@@ -113,6 +113,24 @@ The framework includes a custom [SwiftLint](https://github.com/realm/SwiftLint)
 configuration (`.swiftlint.yml`) that also applies to Coaty application
 projects consuming this package.
 
+### Error handling
+
+Use [ErrorKit](https://github.com/FlineDev/ErrorKit) for all errors handled by
+the package. Package-defined errors must conform to `Throwable` and provide a
+stable, user-facing `userFriendlyMessage`; use `CoatySwiftError` unless a
+distinct public error type is necessary for a clear API boundary.
+
+Do not allow bare `Error`, `DecodingError`, `EncodingError`, or dependency
+errors to escape a CoatySwift API. Convert them at the package boundary to a
+`Throwable` CoatySwift error while preserving actionable diagnostic context in
+the message. At presentation and logging boundaries, obtain user-facing text
+through ErrorKit rather than duplicating ad-hoc error formatting.
+
+Tests that exercise failing paths must assert both the error category and its
+`userFriendlyMessage`. New or changed error behavior must maintain existing
+public signatures unless the associated ticket explicitly authorizes a
+source-breaking migration.
+
 ### Git identity
 
 Commits in this repository must be made using the actual configured git
