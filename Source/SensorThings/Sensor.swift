@@ -192,7 +192,7 @@ public class ObservationTypes {
 }
 
 /// Observation types. For common types see `ObservationTypes`.
-public enum ObservationType: String, Codable {
+public enum ObservationType: String, Codable, Sendable {
     case category_observation = "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Category_Observation"
     case count_observation = "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_CountObservation"
     case measurement = "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement"

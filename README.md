@@ -19,6 +19,11 @@ CoatyJS, legacy CoatySwift, and Axoloty. The Swift implementations have never
 provided every CoatyJS module, and the matrix keeps API presence separate from
 verified wire compatibility.
 
+Error handling now uses [ErrorKit](https://github.com/FlineDev/ErrorKit) for
+newly introduced error types, and `AxolotyError` itself conforms to
+`Throwable` so its existing cases keep the same source-level shape while gaining
+user-facing messages.
+
 __Axoloty__ is a [Coaty](https://coaty.io/) implementation written in Swift.
 
 ## What is Coaty
@@ -114,5 +119,7 @@ Axoloty depends on:
 
 -   RxSwift [MIT
     License](https://github.com/ReactiveX/RxSwift/blob/master/LICENSE.md)
+-   ErrorKit [MIT
+    License](https://github.com/FlineDev/ErrorKit/blob/main/LICENSE)
 -   swift-log [Apache 2.0
     License](https://github.com/apple/swift-log/blob/main/LICENSE.txt)

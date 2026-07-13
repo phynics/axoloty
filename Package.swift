@@ -1,4 +1,4 @@
-// swift-tools-version:5.3
+// swift-tools-version:5.9
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
@@ -24,6 +24,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.80.0"),
         .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.14.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.14.0"),
+        .package(url: "https://github.com/FlineDev/ErrorKit.git", exact: "1.2.1"),
         .package(url: "https://github.com/ReactiveX/RxSwift.git", from: "6.10.0")
     ],
     targets: [
@@ -39,6 +40,7 @@ let package = Package(
                 // through NIOTransportServices/Network.framework instead.
                 .product(name: "NIOSSL", package: "swift-nio-ssl", condition: .when(platforms: [.linux])),
                 .product(name: "Logging", package: "swift-log"),
+                .product(name: "ErrorKit", package: "ErrorKit"),
                 "RxSwift"
             ],
             path: "Source"

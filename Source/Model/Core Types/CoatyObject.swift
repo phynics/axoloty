@@ -100,7 +100,7 @@ open class CoatyObject: Codable {
     }
     
     /// All class types registered for object types by this class and subclasses.
-    private static var classTypes = [String: CoatyObject.Type]()
+    nonisolated(unsafe) private static var classTypes = [String: CoatyObject.Type]()
     private static let classTypesLock = NSLock()
 
     static func getClassType(forObjectType: String) -> CoatyObject.Type? {

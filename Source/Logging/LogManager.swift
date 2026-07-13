@@ -21,7 +21,7 @@ import Logging
 ///   Apple-only and unusable on Linux.
 class LogManager {
 
-    internal static var logLevel = Logging.Logger.Level.error
+    nonisolated(unsafe) internal static var logLevel = Logging.Logger.Level.error
 
     /// Computed once, on first access, using whatever `logLevel` has been set
     /// to at that point (see `Container.resolve(components:configuration:)`,
@@ -31,7 +31,7 @@ class LogManager {
     /// exactly: it is a known, pre-existing limitation - not something
     /// introduced by this swap - that a `logLevel` change made *after* `log`
     /// has already been computed once in the process has no further effect.
-    internal static var log: Logging.Logger = {
+    nonisolated(unsafe) internal static var log: Logging.Logger = {
         var log = Logging.Logger(label: "Axoloty")
         log.logLevel = LogManager.logLevel
         return log

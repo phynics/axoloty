@@ -166,8 +166,9 @@ extension ISO8601DateFormatter {
 
 @available(iOS 11.0, *)
 extension Formatter {
-    static let iso8601withFractionalSeconds = ISO8601DateFormatter([.withInternetDateTime, .withFractionalSeconds])
-    static let iso8601withoutFractionalSeconds = ISO8601DateFormatter([.withInternetDateTime])
+    nonisolated(unsafe) static let iso8601withFractionalSeconds =
+        ISO8601DateFormatter([.withInternetDateTime, .withFractionalSeconds])
+    nonisolated(unsafe) static let iso8601withoutFractionalSeconds = ISO8601DateFormatter([.withInternetDateTime])
 }
 
 @available(iOS 11.0, *)
