@@ -86,16 +86,18 @@ Tests/Fuzzing/run-fuzz.sh \
   --iterations 100000 \
   --seeds 1,2,3,4 \
   --repetitions 3 \
+  --jobs 4 \
   --output .testing/fuzz
 ```
 
-The runner builds the Swift test products once before the first case, then
-invokes each seed/repetition with `swift test --skip-build`. This avoids
-rebuilding the package for every case while preserving separate test
-processes and environment-controlled seeds. The runner works outside the
-development container by selecting Podman or Docker automatically, and works
-inside the container with `--direct`. It streams progress while writing a
-timestamped campaign directory containing
+The runner assigns cases round-robin to `--jobs` workers (two by default). Each worker builds
+its Swift test products once in a private scratch path, then invokes its
+assigned seed/repetitions with `swift test --skip-build`. This avoids both a
+rebuild per case and contention on SwiftPM's shared build database, while
+preserving separate test processes and environment-controlled seeds. The
+runner works outside the development container by selecting Podman or Docker
+automatically, and works inside the container with `--direct`. It streams
+progress while writing a timestamped campaign directory containing
 `manifest.json`, `summary.tsv`, `campaign.log`, and one complete log per
 seed/repetition. A nonzero result means at least one case failed; later cases
 still run unless `--fail-fast` is supplied. Replay a case by copying its

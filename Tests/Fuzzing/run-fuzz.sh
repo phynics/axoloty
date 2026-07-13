@@ -7,6 +7,7 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 ITERATIONS=${AXOLOTY_FUZZ_ITERATIONS:-250}
 SEEDS=${AXOLOTY_FUZZ_SEEDS:-${AXOLOTY_FUZZ_SEED:-0x41584f4c4f5459}}
 REPETITIONS=${AXOLOTY_FUZZ_REPETITIONS:-1}
+JOBS=${AXOLOTY_FUZZ_JOBS:-2}
 OUTPUT_BASE=${AXOLOTY_FUZZ_OUTPUT_DIR:-"$ROOT_DIR/.testing/fuzz"}
 RUNTIME=${CONTAINER_RUNTIME:-}
 IMAGE=${IMAGE:-coatyswift-dev}
@@ -24,6 +25,7 @@ Options:
   --iterations N       Fuzz iterations per case (default: 250)
   --seeds LIST         Comma-separated decimal or hexadecimal seeds
   --repetitions N      Runs per seed (default: 1)
+  --jobs N             Parallel workers with isolated build artifacts (default: 2)
   --output DIR         Parent directory for timestamped campaign artifacts
   --runtime RUNTIME    podman or docker when running outside a container
   --image IMAGE        Development image (default: coatyswift-dev)
@@ -44,12 +46,13 @@ is_positive_integer() { [[ "$1" =~ ^[1-9][0-9]*$ ]]; }
 
 while (($# > 0)); do
     case "$1" in
-        --iterations|--seeds|--repetitions|--output|--runtime|--image)
+        --iterations|--seeds|--repetitions|--jobs|--output|--runtime|--image)
             (($# >= 2)) || die "$1 requires a value"
             case "$1" in
                 --iterations) ITERATIONS=$2 ;;
                 --seeds) SEEDS=$2 ;;
                 --repetitions) REPETITIONS=$2 ;;
+                --jobs) JOBS=$2 ;;
                 --output) OUTPUT_BASE=$2 ;;
                 --runtime) RUNTIME=$2 ;;
                 --image) IMAGE=$2 ;;
@@ -67,6 +70,7 @@ done
 
 is_positive_integer "$ITERATIONS" || die "iterations must be a positive integer"
 is_positive_integer "$REPETITIONS" || die "repetitions must be a positive integer"
+is_positive_integer "$JOBS" || die "jobs must be a positive integer"
 [[ -n "$SEEDS" ]] || die "seeds must not be empty"
 
 if [[ "$MODE" == auto ]]; then
@@ -116,13 +120,14 @@ cat > "$manifest" <<EOF
   "iterations": $ITERATIONS,
   "seeds": ["$(printf '%s' "$SEEDS" | sed 's/,/","/g')"],
   "repetitions": $REPETITIONS,
+  "jobs": $JOBS,
   "cases": []
 }
 EOF
 
 printf 'case\tseed\trepetition\titerations\tdurationSeconds\texitStatus\tlog\n' > "$summary"
 echo "Fuzz campaign started at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$campaign_log"
-((QUIET)) || echo "Fuzz campaign: $campaign_dir (mode=$MODE, iterations=$ITERATIONS, seeds=$SEEDS, repetitions=$REPETITIONS)"
+((QUIET)) || echo "Fuzz campaign: $campaign_dir (mode=$MODE, iterations=$ITERATIONS, seeds=$SEEDS, repetitions=$REPETITIONS, jobs=$JOBS)"
 
 if [[ "$MODE" == container ]]; then
     ((QUIET)) || echo "Preparing development image: $IMAGE"
@@ -132,57 +137,75 @@ if [[ "$MODE" == container ]]; then
     fi
 fi
 
-if [[ "$MODE" == direct ]]; then
-    build_command=(swift build --build-tests)
-else
-    build_command=("$RUNTIME" run --rm -v "$ROOT_DIR:/workspace" -w /workspace
-        "$IMAGE" swift build --build-tests)
-fi
+scratch_root="$ROOT_DIR/.build/fuzz/$(basename "$campaign_dir")"
+mkdir -p "$scratch_root" "$campaign_dir/results"
 
-((QUIET)) || echo "Preparing Swift test products"
-{
-    printf 'build command:'; printf ' %q' "${build_command[@]}"; printf '\n'
-    "${build_command[@]}"
-} 2>&1 | tee -a "$campaign_log"
-build_status=${PIPESTATUS[0]}
-if ((build_status != 0)); then
-    echo "Swift test product preparation failed; see $campaign_log" >&2
-    exit "$build_status"
-fi
+run_worker() {
+    local worker=$1 case_number=0 seed repetition case_name case_log case_start
+    local scratch_host="$scratch_root/worker-$worker"
+    local scratch_path="$scratch_host"
+    local result_file="$campaign_dir/results/worker-$worker.tsv"
+    local worker_status=0 build_status command_status duration result
+    local -a build_command command
+
+    if [[ "$MODE" == container ]]; then scratch_path="/workspace/.build/fuzz/$(basename "$campaign_dir")/worker-$worker"; fi
+    mkdir -p "$scratch_host"
+    if [[ "$MODE" == direct ]]; then
+        build_command=(swift build --build-tests --scratch-path "$scratch_path")
+    else
+        build_command=("$RUNTIME" run --rm -v "$ROOT_DIR:/workspace" -w /workspace
+            "$IMAGE" swift build --build-tests --scratch-path "$scratch_path")
+    fi
+    {
+        printf 'build command:'; printf ' %q' "${build_command[@]}"; printf '\n'
+        "${build_command[@]}"
+    } 2>&1 | tee -a "$campaign_log"
+    build_status=${PIPESTATUS[0]}
+    if ((build_status != 0)); then return "$build_status"; fi
+
+    for seed in "${SEED_LIST[@]}"; do
+        for ((repetition = 1; repetition <= REPETITIONS; repetition++)); do
+            case_number=$((case_number + 1))
+            (( (case_number - 1) % JOBS == worker - 1 )) || continue
+            case_name=$(printf 'case-%03d-seed-%s-repetition-%03d' "$case_number" "$seed" "$repetition")
+            case_name=${case_name//[^a-zA-Z0-9_.-]/_}
+            case_log="$campaign_dir/logs/$case_name.log"
+            case_start=$(date +%s)
+            ((QUIET)) || echo "[$case_number] worker=$worker seed=$seed repetition=$repetition starting"
+            echo "===== $case_name worker=$worker seed=$seed repetition=$repetition =====" >> "$campaign_log"
+            if [[ "$MODE" == direct ]]; then
+                command=(env AXOLOTY_FUZZ_ITERATIONS="$ITERATIONS" AXOLOTY_FUZZ_SEED="$seed" swift test --skip-build --scratch-path "$scratch_path" --filter DeterministicFuzzTests)
+            else
+                command=("$RUNTIME" run --rm -v "$ROOT_DIR:/workspace" -w /workspace
+                    -e "AXOLOTY_FUZZ_ITERATIONS=$ITERATIONS" -e "AXOLOTY_FUZZ_SEED=$seed"
+                    "$IMAGE" swift test --skip-build --scratch-path "$scratch_path" --filter DeterministicFuzzTests)
+            fi
+            {
+                printf 'command:'; printf ' %q' "${command[@]}"; printf '\n'
+                "${command[@]}"
+            } 2>&1 | tee "$case_log" | tee -a "$campaign_log"
+            command_status=${PIPESTATUS[0]}
+            duration=$(($(date +%s) - case_start))
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$case_name" "$seed" "$repetition" "$ITERATIONS" "$duration" "$command_status" "logs/$(basename "$case_log")" >> "$result_file"
+            ((command_status == 0)) && result=passed || { result=failed; worker_status=1; }
+            ((QUIET)) || echo "[$case_number] worker=$worker seed=$seed repetition=$repetition $result (${duration}s)"
+            echo "===== $case_name result=$result durationSeconds=$duration =====" >> "$campaign_log"
+            if ((command_status != 0 && FAIL_FAST == 1)); then return "$worker_status"; fi
+        done
+    done
+    return "$worker_status"
+}
 
 overall_status=0
-case_number=0
-for seed in "${SEED_LIST[@]}"; do
-    for ((repetition = 1; repetition <= REPETITIONS; repetition++)); do
-        case_number=$((case_number + 1))
-        case_name=$(printf 'case-%03d-seed-%s-repetition-%03d' "$case_number" "$seed" "$repetition")
-        case_name=${case_name//[^a-zA-Z0-9_.-]/_}
-        case_log="$campaign_dir/logs/$case_name.log"
-        case_start=$(date +%s)
-        ((QUIET)) || echo "[$case_number] seed=$seed repetition=$repetition starting"
-        echo "===== $case_name seed=$seed repetition=$repetition =====" >> "$campaign_log"
-
-        if [[ "$MODE" == direct ]]; then
-            command=(env AXOLOTY_FUZZ_ITERATIONS="$ITERATIONS" AXOLOTY_FUZZ_SEED="$seed" swift test --skip-build --filter DeterministicFuzzTests)
-        else
-            command=("$RUNTIME" run --rm -v "$ROOT_DIR:/workspace" -w /workspace
-                -e "AXOLOTY_FUZZ_ITERATIONS=$ITERATIONS" -e "AXOLOTY_FUZZ_SEED=$seed"
-                "$IMAGE" swift test --skip-build --filter DeterministicFuzzTests)
-        fi
-
-        {
-            printf 'command:'; printf ' %q' "${command[@]}"; printf '\n'
-            "${command[@]}"
-        } 2>&1 | tee "$case_log" | tee -a "$campaign_log"
-        command_status=${PIPESTATUS[0]}
-        duration=$(($(date +%s) - case_start))
-        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$case_name" "$seed" "$repetition" "$ITERATIONS" "$duration" "$command_status" "logs/$(basename "$case_log")" >> "$summary"
-        ((command_status == 0)) && result=passed || { result=failed; overall_status=1; }
-        ((QUIET)) || echo "[$case_number] seed=$seed repetition=$repetition $result (${duration}s)"
-        echo "===== $case_name result=$result durationSeconds=$duration =====" >> "$campaign_log"
-        if ((command_status != 0 && FAIL_FAST == 1)); then break 2; fi
-    done
+declare -a worker_pids
+for ((worker = 1; worker <= JOBS; worker++)); do
+    run_worker "$worker" &
+    worker_pids+=("$!")
 done
+for worker_pid in "${worker_pids[@]}"; do
+    wait "$worker_pid" || overall_status=1
+done
+find "$campaign_dir/results" -name '*.tsv' -type f -print0 | xargs -0r cat | sort >> "$summary"
 
 end_epoch=$(date +%s)
 case_json=$(awk -F '\t' 'NR > 1 {
