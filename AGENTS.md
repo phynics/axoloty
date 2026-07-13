@@ -20,8 +20,7 @@ cannot run correctly (dynamic-linking failures). Because of that:
   - `make test` — run the test suite inside the container.
   - `make shell` — drop into an interactive shell inside the container, for
     anything not already covered by a Makefile target.
-  - `make docs` — generate API documentation via DocC (once wired up; see
-    Phase 2 of the roadmap).
+  - `make docs` — generate API documentation via DocC into `.build/docc`.
 - The container image and its definition live under `.devcontainer/`
   (`Dockerfile`, `devcontainer.json`). CI (`.github/workflows/ci.yml`) runs
   the same containerized flow, so a green `make build && make test` locally

@@ -83,8 +83,8 @@ version/platform drift documented in `../README.md` today.
 
 **Done when:**
 - [x] SPM is the only documented installation/consumption path.
-- [ ] API documentation is generated via DocC, not Jazzy.
-- [ ] A DocC catalog exists with at least a landing page and a getting-started
+- [x] API documentation is generated via DocC, not Jazzy.
+- [x] A DocC catalog exists with at least a landing page and a getting-started
       article, replacing the removed `docs/` site.
 - [x] `CoatySwift.podspec` and `.jazzy.yaml` no longer exist in the repo;
       the legacy generated/Jekyll documentation was removed in Phase 0.
