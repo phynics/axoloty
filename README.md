@@ -123,3 +123,5 @@ Axoloty depends on:
     License](https://github.com/FlineDev/ErrorKit/blob/main/LICENSE)
 -   swift-log [Apache 2.0
     License](https://github.com/apple/swift-log/blob/main/LICENSE.txt)
+-   swift-docc-plugin [Apache 2.0
+    License](https://github.com/swiftlang/swift-docc-plugin/blob/main/LICENSE.txt)

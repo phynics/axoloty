@@ -6,7 +6,7 @@ CONTAINER_RUNTIME ?= $(shell command -v podman 2>/dev/null || command -v docker 
 WORKDIR := /workspace
 COMMA := ,
 
-.PHONY: help image build test test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all ci-fast ci broker broker-stop shell clean
+.PHONY: help image build test test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all ci-fast ci broker broker-stop shell docs clean
 
 help:
 	@printf '%s\n' \
@@ -26,6 +26,7 @@ help:
 		'make broker      Start Mosquitto on localhost:1883' \
 		'make broker-stop Stop the background Mosquitto container' \
 		'make shell       Open a shell in the Linux container' \
+		'make docs        Generate DocC API documentation into .build/docc' \
 		'make clean       Remove Swift build artifacts'
 
 image:
@@ -102,6 +103,11 @@ broker-stop:
 
 shell: image
 	$(CONTAINER_RUNTIME) run --rm -it -v "$(CURDIR):$(WORKDIR)" -w $(WORKDIR) $(IMAGE) bash
+
+docs: image
+	$(CONTAINER_RUNTIME) run --rm -v "$(CURDIR):$(WORKDIR)" -w $(WORKDIR) $(IMAGE) \
+		swift package generate-documentation --target Axoloty \
+			--transform-for-static-hosting --output-path .build/docc
 
 clean:
 	rm -rf .build
