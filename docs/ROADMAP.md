@@ -2,7 +2,7 @@
 
 This is a living document tracking the phased modernization of this
 [phynics/coaty-swift](https://github.com/phynics/coaty-swift) fork. It is
-intentionally a roadmap, not a spec — see `AGENTS.md` for the
+intentionally a roadmap, not a spec — see `../AGENTS.md` for the
 specs → tickets → worktree workflow used to actually plan and execute each
 piece of work.
 
@@ -27,14 +27,14 @@ verified locally or in CI.
   `.jazzy.yaml`, and the entire legacy `docs/` tree — Jekyll site, Jazzy
   HTML output, and legacy guides, to be recreated as a DocC catalog in
   Phase 2) and a cleaned up `.gitignore`.
-- This roadmap, `AGENTS.md`, and `CLAUDE.md` establishing the agent-facing
+- This roadmap, `../AGENTS.md`, and `../CLAUDE.md` establishing the agent-facing
   workflow and documentation entry points.
 
 **Done when:**
 - [ ] `make build` and `make test` succeed on the NixOS dev machine via podman.
 - [ ] CI runs the same containerized flow on every push/PR.
 - [ ] No stale CocoaPods/Jazzy artifacts remain in the repository.
-- [ ] `ROADMAP.md`, `AGENTS.md`, `CLAUDE.md` exist and are consistent with
+- [ ] `docs/ROADMAP.md`, `../AGENTS.md`, `../CLAUDE.md` exist and are consistent with
       each other.
 
 ## Phase 1 — swift-foundation migration (Linux build blocker)
@@ -70,11 +70,11 @@ dependency or refactoring work.
 **Why:** The project already ships via Swift Package Manager; keeping a
 parallel CocoaPods packaging path (podspec, Jazzy-generated docs meant to
 back a CocoaPods release) is dead weight that actively causes the
-version/platform drift documented in `README.md` today.
+version/platform drift documented in `../README.md` today.
 
 **What this phase covers:**
 - Confirm no remaining references to CocoaPods installation anywhere in the
-  docs or `README.md`.
+  docs or `../README.md`.
 - Replace Jazzy as the API-documentation generator with DocC, wired into
   `make docs`.
 - Recreate project documentation from scratch as a DocC catalog: the old

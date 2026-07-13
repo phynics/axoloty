@@ -10,11 +10,11 @@ MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/
 [phynics/coaty-swift](https://github.com/phynics/coaty-swift) is a fork of
 [coatyio/coaty-swift](https://github.com/coatyio/coaty-swift).
 
-This repository follows its own [ROADMAP.md](./ROADMAP.md). If you're looking
+This repository follows its own [ROADMAP.md](./docs/ROADMAP.md). If you're looking
 for the original project and its documentation, use
 [coatyio/coaty-swift](https://github.com/coatyio/coaty-swift).
 
-See [FEATURE_MATRIX.md](./FEATURE_MATRIX.md) for an explicit comparison of
+See [FEATURE_MATRIX.md](./docs/FEATURE_MATRIX.md) for an explicit comparison of
 CoatyJS, legacy CoatySwift, and Axoloty. The Swift implementations have never
 provided every CoatyJS module, and the matrix keeps API presence separate from
 verified wire compatibility.
@@ -56,7 +56,7 @@ It is compatible with the following deployment targets:
 | iOS               | 10.0+         |
 | macOS             | 10.13+        |
 
-See [ROADMAP.md](./ROADMAP.md) for the current project direction.
+See [ROADMAP.md](./docs/ROADMAP.md) for the current project direction.
 
 ### Swift Package Manager
 
@@ -98,7 +98,7 @@ See [AGENTS.md](./AGENTS.md) for the full set of Makefile targets (including
 For agent- and maintainer-facing conventions used in this fork (build/test
 commands, workflow, coding conventions, git identity rules), see
 [AGENTS.md](./AGENTS.md). For the modernization plan, see
-[ROADMAP.md](./ROADMAP.md).
+[ROADMAP.md](./docs/ROADMAP.md).
 
 ## License
 

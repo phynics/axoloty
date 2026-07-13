@@ -5,7 +5,7 @@ working in this repository. `CLAUDE.md` just points here — keep this file as
 the single source of truth so the two never drift apart.
 
 For the overall modernization plan and current phase, see
-[ROADMAP.md](./ROADMAP.md).
+[ROADMAP.md](./docs/ROADMAP.md).
 
 ## Building & testing: podman only, never native `swift`
 
@@ -115,5 +115,5 @@ This file is the single source of truth for build/test/docs commands, the
 specs/tickets/worktree workflow, and coding conventions — there is currently
 no separate contributor-facing document (this fork isn't taking external
 contributions right now). `README.md` gives a project overview and points
-here and to `ROADMAP.md`; `ROADMAP.md` covers the multi-phase modernization
+here and to `docs/ROADMAP.md`; `docs/ROADMAP.md` covers the multi-phase modernization
 plan this work is part of.
