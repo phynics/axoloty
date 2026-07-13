@@ -1,11 +1,11 @@
 //  Copyright (c) 2020 Siemens AG. Licensed under the MIT License.
 //
 //  ObjectLifecycleControllerTests.swift
-//  CoatySwift
+//  Axoloty
 
 import Foundation
 import Testing
-import CoatySwift
+import Axoloty
 
 @Suite
 struct ObjectLifecycleControllerTests {

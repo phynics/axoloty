@@ -1,7 +1,7 @@
 //  Copyright (c) 2019 Siemens AG. Licensed under the MIT License.
 //
 //  Controller.swift
-//  CoatySwift
+//  Axoloty
 //
 
 import Foundation
@@ -38,7 +38,7 @@ open class Controller {
     /// Never instantiate controller objects in your application; they are created
     /// automatically by dependency injection.
     ///
-    /// - Remark: for internal use in CoatySwift framework only.
+    /// - Remark: for internal use in Axoloty framework only.
     required public init(container: Container, options: ControllerOptions?, controllerType: String) {
         self.container = container
         self.runtime = container.runtime

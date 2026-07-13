@@ -1,7 +1,7 @@
 //  Copyright (c) 2020 Siemens AG. Licensed under the MIT License.
 //
 //  AnyCoatyObjectDecodable.swift
-//  CoatySwift
+//  Axoloty
 //
 //
 
@@ -75,7 +75,7 @@ public class AnyCoatyObjectDecodable: Decodable {
         // Any other fields of the decodable object are ignored.
         
         guard let objectType = try? container.decode(String.self, forKey: .objectType) else {
-            throw CoatySwiftError.DecodingFailure("AnyCoatyObjectDecodable: objectType field is not decodable.")
+            throw AxolotyError.DecodingFailure("AnyCoatyObjectDecodable: objectType field is not decodable.")
         }
         
         if let type = CoatyObject.getClassType(forObjectType: objectType) {
@@ -94,7 +94,7 @@ public class AnyCoatyObjectDecodable: Decodable {
         // `custom` dictionary property of the created instance.
         
         guard let coreType = try? container.decode(CoreType.self, forKey: .coreType) else {
-            throw CoatySwiftError.DecodingFailure("AnyCoatyObjectDecodable: coreType field is not decodable.")
+            throw AxolotyError.DecodingFailure("AnyCoatyObjectDecodable: coreType field is not decodable.")
         }
 
         let type = CoreType.getClassType(forCoreType: coreType)

@@ -1,14 +1,14 @@
 //  Copyright (c) 2019 Siemens AG. Licensed under the MIT License.
 //
-//  CoatySwiftTests.swift
-//  CoatySwift
+//  AxolotyTests.swift
+//  Axoloty
 //
 //
 
 import Testing
 
 @Suite
-struct CoatySwiftTests {
+struct AxolotyTests {
 
     @Test
 

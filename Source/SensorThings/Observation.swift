@@ -1,7 +1,7 @@
 //  Copyright (c) 2020 Siemens AG. Licensed under the MIT License.
 //
 //  Observation.swift
-//  CoatySwift
+//  Axoloty
 //
 
 import Foundation

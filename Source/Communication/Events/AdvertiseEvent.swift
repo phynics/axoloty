@@ -1,7 +1,7 @@
 //  Copyright (c) 2019 Siemens AG. Licensed under the MIT License.
 //
 //  AdvertiseEvent.swift
-//  CoatySwift
+//  Axoloty
 //
 //
 
@@ -35,7 +35,7 @@ public class AdvertiseEvent: CommunicationEvent<AdvertiseEventData> {
     
     fileprivate init(eventType: CommunicationEventType, eventData: AdvertiseEventData, objectType: String) throws {
         guard CommunicationTopic.isValidEventTypeFilter(filter: objectType) else {
-            throw CoatySwiftError.InvalidArgument("Invalid object type: \(objectType)")
+            throw AxolotyError.InvalidArgument("Invalid object type: \(objectType)")
         }
         
         super.init(eventType: eventType, eventData: eventData)

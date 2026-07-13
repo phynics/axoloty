@@ -1,7 +1,7 @@
 //  Copyright (c) 2019 Siemens AG. Licensed under the MIT License.
 //
 //  CommunicationTopic.swift
-//  CoatySwift
+//  Axoloty
 //
 //
 
@@ -34,7 +34,7 @@ class CommunicationTopic {
         let topicLevels = topic.components(separatedBy: TOPIC_SEPARATOR)
         
         guard topicLevels.count >= 5 else {
-            throw CoatySwiftError.InvalidArgument("Invalid topic.")
+            throw AxolotyError.InvalidArgument("Invalid topic.")
         }
         
         let protocolName = topicLevels[0]
@@ -46,47 +46,47 @@ class CommunicationTopic {
         let postfix: String? = topicLevels.count >= 7 ? topicLevels[6] : nil
 
         guard protocolName == PROTOCOL_NAME && version != "" && namespace != "" && eventName != "" && sourceId != "" else {
-            throw CoatySwiftError.InvalidArgument("Invalid topic.")
+            throw AxolotyError.InvalidArgument("Invalid topic.")
         }
         guard (corrId == nil && postfix == nil) || (corrId != nil && corrId != "" && postfix == nil) else {
-            throw CoatySwiftError.InvalidArgument("Invalid topic.")
+            throw AxolotyError.InvalidArgument("Invalid topic.")
         }
         // No need to validate protocol version as subscriptions are filtered by PROTOCOL_VERSION.
         // guard let protocolVersion = Int(version) else {
-        //    throw CoatySwiftError.InvalidArgument("Invalid topic protocol version.")
+        //    throw AxolotyError.InvalidArgument("Invalid topic protocol version.")
         // }
         // guard protocolVersion == PROTOCOL_VERSION else {
-        //    throw CoatySwiftError.InvalidArgument("Unsupported topic protocol version \(protocolVersion).")
+        //    throw AxolotyError.InvalidArgument("Unsupported topic protocol version \(protocolVersion).")
         // }
         guard let sourceIdAsUUID = CoatyUUID(uuidString: sourceId) else {
-            throw CoatySwiftError.InvalidArgument("Invalid topic sourceId.")
+            throw AxolotyError.InvalidArgument("Invalid topic sourceId.")
         }
 
         guard let (eventType, eventTypeFilter) = try CommunicationTopic.extractEventType(eventName) else {
-            throw CoatySwiftError.InvalidArgument("Invalid topic event type: \(eventName)")
+            throw AxolotyError.InvalidArgument("Invalid topic event type: \(eventName)")
         }
 
         if eventType.isOneWay {
             if corrId != nil {
-                throw CoatySwiftError.InvalidArgument("Topic has correlation id for one-way \(eventType) event")
+                throw AxolotyError.InvalidArgument("Topic has correlation id for one-way \(eventType) event")
             }
             if (eventType == .Advertise || eventType == .Channel || eventType == .Associate) &&
                 (eventTypeFilter == nil || eventTypeFilter!.isEmpty) {
-                throw CoatySwiftError.InvalidArgument("Topic missing event filter for \(eventType) event")
+                throw AxolotyError.InvalidArgument("Topic missing event filter for \(eventType) event")
             }
             if  eventType != .Advertise && eventType != .Channel && eventType != .Associate && eventTypeFilter != nil {
-                throw CoatySwiftError.InvalidArgument("Topic has event filter for \(eventType) event")
+                throw AxolotyError.InvalidArgument("Topic has event filter for \(eventType) event")
             }
         } else {
             if corrId == nil {
-                throw CoatySwiftError.InvalidArgument("Topic missing correlation id for two-way event: \(eventType)")
+                throw AxolotyError.InvalidArgument("Topic missing correlation id for two-way event: \(eventType)")
             }
             if (eventType == .Call || eventType == .Update) &&
                 (eventTypeFilter == nil || eventTypeFilter!.isEmpty) {
-                throw CoatySwiftError.InvalidArgument("Topic missing event filter for \(eventType) event")
+                throw AxolotyError.InvalidArgument("Topic missing event filter for \(eventType) event")
             }
             if eventType != .Call && eventType != .Update && eventTypeFilter != nil {
-                throw CoatySwiftError.InvalidArgument("Topic has event filter for \(eventType) event")
+                throw AxolotyError.InvalidArgument("Topic has event filter for \(eventType) event")
             }
         }
 

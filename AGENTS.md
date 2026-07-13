@@ -1,4 +1,4 @@
-# Agent Instructions for CoatySwift
+# Agent Instructions for Axoloty
 
 This document is the canonical set of instructions for any agent (or human)
 working in this repository. `CLAUDE.md` just points here — keep this file as
@@ -117,12 +117,12 @@ projects consuming this package.
 
 Use [ErrorKit](https://github.com/FlineDev/ErrorKit) for all errors handled by
 the package. Package-defined errors must conform to `Throwable` and provide a
-stable, user-facing `userFriendlyMessage`; use `CoatySwiftError` unless a
+stable, user-facing `userFriendlyMessage`; use `AxolotyError` unless a
 distinct public error type is necessary for a clear API boundary.
 
 Do not allow bare `Error`, `DecodingError`, `EncodingError`, or dependency
-errors to escape a CoatySwift API. Convert them at the package boundary to a
-`Throwable` CoatySwift error while preserving actionable diagnostic context in
+errors to escape an Axoloty API. Convert them at the package boundary to a
+`Throwable` Axoloty error while preserving actionable diagnostic context in
 the message. At presentation and logging boundaries, obtain user-facing text
 through ErrorKit rather than duplicating ad-hoc error formatting.
 

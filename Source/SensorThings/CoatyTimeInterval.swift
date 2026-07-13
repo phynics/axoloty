@@ -1,7 +1,7 @@
 //  Copyright (c) 2020 Siemens AG. Licensed under the MIT License.
 //
 //  CoatyTimeInterval.swift
-//  CoatySwift
+//  Axoloty
 //
 
 import Foundation
@@ -126,7 +126,7 @@ public class CoatyTimeInterval: Codable {
     /// - Parameter duration: a duration given in milliseconds
     public static func toDurationIsoString(duration: Int) throws -> String {
         if duration < 0 {
-            throw CoatySwiftError.RuntimeError("Duration cannot be negative.")
+            throw AxolotyError.RuntimeError("Duration cannot be negative.")
         }
         
         // Just return the duration in form of seconds.

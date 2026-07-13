@@ -2,7 +2,7 @@
 
 import Foundation
 import Testing
-@testable import CoatySwift
+@testable import Axoloty
 
 @Suite
 struct WireFixtureTests {

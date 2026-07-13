@@ -1,11 +1,11 @@
 //  Copyright (c) 2021 Siemens AG. Licensed under the MIT License.
 //
 //  DecentralizedLoggingTest.swift
-//  CoatySwift
+//  Axoloty
 
 import Foundation
 import Testing
-import CoatySwift
+import Axoloty
 
 @Suite
 struct DecentralizedLoggingTest {
@@ -88,8 +88,8 @@ class LogCreatorController: Controller {
             self.logInfo(message: "Info Log", tags: ["tag1", "tag2"])
             self.logDebug(message: "Debug Log", tags: ["tag1", "tag2"])
             self.logWarning(message: "Warning Log", tags: ["tag1", "tag2"])
-            self.logError(error: CoatySwiftError.RuntimeError("Random error"), message: "Error Log", tags: ["tag1", "tag2"])
-            self.logFatal(error: CoatySwiftError.RuntimeError("Random fatal error"), message: "Fatal Log", tags: ["tag1", "tag2"])
+            self.logError(error: AxolotyError.RuntimeError("Random error"), message: "Error Log", tags: ["tag1", "tag2"])
+            self.logFatal(error: AxolotyError.RuntimeError("Random fatal error"), message: "Fatal Log", tags: ["tag1", "tag2"])
         }
     }
 }

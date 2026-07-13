@@ -1,11 +1,11 @@
-# Dev/CI container for CoatySwift.
+# Dev/CI container for Axoloty.
 #
 # Based on the official Swift Docker image (Ubuntu Jammy variant). As of writing
 # (2026-07-12) the latest released Swift toolchain is 6.3 (confirmed on Docker
 # Hub - 6.4 has not been released yet). Verified: `podman pull swift:6.3-jammy`
 # and `podman build` with this file succeed against docker.io/library/swift.
 #
-# This image intentionally does NOT COPY any source code in - the CoatySwift
+# This image intentionally does NOT COPY any source code in - the Axoloty
 # repository is bind-mounted at runtime (see the root Makefile and
 # .devcontainer/devcontainer.json), so editing source does not require
 # rebuilding the image.

@@ -33,7 +33,7 @@ Build and test execution must always use the root Makefile and Podman.
 ### Smoke
 
 The smoke tier builds the package in the canonical development container and
-runs one minimal test that imports `CoatySwift`. It catches manifest,
+runs one minimal test that imports `Axoloty`. It catches manifest,
 dependency, and basic linkage failures. It must not start a broker or download
 anything after the container image and Swift dependencies are cached.
 

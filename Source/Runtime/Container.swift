@@ -1,7 +1,7 @@
 //  Copyright (c) 2019 Siemens AG. Licensed under the MIT License.
 //
 //  Container.swift
-//  CoatySwift
+//  Axoloty
 //
 
 import Foundation
@@ -45,8 +45,8 @@ public class Container {
     ///   - configuration: the configuration options for the components
     public static func resolve(components: Components, configuration: Configuration) -> Container {
         
-        // Adjust logging level for CoatySwift.
-        LogManager.logLevel = LogManager.getLogLevel(logLevel: configuration.common?.logLevel ?? CoatySwiftLogLevel.error)
+        // Adjust logging level for Axoloty.
+        LogManager.logLevel = LogManager.getLogLevel(logLevel: configuration.common?.logLevel ?? AxolotyLogLevel.error)
 
         let container = Container()
         
@@ -81,12 +81,12 @@ public class Container {
             
             guard let _ = self.runtime, let communicationManager = self.communicationManager else {
                 LogManager.log.error("Runtime or CommunicationManager was not initialized.")
-                throw CoatySwiftError.InvalidConfiguration("Runtime or CommunicationManager was not initialized.")
+                throw AxolotyError.InvalidConfiguration("Runtime or CommunicationManager was not initialized.")
             }
             
             if self.controllers[name] != nil {
                 LogManager.log.error("Controller with given name already exists.")
-                throw CoatySwiftError.InvalidConfiguration("Controller with given name already exists.")
+                throw AxolotyError.InvalidConfiguration("Controller with given name already exists.")
             }
 
             let controller = resolveController(name: name, controllerType: controllerType, controllerOptions: controllerOptions)

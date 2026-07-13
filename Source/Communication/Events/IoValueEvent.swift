@@ -1,7 +1,7 @@
 //  Copyright (c) 2020 Siemens AG. Licensed under the MIT License.
 //
 //  IoValueEvent.swift
-//  CoatySwift
+//  Axoloty
 //
 //
 
@@ -73,7 +73,7 @@ public class IoValueEvent: CommunicationEvent<IoValueEventData> {
     fileprivate init(eventType: CommunicationEventType, eventData: IoValueEventData, ioSource: IoSource) throws {
         if let useRawIoValues = ioSource.useRawIoValues,
             (eventData.rawPayload != nil && !useRawIoValues) || (eventData.rawPayload == nil && useRawIoValues) {
-            throw CoatySwiftError.InvalidArgument("Inconsistent options chosen for IoValueEvent (see: IoSource.useRawIoValue for reference)")
+            throw AxolotyError.InvalidArgument("Inconsistent options chosen for IoValueEvent (see: IoSource.useRawIoValue for reference)")
         }
         
         super.init(eventType: eventType, eventData: eventData)

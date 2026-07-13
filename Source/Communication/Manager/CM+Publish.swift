@@ -1,7 +1,7 @@
 //  Copyright (c) 2019 Siemens AG. Licensed under the MIT License.
 //
 //  CM+Publish.swift
-//  CoatySwift
+//  Axoloty
 //
 
 import Foundation
@@ -25,7 +25,7 @@ extension CommunicationManager {
     @available(*, deprecated)
     public func publishRaw(topic: String, value: String) throws {
         guard CommunicationTopic.isValidPublicationTopic(topic) else {
-            throw CoatySwiftError.InvalidArgument("Could not publish raw: invalid topic name.")
+            throw AxolotyError.InvalidArgument("Could not publish raw: invalid topic name.")
         }
 
         publish(topic: topic, message: value)
@@ -44,7 +44,7 @@ extension CommunicationManager {
     /// - Throws: if topic name is invalid
     public func publishRaw(topic: String, withString value: String) throws {
         guard CommunicationTopic.isValidPublicationTopic(topic) else {
-            throw CoatySwiftError.InvalidArgument("Could not publish raw: invalid topic name.")
+            throw AxolotyError.InvalidArgument("Could not publish raw: invalid topic name.")
         }
 
         publish(topic: topic, message: value)
@@ -63,7 +63,7 @@ extension CommunicationManager {
     /// - Throws: if topic name is invalid
     public func publishRaw(topic: String, withBinary value: [UInt8]) throws {
         guard CommunicationTopic.isValidPublicationTopic(topic) else {
-            throw CoatySwiftError.InvalidArgument("Could not publish raw: invalid topic name.")
+            throw AxolotyError.InvalidArgument("Could not publish raw: invalid topic name.")
         }
 
         publish(topic: topic, message: value)
@@ -421,7 +421,7 @@ extension CommunicationManager {
     /// - Parameter event: the Associate event to be published
     internal func publishAssociate(event: AssociateEvent) throws {
         guard let eventTypeFilter = event.ioContextName, CommunicationTopic.isValidEventTypeFilter(filter: eventTypeFilter) else {
-            throw CoatySwiftError.InvalidArgument("Associate: Invalid eventTypeFilter")
+            throw AxolotyError.InvalidArgument("Associate: Invalid eventTypeFilter")
         }
         
         let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace, sourceId: self.identity.objectId, eventType: .Associate, eventTypeFilter: eventTypeFilter)

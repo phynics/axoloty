@@ -1,7 +1,7 @@
 //  Copyright (c) 2019 Siemens AG. Licensed under the MIT License.
 //
 //  CM+Util.swift
-//  CoatySwift
+//  Axoloty
 //
 
 import Foundation
@@ -65,7 +65,7 @@ class ObservableWrapper {
             let sub = observable.subscribe({ (event) in
                 if self.hasLastObserverUnsubscribed {
                     // After all initial subscribers have unsubscribed resubscription is no longer possible.
-                    observer.onError(CoatySwiftError.InvalidArgument("Resubscribing to an observed event is not supported"))
+                    observer.onError(AxolotyError.InvalidArgument("Resubscribing to an observed event is not supported"))
                 } else {
                     observer.on(event)
                 }

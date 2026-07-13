@@ -1,7 +1,7 @@
 //  Copyright (c) 2019 Siemens AG. Licensed under the MIT License.
 //
 //  ChannelEvent.swift
-//  CoatySwift
+//  Axoloty
 //
 //
 
@@ -59,7 +59,7 @@ public class ChannelEvent: CommunicationEvent<ChannelEventData> {
 
     fileprivate init(eventType: CommunicationEventType, eventData: ChannelEventData, channelId: String) throws {
         guard CommunicationTopic.isValidEventTypeFilter(filter: channelId) else {
-            throw CoatySwiftError.InvalidArgument("Invalid channel identifier.")
+            throw AxolotyError.InvalidArgument("Invalid channel identifier.")
         }
         
         super.init(eventType: eventType, eventData: eventData)
