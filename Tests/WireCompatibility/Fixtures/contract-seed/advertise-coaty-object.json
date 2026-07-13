@@ -1,0 +1,13 @@
+{
+  "object": {
+    "coreType": "CoatyObject",
+    "name": "Wire fixture",
+    "objectId": "00000000-0000-4000-8000-000000000001",
+    "objectType": "coaty.CoatyObject"
+  },
+  "privateData": {
+    "count": 1,
+    "enabled": true,
+    "producer": "contract-seed"
+  }
+}

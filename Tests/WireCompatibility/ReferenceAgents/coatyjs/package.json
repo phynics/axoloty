@@ -1,0 +1,11 @@
+{
+  "name": "coatyswift-wire-coatyjs-reference",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pinned CoatyJS wire compatibility reference agent",
+  "license": "MIT",
+  "dependencies": {
+    "@coaty/core": "2.4.0",
+    "rxjs": "6.6.7"
+  }
+}

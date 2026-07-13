@@ -1,0 +1,24 @@
+{
+  "format": "coaty-wire-normalization/v1",
+  "profiles": {
+    "coaty-v1": {
+      "description": "Normalize only nondeterministic values before semantic comparison.",
+      "jsonObjectKeyOrder": "ignore",
+      "replacements": [
+        { "jsonPointerPattern": "/object/objectId", "replacement": "<object-id>" },
+        { "jsonPointerPattern": "/object/parentObjectId", "replacement": "<parent-object-id>" },
+        { "jsonPointerPattern": "/sourceId", "replacement": "<source-id>" },
+        { "jsonPointerPattern": "/correlationId", "replacement": "<correlation-id>" },
+        { "jsonPointerPattern": "/timestamp", "replacement": "<timestamp>" }
+      ],
+      "preserve": [
+        "mqtt.topic",
+        "mqtt.qos",
+        "mqtt.retain",
+        "payload JSON array order",
+        "payload JSON number values",
+        "presence versus absence of fields"
+      ]
+    }
+  }
+}

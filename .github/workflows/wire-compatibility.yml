@@ -1,0 +1,27 @@
+name: Wire Compatibility
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1"
+
+jobs:
+  live-coatyjs:
+    name: Live CoatyJS compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run offline and live wire suites
+        run: make test-wire-all CONTAINER_RUNTIME=docker
+
+      - name: Upload wire captures on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wire-captures
+          path: |
+            .testing/wire/
+          if-no-files-found: ignore

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "tiers": [
+    {"id": "smoke", "timeoutSeconds": 300, "cadence": "pull-request", "network": "none", "required": true},
+    {"id": "unit", "timeoutSeconds": 120, "cadence": "pull-request", "network": "none", "required": true},
+    {"id": "module", "timeoutSeconds": 300, "cadence": "pull-request", "network": "isolated", "required": true},
+    {"id": "property", "timeoutSeconds": 600, "cadence": "pull-request-bounded", "network": "none", "required": true},
+    {"id": "integration", "timeoutSeconds": 600, "cadence": "pull-request", "network": "isolated-broker", "required": true},
+    {"id": "wire-offline", "timeoutSeconds": 300, "cadence": "pull-request", "network": "none", "required": true},
+    {"id": "wire-live", "timeoutSeconds": 1200, "cadence": "protocol-change-and-pre-merge", "network": "isolated-containers", "required": true},
+    {"id": "nightly", "timeoutSeconds": 3600, "cadence": "nightly-and-release", "network": "isolated-containers", "required": false},
+    {"id": "manual-macos", "timeoutSeconds": 1800, "cadence": "release-and-apple-change", "network": "isolated-broker", "required": false}
+  ],
+  "artifactContract": {
+    "requiredOnFailure": ["manifest.json", "verifier.log"],
+    "brokerScenarios": ["capture.jsonl", "mosquitto.log"],
+    "interopScenarios": ["axoloty.log", "coatyjs.log"],
+    "generatedScenarios": ["seed.txt", "reproducer"]
+  },
+  "flakePolicy": {
+    "automaticRetries": 0,
+    "diagnosticReruns": 1,
+    "quarantineRequires": ["owner", "ticket", "evidence", "deadline"]
+  }
+}

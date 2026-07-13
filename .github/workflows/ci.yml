@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  wire-compatibility:
+    name: Wire compatibility fixtures
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run wire compatibility gate
+        run: make test-wire CONTAINER_RUNTIME=docker
+
+  build-and-test:
+    name: Linux build and test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # GitHub-hosted runners provide Docker, while local development normally
+      # auto-detects Podman. Keep the Makefile as the shared entry point and
+      # select Docker explicitly in CI.
+      - name: Build and test
+        run: make build test CONTAINER_RUNTIME=docker
