@@ -113,6 +113,25 @@ The framework includes a custom [SwiftLint](https://github.com/realm/SwiftLint)
 configuration (`.swiftlint.yml`) that also applies to Coaty application
 projects consuming this package.
 
+### Documentation comments
+
+DocC-style documentation comments are the single source of API documentation:
+the DocC catalog produced by `make docs` is generated from in-source comments,
+not from a hand-maintained reference. Every public type, property, method,
+initializer, and protocol declaration must carry a [DocC](https://www.swift.org/documentation/docc/)
+documentation comment (`///` for single-line, `/** … */` for multi-line)
+written in DocC markup.
+
+- Document parameters, return values, and thrown errors with the
+  `- Parameter:`, `- Returns:`, and `- Throws:` callouts.
+- Cross-reference other symbols with double-backtick links (`` ``Symbol`` ``)
+  so the catalog resolves them automatically.
+- Keep the documentation co-located with the declaration it describes; do not
+  duplicate API-reference content in standalone `.md` articles — those are
+  reserved for guides and conceptual overviews.
+- When modifying a public API, update its documentation comment in the same
+  change so the catalog never drifts from the code.
+
 ### Error handling
 
 Use [ErrorKit](https://github.com/FlineDev/ErrorKit) for all errors handled by
