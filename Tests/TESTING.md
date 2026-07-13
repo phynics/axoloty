@@ -204,12 +204,11 @@ host:
 
 1. Record macOS, Xcode, Swift, and architecture versions.
 2. Resolve the package from a clean checkout and run the full XCTest suite.
-3. Build the Example Xcode project for macOS and one supported iOS Simulator.
-4. Run the representative Axoloty/CoatyJS Advertise checks in both directions
+3. Run the representative Axoloty/CoatyJS Advertise checks in both directions
    against a broker reachable by the Mac, plus the CoatyJS reference-wire
    scenarios for implemented core patterns.
-5. Exercise TLS with a test CA and verify rejection of an untrusted endpoint.
-6. Attach logs, result bundle, wire captures, and the completed version record
+4. Exercise TLS with a test CA and verify rejection of an untrusted endpoint.
+5. Attach logs, result bundle, wire captures, and the completed version record
    to the release ticket.
 
 Legacy CoatySwift 2.4.0 may be run as an informational oracle when investigating
