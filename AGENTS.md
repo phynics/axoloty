@@ -58,17 +58,17 @@ pipeline, not through ad-hoc branches off a shared checkout:
 - `.claude/tickets/` — markdown tickets derived from specs, scoped to a
   single unit of work. Also local-only and gitignored.
 - **One git worktree per ticket.** For a ticket, create an isolated worktree
-  and branch off `master`:
+  under the repository-local `.worktree/` directory and branch off `master`:
 
   ```sh
-  git worktree add ../coaty-swift-<ticket-id> -b <ticket-id>-<slug> master
+  git worktree add .worktree/<ticket-id> -b <ticket-id>-<slug> master
   ```
 
   Do all work for that ticket inside its own worktree so parallel efforts
   (including other agents') never collide on the same working tree.
 - Open a pull request from the ticket's branch back to `master`.
 - Once the PR is merged, remove the worktree (`git worktree remove
-  ../coaty-swift-<ticket-id>`) — don't leave stale worktrees lying around.
+  .worktree/<ticket-id>`) — don't leave stale worktrees lying around.
 
 This lets multiple agents (or an agent and a human) work on independent
 tickets concurrently without stepping on each other's files.

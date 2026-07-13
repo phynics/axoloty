@@ -60,6 +60,7 @@ iOSInjectionProject/
 
 # Local agentic-coding workspace (specs/tickets), not shared via git
 .claude/
+.worktree/
 
 # DocC generated documentation build output
 .docc-build/
