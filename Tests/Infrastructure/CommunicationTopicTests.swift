@@ -90,4 +90,14 @@ struct CommunicationTopicTests {
         #expect(!(CommunicationTopic.matches("a/b", "a/b/c")))
         #expect(!(CommunicationTopic.matches("", "#")))
     }
+
+    @Test
+
+    func testSingleLevelWildcardDoesNotMatchMissingLevel() {
+        #expect(!(CommunicationTopic.matches("ac1a0ba", "+/+/+#")))
+        #expect(!(CommunicationTopic.matches("ac1a0ba", "+/+/")))
+        #expect(!(CommunicationTopic.matches("ac1a0ba", "+/+#")))
+        #expect(CommunicationTopic.matches("a/", "a/+"))
+        #expect(CommunicationTopic.matches("a", "a/#"))
+    }
 }
