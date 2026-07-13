@@ -165,9 +165,17 @@ class CommunicationTopic {
 
         for i in 0...lastIndex {
             let currentPatternLevel = patternLevels[i]
-            let currentLevel = i < topicLength ? topicLevels[i] : nil
+            let currentLevelMissing = i >= topicLength
+            let currentLevel = currentLevelMissing ? nil : topicLevels[i]
             let currentLevelEmpty = currentLevel?.isEmpty ?? true
-            
+
+            if currentLevelMissing {
+                if currentPatternLevel == MULTI_TOPIC_LEVEL_WILDCARD {
+                    return i == lastIndex
+                }
+                return false
+            }
+
             if currentLevelEmpty && currentPatternLevel.isEmpty {
                 continue
             }
