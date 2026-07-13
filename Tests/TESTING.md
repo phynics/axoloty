@@ -89,14 +89,19 @@ Tests/Fuzzing/run-fuzz.sh \
   --output .testing/fuzz
 ```
 
-The runner works outside the development container by selecting Podman or
-Docker automatically, and works inside the container with `--direct`. It
-streams progress while writing a timestamped campaign directory containing
+The runner builds the Swift test products once before the first case, then
+invokes each seed/repetition with `swift test --skip-build`. This avoids
+rebuilding the package for every case while preserving separate test
+processes and environment-controlled seeds. The runner works outside the
+development container by selecting Podman or Docker automatically, and works
+inside the container with `--direct`. It streams progress while writing a
+timestamped campaign directory containing
 `manifest.json`, `summary.tsv`, `campaign.log`, and one complete log per
 seed/repetition. A nonzero result means at least one case failed; later cases
 still run unless `--fail-fast` is supplied. Replay a case by copying its
 recorded `AXOLOTY_FUZZ_ITERATIONS`, `AXOLOTY_FUZZ_SEED`, and command from the
-case log. `make fuzz-long` runs a default 100,000-iteration, four-seed
+case log, after preparing the test products with the same containerized build
+command. `make fuzz-long` runs a default 100,000-iteration, four-seed
 campaign.
 
 ### Integration

@@ -51,6 +51,7 @@ let package = Package(
                 "TESTING.md",
                 "Fuzzing/Artifacts",
                 "Fuzzing/run-fuzz.sh",
+                "Fuzzing/test-run-fuzz.sh",
                 "Support",
                 "WireCompatibility/Audit",
                 "WireCompatibility/Capture",

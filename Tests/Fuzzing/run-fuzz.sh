@@ -132,6 +132,24 @@ if [[ "$MODE" == container ]]; then
     fi
 fi
 
+if [[ "$MODE" == direct ]]; then
+    build_command=(swift build --build-tests)
+else
+    build_command=("$RUNTIME" run --rm -v "$ROOT_DIR:/workspace" -w /workspace
+        "$IMAGE" swift build --build-tests)
+fi
+
+((QUIET)) || echo "Preparing Swift test products"
+{
+    printf 'build command:'; printf ' %q' "${build_command[@]}"; printf '\n'
+    "${build_command[@]}"
+} 2>&1 | tee -a "$campaign_log"
+build_status=${PIPESTATUS[0]}
+if ((build_status != 0)); then
+    echo "Swift test product preparation failed; see $campaign_log" >&2
+    exit "$build_status"
+fi
+
 overall_status=0
 case_number=0
 for seed in "${SEED_LIST[@]}"; do
@@ -145,11 +163,11 @@ for seed in "${SEED_LIST[@]}"; do
         echo "===== $case_name seed=$seed repetition=$repetition =====" >> "$campaign_log"
 
         if [[ "$MODE" == direct ]]; then
-            command=(env AXOLOTY_FUZZ_ITERATIONS="$ITERATIONS" AXOLOTY_FUZZ_SEED="$seed" swift test --filter DeterministicFuzzTests)
+            command=(env AXOLOTY_FUZZ_ITERATIONS="$ITERATIONS" AXOLOTY_FUZZ_SEED="$seed" swift test --skip-build --filter DeterministicFuzzTests)
         else
             command=("$RUNTIME" run --rm -v "$ROOT_DIR:/workspace" -w /workspace
                 -e "AXOLOTY_FUZZ_ITERATIONS=$ITERATIONS" -e "AXOLOTY_FUZZ_SEED=$seed"
-                "$IMAGE" swift test --filter DeterministicFuzzTests)
+                "$IMAGE" swift test --skip-build --filter DeterministicFuzzTests)
         fi
 
         {
