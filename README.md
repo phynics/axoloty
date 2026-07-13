@@ -7,48 +7,36 @@ MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/
 
 ## About Axoloty
 
-[phynics/coaty-swift](https://github.com/phynics/coaty-swift) is a fork of
-[coatyio/coaty-swift](https://github.com/coatyio/coaty-swift).
+__Axoloty__ is a Swift framework for building distributed, collaborative IoT
+applications out of loosely coupled, decentralized components called *agents*.
+Agents communicate with each other in (soft) real time over a publish-subscribe
+messaging backbone (MQTT), and can run on IoT devices, mobile devices, in
+microservices, or in cloud and backend services.
 
-This repository follows its own [ROADMAP.md](./docs/ROADMAP.md). If you're looking
-for the original project and its documentation, use
-[coatyio/coaty-swift](https://github.com/coatyio/coaty-swift).
+Axoloty provides a production-ready application and communication layer
+foundation for collaborative IoT prosumer scenarios where smart agents act in
+an autonomous, collaborative, and ad-hoc fashion. Its key properties include:
 
-See [FEATURE_MATRIX.md](./docs/FEATURE_MATRIX.md) for an explicit comparison of
-CoatyJS, legacy CoatySwift, and Axoloty. The Swift implementations have never
-provided every CoatyJS module, and the matrix keeps API presence separate from
-verified wire compatibility.
-
-Error handling now uses [ErrorKit](https://github.com/FlineDev/ErrorKit) for
-newly introduced error types, and `AxolotyError` itself conforms to
-`Throwable` so its existing cases keep the same source-level shape while gaining
-user-facing messages.
-
-__Axoloty__ is a [Coaty](https://coaty.io/) implementation written in Swift.
-
-## What is Coaty
-
-Using the Coaty [koʊti] framework as a middleware, you can build distributed
-applications out of decentrally organized application components, so called
-*Coaty agents*, which are loosely coupled and communicate with each other in
-(soft) real-time. The main focus is on IoT prosumer scenarios where smart agents
-act in an autonomous, collaborative, and ad-hoc fashion. Coaty agents can run on
-IoT devices, mobile devices, in microservices, cloud or backend services.
-
-Coaty provides a production-ready application and communication layer foundation
-for building collaborative IoT applications in an easy-to-use yet powerful and
-efficient way. The key properties of the Axoloty framework include:
-
-* a lightweight and modular object-oriented software architecture favoring a
+* a lightweight, modular, object-oriented software architecture favoring a
   resource-oriented and declarative programming style,
-* standardized event based communication patterns on top of an open
-  publish-subscribe messaging protocol (currently [MQTT](https://mqtt.org)),
-* and a platform-agnostic, extensible object model to discover, distribute,
-  share, query, and persist hierarchically typed data.
+* an IoC container with controller-based dependency injection and lifecycle
+  management as the entry point for any Axoloty application,
+* standardized event-based communication patterns — Advertise / Deadvertise,
+  Discover / Resolve, Query / Retrieve, Update / Complete, Channel, and
+  Call / Return — on top of [MQTT](https://mqtt.org),
+* an IO routing model for routing streams of sensor data between sources and
+  actors with pluggable backpressure strategies,
+* a platform-agnostic, extensible object model to discover, distribute, share,
+  query, and persist hierarchically typed data,
+* structured error handling through [ErrorKit](https://github.com/FlineDev/ErrorKit),
+  with `AxolotyError` as the package's `Throwable` base error type,
+* and a structured logging facade backed by [swift-log](https://github.com/apple/swift-log).
 
-## Upstream Reference
-
-The original CoatySwift repository is [coatyio/coaty-swift](https://github.com/coatyio/coaty-swift).
+Axoloty is a modernized fork of
+[coatyio/coaty-swift](https://github.com/coatyio/coaty-swift) and follows its
+own direction documented in [ROADMAP.md](./docs/ROADMAP.md). For an explicit
+comparison against CoatyJS and legacy CoatySwift, see
+[FEATURE_MATRIX.md](./docs/FEATURE_MATRIX.md).
 
 ## Getting started
 
@@ -58,8 +46,9 @@ It is compatible with the following deployment targets:
 
 | Deployment Target | Compatibility |
 | ----------------- | ------------- |
-| iOS               | 10.0+         |
-| macOS             | 10.13+        |
+| iOS               | 12.0+         |
+| macOS             | 10.14+        |
+| Linux             | Yes (containerized) |
 
 See [ROADMAP.md](./docs/ROADMAP.md) for the current project direction.
 
@@ -114,12 +103,7 @@ Code is licensed under the [MIT License](https://opensource.org/licenses/MIT).
 Documentation is licensed under a [Creative Commons Attribution-ShareAlike 4.0
 International License](http://creativecommons.org/licenses/by-sa/4.0/).
 
-The following list displays all the relevant licenses for third-party software
-Axoloty depends on:
+The following vendored software is included in this repository:
 
--   RxSwift [MIT
-    License](https://github.com/ReactiveX/RxSwift/blob/master/LICENSE.md)
--   ErrorKit [MIT
-    License](https://github.com/FlineDev/ErrorKit/blob/main/LICENSE)
--   swift-log [Apache 2.0
-    License](https://github.com/apple/swift-log/blob/main/LICENSE.txt)
+-   AnyCodable [MIT
+    License](https://github.com/Flight-School/AnyCodable/blob/master/LICENSE)
