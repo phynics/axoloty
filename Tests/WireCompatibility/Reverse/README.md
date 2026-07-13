@@ -10,4 +10,5 @@ Run from the repository root:
 Tests/WireCompatibility/Reverse/run-axoloty-advertise.sh
 ```
 
-The Swift XCTest is environment-gated and skips during the normal test suite.
+The Swift Testing case is environment-gated and disabled during the normal
+test suite.

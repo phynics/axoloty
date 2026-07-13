@@ -1,14 +1,13 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-import XCTest
+import Foundation
+import Testing
 import CoatySwift
 
-final class AxolotyAdvertiseProducerTests: XCTestCase {
+@Suite
+struct AxolotyAdvertiseProducerTests {
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["WIRE_REVERSE_LIVE"] == "1"))
     func testPublishesAdvertiseForCoatyJS() throws {
-        guard ProcessInfo.processInfo.environment["WIRE_REVERSE_LIVE"] == "1" else {
-            throw XCTSkip("Set WIRE_REVERSE_LIVE=1 through the reverse compatibility runner")
-        }
-
         let environment = ProcessInfo.processInfo.environment
         let host = environment["WIRE_BROKER_HOST"] ?? "127.0.0.1"
         let port = UInt16(environment["WIRE_BROKER_PORT"] ?? "1883") ?? 1883
@@ -26,17 +25,18 @@ final class AxolotyAdvertiseProducerTests: XCTestCase {
         defer { container.shutdown() }
 
         guard let manager = container.communicationManager else {
-            return XCTFail("Container did not resolve a communication manager")
+            Issue.record("Container did not resolve a communication manager")
+            return
         }
 
-        let online = expectation(description: "Axoloty MQTT connection is online")
+        let online = DispatchSemaphore(value: 0)
         let stateSubscription = manager.observeCommunicationState().subscribe(onNext: { state in
             if state == .online {
-                online.fulfill()
+                online.signal()
             }
         })
         manager.start()
-        wait(for: [online], timeout: 5.0)
+        #expect(online.wait(timeout: .now() + 5) == .success)
         stateSubscription.dispose()
 
         let object = CoatyObject(

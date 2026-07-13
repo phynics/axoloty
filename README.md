@@ -1,7 +1,7 @@
 # Axoloty
 
 [![Swift
-version](https://img.shields.io/badge/swift-5.3%2B-FF4029.svg)](https://developer.apple.com/swift/)
+version](https://img.shields.io/badge/swift-6.3)](https://developer.apple.com/swift/)
 [![License:
 MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 

@@ -1,12 +1,15 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
-import XCTest
+import Testing
 @testable import CoatySwift
 
-final class ObjectTypeRegistryTests: XCTestCase {
+@Suite
+struct ObjectTypeRegistryTests {
     private final class RegisteredTypeA: CoatyObject {}
     private final class RegisteredTypeB: CoatyObject {}
+
+    @Test
 
     func testConcurrentRegistrationAndLookupRemainConsistent() {
         let iterations = 1_000
@@ -41,8 +44,10 @@ final class ObjectTypeRegistryTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(failures, [])
+        #expect((failures) == ([]))
     }
+
+    @Test
 
     func testUnregisteredObjectTypeIsReportedAsUnregistered() {
         let object = CoatyObject(
@@ -52,6 +57,6 @@ final class ObjectTypeRegistryTests: XCTestCase {
             name: "unregistered"
         )
 
-        XCTAssertFalse(object.isObjectTypeRegistered)
+        #expect(!(object.isObjectTypeRegistered))
     }
 }

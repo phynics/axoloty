@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-import XCTest
+import Testing
 
 /// A declarative scenario that a live interoperability runner can execute for
 /// each reference implementation. Keeping the assertions structured prevents
@@ -135,7 +135,9 @@ private enum LifecycleCompatibilityCatalog {
     ]
 }
 
-final class LifecycleCompatibilityScenarioTests: XCTestCase {
+@Suite
+struct LifecycleCompatibilityScenarioTests {
+    @Test
     func testCatalogCoversRequiredFailureAndLifecycleBehavior() {
         let requiredIDs: Set<String> = [
             "offline-queueing", "reconnect-resubscribe", "broker-restart",
@@ -144,47 +146,57 @@ final class LifecycleCompatibilityScenarioTests: XCTestCase {
             "qos-0", "qos-1", "qos-2"
         ]
 
-        XCTAssertEqual(Set(LifecycleCompatibilityCatalog.scenarios.map { $0.id }), requiredIDs)
+        #expect((Set(LifecycleCompatibilityCatalog.scenarios.map { $0.id })) == (requiredIDs))
     }
+
+    @Test
 
     func testScenarioIdentifiersAreUnique() {
         let ids = LifecycleCompatibilityCatalog.scenarios.map { $0.id }
-        XCTAssertEqual(ids.count, Set(ids).count)
+        #expect((ids.count) == (Set(ids).count))
     }
+
+    @Test
 
     func testEveryScenarioHasActionsAndWireObservations() {
         for scenario in LifecycleCompatibilityCatalog.scenarios {
-            XCTAssertFalse(scenario.actions.isEmpty, "\(scenario.id) has no executable actions")
-            XCTAssertFalse(scenario.observations.isEmpty, "\(scenario.id) has no wire assertions")
-            XCTAssertEqual(Set(scenario.participants), Set(LifecycleScenario.Participant.allCases))
+            #expect(!(scenario.actions.isEmpty), "\(scenario.id) has no executable actions")
+            #expect(!(scenario.observations.isEmpty), "\(scenario.id) has no wire assertions")
+            #expect((Set(scenario.participants)) == (Set(LifecycleScenario.Participant.allCases)))
         }
     }
+
+    @Test
 
     func testEveryPublishDeclaresSupportedQoS() {
         let supportedQoS = Set(0...2)
         for scenario in LifecycleCompatibilityCatalog.scenarios {
             for case let .publish(_, qos) in scenario.actions {
-                XCTAssertTrue(supportedQoS.contains(qos), "\(scenario.id) uses invalid QoS \(qos)")
+                #expect(supportedQoS.contains(qos), "\(scenario.id) uses invalid QoS \(qos)")
             }
         }
     }
 
+    @Test
+
     func testQoSScenariosAssertObservedLevel() {
         for qos in 0...2 {
             let scenario = LifecycleCompatibilityCatalog.scenarios.first { $0.id == "qos-\(qos)" }
-            XCTAssertEqual(scenario?.observations.contains(.qos(qos)), true)
+            #expect((scenario?.observations.contains(.qos(qos))) == (true))
         }
     }
 
+    @Test
+
     func testGracefulAndUnexpectedShutdownHaveDistinctWireBehavior() {
         let graceful = LifecycleCompatibilityCatalog.scenarios.first { $0.id == "graceful-deadvertise" }
-        XCTAssertEqual(graceful?.observations.contains(.deadvertise), true)
-        XCTAssertEqual(graceful?.observations.contains(.noLastWill), true)
+        #expect((graceful?.observations.contains(.deadvertise)) == (true))
+        #expect((graceful?.observations.contains(.noLastWill)) == (true))
 
         let unexpected = LifecycleCompatibilityCatalog.scenarios.first {
             $0.id == "unexpected-disconnect-last-will"
         }
-        XCTAssertEqual(unexpected?.observations.contains(.lastWill), true)
-        XCTAssertEqual(unexpected?.observations.contains(.deadvertise), false)
+        #expect((unexpected?.observations.contains(.lastWill)) == (true))
+        #expect((unexpected?.observations.contains(.deadvertise)) == (false))
     }
 }

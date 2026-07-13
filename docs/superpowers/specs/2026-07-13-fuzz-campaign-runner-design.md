@@ -3,7 +3,8 @@
 ## Goal
 
 Provide a reproducible shell-based fuzz campaign runner for the deterministic
-XCTest fuzz suite, with useful terminal progress and durable audit artifacts.
+Swift Testing fuzz suite, with useful terminal progress and durable audit
+artifacts.
 
 ## Location and invocation
 

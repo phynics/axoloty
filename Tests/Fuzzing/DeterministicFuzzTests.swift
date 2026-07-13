@@ -1,14 +1,15 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
-import XCTest
+import Testing
 @testable import CoatySwift
 
 /// Deterministic, bounded property tests for protocol-facing primitives.
 ///
 /// Override the PR-friendly iteration count with `AXOLOTY_FUZZ_ITERATIONS` and
 /// reproduce a failure with `AXOLOTY_FUZZ_SEED` (decimal or `0x` hexadecimal).
-final class DeterministicFuzzTests: XCTestCase {
+@Suite
+struct DeterministicFuzzTests {
     private var iterations: Int {
         let value = ProcessInfo.processInfo.environment["AXOLOTY_FUZZ_ITERATIONS"]
             .flatMap(Int.init) ?? 250
@@ -23,6 +24,8 @@ final class DeterministicFuzzTests: XCTestCase {
         return UInt64(value) ?? 0x41584f4c4f5459
     }
 
+    @Test
+
     func testAnyCodableJSONRoundTripsSemantically() throws {
         var generator = SeededGenerator(seed: seed)
         for iteration in 0..<iterations {
@@ -31,9 +34,11 @@ final class DeterministicFuzzTests: XCTestCase {
             let decoded = try JSONDecoder().decode(AnyCodable.self, from: data)
             let encoded = try JSONEncoder().encode(decoded)
             let actual = try JSONSerialization.jsonObject(with: encoded, options: [.fragmentsAllowed])
-            XCTAssertTrue(jsonEqual(value, actual), "seed=\(seed) iteration=\(iteration)")
+            #expect(jsonEqual(value, actual), "seed=\(seed) iteration=\(iteration)")
         }
     }
+
+    @Test
 
     func testUnknownObjectFieldsDecodeWithoutLossInCustomDictionary() throws {
         var generator = SeededGenerator(seed: seed ^ 0x5555_aaaa)
@@ -51,14 +56,16 @@ final class DeterministicFuzzTests: XCTestCase {
                 "customNested": ["enabled": iteration.isMultiple(of: 2)]
             ]]
             let data = try JSONSerialization.data(withJSONObject: payload)
-            let json = try XCTUnwrap(String(data: data, encoding: .utf8))
-            let event: AdvertiseEvent = try XCTUnwrap(PayloadCoder.decode(json), "seed=\(seed) iteration=\(iteration)")
-            XCTAssertEqual(event.data.object.objectId.string, uuid)
-            XCTAssertEqual(event.data.object.custom["customString"] as? String, customString)
-            XCTAssertEqual(event.data.object.custom["customInteger"] as? Int, customInteger)
-            XCTAssertNotNil(event.data.object.custom["customNested"])
+            let json = try #require(String(data: data, encoding: .utf8))
+            let event: AdvertiseEvent = try #require(PayloadCoder.decode(json), "seed=\(seed) iteration=\(iteration)")
+            #expect((event.data.object.objectId.string) == (uuid))
+            #expect((event.data.object.custom["customString"] as? String) == (customString))
+            #expect((event.data.object.custom["customInteger"] as? Int) == (customInteger))
+            #expect((event.data.object.custom["customNested"]) != nil)
         }
     }
+
+    @Test
 
     func testMalformedAndTruncatedPayloadsAreRejectedWithoutCrashing() throws {
         var generator = SeededGenerator(seed: seed ^ 0xdead_beef)
@@ -66,60 +73,62 @@ final class DeterministicFuzzTests: XCTestCase {
         for length in 0..<valid.utf8.count {
             let truncated = String(valid.prefix(length))
             let event: AdvertiseEvent? = PayloadCoder.decode(truncated)
-            XCTAssertNil(event, "truncation length \(length) unexpectedly decoded")
+            #expect((event) == nil, "truncation length \(length) unexpectedly decoded")
         }
         for iteration in 0..<iterations {
             let bytes = (0..<generator.int(in: 0...128)).map { _ in generator.uint8() }
             let malformed = String(decoding: bytes, as: UTF8.self)
             let event: AdvertiseEvent? = PayloadCoder.decode(malformed)
             if let event = event {
-                XCTAssertFalse(event.data.object.objectType.isEmpty, "seed=\(seed) iteration=\(iteration)")
+                #expect(!(event.data.object.objectType.isEmpty), "seed=\(seed) iteration=\(iteration)")
             }
         }
     }
+
+    @Test
 
     func testUUIDParsingAndCodableRoundTrip() throws {
         var generator = SeededGenerator(seed: seed ^ 0xc0a7_900d)
         for iteration in 0..<iterations {
             let text = generator.uuidString()
-            let uuid = try XCTUnwrap(CoatyUUID(uuidString: text), "seed=\(seed) iteration=\(iteration)")
-            XCTAssertEqual(uuid.string, text)
+            let uuid = try #require(CoatyUUID(uuidString: text), "seed=\(seed) iteration=\(iteration)")
+            #expect((uuid.string) == (text))
             let decoded = try JSONDecoder().decode(CoatyUUID.self, from: JSONEncoder().encode(uuid))
-            XCTAssertEqual(decoded, uuid)
-            XCTAssertEqual(decoded.string, text)
+            #expect((decoded) == (uuid))
+            #expect((decoded.string) == (text))
         }
         for invalid in ["", "not-a-uuid", "00000000-0000-0000-0000", "00000000/0000/0000/0000/000000000000"] {
-            XCTAssertNil(CoatyUUID(uuidString: invalid))
+            #expect((CoatyUUID(uuidString: invalid)) == nil)
         }
     }
+
+    @Test
 
     func testTopicMatcherAgreesWithReferenceImplementation() {
         var generator = SeededGenerator(seed: seed ^ 0x70f1_cafe)
         for iteration in 0..<iterations {
             let topic = generator.topic(allowWildcards: false)
             let filter = generator.topic(allowWildcards: true)
-            XCTAssertEqual(
-                CommunicationTopic.matches(topic, filter),
-                referenceMatches(topic: topic, filter: filter),
-                "seed=\(seed) iteration=\(iteration) topic=\(topic) filter=\(filter)"
-            )
+            #expect((CommunicationTopic.matches(topic, filter)) == (referenceMatches(topic: topic, filter: filter)), "seed=\(seed) iteration=\(iteration) topic=\(topic) filter=\(filter)")
         }
     }
+
+    @Test
 
     func testTopicValidationProperties() {
         var generator = SeededGenerator(seed: seed ^ 0x1234_5678)
         for iteration in 0..<iterations {
             let clean = generator.string(maxLength: 24, alphabet: Array("abcXYZ012._-"))
             if clean.isEmpty {
-                XCTAssertFalse(CommunicationTopic.isValidPublicationTopic(clean))
+                #expect(!(CommunicationTopic.isValidPublicationTopic(clean)))
             } else {
-                XCTAssertTrue(CommunicationTopic.isValidPublicationTopic(clean), "iteration=\(iteration)")
-                XCTAssertTrue(CommunicationTopic.isValidSubscriptionTopic(clean))
+                #expect(CommunicationTopic.isValidPublicationTopic(clean), "iteration=\(iteration)")
+                #expect(CommunicationTopic.isValidSubscriptionTopic(clean))
             }
             for forbidden in ["#", "+", "\u{0000}"] {
-                XCTAssertFalse(CommunicationTopic.isValidPublicationTopic(clean + forbidden))
+                #expect(!(CommunicationTopic.isValidPublicationTopic(clean + forbidden)))
             }
-            XCTAssertFalse(CommunicationTopic.isValidSubscriptionTopic(clean + "\u{0000}"))
+            #expect(!(CommunicationTopic.isValidSubscriptionTopic(clean + "\u{0000}")))
         }
     }
 

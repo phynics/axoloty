@@ -1,10 +1,13 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-import XCTest
+import Testing
 @testable import CoatySwift
 
-final class CommunicationTopicTests: XCTestCase {
+@Suite
+struct CommunicationTopicTests {
     private let sourceId = CoatyUUID(uuidString: "01234567-89ab-4cde-8fab-0123456789ab")!
+
+    @Test
 
     func testPublishTopicRoundTripsThroughParser() throws {
         let topicString = CommunicationTopic.createTopicStringByLevelsForPublish(
@@ -14,16 +17,18 @@ final class CommunicationTopicTests: XCTestCase {
             eventTypeFilter: "com.example.Sensor"
         )
 
-        XCTAssertEqual(topicString, "coaty/3/factory/ADV:com.example.Sensor/\(sourceId.string)")
+        #expect((topicString) == ("coaty/3/factory/ADV:com.example.Sensor/\(sourceId.string)"))
 
         let topic = try CommunicationTopic(topicString)
-        XCTAssertEqual(topic.protocolVersion, 3)
-        XCTAssertEqual(topic.namespace, "factory")
-        XCTAssertEqual(topic.eventType, .Advertise)
-        XCTAssertEqual(topic.eventTypeFilter, "com.example.Sensor")
-        XCTAssertEqual(topic.sourceId, sourceId)
-        XCTAssertNil(topic.correlationId)
+        #expect((topic.protocolVersion) == (3))
+        #expect((topic.namespace) == ("factory"))
+        #expect((topic.eventType) == (.Advertise))
+        #expect((topic.eventTypeFilter) == ("com.example.Sensor"))
+        #expect((topic.sourceId) == (sourceId))
+        #expect((topic.correlationId) == nil)
     }
+
+    @Test
 
     func testTwoWayPublishAndSubscribeTopicsIncludeCorrelationLevel() throws {
         let publication = CommunicationTopic.createTopicStringByLevelsForPublish(
@@ -32,22 +37,18 @@ final class CommunicationTopicTests: XCTestCase {
             eventType: .Discover,
             correlationId: "request-42"
         )
-        XCTAssertEqual(publication, "coaty/3/factory/DSC/\(sourceId.string)/request-42")
-        XCTAssertEqual(try CommunicationTopic(publication).correlationId, "request-42")
+        #expect((publication) == ("coaty/3/factory/DSC/\(sourceId.string)/request-42"))
+        #expect((try CommunicationTopic(publication).correlationId) == ("request-42"))
 
-        XCTAssertEqual(
-            CommunicationTopic.createTopicStringByLevelsForSubscribe(
+        #expect((CommunicationTopic.createTopicStringByLevelsForSubscribe(
                 eventType: .Resolve,
                 namespace: "factory",
                 correlationId: "request-42"
-            ),
-            "coaty/3/factory/RSV/+/request-42"
-        )
-        XCTAssertEqual(
-            CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Discover),
-            "coaty/3/+/DSC/+/+"
-        )
+            )) == ("coaty/3/factory/RSV/+/request-42"))
+        #expect((CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Discover)) == ("coaty/3/+/DSC/+/+"))
     }
+
+    @Test
 
     func testParserRejectsStructurallyInvalidTopics() {
         let invalidTopics = [
@@ -62,27 +63,31 @@ final class CommunicationTopicTests: XCTestCase {
         ]
 
         for topic in invalidTopics {
-            XCTAssertThrowsError(try CommunicationTopic(topic), "Expected rejection of \(topic)")
+            #expect(throws: (any Error).self, "Expected rejection of \(topic)") { try CommunicationTopic(topic) }
         }
     }
 
+    @Test
+
     func testTopicValidationAndRawClassification() {
-        XCTAssertTrue(CommunicationTopic.isValidPublicationTopic("sensors/temperature"))
-        XCTAssertFalse(CommunicationTopic.isValidPublicationTopic("sensors/+"))
-        XCTAssertFalse(CommunicationTopic.isValidPublicationTopic("sensors/#"))
-        XCTAssertFalse(CommunicationTopic.isValidPublicationTopic(""))
-        XCTAssertTrue(CommunicationTopic.isValidSubscriptionTopic("sensors/+/value"))
-        XCTAssertFalse(CommunicationTopic.isValidSubscriptionTopic("bad\u{0000}topic"))
-        XCTAssertFalse(CommunicationTopic.isRawTopic(topic: "coaty/3/ns/DAD/id"))
-        XCTAssertTrue(CommunicationTopic.isRawTopic(topic: "application/events"))
+        #expect(CommunicationTopic.isValidPublicationTopic("sensors/temperature"))
+        #expect(!(CommunicationTopic.isValidPublicationTopic("sensors/+")))
+        #expect(!(CommunicationTopic.isValidPublicationTopic("sensors/#")))
+        #expect(!(CommunicationTopic.isValidPublicationTopic("")))
+        #expect(CommunicationTopic.isValidSubscriptionTopic("sensors/+/value"))
+        #expect(!(CommunicationTopic.isValidSubscriptionTopic("bad\u{0000}topic")))
+        #expect(!(CommunicationTopic.isRawTopic(topic: "coaty/3/ns/DAD/id")))
+        #expect(CommunicationTopic.isRawTopic(topic: "application/events"))
     }
 
+    @Test
+
     func testMQTTWildcardMatching() {
-        XCTAssertTrue(CommunicationTopic.matches("a/b/c", "a/+/c"))
-        XCTAssertTrue(CommunicationTopic.matches("a/b/c/d", "a/b/#"))
-        XCTAssertTrue(CommunicationTopic.matches("a//b", "a/+/b"))
-        XCTAssertFalse(CommunicationTopic.matches("a/b/c/d", "a/+/c"))
-        XCTAssertFalse(CommunicationTopic.matches("a/b", "a/b/c"))
-        XCTAssertFalse(CommunicationTopic.matches("", "#"))
+        #expect(CommunicationTopic.matches("a/b/c", "a/+/c"))
+        #expect(CommunicationTopic.matches("a/b/c/d", "a/b/#"))
+        #expect(CommunicationTopic.matches("a//b", "a/+/b"))
+        #expect(!(CommunicationTopic.matches("a/b/c/d", "a/+/c")))
+        #expect(!(CommunicationTopic.matches("a/b", "a/b/c")))
+        #expect(!(CommunicationTopic.matches("", "#")))
     }
 }

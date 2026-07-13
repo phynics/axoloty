@@ -1,9 +1,11 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-import XCTest
+import Testing
 @testable import CoatySwift
 
-final class PayloadCoderTests: XCTestCase {
+@Suite
+struct PayloadCoderTests {
+    @Test
     func testCoreObjectRoundTripPreservesRequiredAndOptionalFields() {
         _ = Log.objectType
         let objectId = CoatyUUID(uuidString: "01234567-89ab-4cde-8fab-0123456789ab")!
@@ -22,18 +24,20 @@ final class PayloadCoderTests: XCTestCase {
         let encoded = PayloadCoder.encode(log)
         let decoded: Log? = PayloadCoder.decode(encoded)
 
-        XCTAssertEqual(decoded?.objectId, objectId)
-        XCTAssertEqual(decoded?.objectType, Log.objectType)
-        XCTAssertEqual(decoded?.name, "plant log")
-        XCTAssertEqual(decoded?.externalId, "legacy-17")
-        XCTAssertEqual(decoded?.isDeactivated, false)
-        XCTAssertEqual(decoded?.logLevel, .warning)
-        XCTAssertEqual(decoded?.logMessage, "temperature high")
-        XCTAssertEqual(decoded?.logTags ?? [], ["plant", "alert"])
+        #expect((decoded?.objectId) == (objectId))
+        #expect((decoded?.objectType) == (Log.objectType))
+        #expect((decoded?.name) == ("plant log"))
+        #expect((decoded?.externalId) == ("legacy-17"))
+        #expect((decoded?.isDeactivated) == (false))
+        #expect((decoded?.logLevel) == (.warning))
+        #expect((decoded?.logMessage) == ("temperature high"))
+        #expect((decoded?.logTags ?? []) == (["plant", "alert"]))
         // Type-erased JSON numbers intentionally decode as Double.
-        XCTAssertEqual(decoded?.logLabels?["line"] as? Double, 4)
-        XCTAssertEqual(decoded?.logLabels?["active"] as? Bool, true)
+        #expect((decoded?.logLabels?["line"] as? Double) == (4))
+        #expect((decoded?.logLabels?["active"] as? Bool) == (true))
     }
+
+    @Test
 
     func testCommunicationEventRoundTripPreservesPrivateData() throws {
         _ = Identity.objectType
@@ -45,16 +49,18 @@ final class PayloadCoderTests: XCTestCase {
 
         let decoded: AdvertiseEvent? = PayloadCoder.decode(PayloadCoder.encode(event))
 
-        XCTAssertEqual(decoded?.data.object.objectId, identity.objectId)
-        XCTAssertEqual(decoded?.data.object.name, "Axoloty agent")
-        XCTAssertEqual(decoded?.data.privateData?["revision"] as? Double, 7)
-        XCTAssertEqual(decoded?.data.privateData?["ready"] as? Bool, true)
+        #expect((decoded?.data.object.objectId) == (identity.objectId))
+        #expect((decoded?.data.object.name) == ("Axoloty agent"))
+        #expect((decoded?.data.privateData?["revision"] as? Double) == (7))
+        #expect((decoded?.data.privateData?["ready"] as? Bool) == (true))
     }
+
+    @Test
 
     func testDecodeReturnsNilForMalformedAndTypeMismatchedJSON() {
         let malformed: Identity? = PayloadCoder.decode("{not-json")
         let wrongShape: Identity? = PayloadCoder.decode("{\"name\":42}")
-        XCTAssertNil(malformed)
-        XCTAssertNil(wrongShape)
+        #expect((malformed) == nil)
+        #expect((wrongShape) == nil)
     }
 }

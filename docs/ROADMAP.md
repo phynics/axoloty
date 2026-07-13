@@ -175,7 +175,7 @@ support is untested and undeclared.
 - [ ] `#if os(Linux)` conditionals are limited to genuinely
       platform-specific code paths.
 
-## Phase 5 — Testing harness improvements
+## Phase 5 — Testing harness improvements (in progress — Swift Testing complete)
 
 **Why:** The current test suite assumes an MQTT broker is already listening
 on `localhost:1883` on the host machine, which doesn't hold inside a
@@ -187,15 +187,18 @@ Phase 3/4 work adds coverage.
   routing, sensor things, runtime, etc.) instead of one flat directory.
 - Run a real MQTT broker as a sidecar container in the devcontainer and in
   CI, rather than assuming one is already reachable at `localhost:1883`.
-- Consider migrating to the `swift-testing` framework as it matures, instead
-  of (or alongside) `XCTest`.
+- Adopt the toolchain-provided `swift-testing` framework as the sole Swift test
+  framework; XCTest is not retained.
+
+**Status:** The Swift Testing migration is complete. Test organization and
+broker-sidecar automation remain open items for this phase.
 
 **Done when:**
 - [ ] Tests are organized into subsystem subfolders.
 - [ ] CI and the devcontainer both start an MQTT broker sidecar
       automatically; no test depends on a broker pre-existing on the host.
-- [ ] A decision is recorded on adopting `swift-testing`, with at least a
-      pilot conversion if adopted.
+- [x] Swift Testing adoption is recorded and the Swift test target is migrated
+      without an XCTest compatibility layer.
 
 ## Phase 6 — CoatyJS protocol/version compatibility audit
 

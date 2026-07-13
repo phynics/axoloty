@@ -3,38 +3,43 @@
 //  ObjectMatcherTests.swift
 //  CoatySwift
 
-import XCTest
+import Testing
 import CoatySwift
 
-class ObjectMatcherTests: XCTestCase {
-    
+@Suite
+struct ObjectMatcherTests {
+
+    @Test
+
     func testMatchesFilterSingleCondition() throws {
         let obj = CoatyObject(coreType: .Log,
                               objectType: Log.objectType,
                               objectId: .init(),
                               name: "Hello")
-        
+
         let filter = ObjectFilter(condition: ObjectFilterCondition(property: ObjectFilterProperty("name"),
                                                                    expression: ObjectFilterExpression(filterOperator: .Equals,
                                                                                                       op1: "Hello")))
-        
-        XCTAssertTrue(ObjectMatcher.matchesFilter(obj: obj, filter: filter))
+
+        #expect(ObjectMatcher.matchesFilter(obj: obj, filter: filter))
     }
-    
+
+    @Test
+
     func testMatchesFilterAndConditions() throws {
         let dotTest2: [String: Any] = [
             "hello": "hello"
         ]
-        
+
         let dotTest1: [String: Any] = [
             ".": dotTest2
         ]
-        
+
         let nestedDictionary: [String: Any] = [
             "lastProperty": 42,
             ".": dotTest1
         ]
-        
+
         let nestedObject = Log(logLevel: .info,
                                logMessage: "ABCD",
                                logDate: "22.01.2001",
@@ -42,11 +47,11 @@ class ObjectMatcherTests: XCTestCase {
                                objectType: Log.objectType,
                                objectId: .init(),
                                logLabels: nestedDictionary)
-        
+
         let simpleLog = Log(logLevel: .info, logMessage: "Hello", logDate: "42")
         let simpleLog2 = Log(logLevel: .info, logMessage: "Hello", logDate: "43")
         let complexLog = Log(logLevel: .info, logMessage: "Hello", logDate: "42", name: "LogObject", objectType: Log.objectType, objectId: simpleLog.objectId)
-        
+
         // Create hierarchy of objects used for testing.
         let logLabels: [String: Any] = [
             "boolean": true,
@@ -62,7 +67,7 @@ class ObjectMatcherTests: XCTestCase {
             "nestedObject": nestedObject,
             "complexLog": complexLog
         ]
-        
+
         let thirdObject = Log(logLevel: .info,
                               logMessage: "ABC",
                               logDate: "22.01.2001",
@@ -72,27 +77,27 @@ class ObjectMatcherTests: XCTestCase {
                               logTags: ["Tag1", "Tag2"],
                               logLabels: logLabels,
                               logHost: nil)
-        
+
         let secondObject = Snapshot(creationTimestamp: 1.0,
                                     creatorId: .init(),
                                     object: thirdObject)
-        
+
         let firstObject = Snapshot(creationTimestamp: 2.0,
                                    creatorId: .init(),
                                    object: secondObject)
-        
+
         // Initialize the filter object
         // NOTE: It is impossible to create an empty filter with provided intializers, that's why condition and conditions have to be nilled later
         var filter = ObjectFilter(condition: ObjectFilterCondition(property: ObjectFilterProperty("_"),
                                                                    expression: ObjectFilterExpression(filterOperator: ObjectFilterOperator(rawValue: 0)!)))
         filter.condition = nil
         filter.conditions = nil
-        
-        XCTAssertFalse(ObjectMatcher.matchesFilter(obj: nil, filter: nil))
-        XCTAssertFalse(ObjectMatcher.matchesFilter(obj: nil, filter: filter))
-        XCTAssertTrue(ObjectMatcher.matchesFilter(obj: firstObject, filter: nil))
-        XCTAssertTrue(ObjectMatcher.matchesFilter(obj: firstObject, filter: filter))
-        
+
+        #expect(!(ObjectMatcher.matchesFilter(obj: nil, filter: nil)))
+        #expect(!(ObjectMatcher.matchesFilter(obj: nil, filter: filter)))
+        #expect(ObjectMatcher.matchesFilter(obj: firstObject, filter: nil))
+        #expect(ObjectMatcher.matchesFilter(obj: firstObject, filter: filter))
+
         // Create new filter with 'and' conditions
         let conditions: [ObjectFilterCondition] = [
             // MARK: - Test: .Exists and .NotExists; .Equals and .NotEquals for primitives.
@@ -120,7 +125,7 @@ class ObjectMatcherTests: XCTestCase {
                                   expression: ObjectFilterExpression(filterOperator: .Equals, op1: 42)),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.nestedObject.logLabels.foo"),
                                   expression: ObjectFilterExpression(filterOperator: .NotExists)),
-            
+
             // MARK: - Test: .Equals and .NotEquals for arrays.
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.array"),
                                   expression: ObjectFilterExpression(filterOperator: .Equals, op1: [42, [43, 44], [[45, 46]]])),
@@ -148,11 +153,11 @@ class ObjectMatcherTests: XCTestCase {
                                                                                                                      logTags: ["Tag1", "Tag2"],
                                                                                                                      logLabels: logLabels,
                                                                                                                      logHost: nil)))),
-            
+
             // MARK: - TEST: Properties with dot names and properties specified as array
             ObjectFilterCondition(property: ObjectFilterProperty(["object", "object", "logLabels", "nestedObject", "logLabels", ".", ".", "hello"]),
                                   expression: ObjectFilterExpression(filterOperator: .Equals, op1: "hello")),
-            
+
             // MARK: - Test: .LessThan, .LessThanOrEqual, .GreaterThan, .GreaterThanOrEqual
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.number"),
                                   expression: ObjectFilterExpression(filterOperator: .LessThan, op1: 43)),
@@ -242,7 +247,7 @@ class ObjectMatcherTests: XCTestCase {
                                   expression: ObjectFilterExpression(filterOperator: .Like, op1: ".*+?^${}()|[]")),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.filterLikeString2"),
                                   expression: ObjectFilterExpression(filterOperator: .Like, op1: "\\/")),
-            
+
             // MARK: - Test: .Contains
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.array"),
                                   expression: ObjectFilterExpression(filterOperator: .Contains, op1: 42)),
@@ -260,7 +265,7 @@ class ObjectMatcherTests: XCTestCase {
                                   expression: ObjectFilterExpression(filterOperator: .Contains, op1: [3, [3, 2]])),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.complexLog"),
                                   expression: ObjectFilterExpression(filterOperator: .Contains, op1: AnyCodable(simpleLog))),
-            
+
             // MARK: - Test: .NotContains
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.array"),
                                   expression: ObjectFilterExpression(filterOperator: .NotContains, op1: 43)),
@@ -272,7 +277,7 @@ class ObjectMatcherTests: XCTestCase {
                                   expression: ObjectFilterExpression(filterOperator: .NotContains, op1: [3, [3, 1]])),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.complexLog"),
                                   expression: ObjectFilterExpression(filterOperator: .NotContains, op1: AnyCodable(simpleLog2))),
-             
+
             // MARK: - Test: .In
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.number"),
                                   expression: ObjectFilterExpression(filterOperator: .In, op1: [43, 42, "42"])),
@@ -321,28 +326,30 @@ class ObjectMatcherTests: XCTestCase {
                                         logMessage: "Dummy",
                                         logDate: "2.2.2020")
                                   ])),
-            
+
         ]
-        
+
         filter = ObjectFilter(conditions: ObjectFilterConditions(and: conditions))
-        
-        XCTAssertTrue(ObjectMatcher.matchesFilter(obj: firstObject, filter: filter))
+
+        #expect(ObjectMatcher.matchesFilter(obj: firstObject, filter: filter))
     }
-    
+
+    @Test
+
     func testMatchesFilterOrConditions() throws {
         let dotTest2: [String: Any] = [
             "hello": "hello"
         ]
-        
+
         let dotTest1: [String: Any] = [
             ".": dotTest2
         ]
-        
+
         let nestedDictionary: [String: Any] = [
             "lastProperty": 42,
             ".": dotTest1
         ]
-        
+
         let nestedObject = Log(logLevel: .info,
                                logMessage: "ABCD",
                                logDate: "22.01.2001",
@@ -350,11 +357,11 @@ class ObjectMatcherTests: XCTestCase {
                                objectType: Log.objectType,
                                objectId: .init(),
                                logLabels: nestedDictionary)
-        
+
         let simpleLog = Log(logLevel: .info, logMessage: "Hello", logDate: "42")
         let simpleLog2 = Log(logLevel: .info, logMessage: "Hello", logDate: "43")
         let complexLog = Log(logLevel: .info, logMessage: "Hello", logDate: "42", name: "LogObject", objectType: Log.objectType, objectId: simpleLog.objectId)
-        
+
         // Create hierarchy of objects used for testing.
         let logLabels: [String: Any] = [
             "boolean": true,
@@ -370,7 +377,7 @@ class ObjectMatcherTests: XCTestCase {
             "nestedObject": nestedObject,
             "complexLog": complexLog
         ]
-        
+
         let thirdObject = Log(logLevel: .info,
                               logMessage: "ABC",
                               logDate: "22.01.2001",
@@ -380,27 +387,27 @@ class ObjectMatcherTests: XCTestCase {
                               logTags: ["Tag1", "Tag2"],
                               logLabels: logLabels,
                               logHost: nil)
-        
+
         let secondObject = Snapshot(creationTimestamp: 1.0,
                                     creatorId: .init(),
                                     object: thirdObject)
-        
+
         let firstObject = Snapshot(creationTimestamp: 2.0,
                                    creatorId: .init(),
                                    object: secondObject)
-        
+
         // Initialize the filter object
         // NOTE: It is impossible to create an empty filter with provided intializers, that's why condition and conditions have to be nilled later
         var filter = ObjectFilter(condition: ObjectFilterCondition(property: ObjectFilterProperty("_"),
                                                                    expression: ObjectFilterExpression(filterOperator: ObjectFilterOperator(rawValue: 0)!)))
         filter.condition = nil
         filter.conditions = nil
-        
-        XCTAssertFalse(ObjectMatcher.matchesFilter(obj: nil, filter: nil))
-        XCTAssertFalse(ObjectMatcher.matchesFilter(obj: nil, filter: filter))
-        XCTAssertTrue(ObjectMatcher.matchesFilter(obj: firstObject, filter: nil))
-        XCTAssertTrue(ObjectMatcher.matchesFilter(obj: firstObject, filter: filter))
-        
+
+        #expect(!(ObjectMatcher.matchesFilter(obj: nil, filter: nil)))
+        #expect(!(ObjectMatcher.matchesFilter(obj: nil, filter: filter)))
+        #expect(ObjectMatcher.matchesFilter(obj: firstObject, filter: nil))
+        #expect(ObjectMatcher.matchesFilter(obj: firstObject, filter: filter))
+
         // Create new filter with 'and' conditions
         let conditions: [ObjectFilterCondition] = [
             // MARK: - Test: .Exists and .NotExists; .Equals and .NotEquals for primitives.
@@ -428,7 +435,7 @@ class ObjectMatcherTests: XCTestCase {
                                   expression: ObjectFilterExpression(filterOperator: .Equals, op1: 42)),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.nestedObject.logLabels.foo"),
                                   expression: ObjectFilterExpression(filterOperator: .NotExists)),
-            
+
             // MARK: - Test: .Equals and .NotEquals for arrays.
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.array"),
                                   expression: ObjectFilterExpression(filterOperator: .Equals, op1: [42, [43, 44], [[45, 46]]])),
@@ -456,11 +463,11 @@ class ObjectMatcherTests: XCTestCase {
                                                                                                                      logTags: ["Tag1", "Tag2"],
                                                                                                                      logLabels: logLabels,
                                                                                                                      logHost: nil)))),
-            
+
             // MARK: - TEST: Properties with dot names and properties specified as array
             ObjectFilterCondition(property: ObjectFilterProperty(["object", "object", "logLabels", "nestedObject", "logLabels", ".", ".", "hello"]),
                                   expression: ObjectFilterExpression(filterOperator: .Equals, op1: "hello")),
-            
+
             // MARK: - Test: .LessThan, .LessThanOrEqual, .GreaterThan, .GreaterThanOrEqual
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.number"),
                                   expression: ObjectFilterExpression(filterOperator: .LessThan, op1: 43)),
@@ -550,7 +557,7 @@ class ObjectMatcherTests: XCTestCase {
                                   expression: ObjectFilterExpression(filterOperator: .Like, op1: ".*+?^${}()|[]")),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.filterLikeString2"),
                                   expression: ObjectFilterExpression(filterOperator: .Like, op1: "\\/")),
-            
+
             // MARK: - Test: .Contains
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.array"),
                                   expression: ObjectFilterExpression(filterOperator: .Contains, op1: 42)),
@@ -568,7 +575,7 @@ class ObjectMatcherTests: XCTestCase {
                                   expression: ObjectFilterExpression(filterOperator: .Contains, op1: [3, [3, 2]])),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.complexLog"),
                                   expression: ObjectFilterExpression(filterOperator: .Contains, op1: AnyCodable(simpleLog))),
-            
+
             // MARK: - Test: .NotContains
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.array"),
                                   expression: ObjectFilterExpression(filterOperator: .NotContains, op1: 43)),
@@ -580,7 +587,7 @@ class ObjectMatcherTests: XCTestCase {
                                   expression: ObjectFilterExpression(filterOperator: .NotContains, op1: [3, [3, 1]])),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.complexLog"),
                                   expression: ObjectFilterExpression(filterOperator: .NotContains, op1: AnyCodable(simpleLog2))),
-             
+
             // MARK: - Test: .In
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.number"),
                                   expression: ObjectFilterExpression(filterOperator: .In, op1: [43, 42, "42"])),
@@ -629,33 +636,35 @@ class ObjectMatcherTests: XCTestCase {
                                         logMessage: "Dummy",
                                         logDate: "2.2.2020")
                                   ])),
-            
+
         ]
-        
+
         filter = ObjectFilter(conditions: ObjectFilterConditions(or: conditions))
-        
-        XCTAssertTrue(ObjectMatcher.matchesFilter(obj: firstObject, filter: filter))
+
+        #expect(ObjectMatcher.matchesFilter(obj: firstObject, filter: filter))
     }
-    
+
+    @Test
+
     func testBothSingleConditionAndAndCondtions() throws {
         // For single condition
         let singleCondition = ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.string"),
                                                     expression: ObjectFilterExpression(filterOperator: .Equals, op1: "Abc"))
-        
+
         // For And conditions
         let dotTest2: [String: Any] = [
             "hello": "hello"
         ]
-        
+
         let dotTest1: [String: Any] = [
             ".": dotTest2
         ]
-        
+
         let nestedDictionary: [String: Any] = [
             "lastProperty": 42,
             ".": dotTest1
         ]
-        
+
         let nestedObject = Log(logLevel: .info,
                                logMessage: "ABCD",
                                logDate: "22.01.2001",
@@ -663,11 +672,11 @@ class ObjectMatcherTests: XCTestCase {
                                objectType: Log.objectType,
                                objectId: .init(),
                                logLabels: nestedDictionary)
-        
+
         let simpleLog = Log(logLevel: .info, logMessage: "Hello", logDate: "42")
         let simpleLog2 = Log(logLevel: .info, logMessage: "Hello", logDate: "43")
         let complexLog = Log(logLevel: .info, logMessage: "Hello", logDate: "42", name: "LogObject", objectType: Log.objectType, objectId: simpleLog.objectId)
-        
+
         // Create hierarchy of objects used for testing.
         let logLabels: [String: Any] = [
             "boolean": true,
@@ -683,7 +692,7 @@ class ObjectMatcherTests: XCTestCase {
             "nestedObject": nestedObject,
             "complexLog": complexLog
         ]
-        
+
         let thirdObject = Log(logLevel: .info,
                               logMessage: "ABC",
                               logDate: "22.01.2001",
@@ -693,27 +702,27 @@ class ObjectMatcherTests: XCTestCase {
                               logTags: ["Tag1", "Tag2"],
                               logLabels: logLabels,
                               logHost: nil)
-        
+
         let secondObject = Snapshot(creationTimestamp: 1.0,
                                     creatorId: .init(),
                                     object: thirdObject)
-        
+
         let firstObject = Snapshot(creationTimestamp: 2.0,
                                    creatorId: .init(),
                                    object: secondObject)
-        
+
         // Initialize the filter object
         // NOTE: It is impossible to create an empty filter with provided intializers, that's why condition and conditions have to be nilled later
         var filter = ObjectFilter(condition: ObjectFilterCondition(property: ObjectFilterProperty("_"),
                                                                    expression: ObjectFilterExpression(filterOperator: ObjectFilterOperator(rawValue: 0)!)))
         filter.condition = nil
         filter.conditions = nil
-        
-        XCTAssertFalse(ObjectMatcher.matchesFilter(obj: nil, filter: nil))
-        XCTAssertFalse(ObjectMatcher.matchesFilter(obj: nil, filter: filter))
-        XCTAssertTrue(ObjectMatcher.matchesFilter(obj: firstObject, filter: nil))
-        XCTAssertTrue(ObjectMatcher.matchesFilter(obj: firstObject, filter: filter))
-        
+
+        #expect(!(ObjectMatcher.matchesFilter(obj: nil, filter: nil)))
+        #expect(!(ObjectMatcher.matchesFilter(obj: nil, filter: filter)))
+        #expect(ObjectMatcher.matchesFilter(obj: firstObject, filter: nil))
+        #expect(ObjectMatcher.matchesFilter(obj: firstObject, filter: filter))
+
         // Create new filter with 'and' conditions
         let conditions: [ObjectFilterCondition] = [
             // MARK: - Test: .Exists and .NotExists; .Equals and .NotEquals for primitives.
@@ -741,7 +750,7 @@ class ObjectMatcherTests: XCTestCase {
                                   expression: ObjectFilterExpression(filterOperator: .Equals, op1: 42)),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.nestedObject.logLabels.foo"),
                                   expression: ObjectFilterExpression(filterOperator: .NotExists)),
-            
+
             // MARK: - Test: .Equals and .NotEquals for arrays.
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.array"),
                                   expression: ObjectFilterExpression(filterOperator: .Equals, op1: [42, [43, 44], [[45, 46]]])),
@@ -769,11 +778,11 @@ class ObjectMatcherTests: XCTestCase {
                                                                                                                      logTags: ["Tag1", "Tag2"],
                                                                                                                      logLabels: logLabels,
                                                                                                                      logHost: nil)))),
-            
+
             // MARK: - TEST: Properties with dot names and properties specified as array
             ObjectFilterCondition(property: ObjectFilterProperty(["object", "object", "logLabels", "nestedObject", "logLabels", ".", ".", "hello"]),
                                   expression: ObjectFilterExpression(filterOperator: .Equals, op1: "hello")),
-            
+
             // MARK: - Test: .LessThan, .LessThanOrEqual, .GreaterThan, .GreaterThanOrEqual
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.number"),
                                   expression: ObjectFilterExpression(filterOperator: .LessThan, op1: 43)),
@@ -863,7 +872,7 @@ class ObjectMatcherTests: XCTestCase {
                                   expression: ObjectFilterExpression(filterOperator: .Like, op1: ".*+?^${}()|[]")),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.filterLikeString2"),
                                   expression: ObjectFilterExpression(filterOperator: .Like, op1: "\\/")),
-            
+
             // MARK: - Test: .Contains
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.array"),
                                   expression: ObjectFilterExpression(filterOperator: .Contains, op1: 42)),
@@ -881,7 +890,7 @@ class ObjectMatcherTests: XCTestCase {
                                   expression: ObjectFilterExpression(filterOperator: .Contains, op1: [3, [3, 2]])),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.complexLog"),
                                   expression: ObjectFilterExpression(filterOperator: .Contains, op1: AnyCodable(simpleLog))),
-            
+
             // MARK: - Test: .NotContains
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.array"),
                                   expression: ObjectFilterExpression(filterOperator: .NotContains, op1: 43)),
@@ -893,7 +902,7 @@ class ObjectMatcherTests: XCTestCase {
                                   expression: ObjectFilterExpression(filterOperator: .NotContains, op1: [3, [3, 1]])),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.complexLog"),
                                   expression: ObjectFilterExpression(filterOperator: .NotContains, op1: AnyCodable(simpleLog2))),
-             
+
             // MARK: - Test: .In
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.number"),
                                   expression: ObjectFilterExpression(filterOperator: .In, op1: [43, 42, "42"])),
@@ -942,36 +951,38 @@ class ObjectMatcherTests: XCTestCase {
                                         logMessage: "Dummy",
                                         logDate: "2.2.2020")
                                   ])),
-            
+
         ]
-        
+
         filter = ObjectFilter(conditions: ObjectFilterConditions(and: conditions))
-        
+
         // Edge case
         filter.condition = singleCondition
-        
-        XCTAssertTrue(ObjectMatcher.matchesFilter(obj: firstObject, filter: filter))
+
+        #expect(ObjectMatcher.matchesFilter(obj: firstObject, filter: filter))
     }
-    
+
+    @Test
+
     func testBothSingleConditionAndOrCondtions() throws {
         // For single condition
         let singleCondition = ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.string"),
                                                     expression: ObjectFilterExpression(filterOperator: .Equals, op1: "Abc"))
-        
+
         // For And conditions
         let dotTest2: [String: Any] = [
             "hello": "hello"
         ]
-        
+
         let dotTest1: [String: Any] = [
             ".": dotTest2
         ]
-        
+
         let nestedDictionary: [String: Any] = [
             "lastProperty": 42,
             ".": dotTest1
         ]
-        
+
         let nestedObject = Log(logLevel: .info,
                                logMessage: "ABCD",
                                logDate: "22.01.2001",
@@ -979,11 +990,11 @@ class ObjectMatcherTests: XCTestCase {
                                objectType: Log.objectType,
                                objectId: .init(),
                                logLabels: nestedDictionary)
-        
+
         let simpleLog = Log(logLevel: .info, logMessage: "Hello", logDate: "42")
         let simpleLog2 = Log(logLevel: .info, logMessage: "Hello", logDate: "43")
         let complexLog = Log(logLevel: .info, logMessage: "Hello", logDate: "42", name: "LogObject", objectType: Log.objectType, objectId: simpleLog.objectId)
-        
+
         // Create hierarchy of objects used for testing.
         let logLabels: [String: Any] = [
             "boolean": true,
@@ -999,7 +1010,7 @@ class ObjectMatcherTests: XCTestCase {
             "nestedObject": nestedObject,
             "complexLog": complexLog
         ]
-        
+
         let thirdObject = Log(logLevel: .info,
                               logMessage: "ABC",
                               logDate: "22.01.2001",
@@ -1009,27 +1020,27 @@ class ObjectMatcherTests: XCTestCase {
                               logTags: ["Tag1", "Tag2"],
                               logLabels: logLabels,
                               logHost: nil)
-        
+
         let secondObject = Snapshot(creationTimestamp: 1.0,
                                     creatorId: .init(),
                                     object: thirdObject)
-        
+
         let firstObject = Snapshot(creationTimestamp: 2.0,
                                    creatorId: .init(),
                                    object: secondObject)
-        
+
         // Initialize the filter object
         // NOTE: It is impossible to create an empty filter with provided intializers, that's why condition and conditions have to be nilled later
         var filter = ObjectFilter(condition: ObjectFilterCondition(property: ObjectFilterProperty("_"),
                                                                    expression: ObjectFilterExpression(filterOperator: ObjectFilterOperator(rawValue: 0)!)))
         filter.condition = nil
         filter.conditions = nil
-        
-        XCTAssertFalse(ObjectMatcher.matchesFilter(obj: nil, filter: nil))
-        XCTAssertFalse(ObjectMatcher.matchesFilter(obj: nil, filter: filter))
-        XCTAssertTrue(ObjectMatcher.matchesFilter(obj: firstObject, filter: nil))
-        XCTAssertTrue(ObjectMatcher.matchesFilter(obj: firstObject, filter: filter))
-        
+
+        #expect(!(ObjectMatcher.matchesFilter(obj: nil, filter: nil)))
+        #expect(!(ObjectMatcher.matchesFilter(obj: nil, filter: filter)))
+        #expect(ObjectMatcher.matchesFilter(obj: firstObject, filter: nil))
+        #expect(ObjectMatcher.matchesFilter(obj: firstObject, filter: filter))
+
         // Create new filter with 'and' conditions
         let conditions: [ObjectFilterCondition] = [
             // MARK: - Test: .Exists and .NotExists; .Equals and .NotEquals for primitives.
@@ -1057,7 +1068,7 @@ class ObjectMatcherTests: XCTestCase {
                                   expression: ObjectFilterExpression(filterOperator: .Equals, op1: 42)),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.nestedObject.logLabels.foo"),
                                   expression: ObjectFilterExpression(filterOperator: .NotExists)),
-            
+
             // MARK: - Test: .Equals and .NotEquals for arrays.
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.array"),
                                   expression: ObjectFilterExpression(filterOperator: .Equals, op1: [42, [43, 44], [[45, 46]]])),
@@ -1085,11 +1096,11 @@ class ObjectMatcherTests: XCTestCase {
                                                                                                                      logTags: ["Tag1", "Tag2"],
                                                                                                                      logLabels: logLabels,
                                                                                                                      logHost: nil)))),
-            
+
             // MARK: - TEST: Properties with dot names and properties specified as array
             ObjectFilterCondition(property: ObjectFilterProperty(["object", "object", "logLabels", "nestedObject", "logLabels", ".", ".", "hello"]),
                                   expression: ObjectFilterExpression(filterOperator: .Equals, op1: "hello")),
-            
+
             // MARK: - Test: .LessThan, .LessThanOrEqual, .GreaterThan, .GreaterThanOrEqual
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.number"),
                                   expression: ObjectFilterExpression(filterOperator: .LessThan, op1: 43)),
@@ -1179,7 +1190,7 @@ class ObjectMatcherTests: XCTestCase {
                                   expression: ObjectFilterExpression(filterOperator: .Like, op1: ".*+?^${}()|[]")),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.filterLikeString2"),
                                   expression: ObjectFilterExpression(filterOperator: .Like, op1: "\\/")),
-            
+
             // MARK: - Test: .Contains
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.array"),
                                   expression: ObjectFilterExpression(filterOperator: .Contains, op1: 42)),
@@ -1197,7 +1208,7 @@ class ObjectMatcherTests: XCTestCase {
                                   expression: ObjectFilterExpression(filterOperator: .Contains, op1: [3, [3, 2]])),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.complexLog"),
                                   expression: ObjectFilterExpression(filterOperator: .Contains, op1: AnyCodable(simpleLog))),
-            
+
             // MARK: - Test: .NotContains
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.array"),
                                   expression: ObjectFilterExpression(filterOperator: .NotContains, op1: 43)),
@@ -1209,7 +1220,7 @@ class ObjectMatcherTests: XCTestCase {
                                   expression: ObjectFilterExpression(filterOperator: .NotContains, op1: [3, [3, 1]])),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.complexLog"),
                                   expression: ObjectFilterExpression(filterOperator: .NotContains, op1: AnyCodable(simpleLog2))),
-             
+
             // MARK: - Test: .In
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.number"),
                                   expression: ObjectFilterExpression(filterOperator: .In, op1: [43, 42, "42"])),
@@ -1258,30 +1269,34 @@ class ObjectMatcherTests: XCTestCase {
                                         logMessage: "Dummy",
                                         logDate: "2.2.2020")
                                   ])),
-            
+
         ]
-        
+
         filter = ObjectFilter(conditions: ObjectFilterConditions(or: conditions))
-        
+
         // Edge case
         filter.condition = singleCondition
-        
-        XCTAssertTrue(ObjectMatcher.matchesFilter(obj: firstObject, filter: filter))
+
+        #expect(ObjectMatcher.matchesFilter(obj: firstObject, filter: filter))
     }
-    
+
+    @Test
+
     func testEmptyParametersList() throws {
         let obj = CoatyObject(coreType: .Log,
                               objectType: Log.objectType,
                               objectId: .init(),
                               name: "Hello")
-        
+
         let filter = ObjectFilter(condition: ObjectFilterCondition(property: ObjectFilterProperty(""),
                                                                    expression: ObjectFilterExpression(filterOperator: .Equals,
                                                                                                       op1: "Hello")))
-        
-        XCTAssertFalse(ObjectMatcher.matchesFilter(obj: obj, filter: filter))
+
+        #expect(!(ObjectMatcher.matchesFilter(obj: obj, filter: filter)))
     }
-    
+
+    @Test
+
     func testTooShortParametersList() throws {
         let thirdObject = Log(logLevel: .info,
                               logMessage: "ABC",
@@ -1290,37 +1305,39 @@ class ObjectMatcherTests: XCTestCase {
                               objectType: Log.objectType,
                               objectId: .init(),
                               logTags: ["Tag1", "Tag2"])
-        
+
         let secondObject = Snapshot(creationTimestamp: 1.0,
                                     creatorId: .init(),
                                     object: thirdObject)
-        
+
         let firstObject = Snapshot(creationTimestamp: 2.0,
                                    creatorId: .init(),
                                    object: secondObject)
-        
+
         // Shorter list than should be
         let filter = ObjectFilter(condition: ObjectFilterCondition(property: ObjectFilterProperty("object."),
                                                                    expression: ObjectFilterExpression(filterOperator: .Equals,
                                                                                                       op1: "Hello")))
-        
-        XCTAssertFalse(ObjectMatcher.matchesFilter(obj: firstObject, filter: filter))
+
+        #expect(!(ObjectMatcher.matchesFilter(obj: firstObject, filter: filter)))
     }
-    
+
+    @Test
+
     func testNoConditions() throws {
         let obj = CoatyObject(coreType: .Log,
                               objectType: Log.objectType,
                               objectId: .init(),
                               name: "Hello")
-        
+
         let filter = ObjectFilter(condition: ObjectFilterCondition(property: ObjectFilterProperty("name"),
                                                                    expression: ObjectFilterExpression(filterOperator: .Equals,
                                                                                                       op1: "Hello")))
-        
+
         // Edge case
         filter.condition = nil
-        
-        XCTAssertTrue(ObjectMatcher.matchesFilter(obj: obj, filter: filter))
+
+        #expect(ObjectMatcher.matchesFilter(obj: obj, filter: filter))
 
     }
 }

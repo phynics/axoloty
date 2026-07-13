@@ -76,7 +76,7 @@ smallest reduced input on failure. A minimized regression becomes a committed
 example fixture before the bug is closed.
 
 Swift-native fuzzing may be added when toolchain support is stable in the
-container. Until then, deterministic generators in XCTest are the portable
+container. Until then, deterministic generators in Swift Testing are the portable
 baseline. External fuzzers must emit replayable files, never only a crash log.
 
 For an extended, auditable campaign, use the runner beside the fuzz tests:
@@ -172,7 +172,7 @@ must contain, where applicable:
 - `capture.jsonl`: lossless MQTT publications including topic, raw payload,
   QoS, retain flag, and ordering;
 - `mosquitto.log`, `axoloty.log`, and `coatyjs.log`;
-- verifier output and XCTest/JUnit output;
+- verifier output and Swift Testing/JUnit output;
 - minimized generated input or a replay command.
 
 Successful PR runs may discard bulky captures after verification. Nightly and
@@ -203,7 +203,7 @@ platform declarations, or Apple availability code, run on a supported macOS
 host:
 
 1. Record macOS, Xcode, Swift, and architecture versions.
-2. Resolve the package from a clean checkout and run the full XCTest suite.
+2. Resolve the package from a clean checkout and run the full Swift Testing suite.
 3. Run the representative Axoloty/CoatyJS Advertise checks in both directions
    against a broker reachable by the Mac, plus the CoatyJS reference-wire
    scenarios for implemented core patterns.

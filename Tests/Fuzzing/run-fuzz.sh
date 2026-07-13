@@ -18,7 +18,7 @@ usage() {
     cat <<'EOF'
 Usage: Tests/Fuzzing/run-fuzz.sh [options]
 
-Run deterministic XCTest fuzz cases and retain an auditable campaign record.
+Run deterministic Swift Testing fuzz cases and retain an auditable campaign record.
 
 Options:
   --iterations N       Fuzz iterations per case (default: 250)

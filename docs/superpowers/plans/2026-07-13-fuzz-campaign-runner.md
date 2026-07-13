@@ -4,9 +4,9 @@
 
 **Goal:** Add a container-aware, reproducible fuzz campaign runner with streamed progress and audit artifacts.
 
-**Architecture:** `Tests/Fuzzing/run-fuzz.sh` owns campaign orchestration and runs one XCTest process per seed/repetition. It invokes the existing container image outside containers and Swift directly inside containers, writing a manifest, per-case logs, a combined log, and a summary. Make and documentation expose the runner without changing the existing short fuzz target.
+**Architecture:** `Tests/Fuzzing/run-fuzz.sh` owns campaign orchestration and runs one Swift Testing process per seed/repetition. It invokes the existing container image outside containers and Swift directly inside containers, writing a manifest, per-case logs, a combined log, and a summary. Make and documentation expose the runner without changing the existing short fuzz target.
 
-**Tech Stack:** Bash, SwiftPM/XCTest, Podman or Docker, POSIX text utilities for JSON and TSV audit metadata.
+**Tech Stack:** Bash, SwiftPM/Swift Testing, Podman or Docker, POSIX text utilities for JSON and TSV audit metadata.
 
 ## Global Constraints
 

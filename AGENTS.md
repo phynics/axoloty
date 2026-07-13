@@ -27,6 +27,17 @@ cannot run correctly (dynamic-linking failures). Because of that:
   the same containerized flow, so a green `make build && make test` locally
   should predict a green CI run.
 
+Swift tests use the toolchain-provided Swift Testing framework exclusively.
+Test files import `Testing`, declare cases with `@Test`, assert with `#expect`
+and `#require`, and record non-fatal issues with `Issue.record`. Do not add
+XCTest imports, `XCTestCase` subclasses, XCTest expectations, or XCTest
+assertions. Broker-backed tests should use Swift concurrency primitives or
+explicit deadlines for synchronization. The Swift 6 toolchain in
+`.devcontainer/Dockerfile` is therefore the minimum supported test toolchain;
+the package manifest may retain its existing tools-version floor where the
+toolchain can provide the Testing module without changing production language
+mode.
+
 If a Makefile target doesn't exist yet for something you need, prefer adding
 one over reaching for the native toolchain.
 
