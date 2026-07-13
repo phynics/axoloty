@@ -36,7 +36,7 @@ jobs:
             build-
 
       - name: Generate documentation
-        run: make docs CONTAINER_RUNTIME=docker
+        run: make docs CONTAINER_RUNTIME=docker DOC_HOSTING_BASE_PATH=axoloty
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

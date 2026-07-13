@@ -6,6 +6,11 @@ CONTAINER_RUNTIME ?= $(shell command -v podman 2>/dev/null || command -v docker 
 WORKDIR := /workspace
 COMMA := ,
 
+# Hosting base path for static DocC output. Set this to the repository name
+# when publishing to a GitHub Pages project site (e.g. "axoloty" for
+# https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
+DOC_HOSTING_BASE_PATH ?=
+
 .PHONY: help image build test test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all ci-fast ci broker broker-stop shell docs clean
 
 help:
@@ -107,7 +112,9 @@ shell: image
 docs: image
 	$(CONTAINER_RUNTIME) run --rm -v "$(CURDIR):$(WORKDIR)" -w $(WORKDIR) $(IMAGE) \
 		swift package generate-documentation --target Axoloty \
-			--transform-for-static-hosting --output-path .build/docc
+			--transform-for-static-hosting \
+			$(if $(DOC_HOSTING_BASE_PATH),--hosting-base-path $(DOC_HOSTING_BASE_PATH)) \
+			--output-path .build/docc
 
 clean:
 	rm -rf .build
