@@ -14,6 +14,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup container image
+        uses: ./.github/actions/setup-container
+
+      - name: Cache Swift build artifacts
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: build-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Source/**/*.swift', 'Tests/**/*.swift') }}
+          restore-keys: |
+            build-${{ hashFiles('Package.resolved') }}-
+            build-
+
       - name: Run offline and live wire suites
         run: make test-wire-all CONTAINER_RUNTIME=docker
 

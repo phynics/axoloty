@@ -1,0 +1,33 @@
+name: Setup container image
+description: Restore the built Docker image from cache or build and cache it.
+
+inputs:
+  runtime:
+    description: Container runtime to use (docker or podman).
+    required: false
+    default: docker
+
+runs:
+  using: composite
+  steps:
+    - name: Cache Docker image
+      id: cache-image
+      uses: actions/cache@v4
+      with:
+        path: /tmp/coatyswift-dev.tar
+        key: docker-${{ hashFiles('.devcontainer/Dockerfile') }}
+
+    - name: Load cached image
+      if: steps.cache-image.outputs.cache-hit == 'true'
+      shell: bash
+      run: ${{ inputs.runtime }} load -i /tmp/coatyswift-dev.tar
+
+    - name: Build image (cache miss)
+      if: steps.cache-image.outputs.cache-hit != 'true'
+      shell: bash
+      run: make image CONTAINER_RUNTIME=${{ inputs.runtime }}
+
+    - name: Save image for next run (cache miss)
+      if: steps.cache-image.outputs.cache-hit != 'true'
+      shell: bash
+      run: ${{ inputs.runtime }} save coatyswift-dev -o /tmp/coatyswift-dev.tar
