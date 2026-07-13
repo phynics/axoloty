@@ -114,9 +114,5 @@ Axoloty depends on:
 
 -   RxSwift [MIT
     License](https://github.com/ReactiveX/RxSwift/blob/master/LICENSE.md)
--   CocoaMQTT [MIT
-    License](https://github.com/emqtt/CocoaMQTT/blob/master/LICENSE)
 -   swift-log [Apache 2.0
     License](https://github.com/apple/swift-log/blob/main/LICENSE.txt)
--   AnyCodable [MIT
-    License](https://github.com/Flight-School/AnyCodable/blob/master/LICENSE.md)
