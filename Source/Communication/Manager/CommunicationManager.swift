@@ -1,7 +1,7 @@
 //  Copyright (c) 2019 Siemens AG. Licensed under the MIT License.
 //
 //  CommunicationManager.swift
-//  CoatySwift
+//  Axoloty
 //
 //
 
@@ -220,7 +220,7 @@ public class CommunicationManager {
         }
         
         guard CommunicationTopic.isValidEventTypeFilter(filter: ns!) else {
-            throw CoatySwiftError.InvalidConfiguration("CommunicationOptions.namespace contains invalid characters")
+            throw AxolotyError.InvalidConfiguration("CommunicationOptions.namespace contains invalid characters")
         }
         
         self.namespace = ns!
@@ -412,7 +412,7 @@ public class CommunicationManager {
                 if CommunicationTopic.isValidEventTypeFilter(filter: contextName) {
                     return true
                 } else {
-                    throw CoatySwiftError.InvalidConfiguration("ioContextName \(contextName) in ioContextNodes contains invalid characters")
+                    throw AxolotyError.InvalidConfiguration("ioContextName \(contextName) in ioContextNodes contains invalid characters")
                 }
             }).map({ contextName -> IoNode in
                 // Force unwrapping is safe.

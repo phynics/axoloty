@@ -1,7 +1,7 @@
 //  Copyright (c) 2020 Siemens AG. Licensed under the MIT License.
 //
 //  ThingObserverController.swift
-//  CoatySwift
+//  Axoloty
 //
 
 import Foundation

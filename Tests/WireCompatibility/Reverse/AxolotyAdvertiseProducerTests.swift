@@ -2,7 +2,7 @@
 
 import Foundation
 import Testing
-import CoatySwift
+import Axoloty
 
 @Suite
 struct AxolotyAdvertiseProducerTests {

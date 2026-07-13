@@ -1,7 +1,7 @@
 //  Copyright (c) 2019 Siemens AG. Licensed under the MIT License.
 //
 //  CallEvent.swift
-//  CoatySwift
+//  Axoloty
 //
 
 import Foundation
@@ -87,7 +87,7 @@ public class CallEvent: CommunicationEvent<CallEventData> {
     
     fileprivate init(eventType: CommunicationEventType, eventData: CallEventData, operation: String) throws {
         guard CommunicationTopic.isValidEventTypeFilter(filter: operation) else {
-            throw CoatySwiftError.InvalidArgument("Invalid call operation.")
+            throw AxolotyError.InvalidArgument("Invalid call operation.")
         }
         
         super.init(eventType: eventType, eventData: eventData)

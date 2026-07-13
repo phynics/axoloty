@@ -1,14 +1,14 @@
 //  Copyright (c) 2019 Siemens AG. Licensed under the MIT License.
 //
-//  CoatySwiftError.swift
-//  CoatySwift
+//  AxolotyError.swift
+//  Axoloty
 //
 //
 
 import Foundation
 
-/// The base error type for all CoatySwift related errors.
-public enum CoatySwiftError: Error {
+/// The base error type for all Axoloty related errors.
+public enum AxolotyError: Error {
     
     /// Invalid argument error.
     case InvalidArgument(String)

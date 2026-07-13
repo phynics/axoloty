@@ -1,7 +1,7 @@
 //  Copyright (c) 2020 Siemens AG. Licensed under the MIT License.
 //
 //  Polygon.swift
-//  CoatySwift
+//  Axoloty
 //
 
 import Foundation
@@ -48,7 +48,7 @@ public protocol GeoJsonObject {
 }
 
 /// The value values for the "type" property of GeoJSON Objects.
-/// NOTE: Only include types that are relevant for CoatySwift.
+/// NOTE: Only include types that are relevant for Axoloty.
 public enum GeoJsonType: String, Codable {
     case Polygon
 }

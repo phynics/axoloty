@@ -1,11 +1,11 @@
 //  Copyright (c) 2020 Siemens AG. Licensed under the MIT License.
 //
 //  SensorThingsTests.swift
-//  CoatySwift
+//  Axoloty
 
 import Testing
 import Foundation
-import CoatySwift
+import Axoloty
 import RxSwift
 
 /// NOTE: This test case sometimes fails to run because of some problems related to thread scheduling

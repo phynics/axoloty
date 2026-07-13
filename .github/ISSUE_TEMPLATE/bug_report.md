@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Create a report to help us improve CoatySwift
+about: Create a report to help us improve Axoloty
 title: ''
 labels: ''
 assignees: ''
@@ -32,7 +32,7 @@ A clear and concise description of what you expected to happen.
 If applicable, add screenshots or error stack traces to help explain your problem.
 
 **Your Environment (please complete the following information):**
- - CoatySwift Version: [e.g. 1.5.2]
+ - Axoloty Version: [e.g. 0.1.0]
  - OS: [e.g. iOS, iPadOS, or macOS]
  - Device: [e.g. iPhone 8 Plus, or iPad Pro (12.9-inch) (3rd generation)]
 

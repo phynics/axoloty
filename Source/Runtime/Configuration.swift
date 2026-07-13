@@ -1,7 +1,7 @@
 //  Copyright (c) 2019 Siemens AG. Licensed under the MIT License.
 //
 //  Configuration.swift
-//  CoatySwift
+//  Axoloty
 //
 
 import Foundation
@@ -63,7 +63,7 @@ public class Configuration {
         closure(builder)
         
         guard let common = builder.common, let communication = builder.communication else {
-            throw CoatySwiftError.InvalidConfiguration(
+            throw AxolotyError.InvalidConfiguration(
                 "Configuration.build requires both common and communication options to be set")
         }
         
@@ -116,16 +116,16 @@ public class CommonOptions {
     /// Useful to inject service instances to be shared among controllers.
     public var extra = [String: Any]()
     
-    /// Determines the log level (default is .error) for logging CoatySwift internal
+    /// Determines the log level (default is .error) for logging Axoloty internal
     /// errors, warnings, and informational messages.
-    public var logLevel = CoatySwiftLogLevel.error
+    public var logLevel = AxolotyLogLevel.error
     
     /// Create a new CommonOptions instance.
     public init(ioContextNodes: [String: IoNodeDefinition]? = nil,
                 agentIdentity: [String: Any]? = nil,
                 agentInfo: AgentInfo? = nil,
                 extra: [String: Any]? = nil,
-                logLevel: CoatySwiftLogLevel? = nil) {
+                logLevel: AxolotyLogLevel? = nil) {
         self.ioContextNodes = ioContextNodes
         self.agentIdentity = agentIdentity
         self.agentInfo = agentInfo

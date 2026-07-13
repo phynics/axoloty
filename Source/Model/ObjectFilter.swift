@@ -1,7 +1,7 @@
 //  Copyright (c) 2019 Siemens AG. Licensed under the MIT License.
 //
 //  ObjectFilter.swift
-//  CoatySwift
+//  Axoloty
 //
 
 import Foundation
@@ -126,7 +126,7 @@ public class ObjectFilter: Codable {
         try closure(builder)
         
         guard let condition = builder.condition else {
-            throw CoatySwiftError.InvalidArgument("Condition is not set.")
+            throw AxolotyError.InvalidArgument("Condition is not set.")
         }
         
         return ObjectFilter(condition: condition,
@@ -145,7 +145,7 @@ public class ObjectFilter: Codable {
         try closure(builder)
         
         guard let conditions = builder.conditions else {
-            throw CoatySwiftError.InvalidArgument("Conditions are not set.")
+            throw AxolotyError.InvalidArgument("Conditions are not set.")
         }
         
         return ObjectFilter(conditions: conditions,
@@ -377,7 +377,7 @@ public class ObjectFilterConditions: Codable {
         try closure(builder)
         
         guard let and = builder.and else {
-            throw CoatySwiftError.InvalidArgument("ObjectFilterBuilder.and is nil.")
+            throw AxolotyError.InvalidArgument("ObjectFilterBuilder.and is nil.")
         }
         
         return ObjectFilterConditions(and)
@@ -395,7 +395,7 @@ public class ObjectFilterConditions: Codable {
         try closure(builder)
         
         guard let or = builder.or else {
-            throw CoatySwiftError.InvalidArgument("ObjectFilterBuilder.or is nil.")
+            throw AxolotyError.InvalidArgument("ObjectFilterBuilder.or is nil.")
         }
         
         return ObjectFilterConditions(or)
@@ -454,7 +454,7 @@ public class ObjectFilterCondition: Codable {
         try closure(builder)
         
         guard let expression = builder.expression, let property = builder.property else {
-            throw CoatySwiftError.InvalidArgument("The object filter condition could not be built!")
+            throw AxolotyError.InvalidArgument("The object filter condition could not be built!")
         }
         
         return ObjectFilterCondition(property: property, expression: expression)

@@ -1,10 +1,10 @@
 //  Copyright (c) 2020 Siemens AG. Licensed under the MIT License.
 //
 //  SensorThingsMocks.swift
-//  CoatySwift
+//  Axoloty
 
 import Foundation
-import CoatySwift
+import Axoloty
 import Logging
 import RxSwift
 
@@ -25,7 +25,7 @@ class RawEventLogger {
 
 /// Mock controller consuming data produced by sensorThings sensors.
 class MockReceiverController: Controller {
-    let log = Logging.Logger(label: "CoatySwiftTests.MockReceiverController")
+    let log = Logging.Logger(label: "AxolotyTests.MockReceiverController")
 
     override func onInit() {
         super.onInit()
@@ -79,7 +79,7 @@ class MockReceiverController: Controller {
 /// Mock controller producing  sensorThings observations.
 class MockEmitterController: Controller {
     private var _name: String = ""
-    let log = Logging.Logger(label: "CoatySwiftTests.MockEmitterController")
+    let log = Logging.Logger(label: "AxolotyTests.MockEmitterController")
     
     override func onInit() {
         super.onInit()

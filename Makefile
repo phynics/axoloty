@@ -11,7 +11,7 @@ COMMA := ,
 help:
 	@printf '%s\n' \
 		'make image       Build the Linux Swift development image' \
-		'make build       Build CoatySwift in the Linux container' \
+		'make build       Build Axoloty in the Linux container' \
 		'make test        Run the full test suite (starts Mosquitto)' \
 		'make test-unit   Run ObjectMatcherTests' \
 		'make test-module Run targeted infrastructure module tests' \

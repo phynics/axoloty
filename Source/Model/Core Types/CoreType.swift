@@ -1,7 +1,7 @@
 //  Copyright (c) 2019 Siemens AG. Licensed under the MIT License.
 //
 //  CoreType.swift
-//  CoatySwift
+//  Axoloty
 //
 //
 
@@ -43,29 +43,29 @@ public enum CoreType: String, Codable {
     static func getClassType(forCoreType: CoreType) -> CoatyObject.Type {
         switch forCoreType {
         case .CoatyObject:
-            return CoatySwift.CoatyObject.self
+            return Axoloty.CoatyObject.self
         case .User:
-            return CoatySwift.User.self
+            return Axoloty.User.self
         case .Annotation:
-            return CoatySwift.Annotation.self
+            return Axoloty.Annotation.self
         case .Task:
-            return CoatySwift.Task.self
+            return Axoloty.Task.self
         case .IoSource:
-            return CoatySwift.IoSource.self
+            return Axoloty.IoSource.self
         case .IoActor:
-            return CoatySwift.IoActor.self
+            return Axoloty.IoActor.self
         case .IoNode:
-            return CoatySwift.IoNode.self
+            return Axoloty.IoNode.self
         case .IoContext:
-            return CoatySwift.IoContext.self
+            return Axoloty.IoContext.self
         case .Identity:
-            return CoatySwift.Identity.self
+            return Axoloty.Identity.self
         case .Log:
-            return CoatySwift.Log.self
+            return Axoloty.Log.self
         case .Location:
-            return CoatySwift.Location.self
+            return Axoloty.Location.self
         case .Snapshot:
-            return CoatySwift.Snapshot.self
+            return Axoloty.Snapshot.self
         }
     }
 
@@ -104,25 +104,25 @@ public enum CoreType: String, Codable {
     
     /// Registers all Coaty core object types.
     static func registerCoreObjectTypes() {
-        _ = CoatySwift.CoatyObject.objectType
-        _ = CoatySwift.User.objectType
-        _ = CoatySwift.Annotation.objectType
-        _ = CoatySwift.Task.objectType
-        _ = CoatySwift.IoSource.objectType
-        _ = CoatySwift.IoActor.objectType
-        _ = CoatySwift.IoNode.objectType
-        _ = CoatySwift.IoContext.objectType
-        _ = CoatySwift.Identity.objectType
-        _ = CoatySwift.Log.objectType
-        _ = CoatySwift.Location.objectType
-        _ = CoatySwift.Snapshot.objectType
+        _ = Axoloty.CoatyObject.objectType
+        _ = Axoloty.User.objectType
+        _ = Axoloty.Annotation.objectType
+        _ = Axoloty.Task.objectType
+        _ = Axoloty.IoSource.objectType
+        _ = Axoloty.IoActor.objectType
+        _ = Axoloty.IoNode.objectType
+        _ = Axoloty.IoContext.objectType
+        _ = Axoloty.Identity.objectType
+        _ = Axoloty.Log.objectType
+        _ = Axoloty.Location.objectType
+        _ = Axoloty.Snapshot.objectType
     }
     
     static func registerSensorThingsTypes() {
-        _ = CoatySwift.Sensor.objectType
-        _ = CoatySwift.Thing.objectType
-        _ = CoatySwift.FeatureOfInterest.objectType
-        _ = CoatySwift.Observation.objectType
+        _ = Axoloty.Sensor.objectType
+        _ = Axoloty.Thing.objectType
+        _ = Axoloty.FeatureOfInterest.objectType
+        _ = Axoloty.Observation.objectType
     }
     
     /// Gets the object type of this core type.

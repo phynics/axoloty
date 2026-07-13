@@ -1,7 +1,7 @@
 //  Copyright (c) 2020 Siemens AG. Licensed under the MIT License.
 //
 //  SensorSourceController.swift
-//  CoatySwift
+//  Axoloty
 //
 
 import Foundation
@@ -119,7 +119,7 @@ open class SensorSourceController: Controller {
     /// If the Sensor is not registered, this method will throw an error.
     func getSensorValueObservable(sensorId: CoatyUUID) throws -> Observable<Any> {
         if !self._sensors.keys.contains(sensorId.string) {
-            throw CoatySwiftError.RuntimeError("Cannot create a value observable for a non-registered sensor.")
+            throw AxolotyError.RuntimeError("Cannot create a value observable for a non-registered sensor.")
         }
         
         if !self._sensorValueObservables.keys.contains(sensorId.string) {
@@ -183,7 +183,7 @@ open class SensorSourceController: Controller {
         }
         
         if observationPublicationType != .none && (samplingInterval == nil || samplingInterval! <= 0) {
-            throw CoatySwiftError.RuntimeError("A positive sampling interval is expected.")
+            throw AxolotyError.RuntimeError("A positive sampling interval is expected.")
         }
         
         self._sensors[sensor.objectId.string] = SensorContainer(sensor: sensor, io: io)
@@ -220,7 +220,7 @@ open class SensorSourceController: Controller {
     /// that observable are unsubscribed.
     func unregisterSensor(sensorId: CoatyUUID) throws {
         if self._sensors.keys.contains(sensorId.string) {
-            throw CoatySwiftError.RuntimeError("sensorId is not registered.")
+            throw AxolotyError.RuntimeError("sensorId is not registered.")
         }
         
         self._sensors.removeValue(forKey: sensorId.string)
@@ -411,7 +411,7 @@ open class SensorSourceController: Controller {
                                      parameters: [String: String]? = nil,
                                      featureOfInterestId: CoatyUUID? = nil) throws {
         if self._sensors.keys.contains(sensorId.string) {
-            throw CoatySwiftError.RuntimeError("sensorId is not registered")
+            throw AxolotyError.RuntimeError("sensorId is not registered")
         }
         
         let container = self._sensors[sensorId.string]!

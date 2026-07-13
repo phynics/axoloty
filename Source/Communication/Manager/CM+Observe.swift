@@ -1,7 +1,7 @@
 //  Copyright (c) 2019 Siemens AG. Licensed under the MIT License.
 //
 //  CM+Observe.swift
-//  CoatySwift
+//  Axoloty
 //
 
 import Foundation
@@ -38,7 +38,7 @@ extension CommunicationManager {
     /// - Throws: if topic filter is invalid
     public func observeRaw(topicFilter: String) throws -> Observable<(String, [UInt8])> {
         guard CommunicationTopic.isValidSubscriptionTopic(topicFilter) else {
-            throw CoatySwiftError.InvalidArgument("\(topicFilter) is not a valid subscription topic")
+            throw AxolotyError.InvalidArgument("\(topicFilter) is not a valid subscription topic")
         }
         
         self.subscribe(topic: topicFilter)
@@ -109,7 +109,7 @@ extension CommunicationManager {
     /// - Throws: if object type is invalid
     public func observeAdvertise(withObjectType: String) throws -> Observable<AdvertiseEvent> {
         guard CommunicationTopic.isValidEventTypeFilter(filter: withObjectType) else {
-            throw CoatySwiftError.InvalidArgument("\(withObjectType) is not a valid object type")
+            throw AxolotyError.InvalidArgument("\(withObjectType) is not a valid object type")
         }
         
         let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace;
@@ -181,7 +181,7 @@ extension CommunicationManager {
     public func observeChannel(channelId: String) throws -> Observable<ChannelEvent> {
         
         guard CommunicationTopic.isValidEventTypeFilter(filter: channelId) else {
-            throw CoatySwiftError.InvalidArgument("\(channelId) is not a valid channel Id.")
+            throw AxolotyError.InvalidArgument("\(channelId) is not a valid channel Id.")
         }
         
         let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace;
@@ -277,7 +277,7 @@ extension CommunicationManager {
     /// - Throws: if object type is invalid
     public func observeUpdate(withObjectType: String) throws -> Observable<UpdateEvent> {
         guard CommunicationTopic.isValidEventTypeFilter(filter: withObjectType) else {
-            throw CoatySwiftError.InvalidArgument("\(withObjectType) is not a valid object type")
+            throw AxolotyError.InvalidArgument("\(withObjectType) is not a valid object type")
         }
         
         let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace;
@@ -369,7 +369,7 @@ extension CommunicationManager {
     /// - Throws: if operationId is invalid
     public func observeCall(operationId: String, context: CoatyObject?) throws -> Observable<CallEvent> {
         guard CommunicationTopic.isValidEventTypeFilter(filter: operationId) else {
-            throw CoatySwiftError.InvalidArgument("\(operationId) is not a valid operation name.")
+            throw AxolotyError.InvalidArgument("\(operationId) is not a valid operation name.")
         }
         
         let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace;
@@ -451,7 +451,7 @@ extension CommunicationManager {
     
     private func _observeAssociate(ioNodeName: String) throws -> Observable<AssociateEvent> {
         guard CommunicationTopic.isValidEventTypeFilter(filter: ioNodeName) else {
-            throw CoatySwiftError.InvalidArgument("\(ioNodeName) is not a valid context name.")
+            throw AxolotyError.InvalidArgument("\(ioNodeName) is not a valid context name.")
         }
         
         let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace

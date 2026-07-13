@@ -1,4 +1,4 @@
-# CoatySwift Modernization Roadmap
+# Axoloty Modernization Roadmap
 
 This is a living document tracking the phased modernization of this
 [phynics/coaty-swift](https://github.com/phynics/coaty-swift) fork. It is
@@ -129,7 +129,7 @@ Linux build blocker.
   cross-platform support, not just an Apple-platform library), and requires
   swift-tools-version 6.0, matching this fork's direction. New error types
   written from this point on should conform to `Throwable`; migrating the
-  existing `CoatySwiftError` enum onto it is a separate, explicit decision
+  existing `AxolotyError` enum onto it is a separate, explicit decision
   (not assumed) — see the ticket for scope.
 
 **Done when:**
@@ -137,7 +137,7 @@ Linux build blocker.
       with async/await, `AsyncSequence`, or actors.
 - [ ] `ErrorKit` is a Package.swift dependency and all error types added
       after its adoption conform to `Throwable`; a decision is recorded on
-      whether/how `CoatySwiftError` itself migrates.
+      whether/how `AxolotyError` itself migrates.
 - [x] A decision is recorded on CocoaMQTT vs. an alternative MQTT client,
       with Linux/WASM viability as the deciding factor. ✅ Done (T-005,
       `mqtt-nio`) — CocoaMQTT and its transitive Obj-C dependency
@@ -199,7 +199,7 @@ container-local rather than a distinct sidecar.
 
 ## Phase 6 — CoatyJS protocol/version compatibility audit (in progress)
 
-**Why:** CoatySwift's value partly comes from interoperating with CoatyJS
+**Why:** Axoloty's value partly comes from interoperating with CoatyJS
 agents on the wire, but this fork does not need full feature parity with
 CoatyJS going forward — an explicit, scoped decision is needed on what
 compatibility is actually worth preserving.
@@ -226,7 +226,7 @@ in constrained sandboxes) is an attractive long-term target, but it's
 gated entirely on the dependency choices made in Phase 3.
 
 **What this phase covers:**
-- Explore building CoatySwift with the SwiftWasm toolchain.
+- Explore building Axoloty with the SwiftWasm toolchain.
 - Identify which Phase 3 dependency choices block a WASM build — the
   networking/MQTT client is the most likely blocker (raw socket access,
   TLS, and threading models don't map cleanly to WASM/WASI today).

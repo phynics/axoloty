@@ -1,17 +1,17 @@
 //  Copyright (c) 2019 Siemens AG. Licensed under the MIT License.
 //
 //  LogManager.swift
-//  CoatySwift
+//  Axoloty
 //
 //
 
 import Foundation
 import Logging
 
-/// Provides a global logger for the CoatySwift framework. Its implementation is
+/// Provides a global logger for the Axoloty framework. Its implementation is
 /// based on [`swift-log`](https://github.com/apple/swift-log).
 ///
-/// - Note: CoatySwift is a library, not an application, so it deliberately does
+/// - Note: Axoloty is a library, not an application, so it deliberately does
 ///   **not** call `LoggingSystem.bootstrap(...)`. That call is global, may be
 ///   made at most once per process, and is reserved for the embedding
 ///   application to choose (and own) the logging backend. Absent an
@@ -32,12 +32,12 @@ class LogManager {
     /// introduced by this swap - that a `logLevel` change made *after* `log`
     /// has already been computed once in the process has no further effect.
     internal static var log: Logging.Logger = {
-        var log = Logging.Logger(label: "CoatySwift")
+        var log = Logging.Logger(label: "Axoloty")
         log.logLevel = LogManager.logLevel
         return log
     }()
 
-    static internal func getLogLevel(logLevel: CoatySwiftLogLevel) -> Logging.Logger.Level {
+    static internal func getLogLevel(logLevel: AxolotyLogLevel) -> Logging.Logger.Level {
         switch logLevel {
         case .debug:
             return .debug
@@ -51,8 +51,8 @@ class LogManager {
     }
 }
 
-/// The `CoatySwiftLogLevel` enum defines the verbositiy of the internal CoatySwift logger.
-public enum CoatySwiftLogLevel {
+/// The `AxolotyLogLevel` enum defines the verbositiy of the internal Axoloty logger.
+public enum AxolotyLogLevel {
     
     /// Logs information about underlying MQTT topic subscriptions (e.g. subscribe() and unsubscribe() operations)
     /// and OperatingState of communication manager.

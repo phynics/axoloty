@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest an idea or enhancement for CoatySwift
+about: Suggest an idea or enhancement for Axoloty
 title: ''
 labels: ''
 assignees: ''

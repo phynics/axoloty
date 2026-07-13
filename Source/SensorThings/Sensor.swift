@@ -1,7 +1,7 @@
 //  Copyright (c) 2020 Siemens AG. Licensed under the MIT License.
 //
 //  Sensor.swift
-//  CoatySwift
+//  Axoloty
 //
 
 import Foundation
@@ -152,7 +152,7 @@ open class Sensor: CoatyObject {
 // MARK: - Types.
 
 // NOTE: Following *Types classes are used at different places throughout the
-//       SensorThings API implementation in CoatySwift.
+//       SensorThings API implementation in Axoloty.
 
 // MARK: - SensorEncodingTypes.
 /// Some common sensor encoding types.

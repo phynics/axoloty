@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 //
 //  MQTTNIOClient.swift
-//  CoatySwift
+//  Axoloty
 //
 //
 
@@ -116,7 +116,7 @@ internal class MQTTNIOClient: CommunicationClient {
     /// Starts mDNS/Bonjour broker discovery if requested by
     /// `mqttClientOptions.shouldTryMDNSDiscovery`.
     ///
-    /// - Throws: `CoatySwiftError.RuntimeError` if discovery is requested
+    /// - Throws: `AxolotyError.RuntimeError` if discovery is requested
     ///   but no `ServiceDiscovery` implementation is available on the
     ///   current platform (e.g. non-Apple platforms). In that case,
     ///   configure an explicit broker `host`/`port` instead.
@@ -130,7 +130,7 @@ internal class MQTTNIOClient: CommunicationClient {
         discovery?.delegate = self
         discovery?.startDiscovery()
         #else
-        throw CoatySwiftError.RuntimeError(
+        throw AxolotyError.RuntimeError(
             "mDNS/Bonjour broker discovery (shouldTryMDNSDiscovery) was requested, but no " +
             "ServiceDiscovery implementation is available on this platform. " +
             "Configure an explicit broker host/port instead."

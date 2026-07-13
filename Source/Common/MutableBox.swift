@@ -1,7 +1,7 @@
 //  Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 //
 //  MutableBox.swift
-//  CoatySwift
+//  Axoloty
 //
 //
 
