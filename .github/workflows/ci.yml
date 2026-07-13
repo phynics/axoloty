@@ -14,6 +14,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup container image
+        uses: ./.github/actions/setup-container
+
+      - name: Cache Swift build artifacts
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: build-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Source/**/*.swift', 'Tests/**/*.swift') }}
+          restore-keys: |
+            build-${{ hashFiles('Package.resolved') }}-
+            build-
+
       - name: Run wire compatibility gate
         run: make test-wire CONTAINER_RUNTIME=docker
 
@@ -27,5 +39,17 @@ jobs:
       # GitHub-hosted runners provide Docker, while local development normally
       # auto-detects Podman. Keep the Makefile as the shared entry point and
       # select Docker explicitly in CI.
+      - name: Setup container image
+        uses: ./.github/actions/setup-container
+
+      - name: Cache Swift build artifacts
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: build-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Source/**/*.swift', 'Tests/**/*.swift') }}
+          restore-keys: |
+            build-${{ hashFiles('Package.resolved') }}-
+            build-
+
       - name: Build and test
         run: make build test CONTAINER_RUNTIME=docker

@@ -23,6 +23,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup container image
+        uses: ./.github/actions/setup-container
+
+      - name: Cache Swift build artifacts
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: build-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Source/**/*.swift', 'Tests/**/*.swift') }}
+          restore-keys: |
+            build-${{ hashFiles('Package.resolved') }}-
+            build-
+
       - name: Generate documentation
         run: make docs CONTAINER_RUNTIME=docker
 
