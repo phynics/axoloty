@@ -26,33 +26,33 @@ internal enum CommunicationEventType: String {
     
     static func from(_ string: String) -> CommunicationEventType? {
         switch string {
-        case "ADV":
+        case "ADV": 
             return CommunicationEventType.Advertise
-        case "DAD":
+        case "DAD": 
             return CommunicationEventType.Deadvertise
-        case "CHN":
+        case "CHN": 
             return CommunicationEventType.Channel
-        case "ASC":
+        case "ASC": 
             return CommunicationEventType.Associate
-        case "IOV":
+        case "IOV": 
             return CommunicationEventType.IoValue
-        case "DSC":
+        case "DSC": 
             return CommunicationEventType.Discover
-        case "RSV":
+        case "RSV": 
             return CommunicationEventType.Resolve
-        case "QRY":
+        case "QRY": 
             return CommunicationEventType.Query
-        case "RTV":
+        case "RTV": 
             return CommunicationEventType.Retrieve
-        case "UPD":
+        case "UPD": 
             return CommunicationEventType.Update
-        case "CPL":
+        case "CPL": 
             return CommunicationEventType.Complete
-        case "CLL":
+        case "CLL": 
             return CommunicationEventType.Call
-        case "RTN":
+        case "RTN": 
             return CommunicationEventType.Return
-        default:
+        default: 
             return nil
         }
     }

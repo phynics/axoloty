@@ -30,7 +30,7 @@ public class CommunicationManager {
     /// Gets the namespace for communication as specified in the configuration
     /// options. Returns the default namespace used, if no namespace has been
     /// specified in configuration options.
-    private (set) public var namespace: String
+    private(set) public var namespace: String
 
     internal var communicationOptions: CommunicationOptions
     internal var commonOptions: CommonOptions?
@@ -96,20 +96,20 @@ public class CommunicationManager {
     internal var ioActorItems: [String: MutableDictionaryBox<String, MutableArrayBox<CoatyUUID>>] = [:]
     
     /// Observable on which IoValue events are emitted.
-    internal var ioValueObservable: Observable<(String, [UInt8])>? = nil
+    internal var ioValueObservable: Observable<(String, [UInt8])>?
     
     /// Associated IONodes.
     internal var ioNodes: [IoNode] = []
 
     // MARK: - Initializers.
 
-    public init(identity: Identity,
-                communicationOptions: CommunicationOptions,
-                commonOptions: CommonOptions?) {
+    public init(identity: Identity, communicationOptions: CommunicationOptions, commonOptions: CommonOptions?) {
         self.identity = identity
         self.communicationOptions = communicationOptions
         self.commonOptions = commonOptions
         self.namespace = communicationOptions.namespace ?? DEFAULT_NAMESPACE
+        // Fail-fast invariant, not user input.
+        // swiftlint:disable:next force_try
         try! initializeNamespace()
         
         let mqttClientOptions = self.communicationOptions.mqttClientOptions!
@@ -121,6 +121,8 @@ public class CommunicationManager {
         setupCommunicationStateLogging()
         setupOnConnectHandler()
         
+        // Fail-fast invariant, not user input.
+        // swiftlint:disable:next force_try
         try! self._initIoNodes()
         
         if self.communicationOptions.shouldAutoStart && !mqttClientOptions.shouldTryMDNSDiscovery {
@@ -134,6 +136,8 @@ public class CommunicationManager {
     /// specified in the configuration. This is a noop if the communication
     /// manager has already been started.
     public func start() {
+        // Fail-fast invariant, not user input.
+        // swiftlint:disable:next force_try
         guard try! self.operatingState.value() != OperatingState.started else {
             return
         }
@@ -165,7 +169,11 @@ public class CommunicationManager {
         // Reinitialize potentially changed options in case of a restart.
         let mqttClientOptions = self.communicationOptions.mqttClientOptions!
         initializeMQTTClientId(mqttClientOptions)
+        // Fail-fast invariant, not user input.
+        // swiftlint:disable:next force_try
         try! initializeNamespace()
+        // Fail-fast invariant, not user input.
+        // swiftlint:disable:next force_try
         try! _initIoNodes()
         initializeDeadvertisements()
         
@@ -208,7 +216,7 @@ public class CommunicationManager {
         // "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ".
         // The Server MAY allow ClientId’s that contain more than 23 encoded bytes.
         // The Server MAY allow ClientId’s that contain characters not included in the list given above. 
-        let id = self.identity.objectId.string;
+        let id = self.identity.objectId.string
         mqttClientOptions.clientId = "Coaty" + String(id.replacingOccurrences(of: "-", with: "").prefix(18))
     }
 
@@ -256,9 +264,9 @@ public class CommunicationManager {
                         let topic = publication.0
                         let payload = publication.1
                         switch payload {
-                        case .bytesArrayPayload(let bytesArray):
+                        case .bytesArrayPayload(let bytesArray): 
                             self.client.publish(topic, message: bytesArray)
-                        case .stringPayload(let string):
+                        case .stringPayload(let string): 
                             self.client.publish(topic, message: string)
                         }
                     }
@@ -284,14 +292,12 @@ public class CommunicationManager {
     /// Gets last will message to be published when the connection terminates
     /// abnormally.
     private func getLastWill() -> (topic: String, msg: String) {
-        let lastWillTopic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace,
-                                                                                   sourceId: self.identity.objectId,
-                                                                                   eventType: .Deadvertise)
+        let lastWillTopic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace, sourceId: self.identity.objectId, eventType: .Deadvertise)
         let deadvertiseEvent = DeadvertiseEvent.with(objectIds: deadvertiseIds)
 
         deadvertiseEvent.sourceId = self.identity.objectId
 
-        return (lastWillTopic,  deadvertiseEvent.json)
+        return (lastWillTopic, deadvertiseEvent.json)
     }
 
     // MARK: - Identity and IoNodes lifecycle management.
@@ -299,6 +305,8 @@ public class CommunicationManager {
     private func advertiseIdentity() {
         // Advertise identity once.
         // (cp. CommunicationManager.observeDiscoverIdentity)
+        // Fail-fast invariant, not user input.
+        // swiftlint:disable:next force_try
         try! publishAdvertise(AdvertiseEvent.with(object: self.identity))
     }
     
@@ -336,6 +344,8 @@ public class CommunicationManager {
             self.deferredSubscriptions.insert(topic)
 
             // Subscribe if the client is online.
+            // Fail-fast invariant, not user input.
+            // swiftlint:disable:next force_try
             if try! self.communicationState.value() == .online {
                 // Do NOT clean up deferredSubscriptions since we may
                 // need them for reconnects. Update subscription count
@@ -373,6 +383,8 @@ public class CommunicationManager {
     ///   - message: the payload message as String.
     internal func publish(topic: String, message: String) {
         queue.sync {
+            // Fail-fast invariant, not user input.
+            // swiftlint:disable:next force_try
             if try! self.communicationState.value() == .offline {
                 self.deferredPublications.append((topic, MessagePayload.stringPayload(message)))
             } else {
@@ -389,6 +401,8 @@ public class CommunicationManager {
     ///   - message: the payload message as Bytes array.
     internal func publish(topic: String, message: [UInt8]) {
         queue.sync {
+            // Fail-fast invariant, not user input.
+            // swiftlint:disable:next force_try
             if try! self.communicationState.value() == .offline {
                 self.deferredPublications.append((topic, MessagePayload.bytesArrayPayload(message)))
             } else {
@@ -451,9 +465,7 @@ public class CommunicationManager {
     /// - Parameter ioSource: the IO source object
     /// - Returns: an associating topic for routing IO values
     public func createIoRoute(ioSource: IoSource) -> String {
-        return CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace,
-                                                                      sourceId: ioSource.objectId,
-                                                                      eventType: .IoValue)
+        return CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace, sourceId: ioSource.objectId, eventType: .IoValue)
     }
 
     internal func findIoPointById(objectId: CoatyUUID) -> IoPoint? {
@@ -502,8 +514,7 @@ public class CommunicationManager {
                 let hasAssociations = (items != nil) && (items!.actorIds.count != 0)
                 let updateRate: Int? = (items != nil) ? items!.updateRate : nil
                 
-                item.dispatchNext(message: IoStateEvent.with(hasAssociations: hasAssociations,
-                                                             updateRate: updateRate))
+                item.dispatchNext(message: IoStateEvent.with(hasAssociations: hasAssociations, updateRate: updateRate))
             }
         }
 
@@ -523,9 +534,7 @@ public class CommunicationManager {
     private func updateIoSourceItems(ioSourceId: CoatyUUID, ioActorId: CoatyUUID, ioRoute: String?, updateRate: Int?) {
         if let ioRoute = ioRoute {
             if self.ioSourceItems[ioSourceId.string] == nil {
-                let items = IoSourceItem(associatingRoute: ioRoute,
-                                         actorsIds: [ioActorId],
-                                         updateRate: updateRate)
+                let items = IoSourceItem(associatingRoute: ioRoute, actorsIds: [ioActorId], updateRate: updateRate)
                 self.ioSourceItems[ioSourceId.string] = items
             } else if let items = self.ioSourceItems[ioSourceId.string] {
                 if items.associatingRoute == ioRoute {
@@ -579,10 +588,7 @@ public class CommunicationManager {
         }
     }
 
-    private func disassociateIoActorItems(ioSourceId: CoatyUUID,
-                                          ioActorId: CoatyUUID,
-                                          currentIoRoute: String?,
-                                          newIoRoute: String?) {
+    private func disassociateIoActorItems(ioSourceId: CoatyUUID, ioActorId: CoatyUUID, currentIoRoute: String?, newIoRoute: String?) {
         var ioRoutesToUnsubscribe: [String] = []
         let handler = { (items: MutableDictionaryBox<String, MutableArrayBox<CoatyUUID>>, route: String) in
             if let newIoRoute = newIoRoute, newIoRoute == route {
@@ -644,7 +650,7 @@ extension CommunicationManager: Startable {
     /// Auto start communication manager (caused by shouldAutoStart option or
     /// bonjour discovery).
     func didReceiveStart() {
-        self.start();
+        self.start()
     }
 }
 
@@ -676,9 +682,7 @@ internal class IoSourceItem {
     
     var updateRate: Int?
     
-    init(associatingRoute: String,
-         actorsIds: [CoatyUUID],
-         updateRate: Int?) {
+    init(associatingRoute: String, actorsIds: [CoatyUUID], updateRate: Int?) {
         self.associatingRoute = associatingRoute
         self.actorIds = actorsIds
         self.updateRate = updateRate

@@ -16,9 +16,7 @@ open class Identity: CoatyObject {
     }
     
     /// Default initializer for an `Identity` object.
-    public init(name: String = "IdentityObject",
-                objectType: String = Identity.objectType,
-                objectId: CoatyUUID = .init()) {
+    public init(name: String = "IdentityObject", objectType: String = Identity.objectType, objectId: CoatyUUID = .init()) {
         super.init(coreType: .Identity, objectType: objectType, objectId: objectId, name: name)
     }
     

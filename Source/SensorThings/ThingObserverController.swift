@@ -59,6 +59,8 @@ open class ThingObserverController: Controller {
                                           objectFilter: objectFilter,
                                           objectJoinConditions: nil))
             .map { event -> [Thing] in
+            // Fail-fast invariant, not user input.
+            // swiftlint:disable:next force_cast
             return event.data.objects as! [Thing]
         }
     }

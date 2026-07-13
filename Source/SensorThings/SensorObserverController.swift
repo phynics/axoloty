@@ -29,6 +29,8 @@ open class SensorObserverController: Controller {
                     && event.data.object!.objectType == SensorThingsTypes.OBJECT_TYPE_OBSERVATION
                     && event.data.object?.parentObjectId == sensorId
             }).map({ event -> Observation in
+                // Fail-fast invariant, not user input.
+                // swiftlint:disable:next force_cast
                 return event.data.object as! Observation
             })
     }
@@ -42,6 +44,8 @@ open class SensorObserverController: Controller {
             .filter({ event -> Bool in
                 return event.data.object.parentObjectId! == sensorId
             }).map({ event -> Observation in
+                // Fail-fast invariant, not user input.
+                // swiftlint:disable:next force_cast
                 return event.data.object as! Observation
             })
     }
@@ -90,6 +94,8 @@ open class SensorObserverController: Controller {
                                           objectFilter: objectFilter,
                                           objectJoinConditions: nil))
             .map { event -> [Sensor] in
+                // Fail-fast invariant, not user input.
+                // swiftlint:disable:next force_cast
                 return event.data.objects as! [Sensor]
         }
     }

@@ -25,7 +25,7 @@ public struct CoatyTimestamp {
     /// - Returns: a Coaty timestamp representing number of milliseconds elapsed
     ///   since January 1, 1970, 00:00:00 UTC for the given `Date`, as a Double
     ///   value.
-    public static func dateMillis(from: Date)-> Double {
+    public static func dateMillis(from: Date) -> Double {
         return from.timeIntervalSince1970 * 1000
     }
 

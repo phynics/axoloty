@@ -21,9 +21,7 @@ public class ReturnEvent: CommunicationEvent<ReturnEventData> {
     ///     (optional)
     /// - Returns: a Return event with the given parameters
     public static func with(result: AnyCodable, executionInfo: ExecutionInfo?) -> ReturnEvent {
-        let returnEventData = ReturnEventData.createFrom(result: result,
-                                                         executionInfo: executionInfo,
-                                                         error: nil)
+        let returnEventData = ReturnEventData.createFrom(result: result, executionInfo: executionInfo, error: nil)
         return .init(eventType: .Return, eventData: returnEventData)
     }
     
@@ -48,9 +46,7 @@ public class ReturnEvent: CommunicationEvent<ReturnEventData> {
     ///     (optional)
     /// - Returns: a Return event with the given parameters
     public static func with(error: ReturnError, executionInfo: ExecutionInfo?) -> ReturnEvent {
-        let returnEventData = ReturnEventData.createFrom(result: nil,
-                                                         executionInfo: executionInfo,
-                                                         error: error)
+        let returnEventData = ReturnEventData.createFrom(result: nil, executionInfo: executionInfo, error: error)
         return .init(eventType: .Return, eventData: returnEventData)
     }
     
@@ -66,10 +62,6 @@ public class ReturnEvent: CommunicationEvent<ReturnEventData> {
         try super.init(from: decoder)
     }
     
-    override public func encode(to encoder: Encoder) throws {
-        try super.encode(to: encoder)
-    }
-    
 }
 
 public class ReturnEventData: CommunicationEventData {
@@ -83,7 +75,6 @@ public class ReturnEventData: CommunicationEventData {
     /// Defines additional information about the execution environment (any JSON value)
     /// such as the execution time of the operation or the ID of the operated control unit (optional).
     public var executionInfo: ExecutionInfo?
-    
     
     /// The error object to be returned in case the operation call yielded an error (optional).
     /// The value is `nil` if the operation executed successfully.
@@ -111,9 +102,7 @@ public class ReturnEventData: CommunicationEventData {
     
     // MARK: - Factory methods.
     
-    internal static func createFrom(result: ReturnResult?,
-                                    executionInfo: ExecutionInfo?,
-                                    error: ReturnError?) -> ReturnEventData {
+    internal static func createFrom(result: ReturnResult?, executionInfo: ExecutionInfo?, error: ReturnError?) -> ReturnEventData {
         
         return .init(result: result, executionInfo: executionInfo, error: error)
     }
@@ -167,7 +156,6 @@ public enum RemoteCallErrorMessage: String {
     case invalidParameters = "Invalid params"
 }
 
-
 public class ReturnError: Codable {
     
     public var code: Int
@@ -178,8 +166,7 @@ public class ReturnError: Codable {
         self.message = message
     }
     
-    public init(code: RemoteCallErrorCode = .invalidParameters,
-         message: RemoteCallErrorMessage = .invalidParameters) {
+    public init(code: RemoteCallErrorCode = .invalidParameters, message: RemoteCallErrorMessage = .invalidParameters) {
         self.code = RemoteCallErrorCode.invalidParameters.rawValue
         self.message = RemoteCallErrorMessage.invalidParameters.rawValue
     }

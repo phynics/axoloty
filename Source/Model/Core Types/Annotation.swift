@@ -139,7 +139,6 @@ public enum AnnotationType: Int, Codable {
     case liveDataUrl
 }
 
-
 public enum AnnotationStatus: Int, Codable {
 
     /// Set when annotation media has only been stored on the creator's local device

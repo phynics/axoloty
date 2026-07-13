@@ -51,12 +51,6 @@ open class IoActorController: Controller {
         try? reregisterAll()
     }
 
-    override open func onCommunicationManagerStopping() {
-        super.onCommunicationManagerStopping()
-
-        // IO state and IO value subscriptions are automatically unsubscribed.
-    }
-
     // MARK: - Convenience methods.
 
     /// Listen to IO values for the given IO actor. The returned observable
@@ -148,6 +142,8 @@ open class IoActorController: Controller {
                 self.onIoValueChanged(actorId: actorId, value: value)
             })
 
+            // Fail-fast invariant, not user input.
+            // swiftlint:disable:next force_try
             let initialValue = try! ioState.value().eventData.hasAssociations()
             
             item = IoActorItems(

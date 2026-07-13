@@ -66,8 +66,7 @@ public class DiscoverEvent: CommunicationEvent<DiscoverEventData> {
     /// - Parameters:
     ///   - externalId: the external ID to discover
     ///   - objectId: the object ID to discover
-    public static func with(externalId: String,
-                     objectId: CoatyUUID) -> DiscoverEvent {
+    public static func with(externalId: String, objectId: CoatyUUID) -> DiscoverEvent {
         let discoverEventData = DiscoverEventData(externalId: externalId, objectId: objectId)
         return .init(eventType: .Discover, eventData: discoverEventData)
     }
@@ -111,10 +110,6 @@ public class DiscoverEvent: CommunicationEvent<DiscoverEventData> {
     
     public required init(from decoder: Decoder) throws {
         try super.init(from: decoder)
-    }
-    
-    override public func encode(to encoder: Encoder) throws {
-        try super.encode(to: encoder)
     }
     
     /// Validates response parameters of Resolve event against the corresponding

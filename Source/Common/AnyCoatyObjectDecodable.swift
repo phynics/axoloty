@@ -104,4 +104,3 @@ public class AnyCoatyObjectDecodable: Decodable {
             action: { try type.init(from: decoder) })
     }
 }
-

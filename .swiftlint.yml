@@ -1,6 +1,11 @@
 included:
     - Source
 
+excluded:
+    # Vendored third-party source (Flight-School/AnyCodable) — kept close to
+    # upstream for diffability, not reformatted to house style.
+    - Source/Common/AnyCodable
+
 disabled_rules:
     - trailing_whitespace
     - todo

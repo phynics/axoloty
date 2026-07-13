@@ -32,7 +32,6 @@ public class CoatyUUID: Codable, CustomStringConvertible, Hashable {
         self.uuid = uuid
     }
     
-    
     // MARK: - Codable methods.
     
     public required init(from decoder: Decoder) throws {

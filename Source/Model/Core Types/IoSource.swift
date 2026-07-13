@@ -69,22 +69,16 @@ open class IoSource: IoPoint {
     
     /// Default initializer for an `IoSource` object.
     public init(valueType: String,
-         updateStrategy: IoSourceBackpressureStrategy? = nil,
-         useRawIoValues: Bool? = false,
-         updateRate: Int? = nil,
-         externalRoute: String? = nil,
-         name: String = "IoSourceObject",
-         objectType: String = IoSource.objectType,
-         objectId: CoatyUUID = .init()) {
+                updateStrategy: IoSourceBackpressureStrategy? = nil,
+                useRawIoValues: Bool? = false,
+                updateRate: Int? = nil,
+                externalRoute: String? = nil,
+                name: String = "IoSourceObject",
+                objectType: String = IoSource.objectType,
+                objectId: CoatyUUID = .init()) {
         self.valueType = valueType
         self.updateStrategy = updateStrategy
-        super.init(coreType: .IoSource,
-                   objectType: objectType,
-                   objectId: objectId,
-                   name: name,
-                   useRawIoValues: useRawIoValues,
-                   updateRate: updateRate,
-                   externalRoute: externalRoute)
+        super.init(coreType: .IoSource, objectType: objectType, objectId: objectId, name: name, useRawIoValues: useRawIoValues, updateRate: updateRate, externalRoute: externalRoute)
     }
     
     // MARK: - Codable methods.

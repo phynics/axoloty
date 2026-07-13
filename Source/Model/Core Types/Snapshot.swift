@@ -31,20 +31,17 @@ open class Snapshot: CoatyObject {
     
     /// Default initializer for a `Snapshot` object.
     public init(creationTimestamp: Double,
-         creatorId: CoatyUUID,
-         tags: [String]? = nil,
-         object: CoatyObject,
-         name: String = "SnapshotObject",
-         objectType: String = Snapshot.objectType,
-         objectId: CoatyUUID = .init()) {
+                creatorId: CoatyUUID,
+                tags: [String]? = nil,
+                object: CoatyObject,
+                name: String = "SnapshotObject",
+                objectType: String = Snapshot.objectType,
+                objectId: CoatyUUID = .init()) {
         self.creationTimestamp = creationTimestamp
         self.creatorId = creatorId
         self.tags = tags
         self.object = object
-        super.init(coreType: .Snapshot,
-                   objectType: objectType,
-                   objectId: objectId,
-                   name: name)
+        super.init(coreType: .Snapshot, objectType: objectType, objectId: objectId, name: name)
     }
     
     enum SnapshotCodingKeys: String, CodingKey, CaseIterable {
@@ -77,5 +74,3 @@ open class Snapshot: CoatyObject {
         try container.encodeIfPresent(tags, forKey: .tags)
     }
 }
-
-    

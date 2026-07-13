@@ -39,13 +39,13 @@ class LogManager {
 
     static internal func getLogLevel(logLevel: CoatySwiftLogLevel) -> Logging.Logger.Level {
         switch logLevel {
-        case .debug:
+        case .debug: 
             return .debug
-        case .error:
+        case .error: 
             return .error
-        case .info:
+        case .info: 
             return .info
-        case .warning:
+        case .warning: 
             return .warning
         }
     }

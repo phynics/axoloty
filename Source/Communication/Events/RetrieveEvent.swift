@@ -18,8 +18,7 @@ public class RetrieveEvent: CommunicationEvent<RetrieveEventData> {
     ///   - objects: the objects which have been queried.
     ///   - privateData: application-specific options (optional).
     /// - Returns: a Retrieve event with the given parameters
-    public static func with(objects: [CoatyObject],
-                     privateData: [String: Any]? = nil) -> RetrieveEvent {
+    public static func with(objects: [CoatyObject], privateData: [String: Any]? = nil) -> RetrieveEvent {
         let retrieveEventData = RetrieveEventData(objects: objects, privateData: privateData)
         return .init(eventType: .Retrieve, eventData: retrieveEventData)
     }
@@ -34,10 +33,6 @@ public class RetrieveEvent: CommunicationEvent<RetrieveEventData> {
     
     public required init(from decoder: Decoder) throws {
         try super.init(from: decoder)
-    }
-    
-    override public func encode(to encoder: Encoder) throws {
-        try super.encode(to: encoder)
     }
 }
 

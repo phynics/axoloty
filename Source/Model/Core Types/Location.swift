@@ -23,15 +23,12 @@ open class Location: CoatyObject {
     
     // MARK: - Attributes.
     
-    public var geoLocation: GeoLocation;
+    public var geoLocation: GeoLocation
 
     // MARK: - Initializer.
 
     /// Default initializer for a `Location` object.
-    public init(geoLocation: GeoLocation,
-                name: String = "LocationObject",
-                objectType: String = Location.objectType,
-                objectId: CoatyUUID = .init()) {
+    public init(geoLocation: GeoLocation, name: String = "LocationObject", objectType: String = Location.objectType, objectId: CoatyUUID = .init()) {
         
         self.geoLocation = geoLocation
         super.init(coreType: .Location, objectType: objectType, objectId: objectId, name: name)
@@ -70,13 +67,12 @@ public class GeoLocation: Codable {
     /// Contains a set of geographic coordinates together with their associated
     /// accuracy, as well as a set of other optional attributes such as altitude
     /// and speed.
-    public var coords: GeoCoordinates;
+    public var coords: GeoCoordinates
 
-    
     /// Represents the time when the GeoLocation object was acquired
     /// and is represented as a number of milliseconds, either as an absolute time
     /// (relative to some epoch) or as a relative amount of time.
-    public var timestamp: Double;
+    public var timestamp: Double
     
     // MARK: - Initializers.
 
@@ -148,13 +144,7 @@ public class GeoCoordinates: Codable {
     
     // MARK: - Initializers.
     
-    public init(latitude: Double,
-                longitude: Double,
-                accuracy: Double,
-                altitude: Double? = nil,
-                altitudeAccuracy: Double? = nil,
-                heading: Double? = nil,
-                speed: Double? = nil) {
+    public init(latitude: Double, longitude: Double, accuracy: Double, altitude: Double? = nil, altitudeAccuracy: Double? = nil, heading: Double? = nil, speed: Double? = nil) {
         self.latitude = latitude
         self.longitude = longitude
         self.accuracy = accuracy

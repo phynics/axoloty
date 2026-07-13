@@ -31,8 +31,7 @@ public class ResolveEvent: CommunicationEvent<ResolveEventData> {
     ///   - relatedObjects: related objects to be resolved
     ///   - privateData: private data object (optional)
     /// - Returns: a Query event with the given parameters
-    public static func with(relatedObjects: [CoatyObject],
-                     privateData: [String: Any]? = nil) -> ResolveEvent {
+    public static func with(relatedObjects: [CoatyObject], privateData: [String: Any]? = nil) -> ResolveEvent {
         let resolveEventData = ResolveEventData(relatedObjects: relatedObjects, privateData: privateData)
         return .init(eventType: .Resolve, eventData: resolveEventData)
     }
@@ -45,11 +44,8 @@ public class ResolveEvent: CommunicationEvent<ResolveEventData> {
     ///   - relatedObjects: related objects to be resolved
     ///   - privateData: private data object (optional)
     /// - Returns: a Query event with the given parameters
-    public static func with(object: CoatyObject, relatedObjects: [CoatyObject],
-                     privateData: [String: Any]? = nil) -> ResolveEvent {
-        let resolveEventData = ResolveEventData(object: object,
-                                                relatedObjects: relatedObjects,
-                                                privateData: privateData)
+    public static func with(object: CoatyObject, relatedObjects: [CoatyObject], privateData: [String: Any]? = nil) -> ResolveEvent {
+        let resolveEventData = ResolveEventData(object: object, relatedObjects: relatedObjects, privateData: privateData)
         return .init(eventType: .Resolve, eventData: resolveEventData)
     }
 
@@ -63,10 +59,6 @@ public class ResolveEvent: CommunicationEvent<ResolveEventData> {
     
     public required init(from decoder: Decoder) throws {
         try super.init(from: decoder)
-    }
-    
-    override public func encode(to encoder: Encoder) throws {
-        try super.encode(to: encoder)
     }
 }
 
@@ -85,7 +77,7 @@ public class ResolveEventData: CommunicationEventData {
     /// `object` property is defined).
     public var relatedObjects: [CoatyObject]?
 
-    ///Application-specific options (optional).
+    /// Application-specific options (optional).
     public var privateData: [String: Any]?
     
     // MARK: - Initializers.

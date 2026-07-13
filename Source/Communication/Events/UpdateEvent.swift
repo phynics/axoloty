@@ -59,10 +59,6 @@ public class UpdateEvent: CommunicationEvent<UpdateEventData> {
     public required init(from decoder: Decoder) throws {
         try super.init(from: decoder)
     }
-    
-    override public func encode(to encoder: Encoder) throws {
-        try super.encode(to: encoder)
-    }
 
     /// Validates response parameters of Complete event against the
     /// corresponding Update event.
@@ -119,4 +115,3 @@ public class UpdateEventData: CommunicationEventData {
     }
 
 }
-

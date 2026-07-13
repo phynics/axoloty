@@ -31,6 +31,8 @@ public class PayloadCoder {
     /// - NOTE: The JSON encoding is based on the Codable protocol from the Swift standard library.
     /// Please make sure to implement it in all CommunicationEvent and CoatyObject classes.
     public static func encode<T: Codable>(_ event: T) -> String {
+        // Fail-fast invariant, not user input.
+        // swiftlint:disable:next force_try
         let jsonData = try! JSONEncoder().encode(event)
         let jsonString = String(data: jsonData, encoding: .utf8)!
         return jsonString

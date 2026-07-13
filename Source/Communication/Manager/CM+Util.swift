@@ -60,8 +60,7 @@ class ObservableWrapper {
     
     /// Convenience creation of a wrapper observable for observing state changes in
     /// subscribers and unsubscribers.
-    func createObservable<T>(observable: Observable<T>,
-                             cleanup: @escaping () -> ()) -> Observable<T> {
+    func createObservable<T>(observable: Observable<T>, cleanup: @escaping () -> Void) -> Observable<T> {
         return Observable.create { (observer) -> Disposable in
             let sub = observable.subscribe({ (event) in
                 if self.hasLastObserverUnsubscribed {

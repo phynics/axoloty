@@ -13,10 +13,10 @@ public class CommunicationEvent<T: CommunicationEventData>: Codable {
     // MARK: - Attributes.
     
     /// Event data of this event.
-    private (set) public var data: T
+    private(set) public var data: T
 
     /// Object ID of the event source.
-    internal (set) public var sourceId: CoatyUUID?
+    internal(set) public var sourceId: CoatyUUID?
 
     /// Event type of this event.
     internal var type: CommunicationEventType?

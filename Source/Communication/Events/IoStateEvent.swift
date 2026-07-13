@@ -7,7 +7,6 @@
 
 import Foundation
 
-
 /// IoState event.
 ///
 /// This event is internally emitted by the observable returned by
@@ -53,7 +52,7 @@ public class IoStateEventData: CommunicationEventData {
     
     private var _hasAssociations: Bool
     
-    private var _updateRate: Int? = nil
+    private var _updateRate: Int?
     
     // MARK: - Initializers.
     

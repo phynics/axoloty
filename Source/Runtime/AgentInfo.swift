@@ -72,7 +72,7 @@ public class AgentPackageInfo: Codable {
     // MARK: - Initializers.
     
     /// Create a new instance of AgentPackageInfo.
-    public init(name: String, version: String, extra : [String: Any]? = nil) {
+    public init(name: String, version: String, extra: [String: Any]? = nil) {
         self.name = name
         self.version = version
         if let extra = extra {
@@ -125,7 +125,7 @@ public class AgentBuildInfo: Codable {
     // MARK: - Initializers.
     
     /// Create a new instance of AgentBuildInfo.
-    public init(buildDate: String, buildMode: String, extra : [String: Any]? = nil) {
+    public init(buildDate: String, buildMode: String, extra: [String: Any]? = nil) {
         self.buildDate = buildDate
         self.buildMode = buildMode
         if let extra = extra {
@@ -173,7 +173,7 @@ public class AgentConfigInfo: Codable {
     // MARK: - Initializers.
     
     /// Create a new instance of AgentConfigInfo.
-    public init(serviceHost: String, extra : [String: Any]? = nil) {
+    public init(serviceHost: String, extra: [String: Any]? = nil) {
         self.serviceHost = serviceHost
         if let extra = extra {
             self.extra = extra

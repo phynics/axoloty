@@ -27,18 +27,18 @@ protocol CommunicationClient {
     /// when discovering the broker over mDNS.
     var delegate: Startable { get }
     
-    /// MARK: - State management.
+    // MARK: - State management.
     
     /// Emits online or offline state depending on the connection
     /// status of the client.
     var communicationState: BehaviorSubject<CommunicationState> { get }
     
-    /// MARK: - Connection methods.
+    // MARK: - Connection methods.
     
     func connect(lastWillTopic: String, lastWillMessage: String)
     func disconnect()
 
-    /// MARK: - Pub-Sub methods.
+    // MARK: - Pub-Sub methods.
 
     func publish(_ topic: String, message: String)
     func publish(_ topic: String, message: [UInt8])

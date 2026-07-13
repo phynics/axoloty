@@ -61,7 +61,7 @@ open class SensorSourceController: Controller {
     /// Returns all the registered sensor containers in an array.
     var registeredSensorContainers: [SensorContainer] {
         get {
-            return Array(self._sensors.values);
+            return Array(self._sensors.values)
         }
     }
     
@@ -198,6 +198,8 @@ open class SensorSourceController: Controller {
         }
         
         if let skipSensorAdvertise = self.options?.extra["skipSensorAdvertise"] as? Bool, !skipSensorAdvertise {
+            // Fail-fast invariant, not user input.
+            // swiftlint:disable:next force_try
             self.communicationManager.publishAdvertise(try! AdvertiseEvent.with(object: sensor))
         }
         if let ignoreSensorQueryEvents = self.options?.extra["ignoreSensorQueryEvents"] as? Bool, !ignoreSensorQueryEvents {
@@ -366,7 +368,7 @@ open class SensorSourceController: Controller {
             return
         }
 
-        try? self._querySubscription = self.communicationManager.observeQuery().filter({ event -> Bool in
+        try? self._querySubscription = self.communicationManager.observeQuery().filter({ _ -> Bool in
             return true
         }).subscribe(onNext: { event in
             var retrieved: [Sensor] = []
@@ -535,4 +537,3 @@ public struct SensorContainer {
     /// The IO handling used for this sensor.
     let io: SensorIo
 }
-

@@ -132,20 +132,26 @@ open class IoSourceController: Controller {
     public func isAssociated(source: IoSource) -> Bool {
         let item = self.ensureRegistered(source: source)
         let association = item.e3
+        // Fail-fast invariant, not user input.
+        // swiftlint:disable:next force_try
         return try! association.value()
     }
     
     // MARK: - Private functions.
     
     private func reregisterAll() {
-        self.sourceItems.forEach { key, item in
+        self.sourceItems.forEach { _, item in
             let source = item.e0
             let ioState = self.communicationManager.observeIoState(ioPoint: source)
 
             item.e1 = ioState.subscribe(onNext: { event in self.onIoStateChanged(sourceId: source.objectId, event: event) })
             
             // Keep subject that may be in use by the application code.
+            // Fail-fast invariant, not user input.
+            // swiftlint:disable:next force_try
             item.e2.onNext(try! ioState.value().eventData.updateRate()!)
+            // Fail-fast invariant, not user input.
+            // swiftlint:disable:next force_try
             item.e3.onNext(try! ioState.value().eventData.hasAssociations())
             
             self.updateUpdateRateObservable(item: item)
@@ -153,7 +159,7 @@ open class IoSourceController: Controller {
     }
     
     private func deregisterAll() {
-        self.sourceItems.forEach { key, item in
+        self.sourceItems.forEach { _, item in
             item.e1?.dispose()
             item.e1 = nil
             item.e5?.dispose()
@@ -169,7 +175,11 @@ open class IoSourceController: Controller {
             item = IoSourceItems(
                 source,
                 ioState.subscribe(onNext: { event in self.onIoStateChanged(sourceId: sourceId, event: event) }),
+                // Fail-fast invariant, not user input.
+                // swiftlint:disable:next force_try
                 BehaviorSubject<Int?>.init(value: try! ioState.value().eventData.updateRate()),
+                // Fail-fast invariant, not user input.
+                // swiftlint:disable:next force_try
                 BehaviorSubject<Bool>.init(value: try! ioState.value().eventData.hasAssociations()),
                 PublishSubject<Any>.init(),
                 nil
@@ -191,11 +201,15 @@ open class IoSourceController: Controller {
         
         var needsUpdate = false
         
+        // Fail-fast invariant, not user input.
+        // swiftlint:disable:next force_try
         if try! item!.e3.value() != event.eventData.hasAssociations() {
             item!.e3.onNext(event.eventData.hasAssociations())
             needsUpdate = true
         }
         
+        // Fail-fast invariant, not user input.
+        // swiftlint:disable:next force_try
         if try! item!.e2.value() != event.eventData.updateRate() {
             item!.e2.onNext(event.eventData.updateRate())
             needsUpdate = true
@@ -216,6 +230,8 @@ open class IoSourceController: Controller {
         // Unsubscribe and discard already scheduled IO values
         updateSubscription?.dispose()
         
+        // Fail-fast invariant, not user input.
+        // swiftlint:disable:next force_try
         if try! !association.value() {
             item.e5 = nil
             return
@@ -230,28 +246,31 @@ open class IoSourceController: Controller {
             switch source.updateStrategy ?? IoSourceBackpressureStrategy.Default {
             case .Default:
                 fallthrough
-            case .Sample:
+                case .Sample:
                 // TODO: Is this correct?
                 updateObs = updateSubject.sample(Observable<Int>.interval(RxTimeInterval.milliseconds(rate!),
                                                                           scheduler: MainScheduler.instance))
-                break
-            case .Throttle:
+                case .Throttle:
                 // TODO: Is this correct
                 updateObs = updateSubject.debounce(RxTimeInterval.milliseconds(rate!),
                                                    scheduler: MainScheduler.instance)
-                break
-            case .None:
+                case .None:
                 updateObs = updateSubject
-                break
             }
         }
         
         item.e5 = updateObs.subscribe(onNext: { value in
             var event: IoValueEvent
             if let raw = source.useRawIoValues, raw {
+                // Fail-fast invariant, not user input.
+                // swiftlint:disable:next force_cast
                 let rawPayload = value as! [UInt8]
+                // Fail-fast invariant, not user input.
+                // swiftlint:disable:next force_try
                 event = try! IoValueEvent.with(ioSource: source, value: rawPayload, options: .init())
             } else {
+                // Fail-fast invariant, not user input.
+                // swiftlint:disable:next force_try
                 event = try! IoValueEvent.with(ioSource: source, value: AnyCodable(value), options: .init())
             }
             self.communicationManager.publishIoValue(event: event)

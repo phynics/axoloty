@@ -68,7 +68,7 @@ open class CoatyObject: Codable {
     ///   always empty.
     /// - Note: This property is never encoded. It is only intended to be accessed
     ///   inside your local app.
-    internal (set) public var custom: [String: Any]
+    internal(set) public var custom: [String: Any]
     
     // MARK: - Initializers.
     

@@ -17,9 +17,9 @@ class CommunicationTopic {
     var protocolVersion: Int
     var namespace: String
     var eventType: CommunicationEventType
-    var eventTypeFilter: String? = nil
+    var eventTypeFilter: String?
     var sourceId: CoatyUUID
-    var correlationId: String? = nil
+    var correlationId: String?
     
     // MARK: - Initializers.
     
@@ -107,7 +107,6 @@ class CommunicationTopic {
     static func isValidEventTypeFilter(filter: String) -> Bool {
         return self.isValidPublicationTopic(filter) && !filter.contains("/")
     }
-
 
     /// Determines whether the given name is a valid topic name for publication.
     ///
@@ -213,11 +212,7 @@ class CommunicationTopic {
     ///   - eventTypeFilter: optional event filter
     ///   - correlationId: correlation ID for two-way message, or nil for one-way message
     /// - Returns: a topic string that can be used for publication
-    static func createTopicStringByLevelsForPublish(namespace: String,
-                                                    sourceId: CoatyUUID,
-                                                    eventType: CommunicationEventType,
-                                                    eventTypeFilter: String? = nil,
-                                                    correlationId: String? = nil) -> String {
+    static func createTopicStringByLevelsForPublish(namespace: String, sourceId: CoatyUUID, eventType: CommunicationEventType, eventTypeFilter: String? = nil, correlationId: String? = nil) -> String {
         let eventLevel = getEventLevel(eventType: eventType, eventTypeFilter: eventTypeFilter)
         var topic = "\(PROTOCOL_NAME)"
             + "\(TOPIC_SEPARATOR)\(PROTOCOL_VERSION)"
@@ -229,7 +224,7 @@ class CommunicationTopic {
             topic += "\(TOPIC_SEPARATOR)\(correlationId!)"
         }
 
-        return topic;
+        return topic
     }
     
     /// Convenience Method to create a topic string that can be used for subscriptions.
@@ -241,10 +236,7 @@ class CommunicationTopic {
     ///   - correlationId: correlation ID for response message subscription, or nil
     ///     for request message subscription with wildcard
     /// - Returns: a topic string that can be used for subscriptions
-    static func createTopicStringByLevelsForSubscribe(eventType: CommunicationEventType,
-                                                      eventTypeFilter: String? = nil,
-                                                      namespace: String? = nil,
-                                                      correlationId: String? = nil) -> String {
+    static func createTopicStringByLevelsForSubscribe(eventType: CommunicationEventType, eventTypeFilter: String? = nil, namespace: String? = nil, correlationId: String? = nil) -> String {
         let eventLevel = getEventLevel(eventType: eventType, eventTypeFilter: eventTypeFilter)
         var topic = "\(PROTOCOL_NAME)"
             + "\(TOPIC_SEPARATOR)\(PROTOCOL_VERSION)"
@@ -256,7 +248,7 @@ class CommunicationTopic {
             topic += "\(TOPIC_SEPARATOR)\(correlationId ?? SINGLE_TOPIC_LEVEL_WILDCARD)"
         }
 
-        return topic;
+        return topic
     }
     
     // MARK: - Parsing helper methods.
@@ -267,7 +259,7 @@ class CommunicationTopic {
         let eventTypeFilter = index == nil ? nil : String(eventName[eventName.index(after: index!)...])
         
         guard let evType = CommunicationEventType.from(eventType) else {
-            return nil;
+            return nil
         }
         return (evType, eventTypeFilter)
     }

@@ -34,10 +34,6 @@ public class CompleteEvent: CommunicationEvent<CompleteEventData> {
     public required init(from decoder: Decoder) throws {
         try super.init(from: decoder)
     }
-    
-    override public func encode(to encoder: Encoder) throws {
-        try super.encode(to: encoder)
-    }
 }
 
 /// CompleteEventData provides the entire message payload data for a
@@ -80,5 +76,5 @@ public class CompleteEventData: CommunicationEventData {
         try container.encodeIfPresent(self.object, forKey: .object)
         try container.encodeIfPresent(self.privateData, forKey: .privateData)
     }
-}
 
+}

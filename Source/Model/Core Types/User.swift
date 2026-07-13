@@ -26,10 +26,7 @@ open class User: CoatyObject {
     ///
     /// - NOTE: In order to populate all optional properties, please just set them manually without
     /// after initializing the object.
-    public init(name: String,
-                names: ScimUserNames,
-                objectType: String = User.objectType,
-                objectId: CoatyUUID = .init()) {
+    public init(name: String, names: ScimUserNames, objectType: String = User.objectType, objectId: CoatyUUID = .init()) {
         
         self.names = names
         super.init(coreType: .User, objectType: objectType, objectId: objectId, name: name)
@@ -357,12 +354,7 @@ public class ScimUserNames: Codable {
     /// "Ms. Barbara Jane Jensen, III").
     public var honorificSuffix: String?
     
-    public init(formatted: String? = nil,
-                familyName: String? = nil,
-                givenName: String? = nil,
-                middleName: String? = nil,
-                honorificPrefix: String? = nil,
-                honorificSuffix: String? = nil) {
+    public init(formatted: String? = nil, familyName: String? = nil, givenName: String? = nil, middleName: String? = nil, honorificPrefix: String? = nil, honorificSuffix: String? = nil) {
         self.formatted = formatted
         self.familyName = familyName
         self.givenName = givenName

@@ -21,8 +21,8 @@ class BonjourResolver: NSObject, ServiceDiscovery {
 
     private let log = LogManager.log
     private let browser = NetServiceBrowser()
-    private var brokerService: NetService? = nil
-    var delegate: ServiceDiscoveryDelegate? = nil
+    private var brokerService: NetService?
+    var delegate: ServiceDiscoveryDelegate?
 
     override init() {
         super.init()
@@ -36,8 +36,7 @@ class BonjourResolver: NSObject, ServiceDiscovery {
     public func startDiscovery() {
         stopDiscovery()
  
-        browser.searchForServices(ofType: BonjourConfiguration.serviceType,
-                                  inDomain: BonjourConfiguration.serviceDomain)
+        browser.searchForServices(ofType: BonjourConfiguration.serviceType, inDomain: BonjourConfiguration.serviceDomain)
  
     }
  
@@ -66,7 +65,7 @@ extension BonjourResolver: NetServiceBrowserDelegate {
  
     }
  
-    func netServiceBrowser(_ browser: NetServiceBrowser, didNotSearch errorDict: [String : NSNumber]) {
+    func netServiceBrowser(_ browser: NetServiceBrowser, didNotSearch errorDict: [String: NSNumber]) {
         log.debug("Did not search net service.")
     }
 }
@@ -96,7 +95,7 @@ extension BonjourResolver: NetServiceDelegate {
  
     /// Returns all IPv4 addresses for a service.
     /// - Note: Has been taken and adapted from https://sosedoff.com/2018/03/23/zeroconf-swift.html.
-    func resolveIPv4Addresses(addresses: [Data]) ->  [String]? {
+    func resolveIPv4Addresses(addresses: [Data]) -> [String]? {
         var results = [String]()
  
         for addr in addresses {
@@ -124,4 +123,3 @@ extension BonjourResolver: NetServiceDelegate {
 }
 
 #endif
-

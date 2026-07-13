@@ -41,10 +41,8 @@ public class CallEvent: CommunicationEvent<CallEventData> {
     ///       end (optional)
     /// - Returns: a Call event with the given parameters
     /// - Throws: if operation name is invalid
-    public static func with(operation: String, parameters: [String: AnyCodable],
-                            filter: ContextFilter? = nil) throws -> CallEvent {
-        let callEventdata = CallEventData.createFrom(parameters: parameters,
-                                                     filter: filter)
+    public static func with(operation: String, parameters: [String: AnyCodable], filter: ContextFilter? = nil) throws -> CallEvent {
+        let callEventdata = CallEventData.createFrom(parameters: parameters, filter: filter)
         return try .init(eventType: .Call, eventData: callEventdata, operation: operation)
     }
     
@@ -63,10 +61,8 @@ public class CallEvent: CommunicationEvent<CallEventData> {
     ///       end (optional)
     /// - Returns: a Call event with the given parameters
     /// - Throws: if operation name is invalid
-    public static func with(operation: String, parameters: [AnyCodable],
-                            filter: ContextFilter? = nil) throws -> CallEvent {
-        let callEventdata = CallEventData.createFrom(parameters: parameters,
-                                                     filter: filter)
+    public static func with(operation: String, parameters: [AnyCodable], filter: ContextFilter? = nil) throws -> CallEvent {
+        let callEventdata = CallEventData.createFrom(parameters: parameters, filter: filter)
         return try .init(eventType: .Call, eventData: callEventdata, operation: operation)
     }
 
@@ -100,13 +96,7 @@ public class CallEvent: CommunicationEvent<CallEventData> {
     public required init(from decoder: Decoder) throws {
         try super.init(from: decoder)
     }
-    
-    override public func encode(to encoder: Encoder) throws {
-        try super.encode(to: encoder)
-    }
 }
-
-
 
 /// CallEventData provides the entire message payload data for a `CallEvent`.
 public class CallEventData: CommunicationEventData {
@@ -125,9 +115,7 @@ public class CallEventData: CommunicationEventData {
     
     // MARK: - Initializers.
     
-    private init(_ parameterArray: [AnyCodable]? = nil,
-                 _ paramaterDictionary: [String: AnyCodable]? = nil,
-                 _ filter: ContextFilter? = nil) {
+    private init(_ parameterArray: [AnyCodable]? = nil, _ paramaterDictionary: [String: AnyCodable]? = nil, _ filter: ContextFilter? = nil) {
         super.init()
         self.parameterArray = parameterArray
         self.parameterDictionary = paramaterDictionary
@@ -136,13 +124,11 @@ public class CallEventData: CommunicationEventData {
     
     // MARK: - Factory methods.
     
-    internal static func createFrom(parameters: [AnyCodable],
-                                  filter: ContextFilter? = nil) -> CallEventData {
+    internal static func createFrom(parameters: [AnyCodable], filter: ContextFilter? = nil) -> CallEventData {
         return .init(parameters, nil, filter)
     }
     
-    internal static func createFrom(parameters: [String: AnyCodable],
-                                  filter: ContextFilter? = nil) -> CallEventData {
+    internal static func createFrom(parameters: [String: AnyCodable], filter: ContextFilter? = nil) -> CallEventData {
         return .init(nil, parameters, filter)
     }
     
@@ -190,10 +176,10 @@ public class CallEventData: CommunicationEventData {
     ///     - context: a CoatyObject to match against the context filter specified in event data (optional).
     /// - Returns: A boolean value indicating whether the context object matches the context filter.
     internal func matchesFilter(context: CoatyObject?) -> Bool {
-        if (self.filter != nil && context != nil) {
+        if self.filter != nil && context != nil {
             return ObjectMatcher.matchesFilter(obj: context, filter: self.filter)
         }
-        if (self.filter == nil && context != nil) {
+        if self.filter == nil && context != nil {
             return false
         }
         return true
@@ -222,6 +208,5 @@ public class CallEventData: CommunicationEventData {
         try container.encodeIfPresent(self.parameterArray, forKey: .parameters)
         try container.encodeIfPresent(self.parameterDictionary, forKey: .parameters)
     }
-    
-}
 
+}

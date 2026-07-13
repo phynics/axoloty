@@ -58,13 +58,7 @@ import Foundation
     // MARK: - Initializers.
     
     /// Default initializer for an`IoPoint` object.
-    init(coreType: CoreType,
-         objectType: String,
-         objectId: CoatyUUID,
-         name: String,
-         useRawIoValues: Bool? = false,
-         updateRate: Int? = nil,
-         externalRoute: String? = nil) {
+    init(coreType: CoreType, objectType: String, objectId: CoatyUUID, name: String, useRawIoValues: Bool? = false, updateRate: Int? = nil, externalRoute: String? = nil) {
         self.useRawIoValues = useRawIoValues
         self.updateRate = updateRate
         self.externalRoute = externalRoute

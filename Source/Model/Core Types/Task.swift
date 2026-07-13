@@ -152,21 +152,21 @@ public enum TaskStatus: Int, Codable, CaseIterable {
     
     public init?(stringValue: String) {
         switch stringValue {
-        case "pending":
+        case "pending": 
             self = .pending
-        case "inProgress":
+        case "inProgress": 
             self = .inProgress
-        case "done":
+        case "done": 
             self = .done
-        case "blocked":
+        case "blocked": 
             self = .blocked
-        case "request":
+        case "request": 
             self = .request
-        case "requestCancelled":
+        case "requestCancelled": 
             self = .requestCancelled
-        case "cancelled":
+        case "cancelled": 
             self = .cancelled
-        default:
+        default: 
             return nil
         }
     }
@@ -175,19 +175,19 @@ public enum TaskStatus: Int, Codable, CaseIterable {
 extension TaskStatus: CustomStringConvertible {
     public var description: String {
         switch self {
-        case .pending:
+        case .pending: 
             return "pending"
-        case .inProgress:
+        case .inProgress: 
             return "inProgress"
-        case .done:
+        case .done: 
             return "done"
-        case .blocked:
+        case .blocked: 
             return "blocked"
-        case .request:
+        case .request: 
             return "request"
-        case .requestCancelled:
+        case .requestCancelled: 
             return "requestCancelled"
-        case .cancelled:
+        case .cancelled: 
             return "cancelled"
         }
     }

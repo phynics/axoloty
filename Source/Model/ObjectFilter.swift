@@ -35,11 +35,7 @@ public class ObjectFilter: Codable {
     /// is also specified to ensure consistent ordering of paginated results.
     public var skip: Int?
     
-    private init(_ conditions: ObjectFilterConditions? = nil,
-                 _ condition: ObjectFilterCondition? = nil,
-                 _ orderByProperties: [OrderByProperty]? = nil,
-                 _ take: Int? = nil,
-                 _ skip: Int? = nil) {
+    private init(_ conditions: ObjectFilterConditions? = nil, _ condition: ObjectFilterCondition? = nil, _ orderByProperties: [OrderByProperty]? = nil, _ take: Int? = nil, _ skip: Int? = nil) {
         self.conditions = conditions
         self.condition = condition
         self.orderByProperties = orderByProperties
@@ -55,10 +51,7 @@ public class ObjectFilter: Codable {
     ///     - orderByProperties: Determines the ordering of result objects.
     ///     - take: take at most the given count of hits
     ///     - skip: skip the given count of hits
-    public convenience init(condition: ObjectFilterCondition,
-                            orderByProperties: [OrderByProperty]? = nil,
-                            take: Int? = nil,
-                            skip: Int? = nil) {
+    public convenience init(condition: ObjectFilterCondition, orderByProperties: [OrderByProperty]? = nil, take: Int? = nil, skip: Int? = nil) {
         self.init(nil, condition, orderByProperties, take, skip)
     }
     
@@ -68,10 +61,7 @@ public class ObjectFilter: Codable {
     ///     - orderByProperties: Determines the ordering of result objects.
     ///     - take: take at most the given count of hits
     ///     - skip: skip the given count of hits
-    public convenience init(conditions: ObjectFilterConditions,
-                            orderByProperties: [OrderByProperty]? = nil,
-                            take: Int? = nil,
-                            skip: Int? = nil) {
+    public convenience init(conditions: ObjectFilterConditions, orderByProperties: [OrderByProperty]? = nil, take: Int? = nil, skip: Int? = nil) {
         self.init(conditions, nil, orderByProperties, take, skip)
     }
     
@@ -121,7 +111,7 @@ public class ObjectFilter: Codable {
     ///
     /// - Parameter closure: the builder closure, preferably used as trailing closure.
     /// - Returns: ObjectFilter configured using the builder.
-    public static func buildWithCondition(_ closure: (ObjectFilterBuilder) throws -> ()) throws -> ObjectFilter {
+    public static func buildWithCondition(_ closure: (ObjectFilterBuilder) throws -> Void) throws -> ObjectFilter {
         let builder = ObjectFilterBuilder()
         try closure(builder)
         
@@ -129,10 +119,7 @@ public class ObjectFilter: Codable {
             throw CoatySwiftError.InvalidArgument("Condition is not set.")
         }
         
-        return ObjectFilter(condition: condition,
-                            orderByProperties: builder.orderByProperties,
-                            take: builder.take,
-                            skip: builder.skip)
+        return ObjectFilter(condition: condition, orderByProperties: builder.orderByProperties, take: builder.take, skip: builder.skip)
     }
     
     /// Builds a new `ObjectFilter` using the convenience closure syntax. This method can only be
@@ -140,7 +127,7 @@ public class ObjectFilter: Codable {
     ///
     /// - Parameter closure: the builder closure, preferably used as trailing closure.
     /// - Returns: ObjectFilter configured using the builder.
-    public static func buildWithConditions(_ closure: (ObjectFilterBuilder) throws -> ()) throws -> ObjectFilter {
+    public static func buildWithConditions(_ closure: (ObjectFilterBuilder) throws -> Void) throws -> ObjectFilter {
         let builder = ObjectFilterBuilder()
         try closure(builder)
         
@@ -148,10 +135,7 @@ public class ObjectFilter: Codable {
             throw CoatySwiftError.InvalidArgument("Conditions are not set.")
         }
         
-        return ObjectFilter(conditions: conditions,
-                            orderByProperties: builder.orderByProperties,
-                            take: builder.take,
-                            skip: builder.skip)
+        return ObjectFilter(conditions: conditions, orderByProperties: builder.orderByProperties, take: builder.take, skip: builder.skip)
     }
 }
 
@@ -161,10 +145,10 @@ public class ObjectFilter: Codable {
 public class OrderByProperty: Codable {
     
     /// The ordered collection of filter properties.
-    internal (set) public var objectFilterProperties: ObjectFilterProperty
+    internal(set) public var objectFilterProperties: ObjectFilterProperty
 
     /// The sorting order.
-    internal (set) public var sortingOrder: SortingOrder
+    internal(set) public var sortingOrder: SortingOrder
     
     /// Create an OrderByProperty instance.
     /// - Parameters:
@@ -177,8 +161,7 @@ public class OrderByProperty: Codable {
     ///       nested properties as an array of strings (e.g. `["property.with.dots",
     ///       "subproperty.with.dots"]`).
     ///     -sortingOrder: Ascending or descending sort order.
-    public init(properties: ObjectFilterProperty,
-                sortingOrder: SortingOrder) {
+    public init(properties: ObjectFilterProperty, sortingOrder: SortingOrder) {
         self.objectFilterProperties = properties
         self.sortingOrder = sortingOrder
     }
@@ -207,13 +190,12 @@ public class OrderByProperty: Codable {
 public class ObjectFilterProperty: Codable {
 
     /// The name of a single filter property.
-    internal (set) public var objectFilterProperty: String?
+    internal(set) public var objectFilterProperty: String?
 
     /// The ordered collection of names of chained filter properties.
-    internal (set) public var objectFilterProperties: [String]?
+    internal(set) public var objectFilterProperties: [String]?
     
-    private init(objectFilterProperty: String? = nil,
-                 objectFilterProperties: [String]? = nil) {
+    private init(objectFilterProperty: String? = nil, objectFilterProperties: [String]? = nil) {
         self.objectFilterProperty = objectFilterProperty
         self.objectFilterProperties = objectFilterProperties
     }
@@ -270,10 +252,10 @@ public class ObjectFilterConditions: Codable {
     // MARK: - Attributes.
     
     /// The set of (optional) filter conditions which are combined by logical AND.
-    internal (set) public var and: [ObjectFilterCondition]?
+    internal(set) public var and: [ObjectFilterCondition]?
 
     /// The set of (optional) filter conditions which are combined by logical OR.
-    internal (set) public var or: [ObjectFilterCondition]?
+    internal(set) public var or: [ObjectFilterCondition]?
     
     // MARK: - Initializers.
     
@@ -372,7 +354,7 @@ public class ObjectFilterConditions: Codable {
     ///   the array of `ObjectFilterCondition` objects using the dedicated single instance builder.
     /// - Parameter closure: the builder closure, preferably used as trailing closure.
     /// - Returns: `ObjectFilterConditions` configured using the builder.
-    public static func buildAnd(_ closure: (ObjectFilterConditionsBuilder) throws -> ()) throws -> ObjectFilterConditions {
+    public static func buildAnd(_ closure: (ObjectFilterConditionsBuilder) throws -> Void) throws -> ObjectFilterConditions {
         let builder = ObjectFilterConditionsBuilder()
         try closure(builder)
         
@@ -390,7 +372,7 @@ public class ObjectFilterConditions: Codable {
     ///   the array of `ObjectFilterCondition` objects using the dedicated single instance builder.
     /// - Parameter closure: the builder closure, preferably used as trailing closure.
     /// - Returns: `ObjectFilterConditions` configured using the builder.
-    public static func buildOr(_ closure: (ObjectFilterConditionsBuilder) throws -> ()) throws -> ObjectFilterConditions {
+    public static func buildOr(_ closure: (ObjectFilterConditionsBuilder) throws -> Void) throws -> ObjectFilterConditions {
         let builder = ObjectFilterConditionsBuilder()
         try closure(builder)
         
@@ -402,7 +384,6 @@ public class ObjectFilterConditions: Codable {
     }
 }
 
-
  /// An object filter condition is defined by an object property name - object
  /// filter expression pair. The filter expression must evaluate to true when
  /// applied to the object property's value for the condition to become true.
@@ -411,10 +392,10 @@ public class ObjectFilterCondition: Codable {
     // MARK: - Attributes.
     
     /// The filter property of this filter condition.
-    internal (set) public var property: ObjectFilterProperty
+    internal(set) public var property: ObjectFilterProperty
 
     /// The filter expression of this filter condition.
-    internal (set) public var expression: ObjectFilterExpression
+    internal(set) public var expression: ObjectFilterExpression
     
     // MARK: - Initializers.
     
@@ -449,7 +430,7 @@ public class ObjectFilterCondition: Codable {
     ///
     /// - Parameter closure: the builder closure, preferably used as trailing closure.
     /// - Returns: ObjectFilterCondition configured using the builder.
-    public static func build(_ closure: (ObjectFilterConditionBuilder) throws -> ()) throws -> ObjectFilterCondition {
+    public static func build(_ closure: (ObjectFilterConditionBuilder) throws -> Void) throws -> ObjectFilterCondition {
         let builder = ObjectFilterConditionBuilder()
         try closure(builder)
         
@@ -471,13 +452,13 @@ public class ObjectFilterExpression: Codable {
     // MARK: - Attributes.
     
     /// The filter operator constant.
-    internal (set) public var filterOperator: ObjectFilterOperator
+    internal(set) public var filterOperator: ObjectFilterOperator
 
     /// The first operand of the filter expression (optional).
-    internal (set) public var firstOperand: AnyCodable?
+    internal(set) public var firstOperand: AnyCodable?
 
     /// The second operand of the filter expression (optional).
-    internal (set) public var secondOperand: AnyCodable?
+    internal(set) public var secondOperand: AnyCodable?
     
     // MARK: - Initializers.
     
@@ -486,9 +467,7 @@ public class ObjectFilterExpression: Codable {
     ///     - filterOperator: The filter operator constant.
     ///     - op1: The first operand of the filter expression (optional).
     ///     - op2: The second operand of the filter expression (optional).
-    public init(filterOperator: ObjectFilterOperator,
-                op1: AnyCodable? = nil,
-                op2: AnyCodable? = nil) {
+    public init(filterOperator: ObjectFilterOperator, op1: AnyCodable? = nil, op2: AnyCodable? = nil) {
         self.filterOperator = filterOperator
         self.firstOperand = op1
         self.secondOperand = op2
@@ -584,7 +563,7 @@ public class FilterOperations {
     /// than or equal to the second argument `value2`, those two arguments are
     /// automatically swapped. Do not compare a number with a string, as the
     /// result is not defined.
-    public static func between(value1: Double, value2: Double) ->  (ObjectFilterOperator, Double, Double) {
+    public static func between(value1: Double, value2: Double) -> (ObjectFilterOperator, Double, Double) {
         return (ObjectFilterOperator.LessThanOrEqual, value1, value2)
     }
     
@@ -594,7 +573,7 @@ public class FilterOperations {
     /// automatically swapped. For string comparison, a default lexical ordering
     /// is used. Do not compare a number with a string, as the result is not
     /// defined.
-    public static func between(value1: String, value2: String) ->  (ObjectFilterOperator, String, String) {
+    public static func between(value1: String, value2: String) -> (ObjectFilterOperator, String, String) {
         return (ObjectFilterOperator.LessThanOrEqual, value1, value2)
     }
     
@@ -603,7 +582,7 @@ public class FilterOperations {
     /// than or equal to the second argument `value2`, those two arguments are
     /// automatically swapped. Note: Do not compare a number with a string, as
     /// the result is not defined.
-    public static func notBetween(value1: Double, value2: Double) ->  (ObjectFilterOperator, Double, Double) {
+    public static func notBetween(value1: Double, value2: Double) -> (ObjectFilterOperator, Double, Double) {
         return (ObjectFilterOperator.LessThanOrEqual, value1, value2)
     }
     
@@ -613,7 +592,7 @@ public class FilterOperations {
     /// automatically swapped. For string comparison, a default lexical ordering
     /// is used. Note: Do not compare a number with a string, as the result is
     /// not defined.
-    public static func notBetween(value1: String, value2: String) ->  (ObjectFilterOperator, String, String) {
+    public static func notBetween(value1: String, value2: String) -> (ObjectFilterOperator, String, String) {
         return (ObjectFilterOperator.LessThanOrEqual, value1, value2)
     }
 
@@ -753,7 +732,6 @@ public class FilterOperations {
     }
   
 }
-
 
 /// Defines filter operator constants for object filter conditions.
 public enum ObjectFilterOperator: Int {

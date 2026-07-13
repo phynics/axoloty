@@ -26,13 +26,9 @@ public class QueryEvent: CommunicationEvent<QueryEventData> {
     ///     - objectJoinConditions: join related objects into results
     ///       (optional).
     /// - Returns: a Query event with the given parameters
-    public static func with(objectTypes: [String],
-                            objectFilter: ObjectFilter? = nil,
-                            objectJoinConditions: [ObjectJoinCondition]? = nil) -> QueryEvent {
+    public static func with(objectTypes: [String], objectFilter: ObjectFilter? = nil, objectJoinConditions: [ObjectJoinCondition]? = nil) -> QueryEvent {
         
-        let queryEventData = QueryEventData.createFrom(objectTypes: objectTypes,
-                                                       objectFilter: objectFilter,
-                                                       objectJoinConditions: objectJoinConditions)
+        let queryEventData = QueryEventData.createFrom(objectTypes: objectTypes, objectFilter: objectFilter, objectJoinConditions: objectJoinConditions)
         return .init(eventType: .Query, eventData: queryEventData)
     }
     
@@ -45,12 +41,8 @@ public class QueryEvent: CommunicationEvent<QueryEventData> {
     ///     - objectJoinConditions: join related objects into results
     ///       (optional).
     /// - Returns: a Query event with the given parameters
-    public static func with(coreTypes: [CoreType],
-                            objectFilter: ObjectFilter? = nil,
-                            objectJoinConditions: [ObjectJoinCondition]? = nil) -> QueryEvent {
-        let queryEventData = QueryEventData.createFrom(coreTypes: coreTypes,
-                                                       objectFilter: objectFilter,
-                                                       objectJoinConditions: objectJoinConditions)
+    public static func with(coreTypes: [CoreType], objectFilter: ObjectFilter? = nil, objectJoinConditions: [ObjectJoinCondition]? = nil) -> QueryEvent {
+        let queryEventData = QueryEventData.createFrom(coreTypes: coreTypes, objectFilter: objectFilter, objectJoinConditions: objectJoinConditions)
         
         return .init(eventType: .Query, eventData: queryEventData)
     }
@@ -74,10 +66,6 @@ public class QueryEvent: CommunicationEvent<QueryEventData> {
     
     public required init(from decoder: Decoder) throws {
         try super.init(from: decoder)
-    }
-    
-    override public func encode(to encoder: Encoder) throws {
-        try super.encode(to: encoder)
     }
     
     /// Throws an error if the given Retrieve event data does not correspond to
@@ -114,7 +102,6 @@ public class QueryEvent: CommunicationEvent<QueryEventData> {
     }
 }
 
-
 /// QueryEventData provides the entire message payload data for a `QueryEvent`.
 public class QueryEventData: CommunicationEventData {
     
@@ -149,10 +136,10 @@ public class QueryEventData: CommunicationEventData {
     ///     - objectFilter: Restrict results by object filter (optional).
     ///     - objectJoinConditions: Join related objects into results (optional).
     private init(objectTypes: [String]? = nil,
-                 coreTypes: [CoreType]? = nil,
-                 objectFilter: ObjectFilter? = nil,
-                 objectJoinConditions: [ObjectJoinCondition]? = nil,
-                 objectJoinCondition: ObjectJoinCondition? = nil) {
+                  coreTypes: [CoreType]? = nil,
+                  objectFilter: ObjectFilter? = nil,
+                  objectJoinConditions: [ObjectJoinCondition]? = nil,
+                  objectJoinCondition: ObjectJoinCondition? = nil) {
         
         self.objectTypes = objectTypes
         self.coreTypes = coreTypes
@@ -164,44 +151,23 @@ public class QueryEventData: CommunicationEventData {
     
     // MARK: - Factory methods.
     
-    public static func createFrom(objectTypes: [String],
-                           objectFilter: ObjectFilter? = nil,
-                           objectJoinConditions: [ObjectJoinCondition]? = nil) -> QueryEventData {
+    public static func createFrom(objectTypes: [String], objectFilter: ObjectFilter? = nil, objectJoinConditions: [ObjectJoinCondition]? = nil) -> QueryEventData {
 
         if objectJoinConditions?.count == 1 {
-            return .init(objectTypes: objectTypes,
-                         coreTypes: nil,
-                         objectFilter: objectFilter,
-                         objectJoinConditions: nil,
-                         objectJoinCondition: objectJoinConditions![0])
+            return .init(objectTypes: objectTypes, coreTypes: nil, objectFilter: objectFilter, objectJoinConditions: nil, objectJoinCondition: objectJoinConditions![0])
         } else {
-            return .init(objectTypes: objectTypes,
-                         coreTypes: nil,
-                         objectFilter: objectFilter,
-                         objectJoinConditions: objectJoinConditions,
-                         objectJoinCondition: nil)
+            return .init(objectTypes: objectTypes, coreTypes: nil, objectFilter: objectFilter, objectJoinConditions: objectJoinConditions, objectJoinCondition: nil)
             }
     }
     
-    public static func createFrom(coreTypes: [CoreType],
-                                  objectFilter: ObjectFilter? = nil,
-                                  objectJoinConditions: [ObjectJoinCondition]? = nil) -> QueryEventData {
+    public static func createFrom(coreTypes: [CoreType], objectFilter: ObjectFilter? = nil, objectJoinConditions: [ObjectJoinCondition]? = nil) -> QueryEventData {
 
         if objectJoinConditions?.count == 1 {
-            return .init(objectTypes: nil,
-                         coreTypes: coreTypes,
-                         objectFilter: objectFilter,
-                         objectJoinConditions: nil,
-                         objectJoinCondition: objectJoinConditions![0])
+            return .init(objectTypes: nil, coreTypes: coreTypes, objectFilter: objectFilter, objectJoinConditions: nil, objectJoinCondition: objectJoinConditions![0])
         } else {
-            return .init(objectTypes: nil,
-                         coreTypes: coreTypes,
-                         objectFilter: objectFilter,
-                         objectJoinConditions: objectJoinConditions,
-                         objectJoinCondition: nil)
+            return .init(objectTypes: nil, coreTypes: coreTypes, objectFilter: objectFilter, objectJoinConditions: objectJoinConditions, objectJoinCondition: nil)
         }
     }
-    
     
     // MARK: - Codable methods.
     

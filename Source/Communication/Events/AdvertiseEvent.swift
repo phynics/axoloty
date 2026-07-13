@@ -22,8 +22,7 @@ public class AdvertiseEvent: CommunicationEvent<AdvertiseEventData> {
     ///     - privateData: Associated private data to be published (optional).
     /// - Returns: an Advertise event with the given parameters
     /// - Throws: if object type of given object is invalid
-    public static func with(object: CoatyObject,
-                            privateData: [String: Any]? = nil) throws -> AdvertiseEvent {
+    public static func with(object: CoatyObject, privateData: [String: Any]? = nil) throws -> AdvertiseEvent {
         let advertiseEventData = AdvertiseEventData(object: object, privateData: privateData)
         return try .init(eventType: .Advertise, eventData: advertiseEventData, objectType: advertiseEventData.object.objectType)
     }
@@ -47,12 +46,7 @@ public class AdvertiseEvent: CommunicationEvent<AdvertiseEventData> {
     required public init(from decoder: Decoder) throws {
         try super.init(from: decoder)
     }
-    
-    override public func encode(to encoder: Encoder) throws {
-        try super.encode(to: encoder)
-    }
 }
-
 
 /// Defines event data format for advertising objects.
 public class AdvertiseEventData: CommunicationEventData {

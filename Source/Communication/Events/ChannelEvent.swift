@@ -29,9 +29,7 @@ public class ChannelEvent: CommunicationEvent<ChannelEventData> {
     ///   - privateData: application-specific options (optional)
     /// - Returns: a Channel event with the given parameters
     /// - Throws: if channel identifier is invalid
-    public static func with(object: CoatyObject,
-                            channelId: String,
-                            privateData: [String: Any]? = nil) throws -> ChannelEvent {
+    public static func with(object: CoatyObject, channelId: String, privateData: [String: Any]? = nil) throws -> ChannelEvent {
         let channelEventData = ChannelEventData(object: object, privateData: privateData)
         return try .init(eventType: .Channel, eventData: channelEventData, channelId: channelId)
     }
@@ -48,9 +46,7 @@ public class ChannelEvent: CommunicationEvent<ChannelEventData> {
     ///   - privateData: application-specific options (optional)
     /// - Returns: a Channel event with the given parameters
     /// - Throws: if channel identifier is invalid
-    public static func with(objects: [CoatyObject],
-                            channelId: String,
-                            privateData: [String: Any]? = nil) throws -> ChannelEvent {
+    public static func with(objects: [CoatyObject], channelId: String, privateData: [String: Any]? = nil) throws -> ChannelEvent {
         let channelEventData = ChannelEventData(objects: objects, privateData: privateData)
         return try .init(eventType: .Channel, eventData: channelEventData, channelId: channelId)
     }
@@ -71,15 +67,10 @@ public class ChannelEvent: CommunicationEvent<ChannelEventData> {
         self.channelId = channelId
     }
 
-    
     // MARK: - Codable methods.
     
     public required init(from decoder: Decoder) throws {
         try super.init(from: decoder)
-    }
-    
-    override public func encode(to encoder: Encoder) throws {
-        try super.encode(to: encoder)
     }
 }
 

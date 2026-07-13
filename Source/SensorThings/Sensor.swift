@@ -202,8 +202,8 @@ public enum ObservationType: String, Codable {
 
 // MARK: - SensorThingsTypes.
 public enum SensorThingsTypes {
-    public static let OBJECT_TYPE_FEATURE_OF_INTEREST = "coaty.sensorThings.FeatureOfInterest";
-    public static let OBJECT_TYPE_OBSERVATION = "coaty.sensorThings.Observation";
-    public static let OBJECT_TYPE_SENSOR = "coaty.sensorThings.Sensor";
-    public static let OBJECT_TYPE_THING = "coaty.sensorThings.Thing";
+    public static let OBJECT_TYPE_FEATURE_OF_INTEREST = "coaty.sensorThings.FeatureOfInterest"
+    public static let OBJECT_TYPE_OBSERVATION = "coaty.sensorThings.Observation"
+    public static let OBJECT_TYPE_SENSOR = "coaty.sensorThings.Sensor"
+    public static let OBJECT_TYPE_THING = "coaty.sensorThings.Thing"
 }

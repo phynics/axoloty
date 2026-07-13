@@ -116,7 +116,7 @@ public class IoRouter: Controller {
     /// - Parameter predicate: a function returning true if an IO node matches; false
     /// otherwise.
     func findManagedIoNode(predicate: (_ node: IoNode) -> Bool) -> IoNode? {
-        var foundNode: IoNode? = nil
+        var foundNode: IoNode?
         self.managedIoNodes.forEach { _, node in
             if foundNode == nil && predicate(node) {
                 foundNode = node
@@ -217,6 +217,8 @@ public class IoRouter: Controller {
                 .filter { event -> Bool in
                     return event.data.object.name == self.ioContext.name
                 }.subscribe(onNext: { event in
+                    // Fail-fast invariant, not user input.
+                    // swiftlint:disable:next force_cast
                     self.ioNodeAdvertised(node: event.data.object as! IoNode)
                 })
     }
@@ -267,6 +269,8 @@ public class IoRouter: Controller {
             .filter { event -> Bool in
                 event.data.object != nil && event.data.object!.name == self.ioContext.name
             }.subscribe(onNext: { event in
+                // Fail-fast invariant, not user input.
+                // swiftlint:disable:next force_cast
                 self.ioNodeAdvertised(node: event.data.object as! IoNode)
             })
     }
@@ -288,6 +292,8 @@ public class IoRouter: Controller {
             .filter { update -> Bool in
                 update.data.object.objectId == self.ioContext.objectId
             }.subscribe(onNext: { update in
+                // Fail-fast invariant, not user input.
+                // swiftlint:disable:next force_cast
                 self.ioContext = (update.data.object as! IoContext)
                 self.ioContext.parentObjectId = self.container.identity?.objectId
                 try? self.onIoContextChanged()

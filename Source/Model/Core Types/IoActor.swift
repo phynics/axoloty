@@ -37,20 +37,14 @@ open class IoActor: IoPoint {
     
     /// Default initializer for an `IoActor` object.
     public init(valueType: String,
-         useRawIoValues: Bool? = false,
-         updateRate: Int? = nil,
-         externalRoute: String? = nil,
-         name: String = "IoActorObject",
-         objectType: String = IoActor.objectType,
-         objectId: CoatyUUID = .init()) {
+                useRawIoValues: Bool? = false,
+                updateRate: Int? = nil,
+                externalRoute: String? = nil,
+                name: String = "IoActorObject",
+                objectType: String = IoActor.objectType,
+                objectId: CoatyUUID = .init()) {
         self.valueType = valueType
-        super.init(coreType: .IoActor,
-                   objectType: objectType,
-                   objectId: objectId,
-                   name: name,
-                   useRawIoValues: useRawIoValues,
-                   updateRate: updateRate,
-                   externalRoute: externalRoute)
+        super.init(coreType: .IoActor, objectType: objectType, objectId: objectId, name: name, useRawIoValues: useRawIoValues, updateRate: updateRate, externalRoute: externalRoute)
     }
     
     // MARK: Codable methods.

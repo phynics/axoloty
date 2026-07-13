@@ -58,7 +58,7 @@ extension Decoder {
     }
 
     /// Pop the latest context data for recursive decoding.
-    func popContext(forKey key: String) -> Void {
+    func popContext(forKey key: String) {
         guard let contextStack = getContext(forKey: key) as? DecodingContextStack else {
             return
         }

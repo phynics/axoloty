@@ -43,7 +43,7 @@ extension CommunicationManager {
         
         self.subscribe(topic: topicFilter)
         
-        return client.rawMQTTMessages.filter { (topic, payload) -> Bool in
+        return client.rawMQTTMessages.filter { (topic, _) -> Bool in
             CommunicationTopic.matches(topic, topicFilter)
         }
     }
@@ -55,11 +55,8 @@ extension CommunicationManager {
     ///     - topic: topic string in coaty format
     ///     - coreType: observed coreType
     ///     - objectType: observed objectType
-    fileprivate func observeAdvertise(topic: String,
-                                      coreType: CoreType?,
-                                      objectType: String?) -> Observable<AdvertiseEvent> {
-        var observable = self.messagesFor(.Advertise,
-                                          objectType != nil ?
+    fileprivate func observeAdvertise(topic: String, coreType: CoreType?, objectType: String?) -> Observable<AdvertiseEvent> {
+        var observable = self.messagesFor(.Advertise, objectType != nil ?
                                             EVENT_TYPE_FILTER_SEPARATOR + objectType! :
                                             coreType!.rawValue)
             .compactMap { message -> AdvertiseEvent? in
@@ -70,7 +67,7 @@ extension CommunicationManager {
                 }
 
                 advertiseEvent.type = .Advertise
-                advertiseEvent.sourceId = topic.sourceId;
+                advertiseEvent.sourceId = topic.sourceId
                 
                 return advertiseEvent
             }
@@ -88,13 +85,9 @@ extension CommunicationManager {
     ///     - coreType: coreType core type of objects to be observed
     /// - Returns: an observable emitting incoming Advertise events for the given core type
     public func observeAdvertise(withCoreType: CoreType) -> Observable<AdvertiseEvent> {
-        let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace;
-        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Advertise,
-                                                                             eventTypeFilter: withCoreType.rawValue,
-                                                                             namespace: namespace)
-        return observeAdvertise(topic: topic,
-                                coreType: withCoreType,
-                                objectType: nil)
+        let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace
+        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Advertise, eventTypeFilter: withCoreType.rawValue, namespace: namespace)
+        return observeAdvertise(topic: topic, coreType: withCoreType, objectType: nil)
     }
     
     /// Observe Advertise events for the given object type.
@@ -112,7 +105,7 @@ extension CommunicationManager {
             throw CoatySwiftError.InvalidArgument("\(withObjectType) is not a valid object type")
         }
         
-        let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace;
+        let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace
 
         // Optimization: in case core objects should be observed by their object
         // type, we do not subscribe on the object type filter but on the core
@@ -120,32 +113,23 @@ extension CommunicationManager {
         // core object type (see `publishAdvertise`).
         let objectCoreType = CoreType.getCoreType(forObjectType: withObjectType)
         if objectCoreType != nil {
-            let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Advertise,
-                                                                                 eventTypeFilter: objectCoreType!.rawValue,
-                                                                                 namespace: namespace)
-            return observeAdvertise(topic: topic,
-                                    coreType: objectCoreType!,
-                                    objectType: nil)
+            let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Advertise, eventTypeFilter: objectCoreType!.rawValue, namespace: namespace)
+            return observeAdvertise(topic: topic, coreType: objectCoreType!, objectType: nil)
                     .filter { (event) -> Bool in
                         return event.data.object.objectType == withObjectType
                     }
         }
 
-        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Advertise,
-                                                                             eventTypeFilter: EVENT_TYPE_FILTER_SEPARATOR + withObjectType,
-                                                                             namespace: namespace)
-        return observeAdvertise(topic: topic,
-                                coreType: nil,
-                                objectType: withObjectType)
+        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Advertise, eventTypeFilter: EVENT_TYPE_FILTER_SEPARATOR + withObjectType, namespace: namespace)
+        return observeAdvertise(topic: topic, coreType: nil, objectType: withObjectType)
     }
 
     /// Observe Deadvertise events.
     ///
     /// - Returns:  an observable emitting incoming Deadvertise events
     public func observeDeadvertise() -> Observable<DeadvertiseEvent> {
-        let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace;
-        let deadvertiseTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Deadvertise,
-                                                                                        namespace: namespace)
+        let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace
+        let deadvertiseTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Deadvertise, namespace: namespace)
         
         var observable =  self.messagesFor(.Deadvertise)
             .compactMap { message -> DeadvertiseEvent? in
@@ -156,7 +140,7 @@ extension CommunicationManager {
                 }
 
                 deadvertiseEvent.type = .Deadvertise
-                deadvertiseEvent.sourceId = topic.sourceId;
+                deadvertiseEvent.sourceId = topic.sourceId
                 
                 return deadvertiseEvent
             }
@@ -184,10 +168,8 @@ extension CommunicationManager {
             throw CoatySwiftError.InvalidArgument("\(channelId) is not a valid channel Id.")
         }
         
-        let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace;
-        let channelTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Channel,
-                                                                                    eventTypeFilter: channelId,
-                                                                                    namespace: namespace)
+        let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace
+        let channelTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Channel, eventTypeFilter: channelId, namespace: namespace)
 
         var observable =  self.messagesFor(.Channel, channelId)
             .compactMap { message -> ChannelEvent? in
@@ -198,7 +180,7 @@ extension CommunicationManager {
                 }
 
                 channelEvent.type = .Channel
-                channelEvent.sourceId = topic.sourceId;
+                channelEvent.sourceId = topic.sourceId
                 
                 return channelEvent
             }
@@ -219,11 +201,8 @@ extension CommunicationManager {
     ///     - topic: topic string in coaty format
     ///     - coreType: observed coreType
     ///     - objectType: observed objectType
-    private func observeUpdate(topic: String,
-                               coreType: CoreType?,
-                               objectType: String?) -> Observable<UpdateEvent> {
-        var observable = self.messagesFor(.Update,
-                                          objectType != nil ?
+    private func observeUpdate(topic: String, coreType: CoreType?, objectType: String?) -> Observable<UpdateEvent> {
+        var observable = self.messagesFor(.Update, objectType != nil ?
                                             EVENT_TYPE_FILTER_SEPARATOR + objectType! :
                                             coreType!.rawValue)
             .compactMap { message -> UpdateEvent? in
@@ -234,7 +213,7 @@ extension CommunicationManager {
                 }
                 
                 updateEvent.type = .Update
-                updateEvent.sourceId = topic.sourceId;
+                updateEvent.sourceId = topic.sourceId
 
                 updateEvent.completeHandler = {(completeEvent: CompleteEvent) in
                     self.publishComplete(event: completeEvent, correlationId: topic.correlationId!)
@@ -256,13 +235,9 @@ extension CommunicationManager {
     ///     - coreType: coreType core type of objects to be observed
     /// - Returns: an observable emitting incoming Update events for the given core type
     public func observeUpdate(withCoreType: CoreType) -> Observable<UpdateEvent> {
-        let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace;
-        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Update,
-                                                                             eventTypeFilter: withCoreType.rawValue,
-                                                                             namespace: namespace)
-        return observeUpdate(topic: topic,
-                             coreType: withCoreType,
-                             objectType: nil)
+        let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace
+        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Update, eventTypeFilter: withCoreType.rawValue, namespace: namespace)
+        return observeUpdate(topic: topic, coreType: withCoreType, objectType: nil)
     }
     
     /// Observe Update events for the given object type.
@@ -280,7 +255,7 @@ extension CommunicationManager {
             throw CoatySwiftError.InvalidArgument("\(withObjectType) is not a valid object type")
         }
         
-        let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace;
+        let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace
 
         // Optimization: in case core objects should be observed by their object
         // type, we do not subscribe on the object type filter but on the core
@@ -288,32 +263,23 @@ extension CommunicationManager {
         // core object type (see `publishUpdate`).
         let objectCoreType = CoreType.getCoreType(forObjectType: withObjectType)
         if objectCoreType != nil {
-            let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Update,
-                                                                                 eventTypeFilter: objectCoreType!.rawValue,
-                                                                                 namespace: namespace)
-            return observeUpdate(topic: topic,
-                                coreType: objectCoreType!,
-                                objectType: nil)
+            let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Update, eventTypeFilter: objectCoreType!.rawValue, namespace: namespace)
+            return observeUpdate(topic: topic, coreType: objectCoreType!, objectType: nil)
                     .filter { (event) -> Bool in
                         return event.data.object.objectType == withObjectType
                     }
         }
 
-        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Update,
-                                                                             eventTypeFilter: EVENT_TYPE_FILTER_SEPARATOR + withObjectType,
-                                                                             namespace: namespace)
-        return observeUpdate(topic: topic,
-                             coreType: nil,
-                             objectType: withObjectType)
+        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Update, eventTypeFilter: EVENT_TYPE_FILTER_SEPARATOR + withObjectType, namespace: namespace)
+        return observeUpdate(topic: topic, coreType: nil, objectType: withObjectType)
     }
     
     /// Observe Discover events.
     ///
     /// - Returns: an observable emitting incoming Discover events
     public func observeDiscover() -> Observable<DiscoverEvent> {
-        let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace;
-        let discoverTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Discover,
-                                                                                     namespace: namespace)
+        let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace
+        let discoverTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Discover, namespace: namespace)
 
         var observable = self.messagesFor(.Discover)
             .compactMap { message -> DiscoverEvent? in
@@ -324,7 +290,7 @@ extension CommunicationManager {
                 }
 
                 discoverEvent.type = .Discover
-                discoverEvent.sourceId = topic.sourceId;
+                discoverEvent.sourceId = topic.sourceId
                 
                 discoverEvent.resolveHandler = {(resolveEvent: ResolveEvent) in
                     self.publishResolve(event: resolveEvent, correlationId: topic.correlationId!)
@@ -372,10 +338,8 @@ extension CommunicationManager {
             throw CoatySwiftError.InvalidArgument("\(operationId) is not a valid operation name.")
         }
         
-        let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace;
-        let callTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Call,
-                                                                                 eventTypeFilter: operationId,
-                                                                                 namespace: namespace)
+        let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace
+        let callTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Call, eventTypeFilter: operationId, namespace: namespace)
         
         var observable = self.messagesFor(.Call, operationId)
             .compactMap { message -> CallEvent? in
@@ -386,7 +350,7 @@ extension CommunicationManager {
                 }
 
                 callEvent.type = .Call
-                callEvent.sourceId = topic.sourceId;
+                callEvent.sourceId = topic.sourceId
                 
                 callEvent.returnHandler = {(returnEvent: ReturnEvent) in
                     self.publishReturn(event: returnEvent, correlationId: topic.correlationId!)
@@ -409,8 +373,7 @@ extension CommunicationManager {
     /// - Returns: an observable emitting incoming Query events
     public func observeQuery() throws -> Observable<QueryEvent> {
         let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace
-        let queryTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Query,
-                                                                                  namespace: namespace)
+        let queryTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Query, namespace: namespace)
         
         var observable = self.messagesFor(.Query)
             .compactMap { message -> QueryEvent? in
@@ -455,10 +418,7 @@ extension CommunicationManager {
         }
         
         let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace
-        let associateTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Associate,
-                                                                                      eventTypeFilter: ioNodeName,
-                                                                                      namespace: namespace,
-                                                                                      correlationId: nil)
+        let associateTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Associate, eventTypeFilter: ioNodeName, namespace: namespace, correlationId: nil)
         
         var observable = self.messagesFor(.Associate, ioNodeName)
             .compactMap { message -> AssociateEvent? in
@@ -507,7 +467,7 @@ extension CommunicationManager {
     ///
     /// - Returns: a subject emitting IO state events for the given IO source or
     /// actor
-    public func observeIoState(ioPoint: IoPoint) -> BehaviorSubject<IoStateEvent>{
+    public func observeIoState(ioPoint: IoPoint) -> BehaviorSubject<IoStateEvent> {
         return self._observeIoState(ioPointId: ioPoint.objectId)
     }
     
@@ -517,7 +477,7 @@ extension CommunicationManager {
         } else {
             // Compute initial IO state for the subject.
             var hasAssociations = false
-            var updateRate: Int? = nil
+            var updateRate: Int?
             if let srcItems = self.ioSourceItems[ioPointId.string] {
                 hasAssociations = true
                 updateRate = srcItems.updateRate

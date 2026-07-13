@@ -17,7 +17,7 @@ open class SensorIo: ISensorIo {
     
     public var parameters: Any?
     
-    public func read(callback: ((Any) -> ())) {
+    public func read(callback: ((Any) -> Void)) {
         preconditionFailure("This method must be overridden. (abstract method)")
     }
     
@@ -33,7 +33,7 @@ open class MockSensorIo: SensorIo {
     private var _value: Any = 0
     
     /// Returns the internally cached value.
-    public override func read(callback: ((Any) -> ())) {
+    public override func read(callback: ((Any) -> Void)) {
         callback(_value)
     }
     
@@ -51,7 +51,7 @@ public protocol ISensorIo {
     
     var parameters: Any? { get set }
     
-    func read(callback: ((Any) -> ()))
+    func read(callback: ((Any) -> Void))
     
     func write(value: Any)
 }
@@ -59,4 +59,3 @@ public protocol ISensorIo {
 /// Defines a static type for sensor IO interfaces.
 /// It is used to create a new instance of this sensor using dependency injection in the sensor controller.
 public typealias ISensorStatic<T: ISensorIo> = T.Type
-

@@ -188,7 +188,11 @@ public class RuleBasedIoRouter: IoRouter {
     func match(compatibleAssociations: [IoCompatibleAssociation]) -> IoAssociationPairs {
         var associationMap = IoAssociationPairs()
 
-        compatibleAssociations.forEach { source, sourceNode, actor, actorNode in
+        compatibleAssociations.forEach { association in
+            let source = association.source
+            let sourceNode = association.sourceNode
+            let actor = association.actor
+            let actorNode = association.actorNode
             var valueType = source.valueType
             var rules = self.rules[valueType]
             if rules == nil {
@@ -363,7 +367,19 @@ public struct IoAssociationRule {
 
 /// Maps value types to an array of compatible IO source - IO source node - IO
 /// actor - IO actor node pairs.
-typealias IoCompatibleAssociation = (IoSource, IoNode, IoActor, IoNode)
+struct IoCompatibleAssociation {
+    let source: IoSource
+    let sourceNode: IoNode
+    let actor: IoActor
+    let actorNode: IoNode
+
+    init(_ source: IoSource, _ sourceNode: IoNode, _ actor: IoActor, _ actorNode: IoNode) {
+        self.source = source
+        self.sourceNode = sourceNode
+        self.actor = actor
+        self.actorNode = actorNode
+    }
+}
 
 /// A tuple describing an association pair with its update rate.
 typealias IoAssociationInfo = (IoSource, IoActor, Int)

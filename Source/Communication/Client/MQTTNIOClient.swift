@@ -99,6 +99,8 @@ internal class MQTTNIOClient: CommunicationClient {
 
         // `try!` matches the existing fail-fast convention used elsewhere
         // during initialization (see `CommunicationManager.init`).
+        // Fail-fast invariant, not user input.
+        // swiftlint:disable:next force_try
         try! startDiscoveryIfNeeded(mqttClientOptions)
     }
 

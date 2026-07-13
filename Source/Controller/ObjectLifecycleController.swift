@@ -75,7 +75,7 @@ open class ObjectLifecycleController: Controller {
     /// - Returns: an observable emitting changes concerning tracked objects of the
     /// given core type
     public func observeObjectLifecycleInfoByCoreType(coreType: CoreType,
-                                                     objectFilter: ((CoatyObject) -> Bool)? = nil) -> Observable<ObjectLifecycleInfo>{
+                                                     objectFilter: ((CoatyObject) -> Bool)? = nil) -> Observable<ObjectLifecycleInfo> {
         return self._observeObjectLifecycleInfo(coreType: coreType, objectType: nil, objectFilter: objectFilter)
     }
     
@@ -203,10 +203,11 @@ open class ObjectLifecycleController: Controller {
         
         let advertised = coreType != nil ?
             self.communicationManager.observeAdvertise(withCoreType: coreType!) :
+            // Fail-fast invariant, not user input.
+            // swiftlint:disable:next force_try
             try! self.communicationManager.observeAdvertise(withObjectType: objectType!)
         
         let deadvertised = self.communicationManager.observeDeadvertise()
-        
         
         let discoveredObservable = discovered
             .map({ event in event.data.object })
@@ -248,18 +249,18 @@ open class ObjectLifecycleController: Controller {
         
         registry[object.objectId.string] = object
         
-        if (robj === object) {
+        if robj === object {
             return nil
         } else {
             return ObjectLifecycleInfo(changed: [object])
         }
     }
     
-    private func _removeFromRegistry(with registry: inout [String:CoatyObject],
+    private func _removeFromRegistry(with registry: inout [String: CoatyObject],
                                      with objectIds: [CoatyUUID]) -> ObjectLifecycleInfo? {
         var removed: [CoatyObject] = []
         
-        objectIds.forEach{ objectId in
+        objectIds.forEach { objectId in
             self._updateRegistryOnRemove(with: &registry, objectId: objectId, removed: &removed)
         }
         

@@ -5,7 +5,6 @@
 
 import Foundation
 
-
 /// Provides a static `matchesFilter` method to match an object against a
 /// given object filter. Useful for retrieving matching objects on Query events
 /// without using a database adapter. Also useful to filter out Coaty objects
@@ -161,7 +160,7 @@ public enum ObjectMatcher {
     /// - Returns: a tuple list that contains all attributes and their values representes as Any.
     internal static func _fetchProperties(of structure: Any) -> [(String, Any)] {
         // Since access to properties in dictionaries is different than access to properties in object perform an if as? distinction.
-        if let structureAsDictionary = structure as? Dictionary<String, Any> {
+        if let structureAsDictionary = structure as? [String: Any] {
             return structureAsDictionary.map { ($0.key, $0.value) }
         } else {
             let mirror = Mirror(reflecting: structure)
@@ -220,104 +219,100 @@ public enum ObjectMatcher {
         let v1 = condition.expression.firstOperand
         let v2 = condition.expression.secondOperand
         let v = ObjectMatcher.getFilterPropertyValue(propNames: props, obj: obj)
-        
+
         if op == .NotExists {
             return v == nil
         }
         if v == nil {
             return false
         }
-        
+
         switch op {
-        case .LessThan:
-            guard let value = v, let value1 = v1 else {
-                return false
-            }
-            return value < value1
-        case .LessThanOrEqual:
-            guard let value = v, let value1 = v1 else {
-                return false
-            }
-            return value <= value1
-        case .GreaterThan:
-            guard let value = v, let value1 = v1 else {
-                return false
-            }
-            return value > value1
-        case .GreaterThanOrEqual:
-            guard let value = v, let value1 = v1 else {
-                return false
-            }
-            return value >= value1
-        case .Between:
-            if let value1 = v1, let value2 = v2 {
-                if value1 > value2 {
-                    return v! >= value2 && v! <= value1
-                } else {
-                    return v! >= value1 && v! <= value2
-                }
-            } else {
-                return false
-            }
-        case .NotBetween:
-            if let value1 = v1, let value2 = v2 {
-                if value1 > value2 {
-                    return v! < value2 || v! > value1
-                } else {
-                    return v! < value1 || v! > value2
-                }
-            } else {
-                return false
-            }
+        case .LessThan, .LessThanOrEqual, .GreaterThan, .GreaterThanOrEqual, .Equals, .NotEquals:
+            return ObjectMatcher._matchesComparison(op: op, v: v, v1: v1)
+        case .Between, .NotBetween:
+            return ObjectMatcher._matchesRange(op: op, v: v!, v1: v1, v2: v2)
         case .Like:
-            guard let value = v?.value as? String, let value1 = v1?.value as? String else {
-                return false
-            }
-            
-            // NOTE: Ask if this kind of caching is okay
-            // To speed up regexp matching, generate regexp once and
-            // cache it as extra property on object filter op2 property.
-            if let cachedRegex = condition.expression.secondOperand?.value as? NSRegularExpression {
-                return cachedRegex._matches(value)
-            } else {
-                if let likeRegex = ObjectMatcher._createLikeRegexp(pattern: value1) {
-                    condition.expression.secondOperand = AnyCodable(likeRegex)
-                    return likeRegex._matches(value)
-                } else {
-                    return false
-                }
-            }
-        case .Equals:
-            guard let value = v, let value1 = v1 else {
-                return false
-            }
-            return value == value1
-        case .NotEquals:
-            guard let value = v, let value1 = v1 else {
-                return false
-            }
-            return value != value1
+            return ObjectMatcher._matchesLike(v: v, v1: v1, condition: condition)
         case .Exists:
             return true
-        case .Contains:
-            guard let value = v, let value1 = v1 else {
+        case .Contains, .NotContains, .In, .NotIn:
+            return ObjectMatcher._matchesContainment(op: op, v: v, v1: v1)
+        default:
+            return false
+        }
+    }
+
+    /// Evaluates the relational operators (`<`, `<=`, `>`, `>=`, `==`, `!=`)
+    /// that compare a property value against a single operand.
+    private static func _matchesComparison(op: ObjectFilterOperator, v: AnyCodable?, v1: AnyCodable?) -> Bool {
+        guard let value = v, let value1 = v1 else {
+            return false
+        }
+        switch op {
+        case .LessThan:
+            return value < value1
+        case .LessThanOrEqual:
+            return value <= value1
+        case .GreaterThan:
+            return value > value1
+        case .GreaterThanOrEqual:
+            return value >= value1
+        case .Equals:
+            return value == value1
+        case .NotEquals:
+            return value != value1
+        default:
+            return false
+        }
+    }
+
+    /// Evaluates the `Between`/`NotBetween` operators against the two bounding operands.
+    private static func _matchesRange(op: ObjectFilterOperator, v: AnyCodable, v1: AnyCodable?, v2: AnyCodable?) -> Bool {
+        guard let value1 = v1, let value2 = v2 else {
+            return false
+        }
+        let lower = value1 > value2 ? value2 : value1
+        let upper = value1 > value2 ? value1 : value2
+        let isWithinRange = v >= lower && v <= upper
+        return op == .Between ? isWithinRange : !isWithinRange
+    }
+
+    /// Evaluates the `Like` operator, caching the compiled regular expression
+    /// on the condition's second operand to speed up repeated matching.
+    private static func _matchesLike(v: AnyCodable?, v1: AnyCodable?, condition: ObjectFilterCondition) -> Bool {
+        guard let value = v?.value as? String, let value1 = v1?.value as? String else {
+            return false
+        }
+
+        // NOTE: Ask if this kind of caching is okay
+        // To speed up regexp matching, generate regexp once and
+        // cache it as extra property on object filter op2 property.
+        if let cachedRegex = condition.expression.secondOperand?.value as? NSRegularExpression {
+            return cachedRegex._matches(value)
+        } else {
+            if let likeRegex = ObjectMatcher._createLikeRegexp(pattern: value1) {
+                condition.expression.secondOperand = AnyCodable(likeRegex)
+                return likeRegex._matches(value)
+            } else {
                 return false
             }
+        }
+    }
+
+    /// Evaluates the `Contains`/`NotContains`/`In`/`NotIn` containment operators.
+    private static func _matchesContainment(op: ObjectFilterOperator, v: AnyCodable?, v1: AnyCodable?) -> Bool {
+        guard let value = v, let value1 = v1 else {
+            return false
+        }
+        switch op {
+        case .Contains:
             return AnyCodable.deepContains(value, value1)
         case .NotContains:
-            guard let value = v, let value1 = v1 else {
-                return false
-            }
             return !AnyCodable.deepContains(value, value1)
         case .In:
-            guard let value = v, let value1 = v1 else {
-                return false
-            }
             return AnyCodable.deepIncludes(value1, value)
         case .NotIn:
-            guard let value = v, let value1 = v1 else {
-                return false
-            }
             return !AnyCodable.deepIncludes(value1, value)
         default:
             return false

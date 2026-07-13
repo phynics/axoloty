@@ -22,7 +22,6 @@ public class ConfigurationBuilder {
     public var databases: DatabaseOptions?
 }
 
-
 /// Configuration options for Coaty container components,
 /// such as controllers, communication manager, and runtime.
 ///
@@ -43,8 +42,7 @@ public class Configuration {
     public var databases: DatabaseOptions?
     
     /// Create a new configuration instance with the given options.
-    public init(common: CommonOptions? = nil, communication: CommunicationOptions,
-         controllers: ControllerConfig? = nil, databases: DatabaseOptions? = nil) {
+    public init(common: CommonOptions? = nil, communication: CommunicationOptions, controllers: ControllerConfig? = nil, databases: DatabaseOptions? = nil) {
         self.common = common
         self.communication = communication
         self.controllers = controllers
@@ -57,7 +55,7 @@ public class Configuration {
     ///
     /// - Parameter closure: the builder closure, preferably used as trailing closure.
     /// - Returns: Configuration configured using the builder.
-    public static func build(_ closure: (ConfigurationBuilder) -> ()) throws -> Configuration {
+    public static func build(_ closure: (ConfigurationBuilder) -> Void) throws -> Configuration {
         
         let builder = ConfigurationBuilder()
         closure(builder)
@@ -67,10 +65,7 @@ public class Configuration {
                 "Configuration.build requires both common and communication options to be set")
         }
         
-        return .init(common: common,
-                     communication: communication,
-                     controllers: builder.controllers,
-                     databases: builder.databases)
+        return .init(common: common, communication: communication, controllers: builder.controllers, databases: builder.databases)
     }
 }
 
@@ -121,11 +116,7 @@ public class CommonOptions {
     public var logLevel = CoatySwiftLogLevel.error
     
     /// Create a new CommonOptions instance.
-    public init(ioContextNodes: [String: IoNodeDefinition]? = nil,
-                agentIdentity: [String: Any]? = nil,
-                agentInfo: AgentInfo? = nil,
-                extra: [String: Any]? = nil,
-                logLevel: CoatySwiftLogLevel? = nil) {
+    public init(ioContextNodes: [String: IoNodeDefinition]? = nil, agentIdentity: [String: Any]? = nil, agentInfo: AgentInfo? = nil, extra: [String: Any]? = nil, logLevel: CoatySwiftLogLevel? = nil) {
         self.ioContextNodes = ioContextNodes
         self.agentIdentity = agentIdentity
         self.agentInfo = agentInfo
@@ -208,7 +199,6 @@ public class CommunicationOptions {
     }
 }
 
-
 /// Controller options mapped by controller class name.
 public class ControllerConfig {
     
@@ -220,7 +210,6 @@ public class ControllerConfig {
         self.controllerOptions = controllerOptions
     }
 }
-
 
 /// Controller-specific options.
 public class ControllerOptions {
@@ -235,7 +224,6 @@ public class ControllerOptions {
         }
     }
 }
-
 
 /// Database access options mapped by a unique database key.
 public class DatabaseOptions {
@@ -301,17 +289,17 @@ public class MQTTClientOptions {
     
     /// Create a new instance of MQTTClientOptions.
     public init(host: String = "localhost",
-         port: UInt16 = 1883,
-         enableSSL: Bool = false,
-         shouldTryMDNSDiscovery: Bool = false,
-         username: String? = nil,
-         password: String? = nil,
-         keepAlive: UInt16 = 60,
-         autoReconnect: Bool = true,
-         allowUntrustCACertificate: Bool = false,
-         autoReconnectTimeInterval: Int = 1,
-         qos: Int = 0,
-         shouldLog: Bool = false) {
+                port: UInt16 = 1883,
+                enableSSL: Bool = false,
+                shouldTryMDNSDiscovery: Bool = false,
+                username: String? = nil,
+                password: String? = nil,
+                keepAlive: UInt16 = 60,
+                autoReconnect: Bool = true,
+                allowUntrustCACertificate: Bool = false,
+                autoReconnectTimeInterval: Int = 1,
+                qos: Int = 0,
+                shouldLog: Bool = false) {
         self.host = host
         self.port = port
         self.clientId = nil
@@ -326,5 +314,5 @@ public class MQTTClientOptions {
         self.qos = qos
         self.shouldLog = shouldLog
     }
-}
 
+}

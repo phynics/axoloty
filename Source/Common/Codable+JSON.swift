@@ -60,7 +60,7 @@ extension KeyedDecodingContainer {
         return dictionary
     }
     
-    func decodeIfPresent(_ type: [String:Any].Type, forKey key: K) throws -> [String:Any]? {
+    func decodeIfPresent(_ type: [String: Any].Type, forKey key: K) throws -> [String: Any]? {
         return try? decode(type, forKey: key)
     }
     
@@ -113,29 +113,29 @@ extension KeyedEncodingContainerProtocol where Key == JSONCodingKeys {
         try value.forEach({ (key, value) in
             let key = JSONCodingKeys(stringValue: key)
             switch value {
-            case let value as UUID:
+            case let value as UUID: 
                 try encode(value, forKey: key)
-            case let value as CoatyUUID:
+            case let value as CoatyUUID: 
                 try encode(value, forKey: key)
-            case let value as Bool:
+            case let value as Bool: 
                 try encode(value, forKey: key)
-            case let value as Int:
+            case let value as Int: 
                 try encode(value, forKey: key)
-            case let value as String:
+            case let value as String: 
                 try encode(value, forKey: key)
-            case let value as Double:
+            case let value as Double: 
                 try encode(value, forKey: key)
             #if canImport(CoreGraphics)
-            case let value as CGFloat:
+            case let value as CGFloat: 
                 try encode(value, forKey: key)
             #endif
-            case let value as [String: Any]:
+            case let value as [String: Any]: 
                 try encode(value, forKey: key)
-            case let value as [Any]:
+            case let value as [Any]: 
                 try encode(value, forKey: key)
-            case Optional<Any>.none:
+            case Optional<Any>.none: 
                 try encodeNil(forKey: key)
-            default:
+            default: 
                 throw EncodingError.invalidValue(value, EncodingError.Context(codingPath: codingPath
                     + [key], debugDescription: "Invalid JSON value"))
             }
@@ -158,7 +158,7 @@ extension KeyedEncodingContainerProtocol {
         }
     }
     
-    mutating func encodeIfPresent(_ value: [String:Any]?, forKey key: Key) throws {
+    mutating func encodeIfPresent(_ value: [String: Any]?, forKey key: Key) throws {
         try? encode(value, forKey: key)
     }
 }
@@ -167,25 +167,25 @@ extension UnkeyedEncodingContainer {
     mutating func encode(_ value: [Any]) throws {
         try value.enumerated().forEach({ (index, value) in
             switch value {
-            case let value as Bool:
+            case let value as Bool: 
                 try encode(value)
-            case let value as Int:
+            case let value as Int: 
                 try encode(value)
-            case let value as String:
+            case let value as String: 
                 try encode(value)
-            case let value as Double:
+            case let value as Double: 
                 try encode(value)
             #if canImport(CoreGraphics)
-            case let value as CGFloat:
+            case let value as CGFloat: 
                 try encode(value)
             #endif
-            case let value as [String: Any]:
+            case let value as [String: Any]: 
                 try encode(value)
-            case let value as [Any]:
+            case let value as [Any]: 
                 try encode(value)
-            case Optional<Any>.none:
+            case Optional<Any>.none: 
                 try encodeNil()
-            default:
+            default: 
                 let keys = JSONCodingKeys(intValue: index).map({ [ $0 ] }) ?? []
                 throw EncodingError.invalidValue(value, EncodingError.Context(codingPath: codingPath
                     + keys, debugDescription: "Invalid JSON value"))

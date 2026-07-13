@@ -11,23 +11,23 @@ import RxSwift
 open class Controller {
 
     /// Gets the contrainer's communicationManager.
-    private (set) public var communicationManager: CommunicationManager!
+    private(set) public var communicationManager: CommunicationManager!
 
     /// Gets the container object of this controller.
-    private (set) public var container: Container!
+    private(set) public var container: Container!
 
     /// Gets the container's Runtime object.
-    private (set) public var runtime: Runtime!
+    private(set) public var runtime: Runtime!
 
     /// Gets the controller's options as specified in the configuration options.
-    private (set) public var options: ControllerOptions?
+    private(set) public var options: ControllerOptions?
 
     /// Gets the registered name of this controller.
     ///
     /// The registered name is either defined by the corresponding key in the
     /// `Components.controllers` object in the container configuration, or by
     /// invoking `Container.registerController` method with this name.
-    private (set) public var registeredName: String
+    private(set) public var registeredName: String
     
     /// This dispose bag holds references to your observable subscriptions added
     /// with `.disposed(by: self.disposeBag)`. These subscriptions are
@@ -39,9 +39,7 @@ open class Controller {
     /// automatically by dependency injection.
     ///
     /// - Remark: for internal use in CoatySwift framework only.
-    required public init(container: Container,
-                         options: ControllerOptions?,
-                         controllerType: String) {
+    required public init(container: Container, options: ControllerOptions?, controllerType: String) {
         self.container = container
         self.runtime = container.runtime
         self.options = options ?? ControllerOptions()
@@ -155,20 +153,17 @@ open class Controller {
         let agentInfo = self.runtime.commonOptions?.agentInfo
         let pid = Double(ProcessInfo.processInfo.processIdentifier)
         
-        let hostInfo = LogHost(agentInfo: agentInfo,
-                               pid: pid,
-                               hostname: nil,
-                               userAgent: nil) // always nil, because swift does not run in a browser
+        let hostInfo = LogHost(agentInfo: agentInfo, pid: pid, hostname: nil, userAgent: nil) // always nil, because swift does not run in a browser
         
         let log = Log(logLevel: logLevel,
-                      logMessage: message,
-                      logDate: CoatyTimeInterval.toLocalIsoString(date: Date(), includeMilis: true),
-                      name: "\(self.registeredName)",
-                      objectType: Log.objectType,
-                      objectId: .init(),
-                      logTags: tags,
-                      logLabels: nil,
-                      logHost: hostInfo)
+                       logMessage: message,
+                       logDate: CoatyTimeInterval.toLocalIsoString(date: Date(), includeMilis: true),
+                       name: "\(self.registeredName)",
+                       objectType: Log.objectType,
+                       objectId: .init(),
+                       logTags: tags,
+                       logLabels: nil,
+                       logHost: hostInfo)
         
         self.extendLogObject(log: log)
         

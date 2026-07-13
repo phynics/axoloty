@@ -82,10 +82,7 @@ extension CommunicationManager {
         
         // Publish the Advertise event with core type filter to satisfy core type observers.
         let topicForCoreType = CommunicationTopic
-                .createTopicStringByLevelsForPublish(namespace: self.namespace,
-                                                     sourceId: event.sourceId!,
-                                                     eventType: .Advertise,
-                                                     eventTypeFilter: coreType.rawValue)
+                .createTopicStringByLevelsForPublish(namespace: self.namespace, sourceId: event.sourceId!, eventType: .Advertise, eventTypeFilter: coreType.rawValue)
         
         publish(topic: topicForCoreType, message: event.json)
 
@@ -94,12 +91,9 @@ extension CommunicationManager {
         // object type. In this case, object type observers subscribe on the
         // core type followed by a local filter operation to filter out unwanted
         // objects (see `observeAdvertise`).
-        if (coreType.objectType != objectType) {
+        if coreType.objectType != objectType {
             let topicForObjectType = CommunicationTopic
-                .createTopicStringByLevelsForPublish(namespace: self.namespace,
-                                                     sourceId: event.sourceId!,
-                                                     eventType: .Advertise,
-                                                     eventTypeFilter: EVENT_TYPE_FILTER_SEPARATOR + objectType)
+                .createTopicStringByLevelsForPublish(namespace: self.namespace, sourceId: event.sourceId!, eventType: .Advertise, eventTypeFilter: EVENT_TYPE_FILTER_SEPARATOR + objectType)
             publish(topic: topicForObjectType, message: event.json)
         }
 
@@ -119,9 +113,7 @@ extension CommunicationManager {
     /// - Parameter deadvertiseEvent: the Deadvertise event to be published
     public func publishDeadvertise(_ event: DeadvertiseEvent) {
         event.sourceId = self.identity.objectId
-        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace,
-                                                                               sourceId: event.sourceId!,
-                                                                               eventType: .Deadvertise)
+        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace, sourceId: event.sourceId!, eventType: .Deadvertise)
 
         publish(topic: topic, message: event.json)
     }
@@ -131,10 +123,7 @@ extension CommunicationManager {
     /// - Parameter event: the Channel event to be published
     public func publishChannel(_ event: ChannelEvent) {
         event.sourceId = self.identity.objectId
-        let publishTopic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace,
-                                                                                  sourceId: event.sourceId!,
-                                                                                  eventType: .Channel,
-                                                                                  eventTypeFilter: event.channelId)
+        let publishTopic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace, sourceId: event.sourceId!, eventType: .Channel, eventTypeFilter: event.channelId)
         publish(topic: publishTopic, message: event.json)
     }
     
@@ -159,10 +148,8 @@ extension CommunicationManager {
 
         event.sourceId = self.identity.objectId
   
-        let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace;
-        let completeTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Complete,
-                                                                                     namespace: namespace,
-                                                                                     correlationId: correlationId)
+        let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace
+        let completeTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Complete, namespace: namespace, correlationId: correlationId)
         var observable = self.messagesFor(.Complete)
             .filter { message -> Bool in
                 // Filter messages according to message token.
@@ -181,7 +168,7 @@ extension CommunicationManager {
                 }
 
                 completeEvent.type = .Complete
-                completeEvent.sourceId = topic.sourceId;
+                completeEvent.sourceId = topic.sourceId
                 
                 return completeEvent
             }
@@ -192,11 +179,7 @@ extension CommunicationManager {
 
         // Publish event with core type filter to satisfy core type observers.
         let topicForCoreType = CommunicationTopic
-            .createTopicStringByLevelsForPublish(namespace: self.namespace,
-                                                 sourceId: event.sourceId!,
-                                                 eventType: .Update,
-                                                 eventTypeFilter: coreType.rawValue,
-                                                 correlationId: correlationId)
+            .createTopicStringByLevelsForPublish(namespace: self.namespace, sourceId: event.sourceId!, eventType: .Update, eventTypeFilter: coreType.rawValue, correlationId: correlationId)
         publish(topic: topicForCoreType, message: event.json)
 
         // Publish event with object type filter to satisfy object type
@@ -204,13 +187,13 @@ extension CommunicationManager {
         // object type. In this case, object type observers subscribe on the
         // core type followed by a local filter operation to filter out unwanted
         // objects (see `observeUpdate`).
-        if (coreType.objectType != objectType) {
+        if coreType.objectType != objectType {
             let topicForObjectType = CommunicationTopic
                 .createTopicStringByLevelsForPublish(namespace: self.namespace,
-                                                     sourceId: event.sourceId!,
-                                                     eventType: .Update,
-                                                     eventTypeFilter: EVENT_TYPE_FILTER_SEPARATOR + objectType,
-                                                     correlationId: correlationId)
+                                                      sourceId: event.sourceId!,
+                                                      eventType: .Update,
+                                                      eventTypeFilter: EVENT_TYPE_FILTER_SEPARATOR + objectType,
+                                                      correlationId: correlationId)
             publish(topic: topicForObjectType, message: event.json)
         }
         
@@ -224,13 +207,9 @@ extension CommunicationManager {
     /// - Parameters:
     ///   - event: the Complete event that should be sent out.
     ///   - correlationId: the correlation Id of the Update request.
-    internal func publishComplete(event: CompleteEvent,
-                                  correlationId: String) -> Void {
+    internal func publishComplete(event: CompleteEvent, correlationId: String) {
         event.sourceId = self.identity.objectId
-        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace,
-                                                                           sourceId: event.sourceId!,
-                                                                           eventType: .Complete,
-                                                                           correlationId: correlationId)
+        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace, sourceId: event.sourceId!, eventType: .Complete, correlationId: correlationId)
         publish(topic: topic, message: event.json)
     }
     
@@ -247,15 +226,10 @@ extension CommunicationManager {
     public func publishDiscover(_ event: DiscoverEvent) -> Observable<ResolveEvent> {
         event.sourceId = self.identity.objectId
         let correlationId = CoatyUUID().string
-        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace,
-                                                                           sourceId: event.sourceId!,
-                                                                           eventType: .Discover,
-                                                                           correlationId: correlationId)
+        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace, sourceId: event.sourceId!, eventType: .Discover, correlationId: correlationId)
         
-        let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace;
-        let resolveTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Resolve,
-                                                                                    namespace: namespace,
-                                                                                    correlationId: correlationId)
+        let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace
+        let resolveTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Resolve, namespace: namespace, correlationId: correlationId)
         
         var observable = self.messagesFor(.Resolve)
             .filter { message -> Bool in
@@ -275,7 +249,7 @@ extension CommunicationManager {
                 }
                 
                 resolveEvent.type = .Resolve
-                resolveEvent.sourceId = topic.sourceId;
+                resolveEvent.sourceId = topic.sourceId
                 
                 return resolveEvent
             }
@@ -295,13 +269,9 @@ extension CommunicationManager {
     /// - Parameters:
     ///   - event: the Resolve event that should be sent out.
     ///   - correlationId: the correlation Id of the Discover request.
-    internal func publishResolve(event: ResolveEvent,
-                                 correlationId: String) {
+    internal func publishResolve(event: ResolveEvent, correlationId: String) {
         event.sourceId = self.identity.objectId
-        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace,
-                                                                           sourceId: event.sourceId!,
-                                                                           eventType: .Resolve,
-                                                                           correlationId: correlationId)
+        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace, sourceId: event.sourceId!, eventType: .Resolve, correlationId: correlationId)
         publish(topic: topic, message: event.json)
     }
     
@@ -318,15 +288,10 @@ extension CommunicationManager {
     public func publishQuery(_ event: QueryEvent) -> Observable<RetrieveEvent> {
         event.sourceId = self.identity.objectId
         let correlationId = CoatyUUID().string
-        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace,
-                                                                           sourceId: event.sourceId!,
-                                                                           eventType: .Query,
-                                                                           correlationId: correlationId)
+        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace, sourceId: event.sourceId!, eventType: .Query, correlationId: correlationId)
         
-        let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace;
-        let retrieveTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Retrieve,
-                                                                                     namespace: namespace,
-                                                                                     correlationId: correlationId)
+        let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace
+        let retrieveTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Retrieve, namespace: namespace, correlationId: correlationId)
                 
         var observable = self.messagesFor(.Retrieve)
             .filter { message -> Bool in
@@ -346,7 +311,7 @@ extension CommunicationManager {
                 }
 
                 retrieveEvent.type = .Retrieve
-                retrieveEvent.sourceId = topic.sourceId;
+                retrieveEvent.sourceId = topic.sourceId
                 
                 return retrieveEvent
             }
@@ -372,15 +337,13 @@ extension CommunicationManager {
         event.sourceId = self.identity.objectId
         let correlationId = CoatyUUID().string
         let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace,
-                                                                           sourceId: event.sourceId!,
-                                                                           eventType: .Call,
-                                                                           eventTypeFilter: event.operation,
-                                                                           correlationId: correlationId)
+                                                                            sourceId: event.sourceId!,
+                                                                            eventType: .Call,
+                                                                            eventTypeFilter: event.operation,
+                                                                            correlationId: correlationId)
         
-        let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace;
-        let returnTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Return,
-                                                                                   namespace: namespace,
-                                                                                   correlationId: correlationId)
+        let namespace = self.communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace
+        let returnTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Return, namespace: namespace, correlationId: correlationId)
         
         var observable = self.messagesFor(.Return)
             .filter { message -> Bool in
@@ -396,7 +359,7 @@ extension CommunicationManager {
                 }
 
                 returnEvent.type = .Return
-                returnEvent.sourceId = topic.sourceId;
+                returnEvent.sourceId = topic.sourceId
                 
                 return returnEvent
             }
@@ -415,13 +378,9 @@ extension CommunicationManager {
     ///
     /// - Parameters:
     ///   - event: the Retrieve event that should be sent out.
-    internal func publishRetrieve(event: RetrieveEvent,
-                                  correlationId: String) {
+    internal func publishRetrieve(event: RetrieveEvent, correlationId: String) {
         event.sourceId = self.identity.objectId
-        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace,
-                                                                           sourceId: event.sourceId!,
-                                                                           eventType: .Retrieve,
-                                                                           correlationId: correlationId)
+        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace, sourceId: event.sourceId!, eventType: .Retrieve, correlationId: correlationId)
         
         publish(topic: topic, message: event.json)
     }
@@ -433,13 +392,9 @@ extension CommunicationManager {
     /// - Parameters:
     ///   - event: the return event that should be sent out.
     ///   - correlationId: the correlation Id of the Call request.
-    internal func publishReturn(event: ReturnEvent,
-                                correlationId: String) {
+    internal func publishReturn(event: ReturnEvent, correlationId: String) {
         event.sourceId = self.identity.objectId
-        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace,
-                                                                           sourceId: event.sourceId!,
-                                                                           eventType: .Return,
-                                                                           correlationId: correlationId)
+        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace, sourceId: event.sourceId!, eventType: .Return, correlationId: correlationId)
         publish(topic: topic, message: event.json)
     }
     
@@ -469,10 +424,7 @@ extension CommunicationManager {
             throw CoatySwiftError.InvalidArgument("Associate: Invalid eventTypeFilter")
         }
         
-        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace,
-                                                                           sourceId: self.identity.objectId,
-                                                                           eventType: .Associate,
-                                                                           eventTypeFilter: eventTypeFilter)
+        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace, sourceId: self.identity.objectId, eventType: .Associate, eventTypeFilter: eventTypeFilter)
         
         self.publish(topic: topic, message: event.json)
     }

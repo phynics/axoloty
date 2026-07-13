@@ -18,13 +18,13 @@ public class Container {
     /// Gets the identity object of this container.
     /// The identity can be initialized in the common configuration option
     /// `agentIdentity`.
-    private (set) public var identity: Identity?
+    private(set) public var identity: Identity?
 
     /// Gets the runtime object of this container.
-    private (set) public var runtime: Runtime?
+    private(set) public var runtime: Runtime?
 
     /// Gets the communication manager of this container.
-    private (set) public var communicationManager: CommunicationManager?
+    private(set) public var communicationManager: CommunicationManager?
 
     private var controllers = [String: Controller]()
     private var isShutdown = false
@@ -43,8 +43,7 @@ public class Container {
     /// - Parameters:
     ///   - components: the components to set up within this container
     ///   - configuration: the configuration options for the components
-    public static func resolve(components: Components,
-                               configuration: Configuration)  -> Container {
+    public static func resolve(components: Components, configuration: Configuration) -> Container {
         
         // Adjust logging level for CoatySwift.
         LogManager.logLevel = LogManager.getLogLevel(logLevel: configuration.common?.logLevel ?? CoatySwiftLogLevel.error)
@@ -80,8 +79,7 @@ public class Container {
                 return
             }
             
-            guard let _ = self.runtime,
-                let communicationManager = self.communicationManager else {
+            guard let _ = self.runtime, let communicationManager = self.communicationManager else {
                 LogManager.log.error("Runtime or CommunicationManager was not initialized.")
                 throw CoatySwiftError.InvalidConfiguration("Runtime or CommunicationManager was not initialized.")
             }
@@ -91,16 +89,14 @@ public class Container {
                 throw CoatySwiftError.InvalidConfiguration("Controller with given name already exists.")
             }
 
-            let controller = resolveController(name: name,
-                                               controllerType: controllerType,
-                                               controllerOptions: controllerOptions)
+            let controller = resolveController(name: name, controllerType: controllerType, controllerOptions: controllerOptions)
             self.controllers[name] = controller
             
             controller.onInit()
             
             // Trigger onCommunicationManagerStarting() method.
             _ = communicationManager.getOperatingState().take(1).subscribe {
-                if let state = $0.element, (state == .started) {
+                if let state = $0.element, state == .started {
                     self.dispatchOperatingState(state: .started, ctrl: controller)
                 }
             }
@@ -142,12 +138,8 @@ public class Container {
         self.releaseComponents()
     }
     
-    private func resolveController(name: String,
-                                   controllerType: Controller.Type,
-                                   controllerOptions: ControllerOptions?) -> Controller {
-        let controller = controllerType.init(container: self,
-                                             options: controllerOptions,
-                                             controllerType: name)
+    private func resolveController(name: String, controllerType: Controller.Type, controllerOptions: ControllerOptions?) -> Controller {
+        let controller = controllerType.init(container: self, options: controllerOptions, controllerType: name)
         return controller
     }
     
@@ -157,8 +149,7 @@ public class Container {
         }
     }
     
-    private func resolveComponents(_ components: Components,
-                                   _ configuration: Configuration) {
+    private func resolveComponents(_ components: Components, _ configuration: Configuration) {
         self.registerCustomObjectTypes(components)
 
         let identity = createIdentity(options: configuration.common?.agentIdentity)
@@ -174,18 +165,16 @@ public class Container {
         // Create all controllers.
         components.controllers.forEach { (name, controllerType) in
             let options = configuration.controllers?.controllerOptions[name]
-            let controller = resolveController(name: name,
-                                               controllerType: controllerType,
-                                               controllerOptions: options)
+            let controller = resolveController(name: name, controllerType: controllerType, controllerOptions: options)
             self.controllers[name] = controller
         }
         
         // Finally call initialization lifecycle method of each controller.
-        self.controllers.forEach { (name, controller) in
+        self.controllers.forEach { (_, controller) in
             controller.onInit()
         }
         
-        var isInitialOperatingState = true;
+        var isInitialOperatingState = true
         
         // Observe operating state and dispatch to registered controllers.
         self.operatingStateSubscription = operatingState?.subscribe { (operatingStateEvent) in
@@ -196,7 +185,7 @@ public class Container {
                     return
                 }
             }
-            self.controllers.forEach { (name, controller) in
+            self.controllers.forEach { (_, controller) in
                 if let state = operatingStateEvent.element {
                     self.dispatchOperatingState(state: state, ctrl: controller)
                 }
@@ -208,23 +197,23 @@ public class Container {
     private func releaseComponents() {
         // Dispose Communication Manager first to trigger operating state changes
         communicationManager?.onDispose()
-        self.controllers.forEach { (name, controller) in
+        self.controllers.forEach { (_, controller) in
             controller.onDispose()
         }
 
-        self.operatingStateSubscription?.dispose();
-        self.operatingStateSubscription = nil;
+        self.operatingStateSubscription?.dispose()
+        self.operatingStateSubscription = nil
         self.controllers = [String: Controller]()
         self.communicationManager = nil
         self.runtime = nil
-        self.identity = nil;
+        self.identity = nil
     }
     
     private func dispatchOperatingState(state: OperatingState, ctrl: Controller) {
         switch state {
-        case OperatingState.started:
+        case OperatingState.started: 
             ctrl.onCommunicationManagerStarting()
-        case OperatingState.stopped:
+        case OperatingState.stopped: 
             ctrl.onCommunicationManagerStopping()
         }
     }
@@ -237,19 +226,23 @@ public class Container {
         if options != nil {
             for (key, value) in options! {
                 switch key {
-                    case "name":
+                    case "name": 
+                        // Fail-fast invariant, not user input.
+                        // swiftlint:disable:next force_cast
                         identity.name = value as! String
-                    case "objectId":
+                    case "objectId": 
+                        // Fail-fast invariant, not user input.
+                        // swiftlint:disable:next force_cast
                         identity.objectId = value as! CoatyUUID
-                    case "externalId":
+                    case "externalId": 
                         identity.externalId = value as? String
-                    case "parentObjectId":
+                    case "parentObjectId": 
                         identity.parentObjectId = value as? CoatyUUID
-                    case "locationId":
+                    case "locationId": 
                         identity.locationId = value as? CoatyUUID
-                    case "isDeactivated":
+                    case "isDeactivated": 
                         identity.isDeactivated = value as? Bool
-                    default:
+                    default: 
                         break
                 }
             }

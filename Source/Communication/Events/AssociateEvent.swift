@@ -77,12 +77,7 @@ public class AssociateEvent: CommunicationEvent<AssociateEventData> {
     public required init(from decoder: Decoder) throws {
         try super.init(from: decoder)
     }
-    
-    override public func encode(to encoder: Encoder) throws {
-        try super.encode(to: encoder)
-    }
 }
-
 
 /// Defines event data format to associate or disassociate an IO source with an IO actor.
 public class AssociateEventData: CommunicationEventData {

@@ -53,8 +53,4 @@ open class IoContext: CoatyObject {
     public required init(from decoder: Decoder) throws {
         try super.init(from: decoder)
     }
-    
-    open override func encode(to encoder: Encoder) throws {
-        try super.encode(to: encoder)
-    }
 }

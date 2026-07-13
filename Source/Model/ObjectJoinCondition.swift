@@ -42,7 +42,6 @@ public class ObjectJoinCondition: Codable {
     /// property is overwritten.
     var asProperty: String
     
-
      /// Specifies whether the join between the `localProperty` and the corresponding
      /// property of the related object is a one to one relation. If true, the extra property `asProperty`
      /// contains a single related object; otherwise it contains an array of related objects.
@@ -50,8 +49,7 @@ public class ObjectJoinCondition: Codable {
      /// If not specified, the value of this property defaults to `false`.
     var isOneToOneRelation: Bool?
     
-    public init(localProperty: String, asProperty: String,
-                isLocalPropertyArray: Bool? = nil, isOneToOneRelation: Bool? = nil) {
+    public init(localProperty: String, asProperty: String, isLocalPropertyArray: Bool? = nil, isOneToOneRelation: Bool? = nil) {
         self.localProperty = localProperty
         self.asProperty = asProperty
         self.isLocalPropertyArray = isLocalPropertyArray

@@ -141,6 +141,8 @@ open class ThingSensorObservationObserverController: ThingObserverController {
     // MARK: - Private and Internal methods.
     private func _observeThings() {
         self._thingOnlineSubscription = Observable.of(self.discoverThings(),
+                                                      // Fail-fast invariant, not user input.
+                                                      // swiftlint:disable:next force_try
                                                       try! self.observeAdvertisedThings())
             .merge()
             .subscribe(onNext: { thing in
@@ -202,6 +204,8 @@ open class ThingSensorObservationObserverController: ThingObserverController {
     }
     
     private func _observeObservations(_ sensor: Sensor) -> Disposable {
+        // Fail-fast invariant, not user input.
+        // swiftlint:disable:next force_try
         return try! (self._sensorObserverController?
             .observeChanneledObservations(sensorId: sensor.objectId)
             .subscribe(onNext: { observation in
@@ -239,7 +243,6 @@ open class ThingSensorObservationObserverController: ThingObserverController {
                                         changed: [],
                                         total: Array(self._registeredSensors.values)))
     }
-    
     
 }
 

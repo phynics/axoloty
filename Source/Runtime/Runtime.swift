@@ -12,10 +12,10 @@ import Foundation
 public class Runtime {
     
     /// Common options specified in container configuration.
-    private (set) public var commonOptions: CommonOptions?
+    private(set) public var commonOptions: CommonOptions?
     
     /// Database options specified in container configuration.
-    private (set) public var databaseOptions: DatabaseOptions?
+    private(set) public var databaseOptions: DatabaseOptions?
     
     init(commonOptions: CommonOptions? = nil, databaseOptions: DatabaseOptions? = nil) {
         self.commonOptions = commonOptions
@@ -23,4 +23,3 @@ public class Runtime {
     }
 
 }
-

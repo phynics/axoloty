@@ -42,29 +42,29 @@ public enum CoreType: String, Codable {
     
     static func getClassType(forCoreType: CoreType) -> CoatyObject.Type {
         switch forCoreType {
-        case .CoatyObject:
+        case .CoatyObject: 
             return CoatySwift.CoatyObject.self
-        case .User:
+        case .User: 
             return CoatySwift.User.self
-        case .Annotation:
+        case .Annotation: 
             return CoatySwift.Annotation.self
-        case .Task:
+        case .Task: 
             return CoatySwift.Task.self
-        case .IoSource:
+        case .IoSource: 
             return CoatySwift.IoSource.self
-        case .IoActor:
+        case .IoActor: 
             return CoatySwift.IoActor.self
-        case .IoNode:
+        case .IoNode: 
             return CoatySwift.IoNode.self
-        case .IoContext:
+        case .IoContext: 
             return CoatySwift.IoContext.self
-        case .Identity:
+        case .Identity: 
             return CoatySwift.Identity.self
-        case .Log:
+        case .Log: 
             return CoatySwift.Log.self
-        case .Location:
+        case .Location: 
             return CoatySwift.Location.self
-        case .Snapshot:
+        case .Snapshot: 
             return CoatySwift.Snapshot.self
         }
     }
@@ -73,31 +73,31 @@ public enum CoreType: String, Codable {
     /// to a Coaty core type.
     static func getCoreType(forObjectType: String) -> CoreType? {
         switch forObjectType {
-        case ObjectType.CoatyObject.rawValue:
+        case ObjectType.CoatyObject.rawValue: 
             return self.CoatyObject
-        case ObjectType.User.rawValue:
+        case ObjectType.User.rawValue: 
             return self.User
-        case ObjectType.Annotation.rawValue:
+        case ObjectType.Annotation.rawValue: 
             return self.Annotation
-        case ObjectType.Task.rawValue:
+        case ObjectType.Task.rawValue: 
             return self.Task
-        case ObjectType.IoSource.rawValue:
+        case ObjectType.IoSource.rawValue: 
             return self.IoSource
-        case ObjectType.IoActor.rawValue:
+        case ObjectType.IoActor.rawValue: 
             return self.IoActor
-        case ObjectType.IoNode.rawValue:
+        case ObjectType.IoNode.rawValue: 
             return self.IoNode
-        case ObjectType.IoContext.rawValue:
+        case ObjectType.IoContext.rawValue: 
             return self.IoContext
-        case ObjectType.Identity.rawValue:
+        case ObjectType.Identity.rawValue: 
             return self.Identity
-        case ObjectType.Log.rawValue:
+        case ObjectType.Log.rawValue: 
             return self.Log
-        case ObjectType.Location.rawValue:
+        case ObjectType.Location.rawValue: 
             return self.Location
-        case ObjectType.Snapshot.rawValue:
+        case ObjectType.Snapshot.rawValue: 
             return self.Snapshot
-        default:
+        default: 
             return nil
         }
     }
@@ -128,29 +128,29 @@ public enum CoreType: String, Codable {
     /// Gets the object type of this core type.
     public var objectType: String {
         switch self {
-        case .CoatyObject:
+        case .CoatyObject: 
             return ObjectType.CoatyObject.rawValue
-        case .User:
+        case .User: 
             return ObjectType.User.rawValue
-        case .Annotation:
+        case .Annotation: 
             return ObjectType.Annotation.rawValue
-        case .Task:
+        case .Task: 
             return ObjectType.Task.rawValue
-        case .IoSource:
+        case .IoSource: 
             return ObjectType.IoSource.rawValue
-        case .IoActor:
+        case .IoActor: 
             return ObjectType.IoActor.rawValue
-        case .IoNode:
+        case .IoNode: 
             return ObjectType.IoNode.rawValue
-        case .IoContext:
+        case .IoContext: 
             return ObjectType.IoContext.rawValue
-        case .Identity:
+        case .Identity: 
             return ObjectType.Identity.rawValue
-        case .Log:
+        case .Log: 
             return ObjectType.Log.rawValue
-        case .Location:
+        case .Location: 
             return ObjectType.Location.rawValue
-        case .Snapshot:
+        case .Snapshot: 
             return ObjectType.Snapshot.rawValue
 }
     }
@@ -164,8 +164,7 @@ public enum CoreType: String, Codable {
         // Try to parse the raw value to the actual enum.
         guard let coreType = CoreType(rawValue: rawString) else {
             throw DecodingError.dataCorrupted(
-                DecodingError.Context(codingPath: decoder.codingPath,
-                                      debugDescription: "Attempt to decode invalid CoreType."))
+                DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Attempt to decode invalid CoreType."))
         }
         
         self = coreType
