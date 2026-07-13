@@ -99,12 +99,10 @@ commands, workflow, coding conventions, git identity rules), see
 
 ## License
 
-Code and documentation copyright 2019 Siemens AG.
-
-Code is licensed under the [MIT License](https://opensource.org/licenses/MIT).
-
-Documentation is licensed under a [Creative Commons Attribution-ShareAlike 4.0
-International License](http://creativecommons.org/licenses/by-sa/4.0/).
+Axoloty is a fork of [coatyio/coaty-swift](https://github.com/coatyio/coaty-swift),
+which originated at Siemens AG and is licensed under the
+[MIT License](https://opensource.org/licenses/MIT). All code and documentation
+in this repository is distributed under that same MIT License.
 
 The following vendored software is included in this repository:
 
