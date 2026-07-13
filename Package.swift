@@ -21,15 +21,15 @@ let package = Package(
     dependencies: [
         // Dependencies declare other packages that this package depends on.
         .package(url: "https://github.com/swift-server-community/mqtt-nio.git", from: "2.13.0"),
-        .package(url: "https://github.com/apple/swift-nio.git", from: "2.80.0"),
-        .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.14.0"),
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.101.2"),
+        .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.37.1"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.14.0"),
         .package(url: "https://github.com/FlineDev/ErrorKit.git", exact: "1.2.1"),
-        .package(url: "https://github.com/ReactiveX/RxSwift.git", from: "6.10.0"),
+        .package(url: "https://github.com/ReactiveX/RxSwift.git", from: "6.10.2"),
         // Provides the `swift package generate-documentation` subcommand used by
         // `make docs`. The `docc` executable ships with the toolchain, but the
         // SwiftPM integration is delivered by this command-plugin package.
-        .package(url: "https://github.com/swiftlang/swift-docc-plugin.git", from: "1.4.0")
+        .package(url: "https://github.com/swiftlang/swift-docc-plugin.git", from: "1.5.0")
     ],
     targets: [
         // Targets are the basic building blocks of a package. A target can define a module or a test suite.
