@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 This repository's agent instructions live in [AGENTS.md](./AGENTS.md), not
-here. Please read that file for build/test commands, the specs → tickets →
+here. Please read that file for build/test commands, the specs → plans →
 worktree workflow, Swift Testing conventions, ErrorKit error-handling policy,
 coding conventions, and the git identity rule.
 

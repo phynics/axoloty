@@ -46,31 +46,44 @@ exporting the `swift` binary from a Swift dev container via
 editing-time ergonomics, but the podman/Makefile flow above remains the
 canonical build/test path — it's what CI reproduces.
 
-## Workflow: specs → tickets → worktrees
+## Workflow: specs → plans → worktrees
 
-Work is planned and executed through a local, gitignored spec/ticket
-pipeline, not through ad-hoc branches off a shared checkout:
+Work is planned and executed through a spec/plan pipeline that lives in the
+repo under `docs/superpowers/`, tracked in git alongside the code so it is
+reviewed and versioned just like the implementation:
 
-- `.claude/specs/` — markdown specs describing a piece of work at a
-  conceptual level. Local-only, gitignored, not part of the shipped repo
-  history.
-- `.claude/tickets/` — markdown tickets derived from specs, scoped to a
-  single unit of work. Also local-only and gitignored.
-- **One git worktree per ticket.** For a ticket, create an isolated worktree
-  under the repository-local `.worktree/` directory and branch off `master`:
+- `docs/superpowers/specs/` — design specs describing a piece of work at a
+  conceptual level (e.g. `2026-07-13-fuzz-campaign-runner-design.md`).
+- `docs/superpowers/plans/` — plans (the executable tickets) derived from
+  specs, each scoped to a single unit of work (e.g.
+  `2026-07-13-fuzz-campaign-runner.md`).
+
+These are part of the shipped repo history, not local-only scratch files.
+
+### Worktrees and the subagent workflow
+
+- **One git worktree per plan.** Create an isolated worktree under the
+  repository-local `.worktree/` directory (gitignored) and branch off
+  `master`:
 
   ```sh
-  git worktree add .worktree/<ticket-id> -b <ticket-id>-<slug> master
+  git worktree add .worktree/<plan-id> -b <plan-id>-<slug> master
   ```
 
-  Do all work for that ticket inside its own worktree so parallel efforts
+  Do all work for that plan inside its own worktree so parallel efforts
   (including other agents') never collide on the same working tree.
-- Open a pull request from the ticket's branch back to `master`.
+- **When delegating to a subagent**, the subagent does all of its work
+  inside its own worktree on its branch and commits there. The main agent
+  does not edit inside the subagent's tree; instead it reviews the resulting
+  branch and merges it once the work is satisfactory. This keeps each
+  subagent's changes isolated and individually reviewable until the main
+  agent integrates them.
+- Open a pull request from the plan's branch back to `master`.
 - Once the PR is merged, remove the worktree (`git worktree remove
-  .worktree/<ticket-id>`) — don't leave stale worktrees lying around.
+  .worktree/<plan-id>`) — don't leave stale worktrees lying around.
 
 This lets multiple agents (or an agent and a human) work on independent
-tickets concurrently without stepping on each other's files.
+plans concurrently without stepping on each other's files.
 
 ## Coding conventions
 
@@ -146,7 +159,7 @@ through ErrorKit rather than duplicating ad-hoc error formatting.
 
 Tests that exercise failing paths must assert both the error category and its
 `userFriendlyMessage`. New or changed error behavior must maintain existing
-public signatures unless the associated ticket explicitly authorizes a
+public signatures unless the associated plan explicitly authorizes a
 source-breaking migration.
 
 ### Git identity
@@ -159,7 +172,7 @@ other bot co-author trailer to a commit in this repository.
 ## More detail
 
 This file is the single source of truth for build/test/docs commands, the
-specs/tickets/worktree workflow, and coding conventions — there is currently
+specs/plans/worktree workflow, and coding conventions — there is currently
 no separate contributor-facing document (this fork isn't taking external
 contributions right now). `README.md` gives a project overview and points
 here and to `docs/ROADMAP.md`; `docs/ROADMAP.md` covers the multi-phase modernization
