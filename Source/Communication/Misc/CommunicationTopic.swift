@@ -159,45 +159,25 @@ class CommunicationTopic {
         let patternLevels = filter.components(separatedBy: TOPIC_SEPARATOR)
         let topicLevels = topic.components(separatedBy: TOPIC_SEPARATOR)
 
-        let patternLength = patternLevels.count
-        let topicLength = topicLevels.count
-        let lastIndex = patternLength - 1
+        var topicIndex = 0
+        for (patternIndex, patternLevel) in patternLevels.enumerated() {
+            if patternLevel == MULTI_TOPIC_LEVEL_WILDCARD {
+                return patternIndex == patternLevels.count - 1
+            }
 
-        for i in 0...lastIndex {
-            let currentPatternLevel = patternLevels[i]
-            let currentLevelMissing = i >= topicLength
-            let currentLevel = currentLevelMissing ? nil : topicLevels[i]
-            let currentLevelEmpty = currentLevel?.isEmpty ?? true
-
-            if currentLevelMissing {
-                if currentPatternLevel == MULTI_TOPIC_LEVEL_WILDCARD {
-                    return i == lastIndex
-                }
+            guard topicIndex < topicLevels.count else {
                 return false
             }
 
-            if currentLevelEmpty && currentPatternLevel.isEmpty {
-                continue
-            }
-
-            if currentLevelEmpty && currentPatternLevel == SINGLE_TOPIC_LEVEL_WILDCARD {
-                continue
-            }
-
-            if currentLevelEmpty && currentPatternLevel != MULTI_TOPIC_LEVEL_WILDCARD {
+            let topicLevel = topicLevels[topicIndex]
+            guard patternLevel == SINGLE_TOPIC_LEVEL_WILDCARD || patternLevel == topicLevel else {
                 return false
             }
 
-            if currentPatternLevel == MULTI_TOPIC_LEVEL_WILDCARD {
-                return i == lastIndex
-            }
-
-            if currentPatternLevel != SINGLE_TOPIC_LEVEL_WILDCARD && currentPatternLevel != currentLevel {
-                return false
-            }
+            topicIndex += 1
         }
 
-        return patternLength == topicLength
+        return topicIndex == topicLevels.count
     }
     
     /// Gets the topic event level consisting of the given event type and optional event type filter.
