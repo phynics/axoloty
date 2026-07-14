@@ -8,7 +8,7 @@
 
 **Tech Stack:** Swift 6.4 container toolchain, SwiftPM, Swift Testing, Swift concurrency, ErrorKit, DocC, mqtt-nio, swift-log, Podman, Mosquitto, SwiftWasm/WASI.
 
-**Specs:** `.claude/specs/0002-wire-compatibility-testing.md`, `.claude/specs/0003-docc-documentation.md`, `.claude/specs/0004-concurrency-and-errors.md`, `.claude/specs/0005-test-organization.md`, `.claude/specs/0006-wasm-feasibility.md`, `.claude/specs/0007-package-rename.md`.
+**Specs:** `.agents/plans/0002-wire-compatibility-testing.md`, `.agents/plans/0003-docc-documentation.md`, `.agents/plans/0004-concurrency-and-errors.md`, `.agents/plans/0005-test-organization.md`, `.agents/plans/0006-wasm-feasibility.md`, `.agents/plans/0007-package-rename.md`.
 
 ## Global Constraints
 

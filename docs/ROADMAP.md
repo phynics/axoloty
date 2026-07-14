@@ -26,15 +26,15 @@ verified locally or in CI.
 - Removal of stale packaging/doc artifacts (`CoatySwift.podspec`,
   `.jazzy.yaml`, and the legacy Jekyll/Jazzy documentation — to be recreated
   as a DocC catalog in Phase 2) and a cleaned up `.gitignore`.
-- This roadmap, `../AGENTS.md`, and `../CLAUDE.md` establishing the agent-facing
-  workflow and documentation entry points.
+- This roadmap and `../AGENTS.md` establishing the agent-facing workflow and
+  documentation entry points.
 
 **Done when:**
 - [x] `make build` and `make test` succeed on the NixOS dev machine via podman.
 - [x] CI runs the same containerized flow on every push/PR.
 - [x] No stale CocoaPods/Jazzy artifacts remain in the repository.
-- [x] `docs/ROADMAP.md`, `../AGENTS.md`, `../CLAUDE.md` exist and are consistent with
-      each other.
+- [x] `docs/ROADMAP.md` and `../AGENTS.md` exist and are consistent with each
+      other.
 
 ## Phase 1 — swift-foundation migration (complete)
 

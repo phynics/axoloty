@@ -59,8 +59,9 @@ playground.xcworkspace
 iOSInjectionProject/
 
 # Local agentic-coding workspace (worktrees and scratch), not shared via git
-.claude/
+.agents/
 .worktree/
+
 
 # DocC generated documentation build output
 .docc-build/

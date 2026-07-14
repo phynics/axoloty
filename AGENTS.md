@@ -1,8 +1,8 @@
 # Agent Instructions for Axoloty
 
 This document is the canonical set of instructions for any agent (or human)
-working in this repository. `CLAUDE.md` just points here — keep this file as
-the single source of truth so the two never drift apart.
+working in this repository. Keep this file as the single source of truth for
+agent-facing workflow and conventions.
 
 For the overall modernization plan and current phase, see
 [ROADMAP.md](./docs/ROADMAP.md).
@@ -59,6 +59,12 @@ reviewed and versioned just like the implementation:
   `2026-07-13-fuzz-campaign-runner.md`).
 
 These are part of the shipped repo history, not local-only scratch files.
+
+Local agent scratch — per-plan tickets and agent-copied plans — lives under
+`.agents/` (`.agents/tickets/` and `.agents/plans/`). That directory is
+`.gitignore`d so each agent can keep private task state without polluting the
+repo history. Treat it as transient workspace: move/close items there, but
+land canonical specs and plans in `docs/superpowers/`.
 
 ### Worktrees and the subagent workflow
 
