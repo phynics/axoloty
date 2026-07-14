@@ -56,14 +56,20 @@ struct SensorThingsTests {
         let expectedFulfillments = SensorThingsTests.SENSOR_THINGS_TYPES_SET.count * (eventCount + 2)
         for _ in 0..<expectedFulfillments { completion.enter() }
 
-        SensorThingsTests.SENSOR_THINGS_TYPES_SET.forEach { element in
-            let receiverController = container2.getController(name: "MockReceiverController") as! MockReceiverController
+        for element in SensorThingsTests.SENSOR_THINGS_TYPES_SET {
+            let receiverController = try #require(
+                container2.getController(name: "MockReceiverController") as? MockReceiverController,
+                "Expected MockReceiverController in container2"
+            )
 
             let logger = AdvertiseEventLogger()
 
             receiverController.watchForAdvertiseEvents(logger: logger, objectType: element)
 
-            let emitterController = container1.getController(name: "MockEmitterController") as! MockEmitterController
+            let emitterController = try #require(
+                container1.getController(name: "MockEmitterController") as? MockEmitterController,
+                "Expected MockEmitterController in container1"
+            )
 
             let queue = DispatchQueue.init(label: "test.coaty.sensorThings")
             let delay: DispatchTimeInterval = .milliseconds(1500)
@@ -82,11 +88,14 @@ struct SensorThingsTests {
                     }
                     for i in 1...eventCount {
                         if i > logger.count {
-                            Issue.record("Something went wrong")
+                            Issue.record("Expected \(eventCount) advertise events, got \(logger.count)")
                             return
                         }
                         if logger.eventData[i-1].object.name == "Advertised_\(i)" {
                             completion.leave()
+                        } else {
+                            Issue.record("Unexpected object name \(logger.eventData[i-1].object.name) at index \(i)")
+                            return
                         }
                     }
                 }
@@ -144,12 +153,21 @@ struct SensorThingsTests {
             if index == elementArray.count {
                 return
             }
-            let element = elementArray.object(at: index) as! String
+            guard let element = elementArray.object(at: index) as? String else {
+                Issue.record("Expected String at index \(index)")
+                return
+            }
             let logger = ChannelEventLogger()
             let channelId = "42"
 
-            let receiverController = container2.getController(name: "MockReceiverController") as! MockReceiverController
-            let emitterController = container1.getController(name: "MockEmitterController") as! MockEmitterController
+            guard let receiverController = container2.getController(name: "MockReceiverController") as? MockReceiverController else {
+                Issue.record("Expected MockReceiverController in container2")
+                return
+            }
+            guard let emitterController = container1.getController(name: "MockEmitterController") as? MockEmitterController else {
+                Issue.record("Expected MockEmitterController in container1")
+                return
+            }
 
             var disposable: Disposable!
 
@@ -174,6 +192,9 @@ struct SensorThingsTests {
                     for i in 1...eventCount {
                         if i-1 < logger.eventData.count, let object = logger.eventData[i-1].object, object.name == "Channeled_\(i)" {
                             completion.leave()
+                        } else {
+                            Issue.record("Expected Channeled_\(i) at index \(i)")
+                            return
                         }
                     }
 
@@ -195,16 +216,17 @@ struct SensorThingsTests {
     }
 
     @Test
+    func testCoatyTimeIntervalFormatting() throws {
+        // Fixed UTC inputs so the test is deterministic and not wall-clock dependent.
+        let interval = CoatyTimeInterval(start: 0, duration: 4_200_012)
 
-    func testCoatyTimeInterval() throws {
-        // With miliseconds
-        let timeInterval = CoatyTimeInterval(start: Date.init().millisecondsSince1970, duration: 4200012)
-        let timeIntervalString = timeInterval.toLocalIntervalIsoString(includeMillis: true)
-        print(timeIntervalString)
+        let withMillis = interval.toLocalIntervalIsoString(includeMillis: true)
+        #expect(withMillis.hasPrefix("1970-01-01T00:00:00.000Z/PT4200S"))
 
-        // Without miliseconds
-        let timeInterval2 = CoatyTimeInterval(start: Date.init().millisecondsSince1970, duration: 4200012)
-        let timeIntervalString2 = timeInterval2.toLocalIntervalIsoString()
-        print(timeIntervalString2)
+        let withoutMillis = interval.toLocalIntervalIsoString(includeMillis: false)
+        #expect(withoutMillis.hasPrefix("1970-01-01T00:00:00Z/PT4200S"))
+
+        let zeroDuration = CoatyTimeInterval(start: 0, duration: 0)
+        #expect(zeroDuration.toLocalIntervalIsoString(includeMillis: false).hasSuffix("/PT0S"))
     }
 }

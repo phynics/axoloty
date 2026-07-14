@@ -12,7 +12,7 @@ struct DecentralizedLoggingTest {
 
     /// NOTE: Please make sure that a MQTT broker is running on localhost on port 1883 before running.
     @Test
-    func testExample() throws {
+    func testLogEventsAreReceived() throws {
         let components1 = Components(controllers: ["LogCreateorController": LogCreatorController.self],
                                      objectTypes: [])
         let communication1 = CommunicationOptions(namespace: "Logging Test",
@@ -48,9 +48,10 @@ struct DecentralizedLoggingTest {
         Thread.sleep(forTimeInterval: 0.25)
         coatyContainer1.communicationManager?.start()
 
-        guard let receiverController = coatyContainer2.getController(name: "LogReceiverController") as? LogReceiverController else {
-            return
-        }
+        let receiverController = try #require(
+            coatyContainer2.getController(name: "LogReceiverController") as? LogReceiverController,
+            "Expected LogReceiverController in coatyContainer2"
+        )
 
         // Introduce a 5 seconds waiting time to give the infrastructure time to log everything.
         Thread.sleep(forTimeInterval: 5.0)
@@ -104,7 +105,8 @@ class LogReceiverController: Controller {
     override func onCommunicationManagerStarting() {
         _ = self.communicationManager.observeAdvertise(withCoreType: .Log).subscribe(onNext: { event in
             guard let logObject = event.data.object as? Log else {
-                fatalError("Expected a Log object, but got something different. Stopping")
+                Issue.record("Expected a Log object, but got \(type(of: event.data.object))")
+                return
             }
             self.logStorage.append(logObject)
         })
