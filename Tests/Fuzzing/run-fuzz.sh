@@ -14,6 +14,10 @@ IMAGE=${IMAGE:-coatyswift-dev}
 MODE=auto
 FAIL_FAST=0
 QUIET=0
+manifest_finalized=0
+interrupted=0
+
+declare -a worker_pids
 
 usage() {
     cat <<'EOF'
@@ -103,6 +107,64 @@ git_status=$(git -C "$ROOT_DIR" status --porcelain 2>/dev/null || true)
 json_escape() {
     printf '%s' "$1" | sed ':a;N;$!ba;s/\\/\\\\/g;s/"/\\"/g;s/\n/\\n/g;s/\r/\\r/g;s/\t/\\t/g'
 }
+
+finalize_manifest() {
+    local status_text="${1:-failed}"
+    local finished_at duration case_json case_count passed_cases failed_cases
+    [[ -f "$manifest" ]] || return 0
+    (( manifest_finalized )) && return 0
+    manifest_finalized=1
+
+    if [[ -d "$campaign_dir/results" ]]; then
+        find "$campaign_dir/results" -name '*.tsv' -type f -print0 | xargs -0r cat | sort >> "$summary"
+    fi
+
+    if [[ -f "$summary" ]]; then
+        case_json=$(awk -F '\t' 'NR > 1 {
+            if (n++) separator = ",";
+            printf "%s{\"case\":\"%s\",\"seed\":\"%s\",\"repetition\":%s,\"iterations\":%s,\"durationSeconds\":%s,\"exitStatus\":%s,\"log\":\"%s\"}", separator, $1, $2, $3, $4, $5, $6, $7
+        }' "$summary")
+        case_count=$(awk 'NR > 1 { count++ } END { print count + 0 }' "$summary")
+        passed_cases=$(awk -F '\t' 'NR > 1 && $6 == 0 { count++ } END { print count + 0 }' "$summary")
+        failed_cases=$(awk -F '\t' 'NR > 1 && $6 != 0 { count++ } END { print count + 0 }' "$summary")
+    else
+        case_json=""
+        case_count=0
+        passed_cases=0
+        failed_cases=0
+    fi
+
+    finished_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+    duration=$(($(date +%s) - start_epoch))
+    sed -i "/  \"cases\": \[\]/c\\  \"status\": \"$status_text\",\n  \"finishedAt\": \"$finished_at\",\n  \"durationSeconds\": $duration,\n  \"caseCount\": $case_count,\n  \"passedCases\": $passed_cases,\n  \"failedCases\": $failed_cases,\n  \"cases\": [$case_json]" "$manifest"
+    echo "Fuzz campaign finalized with status $status_text at $finished_at" >> "$campaign_log"
+}
+
+trap_signal() {
+    interrupted=1
+    if (( ${#worker_pids[@]} > 0 )); then
+        kill -TERM "${worker_pids[@]}" 2>/dev/null || true
+    fi
+}
+
+trap_exit() {
+    local exit_status=$?
+    if (( ${#worker_pids[@]} > 0 )); then
+        kill -TERM "${worker_pids[@]}" 2>/dev/null || true
+        wait "${worker_pids[@]}" 2>/dev/null || true
+    fi
+    if [[ -f "$manifest" && "$manifest_finalized" -eq 0 ]]; then
+        if (( interrupted )); then
+            finalize_manifest "interrupted"
+        else
+            finalize_manifest "failed"
+        fi
+    fi
+    if (( interrupted )); then exit 143; fi
+    exit "$exit_status"
+}
+trap trap_exit EXIT
+trap 'trap_signal' TERM INT
 
 started_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 git_status_json=$(json_escape "$git_status")
@@ -197,7 +259,6 @@ run_worker() {
 }
 
 overall_status=0
-declare -a worker_pids
 for ((worker = 1; worker <= JOBS; worker++)); do
     run_worker "$worker" &
     worker_pids+=("$!")
@@ -205,20 +266,11 @@ done
 for worker_pid in "${worker_pids[@]}"; do
     wait "$worker_pid" || overall_status=1
 done
-find "$campaign_dir/results" -name '*.tsv' -type f -print0 | xargs -0r cat | sort >> "$summary"
-
-end_epoch=$(date +%s)
-case_json=$(awk -F '\t' 'NR > 1 {
-    if (n++) separator = ",";
-    printf "%s{\"case\":\"%s\",\"seed\":\"%s\",\"repetition\":%s,\"iterations\":%s,\"durationSeconds\":%s,\"exitStatus\":%s,\"log\":\"%s\"}", separator, $1, $2, $3, $4, $5, $6, $7
-}' "$summary")
-case_count=$(awk 'NR > 1 { count++ } END { print count + 0 }' "$summary")
-passed_cases=$(awk -F '\t' 'NR > 1 && $6 == 0 { count++ } END { print count + 0 }' "$summary")
-failed_cases=$(awk -F '\t' 'NR > 1 && $6 != 0 { count++ } END { print count + 0 }' "$summary")
 status_text=failed
 ((overall_status == 0)) && status_text=passed
-finished_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-sed -i "/  \"cases\": \[\]/c\\  \"status\": \"$status_text\",\n  \"finishedAt\": \"$finished_at\",\n  \"durationSeconds\": $((end_epoch - start_epoch)),\n  \"caseCount\": $case_count,\n  \"passedCases\": $passed_cases,\n  \"failedCases\": $failed_cases,\n  \"cases\": [$case_json]" "$manifest"
+((interrupted)) && status_text=interrupted
+finalize_manifest "$status_text"
 echo "Fuzz campaign finished with status $overall_status at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "$campaign_log"
 ((QUIET)) || echo "Campaign artifacts: $campaign_dir"
+if ((interrupted)); then exit 143; fi
 exit "$overall_status"
