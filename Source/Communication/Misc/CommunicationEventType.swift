@@ -6,7 +6,7 @@
 //
 
 /// Predefined event types used by Coaty communication event patterns.
-internal enum CommunicationEventType: String {
+internal enum CommunicationEventType: String, Sendable {
     // Event types for Coaty one-way messages
     case Advertise = "ADV"
     case Deadvertise = "DAD"

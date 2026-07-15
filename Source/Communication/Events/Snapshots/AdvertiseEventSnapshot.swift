@@ -40,3 +40,36 @@ public struct AdvertiseEventSnapshot: EventSnapshot, Codable, Equatable, Sendabl
         self.privateData = privateData
     }
 }
+
+// MARK: - Wire decoding
+
+private struct AdvertiseEventWirePayload: Codable {
+    let object: CoatyObjectSnapshot
+    let privateData: AnyCodable?
+}
+
+extension AdvertiseEventSnapshot {
+
+    /// Decodes an Advertise snapshot from a parsed MQTT message, preserving
+    /// source and filter metadata from the topic.
+    ///
+    /// Malformed payloads are surfaced as `nil` so callers can drop them.
+    ///
+    /// - Parameter parsedMQTTMessage: the parsed transport message.
+    init?(parsedMQTTMessage: ParsedMQTTMessage) {
+        guard let wire: AdvertiseEventWirePayload = PayloadCoder.decode(parsedMQTTMessage.payload) else {
+            return nil
+        }
+
+        let privateData: Data? = wire.privateData.flatMap { value in
+            try? JSONEncoder().encode(value)
+        }
+
+        self.init(
+            sourceId: parsedMQTTMessage.sourceId,
+            eventTypeFilter: parsedMQTTMessage.eventTypeFilter,
+            object: wire.object,
+            privateData: privateData
+        )
+    }
+}

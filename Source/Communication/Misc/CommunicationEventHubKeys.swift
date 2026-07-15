@@ -37,4 +37,31 @@ enum CommunicationEventHubKeys {
         scope: "communication",
         name: "raw-mqtt-message"
     )
+
+    /// Key for the stream of parsed MQTT messages that carry routing metadata.
+    static let parsedMQTTMessage = CommunicationEventHubKey(
+        scope: "communication",
+        name: "parsed-mqtt-message"
+    )
+
+    /// Returns the key for an async Advertise stream filtered by event type filter.
+    ///
+    /// When an object type maps to a core type, callers may pass the concrete
+    /// `objectTypeFilter` to receive a stream that is narrowed to that object
+    /// type while still subscribing on the core type topic.
+    ///
+    /// - Parameters:
+    ///   - eventTypeFilter: the event type filter used for the MQTT subscription.
+    ///   - objectTypeFilter: an optional concrete object type for further narrowing.
+    /// - Returns: a stable ``CommunicationEventHubKey`` for the stream.
+    static func advertise(
+        eventTypeFilter: String,
+        objectTypeFilter: String? = nil
+    ) -> CommunicationEventHubKey {
+        var name = "advertise/\(eventTypeFilter)"
+        if let objectTypeFilter = objectTypeFilter {
+            name += "/\(objectTypeFilter)"
+        }
+        return CommunicationEventHubKey(scope: "communication", name: name)
+    }
 }
