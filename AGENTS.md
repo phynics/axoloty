@@ -1,185 +1,65 @@
 # Agent Instructions for Axoloty
 
-This document is the canonical set of instructions for any agent (or human)
-working in this repository. Keep this file as the single source of truth for
-agent-facing workflow and conventions.
+This file is the canonical agent and contributor workflow for this repository.
+For modernization context, see [ROADMAP.md](./docs/ROADMAP.md).
 
-For the overall modernization plan and current phase, see
-[ROADMAP.md](./docs/ROADMAP.md).
+## Build and test
 
-## Building & testing: podman only, never native `swift`
+- Never run native `swift` commands on the host. Use the root Makefile, which
+  runs through podman: `make build`, `make test`, `make shell`, and `make docs`.
+- Prefer adding a Makefile target to using native Swift tooling.
+- Swift tests use Swift Testing only: `import Testing`, `@Test`, `#expect`,
+  `#require`, and `Issue.record`. Do not add XCTest.
+- Broker-backed tests must synchronize with Swift concurrency primitives or
+  explicit deadlines.
+- A Swift binary exported from a development container is acceptable for editor
+  tooling, but Makefile targets remain the canonical build and test flow.
 
-This repository is developed on NixOS, where the native Swift toolchain
-cannot run correctly (dynamic-linking failures). Because of that:
+## Planning and worktrees
 
-- **Never invoke `swift build`, `swift test`, `swift package`, etc. directly
-  on the host.** They will not work reliably on this machine, and CI does
-  not run them natively either.
-- Always use the root `Makefile`, which wraps everything through `podman`:
-  - `make build` — build the package inside the container.
-  - `make test` — run the test suite inside the container.
-  - `make shell` — drop into an interactive shell inside the container, for
-    anything not already covered by a Makefile target.
-  - `make docs` — generate API documentation via DocC into `.build/docc`.
-- The container image and its definition live under `.devcontainer/`
-  (`Dockerfile`, `devcontainer.json`). CI (`.github/workflows/ci.yml`) runs
-  the same containerized flow, so a green `make build && make test` locally
-  should predict a green CI run.
-
-Swift tests use the toolchain-provided Swift Testing framework exclusively.
-Test files import `Testing`, declare cases with `@Test`, assert with `#expect`
-and `#require`, and record non-fatal issues with `Issue.record`. Do not add
-XCTest imports, `XCTestCase` subclasses, XCTest expectations, or XCTest
-assertions. Broker-backed tests should use Swift concurrency primitives or
-explicit deadlines for synchronization. The Swift 6 toolchain in
-`.devcontainer/Dockerfile` is therefore the minimum supported test toolchain;
-the package manifest may retain its existing tools-version floor where the
-toolchain can provide the Testing module without changing production language
-mode.
-
-If a Makefile target doesn't exist yet for something you need, prefer adding
-one over reaching for the native toolchain.
-
-An alternative for *interactive* tooling (editor LSP, `swift repl`):
-exporting the `swift` binary from a Swift dev container via
-[distrobox](https://github.com/89luca89/distrobox). That's fine for
-editing-time ergonomics, but the podman/Makefile flow above remains the
-canonical build/test path — it's what CI reproduces.
-
-## Workflow: specs → plans → worktrees
-
-Work is planned and executed through a spec/plan pipeline that lives in the
-repo under `docs/superpowers/`, tracked in git alongside the code so it is
-reviewed and versioned just like the implementation:
-
-- `docs/superpowers/specs/` — design specs describing a piece of work at a
-  conceptual level (e.g. `2026-07-13-fuzz-campaign-runner-design.md`).
-- `docs/superpowers/plans/` — plans (the executable tickets) derived from
-  specs, each scoped to a single unit of work (e.g.
-  `2026-07-13-fuzz-campaign-runner.md`).
-
-These are part of the shipped repo history, not local-only scratch files.
-
-Local agent scratch — per-plan tickets and agent-copied plans — lives under
-`.agents/` (`.agents/tickets/` and `.agents/plans/`). That directory is
-`.gitignore`d so each agent can keep private task state without polluting the
-repo history. Treat it as transient workspace: move/close items there, but
-land canonical specs and plans in `docs/superpowers/`.
-
-### Worktrees and the subagent workflow
-
-- **One git worktree per plan.** Create an isolated worktree under the
-  repository-local `.worktree/` directory (gitignored) and branch off
-  `master`:
+- Keep canonical design specs in `docs/superpowers/specs/` and implementation
+  plans in `docs/superpowers/plans/`. Keep agent-local scratch work in the
+  ignored `.agents/` directory.
+- Use one worktree per plan. Create every worktree under the repository-local,
+  ignored `.worktree/` directory, branching from `master`:
 
   ```sh
   git worktree add .worktree/<plan-id> -b <plan-id>-<slug> master
   ```
 
-  Do all work for that plan inside its own worktree so parallel efforts
-  (including other agents') never collide on the same working tree.
-- **When delegating to a subagent**, the subagent does all of its work
-  inside its own worktree on its branch and commits there. The main agent
-  does not edit inside the subagent's tree; instead it reviews the resulting
-  branch and merges it once the work is satisfactory. This keeps each
-  subagent's changes isolated and individually reviewable until the main
-  agent integrates them.
-- Open a pull request from the plan's branch back to `master`.
-- Once the PR is merged, remove the worktree (`git worktree remove
-  .worktree/<plan-id>`) — don't leave stale worktrees lying around.
+- Do all plan work in its worktree. Delegated agents work and commit only in
+  their own worktrees; review and merge their branches before integration.
+- Open a pull request to `master`, then remove its merged worktree with
+  `git worktree remove .worktree/<plan-id>`.
 
-This lets multiple agents (or an agent and a human) work on independent
-plans concurrently without stepping on each other's files.
+## Code conventions
 
-## Coding conventions
+### Source files
 
-### License header
+- New comment-capable source files need this header, using the first
+  publication year and never changing it later:
 
-Attach a license and copyright notice to the top of every new source file:
+  ```swift
+  // Copyright (c) <year> <contributor>. Licensed under the MIT License.
+  ```
 
-```swift
-// Copyright (c) <year> <contributor>. Licensed under the MIT License.
-```
+- Follow the repository SwiftLint configuration.
+- Every public type, property, method, initializer, and protocol needs a
+  DocC comment. Document parameters, returns, and errors when applicable; use
+  double-backtick symbol links; update public API documentation with the API.
 
-`<year>` is the year of *first* publication and must **not** be changed when
-the file is modified later. Don't add additional copyright notices or dates
-on revision. This applies to any source file that can hold a comment easily
-(e.g. `.swift`) and that contributes original content to the project (not
-plain configuration files). Contributions without this header on new source
-files won't be accepted.
+### Errors
 
-### Commit style
+- Use ErrorKit for package errors. Package-defined errors conform to
+  `Throwable` and provide a stable `userFriendlyMessage`; prefer
+  `AxolotyError` unless a distinct public boundary needs another type.
+- Do not expose bare `Error`, encoding/decoding, or dependency errors from an
+  Axoloty API. Convert them to an Axoloty `Throwable` with actionable context.
+- Failure tests assert the error category and `userFriendlyMessage`. Preserve
+  public signatures unless an approved plan authorizes a breaking change.
 
-Use [Conventional Commits](https://conventionalcommits.org/) for commit
-messages:
+### Commits
 
-```
-<type>[optional scope]: <description>
-
-[optional body]
-
-[optional footer]
-```
-
-This keeps history structured enough to eventually support automatic
-changelog generation and version bumping, even though the current build
-process doesn't yet automate that.
-
-### Coding style
-
-The framework includes a custom [SwiftLint](https://github.com/realm/SwiftLint)
-configuration (`.swiftlint.yml`) that also applies to Coaty application
-projects consuming this package.
-
-### Documentation comments
-
-DocC-style documentation comments are the single source of API documentation:
-the DocC catalog produced by `make docs` is generated from in-source comments,
-not from a hand-maintained reference. Every public type, property, method,
-initializer, and protocol declaration must carry a [DocC](https://www.swift.org/documentation/docc/)
-documentation comment (`///` for single-line, `/** … */` for multi-line)
-written in DocC markup.
-
-- Document parameters, return values, and thrown errors with the
-  `- Parameter:`, `- Returns:`, and `- Throws:` callouts.
-- Cross-reference other symbols with double-backtick links (`` ``Symbol`` ``)
-  so the catalog resolves them automatically.
-- Keep the documentation co-located with the declaration it describes; do not
-  duplicate API-reference content in standalone `.md` articles — those are
-  reserved for guides and conceptual overviews.
-- When modifying a public API, update its documentation comment in the same
-  change so the catalog never drifts from the code.
-
-### Error handling
-
-Use [ErrorKit](https://github.com/FlineDev/ErrorKit) for all errors handled by
-the package. Package-defined errors must conform to `Throwable` and provide a
-stable, user-facing `userFriendlyMessage`; use `AxolotyError` unless a
-distinct public error type is necessary for a clear API boundary.
-
-Do not allow bare `Error`, `DecodingError`, `EncodingError`, or dependency
-errors to escape an Axoloty API. Convert them at the package boundary to a
-`Throwable` Axoloty error while preserving actionable diagnostic context in
-the message. At presentation and logging boundaries, obtain user-facing text
-through ErrorKit rather than duplicating ad-hoc error formatting.
-
-Tests that exercise failing paths must assert both the error category and its
-`userFriendlyMessage`. New or changed error behavior must maintain existing
-public signatures unless the associated plan explicitly authorizes a
-source-breaking migration.
-
-### Git identity
-
-Commits in this repository must be made using the actual configured git
-identity for this checkout (`user.name` / `user.email` — currently Atakan
-DULKER / contact@atkn.me). **Never** add a `Co-Authored-By: Claude` or any
-other bot co-author trailer to a commit in this repository.
-
-## More detail
-
-This file is the single source of truth for build/test/docs commands, the
-specs/plans/worktree workflow, and coding conventions — there is currently
-no separate contributor-facing document (this fork isn't taking external
-contributions right now). `README.md` gives a project overview and points
-here and to `docs/ROADMAP.md`; `docs/ROADMAP.md` covers the multi-phase modernization
-plan this work is part of.
+- Use Conventional Commits.
+- Commit with this checkout's configured identity. Never add bot co-author
+  trailers.
