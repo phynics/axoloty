@@ -12,6 +12,8 @@ struct EventSnapshotSendabilityTests {
     @Test
     func advertiseEventSnapshotIsSendable() {
         let snapshot = AdvertiseEventSnapshot(
+            sourceId: sampleSourceId(),
+            eventTypeFilter: ":coaty.Custom",
             object: sampleObject(),
             privateData: sampleData()
         )
@@ -20,15 +22,20 @@ struct EventSnapshotSendabilityTests {
 
     @Test
     func deadvertiseEventSnapshotIsSendable() {
-        let snapshot = DeadvertiseEventSnapshot(objectIds: ["550e8400-e29b-41d4-a716-446655440000"])
+        let snapshot = DeadvertiseEventSnapshot(
+            sourceId: sampleSourceId(),
+            objectIds: ["550e8400-e29b-41d4-a716-446655440000"]
+        )
         assertSendable(snapshot)
     }
 
     @Test
     func channelEventSnapshotIsSendable() {
         let snapshot = ChannelEventSnapshot(
+            sourceId: sampleSourceId(),
             objects: [sampleObject()],
             channelId: "channel-a",
+            eventTypeFilter: "channel-a",
             privateData: sampleData()
         )
         assertSendable(snapshot)
@@ -36,16 +43,21 @@ struct EventSnapshotSendabilityTests {
 
     @Test
     func updateEventSnapshotIsSendable() {
-        let snapshot = UpdateEventSnapshot(object: sampleObject())
+        let snapshot = UpdateEventSnapshot(
+            sourceId: sampleSourceId(),
+            eventTypeFilter: "CoatyObject",
+            object: sampleObject()
+        )
         assertSendable(snapshot)
     }
 
     @Test
     func discoverEventSnapshotIsSendable() {
         let snapshot = DiscoverEventSnapshot(
+            sourceId: sampleSourceId(),
             externalId: "external-1",
             objectTypes: ["coaty.Custom"],
-            coreTypes: ["CoatyObject"]
+            coreTypes: [.CoatyObject]
         )
         assertSendable(snapshot)
     }
@@ -53,6 +65,7 @@ struct EventSnapshotSendabilityTests {
     @Test
     func callEventSnapshotIsSendable() {
         let snapshot = CallEventSnapshot(
+            sourceId: sampleSourceId(),
             operation: "doThing",
             parameters: sampleData(),
             filter: sampleData()
@@ -63,8 +76,9 @@ struct EventSnapshotSendabilityTests {
     @Test
     func queryEventSnapshotIsSendable() {
         let snapshot = QueryEventSnapshot(
+            sourceId: sampleSourceId(),
             objectTypes: ["coaty.Custom"],
-            coreTypes: ["CoatyObject"],
+            coreTypes: [.CoatyObject],
             objectFilter: sampleData(),
             objectJoinConditions: [sampleData()]
         )
@@ -77,10 +91,14 @@ private func assertSendable<T: Sendable>(_ value: T) {
     _ = value
 }
 
+private func sampleSourceId() -> String {
+    "550e8400-e29b-41d4-a716-446655440001"
+}
+
 private func sampleObject() -> CoatyObjectSnapshot {
     CoatyObjectSnapshot(
         objectId: "550e8400-e29b-41d4-a716-446655440000",
-        coreType: "CoatyObject",
+        coreType: .CoatyObject,
         objectType: "coaty.CoatyObject",
         name: "Sample Object"
     )

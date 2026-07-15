@@ -5,13 +5,32 @@ import Foundation
 /// A value-typed snapshot of an `UpdateEvent` suitable for concurrent event streams.
 public struct UpdateEventSnapshot: EventSnapshot, Codable, Equatable, Sendable {
 
+    /// The identifier of the event source, as derived from the incoming topic.
+    public let sourceId: String?
+
+    /// The event type filter used to route the update, if any.
+    ///
+    /// This corresponds to the `typeFilter` set on a legacy `UpdateEvent`
+    /// and is either a core type name or an object type prefixed with the
+    /// event type filter separator.
+    public let eventTypeFilter: String?
+
     /// The object whose properties are to be updated.
     public let object: CoatyObjectSnapshot
 
     /// Creates a snapshot of an Update event.
     ///
-    /// - Parameter object: The object with properties to be updated.
-    public init(object: CoatyObjectSnapshot) {
+    /// - Parameters:
+    ///   - sourceId: The identifier of the event source.
+    ///   - eventTypeFilter: The optional event type filter used for routing.
+    ///   - object: The object with properties to be updated.
+    public init(
+        sourceId: String? = nil,
+        eventTypeFilter: String? = nil,
+        object: CoatyObjectSnapshot
+    ) {
+        self.sourceId = sourceId
+        self.eventTypeFilter = eventTypeFilter
         self.object = object
     }
 }

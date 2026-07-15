@@ -8,7 +8,7 @@
 import Foundation
 
 /// All Coaty core types as defined in https://github.com/coatyio/coaty-js/blob/master/src/model/types.ts
-public enum CoreType: String, Codable {
+public enum CoreType: String, Codable, Sendable {
     
     // MARK: - Value definitions.
     

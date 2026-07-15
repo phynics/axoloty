@@ -9,7 +9,7 @@ public struct CoatyObjectSnapshot: EventSnapshot, Codable, Equatable, Sendable {
     public let objectId: String
 
     /// The core type of the object, as transmitted on the wire.
-    public let coreType: String
+    public let coreType: CoreType
 
     /// The concrete application-specific type of the object.
     public let objectType: String
@@ -47,7 +47,7 @@ public struct CoatyObjectSnapshot: EventSnapshot, Codable, Equatable, Sendable {
     ///   - payload: An optional wire payload for the full encoded object.
     public init(
         objectId: String,
-        coreType: String,
+        coreType: CoreType,
         objectType: String,
         name: String,
         externalId: String? = nil,
