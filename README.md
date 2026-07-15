@@ -91,11 +91,17 @@ make test    # run the test suite inside the container
 make ci      # support checks plus one coverage-enabled Swift test pass
 ```
 
-Each worktree owns its `.build` compiler output. SwiftPM downloads are shared
-through `SPM_CACHE_DIR`, which defaults to a toolchain-specific cache under
-`~/.cache/coaty-swift/swiftpm/`. Override `BUILD_DIR` or `SPM_CACHE_DIR` when a
-different disk or CI cache path is needed. `make worktree-warm` is an optional
-explicit prebuild; bootstrap itself resolves dependencies but does not compile.
+Worktrees share a locked incremental build cache under
+`/tmp/coaty-swift-build/`, scoped by repository and Swift toolchain. SwiftPM
+downloads are shared through `SPM_CACHE_DIR`, which defaults to a
+toolchain-specific cache under `~/.cache/coaty-swift/swiftpm/`. Coverage uses
+the separate `COVERAGE_BUILD_DIR` cache to avoid mixing instrumented artifacts
+with normal builds. Override `BUILD_DIR`, `COVERAGE_BUILD_DIR`, or
+`SPM_CACHE_DIR` for another disk or a CI-local cache; `/tmp` is intentionally
+volatile. CI passes `BUILD_LOCK=0` because each runner uses its own local build
+directory; the Makefile preflight rejects a CI invocation that would wait on a
+shared lock. `make worktree-warm` is an optional explicit prebuild; bootstrap
+itself resolves dependencies but does not compile.
 
 Coverage reports are written to `.testing/coverage/`. The aggregate ratchet is
 enforced, while changed-line coverage is displayed in CI summaries and native

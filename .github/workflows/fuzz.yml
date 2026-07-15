@@ -99,7 +99,7 @@ jobs:
           done
 
       - name: Run fuzz campaign
-        run: make fuzz-long CONTAINER_RUNTIME=docker IMAGE=coatyswift-dev SPM_CACHE_DIR=.swiftpm-cache
+        run: make fuzz-long CONTAINER_RUNTIME=docker IMAGE=coatyswift-dev BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache
 
       - name: Summarize campaign
         if: always()

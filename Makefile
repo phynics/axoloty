@@ -8,6 +8,9 @@ CACHE_NAMESPACE ?= swift-6.3-linux
 REPOSITORY_NAME ?= $(shell git rev-parse --git-common-dir 2>/dev/null | sed 's#/.git$$##' | xargs basename 2>/dev/null || basename "$(CURDIR)")
 BUILD_CACHE_ROOT ?= /tmp/coaty-swift-build/$(REPOSITORY_NAME)/$(CACHE_NAMESPACE)
 BUILD_DIR ?= $(BUILD_CACHE_ROOT)/debug
+COVERAGE_BUILD_DIR ?= $(BUILD_DIR)-coverage
+BUILD_LOCK ?= 1
+export BUILD_LOCK
 ifeq ($(AXOLOTY_DEVCONTAINER),1)
 SPM_CACHE_DIR ?= /workspace/.swiftpm-cache
 else
@@ -23,7 +26,7 @@ COMMA := ,
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image resolve worktree-bootstrap worktree-warm build test test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-fast ci broker broker-stop shell docs clean
+.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build test test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs clean
 
 help:
 	@printf '%s\n' \
@@ -50,11 +53,12 @@ help:
 		'make broker        Start Mosquitto on localhost:1883' \
 		'make broker-stop   Stop the background Mosquitto container' \
 		'make shell         Open a shell in the Linux container' \
-		'make docs          Generate DocC API documentation into .build/docc' \
-		'make clean         Remove Swift build artifacts' \
+		'make docs          Generate DocC API documentation into the active build cache' \
+		'make clean         Remove normal and coverage build artifacts' \
 		'' \
 		'BUILD_DIR and SPM_CACHE_DIR can point at different local cache directories' \
-		'BUILD_DIR defaults to a shared, locked cache under /tmp'
+		'BUILD_DIR defaults to a shared cache under /tmp; BUILD_LOCK=0 disables waiting for isolated CI runs' \
+		'COVERAGE_BUILD_DIR isolates instrumented artifacts from normal builds'
 
 image:
 	@if [ "$(AXOLOTY_DEVCONTAINER)" = "1" ]; then exit 0; fi
@@ -103,6 +107,7 @@ test-wire: resolve
 
 # Harness self-tests intentionally remain host-side Python/shell checks.
 test-support:
+	Tests/Support/test-run-container.sh
 	Tests/Fuzzing/test-run-fuzz.sh
 	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/WireCompatibility/Capture -p 'test_*.py' -v
 	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/WireCompatibility/Legacy -p 'test_*.py' -v
@@ -123,10 +128,15 @@ test-observation-linux: resolve
 
 test-fast: test-unit test-module test-fuzz test-wire test-support
 
-coverage: resolve
+coverage-resolve: image
+	@mkdir -p "$(SPM_CACHE_DIR)"
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(COVERAGE_BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh .devcontainer/resolve.sh
+	@git diff --exit-code -- Package.resolved
+
+coverage: coverage-resolve
 	@mkdir -p .testing/coverage
 	@if [ -n "$(COVERAGE_DIFF_BASE)" ]; then git diff --unified=0 "$(COVERAGE_DIFF_BASE)" HEAD > .testing/coverage/changed.diff; else git diff --unified=0 HEAD^ HEAD > .testing/coverage/changed.diff; fi
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(COVERAGE_BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \
 		sh -c 'set -e; \
 		  pgrep mosquitto >/dev/null 2>&1 || mosquitto -d; \
 		  swift test $(SWIFT_LOCKED_ARGS) --enable-code-coverage; \
@@ -142,7 +152,11 @@ coverage-check: coverage
 
 ci-fast: build test-fast
 
-ci: test-support resolve coverage-check
+ci-preflight:
+	@if [ "$${CI:-}" = "true" ] && [ "$(BUILD_LOCK)" != "0" ]; then echo 'CI must set BUILD_LOCK=0 because its workspace-local build directory is not shared' >&2; exit 2; fi
+
+ci: ci-preflight
+	$(MAKE) test-support coverage-check
 
 broker: image
 	@$(CONTAINER_RUNTIME) rm -f $(BROKER_NAME) >/dev/null 2>&1 || true
@@ -163,4 +177,4 @@ docs: resolve
 		--output-path .build/docc
 
 clean:
-	rm -rf "$(BUILD_DIR)"
+	rm -rf "$(BUILD_DIR)" "$(COVERAGE_BUILD_DIR)"

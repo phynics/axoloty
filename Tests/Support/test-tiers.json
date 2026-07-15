@@ -12,6 +12,7 @@
     {"id": "manual-macos", "timeoutSeconds": 1800, "cadence": "release-and-apple-change", "network": "isolated-broker", "required": false}
   ],
   "selfTests": [
+    {"path": "Tests/Support/test-run-container.sh", "makeTarget": "test-support", "tier": "unit"},
     {"path": "Tests/Fuzzing/test-run-fuzz.sh", "makeTarget": "test-support", "tier": "property"},
     {"path": "Tests/WireCompatibility/Capture/test_mqtt_capture.py", "makeTarget": "test-support", "tier": "wire-offline"},
     {"path": "Tests/WireCompatibility/Legacy/test_legacy_capture.py", "makeTarget": "test-support", "tier": "wire-offline"},
