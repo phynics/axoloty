@@ -8,11 +8,11 @@
 import Foundation
 
 /// CommunicationState indicates the connectivity state of a CommunicationManager.
-public enum CommunicationState {
-    
+public enum CommunicationState: Sendable, Hashable {
+
     /// Not connected
     case offline
-    
+
     /// Connected
     case online
 

@@ -47,6 +47,16 @@ public class CommunicationManager {
         return client.communicationState
     }
 
+    /// The async event hub shared by the underlying communication client.
+    ///
+    /// Use this hub together with the ``CommunicationEventHubKeys`` helpers to
+    /// register streams for transport-level state and raw MQTT messages, or
+    /// use the convenience accessors ``observeCommunicationStateStream()`` and
+    /// ``observeRawMQTTMessageStream()``.
+    public var eventHub: EventHub {
+        return client.eventHub
+    }
+
     /// Holds deferred subscriptions while the communication manager is offline.
     private var deferredSubscriptions = Set<String>()
 

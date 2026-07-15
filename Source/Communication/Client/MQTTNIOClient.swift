@@ -44,6 +44,15 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
     var messages = PublishSubject<(CommunicationTopic, String)>()
     var communicationState = BehaviorSubject(value: CommunicationState.offline)
     var delegate: Startable
+
+    /// The async event hub used to mirror communication state and raw MQTT
+    /// transport messages to concurrent consumers.
+    ///
+    /// - Note: This hub is intentionally owned by the client so that its
+    ///   lifetime matches the underlying transport and so that state streams
+    ///   replay the last known state even before a subscriber attaches.
+    let eventHub = EventHub()
+
     var brokerCandidates = [String]()
     var brokerPort: UInt16 = 1883
 
@@ -332,6 +341,14 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
 
     func updateCommunicationState(_ state: CommunicationState) {
         communicationState.onNext(state)
+
+        _Concurrency.Task<Void, Never> { [weak self] in
+            guard let self else { return }
+            await self.eventHub.yieldState(
+                value: state,
+                to: CommunicationEventHubKeys.communicationState
+            )
+        }
     }
 
     // MARK: - mqtt-nio listener callbacks.
@@ -340,6 +357,15 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
         switch result {
         case .success(let info):
             let bytes = [UInt8](info.payload.readableBytesView)
+            let rawMessage = RawMQTTMessage(topic: info.topicName, payload: bytes)
+
+            _Concurrency.Task<Void, Never> { [weak self] in
+                guard let self else { return }
+                await self.eventHub.yield(
+                    value: rawMessage,
+                    to: CommunicationEventHubKeys.rawMQTTMessage
+                )
+            }
 
             if CommunicationTopic.isRawTopic(topic: info.topicName) {
                 rawMQTTMessages.onNext((info.topicName, bytes))
@@ -352,12 +378,45 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                     ioValueMessages.onNext((info.topicName, bytes))
                 } else if let payloadString = String(bytes: bytes, encoding: .utf8) {
                     messages.onNext((topic, payloadString))
+
+                    let parsed = ParsedMQTTMessage(topic: topic, payload: payloadString)
+                    _Concurrency.Task<Void, Never> { [weak self] in
+                        guard let self else { return }
+                        await self.eventHub.yield(
+                            value: parsed,
+                            to: CommunicationEventHubKeys.parsedMQTTMessage
+                        )
+                        await self.routeAdvertiseSnapshot(parsed: parsed)
+                    }
                 }
             } catch {
                 log.debug("Ignoring incoming event on \(info.topicName): \(error)")
             }
         case .failure(let error):
             log.debug("Error receiving published message: \(error)")
+        }
+    }
+
+    /// Routes a decoded Advertise snapshot to the per-filter event hub keys so
+    /// that async observers can consume it without an intermediate dispatcher.
+    private func routeAdvertiseSnapshot(parsed: ParsedMQTTMessage) async {
+        guard parsed.eventType == .Advertise,
+              let snapshot = AdvertiseEventSnapshot(parsedMQTTMessage: parsed) else {
+            return
+        }
+
+        let baseKey = CommunicationEventHubKeys.advertise(
+            eventTypeFilter: parsed.eventTypeFilter ?? ""
+        )
+        await eventHub.yield(value: snapshot, to: baseKey)
+
+        if let coreType = CoreType.getCoreType(forObjectType: snapshot.object.objectType),
+           parsed.eventTypeFilter == coreType.rawValue {
+            let objectKey = CommunicationEventHubKeys.advertise(
+                eventTypeFilter: coreType.rawValue,
+                objectTypeFilter: snapshot.object.objectType
+            )
+            await eventHub.yield(value: snapshot, to: objectKey)
         }
     }
 

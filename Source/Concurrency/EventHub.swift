@@ -104,10 +104,27 @@ public actor EventHub {
         _yield(value: value, key: key)
     }
 
+    /// Yields a state value, storing it for replay by new state-stream subscribers.
+    ///
+    /// Unlike ``yield(value:to:)``, this stores the value even if no state stream
+    /// is currently registered, so that a later subscriber receives the most recent
+    /// state as its first element.
+    public func yieldState<Element: Sendable>(value: Element, to key: AnyHashable) {
+        _yieldState(value: value, key: key)
+    }
+
     private func _yield(value: Any, key: AnyHashable) {
         if bufferingPolicy[key] == .state {
             lastValues[key] = value
         }
+        guard let keyContinuations = continuations[key] else { return }
+        for (_, continuation) in keyContinuations {
+            continuation.yield(value)
+        }
+    }
+
+    private func _yieldState(value: Any, key: AnyHashable) {
+        lastValues[key] = value
         guard let keyContinuations = continuations[key] else { return }
         for (_, continuation) in keyContinuations {
             continuation.yield(value)

@@ -26,7 +26,10 @@ protocol CommunicationClient {
     /// Delegate necessary to start the communication manager
     /// when discovering the broker over mDNS.
     var delegate: Startable { get }
-    
+
+    /// Async event hub that mirrors transport-level state and raw MQTT messages.
+    var eventHub: EventHub { get }
+
     // MARK: - State management.
     
     /// Emits online or offline state depending on the connection
