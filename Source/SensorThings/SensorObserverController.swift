@@ -28,6 +28,73 @@ open class SensorObserverController: Controller {
             withObjectType: SensorThingsTypes.OBJECT_TYPE_SENSOR
         )
     }
+
+    /// Returns an async stream of advertised Observation snapshots belonging
+    /// to the given Sensor.
+    ///
+    /// The returned snapshots preserve their wire payload and can be decoded
+    /// with ``CoatyObjectSnapshot/decodeObject()`` when a concrete Observation
+    /// is needed.
+    ///
+    /// - Parameter sensorId: Object identifier of the Sensor to observe.
+    /// - Returns: A filtered stream of Observation Advertise snapshots.
+    /// - Throws: ``AxolotyError/InvalidArgument`` if the Observation object
+    ///   type is invalid.
+    public func observeAdvertisedObservationsStream(
+        sensorId: CoatyUUID
+    ) async throws -> AsyncStream<AdvertiseEventSnapshot> {
+        let sensorIdString = sensorId.string
+        let source = try await self.communicationManager.observeAdvertiseStream(
+            withObjectType: SensorThingsTypes.OBJECT_TYPE_OBSERVATION
+        )
+        return filteredStream(source) { snapshot in
+            snapshot.object.parentObjectId == sensorIdString
+        }
+    }
+
+    /// Returns an async stream of channeled Observation snapshots belonging to
+    /// the given Sensor.
+    ///
+    /// - Parameters:
+    ///   - sensorId: Object identifier of the Sensor to observe.
+    ///   - channelId: Channel identifier, defaulting to the Sensor object id.
+    /// - Returns: A filtered stream of Observation Channel snapshots.
+    /// - Throws: ``AxolotyError/InvalidArgument`` when `channelId` is invalid.
+    public func observeChanneledObservationsStream(
+        sensorId: CoatyUUID,
+        channelId: String? = nil
+    ) async throws -> AsyncStream<ChannelEventSnapshot> {
+        let sensorIdString = sensorId.string
+        let source = try await self.communicationManager.observeChannelStream(
+            channelId: channelId ?? sensorId.string
+        )
+        return filteredStream(source) { snapshot in
+            guard let object = snapshot.object else {
+                return false
+            }
+            return object.objectType == SensorThingsTypes.OBJECT_TYPE_OBSERVATION
+                && object.parentObjectId == sensorIdString
+        }
+    }
+
+    private func filteredStream<Element: Sendable>(
+        _ source: EventStream<Element>,
+        _ predicate: @escaping @Sendable (Element) -> Bool
+    ) -> AsyncStream<Element> {
+        let (stream, continuation) = AsyncStream<Element>.makeStream()
+        let task = _Concurrency.Task {
+            for await element in source {
+                if predicate(element) {
+                    continuation.yield(element)
+                }
+            }
+            continuation.finish()
+        }
+        continuation.onTermination = { _ in
+            task.cancel()
+        }
+        return stream
+    }
     
     /// Observe the channeled observations for the given Sensor. By default, the
     /// channelId is the same as the sensorId.

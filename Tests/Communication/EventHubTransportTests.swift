@@ -283,6 +283,76 @@ struct EventHubTransportTests {
     }
 
     @Test
+    func sensorObserverChanneledObservationStreamFiltersBySensor() async throws {
+        let configuration = Configuration(
+            communication: CommunicationOptions(
+                mqttClientOptions: MQTTClientOptions(
+                    host: "127.0.0.1",
+                    port: 1883,
+                    shouldTryMDNSDiscovery: false,
+                    autoReconnect: false
+                ),
+                shouldAutoStart: false
+            )
+        )
+        let components = Components(
+            controllers: ["sensor-observer": SensorObserverController.self],
+            objectTypes: []
+        )
+        let container = Container.resolve(components: components, configuration: configuration)
+        let manager = try #require(container.communicationManager)
+        let observer = try #require(
+            container.getController(name: "sensor-observer") as? SensorObserverController
+        )
+        let fakeClient = FakeCommunicationClient(delegate: manager)
+        manager.client = fakeClient
+
+        let sensorId = CoatyUUID()
+        let stream = try await observer.observeChanneledObservationsStream(
+            sensorId: sensorId,
+            channelId: "observations"
+        )
+        let next = _Concurrency.Task { () -> ChannelEventSnapshot? in
+            for await snapshot in stream {
+                return snapshot
+            }
+            return nil
+        }
+        await _Concurrency.Task.yield()
+
+        let unrelated = ChannelEventSnapshot(
+            sourceId: "source",
+            object: CoatyObjectSnapshot(
+                objectId: "unrelated",
+                coreType: .CoatyObject,
+                objectType: SensorThingsTypes.OBJECT_TYPE_OBSERVATION,
+                name: "unrelated",
+                parentObjectId: CoatyUUID().string
+            ),
+            channelId: "observations",
+            eventTypeFilter: "observations"
+        )
+        let matching = ChannelEventSnapshot(
+            sourceId: "source",
+            object: CoatyObjectSnapshot(
+                objectId: "matching",
+                coreType: .CoatyObject,
+                objectType: SensorThingsTypes.OBJECT_TYPE_OBSERVATION,
+                name: "matching",
+                parentObjectId: sensorId.string
+            ),
+            channelId: "observations",
+            eventTypeFilter: "observations"
+        )
+        let key = CommunicationEventHubKeys.channel(channelId: "observations")
+        await fakeClient.emit(unrelated, to: key)
+        await fakeClient.emit(matching, to: key)
+
+        #expect(await next.value == matching)
+        container.shutdown()
+    }
+
+    @Test
     func managerReplaysDesiredTopicsOnceAfterOnline() async throws {
         let client = FakeCommunicationClient(delegate: FakeStartable())
         let manager = makeManager(client: client)
