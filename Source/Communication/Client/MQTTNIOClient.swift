@@ -315,25 +315,29 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
             }
     }
 
-    func subscribe(_ topic: String) {
-        client?.subscribe(to: [MQTTSubscribeInfo(topicFilter: topic, qos: qos)]).whenComplete { [weak self] result in
-            switch result {
-            case .success:
-                self?.log.debug("Subscribed to topic \(topic).")
-            case .failure(let error):
-                self?.log.debug("Error subscribing to topic \(topic): \(error)")
-            }
+    func subscribe(_ topic: String) async throws {
+        guard let client else {
+            throw AxolotyError.RuntimeError("Cannot subscribe before the MQTT client is initialized.")
+        }
+        do {
+            _ = try await client.subscribe(
+                to: [MQTTSubscribeInfo(topicFilter: topic, qos: qos)]
+            ).get()
+            log.debug("Subscribed to topic \(topic).")
+        } catch {
+            throw AxolotyError.RuntimeError("Error subscribing to topic \(topic): \(error)")
         }
     }
 
-    func unsubscribe(_ topic: String) {
-        client?.unsubscribe(from: [topic]).whenComplete { [weak self] result in
-            switch result {
-            case .success:
-                self?.log.debug("Unsubscribed from topic \(topic).")
-            case .failure(let error):
-                self?.log.debug("Error unsubscribing from topic \(topic): \(error)")
-            }
+    func unsubscribe(_ topic: String) async throws {
+        guard let client else {
+            throw AxolotyError.RuntimeError("Cannot unsubscribe before the MQTT client is initialized.")
+        }
+        do {
+            try await client.unsubscribe(from: [topic]).get()
+            log.debug("Unsubscribed from topic \(topic).")
+        } catch {
+            throw AxolotyError.RuntimeError("Error unsubscribing from topic \(topic): \(error)")
         }
     }
 
@@ -387,6 +391,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                             to: CommunicationEventHubKeys.parsedMQTTMessage
                         )
                         await self.routeAdvertiseSnapshot(parsed: parsed)
+                        await self.routeOneWaySnapshot(parsed: parsed)
                     }
                 }
             } catch {
@@ -417,6 +422,21 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                 objectTypeFilter: snapshot.object.objectType
             )
             await eventHub.yield(value: snapshot, to: objectKey)
+        }
+    }
+
+    private func routeOneWaySnapshot(parsed: ParsedMQTTMessage) async {
+        switch parsed.eventType {
+        case .Deadvertise:
+            if let snapshot = DeadvertiseEventSnapshot(parsedMQTTMessage: parsed) {
+                await eventHub.yield(value: snapshot, to: CommunicationEventHubKeys.deadvertise)
+            }
+        case .Discover:
+            if let snapshot = DiscoverEventSnapshot(parsedMQTTMessage: parsed) {
+                await eventHub.yield(value: snapshot, to: CommunicationEventHubKeys.discover)
+            }
+        default:
+            break
         }
     }
 

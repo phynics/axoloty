@@ -12,7 +12,7 @@ import RxSwift
 /// the `MQTTNIOClient` class.
 ///
 /// Note: We expect our clients to use publish-subscribe communication.
-protocol CommunicationClient {
+protocol CommunicationClient: Sendable {
     
     /// Observable emitting *raw* (topic, payload) MQTT messages.
     var rawMQTTMessages: PublishSubject<(String, [UInt8])> { get }
@@ -45,6 +45,6 @@ protocol CommunicationClient {
 
     func publish(_ topic: String, message: String)
     func publish(_ topic: String, message: [UInt8])
-    func subscribe(_ topic: String)
-    func unsubscribe(_ topic: String)
+    func subscribe(_ topic: String) async throws
+    func unsubscribe(_ topic: String) async throws
 }

@@ -114,6 +114,19 @@ open class Controller {
     /// super.onCommunicationManagerStarting is called in your override. The
     /// base implementation does nothing.
     open func onCommunicationManagerStarting() {}
+
+    /// Asynchronously prepares event consumers before communication starts.
+    ///
+    /// Override this method to create async event-stream consumers and acquire
+    /// their subscriptions before the manager connects to the broker.
+    open func prepareForCommunication() async {}
+
+    /// Runs after communication is online and prepared subscriptions have been
+    /// acknowledged by the broker.
+    ///
+    /// Override this method to publish initial events or perform work that
+    /// depends on consumers already being subscribed.
+    open func onCommunicationManagerReady() async {}
     
     /// Called when the communication manager is about to stop. Implement side
     /// effects here. Ensure that super.onCommunicationManagerStopping is called

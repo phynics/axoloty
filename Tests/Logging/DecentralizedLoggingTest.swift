@@ -12,7 +12,7 @@ struct DecentralizedLoggingTest {
 
     /// NOTE: Please make sure that a MQTT broker is running on localhost on port 1883 before running.
     @Test
-    func testLogEventsAreReceived() throws {
+    func testLogEventsAreReceived() async throws {
         let components1 = Components(controllers: ["LogCreateorController": LogCreatorController.self],
                                      objectTypes: [])
         let communication1 = CommunicationOptions(namespace: "Logging Test",
@@ -33,38 +33,21 @@ struct DecentralizedLoggingTest {
         let coatyContainer2 = Container.resolve(components: components2,
                                                 configuration: configuration2)
 
-        // Bring the receiver online and subscribe it before the creator flushes
-        // its deferred publications. MQTT does not retain these log events, so
-        // starting the publisher first introduces a subscription race.
-        let receiverOnline = DispatchSemaphore(value: 0)
-        let stateSubscription = coatyContainer2.communicationManager?
-            .observeCommunicationState()
-            .filter { $0 == .online }
-            .take(1)
-            .subscribe(onNext: { _ in receiverOnline.signal() })
-        coatyContainer2.communicationManager?.start()
-        #expect(receiverOnline.wait(timeout: .now() + 5) == .success)
-        stateSubscription?.dispose()
-        Thread.sleep(forTimeInterval: 0.25)
-        coatyContainer1.communicationManager?.start()
-
         let receiverController = try #require(
             coatyContainer2.getController(name: "LogReceiverController") as? LogReceiverController,
             "Expected LogReceiverController in coatyContainer2"
         )
 
-        // Introduce a 5 seconds waiting time to give the infrastructure time to log everything.
-        Thread.sleep(forTimeInterval: 5.0)
-        do {
-            // Check if all log events have been received.
-            // The loop can be used to inspect individual log objects when debugging.
-//            receiverController.logStorage.forEach { log in
-//                print(log.logTags)
-//                print(log.logLabels)
-//                print(log.logHost)
-//            }
-            #expect(receiverController.logStorage.count == 50)
+        try await coatyContainer2.startAndWaitUntilReady()
+        try await coatyContainer1.startAndWaitUntilReady()
+
+        for _ in 0..<100 {
+            if await receiverController.logStorage.count == 50 {
+                break
+            }
+            try await _Concurrency.Task.sleep(for: .milliseconds(50))
         }
+        #expect(await receiverController.logStorage.count == 50)
 
         // Shutdown both containers explicitly
         coatyContainer1.shutdown()
@@ -79,7 +62,7 @@ class LogCreatorController: Controller {
         ]
     }
 
-    override func onCommunicationManagerStarting() {
+    override func onCommunicationManagerReady() async {
         self.publishMultipleLogs()
     }
 
@@ -96,19 +79,36 @@ class LogCreatorController: Controller {
 }
 
 class LogReceiverController: Controller {
-    public var logStorage: [Log] = []
+    fileprivate let logStorage = SnapshotStore()
+    private var consumptionTask: _Concurrency.Task<Void, Never>?
 
-    override func onInit() {
-        self.logStorage = .init()
+    override func prepareForCommunication() async {
+        let stream = await self.communicationManager.observeAdvertiseStream(withCoreType: .Log)
+        let preparedIterator = await stream.makeAsyncIteratorAndWait()
+        let storage = self.logStorage
+        self.consumptionTask = _Concurrency.Task {
+            var iterator = preparedIterator
+            while let snapshot = await iterator.next() {
+                await storage.append(snapshot)
+            }
+        }
     }
 
-    override func onCommunicationManagerStarting() {
-        _ = self.communicationManager.observeAdvertise(withCoreType: .Log).subscribe(onNext: { event in
-            guard let logObject = event.data.object as? Log else {
-                Issue.record("Expected a Log object, but got \(type(of: event.data.object))")
-                return
-            }
-            self.logStorage.append(logObject)
-        })
+    override func onCommunicationManagerStopping() {
+        self.consumptionTask?.cancel()
+        self.consumptionTask = nil
+        super.onCommunicationManagerStopping()
+    }
+}
+
+private actor SnapshotStore {
+    private var snapshots: [AdvertiseEventSnapshot] = []
+
+    func append(_ snapshot: AdvertiseEventSnapshot) {
+        snapshots.append(snapshot)
+    }
+
+    var count: Int {
+        snapshots.count
     }
 }

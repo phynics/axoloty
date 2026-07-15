@@ -121,6 +121,14 @@ snapshots) → **T-039** (communication manager actor migration) →
 **T-040 / T-050 / T-051** (controller, IO routing, and SensorThings
 migration) → **T-028** (final RxSwift removal).
 
+T-039's subscription-coordinator slice is implemented: MQTT topic reference
+counts and reconnect replay are actor-owned, subscription acknowledgements are
+awaited before manager readiness, and async Advertise, Deadvertise, and Discover
+snapshot streams now drive subscription lifecycle through `EventHub`.
+Distributed logging and object-lifecycle consumers use the readiness barrier.
+Rx consumers in IO routing and SensorThings remain temporary until T-040,
+T-050, and T-051 move them to snapshots; only then can T-028 remove RxSwift.
+
 **What this phase covers:**
 - Remove RxSwift in favor of Swift 6.3 structured concurrency: async/await,
   `AsyncStream`/`AsyncSequence` in place of `Observable`, actors for shared

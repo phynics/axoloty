@@ -12,12 +12,12 @@ struct ObjectLifecycleControllerTests {
 
     // NOTE: Make sure that a coaty broker (or just any MQTT broker) is running on the localhost before running
     @Test
-    func test() throws {
+    func test() async throws {
         // Configure the first coaty agent
         let mqttOptions1 = MQTTClientOptions(host: "127.0.0.1",
                                              port: UInt16(1883))
         let communication1 = CommunicationOptions(mqttClientOptions: mqttOptions1,
-                                                  shouldAutoStart: true)
+                                                  shouldAutoStart: false)
 
         let configuration1 = Configuration(communication: communication1)
 
@@ -29,14 +29,11 @@ struct ObjectLifecycleControllerTests {
         let coatyAgent1Container = Container.resolve(components: components1,
                                                      configuration: configuration1)
 
-        coatyAgent1Container.communicationManager?.start()
-
-
         // Configure the second coaty agent
         let mqttOptions2 = MQTTClientOptions(host: "127.0.0.1",
                                             port: UInt16(1883))
         let communication2 = CommunicationOptions(mqttClientOptions: mqttOptions2,
-                                                  shouldAutoStart: true)
+                                                  shouldAutoStart: false)
 
         let configuration2 = Configuration(communication: communication2)
 
@@ -46,16 +43,11 @@ struct ObjectLifecycleControllerTests {
         let coatyAgent2Container = Container.resolve(components: components2,
                                                      configuration: configuration2)
 
-        coatyAgent2Container.communicationManager?.start()
-
-        // Start observing changes to Log events (This object type is already a part of Coaty standard package)
-        guard let controller = coatyAgent1Container.getController(name: "ObjectLifecycleController") as? ObjectLifecycleController else {
-            return
-        }
+        let controller = try #require(
+            coatyAgent1Container.getController(name: "ObjectLifecycleController") as? ObjectLifecycleController
+        )
 
         let testLocationId: CoatyUUID = .init()
-
-        var counter = 1
 
         // Create the testLog object that is used for testing purposes
         let testLog = Log(logLevel: .info,
@@ -63,90 +55,79 @@ struct ObjectLifecycleControllerTests {
                           logDate: "Test date")
         testLog.locationId = testLocationId
 
-        let completion = DispatchGroup()
-        completion.enter()
-        completion.enter()
-        completion.enter()
-
-        // Observe by object type
-        controller.observeObjectLifecycleInfoByObjectType(with: Log.objectType,
-                                                          objectFilter: ({ $0.locationId == testLocationId }))
-            .subscribe(onNext: { info in
-                if counter == 1 {
-                    if let added = info.added {
-                        if added.contains(where: { object -> Bool in
-                            object.objectId == testLog.objectId
-                        }) {
-                            completion.leave()
-                        }
-                    } else {
-                        Issue.record()
-                    }
-
-                    if info.changed != nil {
-                        Issue.record()
-                    }
-
-                    if info.removed != nil {
-                        Issue.record()
-                    }
-                } else if counter == 2 {
-                    if info.added != nil {
-                        Issue.record()
-                    }
-
-                    if let changed = info.changed {
-                        if changed.contains(where: { object -> Bool in
-                            object.objectId == testLog.objectId
-                        }) {
-                            completion.leave()
-                        }
-                    } else {
-                        Issue.record()
-                    }
-
-                    if info.removed != nil {
-                        Issue.record()
-                    }
-                } else if counter == 3 {
-                    if info.added != nil {
-                        Issue.record()
-                    }
-
-                    if info.changed != nil {
-                        Issue.record()
-                    }
-
-                    if let removed = info.removed {
-                        if removed.contains(where: { object -> Bool in
-                            object.objectId == testLog.objectId
-                        }) {
-                            completion.leave()
-                        }
-                    } else {
-                        Issue.record()
-                    }
-                }
-                counter += 1
-        })
+        let locationId = testLocationId.string
+        let stream = try await controller.observeObjectLifecycleSnapshotsByObjectType(
+            with: Log.objectType,
+            objectFilter: { $0.locationId == locationId }
+        )
+        var iterator = stream.makeAsyncIterator()
+        try await coatyAgent1Container.startAndWaitUntilReady()
+        try await coatyAgent2Container.startAndWaitUntilReady()
 
         // Advertise the created test object from the second agent
-        coatyAgent1Container.communicationManager?.publishAdvertise(try! AdvertiseEvent.with(object: testLog))
-
-        sleep(1)
+        try coatyAgent2Container.communicationManager?.publishAdvertise(
+            AdvertiseEvent.with(object: testLog)
+        )
+        let added = try await nextValue(&iterator, timeout: .seconds(5))
+        #expect(added.added?.contains { $0.objectId == testLog.objectId.string } == true)
+        #expect(added.changed == nil)
+        #expect(added.removed == nil)
 
         // Change the existing object and advertise again from the second agent
-        testLog.logMessage = "Modifed for test purposes. Ignore."
-        coatyAgent1Container.communicationManager?.publishAdvertise(try! AdvertiseEvent.with(object: testLog))
-
-        sleep(1)
+        testLog.name = "Modified for test purposes. Ignore."
+        try coatyAgent2Container.communicationManager?.publishAdvertise(
+            AdvertiseEvent.with(object: testLog)
+        )
+        let changed = try await nextValue(&iterator, timeout: .seconds(5))
+        #expect(changed.added == nil)
+        #expect(changed.changed?.contains { $0.objectId == testLog.objectId.string } == true)
+        #expect(changed.removed == nil)
 
         // Removed
-        coatyAgent1Container.communicationManager?.publishDeadvertise(DeadvertiseEvent.with(objectIds: [testLog.objectId]))
+        coatyAgent2Container.communicationManager?.publishDeadvertise(
+            DeadvertiseEvent.with(objectIds: [testLog.objectId])
+        )
+        let removed = try await nextValue(&iterator, timeout: .seconds(5))
+        #expect(removed.added == nil)
+        #expect(removed.changed == nil)
+        #expect(removed.removed?.contains { $0.objectId == testLog.objectId.string } == true)
 
-        sleep(1)
+        coatyAgent1Container.shutdown()
+        coatyAgent2Container.shutdown()
+    }
+}
 
-        let result = completion.wait(timeout: .now() + 20)
-        #expect(result == .success)
+private struct TimeoutError: Error {}
+
+private final class IteratorBox<T: Sendable>: @unchecked Sendable {
+    var iterator: AsyncStream<T>.AsyncIterator
+    init(_ iterator: AsyncStream<T>.AsyncIterator) {
+        self.iterator = iterator
+    }
+}
+
+private func nextValue<T: Sendable>(
+    _ iterator: inout AsyncStream<T>.AsyncIterator,
+    timeout: Duration
+) async throws -> T {
+    let box = IteratorBox(iterator)
+    defer { iterator = box.iterator }
+
+    return try await withThrowingTaskGroup(of: T.self) { group in
+        group.addTask {
+            guard let value = await box.iterator.next() else {
+                throw CancellationError()
+            }
+            return value
+        }
+        group.addTask {
+            try await _Concurrency.Task.sleep(for: timeout)
+            throw TimeoutError()
+        }
+        guard let value = try await group.next() else {
+            throw TimeoutError()
+        }
+        group.cancelAll()
+        return value
     }
 }

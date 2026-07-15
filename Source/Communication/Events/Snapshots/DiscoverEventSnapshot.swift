@@ -42,3 +42,27 @@ public struct DiscoverEventSnapshot: EventSnapshot, Codable, Equatable, Sendable
         self.coreTypes = coreTypes
     }
 }
+
+private struct DiscoverEventWirePayload: Codable {
+    let externalId: String?
+    let objectId: String?
+    let objectTypes: [String]?
+    let coreTypes: [CoreType]?
+}
+
+extension DiscoverEventSnapshot {
+    init?(parsedMQTTMessage: ParsedMQTTMessage) {
+        guard let payload: DiscoverEventWirePayload = PayloadCoder.decode(
+            parsedMQTTMessage.payload
+        ) else {
+            return nil
+        }
+        self.init(
+            sourceId: parsedMQTTMessage.sourceId,
+            externalId: payload.externalId,
+            objectId: payload.objectId,
+            objectTypes: payload.objectTypes,
+            coreTypes: payload.coreTypes
+        )
+    }
+}

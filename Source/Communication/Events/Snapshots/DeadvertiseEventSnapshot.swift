@@ -21,3 +21,18 @@ public struct DeadvertiseEventSnapshot: EventSnapshot, Codable, Equatable, Senda
         self.objectIds = objectIds
     }
 }
+
+private struct DeadvertiseEventWirePayload: Codable {
+    let objectIds: [String]
+}
+
+extension DeadvertiseEventSnapshot {
+    init?(parsedMQTTMessage: ParsedMQTTMessage) {
+        guard let payload: DeadvertiseEventWirePayload = PayloadCoder.decode(
+            parsedMQTTMessage.payload
+        ) else {
+            return nil
+        }
+        self.init(sourceId: parsedMQTTMessage.sourceId, objectIds: payload.objectIds)
+    }
+}

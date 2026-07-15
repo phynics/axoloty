@@ -110,6 +110,28 @@ public class Container {
     public func getController<C: Controller>(name: String) -> C? {
         return self.controllers[name] as? C
     }
+
+    /// Prepares registered controllers, starts communication, and waits until
+    /// their desired subscriptions are acknowledged by the broker.
+    ///
+    /// - Throws: A communication or subscription error reported during startup.
+    public func startAndWaitUntilReady() async throws {
+        let controllers = Array(self.controllers.values)
+        for controller in controllers {
+            await controller.prepareForCommunication()
+        }
+
+        guard let communicationManager else {
+            throw AxolotyError.InvalidConfiguration(
+                "CommunicationManager was not initialized."
+            )
+        }
+
+        try await communicationManager.startAndWaitUntilReady()
+        for controller in controllers {
+            await controller.onCommunicationManagerReady()
+        }
+    }
     
     /// Creates a new array with the results of calling the provided callback
     /// function once for each registered controller classType/classInstance

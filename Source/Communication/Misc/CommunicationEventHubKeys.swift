@@ -70,4 +70,16 @@ enum CommunicationEventHubKeys {
         }
         return CommunicationEventHubKey(scope: "communication", name: name)
     }
+
+    /// Key for the incoming Deadvertise event stream.
+    static let deadvertise = CommunicationEventHubKey(
+        scope: "communication",
+        name: "deadvertise"
+    )
+
+    /// Key for the incoming Discover event stream.
+    static let discover = CommunicationEventHubKey(
+        scope: "communication",
+        name: "discover"
+    )
 }

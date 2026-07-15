@@ -84,6 +84,16 @@ public actor EventHub {
         }
     }
 
+    func registerIteratorContinuationAndWait(
+        _ continuation: AnySendableContinuation,
+        streamId: UUID
+    ) {
+        _registerIteratorContinuation(
+            continuation: continuation,
+            streamId: streamId
+        )
+    }
+
     private func _registerIteratorContinuation(
         continuation: AnySendableContinuation,
         streamId: UUID

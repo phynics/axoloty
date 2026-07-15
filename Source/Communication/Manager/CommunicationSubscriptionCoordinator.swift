@@ -36,7 +36,8 @@ public actor CommunicationSubscriptionCoordinator {
 
     /// A sink that receives subscribe and unsubscribe commands produced by the
     /// coordinator.
-    private let commandSink: @Sendable (SubscriptionCommand) async -> Void
+    private let commandSink: @Sendable (SubscriptionCommand) async throws -> Void
+    private var lastCommandError: Error?
 
     /// Creates a new coordinator with the given command sink.
     ///
@@ -44,7 +45,20 @@ public actor CommunicationSubscriptionCoordinator {
     ///   coordinator produces a ``SubscriptionCommand``. The closure is called
     ///   on the actor's isolation context.
     public init(commandSink: @Sendable @escaping (SubscriptionCommand) async -> Void) {
-        self.commandSink = commandSink
+        self.commandSink = { command in
+            await commandSink(command)
+        }
+    }
+
+    /// Creates a coordinator with a command sink that can report transport
+    /// failures.
+    ///
+    /// - Parameter throwingCommandSink: A command sink that may fail when the
+    ///   underlying transport rejects a subscription operation.
+    internal init(
+        throwingCommandSink: @Sendable @escaping (SubscriptionCommand) async throws -> Void
+    ) {
+        self.commandSink = throwingCommandSink
     }
 
     /// Increments the desired subscription count for the given topic.
@@ -62,7 +76,12 @@ public actor CommunicationSubscriptionCoordinator {
         }
 
         activeTopics.insert(topic)
-        await commandSink(.subscribe(topic))
+        do {
+            try await commandSink(.subscribe(topic))
+        } catch {
+            activeTopics.remove(topic)
+            lastCommandError = error
+        }
     }
 
     /// Decrements the desired subscription count for the given topic.
@@ -80,7 +99,11 @@ public actor CommunicationSubscriptionCoordinator {
         if count == 1 {
             desiredCounts.removeValue(forKey: topic)
             if activeTopics.remove(topic) != nil {
-                await commandSink(.unsubscribe(topic))
+                do {
+                    try await commandSink(.unsubscribe(topic))
+                } catch {
+                    lastCommandError = error
+                }
             }
         } else {
             desiredCounts[topic] = count - 1
@@ -106,8 +129,12 @@ public actor CommunicationSubscriptionCoordinator {
         if online {
             let topicsToActivate = desiredCounts.keys.filter { !activeTopics.contains($0) }.sorted()
             for topic in topicsToActivate {
-                activeTopics.insert(topic)
-                await commandSink(.subscribe(topic))
+                do {
+                    try await commandSink(.subscribe(topic))
+                    activeTopics.insert(topic)
+                } catch {
+                    lastCommandError = error
+                }
             }
         } else {
             activeTopics.removeAll()
@@ -122,12 +149,41 @@ public actor CommunicationSubscriptionCoordinator {
     public func reset() async {
         if isOnline {
             for topic in activeTopics.sorted() {
-                await commandSink(.unsubscribe(topic))
+                do {
+                    try await commandSink(.unsubscribe(topic))
+                } catch {
+                    lastCommandError = error
+                }
             }
         }
 
         desiredCounts.removeAll()
         activeTopics.removeAll()
         isOnline = false
+    }
+
+    /// Retries activation for desired topics that are not currently active.
+    internal func activateDesiredTopics() async {
+        guard isOnline else {
+            return
+        }
+
+        let topicsToActivate = desiredCounts.keys
+            .filter { !activeTopics.contains($0) }
+            .sorted()
+        for topic in topicsToActivate {
+            do {
+                try await commandSink(.subscribe(topic))
+                activeTopics.insert(topic)
+            } catch {
+                lastCommandError = error
+            }
+        }
+    }
+
+    /// Returns and clears the most recent command delivery failure.
+    internal func takeCommandError() -> Error? {
+        defer { lastCommandError = nil }
+        return lastCommandError
     }
 }

@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
+import RxSwift
 import Testing
 @testable import Axoloty
 
@@ -8,6 +9,38 @@ import Testing
 /// that it emits subscribe and unsubscribe commands with exact counts.
 @Suite
 struct CommunicationSubscriptionCoordinatorTests {
+
+    @Test
+    func dispatcherForwardsCommandsInOrder() async throws {
+        let client = RecordingCommunicationClient()
+        let dispatcher = CommunicationSubscriptionCommandDispatcher(client: client)
+
+        try await dispatcher.deliver(.subscribe("first"))
+        try await dispatcher.deliver(.unsubscribe("first"))
+
+        #expect(client.commands == [.subscribe("first"), .unsubscribe("first")])
+    }
+
+    @Test
+    func dispatcherWaitsForSubscriptionAcknowledgement() async {
+        let gate = SubscriptionGate()
+        let completed = CompletionFlag()
+        let client = RecordingCommunicationClient(gate: gate)
+        let dispatcher = CommunicationSubscriptionCommandDispatcher(client: client)
+
+        let delivery = _Concurrency.Task {
+            try? await dispatcher.deliver(.subscribe("first"))
+            await completed.mark()
+        }
+
+        await gate.waitUntilStarted()
+        await _Concurrency.Task.yield()
+        #expect(await completed.value == false)
+
+        await gate.open()
+        await delivery.value
+        #expect(await completed.value)
+    }
 
     @Test
     func firstAcquireOnlineEmitsOneSubscribe() async {
@@ -222,4 +255,85 @@ private actor CommandLog {
     func clear() {
         commands.removeAll()
     }
+}
+
+private final class RecordingCommunicationClient: CommunicationClient, @unchecked Sendable {
+    let rawMQTTMessages = PublishSubject<(String, [UInt8])>()
+    let ioValueMessages = PublishSubject<(String, [UInt8])>()
+    let messages = PublishSubject<(CommunicationTopic, String)>()
+    let communicationState = BehaviorSubject<CommunicationState>(value: .offline)
+    let eventHub = EventHub()
+    let delegate: Startable = RecordingStartable()
+    private let gate: SubscriptionGate?
+    private(set) var commands: [SubscriptionCommand] = []
+
+    init(gate: SubscriptionGate? = nil) {
+        self.gate = gate
+    }
+
+    func connect(lastWillTopic: String, lastWillMessage: String) {}
+    func disconnect() {}
+    func publish(_ topic: String, message: String) {}
+    func publish(_ topic: String, message: [UInt8]) {}
+
+    func subscribe(_ topic: String) async throws {
+        commands.append(.subscribe(topic))
+        if let gate {
+            await gate.markStarted()
+            await gate.waitUntilOpen()
+        }
+    }
+
+    func unsubscribe(_ topic: String) async throws {
+        commands.append(.unsubscribe(topic))
+    }
+}
+
+private actor SubscriptionGate {
+    private var started = false
+    private var released = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func markStarted() {
+        started = true
+        startWaiters.forEach { $0.resume() }
+        startWaiters.removeAll()
+    }
+
+    func waitUntilStarted() async {
+        if started {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            startWaiters.append(continuation)
+        }
+    }
+
+    func waitUntilOpen() async {
+        if released {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            releaseWaiters.append(continuation)
+        }
+    }
+
+    func open() {
+        released = true
+        releaseWaiters.forEach { $0.resume() }
+        releaseWaiters.removeAll()
+    }
+}
+
+private actor CompletionFlag {
+    private(set) var value = false
+
+    func mark() {
+        value = true
+    }
+}
+
+private struct RecordingStartable: Startable {
+    func didReceiveStart() {}
 }

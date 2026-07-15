@@ -34,7 +34,6 @@ public class CommunicationManager {
 
     internal var communicationOptions: CommunicationOptions
     internal var commonOptions: CommonOptions?
-    private var subscriptions = [String: Int]()
     
     // Container identity for public and internal use.
     public var identity: Identity
@@ -57,9 +56,6 @@ public class CommunicationManager {
         return client.eventHub
     }
 
-    /// Holds deferred subscriptions while the communication manager is offline.
-    private var deferredSubscriptions = Set<String>()
-
     /// Holds deferred publications (topic, payload) while the communication manager is offline.
     private var deferredPublications = [(String, MessagePayload)]()
 
@@ -72,6 +68,9 @@ public class CommunicationManager {
 
     /// The communication client that offers the required publisher-subscriber API.
     internal var client: CommunicationClient!
+
+    /// Actor-owned lifecycle state for communication topic subscriptions.
+    internal var subscriptionCoordinator: CommunicationSubscriptionCoordinator!
     
     // MARK: IORouting properties.
     
@@ -113,7 +112,21 @@ public class CommunicationManager {
 
     // MARK: - Initializers.
 
-    public init(identity: Identity, communicationOptions: CommunicationOptions, commonOptions: CommonOptions?) {
+    public convenience init(identity: Identity, communicationOptions: CommunicationOptions, commonOptions: CommonOptions?) {
+        self.init(
+            identity: identity,
+            communicationOptions: communicationOptions,
+            commonOptions: commonOptions,
+            client: nil
+        )
+    }
+
+    internal init(
+        identity: Identity,
+        communicationOptions: CommunicationOptions,
+        commonOptions: CommonOptions?,
+        client: CommunicationClient?
+    ) {
         self.identity = identity
         self.communicationOptions = communicationOptions
         self.commonOptions = commonOptions
@@ -125,10 +138,18 @@ public class CommunicationManager {
         let mqttClientOptions = self.communicationOptions.mqttClientOptions!
         initializeMQTTClientId(mqttClientOptions)
 
-        client = MQTTNIOClient(mqttClientOptions: mqttClientOptions, delegate: self)
+        self.client = client ?? MQTTNIOClient(mqttClientOptions: mqttClientOptions, delegate: self)
+
+        let dispatcher = CommunicationSubscriptionCommandDispatcher(client: self.client)
+        self.subscriptionCoordinator = CommunicationSubscriptionCoordinator(
+            throwingCommandSink: { command in
+                try await dispatcher.deliver(command)
+            }
+        )
         
         setupOperatingStateLogging()
         setupCommunicationStateLogging()
+        setupSubscriptionStateHandler()
         setupOnConnectHandler()
         
         // Fail-fast invariant, not user input.
@@ -152,6 +173,36 @@ public class CommunicationManager {
             return
         }
         startClient()
+    }
+
+    /// Starts the communication client and waits until the desired
+    /// subscriptions have been delivered to the broker.
+    ///
+    /// - Throws: A transport error when a subscription command cannot be
+    ///   acknowledged, or a runtime error if the state stream terminates before
+    ///   the client becomes online.
+    internal func startAndWaitUntilReady() async throws {
+        let stateStream = await observeCommunicationStateStream()
+        var iterator = stateStream.makeAsyncIterator()
+        start()
+
+        while let state = await iterator.next() {
+            guard state == .online else {
+                continue
+            }
+
+            let coordinator = self.subscriptionCoordinator!
+            await coordinator.setOnline(true)
+            await coordinator.activateDesiredTopics()
+            if let error = await coordinator.takeCommandError() {
+                throw error
+            }
+            return
+        }
+
+        throw AxolotyError.RuntimeError(
+            "Communication state stream terminated before the client became online."
+        )
     }
 
     /// Stops dispatching and emitting communication events and disconnects from
@@ -210,10 +261,13 @@ public class CommunicationManager {
         
         self.disposeBag = DisposeBag()
         self.client.disconnect()
-        self.deferredSubscriptions = Set<String>()
         self.deferredPublications = []
         self.deadvertiseIds = []
-        self.subscriptions = [:]
+        let coordinator = self.subscriptionCoordinator!
+        _Concurrency.Task {
+            await coordinator.setOnline(false)
+            await coordinator.reset()
+        }
         updateOperatingState(.stopped)
     }
 
@@ -264,12 +318,8 @@ public class CommunicationManager {
                 self.advertiseIdentity()
                 self.advertiseIoNodes()
 
-                // Publish possible deferred subscriptions and publications.
+                // Publish possible deferred publications.
                 self.queue.sync {
-                    self.deferredSubscriptions.forEach { topic in
-                        self.client.subscribe(topic)
-                    }
-
                     self.deferredPublications.forEach { publication in
                         let topic = publication.0
                         let payload = publication.1
@@ -296,6 +346,15 @@ public class CommunicationManager {
     private func setupCommunicationStateLogging() {
         _ = self.communicationState.subscribe(onNext: { state in
             self.log.info("Communication State: \(String(describing: state))")
+        })
+    }
+
+    private func setupSubscriptionStateHandler() {
+        let coordinator = self.subscriptionCoordinator!
+        _ = self.communicationState.subscribe(onNext: { state in
+            _Concurrency.Task {
+                await coordinator.setOnline(state == .online)
+            }
         })
     }
 
@@ -346,43 +405,37 @@ public class CommunicationManager {
 
     // MARK: - Communication methods.
 
-    /// Subscribe defers subscriptions until the communication manager comes online.
+    /// Acquires a reference to a topic subscription.
+    ///
+    /// - Parameter topic: topic name.
+    internal func acquireSubscription(topic: String) async {
+        let coordinator = self.subscriptionCoordinator!
+        await coordinator.acquire(topic: topic)
+    }
+
+    /// Releases a reference to a topic subscription.
+    ///
+    /// - Parameter topic: topic name.
+    internal func releaseSubscription(topic: String) async {
+        let coordinator = self.subscriptionCoordinator!
+        await coordinator.release(topic: topic)
+    }
+
+    /// Schedules acquisition of a topic subscription for legacy synchronous
+    /// internal call sites during the migration to async event streams.
     ///
     /// - Parameter topic: topic name.
     internal func subscribe(topic: String) {
-        queue.sync {
-            self.deferredSubscriptions.insert(topic)
-
-            // Subscribe if the client is online.
-            // Fail-fast invariant, not user input.
-            // swiftlint:disable:next force_try
-            if try! self.communicationState.value() == .online {
-                // Do NOT clean up deferredSubscriptions since we may
-                // need them for reconnects. Update subscription count
-                // map. Do NOT subscribe the same topic filter multiple
-                // times to avoid receiving multiple events on this
-                // topic.
-                if let count = self.subscriptions[topic] {
-                    self.subscriptions[topic] = count + 1
-                } else {
-                    self.subscriptions[topic] = 1
-                    self.client.subscribe(topic) 
-                }
-            }
+        let coordinator = self.subscriptionCoordinator!
+        _Concurrency.Task {
+            await coordinator.acquire(topic: topic)
         }
     }
 
     internal func unsubscribe(topic: String) {
-        queue.sync {
-            if let count = self.subscriptions[topic] {
-                if count == 1 {
-                    client.unsubscribe(topic)
-                    self.subscriptions.removeValue(forKey: topic)
-                    self.deferredSubscriptions.remove(topic)
-                } else {
-                    self.subscriptions[topic] = count - 1
-                }
-            }
+        let coordinator = self.subscriptionCoordinator!
+        _Concurrency.Task {
+            await coordinator.release(topic: topic)
         }
     }
 

@@ -12,6 +12,135 @@ import Testing
 struct EventHubTransportTests {
 
     @Test
+    func advertiseStreamAcquiresTopicAndDeliversSnapshot() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        let stream = await manager.observeAdvertiseStream(withCoreType: .Log)
+        var iterator = stream.makeAsyncIterator()
+        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+            eventType: .Advertise,
+            eventTypeFilter: CoreType.Log.rawValue,
+            namespace: manager.namespace
+        )
+
+        await client.simulateState(.online)
+        try await waitForCommands(on: client, expecting: [.subscribe(topic)])
+
+        let snapshot = AdvertiseEventSnapshot(
+            sourceId: "source",
+            eventTypeFilter: CoreType.Log.rawValue,
+            object: CoatyObjectSnapshot(
+                objectId: "object",
+                coreType: .Log,
+                objectType: Log.objectType,
+                name: "log"
+            )
+        )
+        await client.emit(snapshot, to: CommunicationEventHubKeys.advertise(
+            eventTypeFilter: CoreType.Log.rawValue
+        ))
+
+        #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == snapshot)
+    }
+
+    @Test
+    func advertiseObjectStreamRejectsInvalidObjectType() async {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+
+        do {
+            _ = try await manager.observeAdvertiseStream(withObjectType: "invalid/type")
+            Issue.record("Expected invalid object type to be rejected")
+        } catch {
+            // Expected validation error.
+        }
+    }
+
+    @Test
+    func deadvertiseStreamAcquiresTopicAndDeliversSnapshot() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        let stream = await manager.observeDeadvertiseStream()
+        var iterator = await stream.makeAsyncIteratorAndWait()
+        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+            eventType: .Deadvertise,
+            namespace: manager.namespace
+        )
+
+        await client.simulateState(.online)
+        try await waitForCommands(on: client, expecting: [.subscribe(topic)])
+
+        let snapshot = DeadvertiseEventSnapshot(
+            sourceId: "source",
+            objectIds: ["object"]
+        )
+        await client.emit(snapshot, to: CommunicationEventHubKeys.deadvertise)
+
+        #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == snapshot)
+    }
+
+    @Test
+    func discoverStreamAcquiresTopicAndDeliversSnapshot() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        let stream = await manager.observeDiscoverStream()
+        var iterator = await stream.makeAsyncIteratorAndWait()
+        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+            eventType: .Discover,
+            namespace: manager.namespace
+        )
+
+        await client.simulateState(.online)
+        try await waitForCommands(on: client, expecting: [.subscribe(topic)])
+
+        let snapshot = DiscoverEventSnapshot(
+            sourceId: "source",
+            objectTypes: [Log.objectType]
+        )
+        await client.emit(snapshot, to: CommunicationEventHubKeys.discover)
+
+        #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == snapshot)
+    }
+
+    @Test
+    func managerReplaysDesiredTopicsOnceAfterOnline() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+
+        await manager.acquireSubscription(topic: "coaty/test/#")
+        #expect(client.commands == [])
+
+        await client.simulateState(.online)
+        try await waitForCommands(
+            on: client,
+            expecting: [.subscribe("coaty/test/#")]
+        )
+    }
+
+    @Test
+    func managerReadinessWaitsForSubscriptionAcknowledgements() async throws {
+        let gate = SubscriptionAckGate()
+        let client = FakeCommunicationClient(delegate: FakeStartable(), subscriptionGate: gate)
+        let manager = makeManager(client: client)
+        await manager.acquireSubscription(topic: "coaty/test/#")
+
+        let ready = CompletionFlag()
+        let startup = _Concurrency.Task {
+            try? await manager.startAndWaitUntilReady()
+            await ready.mark()
+        }
+
+        await client.simulateState(.online)
+        await gate.waitUntilStarted()
+        await _Concurrency.Task.yield()
+        #expect(await ready.value == false)
+
+        await gate.open()
+        await startup.value
+        #expect(await ready.value)
+    }
+
+    @Test
     func testCommunicationStateReplayThroughManagerEventHub() async throws {
         let manager = makeManager()
         let fakeClient = FakeCommunicationClient(delegate: manager)
@@ -114,7 +243,7 @@ private func nextValue<T: Sendable>(
     }
 }
 
-private func makeManager() -> CommunicationManager {
+private func makeManager(client: CommunicationClient? = nil) -> CommunicationManager {
     let mqttOptions = MQTTClientOptions(
         host: "127.0.0.1",
         port: 1883,
@@ -130,8 +259,22 @@ private func makeManager() -> CommunicationManager {
     return CommunicationManager(
         identity: Identity(name: "TestIdentity"),
         communicationOptions: communicationOptions,
-        commonOptions: nil
+        commonOptions: nil,
+        client: client
     )
+}
+
+private func waitForCommands(
+    on client: FakeCommunicationClient,
+    expecting expected: [SubscriptionCommand]
+) async throws {
+    for _ in 0..<20 {
+        if client.commands == expected {
+            return
+        }
+        try await _Concurrency.Task.sleep(for: .milliseconds(25))
+    }
+    #expect(client.commands == expected)
 }
 
 // MARK: - Test seam
@@ -148,9 +291,12 @@ private final class FakeCommunicationClient: CommunicationClient, @unchecked Sen
     let communicationState = BehaviorSubject<CommunicationState>(value: .offline)
     let eventHub = EventHub()
     var delegate: Startable
+    private(set) var commands: [SubscriptionCommand] = []
+    private let subscriptionGate: SubscriptionAckGate?
 
-    init(delegate: Startable) {
+    init(delegate: Startable, subscriptionGate: SubscriptionAckGate? = nil) {
         self.delegate = delegate
+        self.subscriptionGate = subscriptionGate
     }
 
     func simulateState(_ state: CommunicationState) async {
@@ -169,10 +315,68 @@ private final class FakeCommunicationClient: CommunicationClient, @unchecked Sen
         )
     }
 
+    func emit<T: Sendable>(_ snapshot: T, to key: CommunicationEventHubKey) async {
+        await eventHub.yield(value: snapshot, to: key)
+    }
+
     func connect(lastWillTopic: String, lastWillMessage: String) {}
     func disconnect() {}
     func publish(_ topic: String, message: String) {}
     func publish(_ topic: String, message: [UInt8]) {}
-    func subscribe(_ topic: String) {}
-    func unsubscribe(_ topic: String) {}
+    func subscribe(_ topic: String) async throws {
+        commands.append(.subscribe(topic))
+        if let subscriptionGate {
+            await subscriptionGate.markStarted()
+            await subscriptionGate.waitUntilOpen()
+        }
+    }
+
+    func unsubscribe(_ topic: String) async throws {
+        commands.append(.unsubscribe(topic))
+    }
+}
+
+private actor SubscriptionAckGate {
+    private var started = false
+    private var released = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func markStarted() {
+        started = true
+        startWaiters.forEach { $0.resume() }
+        startWaiters.removeAll()
+    }
+
+    func waitUntilStarted() async {
+        if started {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            startWaiters.append(continuation)
+        }
+    }
+
+    func waitUntilOpen() async {
+        if released {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            releaseWaiters.append(continuation)
+        }
+    }
+
+    func open() {
+        released = true
+        releaseWaiters.forEach { $0.resume() }
+        releaseWaiters.removeAll()
+    }
+}
+
+private actor CompletionFlag {
+    private(set) var value = false
+
+    func mark() {
+        value = true
+    }
 }

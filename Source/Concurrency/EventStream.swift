@@ -46,4 +46,20 @@ public struct EventStream<Element: Sendable>: Sendable, AsyncSequence {
 
         return Iterator(inner: asyncStream.makeAsyncIterator())
     }
+
+    /// Creates an iterator after its EventHub registration has completed.
+    ///
+    /// Use this method during a startup barrier when the first event must not
+    /// be published before the iterator is attached.
+    public func makeAsyncIteratorAndWait() async -> Iterator {
+        let policy: AsyncStream<Element>.Continuation.BufferingPolicy =
+            buffering == .event ? .bufferingOldest(256) : .bufferingNewest(1)
+
+        let (asyncStream, continuation) = AsyncStream<Element>.makeStream(
+            bufferingPolicy: policy
+        )
+        let erased = AnySendableContinuation(continuation)
+        await hub.registerIteratorContinuationAndWait(erased, streamId: streamId)
+        return Iterator(inner: asyncStream.makeAsyncIterator())
+    }
 }
