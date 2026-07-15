@@ -10,6 +10,10 @@ inputs:
     description: Optional immutable registry image reference.
     required: false
     default: ""
+  allow-build-fallback:
+    description: Build the repository Dockerfile when the registry image is not published yet.
+    required: false
+    default: "true"
 
 runs:
   using: composite
@@ -19,8 +23,15 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        "${{ inputs.runtime }}" pull "${{ inputs.image-ref }}"
-        "${{ inputs.runtime }}" tag "${{ inputs.image-ref }}" coatyswift-dev
+        if "${{ inputs.runtime }}" pull "${{ inputs.image-ref }}"; then
+          "${{ inputs.runtime }}" tag "${{ inputs.image-ref }}" coatyswift-dev
+        elif [[ "${{ inputs.allow-build-fallback }}" == "true" ]]; then
+          echo "Registry image unavailable; building the Dockerfile bootstrap fallback." >&2
+          make image CONTAINER_RUNTIME=${{ inputs.runtime }}
+        else
+          echo "Pinned registry image unavailable and fallback is disabled." >&2
+          exit 1
+        fi
 
     - name: Build local development image
       if: inputs.image-ref == ''
