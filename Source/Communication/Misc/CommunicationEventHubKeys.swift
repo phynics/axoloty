@@ -44,14 +44,20 @@ enum CommunicationEventHubKeys {
         name: "parsed-mqtt-message"
     )
 
-    /// Returns the key for an async Advertise stream filtered by event type filter.
+    /// Returns the key for the parsed Advertise event stream filtered by event
+    /// type filter.
     ///
-    /// When an object type maps to a core type, callers may pass the concrete
-    /// `objectTypeFilter` to receive a stream that is narrowed to that object
-    /// type while still subscribing on the core type topic.
+    /// This key is used by ``MQTTNIOClient`` to route parsed Advertise
+    /// snapshots into the async event hub. It is not yet backed by a public
+    /// manager-level lifecycle API, because ``CommunicationManager`` is not
+    /// yet actor-safe and cannot safely drive MQTT subscription refcounting
+    /// from the ``EventHub`` ``@Sendable`` first/last callbacks. A public
+    /// async Advertise stream is blocked until that lifecycle can be provided
+    /// without a production `@unchecked Sendable` bridge (see
+    /// `docs/superpowers/plans/2026-07-15-T-027-advertise-async-lifecycle.md`).
     ///
     /// - Parameters:
-    ///   - eventTypeFilter: the event type filter used for the MQTT subscription.
+    ///   - eventTypeFilter: the event type filter used for routing.
     ///   - objectTypeFilter: an optional concrete object type for further narrowing.
     /// - Returns: a stable ``CommunicationEventHubKey`` for the stream.
     static func advertise(

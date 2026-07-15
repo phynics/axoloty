@@ -32,7 +32,20 @@ struct EventSnapshotMetadataTests {
         #expect(roundTripped.sourceId == sourceId)
         #expect(roundTripped.eventTypeFilter == ":coaty.Custom")
         #expect(roundTripped.object.objectId == objectId)
+        #expect(roundTripped.object.coreType == .CoatyObject)
         #expect(roundTripped.privateData == sampleData())
+    }
+
+    @Test
+    func advertiseSnapshotDecodesFromParsedMQTTMessage() throws {
+        let topic = try CommunicationTopic("coaty/1/-/ADV:Identity/\(sourceId)")
+        let parsed = ParsedMQTTMessage(topic: topic, payload: advertisePayload())
+        let snapshot = try #require(AdvertiseEventSnapshot(parsedMQTTMessage: parsed))
+
+        #expect(snapshot.sourceId == sourceId)
+        #expect(snapshot.eventTypeFilter == "Identity")
+        #expect(snapshot.object.objectType == "coaty.Identity")
+        #expect(snapshot.object.coreType == .Identity)
     }
 
     @Test
@@ -223,6 +236,12 @@ private func sampleObject() -> CoatyObjectSnapshot {
 
 private func sampleData() -> Data {
     Data("{\"key\":\"value\"}".utf8)
+}
+
+private func advertisePayload() -> String {
+    """
+    {"object":{"objectId":"550e8400-e29b-41d4-a716-446655440002","coreType":"Identity","objectType":"coaty.Identity","name":"Test Identity"}}
+    """
 }
 
 private func roundTrip<T: Codable>(_ value: T) throws -> T {
