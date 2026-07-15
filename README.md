@@ -79,13 +79,27 @@ the related [coaty-examples](https://github.com/coatyio/coaty-examples) repo.
 
 Building and testing Axoloty is container-based (via
 [podman](https://podman.io)), so no local Swift toolchain installation is
-required. This also works around dynamic-linking failures with the native
+required. The devcontainer is the normal long-lived environment; Podman or
+Docker disposable containers remain the fallback when working outside it. This
+also works around dynamic-linking failures with the native
 Swift toolchain on the NixOS development machine used for this project:
 
 ```sh
+make worktree-bootstrap  # resolve dependencies into the shared SwiftPM cache
 make build   # build the package inside the container
 make test    # run the test suite inside the container
+make ci      # support checks plus one coverage-enabled Swift test pass
 ```
+
+Each worktree owns its `.build` compiler output. SwiftPM downloads are shared
+through `SPM_CACHE_DIR`, which defaults to a toolchain-specific cache under
+`~/.cache/coaty-swift/swiftpm/`. Override `BUILD_DIR` or `SPM_CACHE_DIR` when a
+different disk or CI cache path is needed. `make worktree-warm` is an optional
+explicit prebuild; bootstrap itself resolves dependencies but does not compile.
+
+Coverage reports are written to `.testing/coverage/`. The aggregate ratchet is
+enforced, while changed-line coverage is displayed in CI summaries and native
+workflow warnings for information only.
 
 See [AGENTS.md](./AGENTS.md) for the full set of Makefile targets (including
 `make shell` and `make docs`) and how the containerized flow is set up.

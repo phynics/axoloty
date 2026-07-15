@@ -6,92 +6,80 @@ on:
   pull_request:
     branches: [master]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  SWIFT_CACHE_KEY: swiftpm-6.3-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile') }}
+  DEV_IMAGE_REF: ghcr.io/${{ github.repository_owner }}/axoloty-dev:swift-6.3-${{ hashFiles('.devcontainer/Dockerfile') }}
+
 jobs:
-  support-self-tests:
-    name: Support harness self-tests
+  required-checks:
+    name: Required Linux checks
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 40
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Run harness self-tests and tier validation
-        run: make test-support
-
-  wire-compatibility:
-    name: Wire compatibility fixtures
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup container image
         uses: ./.github/actions/setup-container
-
-      - name: Cache Swift build artifacts
-        uses: actions/cache@v4
         with:
-          path: .build
-          key: swift-6.3-linux-build-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Source/**/*.swift', 'Tests/**/*.swift', '.devcontainer/Dockerfile') }}
+          image-ref: ${{ env.DEV_IMAGE_REF }}
+
+      - name: Restore SwiftPM dependency cache
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: .swiftpm-cache
+          key: ${{ env.SWIFT_CACHE_KEY }}
           restore-keys: |
-            swift-6.3-linux-build-${{ hashFiles('Package.resolved') }}-
-            swift-6.3-linux-build-
+            swiftpm-6.3-linux-
 
-      - name: Run wire compatibility gate
-        run: make test-wire CONTAINER_RUNTIME=docker BUILD_DIR=.build
+      - name: Prepare changed-line diff
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .testing/coverage
+          git diff --unified=0 "$BASE_SHA" "$GITHUB_SHA" > .testing/coverage/changed.diff
 
-  build-and-test:
-    name: Linux build and test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Run consolidated checks
+        env:
+          COVERAGE_DIFF_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+        run: make ci CONTAINER_RUNTIME=docker BUILD_DIR=.build SPM_CACHE_DIR=.swiftpm-cache
 
-      # GitHub-hosted runners provide Docker, while local development normally
-      # auto-detects Podman. Keep the Makefile as the shared entry point and
-      # select Docker explicitly in CI.
-      - name: Setup container image
-        uses: ./.github/actions/setup-container
-
-      - name: Cache Swift build artifacts
-        uses: actions/cache@v4
+      - name: Save SwiftPM dependency cache
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
-          path: .build
-          key: swift-6.3-linux-build-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Source/**/*.swift', 'Tests/**/*.swift', '.devcontainer/Dockerfile') }}
-          restore-keys: |
-            swift-6.3-linux-build-${{ hashFiles('Package.resolved') }}-
-            swift-6.3-linux-build-
+          path: .swiftpm-cache
+          key: ${{ env.SWIFT_CACHE_KEY }}
 
-      - name: Build and test
-        run: make build test CONTAINER_RUNTIME=docker BUILD_DIR=.build
-
-  coverage:
-    name: Source coverage ratchet
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup container image
-        uses: ./.github/actions/setup-container
-
-      - name: Cache Swift build artifacts
-        uses: actions/cache@v4
+      - name: Upload coverage summary
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          path: .build
-          key: swift-6.3-linux-build-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Source/**/*.swift', 'Tests/**/*.swift', '.devcontainer/Dockerfile') }}
-          restore-keys: |
-            swift-6.3-linux-build-${{ hashFiles('Package.resolved') }}-
-            swift-6.3-linux-build-
+          name: coverage-summary-${{ github.run_id }}
+          path: |
+            .testing/coverage/report.json
+            .testing/coverage/report.txt
+          if-no-files-found: warn
+          retention-days: 7
 
-      - name: Run coverage ratchet
-        run: make coverage-check CONTAINER_RUNTIME=docker BUILD_DIR=.build
-
-      - name: Upload coverage report on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
+      - name: Upload coverage diagnostics
+        if: failure() || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: coverage-report
+          name: coverage-diagnostics-${{ github.run_id }}
           path: .testing/coverage/
           if-no-files-found: warn
+          retention-days: 7

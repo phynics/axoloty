@@ -1,0 +1,58 @@
+name: Development Container Image
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - .devcontainer/Dockerfile
+      - .github/workflows/container-image.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: development-image
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish pinned development image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Login to GHCR
+        shell: bash
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$REGISTRY_TOKEN" | docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+
+      - name: Build and publish image
+        shell: bash
+        env:
+          IMAGE_BASE: ghcr.io/${{ github.repository_owner }}/axoloty-dev
+        run: |
+          set -euo pipefail
+          dockerfile_hash=$(sha256sum .devcontainer/Dockerfile | awk '{print $1}')
+          image_tag="$IMAGE_BASE:swift-6.3-$dockerfile_hash"
+          docker buildx build \
+            --file .devcontainer/Dockerfile \
+            --tag "$image_tag" \
+            --tag "$IMAGE_BASE:swift-6.3" \
+            --provenance=true \
+            --sbom=true \
+            --push .
+          digest=$(docker buildx imagetools inspect "$image_tag" --format '{{json .Manifest.Digest}}' | tr -d '"')
+          {
+            echo "## Development image"
+            echo
+            echo "- Tag: \`$image_tag\`"
+            echo "- Digest: \`$digest\`"
+            echo "- Dockerfile SHA-256: \`$dockerfile_hash\`"
+          } >> "$GITHUB_STEP_SUMMARY"

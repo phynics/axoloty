@@ -5,8 +5,15 @@ BROKER_NAME ?= coatyswift-mosquitto
 CONTAINER_RUNTIME ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 WORKDIR := /workspace
 CACHE_NAMESPACE ?= swift-6.3-linux
-BUILD_DIR ?= $(HOME)/.cache/coaty-swift/$(CACHE_NAMESPACE)/.build
-CONTAINER_MOUNTS := -v "$(CURDIR):$(WORKDIR)" -v "$(BUILD_DIR):$(WORKDIR)/.build"
+BUILD_DIR ?= $(CURDIR)/.build
+ifeq ($(AXOLOTY_DEVCONTAINER),1)
+SPM_CACHE_DIR ?= /workspace/.swiftpm-cache
+else
+SPM_CACHE_DIR ?= $(HOME)/.cache/coaty-swift/swiftpm/$(CACHE_NAMESPACE)
+endif
+CONTAINER_MOUNTS := -v "$(CURDIR):$(WORKDIR)" -v "$(BUILD_DIR):$(WORKDIR)/.build" -v "$(SPM_CACHE_DIR):$(WORKDIR)/.swiftpm-cache"
+SWIFT_CACHE_ARGS := --cache-path /workspace/.swiftpm-cache
+SWIFT_LOCKED_ARGS := $(SWIFT_CACHE_ARGS) --disable-automatic-resolution
 COMMA := ,
 
 # Hosting base path for static DocC output. Set this to the repository name
@@ -14,11 +21,14 @@ COMMA := ,
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image build test test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-fast ci broker broker-stop shell docs clean
+.PHONY: help image resolve worktree-bootstrap worktree-warm build test test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-fast ci broker broker-stop shell docs clean
 
 help:
 	@printf '%s\n' \
 		'make image         Build the Linux Swift development image' \
+		'make resolve       Resolve Package.resolved using the shared SwiftPM cache' \
+		'make worktree-bootstrap  Prepare dependency cache and validate Package.resolved' \
+		'make worktree-warm  Bootstrap and compile the current worktree' \
 		'make build         Build Axoloty in the Linux container' \
 		'make test          Run the full test suite (starts Mosquitto)' \
 		'make test-unit     Run ObjectMatcherTests' \
@@ -28,47 +38,54 @@ help:
 		'make test-fast     Run unit, module, fuzz, offline wire, and support self-tests' \
 		'make test-wire     Run offline wire fixtures and capture tests' \
 		'make test-support  Run Python/shell harness self-tests and tier validation' \
- 	'make test-observation-linux Run Observation and EventStream tests on Linux' \
- 		'make coverage     Run tests with code coverage and report Source/ coverage' \
-		'make coverage-check Run coverage and fail if it regresses the baseline' \
-		'make test-wire-live Run live CoatyJS compatibility scenarios' \
-		'make test-wire-all Run offline and live compatibility suites' \
+		'make test-observation-linux  Run Observation and EventStream tests on Linux' \
+		'make coverage      Run tests with code coverage and report Source/ coverage' \
+		'make coverage-check  Run coverage and fail if it regresses the baseline' \
+		'make test-wire-live  Run live CoatyJS compatibility scenarios' \
+		'make test-wire-all  Run offline and live compatibility suites' \
 		'make ci-fast       Run the build and fast test suite' \
-		'make ci            Run all pull-request CI checks' \
+		'make ci            Run the consolidated pull-request checks' \
 		'make broker        Start Mosquitto on localhost:1883' \
 		'make broker-stop   Stop the background Mosquitto container' \
 		'make shell         Open a shell in the Linux container' \
 		'make docs          Generate DocC API documentation into .build/docc' \
 		'make clean         Remove Swift build artifacts' \
 		'' \
-		'BUILD_DIR can point at a different persistent SwiftPM cache directory'
+		'BUILD_DIR and SPM_CACHE_DIR can point at different local cache directories'
 
 image:
+	@if [ "$(AXOLOTY_DEVCONTAINER)" = "1" ]; then exit 0; fi
 	@test -n "$(CONTAINER_RUNTIME)" || (echo 'No podman or docker runtime found' >&2; exit 1)
-	@mkdir -p "$(BUILD_DIR)"
+	@mkdir -p "$(BUILD_DIR)" "$(SPM_CACHE_DIR)"
 	$(CONTAINER_RUNTIME) build -t $(IMAGE) -f .devcontainer/Dockerfile .devcontainer
 
-build: image
-	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) swift build
+resolve: image
+	@mkdir -p "$(SPM_CACHE_DIR)"
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh .devcontainer/resolve.sh
+	@git diff --exit-code -- Package.resolved
 
-test: image
-	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) \
-		sh -c 'pgrep mosquitto >/dev/null 2>&1 || mosquitto -d; swift test'
+worktree-bootstrap: resolve
+	@mkdir -p "$(BUILD_DIR)"
 
-test-unit: image
-	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) \
-		swift test --filter ObjectMatcherTests
+worktree-warm: worktree-bootstrap build
 
-test-module: image
-	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) swift test --filter CommunicationTopicTests
-	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) swift test --filter PayloadCoderTests
-	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) swift test --filter ObjectTypeRegistryTests
+build: resolve
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift build $(SWIFT_LOCKED_ARGS)
 
-test-fuzz: image
-	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) \
-		-e AXOLOTY_FUZZ_ITERATIONS="$(or $(AXOLOTY_FUZZ_ITERATIONS),250)" \
-		-e AXOLOTY_FUZZ_SEED="$(or $(AXOLOTY_FUZZ_SEED),0x41584f4c4f5459)" \
-		$(IMAGE) swift test --filter DeterministicFuzzTests
+test: resolve
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh sh -c 'pgrep mosquitto >/dev/null 2>&1 || mosquitto -d; swift test $(SWIFT_LOCKED_ARGS)'
+
+test-unit: resolve
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter ObjectMatcherTests
+
+test-module: resolve
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter CommunicationTopicTests
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter PayloadCoderTests
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter ObjectTypeRegistryTests
+
+test-fuzz: resolve
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \
+		sh -c 'AXOLOTY_FUZZ_ITERATIONS="$(or $(AXOLOTY_FUZZ_ITERATIONS),250)" AXOLOTY_FUZZ_SEED="$(or $(AXOLOTY_FUZZ_SEED),0x41584f4c4f5459)" swift test $(SWIFT_LOCKED_ARGS) --filter DeterministicFuzzTests'
 
 fuzz-long:
 	AXOLOTY_FUZZ_ITERATIONS="$(or $(AXOLOTY_FUZZ_ITERATIONS),100000)" \
@@ -77,15 +94,11 @@ fuzz-long:
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
 		Tests/Fuzzing/run-fuzz.sh
 
-test-wire: image
-	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) \
-		swift test --filter WireFixtureTests
-	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) \
-		swift test --filter LifecycleCompatibilityScenarioTests
+test-wire: resolve
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter WireFixtureTests
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter LifecycleCompatibilityScenarioTests
 
-# Harness self-tests for the Python/shell tooling (fuzz runner, capture and
-# verifier tools, and the test-tier contract). These are intentionally kept
-# separate from protocol-scenario execution and do not invoke Swift.
+# Harness self-tests intentionally remain host-side Python/shell checks.
 test-support:
 	Tests/Fuzzing/test-run-fuzz.sh
 	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/WireCompatibility/Capture -p 'test_*.py' -v
@@ -102,38 +115,31 @@ test-wire-live:
 
 test-wire-all: test-wire test-wire-live
 
-test-observation-linux: image
-	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) \
-		swift test --filter "ObservationLinuxTests|EventStreamTests"
+test-observation-linux: resolve
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter "ObservationLinuxTests|EventStreamTests"
 
 test-fast: test-unit test-module test-fuzz test-wire test-support
 
-# Source-coverage reporting and ratchet. Runs the full test suite with
-# --enable-code-coverage, exports per-file line coverage via llvm-cov, and
-# writes machine-readable reports under .testing/coverage/. Only Source/
-# production files contribute to the denominator.
-coverage: image
-	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) \
+coverage: resolve
+	@mkdir -p .testing/coverage
+	@if [ -n "$(COVERAGE_DIFF_BASE)" ]; then git diff --unified=0 "$(COVERAGE_DIFF_BASE)" HEAD > .testing/coverage/changed.diff; else git diff --unified=0 HEAD^ HEAD > .testing/coverage/changed.diff; fi
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \
 		sh -c 'set -e; \
 		  pgrep mosquitto >/dev/null 2>&1 || mosquitto -d; \
-		  swift test --enable-code-coverage 2>/dev/null; \
+		  swift test $(SWIFT_LOCKED_ARGS) --enable-code-coverage; \
 		  BIN=$$(find .build -name AxolotyPackageTests.xctest -type f | head -1); \
 		  PROFDATA=$$(find .build -name default.profdata | head -1); \
 		  mkdir -p .testing/coverage; \
 		  llvm-cov export "$$BIN" -instr-profile="$$PROFDATA" -format=text > .testing/coverage/coverage.json; \
-		  python3 Tests/Support/coverage_ratchet.py summary .testing/coverage/coverage.json --report .testing/coverage/report.json'
+		  PYTHONDONTWRITEBYTECODE=1 python3 Tests/Support/coverage_ratchet.py summary .testing/coverage/coverage.json --report .testing/coverage/report.json; \
+		  PYTHONDONTWRITEBYTECODE=1 python3 Tests/Support/coverage_report.py .testing/coverage/coverage.json .testing/coverage/changed.diff'
 
-# Compare the measured coverage against the committed baseline. Pure Python,
-# so it runs on the host after `make coverage` produces the export.
 coverage-check: coverage
 	python3 Tests/Support/coverage_ratchet.py check .testing/coverage/coverage.json Tests/Support/coverage-baseline.json
 
-# Keep these as dependency-only targets so one make invocation builds the
-# container image once, even though every underlying target remains useful on
-# its own. The explicit wire target also gives CI a stable compatibility gate.
 ci-fast: build test-fast
 
-ci: ci-fast test
+ci: test-support resolve coverage-check
 
 broker: image
 	@$(CONTAINER_RUNTIME) rm -f $(BROKER_NAME) >/dev/null 2>&1 || true
@@ -144,14 +150,13 @@ broker-stop:
 	$(CONTAINER_RUNTIME) rm -f $(BROKER_NAME)
 
 shell: image
-	$(CONTAINER_RUNTIME) run --rm -it $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) bash
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh bash
 
-docs: image
-	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) \
-		swift package generate-documentation --target Axoloty \
-			--transform-for-static-hosting \
-			$(if $(DOC_HOSTING_BASE_PATH),--hosting-base-path $(DOC_HOSTING_BASE_PATH)) \
-			--output-path .build/docc
+docs: resolve
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift package generate-documentation $(SWIFT_LOCKED_ARGS) --target Axoloty \
+		--transform-for-static-hosting \
+		$(if $(DOC_HOSTING_BASE_PATH),--hosting-base-path $(DOC_HOSTING_BASE_PATH)) \
+		--output-path .build/docc
 
 clean:
 	rm -rf "$(BUILD_DIR)"

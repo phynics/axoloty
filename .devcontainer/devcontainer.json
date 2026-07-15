@@ -5,6 +5,13 @@
   },
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+  "mounts": [
+    "source=${localEnv:HOME}/.cache/coaty-swift/swiftpm/swift-6.3-linux,target=/workspace/.swiftpm-cache,type=bind,consistency=cached"
+  ],
+  "containerEnv": {
+    "AXOLOTY_DEVCONTAINER": "1",
+    "SPM_CACHE_DIR": "/workspace/.swiftpm-cache"
+  },
   "remoteUser": "root",
   "customizations": {
     "vscode": {

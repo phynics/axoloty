@@ -19,6 +19,7 @@ DEV_IMAGE="${DEV_IMAGE:-localhost/coatyswift-dev:latest}"
 JS_IMAGE="${JS_IMAGE:-localhost/coatyswift-wire-coatyjs:2.4.0}"
 CONSUMER_LOG=$(mktemp)
 OUTPUT_DIR="${WIRE_OUTPUT_DIR:-$ROOT_DIR/.testing/wire}"
+SPM_CACHE_DIR="${SPM_CACHE_DIR:-$ROOT_DIR/.swiftpm-cache}"
 
 cleanup() {
     runtime rm -f "$CONSUMER" "$PROBE" "$BROKER" >/dev/null 2>&1 || true
@@ -61,10 +62,10 @@ for _ in $(seq 1 30); do
 done
 grep -q '"state":"ready"' "$CONSUMER_LOG" || { cat "$CONSUMER_LOG" >&2; exit 1; }
 
-runtime run --rm --network "$NETWORK" -v "$ROOT_DIR:/workspace" -w /workspace \
+runtime run --rm --network "$NETWORK" -v "$ROOT_DIR:/workspace" -v "$SPM_CACHE_DIR:/swiftpm-cache" -w /workspace \
     -e WIRE_REVERSE_LIVE=1 -e WIRE_BROKER_HOST="$BROKER" \
     -e WIRE_BROKER_PORT=1883 -e WIRE_NAMESPACE=wire-compat-v1 \
-    "$DEV_IMAGE" swift test --filter AxolotyAdvertiseProducerTests
+    "$DEV_IMAGE" swift test --cache-path /swiftpm-cache --disable-automatic-resolution --filter AxolotyAdvertiseProducerTests
 
 sleep 0.5
 runtime stop -t 1 "$PROBE" >/dev/null || true

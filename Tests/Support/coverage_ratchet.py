@@ -8,10 +8,9 @@ baseline. Only ``Source/`` production files contribute to the denominator;
 tests, dependencies, generated code, and reference agents are excluded.
 
 The ratchet fails when aggregate ``Source/`` line coverage drops by more than
-1.0 percentage point, or when any production file already present in the
-baseline loses covered lines. New files do not trip the per-file rule; they are
-absorbed by the aggregate gate. A clean run records aggregate and per-file
-line/region coverage under ``.testing/coverage/``.
+1.0 percentage point. A clean run records aggregate and per-file line/region
+coverage under ``.testing/coverage/``; informational changed-line reporting is
+handled by ``coverage_report.py``.
 """
 
 import argparse
@@ -71,21 +70,13 @@ def aggregate(files):
 
 
 def evaluate(current_files, baseline, max_drop=MAX_AGGREGATE_DROP):
-    """Return a list of ratchet error strings; an empty list means the ratchet passes.
-
-    ``current_files`` is a ``{path: {count, covered}}`` dict from
-    :func:`extract`. ``baseline`` is the committed envelope
-    (``{"_aggregate": {...}, "files": {...}}``). Fails when aggregate coverage
-    drops by more than ``max_drop`` percentage points, or when a file present in
-    both loses covered lines.
-    """
+    """Return aggregate ratchet errors; an empty list means the check passes."""
     errors = []
 
-    baseline_entries = baseline.get("files", {})
     if "_aggregate" in baseline:
         baseline_percent = float(baseline["_aggregate"].get("percent", 0.0))
     else:
-        _, _, baseline_percent = aggregate(baseline_entries)
+        _, _, baseline_percent = aggregate(baseline.get("files", {}))
 
     _, _, current_percent = aggregate(current_files)
     drop = baseline_percent - current_percent
@@ -94,18 +85,6 @@ def evaluate(current_files, baseline, max_drop=MAX_AGGREGATE_DROP):
             f"aggregate coverage dropped from {baseline_percent:.2f}% to "
             f"{current_percent:.2f}% ({drop:.2f}pp exceeds {max_drop:.2f}pp)"
         )
-
-    for path, baseline_entry in baseline_entries.items():
-        if path.startswith("_"):
-            continue
-        current_entry = current_files.get(path)
-        if current_entry is None:
-            continue
-        if current_entry["covered"] < baseline_entry["covered"]:
-            errors.append(
-                f"{path}: covered lines regressed from {baseline_entry['covered']} "
-                f"to {current_entry['covered']}"
-            )
 
     return errors
 

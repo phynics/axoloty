@@ -6,7 +6,11 @@ For modernization context, see [ROADMAP.md](./docs/ROADMAP.md).
 ## Build and test
 
 - Never run native `swift` commands on the host. Use the root Makefile, which
-  runs through podman: `make build`, `make test`, `make shell`, and `make docs`.
+  runs directly inside the devcontainer and falls back to Podman or Docker:
+  `make build`, `make test`, `make shell`, and `make docs`.
+- Worktrees keep independent `.build` output and share only SwiftPM downloads.
+  Use `make worktree-bootstrap` to resolve dependencies and `make worktree-warm`
+  only when an explicit prebuild is useful.
 - Prefer adding a Makefile target to using native Swift tooling.
 - Swift tests use Swift Testing only: `import Testing`, `@Test`, `#expect`,
   `#require`, and `Issue.record`. Do not add XCTest.
