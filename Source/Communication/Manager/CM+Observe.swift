@@ -43,7 +43,7 @@ extension CommunicationManager {
         
         self.subscribe(topic: topicFilter)
         
-        return client.rawMQTTMessages.filter { (topic, _) -> Bool in
+        return rawMQTTMessages.filter { (topic, _) -> Bool in
             CommunicationTopic.matches(topic, topicFilter)
         }
     }
@@ -524,7 +524,7 @@ extension CommunicationManager {
 
     private func _handleIoValues() {
         if self.ioValueObservable == nil {
-            self.ioValueObservable = Observable.merge(client.rawMQTTMessages, client.ioValueMessages)
+            self.ioValueObservable = Observable.merge(rawMQTTMessages, ioValueMessages)
             self.ioValueObservable!
                 .subscribe(onNext: { topic, payload in
                     // Lookup registered IO actor items for the given IO route and dispatch IO value

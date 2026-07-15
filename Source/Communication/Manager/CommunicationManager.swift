@@ -41,10 +41,9 @@ public class CommunicationManager {
     /// The operating state of the communication manager.
     internal var operatingState: BehaviorSubject<OperatingState> = BehaviorSubject(value: .stopped)
 
-    /// Convenience getter for the communication state of the underlying communication client.
-    internal var communicationState: BehaviorSubject<CommunicationState> {
-        return client.communicationState
-    }
+    /// Communication state mirrored from the underlying transport.
+    internal var communicationState: BehaviorSubject<CommunicationState> =
+        BehaviorSubject(value: .offline)
 
     /// The async event hub shared by the underlying communication client.
     ///
@@ -106,6 +105,12 @@ public class CommunicationManager {
     
     /// Observable on which IoValue events are emitted.
     internal var ioValueObservable: Observable<(String, [UInt8])>?
+
+    /// Transport subjects retained only at the manager boundary while the
+    /// legacy manager implementation is migrated to async streams.
+    internal let rawMQTTMessages = PublishSubject<(String, [UInt8])>()
+    internal let ioValueMessages = PublishSubject<(String, [UInt8])>()
+    internal let messages = PublishSubject<(CommunicationTopic, String)>()
     
     /// Associated IONodes.
     internal var ioNodes: [IoNode] = []
@@ -139,6 +144,7 @@ public class CommunicationManager {
         initializeMQTTClientId(mqttClientOptions)
 
         self.client = client ?? MQTTNIOClient(mqttClientOptions: mqttClientOptions, delegate: self)
+        self.client.delegate = self
 
         let dispatcher = CommunicationSubscriptionCommandDispatcher(client: self.client)
         self.subscriptionCoordinator = CommunicationSubscriptionCoordinator(
@@ -483,6 +489,22 @@ public class CommunicationManager {
             await eventHub.yieldState(value: state, to: CommunicationEventHubKeys.operatingState)
         }
     }
+
+    func didUpdateCommunicationState(_ state: CommunicationState) {
+        communicationState.onNext(state)
+    }
+
+    func didReceiveRawMQTTMessage(topic: String, payload: [UInt8]) {
+        rawMQTTMessages.onNext((topic, payload))
+    }
+
+    func didReceiveIoValue(topic: String, payload: [UInt8]) {
+        ioValueMessages.onNext((topic, payload))
+    }
+
+    func didReceiveMessage(topic: CommunicationTopic, payload: String) {
+        messages.onNext((topic, payload))
+    }
     
     // MARK: - IO Routing
     
@@ -732,7 +754,7 @@ public class CommunicationManager {
     }
 }
 
-extension CommunicationManager: Startable {
+extension CommunicationManager: CommunicationClientDelegate {
 
     /// Auto start communication manager (caused by shouldAutoStart option or
     /// bonjour discovery).

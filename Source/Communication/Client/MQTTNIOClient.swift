@@ -9,7 +9,6 @@ import Foundation
 import Logging
 import MQTTNIO
 import NIO
-import RxSwift
 
 #if canImport(Network)
 import Network
@@ -22,27 +21,21 @@ import NIOSSL
 /// (SwiftNIO based, pure Swift, Linux-native).
 ///
 /// This class replaces the former CocoaMQTT-backed implementation. It keeps the
-/// exact same `CommunicationClient` contract (Rx-based observable surface) so
-/// that `CommunicationManager` and every other consumer is unaffected; only the
-/// underlying MQTT transport changes.
+/// transport events are delivered through the manager delegate and async
+/// ``EventHub`` streams.
 ///
 /// - Note: mqtt-nio's `MQTTClient` exposes an `EventLoopFuture`-based API with a
 ///   named-listener registration model for incoming PUBLISH messages (not
 ///   async/await, and not delegate-based in the `NSObjectProtocol` sense used by
 ///   CocoaMQTT) — see `addPublishListener(named:_:)`/`addCloseListener(named:_:)`.
 ///   Those listener callbacks are plain synchronous closures, so they bridge
-///   directly into the Rx `PublishSubject`/`BehaviorSubject` surface via
-///   `.onNext(...)` without needing a `Task`/`AsyncSequence` bridge.
+///   directly into the synchronous delegate and ``EventHub`` surfaces.
 internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
 
     private let log = LogManager.log
 
     // MARK: - Protocol fields.
 
-    var rawMQTTMessages = PublishSubject<(String, [UInt8])>()
-    var ioValueMessages = PublishSubject<(String, [UInt8])>()
-    var messages = PublishSubject<(CommunicationTopic, String)>()
-    var communicationState = BehaviorSubject(value: CommunicationState.offline)
     var delegate: Startable
 
     /// The async event hub used to mirror communication state and raw MQTT
@@ -344,7 +337,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
     // MARK: - State management methods.
 
     func updateCommunicationState(_ state: CommunicationState) {
-        communicationState.onNext(state)
+        (delegate as? CommunicationClientDelegate)?.didUpdateCommunicationState(state)
 
         _Concurrency.Task<Void, Never> { [weak self] in
             guard let self else { return }
@@ -372,14 +365,20 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
             }
 
             if CommunicationTopic.isRawTopic(topic: info.topicName) {
-                rawMQTTMessages.onNext((info.topicName, bytes))
+                (self.delegate as? CommunicationClientDelegate)?.didReceiveRawMQTTMessage(
+                    topic: info.topicName,
+                    payload: bytes
+                )
                 return
             }
 
             do {
                 let topic = try CommunicationTopic(info.topicName)
                 if topic.eventType == .IoValue {
-                    ioValueMessages.onNext((info.topicName, bytes))
+                    (self.delegate as? CommunicationClientDelegate)?.didReceiveIoValue(
+                        topic: info.topicName,
+                        payload: bytes
+                    )
                     _Concurrency.Task { [weak self] in
                         guard let self else { return }
                         await self.eventHub.yield(
@@ -388,7 +387,10 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                         )
                     }
                 } else if let payloadString = String(bytes: bytes, encoding: .utf8) {
-                    messages.onNext((topic, payloadString))
+                    (self.delegate as? CommunicationClientDelegate)?.didReceiveMessage(
+                        topic: topic,
+                        payload: payloadString
+                    )
 
                     let parsed = ParsedMQTTMessage(topic: topic, payload: payloadString)
                     _Concurrency.Task<Void, Never> { [weak self] in

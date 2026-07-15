@@ -567,6 +567,7 @@ private final class FakeCommunicationClient: CommunicationClient, @unchecked Sen
 
     func simulateState(_ state: CommunicationState) async {
         communicationState.onNext(state)
+        (delegate as? CommunicationClientDelegate)?.didUpdateCommunicationState(state)
         await eventHub.yieldState(
             value: state,
             to: CommunicationEventHubKeys.communicationState

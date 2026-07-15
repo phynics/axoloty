@@ -263,7 +263,7 @@ private final class RecordingCommunicationClient: CommunicationClient, @unchecke
     let messages = PublishSubject<(CommunicationTopic, String)>()
     let communicationState = BehaviorSubject<CommunicationState>(value: .offline)
     let eventHub = EventHub()
-    let delegate: Startable = RecordingStartable()
+    var delegate: Startable = RecordingStartable()
     private let gate: SubscriptionGate?
     private(set) var commands: [SubscriptionCommand] = []
 

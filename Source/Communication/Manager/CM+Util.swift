@@ -24,7 +24,7 @@ extension CommunicationManager {
     // MARK: - Dispatching Messages.
     
     func messagesFor(_ eventType: CommunicationEventType, _ eventTypeFilter: String? = nil) -> Observable<(CommunicationTopic, String)> {
-        return client!.messages
+        return messages
             .filter { (topic, _) in
                 topic.eventType == eventType &&
                 topic.eventTypeFilter == eventTypeFilter }

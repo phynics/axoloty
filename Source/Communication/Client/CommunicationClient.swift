@@ -6,36 +6,39 @@
 //
 
 import Foundation
-import RxSwift
+
+/// Receives synchronous transport callbacks from a communication client.
+///
+/// The callbacks are delivered on the client's transport callback context and
+/// are converted into manager-owned streams at the boundary. Implementations
+/// must keep callback work short and non-blocking.
+protocol CommunicationClientDelegate: Startable {
+    func didUpdateCommunicationState(_ state: CommunicationState)
+    func didReceiveRawMQTTMessage(topic: String, payload: [UInt8])
+    func didReceiveIoValue(topic: String, payload: [UInt8])
+    func didReceiveMessage(topic: CommunicationTopic, payload: String)
+}
+
+extension CommunicationClientDelegate {
+    func didUpdateCommunicationState(_ state: CommunicationState) {}
+    func didReceiveRawMQTTMessage(topic: String, payload: [UInt8]) {}
+    func didReceiveIoValue(topic: String, payload: [UInt8]) {}
+    func didReceiveMessage(topic: CommunicationTopic, payload: String) {}
+}
 
 /// This protocol defines the networking API of a communication client, such as
 /// the `MQTTNIOClient` class.
 ///
 /// Note: We expect our clients to use publish-subscribe communication.
 protocol CommunicationClient: Sendable {
-    
-    /// Observable emitting *raw* (topic, payload) MQTT messages.
-    var rawMQTTMessages: PublishSubject<(String, [UInt8])> { get }
-    
-    /// Observable emitting IoValue messages with *raw* payload.
-    var ioValueMessages: PublishSubject<(String, [UInt8])> { get }
-    
-    /// Observable emitting (parsed topic, payload) values.
-    var messages: PublishSubject<(CommunicationTopic, String)> { get }
-    
+
     /// Delegate necessary to start the communication manager
     /// when discovering the broker over mDNS.
-    var delegate: Startable { get }
+    var delegate: Startable { get set }
 
     /// Async event hub that mirrors transport-level state and raw MQTT messages.
     var eventHub: EventHub { get }
 
-    // MARK: - State management.
-    
-    /// Emits online or offline state depending on the connection
-    /// status of the client.
-    var communicationState: BehaviorSubject<CommunicationState> { get }
-    
     // MARK: - Connection methods.
     
     func connect(lastWillTopic: String, lastWillMessage: String)
