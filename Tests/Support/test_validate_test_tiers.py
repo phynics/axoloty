@@ -81,6 +81,17 @@ class ValidateTestTiersTests(unittest.TestCase):
         )
         self.assertTrue(any("unit" in e and "no-such-target" in e for e in errors))
 
+    def test_tier_workflow_must_exist(self):
+        document = valid_document()
+        document["tiers"][7]["workflow"] = ".github/workflows/missing.yml"
+        errors = vtt.validate(
+            document,
+            make_targets=valid_make_targets(),
+            discovered_self_tests=valid_discovered(),
+            exists=lambda path: path != ".github/workflows/missing.yml",
+        )
+        self.assertTrue(any("workflow" in e and "missing.yml" in e for e in errors))
+
     def test_self_test_with_unknown_make_target_fails(self):
         document = valid_document()
         document["selfTests"][0]["makeTarget"] = "ghost-target"

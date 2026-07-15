@@ -1,0 +1,123 @@
+name: Nightly Fuzz Campaign
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: Iterations per seed (1-1000000)
+        required: false
+        default: "100000"
+      seeds:
+        description: Comma-separated decimal seeds
+        required: false
+        default: "1,2,3,4"
+      repetitions:
+        description: Repetitions per seed (1-10)
+        required: false
+        default: "1"
+      jobs:
+        description: Parallel workers (1-8)
+        required: false
+        default: "2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-fuzz
+  cancel-in-progress: false
+
+jobs:
+  fuzz:
+    name: Auditable fuzz campaign
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      AXOLOTY_FUZZ_ITERATIONS: ${{ inputs.iterations || '100000' }}
+      AXOLOTY_FUZZ_SEEDS: ${{ inputs.seeds || '1,2,3,4' }}
+      AXOLOTY_FUZZ_REPETITIONS: ${{ inputs.repetitions || '1' }}
+      AXOLOTY_FUZZ_JOBS: ${{ inputs.jobs || '2' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pinned development image
+        uses: ./.github/actions/setup-container
+
+      - name: Validate campaign inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          positive_integer() {
+            [[ "$1" =~ ^[1-9][0-9]*$ ]]
+          }
+
+          bounded_integer() {
+            local value="$1" maximum="$2"
+            positive_integer "$value" && (( value <= maximum ))
+          }
+
+          bounded_integer "$AXOLOTY_FUZZ_ITERATIONS" 1000000 || {
+            echo "iterations must be an integer from 1 to 1000000" >&2
+            exit 1
+          }
+          bounded_integer "$AXOLOTY_FUZZ_REPETITIONS" 10 || {
+            echo "repetitions must be an integer from 1 to 10" >&2
+            exit 1
+          }
+          bounded_integer "$AXOLOTY_FUZZ_JOBS" 8 || {
+            echo "jobs must be an integer from 1 to 8" >&2
+            exit 1
+          }
+          [[ "$AXOLOTY_FUZZ_SEEDS" =~ ^[0-9]+(,[0-9]+)*$ ]] || {
+            echo "seeds must be comma-separated decimal integers" >&2
+            exit 1
+          }
+          IFS=',' read -r -a seeds <<< "$AXOLOTY_FUZZ_SEEDS"
+          for seed in "${seeds[@]}"; do
+            bounded_integer "$seed" 4294967295 || {
+              echo "each seed must be an integer from 1 to 4294967295" >&2
+              exit 1
+            }
+          done
+
+      - name: Run fuzz campaign
+        run: make fuzz-long CONTAINER_RUNTIME=docker IMAGE=coatyswift-dev
+
+      - name: Summarize campaign
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import glob
+          import json
+          import os
+
+          manifests = sorted(glob.glob(".testing/fuzz/fuzz-*/manifest.json"))
+          if not manifests:
+              print("No fuzz manifest was produced.")
+              raise SystemExit(0)
+          with open(manifests[-1], encoding="utf-8") as stream:
+              manifest = json.load(stream)
+          summary = os.environ["GITHUB_STEP_SUMMARY"]
+          with open(summary, "a", encoding="utf-8") as stream:
+              stream.write("## Fuzz Campaign\n\n")
+              stream.write(f"- Status: `{manifest.get('status', 'unknown')}`\n")
+              stream.write(f"- Seeds: `{','.join(manifest.get('seeds', []))}`\n")
+              stream.write(f"- Iterations: `{manifest.get('iterations')}`\n")
+              stream.write(f"- Repetitions: `{manifest.get('repetitions')}`\n")
+              stream.write(f"- Duration: `{manifest.get('durationSeconds')}s`\n")
+              stream.write(f"- Failed cases: `{manifest.get('failedCases')}`\n")
+          PY
+
+      - name: Upload campaign evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-fuzz-${{ github.run_id }}
+          path: .testing/fuzz/
+          if-no-files-found: warn
+          retention-days: 30

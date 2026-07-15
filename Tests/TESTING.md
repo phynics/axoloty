@@ -43,6 +43,11 @@ separate from protocol-scenario execution.
 `make test-fast` runs unit, module, property, offline-wire, and support
 self-tests in one image build; `make ci` adds the full integration suite.
 
+Nightly fuzz campaigns run from `.github/workflows/fuzz.yml` with the pinned
+development image. Scheduled runs use 100,000 iterations over seeds 1, 2, 3,
+and 4; manual runs may use bounded inputs and retain the finalized campaign
+manifest, summary, logs, and reproducers as workflow artifacts.
+
 ## Test tiers
 
 | Tier | Purpose | Dependencies | Default timeout | Required cadence |

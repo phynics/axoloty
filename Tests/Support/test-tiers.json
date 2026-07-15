@@ -8,7 +8,7 @@
     {"id": "integration", "timeoutSeconds": 600, "cadence": "pull-request", "network": "isolated-broker", "required": true, "makeTarget": "test"},
     {"id": "wire-offline", "timeoutSeconds": 300, "cadence": "pull-request", "network": "none", "required": true, "makeTarget": "test-wire"},
     {"id": "wire-live", "timeoutSeconds": 1200, "cadence": "protocol-change-and-pre-merge", "network": "isolated-containers", "required": true, "makeTarget": "test-wire-live"},
-    {"id": "nightly", "timeoutSeconds": 3600, "cadence": "nightly-and-release", "network": "isolated-containers", "required": false, "makeTarget": "fuzz-long"},
+    {"id": "nightly", "timeoutSeconds": 3600, "cadence": "nightly-and-release", "network": "isolated-containers", "required": false, "makeTarget": "fuzz-long", "workflow": ".github/workflows/fuzz.yml"},
     {"id": "manual-macos", "timeoutSeconds": 1800, "cadence": "release-and-apple-change", "network": "isolated-broker", "required": false}
   ],
   "selfTests": [

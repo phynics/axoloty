@@ -137,6 +137,12 @@ def validate(document, *, make_targets, discovered_self_tests, exists=None):
                 errors.append(
                     f"{tier_id}: makeTarget {make_target!r} is not a Makefile target"
                 )
+        workflow = tier.get("workflow")
+        if workflow is not None:
+            if not isinstance(workflow, str) or not workflow:
+                errors.append(f"{tier_id}: workflow must be a nonempty string")
+            elif not exists(workflow):
+                errors.append(f"{tier_id}: workflow {workflow!r} does not exist")
 
     flake = document.get("flakePolicy", {})
     if flake.get("automaticRetries") != 0:
