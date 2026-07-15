@@ -8,6 +8,7 @@ import Testing
 import Axoloty
 
 @Suite
+@MainActor
 struct ObjectLifecycleControllerTests {
 
     // NOTE: Make sure that a coaty broker (or just any MQTT broker) is running on the localhost before running

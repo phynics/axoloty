@@ -2,6 +2,7 @@
 
 import Foundation
 
+@MainActor
 extension CommunicationManager {
 
     /// Returns an async stream that replays the current operating lifecycle

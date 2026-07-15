@@ -2,6 +2,7 @@
 
 import Foundation
 
+@MainActor
 extension CommunicationManager {
 
     /// Observes Advertise snapshots for a core type.

@@ -6,7 +6,6 @@
 import Testing
 import Foundation
 import Axoloty
-import RxSwift
 
 /// NOTE: This test case sometimes fails to run because of some problems related to thread scheduling
 /// If possible run these tests against a physical device (e.g. iPhone), instead of Simulator.
@@ -14,6 +13,7 @@ import RxSwift
 
 // MARK: - Communication tests.
 @Suite
+@MainActor
 struct SensorThingsTests {
     static let TEST_TIMEOUT = 10
 
@@ -26,7 +26,7 @@ struct SensorThingsTests {
 
     // MARK: - Test methods.
     @Test
-    func testAdvertise() throws {
+    func testAdvertise() async throws {
         let mqttClientOptions1 = MQTTClientOptions(host: "127.0.0.1", port: UInt16(1883))
         let communicationOptions1 = CommunicationOptions(mqttClientOptions: mqttClientOptions1, shouldAutoStart: true)
         let controllerOptions1 = ControllerOptions(extra: ["name" : "MockEmitterController1", "responseDelay": 1000])
@@ -49,7 +49,7 @@ struct SensorThingsTests {
         container2.communicationManager?.start()
 
         // Give the infrastructure time to start
-        sleep(4)
+        try await _Concurrency.Task.sleep(for: .seconds(4))
 
         let eventCount = 5
         let completion = DispatchGroup()
@@ -74,7 +74,9 @@ struct SensorThingsTests {
             let queue = DispatchQueue.init(label: "test.coaty.sensorThings")
             let delay: DispatchTimeInterval = .milliseconds(1500)
             queue.asyncAfter(deadline: .now() + delay) {
-                emitterController.publishAdvertiseEvents(count: eventCount, objectType: element)
+                _Concurrency.Task { @MainActor in
+                    emitterController.publishAdvertiseEvents(count: eventCount, objectType: element)
+                }
 
                 // smaller delay does not always guarantee that all events will be received
                 let delay2: DispatchTimeInterval = .seconds(4)
@@ -86,32 +88,30 @@ struct SensorThingsTests {
                     if logger.eventData.count == eventCount {
                         completion.leave()
                     }
-                    for i in 1...eventCount {
-                        if i > logger.count {
-                            Issue.record("Expected \(eventCount) advertise events, got \(logger.count)")
-                            return
-                        }
-                        if logger.eventData[i-1].object.name == "Advertised_\(i)" {
-                            completion.leave()
-                        } else {
-                            Issue.record("Unexpected object name \(logger.eventData[i-1].object.name) at index \(i)")
-                            return
-                        }
+                    let expectedNames = Set((1...eventCount).map { "Advertised_\($0)" })
+                    let actualNames = Set(logger.eventData.map(\.object.name))
+                    if actualNames == expectedNames {
+                        for _ in 1...eventCount { completion.leave() }
+                    } else {
+                        Issue.record("Unexpected advertised object names: \(actualNames)")
                     }
                 }
             }
         }
 
-        let result = completion.wait(timeout: .now() + TimeInterval(5 * SensorThingsTests.TEST_TIMEOUT))
+        let timeout = SensorThingsTests.TEST_TIMEOUT
+        let result = await _Concurrency.Task.detached {
+            completion.wait(timeout: .now() + TimeInterval(5 * timeout))
+        }.value
         container1.shutdown()
         container2.shutdown()
-        sleep(2)
+        try await _Concurrency.Task.sleep(for: .seconds(2))
         #expect(result == .success)
     }
 
     @Test
 
-    func testChannel() throws {
+    func testChannel() async throws {
         let mqttClientOptions1 = MQTTClientOptions(host: "127.0.0.1", port: UInt16(1883))
         let communicationOptions1 = CommunicationOptions(mqttClientOptions: mqttClientOptions1, shouldAutoStart: true)
         let controllerOptions1 = ControllerOptions(extra: ["name" : "MockEmitterController1", "responseDelay": 1000])
@@ -134,7 +134,7 @@ struct SensorThingsTests {
         container2.communicationManager?.start()
 
         // Give the infrastructure time to start
-        sleep(2)
+        try await _Concurrency.Task.sleep(for: .seconds(2))
 
         let eventCount = 2
         let completion = DispatchGroup()
@@ -143,7 +143,7 @@ struct SensorThingsTests {
 
         let queue = DispatchQueue.init(label: "test.coaty.sensorThings", qos: .userInitiated)
 
-        let disposableBox = SendableBox<Disposable?>(nil)
+        let disposableBox = SendableBox<_Concurrency.Task<Void, Never>?>(nil)
         let testFunctionBox = SendableBox<(([String], Int) -> Void)?>(nil)
 
         let testFunction: ([String], Int) -> Void = { elementArray, index in
@@ -164,12 +164,16 @@ struct SensorThingsTests {
             }
 
             queue.async {
-                disposableBox.value = receiverController.watchForChannelEvents(logger: logger, channelId: channelId)
+                _Concurrency.Task { @MainActor in
+                    disposableBox.value = receiverController.watchForChannelEvents(logger: logger, channelId: channelId)
+                }
             }
 
             let delay: DispatchTimeInterval = .seconds(6)
             queue.asyncAfter(deadline: .now() + delay) {
-                emitterController.publishChannelEvents(count: eventCount, objectType: element, channelId: channelId)
+                _Concurrency.Task { @MainActor in
+                    emitterController.publishChannelEvents(count: eventCount, objectType: element, channelId: channelId)
+                }
 
                 let delay2: DispatchTimeInterval = .seconds(6)
 
@@ -189,7 +193,7 @@ struct SensorThingsTests {
                         }
                     }
 
-                    disposableBox.value?.dispose()
+                    disposableBox.value?.cancel()
                     testFunctionBox.value?(elementArray, index+1)
                 }
             }
@@ -199,10 +203,13 @@ struct SensorThingsTests {
         let copy = SensorThingsTests.SENSOR_THINGS_TYPES_SET
         testFunction(copy, 0)
 
-        let result = completion.wait(timeout: .now() + TimeInterval(15 * SensorThingsTests.TEST_TIMEOUT))
+        let timeout = SensorThingsTests.TEST_TIMEOUT
+        let result = await _Concurrency.Task.detached {
+            completion.wait(timeout: .now() + TimeInterval(15 * timeout))
+        }.value
         container1.shutdown()
         container2.shutdown()
-        sleep(2)
+        try await _Concurrency.Task.sleep(for: .seconds(2))
         #expect(result == .success)
     }
 

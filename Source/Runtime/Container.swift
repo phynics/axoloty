@@ -5,12 +5,12 @@
 //
 
 import Foundation
-import RxSwift
 
 /// An IoC container that uses constructor dependency injection to create
 /// container components and to resolve dependencies. This container defines the
 /// entry and exit points for any Coaty application providing lifecycle
 /// management for its components.
+@MainActor
 public class Container {
     
     // MARK: Attributes.
@@ -28,8 +28,7 @@ public class Container {
 
     private var controllers = [String: Controller]()
     private var isShutdown = false
-    private var operatingState: Observable<OperatingState>?
-    private var operatingStateSubscription: Disposable?
+    private var operatingStateTask: _Concurrency.Task<Void, Never>?
     
     /// A dispatch queue handling controller synchronisation issues.
     private var queue: DispatchQueue!
@@ -74,32 +73,38 @@ public class Container {
     ///     - controllerType: the class type of the controller
     ///     - controllerOptions: the controller's configuration options
     public func registerController(name: String, controllerType: Controller.Type, controllerOptions: ControllerOptions) throws {
-        try queue.sync {
-            if isShutdown {
-                return
-            }
+        if isShutdown {
+            return
+        }
             
-            guard let _ = self.runtime, let communicationManager = self.communicationManager else {
-                LogManager.log.error("Runtime or CommunicationManager was not initialized.")
-                throw AxolotyError.InvalidConfiguration("Runtime or CommunicationManager was not initialized.")
-            }
+        guard self.runtime != nil, self.communicationManager != nil else {
+            LogManager.log.error("Runtime or CommunicationManager was not initialized.")
+            throw AxolotyError.InvalidConfiguration("Runtime or CommunicationManager was not initialized.")
+        }
             
-            if self.controllers[name] != nil {
-                LogManager.log.error("Controller with given name already exists.")
-                throw AxolotyError.InvalidConfiguration("Controller with given name already exists.")
-            }
+        if self.controllers[name] != nil {
+            LogManager.log.error("Controller with given name already exists.")
+            throw AxolotyError.InvalidConfiguration("Controller with given name already exists.")
+        }
 
-            let controller = resolveController(name: name, controllerType: controllerType, controllerOptions: controllerOptions)
-            self.controllers[name] = controller
+        let controller = resolveController(name: name, controllerType: controllerType, controllerOptions: controllerOptions)
+        self.controllers[name] = controller
             
-            controller.onInit()
+        controller.onInit()
             
-            // Trigger onCommunicationManagerStarting() method.
-            _ = communicationManager.getOperatingState().take(1).subscribe {
-                if let state = $0.element, state == .started {
+            // Trigger onCommunicationManagerStarting() when a dynamically
+            // registered controller joins an already-started manager.
+        _Concurrency.Task { @MainActor [weak self, weak controller] in
+                guard let self,
+                      let controller,
+                      let communicationManager = self.communicationManager else {
+                    return
+                }
+                let stream = await communicationManager.observeOperatingStateStream()
+                var iterator = await stream.makeAsyncIteratorAndWait()
+                if await iterator.next() == .started {
                     self.dispatchOperatingState(state: .started, ctrl: controller)
                 }
-            }
         }
     }
     
@@ -182,7 +187,6 @@ public class Container {
         // Create CommunicationManager.
         let communicationManager = CommunicationManager(identity: self.identity!, communicationOptions: configuration.communication, commonOptions: configuration.common)
         self.communicationManager = communicationManager
-        self.operatingState = communicationManager.operatingState.asObservable()
 
         // Create all controllers.
         components.controllers.forEach { (name, controllerType) in
@@ -196,19 +200,23 @@ public class Container {
             controller.onInit()
         }
         
-        var isInitialOperatingState = true
-        
         // Observe operating state and dispatch to registered controllers.
-        self.operatingStateSubscription = operatingState?.subscribe { (operatingStateEvent) in
-            if isInitialOperatingState {
-                // Do not dispatch initial `stopped` state.
-                isInitialOperatingState = false
-                if operatingStateEvent.element == .stopped {
-                    return
-                }
+        self.operatingStateTask = _Concurrency.Task { @MainActor [weak self] in
+            guard let self,
+                  let communicationManager = self.communicationManager else {
+                return
             }
-            self.controllers.forEach { (_, controller) in
-                if let state = operatingStateEvent.element {
+            let stream = await communicationManager.observeOperatingStateStream()
+            var iterator = await stream.makeAsyncIteratorAndWait()
+            var isInitialOperatingState = true
+            while let state = await iterator.next() {
+                if isInitialOperatingState {
+                    isInitialOperatingState = false
+                    if state == .stopped {
+                        continue
+                    }
+                }
+                for controller in self.controllers.values {
                     self.dispatchOperatingState(state: state, ctrl: controller)
                 }
             }
@@ -223,8 +231,8 @@ public class Container {
             controller.onDispose()
         }
 
-        self.operatingStateSubscription?.dispose()
-        self.operatingStateSubscription = nil
+        self.operatingStateTask?.cancel()
+        self.operatingStateTask = nil
         self.controllers = [String: Controller]()
         self.communicationManager = nil
         self.runtime = nil

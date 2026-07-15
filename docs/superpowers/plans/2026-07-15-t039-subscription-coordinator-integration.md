@@ -6,7 +6,7 @@
 
 **Architecture:** A new actor owns delivery of `SubscriptionCommand` values to the synchronous communication client. `CommunicationManager` owns a coordinator configured with that actor, forwards client connection state to it, and delegates its remaining internal topic helpers to it. Public Advertise streams register existing transport-routed hub keys and capture only the coordinator in lifecycle callbacks.
 
-**Tech Stack:** Swift 6.3, Swift concurrency, Swift Testing, EventHub, mqtt-nio, RxSwift (temporary un-migrated consumers only).
+**Tech Stack:** Swift 6.3, Swift concurrency, Swift Testing, EventHub, mqtt-nio. RxSwift is removed.
 
 ## Global Constraints
 

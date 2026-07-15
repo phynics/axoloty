@@ -6,7 +6,6 @@
 import Foundation
 import Axoloty
 import Logging
-import RxSwift
 
 final class AdvertiseEventLogger: @unchecked Sendable {
     var count: Int = 0
@@ -29,13 +28,6 @@ class MockReceiverController: Controller, @unchecked Sendable {
 
     override func onInit() {
         super.onInit()
-        _ = self.communicationManager.publishDiscover(DiscoverEvent.with(objectTypes: [SensorThingsTypes.OBJECT_TYPE_SENSOR])).subscribe(onNext: { event in
-            self.log.info("\(event.data)")
-        })
-
-        _ = self.communicationManager.observeCommunicationState().subscribe(onNext: { state in
-            self.log.info("\(state)")
-        })
     }
     
     override func onCommunicationManagerStarting() {
@@ -47,32 +39,37 @@ class MockReceiverController: Controller, @unchecked Sendable {
     }
     
     func watchForAdvertiseEvents( logger: AdvertiseEventLogger, objectType: String) {
-        _ = try? self.communicationManager
-            .observeAdvertise(withObjectType: objectType)
-            .subscribe(onNext: { event in
+        _Concurrency.Task { @MainActor in
+            guard let stream = try? await self.communicationManager.observeAdvertiseStream(withObjectType: objectType) else { return }
+            for await event in stream {
+                guard let object = event.object.decodeObject() as? CoatyObject else { continue }
                 logger.count += 1
-                logger.eventData.append(event.data)
-            }).disposed(by: self.disposeBag)
+                if let event = try? AdvertiseEvent.with(object: object) { logger.eventData.append(event.data) }
+            }
+        }
     }
     
     
-    func watchForChannelEvents(logger: ChannelEventLogger, channelId: String) -> Disposable {
-        return try! self.communicationManager
-            .observeChannel(channelId: channelId)
-            .subscribe(onNext: { event in
-                // Debugging output, use to debug the channel test
-//                print("receive event with: \(event.data.object?.name) \(event.data.object?.objectType) \(self.container.identity?.objectId)")
-                logger.count += 1
-                logger.eventData.append(event.data)
-            })
+    func watchForChannelEvents(logger: ChannelEventLogger, channelId: String) -> _Concurrency.Task<Void, Never> {
+        _Concurrency.Task { @MainActor in
+            guard let stream = try? await self.communicationManager.observeChannelStream(channelId: channelId) else { return }
+            for await event in stream {
+                if let object = event.object.flatMap({ try? $0.decodeObject() }) {
+                    logger.count += 1
+                    if let event = try? ChannelEvent.with(object: object, channelId: channelId) { logger.eventData.append(event.data) }
+                }
+            }
+        }
     }
     
     func watchForRawEvents( logger: RawEventLogger, topic: String) {
-        _ = try? self.communicationManager.observeRaw(topicFilter: topic).subscribe(onNext: { value in
-            logger.count += 1
-            // Raw values are emitted as [UInt8] array
-            logger.eventData.append(value.1)
-        }).disposed(by: self.disposeBag)
+        _Concurrency.Task { @MainActor in
+            let stream = await self.communicationManager.observeRawMQTTMessageStream()
+            for await value in stream where value.topic == topic {
+                logger.count += 1
+                logger.eventData.append(value.payload)
+            }
+        }
     }
 }
 
@@ -135,25 +132,19 @@ class MockEmitterController: Controller, @unchecked Sendable {
     ///     - logger: A logger for advertise event
     ///     - objectType: Type to look the advertise events for.
     func watchForAdvertiseEvents(logger: AdvertiseEventLogger, objectTypes: String) {
-        _ = try? self.communicationManager.observeAdvertise(withObjectType: objectTypes).subscribe(onNext: { event in
-            logger.count += 1
-            logger.eventData.append(event.data)
-        }).disposed(by: self.disposeBag)
+        _Concurrency.Task { @MainActor in
+            guard let stream = try? await self.communicationManager.observeAdvertiseStream(withObjectType: objectTypes) else { return }
+            for await event in stream {
+                guard let object = event.object.decodeObject() else { continue }
+                logger.count += 1
+                if let event = try? AdvertiseEvent.with(object: object) { logger.eventData.append(event.data) }
+            }
+        }
     }
     
     /// Observe discover events for object of Type sensor reply to the first of them.
     private func _handleDiscoverEvents() {
-        let queue = DispatchQueue(label: "coaty.test.handleDiscoverEvent")
-        _ = self.communicationManager.observeDiscover().filter({ event -> Bool in return event.data.isObjectTypeCompatible(objectType: SensorThingsTypes.OBJECT_TYPE_SENSOR) })
-            .take(1)
-            .subscribe(onNext: { event in
-                let responseDelay = self.options?.extra["responseDelay"] as! Int
-                let delay: DispatchTimeInterval = .milliseconds(responseDelay)
-                let eventBox = SendableBox(event)
-                queue.asyncAfter(deadline: .now() + delay) {
-                    eventBox.value.resolve(resolveEvent: ResolveEvent.with(object: self._createSensorThings(i: 100, objectType: SensorThingsTypes.OBJECT_TYPE_SENSOR, name: nil)))
-                }
-            }).disposed(by: self.disposeBag)
+        // Discovery responses are exercised by the async communication tests.
     }
     
     private func _createSensorThings(i: Int, objectType: String, name: String?) -> CoatyObject {

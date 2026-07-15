@@ -1,7 +1,6 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
-import RxSwift
 import Testing
 @testable import Axoloty
 
@@ -9,6 +8,7 @@ import Testing
 /// the Swift concurrency ``EventHub`` while the legacy Rx subjects remain
 /// source-compatible.
 @Suite
+@MainActor
 struct EventHubTransportTests {
 
     @Test
@@ -509,6 +509,7 @@ private func nextValue<T: Sendable>(
     }
 }
 
+@MainActor
 private func makeManager(client: CommunicationClient? = nil) -> CommunicationManager {
     let mqttOptions = MQTTClientOptions(
         host: "127.0.0.1",
@@ -551,10 +552,6 @@ private final class FakeStartable: Startable {
 
 private final class FakeCommunicationClient: CommunicationClient, @unchecked Sendable {
 
-    let rawMQTTMessages = PublishSubject<(String, [UInt8])>()
-    let ioValueMessages = PublishSubject<(String, [UInt8])>()
-    let messages = PublishSubject<(CommunicationTopic, String)>()
-    let communicationState = BehaviorSubject<CommunicationState>(value: .offline)
     let eventHub = EventHub()
     var delegate: Startable
     private(set) var commands: [SubscriptionCommand] = []
@@ -566,7 +563,6 @@ private final class FakeCommunicationClient: CommunicationClient, @unchecked Sen
     }
 
     func simulateState(_ state: CommunicationState) async {
-        communicationState.onNext(state)
         (delegate as? CommunicationClientDelegate)?.didUpdateCommunicationState(state)
         await eventHub.yieldState(
             value: state,
@@ -575,7 +571,6 @@ private final class FakeCommunicationClient: CommunicationClient, @unchecked Sen
     }
 
     func simulateRawMessage(topic: String, payload: [UInt8]) async {
-        rawMQTTMessages.onNext((topic, payload))
         await eventHub.yield(
             value: RawMQTTMessage(topic: topic, payload: payload),
             to: CommunicationEventHubKeys.rawMQTTMessage

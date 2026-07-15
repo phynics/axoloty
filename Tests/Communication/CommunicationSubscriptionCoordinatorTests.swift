@@ -1,7 +1,6 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
-import RxSwift
 import Testing
 @testable import Axoloty
 
@@ -258,10 +257,6 @@ private actor CommandLog {
 }
 
 private final class RecordingCommunicationClient: CommunicationClient, @unchecked Sendable {
-    let rawMQTTMessages = PublishSubject<(String, [UInt8])>()
-    let ioValueMessages = PublishSubject<(String, [UInt8])>()
-    let messages = PublishSubject<(CommunicationTopic, String)>()
-    let communicationState = BehaviorSubject<CommunicationState>(value: .offline)
     let eventHub = EventHub()
     var delegate: Startable = RecordingStartable()
     private let gate: SubscriptionGate?

@@ -110,11 +110,10 @@ logging story, and they are a primary source of platform/portability risk
 (see Phase 4 and Phase 7).
 
 **Status:** CocoaMQTT and XCGLogger are gone (T-005, T-006), the dependency
-audit is complete (T-035), and ErrorKit is adopted for `AxolotyError` (T-025).
-RxSwift remains current at 6.10.2 and the containerized Linux build/test flow
-is green; removing RxSwift (T-026 through T-028) remains the outstanding
-modernization work, not a Linux build blocker. The migration proceeds in
-this dependency order:
+audit is complete (T-035), ErrorKit is adopted for `AxolotyError` (T-025), and
+the RxSwift migration (T-026 through T-028, T-040, T-050, T-051) is complete.
+Communication, runtime, IO routing, and SensorThings now use EventHub streams
+and owned Swift concurrency tasks.
 
 **T-026** (Swift 6.3 event-stream foundation) → **T-027** (event-model
 snapshots) → **T-039** (communication manager actor migration) →
@@ -123,11 +122,9 @@ migration) → **T-028** (final RxSwift removal).
 
 T-039's subscription-coordinator slice is implemented: MQTT topic reference
 counts and reconnect replay are actor-owned, subscription acknowledgements are
-awaited before manager readiness, and async Advertise, Deadvertise, and Discover
-snapshot streams now drive subscription lifecycle through `EventHub`.
-Distributed logging and object-lifecycle consumers use the readiness barrier.
-Rx consumers in IO routing and SensorThings remain temporary until T-040,
-T-050, and T-051 move them to snapshots; only then can T-028 remove RxSwift.
+awaited before manager readiness, and async event snapshots drive lifecycle
+through `EventHub`. Distributed logging, object-lifecycle, IO-routing, and
+SensorThings consumers use owned tasks and cancellation.
 
 **What this phase covers:**
 - Remove RxSwift in favor of Swift 6.3 structured concurrency: async/await,
@@ -161,7 +158,7 @@ T-050, and T-051 move them to snapshots; only then can T-028 remove RxSwift.
   (not assumed) — see the ticket for scope.
 
 **Done when:**
-- [ ] No source file imports RxSwift; all reactive-style APIs are expressed
+- [x] No source or test file imports RxSwift; all reactive-style APIs are expressed
       with async/await, `AsyncSequence`, or actors.
 - [x] `ErrorKit` is a Package.swift dependency and `AxolotyError` conforms to
       `Throwable` with a tested user-facing message; broader boundary

@@ -106,4 +106,9 @@ enum CommunicationEventHubKeys {
 
     /// Key for incoming raw IO value messages.
     static let ioValue = CommunicationEventHubKey(scope: "communication", name: "io-value")
+
+    /// Returns the key for a correlated response stream.
+    static func response(eventType: CommunicationEventType, correlationId: String) -> CommunicationEventHubKey {
+        CommunicationEventHubKey(scope: "communication", name: "response/\(eventType.rawValue)/\(correlationId)")
+    }
 }

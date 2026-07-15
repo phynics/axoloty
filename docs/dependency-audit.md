@@ -13,7 +13,6 @@ dependency's GitHub releases page on 2026-07-15.
 | swift-nio | `from: 2.101.2` | 2.101.2 | 2.101.2 | Apache-2.0 | Async network primitives used transitively by mqtt-nio and our TLS code | current |
 | swift-nio-ssl | `from: 2.37.1` | 2.37.1 | 2.37.1 | Apache-2.0 | TLS on Linux (non-Apple platforms); Apple platforms use Network.framework via NIOTransportServices | current |
 | swift-log | `from: 1.14.0` | 1.14.0 | 1.14.0 | Apache-2.0 | Structured logging facade backing `LogManager` | current |
-| RxSwift | `from: 6.10.2` | 6.10.2 | 6.10.2 | MIT | Reactive observation/subscription API across communication, runtime, IO routing, and SensorThings | scheduled for removal (T-028) |
 | ErrorKit | `exact: 1.2.1` | 1.2.1 | 1.2.1 | MIT | `Throwable` error policy and user-facing error formatting (`AxolotyError`) | current; pinned exact |
 | swift-docc-plugin | `from: 1.5.0` | 1.5.0 | 1.5.0 | Apache-2.0 | Provides `swift package generate-documentation` used by `make docs` | current; build-tool only |
 
@@ -60,21 +59,6 @@ The `1.14.0` release adds task-local logger support. The ErrorKit policy
 duplicating formatting at the logging boundary; swift-log remains the
 logging backend. Current at latest. No action needed.
 
-### RxSwift (`6.10.2`, MIT)
-
-Imported by 13 production files across `Communication/Manager`,
-`Communication/Client`, `Runtime`, `IORouting`, `SensorThings`, and
-`Controller`. It is the reactive observation/subscription backbone
-(`Observable`, `DisposeBag`, `filter`/`subscribe`). Phase 3 of the roadmap
-(T-026 → T-027 → T-028) replaces it with Swift structured concurrency
-(`AsyncStream`/owned `Task` values). The `6.10.2` release adds Swift 6.2
-compatibility and Linux concurrency support, so it remains buildable during the
-migration. **Actionable removal path:** T-028 removes the manifest dependency
-and all imports once the actor-owned event hub (T-026) and event-family
-migration (T-027) land. The quarantined legacy compatibility runner under
-`Tests/WireCompatibility/Legacy/` retains its own RxSwift dependency and is
-explicitly excluded from the removal criterion.
-
 ### ErrorKit (`1.2.1` exact, MIT)
 
 Imported by `Source/Common/AxolotyError.swift`, which conforms `AxolotyError`
@@ -105,16 +89,11 @@ vendored third-party source exists under `Source/`.
 
 ## Actionable recommendations
 
-1. **Remove RxSwift (T-028).** It is the only dependency slated for removal
-   and the largest maintenance liability. It is blocked on T-026/T-027, which
-   establish the async observation core and migrate event families. No version
-   change is needed in the meantime; `6.10.2` remains buildable under Swift 6.
-
-2. **Replace vendored AnyCodable (T-036).** Confirmed MIT-compatible and
+1. **Replace vendored AnyCodable (T-036).** Confirmed MIT-compatible and
    unblocked by this audit. Should land after the package rename (T-023) to
    avoid `Package.swift` edit conflicts.
 
-3. **No version bumps required.** All six runtime dependencies and the docc
+2. **No version bumps required.** All six runtime dependencies and the docc
    plugin are resolved at their latest releases. Future updates flow
    automatically through the `from:` ranges; only ErrorKit's `exact:` pin
    requires an intentional bump.
@@ -124,5 +103,5 @@ vendored third-party source exists under `Source/`.
 This audit does not conflict with any in-flight ticket. It confirms that
 mqtt-nio, swift-nio, swift-nio-ssl, and swift-log are current and remain
 compatible with the container toolchain and the WASI feasibility spike
-(T-030). RxSwift removal is owned by T-028 and depends on T-026/T-027.
+(T-030). RxSwift removal is complete (T-028).
 AnyCodable removal is owned by T-036 and is unblocked by this audit.

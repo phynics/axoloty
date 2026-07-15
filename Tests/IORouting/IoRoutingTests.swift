@@ -6,6 +6,7 @@ import Testing
 // MARK: - IoAssociationRule tests
 
 @Suite
+@MainActor
 struct IoAssociationRuleTests {
     @Test
     func testCreateGlobalRule() {
@@ -114,6 +115,7 @@ struct IoAssociationRuleTests {
 // MARK: - IoCompatibleAssociation tests
 
 @Suite
+@MainActor
 struct IoCompatibleAssociationTests {
     @Test
     func testCreateAssociation() {
@@ -141,6 +143,7 @@ struct IoCompatibleAssociationTests {
 // MARK: - RuleBasedIoRouter pure-logic tests
 
 @Suite
+@MainActor
 struct RuleBasedIoRouterLogicTests {
     @Test
     func testComputeCumulatedUpdateRateBothNil() {
@@ -509,6 +512,7 @@ struct RuleBasedIoRouterLogicTests {
 
 // MARK: - Helpers
 
+@MainActor
 private func createMinimalContainer() -> Container {
     let options = CommunicationOptions(
         mqttClientOptions: MQTTClientOptions(),
@@ -522,6 +526,7 @@ private func createMinimalContainer() -> Container {
     return Container.resolve(components: components, configuration: config)
 }
 
+@MainActor
 private func makeRouter() -> RuleBasedIoRouter {
     let ioContext = IoContext(
         coreType: .IoContext, objectType: "test",

@@ -5,9 +5,9 @@
 //
 
 import Foundation
-import RxSwift
 
 /// The base controller class.
+@MainActor
 open class Controller {
 
     /// Gets the contrainer's communicationManager.
@@ -28,12 +28,6 @@ open class Controller {
     /// `Components.controllers` object in the container configuration, or by
     /// invoking `Container.registerController` method with this name.
     private(set) public var registeredName: String
-    
-    /// This dispose bag holds references to your observable subscriptions added
-    /// with `.disposed(by: self.disposeBag)`. These subscriptions are
-    /// *automatically* disposed when the communication manager is stopped (in
-    /// the `onCommunicationManagerStopping` base method).
-    public var disposeBag = DisposeBag()
     
     /// Never instantiate controller objects in your application; they are created
     /// automatically by dependency injection.
@@ -132,20 +126,14 @@ open class Controller {
     /// effects here. Ensure that super.onCommunicationManagerStopping is called
     /// in your override.
     ///
-    /// The base implementation disposes all observable subscriptions collected
-    /// by the controller's dispose bag (see `self.disposeBag`) and
-    /// reinitializes a new dispose bag afterwards.
+    /// The base implementation is a lifecycle hook for cancelling controller
+    /// tasks and releasing other communication resources.
     open func onCommunicationManagerStopping() {
-        self.disposeBag = DisposeBag()
     }
     
     /// Called by the Coaty container when this instance should be disposed.
     /// Implement cleanup side effects here. The base implementation does nothing.
     open func onDispose() {}
-    
-    deinit {
-        onDispose()
-    }
     
     // MARK: - Utility methods for distributed logging functionality.
     

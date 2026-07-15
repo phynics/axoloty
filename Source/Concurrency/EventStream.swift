@@ -7,14 +7,36 @@ public struct EventStream<Element: Sendable>: Sendable, AsyncSequence {
     public typealias AsyncIterator = Iterator
 
     public struct Iterator: AsyncIteratorProtocol {
-        private var inner: AsyncStream<Element>.AsyncIterator
+        private let storage: Storage
+        private let continuation: AnySendableContinuation
 
-        fileprivate init(inner: AsyncStream<Element>.AsyncIterator) {
-            self.inner = inner
+        fileprivate init(
+            inner: AsyncStream<Element>.AsyncIterator,
+            continuation: AnySendableContinuation
+        ) {
+            self.storage = Storage(inner)
+            self.continuation = continuation
         }
 
         public mutating func next() async -> Element? {
-            await inner.next()
+            let cancellation = continuation
+            return await withTaskCancellationHandler {
+                await storage.next()
+            } onCancel: {
+                cancellation.finish()
+            }
+        }
+
+        private final class Storage: @unchecked Sendable {
+            var inner: AsyncStream<Element>.AsyncIterator
+
+            init(_ inner: AsyncStream<Element>.AsyncIterator) {
+                self.inner = inner
+            }
+
+            func next() async -> Element? {
+                await inner.next()
+            }
         }
     }
 
@@ -44,7 +66,7 @@ public struct EventStream<Element: Sendable>: Sendable, AsyncSequence {
 
         hub.registerIteratorContinuation(erased, streamId: streamId)
 
-        return Iterator(inner: asyncStream.makeAsyncIterator())
+        return Iterator(inner: asyncStream.makeAsyncIterator(), continuation: erased)
     }
 
     /// Creates an iterator after its EventHub registration has completed.
@@ -60,6 +82,6 @@ public struct EventStream<Element: Sendable>: Sendable, AsyncSequence {
         )
         let erased = AnySendableContinuation(continuation)
         await hub.registerIteratorContinuationAndWait(erased, streamId: streamId)
-        return Iterator(inner: asyncStream.makeAsyncIterator())
+        return Iterator(inner: asyncStream.makeAsyncIterator(), continuation: erased)
     }
 }

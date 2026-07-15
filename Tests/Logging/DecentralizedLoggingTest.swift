@@ -8,6 +8,7 @@ import Testing
 import Axoloty
 
 @Suite
+@MainActor
 struct DecentralizedLoggingTest {
 
     /// NOTE: Please make sure that a MQTT broker is running on localhost on port 1883 before running.
@@ -84,10 +85,9 @@ class LogReceiverController: Controller {
 
     override func prepareForCommunication() async {
         let stream = await self.communicationManager.observeAdvertiseStream(withCoreType: .Log)
-        let preparedIterator = await stream.makeAsyncIteratorAndWait()
         let storage = self.logStorage
         self.consumptionTask = _Concurrency.Task {
-            var iterator = preparedIterator
+            var iterator = stream.makeAsyncIterator()
             while let snapshot = await iterator.next() {
                 await storage.append(snapshot)
             }

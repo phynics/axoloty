@@ -8,6 +8,9 @@ public struct DiscoverEventSnapshot: EventSnapshot, Codable, Equatable, Sendable
     /// The identifier of the event source, as derived from the incoming topic.
     public let sourceId: String?
 
+    /// The request correlation identifier used for a Resolve response.
+    public let correlationId: String?
+
     /// The external ID of the object(s) to be discovered.
     public let externalId: String?
 
@@ -30,12 +33,14 @@ public struct DiscoverEventSnapshot: EventSnapshot, Codable, Equatable, Sendable
     ///   - coreTypes: An optional list of core types.
     public init(
         sourceId: String? = nil,
+        correlationId: String? = nil,
         externalId: String? = nil,
         objectId: String? = nil,
         objectTypes: [String]? = nil,
         coreTypes: [CoreType]? = nil
     ) {
         self.sourceId = sourceId
+        self.correlationId = correlationId
         self.externalId = externalId
         self.objectId = objectId
         self.objectTypes = objectTypes
@@ -59,6 +64,7 @@ extension DiscoverEventSnapshot {
         }
         self.init(
             sourceId: parsedMQTTMessage.sourceId,
+            correlationId: parsedMQTTMessage.correlationId,
             externalId: payload.externalId,
             objectId: payload.objectId,
             objectTypes: payload.objectTypes,

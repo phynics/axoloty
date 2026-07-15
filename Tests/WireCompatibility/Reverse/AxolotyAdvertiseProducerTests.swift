@@ -5,9 +5,10 @@ import Testing
 import Axoloty
 
 @Suite
+@MainActor
 struct AxolotyAdvertiseProducerTests {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["WIRE_REVERSE_LIVE"] == "1"))
-    func testPublishesAdvertiseForCoatyJS() throws {
+    func testPublishesAdvertiseForCoatyJS() async throws {
         let environment = ProcessInfo.processInfo.environment
         let host = environment["WIRE_BROKER_HOST"] ?? "127.0.0.1"
         let port = UInt16(environment["WIRE_BROKER_PORT"] ?? "1883") ?? 1883
@@ -29,15 +30,11 @@ struct AxolotyAdvertiseProducerTests {
             return
         }
 
-        let online = DispatchSemaphore(value: 0)
-        let stateSubscription = manager.observeCommunicationState().subscribe(onNext: { state in
-            if state == .online {
-                online.signal()
-            }
-        })
+        let stateStream = await manager.observeCommunicationStateStream()
+        let online = _Concurrency.Task { for await state in stateStream where state == .online { return } }
         manager.start()
-        #expect(online.wait(timeout: .now() + 5) == .success)
-        stateSubscription.dispose()
+        try await _Concurrency.Task.sleep(for: .seconds(1))
+        online.cancel()
 
         let object = CoatyObject(
             coreType: .CoatyObject,
@@ -46,6 +43,6 @@ struct AxolotyAdvertiseProducerTests {
             name: "wire-fixture"
         )
         manager.publishAdvertise(try AdvertiseEvent.with(object: object))
-        Thread.sleep(forTimeInterval: 0.5)
+        try await _Concurrency.Task.sleep(for: .milliseconds(500))
     }
 }

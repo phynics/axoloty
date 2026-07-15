@@ -38,6 +38,7 @@ public class IoRouter: Controller {
     internal var managedIoNodes: [String: IoNode] = [:]
     /// Key: CoatyUUID string, Value: (associating route, isExternalRoute)
     internal var sourceRoutes: [String: (String, Bool)] = [:]
+    private var observationTasks: [_Concurrency.Task<Void, Never>] = []
     
     // MARK: - Overridden Controller lifecycle methods.
     
@@ -87,6 +88,8 @@ public class IoRouter: Controller {
         // Clear both dictionaries.
         self.managedIoNodes = [:]
         self.sourceRoutes = [:]
+        observationTasks.forEach { $0.cancel() }
+        observationTasks.removeAll()
     }
     
     // MARK: - Methods requiring overriding.
@@ -213,20 +216,30 @@ public class IoRouter: Controller {
     internal func onStopped() { }
     
     private func observeAdvertisedIoNode() {
-        _ = self.communicationManager.observeAdvertise(withCoreType: .IoNode)
-                .filter { event -> Bool in
-                    return event.data.object.name == self.ioContext.name
-                }.subscribe(onNext: { event in
-                    // Fail-fast invariant, not user input.
-                    // swiftlint:disable:next force_cast
-                    self.ioNodeAdvertised(node: event.data.object as! IoNode)
-                })
+        let task = _Concurrency.Task { @MainActor [weak self] in
+            guard let self else { return }
+            let stream = await communicationManager.observeParsedMessages()
+            for await parsed in stream {
+                guard parsed.eventType == .Advertise,
+                      parsed.eventTypeFilter == CoreType.IoNode.rawValue,
+                      let event: AdvertiseEvent = PayloadCoder.decode(parsed.payload),
+                      let node = event.data.object as? IoNode,
+                      node.name == self.ioContext.name else { continue }
+                self.ioNodeAdvertised(node: node)
+            }
+        }
+        observationTasks.append(task)
     }
     
     private func observeDeadvertisedIoNodes() {
-        _ = self.communicationManager
-            .observeDeadvertise()
-            .subscribe(onNext: { event in self.ioNodesDeadvertised(objectIds: event.data.objectIds) })
+        let task = _Concurrency.Task { @MainActor [weak self] in
+            guard let self else { return }
+            let stream = await communicationManager.observeDeadvertiseStream()
+            for await event in stream {
+                self.ioNodesDeadvertised(objectIds: event.objectIds.compactMap(CoatyUUID.init(uuidString:)))
+            }
+        }
+        observationTasks.append(task)
     }
     
     private func ioNodeAdvertised(node: IoNode) {
@@ -265,39 +278,49 @@ public class IoRouter: Controller {
     }
     
     private func discoverIoNodes() {
-        _ = self.communicationManager.publishDiscover(DiscoverEvent.with(coreTypes: [.IoNode]))
-            .filter { event -> Bool in
-                event.data.object != nil && event.data.object!.name == self.ioContext.name
-            }.subscribe(onNext: { event in
-                // Fail-fast invariant, not user input.
-                // swiftlint:disable:next force_cast
-                self.ioNodeAdvertised(node: event.data.object as! IoNode)
-            })
+        let task = _Concurrency.Task { @MainActor [weak self] in
+            guard let self else { return }
+            let stream = await communicationManager.publishDiscover(DiscoverEvent.with(coreTypes: [.IoNode]))
+            for await response in stream {
+                guard response.eventType == CommunicationEventType.Resolve.rawValue,
+                      let event: ResolveEvent = PayloadCoder.decode(String(data: response.payload, encoding: .utf8) ?? ""),
+                      let node = event.data.object as? IoNode,
+                      node.name == self.ioContext.name else { continue }
+                self.ioNodeAdvertised(node: node)
+            }
+        }
+        observationTasks.append(task)
     }
     
     private func observeDiscoverIoContext() {
-        _ = self.communicationManager
-            .observeDiscover()
-            .filter { event -> Bool in
-                return (event.data.isDiscoveringTypes() && event.data.isCoreTypeCompatible(self.ioContext.coreType)) ||
-                    (event.data.isDiscoveringTypes() && event.data.isObjectTypeCompatible(objectType: self.ioContext.objectType)) ||
-                    (event.data.isDiscoveringObjectId() && event.data.objectId! == self.ioContext.objectId)
-        }.subscribe(onNext: { event in
-            event.resolve(resolveEvent: ResolveEvent.with(object: self.ioContext))
-        })
+        let task = _Concurrency.Task { @MainActor [weak self] in
+            guard let self else { return }
+            let stream = await communicationManager.observeDiscoverStream()
+            for await event in stream {
+                let matches = event.coreTypes?.contains(self.ioContext.coreType) == true ||
+                    event.objectTypes?.contains(self.ioContext.objectType) == true ||
+                    event.objectId == self.ioContext.objectId.string
+                if matches, let correlationId = event.correlationId {
+                    communicationManager.publishResolve(event: ResolveEvent.with(object: self.ioContext), correlationId: correlationId)
+                }
+            }
+        }
+        observationTasks.append(task)
     }
     
     private func observeUpdateIoContext() {
-        _ = self.communicationManager.observeUpdate(withCoreType: self.ioContext.coreType)
-            .filter { update -> Bool in
-                update.data.object.objectId == self.ioContext.objectId
-            }.subscribe(onNext: { update in
-                // Fail-fast invariant, not user input.
-                // swiftlint:disable:next force_cast
-                self.ioContext = (update.data.object as! IoContext)
+        let task = _Concurrency.Task { @MainActor [weak self] in
+            guard let self else { return }
+            let stream = await communicationManager.observeUpdateStream(withCoreType: self.ioContext.coreType)
+            for await update in stream {
+                guard update.object.objectId == self.ioContext.objectId.string,
+                      let payload = update.object.payload,
+                      let object: IoContext = PayloadCoder.decode(String(data: payload, encoding: .utf8) ?? "") else { continue }
+                self.ioContext = object
                 self.ioContext.parentObjectId = self.container.identity?.objectId
                 try? self.onIoContextChanged()
-                update.complete(completeEvent: CompleteEvent.with(object: self.ioContext))
-            })
+            }
+        }
+        observationTasks.append(task)
     }
 }

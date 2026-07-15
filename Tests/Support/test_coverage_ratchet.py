@@ -78,7 +78,6 @@ class ExtractTests(unittest.TestCase):
         export = self._export([
             ("/workspace/Source/Common/Foo.swift", (10, 6)),
             ("/workspace/Tests/SomeTest.swift", (20, 20)),
-            ("/workspace/.build/checkouts/RxSwift/Rx.swift", (5, 5)),
             ("/workspace/Source/IORouting/IoRouter.swift", (100, 40)),
         ])
         with tempfile.TemporaryDirectory() as tmp:

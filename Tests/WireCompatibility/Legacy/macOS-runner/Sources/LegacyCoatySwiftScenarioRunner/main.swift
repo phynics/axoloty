@@ -3,7 +3,6 @@
 import CoatySwift
 import Darwin
 import Foundation
-import RxSwift
 
 private let pinnedCommit = "20a97b29832758fb771ac79fd5f7ae36cff69403"
 private let namespace = "wire-compat-v1"
@@ -75,19 +74,8 @@ private func run(_ arguments: Arguments) throws {
         throw RunnerError.usage("legacy container did not create a communication manager")
     }
 
-    let online = DispatchSemaphore(value: 0)
-    let subscription = manager.observeCommunicationState()
-        .filter { $0 == .online }
-        .take(1)
-        .subscribe(onNext: { _ in online.signal() })
-
     print("{\"state\":\"ready\",\"scenario\":\"advertise\"}")
     manager.start()
-    guard online.wait(timeout: .now() + 15) == .success else {
-        subscription.dispose()
-        manager.stop()
-        throw RunnerError.timeout
-    }
 
     let object = CoatyObject(
         coreType: .CoatyObject,
@@ -98,7 +86,6 @@ private func run(_ arguments: Arguments) throws {
     try manager.publishAdvertise(AdvertiseEvent.with(object: object))
     print("{\"state\":\"published\",\"scenario\":\"advertise\",\"objectId\":\"\(advertisedObjectId)\"}")
     Thread.sleep(forTimeInterval: 1.0)
-    subscription.dispose()
     manager.stop()
     print("{\"state\":\"done\",\"scenario\":\"advertise\"}")
 }

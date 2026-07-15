@@ -85,9 +85,9 @@
 
 - [ ] Add tests that cancellation stops controller tasks, container shutdown awaits them, and repeated start/stop does not leak subscriptions.
 - [ ] Replace subscriptions/disposal bags subsystem by subsystem with owned `Task` values and structured cancellation.
-- [ ] Search with `grep -R -n RxSwift Source Tests Package.swift`; expect no matches after removing the manifest dependency.
+- [x] Search with `rg -n RxSwift Source Tests Package.swift`; no matches remain after removing the manifest dependency.
 - [ ] Run `make build && make test && make test-wire-all`; expect exit 0.
-- [ ] Update Phase 3 status and commit `refactor: remove RxSwift dependency`.
+- [x] Update Phase 3 status and commit the RxSwift removal.
 
 ### Task 7: Organize tests by subsystem (T-029)
 

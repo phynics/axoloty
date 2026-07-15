@@ -6,11 +6,11 @@
 //
 
 import Foundation
-import RxSwift
 
 /// Provides a set of predefined communication events to transfer Coaty objects
 /// between distributed Coaty agents based on the publish-subscribe API of a
 /// `CommunicationClient`.
+@MainActor
 public class CommunicationManager {
     internal enum MessagePayload {
         case stringPayload(String)
@@ -23,9 +23,8 @@ public class CommunicationManager {
 
     // MARK: - Properties.
 
-    /// Dispose bag for observable subscriptions to be disposed when client ends.
-    internal var disposeBag = DisposeBag()
     private var isDisposed = false
+    internal var lifecycleTasks: [_Concurrency.Task<Void, Never>] = []
 
     /// Gets the namespace for communication as specified in the configuration
     /// options. Returns the default namespace used, if no namespace has been
@@ -39,11 +38,10 @@ public class CommunicationManager {
     public var identity: Identity
 
     /// The operating state of the communication manager.
-    internal var operatingState: BehaviorSubject<OperatingState> = BehaviorSubject(value: .stopped)
+    internal private(set) var operatingState: OperatingState = .stopped
 
     /// Communication state mirrored from the underlying transport.
-    internal var communicationState: BehaviorSubject<CommunicationState> =
-        BehaviorSubject(value: .offline)
+    internal private(set) var communicationState: CommunicationState = .offline
 
     /// The async event hub shared by the underlying communication client.
     ///
@@ -77,9 +75,8 @@ public class CommunicationManager {
     /// Key: CoatyUUID string, Value: IoStateItem
     internal var observedIoStateItems: [String: IoStateItem] = [:]
 
-    /// IO value observables for own IO actors (mapped by IO actor ID).
-    /// Key: CoatyUUID string, Value: PublishSubject(Any)
-    internal var observedIoValueItems: [String: PublishSubject<Any>] = [:]
+    /// Async IO value streams for own IO actors (mapped by IO actor ID).
+    internal var observedIoValueItems: [String: UUID] = [:]
 
     /// Own IO sources with associating route, actor ids, and updateRate (mapped
     /// by IO source ID).
@@ -103,14 +100,7 @@ public class CommunicationManager {
     ///   `NSMutableDictionary`/`NSMutableArray` for the same reason (T-001).
     internal var ioActorItems: [String: MutableDictionaryBox<String, MutableArrayBox<CoatyUUID>>] = [:]
     
-    /// Observable on which IoValue events are emitted.
-    internal var ioValueObservable: Observable<(String, [UInt8])>?
-
-    /// Transport subjects retained only at the manager boundary while the
-    /// legacy manager implementation is migrated to async streams.
-    internal let rawMQTTMessages = PublishSubject<(String, [UInt8])>()
-    internal let ioValueMessages = PublishSubject<(String, [UInt8])>()
-    internal let messages = PublishSubject<(CommunicationTopic, String)>()
+    /// The transport-level IO value stream is routed through ``EventHub``.
     
     /// Associated IONodes.
     internal var ioNodes: [IoNode] = []
@@ -175,7 +165,7 @@ public class CommunicationManager {
     public func start() {
         // Fail-fast invariant, not user input.
         // swiftlint:disable:next force_try
-        guard try! self.operatingState.value() != OperatingState.started else {
+        guard self.operatingState != OperatingState.started else {
             return
         }
         startClient()
@@ -187,6 +177,7 @@ public class CommunicationManager {
     /// - Throws: A transport error when a subscription command cannot be
     ///   acknowledged, or a runtime error if the state stream terminates before
     ///   the client becomes online.
+    @MainActor
     internal func startAndWaitUntilReady() async throws {
         let stateStream = await observeCommunicationStateStream()
         var iterator = stateStream.makeAsyncIterator()
@@ -265,7 +256,8 @@ public class CommunicationManager {
 
         self.unobserveIoStateAndValue()
         
-        self.disposeBag = DisposeBag()
+        lifecycleTasks.forEach { $0.cancel() }
+        lifecycleTasks.removeAll()
         self.client.disconnect()
         self.deferredPublications = []
         self.deadvertiseIds = []
@@ -316,53 +308,13 @@ public class CommunicationManager {
     }
 
     /// Setup for the handler method that is invoked when the communication state of the client changes to online.
-    private func setupOnConnectHandler() {
-        _  = self.communicationState
-            .filter { $0 == .online }
-            .subscribe { _ in
+    private func setupOnConnectHandler() {}
 
-                self.advertiseIdentity()
-                self.advertiseIoNodes()
+    private func setupOperatingStateLogging() {}
 
-                // Publish possible deferred publications.
-                self.queue.sync {
-                    self.deferredPublications.forEach { publication in
-                        let topic = publication.0
-                        let payload = publication.1
-                        switch payload {
-                        case .bytesArrayPayload(let bytesArray): 
-                            self.client.publish(topic, message: bytesArray)
-                        case .stringPayload(let string): 
-                            self.client.publish(topic, message: string)
-                        }
-                    }
+    private func setupCommunicationStateLogging() {}
 
-                    self.deferredPublications = []
-                }
-
-            }
-    }
-
-    private func setupOperatingStateLogging() {
-        _ = self.operatingState.subscribe(onNext: { state in
-            self.log.debug("Operating State: \(String(describing: state))")
-        })
-    }
-
-    private func setupCommunicationStateLogging() {
-        _ = self.communicationState.subscribe(onNext: { state in
-            self.log.info("Communication State: \(String(describing: state))")
-        })
-    }
-
-    private func setupSubscriptionStateHandler() {
-        let coordinator = self.subscriptionCoordinator!
-        _ = self.communicationState.subscribe(onNext: { state in
-            _Concurrency.Task {
-                await coordinator.setOnline(state == .online)
-            }
-        })
-    }
+    private func setupSubscriptionStateHandler() {}
 
     /// Gets last will message to be published when the connection terminates
     /// abnormally.
@@ -397,16 +349,19 @@ public class CommunicationManager {
     }
 
     private func observeDiscoverIdentity() {
-        observeDiscover()
-            .filter({ (event) -> Bool in
-                (event.data.isDiscoveringTypes() && event.data.isCoreTypeCompatible(.Identity)) ||
-                (event.data.isDiscoveringObjectId() && event.data.objectId == self.identity.objectId)
-            })
-            .subscribe(onNext: { event in
-                let resolveEvent = ResolveEvent.with(object: self.identity)
-                event.resolve(resolveEvent: resolveEvent)
-            })
-            .disposed(by: self.disposeBag)
+        let task = _Concurrency.Task { @MainActor [weak self] in
+            guard let self else { return }
+            let stream = await self.observeDiscoverStream()
+            for await event in stream {
+                guard (event.coreTypes?.contains(.Identity) == true) ||
+                      (event.objectId == self.identity.objectId.string) else { continue }
+                guard event.sourceId != nil,
+                      let correlationId = event.correlationId else { continue }
+                let resolve = ResolveEvent.with(object: self.identity)
+                self.publishResolve(event: resolve, correlationId: correlationId)
+            }
+        }
+        lifecycleTasks.append(task)
     }
 
     // MARK: - Communication methods.
@@ -414,6 +369,7 @@ public class CommunicationManager {
     /// Acquires a reference to a topic subscription.
     ///
     /// - Parameter topic: topic name.
+    @MainActor
     internal func acquireSubscription(topic: String) async {
         let coordinator = self.subscriptionCoordinator!
         await coordinator.acquire(topic: topic)
@@ -422,6 +378,7 @@ public class CommunicationManager {
     /// Releases a reference to a topic subscription.
     ///
     /// - Parameter topic: topic name.
+    @MainActor
     internal func releaseSubscription(topic: String) async {
         let coordinator = self.subscriptionCoordinator!
         await coordinator.release(topic: topic)
@@ -454,7 +411,7 @@ public class CommunicationManager {
         queue.sync {
             // Fail-fast invariant, not user input.
             // swiftlint:disable:next force_try
-            if try! self.communicationState.value() == .offline {
+            if self.communicationState == .offline {
                 self.deferredPublications.append((topic, MessagePayload.stringPayload(message)))
             } else {
                 // Attempt to publish. If we are disconnecting, this will fail silently.
@@ -472,7 +429,7 @@ public class CommunicationManager {
         queue.sync {
             // Fail-fast invariant, not user input.
             // swiftlint:disable:next force_try
-            if try! self.communicationState.value() == .offline {
+            if self.communicationState == .offline {
                 self.deferredPublications.append((topic, MessagePayload.bytesArrayPayload(message)))
             } else {
                 // Attempt to publish. If we are disconnecting, this will fail silently.
@@ -483,27 +440,50 @@ public class CommunicationManager {
 
     /// Convenience setter for the operating state.
     private func updateOperatingState(_ state: OperatingState) {
-        self.operatingState.onNext(state)
+        self.operatingState = state
+        self.log.debug("Operating State: \(String(describing: state))")
         let eventHub = client.eventHub
         _Concurrency.Task {
             await eventHub.yieldState(value: state, to: CommunicationEventHubKeys.operatingState)
         }
     }
 
-    func didUpdateCommunicationState(_ state: CommunicationState) {
-        communicationState.onNext(state)
+    nonisolated func didUpdateCommunicationState(_ state: CommunicationState) {
+        _Concurrency.Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.communicationState = state
+            self.log.info("Communication State: \(String(describing: state))")
+            await self.subscriptionCoordinator?.setOnline(state == .online)
+            if state == .online {
+                self.advertiseIdentity()
+                self.advertiseIoNodes()
+                self.deferredPublications.forEach { topic, payload in
+                    switch payload {
+                    case .bytesArrayPayload(let bytes): self.client.publish(topic, message: bytes)
+                    case .stringPayload(let string): self.client.publish(topic, message: string)
+                    }
+                }
+                self.deferredPublications.removeAll()
+            }
+        }
     }
 
-    func didReceiveRawMQTTMessage(topic: String, payload: [UInt8]) {
-        rawMQTTMessages.onNext((topic, payload))
+    nonisolated func didReceiveRawMQTTMessage(topic: String, payload: [UInt8]) {
+        _Concurrency.Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.eventHub.yield(value: RawMQTTMessage(topic: topic, payload: payload), to: CommunicationEventHubKeys.rawMQTTMessage)
+        }
     }
 
-    func didReceiveIoValue(topic: String, payload: [UInt8]) {
-        ioValueMessages.onNext((topic, payload))
+    nonisolated func didReceiveIoValue(topic: String, payload: [UInt8]) {
+        _Concurrency.Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.eventHub.yield(value: IoValueEventSnapshot(topic: topic, payload: payload), to: CommunicationEventHubKeys.ioValue)
+        }
     }
 
-    func didReceiveMessage(topic: CommunicationTopic, payload: String) {
-        messages.onNext((topic, payload))
+    nonisolated func didReceiveMessage(topic: String, payload: String) {
+        // Parsed messages are emitted directly by the transport's EventHub.
     }
     
     // MARK: - IO Routing
@@ -728,12 +708,7 @@ public class CommunicationManager {
         }
 
         // Ensure subscriptions on IO value item observables are unsubscribed automatically.
-        self.observedIoValueItems.forEach { _, item in
-            item.onCompleted()
-        }
-        
-        // Reset ioValueObservable for restart.
-        self.ioValueObservable = nil
+        self.observedIoValueItems.removeAll()
     }
 
     private func dispatchIoState(ioPointId: CoatyUUID, item: IoStateItem, message: IoStateEvent) {
@@ -758,30 +733,27 @@ extension CommunicationManager: CommunicationClientDelegate {
 
     /// Auto start communication manager (caused by shouldAutoStart option or
     /// bonjour discovery).
-    func didReceiveStart() {
-        self.start()
+    nonisolated func didReceiveStart() {
+        _Concurrency.Task { @MainActor [weak self] in
+            self?.start()
+        }
     }
 }
 
 class IoStateItem {
     let ioPointId: CoatyUUID
-    var subject: BehaviorSubject<IoStateEvent>
+    var currentValue: IoStateEvent
     
     init(ioPointId: CoatyUUID, initialValue: IoStateEvent) {
         self.ioPointId = ioPointId
-        self.subject = BehaviorSubject<IoStateEvent>.init(value: initialValue)
+        self.currentValue = initialValue
     }
     
     func dispatchNext(message: IoStateEvent) {
-        self.subject.onNext(message)
+        self.currentValue = message
     }
     
     func dispatchComplete() {
-        self.subject.onCompleted()
-    }
-    
-    func dispatchError(error: Swift.Error) {
-        self.subject.onError(error)
     }
 }
 

@@ -21,7 +21,6 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.37.1"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.14.0"),
         .package(url: "https://github.com/FlineDev/ErrorKit.git", exact: "1.2.1"),
-        .package(url: "https://github.com/ReactiveX/RxSwift.git", from: "6.10.2"),
         .package(url: "https://github.com/apple/swift-async-algorithms.git", from: "1.0.0"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin.git", from: "1.5.0"),
     ],
@@ -34,8 +33,7 @@ let package = Package(
                 .product(name: "NIOSSL", package: "swift-nio-ssl", condition: .when(platforms: [.linux])),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "ErrorKit", package: "ErrorKit"),
-                .product(name: "AsyncAlgorithms", package: "swift-async-algorithms"),
-                "RxSwift"
+                .product(name: "AsyncAlgorithms", package: "swift-async-algorithms")
             ],
             path: "Source"
         ),

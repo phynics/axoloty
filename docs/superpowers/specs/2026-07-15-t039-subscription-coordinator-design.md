@@ -3,8 +3,8 @@
 ## Status
 
 Implemented in the working tree on 2026-07-15; the manager, transport, logging,
-and object-lifecycle verification gates pass. IO routing, SensorThings, and
-final RxSwift removal remain follow-up migrations.
+object-lifecycle, IO routing, SensorThings, and RxSwift-removal verification
+gates pass.
 
 ## Problem
 
@@ -26,11 +26,8 @@ active MQTT subscription state. It restores public async Advertise observation f
 core-type and object-type filters.
 
 The finished modernization does not promise support for legacy Rx observation
-callers. This slice adds no compatibility bridge: Rx Advertise APIs remain only as
-temporary implementation dependencies for the in-repository consumers that have not
-yet moved to snapshots. They are removed with those consumers in the subsequent
-Advertise-consumer migration, before final RxSwift removal. Other event families,
-controllers, IO routing, and SensorThings remain separately testable migrations.
+callers. No compatibility bridge is retained; all in-repository consumers use
+snapshots and owned Swift concurrency tasks.
 
 ## Architecture
 
@@ -118,8 +115,6 @@ Use Swift Testing and the containerized Makefile targets.
 
 ## Non-goals and follow-up order
 
-After this slice, migrate the remaining one-way event families and their consumers
-to async streams/tasks. Remove RxSwift once the remaining production callers have
-moved and a repository search confirms no production source imports it. The legacy
-wire-compatibility runner retains its separate historical dependency and is outside
-the package dependency-removal criterion.
+The remaining event families and consumers are migrated to async streams/tasks.
+RxSwift and the legacy runner dependency are removed; repository audits confirm
+no package, source, or test dependency remains.

@@ -2,6 +2,7 @@
 
 import Foundation
 
+@MainActor
 extension CommunicationManager {
 
     /// Observes incoming Deadvertise snapshots.

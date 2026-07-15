@@ -2,6 +2,7 @@
 
 import Foundation
 
+@MainActor
 extension CommunicationManager {
 
     /// Observes Update events for a core type as immutable snapshots.
@@ -45,12 +46,11 @@ extension CommunicationManager {
 
     /// Observes local association state for an IO point as immutable snapshots.
     public func observeIoStateStream(ioPoint: IoPoint) async -> EventStream<IoStateEventSnapshot> {
-        let subject = _observeIoState(ioPointId: ioPoint.objectId)
-        let state = (try? subject.value())?.eventData
+        let state = _observeIoState(ioPointId: ioPoint.objectId)
         let initial = IoStateEventSnapshot(
             ioPointId: ioPoint.objectId.string,
-            hasAssociations: state?.hasAssociations() ?? false,
-            updateRate: state?.updateRate()
+            hasAssociations: state.eventData.hasAssociations(),
+            updateRate: state.eventData.updateRate()
         )
         let key = CommunicationEventHubKeys.ioState(ioPointId: ioPoint.objectId.string)
         await client.eventHub.yieldState(value: initial, to: key)
@@ -60,6 +60,23 @@ extension CommunicationManager {
             onFirst: {},
             onLast: {}
         )
+    }
+
+    internal func _observeIoState(ioPointId: CoatyUUID) -> IoStateEvent {
+        if let item = observedIoStateItems[ioPointId.string] {
+            return item.currentValue
+        }
+        var hasAssociations = false
+        var updateRate: Int?
+        if let source = ioSourceItems[ioPointId.string] {
+            hasAssociations = !source.actorIds.isEmpty
+            updateRate = source.updateRate
+        } else {
+            hasAssociations = ioActorItems.values.contains { $0[ioPointId.string] != nil }
+        }
+        let value = IoStateEvent.with(hasAssociations: hasAssociations, updateRate: updateRate)
+        observedIoStateItems[ioPointId.string] = IoStateItem(ioPointId: ioPointId, initialValue: value)
+        return value
     }
 
     /// Observes raw IO value messages routed through the communication manager.

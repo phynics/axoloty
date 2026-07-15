@@ -388,7 +388,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                     }
                 } else if let payloadString = String(bytes: bytes, encoding: .utf8) {
                     (self.delegate as? CommunicationClientDelegate)?.didReceiveMessage(
-                        topic: topic,
+                        topic: info.topicName,
                         payload: payloadString
                     )
 
@@ -451,6 +451,20 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
     }
 
     private func routeSnapshot(parsed: ParsedMQTTMessage) async {
+        if let correlationId = parsed.correlationId,
+           [.Complete, .Resolve, .Retrieve, .Return].contains(parsed.eventType),
+           let payloadData = parsed.payload.data(using: .utf8) {
+            let snapshot = ResponseEventSnapshot(
+                eventType: parsed.eventType.rawValue,
+                sourceId: parsed.sourceId,
+                correlationId: correlationId,
+                payload: payloadData
+            )
+            await eventHub.yield(
+                value: snapshot,
+                to: CommunicationEventHubKeys.response(eventType: parsed.eventType, correlationId: correlationId)
+            )
+        }
         switch parsed.eventType {
         case .Update:
             guard let snapshot = UpdateEventSnapshot(parsedMQTTMessage: parsed),
