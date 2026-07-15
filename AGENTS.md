@@ -8,9 +8,16 @@ For modernization context, see [ROADMAP.md](./docs/ROADMAP.md).
 - Never run native `swift` commands on the host. Use the root Makefile, which
   runs directly inside the devcontainer and falls back to Podman or Docker:
   `make build`, `make test`, `make shell`, and `make docs`.
-- Worktrees keep independent `.build` output and share only SwiftPM downloads.
-  Use `make worktree-bootstrap` to resolve dependencies and `make worktree-warm`
-  only when an explicit prebuild is useful.
+- By default, worktrees share a repository- and toolchain-scoped incremental
+  build cache under `/tmp/coaty-swift-build/`. Every Makefile-driven SwiftPM
+  operation waits for the cache lock, so concurrent worktrees must not bypass
+  the Makefile. Coverage uses a separate sibling cache. Override `BUILD_DIR`,
+  `COVERAGE_BUILD_DIR`, `SPM_CACHE_DIR`, or `BUILD_LOCK` for isolation or CI;
+  CI uses its workspace-local `.build` directory with `BUILD_LOCK=0` and fails
+  in preflight if that bypass is missing. `/tmp` is volatile and must not be
+  the sole copy of generated output. Use `make worktree-bootstrap` to resolve
+  dependencies and `make worktree-warm` only when an explicit prebuild is
+  useful.
 - Prefer adding a Makefile target to using native Swift tooling.
 - Swift tests use Swift Testing only: `import Testing`, `@Test`, `#expect`,
   `#require`, and `Issue.record`. Do not add XCTest.

@@ -48,7 +48,7 @@ jobs:
             swiftpm-6.3-linux-
 
       - name: Generate documentation
-        run: make docs CONTAINER_RUNTIME=docker BUILD_DIR=.build SPM_CACHE_DIR=.swiftpm-cache DOC_HOSTING_BASE_PATH="${{ steps.pages.outputs.base_path }}"
+        run: make docs CONTAINER_RUNTIME=docker BUILD_DIR=.build BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache DOC_HOSTING_BASE_PATH="${{ steps.pages.outputs.base_path }}"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1

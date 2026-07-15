@@ -55,7 +55,7 @@ jobs:
       - name: Run consolidated checks
         env:
           COVERAGE_DIFF_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
-        run: make ci CONTAINER_RUNTIME=docker BUILD_DIR=.build SPM_CACHE_DIR=.swiftpm-cache
+        run: make ci CONTAINER_RUNTIME=docker BUILD_DIR=.build COVERAGE_BUILD_DIR=.build BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache
 
       - name: Save SwiftPM dependency cache
         if: success() && github.event_name == 'push' && github.ref == 'refs/heads/master'
