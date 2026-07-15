@@ -44,6 +44,15 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
     var messages = PublishSubject<(CommunicationTopic, String)>()
     var communicationState = BehaviorSubject(value: CommunicationState.offline)
     var delegate: Startable
+
+    /// The async event hub used to mirror communication state and raw MQTT
+    /// transport messages to concurrent consumers.
+    ///
+    /// - Note: This hub is intentionally owned by the client so that its
+    ///   lifetime matches the underlying transport and so that state streams
+    ///   replay the last known state even before a subscriber attaches.
+    let eventHub = EventHub()
+
     var brokerCandidates = [String]()
     var brokerPort: UInt16 = 1883
 
@@ -332,6 +341,14 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
 
     func updateCommunicationState(_ state: CommunicationState) {
         communicationState.onNext(state)
+
+        _Concurrency.Task<Void, Never> { [weak self] in
+            guard let self else { return }
+            await self.eventHub.yieldState(
+                value: state,
+                to: CommunicationEventHubKeys.communicationState
+            )
+        }
     }
 
     // MARK: - mqtt-nio listener callbacks.
@@ -340,6 +357,15 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
         switch result {
         case .success(let info):
             let bytes = [UInt8](info.payload.readableBytesView)
+            let rawMessage = RawMQTTMessage(topic: info.topicName, payload: bytes)
+
+            _Concurrency.Task<Void, Never> { [weak self] in
+                guard let self else { return }
+                await self.eventHub.yield(
+                    value: rawMessage,
+                    to: CommunicationEventHubKeys.rawMQTTMessage
+                )
+            }
 
             if CommunicationTopic.isRawTopic(topic: info.topicName) {
                 rawMQTTMessages.onNext((info.topicName, bytes))
