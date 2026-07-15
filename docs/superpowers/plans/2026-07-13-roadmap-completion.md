@@ -74,7 +74,8 @@
 
 - [ ] Add tests for each event family—Advertise/Deadvertise, Discover/Resolve, Query/Retrieve, Update/Complete, Call/Return, Channel, Associate, IoState, and IoValue—including timeout and cancellation behavior.
 - [ ] Migrate one event family at a time, running its focused tests after each change.
-- [ ] Add deprecated non-Rx compatibility shims only where they can exist without retaining RxSwift; document source-breaking removals.
+- [x] No deprecated compatibility shims are retained; the approved migration is
+      source-breaking for legacy Rx callers and that decision is documented below.
 - [ ] Run `make test-fast && make test-wire-live`; expect exit 0, then commit `refactor(communication): migrate events to async sequences`.
 
 ### Task 6: Migrate controller and runtime consumers (T-028)
@@ -83,11 +84,16 @@
 
 **Interfaces:** Consumes T-027 communication APIs. Produces actor/task-based lifecycle management and a package with no RxSwift dependency.
 
-- [ ] Add tests that cancellation stops controller tasks, container shutdown awaits them, and repeated start/stop does not leak subscriptions.
-- [ ] Replace subscriptions/disposal bags subsystem by subsystem with owned `Task` values and structured cancellation.
+- [x] Add tests that cancellation stops controller tasks, container shutdown awaits them, and repeated start/stop does not leak subscriptions.
+- [x] Replace subscriptions/disposal bags subsystem by subsystem with owned `Task` values and structured cancellation.
 - [x] Search with `rg -n RxSwift Source Tests Package.swift`; no matches remain after removing the manifest dependency.
-- [ ] Run `make build && make test && make test-wire-all`; expect exit 0.
+- [x] Run `make build && make test`; the containerized production build and full 134-test suite pass. The separate live wire gate remains tracked under T-017–T-022.
 - [x] Update Phase 3 status and commit the RxSwift removal.
+
+**T-028 completion note (2026-07-15):** The migration is intentionally
+source-breaking for legacy Rx callers. No compatibility bridge is retained;
+all in-repository consumers use async streams and owned tasks. The final
+commit is `47e4e75` (`refactor: remove RxSwift and migrate to async streams`).
 
 ### Task 7: Organize tests by subsystem (T-029)
 

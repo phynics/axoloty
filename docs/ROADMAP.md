@@ -118,7 +118,7 @@ and owned Swift concurrency tasks.
 **T-026** (Swift 6.3 event-stream foundation) → **T-027** (event-model
 snapshots) → **T-039** (communication manager actor migration) →
 **T-040 / T-050 / T-051** (controller, IO routing, and SensorThings
-migration) → **T-028** (final RxSwift removal).
+migration) → **T-028** (final RxSwift removal, completed).
 
 T-039's subscription-coordinator slice is implemented: MQTT topic reference
 counts and reconnect replay are actor-owned, subscription acknowledgements are
@@ -127,21 +127,12 @@ through `EventHub`. Distributed logging, object-lifecycle, IO-routing, and
 SensorThings consumers use owned tasks and cancellation.
 
 **What this phase covers:**
-- Remove RxSwift in favor of Swift 6.3 structured concurrency: async/await,
-  `AsyncStream`/`AsyncSequence` in place of `Observable`, actors for shared
-  mutable state (`CommunicationManager`, `Container`). RxSwift usage today is
-  concentrated in:
-  - `Source/Communication/Manager/*` (`CommunicationManager`,
-    `CM+Observe`/`CM+Publish`/`CM+Util`)
-  - `Source/IORouting/*` (`IoRouter`, `IoActorController`,
-    `IoSourceController` — note `IoRouter.swift` currently relies on a
-    transitive RxSwift import via `.subscribe(onNext:)` without importing
-    RxSwift itself, which is fragile and should be fixed regardless of
-    timing)
-  - `Source/SensorThings/*ObserverController*`
-  - `Source/Controller/ObjectLifecycleController.swift`
-  - `Source/Runtime/Controller.swift` and `Container.swift`
-  - the MQTT client integration files
+- Replace the former RxSwift observation and disposal boundaries with
+  Swift 6.3 structured concurrency: async/await, `AsyncStream`/`AsyncSequence`,
+  EventHub snapshots, actors, and owned cancellation tasks. The migration is
+  complete across communication, runtime, IO routing, SensorThings, and MQTT
+  integration; the paths listed in the original ticket are retained in the
+  ticket history for traceability only.
 - Evaluate CocoaMQTT's Linux/WASM viability — it transitively pulls in
   Starscream and `swift-nio-zlib-support`, both of uncertain Linux/WASM
   status — against alternative MQTT client libraries.
@@ -160,6 +151,8 @@ SensorThings consumers use owned tasks and cancellation.
 **Done when:**
 - [x] No source or test file imports RxSwift; all reactive-style APIs are expressed
       with async/await, `AsyncSequence`, or actors.
+- [x] `Package.swift`, `Package.resolved`, and the legacy runner contain no
+      RxSwift dependency or checkout.
 - [x] `ErrorKit` is a Package.swift dependency and `AxolotyError` conforms to
       `Throwable` with a tested user-facing message; broader boundary
       migration remains part of T-031.
