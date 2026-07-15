@@ -34,3 +34,22 @@ public struct UpdateEventSnapshot: EventSnapshot, Codable, Equatable, Sendable {
         self.object = object
     }
 }
+
+private struct UpdateEventWirePayload: Codable {
+    let object: CoatyObjectSnapshot
+}
+
+extension UpdateEventSnapshot {
+
+    /// Decodes an Update snapshot from a parsed MQTT message.
+    init?(parsedMQTTMessage: ParsedMQTTMessage) {
+        guard let wire: UpdateEventWirePayload = PayloadCoder.decode(parsedMQTTMessage.payload) else {
+            return nil
+        }
+        self.init(
+            sourceId: parsedMQTTMessage.sourceId,
+            eventTypeFilter: parsedMQTTMessage.eventTypeFilter,
+            object: wire.object
+        )
+    }
+}

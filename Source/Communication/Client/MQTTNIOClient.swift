@@ -392,6 +392,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                         )
                         await self.routeAdvertiseSnapshot(parsed: parsed)
                         await self.routeOneWaySnapshot(parsed: parsed)
+                        await self.routeSnapshot(parsed: parsed)
                     }
                 }
             } catch {
@@ -435,6 +436,21 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
             if let snapshot = DiscoverEventSnapshot(parsedMQTTMessage: parsed) {
                 await eventHub.yield(value: snapshot, to: CommunicationEventHubKeys.discover)
             }
+        default:
+            break
+        }
+    }
+
+    private func routeSnapshot(parsed: ParsedMQTTMessage) async {
+        switch parsed.eventType {
+        case .Update:
+            guard let snapshot = UpdateEventSnapshot(parsedMQTTMessage: parsed),
+                  let filter = parsed.eventTypeFilter else { return }
+            await eventHub.yield(value: snapshot, to: CommunicationEventHubKeys.update(eventTypeFilter: filter))
+        case .Channel:
+            guard let snapshot = ChannelEventSnapshot(parsedMQTTMessage: parsed),
+                  let channelId = parsed.eventTypeFilter else { return }
+            await eventHub.yield(value: snapshot, to: CommunicationEventHubKeys.channel(channelId: channelId))
         default:
             break
         }

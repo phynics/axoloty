@@ -103,6 +103,67 @@ struct EventHubTransportTests {
     }
 
     @Test
+    func updateStreamAcquiresTopicAndDeliversSnapshot() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        let stream = await manager.observeUpdateStream(withCoreType: .Log)
+        var iterator = await stream.makeAsyncIteratorAndWait()
+        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+            eventType: .Update,
+            eventTypeFilter: CoreType.Log.rawValue,
+            namespace: manager.namespace
+        )
+
+        await client.simulateState(.online)
+        try await waitForCommands(on: client, expecting: [.subscribe(topic)])
+
+        let snapshot = UpdateEventSnapshot(
+            sourceId: "source",
+            eventTypeFilter: CoreType.Log.rawValue,
+            object: CoatyObjectSnapshot(
+                objectId: "object",
+                coreType: .Log,
+                objectType: Log.objectType,
+                name: "changed"
+            )
+        )
+        await client.emit(snapshot, to: CommunicationEventHubKeys.update(eventTypeFilter: CoreType.Log.rawValue))
+
+        #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == snapshot)
+    }
+
+    @Test
+    func channelStreamAcquiresTopicAndDeliversSnapshot() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        let stream = try await manager.observeChannelStream(channelId: "test-channel")
+        var iterator = await stream.makeAsyncIteratorAndWait()
+        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+            eventType: .Channel,
+            eventTypeFilter: "test-channel",
+            namespace: manager.namespace
+        )
+
+        await client.simulateState(.online)
+        try await waitForCommands(on: client, expecting: [.subscribe(topic)])
+
+        let snapshot = ChannelEventSnapshot(
+            sourceId: "source",
+            object: CoatyObjectSnapshot(
+                objectId: "object",
+                coreType: .Log,
+                objectType: Log.objectType,
+                name: "broadcast"
+            ),
+            channelId: "test-channel",
+            eventTypeFilter: "test-channel"
+        )
+        await client.emit(snapshot, to: CommunicationEventHubKeys.channel(channelId: "test-channel"))
+
+        #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == snapshot)
+    }
+
+    @Test
     func managerReplaysDesiredTopicsOnceAfterOnline() async throws {
         let client = FakeCommunicationClient(delegate: FakeStartable())
         let manager = makeManager(client: client)

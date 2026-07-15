@@ -51,3 +51,29 @@ public struct ChannelEventSnapshot: EventSnapshot, Codable, Equatable, Sendable 
         self.privateData = privateData
     }
 }
+
+private struct ChannelEventWirePayload: Codable {
+    let object: CoatyObjectSnapshot?
+    let objects: [CoatyObjectSnapshot]?
+    let privateData: AnyCodable?
+}
+
+extension ChannelEventSnapshot {
+
+    /// Decodes a Channel snapshot from a parsed MQTT message.
+    init?(parsedMQTTMessage: ParsedMQTTMessage) {
+        guard let wire: ChannelEventWirePayload = PayloadCoder.decode(parsedMQTTMessage.payload),
+              let channelId = parsedMQTTMessage.eventTypeFilter else {
+            return nil
+        }
+        let privateData = wire.privateData.flatMap { try? JSONEncoder().encode($0) }
+        self.init(
+            sourceId: parsedMQTTMessage.sourceId,
+            object: wire.object,
+            objects: wire.objects,
+            channelId: channelId,
+            eventTypeFilter: parsedMQTTMessage.eventTypeFilter,
+            privateData: privateData
+        )
+    }
+}
