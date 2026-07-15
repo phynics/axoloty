@@ -61,7 +61,7 @@ image:
 
 resolve: image
 	@mkdir -p "$(SPM_CACHE_DIR)"
-	@flock "$(SPM_CACHE_DIR)/.resolve.lock" .devcontainer/run.sh swift package resolve $(SWIFT_CACHE_ARGS)
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh .devcontainer/resolve.sh
 	@git diff --exit-code -- Package.resolved
 
 worktree-bootstrap: resolve
@@ -131,8 +131,8 @@ coverage: resolve
 		  PROFDATA=$$(find .build -name default.profdata | head -1); \
 		  mkdir -p .testing/coverage; \
 		  llvm-cov export "$$BIN" -instr-profile="$$PROFDATA" -format=text > .testing/coverage/coverage.json; \
-		  python3 Tests/Support/coverage_ratchet.py summary .testing/coverage/coverage.json --report .testing/coverage/report.json; \
-		  python3 Tests/Support/coverage_report.py .testing/coverage/coverage.json .testing/coverage/changed.diff'
+		  PYTHONDONTWRITEBYTECODE=1 python3 Tests/Support/coverage_ratchet.py summary .testing/coverage/coverage.json --report .testing/coverage/report.json; \
+		  PYTHONDONTWRITEBYTECODE=1 python3 Tests/Support/coverage_report.py .testing/coverage/coverage.json .testing/coverage/changed.diff'
 
 coverage-check: coverage
 	python3 Tests/Support/coverage_ratchet.py check .testing/coverage/coverage.json Tests/Support/coverage-baseline.json

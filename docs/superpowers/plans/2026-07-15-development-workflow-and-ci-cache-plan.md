@@ -36,7 +36,7 @@
 - `make worktree-warm` explicitly performs a build after bootstrap.
 - `AXOLOTY_DEVCONTAINER=1` marks direct in-container execution.
 
-- [ ] **Step 1: Add cache variables and shared command helpers.**
+- [x] **Step 1: Add cache variables and shared command helpers.**
 
 Set `BUILD_DIR ?= $(CURDIR)/.build` and derive `SPM_CACHE_DIR` from the
 toolchain namespace under `$(HOME)/.cache/coaty-swift/swiftpm/` unless CI or a
@@ -44,7 +44,7 @@ caller overrides it. Mount both paths for disposable containers. Define the
 SwiftPM option fragments once so every build/test/docs command receives the
 same `--cache-path` and `--disable-automatic-resolution` policy after resolve.
 
-- [ ] **Step 2: Add explicit resolution and worktree targets.**
+- [x] **Step 2: Add explicit resolution and worktree targets.**
 
 Add `resolve`, `worktree-bootstrap`, and `worktree-warm` targets. Bootstrap
 creates the dependency and build directories, acquires a lock file around
@@ -52,27 +52,27 @@ cache population, runs `swift package resolve --cache-path ...`, then verifies
 `git diff --exit-code -- Package.resolved`. Warm depends on bootstrap and runs
 the normal build. Keep compilation lazy for bootstrap.
 
-- [ ] **Step 3: Make in-container execution direct and retain fallback.**
+- [x] **Step 3: Make in-container execution direct and retain fallback.**
 
 When `AXOLOTY_DEVCONTAINER=1`, run Swift commands in the current container
 without nesting Podman/Docker. Otherwise keep the existing disposable runtime
 path with both mounts. Set the marker and cache mounts in
 `devcontainer.json`; do not infer container state from `/.dockerenv`.
 
-- [ ] **Step 4: Apply the helper to every Swift target.**
+- [x] **Step 4: Apply the helper to every Swift target.**
 
 Update `build`, `test`, focused test targets, wire tests, observation tests,
 coverage, and docs to use the shared command helper. Preserve broker startup,
 fuzz environment defaults, and existing target names. Keep `test-fast` as a
 convenience target but do not use it as the consolidated CI implementation.
 
-- [ ] **Step 5: Make `ci` one physical Swift pass.**
+- [x] **Step 5: Make `ci` one physical Swift pass.**
 
 Change `ci` to run `test-support` followed by `coverage-check`; retain
 `ci-fast` and the tier-specific targets for local diagnosis. Add help text for
 the new cache and bootstrap variables.
 
-- [ ] **Step 6: Run the support contract tests.**
+- [x] **Step 6: Run the support contract tests.**
 
 Run:
 
@@ -83,7 +83,7 @@ make test-support
 Expected: all Python/shell self-tests pass and tier validation reports the
 existing tier contract as valid.
 
-- [ ] **Step 7: Commit the cache/runtime boundary.**
+- [x] **Step 7: Commit the cache/runtime boundary.**
 
 ```sh
 git add Makefile .devcontainer/devcontainer.json
@@ -107,14 +107,14 @@ git commit -m "build: separate SwiftPM and worktree caches"
 - `coverage_ratchet.evaluate` enforces only the aggregate tolerance; per-file
   data remains available for reporting.
 
-- [ ] **Step 1: Write failing coverage-report tests.**
+- [x] **Step 1: Write failing coverage-report tests.**
 
 Use synthetic `llvm-cov export` JSON and unified diffs to test source-path
 normalization, covered executable lines, additions, deletions, renamed files,
 empty diffs, aggregate delta, top file regressions, annotation limiting, and
 malformed JSON.
 
-- [ ] **Step 2: Run the new tests and confirm failure.**
+- [x] **Step 2: Run the new tests and confirm failure.**
 
 Run:
 
@@ -124,7 +124,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest Tests/Support/test_coverage_report
 
 Expected: failure because the reporter module and functions do not yet exist.
 
-- [ ] **Step 3: Implement the standard-library reporter.**
+- [x] **Step 3: Implement the standard-library reporter.**
 
 Parse LLVM segments by source file and line, treating a line as covered when
 any executable segment on that line has a positive count. Parse `@@ -old
@@ -132,21 +132,21 @@ any executable segment on that line has a positive count. Parse `@@ -old
 aggregate, changed-line, and per-file regression data. Keep output stable and
 cap annotations at 20.
 
-- [ ] **Step 4: Replace the absolute per-file ratchet.**
+- [x] **Step 4: Replace the absolute per-file ratchet.**
 
 Remove the rule that fails when an existing file’s absolute covered-line count
 decreases. Retain the aggregate percentage-point tolerance. Update the existing
 unit tests to prove deleted tested code does not fail and aggregate drops still
 fail.
 
-- [ ] **Step 5: Wire reporting into `make coverage`.**
+- [x] **Step 5: Wire reporting into `make coverage`.**
 
 Stop suppressing coverage command stderr. Export the raw LLVM JSON, write the
 normalized `report.json`, and invoke the reporter against a generated diff
 file. For local runs use `COVERAGE_DIFF_BASE` when supplied, otherwise compare
 `HEAD^` to `HEAD`; in CI the workflow prepares the diff file.
 
-- [ ] **Step 6: Run all support tests.**
+- [x] **Step 6: Run all support tests.**
 
 Run:
 
@@ -156,7 +156,7 @@ make test-support
 
 Expected: existing support tests plus the new reporter tests pass.
 
-- [ ] **Step 7: Commit coverage reporting.**
+- [x] **Step 7: Commit coverage reporting.**
 
 ```sh
 git add Makefile Tests/Support/coverage_report.py Tests/Support/test_coverage_report.py Tests/Support/coverage_ratchet.py Tests/Support/test_coverage_ratchet.py
@@ -179,44 +179,44 @@ git commit -m "ci: expose informational coverage changes"
 - `.testing/coverage/report.json` is uploaded on every coverage run; raw
   coverage evidence is retained on failure/manual runs.
 
-- [ ] **Step 1: Add workflow-level cancellation and permissions.**
+- [x] **Step 1: Add workflow-level cancellation and permissions.**
 
 Set `permissions: contents: read` for ordinary CI and use a unique concurrency
 group based on workflow and pull-request ref with `cancel-in-progress: true`.
 Keep Pages permissions confined to `docs.yml`.
 
-- [ ] **Step 2: Replace three Swift CI jobs with one.**
+- [x] **Step 2: Replace three Swift CI jobs with one.**
 
 Remove the separate wire, build-and-test, and coverage jobs from `ci.yml`.
 Create one Linux job with checkout (`fetch-depth: 0`), image setup, dependency
 cache restore, diff preparation, and `make ci CONTAINER_RUNTIME=docker
 BUILD_DIR=.build SPM_CACHE_DIR=.swiftpm-cache`.
 
-- [ ] **Step 3: Make cache writes trusted and dependency-only.**
+- [x] **Step 3: Make cache writes trusted and dependency-only.**
 
 Use restore-only behavior for pull requests and save compatible dependency
 caches from trusted `master` runs. Remove source hashes and `.build` from cache
 paths. Include the Dockerfile/image identity in the key.
 
-- [ ] **Step 4: Publish coverage evidence without extra jobs.**
+- [x] **Step 4: Publish coverage evidence without extra jobs.**
 
 Always upload `report.json` and the text summary with short retention. Upload
 raw LLVM JSON, profiles, and HTML only under `failure()` or explicit manual
 execution. Do not create PR comments or grant pull-request write permission.
 
-- [ ] **Step 5: Migrate docs, scheduled wire, and fuzz cache paths.**
+- [x] **Step 5: Migrate docs, scheduled wire, and fuzz cache paths.**
 
 Keep their cadence and test scope unchanged, but cache only `.swiftpm-cache`
 with the same compatibility key. Add concurrency cancellation only where
 superseding a run is safe; preserve nightly evidence runs.
 
-- [ ] **Step 6: Pin every external action.**
+- [x] **Step 6: Pin every external action.**
 
 Replace version tags in all modified workflows and composite actions with the
 verified full commit SHAs for the selected action releases. Keep local actions
 as `./.github/actions/...`.
 
-- [ ] **Step 7: Run YAML and support checks.**
+- [x] **Step 7: Run YAML and support checks.**
 
 Run:
 
@@ -228,7 +228,7 @@ git diff --check
 Expected: support contract passes and the workflow diff has no whitespace
 errors.
 
-- [ ] **Step 8: Commit CI consolidation.**
+- [x] **Step 8: Commit CI consolidation.**
 
 ```sh
 git add .github/actions .github/workflows
@@ -250,7 +250,7 @@ git commit -m "ci: consolidate Swift checks and dependency caches"
 - `image-lock.json` records the reviewed immutable digest and Dockerfile/image
   metadata consumed by local and CI configuration.
 
-- [ ] **Step 1: Add a trusted image publish workflow.**
+- [x] **Step 1: Add a trusted image publish workflow.**
 
 Build with the repository Dockerfile, log in to GHCR using `GITHUB_TOKEN`, push
 the content-addressed version tag, and publish an SBOM/provenance artifact.
@@ -263,14 +263,14 @@ Record the image reference, digest, Swift version, and Dockerfile hash in
 `.devcontainer/image-lock.json`. Consumers use the digest; updating it is a
 reviewed repository change and is never performed by CI automatically.
 
-- [ ] **Step 3: Align devcontainer and setup action.**
+- [x] **Step 3: Align devcontainer and setup action.**
 
 Use the locked image when available. Keep an explicit local Dockerfile build
 fallback for developers. CI may use the fallback only during the transition
 before the first trusted image is published; after promotion, a missing locked
 image is a hard failure.
 
-- [ ] **Step 4: Run configuration checks.**
+- [x] **Step 4: Run configuration checks.**
 
 Run:
 
@@ -280,7 +280,7 @@ python3 -m json.tool .devcontainer/devcontainer.json >/dev/null
 python3 -m json.tool .devcontainer/image-lock.json >/dev/null
 ```
 
-- [ ] **Step 5: Commit image integration.**
+- [x] **Step 5: Commit image integration.**
 
 ```sh
 git add .devcontainer .github/actions/setup-container/action.yml .github/workflows/container-image.yml
@@ -294,13 +294,13 @@ git commit -m "ci: publish the pinned development image"
 - Modify: `AGENTS.md` only if the final Make/devcontainer contract changes
 - Modify: `docs/superpowers/plans/2026-07-15-development-workflow-and-ci-cache-plan.md`
 
-- [ ] **Step 1: Document local cache controls.**
+- [x] **Step 1: Document local cache controls.**
 
 Document `SPM_CACHE_DIR`, `BUILD_DIR`, `make resolve`,
 `make worktree-bootstrap`, and `make worktree-warm`, including how to remove a
 corrupt dependency cache without deleting a worktree build.
 
-- [ ] **Step 2: Run the full repository verification through Make.**
+- [x] **Step 2: Run the full repository verification through Make.**
 
 Run:
 
@@ -315,7 +315,7 @@ Expected: each command exits zero in the pinned container. If the host lacks a
 container runtime, report that as an environment blocker rather than running
 native Swift.
 
-- [ ] **Step 3: Review the complete diff and branch state.**
+- [x] **Step 3: Review the complete diff and branch state.**
 
 Run:
 
@@ -327,20 +327,20 @@ git status --short
 
 Confirm no unrelated files or generated outputs are included.
 
-- [ ] **Step 4: Commit documentation and plan completion.**
+- [x] **Step 4: Commit documentation and plan completion.**
 
 ```sh
 git add README.md AGENTS.md docs/superpowers/plans/2026-07-15-development-workflow-and-ci-cache-plan.md
 git commit -m "docs: document containerized workflow caches"
 ```
 
-- [ ] **Step 5: Merge into `master`.**
+- [x] **Step 5: Merge into `master`.**
 
 From the clean main checkout, fast-forward or merge the implementation branch
 after verifying the final branch tests. Preserve the unrelated T039 edits by
 using a non-destructive merge and resolving only implementation-branch files.
 
-- [ ] **Step 6: Remove the merged worktree.**
+- [x] **Step 6: Remove the merged worktree.**
 
 After the merge and final verification:
 
