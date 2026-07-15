@@ -49,7 +49,19 @@ extension UpdateEventSnapshot {
         self.init(
             sourceId: parsedMQTTMessage.sourceId,
             eventTypeFilter: parsedMQTTMessage.eventTypeFilter,
-            object: wire.object
+            object: wire.object.withPayload(SnapshotWirePayload.objectPayload(from: parsedMQTTMessage.payload))
         )
+    }
+}
+
+private enum SnapshotWirePayload {
+    static func objectPayload(from payload: String) -> Data? {
+        guard let data = payload.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let object = root["object"],
+              JSONSerialization.isValidJSONObject(object) else {
+            return nil
+        }
+        return try? JSONSerialization.data(withJSONObject: object)
     }
 }

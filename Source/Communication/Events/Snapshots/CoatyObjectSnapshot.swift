@@ -66,4 +66,32 @@ public struct CoatyObjectSnapshot: EventSnapshot, Codable, Equatable, Sendable {
         self.isDeactivated = isDeactivated
         self.payload = payload
     }
+
+    /// Returns a copy carrying the original encoded object payload.
+    ///
+    /// The common snapshot fields remain available for routing and matching,
+    /// while this payload preserves application-specific fields for consumers
+    /// that need to decode a concrete object type.
+    public func withPayload(_ payload: Data?) -> CoatyObjectSnapshot {
+        CoatyObjectSnapshot(
+            objectId: objectId,
+            coreType: coreType,
+            objectType: objectType,
+            name: name,
+            externalId: externalId,
+            parentObjectId: parentObjectId,
+            locationId: locationId,
+            isDeactivated: isDeactivated,
+            payload: payload
+        )
+    }
+
+    /// Decodes the preserved payload into the registered concrete Coaty type.
+    public func decodeObject() -> CoatyObject? {
+        guard let payload else { return nil }
+        guard let decoded = try? JSONDecoder().decode(AnyCoatyObjectDecodable.self, from: payload) else {
+            return nil
+        }
+        return decoded.object
+    }
 }

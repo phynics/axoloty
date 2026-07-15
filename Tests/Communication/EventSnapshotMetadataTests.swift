@@ -46,6 +46,7 @@ struct EventSnapshotMetadataTests {
         #expect(snapshot.eventTypeFilter == "Identity")
         #expect(snapshot.object.objectType == "coaty.Identity")
         #expect(snapshot.object.coreType == .Identity)
+        #expect(snapshot.object.payload != nil)
     }
 
     @Test
