@@ -35,16 +35,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
+      SWIFT_CACHE_KEY: swiftpm-6.3-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile') }}
       AXOLOTY_FUZZ_ITERATIONS: ${{ inputs.iterations || '100000' }}
       AXOLOTY_FUZZ_SEEDS: ${{ inputs.seeds || '1,2,3,4' }}
       AXOLOTY_FUZZ_REPETITIONS: ${{ inputs.repetitions || '1' }}
       AXOLOTY_FUZZ_JOBS: ${{ inputs.jobs || '2' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Setup pinned development image
         uses: ./.github/actions/setup-container
+
+      - name: Restore SwiftPM dependency cache
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: .swiftpm-cache
+          key: ${{ env.SWIFT_CACHE_KEY }}
+          restore-keys: |
+            swiftpm-6.3-linux-
 
       - name: Validate campaign inputs
         shell: bash
@@ -85,7 +96,7 @@ jobs:
           done
 
       - name: Run fuzz campaign
-        run: make fuzz-long CONTAINER_RUNTIME=docker IMAGE=coatyswift-dev
+        run: make fuzz-long CONTAINER_RUNTIME=docker IMAGE=coatyswift-dev SPM_CACHE_DIR=.swiftpm-cache
 
       - name: Summarize campaign
         if: always()
@@ -115,7 +126,7 @@ jobs:
 
       - name: Upload campaign evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: nightly-fuzz-${{ github.run_id }}
           path: .testing/fuzz/

@@ -10,28 +10,31 @@ jobs:
     name: Live CoatyJS compatibility
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      SWIFT_CACHE_KEY: swiftpm-6.3-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile') }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Setup container image
         uses: ./.github/actions/setup-container
 
-      - name: Cache Swift build artifacts
-        uses: actions/cache@v4
+      - name: Restore SwiftPM dependency cache
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
-          path: .build
-          key: swift-6.3-linux-build-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Source/**/*.swift', 'Tests/**/*.swift', '.devcontainer/Dockerfile') }}
+          path: .swiftpm-cache
+          key: ${{ env.SWIFT_CACHE_KEY }}
           restore-keys: |
-            swift-6.3-linux-build-${{ hashFiles('Package.resolved') }}-
-            swift-6.3-linux-build-
+            swiftpm-6.3-linux-
 
       - name: Run offline and live wire suites
-        run: make test-wire-all CONTAINER_RUNTIME=docker BUILD_DIR=.build
+        run: make test-wire-all CONTAINER_RUNTIME=docker BUILD_DIR=.build SPM_CACHE_DIR=.swiftpm-cache
 
       - name: Upload wire captures on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: wire-captures
           path: |
