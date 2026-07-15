@@ -154,6 +154,7 @@ shell: image
 
 docs: resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift package generate-documentation $(SWIFT_LOCKED_ARGS) --target Axoloty \
+		--disable-indexing \
 		--transform-for-static-hosting \
 		$(if $(DOC_HOSTING_BASE_PATH),--hosting-base-path $(DOC_HOSTING_BASE_PATH)) \
 		--output-path .build/docc
