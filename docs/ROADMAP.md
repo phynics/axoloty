@@ -113,10 +113,16 @@ logging story, and they are a primary source of platform/portability risk
 audit is complete (T-035), and ErrorKit is adopted for `AxolotyError` (T-025).
 RxSwift remains current at 6.10.2 and the containerized Linux build/test flow
 is green; removing RxSwift (T-026 through T-028) remains the outstanding
-modernization work, not a Linux build blocker.
+modernization work, not a Linux build blocker. The migration proceeds in
+this dependency order:
+
+**T-026** (Swift 6.3 event-stream foundation) → **T-027** (event-model
+snapshots) → **T-039** (communication manager actor migration) →
+**T-040 / T-050 / T-051** (controller, IO routing, and SensorThings
+migration) → **T-028** (final RxSwift removal).
 
 **What this phase covers:**
-- Remove RxSwift in favor of Swift 6.4 structured concurrency: async/await,
+- Remove RxSwift in favor of Swift 6.3 structured concurrency: async/await,
   `AsyncStream`/`AsyncSequence` in place of `Observable`, actors for shared
   mutable state (`CommunicationManager`, `Container`). RxSwift usage today is
   concentrated in:

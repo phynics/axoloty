@@ -33,7 +33,7 @@ import NIOSSL
 ///   Those listener callbacks are plain synchronous closures, so they bridge
 ///   directly into the Rx `PublishSubject`/`BehaviorSubject` surface via
 ///   `.onNext(...)` without needing a `Task`/`AsyncSequence` bridge.
-internal class MQTTNIOClient: CommunicationClient {
+internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
 
     private let log = LogManager.log
 

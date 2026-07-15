@@ -8,23 +8,23 @@ import Axoloty
 import Logging
 import RxSwift
 
-class AdvertiseEventLogger {
+final class AdvertiseEventLogger: @unchecked Sendable {
     var count: Int = 0
     var eventData: [AdvertiseEventData] = []
 }
 
-class ChannelEventLogger {
+final class ChannelEventLogger: @unchecked Sendable {
     var count: Int = 0
     var eventData: [ChannelEventData] = []
 }
 
-class RawEventLogger {
+final class RawEventLogger: @unchecked Sendable {
     var count: Int = 0
     var eventData: [Any] = []
 }
 
 /// Mock controller consuming data produced by sensorThings sensors.
-class MockReceiverController: Controller {
+class MockReceiverController: Controller, @unchecked Sendable {
     let log = Logging.Logger(label: "AxolotyTests.MockReceiverController")
 
     override func onInit() {
@@ -77,7 +77,7 @@ class MockReceiverController: Controller {
 }
 
 /// Mock controller producing  sensorThings observations.
-class MockEmitterController: Controller {
+class MockEmitterController: Controller, @unchecked Sendable {
     private var _name: String = ""
     let log = Logging.Logger(label: "AxolotyTests.MockEmitterController")
     
@@ -149,8 +149,9 @@ class MockEmitterController: Controller {
             .subscribe(onNext: { event in
                 let responseDelay = self.options?.extra["responseDelay"] as! Int
                 let delay: DispatchTimeInterval = .milliseconds(responseDelay)
+                let eventBox = SendableBox(event)
                 queue.asyncAfter(deadline: .now() + delay) {
-                    event.resolve(resolveEvent: ResolveEvent.with(object: self._createSensorThings(i: 100, objectType: SensorThingsTypes.OBJECT_TYPE_SENSOR, name: nil)))
+                    eventBox.value.resolve(resolveEvent: ResolveEvent.with(object: self._createSensorThings(i: 100, objectType: SensorThingsTypes.OBJECT_TYPE_SENSOR, name: nil)))
                 }
             }).disposed(by: self.disposeBag)
     }
@@ -166,7 +167,7 @@ class MockEmitterController: Controller {
 
 /// A collection of sensorThings objects. Used to check validators behaviours.
 class SensorThingsCollection {
-    public static let sensor = Sensor(description: "A thermometer measures the temperature",
+    public static nonisolated(unsafe) let sensor = Sensor(description: "A thermometer measures the temperature",
                                       encodingType: SensorEncodingTypes.UNDEFINED,
                                       metadata: AnyCodable(),
                                       unitOfMeasurement: UnitOfMeasurement(name: "Celsius",
@@ -184,19 +185,19 @@ class SensorThingsCollection {
                                       objectId: CoatyUUID(uuidString: "83dfc46a-0709-4f70-9ea5-beebf8fa89af")!,
                                       parentObjectId: CoatyUUID(uuidString: "4c480c29-f65f-496f-8005-03e7503eec2b")!)
     
-    public static let featureOfInterest = FeatureOfInterest(description: "feature of interest",
+    public static nonisolated(unsafe) let featureOfInterest = FeatureOfInterest(description: "feature of interest",
                                                             encodingType: EncodingTypes.UNDEFINED,
                                                             metadata: AnyCodable("interesting"),
                                                             name: "F0I1",
                                                             objectId: CoatyUUID(uuidString: "b15521af-9077-4b22-978a-5ff8381d53ae")!)
     
-    public static let location = Location(geoLocation: GeoLocation(coords: GeoCoordinates(latitude: 32, longitude: 46, accuracy: 1),
+    public static nonisolated(unsafe) let location = Location(geoLocation: GeoLocation(coords: GeoCoordinates(latitude: 32, longitude: 46, accuracy: 1),
                                                                    timestamp: Double(Date().millisecondsSince1970)),
                                           name: "Muenchen",
                                           objectType: Location.objectType,
                                           objectId: CoatyUUID(uuidString: "14119642-ee6a-4596-bf34-d8a3436290d3")!)
     
-    public static let observation = Observation(phenomenonTime: Double(Date().millisecondsSince1970),
+    public static nonisolated(unsafe) let observation = Observation(phenomenonTime: Double(Date().millisecondsSince1970),
                                                 result: AnyCodable("12.50"),
                                                 resultTime: Double(Date().millisecondsSince1970),
                                                 featureOfInterest: CoatyUUID(uuidString: "b15521af-9077-4b22-978a-5ff8381d53ae")!,
@@ -204,7 +205,7 @@ class SensorThingsCollection {
                                                 objectId: CoatyUUID(uuidString: "31ba0e43-ea26-4179-acf2-299e3a9a0f92")!,
                                                 parentObjectId: CoatyUUID(uuidString: "83dfc46a-0709-4f70-9ea5-beebf8fa89af")!)
     
-    public static let thing = Thing(description: "",
+    public static nonisolated(unsafe) let thing = Thing(description: "",
                                     name: "Thing1",
                                     objectId: CoatyUUID(uuidString: "4c480c29-f65f-496f-8005-03e7503eec2b")!,
                                     locationId: CoatyUUID(uuidString: "14119642-ee6a-4596-bf34-d8a3436290d3")!)
@@ -246,4 +247,9 @@ extension Date {
     var millisecondsSince1970: Int {
         return Int((self.timeIntervalSince1970 * 1000.0).rounded())
     }
+}
+
+private final class SendableBox<T>: @unchecked Sendable {
+    var value: T
+    init(_ value: T) { self.value = value }
 }

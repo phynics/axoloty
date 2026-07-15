@@ -13,8 +13,7 @@ struct ObjectTypeRegistryTests {
 
     func testConcurrentRegistrationAndLookupRemainConsistent() {
         let iterations = 1_000
-        let failureLock = NSLock()
-        var failures = [String]()
+        let failures = LockedArray<String>()
 
         DispatchQueue.concurrentPerform(iterations: iterations) { index in
             let objectType = "test.concurrent.type.\(index)"
@@ -25,9 +24,7 @@ struct ObjectTypeRegistryTests {
 
             guard let actualType = CoatyObject.getClassType(forObjectType: objectType),
                   ObjectIdentifier(actualType) == ObjectIdentifier(expectedType) else {
-                failureLock.lock()
                 failures.append(objectType)
-                failureLock.unlock()
                 return
             }
 
@@ -38,13 +35,11 @@ struct ObjectTypeRegistryTests {
                 name: "registered"
             )
             if !object.isObjectTypeRegistered {
-                failureLock.lock()
                 failures.append(objectType)
-                failureLock.unlock()
             }
         }
 
-        #expect((failures) == ([]))
+        #expect(failures.values == [])
     }
 
     @Test
@@ -59,4 +54,15 @@ struct ObjectTypeRegistryTests {
 
         #expect(!(object.isObjectTypeRegistered))
     }
+}
+
+private final class LockedArray<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var array: [T] = []
+
+    func append(_ element: T) {
+        lock.withLock { array.append(element) }
+    }
+
+    var values: [T] { lock.withLock { array } }
 }
