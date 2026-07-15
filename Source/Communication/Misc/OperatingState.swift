@@ -6,7 +6,7 @@
 //
 
 /// Indicates the current operating state of a CommunicationManager.
-public enum OperatingState {
+public enum OperatingState: Sendable {
 
     /// Indicates the communication manager is stopped or initialized.
     case stopped

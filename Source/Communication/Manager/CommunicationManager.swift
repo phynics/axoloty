@@ -478,6 +478,10 @@ public class CommunicationManager {
     /// Convenience setter for the operating state.
     private func updateOperatingState(_ state: OperatingState) {
         self.operatingState.onNext(state)
+        let eventHub = client.eventHub
+        _Concurrency.Task {
+            await eventHub.yieldState(value: state, to: CommunicationEventHubKeys.operatingState)
+        }
     }
     
     // MARK: - IO Routing

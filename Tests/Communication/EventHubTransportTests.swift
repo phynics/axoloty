@@ -240,6 +240,22 @@ struct EventHubTransportTests {
     }
 
     @Test
+    func testOperatingStateReplayThroughManagerEventHub() async throws {
+        let manager = makeManager()
+        let fakeClient = FakeCommunicationClient(delegate: manager)
+        manager.client = fakeClient
+
+        await fakeClient.eventHub.yieldState(
+            value: OperatingState.started,
+            to: CommunicationEventHubKeys.operatingState
+        )
+
+        let stream = await manager.observeOperatingStateStream()
+        var iterator = await stream.makeAsyncIteratorAndWait()
+        #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == .started)
+    }
+
+    @Test
     func testMultipleConsumersReceiveRawMQTTMessages() async throws {
         let manager = makeManager()
         let fakeClient = FakeCommunicationClient(delegate: manager)

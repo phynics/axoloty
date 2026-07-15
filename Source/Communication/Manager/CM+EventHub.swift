@@ -4,6 +4,17 @@ import Foundation
 
 extension CommunicationManager {
 
+    /// Returns an async stream that replays the current operating lifecycle
+    /// state and emits future start/stop transitions.
+    public func observeOperatingStateStream() async -> EventStream<OperatingState> {
+        await client.eventHub.registerStream(
+            key: CommunicationEventHubKeys.operatingState,
+            buffering: .state,
+            onFirst: {},
+            onLast: {}
+        )
+    }
+
     /// Returns an async stream that replays the current ``CommunicationState``
     /// and emits future state changes.
     ///

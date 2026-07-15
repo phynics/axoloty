@@ -32,6 +32,12 @@ enum CommunicationEventHubKeys {
         name: "state"
     )
 
+    /// Key for the container operating lifecycle state.
+    static let operatingState = CommunicationEventHubKey(
+        scope: "communication",
+        name: "operating-state"
+    )
+
     /// Key for the stream of incoming raw MQTT transport messages.
     static let rawMQTTMessage = CommunicationEventHubKey(
         scope: "communication",
