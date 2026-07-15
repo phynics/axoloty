@@ -132,16 +132,19 @@ public class RuleBasedIoRouter: IoRouter {
     ///     - sourceNode the IO source's node
     ///     - sourceNode the IO actor's node
     func computeDefaultUpdateRate(source: IoSource,
-                                  actor: IoActor,
-                                  sourceNode: IoNode,
-                                  actorNode: IoNode) -> Int {
-        if source.updateRate == nil {
-            return actor.updateRate!
+                                   actor: IoActor,
+                                   sourceNode: IoNode,
+                                   actorNode: IoNode) -> Int {
+        switch (source.updateRate, actor.updateRate) {
+        case (.none, .none):
+            return 0
+        case (.some(let r), .none):
+            return r
+        case (.none, .some(let r)):
+            return r
+        case (.some(let a), .some(let b)):
+            return max(a, b)
         }
-        if actor.updateRate == nil {
-            return source.updateRate!
-        }
-        return max(source.updateRate!, actor.updateRate!)
     }
     
     override func onIoNodeManaged(node: IoNode) {
@@ -220,8 +223,8 @@ public class RuleBasedIoRouter: IoRouter {
                             associationMap[source.objectId.string] = actors
                         }
                         let value = IoAssociationInfo(source,
-                                                      actor,
-                                                      self.computeCumulatedUpdateRate(rate1: source.updateRate, rate2: actor.updateRate))
+                                                       actor,
+                                                       self.computeCumulatedUpdateRate(rate1: source.updateRate, rate2: actor.updateRate) ?? 0)
                         actors[actor.objectId.string] = value
 
                         // No need to check remaining rules after the first match
@@ -240,7 +243,7 @@ public class RuleBasedIoRouter: IoRouter {
             var cumulatedRate: Int = .init()
             actors.forEach { _, value in
                 let rate = value.2
-                cumulatedRate = self.computeCumulatedUpdateRate(rate1: rate, rate2: cumulatedRate)
+                cumulatedRate = self.computeCumulatedUpdateRate(rate1: rate, rate2: cumulatedRate) ?? 0
             }
             actors.forEach { key, value in
                 var info = value
@@ -304,15 +307,17 @@ public class RuleBasedIoRouter: IoRouter {
         self.currentAssociations = newAssociations
     }
     
-    func computeCumulatedUpdateRate(rate1: Int?, rate2: Int?) -> Int {
-        if rate1 != nil {
-            if rate2 != nil {
-                return max(rate2!, rate1!)
-            } else {
-                return rate1!
-            }
+    func computeCumulatedUpdateRate(rate1: Int?, rate2: Int?) -> Int? {
+        switch (rate1, rate2) {
+        case (.none, .none):
+            return nil
+        case (.some(let r), .none):
+            return r
+        case (.none, .some(let r)):
+            return r
+        case (.some(let a), .some(let b)):
+            return max(a, b)
         }
-        return rate2!
     }
 }
 
