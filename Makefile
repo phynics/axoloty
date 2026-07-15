@@ -5,7 +5,9 @@ BROKER_NAME ?= coatyswift-mosquitto
 CONTAINER_RUNTIME ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 WORKDIR := /workspace
 CACHE_NAMESPACE ?= swift-6.3-linux
-BUILD_DIR ?= $(CURDIR)/.build
+REPOSITORY_NAME ?= $(shell git rev-parse --git-common-dir 2>/dev/null | sed 's#/.git$$##' | xargs basename 2>/dev/null || basename "$(CURDIR)")
+BUILD_CACHE_ROOT ?= /tmp/coaty-swift-build/$(REPOSITORY_NAME)/$(CACHE_NAMESPACE)
+BUILD_DIR ?= $(BUILD_CACHE_ROOT)/debug
 ifeq ($(AXOLOTY_DEVCONTAINER),1)
 SPM_CACHE_DIR ?= /workspace/.swiftpm-cache
 else
@@ -51,7 +53,8 @@ help:
 		'make docs          Generate DocC API documentation into .build/docc' \
 		'make clean         Remove Swift build artifacts' \
 		'' \
-		'BUILD_DIR and SPM_CACHE_DIR can point at different local cache directories'
+		'BUILD_DIR and SPM_CACHE_DIR can point at different local cache directories' \
+		'BUILD_DIR defaults to a shared, locked cache under /tmp'
 
 image:
 	@if [ "$(AXOLOTY_DEVCONTAINER)" = "1" ]; then exit 0; fi
