@@ -164,6 +164,29 @@ struct EventHubTransportTests {
     }
 
     @Test
+    func ioValueStreamDeliversRawSnapshot() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        let stream = await manager.observeIoValueStream()
+        var iterator = await stream.makeAsyncIteratorAndWait()
+        let snapshot = IoValueEventSnapshot(topic: "coaty/1/ns/source/IOV", payload: [1, 2, 3])
+        await client.emit(snapshot, to: CommunicationEventHubKeys.ioValue)
+        #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == snapshot)
+    }
+
+    @Test
+    func ioStateStreamReplaysInitialState() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        let source = IoSource(valueType: "Temperature")
+        let stream = await manager.observeIoStateStream(ioPoint: source)
+        var iterator = await stream.makeAsyncIteratorAndWait()
+        let state = try await nextValue(&iterator, timeout: .milliseconds(500))
+        #expect(state.ioPointId == source.objectId.string)
+        #expect(state.hasAssociations == false)
+    }
+
+    @Test
     func managerReplaysDesiredTopicsOnceAfterOnline() async throws {
         let client = FakeCommunicationClient(delegate: FakeStartable())
         let manager = makeManager(client: client)

@@ -43,6 +43,35 @@ extension CommunicationManager {
         )
     }
 
+    /// Observes local association state for an IO point as immutable snapshots.
+    public func observeIoStateStream(ioPoint: IoPoint) async -> EventStream<IoStateEventSnapshot> {
+        let subject = _observeIoState(ioPointId: ioPoint.objectId)
+        let state = (try? subject.value())?.eventData
+        let initial = IoStateEventSnapshot(
+            ioPointId: ioPoint.objectId.string,
+            hasAssociations: state?.hasAssociations() ?? false,
+            updateRate: state?.updateRate()
+        )
+        let key = CommunicationEventHubKeys.ioState(ioPointId: ioPoint.objectId.string)
+        await client.eventHub.yieldState(value: initial, to: key)
+        return await client.eventHub.registerStream(
+            key: key,
+            buffering: .state,
+            onFirst: {},
+            onLast: {}
+        )
+    }
+
+    /// Observes raw IO value messages routed through the communication manager.
+    public func observeIoValueStream() async -> EventStream<IoValueEventSnapshot> {
+        await client.eventHub.registerStream(
+            key: CommunicationEventHubKeys.ioValue,
+            buffering: .event,
+            onFirst: {},
+            onLast: {}
+        )
+    }
+
     private func registerSnapshotStream<Element: Sendable>(
         key: CommunicationEventHubKey,
         onLast: @escaping @Sendable () -> Void

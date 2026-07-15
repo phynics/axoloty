@@ -92,4 +92,12 @@ enum CommunicationEventHubKeys {
     static func channel(channelId: String) -> CommunicationEventHubKey {
         CommunicationEventHubKey(scope: "communication", name: "channel/\(channelId)")
     }
+
+    /// Returns the key for an IO point's state stream.
+    static func ioState(ioPointId: String) -> CommunicationEventHubKey {
+        CommunicationEventHubKey(scope: "communication", name: "io-state/\(ioPointId)")
+    }
+
+    /// Key for incoming raw IO value messages.
+    static let ioValue = CommunicationEventHubKey(scope: "communication", name: "io-value")
 }

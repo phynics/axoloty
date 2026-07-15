@@ -380,6 +380,13 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                 let topic = try CommunicationTopic(info.topicName)
                 if topic.eventType == .IoValue {
                     ioValueMessages.onNext((info.topicName, bytes))
+                    _Concurrency.Task { [weak self] in
+                        guard let self else { return }
+                        await self.eventHub.yield(
+                            value: IoValueEventSnapshot(topic: info.topicName, payload: bytes),
+                            to: CommunicationEventHubKeys.ioValue
+                        )
+                    }
                 } else if let payloadString = String(bytes: bytes, encoding: .utf8) {
                     messages.onNext((topic, payloadString))
 

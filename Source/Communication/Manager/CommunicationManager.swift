@@ -577,7 +577,8 @@ public class CommunicationManager {
                 let hasAssociations = (items != nil) && (items!.actorIds.count != 0)
                 let updateRate: Int? = (items != nil) ? items!.updateRate : nil
                 
-                item.dispatchNext(message: IoStateEvent.with(hasAssociations: hasAssociations, updateRate: updateRate))
+                self.dispatchIoState(ioPointId: ioSourceId, item: item,
+                                    message: IoStateEvent.with(hasAssociations: hasAssociations, updateRate: updateRate))
             }
         }
 
@@ -589,7 +590,8 @@ public class CommunicationManager {
                 }
 
                 let sourceCount = actorIds?[ioActorId.string]?.count ?? 0
-                item.dispatchNext(message: IoStateEvent.with(hasAssociations: sourceCount > 0))
+                self.dispatchIoState(ioPointId: ioActorId, item: item,
+                                    message: IoStateEvent.with(hasAssociations: sourceCount > 0))
             }
         }
     }
@@ -687,7 +689,8 @@ public class CommunicationManager {
     private func unobserveIoStateAndValue() {
         // Dispatch IO state events to all IO state observers.
         self.observedIoStateItems.forEach { _, item in
-            item.dispatchNext(message: IoStateEvent.with(hasAssociations: false, updateRate: nil))
+            self.dispatchIoState(ioPointId: item.ioPointId, item: item,
+                                message: IoStateEvent.with(hasAssociations: false, updateRate: nil))
 
             // Ensure subscriptions on IO state observables are unsubscribed automatically.
             item.dispatchComplete()
@@ -706,6 +709,23 @@ public class CommunicationManager {
         // Reset ioValueObservable for restart.
         self.ioValueObservable = nil
     }
+
+    private func dispatchIoState(ioPointId: CoatyUUID, item: IoStateItem, message: IoStateEvent) {
+        item.dispatchNext(message: message)
+        let snapshot = IoStateEventSnapshot(
+            ioPointId: ioPointId.string,
+            hasAssociations: message.eventData.hasAssociations(),
+            updateRate: message.eventData.updateRate()
+        )
+        let eventHub = client.eventHub
+        let stateKey = CommunicationEventHubKeys.ioState(ioPointId: ioPointId.string)
+        _Concurrency.Task {
+            await eventHub.yieldState(
+                value: snapshot,
+                to: stateKey
+            )
+        }
+    }
 }
 
 extension CommunicationManager: Startable {
@@ -718,9 +738,11 @@ extension CommunicationManager: Startable {
 }
 
 class IoStateItem {
+    let ioPointId: CoatyUUID
     var subject: BehaviorSubject<IoStateEvent>
     
-    init(initialValue: IoStateEvent) {
+    init(ioPointId: CoatyUUID, initialValue: IoStateEvent) {
+        self.ioPointId = ioPointId
         self.subject = BehaviorSubject<IoStateEvent>.init(value: initialValue)
     }
     

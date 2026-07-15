@@ -471,7 +471,7 @@ extension CommunicationManager {
         return self._observeIoState(ioPointId: ioPoint.objectId)
     }
     
-    private func _observeIoState(ioPointId: CoatyUUID) -> BehaviorSubject<IoStateEvent> {
+    func _observeIoState(ioPointId: CoatyUUID) -> BehaviorSubject<IoStateEvent> {
         if let item = self.observedIoStateItems[ioPointId.string] {
             return item.subject
         } else {
@@ -490,7 +490,7 @@ extension CommunicationManager {
                     }
                 }
             }
-            let item = IoStateItem(initialValue: IoStateEvent.with(hasAssociations: hasAssociations, updateRate: updateRate))
+            let item = IoStateItem(ioPointId: ioPointId, initialValue: IoStateEvent.with(hasAssociations: hasAssociations, updateRate: updateRate))
             self.observedIoStateItems[ioPointId.string] = item
             
             return item.subject
