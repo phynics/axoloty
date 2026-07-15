@@ -48,6 +48,22 @@ development image. Scheduled runs use 100,000 iterations over seeds 1, 2, 3,
 and 4; manual runs may use bounded inputs and retain the finalized campaign
 manifest, summary, logs, and reproducers as workflow artifacts.
 
+## Source coverage ratchet
+
+`make coverage` runs the full test suite with `--enable-code-coverage`, exports
+per-file line coverage for `Source/` via `llvm-cov`, and writes
+`.testing/coverage/coverage.json` plus a normalized `report.json`. Only
+`Source/` production files contribute to the denominator; tests, dependencies,
+generated code, and reference agents are excluded.
+
+`make coverage-check` compares the measured coverage against the committed
+baseline at `Tests/Support/coverage-baseline.json`. It fails when aggregate
+`Source/` coverage drops by more than 1.0 percentage point, or when a
+production file already in the baseline loses covered lines. New files do not
+trip the per-file rule; they are absorbed by the aggregate gate. Update the
+baseline only in a reviewed change that intentionally accepts the new
+coverage level.
+
 ## Test tiers
 
 | Tier | Purpose | Dependencies | Default timeout | Required cadence |

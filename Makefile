@@ -11,7 +11,7 @@ COMMA := ,
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image build test test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support ci-fast ci broker broker-stop shell docs clean
+.PHONY: help image build test test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support coverage coverage-check ci-fast ci broker broker-stop shell docs clean
 
 help:
 	@printf '%s\n' \
@@ -25,6 +25,8 @@ help:
 		'make test-fast     Run unit, module, fuzz, offline wire, and support self-tests' \
 		'make test-wire     Run offline wire fixtures and capture tests' \
 		'make test-support  Run Python/shell harness self-tests and tier validation' \
+		'make coverage     Run tests with code coverage and report Source/ coverage' \
+		'make coverage-check Run coverage and fail if it regresses the baseline' \
 		'make test-wire-live Run live CoatyJS compatibility scenarios' \
 		'make test-wire-all Run offline and live compatibility suites' \
 		'make ci-fast       Run the build and fast test suite' \
@@ -94,6 +96,26 @@ test-wire-live:
 test-wire-all: test-wire test-wire-live
 
 test-fast: test-unit test-module test-fuzz test-wire test-support
+
+# Source-coverage reporting and ratchet. Runs the full test suite with
+# --enable-code-coverage, exports per-file line coverage via llvm-cov, and
+# writes machine-readable reports under .testing/coverage/. Only Source/
+# production files contribute to the denominator.
+coverage: image
+	$(CONTAINER_RUNTIME) run --rm -v "$(CURDIR):$(WORKDIR)" -w $(WORKDIR) $(IMAGE) \
+		sh -c 'set -e; \
+		  pgrep mosquitto >/dev/null 2>&1 || mosquitto -d; \
+		  swift test --enable-code-coverage 2>/dev/null; \
+		  BIN=$$(find .build -name AxolotyPackageTests.xctest -type f | head -1); \
+		  PROFDATA=$$(find .build -name default.profdata | head -1); \
+		  mkdir -p .testing/coverage; \
+		  llvm-cov export "$$BIN" -instr-profile="$$PROFDATA" -format=text > .testing/coverage/coverage.json; \
+		  python3 Tests/Support/coverage_ratchet.py summary .testing/coverage/coverage.json --report .testing/coverage/report.json'
+
+# Compare the measured coverage against the committed baseline. Pure Python,
+# so it runs on the host after `make coverage` produces the export.
+coverage-check: coverage
+	python3 Tests/Support/coverage_ratchet.py check .testing/coverage/coverage.json Tests/Support/coverage-baseline.json
 
 # Keep these as dependency-only targets so one make invocation builds the
 # container image once, even though every underlying target remains useful on
