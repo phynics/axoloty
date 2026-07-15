@@ -9,6 +9,19 @@ piece of work.
 Phases are ordered by dependency, not necessarily by priority. Later phases
 may start before earlier ones fully close out.
 
+## Recent completed slices
+
+- **T-035** (`d8a9519`): audited all seven direct SwiftPM dependencies and
+  documented freshness, licensing, platform, usage, and follow-up paths in
+  `docs/dependency-audit.md`.
+- **T-045** (`da42901`): made the test-tier contract executable, mapped every
+  maintained Python/shell self-test, and separated harness checks from wire
+  scenarios.
+- **T-047** (`89a886e`): added containerized `make coverage` reporting with a
+  measured 39.55% Source/ baseline and a 1.0 percentage-point ratchet.
+- **T-049** (`f1d36b6`): added scheduled/manual bounded fuzz campaigns with
+  finalized artifact retention and nightly-tier registration.
+
 ## Phase 0 — Workspace, workflow & CI/container scaffolding (complete)
 
 **Why:** The development machine (NixOS) cannot run the native Swift
@@ -96,10 +109,11 @@ but are now legacy relative to Swift's native structured-concurrency and
 logging story, and they are a primary source of platform/portability risk
 (see Phase 4 and Phase 7).
 
-**Status:** CocoaMQTT and XCGLogger are gone (T-005, T-006). RxSwift is now
-on 6.10.0 and the containerized Linux build/test flow is green; removing
-RxSwift (T-007/T-008) remains the outstanding modernization work, not a
-Linux build blocker.
+**Status:** CocoaMQTT and XCGLogger are gone (T-005, T-006), the dependency
+audit is complete (T-035), and ErrorKit is adopted for `AxolotyError` (T-025).
+RxSwift remains current at 6.10.2 and the containerized Linux build/test flow
+is green; removing RxSwift (T-026 through T-028) remains the outstanding
+modernization work, not a Linux build blocker.
 
 **What this phase covers:**
 - Remove RxSwift in favor of Swift 6.4 structured concurrency: async/await,
@@ -135,9 +149,9 @@ Linux build blocker.
 **Done when:**
 - [ ] No source file imports RxSwift; all reactive-style APIs are expressed
       with async/await, `AsyncSequence`, or actors.
-- [ ] `ErrorKit` is a Package.swift dependency and all error types added
-      after its adoption conform to `Throwable`; a decision is recorded on
-      whether/how `AxolotyError` itself migrates.
+- [x] `ErrorKit` is a Package.swift dependency and `AxolotyError` conforms to
+      `Throwable` with a tested user-facing message; broader boundary
+      migration remains part of T-031.
 - [x] A decision is recorded on CocoaMQTT vs. an alternative MQTT client,
       with Linux/WASM viability as the deciding factor. ✅ Done (T-005,
       `mqtt-nio`) — CocoaMQTT and its transitive Obj-C dependency
@@ -170,7 +184,7 @@ support is untested and undeclared.
 - [x] `#if os(Linux)` conditionals are limited to genuinely
       platform-specific code paths.
 
-## Phase 5 — Testing harness improvements (in progress — Swift Testing complete)
+## Phase 5 — Testing harness improvements (complete)
 
 **Why:** The current test suite assumes an MQTT broker is already listening
 on `localhost:1883` on the host machine, which doesn't hold inside a
@@ -184,18 +198,22 @@ Phase 3/4 work adds coverage.
   than assuming one is already reachable at `localhost:1883`.
 - Adopt the toolchain-provided `swift-testing` framework as the sole Swift test
   framework; XCTest is not retained.
+- Keep tier ownership executable and retain reproducible fuzz and coverage
+  evidence in CI.
 
-**Status:** The Swift Testing migration is complete, and the canonical test
-target starts Mosquitto automatically inside its test container. Test
-organization remains an open item; the current broker arrangement is
-container-local rather than a distinct sidecar.
+**Status:** Swift Testing migration and test organization are complete. The
+canonical test target starts Mosquitto automatically inside its test
+container; support-tool self-tests, coverage policy, and nightly fuzz evidence
+are separate executable gates.
 
 **Done when:**
-- [ ] Tests are organized into subsystem subfolders.
+- [x] Tests are organized into subsystem subfolders (T-029).
 - [x] CI and local containerized tests start an MQTT broker automatically;
       no test depends on a broker pre-existing on the host.
 - [x] Swift Testing adoption is recorded and the Swift test target is migrated
       without an XCTest compatibility layer.
+- [x] Test-tier ownership, source coverage, and scheduled fuzz artifacts have
+      executable Make/CI gates (T-045, T-047, T-049).
 
 ## Phase 6 — CoatyJS protocol/version compatibility audit (in progress)
 
