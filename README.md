@@ -67,7 +67,7 @@ dependencies: [
 ```
 
 API documentation is built from in-source DocC comments and published to
-GitHub Pages: <https://phynics.github.io/axoloty/>.
+GitHub Pages: <https://phynics.github.io/axoloty/documentation/Axoloty/>.
 
 ## Examples
 

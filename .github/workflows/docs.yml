@@ -21,6 +21,9 @@ jobs:
   build-docs:
     name: Build DocC documentation
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -32,6 +35,10 @@ jobs:
         with:
           image-ref: ${{ env.DEV_IMAGE_REF }}
 
+      - name: Configure GitHub Pages
+        id: pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+
       - name: Restore SwiftPM dependency cache
         uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
@@ -41,7 +48,7 @@ jobs:
             swiftpm-6.3-linux-
 
       - name: Generate documentation
-        run: make docs CONTAINER_RUNTIME=docker BUILD_DIR=.build SPM_CACHE_DIR=.swiftpm-cache DOC_HOSTING_BASE_PATH=axoloty
+        run: make docs CONTAINER_RUNTIME=docker BUILD_DIR=.build SPM_CACHE_DIR=.swiftpm-cache DOC_HOSTING_BASE_PATH="${{ steps.pages.outputs.base_path }}"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
