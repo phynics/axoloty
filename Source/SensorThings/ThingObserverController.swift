@@ -14,6 +14,21 @@ import RxSwift
 /// This controller is designed to be used by a client with a corresponding
 /// controller (e.g. ThingSourceController) that answers to its events.
 open class ThingObserverController: Controller {
+
+    /// Returns an async stream of immutable snapshots for advertised Things.
+    ///
+    /// Consumers can decode the snapshot's preserved payload with
+    /// ``CoatyObjectSnapshot/decodeObject()`` when they need the concrete Thing
+    /// model. The stream owns its MQTT subscription while iterated.
+    ///
+    /// - Returns: An event-buffered stream of Thing Advertise snapshots.
+    /// - Throws: ``AxolotyError/InvalidArgument`` if the registered Thing
+    ///   object type is invalid.
+    public func observeAdvertisedThingsStream() async throws -> EventStream<AdvertiseEventSnapshot> {
+        try await self.communicationManager.observeAdvertiseStream(
+            withObjectType: SensorThingsTypes.OBJECT_TYPE_THING
+        )
+    }
     
     /// Returns an observable of the Things in the system.
     ///
