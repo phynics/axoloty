@@ -38,14 +38,13 @@ class EvaluateTests(unittest.TestCase):
         base = baseline({"Source/A.swift": {"count": 100, "covered": 80}}, percent=80.0)
         self.assertEqual(cr.evaluate(current, base), [])
 
-    def test_per_file_covered_regression_fails(self):
-        current = {"Source/A.swift": {"count": 100, "covered": 79}, "Source/B.swift": {"count": 10, "covered": 4}}
+    def test_per_file_covered_regression_is_informational(self):
+        current = {"Source/A.swift": {"count": 100, "covered": 79}, "Source/B.swift": {"count": 10, "covered": 6}}
         base = baseline({
             "Source/A.swift": {"count": 100, "covered": 80},
             "Source/B.swift": {"count": 10, "covered": 5},
-        }, percent=80.0)
-        errors = cr.evaluate(current, base)
-        self.assertTrue(any("Source/B.swift" in e and "regressed" in e for e in errors))
+        }, percent=85 / 110 * 100)
+        self.assertEqual(cr.evaluate(current, base), [])
 
     def test_new_file_does_not_fail_per_file_rule(self):
         current = {
