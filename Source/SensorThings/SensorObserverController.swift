@@ -13,6 +13,21 @@ import RxSwift
 /// be used by a client as a counterpart to a SensorSourceController which should
 /// answer its requests.
 open class SensorObserverController: Controller {
+
+    /// Returns an async stream of immutable snapshots for advertised Sensors.
+    ///
+    /// Consumers can decode the snapshot's preserved payload with
+    /// ``CoatyObjectSnapshot/decodeObject()`` when they need the concrete
+    /// Sensor model. The stream owns its MQTT subscription while iterated.
+    ///
+    /// - Returns: An event-buffered stream of Sensor Advertise snapshots.
+    /// - Throws: ``AxolotyError/InvalidArgument`` if the registered Sensor
+    ///   object type is invalid.
+    public func observeAdvertisedSensorsStream() async throws -> EventStream<AdvertiseEventSnapshot> {
+        try await self.communicationManager.observeAdvertiseStream(
+            withObjectType: SensorThingsTypes.OBJECT_TYPE_SENSOR
+        )
+    }
     
     /// Observe the channeled observations for the given Sensor. By default, the
     /// channelId is the same as the sensorId.

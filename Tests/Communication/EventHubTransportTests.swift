@@ -187,6 +187,54 @@ struct EventHubTransportTests {
     }
 
     @Test
+    func sensorObserverAdvertisedSensorStreamDeliversSnapshots() async throws {
+        let configuration = Configuration(
+            communication: CommunicationOptions(
+                mqttClientOptions: MQTTClientOptions(
+                    host: "127.0.0.1",
+                    port: 1883,
+                    shouldTryMDNSDiscovery: false,
+                    autoReconnect: false
+                ),
+                shouldAutoStart: false
+            )
+        )
+        let components = Components(
+            controllers: ["sensor-observer": SensorObserverController.self],
+            objectTypes: []
+        )
+        let container = Container.resolve(components: components, configuration: configuration)
+        let manager = try #require(container.communicationManager)
+        let observer = try #require(
+            container.getController(name: "sensor-observer") as? SensorObserverController
+        )
+        let fakeClient = FakeCommunicationClient(delegate: manager)
+        manager.client = fakeClient
+
+        let stream = try await observer.observeAdvertisedSensorsStream()
+        var iterator = await stream.makeAsyncIteratorAndWait()
+        let snapshot = AdvertiseEventSnapshot(
+            sourceId: "source",
+            eventTypeFilter: EVENT_TYPE_FILTER_SEPARATOR + SensorThingsTypes.OBJECT_TYPE_SENSOR,
+            object: CoatyObjectSnapshot(
+                objectId: "sensor",
+                coreType: .CoatyObject,
+                objectType: SensorThingsTypes.OBJECT_TYPE_SENSOR,
+                name: "sensor"
+            )
+        )
+        await fakeClient.emit(
+            snapshot,
+            to: CommunicationEventHubKeys.advertise(
+                eventTypeFilter: EVENT_TYPE_FILTER_SEPARATOR + SensorThingsTypes.OBJECT_TYPE_SENSOR
+            )
+        )
+
+        #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == snapshot)
+        container.shutdown()
+    }
+
+    @Test
     func managerReplaysDesiredTopicsOnceAfterOnline() async throws {
         let client = FakeCommunicationClient(delegate: FakeStartable())
         let manager = makeManager(client: client)
