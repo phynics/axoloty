@@ -11,7 +11,7 @@ COMMA := ,
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image build test test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support coverage coverage-check ci-fast ci broker broker-stop shell docs clean
+.PHONY: help image build test test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-fast ci broker broker-stop shell docs clean
 
 help:
 	@printf '%s\n' \
@@ -25,7 +25,8 @@ help:
 		'make test-fast     Run unit, module, fuzz, offline wire, and support self-tests' \
 		'make test-wire     Run offline wire fixtures and capture tests' \
 		'make test-support  Run Python/shell harness self-tests and tier validation' \
-		'make coverage     Run tests with code coverage and report Source/ coverage' \
+ 	'make test-observation-linux Run Observation and EventStream tests on Linux' \
+ 		'make coverage     Run tests with code coverage and report Source/ coverage' \
 		'make coverage-check Run coverage and fail if it regresses the baseline' \
 		'make test-wire-live Run live CoatyJS compatibility scenarios' \
 		'make test-wire-all Run offline and live compatibility suites' \
@@ -94,6 +95,10 @@ test-wire-live:
 	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/Reverse/run-axoloty-advertise.sh
 
 test-wire-all: test-wire test-wire-live
+
+test-observation-linux: image
+	$(CONTAINER_RUNTIME) run --rm -v "$(CURDIR):$(WORKDIR)" -w $(WORKDIR) $(IMAGE) \
+		swift test --filter "ObservationLinuxTests|EventStreamTests"
 
 test-fast: test-unit test-module test-fuzz test-wire test-support
 

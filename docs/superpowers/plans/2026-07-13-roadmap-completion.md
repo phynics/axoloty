@@ -6,7 +6,7 @@
 
 **Architecture:** Documentation and test-layout work are independent early slices. The concurrency migration establishes one AsyncSequence observation boundary, migrates producers and consumers in bounded layers, and removes RxSwift only after all call sites move. Existing wire-compatibility tickets remain the protocol gate; WASM is an evidence-producing spike after dependency removal.
 
-**Tech Stack:** Swift 6.4 container toolchain, SwiftPM, Swift Testing, Swift concurrency, ErrorKit, DocC, mqtt-nio, swift-log, Podman, Mosquitto, SwiftWasm/WASI.
+**Tech Stack:** Swift 6.3 container toolchain, SwiftPM, Swift Testing, Swift concurrency, ErrorKit, DocC, mqtt-nio, swift-log, Podman, Mosquitto, SwiftWasm/WASI.
 
 **Specs:** `.agents/plans/0002-wire-compatibility-testing.md`, `.agents/plans/0003-docc-documentation.md`, `.agents/plans/0004-concurrency-and-errors.md`, `.agents/plans/0005-test-organization.md`, `.agents/plans/0006-wasm-feasibility.md`, `.agents/plans/0007-package-rename.md`.
 

@@ -143,20 +143,14 @@ struct SensorThingsTests {
 
         let queue = DispatchQueue.init(label: "test.coaty.sensorThings", qos: .userInitiated)
 
-        var testFunction: ((NSArray, Int) -> ())!
+        let disposableBox = SendableBox<Disposable?>(nil)
+        let testFunctionBox = SendableBox<(([String], Int) -> Void)?>(nil)
 
-        /// NOTE: using enough delay is crucial in this test, because of the internal Swift queue management mechanisms
-        /// If delay is chosen too small, then the test will fail.
-        /// Be aware that this test might also fail if e.g. the broker has some internal delay (try to run it a couple of times before concluding that something is wrong with the implementation)
-
-        testFunction = { (elementArray: NSArray, index: Int) in
+        let testFunction: ([String], Int) -> Void = { elementArray, index in
             if index == elementArray.count {
                 return
             }
-            guard let element = elementArray.object(at: index) as? String else {
-                Issue.record("Expected String at index \(index)")
-                return
-            }
+            let element = elementArray[index]
             let logger = ChannelEventLogger()
             let channelId = "42"
 
@@ -169,17 +163,14 @@ struct SensorThingsTests {
                 return
             }
 
-            var disposable: Disposable!
-
             queue.async {
-                disposable = receiverController.watchForChannelEvents(logger: logger, channelId: channelId)
+                disposableBox.value = receiverController.watchForChannelEvents(logger: logger, channelId: channelId)
             }
 
             let delay: DispatchTimeInterval = .seconds(6)
             queue.asyncAfter(deadline: .now() + delay) {
                 emitterController.publishChannelEvents(count: eventCount, objectType: element, channelId: channelId)
 
-                // Delay it by enough time to give the receiverController time to log the incoming events
                 let delay2: DispatchTimeInterval = .seconds(6)
 
                 queue.asyncAfter(deadline: .now() + delay2) {
@@ -198,14 +189,14 @@ struct SensorThingsTests {
                         }
                     }
 
-                    // Dispose the channel observable before moving to the next element
-                    disposable.dispose()
-                    testFunction(elementArray, index+1)
+                    disposableBox.value?.dispose()
+                    testFunctionBox.value?(elementArray, index+1)
                 }
             }
         }
+        testFunctionBox.value = testFunction
 
-        let copy = NSArray(array: SensorThingsTests.SENSOR_THINGS_TYPES_SET)
+        let copy = SensorThingsTests.SENSOR_THINGS_TYPES_SET
         testFunction(copy, 0)
 
         let result = completion.wait(timeout: .now() + TimeInterval(15 * SensorThingsTests.TEST_TIMEOUT))
@@ -229,4 +220,9 @@ struct SensorThingsTests {
         let zeroDuration = CoatyTimeInterval(start: 0, duration: 0)
         #expect(zeroDuration.toLocalIntervalIsoString(includeMillis: false).hasSuffix("/PT0S"))
     }
+}
+
+private final class SendableBox<T>: @unchecked Sendable {
+    var value: T
+    init(_ value: T) { self.value = value }
 }
