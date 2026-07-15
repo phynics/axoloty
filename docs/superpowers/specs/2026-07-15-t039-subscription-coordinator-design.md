@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented in the working tree on 2026-07-15; the manager, transport, logging,
+Implemented and committed on 2026-07-15 (`47e4e75`); the manager, transport, logging,
 object-lifecycle, IO routing, SensorThings, and RxSwift-removal verification
 gates pass.
 
