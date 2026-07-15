@@ -193,7 +193,8 @@ echo "Fuzz campaign started at $(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$campaign_lo
 
 if [[ "$MODE" == container ]]; then
     ((QUIET)) || echo "Preparing development image: $IMAGE"
-    if ! make -C "$ROOT_DIR" image CONTAINER_RUNTIME="$RUNTIME" IMAGE="$IMAGE" 2>&1 | tee -a "$campaign_log"; then
+    if ! make -C "$ROOT_DIR" image CONTAINER_RUNTIME="$RUNTIME" IMAGE="$IMAGE" \
+        SPM_CACHE_DIR="$campaign_dir/swiftpm-cache" 2>&1 | tee -a "$campaign_log"; then
         echo "Container image preparation failed; see $campaign_log" >&2
         exit 1
     fi
