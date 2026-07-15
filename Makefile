@@ -4,6 +4,9 @@ IMAGE ?= coatyswift-dev
 BROKER_NAME ?= coatyswift-mosquitto
 CONTAINER_RUNTIME ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 WORKDIR := /workspace
+CACHE_NAMESPACE ?= swift-6.3-linux
+BUILD_DIR ?= $(HOME)/.cache/coaty-swift/$(CACHE_NAMESPACE)/.build
+CONTAINER_MOUNTS := -v "$(CURDIR):$(WORKDIR)" -v "$(BUILD_DIR):$(WORKDIR)/.build"
 COMMA := ,
 
 # Hosting base path for static DocC output. Set this to the repository name
@@ -36,30 +39,33 @@ help:
 		'make broker-stop   Stop the background Mosquitto container' \
 		'make shell         Open a shell in the Linux container' \
 		'make docs          Generate DocC API documentation into .build/docc' \
-		'make clean         Remove Swift build artifacts'
+		'make clean         Remove Swift build artifacts' \
+		'' \
+		'BUILD_DIR can point at a different persistent SwiftPM cache directory'
 
 image:
 	@test -n "$(CONTAINER_RUNTIME)" || (echo 'No podman or docker runtime found' >&2; exit 1)
+	@mkdir -p "$(BUILD_DIR)"
 	$(CONTAINER_RUNTIME) build -t $(IMAGE) -f .devcontainer/Dockerfile .devcontainer
 
 build: image
-	$(CONTAINER_RUNTIME) run --rm -v "$(CURDIR):$(WORKDIR)" -w $(WORKDIR) $(IMAGE) swift build
+	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) swift build
 
 test: image
-	$(CONTAINER_RUNTIME) run --rm -v "$(CURDIR):$(WORKDIR)" -w $(WORKDIR) $(IMAGE) \
+	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) \
 		sh -c 'pgrep mosquitto >/dev/null 2>&1 || mosquitto -d; swift test'
 
 test-unit: image
-	$(CONTAINER_RUNTIME) run --rm -v "$(CURDIR):$(WORKDIR)" -w $(WORKDIR) $(IMAGE) \
+	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) \
 		swift test --filter ObjectMatcherTests
 
 test-module: image
-	$(CONTAINER_RUNTIME) run --rm -v "$(CURDIR):$(WORKDIR)" -w $(WORKDIR) $(IMAGE) swift test --filter CommunicationTopicTests
-	$(CONTAINER_RUNTIME) run --rm -v "$(CURDIR):$(WORKDIR)" -w $(WORKDIR) $(IMAGE) swift test --filter PayloadCoderTests
-	$(CONTAINER_RUNTIME) run --rm -v "$(CURDIR):$(WORKDIR)" -w $(WORKDIR) $(IMAGE) swift test --filter ObjectTypeRegistryTests
+	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) swift test --filter CommunicationTopicTests
+	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) swift test --filter PayloadCoderTests
+	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) swift test --filter ObjectTypeRegistryTests
 
 test-fuzz: image
-	$(CONTAINER_RUNTIME) run --rm -v "$(CURDIR):$(WORKDIR)" -w $(WORKDIR) \
+	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) \
 		-e AXOLOTY_FUZZ_ITERATIONS="$(or $(AXOLOTY_FUZZ_ITERATIONS),250)" \
 		-e AXOLOTY_FUZZ_SEED="$(or $(AXOLOTY_FUZZ_SEED),0x41584f4c4f5459)" \
 		$(IMAGE) swift test --filter DeterministicFuzzTests
@@ -72,9 +78,9 @@ fuzz-long:
 		Tests/Fuzzing/run-fuzz.sh
 
 test-wire: image
-	$(CONTAINER_RUNTIME) run --rm -v "$(CURDIR):$(WORKDIR)" -w $(WORKDIR) $(IMAGE) \
+	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) \
 		swift test --filter WireFixtureTests
-	$(CONTAINER_RUNTIME) run --rm -v "$(CURDIR):$(WORKDIR)" -w $(WORKDIR) $(IMAGE) \
+	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) \
 		swift test --filter LifecycleCompatibilityScenarioTests
 
 # Harness self-tests for the Python/shell tooling (fuzz runner, capture and
@@ -97,7 +103,7 @@ test-wire-live:
 test-wire-all: test-wire test-wire-live
 
 test-observation-linux: image
-	$(CONTAINER_RUNTIME) run --rm -v "$(CURDIR):$(WORKDIR)" -w $(WORKDIR) $(IMAGE) \
+	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) \
 		swift test --filter "ObservationLinuxTests|EventStreamTests"
 
 test-fast: test-unit test-module test-fuzz test-wire test-support
@@ -107,7 +113,7 @@ test-fast: test-unit test-module test-fuzz test-wire test-support
 # writes machine-readable reports under .testing/coverage/. Only Source/
 # production files contribute to the denominator.
 coverage: image
-	$(CONTAINER_RUNTIME) run --rm -v "$(CURDIR):$(WORKDIR)" -w $(WORKDIR) $(IMAGE) \
+	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) \
 		sh -c 'set -e; \
 		  pgrep mosquitto >/dev/null 2>&1 || mosquitto -d; \
 		  swift test --enable-code-coverage 2>/dev/null; \
@@ -138,14 +144,14 @@ broker-stop:
 	$(CONTAINER_RUNTIME) rm -f $(BROKER_NAME)
 
 shell: image
-	$(CONTAINER_RUNTIME) run --rm -it -v "$(CURDIR):$(WORKDIR)" -w $(WORKDIR) $(IMAGE) bash
+	$(CONTAINER_RUNTIME) run --rm -it $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) bash
 
 docs: image
-	$(CONTAINER_RUNTIME) run --rm -v "$(CURDIR):$(WORKDIR)" -w $(WORKDIR) $(IMAGE) \
+	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) \
 		swift package generate-documentation --target Axoloty \
 			--transform-for-static-hosting \
 			$(if $(DOC_HOSTING_BASE_PATH),--hosting-base-path $(DOC_HOSTING_BASE_PATH)) \
 			--output-path .build/docc
 
 clean:
-	rm -rf .build
+	rm -rf "$(BUILD_DIR)"

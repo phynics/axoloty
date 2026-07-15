@@ -32,13 +32,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .build
-          key: build-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Source/**/*.swift', 'Tests/**/*.swift') }}
+          key: swift-6.3-linux-build-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Source/**/*.swift', 'Tests/**/*.swift', '.devcontainer/Dockerfile') }}
           restore-keys: |
-            build-${{ hashFiles('Package.resolved') }}-
-            build-
+            swift-6.3-linux-build-${{ hashFiles('Package.resolved') }}-
+            swift-6.3-linux-build-
 
       - name: Run wire compatibility gate
-        run: make test-wire CONTAINER_RUNTIME=docker
+        run: make test-wire CONTAINER_RUNTIME=docker BUILD_DIR=.build
 
   build-and-test:
     name: Linux build and test
@@ -57,13 +57,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .build
-          key: build-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Source/**/*.swift', 'Tests/**/*.swift') }}
+          key: swift-6.3-linux-build-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Source/**/*.swift', 'Tests/**/*.swift', '.devcontainer/Dockerfile') }}
           restore-keys: |
-            build-${{ hashFiles('Package.resolved') }}-
-            build-
+            swift-6.3-linux-build-${{ hashFiles('Package.resolved') }}-
+            swift-6.3-linux-build-
 
       - name: Build and test
-        run: make build test CONTAINER_RUNTIME=docker
+        run: make build test CONTAINER_RUNTIME=docker BUILD_DIR=.build
 
   coverage:
     name: Source coverage ratchet
@@ -80,13 +80,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .build
-          key: build-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Source/**/*.swift', 'Tests/**/*.swift') }}
+          key: swift-6.3-linux-build-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Source/**/*.swift', 'Tests/**/*.swift', '.devcontainer/Dockerfile') }}
           restore-keys: |
-            build-${{ hashFiles('Package.resolved') }}-
-            build-
+            swift-6.3-linux-build-${{ hashFiles('Package.resolved') }}-
+            swift-6.3-linux-build-
 
       - name: Run coverage ratchet
-        run: make coverage-check CONTAINER_RUNTIME=docker
+        run: make coverage-check CONTAINER_RUNTIME=docker BUILD_DIR=.build
 
       - name: Upload coverage report on failure
         if: failure()

@@ -30,13 +30,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .build
-          key: build-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Source/**/*.swift', 'Tests/**/*.swift') }}
+          key: swift-6.3-linux-build-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Source/**/*.swift', 'Tests/**/*.swift', '.devcontainer/Dockerfile') }}
           restore-keys: |
-            build-${{ hashFiles('Package.resolved') }}-
-            build-
+            swift-6.3-linux-build-${{ hashFiles('Package.resolved') }}-
+            swift-6.3-linux-build-
 
       - name: Generate documentation
-        run: make docs CONTAINER_RUNTIME=docker DOC_HOSTING_BASE_PATH=axoloty
+        run: make docs CONTAINER_RUNTIME=docker BUILD_DIR=.build DOC_HOSTING_BASE_PATH=axoloty
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
