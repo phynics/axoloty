@@ -7,14 +7,41 @@ oracle. Legacy CoatySwift is useful historical evidence, but is not a required
 interop target.
 
 The machine-readable companion to this document is
-[`Support/test-tiers.json`](Support/test-tiers.json). Validate it with:
+[`Support/test-tiers.json`](Support/test-tiers.json). Each directly executable
+tier records its canonical Make target, and every maintained `Tests/**/test_*.py` /
+`Tests/**/test-*.sh` harness self-test is mapped to exactly one owning Make
+target. Validate the contract with:
 
 ```sh
 python3 Tests/Support/validate_test_tiers.py
 ```
 
-This command validates metadata only and does not invoke Swift on the host.
-Build and test execution must always use the root Makefile and Podman.
+The validator checks tier metadata, resolves every `makeTarget` and self-test
+owner against the real Makefile targets, and fails if a maintained self-test
+is unmapped or owned by more than one target. It does not invoke Swift; run it
+through `make test-support` for the standard Makefile path. Build and test
+execution must always use the root Makefile and Podman.
+
+## Command-to-tier map
+
+Tiers with a direct Make target record it in the contract. The manual macOS
+oracle remains host-specific. Harness self-tests live in `make test-support`,
+separate from protocol-scenario execution.
+
+| Tier | Make target | Runs Swift? | Notes |
+|---|---|:---:|---|
+| Smoke | `make build` | yes | Proves the package compiles and links |
+| Unit | `make test-unit` | yes | `ObjectMatcherTests` |
+| Module | `make test-module` | yes | Topic, payload, and registry module tests |
+| Property | `make test-fuzz` | yes | Seeded `DeterministicFuzzTests` |
+| Integration | `make test` | yes | Full suite against a fresh Mosquitto |
+| Wire offline | `make test-wire` | yes | `WireFixtureTests` and lifecycle scenarios |
+| Wire live | `make test-wire-live` | yes | Live CoatyJS interop (host-run containers) |
+| Nightly | `make fuzz-long` | yes | Multi-seed fuzz campaign |
+| Harness self-tests | `make test-support` | no | Fuzz runner, capture/verifier tools, tier validation |
+
+`make test-fast` runs unit, module, property, offline-wire, and support
+self-tests in one image build; `make ci` adds the full integration suite.
 
 ## Test tiers
 

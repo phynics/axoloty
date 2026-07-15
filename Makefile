@@ -11,28 +11,29 @@ COMMA := ,
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image build test test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all ci-fast ci broker broker-stop shell docs clean
+.PHONY: help image build test test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support ci-fast ci broker broker-stop shell docs clean
 
 help:
 	@printf '%s\n' \
-		'make image       Build the Linux Swift development image' \
-		'make build       Build Axoloty in the Linux container' \
-		'make test        Run the full test suite (starts Mosquitto)' \
-		'make test-unit   Run ObjectMatcherTests' \
-		'make test-module Run targeted infrastructure module tests' \
-		'make test-fuzz   Run deterministic property/fuzz tests' \
-		'make fuzz-long   Run an auditable multi-seed fuzz campaign' \
-		'make test-fast   Run unit, module, fuzz, and offline wire tests' \
-		'make test-wire   Run offline wire fixtures and capture tests' \
+		'make image         Build the Linux Swift development image' \
+		'make build         Build Axoloty in the Linux container' \
+		'make test          Run the full test suite (starts Mosquitto)' \
+		'make test-unit     Run ObjectMatcherTests' \
+		'make test-module   Run targeted infrastructure module tests' \
+		'make test-fuzz     Run deterministic property/fuzz tests' \
+		'make fuzz-long     Run an auditable multi-seed fuzz campaign' \
+		'make test-fast     Run unit, module, fuzz, offline wire, and support self-tests' \
+		'make test-wire     Run offline wire fixtures and capture tests' \
+		'make test-support  Run Python/shell harness self-tests and tier validation' \
 		'make test-wire-live Run live CoatyJS compatibility scenarios' \
 		'make test-wire-all Run offline and live compatibility suites' \
-		'make ci-fast     Run the build and fast test suite' \
-		'make ci          Run all pull-request CI checks' \
-		'make broker      Start Mosquitto on localhost:1883' \
-		'make broker-stop Stop the background Mosquitto container' \
-		'make shell       Open a shell in the Linux container' \
-		'make docs        Generate DocC API documentation into .build/docc' \
-		'make clean       Remove Swift build artifacts'
+		'make ci-fast       Run the build and fast test suite' \
+		'make ci            Run all pull-request CI checks' \
+		'make broker        Start Mosquitto on localhost:1883' \
+		'make broker-stop   Stop the background Mosquitto container' \
+		'make shell         Open a shell in the Linux container' \
+		'make docs          Generate DocC API documentation into .build/docc' \
+		'make clean         Remove Swift build artifacts'
 
 image:
 	@test -n "$(CONTAINER_RUNTIME)" || (echo 'No podman or docker runtime found' >&2; exit 1)
@@ -72,14 +73,17 @@ test-wire: image
 		swift test --filter WireFixtureTests
 	$(CONTAINER_RUNTIME) run --rm -v "$(CURDIR):$(WORKDIR)" -w $(WORKDIR) $(IMAGE) \
 		swift test --filter LifecycleCompatibilityScenarioTests
-	$(CONTAINER_RUNTIME) run --rm -v "$(CURDIR):$(WORKDIR)" -w $(WORKDIR) $(IMAGE) \
-		sh -c "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/WireCompatibility/Capture -p 'test_*.py' -v"
-	$(CONTAINER_RUNTIME) run --rm -v "$(CURDIR):$(WORKDIR)" -w $(WORKDIR) $(IMAGE) \
-		sh -c "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/WireCompatibility/Legacy -p 'test_*.py' -v"
-	$(CONTAINER_RUNTIME) run --rm -v "$(CURDIR):$(WORKDIR)" -w $(WORKDIR) $(IMAGE) \
-		sh -c "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/WireCompatibility/Live -p 'test_*.py' -v"
-	$(CONTAINER_RUNTIME) run --rm -v "$(CURDIR):$(WORKDIR)" -w $(WORKDIR) $(IMAGE) \
-		python3 Tests/Support/validate_test_tiers.py Tests/Support/test-tiers.json
+
+# Harness self-tests for the Python/shell tooling (fuzz runner, capture and
+# verifier tools, and the test-tier contract). These are intentionally kept
+# separate from protocol-scenario execution and do not invoke Swift.
+test-support:
+	Tests/Fuzzing/test-run-fuzz.sh
+	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/WireCompatibility/Capture -p 'test_*.py' -v
+	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/WireCompatibility/Legacy -p 'test_*.py' -v
+	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/WireCompatibility/Live -p 'test_*.py' -v
+	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/Support -p 'test_*.py' -v
+	python3 Tests/Support/validate_test_tiers.py Tests/Support/test-tiers.json
 
 test-wire-live:
 	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/Live/run-coatyjs-advertise.sh
@@ -89,7 +93,7 @@ test-wire-live:
 
 test-wire-all: test-wire test-wire-live
 
-test-fast: test-unit test-module test-fuzz test-wire
+test-fast: test-unit test-module test-fuzz test-wire test-support
 
 # Keep these as dependency-only targets so one make invocation builds the
 # container image once, even though every underlying target remains useful on

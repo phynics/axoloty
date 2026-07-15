@@ -1,15 +1,22 @@
 {
   "schemaVersion": 1,
   "tiers": [
-    {"id": "smoke", "timeoutSeconds": 300, "cadence": "pull-request", "network": "none", "required": true},
-    {"id": "unit", "timeoutSeconds": 120, "cadence": "pull-request", "network": "none", "required": true},
-    {"id": "module", "timeoutSeconds": 300, "cadence": "pull-request", "network": "isolated", "required": true},
-    {"id": "property", "timeoutSeconds": 600, "cadence": "pull-request-bounded", "network": "none", "required": true},
-    {"id": "integration", "timeoutSeconds": 600, "cadence": "pull-request", "network": "isolated-broker", "required": true},
-    {"id": "wire-offline", "timeoutSeconds": 300, "cadence": "pull-request", "network": "none", "required": true},
-    {"id": "wire-live", "timeoutSeconds": 1200, "cadence": "protocol-change-and-pre-merge", "network": "isolated-containers", "required": true},
-    {"id": "nightly", "timeoutSeconds": 3600, "cadence": "nightly-and-release", "network": "isolated-containers", "required": false},
+    {"id": "smoke", "timeoutSeconds": 300, "cadence": "pull-request", "network": "none", "required": true, "makeTarget": "build"},
+    {"id": "unit", "timeoutSeconds": 120, "cadence": "pull-request", "network": "none", "required": true, "makeTarget": "test-unit"},
+    {"id": "module", "timeoutSeconds": 300, "cadence": "pull-request", "network": "isolated", "required": true, "makeTarget": "test-module"},
+    {"id": "property", "timeoutSeconds": 600, "cadence": "pull-request-bounded", "network": "none", "required": true, "makeTarget": "test-fuzz"},
+    {"id": "integration", "timeoutSeconds": 600, "cadence": "pull-request", "network": "isolated-broker", "required": true, "makeTarget": "test"},
+    {"id": "wire-offline", "timeoutSeconds": 300, "cadence": "pull-request", "network": "none", "required": true, "makeTarget": "test-wire"},
+    {"id": "wire-live", "timeoutSeconds": 1200, "cadence": "protocol-change-and-pre-merge", "network": "isolated-containers", "required": true, "makeTarget": "test-wire-live"},
+    {"id": "nightly", "timeoutSeconds": 3600, "cadence": "nightly-and-release", "network": "isolated-containers", "required": false, "makeTarget": "fuzz-long"},
     {"id": "manual-macos", "timeoutSeconds": 1800, "cadence": "release-and-apple-change", "network": "isolated-broker", "required": false}
+  ],
+  "selfTests": [
+    {"path": "Tests/Fuzzing/test-run-fuzz.sh", "makeTarget": "test-support", "tier": "property"},
+    {"path": "Tests/WireCompatibility/Capture/test_mqtt_capture.py", "makeTarget": "test-support", "tier": "wire-offline"},
+    {"path": "Tests/WireCompatibility/Legacy/test_legacy_capture.py", "makeTarget": "test-support", "tier": "wire-offline"},
+    {"path": "Tests/WireCompatibility/Live/test_verify_coatyjs_core.py", "makeTarget": "test-support", "tier": "wire-live"},
+    {"path": "Tests/Support/test_validate_test_tiers.py", "makeTarget": "test-support", "tier": "unit"}
   ],
   "artifactContract": {
     "requiredOnFailure": ["manifest.json", "verifier.log"],
