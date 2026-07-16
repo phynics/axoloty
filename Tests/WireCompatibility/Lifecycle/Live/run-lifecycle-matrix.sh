@@ -25,6 +25,11 @@ for scenario in $SCENARIOS; do
         python3 "$HERE/lifecycle-matrix.py" "$scenario" \
             --application-log "$artifact_dir/coatyjs-last-will.application.jsonl" \
             --capture "$artifact_dir/coatyjs-last-will.jsonl" --output "$manifest"
+    elif [ "$scenario" = "qos-0" ] || [ "$scenario" = "graceful-deadvertise" ]; then
+        WIRE_OUTPUT_DIR="$artifact_dir" "$HERE/run-coatyjs-qos-scenario.sh" "$scenario" >"$verifier_log" 2>&1
+        python3 "$HERE/lifecycle-matrix.py" "$scenario" \
+            --application-log "$artifact_dir/coatyjs-$scenario.application.jsonl" \
+            --capture "$artifact_dir/coatyjs-$scenario.jsonl" --output "$manifest"
     else
         python3 "$HERE/lifecycle-matrix.py" "$scenario" --output "$manifest" >"$verifier_log" 2>&1
     fi

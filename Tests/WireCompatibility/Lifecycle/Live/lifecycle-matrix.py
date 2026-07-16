@@ -20,6 +20,15 @@ _UNSUPPORTED = (
     "the required deterministic control through the reference fixture."
 )
 
+_QOS_BINDING_LIMITATION = (
+    "Pinned @coaty/core 2.4.0's MqttBinding hardcodes QoS 0 for every publish "
+    "(see mqtt-binding.js's onJoin, which sets this._qos = 0 unconditionally) "
+    "and never reads any QoS option back out of communication configuration, "
+    "confirmed empirically: a live attempt at this scenario captured a "
+    "PUBLISH with qos 0 despite requesting a higher level. There is no "
+    "alternative live QoS producer in this harness."
+)
+
 SCENARIOS = {
     scenario: {
         "id": scenario,
@@ -29,9 +38,20 @@ SCENARIOS = {
     }
     for scenario in (
         "offline-queueing", "reconnect-resubscribe", "broker-restart",
-        "graceful-deadvertise", "clean-session", "duplicate-reply", "late-reply",
-        "qos-0", "qos-1", "qos-2",
+        "clean-session", "duplicate-reply", "late-reply",
     )
+}
+SCENARIOS["qos-1"] = {
+    "id": "qos-1",
+    "participants": ["axoloty", "coatyjs-2.4.0"],
+    "status": "unsupported",
+    "reason": _QOS_BINDING_LIMITATION,
+}
+SCENARIOS["qos-2"] = {
+    "id": "qos-2",
+    "participants": ["axoloty", "coatyjs-2.4.0"],
+    "status": "unsupported",
+    "reason": _QOS_BINDING_LIMITATION,
 }
 SCENARIOS["unexpected-disconnect-last-will"] = {
     "id": "unexpected-disconnect-last-will",
@@ -41,6 +61,29 @@ SCENARIOS["unexpected-disconnect-last-will"] = {
         "Pinned CoatyJS 2.4.0 is a real subject; a passive MQTT probe verifies "
         "its advertised identity and broker-issued last will. Axoloty is recorded "
         "as an unavailable subject, not as cross-implementation proof."
+    ),
+}
+SCENARIOS["qos-0"] = {
+    "id": "qos-0",
+    "participants": ["axoloty", "coatyjs-2.4.0"],
+    "status": "executable",
+    "reason": (
+        "Pinned CoatyJS 2.4.0 publishes a deterministic object at QoS 0 (its "
+        "only supported level, see the qos-1/qos-2 reason above); a passive "
+        "MQTT probe verifies the wire QoS. Axoloty is recorded as an "
+        "unavailable subject, not as cross-implementation proof."
+    ),
+}
+SCENARIOS["graceful-deadvertise"] = {
+    "id": "graceful-deadvertise",
+    "participants": ["axoloty", "coatyjs-2.4.0"],
+    "status": "executable",
+    "reason": (
+        "Pinned CoatyJS 2.4.0 calls container.shutdown() itself (not SIGKILL) "
+        "and a passive MQTT probe verifies the client-issued Deadvertise "
+        "follows its Advertise, distinct from the broker-issued last will "
+        "covered by unexpected-disconnect-last-will. Axoloty is recorded as "
+        "an unavailable subject, not as cross-implementation proof."
     ),
 }
 
