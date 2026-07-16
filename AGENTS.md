@@ -66,9 +66,9 @@ Historical T-### tickets are migrated to GitHub Issues with their T-ID retained
 in the title and body. See the migration ledger in `.github/MIGRATION_LEDGER.md`
 for the mapping.
 
-All new work uses GitHub issue numbers. The `docs/superpowers/specs/` and
-`docs/superpowers/plans/` directories are retired as active workflow locations;
-their history is retained in Git.
+All new work uses GitHub issue numbers. The retired `docs/superpowers/`
+spec/plan directory has been removed from the tree; its history is retained
+in Git.
 
 ### Session hygiene
 
