@@ -1,39 +1,53 @@
 name: Setup container image
-description: Pull the pinned development image or build the local Dockerfile fallback.
+description: Pull the reviewed pinned development image by digest, or build the local Dockerfile fallback when the lock is stale.
 
 inputs:
   runtime:
     description: Container runtime to use (docker or podman).
     required: false
     default: docker
-  image-ref:
-    description: Optional immutable registry image reference.
+  lock-file:
+    description: Reviewed image lock recording the image, digest, and Dockerfile hash.
     required: false
-    default: ""
+    default: .devcontainer/image-lock.json
   allow-build-fallback:
-    description: Build the repository Dockerfile when the registry image is not published yet.
+    description: Build the repository Dockerfile when the lock does not describe the current Dockerfile.
     required: false
     default: "true"
 
 runs:
   using: composite
   steps:
-    - name: Pull development image
-      if: inputs.image-ref != ''
+    - name: Resolve pinned development image
       shell: bash
+      env:
+        RUNTIME: ${{ inputs.runtime }}
+        LOCK_FILE: ${{ inputs.lock-file }}
+        ALLOW_BUILD_FALLBACK: ${{ inputs.allow-build-fallback }}
       run: |
         set -euo pipefail
-        if "${{ inputs.runtime }}" pull "${{ inputs.image-ref }}"; then
-          "${{ inputs.runtime }}" tag "${{ inputs.image-ref }}" coatyswift-dev
-        elif [[ "${{ inputs.allow-build-fallback }}" == "true" ]]; then
-          echo "Registry image unavailable; building the Dockerfile bootstrap fallback." >&2
-          make image CONTAINER_RUNTIME=${{ inputs.runtime }}
-        else
-          echo "Pinned registry image unavailable and fallback is disabled." >&2
-          exit 1
+
+        image=$(jq -er '.image' "$LOCK_FILE")
+        digest=$(jq -er '.digest' "$LOCK_FILE")
+        locked_hash=$(jq -er '.dockerfileSha256' "$LOCK_FILE")
+        actual_hash=$(sha256sum .devcontainer/Dockerfile | awk '{print $1}')
+
+        # A hash mismatch means this revision changed the Dockerfile and no
+        # reviewed image has been published for it yet, so building locally is
+        # the expected path. A matching hash promises the image exists, so a
+        # failed pull is a real error rather than a cue to build.
+        if [[ "$locked_hash" != "$actual_hash" ]]; then
+          if [[ "$ALLOW_BUILD_FALLBACK" != "true" ]]; then
+            echo "::error::$LOCK_FILE is stale (locks $locked_hash, Dockerfile is $actual_hash) and the build fallback is disabled." >&2
+            exit 1
+          fi
+          echo "::warning::$LOCK_FILE is stale (locks $locked_hash, Dockerfile is $actual_hash); building the Dockerfile locally. Refresh the lock once the image publishes." >&2
+          make image CONTAINER_RUNTIME="$RUNTIME"
+          exit 0
         fi
 
-    - name: Build local development image
-      if: inputs.image-ref == ''
-      shell: bash
-      run: make image CONTAINER_RUNTIME=${{ inputs.runtime }}
+        if ! "$RUNTIME" pull "$image@$digest"; then
+          echo "::error::Locked image $image@$digest is unavailable. The lock matches the current Dockerfile, so the image is expected to exist." >&2
+          exit 1
+        fi
+        "$RUNTIME" tag "$image@$digest" coatyswift-dev
