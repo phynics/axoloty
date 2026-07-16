@@ -2,12 +2,23 @@
 # Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import base64
+from pathlib import Path
+import tempfile
 import unittest
 
 import mqtt_capture
 
 
 class CaptureFormatTests(unittest.TestCase):
+    def test_ready_marker_is_atomically_created_after_subscription(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ready_file = Path(directory) / "capture.ready"
+
+            mqtt_capture.mark_ready(str(ready_file))
+
+            self.assertEqual(ready_file.read_text(encoding="utf-8"), "subscribed\n")
+            self.assertEqual(list(ready_file.parent.glob(".*.tmp")), [])
+
     def test_publish_parser_preserves_wire_metadata_and_bytes(self):
         topic = b"coaty/ns/advertise"
         payload = b'{"value":1}\x00'

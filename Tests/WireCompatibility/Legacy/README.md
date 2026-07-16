@@ -15,12 +15,13 @@ and implement the command-line contract documented in
 `run_capture_on_macos.sh`. The orchestrator refuses to run off Darwin and
 refuses to overwrite an existing artifact.
 
-```sh
-OUTPUT_DIR=/tmp/legacy-advertise \
-LEGACY_SCENARIO_COMMAND=/path/to/pinned-legacy-scenario \
-SCENARIO=advertise EXPECTED_PUBLICATIONS=1 \
-./Tests/WireCompatibility/Legacy/run_capture_on_macos.sh
-```
+The pinned runner supports `advertise`, `deadvertise`, and `discover-resolve`.
+Use `Tests/WireCompatibility/Legacy/macOS-runner/prepare.sh` first, then invoke
+`run_capture_on_macos.sh` once per scenario with a new `OUTPUT_DIR` and
+`LEGACY_SCENARIO_COMMAND` set to the pinned runner's `run.sh`. It derives the
+expected lossless record count (2, 2, and 4 respectively); do not substitute
+placeholder JSONL or manifests for a macOS-produced capture. See the
+[macOS runner instructions](macOS-runner/README.md) for the exact commands.
 
 Review both artifacts before committing them. The manifest binds the raw file
 with SHA-256 and records the exact source commit, legacy version, Xcode, Swift,

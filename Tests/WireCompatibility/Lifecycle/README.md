@@ -40,6 +40,10 @@ the last will. A clean session reconnect must report no previous session and
 restore subscriptions. Only the first timely reply is accepted. QoS 0, 1, and
 2 probes must be observed at the declared level.
 
-Until the live orchestration layer is available, the Swift tests validate the
-catalog's completeness, uniqueness, supported QoS levels, and mutually
-exclusive graceful/unexpected shutdown expectations.
+`Live/run-lifecycle-matrix.sh` turns this catalog into live-gated evidence
+manifests. A manifest is `executed` only after application and MQTT-capture
+evidence have both been retained. A manifest may instead be `unsupported` when
+the pinned reference fixture cannot expose deterministic controls; that is a
+documented limitation, never a passing cross-implementation result. The
+currently executable CoatyJS last-will direction does not stand in for an
+Axoloty capture or proof in the reverse direction.
