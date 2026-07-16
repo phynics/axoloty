@@ -5,6 +5,7 @@
 //
 //
 
+import ErrorKit
 import Foundation
 import Logging
 import MQTTNIO
@@ -247,7 +248,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
             case .success:
                 self.updateCommunicationState(.online)
             case .failure(let error):
-                self.log.debug("Connection error: \(error)")
+                self.log.debug("Connection error: \(ErrorKit.userFriendlyMessage(for: error))")
             }
         }
     }
@@ -286,14 +287,14 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
     func disconnect() {
         isIntentionalDisconnect = true
         client?.disconnect().whenFailure { [weak self] error in
-            self?.log.debug("Error while disconnecting: \(error)")
+            self?.log.debug("Error while disconnecting: \(ErrorKit.userFriendlyMessage(for: error))")
         }
     }
 
     func publish(_ topic: String, message: String) {
         client?.publish(to: topic, payload: byteBuffer(from: message), qos: qos, retain: false)
             .whenFailure { [weak self] error in
-                self?.log.debug("Error publishing to \(topic): \(error)")
+                self?.log.debug("Error publishing to \(topic): \(ErrorKit.userFriendlyMessage(for: error))")
             }
     }
 
@@ -304,7 +305,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
         // "fixed".
         client?.publish(to: topic, payload: byteBuffer(from: message), qos: .atMostOnce, retain: false)
             .whenFailure { [weak self] error in
-                self?.log.debug("Error publishing to \(topic): \(error)")
+                self?.log.debug("Error publishing to \(topic): \(ErrorKit.userFriendlyMessage(for: error))")
             }
     }
 
@@ -318,7 +319,9 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
             ).get()
             log.debug("Subscribed to topic \(topic).")
         } catch {
-            throw AxolotyError.RuntimeError("Error subscribing to topic \(topic): \(error)")
+            throw AxolotyError.RuntimeError(
+                "Error subscribing to topic \(topic): \(ErrorKit.userFriendlyMessage(for: error))"
+            )
         }
     }
 
@@ -330,7 +333,9 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
             try await client.unsubscribe(from: [topic]).get()
             log.debug("Unsubscribed from topic \(topic).")
         } catch {
-            throw AxolotyError.RuntimeError("Error unsubscribing from topic \(topic): \(error)")
+            throw AxolotyError.RuntimeError(
+                "Error unsubscribing from topic \(topic): \(ErrorKit.userFriendlyMessage(for: error))"
+            )
         }
     }
 
@@ -405,10 +410,10 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                     }
                 }
             } catch {
-                log.debug("Ignoring incoming event on \(info.topicName): \(error)")
+                log.debug("Ignoring incoming event on \(info.topicName): \(ErrorKit.userFriendlyMessage(for: error))")
             }
         case .failure(let error):
-            log.debug("Error receiving published message: \(error)")
+            log.debug("Error receiving published message: \(ErrorKit.userFriendlyMessage(for: error))")
         }
     }
 

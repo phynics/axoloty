@@ -5,6 +5,7 @@
 //
 //
 
+import ErrorKit
 import Foundation
 
 /// PayloadCoder provides utility methods to encode and decode communication events from and to JSON.
@@ -21,7 +22,7 @@ public class PayloadCoder {
         do {
             return try decoder.decode(T.self, from: jsonData)
         } catch {
-            LogManager.log.debug("Could not decode \(T.self): \(error)")
+            LogManager.log.debug("Could not decode \(T.self): \(ErrorKit.userFriendlyMessage(for: error))")
             return nil
         }
     }
