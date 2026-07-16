@@ -36,7 +36,7 @@ titles and bodies as searchable migration metadata.
 | T-043 | Eliminate false-positive and assertion-free tests | #19 | Closed |
 | T-044 | Make broker-backed Swift tests deterministic and fast | #36 | Open |
 | T-045 | Make the test-tier contract executable | #20 | Closed |
-| T-046 | Optimize and harden the pull-request CI test graph | #37 | Open |
+| T-046 | Optimize and harden the pull-request CI test graph | #37 | Closed |
 | T-047 | Add a containerized source-coverage baseline and ratchet | #21 | Closed |
 | T-048 | Add deterministic IO-routing module tests | #22 | Closed |
 | T-049 | Run auditable fuzz campaigns in scheduled CI | #23 | Closed |
@@ -46,7 +46,7 @@ titles and bodies as searchable migration metadata.
 ## Verification
 
 - **Total T-IDs:** 36 (T-016 through T-051)
-- **Open issues:** 10 (T-016–T-022, T-030, T-044, T-046)
-- **Closed issues:** 26 (T-023–T-029, T-031–T-043, T-045, T-047–T-051)
+- **Open issues:** 9 (T-016–T-022, T-030, T-044)
+- **Closed issues:** 27 (T-023–T-029, T-031–T-043, T-045–T-051)
 - **No duplicates:** Every T-ID maps to exactly one GitHub Issue.
 - **Source files preserved:** Local ticket files remain in `.agents/tickets/` for reference
