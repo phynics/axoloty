@@ -121,6 +121,7 @@ test-support:
 	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/WireCompatibility/Capture -p 'test_*.py' -v
 	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/WireCompatibility/Legacy -p 'test_*.py' -v
 	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/WireCompatibility/Live -p 'test_*.py' -v
+	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/WireCompatibility/Reverse -p 'test_*.py' -v
 	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/Support -p 'test_*.py' -v
 	python3 Tests/Support/validate_test_tiers.py Tests/Support/test-tiers.json
 
