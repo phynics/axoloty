@@ -3,15 +3,13 @@
 //  ObjectLifecycleControllerTests.swift
 //  Axoloty
 
+import Axoloty
 import Foundation
 import Testing
-import Axoloty
 
-@Suite
 @MainActor
 struct ObjectLifecycleControllerTests {
-
-    // NOTE: Make sure that a coaty broker (or just any MQTT broker) is running on the localhost before running
+    /// NOTE: Make sure that a coaty broker (or just any MQTT broker) is running on the localhost before running
     @Test
     func test() async throws {
         // Configure the first coaty agent
@@ -32,7 +30,7 @@ struct ObjectLifecycleControllerTests {
 
         // Configure the second coaty agent
         let mqttOptions2 = MQTTClientOptions(host: "127.0.0.1",
-                                            port: UInt16(1883))
+                                             port: UInt16(1883))
         let communication2 = CommunicationOptions(mqttClientOptions: mqttOptions2,
                                                   shouldAutoStart: false)
 
@@ -98,37 +96,4 @@ struct ObjectLifecycleControllerTests {
     }
 }
 
-private struct TimeoutError: Error {}
-
-private final class IteratorBox<T: Sendable>: @unchecked Sendable {
-    var iterator: AsyncStream<T>.AsyncIterator
-    init(_ iterator: AsyncStream<T>.AsyncIterator) {
-        self.iterator = iterator
-    }
-}
-
-private func nextValue<T: Sendable>(
-    _ iterator: inout AsyncStream<T>.AsyncIterator,
-    timeout: Duration
-) async throws -> T {
-    let box = IteratorBox(iterator)
-    defer { iterator = box.iterator }
-
-    return try await withThrowingTaskGroup(of: T.self) { group in
-        group.addTask {
-            guard let value = await box.iterator.next() else {
-                throw CancellationError()
-            }
-            return value
-        }
-        group.addTask {
-            try await _Concurrency.Task.sleep(for: timeout)
-            throw TimeoutError()
-        }
-        guard let value = try await group.next() else {
-            throw TimeoutError()
-        }
-        group.cancelAll()
-        return value
-    }
-}
+// `nextValue` is shared from Tests/Testing/AsyncWaiting.swift.
