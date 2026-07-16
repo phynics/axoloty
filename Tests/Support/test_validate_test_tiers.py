@@ -3,6 +3,7 @@
 """Self-tests for the test-tier contract validator."""
 
 import copy
+import json
 import pathlib
 import tempfile
 import unittest
@@ -63,6 +64,16 @@ def valid_discovered():
 
 
 class ValidateTestTiersTests(unittest.TestCase):
+    def test_checked_in_contract_covers_discovered_self_tests(self):
+        document = json.loads(vtt.CONFIG.read_text(encoding="utf-8"))
+        errors = vtt.validate(
+            document,
+            make_targets=vtt.parse_make_targets(vtt.MAKEFILE),
+            discovered_self_tests=vtt.discover_self_tests(vtt.TESTS_DIR),
+            exists=lambda path: (vtt.ROOT / path).is_file(),
+        )
+        self.assertEqual(errors, [])
+
     def test_valid_contract_passes(self):
         errors = vtt.validate(
             valid_document(),
