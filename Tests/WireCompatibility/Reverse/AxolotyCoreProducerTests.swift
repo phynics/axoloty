@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-import Axoloty
+@testable import Axoloty
 import Foundation
 import Testing
 
