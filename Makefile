@@ -129,7 +129,7 @@ test-support:
 test-wire-live:
 	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/Live/run-coatyjs-advertise.sh
 	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/Live/run-coatyjs-core.sh
-	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/Lifecycle/Live/run-coatyjs-last-will.sh
+	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/Lifecycle/Live/run-lifecycle-matrix.sh
 	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/Reverse/run-axoloty-advertise.sh
 	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/Reverse/run-axoloty-core.sh
 
