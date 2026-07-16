@@ -33,6 +33,11 @@ jobs:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: echo "$REGISTRY_TOKEN" | docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
 
+      # The default `docker` buildx driver can't emit --provenance/--sbom
+      # attestations; switch to the docker-container driver first.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
       - name: Build and publish image
         shell: bash
         env:

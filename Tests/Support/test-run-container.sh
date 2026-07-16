@@ -3,6 +3,12 @@
 
 set -euo pipefail
 
+# Each scenario below sets BUILD_LOCK explicitly (or relies on run.sh's
+# default of 1); an inherited BUILD_LOCK from the caller's environment (e.g.
+# `make ci ... BUILD_LOCK=0`, which the Makefile exports) would silently
+# override that and break the lock-behavior assertions.
+unset BUILD_LOCK
+
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 TEMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TEMP_DIR"' EXIT

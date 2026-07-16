@@ -10,9 +10,14 @@ workdir=${WORKDIR:-/workspace}
 build_dir=${BUILD_DIR:-"$root_dir/.build"}
 spm_cache_dir=${SPM_CACHE_DIR:-"${HOME}/.cache/coaty-swift/swiftpm/swift-6.3-linux"}
 build_lock=${BUILD_LOCK:-1}
+
+# BUILD_DIR/SPM_CACHE_DIR may be given relative to the caller's cwd (CI
+# passes ".build" and ".swiftpm-cache"); container runtimes require
+# absolute host paths for bind mounts, so resolve them before use.
+mkdir -p "$build_dir"
+build_dir=$(cd "$build_dir" && pwd)
 lock_dir="${build_dir}.lock"
 
-mkdir -p "$build_dir"
 if [ "$build_lock" = "1" ]; then
     while ! mkdir "$lock_dir" 2>/dev/null; do
         sleep 1
@@ -38,6 +43,7 @@ if [ -z "$runtime" ]; then
 fi
 
 mkdir -p "$spm_cache_dir"
+spm_cache_dir=$(cd "$spm_cache_dir" && pwd)
 "$runtime" run --rm \
     -v "$root_dir:$workdir" \
     -v "$build_dir:$workdir/.build" \

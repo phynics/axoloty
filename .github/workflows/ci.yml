@@ -13,10 +13,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-env:
-  SWIFT_CACHE_KEY: swiftpm-6.3-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile') }}
-  DEV_IMAGE_REF: ghcr.io/${{ github.repository_owner }}/axoloty-dev:swift-6.3-${{ hashFiles('.devcontainer/Dockerfile') }}
-
 jobs:
   required-checks:
     name: Required Linux checks
@@ -28,6 +24,14 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      # hashFiles() is only valid in step-level expressions, not
+      # workflow/job-level `env:`, so compute the cache key and image
+      # reference here and export them for later steps.
+      - name: Compute cache key and image reference
+        run: |
+          echo "SWIFT_CACHE_KEY=swiftpm-6.3-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile') }}" >> "$GITHUB_ENV"
+          echo "DEV_IMAGE_REF=ghcr.io/${{ github.repository_owner }}/axoloty-dev:swift-6.3-${{ hashFiles('.devcontainer/Dockerfile') }}" >> "$GITHUB_ENV"
 
       - name: Setup container image
         uses: ./.github/actions/setup-container
