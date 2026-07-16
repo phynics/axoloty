@@ -142,12 +142,7 @@ public class CommunicationManager {
                 try await dispatcher.deliver(command)
             }
         )
-        
-        setupOperatingStateLogging()
-        setupCommunicationStateLogging()
-        setupSubscriptionStateHandler()
-        setupOnConnectHandler()
-        
+
         // Fail-fast invariant, not user input.
         // swiftlint:disable:next force_try
         try! self._initIoNodes()
@@ -306,15 +301,6 @@ public class CommunicationManager {
             deadvertiseIds.append(ioNode.objectId)
         }
     }
-
-    /// Setup for the handler method that is invoked when the communication state of the client changes to online.
-    private func setupOnConnectHandler() {}
-
-    private func setupOperatingStateLogging() {}
-
-    private func setupCommunicationStateLogging() {}
-
-    private func setupSubscriptionStateHandler() {}
 
     /// Gets last will message to be published when the connection terminates
     /// abnormally.
