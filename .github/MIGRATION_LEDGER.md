@@ -22,7 +22,7 @@ titles and bodies as searchable migration metadata.
 | T-029 | Organize tests by subsystem | #8 | Closed |
 | T-030 | SwiftWasm/WASI feasibility spike | #33 | Open |
 | T-031 | Migrate codebase errors to ErrorKit | #34 | Closed |
-| T-032 | Migrate stored-property setter access syntax for Swift 6 | #35 | Open |
+| T-032 | Migrate stored-property setter access syntax for Swift 6 | #35 | Closed |
 | T-033 | Fix topic matcher wildcard exhaustion | #9 | Closed |
 | T-034 | Make fuzz campaign artifacts complete on every exit path | #10 | Closed |
 | T-035 | Dependency audit | #11 | Closed |
@@ -46,7 +46,7 @@ titles and bodies as searchable migration metadata.
 ## Verification
 
 - **Total T-IDs:** 36 (T-016 through T-051)
-- **Open issues:** 12 (T-016–T-022, T-030–T-032, T-044, T-046)
-- **Closed issues:** 24 (T-023–T-029, T-033–T-043, T-045, T-047–T-051)
+- **Open issues:** 10 (T-016–T-022, T-030, T-044, T-046)
+- **Closed issues:** 26 (T-023–T-029, T-031–T-043, T-045, T-047–T-051)
 - **No duplicates:** Every T-ID maps to exactly one GitHub Issue.
 - **Source files preserved:** Local ticket files remain in `.agents/tickets/` for reference
