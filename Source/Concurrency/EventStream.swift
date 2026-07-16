@@ -44,7 +44,7 @@ public struct EventStream<Element: Sendable>: Sendable, AsyncSequence {
     private let streamId: UUID
     private let buffering: EventStreamBuffering
 
-    public init(
+    internal init(
         hub: EventHub,
         streamId: UUID,
         buffering: EventStreamBuffering
