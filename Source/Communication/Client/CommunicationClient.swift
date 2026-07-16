@@ -32,9 +32,12 @@ extension CommunicationClientDelegate {
 /// Note: We expect our clients to use publish-subscribe communication.
 protocol CommunicationClient: Sendable {
 
-    /// Delegate necessary to start the communication manager
-    /// when discovering the broker over mDNS.
-    var delegate: Startable { get set }
+    /// The delegate that receives synchronous transport callbacks (state changes
+    /// and incoming messages) and is started once the broker is discovered over
+    /// mDNS. Always a ``CommunicationClientDelegate``; typed concretely so
+    /// transport callbacks are delivered directly instead of being silently
+    /// dropped by a failed `as?` downcast.
+    var delegate: CommunicationClientDelegate { get set }
 
     /// Async event hub that mirrors transport-level state and raw MQTT messages.
     var eventHub: EventHub { get }
