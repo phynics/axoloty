@@ -12,7 +12,11 @@ open class SensorSourceController: Controller {
         super.onInit()
         if let definitions = options?.extra["sensors"] as? [SensorDefinition] {
             for definition in definitions {
-                try? registerSensor(sensor: definition.sensor, io: definition.io.init(parameters: definition.parameters), observationPublicationType: definition.observationPublicationType, samplingInterval: definition.samplingInterval)
+                do {
+                    try registerSensor(sensor: definition.sensor, io: definition.io.init(parameters: definition.parameters), observationPublicationType: definition.observationPublicationType, samplingInterval: definition.samplingInterval)
+                } catch {
+                    LogManager.log.error("Failed to register sensor \(definition.sensor.objectId.string): \(error)")
+                }
             }
         }
     }
@@ -41,13 +45,22 @@ open class SensorSourceController: Controller {
         if observationPublicationType != .none, let interval = samplingInterval {
             samplingTasks[sensor.objectId.string] = _Concurrency.Task { @MainActor [weak self] in
                 while !_Concurrency.Task.isCancelled {
-                    try? await _Concurrency.Task.sleep(for: .milliseconds(interval))
+                    do {
+                        try await _Concurrency.Task.sleep(for: .milliseconds(interval))
+                    } catch {
+                        return
+                    }
+                    guard !_Concurrency.Task.isCancelled else { return }
                     try? self?._publishObservation(sensorId: sensor.objectId, channeled: observationPublicationType == .channel)
                 }
             }
         }
         if options?.extra["skipSensorAdvertise"] as? Bool != true {
-            try? communicationManager.publishAdvertise(AdvertiseEvent.with(object: sensor))
+            do {
+                try communicationManager.publishAdvertise(AdvertiseEvent.with(object: sensor))
+            } catch {
+                LogManager.log.error("Failed to advertise sensor \(sensor.objectId.string): \(error)")
+            }
         }
         observeProtocolEventsIfNeeded()
     }
@@ -61,12 +74,20 @@ open class SensorSourceController: Controller {
 
     /// Publishes a channeled observation.
     func publishChanneledObservation(sensorId: CoatyUUID, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) {
-        try? _publishObservation(sensorId: sensorId, channeled: true, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
+        do {
+            try _publishObservation(sensorId: sensorId, channeled: true, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
+        } catch {
+            LogManager.log.error("Failed to publish channeled observation for sensor \(sensorId.string): \(error)")
+        }
     }
 
     /// Publishes an advertised observation.
     func publishAdvertisedObservation(sensorId: CoatyUUID, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) {
-        try? _publishObservation(sensorId: sensorId, channeled: false, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
+        do {
+            try _publishObservation(sensorId: sensorId, channeled: false, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
+        } catch {
+            LogManager.log.error("Failed to publish advertised observation for sensor \(sensorId.string): \(error)")
+        }
     }
 
     internal func createObservation(container: SensorContainer, value: Any, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) -> Observation {
@@ -102,8 +123,19 @@ open class SensorSourceController: Controller {
             guard let self else { return }
             let observation = self.createObservation(container: container, value: value, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
             self.onObservationWillPublish(container: container, observation: observation)
-            if channeled { try? self.communicationManager.publishChannel(ChannelEvent.with(object: observation, channelId: self.getChannelId(container: container))) }
-            else { try? self.communicationManager.publishAdvertise(AdvertiseEvent.with(object: observation)) }
+            if channeled {
+                do {
+                    try self.communicationManager.publishChannel(ChannelEvent.with(object: observation, channelId: self.getChannelId(container: container)))
+                } catch {
+                    LogManager.log.error("Failed to publish channeled observation: \(error)")
+                }
+            } else {
+                do {
+                    try self.communicationManager.publishAdvertise(AdvertiseEvent.with(object: observation))
+                } catch {
+                    LogManager.log.error("Failed to publish advertised observation: \(error)")
+                }
+            }
             self.onObservationDidPublish(container: container, observation: observation)
         }
     }
