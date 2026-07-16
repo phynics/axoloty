@@ -15,8 +15,8 @@
         "repositoryURL": "https://github.com/emqx/CocoaMQTT",
         "state": {
           "branch": null,
-          "revision": "2bb3a92eb40dbe21d4deed57e37da68459239406",
-          "version": "2.0.7"
+          "revision": "05037d3e09810e1121fca5ed9ab6346d7c0b2456",
+          "version": "2.3.0"
         }
       },
       {
@@ -24,8 +24,8 @@
         "repositoryURL": "https://github.com/leeway1208/MqttCocoaAsyncSocket",
         "state": {
           "branch": null,
-          "revision": "8c61a10eab8c9bc3a4d28883c1a25f6a271400f2",
-          "version": "1.0.5"
+          "revision": "ce3e18607fd01079495f86ff6195d8a3ca469f73",
+          "version": "1.0.8"
         }
       },
       {
@@ -42,17 +42,8 @@
         "repositoryURL": "https://github.com/daltoniam/Starscream.git",
         "state": {
           "branch": null,
-          "revision": "e6b65c6d9077ea48b4a7bdda8994a1d3c6969c8d",
-          "version": "3.1.1"
-        }
-      },
-      {
-        "package": "swift-nio-zlib-support",
-        "repositoryURL": "https://github.com/apple/swift-nio-zlib-support.git",
-        "state": {
-          "branch": null,
-          "revision": "37760e9a52030bb9011972c5213c3350fa9d41fd",
-          "version": "1.0.0"
+          "revision": "c6bfd1af48efcc9a9ad203665db12375ba6b145a",
+          "version": "4.0.8"
         }
       },
       {
@@ -60,8 +51,8 @@
         "repositoryURL": "https://github.com/DaveWoodCom/XCGLogger.git",
         "state": {
           "branch": null,
-          "revision": "a9c4667b247928a29bdd41be2ec2c8d304215a54",
-          "version": "7.0.1"
+          "revision": "4def3c1c772ca90ad5e7bfc8ac437c3b0b4276cf",
+          "version": "7.1.5"
         }
       }
     ]

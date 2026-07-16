@@ -48,7 +48,7 @@ object), two for Deadvertise (automatic Identity plus the reference object ID),
 and four for Discover/Resolve (both deterministic identities, then the request
 and its correlated response). The runner pins namespace `wire-compat-v1`,
 requester identity `00000000-0000-4000-8000-000000000201`, responder identity
-`00000000-0000-4000-8000-000000000202`, reference object
+`00000000-0000-4000-9000-000000000202`, reference object
 `00000000-0000-4000-8000-000000000101`, and private Resolve data
 `{"reference":"coatyswift-2.4.0"}`. All observed messages are protocol
 evidence and should remain in the lossless capture.
@@ -58,3 +58,12 @@ either manager starts and waits until it receives the responder's automatic
 Identity advertisement. That event proves the broker has activated the
 requester subscription, so the deterministic Discover is not released on a
 timing guess.
+
+The requester and responder identities differ starting at their 17th hex
+digit (`8000` vs. `9000`), not only in their trailing digits, because
+CoatySwift derives each client's MQTT ClientID from exactly the first 18 hex
+digits of its identity UUID (dashes stripped); two clients whose UUIDs only
+differ later collide on ClientID and get disconnected by the broker every
+time the other one (re)connects. See `../README.md` for this and the other
+real bug (a blocked main run loop silently dropping every publication) that
+generating these captures surfaced.

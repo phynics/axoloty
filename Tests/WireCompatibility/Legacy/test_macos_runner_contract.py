@@ -29,7 +29,7 @@ class MacOSRunnerContractTests(unittest.TestCase):
         for identifier in (
             "00000000-0000-4000-8000-000000000101",
             "00000000-0000-4000-8000-000000000201",
-            "00000000-0000-4000-8000-000000000202",
+            "00000000-0000-4000-9000-000000000202",
         ):
             self.assertIn(identifier, source)
         self.assertIn("org.axoloty.wire.ReferenceObject", source)
@@ -49,14 +49,14 @@ class MacOSRunnerContractTests(unittest.TestCase):
         source = RUNNER_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn("observeAdvertise(withCoreType: .Identity)", source)
-        self.assertIn("responderIdentityObserved.wait", source)
+        self.assertIn("runLoopWait(responderIdentityObserved", source)
         self.assertNotIn("Thread.sleep(forTimeInterval: subscriptionInterval)", source)
         self.assertLess(
             source.index("observeAdvertise(withCoreType: .Identity)"),
             source.index("requesterManager.start()"),
         )
         self.assertLess(
-            source.index("responderIdentityObserved.wait"),
+            source.index("runLoopWait(responderIdentityObserved"),
             source.index(".publishDiscover(DiscoverEvent"),
         )
 

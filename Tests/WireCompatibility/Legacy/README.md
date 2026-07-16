@@ -28,6 +28,34 @@ with SHA-256 and records the exact source commit, legacy version, Xcode, Swift,
 architecture, scenario, and generation time. Captures must never be manually
 authored or silently regenerated.
 
+`Tests/WireCompatibility/Fixtures/coatyswift-2.4.0/{advertise,deadvertise,discover-resolve}.jsonl`
+and their manifests are real captures generated this way on a macOS 26 /
+Xcode 26.6 / Apple Swift 6.3.3 (arm64) host against a local Mosquitto broker,
+and decoded (not just parsed) by `LegacyCaptureFixtureTests.swift` in the
+Swift test target. Generating them surfaced two real bugs in the previously
+unexercised macOS runner, both fixed in
+`Tests/WireCompatibility/Legacy/macOS-runner/Sources/LegacyCoatySwiftScenarioRunner/main.swift`:
+
+- Pinned CoatySwift 2.4.0's CocoaMQTT client dispatches its socket delegate
+  callbacks on the main dispatch queue. The runner's `Thread.sleep` and
+  `DispatchSemaphore.wait` calls block that same thread without ever spinning
+  its run loop, so the MQTT CONNECT/CONNACK handshake (and every subsequent
+  PUBLISH) never actually ran — the process printed `"state":"done"` while
+  publishing nothing. The runner now uses a `RunLoop`-pumping sleep/wait
+  helper instead.
+- The Discover/Resolve requester and responder identity UUIDs
+  (`...000201` / `...000202`) only differed after the 18th hex digit, but
+  CoatySwift derives each client's MQTT ClientID from exactly that
+  18-character prefix. Both clients computed the same ClientID, so the
+  broker repeatedly disconnected whichever one had connected first every time
+  the other (re)connected, and the scenario never completed. The responder's
+  identity now differs within that prefix.
+
+If you regenerate these captures, verify with `mosquitto_sub -h 127.0.0.1
+-p 1883 -t '#' -v` (or equivalent) that real Advertise/Deadvertise/Resolve
+traffic is actually on the wire before trusting a `"state":"done"` line —
+that exact false-positive is what the first bug above produced.
+
 ## Linux validation and replay
 
 Validation is dependency-free and does not claim to run legacy Swift:

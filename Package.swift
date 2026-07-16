@@ -13,7 +13,8 @@ let package = Package(
     products: [
         .library(
             name: "Axoloty",
-            targets: ["Axoloty"]),
+            targets: ["Axoloty"]
+        ),
     ],
     dependencies: [
         .package(url: "https://github.com/swift-server-community/mqtt-nio.git", from: "2.13.0"),
@@ -33,7 +34,7 @@ let package = Package(
                 .product(name: "NIOSSL", package: "swift-nio-ssl", condition: .when(platforms: [.linux])),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "ErrorKit", package: "ErrorKit"),
-                .product(name: "AsyncAlgorithms", package: "swift-async-algorithms")
+                .product(name: "AsyncAlgorithms", package: "swift-async-algorithms"),
             ],
             path: "Source"
         ),
@@ -50,7 +51,14 @@ let package = Package(
                 "WireCompatibility/Audit",
                 "WireCompatibility/Capture",
                 "WireCompatibility/CompatibilityMatrix.md",
-                "WireCompatibility/Legacy",
+                "WireCompatibility/Legacy/create_manifest.py",
+                "WireCompatibility/Legacy/macOS-runner",
+                "WireCompatibility/Legacy/README.md",
+                "WireCompatibility/Legacy/replay_legacy_capture.py",
+                "WireCompatibility/Legacy/run_capture_on_macos.sh",
+                "WireCompatibility/Legacy/test_legacy_capture.py",
+                "WireCompatibility/Legacy/test_macos_runner_contract.py",
+                "WireCompatibility/Legacy/validate_legacy_capture.py",
                 "WireCompatibility/Lifecycle/README.md",
                 "WireCompatibility/Lifecycle/Live",
                 "WireCompatibility/Live",
@@ -61,10 +69,12 @@ let package = Package(
                 "WireCompatibility/Reverse/coatyjs-core-consumer.js",
                 "WireCompatibility/Reverse/run-axoloty-advertise.sh",
                 "WireCompatibility/Reverse/run-axoloty-core.sh",
-                "WireCompatibility/Reverse/test_run_axoloty_core.py"
+                "WireCompatibility/Reverse/run-coatyjs-to-axoloty-advertise.sh",
+                "WireCompatibility/Reverse/test_run_axoloty_core.py",
+                "WireCompatibility/Reverse/test_run_coatyjs_to_axoloty_advertise.py",
             ],
             resources: [
-                .process("WireCompatibility/Fixtures")
+                .process("WireCompatibility/Fixtures"),
             ]
         ),
     ],
