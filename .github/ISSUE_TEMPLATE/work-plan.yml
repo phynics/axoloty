@@ -1,0 +1,70 @@
+name: Work Plan
+description: Create a structured plan for an Axoloty development task.
+title: "[WP] "
+labels: []
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: State the single, observable result that defines success.
+    validations:
+      required: true
+  - type: textarea
+    id: in_scope
+    attributes:
+      label: In scope
+      description: List the work this issue includes.
+    validations:
+      required: true
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Out of scope / Non-goals
+      description: List work this issue intentionally excludes.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: List blocking and blocked GitHub issues, or state that none exist.
+      placeholder: |
+        Blocked by: #123
+        Blocks: #456
+    validations:
+      required: true
+  - type: textarea
+    id: design_decisions
+    attributes:
+      label: Design decisions
+      description: Record key choices, trade-offs, rationale, and relevant links.
+    validations:
+      required: true
+  - type: textarea
+    id: implementation_checklist
+    attributes:
+      label: Implementation checklist
+      description: List the sequenced implementation tasks as Markdown checkboxes.
+      placeholder: |
+        - [ ] First task
+        - [ ] Second task
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance criteria
+      description: List specific, testable completion conditions.
+    validations:
+      required: true
+  - type: textarea
+    id: validation_commands
+    attributes:
+      label: Validation commands
+      description: List the exact commands that demonstrate the acceptance criteria.
+      value: |
+        make build
+        make test
+    validations:
+      required: true

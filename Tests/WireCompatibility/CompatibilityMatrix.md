@@ -2,7 +2,7 @@
 
 Reference versions must be pinned before captured fixtures become normative:
 
-- Modern Swift: current `master`
+- Modern Swift: current `main`
 - Legacy Swift: `coatyio/coaty-swift` tag `2.4.0` at `20a97b29832758fb771ac79fd5f7ae36cff69403`
 - CoatyJS: `@coaty/core@2.4.0` from tag `v2.4.0` at `4a7716815f9f775db812e7a079146e56e08570d1`
 - Broker: Mosquitto from the repository's pinned Linux test image
