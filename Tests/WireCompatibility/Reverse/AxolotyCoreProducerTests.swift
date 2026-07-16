@@ -108,7 +108,14 @@ struct AxolotyCoreProducerTests {
         eventType: CommunicationEventType,
         as _: Event.Type
     ) async throws -> Event {
-        for await response in stream {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(5))
+        var iterator = await stream.makeAsyncIteratorAndWait()
+        while clock.now < deadline {
+            let response = try await nextValue(
+                &iterator,
+                timeout: clock.now.duration(to: deadline)
+            )
             guard response.eventType == eventType.rawValue,
                   response.sourceId == "33333333-3333-4333-8333-333333333333",
                   let payload = String(data: response.payload, encoding: .utf8),
@@ -117,6 +124,42 @@ struct AxolotyCoreProducerTests {
             }
             return event
         }
-        throw AxolotyError.InvalidConfiguration("CoatyJS ended the response stream before sending \(eventType.rawValue)")
+        throw WireResponseTimeoutError()
+    }
+}
+
+private struct WireResponseTimeoutError: Error {}
+
+private final class EventStreamIteratorBox<Element: Sendable>: @unchecked Sendable {
+    var iterator: EventStream<Element>.Iterator
+
+    init(_ iterator: EventStream<Element>.Iterator) {
+        self.iterator = iterator
+    }
+}
+
+private func nextValue<Element: Sendable>(
+    _ iterator: inout EventStream<Element>.Iterator,
+    timeout: Duration
+) async throws -> Element {
+    let box = EventStreamIteratorBox(iterator)
+    defer { iterator = box.iterator }
+
+    return try await withThrowingTaskGroup(of: Element.self) { group in
+        group.addTask {
+            guard let value = await box.iterator.next() else {
+                throw CancellationError()
+            }
+            return value
+        }
+        group.addTask {
+            try await _Concurrency.Task.sleep(for: timeout)
+            throw WireResponseTimeoutError()
+        }
+        guard let value = try await group.next() else {
+            throw WireResponseTimeoutError()
+        }
+        group.cancelAll()
+        return value
     }
 }

@@ -34,6 +34,10 @@ class AxolotyCoreRunnerContractTests(unittest.TestCase):
 
         self.assertIn("awaitResponse", producer)
         self.assertIn("PayloadCoder.decode", producer)
+        self.assertIn("ContinuousClock", producer)
+        self.assertIn("nextValue", producer)
+        self.assertIn("advanced(by: .seconds(5))", producer)
+        self.assertNotIn("for await response in stream", producer)
         for event in ("ResolveEvent", "RetrieveEvent", "CompleteEvent", "ReturnEvent"):
             self.assertIn(event, producer)
 
@@ -56,6 +60,15 @@ class AxolotyCoreRunnerContractTests(unittest.TestCase):
         self.assertIn("observeQuery", consumer)
         self.assertIn("observeUpdateWithObjectType", consumer)
         self.assertIn("observeCall", consumer)
+
+    def test_runner_waits_for_probe_readiness_and_validates_jsonl_capture(self):
+        runner = (HERE / "run-axoloty-core.sh").read_text(encoding="utf-8")
+
+        self.assertIn("--ready-file", runner)
+        self.assertIn("CAPTURE_READY", runner)
+        self.assertIn("Capture probe did not become ready", runner)
+        self.assertIn('test -s "$capture"', runner)
+        self.assertIn("json.loads", runner)
 
 
 if __name__ == "__main__":

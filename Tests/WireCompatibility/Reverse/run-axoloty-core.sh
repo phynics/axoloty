@@ -22,11 +22,13 @@ JS_IMAGE="${JS_IMAGE:-localhost/coatyswift-wire-coatyjs:2.4.0}"
 OUTPUT_DIR="${WIRE_OUTPUT_DIR:-$ROOT_DIR/.testing/wire}"
 SPM_CACHE_DIR="${SPM_CACHE_DIR:-$ROOT_DIR/.swiftpm-cache}"
 CONSUMER_LOG=$(mktemp)
+CAPTURE_READY=""
 
 cleanup() {
     runtime rm -f "$CONSUMER" "$PROBE" "$BROKER" >/dev/null 2>&1 || true
     runtime network rm "$NETWORK" >/dev/null 2>&1 || true
     rm -f "$CONSUMER_LOG"
+    rm -f "$CAPTURE_READY"
 }
 trap cleanup EXIT INT TERM
 
@@ -47,13 +49,23 @@ runtime exec "$BROKER" python3 -c 'import socket; socket.create_connection(("127
 SCENARIOS="${WIRE_SCENARIOS:-deadvertise channel discover-resolve query-retrieve update-complete call-return}"
 for scenario in $SCENARIOS; do
     capture="$OUTPUT_DIR/axoloty-$scenario.jsonl"
-    rm -f "$capture"
+    CAPTURE_READY="$OUTPUT_DIR/axoloty-$scenario.capture-ready"
+    rm -f "$capture" "$CAPTURE_READY"
     runtime run -d --name "$PROBE" --network "$NETWORK" \
         -v "$ROOT_DIR:/workspace:ro" -v "$OUTPUT_DIR:/artifacts" \
         "$DEV_IMAGE" python3 /workspace/Tests/WireCompatibility/Capture/mqtt_capture.py \
         --host "$BROKER" --topic '#' --producer coatyswift-modern --producer-version current \
-        --scenario "axoloty-$scenario" --output "/artifacts/axoloty-$scenario.jsonl" >/dev/null
-    sleep 0.5
+        --scenario "axoloty-$scenario" --output "/artifacts/axoloty-$scenario.jsonl" \
+        --ready-file "/artifacts/${CAPTURE_READY##*/}" >/dev/null
+    CAPTURE_READY_DEADLINE=$(( $(date +%s) + 10 ))
+    while [ ! -f "$CAPTURE_READY" ]; do
+        if [ "$(date +%s)" -ge "$CAPTURE_READY_DEADLINE" ]; then
+            runtime logs "$PROBE" >&2 || true
+            echo "Capture probe did not become ready within 10 seconds" >&2
+            exit 1
+        fi
+        sleep 0.1
+    done
 
     runtime run -d --name "$CONSUMER" --network "$NETWORK" --entrypoint node \
         -v "$REVERSE_DIR/coatyjs-core-consumer.js:/agent/coatyjs-core-consumer.js:ro,Z" \
@@ -78,6 +90,21 @@ for scenario in $SCENARIOS; do
     grep -q '"state":"ack"' "$CONSUMER_LOG"
     runtime stop -t 1 "$PROBE" >/dev/null || true
     runtime rm "$PROBE" >/dev/null
+    test -s "$capture" || { echo "Capture is missing or empty: $capture" >&2; exit 1; }
+    python3 - "$capture" <<'PY'
+import json
+import pathlib
+import sys
+
+capture = pathlib.Path(sys.argv[1])
+records = [line for line in capture.read_text(encoding="utf-8").splitlines() if line]
+if not records:
+    raise SystemExit(f"Capture is empty: {capture}")
+for line in records:
+    json.loads(line)
+PY
+    rm -f "$CAPTURE_READY"
+    CAPTURE_READY=""
     echo "Capture retained at $capture"
 done
 
