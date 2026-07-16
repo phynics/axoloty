@@ -11,10 +11,20 @@ fi
 : "${BROKER_HOST:=127.0.0.1}"
 : "${BROKER_PORT:=1883}"
 : "${SCENARIO:=advertise}"
-: "${EXPECTED_PUBLICATIONS:=1}"
 : "${OUTPUT_DIR:?Set OUTPUT_DIR to an empty artifact directory}"
 : "${LEGACY_VERSION:=2.4.0}"
 : "${LEGACY_SOURCE_COMMIT:=20a97b29832758fb771ac79fd5f7ae36cff69403}"
+
+case "$SCENARIO" in
+  advertise) DEFAULT_EXPECTED_PUBLICATIONS=2 ;;
+  deadvertise) DEFAULT_EXPECTED_PUBLICATIONS=2 ;;
+  discover-resolve) DEFAULT_EXPECTED_PUBLICATIONS=4 ;;
+  *)
+    echo "Unsupported legacy scenario: $SCENARIO (expected advertise, deadvertise, or discover-resolve)" >&2
+    exit 2
+    ;;
+esac
+: "${EXPECTED_PUBLICATIONS:=$DEFAULT_EXPECTED_PUBLICATIONS}"
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 CAPTURE_TOOL="$SCRIPT_DIR/../Capture/mqtt_capture.py"

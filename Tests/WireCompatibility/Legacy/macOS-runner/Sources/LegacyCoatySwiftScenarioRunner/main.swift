@@ -6,7 +6,13 @@ import Foundation
 
 private let pinnedCommit = "20a97b29832758fb771ac79fd5f7ae36cff69403"
 private let namespace = "wire-compat-v1"
-private let advertisedObjectId = "00000000-0000-4000-8000-000000000101"
+private let referenceObjectType = "org.axoloty.wire.ReferenceObject"
+private let referenceObjectId = "00000000-0000-4000-8000-000000000101"
+private let requesterIdentityId = "00000000-0000-4000-8000-000000000201"
+private let responderIdentityId = "00000000-0000-4000-8000-000000000202"
+private let settleInterval: TimeInterval = 1
+private let subscriptionInterval: TimeInterval = 0.5
+private let resolveTimeout: TimeInterval = 5
 
 private struct Arguments {
     let brokerHost: String
@@ -29,7 +35,7 @@ private struct Arguments {
               let portText = options["broker-port"], let port = UInt16(portText),
               let scenario = options["scenario"],
               let sourceCommit = options["source-commit"] else {
-            throw RunnerError.usage("required: --broker-host HOST --broker-port PORT --scenario advertise --source-commit COMMIT")
+            throw RunnerError.usage("required: --broker-host HOST --broker-port PORT --scenario advertise|deadvertise|discover-resolve --source-commit COMMIT")
         }
         self.brokerHost = host
         self.brokerPort = port
@@ -48,46 +54,138 @@ private enum RunnerError: Error, CustomStringConvertible {
         switch self {
         case .usage(let message), .invalidPin(let message): return message
         case .unsupportedScenario(let scenario): return "unsupported scenario: \(scenario)"
-        case .timeout: return "timed out waiting for the legacy client to connect"
+        case .timeout: return "timed out waiting for deterministic Resolve"
         }
     }
 }
 
-private func run(_ arguments: Arguments) throws {
-    guard arguments.sourceCommit == pinnedCommit else {
-        throw RunnerError.invalidPin("requested source commit does not match compiled pin \(pinnedCommit)")
-    }
-    guard arguments.scenario == "advertise" else {
-        throw RunnerError.unsupportedScenario(arguments.scenario)
-    }
+private func referenceObject() -> CoatyObject {
+    CoatyObject(
+        coreType: .CoatyObject,
+        objectType: referenceObjectType,
+        objectId: CoatyUUID(uuidString: referenceObjectId)!,
+        name: "wire-compat-reference"
+    )
+}
 
+private func makeContainer(arguments: Arguments, identityId: String, identityName: String) -> Container {
     let mqtt = MQTTClientOptions(host: arguments.brokerHost, port: arguments.brokerPort)
     let communication = CommunicationOptions(
         namespace: namespace,
         mqttClientOptions: mqtt,
         shouldAutoStart: false
     )
-    let configuration = Configuration(communication: communication)
+    let common = CommonOptions(agentIdentity: [
+        "objectId": CoatyUUID(uuidString: identityId)!,
+        "name": identityName,
+    ])
+    let configuration = Configuration(common: common, communication: communication)
     let components = Components(controllers: [:], objectTypes: [])
-    let container = Container.resolve(components: components, configuration: configuration)
+    return Container.resolve(components: components, configuration: configuration)
+}
+
+private func communicationManager(for container: Container) throws -> CommunicationManager {
     guard let manager = container.communicationManager else {
         throw RunnerError.usage("legacy container did not create a communication manager")
     }
+    return manager
+}
 
-    print("{\"state\":\"ready\",\"scenario\":\"advertise\"}")
-    manager.start()
+private func report(_ state: String, scenario: String, details: String = "") {
+    print("{\"state\":\"\(state)\",\"scenario\":\"\(scenario)\"\(details)}")
+}
 
-    let object = CoatyObject(
-        coreType: .CoatyObject,
-        objectType: "org.axoloty.wire.ReferenceObject",
-        objectId: CoatyUUID(uuidString: advertisedObjectId)!,
-        name: "wire-compat-reference"
+private func runOneWay(_ arguments: Arguments, publish: (CommunicationManager) -> Void) throws {
+    let container = makeContainer(
+        arguments: arguments,
+        identityId: requesterIdentityId,
+        identityName: "coatyswift-wire-reference"
     )
-    try manager.publishAdvertise(AdvertiseEvent.with(object: object))
-    print("{\"state\":\"published\",\"scenario\":\"advertise\",\"objectId\":\"\(advertisedObjectId)\"}")
-    Thread.sleep(forTimeInterval: 1.0)
+    let manager = try communicationManager(for: container)
+    report("ready", scenario: arguments.scenario)
+    manager.start()
+    publish(manager)
+    report("published", scenario: arguments.scenario, details: ",\"objectId\":\"\(referenceObjectId)\"")
+    Thread.sleep(forTimeInterval: settleInterval)
     manager.stop()
-    print("{\"state\":\"done\",\"scenario\":\"advertise\"}")
+}
+
+private func runDiscoverResolve(_ arguments: Arguments) throws {
+    let requester = makeContainer(
+        arguments: arguments,
+        identityId: requesterIdentityId,
+        identityName: "coatyswift-wire-requester"
+    )
+    let responder = makeContainer(
+        arguments: arguments,
+        identityId: responderIdentityId,
+        identityName: "coatyswift-wire-responder"
+    )
+    let requesterManager = try communicationManager(for: requester)
+    let responderManager = try communicationManager(for: responder)
+    let resolveReceived = DispatchSemaphore(value: 0)
+
+    let discoverSubscription = responderManager.observeDiscover().subscribe(onNext: { event in
+        guard event.data.isObjectTypeCompatible(objectType: referenceObjectType) else {
+            return
+        }
+        report("observed-discover", scenario: arguments.scenario)
+        event.resolve(resolveEvent: ResolveEvent.with(
+            object: referenceObject(),
+            privateData: ["reference": "coatyswift-2.4.0"]
+        ))
+    })
+    report("ready", scenario: arguments.scenario)
+    responderManager.start()
+    requesterManager.start()
+    Thread.sleep(forTimeInterval: subscriptionInterval)
+    let resolveSubscription = requesterManager
+        .publishDiscover(DiscoverEvent.with(objectTypes: [referenceObjectType]))
+        .subscribe(onNext: { event in
+            guard event.data.object?.objectId.string == referenceObjectId else {
+                return
+            }
+            report("received-resolve", scenario: arguments.scenario, details: ",\"objectId\":\"\(referenceObjectId)\"")
+            resolveReceived.signal()
+        })
+    report("published", scenario: arguments.scenario, details: ",\"objectType\":\"\(referenceObjectType)\"")
+
+    guard resolveReceived.wait(timeout: .now() + resolveTimeout) == .success else {
+        discoverSubscription.dispose()
+        resolveSubscription.dispose()
+        requesterManager.stop()
+        responderManager.stop()
+        throw RunnerError.timeout
+    }
+
+    discoverSubscription.dispose()
+    resolveSubscription.dispose()
+    Thread.sleep(forTimeInterval: settleInterval)
+    requesterManager.stop()
+    responderManager.stop()
+}
+
+private func run(_ arguments: Arguments) throws {
+    guard arguments.sourceCommit == pinnedCommit else {
+        throw RunnerError.invalidPin("requested source commit does not match compiled pin \(pinnedCommit)")
+    }
+
+    switch arguments.scenario {
+    case "advertise":
+        try runOneWay(arguments) { manager in
+            manager.publishAdvertise(AdvertiseEvent.with(object: referenceObject()))
+        }
+    case "deadvertise":
+        try runOneWay(arguments) { manager in
+            manager.publishDeadvertise(DeadvertiseEvent.with(objectIds: [referenceObject().objectId]))
+        }
+    case "discover-resolve":
+        try runDiscoverResolve(arguments)
+    default:
+        throw RunnerError.unsupportedScenario(arguments.scenario)
+    }
+
+    report("done", scenario: arguments.scenario)
 }
 
 do {
