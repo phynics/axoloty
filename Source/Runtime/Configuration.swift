@@ -60,12 +60,12 @@ public class Configuration {
         let builder = ConfigurationBuilder()
         closure(builder)
         
-        guard let common = builder.common, let communication = builder.communication else {
+        guard let communication = builder.communication else {
             throw AxolotyError.InvalidConfiguration(
-                "Configuration.build requires both common and communication options to be set")
+                "Configuration.build requires communication options to be set")
         }
         
-        return .init(common: common, communication: communication, controllers: builder.controllers, databases: builder.databases)
+        return .init(common: builder.common, communication: communication, controllers: builder.controllers, databases: builder.databases)
     }
 }
 
