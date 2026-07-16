@@ -4,6 +4,7 @@
 //  Axoloty
 //
 
+import ErrorKit
 import Foundation
 
 /// The base controller class.
@@ -77,8 +78,9 @@ open class Controller {
     ///     - message: additional error message
     ///     - tags: any number of log tags
     public func logError(error: Any, message: String, tags: [String]...) {
-        let msg = "\(message): \(error)"
-        self._log(logLevel: .error, message: msg, tags: tags.reduce([], +))
+        self._log(logLevel: .error,
+                  message: Self.errorLogMessage(error: error, message: message),
+                  tags: tags.reduce([], +))
     }
     
     /// Advertise a Log object for a fatal error.
@@ -88,8 +90,19 @@ open class Controller {
     ///     - message: additional error message
     ///     - tags: any number of log tags
     public func logFatal(error: Any, message: String, tags: [String]...) {
-        let msg = "\(message): \(error)"
-        self._log(logLevel: .fatal, message: msg, tags: tags.reduce([], +))
+        self._log(logLevel: .fatal,
+                  message: Self.errorLogMessage(error: error, message: message),
+                  tags: tags.reduce([], +))
+    }
+
+    /// Renders an error log line, routing `Error` values through ErrorKit so
+    /// they surface their chained, user-friendly message instead of the
+    /// default interpolated description.
+    private static func errorLogMessage(error: Any, message: String) -> String {
+        if let error = error as? any Error {
+            return "\(message): \(ErrorKit.userFriendlyMessage(for: error))"
+        }
+        return "\(message): \(error)"
     }
     
     /// Called when the container has completely set up and injected all

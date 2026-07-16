@@ -100,9 +100,7 @@ struct SensorThingsTests {
         }
 
         let timeout = SensorThingsTests.TEST_TIMEOUT
-        let result = await _Concurrency.Task.detached {
-            completion.wait(timeout: .now() + TimeInterval(5 * timeout))
-        }.value
+        let result = await Self.awaitGroup(completion, timeout: .now() + TimeInterval(5 * timeout))
         container1.shutdown()
         container2.shutdown()
         try await _Concurrency.Task.sleep(for: .seconds(2))
@@ -204,9 +202,7 @@ struct SensorThingsTests {
         testFunction(copy, 0)
 
         let timeout = SensorThingsTests.TEST_TIMEOUT
-        let result = await _Concurrency.Task.detached {
-            completion.wait(timeout: .now() + TimeInterval(15 * timeout))
-        }.value
+        let result = await Self.awaitGroup(completion, timeout: .now() + TimeInterval(15 * timeout))
         container1.shutdown()
         container2.shutdown()
         try await _Concurrency.Task.sleep(for: .seconds(2))
@@ -227,9 +223,23 @@ struct SensorThingsTests {
         let zeroDuration = CoatyTimeInterval(start: 0, duration: 0)
         #expect(zeroDuration.toLocalIntervalIsoString(includeMillis: false).hasSuffix("/PT0S"))
     }
+
+    /// Waits for a `DispatchGroup` off the cooperative pool. Apple toolchains
+    /// mark `DispatchGroup.wait` unavailable from async contexts, so route it
+    /// through a continuation on a global queue.
+    private static func awaitGroup(
+        _ group: DispatchGroup, timeout: DispatchTime
+    ) async -> DispatchTimeoutResult {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                continuation.resume(returning: group.wait(timeout: timeout))
+            }
+        }
+    }
 }
 
 private final class SendableBox<T>: @unchecked Sendable {
     var value: T
     init(_ value: T) { self.value = value }
+
 }
