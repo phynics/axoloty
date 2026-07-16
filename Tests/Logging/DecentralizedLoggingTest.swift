@@ -3,23 +3,21 @@
 //  DecentralizedLoggingTest.swift
 //  Axoloty
 
+import Axoloty
 import Foundation
 import Testing
-import Axoloty
 
-@Suite
 @MainActor
 struct DecentralizedLoggingTest {
-
     /// NOTE: Please make sure that a MQTT broker is running on localhost on port 1883 before running.
     @Test
-    func testLogEventsAreReceived() async throws {
+    func logEventsAreReceived() async throws {
         let components1 = Components(controllers: ["LogCreateorController": LogCreatorController.self],
                                      objectTypes: [])
         let communication1 = CommunicationOptions(namespace: "Logging Test",
-                                                 mqttClientOptions: MQTTClientOptions(host: "localhost",
-                                                                                      port: UInt16(1883)),
-                                                 shouldAutoStart: false)
+                                                  mqttClientOptions: MQTTClientOptions(host: "localhost",
+                                                                                       port: UInt16(1883)),
+                                                  shouldAutoStart: false)
         let configuration1 = Configuration(communication: communication1)
         let coatyContainer1 = Container.resolve(components: components1,
                                                 configuration: configuration1)
@@ -27,9 +25,9 @@ struct DecentralizedLoggingTest {
         let components2 = Components(controllers: ["LogReceiverController": LogReceiverController.self],
                                      objectTypes: [])
         let communication2 = CommunicationOptions(namespace: "Logging Test",
-                                                 mqttClientOptions: MQTTClientOptions(host: "localhost",
-                                                                                      port: UInt16(1883)),
-                                                 shouldAutoStart: false)
+                                                  mqttClientOptions: MQTTClientOptions(host: "localhost",
+                                                                                       port: UInt16(1883)),
+                                                  shouldAutoStart: false)
         let configuration2 = Configuration(communication: communication2)
         let coatyContainer2 = Container.resolve(components: components2,
                                                 configuration: configuration2)
@@ -42,11 +40,8 @@ struct DecentralizedLoggingTest {
         try await coatyContainer2.startAndWaitUntilReady()
         try await coatyContainer1.startAndWaitUntilReady()
 
-        for _ in 0..<100 {
-            if await receiverController.logStorage.count == 50 {
-                break
-            }
-            try await _Concurrency.Task.sleep(for: .milliseconds(50))
+        try await waitUntil("50 received log snapshots", timeout: .seconds(5)) {
+            await receiverController.logStorage.count == 50
         }
         #expect(await receiverController.logStorage.count == 50)
 
@@ -59,22 +54,22 @@ struct DecentralizedLoggingTest {
 class LogCreatorController: Controller {
     override func extendLogObject(log: Log) {
         log.logLabels = [
-            "nonce": Int.random(in: 0...10000)
+            "nonce": Int.random(in: 0 ... 10000),
         ]
     }
 
     override func onCommunicationManagerReady() async {
-        self.publishMultipleLogs()
+        publishMultipleLogs()
     }
 
     /// Publishes 50 log objects in total
     private func publishMultipleLogs() {
-        for _ in 0...9 {
-            self.logInfo(message: "Info Log", tags: ["tag1", "tag2"])
-            self.logDebug(message: "Debug Log", tags: ["tag1", "tag2"])
-            self.logWarning(message: "Warning Log", tags: ["tag1", "tag2"])
-            self.logError(error: AxolotyError.RuntimeError("Random error"), message: "Error Log", tags: ["tag1", "tag2"])
-            self.logFatal(error: AxolotyError.RuntimeError("Random fatal error"), message: "Fatal Log", tags: ["tag1", "tag2"])
+        for _ in 0 ... 9 {
+            logInfo(message: "Info Log", tags: ["tag1", "tag2"])
+            logDebug(message: "Debug Log", tags: ["tag1", "tag2"])
+            logWarning(message: "Warning Log", tags: ["tag1", "tag2"])
+            logError(error: AxolotyError.RuntimeError("Random error"), message: "Error Log", tags: ["tag1", "tag2"])
+            logFatal(error: AxolotyError.RuntimeError("Random fatal error"), message: "Fatal Log", tags: ["tag1", "tag2"])
         }
     }
 }
@@ -84,9 +79,9 @@ class LogReceiverController: Controller {
     private var consumptionTask: _Concurrency.Task<Void, Never>?
 
     override func prepareForCommunication() async {
-        let stream = await self.communicationManager.observeAdvertiseStream(withCoreType: .Log)
-        let storage = self.logStorage
-        self.consumptionTask = _Concurrency.Task {
+        let stream = await communicationManager.observeAdvertiseStream(withCoreType: .Log)
+        let storage = logStorage
+        consumptionTask = _Concurrency.Task {
             var iterator = stream.makeAsyncIterator()
             while let snapshot = await iterator.next() {
                 await storage.append(snapshot)
@@ -95,8 +90,8 @@ class LogReceiverController: Controller {
     }
 
     override func onCommunicationManagerStopping() {
-        self.consumptionTask?.cancel()
-        self.consumptionTask = nil
+        consumptionTask?.cancel()
+        consumptionTask = nil
         super.onCommunicationManagerStopping()
     }
 }
