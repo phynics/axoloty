@@ -53,8 +53,12 @@ const ack = details => {
     clearTimeout(timeout);
     if (subscription) subscription.unsubscribe();
     process.stdout.write(`${JSON.stringify({ state: "ack", scenario, ...details })}\n`);
-    container.shutdown();
-    setTimeout(() => process.exit(0), 100);
+    // Give the MQTT client time to flush a correlated response before the
+    // container disconnects; the Axoloty producer independently decodes it.
+    setTimeout(() => {
+        container.shutdown();
+        process.exit(0);
+    }, 500);
 };
 const timeout = setTimeout(() => fail(new Error(`Timed out waiting for ${scenario}`)), timeoutMs);
 

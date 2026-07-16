@@ -58,7 +58,10 @@ let package = Package(
                 "WireCompatibility/Reverse/Artifacts",
                 "WireCompatibility/Reverse/README.md",
                 "WireCompatibility/Reverse/coatyjs-advertise-consumer.js",
-                "WireCompatibility/Reverse/run-axoloty-advertise.sh"
+                "WireCompatibility/Reverse/coatyjs-core-consumer.js",
+                "WireCompatibility/Reverse/run-axoloty-advertise.sh",
+                "WireCompatibility/Reverse/run-axoloty-core.sh",
+                "WireCompatibility/Reverse/test_run_axoloty_core.py"
             ],
             resources: [
                 .process("WireCompatibility/Fixtures")

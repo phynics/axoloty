@@ -16,10 +16,26 @@ class AxolotyCoreRunnerContractTests(unittest.TestCase):
 
         self.assertIn("AxolotyCoreProducerTests", runner)
         self.assertIn("coatyjs-core-consumer.js", runner)
-        self.assertIn("--producer axoloty-modern", runner)
+        self.assertIn("--producer coatyswift-modern", runner)
         self.assertIn("--producer-version current", runner)
         self.assertIn("WIRE_SCENARIOS", runner)
         self.assertNotIn("run-coatyjs-core.sh", runner)
+
+    def test_runner_identifies_the_modern_coatyswift_producer(self):
+        runner = (HERE / "run-axoloty-core.sh").read_text(encoding="utf-8")
+
+        self.assertIn("--producer coatyswift-modern", runner)
+        self.assertNotIn("--producer axoloty-modern", runner)
+
+    def test_request_response_producer_asserts_decoded_axoloty_streams(self):
+        producer = (HERE / "AxolotyCoreProducerTests.swift").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("awaitResponse", producer)
+        self.assertIn("PayloadCoder.decode", producer)
+        for event in ("ResolveEvent", "RetrieveEvent", "CompleteEvent", "ReturnEvent"):
+            self.assertIn(event, producer)
 
     def test_consumer_acknowledges_every_required_coatyjs_decode(self):
         consumer = (HERE / "coatyjs-core-consumer.js").read_text(encoding="utf-8")

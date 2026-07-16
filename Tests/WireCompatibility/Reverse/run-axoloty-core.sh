@@ -51,7 +51,7 @@ for scenario in $SCENARIOS; do
     runtime run -d --name "$PROBE" --network "$NETWORK" \
         -v "$ROOT_DIR:/workspace:ro" -v "$OUTPUT_DIR:/artifacts" \
         "$DEV_IMAGE" python3 /workspace/Tests/WireCompatibility/Capture/mqtt_capture.py \
-        --host "$BROKER" --topic '#' --producer axoloty-modern --producer-version current \
+        --host "$BROKER" --topic '#' --producer coatyswift-modern --producer-version current \
         --scenario "axoloty-$scenario" --output "/artifacts/axoloty-$scenario.jsonl" >/dev/null
     sleep 0.5
 

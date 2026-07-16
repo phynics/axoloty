@@ -23,19 +23,49 @@ struct AxolotyCoreProducerTests {
                 object: fixture, channelId: "wire-fixture-channel", privateData: ["sequence": 7]
             ))
         case "discover-resolve":
-            _ = await manager.communication.publishDiscover(DiscoverEvent.with(objectTypes: [fixture.objectType]))
+            let response = try await awaitResponse(
+                from: await manager.communication.publishDiscover(DiscoverEvent.with(objectTypes: [fixture.objectType])),
+                eventType: .Resolve,
+                as: ResolveEvent.self
+            )
+            let resolved = try #require(response.data.object)
+            #expect(resolved.objectId == fixture.objectId)
+            #expect(response.data.privateData?["responder"] as? String == "coatyjs-2.4.0")
         case "query-retrieve":
-            _ = await manager.communication.publishQuery(QueryEvent.with(objectTypes: [fixture.objectType]))
+            let response = try await awaitResponse(
+                from: await manager.communication.publishQuery(QueryEvent.with(objectTypes: [fixture.objectType])),
+                eventType: .Retrieve,
+                as: RetrieveEvent.self
+            )
+            #expect(response.data.objects.first?.objectId == fixture.objectId)
+            #expect(response.data.privateData?["responder"] as? String == "coatyjs-2.4.0")
         case "update-complete":
-            _ = await manager.communication.publishUpdate(try UpdateEvent.with(object: fixture))
+            let response = try await awaitResponse(
+                from: await manager.communication.publishUpdate(try UpdateEvent.with(object: fixture)),
+                eventType: .Complete,
+                as: CompleteEvent.self
+            )
+            let completed = try #require(response.data.object)
+            #expect(completed.objectId == fixture.objectId)
+            #expect(completed.name == "wire-fixture-completed")
+            #expect(response.data.privateData?["responder"] as? String == "coatyjs-2.4.0")
         case "call-return":
-            _ = await manager.communication.publishCall(try CallEvent.with(
-                operation: "wire-fixture-operation", parameters: ["operand": AnyCodable(7)]
-            ))
+            let response = try await awaitResponse(
+                from: await manager.communication.publishCall(try CallEvent.with(
+                    operation: "wire-fixture-operation", parameters: ["operand": AnyCodable(7)]
+                )),
+                eventType: .Return,
+                as: ReturnEvent.self
+            )
+            let result = try #require(response.data.result?.value as? [String: AnyCodable])
+            #expect(result["answer"]?.value as? Int == 49)
+            #expect(result["objectId"]?.value as? String == fixture.objectId.string)
+            let executionInfo = try #require(response.data.executionInfo?.value as? [String: AnyCodable])
+            #expect(executionInfo["responder"]?.value as? String == "coatyjs-2.4.0")
         default:
             Issue.record("Unsupported core wire scenario: \(scenario)")
         }
-        try await _Concurrency.Task.sleep(for: .milliseconds(750))
+        try await _Concurrency.Task.sleep(for: .milliseconds(250))
     }
 
     private var fixture: CoatyObject {
@@ -71,5 +101,22 @@ struct AxolotyCoreProducerTests {
         }
         communication.start()
         return (container, communication)
+    }
+
+    private func awaitResponse<Event: Codable>(
+        from stream: EventStream<ResponseEventSnapshot>,
+        eventType: CommunicationEventType,
+        as _: Event.Type
+    ) async throws -> Event {
+        for await response in stream {
+            guard response.eventType == eventType.rawValue,
+                  response.sourceId == "33333333-3333-4333-8333-333333333333",
+                  let payload = String(data: response.payload, encoding: .utf8),
+                  let event: Event = PayloadCoder.decode(payload) else {
+                continue
+            }
+            return event
+        }
+        throw AxolotyError.InvalidConfiguration("CoatyJS ended the response stream before sending \(eventType.rawValue)")
     }
 }
