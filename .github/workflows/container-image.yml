@@ -2,7 +2,7 @@ name: Development Container Image
 
 on:
   push:
-    branches: [master]
+    branches: [main]
     paths:
       - .devcontainer/Dockerfile
       - .github/workflows/container-image.yml

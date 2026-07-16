@@ -26,22 +26,38 @@ For modernization context, see [ROADMAP.md](./docs/ROADMAP.md).
 - A Swift binary exported from a development container is acceptable for editor
   tooling, but Makefile targets remain the canonical build and test flow.
 
-## Planning and worktrees
+## GitHub-centered planning workflow
 
-- Keep canonical design specs in `docs/superpowers/specs/` and implementation
-  plans in `docs/superpowers/plans/`. Keep agent-local scratch work in the
-  ignored `.agents/` directory.
-- Use one worktree per plan. Create every worktree under the repository-local,
-  ignored `.worktree/` directory, branching from `master`:
+The [Axoloty Roadmap](https://github.com/phynics/axoloty/projects) Project is
+the live roadmap. GitHub Issues are the complete planning record.
 
-  ```sh
-  git worktree add .worktree/<plan-id> -b <plan-id>-<slug> master
-  ```
+### Agentic loop
 
-- Do all plan work in its worktree. Delegated agents work and commit only in
-  their own worktrees; review and merge their branches before integration.
-- Open a pull request to `master`, then remove its merged worktree with
-  `git worktree remove .worktree/<plan-id>`.
+1. **Create or refine a GitHub Issue** using the Work Plan template for
+   structured tasks, or the Bug report / Feature request templates for
+   lightweight tickets.
+2. **Move the issue to `Ready`** on the Roadmap Project once the plan is
+   approved.
+3. **Implement from a dedicated worktree** named with the issue number:
+   ```sh
+   git worktree add .worktree/<#issue-number>-<slug> -b <#issue-number>-<slug> main
+   ```
+4. **Open a pull request** targeting `main` with `Closes #<issue-number>` in
+   the description.
+5. **Move the issue through `In progress` → `In review`** on the Project as
+   the PR advances.
+6. **Merge the PR**; the issue closes automatically via the `Closes` keyword.
+7. **Move the issue to `Done`** and remove the worktree.
+
+### Historical tickets
+
+Historical T-### tickets are migrated to GitHub Issues with their T-ID retained
+in the title and body. See the migration ledger in `.github/MIGRATION_LEDGER.md`
+for the mapping.
+
+All new work uses GitHub issue numbers. The `docs/superpowers/specs/` and
+`docs/superpowers/plans/` directories are retired as active workflow locations;
+their history is retained in Git.
 
 ## Code conventions
 
