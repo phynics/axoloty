@@ -28,7 +28,7 @@ For modernization context, see [ROADMAP.md](./docs/ROADMAP.md).
 
 ## GitHub-centered planning workflow
 
-The [Axoloty Roadmap](https://github.com/phynics/axoloty/projects) Project is
+The [Axoloty Roadmap](https://github.com/users/phynics/projects/5) Project is
 the live roadmap. GitHub Issues are the complete planning record.
 
 ### Agentic loop

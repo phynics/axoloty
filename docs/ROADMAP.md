@@ -2,7 +2,7 @@
 
 This document is a strategic overview. The live roadmap — with per-item status,
 phase, and priority — is tracked on the
-[Axoloty Roadmap](https://github.com/phynics/axoloty/projects) GitHub Project.
+[Axoloty Roadmap](https://github.com/users/phynics/projects/5) GitHub Project.
 
 For the agentic workflow driving planning and execution, see
 [AGENTS.md](../AGENTS.md).
