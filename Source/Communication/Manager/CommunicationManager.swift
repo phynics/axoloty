@@ -59,10 +59,6 @@ public class CommunicationManager {
     /// Ids of all advertised components that should be deadvertised on disconnection.
     internal var deadvertiseIds = [CoatyUUID]()
 
-    /// A dispatchqueue that handles synchronisation issues when accessing
-    /// deferred publications and subscriptions.
-    private var queue = DispatchQueue(label: "com.coatyswift.comQueue")
-
     /// The communication client that offers the required publisher-subscriber API.
     internal var client: CommunicationClient!
 
@@ -408,15 +404,13 @@ public class CommunicationManager {
     ///   - topic: the publication topic.
     ///   - message: the payload message as String.
     internal func publish(topic: String, message: String) {
-        queue.sync {
-            // Fail-fast invariant, not user input.
-            // swiftlint:disable:next force_try
-            if self.communicationState == .offline {
-                self.deferredPublications.append((topic, MessagePayload.stringPayload(message)))
-            } else {
-                // Attempt to publish. If we are disconnecting, this will fail silently.
-                client.publish(topic, message: message)
-            }
+        // Fail-fast invariant, not user input.
+        // swiftlint:disable:next force_try
+        if self.communicationState == .offline {
+            self.deferredPublications.append((topic, MessagePayload.stringPayload(message)))
+        } else {
+            // Attempt to publish. If we are disconnecting, this will fail silently.
+            client.publish(topic, message: message)
         }
     }
     
@@ -426,15 +420,13 @@ public class CommunicationManager {
     ///   - topic: the publication topic.
     ///   - message: the payload message as Bytes array.
     internal func publish(topic: String, message: [UInt8]) {
-        queue.sync {
-            // Fail-fast invariant, not user input.
-            // swiftlint:disable:next force_try
-            if self.communicationState == .offline {
-                self.deferredPublications.append((topic, MessagePayload.bytesArrayPayload(message)))
-            } else {
-                // Attempt to publish. If we are disconnecting, this will fail silently.
-                client.publish(topic, message: message)
-            }
+        // Fail-fast invariant, not user input.
+        // swiftlint:disable:next force_try
+        if self.communicationState == .offline {
+            self.deferredPublications.append((topic, MessagePayload.bytesArrayPayload(message)))
+        } else {
+            // Attempt to publish. If we are disconnecting, this will fail silently.
+            client.publish(topic, message: message)
         }
     }
 
