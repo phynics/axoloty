@@ -33,21 +33,32 @@ the live roadmap. GitHub Issues are the complete planning record.
 
 ### Agentic loop
 
-1. **Create or refine a GitHub Issue** using the Work Plan template for
+1. **Fetch and check `origin/main` before branching.** This file and the
+   workflow it describes can change between sessions (it was rewritten
+   mid-session once already — planning moved from `docs/superpowers/` to
+   GitHub Issues and the default branch was renamed `master` → `main`). Do
+   not assume a locally cached `AGENTS.md`, branch name, or directory layout
+   is current; `git fetch origin main` and diff against it first.
+2. **Search existing issues before filing** (`gh issue list`, `gh issue
+   view`). This repo's backlog is populated with `T-NNN — <title>` issues
+   migrated from the old ticket system; a title-only search can miss one,
+   so also grep issue bodies for the topic. Filing a duplicate wastes a
+   round trip closing it.
+3. **Create or refine a GitHub Issue** using the Work Plan template for
    structured tasks, or the Bug report / Feature request templates for
    lightweight tickets.
-2. **Move the issue to `Ready`** on the Roadmap Project once the plan is
+4. **Move the issue to `Ready`** on the Roadmap Project once the plan is
    approved.
-3. **Implement from a dedicated worktree** named with the issue number:
+5. **Implement from a dedicated worktree** named with the issue number:
    ```sh
    git worktree add .worktree/<#issue-number>-<slug> -b <#issue-number>-<slug> main
    ```
-4. **Open a pull request** targeting `main` with `Closes #<issue-number>` in
+6. **Open a pull request** targeting `main` with `Closes #<issue-number>` in
    the description.
-5. **Move the issue through `In progress` → `In review`** on the Project as
+7. **Move the issue through `In progress` → `In review`** on the Project as
    the PR advances.
-6. **Merge the PR**; the issue closes automatically via the `Closes` keyword.
-7. **Move the issue to `Done`** and remove the worktree.
+8. **Merge the PR**; the issue closes automatically via the `Closes` keyword.
+9. **Move the issue to `Done`** and remove the worktree.
 
 ### Historical tickets
 
@@ -58,6 +69,29 @@ for the mapping.
 All new work uses GitHub issue numbers. The `docs/superpowers/specs/` and
 `docs/superpowers/plans/` directories are retired as active workflow locations;
 their history is retained in Git.
+
+### Session hygiene
+
+- **Verify `pwd` and `git branch --show-current` immediately before every
+  commit or push**, not just when something looks off. A shell's working
+  directory can silently reset to the main checkout between tool
+  invocations (e.g. after a `cd` into `/tmp` for a throwaway check); a
+  commit made there lands on whatever branch that checkout has, not the
+  worktree branch you meant. Cheap to check every time, expensive to
+  discover after the fact.
+- **One fix per PR, each rooted in a local repro.** When chasing a
+  multi-layer failure (e.g. a broken CI pipeline where fixing one bug
+  reveals the next), reproduce and verify each bug locally before writing
+  the fix, and land each as its own commit/PR with a message explaining
+  what earlier fix exposed it. Bundling multiple unrelated root causes into
+  one change makes it hard to tell which fix actually mattered if CI is
+  still red afterward.
+- **Filing a new issue proactively (not asked for) is scope creep**, even
+  when it's clearly correct and blocks the task at hand — surface the
+  finding to the requester and let them decide, unless they've already
+  granted standing authorization to act on discoveries. Once they say to
+  proceed, treat that as authorization for that one issue, not a standing
+  policy for future sessions.
 
 ## Code conventions
 
