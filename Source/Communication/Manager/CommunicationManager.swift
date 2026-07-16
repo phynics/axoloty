@@ -331,19 +331,16 @@ public class CommunicationManager {
     }
 
     private func observeDiscoverIdentity() {
-        let task = _Concurrency.Task { @MainActor [weak self] in
-            guard let self else { return }
-            let stream = await self.observeDiscoverStream()
-            for await event in stream {
-                guard (event.coreTypes?.contains(.Identity) == true) ||
-                      (event.objectId == self.identity.objectId.string) else { continue }
-                guard event.sourceId != nil,
-                      let correlationId = event.correlationId else { continue }
-                let resolve = ResolveEvent.with(object: self.identity)
-                self.publishResolve(event: resolve, correlationId: correlationId)
+        respondToDiscover(
+            matching: { manager, event in
+                event.sourceId != nil
+                    && ((event.coreTypes?.contains(.Identity) == true)
+                        || (event.objectId == manager.identity.objectId.string))
+            },
+            resolve: { manager, _, correlationId in
+                manager.publishResolve(event: ResolveEvent.with(object: manager.identity), correlationId: correlationId)
             }
-        }
-        lifecycleTasks.append(task)
+        )
     }
 
     // MARK: - Communication methods.
