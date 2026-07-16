@@ -71,8 +71,10 @@ public class Container {
     ///     - name: the name of the controller class (must match the controller name
     ///             specified in controller config options)
     ///     - controllerType: the class type of the controller
-    ///     - controllerOptions: the controller's configuration options
-    public func registerController(name: String, controllerType: Controller.Type, controllerOptions: ControllerOptions) throws {
+    ///     - controllerOptions: the controller's configuration options. Defaults to
+    ///       an empty `ControllerOptions()` when omitted, matching how statically
+    ///       registered controllers without configured options are resolved.
+    public func registerController(name: String, controllerType: Controller.Type, controllerOptions: ControllerOptions = ControllerOptions()) throws {
         if isShutdown {
             return
         }
