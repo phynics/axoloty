@@ -140,86 +140,46 @@ struct SensorThingsTests {
         try await _Concurrency.Task.sleep(for: .seconds(2))
 
         let eventCount = 2
-        let completion = DispatchGroup()
-        let expectedFulfillments = SensorThingsTests.SENSOR_THINGS_TYPES_SET.count * (eventCount + 2)
-        for _ in 0 ..< expectedFulfillments {
-            completion.enter()
+        let channelId = "42"
+
+        guard let receiverController = container2.getController(name: "MockReceiverController") as? MockReceiverController else {
+            Issue.record("Expected MockReceiverController in container2")
+            return
+        }
+        guard let emitterController = container1.getController(name: "MockEmitterController") as? MockEmitterController else {
+            Issue.record("Expected MockEmitterController in container1")
+            return
         }
 
-        let queue = DispatchQueue(label: "test.coaty.sensorThings", qos: .userInitiated)
-
-        let disposableBox = SendableBox<_Concurrency.Task<Void, Never>?>(nil)
-        let testFunctionBox = SendableBox<(([String], Int) -> Void)?>(nil)
-
-        let testFunction: ([String], Int) -> Void = { elementArray, index in
-            if index == elementArray.count {
-                return
-            }
-            let element = elementArray[index]
+        for element in SensorThingsTests.SENSOR_THINGS_TYPES_SET {
             let logger = ChannelEventLogger()
-            let channelId = "42"
 
-            guard let receiverController = container2.getController(name: "MockReceiverController") as? MockReceiverController else {
-                Issue.record("Expected MockReceiverController in container2")
-                return
-            }
-            guard let emitterController = container1.getController(name: "MockEmitterController") as? MockEmitterController else {
-                Issue.record("Expected MockEmitterController in container1")
-                return
-            }
+            // Awaiting this confirms the broker has acknowledged the subscription,
+            // so publishing right after can't race a "long enough" fixed delay
+            // (see https://github.com/phynics/axoloty/issues/51).
+            let watchTask = try await receiverController.watchForChannelEvents(logger: logger, channelId: channelId)
 
-            queue.async {
-                _Concurrency.Task { @MainActor in
-                    disposableBox.value = receiverController.watchForChannelEvents(logger: logger, channelId: channelId)
-                }
+            emitterController.publishChannelEvents(count: eventCount, objectType: element, channelId: channelId)
+
+            let deadline = Date().addingTimeInterval(TimeInterval(SensorThingsTests.TEST_TIMEOUT))
+            while logger.eventData.count < eventCount && Date() < deadline {
+                try await _Concurrency.Task.sleep(for: .milliseconds(100))
             }
 
-            let delay: DispatchTimeInterval = .seconds(6)
-            queue.asyncAfter(deadline: .now() + delay) {
-                _Concurrency.Task { @MainActor in
-                    emitterController.publishChannelEvents(count: eventCount, objectType: element, channelId: channelId)
-                }
+            // MQTT delivery order across a fresh subscription isn't guaranteed to
+            // match publish order (as advertise()'s matching set-based check above
+            // already assumes), so verify by name set rather than by array index.
+            let expectedNames = Set((1 ... eventCount).map { "Channeled_\($0)" })
+            let actualNames = Set(logger.eventData.compactMap { $0.object?.name })
+            #expect(actualNames == expectedNames)
 
-                let delay2: DispatchTimeInterval = .seconds(6)
-
-                queue.asyncAfter(deadline: .now() + delay2) {
-                    if logger.count == eventCount {
-                        completion.leave()
-                    }
-                    if logger.eventData.count == eventCount {
-                        completion.leave()
-                    }
-                    // MQTT delivery order across a fresh subscription isn't
-                    // guaranteed to match publish order (as testAdvertise's
-                    // matching set-based check above already assumes), so
-                    // verify by name set rather than by array index.
-                    let expectedNames = Set((1 ... eventCount).map { "Channeled_\($0)" })
-                    let actualNames = Set(logger.eventData.compactMap { $0.object?.name })
-                    if actualNames == expectedNames {
-                        for _ in 1 ... eventCount {
-                            completion.leave()
-                        }
-                    } else {
-                        Issue.record("Unexpected channeled object names: \(actualNames)")
-                        return
-                    }
-
-                    disposableBox.value?.cancel()
-                    testFunctionBox.value?(elementArray, index + 1)
-                }
-            }
+            watchTask.cancel()
+            _ = await watchTask.value
         }
-        testFunctionBox.value = testFunction
 
-        let copy = SensorThingsTests.SENSOR_THINGS_TYPES_SET
-        testFunction(copy, 0)
-
-        let timeout = SensorThingsTests.TEST_TIMEOUT
-        let result = await Self.awaitGroup(completion, timeout: .now() + TimeInterval(15 * timeout))
         container1.shutdown()
         container2.shutdown()
         try await _Concurrency.Task.sleep(for: .seconds(2))
-        #expect(result == .success)
     }
 
     @Test
@@ -248,12 +208,5 @@ struct SensorThingsTests {
                 continuation.resume(returning: group.wait(timeout: timeout))
             }
         }
-    }
-}
-
-private final class SendableBox<T>: @unchecked Sendable {
-    var value: T
-    init(_ value: T) {
-        self.value = value
     }
 }
