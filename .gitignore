@@ -65,3 +65,9 @@ iOSInjectionProject/
 
 # DocC generated documentation build output
 .docc-build/
+
+# Python bytecode cache
+__pycache__/
+
+# Node dependencies fetched locally for the pinned CoatyJS reference agent
+node_modules/
