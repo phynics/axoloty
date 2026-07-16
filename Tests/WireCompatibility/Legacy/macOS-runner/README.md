@@ -18,6 +18,10 @@ the repository root. Each command creates a lossless JSONL capture and its
 provenance manifest in a fresh directory; the orchestrator derives the exact
 publication count for the selected scenario, so do not override
 `EXPECTED_PUBLICATIONS` unless diagnosing a capture.
+Before it invokes the legacy runner, the orchestrator waits for the probe's
+broker-acknowledged `coaty/#` subscription (up to `CAPTURE_READY_TIMEOUT`,
+defaulting to 10 seconds). This preserves the automatic Identity publications
+as capture evidence instead of relying on process startup timing.
 
 ```sh
 rm -rf /tmp/coatyswift-2.4.0-advertise

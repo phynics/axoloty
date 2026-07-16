@@ -6,10 +6,12 @@
 import argparse
 import base64
 import json
+import os
 import socket
 import struct
 import time
 import uuid
+from pathlib import Path
 
 
 def encode_remaining_length(value):
@@ -117,9 +119,19 @@ def connect_and_subscribe(args):
     return connection
 
 
+def mark_ready(ready_file):
+    if ready_file is None:
+        return
+    path = Path(ready_file)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary.write_text("subscribed\n", encoding="utf-8")
+    temporary.replace(path)
+
+
 def run(args):
     metadata = vars(args)
     connection = connect_and_subscribe(args)
+    mark_ready(args.ready_file)
     captured = 0
     with connection, open(args.output, "a", encoding="utf-8") as output:
         while args.count == 0 or captured < args.count:
@@ -150,6 +162,7 @@ def main():
     parser.add_argument("--output", required=True)
     parser.add_argument("--count", type=int, default=0, help="Stop after N publications; zero captures until interrupted")
     parser.add_argument("--timeout", type=float, default=10.0)
+    parser.add_argument("--ready-file", help="Atomically create this file after the broker accepts the subscription")
     run(parser.parse_args())
 
 

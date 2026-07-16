@@ -44,6 +44,18 @@ class MacOSRunnerContractTests(unittest.TestCase):
         self.assertIn("discover-resolve) DEFAULT_EXPECTED_PUBLICATIONS=4", source)
         self.assertIn('"$EXPECTED_PUBLICATIONS"', source)
 
+    def test_orchestrator_waits_for_probe_subscription_before_starting_runner(self):
+        source = ORCHESTRATOR.read_text(encoding="utf-8")
+
+        self.assertIn('CAPTURE_READY="$OUTPUT_DIR/$SCENARIO.capture-ready"', source)
+        self.assertIn('--ready-file "$CAPTURE_READY"', source)
+        self.assertIn('while [ ! -f "$CAPTURE_READY" ]; do', source)
+        self.assertIn('Capture probe did not become ready', source)
+        self.assertLess(
+            source.index('while [ ! -f "$CAPTURE_READY" ]; do'),
+            source.index('"$LEGACY_SCENARIO_COMMAND"'),
+        )
+
     def test_runner_documentation_gives_capture_commands_for_every_scenario(self):
         readme = RUNNER_README.read_text(encoding="utf-8")
 
