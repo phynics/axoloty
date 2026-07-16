@@ -38,10 +38,23 @@ class MockReceiverController: Controller, @unchecked Sendable {
         log.info("Stopping the container with name: \(registeredName)")
     }
 
-    func watchForAdvertiseEvents(logger: AdvertiseEventLogger, objectType: String) {
-        _Concurrency.Task { @MainActor in
-            guard let stream = try? await self.communicationManager.observeAdvertiseStream(withObjectType: objectType) else { return }
-            for await event in stream {
+    /// Subscribes to advertise events and only returns once both the broker
+    /// has acknowledged the subscription and this consumer's iterator is
+    /// attached to the event hub, so callers don't need to guess a "long
+    /// enough" delay before publishing (see
+    /// https://github.com/phynics/axoloty/issues/51).
+    ///
+    /// Uses `makeAsyncIteratorAndWait()` rather than plain `for await`: a bare
+    /// `for await` creates its iterator via `makeAsyncIterator()`, whose event
+    /// hub registration is a detached, unawaited task. That leaves a real gap
+    /// between "the broker acknowledged the subscription" and "this consumer
+    /// can actually receive events", which intermittently dropped the first
+    /// events published right after subscribing.
+    func watchForAdvertiseEvents(logger: AdvertiseEventLogger, objectType: String) async throws -> _Concurrency.Task<Void, Never> {
+        let stream = try await communicationManager.observeAdvertiseStream(withObjectType: objectType)
+        let box = SharedAsyncIteratorBox(await stream.makeAsyncIteratorAndWait())
+        return _Concurrency.Task { @MainActor in
+            while let event = await box.iterator.next() {
                 guard let object = event.object.decodeObject() as? CoatyObject else { continue }
                 logger.count += 1
                 if let event = try? AdvertiseEvent.with(object: object) { logger.eventData.append(event.data) }
@@ -49,13 +62,17 @@ class MockReceiverController: Controller, @unchecked Sendable {
         }
     }
 
-    /// Subscribes to channel events and only returns once the subscription has been
-    /// acknowledged by the broker, so callers don't need to guess a "long enough" delay
-    /// before publishing (see https://github.com/phynics/axoloty/issues/51).
+    /// Subscribes to channel events and only returns once both the broker has
+    /// acknowledged the subscription and this consumer's iterator is attached
+    /// to the event hub (see `watchForAdvertiseEvents` above for why a bare
+    /// `for await` isn't sufficient, and
+    /// https://github.com/phynics/axoloty/issues/51 for the subscription-ack
+    /// half of this guarantee).
     func watchForChannelEvents(logger: ChannelEventLogger, channelId: String) async throws -> _Concurrency.Task<Void, Never> {
         let stream = try await communicationManager.observeChannelStream(channelId: channelId)
+        let box = SharedAsyncIteratorBox(await stream.makeAsyncIteratorAndWait())
         return _Concurrency.Task { @MainActor in
-            for await event in stream {
+            while let event = await box.iterator.next() {
                 if let object = event.object.flatMap({ try? $0.decodeObject() }) {
                     logger.count += 1
                     if let event = try? ChannelEvent.with(object: object, channelId: channelId) { logger.eventData.append(event.data) }
@@ -162,50 +179,69 @@ class MockEmitterController: Controller, @unchecked Sendable {
     }
 }
 
-/// A collection of sensorThings objects. Used to check validators behaviours.
+/// A factory of sensorThings objects used to check validator behaviours.
+///
+/// Each `_make*` function returns a brand-new instance. These object types
+/// are classes, and earlier revisions shared one mutable static instance per
+/// type across the whole test process; concurrently running tests (or loop
+/// iterations) publishing the same objectType raced to overwrite that shared
+/// instance's `objectId`/`name` between construction and the point the
+/// communication layer serializes it, which could silently corrupt or drop
+/// events. A fresh instance per call removes the shared mutable state
+/// instead of papering over the race with timing.
 class SensorThingsCollection {
-    nonisolated(unsafe) static let sensor = Sensor(description: "A thermometer measures the temperature",
-                                                   encodingType: SensorEncodingTypes.UNDEFINED,
-                                                   metadata: AnyCodable(),
-                                                   unitOfMeasurement: UnitOfMeasurement(name: "Celsius",
-                                                                                        symbol: "degC",
-                                                                                        definition: "http://www.qudt.org/qudt/owl/1.0.0/unit/Instances.html#DegreeCelsius"),
-                                                   observationType: ObservationTypes.MEASUREMENT,
-                                                   phenomenonTime: CoatyTimeInterval(start: Date().millisecondsSince1970 - 1000,
-                                                                                     end: Date().millisecondsSince1970),
-                                                   resultTime: CoatyTimeInterval(start: Date().millisecondsSince1970 - 1000,
-                                                                                 end: Date().millisecondsSince1970),
-                                                   observedProperty: ObservedProperty(name: "Temperature",
-                                                                                      definition: "http://dbpedia.org/page/Dew_point",
-                                                                                      description: "DewPoint Temperature"),
-                                                   name: "Thermometer",
-                                                   objectId: CoatyUUID(uuidString: "83dfc46a-0709-4f70-9ea5-beebf8fa89af")!,
-                                                   parentObjectId: CoatyUUID(uuidString: "4c480c29-f65f-496f-8005-03e7503eec2b")!)
+    private static func _makeSensor() -> Sensor {
+        Sensor(description: "A thermometer measures the temperature",
+               encodingType: SensorEncodingTypes.UNDEFINED,
+               metadata: AnyCodable(),
+               unitOfMeasurement: UnitOfMeasurement(name: "Celsius",
+                                                    symbol: "degC",
+                                                    definition: "http://www.qudt.org/qudt/owl/1.0.0/unit/Instances.html#DegreeCelsius"),
+               observationType: ObservationTypes.MEASUREMENT,
+               phenomenonTime: CoatyTimeInterval(start: Date().millisecondsSince1970 - 1000,
+                                                 end: Date().millisecondsSince1970),
+               resultTime: CoatyTimeInterval(start: Date().millisecondsSince1970 - 1000,
+                                             end: Date().millisecondsSince1970),
+               observedProperty: ObservedProperty(name: "Temperature",
+                                                  definition: "http://dbpedia.org/page/Dew_point",
+                                                  description: "DewPoint Temperature"),
+               name: "Thermometer",
+               objectId: CoatyUUID(uuidString: "83dfc46a-0709-4f70-9ea5-beebf8fa89af")!,
+               parentObjectId: CoatyUUID(uuidString: "4c480c29-f65f-496f-8005-03e7503eec2b")!)
+    }
 
-    nonisolated(unsafe) static let featureOfInterest = FeatureOfInterest(description: "feature of interest",
-                                                                         encodingType: EncodingTypes.UNDEFINED,
-                                                                         metadata: AnyCodable("interesting"),
-                                                                         name: "F0I1",
-                                                                         objectId: CoatyUUID(uuidString: "b15521af-9077-4b22-978a-5ff8381d53ae")!)
+    private static func _makeFeatureOfInterest() -> FeatureOfInterest {
+        FeatureOfInterest(description: "feature of interest",
+                          encodingType: EncodingTypes.UNDEFINED,
+                          metadata: AnyCodable("interesting"),
+                          name: "F0I1",
+                          objectId: CoatyUUID(uuidString: "b15521af-9077-4b22-978a-5ff8381d53ae")!)
+    }
 
-    nonisolated(unsafe) static let location = Location(geoLocation: GeoLocation(coords: GeoCoordinates(latitude: 32, longitude: 46, accuracy: 1),
-                                                                                timestamp: Double(Date().millisecondsSince1970)),
-                                                       name: "Muenchen",
-                                                       objectType: Location.objectType,
-                                                       objectId: CoatyUUID(uuidString: "14119642-ee6a-4596-bf34-d8a3436290d3")!)
+    private static func _makeLocation() -> Location {
+        Location(geoLocation: GeoLocation(coords: GeoCoordinates(latitude: 32, longitude: 46, accuracy: 1),
+                                          timestamp: Double(Date().millisecondsSince1970)),
+                 name: "Muenchen",
+                 objectType: Location.objectType,
+                 objectId: CoatyUUID(uuidString: "14119642-ee6a-4596-bf34-d8a3436290d3")!)
+    }
 
-    nonisolated(unsafe) static let observation = Observation(phenomenonTime: Double(Date().millisecondsSince1970),
-                                                             result: AnyCodable("12.50"),
-                                                             resultTime: Double(Date().millisecondsSince1970),
-                                                             featureOfInterest: CoatyUUID(uuidString: "b15521af-9077-4b22-978a-5ff8381d53ae")!,
-                                                             name: "Observation1",
-                                                             objectId: CoatyUUID(uuidString: "31ba0e43-ea26-4179-acf2-299e3a9a0f92")!,
-                                                             parentObjectId: CoatyUUID(uuidString: "83dfc46a-0709-4f70-9ea5-beebf8fa89af")!)
+    private static func _makeObservation() -> Observation {
+        Observation(phenomenonTime: Double(Date().millisecondsSince1970),
+                    result: AnyCodable("12.50"),
+                    resultTime: Double(Date().millisecondsSince1970),
+                    featureOfInterest: CoatyUUID(uuidString: "b15521af-9077-4b22-978a-5ff8381d53ae")!,
+                    name: "Observation1",
+                    objectId: CoatyUUID(uuidString: "31ba0e43-ea26-4179-acf2-299e3a9a0f92")!,
+                    parentObjectId: CoatyUUID(uuidString: "83dfc46a-0709-4f70-9ea5-beebf8fa89af")!)
+    }
 
-    nonisolated(unsafe) static let thing = Thing(description: "",
-                                                 name: "Thing1",
-                                                 objectId: CoatyUUID(uuidString: "4c480c29-f65f-496f-8005-03e7503eec2b")!,
-                                                 locationId: CoatyUUID(uuidString: "14119642-ee6a-4596-bf34-d8a3436290d3")!)
+    private static func _makeThing() -> Thing {
+        Thing(description: "",
+              name: "Thing1",
+              objectId: CoatyUUID(uuidString: "4c480c29-f65f-496f-8005-03e7503eec2b")!,
+              locationId: CoatyUUID(uuidString: "14119642-ee6a-4596-bf34-d8a3436290d3")!)
+    }
 
     static func getObjectByType(objectType: String,
                                 uuid: CoatyUUID,
@@ -224,15 +260,15 @@ class SensorThingsCollection {
     private static func _objectTypeRouter(objectType: String) -> CoatyObject? {
         switch objectType {
         case SensorThingsTypes.OBJECT_TYPE_SENSOR:
-            return SensorThingsCollection.sensor
+            return SensorThingsCollection._makeSensor()
         case SensorThingsTypes.OBJECT_TYPE_FEATURE_OF_INTEREST:
-            return SensorThingsCollection.featureOfInterest
+            return SensorThingsCollection._makeFeatureOfInterest()
         case CoreType.Location.objectType:
-            return SensorThingsCollection.location
+            return SensorThingsCollection._makeLocation()
         case SensorThingsTypes.OBJECT_TYPE_OBSERVATION:
-            return SensorThingsCollection.observation
+            return SensorThingsCollection._makeObservation()
         case SensorThingsTypes.OBJECT_TYPE_THING:
-            return SensorThingsCollection.thing
+            return SensorThingsCollection._makeThing()
         default:
             return nil
         }

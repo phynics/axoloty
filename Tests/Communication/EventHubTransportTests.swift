@@ -1,16 +1,14 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+@testable import Axoloty
 import Foundation
 import Testing
-@testable import Axoloty
 
 /// Tests that transport-level state and raw MQTT messages are mirrored into
 /// the Swift concurrency ``EventHub`` while the legacy Rx subjects remain
 /// source-compatible.
-@Suite
 @MainActor
 struct EventHubTransportTests {
-
     @Test
     func advertiseStreamAcquiresTopicAndDeliversSnapshot() async throws {
         let client = FakeCommunicationClient(delegate: FakeStartable())
@@ -368,7 +366,7 @@ struct EventHubTransportTests {
     }
 
     @Test
-    func managerReadinessWaitsForSubscriptionAcknowledgements() async throws {
+    func managerReadinessWaitsForSubscriptionAcknowledgements() async {
         let gate = SubscriptionAckGate()
         let client = FakeCommunicationClient(delegate: FakeStartable(), subscriptionGate: gate)
         let manager = makeManager(client: client)
@@ -391,7 +389,7 @@ struct EventHubTransportTests {
     }
 
     @Test
-    func testCommunicationStateReplayThroughManagerEventHub() async throws {
+    func communicationStateReplayThroughManagerEventHub() async throws {
         let manager = makeManager()
         let fakeClient = FakeCommunicationClient(delegate: manager)
         manager.client = fakeClient
@@ -406,7 +404,7 @@ struct EventHubTransportTests {
     }
 
     @Test
-    func testOperatingStateReplayThroughManagerEventHub() async throws {
+    func operatingStateReplayThroughManagerEventHub() async throws {
         let manager = makeManager()
         let fakeClient = FakeCommunicationClient(delegate: manager)
         manager.client = fakeClient
@@ -422,18 +420,17 @@ struct EventHubTransportTests {
     }
 
     @Test
-    func testMultipleConsumersReceiveRawMQTTMessages() async throws {
+    func multipleConsumersReceiveRawMQTTMessages() async throws {
         let manager = makeManager()
         let fakeClient = FakeCommunicationClient(delegate: manager)
         manager.client = fakeClient
 
         let stream: EventStream<RawMQTTMessage> = await manager.observeRawMQTTMessageStream()
-        var iteratorOne = stream.makeAsyncIterator()
-        var iteratorTwo = stream.makeAsyncIterator()
-
-        // Give the async iterator continuations time to register with the hub
-        // before yielding, because raw messages are not replayed.
-        try? await _Concurrency.Task.sleep(for: .milliseconds(100))
+        // Raw messages aren't replayed, so each iterator must confirm its
+        // event hub registration is attached before we yield, rather than
+        // guessing how long that takes with a fixed sleep.
+        var iteratorOne = await stream.makeAsyncIteratorAndWait()
+        var iteratorTwo = await stream.makeAsyncIteratorAndWait()
 
         await fakeClient.simulateRawMessage(topic: "external/topic", payload: [0xAB, 0xCD])
 
@@ -445,7 +442,7 @@ struct EventHubTransportTests {
     }
 
     @Test
-    func testMQTTNIOClientMirrorsStateChangesToEventHub() async throws {
+    func mQTTNIOClientMirrorsStateChangesToEventHub() async throws {
         let delegate = FakeStartable()
         let options = MQTTClientOptions(
             host: "127.0.0.1",
@@ -456,8 +453,11 @@ struct EventHubTransportTests {
         options.clientId = "test-client"
         let client = MQTTNIOClient(mqttClientOptions: options, delegate: delegate)
 
+        // No settling delay needed: `.state` buffering both caches the latest
+        // value and forwards live yields to already-registered continuations,
+        // so the order between this call and the iterator registration below
+        // doesn't matter — the state reaches the iterator either way.
         client.updateCommunicationState(.online)
-        try? await _Concurrency.Task.sleep(for: .milliseconds(50))
 
         let stream: EventStream<CommunicationState> = await client.eventHub.registerStream(
             key: CommunicationEventHubKeys.communicationState,
@@ -465,7 +465,7 @@ struct EventHubTransportTests {
             onFirst: {},
             onLast: {}
         )
-        var iterator = stream.makeAsyncIterator()
+        var iterator = await stream.makeAsyncIteratorAndWait()
 
         let state = try await nextValue(&iterator, timeout: .milliseconds(500))
         #expect(state == .online)
@@ -474,40 +474,8 @@ struct EventHubTransportTests {
 
 // MARK: - Helpers
 
-private struct TimeoutError: Error {}
-
-private final class IteratorBox<T: Sendable>: @unchecked Sendable {
-    var iterator: EventStream<T>.Iterator
-    init(_ iterator: EventStream<T>.Iterator) { self.iterator = iterator }
-}
-
-private func nextValue<T: Sendable>(
-    _ iterator: inout EventStream<T>.Iterator,
-    timeout: Duration
-) async throws -> T {
-    let box = IteratorBox(iterator)
-    defer { iterator = box.iterator }
-
-    return try await withThrowingTaskGroup(of: T.self) { group in
-        group.addTask {
-            guard let value = await box.iterator.next() else {
-                throw CancellationError()
-            }
-            return value
-        }
-
-        group.addTask {
-            try await _Concurrency.Task.sleep(for: timeout)
-            throw TimeoutError()
-        }
-
-        guard let value = try await group.next() else {
-            throw TimeoutError()
-        }
-        group.cancelAll()
-        return value
-    }
-}
+//
+// `nextValue` is shared from Tests/Testing/AsyncWaiting.swift.
 
 @MainActor
 private func makeManager(client: CommunicationClient? = nil) -> CommunicationManager {
@@ -535,7 +503,7 @@ private func waitForCommands(
     on client: FakeCommunicationClient,
     expecting expected: [SubscriptionCommand]
 ) async throws {
-    for _ in 0..<20 {
+    for _ in 0 ..< 20 {
         if client.commands == expected {
             return
         }
@@ -551,7 +519,6 @@ private final class FakeStartable: CommunicationClientDelegate {
 }
 
 private final class FakeCommunicationClient: CommunicationClient, @unchecked Sendable {
-
     let eventHub = EventHub()
     var delegate: CommunicationClientDelegate
     private(set) var commands: [SubscriptionCommand] = []
@@ -581,10 +548,10 @@ private final class FakeCommunicationClient: CommunicationClient, @unchecked Sen
         await eventHub.yield(value: snapshot, to: key)
     }
 
-    func connect(lastWillTopic: String, lastWillMessage: String) {}
+    func connect(lastWillTopic _: String, lastWillMessage _: String) {}
     func disconnect() {}
-    func publish(_ topic: String, message: String) {}
-    func publish(_ topic: String, message: [UInt8]) {}
+    func publish(_: String, message _: String) {}
+    func publish(_: String, message _: [UInt8]) {}
     func subscribe(_ topic: String) async throws {
         commands.append(.subscribe(topic))
         if let subscriptionGate {
