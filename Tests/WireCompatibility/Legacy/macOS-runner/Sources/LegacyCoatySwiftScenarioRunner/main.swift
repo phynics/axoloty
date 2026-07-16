@@ -11,7 +11,6 @@ private let referenceObjectId = "00000000-0000-4000-8000-000000000101"
 private let requesterIdentityId = "00000000-0000-4000-8000-000000000201"
 private let responderIdentityId = "00000000-0000-4000-8000-000000000202"
 private let settleInterval: TimeInterval = 1
-private let subscriptionInterval: TimeInterval = 0.5
 private let resolveTimeout: TimeInterval = 5
 
 private struct Arguments {
@@ -48,12 +47,14 @@ private enum RunnerError: Error, CustomStringConvertible {
     case usage(String)
     case invalidPin(String)
     case unsupportedScenario(String)
+    case readinessTimeout
     case timeout
 
     var description: String {
         switch self {
         case .usage(let message), .invalidPin(let message): return message
         case .unsupportedScenario(let scenario): return "unsupported scenario: \(scenario)"
+        case .readinessTimeout: return "timed out waiting for responder Identity subscription evidence"
         case .timeout: return "timed out waiting for deterministic Resolve"
         }
     }
@@ -95,7 +96,7 @@ private func report(_ state: String, scenario: String, details: String = "") {
     print("{\"state\":\"\(state)\",\"scenario\":\"\(scenario)\"\(details)}")
 }
 
-private func runOneWay(_ arguments: Arguments, publish: (CommunicationManager) -> Void) throws {
+private func runOneWay(_ arguments: Arguments, publish: (CommunicationManager) throws -> Void) throws {
     let container = makeContainer(
         arguments: arguments,
         identityId: requesterIdentityId,
@@ -104,7 +105,7 @@ private func runOneWay(_ arguments: Arguments, publish: (CommunicationManager) -
     let manager = try communicationManager(for: container)
     report("ready", scenario: arguments.scenario)
     manager.start()
-    publish(manager)
+    try publish(manager)
     report("published", scenario: arguments.scenario, details: ",\"objectId\":\"\(referenceObjectId)\"")
     Thread.sleep(forTimeInterval: settleInterval)
     manager.stop()
@@ -123,6 +124,7 @@ private func runDiscoverResolve(_ arguments: Arguments) throws {
     )
     let requesterManager = try communicationManager(for: requester)
     let responderManager = try communicationManager(for: responder)
+    let responderIdentityObserved = DispatchSemaphore(value: 0)
     let resolveReceived = DispatchSemaphore(value: 0)
 
     let discoverSubscription = responderManager.observeDiscover().subscribe(onNext: { event in
@@ -135,10 +137,25 @@ private func runDiscoverResolve(_ arguments: Arguments) throws {
             privateData: ["reference": "coatyswift-2.4.0"]
         ))
     })
+    let identitySubscription = requesterManager
+        .observeAdvertise(withCoreType: .Identity)
+        .subscribe(onNext: { event in
+            guard event.sourceId?.string == responderIdentityId else {
+                return
+            }
+            responderIdentityObserved.signal()
+        })
     report("ready", scenario: arguments.scenario)
-    responderManager.start()
     requesterManager.start()
-    Thread.sleep(forTimeInterval: subscriptionInterval)
+    responderManager.start()
+    guard responderIdentityObserved.wait(timeout: .now() + resolveTimeout) == .success else {
+        discoverSubscription.dispose()
+        identitySubscription.dispose()
+        requesterManager.stop()
+        responderManager.stop()
+        throw RunnerError.readinessTimeout
+    }
+    identitySubscription.dispose()
     let resolveSubscription = requesterManager
         .publishDiscover(DiscoverEvent.with(objectTypes: [referenceObjectType]))
         .subscribe(onNext: { event in
@@ -173,7 +190,7 @@ private func run(_ arguments: Arguments) throws {
     switch arguments.scenario {
     case "advertise":
         try runOneWay(arguments) { manager in
-            manager.publishAdvertise(AdvertiseEvent.with(object: referenceObject()))
+            try manager.publishAdvertise(AdvertiseEvent.with(object: referenceObject()))
         }
     case "deadvertise":
         try runOneWay(arguments) { manager in

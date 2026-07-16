@@ -35,6 +35,31 @@ class MacOSRunnerContractTests(unittest.TestCase):
         self.assertIn("org.axoloty.wire.ReferenceObject", source)
         self.assertIn('"reference": "coatyswift-2.4.0"', source)
 
+    def test_one_way_publication_errors_propagate_through_the_runner(self):
+        source = RUNNER_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "publish: (CommunicationManager) throws -> Void",
+            source,
+        )
+        self.assertIn("try publish(manager)", source)
+        self.assertIn("try manager.publishAdvertise", source)
+
+    def test_discover_waits_for_observed_responder_identity_not_a_fixed_delay(self):
+        source = RUNNER_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("observeAdvertise(withCoreType: .Identity)", source)
+        self.assertIn("responderIdentityObserved.wait", source)
+        self.assertNotIn("Thread.sleep(forTimeInterval: subscriptionInterval)", source)
+        self.assertLess(
+            source.index("observeAdvertise(withCoreType: .Identity)"),
+            source.index("requesterManager.start()"),
+        )
+        self.assertLess(
+            source.index("responderIdentityObserved.wait"),
+            source.index(".publishDiscover(DiscoverEvent"),
+        )
+
     def test_orchestrator_derives_publication_count_from_scenario(self):
         source = ORCHESTRATOR.read_text(encoding="utf-8")
 

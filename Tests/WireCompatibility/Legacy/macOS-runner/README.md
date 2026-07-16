@@ -52,3 +52,9 @@ requester identity `00000000-0000-4000-8000-000000000201`, responder identity
 `00000000-0000-4000-8000-000000000101`, and private Resolve data
 `{"reference":"coatyswift-2.4.0"}`. All observed messages are protocol
 evidence and should remain in the lossless capture.
+
+For Discover/Resolve, the requester registers its Identity observer before
+either manager starts and waits until it receives the responder's automatic
+Identity advertisement. That event proves the broker has activated the
+requester subscription, so the deterministic Discover is not released on a
+timing guess.
