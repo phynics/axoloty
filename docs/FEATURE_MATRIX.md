@@ -6,7 +6,7 @@ feature parity:
 - **CoatyJS 2.4.x** — the broad reference implementation and ecosystem.
 - **CoatySwift 2.4.0** — the final upstream Swift release used as the legacy
   Swift compatibility oracle.
-- **Axoloty** — this repository's current `master`, newly renamed at the
+- **Axoloty** — this repository's current `main`, newly renamed at the
   package level while its library product and Swift module are still named
   `CoatySwift`.
 

@@ -13,7 +13,7 @@ titles and bodies as searchable migration metadata.
 | T-020 | Lifecycle and failure compatibility | #30 | Open |
 | T-021 | IO and SensorThings compatibility decision | #31 | Open |
 | T-022 | Compatibility CI gates | #32 | Open |
-| T-023 | Full package rename to Axoloty | #2 (canonical), #1 (duplicate, closed) | Closed |
+| T-023 | Full package rename to Axoloty | #2 | Closed |
 | T-024 | DocC catalog and containerized build | #3 | Closed |
 | T-025 | Adopt ErrorKit and record error compatibility policy | #4 | Closed |
 | T-026 | Establish the Swift 6.3 event-stream foundation | #5 | Closed |
@@ -21,7 +21,7 @@ titles and bodies as searchable migration metadata.
 | T-028 | Remove RxSwift and close the migration release | #7 | Closed |
 | T-029 | Organize tests by subsystem | #8 | Closed |
 | T-030 | SwiftWasm/WASI feasibility spike | #33 | Open |
-| T-031 | Migrate codebase errors to ErrorKit | #34 | Open |
+| T-031 | Migrate codebase errors to ErrorKit | #34 | Closed |
 | T-032 | Migrate stored-property setter access syntax for Swift 6 | #35 | Open |
 | T-033 | Fix topic matcher wildcard exhaustion | #9 | Closed |
 | T-034 | Make fuzz campaign artifacts complete on every exit path | #10 | Closed |
@@ -47,6 +47,6 @@ titles and bodies as searchable migration metadata.
 
 - **Total T-IDs:** 36 (T-016 through T-051)
 - **Open issues:** 12 (T-016–T-022, T-030–T-032, T-044, T-046)
-- **Closed issues:** 25 (T-023–T-029, T-033–T-043, T-045, T-047–T-051, plus duplicate T-023 #1)
-- **No duplicates:** All T-IDs map to exactly one canonical issue (T-023 has a closed duplicate at #1)
+- **Closed issues:** 24 (T-023–T-029, T-033–T-043, T-045, T-047–T-051)
+- **No duplicates:** Every T-ID maps to exactly one GitHub Issue.
 - **Source files preserved:** Local ticket files remain in `.agents/tickets/` for reference
