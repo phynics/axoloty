@@ -440,37 +440,47 @@ public class CommunicationManager {
         }
     }
 
-    nonisolated func didUpdateCommunicationState(_ state: CommunicationState) {
+    // MARK: - Main-actor delegate dispatch
+
+    /// Forwards `body` to this manager's main-actor isolation domain, capturing
+    /// `self` weakly so a deallocated manager silently drops the call. Used by
+    /// the `nonisolated` transport delegate callbacks, which are invoked off the
+    /// main actor.
+    private nonisolated func onMain(_ body: @escaping @MainActor (_ manager: CommunicationManager) async -> Void) {
         _Concurrency.Task { @MainActor [weak self] in
             guard let self else { return }
-            self.communicationState = state
-            self.log.info("Communication State: \(String(describing: state))")
-            await self.subscriptionCoordinator?.setOnline(state == .online)
+            await body(self)
+        }
+    }
+
+    nonisolated func didUpdateCommunicationState(_ state: CommunicationState) {
+        onMain { manager in
+            manager.communicationState = state
+            manager.log.info("Communication State: \(String(describing: state))")
+            await manager.subscriptionCoordinator?.setOnline(state == .online)
             if state == .online {
-                self.advertiseIdentity()
-                self.advertiseIoNodes()
-                self.deferredPublications.forEach { topic, payload in
+                manager.advertiseIdentity()
+                manager.advertiseIoNodes()
+                manager.deferredPublications.forEach { topic, payload in
                     switch payload {
-                    case .bytesArrayPayload(let bytes): self.client.publish(topic, message: bytes)
-                    case .stringPayload(let string): self.client.publish(topic, message: string)
+                    case .bytesArrayPayload(let bytes): manager.client.publish(topic, message: bytes)
+                    case .stringPayload(let string): manager.client.publish(topic, message: string)
                     }
                 }
-                self.deferredPublications.removeAll()
+                manager.deferredPublications.removeAll()
             }
         }
     }
 
     nonisolated func didReceiveRawMQTTMessage(topic: String, payload: [UInt8]) {
-        _Concurrency.Task { @MainActor [weak self] in
-            guard let self else { return }
-            await self.eventHub.yield(value: RawMQTTMessage(topic: topic, payload: payload), to: CommunicationEventHubKeys.rawMQTTMessage)
+        onMain { manager in
+            await manager.eventHub.yield(value: RawMQTTMessage(topic: topic, payload: payload), to: CommunicationEventHubKeys.rawMQTTMessage)
         }
     }
 
     nonisolated func didReceiveIoValue(topic: String, payload: [UInt8]) {
-        _Concurrency.Task { @MainActor [weak self] in
-            guard let self else { return }
-            await self.eventHub.yield(value: IoValueEventSnapshot(topic: topic, payload: payload), to: CommunicationEventHubKeys.ioValue)
+        onMain { manager in
+            await manager.eventHub.yield(value: IoValueEventSnapshot(topic: topic, payload: payload), to: CommunicationEventHubKeys.ioValue)
         }
     }
 
@@ -726,9 +736,7 @@ extension CommunicationManager: CommunicationClientDelegate {
     /// Auto start communication manager (caused by shouldAutoStart option or
     /// bonjour discovery).
     nonisolated func didReceiveStart() {
-        _Concurrency.Task { @MainActor [weak self] in
-            self?.start()
-        }
+        onMain { manager in manager.start() }
     }
 }
 
