@@ -41,20 +41,37 @@ extension CommunicationManager {
         }
     }
 
-    /// Starts the internal Discover-event consumer that resolves configured IO nodes.
-    internal func observeDiscoverIoNodes() {
-        guard !ioNodes.isEmpty else { return }
+    /// Subscribes to the Discover stream and resolves matching objects.
+    ///
+    /// `predicate` decides whether an incoming Discover event should be answered;
+    /// `resolve` publishes the Resolve response(s) for a matching event, using the
+    /// supplied correlation ID. Both closures receive the manager so they need not
+    /// capture `self`.
+    internal func respondToDiscover(
+        matching predicate: @escaping @MainActor @Sendable (CommunicationManager, DiscoverEventSnapshot) -> Bool,
+        resolve: @escaping @MainActor @Sendable (CommunicationManager, DiscoverEventSnapshot, String) -> Void
+    ) {
         let task = _Concurrency.Task { @MainActor [weak self] in
             guard let self else { return }
             let stream = await self.observeDiscoverStream()
             for await event in stream {
-                guard event.coreTypes?.contains(.IoNode) == true,
-                      let correlationId = event.correlationId else { continue }
-                for node in self.ioNodes {
-                    self.publishResolve(event: ResolveEvent.with(object: node), correlationId: correlationId)
-                }
+                guard predicate(self, event), let correlationId = event.correlationId else { continue }
+                resolve(self, event, correlationId)
             }
         }
         lifecycleTasks.append(task)
+    }
+
+    /// Starts the internal Discover-event consumer that resolves configured IO nodes.
+    internal func observeDiscoverIoNodes() {
+        guard !ioNodes.isEmpty else { return }
+        respondToDiscover(
+            matching: { _, event in event.coreTypes?.contains(.IoNode) == true },
+            resolve: { manager, _, correlationId in
+                for node in manager.ioNodes {
+                    manager.publishResolve(event: ResolveEvent.with(object: node), correlationId: correlationId)
+                }
+            }
+        )
     }
 }
