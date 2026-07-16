@@ -37,7 +37,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
 
     // MARK: - Protocol fields.
 
-    var delegate: Startable
+    var delegate: CommunicationClientDelegate
 
     /// The async event hub used to mirror communication state and raw MQTT
     /// transport messages to concurrent consumers.
@@ -96,7 +96,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
 
     // MARK: - Initializer.
 
-    init(mqttClientOptions: MQTTClientOptions, delegate: Startable) {
+    init(mqttClientOptions: MQTTClientOptions, delegate: CommunicationClientDelegate) {
         self.delegate = delegate
         configure(mqttClientOptions)
 
@@ -342,7 +342,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
     // MARK: - State management methods.
 
     func updateCommunicationState(_ state: CommunicationState) {
-        (delegate as? CommunicationClientDelegate)?.didUpdateCommunicationState(state)
+        delegate.didUpdateCommunicationState(state)
 
         _Concurrency.Task<Void, Never> { [weak self] in
             guard let self else { return }
@@ -370,7 +370,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
             }
 
             if CommunicationTopic.isRawTopic(topic: info.topicName) {
-                (self.delegate as? CommunicationClientDelegate)?.didReceiveRawMQTTMessage(
+                self.delegate.didReceiveRawMQTTMessage(
                     topic: info.topicName,
                     payload: bytes
                 )
@@ -380,7 +380,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
             do {
                 let topic = try CommunicationTopic(info.topicName)
                 if topic.eventType == .IoValue {
-                    (self.delegate as? CommunicationClientDelegate)?.didReceiveIoValue(
+                    self.delegate.didReceiveIoValue(
                         topic: info.topicName,
                         payload: bytes
                     )
@@ -392,7 +392,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                         )
                     }
                 } else if let payloadString = String(bytes: bytes, encoding: .utf8) {
-                    (self.delegate as? CommunicationClientDelegate)?.didReceiveMessage(
+                    self.delegate.didReceiveMessage(
                         topic: info.topicName,
                         payload: payloadString
                     )

@@ -546,24 +546,24 @@ private func waitForCommands(
 
 // MARK: - Test seam
 
-private final class FakeStartable: Startable {
+private final class FakeStartable: CommunicationClientDelegate {
     func didReceiveStart() {}
 }
 
 private final class FakeCommunicationClient: CommunicationClient, @unchecked Sendable {
 
     let eventHub = EventHub()
-    var delegate: Startable
+    var delegate: CommunicationClientDelegate
     private(set) var commands: [SubscriptionCommand] = []
     private let subscriptionGate: SubscriptionAckGate?
 
-    init(delegate: Startable, subscriptionGate: SubscriptionAckGate? = nil) {
+    init(delegate: CommunicationClientDelegate, subscriptionGate: SubscriptionAckGate? = nil) {
         self.delegate = delegate
         self.subscriptionGate = subscriptionGate
     }
 
     func simulateState(_ state: CommunicationState) async {
-        (delegate as? CommunicationClientDelegate)?.didUpdateCommunicationState(state)
+        delegate.didUpdateCommunicationState(state)
         await eventHub.yieldState(
             value: state,
             to: CommunicationEventHubKeys.communicationState

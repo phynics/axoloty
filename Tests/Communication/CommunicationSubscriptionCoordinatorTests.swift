@@ -258,7 +258,7 @@ private actor CommandLog {
 
 private final class RecordingCommunicationClient: CommunicationClient, @unchecked Sendable {
     let eventHub = EventHub()
-    var delegate: Startable = RecordingStartable()
+    var delegate: CommunicationClientDelegate = RecordingStartable()
     private let gate: SubscriptionGate?
     private(set) var commands: [SubscriptionCommand] = []
 
@@ -329,6 +329,6 @@ private actor CompletionFlag {
     }
 }
 
-private struct RecordingStartable: Startable {
+private struct RecordingStartable: CommunicationClientDelegate {
     func didReceiveStart() {}
 }
