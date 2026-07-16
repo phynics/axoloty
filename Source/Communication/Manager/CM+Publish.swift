@@ -50,68 +50,73 @@ extension CommunicationManager {
         )
     }
 
-    public func publishUpdate(_ event: UpdateEvent) async -> EventStream<ResponseEventSnapshot> {
+    private func publishWithResponse<D: CommunicationEventData>(
+        _ event: CommunicationEvent<D>,
+        request eventType: CommunicationEventType,
+        response responseType: CommunicationEventType,
+        eventTypeFilter: String? = nil
+    ) async -> EventStream<ResponseEventSnapshot> {
         event.sourceId = identity.objectId
         let correlationId = CoatyUUID().string
-        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: namespace, sourceId: identity.objectId, eventType: .Update, eventTypeFilter: event.data.object.coreType.rawValue, correlationId: correlationId)
-        let responseTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Complete, namespace: communicationOptions.shouldEnableCrossNamespacing ? nil : namespace, correlationId: correlationId)
-        let stream = await responseStream(.Complete, correlationId: correlationId, topic: responseTopic)
+        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(
+            namespace: namespace,
+            sourceId: identity.objectId,
+            eventType: eventType,
+            eventTypeFilter: eventTypeFilter,
+            correlationId: correlationId)
+        let responseTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+            eventType: responseType,
+            namespace: communicationOptions.shouldEnableCrossNamespacing ? nil : namespace,
+            correlationId: correlationId)
+        let stream = await responseStream(responseType, correlationId: correlationId, topic: responseTopic)
         publish(topic: topic, message: event.json)
         return stream
+    }
+
+    private func publishResponseless<D: CommunicationEventData>(
+        _ event: CommunicationEvent<D>,
+        eventType: CommunicationEventType,
+        correlationId: String
+    ) {
+        event.sourceId = identity.objectId
+        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(
+            namespace: namespace,
+            sourceId: identity.objectId,
+            eventType: eventType,
+            correlationId: correlationId)
+        publish(topic: topic, message: event.json)
+    }
+
+    public func publishUpdate(_ event: UpdateEvent) async -> EventStream<ResponseEventSnapshot> {
+        await publishWithResponse(event, request: .Update, response: .Complete, eventTypeFilter: event.data.object.coreType.rawValue)
     }
 
     public func publishDiscover(_ event: DiscoverEvent) async -> EventStream<ResponseEventSnapshot> {
-        event.sourceId = identity.objectId
-        let correlationId = CoatyUUID().string
-        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: namespace, sourceId: identity.objectId, eventType: .Discover, correlationId: correlationId)
-        let responseTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Resolve, namespace: communicationOptions.shouldEnableCrossNamespacing ? nil : namespace, correlationId: correlationId)
-        let stream = await responseStream(.Resolve, correlationId: correlationId, topic: responseTopic)
-        publish(topic: topic, message: event.json)
-        return stream
+        await publishWithResponse(event, request: .Discover, response: .Resolve)
     }
 
     public func publishQuery(_ event: QueryEvent) async -> EventStream<ResponseEventSnapshot> {
-        event.sourceId = identity.objectId
-        let correlationId = CoatyUUID().string
-        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: namespace, sourceId: identity.objectId, eventType: .Query, correlationId: correlationId)
-        let responseTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Retrieve, namespace: communicationOptions.shouldEnableCrossNamespacing ? nil : namespace, correlationId: correlationId)
-        let stream = await responseStream(.Retrieve, correlationId: correlationId, topic: responseTopic)
-        publish(topic: topic, message: event.json)
-        return stream
+        await publishWithResponse(event, request: .Query, response: .Retrieve)
     }
 
     public func publishCall(_ event: CallEvent) async -> EventStream<ResponseEventSnapshot> {
-        event.sourceId = identity.objectId
-        let correlationId = CoatyUUID().string
-        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: namespace, sourceId: identity.objectId, eventType: .Call, eventTypeFilter: event.operation, correlationId: correlationId)
-        let responseTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Return, namespace: communicationOptions.shouldEnableCrossNamespacing ? nil : namespace, correlationId: correlationId)
-        let stream = await responseStream(.Return, correlationId: correlationId, topic: responseTopic)
-        publish(topic: topic, message: event.json)
-        return stream
+        await publishWithResponse(event, request: .Call, response: .Return, eventTypeFilter: event.operation)
     }
 
     internal func publishComplete(event: CompleteEvent, correlationId: String) {
-        event.sourceId = identity.objectId
-        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: namespace, sourceId: identity.objectId, eventType: .Complete, correlationId: correlationId)
-        publish(topic: topic, message: event.json)
+        publishResponseless(event, eventType: .Complete, correlationId: correlationId)
     }
 
     internal func publishResolve(event: ResolveEvent, correlationId: String) {
-        event.sourceId = identity.objectId
-        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: namespace, sourceId: identity.objectId, eventType: .Resolve, correlationId: correlationId)
-        publish(topic: topic, message: event.json)
+        publishResponseless(event, eventType: .Resolve, correlationId: correlationId)
     }
 
     internal func publishRetrieve(event: RetrieveEvent, correlationId: String) {
-        event.sourceId = identity.objectId
-        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: namespace, sourceId: identity.objectId, eventType: .Retrieve, correlationId: correlationId)
-        publish(topic: topic, message: event.json)
+        publishResponseless(event, eventType: .Retrieve, correlationId: correlationId)
     }
 
     internal func publishReturn(event: ReturnEvent, correlationId: String) {
-        event.sourceId = identity.objectId
-        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: namespace, sourceId: identity.objectId, eventType: .Return, correlationId: correlationId)
-        publish(topic: topic, message: event.json)
+        publishResponseless(event, eventType: .Return, correlationId: correlationId)
     }
 
     public func publishIoValue(event: IoValueEvent) {
