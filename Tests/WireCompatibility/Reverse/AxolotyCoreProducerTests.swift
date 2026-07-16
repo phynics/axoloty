@@ -1,14 +1,13 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+import Axoloty
 import Foundation
 import Testing
-import Axoloty
 
-@Suite
 @MainActor
 struct AxolotyCoreProducerTests {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["WIRE_REVERSE_LIVE"] == "1"))
-    func testPublishesCoreEventsForCoatyJS() async throws {
+    func publishesCoreEventsForCoatyJS() async throws {
         let environment = ProcessInfo.processInfo.environment
         let scenario = try #require(environment["WIRE_SCENARIO"])
         let manager = try makeManager(environment: environment)
@@ -19,7 +18,7 @@ struct AxolotyCoreProducerTests {
         case "deadvertise":
             manager.communication.publishDeadvertise(DeadvertiseEvent.with(objectIds: [fixture.objectId]))
         case "channel":
-            manager.communication.publishChannel(try ChannelEvent.with(
+            try manager.communication.publishChannel(ChannelEvent.with(
                 object: fixture, channelId: "wire-fixture-channel", privateData: ["sequence": 7]
             ))
         case "discover-resolve":
@@ -41,7 +40,7 @@ struct AxolotyCoreProducerTests {
             #expect(response.data.privateData?["responder"] as? String == "coatyjs-2.4.0")
         case "update-complete":
             let response = try await awaitResponse(
-                from: await manager.communication.publishUpdate(try UpdateEvent.with(object: fixture)),
+                from: await manager.communication.publishUpdate(UpdateEvent.with(object: fixture)),
                 eventType: .Complete,
                 as: CompleteEvent.self
             )
@@ -51,7 +50,7 @@ struct AxolotyCoreProducerTests {
             #expect(response.data.privateData?["responder"] as? String == "coatyjs-2.4.0")
         case "call-return":
             let response = try await awaitResponse(
-                from: await manager.communication.publishCall(try CallEvent.with(
+                from: await manager.communication.publishCall(CallEvent.with(
                     operation: "wire-fixture-operation", parameters: ["operand": AnyCodable(7)]
                 )),
                 eventType: .Return,
@@ -83,7 +82,7 @@ struct AxolotyCoreProducerTests {
         let namespace = environment["WIRE_NAMESPACE"] ?? "wire-compat-v1"
         let common = CommonOptions(agentIdentity: [
             "name": "axoloty-core-producer",
-            "objectId": CoatyUUID(uuidString: "22222222-2222-4222-8222-222222222222")!
+            "objectId": CoatyUUID(uuidString: "22222222-2222-4222-8222-222222222222")!,
         ])
         let container = Container.resolve(
             components: Components(controllers: [:], objectTypes: []),
@@ -119,16 +118,15 @@ struct AxolotyCoreProducerTests {
             guard response.eventType == eventType.rawValue,
                   response.sourceId == "33333333-3333-4333-8333-333333333333",
                   let payload = String(data: response.payload, encoding: .utf8),
-                  let event: Event = PayloadCoder.decode(payload) else {
+                  let event: Event = PayloadCoder.decode(payload)
+            else {
                 continue
             }
             return event
         }
-        throw WireResponseTimeoutError()
+        throw AxolotyError.RuntimeError("Timed out waiting for a \(eventType.rawValue) response")
     }
 }
-
-private struct WireResponseTimeoutError: Error {}
 
 private final class EventStreamIteratorBox<Element: Sendable>: @unchecked Sendable {
     var iterator: EventStream<Element>.Iterator
@@ -154,10 +152,10 @@ private func nextValue<Element: Sendable>(
         }
         group.addTask {
             try await _Concurrency.Task.sleep(for: timeout)
-            throw WireResponseTimeoutError()
+            throw AxolotyError.RuntimeError("Timed out waiting for the next wire response event")
         }
         guard let value = try await group.next() else {
-            throw WireResponseTimeoutError()
+            throw AxolotyError.RuntimeError("Timed out waiting for the next wire response event")
         }
         group.cancelAll()
         return value
