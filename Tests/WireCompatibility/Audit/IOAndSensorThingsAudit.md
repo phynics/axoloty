@@ -81,7 +81,7 @@ the four top-level discriminators.
 | Area | Existing evidence | Missing compatibility evidence |
 |---|---|---|
 | IO routing | No IO-focused test exists under `Tests/` | No Associate/IOV capture, cross-language producer/consumer test, raw-value test, external-route test, or IoState behavior test |
-| SensorThings | `SensorThingsTests.testAdvertise` exercises the four object types between two current Swift containers; `testChannel` exercises Channel; mocks also use Discover/Resolve | No golden reference payloads, JS/legacy Swift direction, Query/Retrieve capture, full field-boundary fixtures, unknown-field behavior, or semantic assertions for nested types |
+| SensorThings | `SensorThingsTests.advertise` exercises the four object types between two current Swift containers; `channel` exercises Channel; mocks also use Discover/Resolve | No golden reference payloads, JS/legacy Swift direction, Query/Retrieve capture, full field-boundary fixtures, unknown-field behavior, or semantic assertions for nested types |
 | Reference agents | CoatyJS 2.4.0 has a reproducible Linux image; legacy Swift 2.4.0 has an immutable source pin | CoatyJS runner supports only `advertise`; legacy Swift requires a macOS/Xcode runner or macOS-produced captures |
 | Capture tooling | Passive MQTT capture preserves topic, raw bytes, QoS, retain, duplicate flag, and order | No IO or SensorThings scenario currently invokes it; no approved fixtures exist for these capabilities |
 
