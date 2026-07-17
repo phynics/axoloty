@@ -17,8 +17,6 @@ public actor EventHub {
     private var registrationKeys: [UUID: AnyHashable] = [:]
     private var lastCallbacks: [AnyHashable: [UUID: @Sendable () -> Void]] = [:]
 
-    private let log = LogManager.log
-
     public init() {}
 
     private struct StreamRegistration {

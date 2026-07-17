@@ -7,6 +7,7 @@
 
 import ErrorKit
 import Foundation
+import Logging
 
 /// Provides a set of predefined communication events to transfer Coaty objects
 /// between distributed Coaty agents based on the publish-subscribe API of a
@@ -20,7 +21,7 @@ public class CommunicationManager {
     
     // MARK: - Logger.
 
-    internal let log = LogManager.log
+    internal let log = LogManager.logger(.communication)
 
     // MARK: - Properties.
 
@@ -438,7 +439,7 @@ public class CommunicationManager {
     /// Convenience setter for the operating state.
     private func updateOperatingState(_ state: OperatingState) {
         self.operatingState = state
-        self.log.debug("Operating State: \(String(describing: state))")
+        self.log.debug("Operating state changed", metadata: ["operatingState": .string(String(describing: state))])
         let eventHub = client.eventHub
         _Concurrency.Task {
             await eventHub.yieldState(value: state, to: CommunicationEventHubKeys.operatingState)
@@ -461,7 +462,7 @@ public class CommunicationManager {
     nonisolated func didUpdateCommunicationState(_ state: CommunicationState) {
         onMain { manager in
             manager.communicationState = state
-            manager.log.info("Communication State: \(String(describing: state))")
+            manager.log.info("Communication state changed", metadata: ["communicationState": .string(String(describing: state))])
             await manager.subscriptionCoordinator?.setOnline(state == .online)
             if state == .online {
                 manager.advertiseIdentity()
@@ -570,6 +571,16 @@ public class CommunicationManager {
         }
 
         let ioRoute = event.data.associatingRoute
+
+        // Associate carries no wire-level correlation id; the (ioSourceId,
+        // ioActorId) pair is stable for the association's lifetime and
+        // sufficient to correlate this Associate with the IoValue traffic it
+        // enables (see publishIoValue / MQTTNIOClient's IoValue handling).
+        log.debug("Handling Associate", metadata: [
+            "ioSourceId": .string(ioSourceId.string),
+            "ioActorId": .string(ioActorId.string),
+            "ioRoute": ioRoute.map { Logging.Logger.MetadataValue.string($0) } ?? "none",
+        ])
 
         // Update own IO source associations
         if isIoSourceAssociated {
@@ -750,7 +761,9 @@ extension CommunicationManager: CommunicationClientDelegate {
             do {
                 try manager.start()
             } catch {
-                manager.log.error("Failed to start CommunicationManager: \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
+                manager.log.error("Failed to start CommunicationManager", metadata: [
+                    "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+                ])
             }
         }
     }

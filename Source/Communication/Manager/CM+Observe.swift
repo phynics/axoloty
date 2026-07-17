@@ -55,6 +55,7 @@ extension CommunicationManager {
             let stream = await self.observeDiscoverStream()
             for await event in stream {
                 guard predicate(self, event), let correlationId = event.correlationId else { continue }
+                self.log.debug("Responding to Discover", metadata: ["correlationId": .string(correlationId)])
                 resolve(self, event, correlationId)
             }
         }

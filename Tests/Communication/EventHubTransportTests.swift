@@ -100,6 +100,50 @@ struct EventHubTransportTests {
         #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == snapshot)
     }
 
+    /// Discover→Resolve is a request/response flow: `publishDiscover` mints a
+    /// correlation id (logged at mint) and only matches a response snapshot
+    /// carrying that exact id (logged again at the match, see
+    /// `CommunicationManager.log` sites in `CM+Publish.swift`). This proves
+    /// the same id that gets logged on the request hop is the one the
+    /// response hop matches on -- the mechanism the correlation-id logging
+    /// added in #140 relies on. `LogManager`'s handler always writes to
+    /// stderr (see its doc comment), so this checks the underlying id
+    /// propagation rather than capturing the literal log line.
+    @Test
+    func discoverPublishAndResolveMatchShareOneCorrelationId() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        await client.simulateState(.online)
+
+        let stream = await manager.publishDiscover(DiscoverEvent.with(objectTypes: [Log.objectType]))
+        var iterator = await stream.makeAsyncIteratorAndWait()
+
+        // `.online` also triggers identity/IoNode advertisements, so filter
+        // for the Discover topic rather than assuming publish order.
+        try await waitUntil("Discover topic to be published") {
+            try client.publishedTopics.contains { try CommunicationTopic($0).eventType == .Discover }
+        }
+        let publishedTopic = try #require(
+            try client.publishedTopics.first { try CommunicationTopic($0).eventType == .Discover }
+        )
+        let parsedTopic = try CommunicationTopic(publishedTopic)
+        let mintedCorrelationId = try #require(parsedTopic.correlationId)
+
+        let resolveSnapshot = ResponseEventSnapshot(
+            eventType: CommunicationEventType.Resolve.rawValue,
+            sourceId: "responder",
+            correlationId: mintedCorrelationId,
+            payload: Data("{}".utf8)
+        )
+        await client.emit(
+            resolveSnapshot,
+            to: CommunicationEventHubKeys.response(eventType: .Resolve, correlationId: mintedCorrelationId)
+        )
+
+        let received = try await nextValue(&iterator, timeout: .milliseconds(500))
+        #expect(received.correlationId == mintedCorrelationId)
+    }
+
     @Test
     func updateStreamAcquiresTopicAndDeliversSnapshot() async throws {
         let client = FakeCommunicationClient(delegate: FakeStartable())
@@ -523,6 +567,7 @@ private final class FakeCommunicationClient: CommunicationClient, @unchecked Sen
     let eventHub = EventHub()
     var delegate: CommunicationClientDelegate
     private(set) var commands: [SubscriptionCommand] = []
+    private(set) var publishedTopics: [String] = []
     private let subscriptionGate: SubscriptionAckGate?
 
     init(delegate: CommunicationClientDelegate, subscriptionGate: SubscriptionAckGate? = nil) {
@@ -551,8 +596,8 @@ private final class FakeCommunicationClient: CommunicationClient, @unchecked Sen
 
     func connect(lastWillTopic _: String, lastWillMessage _: String) {}
     func disconnect() {}
-    func publish(_: String, message _: String) {}
-    func publish(_: String, message _: [UInt8]) {}
+    func publish(_ topic: String, message _: String) { publishedTopics.append(topic) }
+    func publish(_ topic: String, message _: [UInt8]) { publishedTopics.append(topic) }
     func subscribe(_ topic: String) async throws {
         commands.append(.subscribe(topic))
         if let subscriptionGate {

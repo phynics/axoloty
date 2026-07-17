@@ -17,7 +17,10 @@ open class SensorSourceController: Controller {
                 do {
                     try registerSensor(sensor: definition.sensor, io: definition.io.init(parameters: definition.parameters), observationPublicationType: definition.observationPublicationType, samplingInterval: definition.samplingInterval)
                 } catch {
-                    LogManager.log.error("Failed to register sensor \(definition.sensor.objectId.string): \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
+                    LogManager.logger(.sensorThings).error("Failed to register sensor", metadata: [
+                        "ioSourceId": .string(definition.sensor.objectId.string),
+                        "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+                    ])
                 }
             }
         }
@@ -65,7 +68,10 @@ open class SensorSourceController: Controller {
             do {
                 try communicationManager.publishAdvertise(AdvertiseEvent.with(object: sensor))
             } catch {
-                LogManager.log.error("Failed to advertise sensor \(sensor.objectId.string): \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
+                LogManager.logger(.sensorThings).error("Failed to advertise sensor", metadata: [
+                    "ioSourceId": .string(sensor.objectId.string),
+                    "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+                ])
             }
         }
         observeDiscoverForSensors()
@@ -86,7 +92,10 @@ open class SensorSourceController: Controller {
         do {
             try _publishObservation(sensorId: sensorId, channeled: true, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
         } catch {
-            LogManager.log.error("Failed to publish channeled observation for sensor \(sensorId.string): \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
+            LogManager.logger(.sensorThings).error("Failed to publish channeled observation", metadata: [
+                "ioSourceId": .string(sensorId.string),
+                "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+            ])
         }
     }
 
@@ -95,7 +104,10 @@ open class SensorSourceController: Controller {
         do {
             try _publishObservation(sensorId: sensorId, channeled: false, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
         } catch {
-            LogManager.log.error("Failed to publish advertised observation for sensor \(sensorId.string): \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
+            LogManager.logger(.sensorThings).error("Failed to publish advertised observation", metadata: [
+                "ioSourceId": .string(sensorId.string),
+                "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+            ])
         }
     }
 
@@ -195,13 +207,19 @@ open class SensorSourceController: Controller {
                 do {
                     try self.communicationManager.publishChannel(ChannelEvent.with(object: observation, channelId: self.getChannelId(container: container)))
                 } catch {
-                    LogManager.log.error("Failed to publish channeled observation: \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
+                    LogManager.logger(.sensorThings).error("Failed to publish channeled observation", metadata: [
+                        "ioSourceId": .string(sensorId.string),
+                        "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+                    ])
                 }
             } else {
                 do {
                     try self.communicationManager.publishAdvertise(AdvertiseEvent.with(object: observation))
                 } catch {
-                    LogManager.log.error("Failed to publish advertised observation: \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
+                    LogManager.logger(.sensorThings).error("Failed to publish advertised observation", metadata: [
+                        "ioSourceId": .string(sensorId.string),
+                        "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+                    ])
                 }
             }
             self.onObservationDidPublish(container: container, observation: observation)

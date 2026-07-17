@@ -120,28 +120,28 @@ public class DiscoverEvent: CommunicationEvent<DiscoverEventData> {
     internal func ensureValidResponseParameters(eventData: ResolveEventData) -> Bool {
         if self.data.coreTypes != nil && eventData.object != nil {
             if !((self.data.coreTypes?.contains(eventData.object!.coreType))!) {
-                LogManager.log.debug("resolved coreType not contained in Discover coreTypes")
+                LogManager.logger(.communication).debug("resolved coreType not contained in Discover coreTypes")
                 return false
             }
         }
         
         if self.data.objectTypes != nil && eventData.object != nil {
             if !((self.data.objectTypes?.contains(eventData.object!.objectType))!) {
-                LogManager.log.debug("resolved objectType not contained in Discover objectTypes")
+                LogManager.logger(.communication).debug("resolved objectType not contained in Discover objectTypes")
                 return false
             }
         }
             
         if self.data.objectId != nil && eventData.object != nil {
             if self.data.objectId != eventData.object?.objectId {
-                LogManager.log.debug("resolved object's UUID doesn't match Discover objectId")
+                LogManager.logger(.communication).debug("resolved object's UUID doesn't match Discover objectId")
                 return false
             }
         }
         
         if self.data.externalId != nil && eventData.object != nil {
             if self.data.externalId != eventData.object!.externalId {
-                LogManager.log.debug("resolved object's external ID doesn't match Discover externalId")
+                LogManager.logger(.communication).debug("resolved object's external ID doesn't match Discover externalId")
                 return false
             }
         }

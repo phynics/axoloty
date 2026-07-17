@@ -81,7 +81,7 @@ public class QueryEvent: CommunicationEvent<QueryEventData> {
                 }
                 
                 if !coreTypeValid {
-                    LogManager.log.debug("retrieved coreType not contained in Query coreTypes")
+                    LogManager.logger(.communication).debug("retrieved coreType not contained in Query coreTypes")
                     return false
                 }
             }
@@ -92,7 +92,7 @@ public class QueryEvent: CommunicationEvent<QueryEventData> {
                 }
                 
                 if !objectTypeValid {
-                    LogManager.log.debug("retrieved objectType not contained in Query objectTypes")
+                    LogManager.logger(.communication).debug("retrieved objectType not contained in Query objectTypes")
                     return false
                 }
             }

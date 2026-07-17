@@ -135,6 +135,33 @@ in Git.
   chain for debugging. `userFriendlyMessage` is the stable, public-facing
   string and is comparatively lossy; reserve it for user-visible text.
 
+### Logging
+
+- Use `LogManager.logger(.subsystem)` (see `Subsystem`), never construct a
+  bare `Logger(label:)` or a second ad hoc logger for a concern that already
+  has a subsystem. `LogManager`'s handler always writes to `stderr` and its
+  level is controlled via `LogManager.setLevel(_:for:)` — it does not honor
+  an embedding app's `LoggingSystem.bootstrap`; see `LogManager`'s doc
+  comment for why.
+- Follow the tiering rubric: `trace` for wire-level detail (topics,
+  decoded event shape), `debug` for routine control-flow (connect/subscribe/
+  disconnect housekeeping), `info` for lifecycle milestones, `notice`/
+  `warning` for absorbed failures the transport recovered from on its own
+  (not `.debug` — a dropped publish or ignored malformed inbound event is
+  the caller's business even when it isn't fatal), `error` for a thrown-and-
+  caught operation failure, `critical` for an unrecoverable config/bootstrap
+  invariant. Don't invent trace/notice/critical usage beyond what's honestly
+  applicable just to exercise the whole level range.
+- Always pass `metadata:` for dynamic values (topic, correlation id, error
+  chain, tags, etc.) — never string-interpolate them into the message. A
+  message string should read the same on every call; the values that vary go
+  in metadata so they're queryable, not just readable.
+- When touching a multi-hop flow (a request/response pair, a connect/
+  reconnect sequence, an Associate/IoValue pairing), thread and log the
+  existing `correlationId`/attempt id if one already exists in that flow, or
+  mint one at the point it starts if none does. Don't add a new wire field to
+  carry it — correlate purely on the local/log side.
+
 ### Commits
 
 - Use Conventional Commits.
