@@ -125,4 +125,67 @@ struct AnyCodableCharacterizationTests {
         #expect(!(AnyCodable(1) < AnyCodable("a")))
         #expect(!(AnyCodable("a") < AnyCodable(1)))
     }
+
+    // MARK: - Like operator operand mutation.
+
+    /// A `Like` match rewrites the filter's second operand, caching a compiled
+    /// `NSRegularExpression` into it.
+    ///
+    /// `ObjectMatcher._matchesLike` does this to avoid recompiling the pattern,
+    /// under a source comment reading "NOTE: Ask if this kind of caching is
+    /// okay". It is a write to shared filter state performed during matching.
+    ///
+    /// - Important: This pins present, undesirable behavior. #110 Phase 2
+    ///   compiles the pattern at decode time and removes the mutation, at which
+    ///   point this test is expected to be inverted deliberately.
+    @Test
+
+    func testLikeMatchReplacesSecondOperandWithACompiledRegex() throws {
+        let filter = Self.likeFilter()
+
+        #expect(ObjectMatcher.matchesFilter(obj: try Self.helloObject(), filter: filter))
+
+        let expression = try #require(filter.condition).expression
+        #expect(expression.firstOperand?.value is String)
+        #expect(expression.secondOperand?.value is NSRegularExpression)
+    }
+
+    /// Because the cached regex is not `Encodable`, a filter can no longer be
+    /// encoded once it has been used for a `Like` match.
+    ///
+    /// This is latent rather than active: the common receive-side flow decodes
+    /// a filter, matches it, and never re-encodes it. It is a landmine because
+    /// ``PayloadCoder/encode(_:)`` force-tries the encode, so a filter that is
+    /// matched and then published crashes rather than throwing.
+    ///
+    /// - Important: Pins present, undesirable behavior. #110 Phase 2 removes
+    ///   the mutation, after which encoding must succeed and this test is
+    ///   expected to be inverted deliberately.
+    @Test
+
+    func testFilterCannotBeReEncodedAfterALikeMatch() throws {
+        let filter = Self.likeFilter()
+        #expect(throws: Never.self) { try JSONEncoder().encode(filter) }
+
+        _ = ObjectMatcher.matchesFilter(obj: try Self.helloObject(), filter: filter)
+
+        #expect(throws: EncodingError.self) { try JSONEncoder().encode(filter) }
+    }
+
+    // MARK: - Fixtures.
+
+    private static func helloObject() throws -> CoatyObject {
+        return CoatyObject(coreType: .Log,
+                           objectType: Log.objectType,
+                           objectId: .init(),
+                           name: "Hello")
+    }
+
+    private static func likeFilter() -> ObjectFilter {
+        return ObjectFilter(
+            condition: ObjectFilterCondition(
+                property: ObjectFilterProperty("name"),
+                expression: ObjectFilterExpression(filterOperator: .Like,
+                                                   op1: AnyCodable("H%"))))
+    }
 }
