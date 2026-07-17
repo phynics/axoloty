@@ -127,37 +127,3 @@ struct AxolotyCoreProducerTests {
         throw AxolotyError.runtime(code: .timedOut, reason: "Timed out waiting for a \(eventType.rawValue) response")
     }
 }
-
-private final class EventStreamIteratorBox<Element: Sendable>: @unchecked Sendable {
-    var iterator: EventStream<Element>.Iterator
-
-    init(_ iterator: EventStream<Element>.Iterator) {
-        self.iterator = iterator
-    }
-}
-
-private func nextValue<Element: Sendable>(
-    _ iterator: inout EventStream<Element>.Iterator,
-    timeout: Duration
-) async throws -> Element {
-    let box = EventStreamIteratorBox(iterator)
-    defer { iterator = box.iterator }
-
-    return try await withThrowingTaskGroup(of: Element.self) { group in
-        group.addTask {
-            guard let value = await box.iterator.next() else {
-                throw CancellationError()
-            }
-            return value
-        }
-        group.addTask {
-            try await _Concurrency.Task.sleep(for: timeout)
-            throw AxolotyError.runtime(code: .timedOut, reason: "Timed out waiting for the next wire response event")
-        }
-        guard let value = try await group.next() else {
-            throw AxolotyError.runtime(code: .timedOut, reason: "Timed out waiting for the next wire response event")
-        }
-        group.cancelAll()
-        return value
-    }
-}
