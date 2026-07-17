@@ -52,8 +52,22 @@ genuine subject via a controllable TCP proxy and real broker restarts);
 `qos-1`/`qos-2` are approved divergences (CoatyJS 2.4.0 hardcodes QoS 0);
 legacy CoatySwift lifecycle coverage is descoped by recorded decision
 (`Tests/WireCompatibility/Audit/LegacySwiftLifecycleScopeDecision.md`).
-Remaining in this phase: the IO/SensorThings compatibility decision (T-021,
-#31) and compatibility CI gates (T-022, #32).
+
+The IO/SensorThings compatibility decision (T-021, #31) is recorded: the IO
+reference runner, offline wire-format evidence, and a live modern→JS
+Associate scenario are in place, and the keep/diverge/remove decisions are
+documented in
+`Tests/WireCompatibility/Audit/IOAndSensorThingsDecisions.md`. Two defects
+were found and recorded as intentional divergences rather than silently
+normalized: Axoloty's `handleAssociate` force-unwraps the optional
+`isExternalRoute` (CoatyJS omits it, so an Axoloty actor traps), and the
+IoValue wire format wraps the value under `payload` while CoatyJS publishes
+the bare value. Several scenarios (raw IoValue capture, external route,
+fan-out, SensorThings fixtures) are honestly marked not-yet-tested pending
+follow-up captures; legacy CoatySwift IO directions are descoped by recorded
+decision (`LegacySwiftIOScopeDecision.md`). Remaining in this phase: the
+compatibility CI gates (T-022, #32) wiring the new offline suites into the PR
+tier and the live IO runner into the nightly tier.
 
 ### Phase 7 — Runtime correctness (EventHub/streaming + IO routing)
 
@@ -73,8 +87,8 @@ scenario coverage. Tracked under
 ---
 
 The modernization roadmap epic ([#43](https://github.com/phynics/Axoloty/issues/43))
-is closing out with only its final two Phase 6 items remaining (#31, #32).
-Phases 7–8 continue under a new epic,
+is closing out: T-021 (#31) is complete with its decisions recorded, leaving
+only the compatibility CI gates T-022 (#32). Phases 7–8 continue under a new epic,
 [#135](https://github.com/phynics/Axoloty/issues/135) (Post-Modernization
 Roadmap), per
 `docs/superpowers/plans/2026-07-17-post-modernization-roadmap.md`. WASM
