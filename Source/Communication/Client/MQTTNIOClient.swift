@@ -249,6 +249,18 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                 self.updateCommunicationState(.online)
             case .failure(let error):
                 self.log.debug("Connection error: \(ErrorKit.userFriendlyMessage(for: error))")
+                // A refused/failed connect attempt never established a
+                // connection, so mqtt-nio's close listener (handleClose)
+                // does not fire for it. Without an explicit retry here, one
+                // failed attempt -- e.g. while a restarting broker is not
+                // yet accepting connections -- would permanently end
+                // auto-reconnect, contradicting handleClose's documented
+                // fallback contract.
+                if !self.brokerCandidates.isEmpty {
+                    self.connectNext()
+                } else if self.mqttClientOptions.autoReconnect {
+                    self.scheduleReconnect()
+                }
             }
         }
     }

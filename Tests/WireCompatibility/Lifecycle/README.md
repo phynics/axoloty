@@ -47,21 +47,24 @@ the pinned reference fixture or this harness cannot expose the deterministic
 control a scenario needs; that is a documented limitation, never a passing
 cross-implementation result.
 
-Five of the eleven catalog scenarios are executable end-to-end today:
+Nine of the eleven catalog scenarios are executable end-to-end today:
 
 - `unexpected-disconnect-last-will`, `qos-0`, `graceful-deadvertise`: CoatyJS
   2.4.0 is the live subject; Axoloty is recorded as an unavailable subject for
   these three, not as cross-implementation proof.
 - `duplicate-reply`, `late-reply`: **Axoloty (modern Swift) is the live
   subject** -- the Call/Return initiator -- against pinned CoatyJS 2.4.0 as
-  the responder. This is the first pair of lifecycle scenarios with Axoloty as
-  a genuine subject rather than an unavailable one.
+  the responder.
+- `offline-queueing`, `reconnect-resubscribe`, `broker-restart`,
+  `clean-session`: **Axoloty is the live subject** behind a controllable TCP
+  proxy (`Live/tcp_proxy.py`) that genuinely severs and restores its broker
+  connectivity -- or, for `broker-restart`, a really stopped-and-restarted
+  Mosquitto process -- with the post-reconnect subscription proven by
+  decoding an Advertise probe from pinned CoatyJS 2.4.0 and, for
+  `clean-session`, the proxy-decoded CONNACK `sessionPresent=false`
+  handshakes.
 
-The remaining four (`offline-queueing`, `reconnect-resubscribe`,
-`broker-restart`, `clean-session`) are `unsupported`: they need a network-
-manipulation harness (severing/restoring the TCP connection between Axoloty
-and the broker, or a controllable broker restart) that was not built in this
-pass. See `Live/README.md` for the full disposition of every catalog entry,
-including the verified reason `qos-1`/`qos-2` are `unsupported`: pinned
+Only `qos-1`/`qos-2` remain `unsupported`, for a verified reason: pinned
 `@coaty/core@2.4.0` hardcodes QoS 0 for every publish regardless of
-configuration.
+configuration. See `Live/README.md` for the full disposition of every
+catalog entry.

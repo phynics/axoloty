@@ -13,7 +13,7 @@ deadlines for broker subscription, application readiness, identity advertisement
 and last-will observation; polling is only a transport mechanism, never the
 assertion.
 
-Five of the eleven catalog scenarios are executable, all verified end-to-end
+Nine of the eleven catalog scenarios are executable, all verified end-to-end
 (not merely syntax-checked) on a macOS host with a local Mosquitto broker and
 `node`/`npm` running `@coaty/core` directly, ahead of writing container-based
 scripts. This host has no `docker`/`podman`; `run-lifecycle-call-return.sh`
@@ -68,25 +68,46 @@ Both are verified against a cross-referenced independent MQTT capture and the
 Axoloty application log by `verify-lifecycle-call-return.py`, matching the
 evidentiary rigor of the CoatyJS-subject scenarios above.
 
-The remaining four catalog entries (`offline-queueing`, `reconnect-resubscribe`,
-`broker-restart`, `clean-session`) are emitted as `unsupported`: Axoloty is now
-a proven live lifecycle subject (see Call/Return above), but these four need a
-TCP-level network-manipulation harness — severing/restoring connectivity
-between Axoloty and the broker (e.g. a local TCP proxy Axoloty connects
-through instead of the broker directly), or a controllable broker
-stop/start — that was not built in this pass. None of these results claim an
-Axoloty capture or cross-implementation proof for these four specifically.
+**Axoloty is also the live subject** for the four network-failure scenarios,
+run by `run-lifecycle-network.sh` (via the same
+`AxolotyLifecycleSubjectTests.swift`):
 
-To execute only the currently available evidence-producing scenarios:
+- `offline-queueing`, `reconnect-resubscribe`, `clean-session`: the subject's
+  MQTT connection runs through `tcp_proxy.py`, a controllable local TCP proxy
+  the orchestrating script commands to genuinely sever and restore, while the
+  passive capture probe stays connected to the broker directly. For
+  `offline-queueing` the capture proves both labeled publications queued
+  while offline arrive in order exactly once after restore; for the other two
+  the subject must decode an Advertise probe that pinned CoatyJS 2.4.0
+  publishes only after the subject reported its reconnect, proving genuine
+  re-subscription (Axoloty always connects with `cleanSession: true`, so no
+  broker session state could carry the old subscription over). For
+  `clean-session` the proxy additionally decodes every MQTT CONNACK on the
+  subject's connection and the verifier requires at least two handshakes all
+  reporting `sessionPresent=false`.
+- `broker-restart`: no proxy — the Mosquitto process itself is stopped and
+  restarted, and the subject must reconnect and decode the post-restart
+  CoatyJS probe. This scenario initially failed and exposed a real defect
+  (fixed alongside this harness): `MQTTNIOClient`'s failed connect attempts
+  never rescheduled auto-reconnect, because only established-then-closed
+  connections fire mqtt-nio's close listener, so one refused attempt against
+  a not-yet-listening broker permanently ended reconnection.
 
-```sh
-WIRE_LIFECYCLE_SCENARIOS="unexpected-disconnect-last-will qos-0 graceful-deadvertise duplicate-reply late-reply" \
-  Tests/WireCompatibility/Lifecycle/Live/run-lifecycle-matrix.sh
-```
+All four are verified by `verify-lifecycle-network.py` against the subject's
+timestamped application log, the independent MQTT capture, and (for
+clean-session) the proxy's CONNACK log.
 
-The Call/Return pair can also be run directly (native, no container runtime):
+`qos-1` and `qos-2` remain the only non-executable catalog entries; see the
+verified reason above.
+
+The Axoloty-subject scenarios can also be run directly (native, no container
+runtime):
 
 ```sh
 Tests/WireCompatibility/Lifecycle/Live/run-lifecycle-call-return.sh duplicate-reply
 Tests/WireCompatibility/Lifecycle/Live/run-lifecycle-call-return.sh late-reply
+Tests/WireCompatibility/Lifecycle/Live/run-lifecycle-network.sh offline-queueing
+Tests/WireCompatibility/Lifecycle/Live/run-lifecycle-network.sh reconnect-resubscribe
+Tests/WireCompatibility/Lifecycle/Live/run-lifecycle-network.sh broker-restart
+Tests/WireCompatibility/Lifecycle/Live/run-lifecycle-network.sh clean-session
 ```
