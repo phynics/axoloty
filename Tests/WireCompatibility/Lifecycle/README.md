@@ -43,11 +43,25 @@ restore subscriptions. Only the first timely reply is accepted. QoS 0, 1, and
 `Live/run-lifecycle-matrix.sh` turns this catalog into live-gated evidence
 manifests. A manifest is `executed` only after application and MQTT-capture
 evidence have both been retained. A manifest may instead be `unsupported` when
-the pinned reference fixture cannot expose deterministic controls; that is a
-documented limitation, never a passing cross-implementation result. The
-currently executable CoatyJS scenarios (`unexpected-disconnect-last-will`,
-`qos-0`, `graceful-deadvertise`) do not stand in for an Axoloty capture or
-proof in the reverse direction. See `Live/README.md` for the full disposition
-of every catalog entry, including the verified reason `qos-1`/`qos-2` are
-`unsupported`: pinned `@coaty/core@2.4.0` hardcodes QoS 0 for every publish
-regardless of configuration.
+the pinned reference fixture or this harness cannot expose the deterministic
+control a scenario needs; that is a documented limitation, never a passing
+cross-implementation result.
+
+Five of the eleven catalog scenarios are executable end-to-end today:
+
+- `unexpected-disconnect-last-will`, `qos-0`, `graceful-deadvertise`: CoatyJS
+  2.4.0 is the live subject; Axoloty is recorded as an unavailable subject for
+  these three, not as cross-implementation proof.
+- `duplicate-reply`, `late-reply`: **Axoloty (modern Swift) is the live
+  subject** -- the Call/Return initiator -- against pinned CoatyJS 2.4.0 as
+  the responder. This is the first pair of lifecycle scenarios with Axoloty as
+  a genuine subject rather than an unavailable one.
+
+The remaining four (`offline-queueing`, `reconnect-resubscribe`,
+`broker-restart`, `clean-session`) are `unsupported`: they need a network-
+manipulation harness (severing/restoring the TCP connection between Axoloty
+and the broker, or a controllable broker restart) that was not built in this
+pass. See `Live/README.md` for the full disposition of every catalog entry,
+including the verified reason `qos-1`/`qos-2` are `unsupported`: pinned
+`@coaty/core@2.4.0` hardcodes QoS 0 for every publish regardless of
+configuration.

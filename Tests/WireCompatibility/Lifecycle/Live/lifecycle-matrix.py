@@ -10,14 +10,15 @@ from pathlib import Path
 
 
 # An ``unsupported`` disposition is deliberate evidence of a reference-agent
-# boundary, not a skipped passing scenario. The pinned CoatyJS runner can prove
-# its broker-issued identity last will. The remaining scenarios need public
-# lifecycle controls or request/reply hooks that CoatyJS 2.4.0 does not expose
-# through this reference fixture, and Axoloty has no lifecycle test subject yet.
-_UNSUPPORTED = (
-    "No live subject is available for this direction: Axoloty lifecycle control "
-    "is not implemented by this harness and pinned CoatyJS 2.4.0 does not expose "
-    "the required deterministic control through the reference fixture."
+# or harness boundary, not a skipped passing scenario.
+_NO_NETWORK_HARNESS = (
+    "Axoloty is a genuine live subject for Call/Return (see duplicate-reply "
+    "and late-reply below), but this scenario needs a TCP-level "
+    "network-manipulation harness (severing and restoring connectivity "
+    "between Axoloty and the broker, or a controllable broker restart) that "
+    "was not built in this pass. No lifecycle control asserts a wire "
+    "observation without one: see Tests/WireCompatibility/Lifecycle/README.md "
+    "for what a native (non-container) harness for this would need."
 )
 
 _QOS_BINDING_LIMITATION = (
@@ -34,11 +35,11 @@ SCENARIOS = {
         "id": scenario,
         "participants": ["axoloty", "coatyjs-2.4.0"],
         "status": "unsupported",
-        "reason": _UNSUPPORTED,
+        "reason": _NO_NETWORK_HARNESS,
     }
     for scenario in (
         "offline-queueing", "reconnect-resubscribe", "broker-restart",
-        "clean-session", "duplicate-reply", "late-reply",
+        "clean-session",
     )
 }
 SCENARIOS["qos-1"] = {
@@ -52,6 +53,37 @@ SCENARIOS["qos-2"] = {
     "participants": ["axoloty", "coatyjs-2.4.0"],
     "status": "unsupported",
     "reason": _QOS_BINDING_LIMITATION,
+}
+SCENARIOS["duplicate-reply"] = {
+    "id": "duplicate-reply",
+    "participants": ["axoloty", "coatyjs-2.4.0"],
+    "status": "executable",
+    "reason": (
+        "Axoloty is the live Call/Return initiator; pinned CoatyJS 2.4.0 is a "
+        "real responder that sends two genuine wire Return publishes "
+        "(original then duplicate, 300ms apart) for the same correlationId "
+        "-- nothing in @coaty/core 2.4.0's CallEvent.returnEvent prevents "
+        "this, confirmed by reading call-return.js and "
+        "communication-manager.js before writing the responder. Axoloty's "
+        "EventHub does not deduplicate Return events by correlationId "
+        "either; the application-level 'accept only the first' behavior "
+        "asserted here is real caller logic, not a library guarantee."
+    ),
+}
+SCENARIOS["late-reply"] = {
+    "id": "late-reply",
+    "participants": ["axoloty", "coatyjs-2.4.0"],
+    "status": "executable",
+    "reason": (
+        "Axoloty is the live Call/Return initiator with a real 2s response "
+        "deadline; pinned CoatyJS 2.4.0 deliberately withholds its Return "
+        "until 4s (past that deadline) before genuinely publishing it. The "
+        "independent MQTT capture proves the late Return actually reached "
+        "the broker after Axoloty's CM+Publish.swift responseStream had "
+        "already released (unsubscribed) the correlated response topic on "
+        "timeout, so the late reply is provably unobservable, not merely "
+        "unobserved."
+    ),
 }
 SCENARIOS["unexpected-disconnect-last-will"] = {
     "id": "unexpected-disconnect-last-will",
