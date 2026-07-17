@@ -78,6 +78,21 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
     /// auto-reconnect/broker-candidate fallback.
     private var isIntentionalDisconnect = false
 
+    /// Serializes delivery of decoded MQTT messages into ``EventHub`` in
+    /// arrival order.
+    ///
+    /// mqtt-nio's publish listener fires synchronously per message on its
+    /// event loop, but each per-message hub yield is `async` (`EventHub` is
+    /// an actor). Spawning an unstructured `Task` per message let
+    /// independently-scheduled tasks race for actor execution, so messages
+    /// could reach the hub out of arrival order -- a regression from the
+    /// RxSwift-era sequential dispatch. `AsyncStream.Continuation.yield` is
+    /// synchronous and preserves call order, so feeding one and draining it
+    /// from a single long-lived `Task` restores that guarantee. See issue
+    /// #56.
+    private let deliveryContinuation: AsyncStream<@Sendable () async -> Void>.Continuation
+    private let deliveryTask: _Concurrency.Task<Void, Never>
+
     /// Shared event loop group for all `MQTTClient` instances created by this
     /// object (one per broker candidate attempt). Using a shared group avoids
     /// spinning up a new thread pool on every broker-candidate fallback.
@@ -98,6 +113,15 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
 
     init(mqttClientOptions: MQTTClientOptions, delegate: CommunicationClientDelegate) {
         self.delegate = delegate
+
+        let (stream, continuation) = AsyncStream<@Sendable () async -> Void>.makeStream()
+        self.deliveryContinuation = continuation
+        self.deliveryTask = _Concurrency.Task<Void, Never> {
+            for await job in stream {
+                await job()
+            }
+        }
+
         configure(mqttClientOptions)
 
         // `try!` matches the existing fail-fast convention used elsewhere
@@ -108,6 +132,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
     }
 
     deinit {
+        deliveryContinuation.finish()
         discovery?.stopDiscovery()
         // Flips mqtt-nio's internal `isShutdown` flag synchronously, which is
         // enough to satisfy its deinit precondition even though the rest of
@@ -356,7 +381,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
     func updateCommunicationState(_ state: CommunicationState) {
         delegate.didUpdateCommunicationState(state)
 
-        _Concurrency.Task<Void, Never> { [weak self] in
+        deliveryContinuation.yield { [weak self] in
             guard let self else { return }
             await self.eventHub.yieldState(
                 value: state,
@@ -373,7 +398,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
             let bytes = [UInt8](info.payload.readableBytesView)
             let rawMessage = RawMQTTMessage(topic: info.topicName, payload: bytes)
 
-            _Concurrency.Task<Void, Never> { [weak self] in
+            deliveryContinuation.yield { [weak self] in
                 guard let self else { return }
                 await self.eventHub.yield(
                     value: rawMessage,
@@ -396,7 +421,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                         topic: info.topicName,
                         payload: bytes
                     )
-                    _Concurrency.Task { [weak self] in
+                    deliveryContinuation.yield { [weak self] in
                         guard let self else { return }
                         await self.eventHub.yield(
                             value: IoValueEventSnapshot(topic: info.topicName, payload: bytes),
@@ -410,7 +435,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                     )
 
                     let parsed = ParsedMQTTMessage(topic: topic, payload: payloadString)
-                    _Concurrency.Task<Void, Never> { [weak self] in
+                    deliveryContinuation.yield { [weak self] in
                         guard let self else { return }
                         await self.eventHub.yield(
                             value: parsed,
