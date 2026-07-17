@@ -96,9 +96,9 @@ struct AxolotyCoreProducerTests {
             )
         )
         guard let communication = container.communicationManager else {
-            throw AxolotyError.InvalidConfiguration("Container did not resolve a communication manager")
+            throw AxolotyError.invalidConfiguration(option: "communicationManager", reason: "container did not resolve a communication manager")
         }
-        communication.start()
+        try communication.start()
         return (container, communication)
     }
 
@@ -118,13 +118,13 @@ struct AxolotyCoreProducerTests {
             guard response.eventType == eventType.rawValue,
                   response.sourceId == "33333333-3333-4333-8333-333333333333",
                   let payload = String(data: response.payload, encoding: .utf8),
-                  let event: Event = PayloadCoder.decode(payload)
+                  let event: Event = try? PayloadCoder.decode(payload)
             else {
                 continue
             }
             return event
         }
-        throw AxolotyError.RuntimeError("Timed out waiting for a \(eventType.rawValue) response")
+        throw AxolotyError.runtime(code: .timedOut, reason: "Timed out waiting for a \(eventType.rawValue) response")
     }
 }
 
@@ -152,10 +152,10 @@ private func nextValue<Element: Sendable>(
         }
         group.addTask {
             try await _Concurrency.Task.sleep(for: timeout)
-            throw AxolotyError.RuntimeError("Timed out waiting for the next wire response event")
+            throw AxolotyError.runtime(code: .timedOut, reason: "Timed out waiting for the next wire response event")
         }
         guard let value = try await group.next() else {
-            throw AxolotyError.RuntimeError("Timed out waiting for the next wire response event")
+            throw AxolotyError.runtime(code: .timedOut, reason: "Timed out waiting for the next wire response event")
         }
         group.cancelAll()
         return value

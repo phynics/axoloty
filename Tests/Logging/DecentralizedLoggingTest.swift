@@ -68,8 +68,8 @@ class LogCreatorController: Controller {
             logInfo(message: "Info Log", tags: ["tag1", "tag2"])
             logDebug(message: "Debug Log", tags: ["tag1", "tag2"])
             logWarning(message: "Warning Log", tags: ["tag1", "tag2"])
-            logError(error: AxolotyError.RuntimeError("Random error"), message: "Error Log", tags: ["tag1", "tag2"])
-            logFatal(error: AxolotyError.RuntimeError("Random fatal error"), message: "Fatal Log", tags: ["tag1", "tag2"])
+            logError(error: AxolotyError.invalidArgument(argument: "test", reason: "Random error"), message: "Error Log", tags: ["tag1", "tag2"])
+            logFatal(error: AxolotyError.invalidArgument(argument: "test", reason: "Random fatal error"), message: "Fatal Log", tags: ["tag1", "tag2"])
         }
     }
 }

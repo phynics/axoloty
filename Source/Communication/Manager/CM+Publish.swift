@@ -5,12 +5,16 @@ import Foundation
 @MainActor
 extension CommunicationManager {
     public func publishRaw(topic: String, withString value: String) throws {
-        guard CommunicationTopic.isValidPublicationTopic(topic) else { throw AxolotyError.InvalidArgument("Could not publish raw: invalid topic name.") }
+        guard CommunicationTopic.isValidPublicationTopic(topic) else {
+            throw AxolotyError.invalidArgument(argument: "topic", reason: "\"\(topic)\" is not a valid publication topic name")
+        }
         publish(topic: topic, message: value)
     }
 
     public func publishRaw(topic: String, withBinary value: [UInt8]) throws {
-        guard CommunicationTopic.isValidPublicationTopic(topic) else { throw AxolotyError.InvalidArgument("Could not publish raw: invalid topic name.") }
+        guard CommunicationTopic.isValidPublicationTopic(topic) else {
+            throw AxolotyError.invalidArgument(argument: "topic", reason: "\"\(topic)\" is not a valid publication topic name")
+        }
         publish(topic: topic, message: value)
     }
 
@@ -150,7 +154,9 @@ extension CommunicationManager {
     }
 
     internal func publishAssociate(event: AssociateEvent) throws {
-        guard let name = event.ioContextName, CommunicationTopic.isValidEventTypeFilter(filter: name) else { throw AxolotyError.InvalidArgument("Associate: Invalid eventTypeFilter") }
+        guard let name = event.ioContextName, CommunicationTopic.isValidEventTypeFilter(filter: name) else {
+            throw AxolotyError.invalidArgument(argument: "ioContextName", reason: "Associate: not a valid eventTypeFilter")
+        }
         let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: namespace, sourceId: identity.objectId, eventType: .Associate, eventTypeFilter: name)
         publish(topic: topic, message: event.json)
     }

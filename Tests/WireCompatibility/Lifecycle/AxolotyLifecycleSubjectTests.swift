@@ -252,7 +252,7 @@ struct AxolotyLifecycleSubjectTests {
             )
         )
         guard let communication = container.communicationManager else {
-            throw AxolotyError.InvalidConfiguration("Container did not resolve a communication manager")
+            throw AxolotyError.invalidConfiguration(option: "communicationManager", reason: "container did not resolve a communication manager")
         }
         return (container, communication)
     }
@@ -260,7 +260,7 @@ struct AxolotyLifecycleSubjectTests {
     private func decodeVariant(from response: ResponseEventSnapshot) throws -> String {
         #expect(response.eventType == "RTN")
         let payload = try #require(String(data: response.payload, encoding: .utf8))
-        let event: ReturnEvent = try #require(PayloadCoder.decode(payload))
+        let event: ReturnEvent = try PayloadCoder.decode(payload)
         let result = try #require(event.data.result?.value as? [String: Any])
         return try #require(result["variant"] as? String)
     }

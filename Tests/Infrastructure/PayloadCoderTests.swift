@@ -6,7 +6,7 @@ import Testing
 @Suite
 struct PayloadCoderTests {
     @Test
-    func testCoreObjectRoundTripPreservesRequiredAndOptionalFields() {
+    func testCoreObjectRoundTripPreservesRequiredAndOptionalFields() throws {
         _ = Log.objectType
         let objectId = CoatyUUID(uuidString: "01234567-89ab-4cde-8fab-0123456789ab")!
         let log = Log(
@@ -21,8 +21,8 @@ struct PayloadCoderTests {
         log.externalId = "legacy-17"
         log.isDeactivated = false
 
-        let encoded = PayloadCoder.encode(log)
-        let decoded: Log? = PayloadCoder.decode(encoded)
+        let encoded = try PayloadCoder.encode(log)
+        let decoded: Log? = try? PayloadCoder.decode(encoded)
 
         #expect((decoded?.objectId) == (objectId))
         #expect((decoded?.objectType) == (Log.objectType))
@@ -47,7 +47,8 @@ struct PayloadCoderTests {
             privateData: ["revision": 7, "ready": true]
         )
 
-        let decoded: AdvertiseEvent? = PayloadCoder.decode(PayloadCoder.encode(event))
+        let encoded = try PayloadCoder.encode(event)
+        let decoded: AdvertiseEvent? = try? PayloadCoder.decode(encoded)
 
         #expect((decoded?.data.object.objectId) == (identity.objectId))
         #expect((decoded?.data.object.name) == ("Axoloty agent"))
@@ -58,8 +59,8 @@ struct PayloadCoderTests {
     @Test
 
     func testDecodeReturnsNilForMalformedAndTypeMismatchedJSON() {
-        let malformed: Identity? = PayloadCoder.decode("{not-json")
-        let wrongShape: Identity? = PayloadCoder.decode("{\"name\":42}")
+        let malformed: Identity? = try? PayloadCoder.decode("{not-json")
+        let wrongShape: Identity? = try? PayloadCoder.decode("{\"name\":42}")
         #expect((malformed) == nil)
         #expect((wrongShape) == nil)
     }

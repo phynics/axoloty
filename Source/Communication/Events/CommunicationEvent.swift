@@ -5,6 +5,7 @@
 //
 //
 
+import ErrorKit
 import Foundation
 
 /// CommunicationEvent is a generic supertype for all defined Coaty event types.
@@ -47,9 +48,15 @@ public class CommunicationEvent<T: CommunicationEventData>: Codable {
 // MARK: - Extension enable easy access to JSON representation of event data.
 
 extension CommunicationEvent {
+    /// JSON representation of this event.
+    ///
+    /// - Note: Falls back to `"{}"` and logs the failure if the event data
+    ///   cannot be encoded (e.g. a ``Double`` field holding `NaN`/`infinity`).
+    ///   Kept non-throwing because it is read from dozens of publish call
+    ///   sites that do not otherwise throw; see ``PayloadCoder/encode(_:)``.
     public var json: String {
         get {
-            return PayloadCoder.encode(self)
+            return PayloadCoder.encodeForJSON(self)
         }
     }
 }

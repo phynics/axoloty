@@ -37,7 +37,7 @@ public actor CommunicationSubscriptionCoordinator {
     /// A sink that receives subscribe and unsubscribe commands produced by the
     /// coordinator.
     private let commandSink: @Sendable (SubscriptionCommand) async throws -> Void
-    private var lastCommandError: Error?
+    private var lastCommandError: AxolotyError?
 
     /// Creates a new coordinator with the given command sink.
     ///
@@ -80,7 +80,7 @@ public actor CommunicationSubscriptionCoordinator {
             try await commandSink(.subscribe(topic))
         } catch {
             activeTopics.remove(topic)
-            lastCommandError = error
+            lastCommandError = .caught(error)
         }
     }
 
@@ -102,7 +102,7 @@ public actor CommunicationSubscriptionCoordinator {
                 do {
                     try await commandSink(.unsubscribe(topic))
                 } catch {
-                    lastCommandError = error
+                    lastCommandError = .caught(error)
                 }
             }
         } else {
@@ -133,7 +133,7 @@ public actor CommunicationSubscriptionCoordinator {
                     try await commandSink(.subscribe(topic))
                     activeTopics.insert(topic)
                 } catch {
-                    lastCommandError = error
+                    lastCommandError = .caught(error)
                 }
             }
         } else {
@@ -152,7 +152,7 @@ public actor CommunicationSubscriptionCoordinator {
                 do {
                     try await commandSink(.unsubscribe(topic))
                 } catch {
-                    lastCommandError = error
+                    lastCommandError = .caught(error)
                 }
             }
         }
@@ -176,13 +176,13 @@ public actor CommunicationSubscriptionCoordinator {
                 try await commandSink(.subscribe(topic))
                 activeTopics.insert(topic)
             } catch {
-                lastCommandError = error
+                lastCommandError = .caught(error)
             }
         }
     }
 
     /// Returns and clears the most recent command delivery failure.
-    internal func takeCommandError() -> Error? {
+    internal func takeCommandError() -> AxolotyError? {
         defer { lastCommandError = nil }
         return lastCommandError
     }

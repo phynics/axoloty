@@ -43,7 +43,7 @@ extension UpdateEventSnapshot {
 
     /// Decodes an Update snapshot from a parsed MQTT message.
     init?(parsedMQTTMessage: ParsedMQTTMessage) {
-        guard let wire: UpdateEventWirePayload = PayloadCoder.decode(parsedMQTTMessage.payload) else {
+        guard let wire: UpdateEventWirePayload = try? PayloadCoder.decode(parsedMQTTMessage.payload) else {
             return nil
         }
         self.init(

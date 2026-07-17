@@ -28,7 +28,7 @@ private struct DeadvertiseEventWirePayload: Codable {
 
 extension DeadvertiseEventSnapshot {
     init?(parsedMQTTMessage: ParsedMQTTMessage) {
-        guard let payload: DeadvertiseEventWirePayload = PayloadCoder.decode(
+        guard let payload: DeadvertiseEventWirePayload = try? PayloadCoder.decode(
             parsedMQTTMessage.payload
         ) else {
             return nil

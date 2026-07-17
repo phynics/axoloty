@@ -83,7 +83,7 @@ public class CallEvent: CommunicationEvent<CallEventData> {
     
     fileprivate init(eventType: CommunicationEventType, eventData: CallEventData, operation: String) throws {
         guard CommunicationTopic.isValidEventTypeFilter(filter: operation) else {
-            throw AxolotyError.InvalidArgument("Invalid call operation.")
+            throw AxolotyError.invalidArgument(argument: "operation", reason: "\"\(operation)\" is not a valid call operation")
         }
         
         super.init(eventType: eventType, eventData: eventData)

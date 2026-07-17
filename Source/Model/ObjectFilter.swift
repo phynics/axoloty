@@ -101,13 +101,18 @@ public class ObjectFilter: Codable {
     public required init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         
+        // The wire `conditions` field is either a single condition or a
+        // conditions set (`and`/`or`); probe both shapes and keep whichever
+        // decodes. A failure here means "not this shape", not a swallowed
+        // error -- the other probe (or both failing, leaving both nil) is
+        // the expected outcome for the non-matching shape.
         do {
             condition = try container.decodeIfPresent(ObjectFilterCondition.self, forKey: .conditions)
-        } catch { /* Surpress error. */ }
-        
+        } catch { /* Not this shape; try the other. */ }
+
         do {
             conditions = try container.decodeIfPresent(ObjectFilterConditions.self, forKey: .conditions)
-         } catch { /* Surpress error. */ }
+         } catch { /* Not this shape; the other probe above already ran. */ }
         
         take = try container.decodeIfPresent(Int.self, forKey: .take)
         skip = try container.decodeIfPresent(Int.self, forKey: .skip)
@@ -126,7 +131,7 @@ public class ObjectFilter: Codable {
         try closure(builder)
         
         guard let condition = builder.condition else {
-            throw AxolotyError.InvalidArgument("Condition is not set.")
+            throw AxolotyError.invalidArgument(argument: "condition", reason: "condition is not set")
         }
         
         return ObjectFilter(condition: condition, orderByProperties: builder.orderByProperties, take: builder.take, skip: builder.skip)
@@ -142,7 +147,7 @@ public class ObjectFilter: Codable {
         try closure(builder)
         
         guard let conditions = builder.conditions else {
-            throw AxolotyError.InvalidArgument("Conditions are not set.")
+            throw AxolotyError.invalidArgument(argument: "conditions", reason: "conditions are not set")
         }
         
         return ObjectFilter(conditions: conditions, orderByProperties: builder.orderByProperties, take: builder.take, skip: builder.skip)
@@ -186,7 +191,13 @@ public class OrderByProperty: Codable {
         var container = try decoder.unkeyedContainer()
         objectFilterProperties = try container.decode(ObjectFilterProperty.self)
         let sortingOrderString = try container.decode(String.self)
-        sortingOrder = SortingOrder(rawValue: sortingOrderString)!
+        guard let decodedSortingOrder = SortingOrder(rawValue: sortingOrderString) else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "\"\(sortingOrderString)\" is not a valid SortingOrder"
+            )
+        }
+        sortingOrder = decodedSortingOrder
     }
     
 }
@@ -346,13 +357,17 @@ public class ObjectFilterConditions: Codable {
     public required init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         
+        // `and`/`or` are mutually exclusive by contract (see the type's doc
+        // comment); a decode failure on one is treated the same as it being
+        // absent rather than propagated, so a peer that sends the other one
+        // still decodes successfully instead of failing the whole filter.
         do {
             and = try container.decodeIfPresent([ObjectFilterCondition].self, forKey: .and)
-         } catch { /* Surpress error. */ }
-        
+         } catch { /* Treated as absent; `or` may still be present. */ }
+
         do {
             or = try container.decodeIfPresent([ObjectFilterCondition].self, forKey: .or)
-         } catch { /* Surpress error. */ }
+         } catch { /* Treated as absent; `and` may still be present. */ }
     }
     
     // MARK: - Builder methods.
@@ -369,7 +384,7 @@ public class ObjectFilterConditions: Codable {
         try closure(builder)
         
         guard let and = builder.and else {
-            throw AxolotyError.InvalidArgument("ObjectFilterBuilder.and is nil.")
+            throw AxolotyError.invalidArgument(argument: "and", reason: "ObjectFilterConditionsBuilder.and is nil")
         }
         
         return ObjectFilterConditions(and)
@@ -387,7 +402,7 @@ public class ObjectFilterConditions: Codable {
         try closure(builder)
         
         guard let or = builder.or else {
-            throw AxolotyError.InvalidArgument("ObjectFilterBuilder.or is nil.")
+            throw AxolotyError.invalidArgument(argument: "or", reason: "ObjectFilterConditionsBuilder.or is nil")
         }
         
         return ObjectFilterConditions(or)
@@ -445,7 +460,7 @@ public class ObjectFilterCondition: Codable {
         try closure(builder)
         
         guard let expression = builder.expression, let property = builder.property else {
-            throw AxolotyError.InvalidArgument("The object filter condition could not be built!")
+            throw AxolotyError.invalidArgument(argument: "property/expression", reason: "the object filter condition could not be built")
         }
         
         return ObjectFilterCondition(property: property, expression: expression)
@@ -505,7 +520,13 @@ public class ObjectFilterExpression: Codable {
         // JSON decoding format is: [filterOperator, firstOperand?, secondOperand?]
         var container = try decoder.unkeyedContainer()
         let filterOperatorInt = try container.decode(Int.self)
-        filterOperator = ObjectFilterOperator(rawValue: filterOperatorInt)!
+        guard let decodedFilterOperator = ObjectFilterOperator(rawValue: filterOperatorInt) else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "\(filterOperatorInt) is not a valid ObjectFilterOperator"
+            )
+        }
+        filterOperator = decodedFilterOperator
         firstOperand = try container.decodeIfPresent(AnyCodable.self)
         secondOperand = try container.decodeIfPresent(AnyCodable.self)
     }

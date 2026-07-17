@@ -30,7 +30,7 @@ extension CommunicationManager {
                 for await parsed in stream {
                     guard parsed.eventType == .Associate,
                           parsed.eventTypeFilter == ioNode.name,
-                          let payload: AssociateEvent = PayloadCoder.decode(parsed.payload) else { continue }
+                          let payload: AssociateEvent = try? PayloadCoder.decode(parsed.payload) else { continue }
                     payload.type = .Associate
                     if let sourceId = CoatyUUID(uuidString: parsed.sourceId) { payload.sourceId = sourceId }
                     self.handleAssociate(event: payload)

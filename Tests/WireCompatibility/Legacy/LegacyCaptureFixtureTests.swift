@@ -53,7 +53,7 @@ struct LegacyCaptureFixtureTests {
         #expect((record.mqtt.retain) == false)
 
         let payload = try decodedPayload(record)
-        let event: AdvertiseEvent = try #require(PayloadCoder.decode(payload))
+        let event: AdvertiseEvent = try PayloadCoder.decode(payload)
         #expect((event.data.object.coreType) == .CoatyObject)
         #expect((event.data.object.objectType) == "org.axoloty.wire.ReferenceObject")
         #expect((event.data.object.objectId.string) == "00000000-0000-4000-8000-000000000101")
@@ -71,7 +71,7 @@ struct LegacyCaptureFixtureTests {
         #expect((record.mqtt.retain) == false)
 
         let payload = try decodedPayload(record)
-        let event: DeadvertiseEvent = try #require(PayloadCoder.decode(payload))
+        let event: DeadvertiseEvent = try PayloadCoder.decode(payload)
         #expect((event.data.objectIds.map(\.string)) == ["00000000-0000-4000-8000-000000000101"])
     }
 
@@ -96,11 +96,11 @@ struct LegacyCaptureFixtureTests {
         #expect(resolveCorrelationId == discoverCorrelationId)
 
         let discoverPayload = try decodedPayload(discover)
-        let discoverEvent: DiscoverEvent = try #require(PayloadCoder.decode(discoverPayload))
+        let discoverEvent: DiscoverEvent = try PayloadCoder.decode(discoverPayload)
         #expect((discoverEvent.data.objectTypes) == ["org.axoloty.wire.ReferenceObject"])
 
         let resolvePayload = try decodedPayload(resolve)
-        let resolveEvent: ResolveEvent = try #require(PayloadCoder.decode(resolvePayload))
+        let resolveEvent: ResolveEvent = try PayloadCoder.decode(resolvePayload)
         let object = try #require(resolveEvent.data.object)
         #expect((object.coreType) == .CoatyObject)
         #expect((object.objectType) == "org.axoloty.wire.ReferenceObject")

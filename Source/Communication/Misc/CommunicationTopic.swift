@@ -34,7 +34,7 @@ class CommunicationTopic {
         let topicLevels = topic.components(separatedBy: TOPIC_SEPARATOR)
         
         guard topicLevels.count >= 5 else {
-            throw AxolotyError.InvalidArgument("Invalid topic.")
+            throw AxolotyError.invalidArgument(argument: "topic", reason: "\"\(topic)\" has fewer than 5 segments")
         }
         
         let protocolName = topicLevels[0]
@@ -46,47 +46,47 @@ class CommunicationTopic {
         let postfix: String? = topicLevels.count >= 7 ? topicLevels[6] : nil
 
         guard protocolName == PROTOCOL_NAME && version != "" && namespace != "" && eventName != "" && sourceId != "" else {
-            throw AxolotyError.InvalidArgument("Invalid topic.")
+            throw AxolotyError.invalidArgument(argument: "topic", reason: "\"\(topic)\" is malformed")
         }
         guard (corrId == nil && postfix == nil) || (corrId != nil && corrId != "" && postfix == nil) else {
-            throw AxolotyError.InvalidArgument("Invalid topic.")
+            throw AxolotyError.invalidArgument(argument: "topic", reason: "\"\(topic)\" is malformed")
         }
         // No need to validate protocol version as subscriptions are filtered by PROTOCOL_VERSION.
         // guard let protocolVersion = Int(version) else {
-        //    throw AxolotyError.InvalidArgument("Invalid topic protocol version.")
+        //    throw AxolotyError.invalidArgument(argument: "protocolVersion", reason: "invalid topic protocol version")
         // }
         // guard protocolVersion == PROTOCOL_VERSION else {
-        //    throw AxolotyError.InvalidArgument("Unsupported topic protocol version \(protocolVersion).")
+        //    throw AxolotyError.invalidArgument(argument: "protocolVersion", reason: "unsupported topic protocol version \(protocolVersion)")
         // }
         guard let sourceIdAsUUID = CoatyUUID(uuidString: sourceId) else {
-            throw AxolotyError.InvalidArgument("Invalid topic sourceId.")
+            throw AxolotyError.invalidArgument(argument: "sourceId", reason: "\"\(sourceId)\" is not a valid topic sourceId")
         }
 
         guard let (eventType, eventTypeFilter) = try CommunicationTopic.extractEventType(eventName) else {
-            throw AxolotyError.InvalidArgument("Invalid topic event type: \(eventName)")
+            throw AxolotyError.invalidArgument(argument: "eventType", reason: "\"\(eventName)\" is not a valid topic event type")
         }
 
         if eventType.isOneWay {
             if corrId != nil {
-                throw AxolotyError.InvalidArgument("Topic has correlation id for one-way \(eventType) event")
+                throw AxolotyError.invalidArgument(argument: "correlationId", reason: "must not be present for one-way \(eventType) event")
             }
             if (eventType == .Advertise || eventType == .Channel || eventType == .Associate) &&
                 (eventTypeFilter == nil || eventTypeFilter!.isEmpty) {
-                throw AxolotyError.InvalidArgument("Topic missing event filter for \(eventType) event")
+                throw AxolotyError.invalidArgument(argument: "eventTypeFilter", reason: "required for \(eventType) event")
             }
             if  eventType != .Advertise && eventType != .Channel && eventType != .Associate && eventTypeFilter != nil {
-                throw AxolotyError.InvalidArgument("Topic has event filter for \(eventType) event")
+                throw AxolotyError.invalidArgument(argument: "eventTypeFilter", reason: "must not be present for \(eventType) event")
             }
         } else {
             if corrId == nil {
-                throw AxolotyError.InvalidArgument("Topic missing correlation id for two-way event: \(eventType)")
+                throw AxolotyError.invalidArgument(argument: "correlationId", reason: "required for two-way event: \(eventType)")
             }
             if (eventType == .Call || eventType == .Update) &&
                 (eventTypeFilter == nil || eventTypeFilter!.isEmpty) {
-                throw AxolotyError.InvalidArgument("Topic missing event filter for \(eventType) event")
+                throw AxolotyError.invalidArgument(argument: "eventTypeFilter", reason: "required for \(eventType) event")
             }
             if eventType != .Call && eventType != .Update && eventTypeFilter != nil {
-                throw AxolotyError.InvalidArgument("Topic has event filter for \(eventType) event")
+                throw AxolotyError.invalidArgument(argument: "eventTypeFilter", reason: "must not be present for \(eventType) event")
             }
         }
 

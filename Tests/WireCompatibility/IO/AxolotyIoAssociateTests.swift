@@ -40,7 +40,7 @@ struct AxolotyIoAssociateTests {
         )
 
         let json = event.json
-        let decoded: AssociateEventData = try #require(PayloadCoder.decode(json))
+        let decoded: AssociateEventData = try PayloadCoder.decode(json)
 
         #expect(decoded.ioSourceId == sourceId)
         #expect(decoded.ioActorId == actorId)
@@ -69,7 +69,7 @@ struct AxolotyIoAssociateTests {
             associatingRoute: nil
         )
 
-        let decoded: AssociateEventData = try #require(PayloadCoder.decode(event.json))
+        let decoded: AssociateEventData = try PayloadCoder.decode(event.json)
         #expect(decoded.associatingRoute == nil)
         #expect(decoded.updateRate == nil)
     }
@@ -93,7 +93,7 @@ struct AxolotyIoAssociateTests {
             {"ioSourceId":"33333333-3333-4333-8333-333333333333","ioActorId":"44444444-4444-4444-8444-444444444444","associatingRoute":"coaty/3/wire-compat-v1/IOV/33333333-3333-4333-8333-333333333333","updateRate":250}
             """
 
-        let decoded: AssociateEventData = try #require(PayloadCoder.decode(coatyJsPayload))
+        let decoded: AssociateEventData = try PayloadCoder.decode(coatyJsPayload)
 
         #expect(decoded.ioSourceId == CoatyUUID(uuidString: "33333333-3333-4333-8333-333333333333"))
         #expect(decoded.ioActorId == CoatyUUID(uuidString: "44444444-4444-4444-8444-444444444444"))

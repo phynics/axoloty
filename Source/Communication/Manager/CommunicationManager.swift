@@ -5,6 +5,7 @@
 //
 //
 
+import ErrorKit
 import Foundation
 
 /// Provides a set of predefined communication events to transfer Coaty objects
@@ -103,8 +104,17 @@ public class CommunicationManager {
 
     // MARK: - Initializers.
 
-    public convenience init(identity: Identity, communicationOptions: CommunicationOptions, commonOptions: CommonOptions?) {
-        self.init(
+    /// Creates a communication manager with the given identity and options.
+    ///
+    /// - Parameters:
+    ///   - identity: The agent identity to use for communication.
+    ///   - communicationOptions: The communication-specific options, including
+    ///     the MQTT broker configuration.
+    ///   - commonOptions: The common options shared across the container.
+    /// - Throws: ``AxolotyError/invalidConfiguration(option:reason:)`` if the
+    ///   MQTT client options are missing when using the default MQTT transport.
+    public convenience init(identity: Identity, communicationOptions: CommunicationOptions, commonOptions: CommonOptions?) throws {
+        try self.init(
             identity: identity,
             communicationOptions: communicationOptions,
             commonOptions: commonOptions,
@@ -117,7 +127,7 @@ public class CommunicationManager {
         communicationOptions: CommunicationOptions,
         commonOptions: CommonOptions?,
         client: CommunicationClient?
-    ) {
+    ) throws {
         self.identity = identity
         self.communicationOptions = communicationOptions
         self.commonOptions = commonOptions
@@ -125,8 +135,13 @@ public class CommunicationManager {
         // Fail-fast invariant, not user input.
         // swiftlint:disable:next force_try
         try! initializeNamespace()
-        
-        let mqttClientOptions = self.communicationOptions.mqttClientOptions!
+
+        guard let mqttClientOptions = self.communicationOptions.mqttClientOptions else {
+            throw AxolotyError.invalidConfiguration(
+                option: "mqttClientOptions",
+                reason: "must be set when using the default MQTT transport"
+            )
+        }
         initializeMQTTClientId(mqttClientOptions)
 
         self.client = client ?? MQTTNIOClient(mqttClientOptions: mqttClientOptions, delegate: self)
@@ -153,13 +168,14 @@ public class CommunicationManager {
     /// Starts this communication manager with the communication options
     /// specified in the configuration. This is a noop if the communication
     /// manager has already been started.
-    public func start() {
-        // Fail-fast invariant, not user input.
-        // swiftlint:disable:next force_try
+    ///
+    /// - Throws: ``AxolotyError/invalidConfiguration(option:reason:)`` if the
+    ///   MQTT client options are missing on the restart path.
+    public func start() throws {
         guard self.operatingState != OperatingState.started else {
             return
         }
-        startClient()
+        try startClient()
     }
 
     /// Starts the communication client and waits until the desired
@@ -172,7 +188,7 @@ public class CommunicationManager {
     internal func startAndWaitUntilReady() async throws {
         let stateStream = await observeCommunicationStateStream()
         var iterator = stateStream.makeAsyncIterator()
-        start()
+        try start()
 
         while let state = await iterator.next() {
             guard state == .online else {
@@ -188,8 +204,9 @@ public class CommunicationManager {
             return
         }
 
-        throw AxolotyError.RuntimeError(
-            "Communication state stream terminated before the client became online."
+        throw AxolotyError.runtime(
+            code: .streamEnded,
+            reason: "Communication state stream terminated before the client became online."
         )
     }
 
@@ -214,9 +231,14 @@ public class CommunicationManager {
     }
 
     /// Starts the client gracefully and tries to connect to the broker.
-    private func startClient() {
+    private func startClient() throws {
         // Reinitialize potentially changed options in case of a restart.
-        let mqttClientOptions = self.communicationOptions.mqttClientOptions!
+        guard let mqttClientOptions = self.communicationOptions.mqttClientOptions else {
+            throw AxolotyError.invalidConfiguration(
+                option: "mqttClientOptions",
+                reason: "must be set when using the default MQTT transport"
+            )
+        }
         initializeMQTTClientId(mqttClientOptions)
         // Fail-fast invariant, not user input.
         // swiftlint:disable:next force_try
@@ -281,7 +303,7 @@ public class CommunicationManager {
         }
         
         guard CommunicationTopic.isValidEventTypeFilter(filter: ns!) else {
-            throw AxolotyError.InvalidConfiguration("CommunicationOptions.namespace contains invalid characters")
+            throw AxolotyError.invalidConfiguration(option: "CommunicationOptions.namespace", reason: "contains invalid characters")
         }
         
         self.namespace = ns!
@@ -480,7 +502,10 @@ public class CommunicationManager {
                 if CommunicationTopic.isValidEventTypeFilter(filter: contextName) {
                     return true
                 } else {
-                    throw AxolotyError.InvalidConfiguration("ioContextName \(contextName) in ioContextNodes contains invalid characters")
+                    throw AxolotyError.invalidConfiguration(
+                        option: "ioContextNodes",
+                        reason: "ioContextName \"\(contextName)\" contains invalid characters"
+                    )
                 }
             }).map({ contextName -> IoNode in
                 // Force unwrapping is safe.
@@ -554,9 +579,8 @@ public class CommunicationManager {
         // Update own IO actor associations
         if isIoActorAssociated {
             if let ioRoute = ioRoute {
-                // CoatyJS 2.4.0 never serializes `isExternalRoute`; default
-                // to false (a generated route) rather than trapping on the
-                // omitted field. See AGENTS.md "Wire compatibility".
+                // CoatyJS 2.4.0 never sends `isExternalRoute` on Associate events (#31); default
+                // to false rather than force-unwrapping a field a legacy peer may omit.
                 self.associateIoActorItems(ioSourceId: ioSourceId, ioActor: ioActor!, ioRoute: ioRoute, isExternalRoute: event.data.isExternalRoute ?? false)
             } else {
                 self.disassociateIoActorItems(ioSourceId: ioSourceId, ioActorId: ioActorId, currentIoRoute: nil, newIoRoute: nil)
@@ -722,7 +746,13 @@ extension CommunicationManager: CommunicationClientDelegate {
     /// Auto start communication manager (caused by shouldAutoStart option or
     /// bonjour discovery).
     nonisolated func didReceiveStart() {
-        onMain { manager in manager.start() }
+        onMain { manager in
+            do {
+                try manager.start()
+            } catch {
+                manager.log.error("Failed to start CommunicationManager: \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
+            }
+        }
     }
 }
 

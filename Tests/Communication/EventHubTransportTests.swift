@@ -490,7 +490,9 @@ private func makeManager(client: CommunicationClient? = nil) -> CommunicationMan
         mqttClientOptions: mqttOptions,
         shouldAutoStart: false
     )
-    return CommunicationManager(
+    // mqttClientOptions is always set above, so this can never throw.
+    // swiftlint:disable:next force_try
+    return try! CommunicationManager(
         identity: Identity(name: "TestIdentity"),
         communicationOptions: communicationOptions,
         commonOptions: nil,

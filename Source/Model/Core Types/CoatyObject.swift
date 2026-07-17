@@ -5,6 +5,7 @@
 //
 //
 
+import ErrorKit
 import Foundation
 
 /// The base type of all objects in the Coaty object model. Application-specific object types
@@ -187,9 +188,15 @@ open class CoatyObject: Codable {
 // MARK: - Extension enable easy access to JSON representation of Coaty object.
 
 extension CoatyObject {
+    /// JSON representation of this object.
+    ///
+    /// - Note: Falls back to `"{}"` and logs the failure if the object
+    ///   cannot be encoded (e.g. a ``Double`` field holding `NaN`/`infinity`).
+    ///   Kept non-throwing because it is read from dozens of publish call
+    ///   sites that do not otherwise throw; see ``PayloadCoder/encode(_:)``.
     public var json: String {
         get {
-            return PayloadCoder.encode(self)
+            return PayloadCoder.encodeForJSON(self)
         }
     }
 }

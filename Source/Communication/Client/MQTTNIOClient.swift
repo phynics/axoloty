@@ -146,10 +146,10 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
     /// Starts mDNS/Bonjour broker discovery if requested by
     /// `mqttClientOptions.shouldTryMDNSDiscovery`.
     ///
-    /// - Throws: `AxolotyError.RuntimeError` if discovery is requested
-    ///   but no `ServiceDiscovery` implementation is available on the
-    ///   current platform (e.g. non-Apple platforms). In that case,
-    ///   configure an explicit broker `host`/`port` instead.
+    /// - Throws: `AxolotyError.runtime(code: .brokerUnavailable, ...)` if
+    ///   discovery is requested but no `ServiceDiscovery` implementation is
+    ///   available on the current platform (e.g. non-Apple platforms). In
+    ///   that case, configure an explicit broker `host`/`port` instead.
     private func startDiscoveryIfNeeded(_ mqttClientOptions: MQTTClientOptions) throws {
         guard mqttClientOptions.shouldTryMDNSDiscovery else {
             return
@@ -160,8 +160,9 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
         discovery?.delegate = self
         discovery?.startDiscovery()
         #else
-        throw AxolotyError.RuntimeError(
-            "mDNS/Bonjour broker discovery (shouldTryMDNSDiscovery) was requested, but no " +
+        throw AxolotyError.runtime(
+            code: .brokerUnavailable,
+            reason: "mDNS/Bonjour broker discovery (shouldTryMDNSDiscovery) was requested, but no " +
             "ServiceDiscovery implementation is available on this platform. " +
             "Configure an explicit broker host/port instead."
         )
@@ -273,7 +274,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
             case .success:
                 self.updateCommunicationState(.online)
             case .failure(let error):
-                self.log.debug("Connection error: \(ErrorKit.userFriendlyMessage(for: error))")
+                self.log.debug("Connection error: \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
                 // A refused/failed connect attempt never established a
                 // connection, so mqtt-nio's close listener (handleClose)
                 // does not fire for it. Without an explicit retry here, one
@@ -324,14 +325,14 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
     func disconnect() {
         isIntentionalDisconnect = true
         client?.disconnect().whenFailure { [weak self] error in
-            self?.log.debug("Error while disconnecting: \(ErrorKit.userFriendlyMessage(for: error))")
+            self?.log.debug("Error while disconnecting: \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
         }
     }
 
     func publish(_ topic: String, message: String) {
         client?.publish(to: topic, payload: byteBuffer(from: message), qos: qos, retain: false)
             .whenFailure { [weak self] error in
-                self?.log.debug("Error publishing to \(topic): \(ErrorKit.userFriendlyMessage(for: error))")
+                self?.log.warning("Error publishing to \(topic): \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
             }
     }
 
@@ -342,13 +343,13 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
         // "fixed".
         client?.publish(to: topic, payload: byteBuffer(from: message), qos: .atMostOnce, retain: false)
             .whenFailure { [weak self] error in
-                self?.log.debug("Error publishing to \(topic): \(ErrorKit.userFriendlyMessage(for: error))")
+                self?.log.warning("Error publishing to \(topic): \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
             }
     }
 
     func subscribe(_ topic: String) async throws {
         guard let client else {
-            throw AxolotyError.RuntimeError("Cannot subscribe before the MQTT client is initialized.")
+            throw AxolotyError.runtime(code: .notStarted, reason: "Cannot subscribe before the MQTT client is initialized.")
         }
         do {
             _ = try await client.subscribe(
@@ -356,22 +357,24 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
             ).get()
             log.debug("Subscribed to topic \(topic).")
         } catch {
-            throw AxolotyError.RuntimeError(
-                "Error subscribing to topic \(topic): \(ErrorKit.userFriendlyMessage(for: error))"
+            throw AxolotyError.network(
+                error: error,
+                reason: "Error subscribing to topic \(topic): \(ErrorKit.userFriendlyMessage(for: error))"
             )
         }
     }
 
     func unsubscribe(_ topic: String) async throws {
         guard let client else {
-            throw AxolotyError.RuntimeError("Cannot unsubscribe before the MQTT client is initialized.")
+            throw AxolotyError.runtime(code: .notStarted, reason: "Cannot unsubscribe before the MQTT client is initialized.")
         }
         do {
             try await client.unsubscribe(from: [topic]).get()
             log.debug("Unsubscribed from topic \(topic).")
         } catch {
-            throw AxolotyError.RuntimeError(
-                "Error unsubscribing from topic \(topic): \(ErrorKit.userFriendlyMessage(for: error))"
+            throw AxolotyError.network(
+                error: error,
+                reason: "Error unsubscribing from topic \(topic): \(ErrorKit.userFriendlyMessage(for: error))"
             )
         }
     }
@@ -447,10 +450,10 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                     }
                 }
             } catch {
-                log.debug("Ignoring incoming event on \(info.topicName): \(ErrorKit.userFriendlyMessage(for: error))")
+                log.warning("Ignoring incoming event on \(info.topicName): \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
             }
         case .failure(let error):
-            log.debug("Error receiving published message: \(ErrorKit.userFriendlyMessage(for: error))")
+            log.warning("Error receiving published message: \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
         }
     }
 

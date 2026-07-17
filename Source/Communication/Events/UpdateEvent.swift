@@ -47,10 +47,10 @@ public class UpdateEvent: CommunicationEvent<UpdateEventData> {
     }
     
     fileprivate init(eventType: CommunicationEventType, eventData: UpdateEventData, objectType: String) throws {
-        guard CommunicationTopic.isValidEventTypeFilter(filter: eventData.object.objectType) else {
-            throw AxolotyError.InvalidArgument("Invalid object type: \(objectType)")
+        guard CommunicationTopic.isValidEventTypeFilter(filter: objectType) else {
+            throw AxolotyError.invalidArgument(argument: "objectType", reason: "\"\(objectType)\" is not a valid object type")
         }
-        
+
         super.init(eventType: eventType, eventData: eventData)
     }
     

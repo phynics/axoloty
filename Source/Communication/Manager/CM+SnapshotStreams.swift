@@ -24,10 +24,10 @@ extension CommunicationManager {
 
     /// Observes Channel events for a channel identifier as immutable snapshots.
     ///
-    /// - Throws: ``AxolotyError.InvalidArgument`` when `channelId` is invalid.
+    /// - Throws: ``AxolotyError.invalidArgument(argument:reason:)`` when `channelId` is invalid.
     public func observeChannelStream(channelId: String) async throws -> EventStream<ChannelEventSnapshot> {
         guard CommunicationTopic.isValidEventTypeFilter(filter: channelId) else {
-            throw AxolotyError.InvalidArgument("\(channelId) is not a valid channel Id.")
+            throw AxolotyError.invalidArgument(argument: "channelId", reason: "\"\(channelId)\" is not a valid channel Id")
         }
         let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
             eventType: .Channel,

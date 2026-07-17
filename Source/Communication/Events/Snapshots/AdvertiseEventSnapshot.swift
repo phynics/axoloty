@@ -57,7 +57,7 @@ extension AdvertiseEventSnapshot {
     ///
     /// - Parameter parsedMQTTMessage: the parsed transport message.
     init?(parsedMQTTMessage: ParsedMQTTMessage) {
-        guard let wire: AdvertiseEventWirePayload = PayloadCoder.decode(parsedMQTTMessage.payload) else {
+        guard let wire: AdvertiseEventWirePayload = try? PayloadCoder.decode(parsedMQTTMessage.payload) else {
             return nil
         }
 

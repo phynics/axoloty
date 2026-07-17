@@ -83,7 +83,7 @@ extension BonjourResolver: NetServiceDelegate {
         log.debug("Did resolve net service address.")
  
         // Find the IPV4 address.
-        guard let serviceIPs = resolveIPv4Addresses(addresses: sender.addresses!) else {
+        guard let addresses = sender.addresses, let serviceIPs = resolveIPv4Addresses(addresses: addresses) else {
             log.error("Could not find IPV4 addresses.")
             return
         }

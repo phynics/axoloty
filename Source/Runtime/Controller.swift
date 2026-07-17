@@ -180,8 +180,12 @@ open class Controller {
                        logHost: hostInfo)
         
         self.extendLogObject(log: log)
-        
-        try? self.communicationManager.publishAdvertise(AdvertiseEvent.with(object: log))
+
+        do {
+            try self.communicationManager.publishAdvertise(AdvertiseEvent.with(object: log))
+        } catch {
+            LogManager.log.warning("Failed to advertise Log object: \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
+        }
     }
 
 }

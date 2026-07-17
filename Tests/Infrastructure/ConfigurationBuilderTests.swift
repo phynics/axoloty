@@ -44,11 +44,11 @@ struct ConfigurationBuilderTests {
             _ = try Configuration.build { _ in }
             Issue.record("Expected Configuration.build to throw when communication is missing")
         } catch let error as AxolotyError {
-            guard case .InvalidConfiguration = error else {
-                Issue.record("Expected .InvalidConfiguration, got \(error)")
+            guard case .invalidConfiguration = error else {
+                Issue.record("Expected .invalidConfiguration, got \(error)")
                 return
             }
-            #expect(error.userFriendlyMessage == "Configuration.build requires communication options to be set")
+            #expect(error.userFriendlyMessage == "communication: Configuration.build requires communication options to be set")
         } catch {
             Issue.record("Expected AxolotyError, got \(error)")
         }

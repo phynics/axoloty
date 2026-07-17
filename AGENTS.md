@@ -118,6 +118,22 @@ in Git.
   Axoloty API. Convert them to an Axoloty `Throwable` with actionable context.
 - Failure tests assert the error category and `userFriendlyMessage`. Preserve
   public signatures unless an approved plan authorizes a breaking change.
+- `AxolotyError`'s structured cases (`invalidArgument`, `decodingFailure`,
+  `invalidConfiguration`, `runtime`) carry machine-readable context, not a
+  free-form string. Use the existing fields (`argument`/`option`/`type` +
+  `reason`) or an existing `RuntimeErrorCode` case when one fits; add a new
+  `RuntimeErrorCode` case rather than force a bad fit or fall back to an ad
+  hoc string. `RuntimeErrorCode` is a semver-relevant public surface —
+  downstream code switches on it, so treat additions as additive-only.
+- Wrap every foreign error at an Axoloty API boundary via
+  `AxolotyError.caught(_:)` (or ErrorKit's `Catching.catch { ... }`) — never
+  let a bare `Error` cross an Axoloty API, thrown or logged. This applies to
+  absorbed/swallowed failures too: even when the boundary policy is to log
+  and continue rather than propagate, wrap before logging.
+- Log `ErrorKit.errorChainDescription(for:)`, not `userFriendlyMessage`, when
+  diagnosing a caught error — the chain description preserves the full cause
+  chain for debugging. `userFriendlyMessage` is the stable, public-facing
+  string and is comparatively lossy; reserve it for user-visible text.
 
 ### Commits
 

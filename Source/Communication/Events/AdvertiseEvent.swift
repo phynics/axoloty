@@ -35,7 +35,7 @@ public class AdvertiseEvent: CommunicationEvent<AdvertiseEventData> {
     
     fileprivate init(eventType: CommunicationEventType, eventData: AdvertiseEventData, objectType: String) throws {
         guard CommunicationTopic.isValidEventTypeFilter(filter: objectType) else {
-            throw AxolotyError.InvalidArgument("Invalid object type: \(objectType)")
+            throw AxolotyError.invalidArgument(argument: "objectType", reason: "\"\(objectType)\" is not a valid object type")
         }
         
         super.init(eventType: eventType, eventData: eventData)
