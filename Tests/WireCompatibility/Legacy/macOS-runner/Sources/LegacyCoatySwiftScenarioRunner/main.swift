@@ -3,6 +3,7 @@
 import CoatySwift
 import Darwin
 import Foundation
+import RxSwift
 
 private let pinnedCommit = "20a97b29832758fb771ac79fd5f7ae36cff69403"
 private let namespace = "wire-compat-v1"
@@ -20,6 +21,7 @@ private let requesterIdentityId = "00000000-0000-4000-8000-000000000201"
 private let responderIdentityId = "00000000-0000-4000-9000-000000000202"
 private let settleInterval: TimeInterval = 1
 private let resolveTimeout: TimeInterval = 5
+private let onlineTimeout: TimeInterval = 15
 
 /// Blocks the calling thread for `interval` while still servicing the main
 /// run loop in short slices.
@@ -89,6 +91,7 @@ private enum RunnerError: Error, CustomStringConvertible {
     case invalidPin(String)
     case unsupportedScenario(String)
     case readinessTimeout
+    case onlineTimeout
     case timeout
 
     var description: String {
@@ -96,6 +99,7 @@ private enum RunnerError: Error, CustomStringConvertible {
         case let .usage(message), let .invalidPin(message): return message
         case let .unsupportedScenario(scenario): return "unsupported scenario: \(scenario)"
         case .readinessTimeout: return "timed out waiting for responder Identity subscription evidence"
+        case .onlineTimeout: return "timed out waiting for communication manager to go online"
         case .timeout: return "timed out waiting for deterministic Resolve"
         }
     }
@@ -137,6 +141,26 @@ private func report(_ state: String, scenario: String, details: String = "") {
     print("{\"state\":\"\(state)\",\"scenario\":\"\(scenario)\"\(details)}")
 }
 
+/// Waits for `manager` to report `.online`, or throws once `onlineTimeout`
+/// elapses.
+///
+/// Restores the guard dropped when RxSwift removal replaced this wait with a
+/// blind 1s sleep after `start()`: publishing before the broker connection is
+/// actually up silently drops the publication despite the process reporting
+/// success. See issue #61.
+private func waitUntilOnline(_ manager: CommunicationManager) throws {
+    let online = DispatchSemaphore(value: 0)
+    let subscription = manager.observeCommunicationState()
+        .filter { $0 == .online }
+        .take(1)
+        .subscribe(onNext: { _ in online.signal() })
+    defer { subscription.dispose() }
+
+    guard runLoopWait(online, timeout: onlineTimeout) else {
+        throw RunnerError.onlineTimeout
+    }
+}
+
 private func runOneWay(_ arguments: Arguments, publish: (CommunicationManager) throws -> Void) throws {
     let container = makeContainer(
         arguments: arguments,
@@ -146,6 +170,12 @@ private func runOneWay(_ arguments: Arguments, publish: (CommunicationManager) t
     let manager = try communicationManager(for: container)
     report("ready", scenario: arguments.scenario)
     manager.start()
+    do {
+        try waitUntilOnline(manager)
+    } catch {
+        manager.stop()
+        throw error
+    }
     try publish(manager)
     report("published", scenario: arguments.scenario, details: ",\"objectId\":\"\(referenceObjectId)\"")
     runLoopSleep(settleInterval)
