@@ -17,9 +17,9 @@ Reference versions must be pinned before captured fixtures become normative:
 | Call / Return | Not tested | Compatible with normalization | Not tested | Not tested | PR |
 | Channel | Not tested | Compatible with normalization | Not tested | Not tested | PR |
 | Identity lifecycle / last will | Not tested | Not tested | Not tested | Not tested | Nightly |
-| Associate / IoState / IoValue | Decision needed | Decision needed | Decision needed | Decision needed | Nightly |
+| Associate / IoState / IoValue | Intentional divergence | Intentional divergence | Not tested | Not tested | Nightly |
 | Decentralized logging | Not tested | Not tested | Not tested | Not tested | Nightly |
-| SensorThings | Decision needed | Decision needed | Decision needed | Decision needed | Audit |
+| SensorThings | Not tested | Not tested | Not tested | Not tested | Audit |
 
 Allowed results are `Compatible`, `Compatible with normalization`, `Intentional divergence`, `Unsupported`, and `Not tested`. Any intentional divergence requires a linked decision and fixture update.
 
@@ -35,3 +35,34 @@ The `contract-seed` fixtures exercise the harness only. They are supplemented, f
 
 Reference-agent pins, build instructions, and the documented legacy Swift
 platform constraint live in `ReferenceAgents/README.md`.
+
+`Associate / IoState / IoValue` is backed by `Tests/WireCompatibility/IO/`
+(T-021). The generated IOV route and ASC topic, and the required Associate
+fields, are compatible in both directions; the rows are marked
+`Intentional divergence` because two defects were found and recorded rather
+than silently normalized. **JS → modern** is blocked by Axoloty's
+`handleAssociate` force-unwrapping the optional `isExternalRoute`
+(`CommunicationManager.swift:557`); pinned CoatyJS 2.4.0 never serializes
+that field, so an Axoloty actor traps on a CoatyJS Associate (the decode fact
+is locked in offline by `AxolotyIoAssociateTests`).
+**Modern → JS** runs live (`IO/Live/run-io-associate.sh`, PASS): the CoatyJS
+actor decodes the Associate and subscribes to the generated route, but
+receives Axoloty's IoValue as `{"payload":42}` rather than the bare value
+`42` — Axoloty wraps the value under `payload` (`IoValueEventData.encode`)
+while CoatyJS publishes the raw value. Both are recorded defects pending
+follow-up PRs; see
+`Audit/IOAndSensorThingsDecisions.md`. `IoState` is internal (not a wire
+contract) and kept. Legacy CoatySwift 2.4.0 IO directions are descoped by
+`Audit/LegacySwiftIOScopeDecision.md` (no macOS/Xcode host). JS integer
+IoValues exceeding 2^53 lose precision through CoatyJS's float64
+(`Int64.max` round-trips as `9223372036854776000`); Axoloty preserves Int64
+exactly.
+
+`SensorThings` is `Not tested` this session. There is no
+`@coaty/sensor-things` npm package and `@coaty/core@2.4.0` exports no
+SensorThings types; per the audit its wire contract is ordinary Coaty object
+JSON with an `objectType` of `coaty.sensorThings.*` over standard
+Advertise/Channel topics, so its transport compatibility reduces to the
+already-proven Advertise/Channel rows. The field-schema fixtures
+(`Tests/SensorThings/` exists same-process) and cross-implementation captures
+remain to be run; see `Audit/IOAndSensorThingsDecisions.md`.
