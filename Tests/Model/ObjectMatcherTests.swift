@@ -1362,7 +1362,7 @@ struct ObjectMatcherTests {
     @Test
 
     func testMatchesFilterOnUUIDPropertyBuiltLocally() throws {
-        let operand = AnyCodable(try #require(CoatyUUID(uuidString: Self.knownUUIDString)))
+        let operand = AnyCodable(CoatyUUID(uuidString: Self.knownUUIDString)!)
         let filter = Self.objectIdEqualsFilter(operand: operand)
 
         #expect(ObjectMatcher.matchesFilter(obj: try Self.objectWithKnownId(), filter: filter))
@@ -1377,7 +1377,7 @@ struct ObjectMatcherTests {
     @Test
 
     func testMatchesFilterOnUUIDPropertyAfterWireRoundTrip() throws {
-        let operand = AnyCodable(try #require(CoatyUUID(uuidString: Self.knownUUIDString)))
+        let operand = AnyCodable(CoatyUUID(uuidString: Self.knownUUIDString)!)
         let filter = Self.objectIdEqualsFilter(operand: operand)
 
         let data = try JSONEncoder().encode(filter)

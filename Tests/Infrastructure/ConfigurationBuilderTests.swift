@@ -41,7 +41,7 @@ struct ConfigurationBuilderTests {
     @Test
     func testBuildThrowsInvalidConfigurationWhenCommunicationMissing() {
         do {
-            try Configuration.build { _ in }
+            _ = try Configuration.build { _ in }
             Issue.record("Expected Configuration.build to throw when communication is missing")
         } catch let error as AxolotyError {
             guard case .InvalidConfiguration = error else {

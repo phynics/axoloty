@@ -177,7 +177,12 @@ public class CommunicationOptions {
     /// <uuid> specifies the `objectId` of the communication manager's `identity` object.
     /// If you experience issues with a specific broker, specify this option as `true`.
     @available(*, deprecated)
-    public var useProtocolCompliantClientId: Bool = false
+    public var useProtocolCompliantClientId: Bool {
+        get { _useProtocolCompliantClientId }
+        set { _useProtocolCompliantClientId = newValue }
+    }
+
+    private var _useProtocolCompliantClientId: Bool = false
     
     /// Create a new CommunicationOptions instance.
     public init(namespace: String? = nil,
@@ -194,7 +199,7 @@ public class CommunicationOptions {
             self.shouldAutoStart = shouldAutoStart
         }
         if let useProtocolCompliantClientId = useProtocolCompliantClientId {
-            self.useProtocolCompliantClientId = useProtocolCompliantClientId
+            self._useProtocolCompliantClientId = useProtocolCompliantClientId
         }
     }
 }

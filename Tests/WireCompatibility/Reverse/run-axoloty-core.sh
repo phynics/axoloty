@@ -88,6 +88,7 @@ for scenario in $SCENARIOS; do
     runtime logs "$CONSUMER" >"$CONSUMER_LOG" 2>&1
     cat "$CONSUMER_LOG"
     grep -q '"state":"ack"' "$CONSUMER_LOG"
+    runtime rm "$CONSUMER" >/dev/null
     runtime stop -t 1 "$PROBE" >/dev/null || true
     runtime rm "$PROBE" >/dev/null
     test -s "$capture" || { echo "Capture is missing or empty: $capture" >&2; exit 1; }

@@ -422,16 +422,6 @@ struct RuleBasedIoRouterLogicTests {
         let router = makeRouter()
         let source = IoSource(valueType: "T", updateRate: 100)
         let actor = IoActor(valueType: "T", updateRate: 200)
-        let sourceNode = IoNode(
-            coreType: .IoNode, objectType: IoNode.objectType,
-            objectId: CoatyUUID(), name: "sn",
-            ioSources: [source], ioActors: []
-        )
-        let actorNode = IoNode(
-            coreType: .IoNode, objectType: IoNode.objectType,
-            objectId: CoatyUUID(), name: "an",
-            ioSources: [], ioActors: [actor]
-        )
 
         var map = IoAssociationPairs()
         let actors = MutableDictionaryBox<String, IoAssociationInfo>()
