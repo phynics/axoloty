@@ -45,6 +45,36 @@ struct EventStreamTests {
     }
 
     @Test
+    func testMultipleRegistrationsOnSameKeyFireAllOnLastCallbacks() async {
+        let hub = EventHub()
+        let counter = SendableCounter()
+
+        let stream1: EventStream<Int> = await hub.registerStream(
+            key: "shared-key",
+            buffering: .event,
+            onFirst: { counter.incFirst() },
+            onLast: { counter.incLast() }
+        )
+        let stream2: EventStream<Int> = await hub.registerStream(
+            key: "shared-key",
+            buffering: .event,
+            onFirst: { counter.incFirst() },
+            onLast: { counter.incLast() }
+        )
+
+        var it1 = stream1.makeAsyncIterator()
+        try? await _Concurrency.Task.sleep(for: .milliseconds(100))
+        var it2 = stream2.makeAsyncIterator()
+        try? await _Concurrency.Task.sleep(for: .milliseconds(100))
+
+        await hub.finish(key: "shared-key")
+        try? await _Concurrency.Task.sleep(for: .milliseconds(100))
+
+        #expect(counter.firstCount == 1, "onFirst should fire once for the shared key")
+        #expect(counter.lastCount == 2, "onLast should fire once per registration (2)")
+    }
+
+    @Test
     func testEventStreamNoReplay() async throws {
         let hub = EventHub()
         let stream: EventStream<Int> = await hub.registerStream(

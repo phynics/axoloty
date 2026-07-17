@@ -15,8 +15,7 @@ public actor EventHub {
     private var lastValues: [AnyHashable: Any] = [:]
     private var bufferingPolicy: [AnyHashable: EventStreamBuffering] = [:]
     private var registrationKeys: [UUID: AnyHashable] = [:]
-    private var onFirstCallbacks: [AnyHashable: @Sendable () -> Void] = [:]
-    private var onLastCallbacks: [AnyHashable: @Sendable () -> Void] = [:]
+    private var lastCallbacks: [AnyHashable: [UUID: @Sendable () -> Void]] = [:]
 
     private let log = LogManager.log
 
@@ -51,8 +50,6 @@ public actor EventHub {
     ) {
         self.bufferingPolicy[key] = buffering
         registrationKeys[id] = key
-        onFirstCallbacks[key] = onFirst
-        onLastCallbacks[key] = onLast
 
         let wasEmpty = (continuations[key]?.isEmpty ?? true)
         if wasEmpty {
@@ -100,6 +97,12 @@ public actor EventHub {
     ) {
         guard let info = streamInfo[streamId] else { return }
         let continuationId = UUID()
+        // Store onLast once per stream registration per key, so that when the
+        // key's last iterator terminates, every registration's onLast fires —
+        // not just the last-registered one.
+        if lastCallbacks[info.key]?[streamId] == nil {
+            lastCallbacks[info.key, default: [:]][streamId] = info.onLast
+        }
         registerContinuation(
             continuation,
             id: continuationId,
@@ -153,8 +156,7 @@ public actor EventHub {
         }
         lastValues.removeValue(forKey: key)
         bufferingPolicy.removeValue(forKey: key)
-        onLastCallbacks.removeValue(forKey: key)?()
-        onFirstCallbacks.removeValue(forKey: key)
+        fireAndClearLastCallbacks(for: key)
     }
 
     private func handleTermination(id: UUID) {
@@ -164,10 +166,16 @@ public actor EventHub {
         if keyContinuations.isEmpty {
             continuations.removeValue(forKey: key)
             bufferingPolicy.removeValue(forKey: key)
-            onLastCallbacks.removeValue(forKey: key)?()
-            onFirstCallbacks.removeValue(forKey: key)
+            fireAndClearLastCallbacks(for: key)
         } else {
             continuations[key] = keyContinuations
+        }
+    }
+
+    private func fireAndClearLastCallbacks(for key: AnyHashable) {
+        guard let callbacks = lastCallbacks.removeValue(forKey: key) else { return }
+        for (_, callback) in callbacks {
+            callback()
         }
     }
 }
