@@ -7,7 +7,7 @@ public struct EventStream<Element: Sendable>: Sendable, AsyncSequence {
     public typealias AsyncIterator = Iterator
 
     public struct Iterator: AsyncIteratorProtocol {
-        private let storage: Storage
+        private var storage: Storage
         private let continuation: AnySendableContinuation
 
         fileprivate init(
@@ -27,14 +27,14 @@ public struct EventStream<Element: Sendable>: Sendable, AsyncSequence {
             }
         }
 
-        private final class Storage: @unchecked Sendable {
+        private struct Storage {
             var inner: AsyncStream<Element>.AsyncIterator
 
             init(_ inner: AsyncStream<Element>.AsyncIterator) {
                 self.inner = inner
             }
 
-            func next() async -> Element? {
+            mutating func next() async -> Element? {
                 await inner.next()
             }
         }
