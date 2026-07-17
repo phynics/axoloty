@@ -95,6 +95,142 @@ struct AxolotyLifecycleSubjectTests {
         report(state: "done", scenario: "late-reply")
     }
 
+    // MARK: - Network-failure scenarios (driven through tcp_proxy.py).
+    //
+    // These four tests are the Axoloty-subject half of the lifecycle
+    // catalog's connectivity scenarios. The orchestrating script
+    // (run-lifecycle-network.sh) watches the JSONL state lines below and
+    // severs/restores the TCP path (or stops/starts the broker itself) at
+    // the documented points; the subject only ever observes its own
+    // communication state stream and reports transitions. Assertions about
+    // what actually crossed the wire live in verify-lifecycle-network.py,
+    // against the independent MQTT capture.
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["WIRE_LIFECYCLE_OFFLINE_QUEUEING_LIVE"] == "1"))
+    func offlineQueueing() async throws {
+        let (container, manager) = try makeManager()
+        defer { container.shutdown() }
+        try await container.startAndWaitUntilReady()
+
+        let states = await manager.observeCommunicationStateStream()
+        var stateIterator = await states.makeAsyncIteratorAndWait()
+        report(state: "ready", scenario: "offline-queueing")
+
+        try await waitForState(.offline, &stateIterator, scenario: "offline-queueing")
+        report(state: "offline", scenario: "offline-queueing")
+
+        // Published while provably offline: CommunicationManager.publish
+        // appends to deferredPublications and flushes them, in order, on the
+        // next online transition. The wire capture (which bypasses the
+        // severed proxy) proves each label then appears exactly once.
+        for label in ["first", "second"] {
+            let object = CoatyObject(
+                coreType: .CoatyObject,
+                objectType: "com.coaty.test.WireQueuedFixture",
+                objectId: CoatyUUID(),
+                name: label
+            )
+            try manager.publishAdvertise(AdvertiseEvent.with(object: object))
+        }
+        report(state: "published-offline", scenario: "offline-queueing")
+
+        try await waitForState(.online, &stateIterator, scenario: "offline-queueing")
+        report(state: "reconnected", scenario: "offline-queueing")
+
+        // publish is fire-and-forget (see AxolotyAdvertiseProducerTests);
+        // give the flushed queue time to reach the broker before shutdown.
+        try await _Concurrency.Task.sleep(for: .seconds(2))
+        report(state: "done", scenario: "offline-queueing")
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["WIRE_LIFECYCLE_RECONNECT_RESUBSCRIBE_LIVE"] == "1"))
+    func reconnectResubscribe() async throws {
+        try await runReconnectProbeScenario(named: "reconnect-resubscribe")
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["WIRE_LIFECYCLE_BROKER_RESTART_LIVE"] == "1"))
+    func brokerRestart() async throws {
+        try await runReconnectProbeScenario(named: "broker-restart")
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["WIRE_LIFECYCLE_CLEAN_SESSION_LIVE"] == "1"))
+    func cleanSession() async throws {
+        // Identical subject behavior to reconnect-resubscribe: Axoloty always
+        // connects with cleanSession: true (MQTTNIOClient.performConnect), so
+        // the subscription being restored after reconnect is the coordinator
+        // genuinely re-subscribing, not broker session state. The proxy's
+        // CONNACK log (verified in verify-lifecycle-network.py) proves the
+        // broker reported sessionPresent=false on the reconnect handshake.
+        try await runReconnectProbeScenario(named: "clean-session")
+    }
+
+    /// Shared subject flow for the three scenarios whose wire observation is
+    /// "a subscription survives a connectivity interruption": subscribe,
+    /// report ready, wait out an orchestrated offline/online cycle, then
+    /// require a genuinely decoded post-reconnect Advertise probe published
+    /// by pinned CoatyJS 2.4.0.
+    private func runReconnectProbeScenario(named scenario: String) async throws {
+        let (container, manager) = try makeManager()
+        defer { container.shutdown() }
+        try await container.startAndWaitUntilReady()
+
+        let advertises = try await manager.observeAdvertiseStream(
+            withObjectType: "com.coaty.test.WireFixture"
+        )
+        var advertiseIterator = await advertises.makeAsyncIteratorAndWait()
+        let states = await manager.observeCommunicationStateStream()
+        var stateIterator = await states.makeAsyncIteratorAndWait()
+        report(state: "ready", scenario: scenario)
+
+        try await waitForState(.offline, &stateIterator, scenario: scenario)
+        report(state: "offline", scenario: scenario)
+
+        try await waitForState(.online, &stateIterator, scenario: scenario)
+        report(state: "reconnected", scenario: scenario)
+
+        // The orchestrator publishes the CoatyJS probe only after seeing
+        // "reconnected", so receiving it here proves the re-subscription
+        // (SubscriptionCoordinator.setOnline) actually happened on the new
+        // connection -- with cleanSession: true there is no broker-side
+        // session for the old subscription to survive in.
+        // Generous deadline: the probe is a freshly spawned node process
+        // (pinned @coaty/core), whose cold start alone has been observed to
+        // take ~20s on this harness's hosts.
+        let probe = try await nextAdvertise(&advertiseIterator, timeout: .seconds(60))
+        #expect(probe.object.objectType == "com.coaty.test.WireFixture")
+        #expect(probe.object.name == "wire-fixture")
+        report(state: "probe-received", scenario: scenario, extra: ["name": probe.object.name])
+        report(state: "done", scenario: scenario)
+    }
+
+    private func waitForState(
+        _ target: CommunicationState,
+        _ iterator: inout EventStream<CommunicationState>.Iterator,
+        scenario: String
+    ) async throws {
+        // The state stream replays the current state to a new iterator, so
+        // this loop tolerates an immediate non-target value and simply waits
+        // until the orchestrated transition genuinely happens.
+        let box = StateIteratorBox(iterator)
+        defer { iterator = box.iterator }
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                while let state = await box.iterator.next() {
+                    if state == target {
+                        return
+                    }
+                }
+                throw TimeoutGivingUp()
+            }
+            group.addTask {
+                try await _Concurrency.Task.sleep(for: .seconds(60))
+                throw TimeoutGivingUp()
+            }
+            try await group.next()
+            group.cancelAll()
+        }
+    }
+
     private func makeManager() throws -> (container: Container, communication: CommunicationManager) {
         let environment = ProcessInfo.processInfo.environment
         let host = environment["WIRE_BROKER_HOST"] ?? "127.0.0.1"
@@ -130,15 +266,73 @@ struct AxolotyLifecycleSubjectTests {
     }
 
     private func report(state: String, scenario: String, extra: [String: String] = [:]) {
-        var fields = ["\"state\":\"\(state)\"", "\"scenario\":\"\(scenario)\""]
+        // A UTC wall-clock timestamp on every state line, with the same
+        // format as the capture probe's `capturedAt` (see mqtt_capture.py),
+        // so verify-lifecycle-call-return.py can genuinely compare wire
+        // timing against subject timing instead of trusting prose.
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var fields = [
+            "\"state\":\"\(state)\"",
+            "\"scenario\":\"\(scenario)\"",
+            "\"at\":\"\(formatter.string(from: Date()))\"",
+        ]
         for (key, value) in extra {
             fields.append("\"\(key)\":\"\(value)\"")
         }
-        print("{\(fields.joined(separator: ","))}")
+        // The network-scenario orchestrator tails this process's redirected
+        // stdout to time its sever/restore commands, so each state line is
+        // written as an unbuffered FileHandle syscall: file-backed stdio
+        // would hold block-buffered lines until process exit, and Swift 6
+        // rejects touching C's shared `stdout` for an explicit fflush.
+        let line = "{\(fields.joined(separator: ","))}\n"
+        FileHandle.standardOutput.write(Data(line.utf8))
     }
 }
 
 private struct TimeoutGivingUp: Swift.Error {}
+
+private final class StateIteratorBox: @unchecked Sendable {
+    var iterator: EventStream<CommunicationState>.Iterator
+
+    init(_ iterator: EventStream<CommunicationState>.Iterator) {
+        self.iterator = iterator
+    }
+}
+
+private func nextAdvertise(
+    _ iterator: inout EventStream<AdvertiseEventSnapshot>.Iterator,
+    timeout: Duration
+) async throws -> AdvertiseEventSnapshot {
+    let box = AdvertiseIteratorBox(iterator)
+    defer { iterator = box.iterator }
+
+    return try await withThrowingTaskGroup(of: AdvertiseEventSnapshot.self) { group in
+        group.addTask {
+            guard let value = await box.iterator.next() else {
+                throw TimeoutGivingUp()
+            }
+            return value
+        }
+        group.addTask {
+            try await _Concurrency.Task.sleep(for: timeout)
+            throw TimeoutGivingUp()
+        }
+        guard let value = try await group.next() else {
+            throw TimeoutGivingUp()
+        }
+        group.cancelAll()
+        return value
+    }
+}
+
+private final class AdvertiseIteratorBox: @unchecked Sendable {
+    var iterator: EventStream<AdvertiseEventSnapshot>.Iterator
+
+    init(_ iterator: EventStream<AdvertiseEventSnapshot>.Iterator) {
+        self.iterator = iterator
+    }
+}
 
 private final class ResponseIteratorBox: @unchecked Sendable {
     var iterator: EventStream<ResponseEventSnapshot>.Iterator

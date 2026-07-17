@@ -11,16 +11,6 @@ from pathlib import Path
 
 # An ``unsupported`` disposition is deliberate evidence of a reference-agent
 # or harness boundary, not a skipped passing scenario.
-_NO_NETWORK_HARNESS = (
-    "Axoloty is a genuine live subject for Call/Return (see duplicate-reply "
-    "and late-reply below), but this scenario needs a TCP-level "
-    "network-manipulation harness (severing and restoring connectivity "
-    "between Axoloty and the broker, or a controllable broker restart) that "
-    "was not built in this pass. No lifecycle control asserts a wire "
-    "observation without one: see Tests/WireCompatibility/Lifecycle/README.md "
-    "for what a native (non-container) harness for this would need."
-)
-
 _QOS_BINDING_LIMITATION = (
     "Pinned @coaty/core 2.4.0's MqttBinding hardcodes QoS 0 for every publish "
     "(see mqtt-binding.js's onJoin, which sets this._qos = 0 unconditionally) "
@@ -30,17 +20,57 @@ _QOS_BINDING_LIMITATION = (
     "alternative live QoS producer in this harness."
 )
 
-SCENARIOS = {
-    scenario: {
-        "id": scenario,
-        "participants": ["axoloty", "coatyjs-2.4.0"],
-        "status": "unsupported",
-        "reason": _NO_NETWORK_HARNESS,
-    }
-    for scenario in (
-        "offline-queueing", "reconnect-resubscribe", "broker-restart",
-        "clean-session",
-    )
+SCENARIOS = {}
+SCENARIOS["offline-queueing"] = {
+    "id": "offline-queueing",
+    "participants": ["axoloty", "coatyjs-2.4.0"],
+    "status": "executable",
+    "reason": (
+        "Axoloty is the live subject behind tcp_proxy.py: with its TCP path "
+        "to the broker genuinely severed, it publishes two labeled Advertise "
+        "events (CommunicationManager.publish defers them while offline), "
+        "and after the path is restored the independent capture -- which "
+        "bypasses the proxy -- proves both arrive in order exactly once on "
+        "the object-type route."
+    ),
+}
+SCENARIOS["reconnect-resubscribe"] = {
+    "id": "reconnect-resubscribe",
+    "participants": ["axoloty", "coatyjs-2.4.0"],
+    "status": "executable",
+    "reason": (
+        "Axoloty is the live subject behind tcp_proxy.py; after a real TCP "
+        "sever and restore it must decode an Advertise probe published by "
+        "pinned CoatyJS 2.4.0 only after the subject reported its reconnect. "
+        "Since Axoloty always connects with cleanSession: true, receiving "
+        "the probe proves the SubscriptionCoordinator genuinely re-subscribed "
+        "on the new connection."
+    ),
+}
+SCENARIOS["broker-restart"] = {
+    "id": "broker-restart",
+    "participants": ["axoloty", "coatyjs-2.4.0"],
+    "status": "executable",
+    "reason": (
+        "Axoloty is the live subject against a Mosquitto process that is "
+        "really stopped and restarted; the subject must reconnect and decode "
+        "a post-restart CoatyJS 2.4.0 Advertise probe. This scenario "
+        "initially failed and exposed a real defect: MQTTNIOClient's failed "
+        "connect attempts never rescheduled auto-reconnect (only established-"
+        "then-closed connections did), fixed alongside this harness."
+    ),
+}
+SCENARIOS["clean-session"] = {
+    "id": "clean-session",
+    "participants": ["axoloty", "coatyjs-2.4.0"],
+    "status": "executable",
+    "reason": (
+        "Same live sever/restore cycle as reconnect-resubscribe, plus "
+        "tcp_proxy.py decodes every MQTT CONNACK on the subject's connection "
+        "and the verifier requires at least two handshakes, all reporting "
+        "sessionPresent=false -- the broker's own confirmation that Axoloty's "
+        "hardcoded cleanSession: true left no session state behind."
+    ),
 }
 SCENARIOS["qos-1"] = {
     "id": "qos-1",
