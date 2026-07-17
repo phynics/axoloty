@@ -31,13 +31,45 @@ struct AxolotyCoreProducerTests {
             #expect(resolved.objectId == fixture.objectId)
             #expect(response.data.privateData?["responder"] as? String == "coatyjs-2.4.0")
         case "query-retrieve":
+            let filter = ObjectFilter(condition: ObjectFilterCondition(
+                property: ObjectFilterProperty("name"),
+                expression: ObjectFilterExpression(filterOperator: .Equals, op1: AnyCodable("wire-fixture"))
+            ))
             let response = try await awaitResponse(
-                from: await manager.communication.publishQuery(QueryEvent.with(objectTypes: [fixture.objectType])),
+                from: await manager.communication.publishQuery(
+                    QueryEvent.with(objectTypes: [fixture.objectType], objectFilter: filter)
+                ),
                 eventType: .Retrieve,
                 as: RetrieveEvent.self
             )
             #expect(response.data.objects.first?.objectId == fixture.objectId)
             #expect(response.data.privateData?["responder"] as? String == "coatyjs-2.4.0")
+        case "query-retrieve-filter-negative":
+            let filter = ObjectFilter(condition: ObjectFilterCondition(
+                property: ObjectFilterProperty("name"),
+                expression: ObjectFilterExpression(filterOperator: .Equals, op1: AnyCodable("no-match"))
+            ))
+            let stream = await manager.communication.publishQuery(
+                QueryEvent.with(objectTypes: [fixture.objectType], objectFilter: filter)
+            )
+            await assertNoRetrieveResponse(stream, label: "negative string")
+        case "query-retrieve-filter-operands":
+            let operands: [(String, AnyCodable)] = [
+                ("int", AnyCodable(42)),
+                ("double", AnyCodable(42.5)),
+                ("bool", AnyCodable(true)),
+                ("null", AnyCodable()),
+            ]
+            for (label, operand) in operands {
+                let filter = ObjectFilter(condition: ObjectFilterCondition(
+                    property: ObjectFilterProperty("name"),
+                    expression: ObjectFilterExpression(filterOperator: .Equals, op1: operand)
+                ))
+                let stream = await manager.communication.publishQuery(
+                    QueryEvent.with(objectTypes: [fixture.objectType], objectFilter: filter)
+                )
+                await assertNoRetrieveResponse(stream, label: label)
+            }
         case "update-complete":
             let response = try await awaitResponse(
                 from: await manager.communication.publishUpdate(UpdateEvent.with(object: fixture)),
@@ -125,6 +157,35 @@ struct AxolotyCoreProducerTests {
             return event
         }
         throw AxolotyError.runtime(code: .timedOut, reason: "Timed out waiting for a \(eventType.rawValue) response")
+    }
+
+    /// Asserts that no Retrieve response arrives from the CoatyJS consumer
+    /// within the given timeout, proving a filter that should not match was
+    /// correctly evaluated as "no match" by the reference implementation.
+    private func assertNoRetrieveResponse(
+        _ stream: EventStream<ResponseEventSnapshot>,
+        timeout: Duration = .seconds(3),
+        label: String
+    ) async {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        var iterator = await stream.makeAsyncIteratorAndWait()
+        while clock.now < deadline {
+            do {
+                let response = try await nextValue(
+                    &iterator,
+                    timeout: clock.now.duration(to: deadline)
+                )
+                guard response.eventType == CommunicationEventType.Retrieve.rawValue,
+                      response.sourceId == "33333333-3333-4333-8333-333333333333" else {
+                    continue
+                }
+                Issue.record("Unexpected Retrieve from CoatyJS for \(label) filter — the filter should not have matched")
+                return
+            } catch {
+                return
+            }
+        }
     }
 }
 

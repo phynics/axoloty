@@ -92,6 +92,23 @@ async function run() {
             event.retrieve(RetrieveEvent.withObjects([object], { responder: "coatyjs-2.4.0" }));
             ack({ objectId: object.objectId });
         }, fail);
+    } else if (scenario === "query-retrieve-filter-negative") {
+        subscription = manager.observeQuery().subscribe(event => {
+            const matched = event.data.matchesObject(object);
+            if (matched) {
+                event.retrieve(RetrieveEvent.withObjects([object], { responder: "coatyjs-2.4.0" }));
+            }
+            ack({ objectId: object.objectId, matched });
+        }, fail);
+    } else if (scenario === "query-retrieve-filter-operands") {
+        const expected = 4;
+        let received = 0;
+        subscription = manager.observeQuery().subscribe(event => {
+            received++;
+            if (received >= expected) {
+                ack({ objectId: object.objectId, queriesReceived: received });
+            }
+        }, fail);
     } else if (scenario === "update-complete") {
         subscription = manager.observeUpdateWithObjectType(object.objectType).subscribe(event => {
             if (!matchesFixture(event.data.object)) return;
