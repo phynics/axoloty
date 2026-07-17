@@ -554,7 +554,10 @@ public class CommunicationManager {
         // Update own IO actor associations
         if isIoActorAssociated {
             if let ioRoute = ioRoute {
-                self.associateIoActorItems(ioSourceId: ioSourceId, ioActor: ioActor!, ioRoute: ioRoute, isExternalRoute: event.data.isExternalRoute!)
+                // CoatyJS 2.4.0 never serializes `isExternalRoute`; default
+                // to false (a generated route) rather than trapping on the
+                // omitted field. See AGENTS.md "Wire compatibility".
+                self.associateIoActorItems(ioSourceId: ioSourceId, ioActor: ioActor!, ioRoute: ioRoute, isExternalRoute: event.data.isExternalRoute ?? false)
             } else {
                 self.disassociateIoActorItems(ioSourceId: ioSourceId, ioActorId: ioActorId, currentIoRoute: nil, newIoRoute: nil)
             }
