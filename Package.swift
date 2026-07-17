@@ -51,6 +51,8 @@ let package = Package(
                 "WireCompatibility/Audit",
                 "WireCompatibility/Capture",
                 "WireCompatibility/CompatibilityMatrix.md",
+                "WireCompatibility/IO/coatyjs-io-runner.js",
+                "WireCompatibility/IO/Live",
                 "WireCompatibility/Legacy/create_manifest.py",
                 "WireCompatibility/Legacy/macOS-runner",
                 "WireCompatibility/Legacy/README.md",

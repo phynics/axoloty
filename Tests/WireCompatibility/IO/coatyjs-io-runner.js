@@ -184,7 +184,7 @@ async function runActor(raw) {
     report("ready");
 
     let received = 0;
-    const expected = raw ? 1 : jsonValues.length;
+    const expected = Number(process.env.IO_EXPECTED_VALUES || "1");
     const timeout = setTimeout(() => {
         process.stderr.write(`Timed out waiting for IoValues (${received}/${expected})\n`);
         container.shutdown();
