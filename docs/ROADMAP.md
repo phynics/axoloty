@@ -55,9 +55,28 @@ legacy CoatySwift lifecycle coverage is descoped by recorded decision
 Remaining in this phase: the IO/SensorThings compatibility decision (T-021,
 #31) and compatibility CI gates (T-022, #32).
 
-### Phase 7 — WASM exploration (tracked separately)
+### Phase 7 — Runtime correctness (EventHub/streaming + IO routing)
 
-Exploring SwiftWasm build; identifying dependency blockers for WASM target.
-Split out of the modernization roadmap epic into its own epic, since it's
-exploratory and not gated on the rest of the roadmap: see
-[#127](https://github.com/phynics/Axoloty/issues/127).
+Closes out correctness gaps left by the Phase 3 RxSwift → async/await
+migration: lost/dropped events, unstructured task spawning breaking MQTT
+ordering, stream lifecycle leaks, and IO-routing data-clump cleanup. Tracked
+under [#135](https://github.com/phynics/Axoloty/issues/135).
+
+### Phase 8 — Wire test infrastructure
+
+Replaces the Python wire-compatibility harness with an npx-runnable Node CLI
+plus Swift Testing verification, and fills in remaining JS → modern live
+scenario coverage. Tracked under
+[#120](https://github.com/phynics/Axoloty/issues/120), sequenced as part of
+[#135](https://github.com/phynics/Axoloty/issues/135).
+
+---
+
+The modernization roadmap epic ([#43](https://github.com/phynics/Axoloty/issues/43))
+is closing out with only its final two Phase 6 items remaining (#31, #32).
+Phases 7–8 continue under a new epic,
+[#135](https://github.com/phynics/Axoloty/issues/135) (Post-Modernization
+Roadmap), per
+`docs/superpowers/plans/2026-07-17-post-modernization-roadmap.md`. WASM
+exploration (#127), Embedded Swift (#96), and the IO routing bounded-cost
+epic (#115) remain tracked separately and are not gated on #135.
