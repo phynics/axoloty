@@ -20,7 +20,7 @@ titles and bodies as searchable migration metadata.
 | T-027 | Migrate one-way communication APIs to EventStream | #6 | Closed |
 | T-028 | Remove RxSwift and close the migration release | #7 | Closed |
 | T-029 | Organize tests by subsystem | #8 | Closed |
-| T-030 | SwiftWasm/WASI feasibility spike | #33 | Open |
+| T-030 | SwiftWasm/WASI feasibility spike | #33 | Open (tracked under #127) |
 | T-031 | Migrate codebase errors to ErrorKit | #34 | Closed |
 | T-032 | Migrate stored-property setter access syntax for Swift 6 | #35 | Closed |
 | T-033 | Fix topic matcher wildcard exhaustion | #9 | Closed |

@@ -52,6 +52,9 @@ recorded as an approved divergence (CoatyJS 2.4.0 hardcodes QoS 0); the
 remaining scenarios need a network-manipulation harness, Call/Return
 request-reply plumbing, and a decision on legacy-Swift lifecycle scope.
 
-### Phase 7 — WASM exploration
+### Phase 7 — WASM exploration (tracked separately)
 
 Exploring SwiftWasm build; identifying dependency blockers for WASM target.
+Split out of the modernization roadmap epic into its own epic, since it's
+exploratory and not gated on the rest of the roadmap: see
+[#127](https://github.com/phynics/Axoloty/issues/127).
