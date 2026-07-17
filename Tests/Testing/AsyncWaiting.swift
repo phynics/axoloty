@@ -103,6 +103,36 @@ func nextValue<I: AsyncIteratorProtocol>(
     }
 }
 
+/// Runs `operation`, failing with a named timeout instead of hanging forever
+/// if it never returns — e.g. `Container.startAndWaitUntilReady()` when no
+/// broker is reachable, which otherwise waits on a state stream that never
+/// emits `.online`.
+///
+/// - Throws: ``AsyncWaitTimeoutError`` if `operation` doesn't finish before
+///   `timeout`, or whatever `operation` itself throws.
+func withTimeout<T: Sendable>(
+    _ description: String,
+    timeout: Duration = .seconds(10),
+    operation: @escaping @Sendable () async throws -> T
+) async throws -> T {
+    try await withThrowingTaskGroup(of: T.self) { group in
+        group.addTask { try await operation() }
+        group.addTask {
+            try await _Concurrency.Task.sleep(for: timeout)
+            throw AsyncWaitTimeoutError(
+                description: "Timed out after \(timeout) waiting for: \(description)"
+            )
+        }
+        guard let value = try await group.next() else {
+            throw AsyncWaitTimeoutError(
+                description: "Timed out after \(timeout) waiting for: \(description)"
+            )
+        }
+        group.cancelAll()
+        return value
+    }
+}
+
 /// Lets a non-`Sendable` iterator be captured by a `@Sendable` closure (e.g.
 /// a spawned `Task`'s body) without tripping strict-concurrency checks.
 /// `@unchecked` is safe here because callers only ever touch `iterator` from

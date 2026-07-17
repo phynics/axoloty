@@ -37,8 +37,8 @@ struct DecentralizedLoggingTest {
             "Expected LogReceiverController in coatyContainer2"
         )
 
-        try await coatyContainer2.startAndWaitUntilReady()
-        try await coatyContainer1.startAndWaitUntilReady()
+        try await withTimeout("container2 ready") { try await coatyContainer2.startAndWaitUntilReady() }
+        try await withTimeout("container1 ready") { try await coatyContainer1.startAndWaitUntilReady() }
 
         try await waitUntil("50 received log snapshots", timeout: .seconds(5)) {
             await receiverController.logStorage.count == 50

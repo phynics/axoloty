@@ -60,8 +60,8 @@ struct ObjectLifecycleControllerTests {
             objectFilter: { $0.locationId == locationId }
         )
         var iterator = stream.makeAsyncIterator()
-        try await coatyAgent1Container.startAndWaitUntilReady()
-        try await coatyAgent2Container.startAndWaitUntilReady()
+        try await withTimeout("agent1 container ready") { try await coatyAgent1Container.startAndWaitUntilReady() }
+        try await withTimeout("agent2 container ready") { try await coatyAgent2Container.startAndWaitUntilReady() }
 
         // Advertise the created test object from the second agent
         try coatyAgent2Container.communicationManager?.publishAdvertise(

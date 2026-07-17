@@ -47,8 +47,8 @@ struct SensorThingsTests {
         let components2 = Components(controllers: controllers2, objectTypes: [])
         let container2 = Container.resolve(components: components2, configuration: configuration2)
 
-        try await container1.startAndWaitUntilReady()
-        try await container2.startAndWaitUntilReady()
+        try await withTimeout("container1 ready") { try await container1.startAndWaitUntilReady() }
+        try await withTimeout("container2 ready") { try await container2.startAndWaitUntilReady() }
 
         let eventCount = 5
 
@@ -128,8 +128,8 @@ struct SensorThingsTests {
         let components2 = Components(controllers: controllers2, objectTypes: [])
         let container2 = Container.resolve(components: components2, configuration: configuration2)
 
-        try await container1.startAndWaitUntilReady()
-        try await container2.startAndWaitUntilReady()
+        try await withTimeout("container1 ready") { try await container1.startAndWaitUntilReady() }
+        try await withTimeout("container2 ready") { try await container2.startAndWaitUntilReady() }
 
         let eventCount = 2
         let channelId = "42"
