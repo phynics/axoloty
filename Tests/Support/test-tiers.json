@@ -20,6 +20,7 @@
     {"path": "Tests/WireCompatibility/Live/test_verify_coatyjs_core.py", "makeTarget": "test-support", "tier": "wire-live"},
     {"path": "Tests/WireCompatibility/Lifecycle/Live/test_lifecycle_matrix.py", "makeTarget": "test-support", "tier": "wire-live"},
     {"path": "Tests/WireCompatibility/Reverse/test_run_axoloty_core.py", "makeTarget": "test-support", "tier": "wire-offline"},
+    {"path": "Tests/WireCompatibility/Reverse/test_run_coatyjs_to_axoloty_advertise.py", "makeTarget": "test-support", "tier": "wire-offline"},
     {"path": "Tests/Support/test_validate_test_tiers.py", "makeTarget": "test-support", "tier": "unit"},
     {"path": "Tests/Support/test_coverage_ratchet.py", "makeTarget": "test-support", "tier": "unit"},
     {"path": "Tests/Support/test_coverage_report.py", "makeTarget": "test-support", "tier": "unit"},

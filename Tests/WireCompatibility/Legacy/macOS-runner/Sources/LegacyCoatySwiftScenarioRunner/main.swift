@@ -8,10 +8,50 @@ private let pinnedCommit = "20a97b29832758fb771ac79fd5f7ae36cff69403"
 private let namespace = "wire-compat-v1"
 private let referenceObjectType = "org.axoloty.wire.ReferenceObject"
 private let referenceObjectId = "00000000-0000-4000-8000-000000000101"
+// The requester and responder identity UUIDs must differ within their first
+// 18 hex digits (dashes stripped): CoatySwift derives each client's MQTT
+// ClientID from exactly that prefix (see `initializeMQTTClientId`), and two
+// clients sharing an MQTT ClientID cause the broker to repeatedly disconnect
+// whichever client connected first every time the other (re)connects. IDs
+// that only differed in their final digits (as in an earlier version of this
+// file) collided and produced an endless advertise/deadvertise reconnect
+// loop instead of a stable Discover/Resolve exchange.
 private let requesterIdentityId = "00000000-0000-4000-8000-000000000201"
-private let responderIdentityId = "00000000-0000-4000-8000-000000000202"
+private let responderIdentityId = "00000000-0000-4000-9000-000000000202"
 private let settleInterval: TimeInterval = 1
 private let resolveTimeout: TimeInterval = 5
+
+/// Blocks the calling thread for `interval` while still servicing the main
+/// run loop in short slices.
+///
+/// CocoaMQTT (used by pinned CoatySwift 2.4.0) dispatches its socket
+/// delegate callbacks onto the main dispatch queue, which is only drained by
+/// spinning the main run loop. A plain `Thread.sleep` starves that queue, so
+/// the MQTT CONNECT/CONNACK handshake and every subsequent PUBLISH
+/// confirmation would never actually run, silently dropping every
+/// publication despite the process reporting `"state":"done"`. This helper
+/// keeps the process printing correct state transitions honest by actually
+/// letting the network stack make progress while it waits.
+private func runLoopSleep(_ interval: TimeInterval) {
+    let deadline = Date().addingTimeInterval(interval)
+    while Date() < deadline {
+        RunLoop.current.run(mode: .default, before: min(Date().addingTimeInterval(0.05), deadline))
+    }
+}
+
+/// Waits for `semaphore` while still servicing the main run loop, or returns
+/// `false` once `timeout` elapses. See `runLoopSleep` for why a bare
+/// `DispatchSemaphore.wait` cannot be used here.
+private func runLoopWait(_ semaphore: DispatchSemaphore, timeout: TimeInterval) -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if semaphore.wait(timeout: .now()) == .success {
+            return true
+        }
+        RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.05))
+    }
+    return semaphore.wait(timeout: .now()) == .success
+}
 
 private struct Arguments {
     let brokerHost: String
@@ -33,11 +73,12 @@ private struct Arguments {
         guard let host = options["broker-host"], !host.isEmpty,
               let portText = options["broker-port"], let port = UInt16(portText),
               let scenario = options["scenario"],
-              let sourceCommit = options["source-commit"] else {
+              let sourceCommit = options["source-commit"]
+        else {
             throw RunnerError.usage("required: --broker-host HOST --broker-port PORT --scenario advertise|deadvertise|discover-resolve --source-commit COMMIT")
         }
-        self.brokerHost = host
-        self.brokerPort = port
+        brokerHost = host
+        brokerPort = port
         self.scenario = scenario
         self.sourceCommit = sourceCommit
     }
@@ -52,8 +93,8 @@ private enum RunnerError: Error, CustomStringConvertible {
 
     var description: String {
         switch self {
-        case .usage(let message), .invalidPin(let message): return message
-        case .unsupportedScenario(let scenario): return "unsupported scenario: \(scenario)"
+        case let .usage(message), let .invalidPin(message): return message
+        case let .unsupportedScenario(scenario): return "unsupported scenario: \(scenario)"
         case .readinessTimeout: return "timed out waiting for responder Identity subscription evidence"
         case .timeout: return "timed out waiting for deterministic Resolve"
         }
@@ -107,7 +148,7 @@ private func runOneWay(_ arguments: Arguments, publish: (CommunicationManager) t
     manager.start()
     try publish(manager)
     report("published", scenario: arguments.scenario, details: ",\"objectId\":\"\(referenceObjectId)\"")
-    Thread.sleep(forTimeInterval: settleInterval)
+    runLoopSleep(settleInterval)
     manager.stop()
 }
 
@@ -148,7 +189,7 @@ private func runDiscoverResolve(_ arguments: Arguments) throws {
     report("ready", scenario: arguments.scenario)
     requesterManager.start()
     responderManager.start()
-    guard responderIdentityObserved.wait(timeout: .now() + resolveTimeout) == .success else {
+    guard runLoopWait(responderIdentityObserved, timeout: resolveTimeout) else {
         discoverSubscription.dispose()
         identitySubscription.dispose()
         requesterManager.stop()
@@ -167,7 +208,7 @@ private func runDiscoverResolve(_ arguments: Arguments) throws {
         })
     report("published", scenario: arguments.scenario, details: ",\"objectType\":\"\(referenceObjectType)\"")
 
-    guard resolveReceived.wait(timeout: .now() + resolveTimeout) == .success else {
+    guard runLoopWait(resolveReceived, timeout: resolveTimeout) else {
         discoverSubscription.dispose()
         resolveSubscription.dispose()
         requesterManager.stop()
@@ -177,7 +218,7 @@ private func runDiscoverResolve(_ arguments: Arguments) throws {
 
     discoverSubscription.dispose()
     resolveSubscription.dispose()
-    Thread.sleep(forTimeInterval: settleInterval)
+    runLoopSleep(settleInterval)
     requesterManager.stop()
     responderManager.stop()
 }

@@ -45,5 +45,9 @@ manifests. A manifest is `executed` only after application and MQTT-capture
 evidence have both been retained. A manifest may instead be `unsupported` when
 the pinned reference fixture cannot expose deterministic controls; that is a
 documented limitation, never a passing cross-implementation result. The
-currently executable CoatyJS last-will direction does not stand in for an
-Axoloty capture or proof in the reverse direction.
+currently executable CoatyJS scenarios (`unexpected-disconnect-last-will`,
+`qos-0`, `graceful-deadvertise`) do not stand in for an Axoloty capture or
+proof in the reverse direction. See `Live/README.md` for the full disposition
+of every catalog entry, including the verified reason `qos-1`/`qos-2` are
+`unsupported`: pinned `@coaty/core@2.4.0` hardcodes QoS 0 for every publish
+regardless of configuration.
