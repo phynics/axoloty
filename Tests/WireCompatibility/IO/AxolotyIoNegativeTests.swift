@@ -26,7 +26,7 @@ struct AxolotyIoNegativeTests {
             {"ioSourceId":"33333333-3333-4333-8333-333333333333","ioActorId":"44444444-4444-4444-8444-444444444444","associatingRoute":"coaty/3/wire-compat-v1/IOV/33333333-3333-4333-8333-333333333333","updateRate":250,"futureField":"some-value","nested":{"a":1}}
             """
 
-        let decoded: AssociateEventData = try #require(PayloadCoder.decode(payload))
+        let decoded: AssociateEventData = try PayloadCoder.decode(payload)
 
         #expect(decoded.ioSourceId == CoatyUUID(uuidString: "33333333-3333-4333-8333-333333333333"))
         #expect(decoded.updateRate == 250)
@@ -41,7 +41,7 @@ struct AxolotyIoNegativeTests {
             {"ioSourceId":"33333333-3333-4333-8333-333333333333","ioActorId":"44444444-4444-4444-8444-444444444444","associatingRoute":"coaty/3/wire-compat-v1/IOV/33333333-3333-4333-8333-333333333333"}
             """
 
-        let decoded: AssociateEventData = try #require(PayloadCoder.decode(payload))
+        let decoded: AssociateEventData = try PayloadCoder.decode(payload)
 
         #expect(decoded.updateRate == nil)
         #expect(decoded.isExternalRoute == nil)
@@ -78,7 +78,7 @@ struct AxolotyIoNegativeTests {
             {"ioSourceId":"not-a-uuid","ioActorId":"44444444-4444-4444-8444-444444444444"}
             """
 
-        let decoded: AssociateEventData? = PayloadCoder.decode(payload)
+        let decoded: AssociateEventData? = try? PayloadCoder.decode(payload)
 
         #expect(decoded == nil)
     }

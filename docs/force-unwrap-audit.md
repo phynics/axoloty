@@ -27,7 +27,12 @@ listed.
 |---|---|
 | `Common/PayloadCoder.swift:19` (`decode`, `jsonString.data(using: .utf8)!`) | `String.data(using: .utf8)` cannot fail for a Swift `String`; Swift strings are always representable in UTF-8. Documented with an inline comment. |
 | `Common/PayloadCoder.swift` (`encode`, `String(data: jsonData, encoding: .utf8)!`) | `JSONEncoder` output is valid UTF-8 by spec. Documented with an inline comment. |
+| `Communication/Manager/CommunicationManager.swift` (`init` and `startClient`, `try! initializeNamespace()`) | Fail-fast invariant on a normalized string derived from `CommunicationOptions.namespace`, not user input. |
+| `Communication/Manager/CommunicationManager.swift` (`init`, `try! self._initIoNodes()`) | Fail-fast invariant on the internally-constructed IO node graph; not reachable from peer payloads or downstream config. |
+| `Communication/Manager/CommunicationManager.swift` (`startClient`, `try! _initIoNodes()`) | Same invariant as the `init` path; re-initializes IO nodes on restart. |
+| `Communication/Manager/CommunicationManager.swift` (`advertiseIdentity`, `try! publishAdvertise(...)`) | `self.identity` is always a valid, internally-created `Identity` object; encoding cannot fail. Fail-fast invariant, not user input. |
 | `Communication/Manager/CommunicationManager.swift` (`handleAssociate`, `ioActor!`) | Guarded by the `isIoActorAssociated` check earlier in the same function; control flow guarantees non-nil before use. |
+| `Communication/Client/MQTTNIOClient.swift` (`init`, `try! startDiscoveryIfNeeded(...)`) | Fail-fast invariant on internally-derived MQTT client options; `startDiscoveryIfNeeded` only throws `.brokerUnavailable` for a platform configuration issue, which is set before this call and already validated. |
 | `Runtime/Container.swift` (`resolveComponents`, `self.identity!`) | Set unconditionally on the line immediately above; never accessed before assignment. |
 | `subscriptionCoordinator!`, `client!` and similar lifecycle-owned IUOs across `CommunicationManager.swift`/`MQTTNIOClient.swift` | Set once during `init`/`configure` and never accessed before that point; safe-by-construction, not reachable from peer payloads or downstream config. Out of scope per the ticket's "leave the safe-by-construction IUO family as-is" guidance. |
 

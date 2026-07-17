@@ -62,7 +62,7 @@ extension ChannelEventSnapshot {
 
     /// Decodes a Channel snapshot from a parsed MQTT message.
     init?(parsedMQTTMessage: ParsedMQTTMessage) {
-        guard let wire: ChannelEventWirePayload = PayloadCoder.decode(parsedMQTTMessage.payload),
+        guard let wire: ChannelEventWirePayload = try? PayloadCoder.decode(parsedMQTTMessage.payload),
               let channelId = parsedMQTTMessage.eventTypeFilter else {
             return nil
         }

@@ -2,6 +2,7 @@
 
 @testable import Axoloty
 import ErrorKit
+import Foundation
 import Testing
 
 struct ErrorKitPolicyTests {
@@ -80,11 +81,11 @@ struct ErrorKitPolicyTests {
     /// through `ErrorKit.errorChainDescription(for:)`.
     @Test
     func caughtBoundaryErrorExposesFullChainDescription() {
-        struct InnerTransportError: Throwable {
-            let userFriendlyMessage = "connection reset by peer"
-        }
+        let foreignError = NSError(domain: "com.axoloty.test.transport", code: 1, userInfo: [
+            NSLocalizedDescriptionKey: "connection reset by peer"
+        ])
 
-        let boundaryError = AxolotyError.caught(InnerTransportError())
+        let boundaryError = AxolotyError.caught(foreignError)
         let chainDescription = ErrorKit.errorChainDescription(for: boundaryError)
 
         #expect(chainDescription.contains("connection reset by peer"))
@@ -93,6 +94,28 @@ struct ErrorKitPolicyTests {
             Issue.record("Expected .caught, got \(boundaryError)")
             return
         }
-        #expect(inner is InnerTransportError)
+        #expect(inner as NSError == foreignError)
+    }
+
+    /// A network error preserves the original foreign error while exposing a
+    /// composed user-facing reason.
+    @Test
+    func networkErrorPreservesForeignErrorAndReason() {
+        let foreignError = NSError(domain: "com.axoloty.test.transport", code: 2, userInfo: [
+            NSLocalizedDescriptionKey: "broker refused subscription"
+        ])
+        let networkError = AxolotyError.network(
+            error: foreignError,
+            reason: "Error subscribing to topic test/topic: broker refused subscription"
+        )
+
+        #expect(networkError.userFriendlyMessage == "Error subscribing to topic test/topic: broker refused subscription")
+
+        guard case let .network(inner, reason) = networkError else {
+            Issue.record("Expected .network, got \(networkError)")
+            return
+        }
+        #expect(inner as NSError == foreignError)
+        #expect(reason.contains("test/topic"))
     }
 }

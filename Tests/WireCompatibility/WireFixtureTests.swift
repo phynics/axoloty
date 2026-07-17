@@ -12,7 +12,7 @@ struct WireFixtureTests {
         let fixtureJSON = try #require(JSONSerialization.jsonObject(with: fixture) as? NSDictionary)
         let payload = try #require(String(data: fixture, encoding: .utf8))
 
-        let event: AdvertiseEvent = try #require(PayloadCoder.decode(payload))
+        let event: AdvertiseEvent = try PayloadCoder.decode(payload)
         #expect((event.data.object.coreType) == (.CoatyObject))
         #expect((event.data.object.objectType) == ("coaty.CoatyObject"))
         #expect((event.data.object.objectId.string) == ("00000000-0000-4000-8000-000000000001"))

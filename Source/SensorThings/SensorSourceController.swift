@@ -111,10 +111,12 @@ open class SensorSourceController: Controller {
             let stream = await communicationManager.observeParsedMessages()
             for await parsed in stream {
                 guard let correlationId = parsed.correlationId else { continue }
-                if parsed.eventType == .Discover, let request: DiscoverEvent = PayloadCoder.decode(parsed.payload) {
+                if parsed.eventType == .Discover,
+                   let request: DiscoverEvent = try? PayloadCoder.decode(parsed.payload) {
                     if request.data.isDiscoveringObjectId(), let id = request.data.objectId, let sensor = sensors[id.string] { communicationManager.publishResolve(event: ResolveEvent.with(object: sensor.sensor), correlationId: correlationId) }
                     else if request.data.isDiscoveringTypes(), request.data.isObjectTypeCompatible(objectType: SensorThingsTypes.OBJECT_TYPE_SENSOR) { for sensor in sensors.values { communicationManager.publishResolve(event: ResolveEvent.with(object: sensor.sensor), correlationId: correlationId) } }
-                } else if parsed.eventType == .Query, let request: QueryEvent = PayloadCoder.decode(parsed.payload) {
+                } else if parsed.eventType == .Query,
+                          let request: QueryEvent = try? PayloadCoder.decode(parsed.payload) {
                     let result = sensors.values.map(\.sensor).filter { request.data.objectFilter == nil || ObjectMatcher.matchesFilter(obj: $0, filter: request.data.objectFilter!) }
                     if !result.isEmpty { communicationManager.publishRetrieve(event: RetrieveEvent.with(objects: result), correlationId: correlationId) }
                 }

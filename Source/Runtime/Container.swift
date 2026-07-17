@@ -80,9 +80,14 @@ public class Container {
             return
         }
             
-        guard self.runtime != nil, self.communicationManager != nil else {
-            LogManager.log.error("Runtime or CommunicationManager was not initialized.")
-            throw AxolotyError.invalidConfiguration(option: "runtime/communicationManager", reason: "was not initialized")
+        guard self.runtime != nil else {
+            LogManager.log.error("Runtime was not initialized.")
+            throw AxolotyError.invalidConfiguration(option: "runtime", reason: "was not initialized")
+        }
+
+        guard self.communicationManager != nil else {
+            LogManager.log.error("CommunicationManager was not initialized.")
+            throw AxolotyError.invalidConfiguration(option: "communicationManager", reason: "was not initialized")
         }
 
         if self.controllers[name] != nil {

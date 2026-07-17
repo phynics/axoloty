@@ -57,7 +57,7 @@ private struct DiscoverEventWirePayload: Codable {
 
 extension DiscoverEventSnapshot {
     init?(parsedMQTTMessage: ParsedMQTTMessage) {
-        guard let payload: DiscoverEventWirePayload = PayloadCoder.decode(
+        guard let payload: DiscoverEventWirePayload = try? PayloadCoder.decode(
             parsedMQTTMessage.payload
         ) else {
             return nil

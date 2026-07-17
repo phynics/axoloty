@@ -18,7 +18,7 @@ import Foundation
 ///
 /// Four different initializers, one for each format case ensure that this object always has a correct format.
 ///
-/// The ISO 8601 standard string can be created using the function `toLocalTimeIntervalIsoString`
+/// The ISO 8601 standard string can be created using the function ``toLocalTimeIntervalIsoString``
 /// which is a part of this class.
 public class CoatyTimeInterval: Codable {
     
@@ -85,7 +85,7 @@ public class CoatyTimeInterval: Codable {
     ///
     /// The four public initializers above each enforce exactly one of the
     /// valid formats (start+end, start+duration, duration+end, duration
-    /// alone). A synthesized `Decodable` conformance would bypass that
+    /// alone). A synthesized ``Decodable`` conformance would bypass that
     /// invariant and accept any combination straight from the wire --
     /// including ones this class's other methods force-unwrap assuming are
     /// present. Validate here so a malformed peer payload throws instead of

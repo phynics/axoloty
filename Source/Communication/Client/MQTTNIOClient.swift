@@ -357,9 +357,9 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
             ).get()
             log.debug("Subscribed to topic \(topic).")
         } catch {
-            throw AxolotyError.runtime(
-                code: .subscriptionFailed,
-                reason: "Error subscribing to topic \(topic): \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))"
+            throw AxolotyError.network(
+                error: error,
+                reason: "Error subscribing to topic \(topic): \(ErrorKit.userFriendlyMessage(for: error))"
             )
         }
     }
@@ -372,9 +372,9 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
             try await client.unsubscribe(from: [topic]).get()
             log.debug("Unsubscribed from topic \(topic).")
         } catch {
-            throw AxolotyError.runtime(
-                code: .subscriptionFailed,
-                reason: "Error unsubscribing from topic \(topic): \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))"
+            throw AxolotyError.network(
+                error: error,
+                reason: "Error unsubscribing from topic \(topic): \(ErrorKit.userFriendlyMessage(for: error))"
             )
         }
     }

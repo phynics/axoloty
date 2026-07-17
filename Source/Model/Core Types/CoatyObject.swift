@@ -191,17 +191,12 @@ extension CoatyObject {
     /// JSON representation of this object.
     ///
     /// - Note: Falls back to `"{}"` and logs the failure if the object
-    ///   cannot be encoded (e.g. a `Double` field holding `NaN`/`infinity`).
+    ///   cannot be encoded (e.g. a ``Double`` field holding `NaN`/`infinity`).
     ///   Kept non-throwing because it is read from dozens of publish call
-    ///   sites that do not otherwise throw; see `PayloadCoder.encode`.
+    ///   sites that do not otherwise throw; see ``PayloadCoder/encode(_:)``.
     public var json: String {
         get {
-            do {
-                return try PayloadCoder.encode(self)
-            } catch {
-                LogManager.log.error("Failed to encode \(Self.self) to JSON: \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
-                return "{}"
-            }
+            return PayloadCoder.encodeForJSON(self)
         }
     }
 }

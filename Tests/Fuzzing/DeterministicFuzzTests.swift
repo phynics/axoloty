@@ -57,7 +57,7 @@ struct DeterministicFuzzTests {
             ]]
             let data = try JSONSerialization.data(withJSONObject: payload)
             let json = try #require(String(data: data, encoding: .utf8))
-            let event: AdvertiseEvent = try #require(PayloadCoder.decode(json), "seed=\(seed) iteration=\(iteration)")
+            let event: AdvertiseEvent = try PayloadCoder.decode(json)
             #expect((event.data.object.objectId.string) == (uuid))
             #expect((event.data.object.custom["customString"] as? String) == (customString))
             #expect((event.data.object.custom["customInteger"] as? Int) == (customInteger))
@@ -72,13 +72,13 @@ struct DeterministicFuzzTests {
         let valid = "{\"data\":{\"object\":{\"objectId\":\"00000000-0000-4000-8000-000000000001\",\"coreType\":\"CoatyObject\",\"objectType\":\"coaty.CoatyObject\",\"name\":\"fixture\"}}}"
         for length in 0..<valid.utf8.count {
             let truncated = String(valid.prefix(length))
-            let event: AdvertiseEvent? = PayloadCoder.decode(truncated)
+            let event: AdvertiseEvent? = try? PayloadCoder.decode(truncated)
             #expect((event) == nil, "truncation length \(length) unexpectedly decoded")
         }
         for iteration in 0..<iterations {
             let bytes = (0..<generator.int(in: 0...128)).map { _ in generator.uint8() }
             let malformed = String(decoding: bytes, as: UTF8.self)
-            let event: AdvertiseEvent? = PayloadCoder.decode(malformed)
+            let event: AdvertiseEvent? = try? PayloadCoder.decode(malformed)
             if let event = event {
                 #expect(!(event.data.object.objectType.isEmpty), "seed=\(seed) iteration=\(iteration)")
             }

@@ -222,7 +222,7 @@ public class IoRouter: Controller {
             for await parsed in stream {
                 guard parsed.eventType == .Advertise,
                       parsed.eventTypeFilter == CoreType.IoNode.rawValue,
-                      let event: AdvertiseEvent = PayloadCoder.decode(parsed.payload),
+                      let event: AdvertiseEvent = try? PayloadCoder.decode(parsed.payload),
                       let node = event.data.object as? IoNode,
                       node.name == self.ioContext.name else { continue }
                 self.ioNodeAdvertised(node: node)
@@ -283,7 +283,7 @@ public class IoRouter: Controller {
             let stream = await communicationManager.publishDiscover(DiscoverEvent.with(coreTypes: [.IoNode]))
             for await response in stream {
                 guard response.eventType == CommunicationEventType.Resolve.rawValue,
-                      let event: ResolveEvent = PayloadCoder.decode(String(data: response.payload, encoding: .utf8) ?? ""),
+                      let event: ResolveEvent = try? PayloadCoder.decode(String(data: response.payload, encoding: .utf8) ?? ""),
                       let node = event.data.object as? IoNode,
                       node.name == self.ioContext.name else { continue }
                 self.ioNodeAdvertised(node: node)
@@ -315,7 +315,7 @@ public class IoRouter: Controller {
             for await update in stream {
                 guard update.object.objectId == self.ioContext.objectId.string,
                       let payload = update.object.payload,
-                      let object: IoContext = PayloadCoder.decode(String(data: payload, encoding: .utf8) ?? "") else { continue }
+                      let object: IoContext = try? PayloadCoder.decode(String(data: payload, encoding: .utf8) ?? "") else { continue }
                 self.ioContext = object
                 self.ioContext.parentObjectId = self.container.identity?.objectId
                 try? self.onIoContextChanged()

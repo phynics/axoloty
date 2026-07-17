@@ -104,6 +104,15 @@ public class CommunicationManager {
 
     // MARK: - Initializers.
 
+    /// Creates a communication manager with the given identity and options.
+    ///
+    /// - Parameters:
+    ///   - identity: The agent identity to use for communication.
+    ///   - communicationOptions: The communication-specific options, including
+    ///     the MQTT broker configuration.
+    ///   - commonOptions: The common options shared across the container.
+    /// - Throws: ``AxolotyError/invalidConfiguration(option:reason:)`` if the
+    ///   MQTT client options are missing when using the default MQTT transport.
     public convenience init(identity: Identity, communicationOptions: CommunicationOptions, commonOptions: CommonOptions?) throws {
         try self.init(
             identity: identity,
@@ -159,6 +168,9 @@ public class CommunicationManager {
     /// Starts this communication manager with the communication options
     /// specified in the configuration. This is a noop if the communication
     /// manager has already been started.
+    ///
+    /// - Throws: ``AxolotyError/invalidConfiguration(option:reason:)`` if the
+    ///   MQTT client options are missing on the restart path.
     public func start() throws {
         guard self.operatingState != OperatingState.started else {
             return

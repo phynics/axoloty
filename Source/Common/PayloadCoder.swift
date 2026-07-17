@@ -10,12 +10,15 @@ import Foundation
 
 /// PayloadCoder provides utility methods to encode and decode communication events from and to JSON.
 public class PayloadCoder {
-    
+
     /// Decodes a communication event from its JSON representation.
     ///
     /// - NOTE: The JSON decoding is based on the Codable protocol from the Swift standard library.
     /// Please make sure to implement it in all CommunicationEvent and CoatyObject classes.
-    public static func decode<T: Codable>(_ jsonString: String) -> T? {
+    ///
+    /// - Throws: ``AxolotyError/decodingFailure(type:reason:payload:)`` if the
+    ///   JSON cannot be decoded into the requested type.
+    public static func decode<T: Codable>(_ jsonString: String) throws -> T {
         // `String.data(using: .utf8)` cannot fail for a Swift `String` --
         // Swift strings are always representable in UTF-8.
         let jsonData = jsonString.data(using: .utf8)!
@@ -24,18 +27,21 @@ public class PayloadCoder {
         do {
             return try decoder.decode(T.self, from: jsonData)
         } catch {
-            LogManager.log.debug("Could not decode \(T.self): \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
-            return nil
+            throw AxolotyError.decodingFailure(
+                type: String(describing: T.self),
+                reason: ErrorKit.userFriendlyMessage(for: error),
+                payload: jsonString
+            )
         }
     }
-    
+
     /// Encodes a communication event to its JSON representation.
     ///
     /// - NOTE: The JSON encoding is based on the Codable protocol from the Swift standard library.
     /// Please make sure to implement it in all CommunicationEvent and CoatyObject classes.
     ///
-    /// - Throws: `AxolotyError.caught` if the value contains data `JSONEncoder`
-    ///   cannot represent (e.g. a `Double` holding `NaN`/`infinity` set by
+    /// - Throws: ``AxolotyError/caught(_:)`` if the value contains data ``JSONEncoder``
+    ///   cannot represent (e.g. a ``Double`` holding `NaN`/`infinity` set by
     ///   downstream application code).
     public static func encode<T: Codable>(_ event: T) throws -> String {
         do {
@@ -44,6 +50,23 @@ public class PayloadCoder {
             return String(data: jsonData, encoding: .utf8)!
         } catch {
             throw AxolotyError.caught(error)
+        }
+    }
+
+    /// Encodes a value to JSON and returns `"{}"` if encoding fails.
+    ///
+    /// Used by non-throwing convenience properties (`CommunicationEvent.json`,
+    /// `CoatyObject.json`) that are read from publish call sites that do not
+    /// otherwise throw. The failure is logged at `.error` with the full cause
+    /// chain.
+    internal static func encodeForJSON<T: Codable>(_ value: T) -> String {
+        do {
+            return try encode(value)
+        } catch {
+            LogManager.log.error(
+                "Failed to encode \(T.self) to JSON: \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))"
+            )
+            return "{}"
         }
     }
 }
