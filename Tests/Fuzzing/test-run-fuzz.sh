@@ -13,8 +13,12 @@ fake_runtime="$TEMP_DIR/fake-runtime"
 cat > "$fake_runtime" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-printf '%q ' "$@" >> "${FAKE_RUNTIME_LOG}"
-printf '\n' >> "${FAKE_RUNTIME_LOG}"
+# Build the whole log line in memory, then write it with a single buffered
+# printf so concurrent worker invocations cannot interleave their args and
+# newline onto one line (which made the test's `grep -c` undercount builds
+# and tests ~1 run in 10).
+log_line=$(printf '%q ' "$@")
+printf '%s\n' "$log_line" >> "${FAKE_RUNTIME_LOG}"
 if [[ "$*" == *'swift test'* && -n "${FAKE_RUNTIME_SLEEP_SECONDS:-}" ]]; then
     sleep "${FAKE_RUNTIME_SLEEP_SECONDS}"
 fi
