@@ -150,4 +150,32 @@ struct LogManagerTests {
             #expect(entry.message == "Error publishing")
         }
     }
+
+    /// `AxolotyLogHandler.logLevel`'s getter reads `LevelStore` on every log
+    /// call, from whatever thread emits it -- including a NIO event loop in
+    /// `MQTTNIOClient`'s connect/publish/receive callbacks -- while
+    /// `setLevel(_:for:)` writes from wherever the embedding app calls it.
+    /// Races many concurrent reads against many concurrent writes on one
+    /// label; `LevelStore`'s lock must make this safe rather than corrupting
+    /// the underlying dictionary. Doesn't assert a specific outcome value
+    /// (the race is over ordering, not correctness of a given read) -- the
+    /// point is that this completes without crashing. Run under
+    /// `swift test --sanitize=thread` to catch a regression back to
+    /// unsynchronized access.
+    @Test
+    func concurrentLevelReadsAndWritesDoNotRace() async throws {
+        try await withIsolatedSubsystemLevel("test.concurrency") {
+            let levels: [Logging.Logger.Level] = [.trace, .debug, .info, .notice, .warning, .error, .critical]
+            await withTaskGroup(of: Void.self) { group in
+                for i in 0 ..< 500 {
+                    group.addTask {
+                        LogManager.setLevel(levels[i % levels.count], forSubsystemLabel: "test.concurrency")
+                    }
+                    group.addTask {
+                        _ = LogManager.level(for: "test.concurrency")
+                    }
+                }
+            }
+        }
+    }
 }

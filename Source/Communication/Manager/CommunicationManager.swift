@@ -576,11 +576,16 @@ public class CommunicationManager {
         // ioActorId) pair is stable for the association's lifetime and
         // sufficient to correlate this Associate with the IoValue traffic it
         // enables (see publishIoValue / MQTTNIOClient's IoValue handling).
-        log.debug("Handling Associate", metadata: [
+        // `ioRoute` is absent (key omitted below) exactly when this
+        // Associate is a disassociation.
+        var associateMetadata: Logging.Logger.Metadata = [
             "ioSourceId": .string(ioSourceId.string),
             "ioActorId": .string(ioActorId.string),
-            "ioRoute": ioRoute.map { Logging.Logger.MetadataValue.string($0) } ?? "none",
-        ])
+        ]
+        if let ioRoute {
+            associateMetadata["ioRoute"] = .string(ioRoute)
+        }
+        log.debug("Handling Associate", metadata: associateMetadata)
 
         // Update own IO source associations
         if isIoSourceAssociated {

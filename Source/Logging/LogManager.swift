@@ -28,11 +28,14 @@ import Logging
 ///   without every call site re-vending its logger on every use.
 public enum LogManager {
 
-    nonisolated(unsafe) private static var subsystemLevels: [String: Logging.Logger.Level] = [:]
+    private static let store = LevelStore()
 
     /// The level applied to any subsystem without its own override via
     /// `setLevel(_:for:)`.
-    nonisolated(unsafe) public static var defaultLevel: Logging.Logger.Level = .error
+    public static var defaultLevel: Logging.Logger.Level {
+        get { store.defaultLevel }
+        set { store.defaultLevel = newValue }
+    }
 
     /// Returns a logger for the given subsystem.
     ///
@@ -49,27 +52,35 @@ public enum LogManager {
     /// Sets the log level for a specific subsystem, or -- when `subsystem` is
     /// `nil` -- `defaultLevel`, applied to every subsystem without its own
     /// override. Takes effect immediately for every already-vended `Logger`.
+    ///
+    /// - Note: This is process-wide, not instance-local: every `Logger` for
+    ///   `subsystem` (or, with `subsystem: nil`, every `Logger` without its
+    ///   own override) observes the change, including ones already vended
+    ///   and stored elsewhere. `AxolotyLogHandler.logLevel`'s setter routes
+    ///   here too, so assigning to a single `Logger`'s `.logLevel` has this
+    ///   same global effect for its subsystem -- swift-log clients that
+    ///   expect `logger.logLevel = x` to be instance-local should use
+    ///   `setLevel(_:for:)` explicitly instead, for clarity at the call site.
     public static func setLevel(_ level: Logging.Logger.Level, for subsystem: Subsystem? = nil) {
-        guard let subsystem else {
-            defaultLevel = level
-            return
-        }
-        subsystemLevels[subsystem.rawValue] = level
+        store.setLevel(level, forSubsystemLabel: subsystem?.rawValue)
     }
 
     /// Returns the effective level for a subsystem label, falling back to
     /// `defaultLevel` when no override has been set. Takes a raw label
     /// (rather than `Subsystem`) so `AxolotyLogHandler` can look up its own
     /// level without round-tripping through `Subsystem(rawValue:)`.
+    ///
+    /// - Note: Called on every log call, from whatever thread emits it (e.g.
+    ///   a NIO event loop) -- see `LevelStore`.
     static func level(for subsystemLabel: String) -> Logging.Logger.Level {
-        subsystemLevels[subsystemLabel] ?? defaultLevel
+        store.level(for: subsystemLabel)
     }
 
     /// Sets the level for a subsystem by its raw label. Internal counterpart
     /// to `setLevel(_:for:)` used by `AxolotyLogHandler`'s `logLevel`
     /// setter, which only has the label, not the `Subsystem` case.
     static func setLevel(_ level: Logging.Logger.Level, forSubsystemLabel subsystemLabel: String) {
-        subsystemLevels[subsystemLabel] = level
+        store.setLevel(level, forSubsystemLabel: subsystemLabel)
     }
 
     /// Maps the public, Configuration-facing `AxolotyLogLevel` to a
@@ -85,6 +96,53 @@ public enum LogManager {
         case .warning:
             return .warning
         }
+    }
+}
+
+/// Lock-guarded storage for `LogManager`'s subsystem levels.
+///
+/// `AxolotyLogHandler.logLevel`'s getter reads this on every single log call
+/// -- including from arbitrary threads such as a NIO event loop in
+/// `MQTTNIOClient`'s connect/publish/receive callbacks -- while
+/// `LogManager.setLevel(_:for:)` writes to it from wherever the embedding
+/// app calls it. Concurrent unsynchronized access to a Swift `Dictionary` is
+/// undefined behavior, not just a stale read, so this needs real
+/// synchronization rather than the `nonisolated(unsafe)` a write-once-then-
+/// read-only global would get away with.
+private final class LevelStore: @unchecked Sendable {
+    private let lock = NSLock()
+    private var subsystemLevels: [String: Logging.Logger.Level] = [:]
+    private var _defaultLevel: Logging.Logger.Level = .error
+
+    var defaultLevel: Logging.Logger.Level {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _defaultLevel
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            _defaultLevel = newValue
+        }
+    }
+
+    func level(for subsystemLabel: String) -> Logging.Logger.Level {
+        lock.lock()
+        defer { lock.unlock() }
+        return subsystemLevels[subsystemLabel] ?? _defaultLevel
+    }
+
+    /// Sets `defaultLevel` when `subsystemLabel` is `nil`, or the level for
+    /// that specific subsystem label otherwise.
+    func setLevel(_ level: Logging.Logger.Level, forSubsystemLabel subsystemLabel: String?) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let subsystemLabel else {
+            _defaultLevel = level
+            return
+        }
+        subsystemLevels[subsystemLabel] = level
     }
 }
 

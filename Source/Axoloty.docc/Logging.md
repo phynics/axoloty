@@ -49,6 +49,12 @@ LogManager.setLevel(.trace)
 LogManager.setLevel(.trace, for: .mqtt)
 ```
 
+- Note: `mqtt-nio`'s own verbose wire-protocol logging (gated by
+  `MQTTClientOptions.shouldLog`) is routed through the same `Axoloty.mqtt`
+  logger and level as Axoloty's own MQTT lines. Raising `.mqtt` to `.trace`
+  to see Axoloty's wire-level publish/receive detail will also surface
+  `mqtt-nio`'s internal chatter if `shouldLog` is enabled.
+
 ## Filtering by subsystem
 
 Every log line is labelled `Axoloty.<subsystem>` (``Subsystem`` lists

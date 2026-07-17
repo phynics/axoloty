@@ -460,11 +460,14 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
 
             do {
                 let topic = try CommunicationTopic(info.topicName)
-                log.trace("Received event", metadata: [
+                var receivedEventMetadata: Logging.Logger.Metadata = [
                     "topic": .string(info.topicName),
                     "eventType": .string(topic.eventType.rawValue),
-                    "correlationId": topic.correlationId.map { Logging.Logger.MetadataValue.string($0) } ?? "none",
-                ])
+                ]
+                if let correlationId = topic.correlationId {
+                    receivedEventMetadata["correlationId"] = .string(correlationId)
+                }
+                log.trace("Received event", metadata: receivedEventMetadata)
                 if topic.eventType == .IoValue {
                     self.delegate.didReceiveIoValue(
                         topic: info.topicName,
