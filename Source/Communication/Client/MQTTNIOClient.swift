@@ -544,6 +544,15 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
             if let snapshot = DiscoverEventSnapshot(parsedMQTTMessage: parsed) {
                 await eventHub.yield(value: snapshot, to: CommunicationEventHubKeys.discover)
             }
+        case .Query:
+            if let snapshot = QueryEventSnapshot(parsedMQTTMessage: parsed) {
+                await eventHub.yield(value: snapshot, to: CommunicationEventHubKeys.query)
+            }
+        case .Call:
+            if let snapshot = CallEventSnapshot(parsedMQTTMessage: parsed),
+               let operation = parsed.eventTypeFilter {
+                await eventHub.yield(value: snapshot, to: CommunicationEventHubKeys.call(operation: operation))
+            }
         default:
             break
         }

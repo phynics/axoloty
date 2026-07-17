@@ -89,6 +89,17 @@ enum CommunicationEventHubKeys {
         name: "discover"
     )
 
+    /// Key for the incoming Query event stream.
+    static let query = CommunicationEventHubKey(
+        scope: "communication",
+        name: "query"
+    )
+
+    /// Returns the key for an incoming Call event stream filtered by operation.
+    static func call(operation: String) -> CommunicationEventHubKey {
+        CommunicationEventHubKey(scope: "communication", name: "call/\(operation)")
+    }
+
     /// Returns the key for an incoming Update event stream.
     static func update(eventTypeFilter: String) -> CommunicationEventHubKey {
         CommunicationEventHubKey(scope: "communication", name: "update/\(eventTypeFilter)")

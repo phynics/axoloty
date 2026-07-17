@@ -8,6 +8,9 @@ public struct QueryEventSnapshot: EventSnapshot, Codable, Equatable, Sendable {
     /// The identifier of the event source, as derived from the incoming topic.
     public let sourceId: String?
 
+    /// The request correlation identifier used for a Retrieve response.
+    public let correlationId: String?
+
     /// The object types used to restrict query results.
     public let objectTypes: [String]?
 
@@ -31,6 +34,7 @@ public struct QueryEventSnapshot: EventSnapshot, Codable, Equatable, Sendable {
     ///
     /// - Parameters:
     ///   - sourceId: The identifier of the event source.
+    ///   - correlationId: The correlation identifier for a Retrieve response.
     ///   - objectTypes: An optional list of object types.
     ///   - coreTypes: An optional list of core types.
     ///   - objectFilter: An optional encoded object filter.
@@ -38,6 +42,7 @@ public struct QueryEventSnapshot: EventSnapshot, Codable, Equatable, Sendable {
     ///   - objectJoinCondition: An optional encoded single join condition.
     public init(
         sourceId: String? = nil,
+        correlationId: String? = nil,
         objectTypes: [String]? = nil,
         coreTypes: [CoreType]? = nil,
         objectFilter: Data? = nil,
@@ -45,10 +50,37 @@ public struct QueryEventSnapshot: EventSnapshot, Codable, Equatable, Sendable {
         objectJoinCondition: Data? = nil
     ) {
         self.sourceId = sourceId
+        self.correlationId = correlationId
         self.objectTypes = objectTypes
         self.coreTypes = coreTypes
         self.objectFilter = objectFilter
         self.objectJoinConditions = objectJoinConditions
         self.objectJoinCondition = objectJoinCondition
+    }
+}
+
+private struct QueryEventWirePayload: Codable {
+    let objectTypes: [String]?
+    let coreTypes: [CoreType]?
+}
+
+extension QueryEventSnapshot {
+
+    /// Decodes a Query snapshot from a parsed MQTT message.
+    init?(parsedMQTTMessage: ParsedMQTTMessage) {
+        guard let wire: QueryEventWirePayload = try? PayloadCoder.decode(
+            parsedMQTTMessage.payload
+        ) else {
+            return nil
+        }
+        self.init(
+            sourceId: parsedMQTTMessage.sourceId,
+            correlationId: parsedMQTTMessage.correlationId,
+            objectTypes: wire.objectTypes,
+            coreTypes: wire.coreTypes,
+            objectFilter: WirePayloadExtractor.nestedObjectPayload(from: parsedMQTTMessage.payload, key: "objectFilter"),
+            objectJoinConditions: WirePayloadExtractor.nestedArrayPayload(from: parsedMQTTMessage.payload, key: "objectJoinConditions"),
+            objectJoinCondition: WirePayloadExtractor.nestedObjectPayload(from: parsedMQTTMessage.payload, key: "objectJoinConditions")
+        )
     }
 }

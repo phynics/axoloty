@@ -145,6 +145,68 @@ struct EventHubTransportTests {
     }
 
     @Test
+    func queryStreamAcquiresTopicAndDeliversSnapshot() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        let stream = await manager.observeQueryStream()
+        var iterator = await stream.makeAsyncIteratorAndWait()
+        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+            eventType: .Query,
+            namespace: manager.namespace
+        )
+
+        await client.simulateState(.online)
+        try await waitForCommands(on: client, expecting: [.subscribe(topic)])
+
+        let snapshot = QueryEventSnapshot(
+            sourceId: "source",
+            correlationId: "corr-1",
+            objectTypes: [Log.objectType]
+        )
+        await client.emit(snapshot, to: CommunicationEventHubKeys.query)
+
+        #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == snapshot)
+    }
+
+    @Test
+    func callStreamAcquiresTopicAndDeliversSnapshot() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        let stream = try await manager.observeCallStream(operation: "doThing")
+        var iterator = await stream.makeAsyncIteratorAndWait()
+        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+            eventType: .Call,
+            eventTypeFilter: "doThing",
+            namespace: manager.namespace
+        )
+
+        await client.simulateState(.online)
+        try await waitForCommands(on: client, expecting: [.subscribe(topic)])
+
+        let snapshot = CallEventSnapshot(
+            sourceId: "source",
+            correlationId: "corr-1",
+            operation: "doThing"
+        )
+        await client.emit(snapshot, to: CommunicationEventHubKeys.call(operation: "doThing"))
+
+        #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == snapshot)
+    }
+
+    @Test
+    func callStreamRejectsInvalidOperation() async {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+
+        do {
+            _ = try await manager.observeCallStream(operation: "invalid/operation")
+            Issue.record("Expected invalid operation to be rejected")
+        } catch {
+            // Expected validation error.
+        }
+    }
+
+    @Test
     func updateStreamAcquiresTopicAndDeliversSnapshot() async throws {
         let client = FakeCommunicationClient(delegate: FakeStartable())
         let manager = makeManager(client: client)
