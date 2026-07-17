@@ -145,12 +145,12 @@ struct AxolotyIoAssociateTests {
         // The bare value publishIoValue now puts on the wire for each class,
         // matching CoatyJS (which publishes the payload directly, not wrapped
         // under a "payload" key).
-        #expect(PayloadCoder.encode(AnyCodable(42)) == "42")
-        #expect(PayloadCoder.encode(AnyCodable("héllo 世界 ✓")) == "\"héllo 世界 ✓\"")
+        #expect(try PayloadCoder.encode(AnyCodable(42)) == "42")
+        #expect(try PayloadCoder.encode(AnyCodable("héllo 世界 ✓")) == "\"héllo 世界 ✓\"")
         let object: AnyCodable = ["temp": 23.5]
-        #expect(PayloadCoder.encode(object) == "{\"temp\":23.5}")
+        #expect(try PayloadCoder.encode(object) == "{\"temp\":23.5}")
         let array: AnyCodable = [1, 2, 3]
-        #expect(PayloadCoder.encode(array) == "[1,2,3]")
+        #expect(try PayloadCoder.encode(array) == "[1,2,3]")
     }
 
     // MARK: - Live modern -> JS direction (Axoloty produces, CoatyJS consumes)
@@ -324,16 +324,16 @@ private func nextSnapshot<E: Sendable>(
     return try await withThrowingTaskGroup(of: E.self) { group in
         group.addTask {
             guard let value = await box.iterator.next() else {
-                throw AxolotyError.RuntimeError("Stream ended while waiting for \(label)")
+                throw AxolotyError.runtime(code: .streamEnded, reason: "Stream ended while waiting for \(label)")
             }
             return value
         }
         group.addTask {
             try await _Concurrency.Task.sleep(for: timeout)
-            throw AxolotyError.RuntimeError("Timed out waiting for \(label)")
+            throw AxolotyError.runtime(code: .timedOut, reason: "Timed out waiting for \(label)")
         }
         guard let value = try await group.next() else {
-            throw AxolotyError.RuntimeError("Timed out waiting for \(label)")
+            throw AxolotyError.runtime(code: .timedOut, reason: "Timed out waiting for \(label)")
         }
         group.cancelAll()
         return value
