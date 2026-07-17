@@ -68,11 +68,51 @@ public class CoatyTimeInterval: Codable {
     /// 4. format case: duration
     public init(duration: Int) {
         self._duration = duration
-        
+
         self._start = nil
         self._end = nil
     }
-    
+
+    // MARK: - Codable methods.
+
+    private enum CodingKeys: String, CodingKey {
+        case _start
+        case _end
+        case _duration
+    }
+
+    /// Custom decoding that validates the start/end/duration combination.
+    ///
+    /// The four public initializers above each enforce exactly one of the
+    /// valid formats (start+end, start+duration, duration+end, duration
+    /// alone). A synthesized `Decodable` conformance would bypass that
+    /// invariant and accept any combination straight from the wire --
+    /// including ones this class's other methods force-unwrap assuming are
+    /// present. Validate here so a malformed peer payload throws instead of
+    /// crashing downstream.
+    public required init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let start = try container.decodeIfPresent(Int.self, forKey: ._start)
+        let end = try container.decodeIfPresent(Int.self, forKey: ._end)
+        let duration = try container.decodeIfPresent(Int.self, forKey: ._duration)
+
+        switch (start != nil, end != nil, duration != nil) {
+        case (true, true, false), (true, false, true), (false, true, true), (false, false, true):
+            break
+        default:
+            throw DecodingError.dataCorruptedError(
+                forKey: ._start,
+                in: container,
+                debugDescription: "CoatyTimeInterval requires exactly one of: start+end, start+duration, " +
+                    "duration+end, or duration alone"
+            )
+        }
+
+        self._start = start
+        self._end = end
+        self._duration = duration
+    }
+
     // MARK: - Getters.
     var start: Int? {
         get {
@@ -114,6 +154,9 @@ public class CoatyTimeInterval: Codable {
                 fatalError("Either start or end must be specified")
             }
         } else {
+            // duration is nil here, so the start+end format applies; every
+            // initializer (including the validating init(from:) above)
+            // guarantees both are set in that case.
             let firstComponent = CoatyTimeInterval.toLocalIsoString(date: Date(timeIntervalSince1970: Double(self._start!)),
                                                                     includeMilis: includeMillis)
             let secondComponent = CoatyTimeInterval.toLocalIsoString(date: Date(timeIntervalSince1970: Double(self._end!)),
@@ -126,7 +169,7 @@ public class CoatyTimeInterval: Codable {
     /// - Parameter duration: a duration given in milliseconds
     public static func toDurationIsoString(duration: Int) throws -> String {
         if duration < 0 {
-            throw AxolotyError.RuntimeError("Duration cannot be negative.")
+            throw AxolotyError.invalidArgument(argument: "duration", reason: "duration cannot be negative")
         }
         
         // Just return the duration in form of seconds.

@@ -34,12 +34,12 @@ extension CommunicationManager {
     ///
     /// - Parameter objectType: The object type to observe.
     /// - Returns: An event-buffered stream of immutable Advertise snapshots.
-    /// - Throws: ``AxolotyError/InvalidArgument`` when `objectType` is invalid.
+    /// - Throws: ``AxolotyError/invalidArgument(argument:reason:)`` when `objectType` is invalid.
     public func observeAdvertiseStream(
         withObjectType objectType: String
     ) async throws -> EventStream<AdvertiseEventSnapshot> {
         guard CommunicationTopic.isValidEventTypeFilter(filter: objectType) else {
-            throw AxolotyError.InvalidArgument("(objectType) is not a valid object type")
+            throw AxolotyError.invalidArgument(argument: "objectType", reason: "\"\(objectType)\" is not a valid object type")
         }
 
         let namespace = communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace

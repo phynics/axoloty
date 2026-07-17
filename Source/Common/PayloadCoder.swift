@@ -16,13 +16,15 @@ public class PayloadCoder {
     /// - NOTE: The JSON decoding is based on the Codable protocol from the Swift standard library.
     /// Please make sure to implement it in all CommunicationEvent and CoatyObject classes.
     public static func decode<T: Codable>(_ jsonString: String) -> T? {
+        // `String.data(using: .utf8)` cannot fail for a Swift `String` --
+        // Swift strings are always representable in UTF-8.
         let jsonData = jsonString.data(using: .utf8)!
         let decoder = JSONDecoder()
         decoder.initPushContext(forKey: "coreTypeKeys")
         do {
             return try decoder.decode(T.self, from: jsonData)
         } catch {
-            LogManager.log.debug("Could not decode \(T.self): \(ErrorKit.userFriendlyMessage(for: error))")
+            LogManager.log.debug("Could not decode \(T.self): \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
             return nil
         }
     }
@@ -31,11 +33,17 @@ public class PayloadCoder {
     ///
     /// - NOTE: The JSON encoding is based on the Codable protocol from the Swift standard library.
     /// Please make sure to implement it in all CommunicationEvent and CoatyObject classes.
-    public static func encode<T: Codable>(_ event: T) -> String {
-        // Fail-fast invariant, not user input.
-        // swiftlint:disable:next force_try
-        let jsonData = try! JSONEncoder().encode(event)
-        let jsonString = String(data: jsonData, encoding: .utf8)!
-        return jsonString
+    ///
+    /// - Throws: `AxolotyError.caught` if the value contains data `JSONEncoder`
+    ///   cannot represent (e.g. a `Double` holding `NaN`/`infinity` set by
+    ///   downstream application code).
+    public static func encode<T: Codable>(_ event: T) throws -> String {
+        do {
+            let jsonData = try JSONEncoder().encode(event)
+            // JSON produced by `JSONEncoder` is always valid UTF-8 by spec.
+            return String(data: jsonData, encoding: .utf8)!
+        } catch {
+            throw AxolotyError.caught(error)
+        }
     }
 }

@@ -37,9 +37,14 @@ extension KeyedDecodingContainer {
         return try container.decode(type)
     }
     
+    /// Decodes a heterogeneous JSON object by probing each supported Swift
+    /// type per key with `try?` in turn. Each failed probe means "not this
+    /// type, try the next one" -- not a swallowed error -- since the JSON
+    /// value's concrete type is unknown ahead of time; a key is only
+    /// dropped from `dictionary` if none of the candidate types match.
     func decode(_ type: [String: Any].Type) throws -> [String: Any] {
         var dictionary = [String: Any]()
-        
+
         for key in allKeys {
             if let boolValue = try? decode(Bool.self, forKey: key) {
                 dictionary[key.stringValue] = boolValue
@@ -67,6 +72,10 @@ extension KeyedDecodingContainer {
 }
 
 extension UnkeyedDecodingContainer {
+    /// Decodes a heterogeneous JSON array element-by-element, probing each
+    /// supported Swift type per element with `try?` in turn -- same
+    /// deliberate type-probing pattern as `KeyedDecodingContainer.decode(_:
+    /// [String: Any].Type)` above, not a swallowed error.
     mutating func decode(_ type: [Any].Type) throws -> [Any] {
         var array: [Any] = []
         

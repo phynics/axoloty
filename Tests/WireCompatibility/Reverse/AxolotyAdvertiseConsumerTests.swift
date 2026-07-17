@@ -87,16 +87,16 @@ private func nextAdvertise(
     return try await withThrowingTaskGroup(of: AdvertiseEventSnapshot.self) { group in
         group.addTask {
             guard let value = await box.iterator.next() else {
-                throw AxolotyError.RuntimeError("Advertise stream ended before a snapshot arrived")
+                throw AxolotyError.runtime(code: .streamEnded, reason: "Advertise stream ended before a snapshot arrived")
             }
             return value
         }
         group.addTask {
             try await _Concurrency.Task.sleep(for: timeout)
-            throw AxolotyError.RuntimeError("Timed out waiting for CoatyJS to publish Advertise")
+            throw AxolotyError.runtime(code: .timedOut, reason: "Timed out waiting for CoatyJS to publish Advertise")
         }
         guard let value = try await group.next() else {
-            throw AxolotyError.RuntimeError("Timed out waiting for CoatyJS to publish Advertise")
+            throw AxolotyError.runtime(code: .timedOut, reason: "Timed out waiting for CoatyJS to publish Advertise")
         }
         group.cancelAll()
         return value

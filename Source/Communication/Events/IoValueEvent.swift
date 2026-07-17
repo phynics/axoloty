@@ -73,7 +73,10 @@ public class IoValueEvent: CommunicationEvent<IoValueEventData> {
     fileprivate init(eventType: CommunicationEventType, eventData: IoValueEventData, ioSource: IoSource) throws {
         if let useRawIoValues = ioSource.useRawIoValues,
             (eventData.rawPayload != nil && !useRawIoValues) || (eventData.rawPayload == nil && useRawIoValues) {
-            throw AxolotyError.InvalidArgument("Inconsistent options chosen for IoValueEvent (see: IoSource.useRawIoValue for reference)")
+            throw AxolotyError.invalidArgument(
+                argument: "ioSource.useRawIoValues",
+                reason: "inconsistent options chosen for IoValueEvent (see IoSource.useRawIoValues for reference)"
+            )
         }
         
         super.init(eventType: eventType, eventData: eventData)

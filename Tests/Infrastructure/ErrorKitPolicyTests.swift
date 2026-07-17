@@ -7,25 +7,25 @@ import Testing
 struct ErrorKitPolicyTests {
     @Test
     func axolotyErrorUsesThrowableMessages() {
-        let error = AxolotyError.InvalidArgument("invalid topic")
+        let error = AxolotyError.invalidArgument(argument: "topic", reason: "invalid topic")
 
-        #expect(error.userFriendlyMessage == "invalid topic")
-        #expect(ErrorKit.userFriendlyMessage(for: error) == "invalid topic")
+        #expect(error.userFriendlyMessage == "topic: invalid topic")
+        #expect(ErrorKit.userFriendlyMessage(for: error) == "topic: invalid topic")
     }
 
     @Test
     func axolotyErrorRemainsSourceCompatibleAsThrownError() {
-        let error: any Error = AxolotyError.RuntimeError("boom")
+        let error: any Error = AxolotyError.runtime(code: .notStarted, reason: "boom")
 
         #expect((error as? AxolotyError)?.userFriendlyMessage == "boom")
     }
 
     @Test
     func caughtCaseDelegatesToWrappedErrorMessage() {
-        let wrapped = AxolotyError.caught(AxolotyError.DecodingFailure("bad payload"))
+        let wrapped = AxolotyError.caught(AxolotyError.decodingFailure(type: "Payload", reason: "bad payload"))
 
-        #expect(wrapped.userFriendlyMessage == "bad payload")
-        #expect(ErrorKit.userFriendlyMessage(for: wrapped) == "bad payload")
+        #expect(wrapped.userFriendlyMessage == "Payload: bad payload")
+        #expect(ErrorKit.userFriendlyMessage(for: wrapped) == "Payload: bad payload")
     }
 
     @Test
@@ -48,5 +48,51 @@ struct ErrorKitPolicyTests {
             #expect(inner is ForeignError)
             #expect(error.userFriendlyMessage == "foreign failure")
         }
+    }
+
+    /// Golden `userFriendlyMessage` composition per case, including every
+    /// `RuntimeErrorCode` branch. Locks the "argument: reason" shape so a
+    /// future edit to the composition doesn't silently regress it.
+    @Test
+    func userFriendlyMessageIsComposedPerCase() {
+        #expect(
+            AxolotyError.invalidArgument(argument: "topic", reason: "malformed").userFriendlyMessage
+                == "topic: malformed"
+        )
+        #expect(
+            AxolotyError.decodingFailure(type: "AssociateEventData", reason: "bad shape").userFriendlyMessage
+                == "AssociateEventData: bad shape"
+        )
+        #expect(
+            AxolotyError.invalidConfiguration(option: "mqttClientOptions", reason: "missing").userFriendlyMessage
+                == "mqttClientOptions: missing"
+        )
+
+        // `.runtime` renders as the reason alone, independent of the code --
+        // the code is for programmatic branching, not message composition.
+        for code in AxolotyError.RuntimeErrorCode.allCases {
+            #expect(AxolotyError.runtime(code: code, reason: "boom").userFriendlyMessage == "boom")
+        }
+    }
+
+    /// A foreign error wrapped at a boundary surfaces as `.caught`, and its
+    /// chain description (not just its top-level message) is reachable
+    /// through `ErrorKit.errorChainDescription(for:)`.
+    @Test
+    func caughtBoundaryErrorExposesFullChainDescription() {
+        struct InnerTransportError: Throwable {
+            let userFriendlyMessage = "connection reset by peer"
+        }
+
+        let boundaryError = AxolotyError.caught(InnerTransportError())
+        let chainDescription = ErrorKit.errorChainDescription(for: boundaryError)
+
+        #expect(chainDescription.contains("connection reset by peer"))
+
+        guard case let .caught(inner) = boundaryError else {
+            Issue.record("Expected .caught, got \(boundaryError)")
+            return
+        }
+        #expect(inner is InnerTransportError)
     }
 }

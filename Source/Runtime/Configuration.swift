@@ -61,8 +61,10 @@ public class Configuration {
         closure(builder)
         
         guard let communication = builder.communication else {
-            throw AxolotyError.InvalidConfiguration(
-                "Configuration.build requires communication options to be set")
+            throw AxolotyError.invalidConfiguration(
+                option: "communication",
+                reason: "Configuration.build requires communication options to be set"
+            )
         }
         
         return .init(common: builder.common, communication: communication, controllers: builder.controllers, databases: builder.databases)

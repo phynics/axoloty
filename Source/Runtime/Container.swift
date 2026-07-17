@@ -4,6 +4,7 @@
 //  Axoloty
 //
 
+import ErrorKit
 import Foundation
 
 /// An IoC container that uses constructor dependency injection to create
@@ -81,12 +82,12 @@ public class Container {
             
         guard self.runtime != nil, self.communicationManager != nil else {
             LogManager.log.error("Runtime or CommunicationManager was not initialized.")
-            throw AxolotyError.InvalidConfiguration("Runtime or CommunicationManager was not initialized.")
+            throw AxolotyError.invalidConfiguration(option: "runtime/communicationManager", reason: "was not initialized")
         }
-            
+
         if self.controllers[name] != nil {
             LogManager.log.error("Controller with given name already exists.")
-            throw AxolotyError.InvalidConfiguration("Controller with given name already exists.")
+            throw AxolotyError.invalidConfiguration(option: "name", reason: "controller with given name already exists")
         }
 
         let controller = resolveController(name: name, controllerType: controllerType, controllerOptions: controllerOptions)
@@ -129,9 +130,7 @@ public class Container {
         }
 
         guard let communicationManager else {
-            throw AxolotyError.InvalidConfiguration(
-                "CommunicationManager was not initialized."
-            )
+            throw AxolotyError.invalidConfiguration(option: "communicationManager", reason: "was not initialized")
         }
 
         try await communicationManager.startAndWaitUntilReady()
@@ -181,14 +180,27 @@ public class Container {
     private func resolveComponents(_ components: Components, _ configuration: Configuration) {
         self.registerCustomObjectTypes(components)
 
-        let identity = createIdentity(options: configuration.common?.agentIdentity)
+        let identity: Identity
+        do {
+            identity = try createIdentity(options: configuration.common?.agentIdentity)
+        } catch {
+            LogManager.log.critical("Failed to create identity: \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
+            identity = Identity(name: "Coaty Agent")
+        }
         self.identity = identity
         let runtime = Runtime(commonOptions: configuration.common, databaseOptions: configuration.databases)
         self.runtime = runtime
         
         // Create CommunicationManager.
-        let communicationManager = CommunicationManager(identity: self.identity!, communicationOptions: configuration.communication, commonOptions: configuration.common)
-        self.communicationManager = communicationManager
+        do {
+            self.communicationManager = try CommunicationManager(
+                identity: self.identity!,
+                communicationOptions: configuration.communication,
+                commonOptions: configuration.common
+            )
+        } catch {
+            LogManager.log.critical("Failed to create CommunicationManager: \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
+        }
 
         // Create all controllers.
         components.controllers.forEach { (name, controllerType) in
@@ -250,7 +262,7 @@ public class Container {
         }
     }
 
-    private func createIdentity(options: [String: Any]?) -> Identity {
+    private func createIdentity(options: [String: Any]?) throws -> Identity {
         let identity = Identity(name: "Coaty Agent")
 
         // Merge property values from CommonOptions.agentIdentity option
@@ -258,23 +270,25 @@ public class Container {
         if options != nil {
             for (key, value) in options! {
                 switch key {
-                    case "name": 
-                        // Fail-fast invariant, not user input.
-                        // swiftlint:disable:next force_cast
-                        identity.name = value as! String
-                    case "objectId": 
-                        // Fail-fast invariant, not user input.
-                        // swiftlint:disable:next force_cast
-                        identity.objectId = value as! CoatyUUID
-                    case "externalId": 
+                    case "name":
+                        guard let name = value as? String else {
+                            throw AxolotyError.invalidConfiguration(option: "agentIdentity.name", reason: "must be a String")
+                        }
+                        identity.name = name
+                    case "objectId":
+                        guard let objectId = value as? CoatyUUID else {
+                            throw AxolotyError.invalidConfiguration(option: "agentIdentity.objectId", reason: "must be a CoatyUUID")
+                        }
+                        identity.objectId = objectId
+                    case "externalId":
                         identity.externalId = value as? String
-                    case "parentObjectId": 
+                    case "parentObjectId":
                         identity.parentObjectId = value as? CoatyUUID
-                    case "locationId": 
+                    case "locationId":
                         identity.locationId = value as? CoatyUUID
-                    case "isDeactivated": 
+                    case "isDeactivated":
                         identity.isDeactivated = value as? Bool
-                    default: 
+                    default:
                         break
                 }
             }

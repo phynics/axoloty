@@ -252,7 +252,7 @@ struct AxolotyLifecycleSubjectTests {
             )
         )
         guard let communication = container.communicationManager else {
-            throw AxolotyError.InvalidConfiguration("Container did not resolve a communication manager")
+            throw AxolotyError.invalidConfiguration(option: "communicationManager", reason: "container did not resolve a communication manager")
         }
         return (container, communication)
     }
