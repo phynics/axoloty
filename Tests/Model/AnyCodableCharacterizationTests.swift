@@ -67,4 +67,62 @@ struct AnyCodableCharacterizationTests {
         #expect(decoded.value is Bool)
         #expect(!(decoded.value is Int))
     }
+
+    // MARK: - Equality.
+
+    /// `AnyCodable.==` switches on the pair of dynamic types and has no
+    /// cross-type case, so an `Int` and a `Double` of equal numeric value fall
+    /// through to `default: return false`.
+    ///
+    /// This is the same shape as the defect fixed in #102/#103, where a
+    /// `CoatyUUID` never compared equal to its wire-decoded `String`. Pinned so
+    /// that #110 Phase 2 makes a deliberate choice about cross-type comparison
+    /// rather than an accidental one.
+    @Test
+
+    func testIntAndDoubleOfEqualValueAreNotEqual() {
+        #expect(AnyCodable(42) != AnyCodable(42.0))
+    }
+
+    @Test
+
+    func testStringEqualityIsSupported() {
+        #expect(AnyCodable("a") == AnyCodable("a"))
+        #expect(AnyCodable("a") != AnyCodable("b"))
+    }
+
+    /// Since #103, a `CoatyUUID` is stored as its lowercase string, so it
+    /// compares equal to that string. This is the fix's contract; Phase 2 must
+    /// preserve it.
+    @Test
+
+    func testCoatyUUIDEqualsItsLowercaseString() throws {
+        let uuidString = "3f2504e0-4f89-11d3-9a0c-0305e82c3301"
+        let uuid = try #require(CoatyUUID(uuidString: uuidString))
+
+        #expect(AnyCodable(uuid) == AnyCodable(uuidString))
+    }
+
+    // MARK: - Ordering.
+
+    /// String ordering uses `localizedCompare`, not raw lexicographic ordering.
+    @Test
+
+    func testStringOrderingUsesLocalizedCompare() {
+        #expect(AnyCodable("a") < AnyCodable("b"))
+        #expect(!(AnyCodable("b") < AnyCodable("a")))
+    }
+
+    /// Ordering across mismatched types silently returns false rather than
+    /// erroring, in both directions. The public docs warn about this in prose
+    /// ("Do not compare a number with a string, as the result is not defined")
+    /// rather than preventing it. Phase 2's enum-shaped expression is expected
+    /// to make such pairs unrepresentable; this pins today's behavior until it
+    /// does.
+    @Test
+
+    func testOrderingAcrossMismatchedTypesReturnsFalse() {
+        #expect(!(AnyCodable(1) < AnyCodable("a")))
+        #expect(!(AnyCodable("a") < AnyCodable(1)))
+    }
 }
