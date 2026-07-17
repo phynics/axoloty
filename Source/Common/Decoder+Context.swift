@@ -87,6 +87,16 @@ extension Decoder {
 extension JSONDecoder {
 
     /// Set context data to be accessible on decoder's user info indexed by the given key.
+    ///
+    /// - Note: The compiler warns "type 'Any' does not conform to the 'Sendable'
+    ///   protocol" on the `userInfo[infoKey] = context` assignment below. This
+    ///   is left intentionally: the only value stored in practice is a
+    ///   ``DecodingContextStack`` (via ``initPushContext(forKey:)``), and
+    ///   silencing the diagnostic requires changing the public `Any?` parameter
+    ///   to `(any Sendable)?` across this extension and ``DecodingContextStack``
+    ///   — a breaking public API change that needs an approved plan. Making
+    ///   ``DecodingContextStack`` itself `@unchecked Sendable` does *not* help
+    ///   (the warning is on the `Any` type, not the concrete value).
     func setContext(_ context: Any?, forKey key: String) {
         let infoKey = CodingUserInfoKey(rawValue: key)!
         userInfo[infoKey] = context

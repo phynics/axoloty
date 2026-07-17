@@ -68,6 +68,18 @@ func nextValue<I: AsyncIteratorProtocol>(
     defer { iterator = box.iterator }
 
     return try await withThrowingTaskGroup(of: I.Element.self) { group in
+        // Note: this `@Sendable` closure captures `box: SharedAsyncIteratorBox<I>`,
+        // which is generic over `I`, so the compiler captures the non-`Sendable`
+        // metatype `I.Type` ("capture of non-Sendable type 'I.Type' in an
+        // isolated closure"). Left intentionally:
+        //  - Constraining `I: Sendable` breaks every caller, which passes
+        //    `EventStream.Iterator` (wraps the non-`Sendable`
+        //    `AsyncStream.AsyncIterator` in a `var`).
+        //  - Type-erasing the box to non-generic loses the `defer { iterator =
+        //    box.iterator }` restore that multi-call callers
+        //    (`ObjectLifecycleControllerTests`, `EventHubTransportTests`) rely on.
+        // A real fix needs an actor-based type-erasure refactor that preserves
+        // the restore; tracked separately.
         group.addTask {
             guard let value = try await box.iterator.next() else {
                 throw CancellationError()
