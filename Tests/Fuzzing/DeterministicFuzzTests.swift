@@ -104,6 +104,52 @@ struct DeterministicFuzzTests {
 
     @Test
 
+    func testAnyCodableUUIDNormalizedToString() throws {
+        let uuid = try #require(CoatyUUID(uuidString: "3f2504e0-4f89-11d3-9a0c-0305e82c3301"))
+        #expect(AnyCodable(uuid).value is String)
+        #expect((AnyCodable(uuid).value as? String) == uuid.string)
+        #expect(AnyCodable(uuid) == AnyCodable(uuid.string))
+    }
+
+    @Test
+
+    func testAnyCodableUUIDRoundTripPreservesEquality() throws {
+        let uuid = try #require(CoatyUUID(uuidString: "3f2504e0-4f89-11d3-9a0c-0305e82c3301"))
+        let original = AnyCodable(uuid)
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(AnyCodable.self, from: data)
+        #expect(original == decoded)
+        let json = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
+        #expect((json as? String) == uuid.string)
+    }
+
+    @Test
+
+    func testAnyCodableUUIDOrderingNoLongerSilentlyFalse() {
+        let low = AnyCodable(CoatyUUID(uuidString: "00000000-0000-4000-8000-000000000001")!)
+        let high = AnyCodable(CoatyUUID(uuidString: "00000000-0000-4000-8000-000000000002")!)
+        #expect(low < high)
+        #expect(!(high < low))
+    }
+
+    @Test
+
+    func testWireDecodedFilterOnUUIDPropertyMatches() throws {
+        let uuid = try #require(CoatyUUID(uuidString: "3f2504e0-4f89-11d3-9a0c-0305e82c3301"))
+        let obj = CoatyObject(coreType: .CoatyObject, objectType: "test.Thing",
+                              objectId: uuid, name: "thing")
+        let filter = ObjectFilter(condition: ObjectFilterCondition(
+            property: ObjectFilterProperty("objectId"),
+            expression: ObjectFilterExpression(filterOperator: .Equals,
+                                               op1: AnyCodable(uuid))))
+        #expect(ObjectMatcher.matchesFilter(obj: obj, filter: filter))
+        let data = try JSONEncoder().encode(filter)
+        let decoded = try JSONDecoder().decode(ObjectFilter.self, from: data)
+        #expect(ObjectMatcher.matchesFilter(obj: obj, filter: decoded))
+    }
+
+    @Test
+
     func testTopicMatcherAgreesWithReferenceImplementation() {
         var generator = SeededGenerator(seed: seed ^ 0x70f1_cafe)
         for iteration in 0..<iterations {

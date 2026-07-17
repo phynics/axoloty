@@ -20,7 +20,15 @@ public struct AnyCodable: Codable {
     public let value: Any
     
     public init<T>(_ value: T?) {
-        self.value = value ?? ()
+        // CoatyUUID is normalized to its lowercase string at construction.
+        // JSON has no UUID type; in CoatyJS a UUID inside an untyped payload is
+        // simply a string. Normalizing here ensures that AnyCodable(CoatyUUID(x))
+        // equals AnyCodable(x.string) and that wire round-trips preserve equality.
+        if let uuid = value as? CoatyUUID {
+            self.value = uuid.string
+        } else {
+            self.value = value ?? ()
+        }
     }
 }
 
@@ -58,8 +66,6 @@ extension AnyCodable: Equatable {
         case let (lhs as Double, rhs as Double):
             return lhs == rhs
         case let (lhs as String, rhs as String):
-            return lhs == rhs
-        case (let lhs as CoatyUUID, let rhs as CoatyUUID):
             return lhs == rhs
         case let (lhs as CoatyObject, rhs as CoatyObject):
             return AnyCodable.deepEquals(lhs, rhs)

@@ -50,8 +50,6 @@ extension _AnyEncodable {
             try container.encode(double)
         case let string as String:
             try container.encode(string)
-        case let coatyUUID as CoatyUUID:
-            try container.encode(coatyUUID)
         case let date as Date:
             try container.encode(date)
         case let url as URL:

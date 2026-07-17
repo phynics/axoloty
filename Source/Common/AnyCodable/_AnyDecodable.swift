@@ -31,8 +31,12 @@ extension _AnyDecodable {
             self.init(double)
         } else if let string = try? container.decode(String.self) {
             self.init(string)
-        } else if let coatyUUID = try? container.decode(CoatyUUID.self) {
-            self.init(coatyUUID)
+        // CoatyUUID is intentionally NOT decoded here. A UUID in JSON is a
+        // string, and String.self above already matches. Normalization happens
+        // at construction in AnyCodable.init<T>(_:), which stores CoatyUUID as
+        // its lowercase string. Reintroducing a CoatyUUID branch here would be
+        // dead code AND wrong: any UUID-shaped string in a custom field would
+        // be misinterpreted as a CoatyUUID.
         } else if let array = try? container.decode([AnyCodable].self) {
             self.init(array.map { $0.value })
         } else if let dictionary = try? container.decode([String: AnyCodable].self) {
