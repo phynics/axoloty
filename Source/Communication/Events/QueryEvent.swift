@@ -193,8 +193,14 @@ public class QueryEventData: CommunicationEventData {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encodeIfPresent(self.objectTypes, forKey: .objectTypes)
         try container.encodeIfPresent(self.coreTypes, forKey: .coreTypes)
-        try container.encodeIfPresent(self.objectFilter, forKey: .objectFilter)
-        
+        // Always emit `objectFilter` (as `{}` when nil). The Coaty wire format
+        // treats it as required: CoatyJS consumers validate incoming Query
+        // events with `isObjectFilterValid`, which rejects a Query whose
+        // `objectFilter` is absent, so the request silently gets no Retrieve
+        // response. See the reverse-direction wire-compatibility matrix
+        // (`run-axoloty-core.sh`, scenario `query-retrieve`).
+        try container.encode(self.objectFilter ?? ObjectFilter(), forKey: .objectFilter)
+
         // There is only one of them set.
         try container.encodeIfPresent(self.objectJoinConditions, forKey: .objectJoinConditions)
         try container.encodeIfPresent(self.objectJoinCondition, forKey: .objectJoinConditions)
