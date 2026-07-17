@@ -209,8 +209,11 @@ public class RuleBasedIoRouter: IoRouter {
                     let rule = rules[index]
 
                     guard let isMatch = rule.condition(source, sourceNode, actor, actorNode, self.ioContext, self) else {
-                        let logger = LogManager.log
-                        logger.error("RuleBasedIoRouter: failed invoking condition of rule. Returned value is nil.")
+                        LogManager.logger(.ioRouting).error("Rule condition invocation returned nil", metadata: [
+                            "ioSourceId": .string(source.objectId.string),
+                            "ioActorId": .string(actor.objectId.string),
+                            "valueType": .string(valueType),
+                        ])
                         continue
                     }
 

@@ -33,7 +33,7 @@ import NIOSSL
 ///   directly into the synchronous delegate and ``EventHub`` surfaces.
 internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
 
-    private let log = LogManager.log
+    private let log = LogManager.logger(.mqtt)
 
     // MARK: - Protocol fields.
 
@@ -71,6 +71,15 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
     /// Guards against overlapping connection attempts (mqtt-nio has no
     /// CocoaMQTT-style `connState` to query directly).
     private var isConnecting = false
+
+    /// Correlates every attempt of one connect/reconnect sequence (broker
+    /// candidate fallback and `autoReconnect` retries) under a single id.
+    /// Minted the first time `performConnect()` runs after the previous
+    /// sequence concluded (success or intentional disconnect), and cleared
+    /// on the same conditions -- so a dropped connection that triggers
+    /// several retries logs one id throughout, and the *next* drop gets a
+    /// fresh one.
+    private var connectionAttemptId: String?
 
     /// Set right before an explicit, user-requested `disconnect()` so the
     /// close-listener (which fires on *any* connection close, intentional or
@@ -209,12 +218,16 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
     }
 
     private func makeClient(host: String, port: Int) -> MQTTClient {
+        // `shouldLog` is an additional early-exit for mqtt-nio's own verbose
+        // wire-protocol logging, not a replacement for `log`'s level gating
+        // -- when enabled, mqtt-nio logs through the same per-subsystem
+        // logger and level store as the rest of this client.
         MQTTClient(
             host: host,
             port: port,
             identifier: mqttClientOptions.clientId!,
             eventLoopGroupProvider: .shared(eventLoopGroup),
-            logger: mqttClientOptions.shouldLog ? Logger(label: "com.coatyswift.mqttnio") : nil,
+            logger: mqttClientOptions.shouldLog ? log : nil,
             configuration: configuration
         )
     }
@@ -259,7 +272,15 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
         }
 
         isConnecting = true
-        log.debug("Connecting to broker host \(client.host) on port \(client.port)")
+        let attemptId = connectionAttemptId ?? {
+            let id = CoatyUUID().string
+            connectionAttemptId = id
+            return id
+        }()
+        log.debug("Connecting to broker", metadata: [
+            "correlationId": .string(attemptId),
+            "broker": "\(client.host):\(client.port)",
+        ])
 
         let will = lastWill.map {
             (topicName: $0.topic, payload: byteBuffer(from: $0.message), qos: qos, retain: false)
@@ -272,9 +293,18 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
             self.isConnecting = false
             switch result {
             case .success:
+                self.log.info("Connected to broker", metadata: [
+                    "correlationId": .string(attemptId),
+                    "broker": "\(client.host):\(client.port)",
+                ])
+                self.connectionAttemptId = nil
                 self.updateCommunicationState(.online)
             case .failure(let error):
-                self.log.debug("Connection error: \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
+                self.log.debug("Connection error", metadata: [
+                    "correlationId": .string(attemptId),
+                    "broker": "\(client.host):\(client.port)",
+                    "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+                ])
                 // A refused/failed connect attempt never established a
                 // connection, so mqtt-nio's close listener (handleClose)
                 // does not fire for it. Without an explicit retry here, one
@@ -324,15 +354,22 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
 
     func disconnect() {
         isIntentionalDisconnect = true
+        connectionAttemptId = nil
         client?.disconnect().whenFailure { [weak self] error in
-            self?.log.debug("Error while disconnecting: \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
+            self?.log.debug("Error while disconnecting", metadata: [
+                "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+            ])
         }
     }
 
     func publish(_ topic: String, message: String) {
+        log.trace("Publishing", metadata: ["topic": .string(topic), "qos": "\(qos)"])
         client?.publish(to: topic, payload: byteBuffer(from: message), qos: qos, retain: false)
             .whenFailure { [weak self] error in
-                self?.log.warning("Error publishing to \(topic): \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
+                self?.log.warning("Error publishing", metadata: [
+                    "topic": .string(topic),
+                    "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+                ])
             }
     }
 
@@ -341,9 +378,13 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
         // this overload always publishes at QoS 0, unretained, regardless of
         // `mqttClientOptions.qos`. Not changed here; flagged, not silently
         // "fixed".
+        log.trace("Publishing", metadata: ["topic": .string(topic), "qos": "atMostOnce"])
         client?.publish(to: topic, payload: byteBuffer(from: message), qos: .atMostOnce, retain: false)
             .whenFailure { [weak self] error in
-                self?.log.warning("Error publishing to \(topic): \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
+                self?.log.warning("Error publishing", metadata: [
+                    "topic": .string(topic),
+                    "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+                ])
             }
     }
 
@@ -355,7 +396,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
             _ = try await client.subscribe(
                 to: [MQTTSubscribeInfo(topicFilter: topic, qos: qos)]
             ).get()
-            log.debug("Subscribed to topic \(topic).")
+            log.debug("Subscribed to topic", metadata: ["topic": .string(topic)])
         } catch {
             throw AxolotyError.network(
                 error: error,
@@ -370,7 +411,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
         }
         do {
             try await client.unsubscribe(from: [topic]).get()
-            log.debug("Unsubscribed from topic \(topic).")
+            log.debug("Unsubscribed from topic", metadata: ["topic": .string(topic)])
         } catch {
             throw AxolotyError.network(
                 error: error,
@@ -419,6 +460,14 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
 
             do {
                 let topic = try CommunicationTopic(info.topicName)
+                var receivedEventMetadata: Logging.Logger.Metadata = [
+                    "topic": .string(info.topicName),
+                    "eventType": .string(topic.eventType.rawValue),
+                ]
+                if let correlationId = topic.correlationId {
+                    receivedEventMetadata["correlationId"] = .string(correlationId)
+                }
+                log.trace("Received event", metadata: receivedEventMetadata)
                 if topic.eventType == .IoValue {
                     self.delegate.didReceiveIoValue(
                         topic: info.topicName,
@@ -450,10 +499,15 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                     }
                 }
             } catch {
-                log.warning("Ignoring incoming event on \(info.topicName): \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
+                log.warning("Ignoring incoming event", metadata: [
+                    "topic": .string(info.topicName),
+                    "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+                ])
             }
         case .failure(let error):
-            log.warning("Error receiving published message: \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
+            log.warning("Error receiving published message", metadata: [
+                "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+            ])
         }
     }
 

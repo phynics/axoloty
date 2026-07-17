@@ -63,9 +63,10 @@ public class PayloadCoder {
         do {
             return try encode(value)
         } catch {
-            LogManager.log.error(
-                "Failed to encode \(T.self) to JSON: \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))"
-            )
+            LogManager.logger(.communication).error("Failed to encode value to JSON", metadata: [
+                "type": .string("\(T.self)"),
+                "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+            ])
             return "{}"
         }
     }

@@ -6,6 +6,7 @@
 
 import ErrorKit
 import Foundation
+import Logging
 
 /// The base controller class.
 @MainActor
@@ -13,6 +14,13 @@ open class Controller {
 
     /// Gets the contrainer's communicationManager.
     private(set) public var communicationManager: CommunicationManager!
+
+    /// Local process diagnostics for this controller, distinct from the
+    /// distributed `Log` domain object `logDebug`/`logInfo`/`logWarning`/
+    /// `logError`/`logFatal` advertise over the bus (see `_log`). `_log`
+    /// emits a correlated line through this logger too, so a `Log` object's
+    /// tags are visible in both places without maintaining two call sites.
+    private let log = LogManager.logger(.runtime)
 
     /// Gets the container object of this controller.
     private(set) public var container: Container!
@@ -181,10 +189,30 @@ open class Controller {
         
         self.extendLogObject(log: log)
 
+        self.log.log(level: Self.swiftLogLevel(for: logLevel), "\(message)", metadata: [
+            "objectId": .string(log.objectId.string),
+            "controllerName": .string(self.registeredName),
+            "logTags": .array(tags.map { .string($0) }),
+        ])
+
         do {
             try self.communicationManager.publishAdvertise(AdvertiseEvent.with(object: log))
         } catch {
-            LogManager.log.warning("Failed to advertise Log object: \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
+            self.log.warning("Failed to advertise Log object", metadata: [
+                "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+            ])
+        }
+    }
+
+    /// Maps the distributed `Log` domain object's level to a `swift-log`
+    /// level for the correlated local diagnostic line `_log` emits.
+    private static func swiftLogLevel(for logLevel: LogLevel) -> Logging.Logger.Level {
+        switch logLevel {
+        case .debug: return .debug
+        case .info: return .info
+        case .warning: return .warning
+        case .error: return .error
+        case .fatal: return .critical
         }
     }
 

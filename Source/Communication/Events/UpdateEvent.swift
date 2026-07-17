@@ -68,7 +68,7 @@ public class UpdateEvent: CommunicationEvent<UpdateEventData> {
     internal func ensureValidResponseParameters(eventData: CompleteEventData) -> Bool {
         
         if self.data.object.objectId != eventData.object?.objectId {
-            LogManager.log.debug("object ID of Complete event doesn't match object ID of Update event")
+            LogManager.logger(.communication).debug("object ID of Complete event doesn't match object ID of Update event")
             return false
         }
         

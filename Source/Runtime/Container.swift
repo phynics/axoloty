@@ -46,7 +46,7 @@ public class Container {
     public static func resolve(components: Components, configuration: Configuration) -> Container {
         
         // Adjust logging level for Axoloty.
-        LogManager.logLevel = LogManager.getLogLevel(logLevel: configuration.common?.logLevel ?? AxolotyLogLevel.error)
+        LogManager.defaultLevel = LogManager.getLogLevel(logLevel: configuration.common?.logLevel ?? AxolotyLogLevel.error)
 
         let container = Container()
         
@@ -81,17 +81,17 @@ public class Container {
         }
             
         guard self.runtime != nil else {
-            LogManager.log.error("Runtime was not initialized.")
+            LogManager.logger(.runtime).critical("Runtime was not initialized", metadata: ["controllerName": .string(name)])
             throw AxolotyError.invalidConfiguration(option: "runtime", reason: "was not initialized")
         }
 
         guard self.communicationManager != nil else {
-            LogManager.log.error("CommunicationManager was not initialized.")
+            LogManager.logger(.runtime).critical("CommunicationManager was not initialized", metadata: ["controllerName": .string(name)])
             throw AxolotyError.invalidConfiguration(option: "communicationManager", reason: "was not initialized")
         }
 
         if self.controllers[name] != nil {
-            LogManager.log.error("Controller with given name already exists.")
+            LogManager.logger(.runtime).critical("Controller with given name already exists", metadata: ["controllerName": .string(name)])
             throw AxolotyError.invalidConfiguration(option: "name", reason: "controller with given name already exists")
         }
 
@@ -189,7 +189,7 @@ public class Container {
         do {
             identity = try createIdentity(options: configuration.common?.agentIdentity)
         } catch {
-            LogManager.log.critical("Failed to create identity: \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
+            LogManager.logger(.runtime).critical("Failed to create identity", metadata: ["error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))])
             identity = Identity(name: "Coaty Agent")
         }
         self.identity = identity
@@ -204,7 +204,7 @@ public class Container {
                 commonOptions: configuration.common
             )
         } catch {
-            LogManager.log.critical("Failed to create CommunicationManager: \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
+            LogManager.logger(.runtime).critical("Failed to create CommunicationManager", metadata: ["error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))])
         }
 
         // Create all controllers.

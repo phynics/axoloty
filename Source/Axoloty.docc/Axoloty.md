@@ -64,6 +64,12 @@ For a step-by-step introduction including a compiling minimal example, see
 
 - ``AxolotyError``
 
+### Logging
+
+- ``LogManager``
+- ``Subsystem``
+
 ### Articles
 
 - ``GettingStarted``
+- <doc:Logging-article>

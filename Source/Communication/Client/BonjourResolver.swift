@@ -19,7 +19,7 @@ class BonjourResolver: NSObject, ServiceDiscovery {
 
     // MARK: - Attributes.
 
-    private let log = LogManager.log
+    private let log = LogManager.logger(.mqtt)
     private let browser = NetServiceBrowser()
     private var brokerService: NetService?
     var delegate: ServiceDiscoveryDelegate?
@@ -51,43 +51,45 @@ class BonjourResolver: NSObject, ServiceDiscovery {
 extension BonjourResolver: NetServiceBrowserDelegate {
  
     func netServiceBrowser(_ browser: NetServiceBrowser, didFind service: NetService, moreComing: Bool) {
-        
-        log.debug("Did find net service.")
- 
+
+        log.debug("Did find net service", metadata: ["broker": .string(service.name)])
+
         // Has to be saved here, otherwise we lose reference and cannot resolve.
         brokerService = service
-        
+
         // Add delegate for resolving later.
         brokerService?.delegate = self
- 
+
         // Starting the service resolve.
         service.resolve(withTimeout: 5)
- 
+
     }
- 
+
     func netServiceBrowser(_ browser: NetServiceBrowser, didNotSearch errorDict: [String: NSNumber]) {
-        log.debug("Did not search net service.")
+        log.warning("Did not search net service", metadata: [
+            "error": .string(errorDict.map { "\($0.key)=\($0.value)" }.joined(separator: ", ")),
+        ])
     }
 }
 
 // MARK: - NetServiceDelegate extension.
 
 extension BonjourResolver: NetServiceDelegate {
- 
+
     func netServiceBrowser(_ browser: NetServiceBrowser, didRemove service: NetService, moreComing: Bool) {
-        log.debug("Did remove net service.")
+        log.debug("Did remove net service", metadata: ["broker": .string(service.name)])
     }
- 
+
     func netServiceDidResolveAddress(_ sender: NetService) {
- 
-        log.debug("Did resolve net service address.")
- 
+
+        log.debug("Did resolve net service address", metadata: ["broker": .string(sender.name)])
+
         // Find the IPV4 address.
         guard let addresses = sender.addresses, let serviceIPs = resolveIPv4Addresses(addresses: addresses) else {
-            log.error("Could not find IPV4 addresses.")
+            log.error("Could not find IPV4 addresses", metadata: ["broker": .string(sender.name)])
             return
         }
- 
+
         delegate?.didReceiveService(addresses: serviceIPs, port: sender.port)
     }
  

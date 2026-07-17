@@ -74,6 +74,10 @@ extension CommunicationManager {
     ) async -> EventStream<ResponseEventSnapshot> {
         event.sourceId = identity.objectId
         let correlationId = CoatyUUID().string
+        log.debug("Minted request/response correlation id", metadata: [
+            "correlationId": .string(correlationId),
+            "eventType": .string(eventType.rawValue),
+        ])
         let topic = CommunicationTopic.createTopicStringByLevelsForPublish(
             namespace: namespace,
             sourceId: identity.objectId,
@@ -95,6 +99,10 @@ extension CommunicationManager {
         correlationId: String
     ) {
         event.sourceId = identity.objectId
+        log.debug("Publishing response for correlation id", metadata: [
+            "correlationId": .string(correlationId),
+            "eventType": .string(eventType.rawValue),
+        ])
         let topic = CommunicationTopic.createTopicStringByLevelsForPublish(
             namespace: namespace,
             sourceId: identity.objectId,
@@ -140,6 +148,10 @@ extension CommunicationManager {
         event.topic = item.associatingRoute
         event.sourceId = identity.objectId
         let route = item.associatingRoute
+        log.trace("Publishing IoValue", metadata: [
+            "ioSourceId": .string(source.objectId.string),
+            "ioRoute": .string(route),
+        ])
         // Publish the bare payload, matching CoatyJS 2.4.0: its
         // `IoValueEventData.toJsonObject` returns the payload directly (the
         // scalar `42`, not `{"payload":42}`), and raw values are sent as bytes.
