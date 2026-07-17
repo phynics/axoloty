@@ -64,7 +64,17 @@ public class ObjectFilter: Codable {
     public convenience init(conditions: ObjectFilterConditions, orderByProperties: [OrderByProperty]? = nil, take: Int? = nil, skip: Int? = nil) {
         self.init(conditions, nil, orderByProperties, take, skip)
     }
-    
+
+    /// Creates an empty object filter (no conditions, ordering, or paging)
+    /// that encodes to `{}`. Used to emit the Coaty wire format's
+    /// `objectFilter` field on Query events even when no filtering is desired:
+    /// CoatyJS consumers validate incoming Query events with
+    /// `isObjectFilterValid`, which rejects a Query whose `objectFilter` is
+    /// absent (the field is treated as required on the wire).
+    public convenience init() {
+        self.init(nil, nil, nil, nil, nil)
+    }
+
     // MARK: - Codable methods.
     
     enum CodingKeys: String, CodingKey {
