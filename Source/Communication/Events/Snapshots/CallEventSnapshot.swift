@@ -8,6 +8,9 @@ public struct CallEventSnapshot: EventSnapshot, Codable, Equatable, Sendable {
     /// The identifier of the event source, as derived from the incoming topic.
     public let sourceId: String?
 
+    /// The request correlation identifier used for a Return response.
+    public let correlationId: String?
+
     /// The name of the remote operation to be invoked.
     ///
     /// This corresponds to the `typeFilter` used to route the call on the wire.
@@ -23,18 +26,38 @@ public struct CallEventSnapshot: EventSnapshot, Codable, Equatable, Sendable {
     ///
     /// - Parameters:
     ///   - sourceId: The identifier of the event source.
+    ///   - correlationId: The correlation identifier for a Return response.
     ///   - operation: The name of the remote operation.
     ///   - parameters: Optional encoded operation parameters.
     ///   - filter: Optional encoded context filter.
     public init(
         sourceId: String? = nil,
+        correlationId: String? = nil,
         operation: String,
         parameters: Data? = nil,
         filter: Data? = nil
     ) {
         self.sourceId = sourceId
+        self.correlationId = correlationId
         self.operation = operation
         self.parameters = parameters
         self.filter = filter
+    }
+}
+
+extension CallEventSnapshot {
+
+    /// Decodes a Call snapshot from a parsed MQTT message.
+    init?(parsedMQTTMessage: ParsedMQTTMessage) {
+        guard let operation = parsedMQTTMessage.eventTypeFilter else {
+            return nil
+        }
+        self.init(
+            sourceId: parsedMQTTMessage.sourceId,
+            correlationId: parsedMQTTMessage.correlationId,
+            operation: operation,
+            parameters: WirePayloadExtractor.nestedPayload(from: parsedMQTTMessage.payload, key: "parameters"),
+            filter: WirePayloadExtractor.nestedObjectPayload(from: parsedMQTTMessage.payload, key: "filter")
+        )
     }
 }
