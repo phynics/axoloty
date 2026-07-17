@@ -140,3 +140,26 @@ in Git.
 - Use Conventional Commits.
 - Commit with this checkout's configured identity. Never add bot co-author
   trailers.
+
+### Wire compatibility
+
+Axoloty targets wire compatibility with the pinned CoatyJS reference agent
+(`Tests/WireCompatibility/ReferenceAgents/`). The reference is the source of
+truth for wire shape.
+
+- **Match CoatyJS where possible.** When Axoloty and CoatyJS disagree on a
+  wire detail (field presence, payload wrapping, encoding overload), the
+  default is to change Axoloty to match the reference, not to record the
+  difference as accepted. A captured discrepancy is a defect to fix, not a
+  divergence to ratify — unless matching is impossible or more harmful than
+  breaking.
+- **Remain compatible despite divergence.** When a divergence is unavoidable,
+  Axoloty must still tolerate the peer's wire shape: decode optional fields
+  defensively (never force-unwrap a field a peer may omit), accept the bare
+  payload an external producer sends, and so on. Trapping on a peer's
+  legitimate omission is a bug, not a compatibility boundary.
+- **No accidental divergences.** A wire-format or field-presence change
+  requires a regression test locking in the new behavior and an update to
+  `Tests/WireCompatibility/CompatibilityMatrix.md`. Record only deliberate,
+  unavoidable divergences (e.g. a platform constraint like CoatyJS hardcoding
+  QoS 0) with capture evidence and a linked decision.
