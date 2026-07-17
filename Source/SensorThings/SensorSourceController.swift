@@ -70,7 +70,7 @@ open class SensorSourceController: Controller {
 
     /// Unregisters a sensor.
     func unregisterSensor(sensorId: CoatyUUID) throws {
-        guard let _ = sensors.removeValue(forKey: sensorId.string) else {
+        guard sensors.removeValue(forKey: sensorId.string) != nil else {
             throw AxolotyError.runtime(code: .notRegistered, reason: "sensorId \(sensorId.string) is not registered")
         }
         samplingTasks.removeValue(forKey: sensorId.string)?.cancel()
@@ -110,17 +110,67 @@ open class SensorSourceController: Controller {
             guard let self else { return }
             let stream = await communicationManager.observeParsedMessages()
             for await parsed in stream {
-                guard let correlationId = parsed.correlationId else { continue }
-                if parsed.eventType == .Discover,
-                   let request: DiscoverEvent = try? PayloadCoder.decode(parsed.payload) {
-                    if request.data.isDiscoveringObjectId(), let id = request.data.objectId, let sensor = sensors[id.string] { communicationManager.publishResolve(event: ResolveEvent.with(object: sensor.sensor), correlationId: correlationId) }
-                    else if request.data.isDiscoveringTypes(), request.data.isObjectTypeCompatible(objectType: SensorThingsTypes.OBJECT_TYPE_SENSOR) { for sensor in sensors.values { communicationManager.publishResolve(event: ResolveEvent.with(object: sensor.sensor), correlationId: correlationId) } }
-                } else if parsed.eventType == .Query,
-                          let request: QueryEvent = try? PayloadCoder.decode(parsed.payload) {
-                    let result = sensors.values.map(\.sensor).filter { request.data.objectFilter == nil || ObjectMatcher.matchesFilter(obj: $0, filter: request.data.objectFilter!) }
-                    if !result.isEmpty { communicationManager.publishRetrieve(event: RetrieveEvent.with(objects: result), correlationId: correlationId) }
-                }
+                self.handleParsedMessage(parsed)
             }
+        }
+    }
+
+    @MainActor
+    private func handleParsedMessage(_ parsed: ParsedMQTTMessage) {
+        guard let correlationId = parsed.correlationId else { return }
+        switch parsed.eventType {
+        case .Discover:
+            if let request: DiscoverEvent = try? PayloadCoder.decode(parsed.payload) {
+                handleDiscoverEvent(request, correlationId: correlationId)
+            }
+        case .Query:
+            if let request: QueryEvent = try? PayloadCoder.decode(parsed.payload) {
+                handleQueryEvent(request, correlationId: correlationId)
+            }
+        default:
+            break
+        }
+    }
+
+    @MainActor
+    private func handleDiscoverEvent(_ request: DiscoverEvent, correlationId: String) {
+        if request.data.isDiscoveringObjectId() {
+            publishSensorForObjectIdIfPresent(request, correlationId: correlationId)
+        } else if request.data.isDiscoveringTypes()
+                    && request.data.isObjectTypeCompatible(objectType: SensorThingsTypes.OBJECT_TYPE_SENSOR) {
+            publishAllSensors(correlationId: correlationId)
+        }
+    }
+
+    @MainActor
+    private func publishSensorForObjectIdIfPresent(_ request: DiscoverEvent, correlationId: String) {
+        guard let id = request.data.objectId, let sensor = sensors[id.string] else { return }
+        communicationManager.publishResolve(
+            event: ResolveEvent.with(object: sensor.sensor),
+            correlationId: correlationId
+        )
+    }
+
+    @MainActor
+    private func publishAllSensors(correlationId: String) {
+        for sensor in sensors.values {
+            communicationManager.publishResolve(
+                event: ResolveEvent.with(object: sensor.sensor),
+                correlationId: correlationId
+            )
+        }
+    }
+
+    @MainActor
+    private func handleQueryEvent(_ request: QueryEvent, correlationId: String) {
+        let result = sensors.values.map(\.sensor).filter {
+            request.data.objectFilter == nil || ObjectMatcher.matchesFilter(obj: $0, filter: request.data.objectFilter!)
+        }
+        if !result.isEmpty {
+            communicationManager.publishRetrieve(
+                event: RetrieveEvent.with(objects: result),
+                correlationId: correlationId
+            )
         }
     }
 
