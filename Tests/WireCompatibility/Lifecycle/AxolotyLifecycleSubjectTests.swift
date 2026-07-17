@@ -280,12 +280,13 @@ struct AxolotyLifecycleSubjectTests {
         for (key, value) in extra {
             fields.append("\"\(key)\":\"\(value)\"")
         }
-        print("{\(fields.joined(separator: ","))}")
         // The network-scenario orchestrator tails this process's redirected
-        // stdout to time its sever/restore commands; without an explicit
-        // flush, file-backed stdout is block-buffered and every state line
-        // would arrive only at process exit.
-        fflush(stdout)
+        // stdout to time its sever/restore commands, so each state line is
+        // written as an unbuffered FileHandle syscall: file-backed stdio
+        // would hold block-buffered lines until process exit, and Swift 6
+        // rejects touching C's shared `stdout` for an explicit fflush.
+        let line = "{\(fields.joined(separator: ","))}\n"
+        FileHandle.standardOutput.write(Data(line.utf8))
     }
 }
 
