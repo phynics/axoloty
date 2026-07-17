@@ -6,10 +6,10 @@ titles and bodies as searchable migration metadata.
 
 | T-ID | Title | GitHub Issue | Status |
 |------|-------|-------------|--------|
-| T-016 | Wire fixture harness | #26 | Open |
-| T-017 | Pin and containerize reference agents | #27 | Open |
-| T-018 | Capture reference wire fixtures | #28 | Open |
-| T-019 | Live core interoperability matrix | #29 | Open |
+| T-016 | Wire fixture harness | #26 | Closed |
+| T-017 | Pin and containerize reference agents | #27 | Closed |
+| T-018 | Capture reference wire fixtures | #28 | Closed |
+| T-019 | Live core interoperability matrix | #29 | Closed |
 | T-020 | Lifecycle and failure compatibility | #30 | Open |
 | T-021 | IO and SensorThings compatibility decision | #31 | Open |
 | T-022 | Compatibility CI gates | #32 | Open |
@@ -46,7 +46,7 @@ titles and bodies as searchable migration metadata.
 ## Verification
 
 - **Total T-IDs:** 36 (T-016 through T-051)
-- **Open issues:** 8 (T-016–T-022, T-030)
-- **Closed issues:** 28 (T-023–T-029, T-031–T-051)
+- **Open issues:** 4 (T-020, T-021, T-022, T-030)
+- **Closed issues:** 32 (T-016–T-019, T-023–T-029, T-031–T-051)
 - **No duplicates:** Every T-ID maps to exactly one GitHub Issue.
 - **Source files preserved:** Local ticket files remain in `.agents/tickets/` for reference
