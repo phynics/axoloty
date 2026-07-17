@@ -44,6 +44,13 @@ artifacts have executable Make/CI gates.
 
 Maintaining wire-compatibility harness; auditing protocol/event versioning
 against CoatyJS; per-area decisions on kept vs. dropped vs. diverged features.
+Wire fixture harness, pinned/containerized reference agents, captured
+reference fixtures, and the live core interoperability matrix are complete
+(T-016–T-019). Lifecycle and failure compatibility (T-020) is in progress:
+3 of 11 catalog scenarios execute live against CoatyJS, with `qos-1`/`qos-2`
+recorded as an approved divergence (CoatyJS 2.4.0 hardcodes QoS 0); the
+remaining scenarios need a network-manipulation harness, Call/Return
+request-reply plumbing, and a decision on legacy-Swift lifecycle scope.
 
 ### Phase 7 — WASM exploration
 
