@@ -31,17 +31,19 @@ struct EventStreamTests {
             onLast: { counter.incLast() }
         )
 
-        var it = stream.makeAsyncIterator()
+        let it = stream.makeAsyncIterator()
         try? await _Concurrency.Task.sleep(for: .milliseconds(100))
 
-        var it2 = stream.makeAsyncIterator()
+        let it2 = stream.makeAsyncIterator()
         try? await _Concurrency.Task.sleep(for: .milliseconds(100))
 
         await hub.finish(key: "first-last")
         try? await _Concurrency.Task.sleep(for: .milliseconds(100))
 
-        #expect(counter.firstCount == 1, "onFirst should fire once")
-        #expect(counter.lastCount == 1, "onLast should fire once")
+        withExtendedLifetime((it, it2)) {
+            #expect(counter.firstCount == 1, "onFirst should fire once")
+            #expect(counter.lastCount == 1, "onLast should fire once")
+        }
     }
 
     @Test
@@ -62,16 +64,18 @@ struct EventStreamTests {
             onLast: { counter.incLast() }
         )
 
-        var it1 = stream1.makeAsyncIterator()
+        let it1 = stream1.makeAsyncIterator()
         try? await _Concurrency.Task.sleep(for: .milliseconds(100))
-        var it2 = stream2.makeAsyncIterator()
+        let it2 = stream2.makeAsyncIterator()
         try? await _Concurrency.Task.sleep(for: .milliseconds(100))
 
         await hub.finish(key: "shared-key")
         try? await _Concurrency.Task.sleep(for: .milliseconds(100))
 
-        #expect(counter.firstCount == 1, "onFirst should fire once for the shared key")
-        #expect(counter.lastCount == 2, "onLast should fire once per registration (2)")
+        withExtendedLifetime((it1, it2)) {
+            #expect(counter.firstCount == 1, "onFirst should fire once for the shared key")
+            #expect(counter.lastCount == 2, "onLast should fire once per registration (2)")
+        }
     }
 
     @Test
@@ -227,7 +231,7 @@ struct EventStreamTests {
             onLast: {}
         )
 
-        var it = stream.makeAsyncIterator()
+        let it = stream.makeAsyncIterator()
         try? await _Concurrency.Task.sleep(for: .milliseconds(100))
 
         let box = IteratorBox(it)

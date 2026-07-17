@@ -55,7 +55,7 @@ class MockReceiverController: Controller, @unchecked Sendable {
         let box = SharedAsyncIteratorBox(await stream.makeAsyncIteratorAndWait())
         return _Concurrency.Task { @MainActor in
             while let event = await box.iterator.next() {
-                guard let object = event.object.decodeObject() as? CoatyObject else { continue }
+                guard let object = event.object.decodeObject() else { continue }
                 logger.count += 1
                 if let event = try? AdvertiseEvent.with(object: object) { logger.eventData.append(event.data) }
             }
@@ -73,7 +73,7 @@ class MockReceiverController: Controller, @unchecked Sendable {
         let box = SharedAsyncIteratorBox(await stream.makeAsyncIteratorAndWait())
         return _Concurrency.Task { @MainActor in
             while let event = await box.iterator.next() {
-                if let object = event.object.flatMap({ try? $0.decodeObject() }) {
+                if let object = event.object.flatMap({ $0.decodeObject() }) {
                     logger.count += 1
                     if let event = try? ChannelEvent.with(object: object, channelId: channelId) { logger.eventData.append(event.data) }
                 }
