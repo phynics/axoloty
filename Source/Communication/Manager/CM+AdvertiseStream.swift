@@ -75,7 +75,6 @@ extension CommunicationManager {
         return await eventHub.registerStream(
             key: key,
             buffering: .event,
-            onFirst: {},
             onLast: {
                 _Concurrency.Task {
                     await coordinator.release(topic: topic)

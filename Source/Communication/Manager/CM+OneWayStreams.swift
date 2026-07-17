@@ -19,7 +19,6 @@ extension CommunicationManager {
         return await eventHub.registerStream(
             key: CommunicationEventHubKeys.deadvertise,
             buffering: .event,
-            onFirst: {},
             onLast: {
                 _Concurrency.Task {
                     await coordinator.release(topic: topic)
@@ -42,7 +41,6 @@ extension CommunicationManager {
         return await eventHub.registerStream(
             key: CommunicationEventHubKeys.discover,
             buffering: .event,
-            onFirst: {},
             onLast: {
                 _Concurrency.Task {
                     await coordinator.release(topic: topic)

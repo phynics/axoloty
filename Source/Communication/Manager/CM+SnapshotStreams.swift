@@ -57,7 +57,6 @@ extension CommunicationManager {
         return await client.eventHub.registerStream(
             key: key,
             buffering: .state,
-            onFirst: {},
             onLast: {}
         )
     }
@@ -84,7 +83,6 @@ extension CommunicationManager {
         await client.eventHub.registerStream(
             key: CommunicationEventHubKeys.ioValue,
             buffering: .event,
-            onFirst: {},
             onLast: {}
         )
     }
@@ -96,7 +94,6 @@ extension CommunicationManager {
         await client.eventHub.registerStream(
             key: key,
             buffering: .event,
-            onFirst: {},
             onLast: onLast
         )
     }

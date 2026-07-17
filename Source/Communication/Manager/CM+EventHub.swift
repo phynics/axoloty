@@ -11,7 +11,6 @@ extension CommunicationManager {
         await client.eventHub.registerStream(
             key: CommunicationEventHubKeys.operatingState,
             buffering: .state,
-            onFirst: {},
             onLast: {}
         )
     }
@@ -27,7 +26,6 @@ extension CommunicationManager {
         return await client.eventHub.registerStream(
             key: CommunicationEventHubKeys.communicationState,
             buffering: .state,
-            onFirst: {},
             onLast: {}
         )
     }
@@ -43,7 +41,6 @@ extension CommunicationManager {
         return await client.eventHub.registerStream(
             key: CommunicationEventHubKeys.rawMQTTMessage,
             buffering: .event,
-            onFirst: {},
             onLast: {}
         )
     }

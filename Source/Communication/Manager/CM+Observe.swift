@@ -10,7 +10,6 @@ extension CommunicationManager {
         await eventHub.registerStream(
             key: CommunicationEventHubKeys.parsedMQTTMessage,
             buffering: .event,
-            onFirst: {},
             onLast: {}
         )
     }

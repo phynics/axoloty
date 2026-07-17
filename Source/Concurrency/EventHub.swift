@@ -24,18 +24,16 @@ public actor EventHub {
     private struct StreamRegistration {
         let key: AnyHashable
         let buffering: EventStreamBuffering
-        let onFirst: @Sendable () -> Void
         let onLast: @Sendable () -> Void
     }
 
     public func registerStream<Element: Sendable>(
         key: AnyHashable,
         buffering: EventStreamBuffering,
-        onFirst: @escaping @Sendable () -> Void,
         onLast: @escaping @Sendable () -> Void
     ) -> EventStream<Element> {
         let id = UUID()
-        streamInfo[id] = StreamRegistration(key: key, buffering: buffering, onFirst: onFirst, onLast: onLast)
+        streamInfo[id] = StreamRegistration(key: key, buffering: buffering, onLast: onLast)
         bufferingPolicy[key] = buffering
         return EventStream<Element>(hub: self, streamId: id, buffering: buffering)
     }
@@ -45,16 +43,10 @@ public actor EventHub {
         id: UUID,
         key: AnyHashable,
         buffering: EventStreamBuffering,
-        onFirst: @escaping @Sendable () -> Void,
         onLast: @escaping @Sendable () -> Void
     ) {
         self.bufferingPolicy[key] = buffering
         registrationKeys[id] = key
-
-        let wasEmpty = (continuations[key]?.isEmpty ?? true)
-        if wasEmpty {
-            onFirst()
-        }
 
         continuation.setTerminationHandler { [weak self] in
             _Concurrency.Task { [weak self] in
@@ -108,7 +100,6 @@ public actor EventHub {
             id: continuationId,
             key: info.key,
             buffering: info.buffering,
-            onFirst: info.onFirst,
             onLast: info.onLast
         )
     }

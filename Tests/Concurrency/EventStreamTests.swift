@@ -13,21 +13,19 @@ struct EventStreamTests {
         let stream: EventStream<Int> = await hub.registerStream(
             key: "never-iterated",
             buffering: .event,
-            onFirst: {},
             onLast: {}
         )
         _ = stream
     }
 
     @Test
-    func testFirstAndLastRegistrationCallbacks() async {
+    func testLastRegistrationCallback() async {
         let hub = EventHub()
         let counter = SendableCounter()
 
         let stream: EventStream<Int> = await hub.registerStream(
             key: "first-last",
             buffering: .event,
-            onFirst: { counter.incFirst() },
             onLast: { counter.incLast() }
         )
 
@@ -41,7 +39,6 @@ struct EventStreamTests {
         try? await _Concurrency.Task.sleep(for: .milliseconds(100))
 
         withExtendedLifetime((it, it2)) {
-            #expect(counter.firstCount == 1, "onFirst should fire once")
             #expect(counter.lastCount == 1, "onLast should fire once")
         }
     }
@@ -54,13 +51,11 @@ struct EventStreamTests {
         let stream1: EventStream<Int> = await hub.registerStream(
             key: "shared-key",
             buffering: .event,
-            onFirst: { counter.incFirst() },
             onLast: { counter.incLast() }
         )
         let stream2: EventStream<Int> = await hub.registerStream(
             key: "shared-key",
             buffering: .event,
-            onFirst: { counter.incFirst() },
             onLast: { counter.incLast() }
         )
 
@@ -73,7 +68,6 @@ struct EventStreamTests {
         try? await _Concurrency.Task.sleep(for: .milliseconds(100))
 
         withExtendedLifetime((it1, it2)) {
-            #expect(counter.firstCount == 1, "onFirst should fire once for the shared key")
             #expect(counter.lastCount == 2, "onLast should fire once per registration (2)")
         }
     }
@@ -84,7 +78,6 @@ struct EventStreamTests {
         let stream: EventStream<Int> = await hub.registerStream(
             key: "no-replay",
             buffering: .event,
-            onFirst: {},
             onLast: {}
         )
 
@@ -110,7 +103,6 @@ struct EventStreamTests {
         let stream: EventStream<Int> = await hub.registerStream(
             key: "state-replay",
             buffering: .state,
-            onFirst: {},
             onLast: {}
         )
 
@@ -135,7 +127,6 @@ struct EventStreamTests {
         let stream: EventStream<Int> = await hub.registerStream(
             key: "concurrent",
             buffering: .event,
-            onFirst: {},
             onLast: {}
         )
 
@@ -161,7 +152,6 @@ struct EventStreamTests {
         let stream: EventStream<Int> = await hub.registerStream(
             key: "finish",
             buffering: .event,
-            onFirst: {},
             onLast: {}
         )
 
@@ -185,7 +175,6 @@ struct EventStreamTests {
         let stream: EventStream<Int> = await hub.registerStream(
             key: "resubscribe",
             buffering: .event,
-            onFirst: {},
             onLast: {}
         )
 
@@ -204,7 +193,6 @@ struct EventStreamTests {
         let stream2: EventStream<Int> = await hub.registerStream(
             key: "resubscribe-2",
             buffering: .event,
-            onFirst: {},
             onLast: {}
         )
 
@@ -227,7 +215,6 @@ struct EventStreamTests {
         let stream: EventStream<Int> = await hub.registerStream(
             key: "cancel",
             buffering: .event,
-            onFirst: {},
             onLast: {}
         )
 
@@ -258,9 +245,7 @@ struct EventStreamTests {
 // MARK: - Helpers
 
 private final class SendableCounter: @unchecked Sendable {
-    private(set) var firstCount = 0
     private(set) var lastCount = 0
-    func incFirst() { firstCount += 1 }
     func incLast() { lastCount += 1 }
 }
 

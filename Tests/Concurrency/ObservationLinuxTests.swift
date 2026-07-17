@@ -40,7 +40,6 @@ struct ObservationLinuxTests {
         let stream: EventStream<Double> = await hub.registerStream(
             key: "sensor-state",
             buffering: .state,
-            onFirst: {},
             onLast: {}
         )
 
@@ -66,7 +65,6 @@ struct ObservationLinuxTests {
         let stream: EventStream<String> = await hub.registerStream(
             key: "event-test",
             buffering: .event,
-            onFirst: {},
             onLast: {}
         )
 

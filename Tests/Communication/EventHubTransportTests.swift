@@ -462,7 +462,6 @@ struct EventHubTransportTests {
         let stream: EventStream<CommunicationState> = await client.eventHub.registerStream(
             key: CommunicationEventHubKeys.communicationState,
             buffering: .state,
-            onFirst: {},
             onLast: {}
         )
         var iterator = await stream.makeAsyncIteratorAndWait()
