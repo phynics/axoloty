@@ -7,7 +7,8 @@ import Foundation
 open class SensorSourceController: Controller {
     private var sensors: [String: SensorContainer] = [:]
     private var samplingTasks: [String: _Concurrency.Task<Void, Never>] = [:]
-    private var protocolTask: _Concurrency.Task<Void, Never>?
+    private var discoverTask: _Concurrency.Task<Void, Never>?
+    private var queryTask: _Concurrency.Task<Void, Never>?
 
     override open func onInit() {
         super.onInit()
@@ -26,8 +27,10 @@ open class SensorSourceController: Controller {
         super.onCommunicationManagerStopping()
         samplingTasks.values.forEach { $0.cancel() }
         samplingTasks.removeAll()
-        protocolTask?.cancel()
-        protocolTask = nil
+        discoverTask?.cancel()
+        discoverTask = nil
+        queryTask?.cancel()
+        queryTask = nil
     }
 
     var registeredSensorContainers: [SensorContainer] { Array(sensors.values) }
@@ -65,7 +68,8 @@ open class SensorSourceController: Controller {
                 LogManager.log.error("Failed to advertise sensor \(sensor.objectId.string): \(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))")
             }
         }
-        observeProtocolEventsIfNeeded()
+        observeDiscoverForSensors()
+        observeQueryForSensors()
     }
 
     /// Unregisters a sensor.
@@ -104,60 +108,65 @@ open class SensorSourceController: Controller {
     internal func onObservationWillPublish(container: SensorContainer, observation: Observation) {}
     internal func onObservationDidPublish(container: SensorContainer, observation: Observation) {}
 
-    private func observeProtocolEventsIfNeeded() {
-        guard protocolTask == nil else { return }
-        protocolTask = _Concurrency.Task { @MainActor [weak self] in
+    /// Consumes the typed Discover stream and resolves matching sensors.
+    ///
+    /// Mirrors ``CommunicationManager.respondToDiscover(matching:resolve:)``,
+    /// which is the shared discover-responder used by
+    /// ``CommunicationManager.observeDiscoverIdentity`` and
+    /// ``CM+Observe.observeDiscoverIoNodes``. This controller needs direct stream
+    /// access because its ``sensors`` state is not visible to the communication
+    /// manager.
+    private func observeDiscoverForSensors() {
+        guard discoverTask == nil else { return }
+        discoverTask = _Concurrency.Task { @MainActor [weak self] in
             guard let self else { return }
-            let stream = await communicationManager.observeParsedMessages()
-            for await parsed in stream {
-                self.handleParsedMessage(parsed)
+            let stream = await communicationManager.observeDiscoverStream()
+            for await event in stream {
+                self.handleDiscoverSnapshot(event)
             }
         }
     }
 
     @MainActor
-    private func handleParsedMessage(_ parsed: ParsedMQTTMessage) {
-        guard let correlationId = parsed.correlationId else { return }
-        switch parsed.eventType {
-        case .Discover:
-            if let request: DiscoverEvent = try? PayloadCoder.decode(parsed.payload) {
-                handleDiscoverEvent(request, correlationId: correlationId)
-            }
-        case .Query:
-            if let request: QueryEvent = try? PayloadCoder.decode(parsed.payload) {
-                handleQueryEvent(request, correlationId: correlationId)
-            }
-        default:
-            break
-        }
-    }
+    private func handleDiscoverSnapshot(_ event: DiscoverEventSnapshot) {
+        guard let correlationId = event.correlationId else { return }
 
-    @MainActor
-    private func handleDiscoverEvent(_ request: DiscoverEvent, correlationId: String) {
-        if request.data.isDiscoveringObjectId() {
-            publishSensorForObjectIdIfPresent(request, correlationId: correlationId)
-        } else if request.data.isDiscoveringTypes()
-                    && request.data.isObjectTypeCompatible(objectType: SensorThingsTypes.OBJECT_TYPE_SENSOR) {
-            publishAllSensors(correlationId: correlationId)
-        }
-    }
-
-    @MainActor
-    private func publishSensorForObjectIdIfPresent(_ request: DiscoverEvent, correlationId: String) {
-        guard let id = request.data.objectId, let sensor = sensors[id.string] else { return }
-        communicationManager.publishResolve(
-            event: ResolveEvent.with(object: sensor.sensor),
-            correlationId: correlationId
-        )
-    }
-
-    @MainActor
-    private func publishAllSensors(correlationId: String) {
-        for sensor in sensors.values {
+        if event.externalId == nil && event.objectId != nil {
+            guard let id = event.objectId,
+                  let uuid = CoatyUUID(uuidString: id),
+                  let sensor = sensors[uuid.string] else { return }
             communicationManager.publishResolve(
                 event: ResolveEvent.with(object: sensor.sensor),
                 correlationId: correlationId
             )
+        } else if event.externalId == nil && event.objectId == nil
+                    && event.objectTypes?.contains(SensorThingsTypes.OBJECT_TYPE_SENSOR) == true {
+            for sensor in sensors.values {
+                communicationManager.publishResolve(
+                    event: ResolveEvent.with(object: sensor.sensor),
+                    correlationId: correlationId
+                )
+            }
+        }
+    }
+
+    /// Consumes parsed transport messages for Query events and publishes
+    /// Retrieve responses for matching sensors.
+    ///
+    /// Query observation still uses the raw ``observeParsedMessages()`` stream
+    /// because a typed ``observeQueryStream()`` does not yet exist (tracked by
+    /// issue #55).
+    private func observeQueryForSensors() {
+        guard queryTask == nil else { return }
+        queryTask = _Concurrency.Task { @MainActor [weak self] in
+            guard let self else { return }
+            let stream = await communicationManager.observeParsedMessages()
+            for await parsed in stream {
+                guard parsed.eventType == .Query,
+                      let correlationId = parsed.correlationId,
+                      let request: QueryEvent = try? PayloadCoder.decode(parsed.payload) else { continue }
+                self.handleQueryEvent(request, correlationId: correlationId)
+            }
         }
     }
 
