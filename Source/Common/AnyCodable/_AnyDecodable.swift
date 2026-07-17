@@ -30,9 +30,13 @@ extension _AnyDecodable {
         } else if let double = try? container.decode(Double.self) {
             self.init(double)
         } else if let string = try? container.decode(String.self) {
+            // A UUID-shaped string stays a String. `CoatyUUID` decodes from a
+            // JSON string, so a `CoatyUUID` branch here could never be reached
+            // — the `String` branch above always consumes the same input — and
+            // making it reachable would be wrong: a UUID cannot be told apart
+            // from a custom string that merely looks like one, so
+            // application-supplied values would be silently retyped. See #102.
             self.init(string)
-        } else if let coatyUUID = try? container.decode(CoatyUUID.self) {
-            self.init(coatyUUID)
         } else if let array = try? container.decode([AnyCodable].self) {
             self.init(array.map { $0.value })
         } else if let dictionary = try? container.decode([String: AnyCodable].self) {

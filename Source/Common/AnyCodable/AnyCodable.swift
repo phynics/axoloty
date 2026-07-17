@@ -19,8 +19,27 @@ import Foundation
 public struct AnyCodable: Codable {
     public let value: Any
     
+    /// Creates a type-erased JSON value.
+    ///
+    /// A ``CoatyUUID`` is stored as its lowercase string rather than as a
+    /// ``CoatyUUID`` instance. `AnyCodable` models a JSON value, and JSON has
+    /// no UUID type: in an untyped payload a UUID simply is a string, which is
+    /// also how CoatyJS represents it.
+    ///
+    /// Normalizing here — the single point through which every `AnyCodable` is
+    /// constructed, including the `ExpressibleBy*` literals and the decoder —
+    /// keeps equality, ordering, encoding, and decoding consistent with each
+    /// other. Without it, an in-memory operand (`CoatyUUID`) and a
+    /// wire-decoded one (`String`) compare unequal, and filters on UUID
+    /// properties silently never match. See issue #102.
+    ///
+    /// - Parameter value: The value to type-erase.
     public init<T>(_ value: T?) {
-        self.value = value ?? ()
+        if let coatyUUID = value as? CoatyUUID {
+            self.value = coatyUUID.string
+        } else {
+            self.value = value ?? ()
+        }
     }
 }
 

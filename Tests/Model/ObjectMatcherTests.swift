@@ -5,6 +5,7 @@
 
 import Testing
 import Axoloty
+import Foundation
 
 @Suite
 struct ObjectMatcherTests {
@@ -1339,5 +1340,59 @@ struct ObjectMatcherTests {
 
         #expect(ObjectMatcher.matchesFilter(obj: obj, filter: filter))
 
+    }
+
+    // MARK: - UUID property filtering across the wire (see issue #102).
+
+    private static let knownUUIDString = "3f2504e0-4f89-11d3-9a0c-0305e82c3301"
+
+    private static func objectWithKnownId() throws -> CoatyObject {
+        return CoatyObject(coreType: .CoatyObject,
+                           objectType: "test.Thing",
+                           objectId: try #require(CoatyUUID(uuidString: knownUUIDString)),
+                           name: "thing")
+    }
+
+    private static func objectIdEqualsFilter(operand: AnyCodable) -> ObjectFilter {
+        return ObjectFilter(condition: ObjectFilterCondition(property: ObjectFilterProperty("objectId"),
+                                                             expression: ObjectFilterExpression(filterOperator: .Equals,
+                                                                                                op1: operand)))
+    }
+
+    @Test
+
+    func testMatchesFilterOnUUIDPropertyBuiltLocally() throws {
+        let operand = AnyCodable(try #require(CoatyUUID(uuidString: Self.knownUUIDString)))
+        let filter = Self.objectIdEqualsFilter(operand: operand)
+
+        #expect(ObjectMatcher.matchesFilter(obj: try Self.objectWithKnownId(), filter: filter))
+    }
+
+    /// A filter that matches locally must still match after crossing the wire.
+    ///
+    /// Regression test for issue #102: the decoded operand arrives as a
+    /// `String` while the object's `objectId` was wrapped as a `CoatyUUID`, so
+    /// equality fell through to `default: return false` and the filter
+    /// silently never matched.
+    @Test
+
+    func testMatchesFilterOnUUIDPropertyAfterWireRoundTrip() throws {
+        let operand = AnyCodable(try #require(CoatyUUID(uuidString: Self.knownUUIDString)))
+        let filter = Self.objectIdEqualsFilter(operand: operand)
+
+        let data = try JSONEncoder().encode(filter)
+        let decoded = try JSONDecoder().decode(ObjectFilter.self, from: data)
+
+        #expect(ObjectMatcher.matchesFilter(obj: try Self.objectWithKnownId(), filter: decoded))
+    }
+
+    /// A CoatyJS peer authors the operand as a plain JSON string. That must
+    /// match an Axoloty object whose `objectId` is a `CoatyUUID`.
+    @Test
+
+    func testMatchesFilterOnUUIDPropertyWithStringOperand() throws {
+        let filter = Self.objectIdEqualsFilter(operand: AnyCodable(Self.knownUUIDString))
+
+        #expect(ObjectMatcher.matchesFilter(obj: try Self.objectWithKnownId(), filter: filter))
     }
 }
