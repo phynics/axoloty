@@ -135,7 +135,18 @@ extension CommunicationManager {
         guard let source = event.ioSource, let item = ioSourceItems[source.objectId.string] else { return }
         event.topic = item.associatingRoute
         event.sourceId = identity.objectId
-        publish(topic: item.associatingRoute, message: event.json)
+        let route = item.associatingRoute
+        // Publish the bare payload, matching CoatyJS 2.4.0: its
+        // `IoValueEventData.toJsonObject` returns the payload directly (the
+        // scalar `42`, not `{"payload":42}`), and raw values are sent as bytes.
+        // Sending `event.json` here previously wrapped JSON values under a
+        // `payload` key and routed raw bytes through the String overload; both
+        // diverged from the reference. See AGENTS.md "Wire compatibility".
+        if let raw = event.data.rawPayload {
+            publish(topic: route, message: raw)
+        } else if let json = event.data.jsonPayload {
+            publish(topic: route, message: PayloadCoder.encode(json))
+        }
     }
 
     internal func publishAssociate(event: AssociateEvent) throws {

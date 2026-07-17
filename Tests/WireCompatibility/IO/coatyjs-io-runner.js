@@ -149,6 +149,14 @@ async function runSource(raw, externalRoute) {
         : cm.createAssociatingRoute(source);
     publishAssociation(cm, route, externalRoute != null, UPDATE_RATE);
 
+    // Retry the Associate so a peer whose ASC subscription is still being
+    // acquired asynchronously after start (Axoloty) catches one. Association
+    // is idempotent for an unchanged route, so re-publishing is safe.
+    for (const delay of [500, 500]) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+        publishAssociation(cm, route, externalRoute != null, UPDATE_RATE);
+    }
+
     // The Associate is delivered back through the broker before the local
     // source's route is registered; settle so publishIoValue can resolve it.
     await new Promise(resolve => setTimeout(resolve, settleMs));
