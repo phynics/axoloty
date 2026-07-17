@@ -14,6 +14,7 @@ exited 0.
 import argparse
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 
@@ -51,15 +52,22 @@ def verify_duplicate_reply(capture, application_log):
         raise SystemExit(f"Expected the ignored response to be the 'duplicate' variant, got {ignored}")
 
 
+def parse_utc(value):
+    """Parse an ISO-8601 UTC timestamp with or without fractional seconds."""
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
 def verify_late_reply(capture, application_log):
-    calls_on_wire = wire_topics(capture, "CLL:wire-fixture-operation") or [
-        t for t in (r["mqtt"]["topic"] for r in capture) if "/CLL:wire-fixture-operation/" in t
+    calls_on_wire = wire_topics(capture, "CLL:wire-fixture-operation")
+    return_records = [
+        record
+        for record in capture
+        if "/RTN/" in record["mqtt"]["topic"] or record["mqtt"]["topic"].endswith("/RTN")
     ]
-    returns_on_wire = wire_topics(capture, "RTN")
     if not calls_on_wire:
         raise SystemExit("Expected a wire CLL publish for wire-fixture-operation, found none")
-    if len(returns_on_wire) != 1:
-        raise SystemExit(f"Expected exactly one late wire RTN publish, found {len(returns_on_wire)}")
+    if len(return_records) != 1:
+        raise SystemExit(f"Expected exactly one late wire RTN publish, found {len(return_records)}")
     states = [record["state"] for record in application_log]
     if "gave-up" not in states:
         raise SystemExit(f"Expected Axoloty to report giving up on the Call, got {states}")
@@ -69,6 +77,32 @@ def verify_late_reply(capture, application_log):
         )
     if states.index("gave-up") >= states.index("done"):
         raise SystemExit(f"Expected 'gave-up' to precede 'done', got {states}")
+
+    # The actual "late" cross-check: the wire RTN's broker-side capture
+    # timestamp must fall after the moment the Axoloty subject reported
+    # giving up (which is when its correlated response subscription is
+    # released). Without this comparison, a regression that made CoatyJS
+    # reply early for an unrelated reason would still pass. The capture's
+    # `capturedAt` has whole-second resolution (see mqtt_capture.py), so its
+    # true instant may be up to 1s later than the parsed value; requiring
+    # the floored capture time to be >= the gave-up time therefore never
+    # produces a false failure and still rejects any Return that arrived
+    # before the subject gave up.
+    gave_up = next(r for r in application_log if r["state"] == "gave-up")
+    if "at" not in gave_up:
+        raise SystemExit(
+            "The application log's gave-up record carries no 'at' timestamp; "
+            "cannot prove the Return arrived late"
+        )
+    gave_up_at = parse_utc(gave_up["at"])
+    return_at = parse_utc(return_records[0]["capturedAt"])
+    if return_at < gave_up_at:
+        raise SystemExit(
+            f"The wire RTN was captured at {return_at.isoformat()} but Axoloty "
+            f"only gave up at {gave_up_at.isoformat()}: the Return was not "
+            "late relative to the subject's timeout, so this run does not "
+            "demonstrate the late-reply scenario"
+        )
 
 
 VERIFIERS = {

@@ -130,7 +130,17 @@ struct AxolotyLifecycleSubjectTests {
     }
 
     private func report(state: String, scenario: String, extra: [String: String] = [:]) {
-        var fields = ["\"state\":\"\(state)\"", "\"scenario\":\"\(scenario)\""]
+        // A UTC wall-clock timestamp on every state line, with the same
+        // format as the capture probe's `capturedAt` (see mqtt_capture.py),
+        // so verify-lifecycle-call-return.py can genuinely compare wire
+        // timing against subject timing instead of trusting prose.
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var fields = [
+            "\"state\":\"\(state)\"",
+            "\"scenario\":\"\(scenario)\"",
+            "\"at\":\"\(formatter.string(from: Date()))\"",
+        ]
         for (key, value) in extra {
             fields.append("\"\(key)\":\"\(value)\"")
         }
