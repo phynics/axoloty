@@ -104,6 +104,50 @@ async function run() {
             event.returnEvent(ReturnEvent.withResult({ answer: 49, objectId: object.objectId }, { responder: "coatyjs-2.4.0" }));
             ack({ objectId: object.objectId });
         }, fail);
+    } else if (scenario === "duplicate-reply") {
+        // Backs the `duplicate-reply` lifecycle scenario: this responder is a
+        // legitimate CoatyJS Call responder that (mis)behaves by sending the
+        // same correlated Return twice, "original" then "duplicate" 300ms
+        // later. Nothing in @coaty/core's CallEvent.returnEvent (see
+        // node_modules/@coaty/core/com/call-return.js and
+        // communication-manager.js's observeCall handler) prevents a
+        // responder from doing this -- there is no one-reply-per-event guard
+        // on the wire producer side, confirmed by reading that source before
+        // writing this branch. The initiator's behavior (accepting only the
+        // first) is therefore a genuine assertion about Axoloty, not a
+        // fabricated one about CoatyJS.
+        subscription = manager.observeCall("wire-fixture-operation").subscribe(event => {
+            if (event.data.getParameterByName("operand") !== 7) return;
+            event.returnEvent(ReturnEvent.withResult(
+                { answer: 49, objectId: object.objectId, variant: "original" },
+                { responder: "coatyjs-2.4.0" }
+            ));
+            setTimeout(() => {
+                event.returnEvent(ReturnEvent.withResult(
+                    { answer: 49, objectId: object.objectId, variant: "duplicate" },
+                    { responder: "coatyjs-2.4.0" }
+                ));
+                ack({ objectId: object.objectId });
+            }, 300);
+        }, fail);
+    } else if (scenario === "late-reply") {
+        // Backs the `late-reply` lifecycle scenario: this responder withholds
+        // its Return well past the point where a well-behaved initiator (see
+        // AxolotyLifecycleSubjectTests.lateReply, which uses a 2s response
+        // deadline) has already given up and released its response
+        // subscription. The Return is still genuinely published to the
+        // broker -- LIFECYCLE_LATE_REPLY_DELAY_MS controls exactly how late.
+        const delayMs = Number(process.env.LIFECYCLE_LATE_REPLY_DELAY_MS || "4000");
+        subscription = manager.observeCall("wire-fixture-operation").subscribe(event => {
+            if (event.data.getParameterByName("operand") !== 7) return;
+            setTimeout(() => {
+                event.returnEvent(ReturnEvent.withResult(
+                    { answer: 49, objectId: object.objectId, variant: "late" },
+                    { responder: "coatyjs-2.4.0" }
+                ));
+                ack({ objectId: object.objectId });
+            }, delayMs);
+        }, fail);
     } else {
         throw new Error(`unsupported scenario: ${scenario}`);
     }
