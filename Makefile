@@ -139,6 +139,7 @@ test-wire-live:
 	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/Reverse/run-axoloty-advertise.sh
 	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/Reverse/run-axoloty-core.sh
 	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/Reverse/run-coatyjs-to-axoloty-advertise.sh
+	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/IO/Live/run-io-associate.sh
 
 test-wire-all: test-wire test-wire-live
 
