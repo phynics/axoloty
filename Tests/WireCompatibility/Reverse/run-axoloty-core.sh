@@ -46,7 +46,7 @@ for _ in $(seq 1 30); do
 done
 runtime exec "$BROKER" python3 -c 'import socket; socket.create_connection(("127.0.0.1", 1883), 1).close()' >/dev/null
 
-SCENARIOS="${WIRE_SCENARIOS:-deadvertise channel discover-resolve query-retrieve update-complete call-return}"
+SCENARIOS="${WIRE_SCENARIOS:-deadvertise channel discover-resolve query-retrieve query-retrieve-filter-negative query-retrieve-filter-operands update-complete call-return}"
 for scenario in $SCENARIOS; do
     capture="$OUTPUT_DIR/axoloty-$scenario.jsonl"
     CAPTURE_READY="$OUTPUT_DIR/axoloty-$scenario.capture-ready"
