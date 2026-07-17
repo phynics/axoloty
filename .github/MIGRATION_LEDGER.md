@@ -11,8 +11,8 @@ titles and bodies as searchable migration metadata.
 | T-018 | Capture reference wire fixtures | #28 | Closed |
 | T-019 | Live core interoperability matrix | #29 | Closed |
 | T-020 | Lifecycle and failure compatibility | #30 | Closed |
-| T-021 | IO and SensorThings compatibility decision | #31 | Open |
-| T-022 | Compatibility CI gates | #32 | Open |
+| T-021 | IO and SensorThings compatibility decision | #31 | Closed |
+| T-022 | Compatibility CI gates | #32 | Closed |
 | T-023 | Full package rename to Axoloty | #2 | Closed |
 | T-024 | DocC catalog and containerized build | #3 | Closed |
 | T-025 | Adopt ErrorKit and record error compatibility policy | #4 | Closed |
@@ -46,7 +46,7 @@ titles and bodies as searchable migration metadata.
 ## Verification
 
 - **Total T-IDs:** 36 (T-016 through T-051)
-- **Open issues:** 3 (T-021, T-022, T-030)
-- **Closed issues:** 33 (T-016–T-020, T-023–T-029, T-031–T-051)
+- **Open issues:** 1 (T-030)
+- **Closed issues:** 35 (T-016–T-029, T-031–T-051)
 - **No duplicates:** Every T-ID maps to exactly one GitHub Issue.
 - **Source files preserved:** Local ticket files remain in `.agents/tickets/` for reference
