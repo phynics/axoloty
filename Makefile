@@ -5,7 +5,10 @@ BROKER_NAME ?= coatyswift-mosquitto
 CONTAINER_RUNTIME ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 WORKDIR := /workspace
 CACHE_NAMESPACE ?= swift-6.3-linux
-REPOSITORY_NAME ?= $(shell git rev-parse --git-common-dir 2>/dev/null | sed 's#/.git$$##' | xargs basename 2>/dev/null || basename "$(CURDIR)")
+# The sed delimiter must not be '#': GNU Make starts a comment at '#' even
+# inside $(shell ...), which hides the closing paren and breaks parsing on
+# GNU Make 3.81 (shipped by macOS). See issue #100.
+REPOSITORY_NAME ?= $(shell git rev-parse --git-common-dir 2>/dev/null | sed 's|/.git$$||' | xargs basename 2>/dev/null || basename "$(CURDIR)")
 BUILD_CACHE_ROOT ?= /tmp/coaty-swift-build/$(REPOSITORY_NAME)/$(CACHE_NAMESPACE)
 BUILD_DIR ?= $(BUILD_CACHE_ROOT)/debug
 COVERAGE_BUILD_DIR ?= $(BUILD_DIR)-coverage
