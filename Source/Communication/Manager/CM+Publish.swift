@@ -41,9 +41,22 @@ extension CommunicationManager {
 
     private func responseStream(_ eventType: CommunicationEventType, correlationId: String, topic: String) async -> EventStream<ResponseEventSnapshot> {
         await acquireSubscription(topic: topic)
-        let coordinator = subscriptionCoordinator!
+        let key = CommunicationEventHubKeys.response(eventType: eventType, correlationId: correlationId)
+
+        guard let coordinator = subscriptionCoordinator else {
+            // The manager has no coordinator (e.g. this call raced teardown).
+            // Fail gracefully with an already-finished stream instead of crashing.
+            let stream: EventStream<ResponseEventSnapshot> = await eventHub.registerStream(
+                key: key,
+                buffering: .event,
+                onLast: {}
+            )
+            await eventHub.finish(key: key)
+            return stream
+        }
+
         return await eventHub.registerStream(
-            key: CommunicationEventHubKeys.response(eventType: eventType, correlationId: correlationId),
+            key: key,
             buffering: .event,
             onLast: { _Concurrency.Task { await coordinator.release(topic: topic) } }
         )
