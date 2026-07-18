@@ -52,7 +52,7 @@ class MockReceiverController: Controller, @unchecked Sendable {
     /// events published right after subscribing.
     func watchForAdvertiseEvents(logger: AdvertiseEventLogger, objectType: String) async throws -> _Concurrency.Task<Void, Never> {
         let stream = try await communicationManager.observeAdvertiseStream(withObjectType: objectType)
-        let box = SharedAsyncIteratorBox(await stream.makeAsyncIteratorAndWait())
+        let box = EventStreamBox(await stream.makeAsyncIteratorAndWait())
         return _Concurrency.Task { @MainActor in
             while let event = await box.iterator.next() {
                 guard let object = event.object.decodeObject() else { continue }
@@ -70,7 +70,7 @@ class MockReceiverController: Controller, @unchecked Sendable {
     /// half of this guarantee).
     func watchForChannelEvents(logger: ChannelEventLogger, channelId: String) async throws -> _Concurrency.Task<Void, Never> {
         let stream = try await communicationManager.observeChannelStream(channelId: channelId)
-        let box = SharedAsyncIteratorBox(await stream.makeAsyncIteratorAndWait())
+        let box = EventStreamBox(await stream.makeAsyncIteratorAndWait())
         return _Concurrency.Task { @MainActor in
             while let event = await box.iterator.next() {
                 if let object = event.object.flatMap({ $0.decodeObject() }) {
@@ -280,12 +280,5 @@ class SensorThingsCollection {
 extension Date {
     var millisecondsSince1970: Int {
         return Int((timeIntervalSince1970 * 1000.0).rounded())
-    }
-}
-
-private final class SendableBox<T>: @unchecked Sendable {
-    var value: T
-    init(_ value: T) {
-        self.value = value
     }
 }

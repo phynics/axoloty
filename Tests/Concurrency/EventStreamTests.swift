@@ -221,10 +221,10 @@ struct EventStreamTests {
         let it = stream.makeAsyncIterator()
         try? await _Concurrency.Task.sleep(for: .milliseconds(100))
 
-        let box = IteratorBox(it)
+        let holder = EventStreamBox(it)
         let task = _Concurrency.Task {
             var count = 0
-            while let _ = await box.iterator.next() {
+            while let _ = await holder.iterator.next() {
                 count += 1
             }
             return count
@@ -247,11 +247,6 @@ struct EventStreamTests {
 private final class SendableCounter: @unchecked Sendable {
     private(set) var lastCount = 0
     func incLast() { lastCount += 1 }
-}
-
-private final class IteratorBox<T: Sendable>: @unchecked Sendable {
-    var iterator: EventStream<T>.Iterator
-    init(_ iterator: EventStream<T>.Iterator) { self.iterator = iterator }
 }
 
 private func collectValues<T: Sendable>(

@@ -59,7 +59,11 @@ func waitUntil(
 /// The box is generic over `Element: Sendable` (not over the iterator type),
 /// so the `@Sendable` task-group closure captures `Element.Type` — which is
 /// `Sendable` — rather than the non-`Sendable` iterator metatype that a
-/// generic `I: AsyncIteratorProtocol` parameter would introduce.
+/// generic `I: AsyncIteratorProtocol` parameter would introduce. The box is
+/// the one remaining shared `@unchecked Sendable` iterator wrapper in the
+/// test target: an actor-based holder was attempted (see #148) but cannot
+/// work because ``EventStream/Iterator`` is non-`Sendable` and so cannot
+/// cross the actor's isolation boundary in either direction.
 ///
 /// - Throws: ``AsyncWaitTimeoutError`` if no value arrives before `timeout`,
 ///   or `CancellationError` if the stream finishes first.
@@ -164,20 +168,13 @@ func withTimeout<T: Sendable>(
     }
 }
 
-/// Lets a non-`Sendable` iterator be captured by a `@Sendable` closure (e.g.
-/// a spawned `Task`'s body) without tripping strict-concurrency checks.
-/// `@unchecked` is safe here because callers only ever touch `iterator` from
-/// one execution context at a time (this test target never shares one across
-/// concurrent tasks).
-final class SharedAsyncIteratorBox<I: AsyncIteratorProtocol>: @unchecked Sendable {
-    var iterator: I
-    init(_ iterator: I) {
-        self.iterator = iterator
-    }
-}
-
 /// A `@unchecked Sendable` box for an ``EventStream`` iterator, generic over
 /// `Element: Sendable` so the captured metatype is `Sendable`.
+///
+/// Shared by the timeout-racing `nextValue` overloads above and by the
+/// long-lived consumer tasks in `EventStreamTests`, `SensorThingsMocks`, and
+/// `AxolotyLifecycleSubjectTests`, replacing the per-file `@unchecked
+/// Sendable` box copies those files used to carry.
 final class EventStreamBox<E: Sendable>: @unchecked Sendable {
     var iterator: EventStream<E>.Iterator
     init(_ iterator: EventStream<E>.Iterator) {
