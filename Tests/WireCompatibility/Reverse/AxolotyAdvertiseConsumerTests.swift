@@ -65,40 +65,19 @@ struct AxolotyAdvertiseConsumerTests {
     }
 }
 
-/// `EventStream.Iterator.next()` is a mutating method, which an escaping task
-/// closure cannot call directly on a captured `var`. Boxing it in a class
-/// (matching the pattern in `AxolotyCoreProducerTests.swift`) gives the
-/// closure a stable reference to mutate instead.
-private final class AdvertiseIteratorBox: @unchecked Sendable {
-    var iterator: EventStream<AdvertiseEventSnapshot>.Iterator
-
-    init(_ iterator: EventStream<AdvertiseEventSnapshot>.Iterator) {
-        self.iterator = iterator
-    }
-}
-
+/// Awaits the next Advertise snapshot, racing the pull against `timeout` via
+/// the shared `nextValue` (which holds the iterator in an actor). Any failure
+/// — stream ended or timeout — surfaces as `AxolotyError.runtime` with a
+/// scenario-specific reason.
 private func nextAdvertise(
     _ iterator: inout EventStream<AdvertiseEventSnapshot>.Iterator,
     timeout: Duration
 ) async throws -> AdvertiseEventSnapshot {
-    let box = AdvertiseIteratorBox(iterator)
-    defer { iterator = box.iterator }
-
-    return try await withThrowingTaskGroup(of: AdvertiseEventSnapshot.self) { group in
-        group.addTask {
-            guard let value = await box.iterator.next() else {
-                throw AxolotyError.runtime(code: .streamEnded, reason: "Advertise stream ended before a snapshot arrived")
-            }
-            return value
-        }
-        group.addTask {
-            try await _Concurrency.Task.sleep(for: timeout)
-            throw AxolotyError.runtime(code: .timedOut, reason: "Timed out waiting for CoatyJS to publish Advertise")
-        }
-        guard let value = try await group.next() else {
-            throw AxolotyError.runtime(code: .timedOut, reason: "Timed out waiting for CoatyJS to publish Advertise")
-        }
-        group.cancelAll()
-        return value
+    do {
+        return try await nextValue(&iterator, timeout: timeout)
+    } catch is CancellationError {
+        throw AxolotyError.runtime(code: .streamEnded, reason: "Advertise stream ended before a snapshot arrived")
+    } catch {
+        throw AxolotyError.runtime(code: .timedOut, reason: "Timed out waiting for CoatyJS to publish Advertise")
     }
 }

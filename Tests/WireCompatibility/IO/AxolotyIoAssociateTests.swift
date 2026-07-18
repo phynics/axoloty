@@ -307,43 +307,20 @@ struct AxolotyIoAssociateTests {
 ///
 /// `EventStream.Iterator.next()` suspends until an element arrives or the stream
 /// finishes, so a bare deadline check cannot bound it — the wait has to race the
-/// pull against a timer. A child task pulls the next element while a sibling
-/// sleeps for `timeout`; whichever finishes first wins, and cancelling the group
-/// unblocks the losing pull (its cancellation handler finishes the stream). This
-/// mirrors the snapshot helpers in `AxolotyLifecycleSubjectTests`. The box works
-/// around `inout` not being capturable by an escaping child task; the mutated
-/// iterator is written back on the way out.
+/// pull against a timer. This delegates to the shared `nextValue` (which holds
+/// the iterator in an actor across the race) and converts its generic timeout /
+/// stream-ended errors into the `AxolotyError.runtime` categories these
+/// assertions switch on, preserving the `label` in the reason.
 private func nextSnapshot<E: Sendable>(
     _ iterator: inout EventStream<E>.Iterator,
     timeout: Duration,
     _ label: String
 ) async throws -> E {
-    let box = IteratorBox(iterator)
-    defer { iterator = box.iterator }
-
-    return try await withThrowingTaskGroup(of: E.self) { group in
-        group.addTask {
-            guard let value = await box.iterator.next() else {
-                throw AxolotyError.runtime(code: .streamEnded, reason: "Stream ended while waiting for \(label)")
-            }
-            return value
-        }
-        group.addTask {
-            try await _Concurrency.Task.sleep(for: timeout)
-            throw AxolotyError.runtime(code: .timedOut, reason: "Timed out waiting for \(label)")
-        }
-        guard let value = try await group.next() else {
-            throw AxolotyError.runtime(code: .timedOut, reason: "Timed out waiting for \(label)")
-        }
-        group.cancelAll()
-        return value
-    }
-}
-
-private final class IteratorBox<E: Sendable>: @unchecked Sendable {
-    var iterator: EventStream<E>.Iterator
-
-    init(_ iterator: EventStream<E>.Iterator) {
-        self.iterator = iterator
+    do {
+        return try await nextValue(&iterator, timeout: timeout)
+    } catch is CancellationError {
+        throw AxolotyError.runtime(code: .streamEnded, reason: "Stream ended while waiting for \(label)")
+    } catch {
+        throw AxolotyError.runtime(code: .timedOut, reason: "Timed out waiting for \(label)")
     }
 }

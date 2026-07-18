@@ -211,7 +211,7 @@ struct AxolotyLifecycleSubjectTests {
         // The state stream replays the current state to a new iterator, so
         // this loop tolerates an immediate non-target value and simply waits
         // until the orchestrated transition genuinely happens.
-        let box = StateIteratorBox(iterator)
+        let box = EventStreamBox(iterator)
         defer { iterator = box.iterator }
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
@@ -292,53 +292,14 @@ struct AxolotyLifecycleSubjectTests {
 
 private struct TimeoutGivingUp: Swift.Error {}
 
-private final class StateIteratorBox: @unchecked Sendable {
-    var iterator: EventStream<CommunicationState>.Iterator
-
-    init(_ iterator: EventStream<CommunicationState>.Iterator) {
-        self.iterator = iterator
-    }
-}
-
 private func nextAdvertise(
     _ iterator: inout EventStream<AdvertiseEventSnapshot>.Iterator,
     timeout: Duration
 ) async throws -> AdvertiseEventSnapshot {
-    let box = AdvertiseIteratorBox(iterator)
-    defer { iterator = box.iterator }
-
-    return try await withThrowingTaskGroup(of: AdvertiseEventSnapshot.self) { group in
-        group.addTask {
-            guard let value = await box.iterator.next() else {
-                throw TimeoutGivingUp()
-            }
-            return value
-        }
-        group.addTask {
-            try await _Concurrency.Task.sleep(for: timeout)
-            throw TimeoutGivingUp()
-        }
-        guard let value = try await group.next() else {
-            throw TimeoutGivingUp()
-        }
-        group.cancelAll()
-        return value
-    }
-}
-
-private final class AdvertiseIteratorBox: @unchecked Sendable {
-    var iterator: EventStream<AdvertiseEventSnapshot>.Iterator
-
-    init(_ iterator: EventStream<AdvertiseEventSnapshot>.Iterator) {
-        self.iterator = iterator
-    }
-}
-
-private final class ResponseIteratorBox: @unchecked Sendable {
-    var iterator: EventStream<ResponseEventSnapshot>.Iterator
-
-    init(_ iterator: EventStream<ResponseEventSnapshot>.Iterator) {
-        self.iterator = iterator
+    do {
+        return try await nextValue(&iterator, timeout: timeout)
+    } catch {
+        throw TimeoutGivingUp()
     }
 }
 
@@ -346,24 +307,9 @@ private func nextResponse(
     _ iterator: inout EventStream<ResponseEventSnapshot>.Iterator,
     timeout: Duration
 ) async throws -> ResponseEventSnapshot {
-    let box = ResponseIteratorBox(iterator)
-    defer { iterator = box.iterator }
-
-    return try await withThrowingTaskGroup(of: ResponseEventSnapshot.self) { group in
-        group.addTask {
-            guard let value = await box.iterator.next() else {
-                throw TimeoutGivingUp()
-            }
-            return value
-        }
-        group.addTask {
-            try await _Concurrency.Task.sleep(for: timeout)
-            throw TimeoutGivingUp()
-        }
-        guard let value = try await group.next() else {
-            throw TimeoutGivingUp()
-        }
-        group.cancelAll()
-        return value
+    do {
+        return try await nextValue(&iterator, timeout: timeout)
+    } catch {
+        throw TimeoutGivingUp()
     }
 }
