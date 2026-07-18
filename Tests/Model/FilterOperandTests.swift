@@ -69,4 +69,32 @@ struct FilterOperandTests {
         let decoded = try JSONDecoder().decode(FilterOperand.self, from: Data(json.utf8))
         #expect(decoded == .object(["a": .array([.int(1), .bool(true), .null])]))
     }
+
+    // MARK: - Wire contract.
+
+    /// The `Int` raw values of ``ObjectFilterOperator`` are the wire contract:
+    /// CoatyJS encodes `["objectId", [7, "..."]]` for `Equals`, where `7` is
+    /// the operator's raw value. These integers are implicit (declaration
+    /// order) and therefore fragile — reordering or inserting a case
+    /// silently renumbers every peer's filters. Pinned so Phase 2's reshaping
+    /// of `ObjectFilterExpression` cannot drift them.
+    @Test
+
+    func testOperatorRawValuesMatchTheWireContract() {
+        #expect(ObjectFilterOperator.LessThan.rawValue == 0)
+        #expect(ObjectFilterOperator.LessThanOrEqual.rawValue == 1)
+        #expect(ObjectFilterOperator.GreaterThan.rawValue == 2)
+        #expect(ObjectFilterOperator.GreaterThanOrEqual.rawValue == 3)
+        #expect(ObjectFilterOperator.Between.rawValue == 4)
+        #expect(ObjectFilterOperator.NotBetween.rawValue == 5)
+        #expect(ObjectFilterOperator.Like.rawValue == 6)
+        #expect(ObjectFilterOperator.Equals.rawValue == 7)
+        #expect(ObjectFilterOperator.NotEquals.rawValue == 8)
+        #expect(ObjectFilterOperator.Exists.rawValue == 9)
+        #expect(ObjectFilterOperator.NotExists.rawValue == 10)
+        #expect(ObjectFilterOperator.Contains.rawValue == 11)
+        #expect(ObjectFilterOperator.NotContains.rawValue == 12)
+        #expect(ObjectFilterOperator.In.rawValue == 13)
+        #expect(ObjectFilterOperator.NotIn.rawValue == 14)
+    }
 }
