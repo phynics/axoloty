@@ -29,7 +29,7 @@ COMMA := ,
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build test test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs clean
+.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build test-decoder-context-sendable test test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs clean
 
 help:
 	@printf '%s\n' \
@@ -38,6 +38,7 @@ help:
 		'make worktree-bootstrap  Prepare dependency cache and validate Package.resolved' \
 		'make worktree-warm  Bootstrap and compile the current worktree' \
 		'make build         Build Axoloty in the Linux container' \
+		'make test-decoder-context-sendable  Fail if the former decoder-context Sendable diagnostic returns' \
 		'make test          Run the full test suite (starts Mosquitto)' \
 		'make test-unit     Run ObjectMatcherTests' \
 		'make test-module   Run targeted infrastructure module tests' \
@@ -89,6 +90,13 @@ test-broker-regressions: image
 
 build: resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift build $(SWIFT_LOCKED_ARGS)
+
+test-decoder-context-sendable:
+	@build_log=$$(mktemp); \
+	trap 'rm -f "$$build_log"' EXIT; \
+	if ! $(MAKE) build >"$$build_log" 2>&1; then cat "$$build_log"; exit 1; fi; \
+	cat "$$build_log"; \
+	sh Tests/Support/check-decoder-context-diagnostic.sh "$$build_log"
 
 test: resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh sh -c 'pgrep mosquitto >/dev/null 2>&1 || mosquitto -d; swift test $(SWIFT_LOCKED_ARGS)'
@@ -160,7 +168,9 @@ coverage: coverage-resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(COVERAGE_BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \
 		sh -c 'set -e; \
 		  pgrep mosquitto >/dev/null 2>&1 || mosquitto -d; \
-		  swift test $(SWIFT_LOCKED_ARGS) --enable-code-coverage; \
+		  # Several integration tests configure process-global runtime settings, including LogManager.defaultLevel. \
+		  # Swift Testing otherwise runs unrelated suites concurrently, which makes their setup race. \
+		  swift test $(SWIFT_LOCKED_ARGS) --no-parallel --enable-code-coverage; \
 		  BIN=$$(find .build -name AxolotyPackageTests.xctest -type f | head -1); \
 		  PROFDATA=$$(find .build -name default.profdata | head -1); \
 		  mkdir -p .testing/coverage; \
@@ -176,7 +186,7 @@ ci-fast: build test-fast
 ci-preflight:
 	@if [ "$${CI:-}" = "true" ] && [ "$(BUILD_LOCK)" != "0" ]; then echo 'CI must set BUILD_LOCK=0 because its workspace-local build directory is not shared' >&2; exit 2; fi
 
-ci: ci-preflight
+ci: ci-preflight test-decoder-context-sendable
 	$(MAKE) test-support coverage-check
 
 broker: image
