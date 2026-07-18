@@ -82,6 +82,22 @@ extension CommunicationManager {
         )
     }
 
+    /// Publishes a request event and returns the response stream.
+    ///
+    /// - Warning: This returns an ``EventStream`` whose iterator continuation
+    ///   is registered with the ``EventHub`` only when the caller creates an
+    ///   iterator. A fast broker response arriving between this method's
+    ///   return and the caller's iterator registration has no continuation to
+    ///   route to and is silently dropped — this is #70's root cause, the same
+    ///   ``EventStream.makeAsyncIterator()`` registration race documented in
+    ///   #74. Callers that must not lose the response should attach an
+    ///   iterator via ``EventStream.makeAsyncIteratorAndWait()`` (which
+    ///   awaits registration) before relying on the stream, and avoid
+    ///   ``for await`` (the non-`async` ``AsyncSequence`` path) on the
+    ///   returned stream. The in-repo caller
+    ///   (`AxolotyCoreProducerTests.awaitResponse`) already does this; the
+    ///   proper fix is the structured-operation redesign tracked by #70/#74,
+    ///   blocked on the `AsyncSequence` non-`async` contract.
     private func publishWithResponse<D: CommunicationEventData>(
         _ event: CommunicationEvent<D>,
         request eventType: CommunicationEventType,
