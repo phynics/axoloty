@@ -9,13 +9,16 @@ public struct EventStream<Element: Sendable>: Sendable, AsyncSequence {
     public struct Iterator: AsyncIteratorProtocol {
         private var storage: Storage
         private let continuation: AnySendableContinuation
+        private let lifecycle: StreamLifecycle
 
         fileprivate init(
             inner: AsyncStream<Element>.AsyncIterator,
-            continuation: AnySendableContinuation
+            continuation: AnySendableContinuation,
+            lifecycle: StreamLifecycle
         ) {
             self.storage = Storage(inner)
             self.continuation = continuation
+            self.lifecycle = lifecycle
         }
 
         public mutating func next() async -> Element? {
@@ -42,6 +45,7 @@ public struct EventStream<Element: Sendable>: Sendable, AsyncSequence {
 
     private let asyncStream: AsyncStream<Element>
     private let continuation: AnySendableContinuation
+    private let lifecycle: StreamLifecycle
 
     internal init(
         asyncStream: AsyncStream<Element>,
@@ -49,6 +53,7 @@ public struct EventStream<Element: Sendable>: Sendable, AsyncSequence {
     ) {
         self.asyncStream = asyncStream
         self.continuation = continuation
+        self.lifecycle = StreamLifecycle(continuation)
     }
 
     /// Creates and returns an iterator.
@@ -60,7 +65,7 @@ public struct EventStream<Element: Sendable>: Sendable, AsyncSequence {
     /// This method is synchronous (required by `AsyncSequence` conformance)
     /// and safe — no registration race.
     public func makeAsyncIterator() -> Iterator {
-        Iterator(inner: asyncStream.makeAsyncIterator(), continuation: continuation)
+        Iterator(inner: asyncStream.makeAsyncIterator(), continuation: continuation, lifecycle: lifecycle)
     }
 
     /// Creates an iterator.
@@ -70,5 +75,17 @@ public struct EventStream<Element: Sendable>: Sendable, AsyncSequence {
     /// callers that previously needed the registration-safe path.
     public func makeAsyncIteratorAndWait() async -> Iterator {
         makeAsyncIterator()
+    }
+}
+
+private final class StreamLifecycle: Sendable {
+    private let continuation: AnySendableContinuation
+
+    init(_ continuation: AnySendableContinuation) {
+        self.continuation = continuation
+    }
+
+    deinit {
+        continuation.finish()
     }
 }

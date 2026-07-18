@@ -19,6 +19,23 @@ struct EventStreamTests {
     }
 
     @Test
+    func testDroppingUniteratedStreamFiresOnLast() async throws {
+        let hub = EventHub()
+        let counter = SendableCounter()
+
+        var stream: EventStream<Int>? = await hub.registerStream(
+            key: "uniterated-drop",
+            buffering: .event,
+            onLast: { counter.incLast() }
+        )
+        stream = nil
+
+        try? await _Concurrency.Task.sleep(for: .milliseconds(200))
+
+        #expect(counter.lastCount == 1, "onLast should fire when an uniterated stream is dropped")
+    }
+
+    @Test
     func testLastRegistrationCallback() async {
         let hub = EventHub()
         let counter = SendableCounter()
