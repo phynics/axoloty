@@ -64,4 +64,22 @@ struct PayloadCoderTests {
         #expect((malformed) == nil)
         #expect((wrongShape) == nil)
     }
+
+    @Test
+
+    func encodeWrapsUnencodableValueInAxolotyErrorRatherThanCrashing() throws {
+        struct HoldsNaN: Codable { let value = Double.nan }
+
+        do {
+            _ = try PayloadCoder.encode(HoldsNaN())
+            Issue.record("Expected encode to throw for a non-finite double")
+        } catch let error as AxolotyError {
+            guard case .caught = error else {
+                Issue.record("Expected .caught wrapping the encoding failure, got \(error)")
+                return
+            }
+        } catch {
+            Issue.record("Expected AxolotyError, got \(error)")
+        }
+    }
 }
