@@ -184,7 +184,7 @@ ci-fast: build test-fast
 ci-preflight:
 	@if [ "$${CI:-}" = "true" ] && [ "$(BUILD_LOCK)" != "0" ]; then echo 'CI must set BUILD_LOCK=0 because its workspace-local build directory is not shared' >&2; exit 2; fi
 
-ci: ci-preflight
+ci: ci-preflight test-decoder-context-sendable
 	$(MAKE) test-support coverage-check
 
 broker: image
