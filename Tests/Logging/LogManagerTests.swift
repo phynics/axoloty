@@ -65,6 +65,15 @@ private func withIsolatedSubsystemLevel(_ label: String, _ body: () async throws
     try await body()
 }
 
+/// Restores the process-global default level after a test, including when its
+/// assertion fails. Default-level tests must run without peer tests because
+/// `Container.resolve` intentionally updates this same application setting.
+private func withIsolatedDefaultLevel(_ body: () throws -> Void) rethrows {
+    let original = LogManager.defaultLevel
+    defer { LogManager.defaultLevel = original }
+    try body()
+}
+
 struct LogManagerTests {
     @Test
     func levelGatingSuppressesBelowThresholdAndPassesThroughAtOrAboveIt() async throws {
@@ -113,16 +122,14 @@ struct LogManagerTests {
     /// and reflects a later change to it just as live as a per-subsystem
     /// override does.
     @Test
-    func subsystemWithoutOverrideTracksDefaultLevelLive() async throws {
-        await withIsolatedSubsystemLevel("test.defaultFallback") {
-            let originalDefault = LogManager.defaultLevel
-            defer { LogManager.defaultLevel = originalDefault }
-
+    func subsystemWithoutOverrideTracksDefaultLevelLive() throws {
+        let fallbackLabel = "test.defaultFallback.\(UUID().uuidString)"
+        withIsolatedDefaultLevel {
             LogManager.defaultLevel = .critical
-            #expect(LogManager.level(for: "test.defaultFallback") == .critical)
+            #expect(LogManager.level(for: fallbackLabel) == .critical)
 
             LogManager.defaultLevel = .trace
-            #expect(LogManager.level(for: "test.defaultFallback") == .trace)
+            #expect(LogManager.level(for: fallbackLabel) == .trace)
         }
     }
 

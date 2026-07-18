@@ -168,7 +168,9 @@ coverage: coverage-resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(COVERAGE_BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \
 		sh -c 'set -e; \
 		  pgrep mosquitto >/dev/null 2>&1 || mosquitto -d; \
-		  swift test $(SWIFT_LOCKED_ARGS) --enable-code-coverage; \
+		  # Several integration tests configure process-global runtime settings, including LogManager.defaultLevel. \
+		  # Swift Testing otherwise runs unrelated suites concurrently, which makes their setup race. \
+		  swift test $(SWIFT_LOCKED_ARGS) --no-parallel --enable-code-coverage; \
 		  BIN=$$(find .build -name AxolotyPackageTests.xctest -type f | head -1); \
 		  PROFDATA=$$(find .build -name default.profdata | head -1); \
 		  mkdir -p .testing/coverage; \
