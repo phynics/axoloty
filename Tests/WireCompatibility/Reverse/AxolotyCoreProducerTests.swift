@@ -35,13 +35,30 @@ struct AxolotyCoreProducerTests {
                 property: ObjectFilterProperty("name"),
                 expression: ObjectFilterExpression(filterOperator: .Equals, op1: AnyCodable("wire-fixture"))
             ))
-            let response = try await awaitResponse(
-                from: await manager.communication.publishQuery(
-                    QueryEvent.with(objectTypes: [fixture.objectType], objectFilter: filter)
-                ),
-                eventType: .Retrieve,
-                as: RetrieveEvent.self
-            )
+            let queryEvent = QueryEvent.with(objectTypes: [fixture.objectType], objectFilter: filter)
+            // #134: the CoatyJS consumer emits its "ready" signal on a fixed
+            // 500ms timer (`coatyjs-core-consumer.js`) rather than gating on the
+            // MQTT SUBACK, so the first QRY can race the broker's subscription
+            // confirmation and be dropped (0 RTV). By the retry the consumer's
+            // subscription is confirmed, so the second QRY is delivered. The
+            // proper fix is a subscribe-then-ping-self handshake on the
+            // consumer (CoatyJS doesn't expose SUBACK); this producer-side
+            // retry is the pragmatic workaround the ticket offers.
+            let response: RetrieveEvent
+            do {
+                response = try await awaitResponse(
+                    from: await manager.communication.publishQuery(queryEvent),
+                    eventType: .Retrieve,
+                    as: RetrieveEvent.self
+                )
+            } catch let error as AxolotyError {
+                guard case .runtime(code: .timedOut, reason: _) = error else { throw error }
+                response = try await awaitResponse(
+                    from: await manager.communication.publishQuery(queryEvent),
+                    eventType: .Retrieve,
+                    as: RetrieveEvent.self
+                )
+            }
             #expect(response.data.objects.first?.objectId == fixture.objectId)
             #expect(response.data.privateData?["responder"] as? String == "coatyjs-2.4.0")
         case "query-retrieve-filter-negative":
