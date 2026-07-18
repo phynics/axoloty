@@ -214,7 +214,7 @@ class CommunicationTopic {
 
         return topic
     }
-    
+
     /// Convenience Method to create a topic string that can be used for subscriptions.
     /// See [Communication Protocol](https://coatyio.github.io/coaty-js/man/communication-protocol/#topic-filters)
     /// - Parameters:
@@ -237,6 +237,56 @@ class CommunicationTopic {
         }
 
         return topic
+    }
+
+    /// Bundles the levels that travel together through every publication
+    /// topic-string call site — `namespace`, `eventType`, `eventTypeFilter`,
+    /// and `correlationId` — so the data clump identified in #66 is named
+    /// rather than positional. `sourceId` is intentionally NOT part of this
+    /// struct: it is required for publication (passed alongside the struct to
+    /// ``createTopicStringByLevelsForPublish(components:sourceId:)``) and
+    /// absent for subscription (``createTopicStringByLevelsForSubscribe``
+    /// wildcards it), so carrying it here would lose the compile-time
+    /// distinction between the two directions.
+    ///
+    /// Subscription call sites are not migrated: their `namespace` is optional
+    /// (nil for cross-namespace wildcarding), which does not fit this struct's
+    /// non-nil `namespace`, and bundling it would be more verbose than the
+    /// existing positional call.
+    struct TopicStringComponents {
+        let namespace: String
+        let eventType: CommunicationEventType
+        let eventTypeFilter: String?
+        let correlationId: String?
+
+        init(
+            namespace: String,
+            eventType: CommunicationEventType,
+            eventTypeFilter: String? = nil,
+            correlationId: String? = nil
+        ) {
+            self.namespace = namespace
+            self.eventType = eventType
+            self.eventTypeFilter = eventTypeFilter
+            self.correlationId = correlationId
+        }
+    }
+
+    /// Builds a publication topic from ``TopicStringComponents`` plus the
+    /// required publication `sourceId`. See
+    /// ``createTopicStringByLevelsForPublish(namespace:sourceId:eventType:eventTypeFilter:correlationId:)``
+    /// for the wire format.
+    static func createTopicStringByLevelsForPublish(
+        components: TopicStringComponents,
+        sourceId: CoatyUUID
+    ) -> String {
+        createTopicStringByLevelsForPublish(
+            namespace: components.namespace,
+            sourceId: sourceId,
+            eventType: components.eventType,
+            eventTypeFilter: components.eventTypeFilter,
+            correlationId: components.correlationId
+        )
     }
     
     // MARK: - Parsing helper methods.

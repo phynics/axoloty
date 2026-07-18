@@ -20,10 +20,20 @@ extension CommunicationManager {
 
     public func publishAdvertise(_ event: AdvertiseEvent) {
         event.sourceId = identity.objectId
-        let core = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: namespace, sourceId: identity.objectId, eventType: .Advertise, eventTypeFilter: event.data.object.coreType.rawValue)
-        publish(topic: core, message: event.json)
+        let components = CommunicationTopic.TopicStringComponents(
+            namespace: namespace, eventType: .Advertise,
+            eventTypeFilter: event.data.object.coreType.rawValue
+        )
+        publish(topic: CommunicationTopic.createTopicStringByLevelsForPublish(components: components, sourceId: identity.objectId),
+                message: event.json)
         if event.data.object.coreType.objectType != event.data.object.objectType {
-            let object = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: namespace, sourceId: identity.objectId, eventType: .Advertise, eventTypeFilter: EVENT_TYPE_FILTER_SEPARATOR + event.data.object.objectType)
+            let object = CommunicationTopic.createTopicStringByLevelsForPublish(
+                components: .init(
+                    namespace: namespace, eventType: .Advertise,
+                    eventTypeFilter: EVENT_TYPE_FILTER_SEPARATOR + event.data.object.objectType
+                ),
+                sourceId: identity.objectId
+            )
             publish(topic: object, message: event.json)
         }
         if [.Identity, .IoNode].contains(event.data.object.coreType), !deadvertiseIds.contains(event.data.object.objectId) {
@@ -33,13 +43,19 @@ extension CommunicationManager {
 
     public func publishDeadvertise(_ event: DeadvertiseEvent) {
         event.sourceId = identity.objectId
-        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: namespace, sourceId: identity.objectId, eventType: .Deadvertise)
+        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(
+            components: .init(namespace: namespace, eventType: .Deadvertise),
+            sourceId: identity.objectId
+        )
         publish(topic: topic, message: event.json)
     }
 
     public func publishChannel(_ event: ChannelEvent) {
         event.sourceId = identity.objectId
-        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: namespace, sourceId: identity.objectId, eventType: .Channel, eventTypeFilter: event.channelId)
+        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(
+            components: .init(namespace: namespace, eventType: .Channel, eventTypeFilter: event.channelId),
+            sourceId: identity.objectId
+        )
         publish(topic: topic, message: event.json)
     }
 
@@ -78,16 +94,18 @@ extension CommunicationManager {
             "correlationId": .string(correlationId),
             "eventType": .string(eventType.rawValue),
         ])
-        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(
+        let components = CommunicationTopic.TopicStringComponents(
             namespace: namespace,
-            sourceId: identity.objectId,
             eventType: eventType,
             eventTypeFilter: eventTypeFilter,
-            correlationId: correlationId)
+            correlationId: correlationId
+        )
+        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(components: components, sourceId: identity.objectId)
         let responseTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
             eventType: responseType,
             namespace: communicationOptions.shouldEnableCrossNamespacing ? nil : namespace,
-            correlationId: correlationId)
+            correlationId: correlationId
+        )
         let stream = await responseStream(responseType, correlationId: correlationId, topic: responseTopic)
         publish(topic: topic, message: event.json)
         return stream
@@ -104,10 +122,9 @@ extension CommunicationManager {
             "eventType": .string(eventType.rawValue),
         ])
         let topic = CommunicationTopic.createTopicStringByLevelsForPublish(
-            namespace: namespace,
-            sourceId: identity.objectId,
-            eventType: eventType,
-            correlationId: correlationId)
+            components: .init(namespace: namespace, eventType: eventType, correlationId: correlationId),
+            sourceId: identity.objectId
+        )
         publish(topic: topic, message: event.json)
     }
 
@@ -171,7 +188,10 @@ extension CommunicationManager {
         guard let name = event.ioContextName, CommunicationTopic.isValidEventTypeFilter(filter: name) else {
             throw AxolotyError.invalidArgument(argument: "ioContextName", reason: "Associate: not a valid eventTypeFilter")
         }
-        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: namespace, sourceId: identity.objectId, eventType: .Associate, eventTypeFilter: name)
+        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(
+            components: .init(namespace: namespace, eventType: .Associate, eventTypeFilter: name),
+            sourceId: identity.objectId
+        )
         publish(topic: topic, message: event.json)
     }
 }

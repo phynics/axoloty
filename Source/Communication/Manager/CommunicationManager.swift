@@ -324,7 +324,10 @@ public class CommunicationManager {
     /// Gets last will message to be published when the connection terminates
     /// abnormally.
     private func getLastWill() -> (topic: String, msg: String) {
-        let lastWillTopic = CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace, sourceId: self.identity.objectId, eventType: .Deadvertise)
+        let lastWillTopic = CommunicationTopic.createTopicStringByLevelsForPublish(
+            components: .init(namespace: self.namespace, eventType: .Deadvertise),
+            sourceId: self.identity.objectId
+        )
         let deadvertiseEvent = DeadvertiseEvent.with(objectIds: deadvertiseIds)
 
         deadvertiseEvent.sourceId = self.identity.objectId
@@ -545,7 +548,10 @@ public class CommunicationManager {
     /// - Parameter ioSource: the IO source object
     /// - Returns: an associating topic for routing IO values
     public func createIoRoute(ioSource: IoSource) -> String {
-        return CommunicationTopic.createTopicStringByLevelsForPublish(namespace: self.namespace, sourceId: ioSource.objectId, eventType: .IoValue)
+        return CommunicationTopic.createTopicStringByLevelsForPublish(
+            components: .init(namespace: self.namespace, eventType: .IoValue),
+            sourceId: ioSource.objectId
+        )
     }
 
     internal func findIoPointById(objectId: CoatyUUID) -> IoPoint? {
