@@ -1,10 +1,29 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+import Foundation
 import Testing
 @testable import Axoloty
 
 @Suite
 struct PayloadCoderTests {
+    @Test
+    func decoderContextReturnsSendableValues() throws {
+        struct ContextReader: Decodable {
+            let context: (any Sendable)?
+
+            init(from decoder: any Decoder) throws {
+                decoder.pushContext("plant-7", forKey: "site")
+                context = decoder.currentContext(forKey: "site")
+            }
+        }
+
+        let decoder = JSONDecoder()
+        decoder.initPushContext(forKey: "site")
+        let value = try decoder.decode(ContextReader.self, from: Data("{}".utf8))
+
+        #expect((value.context as? String) == "plant-7")
+    }
+
     @Test
     func testCoreObjectRoundTripPreservesRequiredAndOptionalFields() throws {
         _ = Log.objectType

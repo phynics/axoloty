@@ -16,11 +16,17 @@ import Foundation
 /// (rather than a plain Swift `Array`) means every copy of the dictionary
 /// still refers to the very same stack, so pushes/pops made at one level of
 /// a decode are visible to callers at other levels.
-final class DecodingContextStack {
-    private var items: [Any?] = []
+///
+/// This type is `@unchecked Sendable` because it is stored in
+/// ``JSONDecoder/userInfo`` as an `(any Sendable)` value. Its mutable state is
+/// only accessed synchronously during one decode operation; ``JSONDecoder``
+/// does not invoke a decoder concurrently, and this stack is never shared with
+/// another decode operation.
+final class DecodingContextStack: @unchecked Sendable {
+    private var items: [(any Sendable)?] = []
 
     /// Push the given context data for recursive decoding.
-    func push(_ context: Any?) {
+    func push(_ context: (any Sendable)?) {
         items.append(context)
     }
 
@@ -33,7 +39,7 @@ final class DecodingContextStack {
     }
 
     /// The latest context data for recursive decoding.
-    var current: Any? {
+    var current: (any Sendable)? {
         guard let last = items.last else {
             return nil
         }
@@ -43,21 +49,30 @@ final class DecodingContextStack {
 
 extension Decoder {
 
-    /// Get context data stored on decoder's user info indexed by the given key.
+    /// Gets context data stored in the decoder's user info for a key.
+    ///
+    /// - Parameter key: The key identifying the context data.
+    /// - Returns: The context data, or `nil` when no value is stored for `key`.
     func getContext(forKey key: String) -> Any? {
         let infoKey = CodingUserInfoKey(rawValue: key)!
         return userInfo[infoKey]
     }
 
-    /// Push the given context data for recursive decoding.
-    func pushContext(_ context: Any?, forKey key: String) {
+    /// Pushes `Sendable` context data for recursive decoding.
+    ///
+    /// - Parameters:
+    ///   - context: The context data to push.
+    ///   - key: The key identifying the recursive context stack.
+    func pushContext(_ context: (any Sendable)?, forKey key: String) {
         guard let contextStack = getContext(forKey: key) as? DecodingContextStack else {
             return
         }
         contextStack.push(context)
     }
 
-    /// Pop the latest context data for recursive decoding.
+    /// Pops the latest context data for recursive decoding.
+    ///
+    /// - Parameter key: The key identifying the recursive context stack.
     func popContext(forKey key: String) {
         guard let contextStack = getContext(forKey: key) as? DecodingContextStack else {
             return
@@ -65,16 +80,26 @@ extension Decoder {
         contextStack.pop()
     }
 
-    /// Get the latest context data for recursive decoding.
-    func currentContext(forKey key: String) -> Any? {
+    /// Gets the latest `Sendable` context data for recursive decoding.
+    ///
+    /// - Parameter key: The key identifying the recursive context stack.
+    /// - Returns: The latest context data, or `nil` when no context is
+    ///   available.
+    func currentContext(forKey key: String) -> (any Sendable)? {
         guard let contextStack = getContext(forKey: key) as? DecodingContextStack else {
             return nil
         }
         return contextStack.current
     }
 
-    /// Push the given context data for recursive decoding, execute the given action and pop the pushed context.
-    func withContext<T>(_ context: Any?, forKey key: String, action: () throws -> T) rethrows -> T {
+    /// Pushes `Sendable` context data, executes an action, then pops the context.
+    ///
+    /// - Parameters:
+    ///   - context: The context data to push.
+    ///   - key: The key identifying the recursive context stack.
+    ///   - action: The operation to perform while the context is current.
+    /// - Returns: The value returned by `action`.
+    func withContext<T>(_ context: (any Sendable)?, forKey key: String, action: () throws -> T) rethrows -> T {
         pushContext(context, forKey: key)
         defer {
             popContext(forKey: key)
@@ -86,23 +111,19 @@ extension Decoder {
 
 extension JSONDecoder {
 
-    /// Set context data to be accessible on decoder's user info indexed by the given key.
+    /// Sets `Sendable` context data accessible in the decoder's user info.
     ///
-    /// - Note: The compiler warns "type 'Any' does not conform to the 'Sendable'
-    ///   protocol" on the `userInfo[infoKey] = context` assignment below. This
-    ///   is left intentionally: the only value stored in practice is a
-    ///   ``DecodingContextStack`` (via ``initPushContext(forKey:)``), and
-    ///   silencing the diagnostic requires changing the public `Any?` parameter
-    ///   to `(any Sendable)?` across this extension and ``DecodingContextStack``
-    ///   — a breaking public API change that needs an approved plan. Making
-    ///   ``DecodingContextStack`` itself `@unchecked Sendable` does *not* help
-    ///   (the warning is on the `Any` type, not the concrete value).
-    func setContext(_ context: Any?, forKey key: String) {
+    /// - Parameters:
+    ///   - context: The context data to store.
+    ///   - key: The key identifying the context data.
+    func setContext(_ context: (any Sendable)?, forKey key: String) {
         let infoKey = CodingUserInfoKey(rawValue: key)!
         userInfo[infoKey] = context
     }
 
-    /// Set up context data for recursive decoding.
+    /// Sets up a recursive decoding context stack.
+    ///
+    /// - Parameter key: The key identifying the recursive context stack.
     func initPushContext(forKey key: String) {
         setContext(DecodingContextStack(), forKey: key)
     }

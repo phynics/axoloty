@@ -21,7 +21,11 @@ enum AnyCoatyObjectDiscriminator: String, CodingKey {
 /// Pushed onto the decoder's `"coreTypeKeys"` context stack (see
 /// `Decoder+Context.swift`) so that every class in the hierarchy's chained
 /// `init(from:)` calls shares and mutates the very same instance.
-final class CoreTypeKeysContext {
+///
+/// This type is `@unchecked Sendable` because it is pushed onto a
+/// ``DecodingContextStack``. Its mutable state is only accessed synchronously
+/// by one recursive decode operation and is never shared with another decode.
+final class CoreTypeKeysContext: @unchecked Sendable {
     private(set) var keys = Set<String>()
 
     func insert(_ key: String) {
