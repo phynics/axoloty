@@ -170,6 +170,14 @@ async function run() {
     }
     // Allow the broker to register the scenario-specific subscription before
     // the shell runner releases the Axoloty producer.
+    //
+    // #134: this fixed 500ms delay is NOT gated on the MQTT SUBACK (CoatyJS's
+    // reactive subscribe doesn't expose it), so under load the Axoloty
+    // producer's QRY can arrive before the broker has confirmed this
+    // consumer's subscription and be dropped. The Axoloty producer now retries
+    // the QRY once on timeout (see AxolotyCoreProducerTests.swift) as a
+    // pragmatic workaround; the proper fix is a subscribe-then-ping-self
+    // handshake here, pending a way to confirm SUBACK through @coaty/core.
     setTimeout(() => process.stdout.write(`${JSON.stringify({ state: "ready", scenario })}\n`), 500);
 }
 
