@@ -206,7 +206,7 @@ docs: resolve
 		--transform-for-static-hosting \
 		$(if $(DOC_HOSTING_BASE_PATH),--hosting-base-path $(DOC_HOSTING_BASE_PATH)) \
 		--output-path .build/docc
-	.github/scripts/write-docs-root-redirect.sh .build/docc
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh sh .github/scripts/write-docs-root-redirect.sh .build/docc
 
 clean:
 	rm -rf "$(BUILD_DIR)" "$(COVERAGE_BUILD_DIR)"
