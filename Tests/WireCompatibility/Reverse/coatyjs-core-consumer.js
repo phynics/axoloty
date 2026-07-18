@@ -37,12 +37,14 @@ const container = Container.resolve({}, {
 });
 
 let subscription;
+let readySubscription;
 let finished = false;
 const fail = error => {
     if (finished) return;
     finished = true;
     clearTimeout(timeout);
     if (subscription) subscription.unsubscribe();
+    if (readySubscription) readySubscription.unsubscribe();
     container.shutdown();
     process.stderr.write(`${error.stack || error}\n`);
     process.exitCode = 1;
@@ -52,6 +54,7 @@ const ack = details => {
     finished = true;
     clearTimeout(timeout);
     if (subscription) subscription.unsubscribe();
+    if (readySubscription) readySubscription.unsubscribe();
     process.stdout.write(`${JSON.stringify({ state: "ack", scenario, ...details })}\n`);
     // Give the MQTT client time to flush a correlated response before the
     // container disconnects; the Axoloty producer independently decodes it.
@@ -65,6 +68,43 @@ const timeout = setTimeout(() => fail(new Error(`Timed out waiting for ${scenari
 function matchesFixture(candidate) {
     return candidate && candidate.objectId === object.objectId &&
         candidate.objectType === object.objectType && candidate.name === object.name;
+}
+
+// Signal readiness only once the broker has positively confirmed this
+// consumer's subscription, replacing the fixed-delay assumption that caused
+// #134's live query-retrieve timeout (see #163).
+//
+// @coaty/core does not expose MQTT SUBACK, so we probe it indirectly: after
+// the scenario subscription is issued, subscribe to a self-ping channel and
+// publish a probe to it. Receiving our own probe proves the broker has
+// registered the subscription and is routing messages to us — a SUBACK
+// followed by a successful round trip.
+//
+// The scenario subscription is issued before the probe subscription, and
+// CoatyJS (mqtt.js) sends the SUBSCRIBE packet before the PUBLISH on the same
+// TCP connection, so the broker registers the scenario subscription first;
+// once the probe echo arrives both subscriptions are confirmed active.
+//
+// Uniqueness: each consumer process gets its own ready channel derived from
+// its pid, and the probe carries a one-time token so a stray probe from
+// another run (same namespace, non-isolated broker) cannot trigger a false
+// ready.
+const READY_CHANNEL_PREFIX = "wire-fixture-ready-";
+function signalReadyWhenSubscribed(manager) {
+    const readyChannel = READY_CHANNEL_PREFIX + process.pid;
+    const token = `ready-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    readySubscription = manager.observeChannel(readyChannel).subscribe(event => {
+        if (finished) return;
+        const privateData = event.data.privateData;
+        if (privateData && privateData.token === token) {
+            if (readySubscription) {
+                readySubscription.unsubscribe();
+                readySubscription = undefined;
+            }
+            process.stdout.write(`${JSON.stringify({ state: "ready", scenario })}\n`);
+        }
+    }, fail);
+    manager.publishChannel(ChannelEvent.withObject(readyChannel, object, { token }));
 }
 
 async function run() {
@@ -168,17 +208,11 @@ async function run() {
     } else {
         throw new Error(`unsupported scenario: ${scenario}`);
     }
-    // Allow the broker to register the scenario-specific subscription before
-    // the shell runner releases the Axoloty producer.
-    //
-    // #134: this fixed 500ms delay is NOT gated on the MQTT SUBACK (CoatyJS's
-    // reactive subscribe doesn't expose it), so under load the Axoloty
-    // producer's QRY can arrive before the broker has confirmed this
-    // consumer's subscription and be dropped. The Axoloty producer now retries
-    // the QRY once on timeout (see AxolotyCoreProducerTests.swift) as a
-    // pragmatic workaround; the proper fix is a subscribe-then-ping-self
-    // handshake here, pending a way to confirm SUBACK through @coaty/core.
-    setTimeout(() => process.stdout.write(`${JSON.stringify({ state: "ready", scenario })}\n`), 500);
+    // Positively confirm the scenario subscription is registered with the
+    // broker before signalling ready (see signalReadyWhenSubscribed). The
+    // scenario subscription above was issued first, so its SUBACK is confirmed
+    // no later than the probe's.
+    signalReadyWhenSubscribed(manager);
 }
 
 run().catch(fail);
