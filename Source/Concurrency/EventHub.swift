@@ -11,7 +11,6 @@ public enum EventStreamBuffering: Sendable {
 public actor EventHub {
 
     private var continuations: [AnyHashable: [UUID: AnySendableContinuation]] = [:]
-    private var streamInfo: [UUID: StreamRegistration] = [:]
     private var lastValues: [AnyHashable: Any] = [:]
     private var bufferingPolicy: [AnyHashable: EventStreamBuffering] = [:]
     private var registrationKeys: [UUID: AnyHashable] = [:]
@@ -19,21 +18,36 @@ public actor EventHub {
 
     public init() {}
 
-    private struct StreamRegistration {
-        let key: AnyHashable
-        let buffering: EventStreamBuffering
-        let onLast: @Sendable () -> Void
-    }
-
+    /// Registers an ``EventStream`` under ``key``, eagerly constructing and
+    /// registering its continuation so values yielded after this call are
+    /// buffered and delivered to the first iterator.
+    ///
+    /// - Parameters:
+    ///   - key: The hub key to route yielded values through.
+    ///   - buffering: The buffering strategy (``EventStreamBuffering/event``
+    ///     buffers up to 256 oldest values; ``EventStreamBuffering/state``
+    ///     keeps only the newest).
+    ///   - onLast: Called once when the stream's last continuation terminates
+    ///     or ``finish(key:)`` is called for ``key``.
+    /// - Returns: An ``EventStream`` whose continuation is already registered.
     public func registerStream<Element: Sendable>(
         key: AnyHashable,
         buffering: EventStreamBuffering,
         onLast: @escaping @Sendable () -> Void
     ) -> EventStream<Element> {
         let id = UUID()
-        streamInfo[id] = StreamRegistration(key: key, buffering: buffering, onLast: onLast)
+        let policy: AsyncStream<Element>.Continuation.BufferingPolicy =
+            buffering == .event ? .bufferingOldest(256) : .bufferingNewest(1)
+        let (asyncStream, continuation) = AsyncStream<Element>.makeStream(bufferingPolicy: policy)
+        let erased = AnySendableContinuation(continuation)
+
         bufferingPolicy[key] = buffering
-        return EventStream<Element>(hub: self, streamId: id, buffering: buffering)
+        if lastCallbacks[key]?[id] == nil {
+            lastCallbacks[key, default: [:]][id] = onLast
+        }
+        registerContinuation(erased, id: id, key: key, buffering: buffering, onLast: onLast)
+
+        return EventStream<Element>(asyncStream: asyncStream, continuation: erased)
     }
 
     public func registerContinuation(
@@ -57,49 +71,6 @@ public actor EventHub {
         }
 
         continuations[key, default: [:]][id] = continuation
-    }
-
-    nonisolated func registerIteratorContinuation(
-        _ continuation: AnySendableContinuation,
-        streamId: UUID
-    ) {
-        _Concurrency.Task { [self] in
-            await _registerIteratorContinuation(
-                continuation: continuation,
-                streamId: streamId
-            )
-        }
-    }
-
-    func registerIteratorContinuationAndWait(
-        _ continuation: AnySendableContinuation,
-        streamId: UUID
-    ) {
-        _registerIteratorContinuation(
-            continuation: continuation,
-            streamId: streamId
-        )
-    }
-
-    private func _registerIteratorContinuation(
-        continuation: AnySendableContinuation,
-        streamId: UUID
-    ) {
-        guard let info = streamInfo[streamId] else { return }
-        let continuationId = UUID()
-        // Store onLast once per stream registration per key, so that when the
-        // key's last iterator terminates, every registration's onLast fires —
-        // not just the last-registered one.
-        if lastCallbacks[info.key]?[streamId] == nil {
-            lastCallbacks[info.key, default: [:]][streamId] = info.onLast
-        }
-        registerContinuation(
-            continuation,
-            id: continuationId,
-            key: info.key,
-            buffering: info.buffering,
-            onLast: info.onLast
-        )
     }
 
     public func yield<Element: Sendable>(value: Element, to key: AnyHashable) {
