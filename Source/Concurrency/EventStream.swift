@@ -40,68 +40,35 @@ public struct EventStream<Element: Sendable>: Sendable, AsyncSequence {
         }
     }
 
-    private let hub: EventHub
-    private let streamId: UUID
-    private let buffering: EventStreamBuffering
+    private let asyncStream: AsyncStream<Element>
+    private let continuation: AnySendableContinuation
 
     internal init(
-        hub: EventHub,
-        streamId: UUID,
-        buffering: EventStreamBuffering
+        asyncStream: AsyncStream<Element>,
+        continuation: AnySendableContinuation
     ) {
-        self.hub = hub
-        self.streamId = streamId
-        self.buffering = buffering
+        self.asyncStream = asyncStream
+        self.continuation = continuation
     }
 
-    /// Creates and returns an iterator, registering its continuation with the
-    /// ``EventHub`` asynchronously.
+    /// Creates and returns an iterator.
     ///
-    /// - Warning: The continuation is registered through a detached task (the
-    ///   ``EventHub`` is an actor, so a non-`async` caller can't reach its
-    ///   isolated state directly), so it is not yet visible to the hub when
-    ///   this method returns. For ``EventStreamBuffering/event`` streams,
-    ///   values yielded to the hub in the window between this method's return
-    ///   and the detached task's completion are dropped — the hub has no
-    ///   continuation to route them to. ``EventStreamBuffering/state`` streams
-    ///   replay the last value to a late-registering iterator and are not
-    ///   affected. This non-`async` signature is required by `AsyncSequence`
-    ///   conformance, which is why the race can't be closed without a breaking
-    ///   redesign (see #74). Callers that must not lose the first event should
-    ///   use ``makeAsyncIteratorAndWait()`` instead, which awaits registration
-    ///   before returning.
+    /// The continuation is registered with the ``EventHub`` eagerly when the
+    /// ``EventStream`` is created via
+    /// ``EventHub/registerStream(key:buffering:onLast:)``, so values yielded
+    /// after stream creation are buffered and delivered to the first iterator.
+    /// This method is synchronous (required by `AsyncSequence` conformance)
+    /// and safe — no registration race.
     public func makeAsyncIterator() -> Iterator {
-        let policy: AsyncStream<Element>.Continuation.BufferingPolicy =
-            buffering == .event ? .bufferingOldest(256) : .bufferingNewest(1)
-
-        let (asyncStream, continuation) = AsyncStream<Element>.makeStream(
-            bufferingPolicy: policy
-        )
-
-        let erased = AnySendableContinuation(continuation)
-
-        hub.registerIteratorContinuation(erased, streamId: streamId)
-
-        return Iterator(inner: asyncStream.makeAsyncIterator(), continuation: erased)
+        Iterator(inner: asyncStream.makeAsyncIterator(), continuation: continuation)
     }
 
-    /// Creates an iterator after its EventHub registration has completed.
+    /// Creates an iterator.
     ///
-    /// Use this method during a startup barrier when the first event must not
-    /// be published before the iterator is attached. This is the safe
-    /// alternative to ``makeAsyncIterator()`` (which `AsyncSequence`'s
-    /// `for await` syntax uses): it awaits the hub's registration before
-    /// returning, so no event yielded afterward can fall in the registration
-    /// race window. See ``makeAsyncIterator()``'s warning for the race.
+    /// Registration is now eager (see ``makeAsyncIterator()``), so this
+    /// method is equivalent and retained for source compatibility with
+    /// callers that previously needed the registration-safe path.
     public func makeAsyncIteratorAndWait() async -> Iterator {
-        let policy: AsyncStream<Element>.Continuation.BufferingPolicy =
-            buffering == .event ? .bufferingOldest(256) : .bufferingNewest(1)
-
-        let (asyncStream, continuation) = AsyncStream<Element>.makeStream(
-            bufferingPolicy: policy
-        )
-        let erased = AnySendableContinuation(continuation)
-        await hub.registerIteratorContinuationAndWait(erased, streamId: streamId)
-        return Iterator(inner: asyncStream.makeAsyncIterator(), continuation: erased)
+        makeAsyncIterator()
     }
 }

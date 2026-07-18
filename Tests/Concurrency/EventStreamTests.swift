@@ -73,28 +73,27 @@ struct EventStreamTests {
     }
 
     @Test
-    func testEventStreamNoReplay() async throws {
+    func testEventStreamBuffersEventsFromCreation() async throws {
         let hub = EventHub()
         let stream: EventStream<Int> = await hub.registerStream(
-            key: "no-replay",
+            key: "buffers-early",
             buffering: .event,
             onLast: {}
         )
 
-        await hub.yield(value: 42, to: "no-replay")
+        await hub.yield(value: 42, to: "buffers-early")
 
         var it = stream.makeAsyncIterator()
-        try? await _Concurrency.Task.sleep(for: .milliseconds(100))
 
-        await hub.yield(value: 99, to: "no-replay")
-        await hub.finish(key: "no-replay")
+        await hub.yield(value: 99, to: "buffers-early")
+        await hub.finish(key: "buffers-early")
 
         var values: [Int] = []
         while let v = await it.next() {
             values.append(v)
         }
 
-        #expect(values == [99], "Event stream should not replay previous values")
+        #expect(values == [42, 99], "Event stream should buffer values yielded after registration")
     }
 
     @Test
@@ -124,15 +123,19 @@ struct EventStreamTests {
     @Test
     func testTwoConcurrentIterators() async throws {
         let hub = EventHub()
-        let stream: EventStream<Int> = await hub.registerStream(
+        let stream1: EventStream<Int> = await hub.registerStream(
+            key: "concurrent",
+            buffering: .event,
+            onLast: {}
+        )
+        let stream2: EventStream<Int> = await hub.registerStream(
             key: "concurrent",
             buffering: .event,
             onLast: {}
         )
 
-        var it1 = stream.makeAsyncIterator()
-        var it2 = stream.makeAsyncIterator()
-        try? await _Concurrency.Task.sleep(for: .milliseconds(100))
+        var it1 = stream1.makeAsyncIterator()
+        var it2 = stream2.makeAsyncIterator()
 
         await hub.yield(value: 10, to: "concurrent")
         await hub.yield(value: 20, to: "concurrent")

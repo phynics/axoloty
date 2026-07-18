@@ -531,12 +531,10 @@ struct EventHubTransportTests {
         let fakeClient = FakeCommunicationClient(delegate: manager)
         manager.client = fakeClient
 
-        let stream: EventStream<RawMQTTMessage> = await manager.observeRawMQTTMessageStream()
-        // Raw messages aren't replayed, so each iterator must confirm its
-        // event hub registration is attached before we yield, rather than
-        // guessing how long that takes with a fixed sleep.
-        var iteratorOne = await stream.makeAsyncIteratorAndWait()
-        var iteratorTwo = await stream.makeAsyncIteratorAndWait()
+        let stream1: EventStream<RawMQTTMessage> = await manager.observeRawMQTTMessageStream()
+        let stream2: EventStream<RawMQTTMessage> = await manager.observeRawMQTTMessageStream()
+        var iteratorOne = stream1.makeAsyncIterator()
+        var iteratorTwo = stream2.makeAsyncIterator()
 
         await fakeClient.simulateRawMessage(topic: "external/topic", payload: [0xAB, 0xCD])
 
