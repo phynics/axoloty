@@ -73,9 +73,6 @@ public class CommunicationManager {
     /// Key: CoatyUUID string, Value: IoStateItem
     internal var observedIoStateItems: [String: IoStateItem] = [:]
 
-    /// Async IO value streams for own IO actors (mapped by IO actor ID).
-    internal var observedIoValueItems: [String: UUID] = [:]
-
     /// Own IO sources with associating route, actor ids, and updateRate (mapped
     /// by IO source ID).
     /// Key: CoatyUUID string, Value: IoSourceItem
@@ -740,9 +737,6 @@ public class CommunicationManager {
         self.ioActorItems.forEach { ioRoute, _ in
             self.unsubscribe(topic: ioRoute)
         }
-
-        // Ensure subscriptions on IO value item observables are unsubscribed automatically.
-        self.observedIoValueItems.removeAll()
     }
 
     private func dispatchIoState(ioPointId: CoatyUUID, item: IoStateItem, message: IoStateEvent) {
