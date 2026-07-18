@@ -1,0 +1,20 @@
+{
+  "name": "@axoloty/wire-tool",
+  "version": "0.0.0",
+  "private": true,
+  "description": "npx-runnable CLI for capturing CoatyJS wire-compatibility traffic and writing JSONL + manifests (replaces the Python wire-test harness).",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "axoloty-wire": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
