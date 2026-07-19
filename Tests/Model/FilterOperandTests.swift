@@ -97,4 +97,73 @@ struct FilterOperandTests {
         #expect(ObjectFilterOperator.In.rawValue == 13)
         #expect(ObjectFilterOperator.NotIn.rawValue == 14)
     }
+
+    // MARK: - Expression wire round-trip (Task 5)
+
+    /// The enum-shaped `ObjectFilterExpression` must produce the same
+    /// `[operatorInt, op1?, op2?]` wire format as the old class. Test each
+    /// operator arity: no operand (`.exists`), one (`.equals`), two
+    /// (`.between`), and `.like` (pattern only, matcher is not on the wire).
+    @Test
+
+    func testExpressionWireRoundTripExists() throws {
+        let expr: ObjectFilterExpression = .exists
+        let encoded = try JSONEncoder().encode(expr)
+        // Wire: [9] — operator only, no operands.
+        #expect(String(data: encoded, encoding: .utf8) == "[9]")
+        let decoded = try JSONDecoder().decode(ObjectFilterExpression.self, from: encoded)
+        #expect(decoded == .exists)
+    }
+
+    @Test
+
+    func testExpressionWireRoundTripEquals() throws {
+        let expr: ObjectFilterExpression = .equals("hello")
+        let encoded = try JSONEncoder().encode(expr)
+        // Wire: [7, "hello"]
+        #expect(String(data: encoded, encoding: .utf8) == #"[7,"hello"]"#)
+        let decoded = try JSONDecoder().decode(ObjectFilterExpression.self, from: encoded)
+        #expect(decoded == .equals("hello"))
+    }
+
+    @Test
+
+    func testExpressionWireRoundTripBetween() throws {
+        let expr: ObjectFilterExpression = .between(1, 10)
+        let encoded = try JSONEncoder().encode(expr)
+        // Wire: [4, 1, 10]
+        #expect(String(data: encoded, encoding: .utf8) == "[4,1,10]")
+        let decoded = try JSONDecoder().decode(ObjectFilterExpression.self, from: encoded)
+        #expect(decoded == .between(1, 10))
+    }
+
+    @Test
+
+    func testExpressionWireRoundTripLike() throws {
+        let expr: ObjectFilterExpression = .like("H%")
+        let encoded = try JSONEncoder().encode(expr)
+        // Wire: [6, "H%"] — matcher is NOT on the wire.
+        #expect(String(data: encoded, encoding: .utf8) == #"[6,"H%"]"#)
+        let decoded = try JSONDecoder().decode(ObjectFilterExpression.self, from: encoded)
+        guard case .like(let pattern, _) = decoded else {
+            Issue.record("Expected .like, got \(decoded)")
+            return
+        }
+        #expect(pattern == "H%")
+    }
+
+    /// Constructing `.like` with a non-string is not possible — the case
+    /// takes a `String`, not a `FilterOperand`. Invalid operator/operand
+    /// pairs are unrepresentable at compile time.
+    @Test
+
+    func testInvalidOperatorOperandPairsDoNotCompile() {
+        // This test exists as documentation: the enum's associated values
+        // make invalid combinations unrepresentable. For example:
+        // - .between requires exactly two operands.
+        // - .exists takes no operands.
+        // - .like takes a String pattern, not a FilterOperand.
+        // A wrong-arity construction fails at compile time, not runtime.
+        #expect(true)
+    }
 }

@@ -33,7 +33,7 @@ struct AxolotyCoreProducerTests {
         case "query-retrieve":
             let filter = ObjectFilter(condition: ObjectFilterCondition(
                 property: ObjectFilterProperty("name"),
-                expression: ObjectFilterExpression(filterOperator: .Equals, op1: "wire-fixture")
+                expression: .equals("wire-fixture")
             ))
             let queryEvent = QueryEvent.with(objectTypes: [fixture.objectType], objectFilter: filter)
             // #134: the CoatyJS consumer emits its "ready" signal on a fixed
@@ -64,7 +64,7 @@ struct AxolotyCoreProducerTests {
         case "query-retrieve-filter-negative":
             let filter = ObjectFilter(condition: ObjectFilterCondition(
                 property: ObjectFilterProperty("name"),
-                expression: ObjectFilterExpression(filterOperator: .Equals, op1: "no-match")
+                expression: .equals("no-match")
             ))
             let stream = await manager.communication.publishQuery(
                 QueryEvent.with(objectTypes: [fixture.objectType], objectFilter: filter)
@@ -80,7 +80,7 @@ struct AxolotyCoreProducerTests {
             for (label, operand) in operands {
                 let filter = ObjectFilter(condition: ObjectFilterCondition(
                     property: ObjectFilterProperty("name"),
-                    expression: ObjectFilterExpression(filterOperator: .Equals, op1: operand)
+                    expression: .equals(operand)
                 ))
                 let stream = await manager.communication.publishQuery(
                     QueryEvent.with(objectTypes: [fixture.objectType], objectFilter: filter)

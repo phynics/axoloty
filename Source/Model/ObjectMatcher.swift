@@ -214,112 +214,57 @@ public enum ObjectMatcher {
     ///     - condition: considered condition
     /// - Returns: true if object satisfies the condition; false otherwise
     internal static func _matchesCondition(obj: CoatyObject, condition: ObjectFilterCondition) -> Bool {
-        let props = condition.property
-        let op = condition.expression.filterOperator
-        let v1 = condition.expression.firstOperand
-        let v2 = condition.expression.secondOperand
-        let v = ObjectMatcher.getFilterPropertyValue(propNames: props, obj: obj)
+        let v = ObjectMatcher.getFilterPropertyValue(propNames: condition.property, obj: obj)
 
-        if op == .NotExists {
+        switch condition.expression {
+        case .notExists:
             return v == nil
-        }
-        if v == nil {
-            return false
-        }
-
-        switch op {
-        case .LessThan, .LessThanOrEqual, .GreaterThan, .GreaterThanOrEqual, .Equals, .NotEquals:
-            return ObjectMatcher._matchesComparison(op: op, v: v, v1: v1)
-        case .Between, .NotBetween:
-            return ObjectMatcher._matchesRange(op: op, v: v!, v1: v1, v2: v2)
-        case .Like:
-            return ObjectMatcher._matchesLike(v: v, v1: v1, condition: condition)
-        case .Exists:
-            return true
-        case .Contains, .NotContains, .In, .NotIn:
-            return ObjectMatcher._matchesContainment(op: op, v: v, v1: v1)
-        default:
-            return false
-        }
-    }
-
-    /// Evaluates the relational operators (`<`, `<=`, `>`, `>=`, `==`, `!=`)
-    /// that compare a property value against a single operand.
-    private static func _matchesComparison(op: ObjectFilterOperator, v: FilterOperand?, v1: FilterOperand?) -> Bool {
-        guard let value = v, let value1 = v1 else {
-            return false
-        }
-        switch op {
-        case .LessThan:
-            return value < value1
-        case .LessThanOrEqual:
-            return value <= value1
-        case .GreaterThan:
-            return value > value1
-        case .GreaterThanOrEqual:
-            return value >= value1
-        case .Equals:
-            return value == value1
-        case .NotEquals:
-            return value != value1
-        default:
-            return false
-        }
-    }
-
-    /// Evaluates the `Between`/`NotBetween` operators against the two bounding operands.
-    private static func _matchesRange(op: ObjectFilterOperator, v: FilterOperand, v1: FilterOperand?, v2: FilterOperand?) -> Bool {
-        guard let value1 = v1, let value2 = v2 else {
-            return false
-        }
-        let lower = value1 > value2 ? value2 : value1
-        let upper = value1 > value2 ? value1 : value2
-        let isWithinRange = v >= lower && v <= upper
-        return op == .Between ? isWithinRange : !isWithinRange
-    }
-
-    /// Evaluates the `Like` operator using the pre-compiled pattern stored
-    /// on the expression (compiled at decode or construction time).
-    ///
-    /// Task 4: the pattern is no longer compiled and cached in
-    /// `secondOperand` during matching — the mutation is gone, and a filter
-    /// re-encodes correctly after a `Like` match.
-    private static func _matchesLike(v: FilterOperand?, v1: FilterOperand?, condition: ObjectFilterCondition) -> Bool {
-        guard let value = v, case .string(let stringValue) = value,
-              case .string(let pattern) = v1 else {
-            return false
-        }
-
-        if let regex = condition.expression.compiledLikePattern {
+        case .exists:
+            return v != nil
+        case .lessThan(let v1):
+            guard let v else { return false }
+            return v < v1
+        case .lessThanOrEqual(let v1):
+            guard let v else { return false }
+            return v <= v1
+        case .greaterThan(let v1):
+            guard let v else { return false }
+            return v > v1
+        case .greaterThanOrEqual(let v1):
+            guard let v else { return false }
+            return v >= v1
+        case .equals(let v1):
+            guard let v else { return false }
+            return v == v1
+        case .notEquals(let v1):
+            guard let v else { return false }
+            return v != v1
+        case .between(let v1, let v2):
+            guard let v else { return false }
+            let lower = v1 > v2 ? v2 : v1
+            let upper = v1 > v2 ? v1 : v2
+            return v >= lower && v <= upper
+        case .notBetween(let v1, let v2):
+            guard let v else { return false }
+            let lower = v1 > v2 ? v2 : v1
+            let upper = v1 > v2 ? v1 : v2
+            return !(v >= lower && v <= upper)
+        case .like(_, let matcher):
+            guard let v, case .string(let stringValue) = v else { return false }
+            guard let regex = matcher else { return false }
             return regex._matches(stringValue)
-        }
-
-        // Fallback: compile on the fly if the pre-compiled pattern is missing
-        // (e.g. the expression was constructed without going through the init
-        // that compiles). This preserves correctness without re-introducing
-        // the mutation.
-        if let regex = ObjectMatcher._createLikeRegexp(pattern: pattern) {
-            return regex._matches(stringValue)
-        }
-        return false
-    }
-
-    /// Evaluates the `Contains`/`NotContains`/`In`/`NotIn` containment operators.
-    private static func _matchesContainment(op: ObjectFilterOperator, v: FilterOperand?, v1: FilterOperand?) -> Bool {
-        guard let value = v, let value1 = v1 else {
-            return false
-        }
-        switch op {
-        case .Contains:
-            return FilterOperand.deepContains(value, value1)
-        case .NotContains:
-            return !FilterOperand.deepContains(value, value1)
-        case .In:
-            return FilterOperand.deepIncludes(value1, value)
-        case .NotIn:
-            return !FilterOperand.deepIncludes(value1, value)
-        default:
-            return false
+        case .contains(let v1):
+            guard let v else { return false }
+            return FilterOperand.deepContains(v, v1)
+        case .notContains(let v1):
+            guard let v else { return false }
+            return !FilterOperand.deepContains(v, v1)
+        case .valuesIn(let values):
+            guard let v else { return false }
+            return FilterOperand.deepIncludes(.array(values), v)
+        case .valuesNotIn(let values):
+            guard let v else { return false }
+            return !FilterOperand.deepIncludes(.array(values), v)
         }
     }
     

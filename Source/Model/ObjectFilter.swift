@@ -467,317 +467,291 @@ public class ObjectFilterCondition: Codable {
     }
 }
 
-/// A filter expression consists of a filter operator and an operator-specific
-/// number of filter operands (at most two).
+/// A filter expression consisting of a filter operator and its operands.
 ///
-/// Tip: use one of the typesafe `FilterOperations` functions to specify a
-/// filter expression.
-public class ObjectFilterExpression: Codable {
-    
-    // MARK: - Attributes.
-    
-    /// The filter operator constant.
-    internal(set) public var filterOperator: ObjectFilterOperator
+/// Invalid operator/operand combinations are unrepresentable: each case
+/// carries exactly the operands its operator requires. For example, `.between`
+/// always has two operands, and `.exists` has none.
+///
+/// The wire format is the unkeyed `[operatorInt, op1?, op2?]` array
+/// preserved from the CoatyJS reference; ``ObjectFilterOperator``'s raw
+/// values are the wire contract.
+///
+/// Tip: use one of the typesafe `FilterOperations` functions to construct
+/// an expression.
+public enum ObjectFilterExpression: Codable, Equatable {
 
-    /// The first operand of the filter expression (optional).
-    internal(set) public var firstOperand: FilterOperand?
+    // MARK: - Cases.
 
-    /// The second operand of the filter expression (optional).
-    internal(set) public var secondOperand: FilterOperand?
+    /// Checks if the filter property is less than the given value.
+    case lessThan(FilterOperand)
 
-    /// A compiled `Like` pattern, built once at decode or construction time
-    /// so that matching does not mutate filter state. `nil` for non-`Like`
-    /// expressions or if the pattern could not be compiled.
-    internal var compiledLikePattern: NSRegularExpression?
-    
-    // MARK: - Initializers.
-    
-    /// Creates an instance of ObjectFilterExpression.
-    /// - Parameters:
-    ///     - filterOperator: The filter operator constant.
-    ///     - op1: The first operand of the filter expression (optional).
-    ///     - op2: The second operand of the filter expression (optional).
-    public init(filterOperator: ObjectFilterOperator, op1: FilterOperand? = nil, op2: FilterOperand? = nil) {
-        self.filterOperator = filterOperator
-        self.firstOperand = op1
-        self.secondOperand = op2
-        if filterOperator == .Like,
-           case .string(let pattern) = op1 {
-            self.compiledLikePattern = ObjectMatcher._createLikeRegexp(pattern: pattern)
+    /// Checks if the filter property is less than or equal to the given value.
+    case lessThanOrEqual(FilterOperand)
+
+    /// Checks if the filter property is greater than the given value.
+    case greaterThan(FilterOperand)
+
+    /// Checks if the filter property is greater than or equal to the given value.
+    case greaterThanOrEqual(FilterOperand)
+
+    /// Checks if the filter property is between the two given values.
+    case between(FilterOperand, FilterOperand)
+
+    /// Checks if the filter property is not between the two given values.
+    case notBetween(FilterOperand, FilterOperand)
+
+    /// Checks if the filter property string matches the given pattern.
+    ///
+    /// The `matcher` is compiled once at decode time and carries no
+    /// additional wire data; it is `nil` if the pattern could not be compiled.
+    case like(pattern: String, matcher: NSRegularExpression?)
+
+    /// Checks if the filter property is deep equal to the given value.
+    case equals(FilterOperand)
+
+    /// Checks if the filter property is not deep equal to the given value.
+    case notEquals(FilterOperand)
+
+    /// Checks if the filter property exists.
+    case exists
+
+    /// Checks if the filter property doesn't exist.
+    case notExists
+
+    /// Checks if the filter property value contains the given values.
+    case contains(FilterOperand)
+
+    /// Checks if the filter property value does not contain the given values.
+    case notContains(FilterOperand)
+
+    /// Checks if the filter property value is included in the given array.
+    case valuesIn([FilterOperand])
+
+    /// Checks if the filter property value is not included in the given array.
+    case valuesNotIn([FilterOperand])
+
+    // MARK: - Convenience factory for Like (compiles the pattern).
+
+    /// Creates a `.like` expression, compiling the pattern immediately.
+    public static func like(_ pattern: String) -> ObjectFilterExpression {
+        .like(pattern: pattern, matcher: ObjectMatcher._createLikeRegexp(pattern: pattern))
+    }
+
+    // MARK: - Equatable (matcher is ignored for .like — only the pattern matters).
+
+    public static func == (lhs: ObjectFilterExpression, rhs: ObjectFilterExpression) -> Bool {
+        switch (lhs, rhs) {
+        case (.lessThan(let l), .lessThan(let r)),
+             (.lessThanOrEqual(let l), .lessThanOrEqual(let r)),
+             (.greaterThan(let l), .greaterThan(let r)),
+             (.greaterThanOrEqual(let l), .greaterThanOrEqual(let r)),
+             (.equals(let l), .equals(let r)),
+             (.notEquals(let l), .notEquals(let r)),
+             (.contains(let l), .contains(let r)),
+             (.notContains(let l), .notContains(let r)):
+            return l == r
+        case (.between(let l1, let l2), .between(let r1, let r2)),
+             (.notBetween(let l1, let l2), .notBetween(let r1, let r2)):
+            return l1 == r1 && l2 == r2
+        case (.like(let l, _), .like(let r, _)):
+            return l == r
+        case (.valuesIn(let l), .valuesIn(let r)),
+             (.valuesNotIn(let l), .valuesNotIn(let r)):
+            return l == r
+        case (.exists, .exists), (.notExists, .notExists):
+            return true
+        default:
+            return false
         }
     }
-    
-    // MARK: - Codable methods.
-    
-    public func encode(to encoder: Encoder) throws {
-        // JSON encoding format is: [filterOperator, firstOperand?, secondOperand?]
-        var container = encoder.unkeyedContainer()
-        try container.encode(filterOperator.rawValue)
-        
-        // First operand is encoded as a single value.
-        if let firstOperand = self.firstOperand {
-            try container.encode(firstOperand)
-        }
 
-        // Second operand is encoded as a single value.
-        if let secondOperand = self.secondOperand, firstOperand != nil {
-            try container.encode(secondOperand)
-        }
-    }
-    
-    public required init(from decoder: Decoder) throws {
-        // JSON decoding format is: [filterOperator, firstOperand?, secondOperand?]
+    // MARK: - Codable (wire format: [operatorInt, op1?, op2?]).
+
+    public init(from decoder: Decoder) throws {
         var container = try decoder.unkeyedContainer()
-        let filterOperatorInt = try container.decode(Int.self)
-        guard let decodedFilterOperator = ObjectFilterOperator(rawValue: filterOperatorInt) else {
+        let opInt = try container.decode(Int.self)
+        guard let op = ObjectFilterOperator(rawValue: opInt) else {
             throw DecodingError.dataCorruptedError(
                 in: container,
-                debugDescription: "\(filterOperatorInt) is not a valid ObjectFilterOperator"
+                debugDescription: "\(opInt) is not a valid ObjectFilterOperator"
             )
         }
-        filterOperator = decodedFilterOperator
-        firstOperand = try container.decodeIfPresent(FilterOperand.self)
-        secondOperand = try container.decodeIfPresent(FilterOperand.self)
+        switch op {
+        case .LessThan:
+            self = .lessThan(try container.decode(FilterOperand.self))
+        case .LessThanOrEqual:
+            self = .lessThanOrEqual(try container.decode(FilterOperand.self))
+        case .GreaterThan:
+            self = .greaterThan(try container.decode(FilterOperand.self))
+        case .GreaterThanOrEqual:
+            self = .greaterThanOrEqual(try container.decode(FilterOperand.self))
+        case .Between:
+            self = .between(
+                try container.decode(FilterOperand.self),
+                try container.decode(FilterOperand.self)
+            )
+        case .NotBetween:
+            self = .notBetween(
+                try container.decode(FilterOperand.self),
+                try container.decode(FilterOperand.self)
+            )
+        case .Like:
+            let pattern = try container.decode(String.self)
+            self = .like(pattern: pattern, matcher: ObjectMatcher._createLikeRegexp(pattern: pattern))
+        case .Equals:
+            self = .equals(try container.decode(FilterOperand.self))
+        case .NotEquals:
+            self = .notEquals(try container.decode(FilterOperand.self))
+        case .Exists:
+            self = .exists
+        case .NotExists:
+            self = .notExists
+        case .Contains:
+            self = .contains(try container.decode(FilterOperand.self))
+        case .NotContains:
+            self = .notContains(try container.decode(FilterOperand.self))
+        case .In:
+            self = .valuesIn(try container.decode([FilterOperand].self))
+        case .NotIn:
+            self = .valuesNotIn(try container.decode([FilterOperand].self))
+        }
+    }
 
-        // Task 4: compile the Like pattern once at decode time so matching
-        // does not mutate filter state.
-        if filterOperator == .Like,
-           case .string(let pattern) = firstOperand {
-            compiledLikePattern = ObjectMatcher._createLikeRegexp(pattern: pattern)
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.unkeyedContainer()
+        switch self {
+        case .lessThan(let v):
+            try container.encode(ObjectFilterOperator.LessThan.rawValue)
+            try container.encode(v)
+        case .lessThanOrEqual(let v):
+            try container.encode(ObjectFilterOperator.LessThanOrEqual.rawValue)
+            try container.encode(v)
+        case .greaterThan(let v):
+            try container.encode(ObjectFilterOperator.GreaterThan.rawValue)
+            try container.encode(v)
+        case .greaterThanOrEqual(let v):
+            try container.encode(ObjectFilterOperator.GreaterThanOrEqual.rawValue)
+            try container.encode(v)
+        case .between(let v1, let v2):
+            try container.encode(ObjectFilterOperator.Between.rawValue)
+            try container.encode(v1)
+            try container.encode(v2)
+        case .notBetween(let v1, let v2):
+            try container.encode(ObjectFilterOperator.NotBetween.rawValue)
+            try container.encode(v1)
+            try container.encode(v2)
+        case .like(let pattern, _):
+            try container.encode(ObjectFilterOperator.Like.rawValue)
+            try container.encode(pattern)
+        case .equals(let v):
+            try container.encode(ObjectFilterOperator.Equals.rawValue)
+            try container.encode(v)
+        case .notEquals(let v):
+            try container.encode(ObjectFilterOperator.NotEquals.rawValue)
+            try container.encode(v)
+        case .exists:
+            try container.encode(ObjectFilterOperator.Exists.rawValue)
+        case .notExists:
+            try container.encode(ObjectFilterOperator.NotExists.rawValue)
+        case .contains(let v):
+            try container.encode(ObjectFilterOperator.Contains.rawValue)
+            try container.encode(v)
+        case .notContains(let v):
+            try container.encode(ObjectFilterOperator.NotContains.rawValue)
+            try container.encode(v)
+        case .valuesIn(let vs):
+            try container.encode(ObjectFilterOperator.In.rawValue)
+            try container.encode(vs)
+        case .valuesNotIn(let vs):
+            try container.encode(ObjectFilterOperator.NotIn.rawValue)
+            try container.encode(vs)
         }
     }
 }
 
-/// Defines filter operator functions that yield object filter expressions.
-public class FilterOperations {
-    
-    /// Checks if the filter property is less than the given value. Note: Do not
-    /// compare a number with a string, as the result is not defined.
-    public static func lessThan(value: Double) -> (ObjectFilterOperator, Double) {
-        return (ObjectFilterOperator.LessThan, value)
-    }
-    
-    /// Checks if the filter property is less than the given value. For string
-    /// comparison, a default lexical ordering is used. Note: Do not compare a
-    /// number with a string, as the result is not defined.
-    public static func lessThan(value: String) -> (ObjectFilterOperator, String) {
-        return (ObjectFilterOperator.LessThan, value)
-    }
-    
-    /// Checks if the filter property is less than or equal to the given value.
-    /// Note: Do not compare a number with a string, as the result is not
-    /// defined.
-    public static func lessThanOrEqual(value: Double) -> (ObjectFilterOperator, Double) {
-        return (ObjectFilterOperator.LessThanOrEqual, value)
-    }
-    
-    /// Checks if the filter property is less than or equal to the given value.
-    /// For string comparison, a default lexical ordering is used.
-    /// Note: Do not compare a number with a string, as the result is not defined.
-    public static func lessThanOrEqual(value: String) -> (ObjectFilterOperator, String) {
-        return (ObjectFilterOperator.LessThanOrEqual, value)
+/// Defines filter operator functions that yield ``ObjectFilterExpression``
+/// values.
+///
+/// Each function takes a ``FilterOperand`` (which is
+/// `ExpressibleBy*Literal`, so literals like `42`, `"abc"`, `[1, 2, 3]` are
+/// accepted directly) and returns the corresponding expression case.
+public enum FilterOperations {
+
+    /// Checks if the filter property is less than the given value.
+    public static func lessThan(_ value: FilterOperand) -> ObjectFilterExpression {
+        .lessThan(value)
     }
 
-    /// Checks if the filter property is greater than the given value. Note: Do
-    /// not compare a number with a string, as the result is not defined.   
-    public static func greaterThan(value: Double) -> (ObjectFilterOperator, Double) {
-        return (ObjectFilterOperator.GreaterThan, value)
-    }
-    
-    /// Checks if the filter property is greater than the given value. For
-    /// string comparison, a default lexical ordering is used. Note: Do not
-    /// compare a number with a string, as the result is not defined.
-    public static func greaterThan(value: String) -> (ObjectFilterOperator, String) {
-        return (ObjectFilterOperator.GreaterThan, value)
-    }
-    
-    /// Checks if the filter property is greater than or equal to the given
-    /// value. Note: Do not compare a number with a string, as the result is not
-    /// defined.
-    public static func greaterThanOrEqual(value: Double) -> (ObjectFilterOperator, Double) {
-        return (ObjectFilterOperator.LessThanOrEqual, value)
-    }
-    
-    /// Checks if the filter property is greater than or equal to the given
-    /// value. For string comparison, a default lexical ordering is used. Note:
-    /// Do not compare a number with a string, as the result is not defined.
-    public static func greaterThanOrEqual(value: String) -> (ObjectFilterOperator, String) {
-        return (ObjectFilterOperator.LessThanOrEqual, value)
-    }
-    
-    /// Checks if the filter property is between the given values, i.e. prop >=
-    /// value1 AND prop <= value2. If the first argument `value1` is not less
-    /// than or equal to the second argument `value2`, those two arguments are
-    /// automatically swapped. Do not compare a number with a string, as the
-    /// result is not defined.
-    public static func between(value1: Double, value2: Double) -> (ObjectFilterOperator, Double, Double) {
-        return (ObjectFilterOperator.LessThanOrEqual, value1, value2)
-    }
-    
-    /// Checks if the filter property is between the given values, i.e. prop >=
-    /// value1 AND prop <= value2. If the first argument `value1` is not less
-    /// than or equal to the second argument `value2`, those two arguments are
-    /// automatically swapped. For string comparison, a default lexical ordering
-    /// is used. Do not compare a number with a string, as the result is not
-    /// defined.
-    public static func between(value1: String, value2: String) -> (ObjectFilterOperator, String, String) {
-        return (ObjectFilterOperator.LessThanOrEqual, value1, value2)
-    }
-    
-    /// Checks if the filter property is not between the given values, i.e. prop
-    /// < value1 OR prop > value2. If the first argument `value1` is not less
-    /// than or equal to the second argument `value2`, those two arguments are
-    /// automatically swapped. Note: Do not compare a number with a string, as
-    /// the result is not defined.
-    public static func notBetween(value1: Double, value2: Double) -> (ObjectFilterOperator, Double, Double) {
-        return (ObjectFilterOperator.LessThanOrEqual, value1, value2)
-    }
-    
-    /// Checks if the filter property is not between the given values, i.e. prop
-    /// < value1 OR prop > value2. If the first argument `value1` is not less
-    /// than or equal to the second argument `value2`, those two arguments are
-    /// automatically swapped. For string comparison, a default lexical ordering
-    /// is used. Note: Do not compare a number with a string, as the result is
-    /// not defined.
-    public static func notBetween(value1: String, value2: String) -> (ObjectFilterOperator, String, String) {
-        return (ObjectFilterOperator.LessThanOrEqual, value1, value2)
+    /// Checks if the filter property is less than or equal to the given value.
+    public static func lessThanOrEqual(_ value: FilterOperand) -> ObjectFilterExpression {
+        .lessThanOrEqual(value)
     }
 
-    /// Checks if the filter property string matches the given pattern. If
-    /// pattern does not contain percent signs or underscores, then the pattern
-    /// only represents the string itself; in that case LIKE acts like the
-    /// equals operator (but less performant). An underscore (_) in pattern
-    /// stands for (matches) any single character; a percent sign (%) matches
-    /// any sequence of zero or more characters.
-    ///
-    /// LIKE pattern matching always covers the entire string. Therefore, if
-    /// it's desired to match a sequence anywhere within a string, the pattern
-    /// must start and end with a percent sign.
-    ///
-    /// To match a literal underscore or percent sign without matching other
-    /// characters, the respective character in pattern must be preceded by the
-    /// escape character. The default escape character is the backslash. To
-    /// match the escape character itself, write two escape characters.
-    ///
-    /// For example, the pattern string `%a_c\\d\_` matches `abc\d_` in `hello
-    /// abc\d_` and `acc\d_` in `acc\d_`, but nothing in `hello abc\d_world`.
-    /// Note that in programming languages like JavaScript, Java, or C#, where
-    /// the backslash character is used as escape character for certain special
-    /// characters you have to double backslashes in literal string constants.
-    /// Thus, for the example above the pattern string literal would look like
-    /// `"%a_c\\\\d\\_"`.
-    public static func like(pattern: String) -> (ObjectFilterOperator, String) {
-        return (ObjectFilterOperator.Like, pattern)
+    /// Checks if the filter property is greater than the given value.
+    public static func greaterThan(_ value: FilterOperand) -> ObjectFilterExpression {
+        .greaterThan(value)
     }
-    
+
+    /// Checks if the filter property is greater than or equal to the given value.
+    public static func greaterThanOrEqual(_ value: FilterOperand) -> ObjectFilterExpression {
+        .greaterThanOrEqual(value)
+    }
+
+    /// Checks if the filter property is between the two given values.
+    public static func between(_ value1: FilterOperand, _ value2: FilterOperand) -> ObjectFilterExpression {
+        .between(value1, value2)
+    }
+
+    /// Checks if the filter property is not between the two given values.
+    public static func notBetween(_ value1: FilterOperand, _ value2: FilterOperand) -> ObjectFilterExpression {
+        .notBetween(value1, value2)
+    }
+
+    /// Checks if the filter property string matches the given LIKE pattern.
+    public static func like(pattern: String) -> ObjectFilterExpression {
+        .like(pattern)
+    }
+
     /// Checks if the filter property exists.
-    public static func exists() -> (ObjectFilterOperator) {
-        return (ObjectFilterOperator.Exists)
-    }
-    
-    /// Checks if the filter property doesn't exist.
-    public static func notExists() -> (ObjectFilterOperator) {
-        return (ObjectFilterOperator.NotExists)
-    }
-    
-    /// Checks if the filter property is deep equal to the given value according
-    /// to a recursive equality algorithm.
-    public static func equals(value: AnyCodable) -> (ObjectFilterOperator, AnyCodable) {
-        return (ObjectFilterOperator.Equals, value)
-    }
-    
-    /// Checks if the filter property is not deep equal to the given value
-    /// according to a recursive equality algorithm.
-    public static func notEquals(value: AnyCodable) -> (ObjectFilterOperator, AnyCodable) {
-        return (ObjectFilterOperator.NotEquals, value)
-    }
-    
-    /// Checks if the filter property value (usually an object or array)
-    /// contains the given values. Primitive value types (number, string,
-    /// boolean, null) contain only the identical value. Object properties match
-    /// if all the key-value pairs of the specified object are contained in
-    /// them. Array properties match if all the specified array elements are
-    /// contained in them.
-    ///
-    /// The general principle is that the contained object must match the
-    /// containing object as to structure and data contents recursively on all
-    /// levels, possibly after discarding some non-matching array elements or
-    /// object key/value pairs from the containing object. But remember that the
-    /// order of array elements is not significant when doing a containment
-    /// match, and duplicate array elements are effectively considered only
-    /// once.
-    ///
-    /// As a special exception to the general principle that the structures must
-    /// match, an array on *toplevel* may contain a primitive value:
-    ///
-    /// ```
-    /// contains([1, 2, 3], [3]) => true
-    /// contains([1, 2, 3], 3) => true
-    /// ```
-    public static func contains(values: AnyCodable) -> (ObjectFilterOperator, AnyCodable) {
-        return (ObjectFilterOperator.Contains, values)
-    }
-    
-    /// Checks if the filter property value (usually an object or array) does
-    /// not contain the given values. Primitive value types (number, string,
-    /// boolean, null) contain only the identical value. Object properties match
-    /// if all the key-value pairs of the specified object are not contained in
-    /// them. Array properties match if all the specified array elements are not
-    /// contained in them.
-    ///
-    /// The general principle is that the contained object must match the
-    /// containing object as to structure and data contents recursively on all
-    /// levels, possibly after discarding some non-matching array elements or
-    /// object key/value pairs from the containing object. But remember that the
-    /// order of array elements is not significant when doing a containment
-    /// match, and duplicate array elements are effectively considered only
-    /// once.
-    ///
-    /// As a special exception to the general principle that the structures must
-    /// match, an array on *toplevel* may contain a primitive value
-    ///
-    /// ```
-    /// notContains([1, 2, 3], [4]) => true
-    /// notContains([1, 2, 3], 4) => true
-    /// ```
-    public static func notContains(values: AnyCodable) -> (ObjectFilterOperator, AnyCodable) {
-        return (ObjectFilterOperator.NotContains, values)
-    }
-    
-    /// Checks if the filter property value is included on toplevel in the given
-    /// operand array of values which may be primitive types (number, string,
-    /// boolean, null) or object types compared using the deep equality
-    /// operator.
-    ///
-    /// For example:
-    ///
-    /// ```
-    /// in(47, [1, 46, 47, "foo"]) => true
-    /// in(47, [1, 46, "47", "foo"]) => false
-    /// in({ "foo": 47 }, [1, 46, { "foo": 47 }, "foo"]) => true
-    /// in({ "foo": 47 }, [1, 46, { "foo": 47, "bar": 42 }, "foo"]) => false
-    /// ```
-    public static func valuesIn(values: [AnyCodable]) -> (ObjectFilterOperator, [AnyCodable]) {
-        return (ObjectFilterOperator.In, values)
+    public static func exists() -> ObjectFilterExpression {
+        .exists
     }
 
-    /// Checks if the filter property value is not included on toplevel in the
-    /// given operand array of values which may be primitive types (number,
-    /// string, boolean, null) or object types compared using the deep equality
-    /// operator.
-    ///
-    /// For example:
-    ///
-    /// ```
-    /// notIn(47, [1, 46, 47, "foo"]) => false
-    /// notIn(47, [1, 46, "47", "foo"]) => true
-    /// notIn({ "foo": 47 }, [1, 46, { "foo": 47 }, "foo"]) => false
-    /// notIn({ "foo": 47 }, [1, 46, { "foo": 47, "bar": 42 }, "foo"]) => true
-    /// ```
-    public static func valuesNotIn(values: [AnyCodable]) -> (ObjectFilterOperator, [AnyCodable]) {
-        return (ObjectFilterOperator.NotIn, values)
+    /// Checks if the filter property doesn't exist.
+    public static func notExists() -> ObjectFilterExpression {
+        .notExists
     }
-  
+
+    /// Checks if the filter property is deep equal to the given value.
+    public static func equals(_ value: FilterOperand) -> ObjectFilterExpression {
+        .equals(value)
+    }
+
+    /// Checks if the filter property is not deep equal to the given value.
+    public static func notEquals(_ value: FilterOperand) -> ObjectFilterExpression {
+        .notEquals(value)
+    }
+
+    /// Checks if the filter property value contains the given values.
+    public static func contains(_ value: FilterOperand) -> ObjectFilterExpression {
+        .contains(value)
+    }
+
+    /// Checks if the filter property value does not contain the given values.
+    public static func notContains(_ value: FilterOperand) -> ObjectFilterExpression {
+        .notContains(value)
+    }
+
+    /// Checks if the filter property value is included in the given array.
+    public static func valuesIn(_ values: [FilterOperand]) -> ObjectFilterExpression {
+        .valuesIn(values)
+    }
+
+    /// Checks if the filter property value is not included in the given array.
+    public static func valuesNotIn(_ values: [FilterOperand]) -> ObjectFilterExpression {
+        .valuesNotIn(values)
+    }
 }
 
 /// Defines filter operator constants for object filter conditions.

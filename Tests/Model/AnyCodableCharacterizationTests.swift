@@ -129,38 +129,41 @@ struct AnyCodableCharacterizationTests {
     // MARK: - Like operator operand mutation (Task 4: removed).
 
     /// Task 4 inverted this pin: a `Like` match no longer mutates the
-    /// filter's operands. The pattern is compiled once at decode time into
-    /// `ObjectFilterExpression.compiledLikePattern`, and the first operand
-    /// remains the original string pattern.
+    /// filter's operands. The pattern is carried in the `.like` enum case
+    /// alongside its compiled matcher, and matching does not rewrite it.
     @Test
 
-    func testLikeMatchPreservesSecondOperand() throws {
+    func testLikeMatchPreservesPattern() throws {
         let filter = Self.likeFilter()
 
         #expect(ObjectMatcher.matchesFilter(obj: try Self.helloObject(), filter: filter))
 
         let expression = try #require(filter.condition).expression
-        #expect(expression.firstOperand == .string("H%"))
-        // secondOperand was never set by the Like filter (only firstOperand
-        // carries the pattern). It remains nil.
-        #expect(expression.secondOperand == nil)
+        guard case .like(let pattern, _) = expression else {
+            Issue.record("Expected .like expression, got \(expression)")
+            return
+        }
+        #expect(pattern == "H%")
     }
 
     /// Task 4 inverted this pin: a filter can now be re-encoded after a
-    /// `Like` match because the compiled regex is stored separately from the
-    /// Codable operands, so re-encoding the expression no longer attempts to
-    /// serialize an `NSRegularExpression`.
+    /// `Like` match because the compiled regex is carried in the enum case
+    /// but excluded from Codable, so re-encoding round-trips the pattern.
     @Test
 
     func testFilterCanBeReEncodedAfterALikeMatch() throws {
         let filter = Self.likeFilter()
         _ = ObjectMatcher.matchesFilter(obj: try Self.helloObject(), filter: filter)
 
-        // Must not throw — the Like pattern is not stored in the Codable operands.
+        // Must not throw — the matcher is not part of the Codable wire shape.
         let encoded = try JSONEncoder().encode(filter)
         let decoded = try JSONDecoder().decode(ObjectFilter.self, from: encoded)
         let reExpression = try #require(decoded.condition).expression
-        #expect(reExpression.firstOperand == .string("H%"))
+        guard case .like(let pattern, _) = reExpression else {
+            Issue.record("Expected .like expression, got \(reExpression)")
+            return
+        }
+        #expect(pattern == "H%")
     }
 
     // MARK: - Fixtures.
@@ -176,7 +179,6 @@ struct AnyCodableCharacterizationTests {
         return ObjectFilter(
             condition: ObjectFilterCondition(
                 property: ObjectFilterProperty("name"),
-                expression: ObjectFilterExpression(filterOperator: .Like,
-                                                   op1: "H%")))
+                expression: .like("H%")))
     }
 }
