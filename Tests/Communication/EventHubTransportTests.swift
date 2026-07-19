@@ -650,7 +650,7 @@ private final class FakeCommunicationClient: CommunicationClient, @unchecked Sen
         )
     }
 
-    func emit<T: Sendable>(_ snapshot: T, to key: CommunicationEventHubKey) async {
+    func emit<E: Sendable>(_ snapshot: E, to key: EventKey<E>) async {
         await eventHub.yield(value: snapshot, to: key)
     }
 
