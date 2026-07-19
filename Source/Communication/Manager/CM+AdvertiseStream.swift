@@ -68,7 +68,7 @@ extension CommunicationManager {
 
     private func registerAdvertiseStream(
         topic: String,
-        key: CommunicationEventHubKey
+        key: EventKey<AdvertiseEventSnapshot>
     ) async -> EventStream<AdvertiseEventSnapshot> {
         let coordinator = subscriptionCoordinator!
         await coordinator.acquire(topic: topic)

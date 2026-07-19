@@ -8,13 +8,13 @@ public struct EventStream<Element: Sendable>: Sendable, AsyncSequence {
 
     public struct Iterator: AsyncIteratorProtocol {
         private var storage: Storage
-        private let continuation: AnySendableContinuation
-        private let lifecycle: StreamLifecycle
+        private let continuation: AsyncStream<Element>.Continuation
+        private let lifecycle: StreamLifecycle<Element>
 
         fileprivate init(
             inner: AsyncStream<Element>.AsyncIterator,
-            continuation: AnySendableContinuation,
-            lifecycle: StreamLifecycle
+            continuation: AsyncStream<Element>.Continuation,
+            lifecycle: StreamLifecycle<Element>
         ) {
             self.storage = Storage(inner)
             self.continuation = continuation
@@ -44,12 +44,12 @@ public struct EventStream<Element: Sendable>: Sendable, AsyncSequence {
     }
 
     private let asyncStream: AsyncStream<Element>
-    private let continuation: AnySendableContinuation
-    private let lifecycle: StreamLifecycle
+    private let continuation: AsyncStream<Element>.Continuation
+    private let lifecycle: StreamLifecycle<Element>
 
     internal init(
         asyncStream: AsyncStream<Element>,
-        continuation: AnySendableContinuation
+        continuation: AsyncStream<Element>.Continuation
     ) {
         self.asyncStream = asyncStream
         self.continuation = continuation
@@ -65,7 +65,11 @@ public struct EventStream<Element: Sendable>: Sendable, AsyncSequence {
     /// This method is synchronous (required by `AsyncSequence` conformance)
     /// and safe — no registration race.
     public func makeAsyncIterator() -> Iterator {
-        Iterator(inner: asyncStream.makeAsyncIterator(), continuation: continuation, lifecycle: lifecycle)
+        Iterator(
+            inner: asyncStream.makeAsyncIterator(),
+            continuation: continuation,
+            lifecycle: lifecycle
+        )
     }
 
     /// Creates an iterator.
@@ -78,10 +82,15 @@ public struct EventStream<Element: Sendable>: Sendable, AsyncSequence {
     }
 }
 
-private final class StreamLifecycle: Sendable {
-    private let continuation: AnySendableContinuation
+/// Owns the lifetime of an ``EventStream``'s underlying continuation.
+///
+/// When an ``EventStream`` is dropped without being iterated (or while
+/// iterators are still live), finishing the continuation here ensures the
+/// hub's `onLast` callback fires and MQTT subscription refcounting unwinds.
+private final class StreamLifecycle<Element: Sendable>: Sendable {
+    private let continuation: AsyncStream<Element>.Continuation
 
-    init(_ continuation: AnySendableContinuation) {
+    init(_ continuation: AsyncStream<Element>.Continuation) {
         self.continuation = continuation
     }
 

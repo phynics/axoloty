@@ -87,10 +87,10 @@ extension CommunicationManager {
         )
     }
 
-    private func registerSnapshotStream<Element: Sendable>(
-        key: CommunicationEventHubKey,
+    private func registerSnapshotStream<E: Sendable>(
+        key: EventKey<E>,
         onLast: @escaping @Sendable () -> Void
-    ) async -> EventStream<Element> {
+    ) async -> EventStream<E> {
         await client.eventHub.registerStream(
             key: key,
             buffering: .event,

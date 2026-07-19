@@ -37,18 +37,19 @@ struct ObservationLinuxTests {
     func testEventHubWithStateStreamOnLinux() async {
         // Verify EventHub state streams work correctly on Linux.
         let hub = EventHub()
+        let key = EventKey<Double>(scope: "test", name: "sensor-state")
         let stream: EventStream<Double> = await hub.registerStream(
-            key: "sensor-state",
+            key: key,
             buffering: .state,
             onLast: {}
         )
 
-        await hub.yield(value: 23.5, to: "sensor-state")
+        await hub.yield(value: 23.5, to: key)
 
         var it = stream.makeAsyncIterator()
         try? await _Concurrency.Task.sleep(for: .milliseconds(100))
 
-        await hub.finish(key: "sensor-state")
+        await hub.finish(key: key)
 
         var values: [Double] = []
         while let v = await it.next() {
@@ -62,8 +63,9 @@ struct ObservationLinuxTests {
     func testEventHubWithEventStreamOnLinux() async {
         // Verify EventHub event streams work correctly on Linux.
         let hub = EventHub()
+        let key = EventKey<String>(scope: "test", name: "event-test")
         let stream: EventStream<String> = await hub.registerStream(
-            key: "event-test",
+            key: key,
             buffering: .event,
             onLast: {}
         )
@@ -71,9 +73,9 @@ struct ObservationLinuxTests {
         var it = stream.makeAsyncIterator()
         try? await _Concurrency.Task.sleep(for: .milliseconds(100))
 
-        await hub.yield(value: "hello", to: "event-test")
-        await hub.yield(value: "world", to: "event-test")
-        await hub.finish(key: "event-test")
+        await hub.yield(value: "hello", to: key)
+        await hub.yield(value: "world", to: key)
+        await hub.finish(key: key)
 
         var values: [String] = []
         while let v = await it.next() {
