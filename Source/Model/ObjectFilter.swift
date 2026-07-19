@@ -480,10 +480,15 @@ public class ObjectFilterExpression: Codable {
     internal(set) public var filterOperator: ObjectFilterOperator
 
     /// The first operand of the filter expression (optional).
-    internal(set) public var firstOperand: AnyCodable?
+    internal(set) public var firstOperand: FilterOperand?
 
     /// The second operand of the filter expression (optional).
-    internal(set) public var secondOperand: AnyCodable?
+    internal(set) public var secondOperand: FilterOperand?
+
+    /// A compiled `Like` pattern, built once at decode or construction time
+    /// so that matching does not mutate filter state. `nil` for non-`Like`
+    /// expressions or if the pattern could not be compiled.
+    internal var compiledLikePattern: NSRegularExpression?
     
     // MARK: - Initializers.
     
@@ -492,10 +497,14 @@ public class ObjectFilterExpression: Codable {
     ///     - filterOperator: The filter operator constant.
     ///     - op1: The first operand of the filter expression (optional).
     ///     - op2: The second operand of the filter expression (optional).
-    public init(filterOperator: ObjectFilterOperator, op1: AnyCodable? = nil, op2: AnyCodable? = nil) {
+    public init(filterOperator: ObjectFilterOperator, op1: FilterOperand? = nil, op2: FilterOperand? = nil) {
         self.filterOperator = filterOperator
         self.firstOperand = op1
         self.secondOperand = op2
+        if filterOperator == .Like,
+           case .string(let pattern) = op1 {
+            self.compiledLikePattern = ObjectMatcher._createLikeRegexp(pattern: pattern)
+        }
     }
     
     // MARK: - Codable methods.
@@ -527,8 +536,15 @@ public class ObjectFilterExpression: Codable {
             )
         }
         filterOperator = decodedFilterOperator
-        firstOperand = try container.decodeIfPresent(AnyCodable.self)
-        secondOperand = try container.decodeIfPresent(AnyCodable.self)
+        firstOperand = try container.decodeIfPresent(FilterOperand.self)
+        secondOperand = try container.decodeIfPresent(FilterOperand.self)
+
+        // Task 4: compile the Like pattern once at decode time so matching
+        // does not mutate filter state.
+        if filterOperator == .Like,
+           case .string(let pattern) = firstOperand {
+            compiledLikePattern = ObjectMatcher._createLikeRegexp(pattern: pattern)
+        }
     }
 }
 

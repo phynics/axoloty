@@ -126,50 +126,41 @@ struct AnyCodableCharacterizationTests {
         #expect(!(AnyCodable("a") < AnyCodable(1)))
     }
 
-    // MARK: - Like operator operand mutation.
+    // MARK: - Like operator operand mutation (Task 4: removed).
 
-    /// A `Like` match rewrites the filter's second operand, caching a compiled
-    /// `NSRegularExpression` into it.
-    ///
-    /// `ObjectMatcher._matchesLike` does this to avoid recompiling the pattern,
-    /// under a source comment reading "NOTE: Ask if this kind of caching is
-    /// okay". It is a write to shared filter state performed during matching.
-    ///
-    /// - Important: This pins present, undesirable behavior. #110 Phase 2
-    ///   compiles the pattern at decode time and removes the mutation, at which
-    ///   point this test is expected to be inverted deliberately.
+    /// Task 4 inverted this pin: a `Like` match no longer mutates the
+    /// filter's operands. The pattern is compiled once at decode time into
+    /// `ObjectFilterExpression.compiledLikePattern`, and the first operand
+    /// remains the original string pattern.
     @Test
 
-    func testLikeMatchReplacesSecondOperandWithACompiledRegex() throws {
+    func testLikeMatchPreservesSecondOperand() throws {
         let filter = Self.likeFilter()
 
         #expect(ObjectMatcher.matchesFilter(obj: try Self.helloObject(), filter: filter))
 
         let expression = try #require(filter.condition).expression
-        #expect(expression.firstOperand?.value is String)
-        #expect(expression.secondOperand?.value is NSRegularExpression)
+        #expect(expression.firstOperand == .string("H%"))
+        // secondOperand was never set by the Like filter (only firstOperand
+        // carries the pattern). It remains nil.
+        #expect(expression.secondOperand == nil)
     }
 
-    /// Because the cached regex is not `Encodable`, a filter can no longer be
-    /// encoded once it has been used for a `Like` match.
-    ///
-    /// This is latent rather than active: the common receive-side flow decodes
-    /// a filter, matches it, and never re-encodes it. It is a landmine because
-    /// ``PayloadCoder/encode(_:)`` force-tries the encode, so a filter that is
-    /// matched and then published crashes rather than throwing.
-    ///
-    /// - Important: Pins present, undesirable behavior. #110 Phase 2 removes
-    ///   the mutation, after which encoding must succeed and this test is
-    ///   expected to be inverted deliberately.
+    /// Task 4 inverted this pin: a filter can now be re-encoded after a
+    /// `Like` match because the compiled regex is stored separately from the
+    /// Codable operands, so re-encoding the expression no longer attempts to
+    /// serialize an `NSRegularExpression`.
     @Test
 
-    func testFilterCannotBeReEncodedAfterALikeMatch() throws {
+    func testFilterCanBeReEncodedAfterALikeMatch() throws {
         let filter = Self.likeFilter()
-        #expect(throws: Never.self) { try JSONEncoder().encode(filter) }
-
         _ = ObjectMatcher.matchesFilter(obj: try Self.helloObject(), filter: filter)
 
-        #expect(throws: EncodingError.self) { try JSONEncoder().encode(filter) }
+        // Must not throw — the Like pattern is not stored in the Codable operands.
+        let encoded = try JSONEncoder().encode(filter)
+        let decoded = try JSONDecoder().decode(ObjectFilter.self, from: encoded)
+        let reExpression = try #require(decoded.condition).expression
+        #expect(reExpression.firstOperand == .string("H%"))
     }
 
     // MARK: - Fixtures.
@@ -186,6 +177,6 @@ struct AnyCodableCharacterizationTests {
             condition: ObjectFilterCondition(
                 property: ObjectFilterProperty("name"),
                 expression: ObjectFilterExpression(filterOperator: .Like,
-                                                   op1: AnyCodable("H%"))))
+                                                   op1: "H%")))
     }
 }

@@ -36,7 +36,7 @@ public enum ObjectMatcher {
         // logically 'and' it with the conditions.and
         if let singleCondition = filter?.condition, let multipleConditionsAnd = filter?.conditions?.and {
             let singleConditionResult = ObjectMatcher._matchesCondition(obj: obj!,
-                                                                        condition: singleCondition)
+                                                                         condition: singleCondition)
 
             let multipleConditionsAndResult = multipleConditionsAnd.allSatisfy { cond -> Bool in
                 return ObjectMatcher._matchesCondition(obj: obj!,
@@ -50,7 +50,7 @@ public enum ObjectMatcher {
         // logically 'and' it with the conditions
         if let singleCondition = filter?.condition, let multipleConditionsOr = filter?.conditions?.or {
             let singleConditionResult = ObjectMatcher._matchesCondition(obj: obj!,
-                                                                        condition: singleCondition)
+                                                                         condition: singleCondition)
 
             let multipleConditionsOrResult = multipleConditionsOr.contains { cond -> Bool in
                 return ObjectMatcher._matchesCondition(obj: obj!,
@@ -108,8 +108,8 @@ public enum ObjectMatcher {
     /// - Parameters:
     ///     - propNames: property names as string in dot notation or as array of property names
     ///     - obj: a Coaty object
-    /// - Returns: the value of the nested properties of the given object as AnyCodable (nil if no such property has been found or any other error has occured)
-    internal static func getFilterPropertyValue(propNames: ObjectFilterProperty, obj: CoatyObject) -> AnyCodable? {
+    /// - Returns: the value of the nested properties of the given object as FilterOperand (nil if no such property has been found or any other error has occured)
+    internal static func getFilterPropertyValue(propNames: ObjectFilterProperty, obj: CoatyObject) -> FilterOperand? {
         let propNamesAsArray = ObjectMatcher.getFilterProperties(propNames: propNames)
         
         return ObjectMatcher._getFilterPropertyValue(propNames: propNamesAsArray,
@@ -125,7 +125,7 @@ public enum ObjectMatcher {
     ///     - propNames property names as an array of property names (already in a correct format)
     ///     - obj: a Coaty object
     /// - Returns: the value of the nested properties of the given object
-    internal static func _getFilterPropertyValue(propNames: [String], obj: Any) -> AnyCodable? {
+    internal static func _getFilterPropertyValue(propNames: [String], obj: Any) -> FilterOperand? {
         var nextPropNames = propNames
         if nextPropNames.isEmpty {
             return nil
@@ -142,7 +142,7 @@ public enum ObjectMatcher {
         if let (_, value) = currentLevelProperty {
             // We have reached the end of the property names.
             if nextPropNames.count == 0 {
-                return AnyCodable._getAnyAsAnyCodable(value)
+                return FilterOperand.from(value)
             } else {
                 return ObjectMatcher._getFilterPropertyValue(propNames: nextPropNames, obj: value)
             }
@@ -245,7 +245,7 @@ public enum ObjectMatcher {
 
     /// Evaluates the relational operators (`<`, `<=`, `>`, `>=`, `==`, `!=`)
     /// that compare a property value against a single operand.
-    private static func _matchesComparison(op: ObjectFilterOperator, v: AnyCodable?, v1: AnyCodable?) -> Bool {
+    private static func _matchesComparison(op: ObjectFilterOperator, v: FilterOperand?, v1: FilterOperand?) -> Bool {
         guard let value = v, let value1 = v1 else {
             return false
         }
@@ -268,7 +268,7 @@ public enum ObjectMatcher {
     }
 
     /// Evaluates the `Between`/`NotBetween` operators against the two bounding operands.
-    private static func _matchesRange(op: ObjectFilterOperator, v: AnyCodable, v1: AnyCodable?, v2: AnyCodable?) -> Bool {
+    private static func _matchesRange(op: ObjectFilterOperator, v: FilterOperand, v1: FilterOperand?, v2: FilterOperand?) -> Bool {
         guard let value1 = v1, let value2 = v2 else {
             return false
         }
@@ -278,42 +278,46 @@ public enum ObjectMatcher {
         return op == .Between ? isWithinRange : !isWithinRange
     }
 
-    /// Evaluates the `Like` operator, caching the compiled regular expression
-    /// on the condition's second operand to speed up repeated matching.
-    private static func _matchesLike(v: AnyCodable?, v1: AnyCodable?, condition: ObjectFilterCondition) -> Bool {
-        guard let value = v?.value as? String, let value1 = v1?.value as? String else {
+    /// Evaluates the `Like` operator using the pre-compiled pattern stored
+    /// on the expression (compiled at decode or construction time).
+    ///
+    /// Task 4: the pattern is no longer compiled and cached in
+    /// `secondOperand` during matching — the mutation is gone, and a filter
+    /// re-encodes correctly after a `Like` match.
+    private static func _matchesLike(v: FilterOperand?, v1: FilterOperand?, condition: ObjectFilterCondition) -> Bool {
+        guard let value = v, case .string(let stringValue) = value,
+              case .string(let pattern) = v1 else {
             return false
         }
 
-        // NOTE: Ask if this kind of caching is okay
-        // To speed up regexp matching, generate regexp once and
-        // cache it as extra property on object filter op2 property.
-        if let cachedRegex = condition.expression.secondOperand?.value as? NSRegularExpression {
-            return cachedRegex._matches(value)
-        } else {
-            if let likeRegex = ObjectMatcher._createLikeRegexp(pattern: value1) {
-                condition.expression.secondOperand = AnyCodable(likeRegex)
-                return likeRegex._matches(value)
-            } else {
-                return false
-            }
+        if let regex = condition.expression.compiledLikePattern {
+            return regex._matches(stringValue)
         }
+
+        // Fallback: compile on the fly if the pre-compiled pattern is missing
+        // (e.g. the expression was constructed without going through the init
+        // that compiles). This preserves correctness without re-introducing
+        // the mutation.
+        if let regex = ObjectMatcher._createLikeRegexp(pattern: pattern) {
+            return regex._matches(stringValue)
+        }
+        return false
     }
 
     /// Evaluates the `Contains`/`NotContains`/`In`/`NotIn` containment operators.
-    private static func _matchesContainment(op: ObjectFilterOperator, v: AnyCodable?, v1: AnyCodable?) -> Bool {
+    private static func _matchesContainment(op: ObjectFilterOperator, v: FilterOperand?, v1: FilterOperand?) -> Bool {
         guard let value = v, let value1 = v1 else {
             return false
         }
         switch op {
         case .Contains:
-            return AnyCodable.deepContains(value, value1)
+            return FilterOperand.deepContains(value, value1)
         case .NotContains:
-            return !AnyCodable.deepContains(value, value1)
+            return !FilterOperand.deepContains(value, value1)
         case .In:
-            return AnyCodable.deepIncludes(value1, value)
+            return FilterOperand.deepIncludes(value1, value)
         case .NotIn:
-            return !AnyCodable.deepIncludes(value1, value)
+            return !FilterOperand.deepIncludes(value1, value)
         default:
             return false
         }
