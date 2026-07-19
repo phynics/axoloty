@@ -94,3 +94,187 @@ extension FilterOperand: Codable {
         }
     }
 }
+
+// MARK: - Comparable
+
+extension FilterOperand: Comparable {
+
+    /// Ordering mirrors the pinned `AnyCodable` behavior: same-type
+    /// comparisons use the native operator (strings use
+    /// `localizedCompare`), cross-type pairs return `false`.
+    public static func < (lhs: FilterOperand, rhs: FilterOperand) -> Bool {
+        switch (lhs, rhs) {
+        case let (.int(l), .int(r)):
+            return l < r
+        case let (.double(l), .double(r)):
+            return l < r
+        case let (.bool(l), .bool(r)):
+            return l == false && r == true
+        case let (.string(l), .string(r)):
+            return l.localizedCompare(r) == .orderedAscending
+        default:
+            return false
+        }
+    }
+}
+
+// MARK: - ExpressibleByLiteral (test ergonomics)
+
+extension FilterOperand: ExpressibleByNilLiteral {
+    public init(nilLiteral: ()) { self = .null }
+}
+
+extension FilterOperand: ExpressibleByBooleanLiteral {
+    public init(booleanLiteral value: Bool) { self = .bool(value) }
+}
+
+extension FilterOperand: ExpressibleByIntegerLiteral {
+    public init(integerLiteral value: Int) { self = .int(value) }
+}
+
+extension FilterOperand: ExpressibleByFloatLiteral {
+    public init(floatLiteral value: Double) { self = .double(value) }
+}
+
+extension FilterOperand: ExpressibleByStringLiteral {
+    public init(stringLiteral value: String) { self = .string(value) }
+}
+
+extension FilterOperand: ExpressibleByArrayLiteral {
+    public init(arrayLiteral elements: FilterOperand...) { self = .array(elements) }
+}
+
+// MARK: - CoatyObject bridge
+
+extension FilterOperand {
+
+    /// Creates a string operand from a ``CoatyUUID``, normalizing to the
+    /// lowercase string form — matching how ``AnyCodable`` stores UUIDs and
+    /// how CoatyJS represents them on the wire (JSON has no UUID type).
+    public init(_ uuid: CoatyUUID) {
+        self = .string(uuid.string)
+    }
+
+    /// Creates a string operand from a non-literal `String` value.
+    public init(_ string: String) {
+        self = .string(string)
+    }
+
+    /// Converts a ``CoatyObject`` to a ``FilterOperand.object`` by reflecting
+    /// its properties.
+    ///
+    /// A ``CoatyUUID`` is stored as its lowercase string, matching the
+    /// normalization ``AnyCodable`` performs: a UUID property and a
+    /// wire-decoded string operand compare equal. Optional properties that
+    /// are `nil` are omitted (treated as absent), preserving the
+    /// `.NotExists` semantics pinned in Phase 1.
+    public init(_ coatyObject: CoatyObject) {
+        let mirror = Mirror(reflecting: coatyObject)
+        var dict: [String: FilterOperand] = [:]
+        for child in mirror.children {
+            guard let label = child.label else { continue }
+            if let value = FilterOperand.from(child.value) {
+                dict[label] = value
+            }
+        }
+        if let superMirror = mirror.superclassMirror {
+            for child in superMirror.children {
+                guard let label = child.label else { continue }
+                if dict[label] == nil, let value = FilterOperand.from(child.value) {
+                    dict[label] = value
+                }
+            }
+        }
+        self = .object(dict)
+    }
+}
+
+extension FilterOperand {
+
+    /// Converts a reflected `Any` value to a `FilterOperand`, returning
+    /// `nil` for values that cannot be represented (including
+    /// `Optional.none`, which is treated as absent to preserve
+    /// `.NotExists` semantics).
+    internal static func from(_ value: Any) -> FilterOperand? {
+        // Mirror reflects optionals with displayStyle .optional; unwrap
+        // .some and return nil for .none.
+        let mirror = Mirror(reflecting: value)
+        if mirror.displayStyle == .optional {
+            guard let unwrapped = mirror.children.first?.value else { return nil }
+            return FilterOperand.from(unwrapped)
+        }
+        if let v = value as? Bool { return .bool(v) }
+        if let v = value as? Int { return .int(v) }
+        if let v = value as? Double { return .double(v) }
+        if let v = value as? String { return .string(v) }
+        if let v = value as? CoatyUUID { return .string(v.string) }
+        if let v = value as? CoatyObject { return FilterOperand(v) }
+        if let v = value as? [Any] {
+            return .array(v.compactMap { FilterOperand.from($0) })
+        }
+        if let v = value as? [String: Any] {
+            var dict: [String: FilterOperand] = [:]
+            for (key, val) in v {
+                if let converted = FilterOperand.from(val) {
+                    dict[key] = converted
+                }
+            }
+            return .object(dict)
+        }
+        return nil
+    }
+}
+
+// MARK: - Containment operations
+
+extension FilterOperand {
+
+    /// Checks if a value (usually an object or array) contains another value.
+    ///
+    /// Primitive value types contain only the identical value. Object
+    /// properties match if all the key-value pairs of the contained object
+    /// are present in the containing object. Array properties match if all
+    /// specified array elements are contained in them.
+    ///
+    /// As a special exception, an array at the top level may contain a
+    /// primitive value: `contains([1, 2, 3], 3)` returns `true`.
+    internal static func deepContains(_ a: FilterOperand, _ b: FilterOperand) -> Bool {
+        FilterOperand._deepContains(a, b, isTopLevel: true)
+    }
+
+    /// Checks if a value is included at the top level in the given array,
+    /// compared using equality.
+    internal static func deepIncludes(_ array: FilterOperand, _ value: FilterOperand) -> Bool {
+        guard case .array(let elements) = array else { return false }
+        return elements.contains { $0 == value }
+    }
+
+    private static func _deepContains(
+        _ x: FilterOperand,
+        _ y: FilterOperand,
+        isTopLevel: Bool
+    ) -> Bool {
+        switch (x, y) {
+        case (.array(let xValues), .array(let yValues)):
+            return yValues.allSatisfy { yv in
+                xValues.contains { xv in
+                    FilterOperand._deepContains(xv, yv, isTopLevel: false)
+                }
+            }
+        case (.array(let xValues), _):
+            // Special exception: a primitive on the top level is contained
+            // if it matches any element.
+            if isTopLevel {
+                return xValues.contains { $0 == y }
+            }
+            return false
+        case (.object(let xDict), .object(let yDict)):
+            return xDict.keys.allSatisfy { xk in
+                guard let yv = yDict[xk] else { return false }
+                return FilterOperand._deepContains(xDict[xk]!, yv, isTopLevel: false)
+            }
+        default:
+            return x == y
+        }
+    }
+}

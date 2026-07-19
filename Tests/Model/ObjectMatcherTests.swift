@@ -135,7 +135,7 @@ struct ObjectMatcherTests {
 
             // MARK: - Test: .Equals and .NotEquals for objects.
             ObjectFilterCondition(property: ObjectFilterProperty("object.object"),
-                                  expression: ObjectFilterExpression(filterOperator: .Equals, op1: AnyCodable(Log(logLevel: .info,
+                                  expression: ObjectFilterExpression(filterOperator: .Equals, op1: FilterOperand(Log(logLevel: .info,
                                                                                                                   logMessage: "ABC",
                                                                                                                   logDate: "22.01.2001",
                                                                                                                   name: "AbCC",
@@ -145,7 +145,7 @@ struct ObjectMatcherTests {
                                                                                                                   logLabels: logLabels,
                                                                                                                   logHost: nil)))),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object"),
-                                  expression: ObjectFilterExpression(filterOperator: .NotEquals, op1: AnyCodable(Log(logLevel: .info,
+                                  expression: ObjectFilterExpression(filterOperator: .NotEquals, op1: FilterOperand(Log(logLevel: .info,
                                                                                                                      logMessage: "...",
                                                                                                                      logDate: "...",
                                                                                                                      name: "...",
@@ -265,7 +265,7 @@ struct ObjectMatcherTests {
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.array2"),
                                   expression: ObjectFilterExpression(filterOperator: .Contains, op1: [3, [3, 2]])),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.complexLog"),
-                                  expression: ObjectFilterExpression(filterOperator: .Contains, op1: AnyCodable(simpleLog))),
+                                  expression: ObjectFilterExpression(filterOperator: .Contains, op1: FilterOperand(simpleLog))),
 
             // MARK: - Test: .NotContains
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.array"),
@@ -277,7 +277,7 @@ struct ObjectMatcherTests {
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.array2"),
                                   expression: ObjectFilterExpression(filterOperator: .NotContains, op1: [3, [3, 1]])),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.complexLog"),
-                                  expression: ObjectFilterExpression(filterOperator: .NotContains, op1: AnyCodable(simpleLog2))),
+                                  expression: ObjectFilterExpression(filterOperator: .NotContains, op1: FilterOperand(simpleLog2))),
 
             // MARK: - Test: .In
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.number"),
@@ -288,7 +288,7 @@ struct ObjectMatcherTests {
                                   expression: ObjectFilterExpression(filterOperator: .In, op1: [43, true, "Abc"])),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object"),
                                   expression: ObjectFilterExpression(filterOperator: .In, op1: [
-                                    Log(logLevel: .info,
+                                    FilterOperand(Log(logLevel: .info,
                                         logMessage: "ABC",
                                         logDate: "22.01.2001",
                                         name: "AbCC",
@@ -297,10 +297,10 @@ struct ObjectMatcherTests {
                                         objectId: thirdObject.objectId,
                                         logTags: ["Tag1", "Tag2"],
                                         logLabels: logLabels,
-                                        logHost: nil),
-                                    Log(logLevel: .info,
+                                        logHost: nil)),
+                                    FilterOperand(Log(logLevel: .info,
                                         logMessage: "Dummy",
-                                        logDate: "2.2.2020")
+                                        logDate: "2.2.2020"))
                                   ])),
 
             // MARK: - Test: .NotIn
@@ -312,7 +312,7 @@ struct ObjectMatcherTests {
                                   expression: ObjectFilterExpression(filterOperator: .NotIn, op1: [43, false, "Abc"])),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object"),
                                   expression: ObjectFilterExpression(filterOperator: .NotIn, op1: [
-                                    Log(logLevel: .info,
+                                    FilterOperand(Log(logLevel: .info,
                                         logMessage: "ABC",
                                         logDate: "22.01.2001",
                                         // Only name property is not the same as in object.object
@@ -322,10 +322,10 @@ struct ObjectMatcherTests {
                                         objectId: thirdObject.objectId,
                                         logTags: ["Tag1", "Tag2"],
                                         logLabels: logLabels,
-                                        logHost: nil),
-                                    Log(logLevel: .info,
+                                        logHost: nil)),
+                                    FilterOperand(Log(logLevel: .info,
                                         logMessage: "Dummy",
-                                        logDate: "2.2.2020")
+                                        logDate: "2.2.2020"))
                                   ])),
 
         ]
@@ -445,7 +445,7 @@ struct ObjectMatcherTests {
 
             // MARK: - Test: .Equals and .NotEquals for objects.
             ObjectFilterCondition(property: ObjectFilterProperty("object.object"),
-                                  expression: ObjectFilterExpression(filterOperator: .Equals, op1: AnyCodable(Log(logLevel: .info,
+                                  expression: ObjectFilterExpression(filterOperator: .Equals, op1: FilterOperand(Log(logLevel: .info,
                                                                                                                   logMessage: "ABC",
                                                                                                                   logDate: "22.01.2001",
                                                                                                                   name: "AbCC",
@@ -455,7 +455,7 @@ struct ObjectMatcherTests {
                                                                                                                   logLabels: logLabels,
                                                                                                                   logHost: nil)))),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object"),
-                                  expression: ObjectFilterExpression(filterOperator: .NotEquals, op1: AnyCodable(Log(logLevel: .info,
+                                  expression: ObjectFilterExpression(filterOperator: .NotEquals, op1: FilterOperand(Log(logLevel: .info,
                                                                                                                      logMessage: "...",
                                                                                                                      logDate: "...",
                                                                                                                      name: "...",
@@ -575,7 +575,7 @@ struct ObjectMatcherTests {
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.array2"),
                                   expression: ObjectFilterExpression(filterOperator: .Contains, op1: [3, [3, 2]])),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.complexLog"),
-                                  expression: ObjectFilterExpression(filterOperator: .Contains, op1: AnyCodable(simpleLog))),
+                                  expression: ObjectFilterExpression(filterOperator: .Contains, op1: FilterOperand(simpleLog))),
 
             // MARK: - Test: .NotContains
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.array"),
@@ -587,7 +587,7 @@ struct ObjectMatcherTests {
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.array2"),
                                   expression: ObjectFilterExpression(filterOperator: .NotContains, op1: [3, [3, 1]])),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.complexLog"),
-                                  expression: ObjectFilterExpression(filterOperator: .NotContains, op1: AnyCodable(simpleLog2))),
+                                  expression: ObjectFilterExpression(filterOperator: .NotContains, op1: FilterOperand(simpleLog2))),
 
             // MARK: - Test: .In
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.number"),
@@ -598,7 +598,7 @@ struct ObjectMatcherTests {
                                   expression: ObjectFilterExpression(filterOperator: .In, op1: [43, true, "Abc"])),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object"),
                                   expression: ObjectFilterExpression(filterOperator: .In, op1: [
-                                    Log(logLevel: .info,
+                                    FilterOperand(Log(logLevel: .info,
                                         logMessage: "ABC",
                                         logDate: "22.01.2001",
                                         name: "AbCC",
@@ -607,10 +607,10 @@ struct ObjectMatcherTests {
                                         objectId: thirdObject.objectId,
                                         logTags: ["Tag1", "Tag2"],
                                         logLabels: logLabels,
-                                        logHost: nil),
-                                    Log(logLevel: .info,
+                                        logHost: nil)),
+                                    FilterOperand(Log(logLevel: .info,
                                         logMessage: "Dummy",
-                                        logDate: "2.2.2020")
+                                        logDate: "2.2.2020"))
                                   ])),
 
             // MARK: - Test: .NotIn
@@ -622,7 +622,7 @@ struct ObjectMatcherTests {
                                   expression: ObjectFilterExpression(filterOperator: .NotIn, op1: [43, false, "Abc"])),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object"),
                                   expression: ObjectFilterExpression(filterOperator: .NotIn, op1: [
-                                    Log(logLevel: .info,
+                                    FilterOperand(Log(logLevel: .info,
                                         logMessage: "ABC",
                                         logDate: "22.01.2001",
                                         // Only name property is not the same as in object.object
@@ -632,10 +632,10 @@ struct ObjectMatcherTests {
                                         objectId: thirdObject.objectId,
                                         logTags: ["Tag1", "Tag2"],
                                         logLabels: logLabels,
-                                        logHost: nil),
-                                    Log(logLevel: .info,
+                                        logHost: nil)),
+                                    FilterOperand(Log(logLevel: .info,
                                         logMessage: "Dummy",
-                                        logDate: "2.2.2020")
+                                        logDate: "2.2.2020"))
                                   ])),
 
         ]
@@ -760,7 +760,7 @@ struct ObjectMatcherTests {
 
             // MARK: - Test: .Equals and .NotEquals for objects.
             ObjectFilterCondition(property: ObjectFilterProperty("object.object"),
-                                  expression: ObjectFilterExpression(filterOperator: .Equals, op1: AnyCodable(Log(logLevel: .info,
+                                  expression: ObjectFilterExpression(filterOperator: .Equals, op1: FilterOperand(Log(logLevel: .info,
                                                                                                                   logMessage: "ABC",
                                                                                                                   logDate: "22.01.2001",
                                                                                                                   name: "AbCC",
@@ -770,7 +770,7 @@ struct ObjectMatcherTests {
                                                                                                                   logLabels: logLabels,
                                                                                                                   logHost: nil)))),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object"),
-                                  expression: ObjectFilterExpression(filterOperator: .NotEquals, op1: AnyCodable(Log(logLevel: .info,
+                                  expression: ObjectFilterExpression(filterOperator: .NotEquals, op1: FilterOperand(Log(logLevel: .info,
                                                                                                                      logMessage: "...",
                                                                                                                      logDate: "...",
                                                                                                                      name: "...",
@@ -890,7 +890,7 @@ struct ObjectMatcherTests {
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.array2"),
                                   expression: ObjectFilterExpression(filterOperator: .Contains, op1: [3, [3, 2]])),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.complexLog"),
-                                  expression: ObjectFilterExpression(filterOperator: .Contains, op1: AnyCodable(simpleLog))),
+                                  expression: ObjectFilterExpression(filterOperator: .Contains, op1: FilterOperand(simpleLog))),
 
             // MARK: - Test: .NotContains
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.array"),
@@ -902,7 +902,7 @@ struct ObjectMatcherTests {
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.array2"),
                                   expression: ObjectFilterExpression(filterOperator: .NotContains, op1: [3, [3, 1]])),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.complexLog"),
-                                  expression: ObjectFilterExpression(filterOperator: .NotContains, op1: AnyCodable(simpleLog2))),
+                                  expression: ObjectFilterExpression(filterOperator: .NotContains, op1: FilterOperand(simpleLog2))),
 
             // MARK: - Test: .In
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.number"),
@@ -913,7 +913,7 @@ struct ObjectMatcherTests {
                                   expression: ObjectFilterExpression(filterOperator: .In, op1: [43, true, "Abc"])),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object"),
                                   expression: ObjectFilterExpression(filterOperator: .In, op1: [
-                                    Log(logLevel: .info,
+                                    FilterOperand(Log(logLevel: .info,
                                         logMessage: "ABC",
                                         logDate: "22.01.2001",
                                         name: "AbCC",
@@ -922,10 +922,10 @@ struct ObjectMatcherTests {
                                         objectId: thirdObject.objectId,
                                         logTags: ["Tag1", "Tag2"],
                                         logLabels: logLabels,
-                                        logHost: nil),
-                                    Log(logLevel: .info,
+                                        logHost: nil)),
+                                    FilterOperand(Log(logLevel: .info,
                                         logMessage: "Dummy",
-                                        logDate: "2.2.2020")
+                                        logDate: "2.2.2020"))
                                   ])),
 
             // MARK: - Test: .NotIn
@@ -937,7 +937,7 @@ struct ObjectMatcherTests {
                                   expression: ObjectFilterExpression(filterOperator: .NotIn, op1: [43, false, "Abc"])),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object"),
                                   expression: ObjectFilterExpression(filterOperator: .NotIn, op1: [
-                                    Log(logLevel: .info,
+                                    FilterOperand(Log(logLevel: .info,
                                         logMessage: "ABC",
                                         logDate: "22.01.2001",
                                         // Only name property is not the same as in object.object
@@ -947,10 +947,10 @@ struct ObjectMatcherTests {
                                         objectId: thirdObject.objectId,
                                         logTags: ["Tag1", "Tag2"],
                                         logLabels: logLabels,
-                                        logHost: nil),
-                                    Log(logLevel: .info,
+                                        logHost: nil)),
+                                    FilterOperand(Log(logLevel: .info,
                                         logMessage: "Dummy",
-                                        logDate: "2.2.2020")
+                                        logDate: "2.2.2020"))
                                   ])),
 
         ]
@@ -1078,7 +1078,7 @@ struct ObjectMatcherTests {
 
             // MARK: - Test: .Equals and .NotEquals for objects.
             ObjectFilterCondition(property: ObjectFilterProperty("object.object"),
-                                  expression: ObjectFilterExpression(filterOperator: .Equals, op1: AnyCodable(Log(logLevel: .info,
+                                  expression: ObjectFilterExpression(filterOperator: .Equals, op1: FilterOperand(Log(logLevel: .info,
                                                                                                                   logMessage: "ABC",
                                                                                                                   logDate: "22.01.2001",
                                                                                                                   name: "AbCC",
@@ -1088,7 +1088,7 @@ struct ObjectMatcherTests {
                                                                                                                   logLabels: logLabels,
                                                                                                                   logHost: nil)))),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object"),
-                                  expression: ObjectFilterExpression(filterOperator: .NotEquals, op1: AnyCodable(Log(logLevel: .info,
+                                  expression: ObjectFilterExpression(filterOperator: .NotEquals, op1: FilterOperand(Log(logLevel: .info,
                                                                                                                      logMessage: "...",
                                                                                                                      logDate: "...",
                                                                                                                      name: "...",
@@ -1208,7 +1208,7 @@ struct ObjectMatcherTests {
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.array2"),
                                   expression: ObjectFilterExpression(filterOperator: .Contains, op1: [3, [3, 2]])),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.complexLog"),
-                                  expression: ObjectFilterExpression(filterOperator: .Contains, op1: AnyCodable(simpleLog))),
+                                  expression: ObjectFilterExpression(filterOperator: .Contains, op1: FilterOperand(simpleLog))),
 
             // MARK: - Test: .NotContains
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.array"),
@@ -1220,7 +1220,7 @@ struct ObjectMatcherTests {
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.array2"),
                                   expression: ObjectFilterExpression(filterOperator: .NotContains, op1: [3, [3, 1]])),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.complexLog"),
-                                  expression: ObjectFilterExpression(filterOperator: .NotContains, op1: AnyCodable(simpleLog2))),
+                                  expression: ObjectFilterExpression(filterOperator: .NotContains, op1: FilterOperand(simpleLog2))),
 
             // MARK: - Test: .In
             ObjectFilterCondition(property: ObjectFilterProperty("object.object.logLabels.number"),
@@ -1231,7 +1231,7 @@ struct ObjectMatcherTests {
                                   expression: ObjectFilterExpression(filterOperator: .In, op1: [43, true, "Abc"])),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object"),
                                   expression: ObjectFilterExpression(filterOperator: .In, op1: [
-                                    Log(logLevel: .info,
+                                    FilterOperand(Log(logLevel: .info,
                                         logMessage: "ABC",
                                         logDate: "22.01.2001",
                                         name: "AbCC",
@@ -1240,10 +1240,10 @@ struct ObjectMatcherTests {
                                         objectId: thirdObject.objectId,
                                         logTags: ["Tag1", "Tag2"],
                                         logLabels: logLabels,
-                                        logHost: nil),
-                                    Log(logLevel: .info,
+                                        logHost: nil)),
+                                    FilterOperand(Log(logLevel: .info,
                                         logMessage: "Dummy",
-                                        logDate: "2.2.2020")
+                                        logDate: "2.2.2020"))
                                   ])),
 
             // MARK: - Test: .NotIn
@@ -1255,7 +1255,7 @@ struct ObjectMatcherTests {
                                   expression: ObjectFilterExpression(filterOperator: .NotIn, op1: [43, false, "Abc"])),
             ObjectFilterCondition(property: ObjectFilterProperty("object.object"),
                                   expression: ObjectFilterExpression(filterOperator: .NotIn, op1: [
-                                    Log(logLevel: .info,
+                                    FilterOperand(Log(logLevel: .info,
                                         logMessage: "ABC",
                                         logDate: "22.01.2001",
                                         // Only name property is not the same as in object.object
@@ -1265,10 +1265,10 @@ struct ObjectMatcherTests {
                                         objectId: thirdObject.objectId,
                                         logTags: ["Tag1", "Tag2"],
                                         logLabels: logLabels,
-                                        logHost: nil),
-                                    Log(logLevel: .info,
+                                        logHost: nil)),
+                                    FilterOperand(Log(logLevel: .info,
                                         logMessage: "Dummy",
-                                        logDate: "2.2.2020")
+                                        logDate: "2.2.2020"))
                                   ])),
 
         ]
@@ -1353,7 +1353,7 @@ struct ObjectMatcherTests {
                            name: "thing")
     }
 
-    private static func objectIdEqualsFilter(operand: AnyCodable) -> ObjectFilter {
+    private static func objectIdEqualsFilter(operand: FilterOperand) -> ObjectFilter {
         return ObjectFilter(condition: ObjectFilterCondition(property: ObjectFilterProperty("objectId"),
                                                              expression: ObjectFilterExpression(filterOperator: .Equals,
                                                                                                 op1: operand)))
@@ -1362,7 +1362,7 @@ struct ObjectMatcherTests {
     @Test
 
     func testMatchesFilterOnUUIDPropertyBuiltLocally() throws {
-        let operand = AnyCodable(CoatyUUID(uuidString: Self.knownUUIDString)!)
+        let operand = FilterOperand(CoatyUUID(uuidString: Self.knownUUIDString)!)
         let filter = Self.objectIdEqualsFilter(operand: operand)
 
         #expect(ObjectMatcher.matchesFilter(obj: try Self.objectWithKnownId(), filter: filter))
@@ -1377,7 +1377,7 @@ struct ObjectMatcherTests {
     @Test
 
     func testMatchesFilterOnUUIDPropertyAfterWireRoundTrip() throws {
-        let operand = AnyCodable(CoatyUUID(uuidString: Self.knownUUIDString)!)
+        let operand = FilterOperand(CoatyUUID(uuidString: Self.knownUUIDString)!)
         let filter = Self.objectIdEqualsFilter(operand: operand)
 
         let data = try JSONEncoder().encode(filter)
@@ -1391,7 +1391,7 @@ struct ObjectMatcherTests {
     @Test
 
     func testMatchesFilterOnUUIDPropertyWithStringOperand() throws {
-        let filter = Self.objectIdEqualsFilter(operand: AnyCodable(Self.knownUUIDString))
+        let filter = Self.objectIdEqualsFilter(operand: FilterOperand(Self.knownUUIDString))
 
         #expect(ObjectMatcher.matchesFilter(obj: try Self.objectWithKnownId(), filter: filter))
     }
