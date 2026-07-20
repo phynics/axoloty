@@ -55,7 +55,6 @@ public struct ChannelEventSnapshot: EventSnapshot, Codable, Equatable, Sendable 
 private struct ChannelEventWirePayload: Codable {
     let object: CoatyObjectSnapshot?
     let objects: [CoatyObjectSnapshot]?
-    let privateData: AnyCodable?
 }
 
 extension ChannelEventSnapshot {
@@ -66,26 +65,14 @@ extension ChannelEventSnapshot {
               let channelId = parsedMQTTMessage.eventTypeFilter else {
             return nil
         }
-        let privateData = wire.privateData.flatMap { try? JSONEncoder().encode($0) }
+        let privateData = WirePayloadExtractor.nestedPayload(from: parsedMQTTMessage.payload, key: "privateData")
         self.init(
             sourceId: parsedMQTTMessage.sourceId,
-            object: wire.object?.withPayload(SnapshotWirePayload.objectPayload(from: parsedMQTTMessage.payload, key: "object")),
+            object: wire.object?.withPayload(WirePayloadExtractor.nestedObjectPayload(from: parsedMQTTMessage.payload, key: "object")),
             objects: wire.objects,
             channelId: channelId,
             eventTypeFilter: parsedMQTTMessage.eventTypeFilter,
             privateData: privateData
         )
-    }
-}
-
-private enum SnapshotWirePayload {
-    static func objectPayload(from payload: String, key: String) -> Data? {
-        guard let data = payload.data(using: .utf8),
-              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let object = root[key],
-              JSONSerialization.isValidJSONObject(object) else {
-            return nil
-        }
-        return try? JSONSerialization.data(withJSONObject: object)
     }
 }

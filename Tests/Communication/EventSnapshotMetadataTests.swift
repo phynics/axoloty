@@ -50,6 +50,16 @@ struct EventSnapshotMetadataTests {
     }
 
     @Test
+    func advertiseSnapshotDecodesPrivateDataFromParsedMQTTMessage() throws {
+        let topic = try CommunicationTopic("coaty/1/-/ADV:Identity/\(sourceId)")
+        let parsed = ParsedMQTTMessage(topic: topic, payload: advertisePayload(withPrivateData: true))
+        let snapshot = try #require(AdvertiseEventSnapshot(parsedMQTTMessage: parsed))
+
+        let privateData = try #require(snapshot.privateData)
+        #expect(try jsonEquivalent(privateData, to: samplePrivateDataJSON()))
+    }
+
+    @Test
     func deadvertiseSnapshotPreservesMetadataAndObjectIds() throws {
         let snapshot = DeadvertiseEventSnapshot(
             sourceId: sourceId,
@@ -86,6 +96,20 @@ struct EventSnapshotMetadataTests {
         #expect(roundTripped.channelId == "channel-a")
         #expect(roundTripped.eventTypeFilter == "channel-a")
         #expect(roundTripped.objects?.first?.objectId == objectId)
+    }
+
+    @Test
+    func channelSnapshotDecodesFromParsedMQTTMessage() throws {
+        let topic = try CommunicationTopic("coaty/1/-/CHN:channel-a/\(sourceId)")
+        let parsed = ParsedMQTTMessage(topic: topic, payload: channelPayload(withPrivateData: true))
+        let snapshot = try #require(ChannelEventSnapshot(parsedMQTTMessage: parsed))
+
+        #expect(snapshot.sourceId == sourceId)
+        #expect(snapshot.channelId == "channel-a")
+        #expect(snapshot.object?.objectType == "coaty.Identity")
+
+        let privateData = try #require(snapshot.privateData)
+        #expect(try jsonEquivalent(privateData, to: samplePrivateDataJSON()))
     }
 
     @Test
@@ -239,10 +263,30 @@ private func sampleData() -> Data {
     Data("{\"key\":\"value\"}".utf8)
 }
 
-private func advertisePayload() -> String {
+private func advertisePayload(withPrivateData: Bool = false) -> String {
+    let privateData = withPrivateData ? ",\"privateData\":\(samplePrivateDataJSON())" : ""
+    return """
+    {"object":{"objectId":"550e8400-e29b-41d4-a716-446655440002","coreType":"Identity","objectType":"coaty.Identity","name":"Test Identity"}\(privateData)}
     """
-    {"object":{"objectId":"550e8400-e29b-41d4-a716-446655440002","coreType":"Identity","objectType":"coaty.Identity","name":"Test Identity"}}
+}
+
+private func channelPayload(withPrivateData: Bool = false) -> String {
+    let privateData = withPrivateData ? ",\"privateData\":\(samplePrivateDataJSON())" : ""
+    return """
+    {"object":{"objectId":"550e8400-e29b-41d4-a716-446655440002","coreType":"Identity","objectType":"coaty.Identity","name":"Test Identity"}\(privateData)}
     """
+}
+
+private func samplePrivateDataJSON() -> String {
+    "{\"foo\":\"bar\",\"count\":3}"
+}
+
+/// Compares two JSON-encoded `Data`/`String` values for semantic equality
+/// (parsed structure), tolerating key-order or whitespace differences.
+private func jsonEquivalent(_ lhs: Data, to rhs: String) throws -> Bool {
+    let lhsObject = try JSONSerialization.jsonObject(with: lhs) as? [String: Any]
+    let rhsObject = try JSONSerialization.jsonObject(with: Data(rhs.utf8)) as? [String: Any]
+    return NSDictionary(dictionary: lhsObject ?? [:]).isEqual(to: rhsObject ?? [:])
 }
 
 private func roundTrip<T: Codable>(_ value: T) throws -> T {
