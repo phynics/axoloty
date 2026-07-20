@@ -86,7 +86,7 @@ wire-evidence section and `../Tests/WireCompatibility/CompatibilityMatrix.md`.
 
 | Feature | CoatyJS 2.4.x | CoatySwift 2.4.0 | Axoloty | Notes |
 |---|---|---|---|---|
-| Reactive API | RxJS | RxSwift 5 | None | Axoloty uses structured-concurrency EventHub streams; RxSwift is removed. |
+| Reactive API | RxJS | RxSwift 5 | None | Axoloty uses structured-concurrency Broadcast streams; RxSwift is removed. |
 | Standard logging facade | JS console/framework utilities | XCGLogger | swift-log | Wire `Log` objects remain separate from local log backends. |
 | Project template / generator | Yes | No | No | JS ships a Node/TypeScript agent template and project scripts. |
 | Build metadata generation/release scripts | Yes | No equivalent | Partial | Axoloty has container/Make workflows but not JS's agent-project toolchain. |

@@ -94,7 +94,7 @@ public class CommunicationManager {
     ///   `NSMutableDictionary`/`NSMutableArray` for the same reason (T-001).
     internal var ioActorItems: [String: MutableDictionaryBox<String, MutableArrayBox<CoatyUUID>>] = [:]
     
-    /// The transport-level IO value stream is routed through ``EventHub``.
+    /// The transport-level IO value stream is routed through ``Broadcast``.
     
     /// Associated IONodes.
     internal var ioNodes: [IoNode] = []
@@ -646,7 +646,7 @@ public class CommunicationManager {
     }
 
     nonisolated func didReceiveMessage(topic: String, payload: String) {
-        // Parsed messages are emitted directly by the transport's EventHub.
+        // Parsed messages are emitted directly by the transport's Broadcast streams.
     }
     
     // MARK: - IO Routing
