@@ -3,7 +3,7 @@
 set -euo pipefail
 
 RUNTIME="${CONTAINER_RUNTIME:-podman}"
-podman() { "$RUNTIME" "$@"; }
+podman() { command "$RUNTIME" "$@"; }
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
 LIVE="$ROOT/Tests/WireCompatibility/Live"

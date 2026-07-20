@@ -5,7 +5,7 @@ set -euo pipefail
 SCENARIO="${1:?Usage: run-coatyjs-qos-scenario.sh <qos-0|graceful-deadvertise>}"
 
 RUNTIME="${CONTAINER_RUNTIME:-podman}"
-podman() { "$RUNTIME" "$@"; }
+podman() { command "$RUNTIME" "$@"; }
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
 LIVE="$ROOT/Tests/WireCompatibility/Live"
