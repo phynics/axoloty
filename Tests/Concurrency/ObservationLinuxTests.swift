@@ -19,8 +19,10 @@ struct ObservationLinuxTests {
     @Test
     func testWithObservationTrackingAvailable() async {
         // Verify withObservationTracking is callable. On Linux Swift 6.3,
-        // the @Observable macro has known limitations with the Observable
-        // protocol synthesis. This test validates the tracking API itself.
+        // the @Observable macro is unavailable: it expands to code referencing
+        // Observation.ObservationRegistrar, which does not exist in the Linux
+        // toolchain's Observation module. Direction C's @Observable state-stream
+        // design is therefore blocked on Linux; all streams use Broadcast instead.
         var trackingFired = false
 
         withObservationTracking {
@@ -34,22 +36,17 @@ struct ObservationLinuxTests {
     }
 
     @Test
-    func testEventHubWithStateStreamOnLinux() async {
-        // Verify EventHub state streams work correctly on Linux.
-        let hub = EventHub()
-        let key = EventKey<Double>(scope: "test", name: "sensor-state")
-        let stream: EventStream<Double> = await hub.registerStream(
-            key: key,
-            buffering: .state,
-            onLast: {}
-        )
+    func testBroadcastStateStreamOnLinux() async {
+        // Verify Broadcast state streams work correctly on Linux.
+        let broadcast = Broadcast<Double>(mode: .state)
+        let stream = await broadcast.subscribe()
 
-        await hub.yield(value: 23.5, to: key)
+        await broadcast.send(23.5)
 
         var it = stream.makeAsyncIterator()
         try? await _Concurrency.Task.sleep(for: .milliseconds(100))
 
-        await hub.finish(key: key)
+        await broadcast.finish()
 
         var values: [Double] = []
         while let v = await it.next() {
@@ -60,22 +57,17 @@ struct ObservationLinuxTests {
     }
 
     @Test
-    func testEventHubWithEventStreamOnLinux() async {
-        // Verify EventHub event streams work correctly on Linux.
-        let hub = EventHub()
-        let key = EventKey<String>(scope: "test", name: "event-test")
-        let stream: EventStream<String> = await hub.registerStream(
-            key: key,
-            buffering: .event,
-            onLast: {}
-        )
+    func testBroadcastEventStreamOnLinux() async {
+        // Verify Broadcast event streams work correctly on Linux.
+        let broadcast = Broadcast<String>(mode: .event)
+        let stream = await broadcast.subscribe()
 
         var it = stream.makeAsyncIterator()
         try? await _Concurrency.Task.sleep(for: .milliseconds(100))
 
-        await hub.yield(value: "hello", to: key)
-        await hub.yield(value: "world", to: key)
-        await hub.finish(key: key)
+        await broadcast.send("hello")
+        await broadcast.send("world")
+        await broadcast.finish()
 
         var values: [String] = []
         while let v = await it.next() {

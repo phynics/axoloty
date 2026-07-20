@@ -14,7 +14,7 @@ open class IoActorController: Controller {
     }
 
     /// Observes raw IO value snapshots routed to an actor.
-    public func observeIoValue(actor: IoActor) async -> EventStream<IoValueEventSnapshot> {
+    public func observeIoValue(actor: IoActor) async -> AsyncStream<IoValueEventSnapshot> {
         await communicationManager.observeIoValueStream()
     }
 
@@ -24,7 +24,7 @@ open class IoActorController: Controller {
     }
 
     /// Observes association state snapshots for an actor.
-    public func observeAssociation(actor: IoActor) async -> EventStream<IoStateEventSnapshot> {
+    public func observeAssociation(actor: IoActor) async -> AsyncStream<IoStateEventSnapshot> {
         await communicationManager.observeIoStateStream(ioPoint: actor)
     }
 

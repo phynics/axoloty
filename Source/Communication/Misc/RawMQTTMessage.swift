@@ -6,7 +6,7 @@ import Foundation
 ///
 /// This value type wraps the topic and payload of an incoming MQTT
 /// ``PUBLISH`` packet before any higher-level Coaty parsing is applied. It
-/// conforms to ``Sendable`` so it can safely cross the ``EventHub`` boundary
+/// conforms to ``Sendable`` so it can safely cross the ``Broadcast`` boundary
 /// from the MQTT client to async consumers.
 public struct RawMQTTMessage: Sendable, Hashable {
 

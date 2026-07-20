@@ -69,7 +69,7 @@ decision (`LegacySwiftIOScopeDecision.md`). Remaining in this phase: the
 compatibility CI gates (T-022, #32) wiring the new offline suites into the PR
 tier and the live IO runner into the nightly tier.
 
-### Phase 7 — Runtime correctness (EventHub/streaming + IO routing)
+### Phase 7 — Runtime correctness (Broadcast/streaming + IO routing)
 
 Closes out correctness gaps left by the Phase 3 RxSwift → async/await
 migration: lost/dropped events, unstructured task spawning breaking MQTT

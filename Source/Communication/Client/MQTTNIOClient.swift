@@ -23,14 +23,14 @@ import NIOSSL
 ///
 /// This class replaces the former CocoaMQTT-backed implementation. It keeps the
 /// transport events are delivered through the manager delegate and async
-/// ``EventHub`` streams.
+/// ``Broadcast`` streams.
 ///
 /// - Note: mqtt-nio's `MQTTClient` exposes an `EventLoopFuture`-based API with a
 ///   named-listener registration model for incoming PUBLISH messages (not
 ///   async/await, and not delegate-based in the `NSObjectProtocol` sense used by
 ///   CocoaMQTT) — see `addPublishListener(named:_:)`/`addCloseListener(named:_:)`.
 ///   Those listener callbacks are plain synchronous closures, so they bridge
-///   directly into the synchronous delegate and ``EventHub`` surfaces.
+///   directly into the synchronous delegate and ``Broadcast`` surfaces.
 internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
 
     private let log = LogManager.logger(.mqtt)
@@ -39,13 +39,21 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
 
     var delegate: CommunicationClientDelegate
 
-    /// The async event hub used to mirror communication state and raw MQTT
+    /// Typed broadcast streams that mirror communication state and raw MQTT
     /// transport messages to concurrent consumers.
     ///
-    /// - Note: This hub is intentionally owned by the client so that its
-    ///   lifetime matches the underlying transport and so that state streams
-    ///   replay the last known state even before a subscriber attaches.
-    let eventHub = EventHub()
+    /// Created by ``CommunicationManager`` (which owns the subscription
+    /// coordinator needed for `onFirst`/`onLast` hooks) and set on this
+    /// client via ``setStreams(_:)`` before it starts producing values.
+    ///
+    /// - Warning: Accessing `streams` before ``setStreams(_:)`` is called
+    ///   will crash (implicitly-unwrapped optional is nil). The manager
+    ///   calls `setStreams` in its `init`, before `connect()` is called.
+    var streams: CommunicationStreams!
+
+    func setStreams(_ streams: CommunicationStreams) {
+        self.streams = streams
+    }
 
     var brokerCandidates = [String]()
     var brokerPort: UInt16 = 1883
@@ -87,11 +95,11 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
     /// auto-reconnect/broker-candidate fallback.
     private var isIntentionalDisconnect = false
 
-    /// Serializes delivery of decoded MQTT messages into ``EventHub`` in
+    /// Serializes delivery of decoded MQTT messages into ``Broadcast`` in
     /// arrival order.
     ///
     /// mqtt-nio's publish listener fires synchronously per message on its
-    /// event loop, but each per-message hub yield is `async` (`EventHub` is
+    /// event loop, but each per-message broadcast send is `async` (`Broadcast` is
     /// an actor). Spawning an unstructured `Task` per message let
     /// independently-scheduled tasks race for actor execution, so messages
     /// could reach the hub out of arrival order -- a regression from the
@@ -427,10 +435,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
 
         deliveryContinuation.yield { [weak self] in
             guard let self else { return }
-            await self.eventHub.yieldState(
-                value: state,
-                to: CommunicationEventHubKeys.communicationState
-            )
+            await self.streams.communicationState.sendState(state)
         }
     }
 
@@ -444,10 +449,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
 
             deliveryContinuation.yield { [weak self] in
                 guard let self else { return }
-                await self.eventHub.yield(
-                    value: rawMessage,
-                    to: CommunicationEventHubKeys.rawMQTTMessage
-                )
+                await self.streams.rawMQTTMessages.send(rawMessage)
             }
 
             if CommunicationTopic.isRawTopic(topic: info.topicName) {
@@ -475,10 +477,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                     )
                     deliveryContinuation.yield { [weak self] in
                         guard let self else { return }
-                        await self.eventHub.yield(
-                            value: IoValueEventSnapshot(topic: info.topicName, payload: bytes),
-                            to: CommunicationEventHubKeys.ioValue
-                        )
+                        await self.streams.ioValues.send(IoValueEventSnapshot(topic: info.topicName, payload: bytes))
                     }
                 } else if let payloadString = String(bytes: bytes, encoding: .utf8) {
                     self.delegate.didReceiveMessage(
@@ -489,10 +488,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                     let parsed = ParsedMQTTMessage(topic: topic, payload: payloadString)
                     deliveryContinuation.yield { [weak self] in
                         guard let self else { return }
-                        await self.eventHub.yield(
-                            value: parsed,
-                            to: CommunicationEventHubKeys.parsedMQTTMessage
-                        )
+                        await self.streams.parsedMQTTMessages.send(parsed)
                         await self.routeAdvertiseSnapshot(parsed: parsed)
                         await self.routeOneWaySnapshot(parsed: parsed)
                         await self.routeSnapshot(parsed: parsed)
@@ -519,18 +515,16 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
             return
         }
 
-        let baseKey = CommunicationEventHubKeys.advertise(
-            eventTypeFilter: parsed.eventTypeFilter ?? ""
-        )
-        await eventHub.yield(value: snapshot, to: baseKey)
+        let baseKey = AdvertiseKey(eventTypeFilter: parsed.eventTypeFilter ?? "")
+        await streams.advertiseFamily.send(snapshot, for: baseKey)
 
         if let coreType = CoreType.getCoreType(forObjectType: snapshot.object.objectType),
            parsed.eventTypeFilter == coreType.rawValue {
-            let objectKey = CommunicationEventHubKeys.advertise(
+            let objectKey = AdvertiseKey(
                 eventTypeFilter: coreType.rawValue,
                 objectTypeFilter: snapshot.object.objectType
             )
-            await eventHub.yield(value: snapshot, to: objectKey)
+            await streams.advertiseFamily.send(snapshot, for: objectKey)
         }
     }
 
@@ -538,20 +532,20 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
         switch parsed.eventType {
         case .Deadvertise:
             if let snapshot = DeadvertiseEventSnapshot(parsedMQTTMessage: parsed) {
-                await eventHub.yield(value: snapshot, to: CommunicationEventHubKeys.deadvertise)
+                await streams.deadvertise.send(snapshot)
             }
         case .Discover:
             if let snapshot = DiscoverEventSnapshot(parsedMQTTMessage: parsed) {
-                await eventHub.yield(value: snapshot, to: CommunicationEventHubKeys.discover)
+                await streams.discover.send(snapshot)
             }
         case .Query:
             if let snapshot = QueryEventSnapshot(parsedMQTTMessage: parsed) {
-                await eventHub.yield(value: snapshot, to: CommunicationEventHubKeys.query)
+                await streams.query.send(snapshot)
             }
         case .Call:
             if let snapshot = CallEventSnapshot(parsedMQTTMessage: parsed),
                let operation = parsed.eventTypeFilter {
-                await eventHub.yield(value: snapshot, to: CommunicationEventHubKeys.call(operation: operation))
+                await streams.callFamily.send(snapshot, for: operation)
             }
         default:
             break
@@ -568,20 +562,20 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                 correlationId: correlationId,
                 payload: payloadData
             )
-            await eventHub.yield(
-                value: snapshot,
-                to: CommunicationEventHubKeys.response(eventType: parsed.eventType, correlationId: correlationId)
+            await streams.responseFamily.send(
+                snapshot,
+                for: ResponseKey(eventType: parsed.eventType, correlationId: correlationId)
             )
         }
         switch parsed.eventType {
         case .Update:
             guard let snapshot = UpdateEventSnapshot(parsedMQTTMessage: parsed),
                   let filter = parsed.eventTypeFilter else { return }
-            await eventHub.yield(value: snapshot, to: CommunicationEventHubKeys.update(eventTypeFilter: filter))
+            await streams.updateFamily.send(snapshot, for: filter)
         case .Channel:
             guard let snapshot = ChannelEventSnapshot(parsedMQTTMessage: parsed),
                   let channelId = parsed.eventTypeFilter else { return }
-            await eventHub.yield(value: snapshot, to: CommunicationEventHubKeys.channel(channelId: channelId))
+            await streams.channelFamily.send(snapshot, for: channelId)
         default:
             break
         }

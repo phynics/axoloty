@@ -312,7 +312,7 @@ struct AxolotyIoAssociateTests {
 /// stream-ended errors into the `AxolotyError.runtime` categories these
 /// assertions switch on, preserving the `label` in the reason.
 private func nextSnapshot<E: Sendable>(
-    _ iterator: inout EventStream<E>.Iterator,
+    _ iterator: inout AsyncStream<E>.Iterator,
     timeout: Duration,
     _ label: String
 ) async throws -> E {

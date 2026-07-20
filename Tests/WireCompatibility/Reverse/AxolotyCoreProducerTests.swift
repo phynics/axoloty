@@ -152,13 +152,13 @@ struct AxolotyCoreProducerTests {
     }
 
     private func awaitResponse<Event: Codable>(
-        from stream: EventStream<ResponseEventSnapshot>,
+        from stream: AsyncStream<ResponseEventSnapshot>,
         eventType: CommunicationEventType,
         as _: Event.Type
     ) async throws -> Event {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: .seconds(5))
-        var iterator = await stream.makeAsyncIteratorAndWait()
+        var iterator = stream.makeAsyncIterator()
         while clock.now < deadline {
             let response = try await nextValue(
                 &iterator,
@@ -180,13 +180,13 @@ struct AxolotyCoreProducerTests {
     /// within the given timeout, proving a filter that should not match was
     /// correctly evaluated as "no match" by the reference implementation.
     private func assertNoRetrieveResponse(
-        _ stream: EventStream<ResponseEventSnapshot>,
+        _ stream: AsyncStream<ResponseEventSnapshot>,
         timeout: Duration = .seconds(3),
         label: String
     ) async {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: timeout)
-        var iterator = await stream.makeAsyncIteratorAndWait()
+        var iterator = stream.makeAsyncIterator()
         while clock.now < deadline {
             do {
                 let response = try await nextValue(

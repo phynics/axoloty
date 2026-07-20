@@ -6,12 +6,8 @@ import Foundation
 extension CommunicationManager {
 
     /// Observes parsed transport messages for manager-owned protocol plumbing.
-    internal func observeParsedMessages() async -> EventStream<ParsedMQTTMessage> {
-        await eventHub.registerStream(
-            key: CommunicationEventHubKeys.parsedMQTTMessage,
-            buffering: .event,
-            onLast: {}
-        )
+    internal func observeParsedMessages() async -> AsyncStream<ParsedMQTTMessage> {
+        await streams.parsedMQTTMessages.subscribe()
     }
 
     /// Starts the internal Associate-event consumer for each configured IO node.

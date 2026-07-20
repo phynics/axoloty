@@ -5,7 +5,7 @@ import Foundation
 /// Observes Sensors and Sensor-related objects using async event streams.
 open class SensorObserverController: Controller {
     /// Observes advertised Sensor snapshots.
-    public func observeAdvertisedSensorsStream() async throws -> EventStream<AdvertiseEventSnapshot> {
+    public func observeAdvertisedSensorsStream() async throws -> AsyncStream<AdvertiseEventSnapshot> {
         try await communicationManager.observeAdvertiseStream(withObjectType: SensorThingsTypes.OBJECT_TYPE_SENSOR)
     }
 
@@ -24,16 +24,16 @@ open class SensorObserverController: Controller {
     }
 
     /// Discovers Sensor response snapshots.
-    public func discoverSensorsStream() async -> EventStream<ResponseEventSnapshot> {
+    public func discoverSensorsStream() async -> AsyncStream<ResponseEventSnapshot> {
         await communicationManager.publishDiscover(DiscoverEvent.with(objectTypes: [SensorThingsTypes.OBJECT_TYPE_SENSOR]))
     }
 
     /// Queries Sensor response snapshots for a Thing.
-    public func querySensorsOfThingsStream(thingId: CoatyUUID) async -> EventStream<ResponseEventSnapshot> {
+    public func querySensorsOfThingsStream(thingId: CoatyUUID) async -> AsyncStream<ResponseEventSnapshot> {
         await communicationManager.publishQuery(QueryEvent.with(objectTypes: [SensorThingsTypes.OBJECT_TYPE_SENSOR], objectFilter: nil, objectJoinConditions: nil))
     }
 
-    private func filteredStream<Element: Sendable>(_ source: EventStream<Element>, _ predicate: @escaping @Sendable (Element) -> Bool) -> AsyncStream<Element> {
+    private func filteredStream<Element: Sendable>(_ source: AsyncStream<Element>, _ predicate: @escaping @Sendable (Element) -> Bool) -> AsyncStream<Element> {
         let (stream, continuation) = AsyncStream<Element>.makeStream(bufferingPolicy: .bufferingNewest(256))
         let task = _Concurrency.Task {
             for await element in source where predicate(element) { continuation.yield(element) }

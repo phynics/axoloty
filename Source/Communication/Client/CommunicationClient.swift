@@ -39,8 +39,10 @@ protocol CommunicationClient: Sendable {
     /// dropped by a failed `as?` downcast.
     var delegate: CommunicationClientDelegate { get set }
 
-    /// Async event hub that mirrors transport-level state and raw MQTT messages.
-    var eventHub: EventHub { get }
+    /// Sets the typed broadcast streams on this client. Called by
+    /// ``CommunicationManager`` after the subscription coordinator is
+    /// initialized, before the client starts producing values.
+    func setStreams(_ streams: CommunicationStreams)
 
     // MARK: - Connection methods.
     

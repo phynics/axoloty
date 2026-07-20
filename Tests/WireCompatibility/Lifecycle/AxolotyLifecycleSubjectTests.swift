@@ -29,7 +29,7 @@ struct AxolotyLifecycleSubjectTests {
             operation: "wire-fixture-operation",
             parameters: ["operand": AnyCodable(7)]
         ))
-        var iterator = await stream.makeAsyncIteratorAndWait()
+        var iterator = stream.makeAsyncIterator()
         report(state: "ready", scenario: "duplicate-reply")
 
         // Real application-level duplicate handling: Axoloty's EventHub does
@@ -67,7 +67,7 @@ struct AxolotyLifecycleSubjectTests {
             operation: "wire-fixture-operation",
             parameters: ["operand": AnyCodable(7)]
         ))
-        var iterator = await stream.makeAsyncIteratorAndWait()
+        var iterator = stream.makeAsyncIterator()
         report(state: "ready", scenario: "late-reply")
 
         // A deliberately short deadline: CoatyJS's responder (see
@@ -113,7 +113,7 @@ struct AxolotyLifecycleSubjectTests {
         try await container.startAndWaitUntilReady()
 
         let states = await manager.observeCommunicationStateStream()
-        var stateIterator = await states.makeAsyncIteratorAndWait()
+        var stateIterator = states.makeAsyncIterator()
         report(state: "ready", scenario: "offline-queueing")
 
         try await waitForState(.offline, &stateIterator, scenario: "offline-queueing")
@@ -177,9 +177,9 @@ struct AxolotyLifecycleSubjectTests {
         let advertises = try await manager.observeAdvertiseStream(
             withObjectType: "com.coaty.test.WireFixture"
         )
-        var advertiseIterator = await advertises.makeAsyncIteratorAndWait()
+        var advertiseIterator = advertises.makeAsyncIterator()
         let states = await manager.observeCommunicationStateStream()
-        var stateIterator = await states.makeAsyncIteratorAndWait()
+        var stateIterator = states.makeAsyncIterator()
         report(state: "ready", scenario: scenario)
 
         try await waitForState(.offline, &stateIterator, scenario: scenario)
@@ -205,13 +205,13 @@ struct AxolotyLifecycleSubjectTests {
 
     private func waitForState(
         _ target: CommunicationState,
-        _ iterator: inout EventStream<CommunicationState>.Iterator,
+        _ iterator: inout AsyncStream<CommunicationState>.Iterator,
         scenario: String
     ) async throws {
         // The state stream replays the current state to a new iterator, so
         // this loop tolerates an immediate non-target value and simply waits
         // until the orchestrated transition genuinely happens.
-        let box = EventStreamBox(iterator)
+        let box = AsyncStreamBox(iterator)
         defer { iterator = box.iterator }
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
@@ -293,7 +293,7 @@ struct AxolotyLifecycleSubjectTests {
 private struct TimeoutGivingUp: Swift.Error {}
 
 private func nextAdvertise(
-    _ iterator: inout EventStream<AdvertiseEventSnapshot>.Iterator,
+    _ iterator: inout AsyncStream<AdvertiseEventSnapshot>.Iterator,
     timeout: Duration
 ) async throws -> AdvertiseEventSnapshot {
     do {
@@ -304,7 +304,7 @@ private func nextAdvertise(
 }
 
 private func nextResponse(
-    _ iterator: inout EventStream<ResponseEventSnapshot>.Iterator,
+    _ iterator: inout AsyncStream<ResponseEventSnapshot>.Iterator,
     timeout: Duration
 ) async throws -> ResponseEventSnapshot {
     do {
