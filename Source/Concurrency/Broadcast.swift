@@ -210,9 +210,11 @@ internal actor BroadcastFamily<Key: Hashable & Sendable, Element: Sendable> {
     }
 
     /// Sends a value to all subscribers of the `Broadcast` registered
-    /// under `key`. If no `Broadcast` exists for `key`, the value is
-    /// dropped silently — matching the former `EventHub.yield` behavior
-    /// for keys with no registered stream.
+    /// under `key`. If no `Broadcast` exists for `key` (no subscriber
+    /// has ever attached), the value is dropped silently — matching
+    /// the former `EventHub.yield` behavior for keys with no registered
+    /// stream. A producer racing ahead of the first subscriber thus
+    /// loses the value, same as before.
     func send(_ value: Element, for key: Key) async {
         guard let broadcast = broadcasts[key] else { return }
         await broadcast.send(value)

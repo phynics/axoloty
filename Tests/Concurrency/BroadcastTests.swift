@@ -286,6 +286,27 @@ struct BroadcastTests {
         #expect(values == [42], "sendState before subscriber should replay on attach")
     }
 
+    /// `send` on a `.state` broadcast caches `lastValue` just like
+    /// `sendState`, so a late subscriber receives the value. This
+    /// verifies the documented equivalence: "For `.state` mode, the
+    /// value is cached for replay to future subscribers (equivalent to
+    /// ``sendState(_:)``)."
+    @Test
+    func testSendOnStateBroadcastIsEquivalentToSendState() async throws {
+        let broadcast = Broadcast<Int>(mode: .state)
+
+        // send (not sendState) on a .state broadcast should cache lastValue.
+        await broadcast.send(42)
+
+        let stream = await broadcast.subscribe()
+        var it = stream.makeAsyncIterator()
+        try? await _Concurrency.Task.sleep(for: .milliseconds(50))
+        await broadcast.finish()
+
+        let value = await it.next()
+        #expect(value == 42, "send on .state broadcast should cache and replay like sendState")
+    }
+
     @Test
     func testOnFirstFiresOnFirstSubscriber() async throws {
         let counter = SendableCounter()
@@ -437,6 +458,35 @@ struct BroadcastFamilyTests {
         stream = nil
         try? await _Concurrency.Task.sleep(for: .milliseconds(200))
         #expect(counter.lastCount == 1, "onLast should fire for key1")
+    }
+
+    @Test
+    func testFinishAllClearsAllBroadcasts() async throws {
+        let family = BroadcastFamily<String, String>(mode: .event)
+
+        let stream1 = await family.subscribe(for: "key1")
+        let stream2 = await family.subscribe(for: "key2")
+
+        var it1 = stream1.makeAsyncIterator()
+        var it2 = stream2.makeAsyncIterator()
+
+        await family.send("a", for: "key1")
+        await family.send("b", for: "key2")
+
+        await family.finishAll()
+
+        // Consume buffered values, then expect nil (stream finished).
+        var values1: [String] = []
+        while let v = await it1.next() { values1.append(v) }
+        var values2: [String] = []
+        while let v = await it2.next() { values2.append(v) }
+
+        #expect(values1 == ["a"], "Should receive buffered value before finish")
+        #expect(values2 == ["b"], "Should receive buffered value before finish")
+
+        // Sending after finishAll should be a no-op (no Broadcast exists).
+        await family.send("c", for: "key1")
+        await family.send("d", for: "key2")
     }
 
     /// `onFirst` is awaited inside `subscribe()` before the method returns.

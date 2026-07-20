@@ -139,6 +139,42 @@ struct BroadcastTransportTests {
         #expect(received.correlationId == mintedCorrelationId)
     }
 
+    /// Verifies the acquire-before-publish ordering for the response path:
+    /// `onFirst` (which calls `coordinator.acquire` → `client.subscribe`)
+    /// is awaited inside `Broadcast.subscribe()` before
+    /// `publishWithResponse` sends the request. So the response topic's
+    /// SUBSCRIBE command must be issued. The stream must be kept alive
+    /// to prevent `onLast` from firing and unsubscribing before we check.
+    @Test
+    func responseStreamAcquiresTopicBeforePublish() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        await client.simulateState(.online)
+
+        // Store the stream to prevent onLast from firing during the test.
+        let stream = await manager.publishDiscover(DiscoverEvent.with(objectTypes: [Log.objectType]))
+
+        // Wait for the Discover publish to appear — this implies
+        // setOnline has completed and desired topics have been activated.
+        try await waitUntil("Discover topic to be published") {
+            try client.publishedTopics.contains { try CommunicationTopic($0).eventType == .Discover }
+        }
+
+        // The response topic (Resolve with correlation ID) should have been
+        // subscribed via onFirst — which is awaited inside subscribe()
+        // before publishWithResponse publishes the request.
+        let responseSubscribed = client.commands.contains { cmd in
+            if case .subscribe(let topic) = cmd {
+                return topic.contains("/RSV/")
+            }
+            return false
+        }
+        #expect(responseSubscribed, "Response topic should be subscribed before request is published")
+
+        // Keep the stream alive so onLast doesn't fire and unsubscribe.
+        _ = stream
+    }
+
     @Test
     func queryStreamAcquiresTopicAndDeliversSnapshot() async throws {
         let client = FakeCommunicationClient(delegate: FakeStartable())
@@ -309,7 +345,7 @@ struct BroadcastTransportTests {
         )
         let fakeClient = FakeCommunicationClient(delegate: manager)
         manager.client = fakeClient
-        fakeClient.streams = manager.streams
+        fakeClient.setStreams(manager.streams)
 
         let stream = try await observer.observeAdvertisedSensorsStream()
         var iterator = stream.makeAsyncIterator()
@@ -356,7 +392,7 @@ struct BroadcastTransportTests {
         )
         let fakeClient = FakeCommunicationClient(delegate: manager)
         manager.client = fakeClient
-        fakeClient.streams = manager.streams
+        fakeClient.setStreams(manager.streams)
 
         let stream = try await observer.observeAdvertisedThingsStream()
         var iterator = stream.makeAsyncIterator()
@@ -403,7 +439,7 @@ struct BroadcastTransportTests {
         )
         let fakeClient = FakeCommunicationClient(delegate: manager)
         manager.client = fakeClient
-        fakeClient.streams = manager.streams
+        fakeClient.setStreams(manager.streams)
 
         let sensorId = CoatyUUID()
         let stream = try await observer.observeChanneledObservationsStream(
@@ -492,7 +528,7 @@ struct BroadcastTransportTests {
         let manager = makeManager()
         let fakeClient = FakeCommunicationClient(delegate: manager)
         manager.client = fakeClient
-        fakeClient.streams = manager.streams
+        fakeClient.setStreams(manager.streams)
 
         await fakeClient.simulateState(.online)
 
@@ -508,7 +544,7 @@ struct BroadcastTransportTests {
         let manager = makeManager()
         let fakeClient = FakeCommunicationClient(delegate: manager)
         manager.client = fakeClient
-        fakeClient.streams = manager.streams
+        fakeClient.setStreams(manager.streams)
 
         await fakeClient.emitOperatingState(.started)
 
@@ -522,7 +558,7 @@ struct BroadcastTransportTests {
         let manager = makeManager()
         let fakeClient = FakeCommunicationClient(delegate: manager)
         manager.client = fakeClient
-        fakeClient.streams = manager.streams
+        fakeClient.setStreams(manager.streams)
 
         let stream1: AsyncStream<RawMQTTMessage> = await manager.observeRawMQTTMessageStream()
         let stream2: AsyncStream<RawMQTTMessage> = await manager.observeRawMQTTMessageStream()
