@@ -45,7 +45,6 @@ public struct AdvertiseEventSnapshot: EventSnapshot, Codable, Equatable, Sendabl
 
 private struct AdvertiseEventWirePayload: Codable {
     let object: CoatyObjectSnapshot
-    let privateData: AnyCodable?
 }
 
 extension AdvertiseEventSnapshot {
@@ -61,10 +60,8 @@ extension AdvertiseEventSnapshot {
             return nil
         }
 
-        let privateData: Data? = wire.privateData.flatMap { value in
-            try? JSONEncoder().encode(value)
-        }
-        let objectPayload = SnapshotWirePayload.objectPayload(from: parsedMQTTMessage.payload)
+        let objectPayload = WirePayloadExtractor.nestedObjectPayload(from: parsedMQTTMessage.payload, key: "object")
+        let privateData = WirePayloadExtractor.nestedPayload(from: parsedMQTTMessage.payload, key: "privateData")
 
         self.init(
             sourceId: parsedMQTTMessage.sourceId,
@@ -72,17 +69,5 @@ extension AdvertiseEventSnapshot {
             object: wire.object.withPayload(objectPayload),
             privateData: privateData
         )
-    }
-}
-
-private enum SnapshotWirePayload {
-    static func objectPayload(from payload: String) -> Data? {
-        guard let data = payload.data(using: .utf8),
-              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let object = root["object"],
-              JSONSerialization.isValidJSONObject(object) else {
-            return nil
-        }
-        return try? JSONSerialization.data(withJSONObject: object)
     }
 }
