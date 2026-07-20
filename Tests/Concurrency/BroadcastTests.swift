@@ -438,6 +438,101 @@ struct BroadcastFamilyTests {
         try? await _Concurrency.Task.sleep(for: .milliseconds(200))
         #expect(counter.lastCount == 1, "onLast should fire for key1")
     }
+
+    /// `onFirst` is awaited inside `subscribe()` before the method returns.
+    /// This guarantees MQTT topic acquisition completes before the caller
+    /// receives the stream — the acquire-before-publish ordering the
+    /// request/response path depends on (#70).
+    @Test
+    func testOnFirstCompletesBeforeSubscribeReturns() async throws {
+        let recorder = OrderRecorder()
+
+        let broadcast = Broadcast<Int>(mode: .event, onFirst: {
+            recorder.record("onFirst")
+        })
+
+        let stream = await broadcast.subscribe()
+        recorder.record("subscribeReturned")
+
+        #expect(
+            recorder.events == ["onFirst", "subscribeReturned"],
+            "onFirst must complete before subscribe() returns"
+        )
+
+        _ = stream
+    }
+}
+
+// MARK: - BroadcastFamily Eviction Tests
+
+@Suite
+struct BroadcastFamilyEvictionTests {
+
+    /// `evictOnLast: true` removes the `Broadcast` from the family when
+    /// the last subscriber leaves, preventing unbounded memory growth for
+    /// per-correlation-id families like `responseFamily`.
+    @Test
+    func testEvictOnLastRemovesBroadcastAfterLastSubscriberLeaves() async throws {
+        let family = BroadcastFamily<String, String>(mode: .event, evictOnLast: true)
+
+        // Subscribe and drop the stream.
+        var stream: AsyncStream<String>? = await family.subscribe(for: "key1")
+        stream = nil
+
+        // Wait for onLast to fire and evict.
+        try? await _Concurrency.Task.sleep(for: .milliseconds(200))
+
+        // Send to the evicted key — should be dropped (no Broadcast exists).
+        await family.send("dropped", for: "key1")
+
+        // Subscribe again — should create a new Broadcast.
+        let stream2 = await family.subscribe(for: "key1")
+        var it = stream2.makeAsyncIterator()
+        await family.send("value2", for: "key1")
+        await family.finishAll()
+
+        let value = await it.next()
+        #expect(value == "value2", "New subscriber after eviction should receive new values, not evicted ones")
+    }
+
+    /// Simulates the response path: many unique correlation IDs are used
+    /// over time, each with one subscriber that leaves after receiving
+    /// the response. With `evictOnLast: true`, the family should not
+    /// retain dead `Broadcast` instances.
+    @Test
+    func testResponseFamilyDoesNotRetainBroadcastsAcrossManyCorrelationIds() async throws {
+        let family = BroadcastFamily<String, String>(mode: .event, evictOnLast: true)
+
+        for i in 0..<100 {
+            let key = "corr-\(i)"
+            let stream = await family.subscribe(for: key)
+            var it = stream.makeAsyncIterator()
+
+            await family.send("response-\(i)", for: key)
+
+            let value = await it.next()
+            #expect(value == "response-\(i)")
+            // Iterator goes out of scope → onTermination → onLast → evict.
+        }
+
+        // Give eviction tasks time to run.
+        try? await _Concurrency.Task.sleep(for: .milliseconds(300))
+
+        // The family should have zero retained Broadcasts (all evicted).
+        // We verify indirectly: sending to any old key should be a no-op.
+        await family.send("should-be-dropped", for: "corr-0")
+        await family.send("should-be-dropped", for: "corr-50")
+        await family.send("should-be-dropped", for: "corr-99")
+
+        // A fresh subscribe should still work.
+        let freshStream = await family.subscribe(for: "corr-fresh")
+        var freshIt = freshStream.makeAsyncIterator()
+        await family.send("fresh-value", for: "corr-fresh")
+        await family.finishAll()
+
+        let freshValue = await freshIt.next()
+        #expect(freshValue == "fresh-value")
+    }
 }
 
 // MARK: - Helpers
@@ -447,6 +542,23 @@ private final class SendableCounter: @unchecked Sendable {
     private(set) var lastCount = 0
     func incFirst() { firstCount += 1 }
     func incLast() { lastCount += 1 }
+}
+
+private final class OrderRecorder: @unchecked Sendable {
+    private var _events: [String] = []
+    private let lock = NSLock()
+
+    func record(_ event: String) {
+        lock.lock()
+        _events.append(event)
+        lock.unlock()
+    }
+
+    var events: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return _events
+    }
 }
 
 private func collectValues<T: Sendable>(

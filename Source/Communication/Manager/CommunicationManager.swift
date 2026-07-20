@@ -300,6 +300,7 @@ public class CommunicationManager {
             ),
             responseFamily: BroadcastFamily(
                 mode: .event,
+                evictOnLast: true,
                 onFirst: { key in
                     let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
                         eventType: key.eventType, namespace: crossNs, correlationId: key.correlationId

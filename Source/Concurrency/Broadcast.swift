@@ -4,7 +4,6 @@ import Foundation
 
 /// Buffering mode for a ``Broadcast`` stream.
 ///
-/// Replaces the former ``EventStreamBuffering`` (deleted with ``EventHub``).
 /// ``BroadcastMode/event`` buffers up to 256 oldest values and does not
 /// replay to late subscribers. ``BroadcastMode/state`` keeps only the newest
 /// value and replays it to late subscribers as their first element.
@@ -22,21 +21,24 @@ internal enum BroadcastMode: Sendable {
 /// replay.
 ///
 /// `onFirst` fires when the first subscriber attaches (subscriber count
-/// goes from 0 to 1). `onLast` fires when the last subscriber's
-/// continuation terminates (count goes from 1 to 0). These hooks drive
-/// MQTT subscription refcounting: `onFirst` acquires the topic,
-/// `onLast` releases it. Both can fire multiple times over the
+/// goes from 0 to 1) and is **awaited** inside ``subscribe()``, so the
+/// caller can rely on the MQTT topic being acquired before the stream
+/// is returned. `onLast` fires when the last subscriber's continuation
+/// terminates (count goes from 1 to 0) and is **awaited** inside
+/// ``removeSubscriber(_:)``, so acquire always precedes release for the
+/// same subscriber cycle. Both can fire multiple times over the
 /// `Broadcast`'s lifetime if all subscribers leave and new ones later
 /// attach.
 ///
 /// The continuation is registered eagerly inside ``subscribe()``
-/// before the method returns, so values sent between `subscribe()` and
-/// the first `next()` call are buffered and delivered — no registration
-/// race.
+/// before `onFirst` is awaited, so values sent between `subscribe()`
+/// and the first `next()` call are buffered and delivered — no
+/// registration race.
 ///
-/// - Note: `Broadcast` is an `actor`; all operations are serialized.
-///   Producers call ``send(_:)`` or ``sendState(_:)``; consumers call
-///   ``subscribe()`` to obtain an `AsyncStream<Element>`.
+/// - Note: `send(_:)` on a `.state` broadcast is equivalent to
+///   ``sendState(_:)`` — both update `lastValue`. The two methods exist
+///   for call-site clarity: `sendState` signals "this value must be
+///   cached even if no subscriber is attached."
 internal actor Broadcast<Element: Sendable> {
 
     private let mode: BroadcastMode
@@ -59,11 +61,17 @@ internal actor Broadcast<Element: Sendable> {
 
     /// Registers a new subscriber and returns its `AsyncStream`.
     ///
-    /// The continuation is registered eagerly before this method returns,
-    /// so values sent between `subscribe()` and the first `next()` call
-    /// are buffered and delivered. For `.state` mode, the most recently
-    /// sent value (if any) is replayed as the first element.
-    func subscribe() -> AsyncStream<Element> {
+    /// The continuation is registered eagerly before `onFirst` is
+    /// awaited, so values sent between `subscribe()` and the first
+    /// `next()` call are buffered and delivered. For `.state` mode,
+    /// the most recently sent value (if any) is replayed as the first
+    /// element.
+    ///
+    /// `onFirst` is awaited before this method returns, guaranteeing
+    /// that any MQTT topic acquisition has completed before the caller
+    /// receives the stream. This preserves the acquire-before-publish
+    /// ordering that the request/response path depends on.
+    func subscribe() async -> AsyncStream<Element> {
         let id = UUID()
         let policy: AsyncStream<Element>.Continuation.BufferingPolicy =
             mode == .event ? .bufferingOldest(256) : .bufferingNewest(1)
@@ -84,7 +92,7 @@ internal actor Broadcast<Element: Sendable> {
         if !started {
             started = true
             if let onFirst {
-                _Concurrency.Task { await onFirst() }
+                await onFirst()
             }
         }
 
@@ -94,8 +102,9 @@ internal actor Broadcast<Element: Sendable> {
     /// Sends a value to all current subscribers.
     ///
     /// For `.state` mode, the value is cached for replay to future
-    /// subscribers. If no subscriber is attached, the value is dropped
-    /// (`.event`) or cached only (`.state`).
+    /// subscribers (equivalent to ``sendState(_:)``). If no subscriber
+    /// is attached, the value is dropped (`.event`) or cached only
+    /// (`.state`).
     func send(_ value: Element) {
         if mode == .state {
             lastValue = value
@@ -108,9 +117,9 @@ internal actor Broadcast<Element: Sendable> {
     /// Sends a state value, caching it for replay even if no subscriber
     /// is currently attached.
     ///
-    /// Unlike ``send(_:)``, this always updates `lastValue`, so a
-    /// subscriber that later calls ``subscribe()`` receives this value
-    /// as its first element.
+    /// Unlike ``send(_:)``, this always updates `lastValue` regardless
+    /// of mode, so a subscriber that later calls ``subscribe()``
+    /// receives this value as its first element.
     func sendState(_ value: Element) {
         lastValue = value
         for (_, continuation) in subscribers {
@@ -121,8 +130,9 @@ internal actor Broadcast<Element: Sendable> {
     /// Finishes all subscriber continuations and clears replay state.
     ///
     /// If `onLast` is set and the `Broadcast` was started, `onLast`
-    /// fires to release any associated MQTT subscription.
-    func finish() {
+    /// is awaited before this method returns, releasing any associated
+    /// MQTT subscription.
+    func finish() async {
         for (_, continuation) in subscribers {
             continuation.finish()
         }
@@ -131,17 +141,17 @@ internal actor Broadcast<Element: Sendable> {
         if started {
             started = false
             if let onLast {
-                _Concurrency.Task { await onLast() }
+                await onLast()
             }
         }
     }
 
-    private func removeSubscriber(_ id: UUID) {
+    private func removeSubscriber(_ id: UUID) async {
         guard subscribers.removeValue(forKey: id) != nil else { return }
         if subscribers.isEmpty && started {
             started = false
             if let onLast {
-                _Concurrency.Task { await onLast() }
+                await onLast()
             }
         }
     }
@@ -153,53 +163,56 @@ internal actor Broadcast<Element: Sendable> {
 ///
 /// `BroadcastFamily` manages the lifecycle of per-key `Broadcast`
 /// instances. When the first subscriber for a key attaches,
-/// `onFirst(key)` fires (e.g. to acquire the MQTT topic). When the
-/// last subscriber for that key leaves, `onLast(key)` fires (e.g. to
-/// release the MQTT topic).
+/// `onFirst(key)` is awaited (e.g. to acquire the MQTT topic). When the
+/// last subscriber for that key leaves, `onLast(key)` is awaited (e.g.
+/// to release the MQTT topic).
 ///
-/// `Broadcast` instances are **not evicted** when their subscriber
-/// count drops to zero. This avoids a race where `onLast` fires
-/// asynchronously and a new subscriber attaches to the same `Broadcast`
-/// before eviction runs — the new subscriber would be orphaned if the
-/// `Broadcast` were removed. Instead, `Broadcast` instances persist in
-/// the family's dictionary for the lifetime of the family. This is
-/// acceptable because the number of distinct keys is bounded by the
-/// communication protocol's event-type/filter/channel taxonomy.
+/// By default, `Broadcast` instances are **not evicted** when their
+/// subscriber count drops to zero, because the keys are drawn from a
+/// bounded taxonomy (core types, operations, channel IDs) and a new
+/// subscriber may re-attach at any time. For families with unbounded
+/// keys (e.g. per-correlation-id response streams), set
+/// `evictOnLast: true` to remove the `Broadcast` from the dictionary
+/// when `onLast` fires, preventing unbounded memory growth.
 internal actor BroadcastFamily<Key: Hashable & Sendable, Element: Sendable> {
 
     private let mode: BroadcastMode
     private let makeOnFirst: (@Sendable (Key) async -> Void)?
     private let makeOnLast: (@Sendable (Key) async -> Void)?
+    private let evictOnLast: Bool
     private var broadcasts: [Key: Broadcast<Element>] = [:]
 
     init(
         mode: BroadcastMode,
+        evictOnLast: Bool = false,
         onFirst: (@Sendable (Key) async -> Void)? = nil,
         onLast: (@Sendable (Key) async -> Void)? = nil
     ) {
         self.mode = mode
+        self.evictOnLast = evictOnLast
         self.makeOnFirst = onFirst
         self.makeOnLast = onLast
     }
 
     /// Returns an `AsyncStream` for the given key, creating a new
     /// `Broadcast` for that key if one does not already exist.
+    ///
+    /// `onFirst` is awaited inside `Broadcast.subscribe()` before this
+    /// method returns, guaranteeing MQTT topic acquisition completes
+    /// before the caller receives the stream.
     func subscribe(for key: Key) async -> AsyncStream<Element> {
         if let existing = broadcasts[key] {
             return await existing.subscribe()
         }
-        let broadcast = Broadcast<Element>(
-            mode: mode,
-            onFirst: { [makeOnFirst, key] in await makeOnFirst?(key) },
-            onLast: { [makeOnLast, key] in await makeOnLast?(key) }
-        )
+        let broadcast = makeBroadcast(for: key)
         broadcasts[key] = broadcast
         return await broadcast.subscribe()
     }
 
     /// Sends a value to all subscribers of the `Broadcast` registered
     /// under `key`. If no `Broadcast` exists for `key`, the value is
-    /// dropped.
+    /// dropped silently — matching the former `EventHub.yield` behavior
+    /// for keys with no registered stream.
     func send(_ value: Element, for key: Key) async {
         guard let broadcast = broadcasts[key] else { return }
         await broadcast.send(value)
@@ -210,11 +223,7 @@ internal actor BroadcastFamily<Key: Hashable & Sendable, Element: Sendable> {
     /// `Broadcast` for `key` if one does not exist.
     func sendState(_ value: Element, for key: Key) async {
         if broadcasts[key] == nil {
-            let broadcast = Broadcast<Element>(
-                mode: mode,
-                onFirst: { [makeOnFirst, key] in await makeOnFirst?(key) },
-                onLast: { [makeOnLast, key] in await makeOnLast?(key) }
-            )
+            let broadcast = makeBroadcast(for: key)
             broadcasts[key] = broadcast
         }
         await broadcasts[key]?.sendState(value)
@@ -227,5 +236,24 @@ internal actor BroadcastFamily<Key: Hashable & Sendable, Element: Sendable> {
             await broadcast.finish()
         }
         broadcasts.removeAll()
+    }
+
+    // MARK: - Private
+
+    private func makeBroadcast(for key: Key) -> Broadcast<Element> {
+        Broadcast<Element>(
+            mode: mode,
+            onFirst: { [makeOnFirst, key] in await makeOnFirst?(key) },
+            onLast: { [weak self, key, makeOnLast, evictOnLast] in
+                if evictOnLast {
+                    await self?.evict(key)
+                }
+                await makeOnLast?(key)
+            }
+        )
+    }
+
+    private func evict(_ key: Key) {
+        broadcasts.removeValue(forKey: key)
     }
 }

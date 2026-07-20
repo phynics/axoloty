@@ -44,7 +44,11 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
     ///
     /// Created by ``CommunicationManager`` (which owns the subscription
     /// coordinator needed for `onFirst`/`onLast` hooks) and set on this
-    /// client before it starts producing values.
+    /// client via ``setStreams(_:)`` before it starts producing values.
+    ///
+    /// - Warning: Accessing `streams` before ``setStreams(_:)`` is called
+    ///   will crash (implicitly-unwrapped optional is nil). The manager
+    ///   calls `setStreams` in its `init`, before `connect()` is called.
     var streams: CommunicationStreams!
 
     func setStreams(_ streams: CommunicationStreams) {
@@ -430,9 +434,9 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
         delegate.didUpdateCommunicationState(state)
 
         deliveryContinuation.yield { [weak self] in
-                guard let self else { return }
-                await self.streams.communicationState.sendState(state)
-            }
+            guard let self else { return }
+            await self.streams.communicationState.sendState(state)
+        }
     }
 
     // MARK: - mqtt-nio listener callbacks.
@@ -444,9 +448,9 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
             let rawMessage = RawMQTTMessage(topic: info.topicName, payload: bytes)
 
             deliveryContinuation.yield { [weak self] in
-                    guard let self else { return }
-                    await self.streams.rawMQTTMessages.send(rawMessage)
-                }
+                guard let self else { return }
+                await self.streams.rawMQTTMessages.send(rawMessage)
+            }
 
             if CommunicationTopic.isRawTopic(topic: info.topicName) {
                 self.delegate.didReceiveRawMQTTMessage(
