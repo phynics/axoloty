@@ -6,59 +6,31 @@ import Foundation
 extension CommunicationManager {
 
     /// Observes Update events for a core type as immutable snapshots.
-    public func observeUpdateStream(withCoreType coreType: CoreType) async -> EventStream<UpdateEventSnapshot> {
-        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
-            eventType: .Update,
-            eventTypeFilter: coreType.rawValue,
-            namespace: communicationOptions.shouldEnableCrossNamespacing ? nil : namespace
-        )
-        await acquireSubscription(topic: topic)
-        let coordinator = subscriptionCoordinator!
-        return await registerSnapshotStream(
-            key: CommunicationEventHubKeys.update(eventTypeFilter: coreType.rawValue),
-            onLast: {
-                _Concurrency.Task { await coordinator.release(topic: topic) }
-            }
-        )
+    public func observeUpdateStream(withCoreType coreType: CoreType) async -> AsyncStream<UpdateEventSnapshot> {
+        await streams.updateFamily.subscribe(for: coreType.rawValue)
     }
 
     /// Observes Channel events for a channel identifier as immutable snapshots.
     ///
     /// - Throws: ``AxolotyError.invalidArgument(argument:reason:)`` when `channelId` is invalid.
-    public func observeChannelStream(channelId: String) async throws -> EventStream<ChannelEventSnapshot> {
+    public func observeChannelStream(channelId: String) async throws -> AsyncStream<ChannelEventSnapshot> {
         guard CommunicationTopic.isValidEventTypeFilter(filter: channelId) else {
             throw AxolotyError.invalidArgument(argument: "channelId", reason: "\"\(channelId)\" is not a valid channel Id")
         }
-        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
-            eventType: .Channel,
-            eventTypeFilter: channelId,
-            namespace: communicationOptions.shouldEnableCrossNamespacing ? nil : namespace
-        )
-        await acquireSubscription(topic: topic)
-        let coordinator = subscriptionCoordinator!
-        return await registerSnapshotStream(
-            key: CommunicationEventHubKeys.channel(channelId: channelId),
-            onLast: {
-                _Concurrency.Task { await coordinator.release(topic: topic) }
-            }
-        )
+        return await streams.channelFamily.subscribe(for: channelId)
     }
 
     /// Observes local association state for an IO point as immutable snapshots.
-    public func observeIoStateStream(ioPoint: IoPoint) async -> EventStream<IoStateEventSnapshot> {
+    public func observeIoStateStream(ioPoint: IoPoint) async -> AsyncStream<IoStateEventSnapshot> {
         let state = _observeIoState(ioPointId: ioPoint.objectId)
         let initial = IoStateEventSnapshot(
             ioPointId: ioPoint.objectId.string,
             hasAssociations: state.eventData.hasAssociations(),
             updateRate: state.eventData.updateRate()
         )
-        let key = CommunicationEventHubKeys.ioState(ioPointId: ioPoint.objectId.string)
-        await client.eventHub.yieldState(value: initial, to: key)
-        return await client.eventHub.registerStream(
-            key: key,
-            buffering: .state,
-            onLast: {}
-        )
+        let ioPointId = ioPoint.objectId.string
+        await streams.ioStateFamily.sendState(initial, for: ioPointId)
+        return await streams.ioStateFamily.subscribe(for: ioPointId)
     }
 
     internal func _observeIoState(ioPointId: CoatyUUID) -> IoStateEvent {
@@ -79,22 +51,7 @@ extension CommunicationManager {
     }
 
     /// Observes raw IO value messages routed through the communication manager.
-    public func observeIoValueStream() async -> EventStream<IoValueEventSnapshot> {
-        await client.eventHub.registerStream(
-            key: CommunicationEventHubKeys.ioValue,
-            buffering: .event,
-            onLast: {}
-        )
-    }
-
-    private func registerSnapshotStream<E: Sendable>(
-        key: EventKey<E>,
-        onLast: @escaping @Sendable () -> Void
-    ) async -> EventStream<E> {
-        await client.eventHub.registerStream(
-            key: key,
-            buffering: .event,
-            onLast: onLast
-        )
+    public func observeIoValueStream() async -> AsyncStream<IoValueEventSnapshot> {
+        await streams.ioValues.subscribe()
     }
 }

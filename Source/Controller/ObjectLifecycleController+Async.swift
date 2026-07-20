@@ -39,7 +39,7 @@ extension ObjectLifecycleController {
         with objectType: String,
         objectFilter: (@Sendable (CoatyObjectSnapshot) -> Bool)? = nil
     ) async throws -> AsyncStream<ObjectLifecycleSnapshotInfo> {
-        let advertiseStream: EventStream<AdvertiseEventSnapshot>
+        let advertiseStream: AsyncStream<AdvertiseEventSnapshot>
         if let coreType = CoreType.getCoreType(forObjectType: objectType) {
             advertiseStream = await communicationManager.observeAdvertiseStream(
                 withCoreType: coreType
@@ -63,14 +63,14 @@ extension ObjectLifecycleController {
         let task = _Concurrency.Task {
             await withTaskGroup(of: Void.self) { group in
                 group.addTask {
-                    var iterator = await advertiseStream.makeAsyncIteratorAndWait()
+                    var iterator = advertiseStream.makeAsyncIterator()
                     await ready.markReady()
                     while let snapshot = await iterator.next() {
                         await registry.handleAdvertise(snapshot)
                     }
                 }
                 group.addTask {
-                    var iterator = await deadvertiseStream.makeAsyncIteratorAndWait()
+                    var iterator = deadvertiseStream.makeAsyncIterator()
                     await ready.markReady()
                     while let snapshot = await iterator.next() {
                         await registry.handleDeadvertise(snapshot)

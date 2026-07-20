@@ -45,15 +45,14 @@ public class CommunicationManager {
     /// Communication state mirrored from the underlying transport.
     internal private(set) var communicationState: CommunicationState = .offline
 
-    /// The async event hub shared by the underlying communication client.
+    /// Holds all typed broadcast streams shared with the underlying
+    /// communication client.
     ///
-    /// Use this hub together with the ``CommunicationEventHubKeys`` helpers to
-    /// register streams for transport-level state and raw MQTT messages, or
-    /// use the convenience accessors ``observeCommunicationStateStream()`` and
-    /// ``observeRawMQTTMessageStream()``.
-    public var eventHub: EventHub {
-        return client.eventHub
-    }
+    /// Created in ``init`` after the subscription coordinator is
+    /// initialized, then set on the client. Producers (``MQTTNIOClient``)
+    /// call `send`/`sendState`; consumers (the async observation API in
+    /// `CM+*Stream.swift`) call `subscribe`.
+    internal private(set) var streams: CommunicationStreams!
 
     /// Holds deferred publications (topic, payload) while the communication manager is offline.
     private var deferredPublications = [(String, MessagePayload)]()
@@ -152,6 +151,18 @@ public class CommunicationManager {
             }
         )
 
+        // Create typed broadcast streams with coordinator-owned
+        // onFirst/onLast hooks for MQTT subscription refcounting.
+        // @Observable was rejected because the @Observable macro does
+        // not expand on Linux Swift 6.3 (Observation.ObservationRegistrar
+        // is missing from the Linux toolchain). All streams use Broadcast
+        // instead — state streams use .state mode for late-subscriber
+        // replay, event streams use .event mode.
+        let crossNs = communicationOptions.shouldEnableCrossNamespacing ? nil : self.namespace
+        let coordinator = self.subscriptionCoordinator!
+        self.streams = makeStreams(crossNs: crossNs, coordinator: coordinator)
+        self.client.setStreams(self.streams)
+
         // Fail-fast invariant, not user input.
         // swiftlint:disable:next force_try
         try! self._initIoNodes()
@@ -159,6 +170,150 @@ public class CommunicationManager {
         if self.communicationOptions.shouldAutoStart && !mqttClientOptions.shouldTryMDNSDiscovery {
             self.didReceiveStart()
         }
+    }
+
+    // MARK: - Stream factory.
+
+    /// Creates all ``CommunicationStreams`` with coordinator-owned
+    /// `onFirst`/`onLast` hooks for MQTT subscription refcounting.
+    ///
+    /// Streams without MQTT refcounting (state, raw/parsed messages, IO
+    /// values, IO state) are created with nil hooks. Streams with
+    /// refcounting (deadvertise, discover, query, advertise, call,
+    /// update, channel, response) derive the MQTT topic from the key
+    /// and call `coordinator.acquire`/`release`.
+    private func makeStreams(
+        crossNs: String?,
+        coordinator: CommunicationSubscriptionCoordinator
+    ) -> CommunicationStreams {
+        CommunicationStreams(
+            communicationState: Broadcast(mode: .state),
+            operatingState: Broadcast(mode: .state),
+            rawMQTTMessages: Broadcast(mode: .event),
+            parsedMQTTMessages: Broadcast(mode: .event),
+            ioValues: Broadcast(mode: .event),
+            ioStateFamily: BroadcastFamily(mode: .state),
+            advertiseFamily: BroadcastFamily(
+                mode: .event,
+                onFirst: { key in
+                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                        eventType: .Advertise, eventTypeFilter: key.eventTypeFilter, namespace: crossNs
+                    )
+                    await coordinator.acquire(topic: topic)
+                },
+                onLast: { key in
+                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                        eventType: .Advertise, eventTypeFilter: key.eventTypeFilter, namespace: crossNs
+                    )
+                    await coordinator.release(topic: topic)
+                }
+            ),
+            deadvertise: Broadcast(
+                mode: .event,
+                onFirst: {
+                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                        eventType: .Deadvertise, namespace: crossNs
+                    )
+                    await coordinator.acquire(topic: topic)
+                },
+                onLast: {
+                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                        eventType: .Deadvertise, namespace: crossNs
+                    )
+                    await coordinator.release(topic: topic)
+                }
+            ),
+            discover: Broadcast(
+                mode: .event,
+                onFirst: {
+                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                        eventType: .Discover, namespace: crossNs
+                    )
+                    await coordinator.acquire(topic: topic)
+                },
+                onLast: {
+                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                        eventType: .Discover, namespace: crossNs
+                    )
+                    await coordinator.release(topic: topic)
+                }
+            ),
+            query: Broadcast(
+                mode: .event,
+                onFirst: {
+                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                        eventType: .Query, namespace: crossNs
+                    )
+                    await coordinator.acquire(topic: topic)
+                },
+                onLast: {
+                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                        eventType: .Query, namespace: crossNs
+                    )
+                    await coordinator.release(topic: topic)
+                }
+            ),
+            callFamily: BroadcastFamily(
+                mode: .event,
+                onFirst: { operation in
+                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                        eventType: .Call, eventTypeFilter: operation, namespace: crossNs
+                    )
+                    await coordinator.acquire(topic: topic)
+                },
+                onLast: { operation in
+                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                        eventType: .Call, eventTypeFilter: operation, namespace: crossNs
+                    )
+                    await coordinator.release(topic: topic)
+                }
+            ),
+            updateFamily: BroadcastFamily(
+                mode: .event,
+                onFirst: { filter in
+                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                        eventType: .Update, eventTypeFilter: filter, namespace: crossNs
+                    )
+                    await coordinator.acquire(topic: topic)
+                },
+                onLast: { filter in
+                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                        eventType: .Update, eventTypeFilter: filter, namespace: crossNs
+                    )
+                    await coordinator.release(topic: topic)
+                }
+            ),
+            channelFamily: BroadcastFamily(
+                mode: .event,
+                onFirst: { channelId in
+                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                        eventType: .Channel, eventTypeFilter: channelId, namespace: crossNs
+                    )
+                    await coordinator.acquire(topic: topic)
+                },
+                onLast: { channelId in
+                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                        eventType: .Channel, eventTypeFilter: channelId, namespace: crossNs
+                    )
+                    await coordinator.release(topic: topic)
+                }
+            ),
+            responseFamily: BroadcastFamily(
+                mode: .event,
+                onFirst: { key in
+                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                        eventType: key.eventType, namespace: crossNs, correlationId: key.correlationId
+                    )
+                    await coordinator.acquire(topic: topic)
+                },
+                onLast: { key in
+                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                        eventType: key.eventType, namespace: crossNs, correlationId: key.correlationId
+                    )
+                    await coordinator.release(topic: topic)
+                }
+            )
+        )
     }
 
     // MARK: - Manager lifecycle methods.
@@ -440,9 +595,8 @@ public class CommunicationManager {
     private func updateOperatingState(_ state: OperatingState) {
         self.operatingState = state
         self.log.debug("Operating state changed", metadata: ["operatingState": .string(String(describing: state))])
-        let eventHub = client.eventHub
         _Concurrency.Task {
-            await eventHub.yieldState(value: state, to: CommunicationEventHubKeys.operatingState)
+            await self.streams.operatingState.sendState(state)
         }
     }
 
@@ -480,13 +634,13 @@ public class CommunicationManager {
 
     nonisolated func didReceiveRawMQTTMessage(topic: String, payload: [UInt8]) {
         onMain { manager in
-            await manager.eventHub.yield(value: RawMQTTMessage(topic: topic, payload: payload), to: CommunicationEventHubKeys.rawMQTTMessage)
+            await manager.streams.rawMQTTMessages.send(RawMQTTMessage(topic: topic, payload: payload))
         }
     }
 
     nonisolated func didReceiveIoValue(topic: String, payload: [UInt8]) {
         onMain { manager in
-            await manager.eventHub.yield(value: IoValueEventSnapshot(topic: topic, payload: payload), to: CommunicationEventHubKeys.ioValue)
+            await manager.streams.ioValues.send(IoValueEventSnapshot(topic: topic, payload: payload))
         }
     }
 
@@ -746,13 +900,9 @@ public class CommunicationManager {
             hasAssociations: message.eventData.hasAssociations(),
             updateRate: message.eventData.updateRate()
         )
-        let eventHub = client.eventHub
-        let stateKey = CommunicationEventHubKeys.ioState(ioPointId: ioPointId.string)
+        let ioPointIdString = ioPointId.string
         _Concurrency.Task {
-            await eventHub.yieldState(
-                value: snapshot,
-                to: stateKey
-            )
+            await self.streams.ioStateFamily.sendState(snapshot, for: ioPointIdString)
         }
     }
 }

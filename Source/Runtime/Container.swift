@@ -109,7 +109,7 @@ public class Container {
                     return
                 }
                 let stream = await communicationManager.observeOperatingStateStream()
-                var iterator = await stream.makeAsyncIteratorAndWait()
+                var iterator = stream.makeAsyncIterator()
                 if await iterator.next() == .started {
                     self.dispatchOperatingState(state: .started, ctrl: controller)
                 }
@@ -226,7 +226,7 @@ public class Container {
                 return
             }
             let stream = await communicationManager.observeOperatingStateStream()
-            var iterator = await stream.makeAsyncIteratorAndWait()
+            var iterator = stream.makeAsyncIterator()
             var isInitialOperatingState = true
             while let state = await iterator.next() {
                 if isInitialOperatingState {

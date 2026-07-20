@@ -7,12 +7,8 @@ extension CommunicationManager {
 
     /// Returns an async stream that replays the current operating lifecycle
     /// state and emits future start/stop transitions.
-    public func observeOperatingStateStream() async -> EventStream<OperatingState> {
-        await client.eventHub.registerStream(
-            key: CommunicationEventHubKeys.operatingState,
-            buffering: .state,
-            onLast: {}
-        )
+    public func observeOperatingStateStream() async -> AsyncStream<OperatingState> {
+        await streams.operatingState.subscribe()
     }
 
     /// Returns an async stream that replays the current ``CommunicationState``
@@ -21,13 +17,9 @@ extension CommunicationManager {
     /// The returned stream uses state buffering, so the most recently emitted
     /// state is replayed to new subscribers before any future changes.
     ///
-    /// - Returns: an ``EventStream`` of ``CommunicationState`` values.
-    public func observeCommunicationStateStream() async -> EventStream<CommunicationState> {
-        return await client.eventHub.registerStream(
-            key: CommunicationEventHubKeys.communicationState,
-            buffering: .state,
-            onLast: {}
-        )
+    /// - Returns: an `AsyncStream` of ``CommunicationState`` values.
+    public func observeCommunicationStateStream() async -> AsyncStream<CommunicationState> {
+        await streams.communicationState.subscribe()
     }
 
     /// Returns an async stream of raw incoming MQTT transport messages.
@@ -36,12 +28,8 @@ extension CommunicationManager {
     /// for each incoming MQTT `PUBLISH` packet. It does not replay historical
     /// messages.
     ///
-    /// - Returns: an ``EventStream`` of ``RawMQTTMessage`` values.
-    public func observeRawMQTTMessageStream() async -> EventStream<RawMQTTMessage> {
-        return await client.eventHub.registerStream(
-            key: CommunicationEventHubKeys.rawMQTTMessage,
-            buffering: .event,
-            onLast: {}
-        )
+    /// - Returns: an `AsyncStream` of ``RawMQTTMessage`` values.
+    public func observeRawMQTTMessageStream() async -> AsyncStream<RawMQTTMessage> {
+        await streams.rawMQTTMessages.subscribe()
     }
 }

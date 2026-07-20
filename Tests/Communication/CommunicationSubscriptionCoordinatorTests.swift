@@ -257,7 +257,8 @@ private actor CommandLog {
 }
 
 private final class RecordingCommunicationClient: CommunicationClient, @unchecked Sendable {
-    let eventHub = EventHub()
+    var streams: CommunicationStreams!
+    func setStreams(_ streams: CommunicationStreams) { self.streams = streams }
     var delegate: CommunicationClientDelegate = RecordingStartable()
     private let gate: SubscriptionGate?
     private(set) var commands: [SubscriptionCommand] = []

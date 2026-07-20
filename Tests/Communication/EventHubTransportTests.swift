@@ -5,10 +5,10 @@ import Foundation
 import Testing
 
 /// Tests that transport-level state and raw MQTT messages are mirrored into
-/// the Swift concurrency ``EventHub`` while the legacy Rx subjects remain
+/// the Swift concurrency ``Broadcast`` while the legacy Rx subjects remain
 /// source-compatible.
 @MainActor
-struct EventHubTransportTests {
+struct BroadcastTransportTests {
     @Test
     func advertiseStreamAcquiresTopicAndDeliversSnapshot() async throws {
         let client = FakeCommunicationClient(delegate: FakeStartable())
@@ -34,9 +34,7 @@ struct EventHubTransportTests {
                 name: "log"
             )
         )
-        await client.emit(snapshot, to: CommunicationEventHubKeys.advertise(
-            eventTypeFilter: CoreType.Log.rawValue
-        ))
+        await client.emitAdvertise(snapshot, filter: CoreType.Log.rawValue)
 
         #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == snapshot)
     }
@@ -59,7 +57,7 @@ struct EventHubTransportTests {
         let client = FakeCommunicationClient(delegate: FakeStartable())
         let manager = makeManager(client: client)
         let stream = await manager.observeDeadvertiseStream()
-        var iterator = await stream.makeAsyncIteratorAndWait()
+        var iterator = stream.makeAsyncIterator()
         let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
             eventType: .Deadvertise,
             namespace: manager.namespace
@@ -72,7 +70,7 @@ struct EventHubTransportTests {
             sourceId: "source",
             objectIds: ["object"]
         )
-        await client.emit(snapshot, to: CommunicationEventHubKeys.deadvertise)
+        await client.emitDeadvertise(snapshot)
 
         #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == snapshot)
     }
@@ -82,7 +80,7 @@ struct EventHubTransportTests {
         let client = FakeCommunicationClient(delegate: FakeStartable())
         let manager = makeManager(client: client)
         let stream = await manager.observeDiscoverStream()
-        var iterator = await stream.makeAsyncIteratorAndWait()
+        var iterator = stream.makeAsyncIterator()
         let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
             eventType: .Discover,
             namespace: manager.namespace
@@ -95,7 +93,7 @@ struct EventHubTransportTests {
             sourceId: "source",
             objectTypes: [Log.objectType]
         )
-        await client.emit(snapshot, to: CommunicationEventHubKeys.discover)
+        await client.emitDiscover(snapshot)
 
         #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == snapshot)
     }
@@ -116,7 +114,7 @@ struct EventHubTransportTests {
         await client.simulateState(.online)
 
         let stream = await manager.publishDiscover(DiscoverEvent.with(objectTypes: [Log.objectType]))
-        var iterator = await stream.makeAsyncIteratorAndWait()
+        var iterator = stream.makeAsyncIterator()
 
         // `.online` also triggers identity/IoNode advertisements, so filter
         // for the Discover topic rather than assuming publish order.
@@ -135,10 +133,7 @@ struct EventHubTransportTests {
             correlationId: mintedCorrelationId,
             payload: Data("{}".utf8)
         )
-        await client.emit(
-            resolveSnapshot,
-            to: CommunicationEventHubKeys.response(eventType: .Resolve, correlationId: mintedCorrelationId)
-        )
+        await client.emitResponse(resolveSnapshot, eventType: .Resolve, correlationId: mintedCorrelationId)
 
         let received = try await nextValue(&iterator, timeout: .milliseconds(500))
         #expect(received.correlationId == mintedCorrelationId)
@@ -149,7 +144,7 @@ struct EventHubTransportTests {
         let client = FakeCommunicationClient(delegate: FakeStartable())
         let manager = makeManager(client: client)
         let stream = await manager.observeQueryStream()
-        var iterator = await stream.makeAsyncIteratorAndWait()
+        var iterator = stream.makeAsyncIterator()
         let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
             eventType: .Query,
             namespace: manager.namespace
@@ -163,7 +158,7 @@ struct EventHubTransportTests {
             correlationId: "corr-1",
             objectTypes: [Log.objectType]
         )
-        await client.emit(snapshot, to: CommunicationEventHubKeys.query)
+        await client.emitQuery(snapshot)
 
         #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == snapshot)
     }
@@ -173,7 +168,7 @@ struct EventHubTransportTests {
         let client = FakeCommunicationClient(delegate: FakeStartable())
         let manager = makeManager(client: client)
         let stream = try await manager.observeCallStream(operation: "doThing")
-        var iterator = await stream.makeAsyncIteratorAndWait()
+        var iterator = stream.makeAsyncIterator()
         let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
             eventType: .Call,
             eventTypeFilter: "doThing",
@@ -188,7 +183,7 @@ struct EventHubTransportTests {
             correlationId: "corr-1",
             operation: "doThing"
         )
-        await client.emit(snapshot, to: CommunicationEventHubKeys.call(operation: "doThing"))
+        await client.emitCall(snapshot, operation: "doThing")
 
         #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == snapshot)
     }
@@ -211,7 +206,7 @@ struct EventHubTransportTests {
         let client = FakeCommunicationClient(delegate: FakeStartable())
         let manager = makeManager(client: client)
         let stream = await manager.observeUpdateStream(withCoreType: .Log)
-        var iterator = await stream.makeAsyncIteratorAndWait()
+        var iterator = stream.makeAsyncIterator()
         let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
             eventType: .Update,
             eventTypeFilter: CoreType.Log.rawValue,
@@ -231,7 +226,7 @@ struct EventHubTransportTests {
                 name: "changed"
             )
         )
-        await client.emit(snapshot, to: CommunicationEventHubKeys.update(eventTypeFilter: CoreType.Log.rawValue))
+        await client.emitUpdate(snapshot, filter: CoreType.Log.rawValue)
 
         #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == snapshot)
     }
@@ -241,7 +236,7 @@ struct EventHubTransportTests {
         let client = FakeCommunicationClient(delegate: FakeStartable())
         let manager = makeManager(client: client)
         let stream = try await manager.observeChannelStream(channelId: "test-channel")
-        var iterator = await stream.makeAsyncIteratorAndWait()
+        var iterator = stream.makeAsyncIterator()
         let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
             eventType: .Channel,
             eventTypeFilter: "test-channel",
@@ -262,7 +257,7 @@ struct EventHubTransportTests {
             channelId: "test-channel",
             eventTypeFilter: "test-channel"
         )
-        await client.emit(snapshot, to: CommunicationEventHubKeys.channel(channelId: "test-channel"))
+        await client.emitChannel(snapshot, channelId: "test-channel")
 
         #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == snapshot)
     }
@@ -272,9 +267,9 @@ struct EventHubTransportTests {
         let client = FakeCommunicationClient(delegate: FakeStartable())
         let manager = makeManager(client: client)
         let stream = await manager.observeIoValueStream()
-        var iterator = await stream.makeAsyncIteratorAndWait()
+        var iterator = stream.makeAsyncIterator()
         let snapshot = IoValueEventSnapshot(topic: "coaty/1/ns/source/IOV", payload: [1, 2, 3])
-        await client.emit(snapshot, to: CommunicationEventHubKeys.ioValue)
+        await client.emitIoValue(snapshot)
         #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == snapshot)
     }
 
@@ -284,7 +279,7 @@ struct EventHubTransportTests {
         let manager = makeManager(client: client)
         let source = IoSource(valueType: "Temperature")
         let stream = await manager.observeIoStateStream(ioPoint: source)
-        var iterator = await stream.makeAsyncIteratorAndWait()
+        var iterator = stream.makeAsyncIterator()
         let state = try await nextValue(&iterator, timeout: .milliseconds(500))
         #expect(state.ioPointId == source.objectId.string)
         #expect(state.hasAssociations == false)
@@ -314,9 +309,10 @@ struct EventHubTransportTests {
         )
         let fakeClient = FakeCommunicationClient(delegate: manager)
         manager.client = fakeClient
+        fakeClient.streams = manager.streams
 
         let stream = try await observer.observeAdvertisedSensorsStream()
-        var iterator = await stream.makeAsyncIteratorAndWait()
+        var iterator = stream.makeAsyncIterator()
         let snapshot = AdvertiseEventSnapshot(
             sourceId: "source",
             eventTypeFilter: EVENT_TYPE_FILTER_SEPARATOR + SensorThingsTypes.OBJECT_TYPE_SENSOR,
@@ -327,11 +323,9 @@ struct EventHubTransportTests {
                 name: "sensor"
             )
         )
-        await fakeClient.emit(
+        await fakeClient.emitAdvertise(
             snapshot,
-            to: CommunicationEventHubKeys.advertise(
-                eventTypeFilter: EVENT_TYPE_FILTER_SEPARATOR + SensorThingsTypes.OBJECT_TYPE_SENSOR
-            )
+            filter: EVENT_TYPE_FILTER_SEPARATOR + SensorThingsTypes.OBJECT_TYPE_SENSOR
         )
 
         #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == snapshot)
@@ -362,9 +356,10 @@ struct EventHubTransportTests {
         )
         let fakeClient = FakeCommunicationClient(delegate: manager)
         manager.client = fakeClient
+        fakeClient.streams = manager.streams
 
         let stream = try await observer.observeAdvertisedThingsStream()
-        var iterator = await stream.makeAsyncIteratorAndWait()
+        var iterator = stream.makeAsyncIterator()
         let snapshot = AdvertiseEventSnapshot(
             sourceId: "source",
             eventTypeFilter: EVENT_TYPE_FILTER_SEPARATOR + SensorThingsTypes.OBJECT_TYPE_THING,
@@ -375,11 +370,9 @@ struct EventHubTransportTests {
                 name: "thing"
             )
         )
-        await fakeClient.emit(
+        await fakeClient.emitAdvertise(
             snapshot,
-            to: CommunicationEventHubKeys.advertise(
-                eventTypeFilter: EVENT_TYPE_FILTER_SEPARATOR + SensorThingsTypes.OBJECT_TYPE_THING
-            )
+            filter: EVENT_TYPE_FILTER_SEPARATOR + SensorThingsTypes.OBJECT_TYPE_THING
         )
 
         #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == snapshot)
@@ -410,6 +403,7 @@ struct EventHubTransportTests {
         )
         let fakeClient = FakeCommunicationClient(delegate: manager)
         manager.client = fakeClient
+        fakeClient.streams = manager.streams
 
         let sensorId = CoatyUUID()
         let stream = try await observer.observeChanneledObservationsStream(
@@ -448,9 +442,8 @@ struct EventHubTransportTests {
             channelId: "observations",
             eventTypeFilter: "observations"
         )
-        let key = CommunicationEventHubKeys.channel(channelId: "observations")
-        await fakeClient.emit(unrelated, to: key)
-        await fakeClient.emit(matching, to: key)
+        await fakeClient.emitChannel(unrelated, channelId: "observations")
+        await fakeClient.emitChannel(matching, channelId: "observations")
 
         #expect(await next.value == matching)
         container.shutdown()
@@ -495,14 +488,15 @@ struct EventHubTransportTests {
     }
 
     @Test
-    func communicationStateReplayThroughManagerEventHub() async throws {
+    func communicationStateReplayThroughBroadcast() async throws {
         let manager = makeManager()
         let fakeClient = FakeCommunicationClient(delegate: manager)
         manager.client = fakeClient
+        fakeClient.streams = manager.streams
 
         await fakeClient.simulateState(.online)
 
-        let stream: EventStream<CommunicationState> = await manager.observeCommunicationStateStream()
+        let stream: AsyncStream<CommunicationState> = await manager.observeCommunicationStateStream()
         var iterator = stream.makeAsyncIterator()
 
         let state = try await nextValue(&iterator, timeout: .milliseconds(500))
@@ -510,18 +504,16 @@ struct EventHubTransportTests {
     }
 
     @Test
-    func operatingStateReplayThroughManagerEventHub() async throws {
+    func operatingStateReplayThroughBroadcast() async throws {
         let manager = makeManager()
         let fakeClient = FakeCommunicationClient(delegate: manager)
         manager.client = fakeClient
+        fakeClient.streams = manager.streams
 
-        await fakeClient.eventHub.yieldState(
-            value: OperatingState.started,
-            to: CommunicationEventHubKeys.operatingState
-        )
+        await fakeClient.emitOperatingState(.started)
 
         let stream = await manager.observeOperatingStateStream()
-        var iterator = await stream.makeAsyncIteratorAndWait()
+        var iterator = stream.makeAsyncIterator()
         #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == .started)
     }
 
@@ -530,9 +522,10 @@ struct EventHubTransportTests {
         let manager = makeManager()
         let fakeClient = FakeCommunicationClient(delegate: manager)
         manager.client = fakeClient
+        fakeClient.streams = manager.streams
 
-        let stream1: EventStream<RawMQTTMessage> = await manager.observeRawMQTTMessageStream()
-        let stream2: EventStream<RawMQTTMessage> = await manager.observeRawMQTTMessageStream()
+        let stream1: AsyncStream<RawMQTTMessage> = await manager.observeRawMQTTMessageStream()
+        let stream2: AsyncStream<RawMQTTMessage> = await manager.observeRawMQTTMessageStream()
         var iteratorOne = stream1.makeAsyncIterator()
         var iteratorTwo = stream2.makeAsyncIterator()
 
@@ -546,7 +539,7 @@ struct EventHubTransportTests {
     }
 
     @Test
-    func mQTTNIOClientMirrorsStateChangesToEventHub() async throws {
+    func mQTTNIOClientMirrorsStateChangesToBroadcast() async throws {
         let delegate = FakeStartable()
         let options = MQTTClientOptions(
             host: "127.0.0.1",
@@ -556,6 +549,7 @@ struct EventHubTransportTests {
         )
         options.clientId = "test-client"
         let client = MQTTNIOClient(mqttClientOptions: options, delegate: delegate)
+        client.streams = makeTestStreams()
 
         // No settling delay needed: `.state` buffering both caches the latest
         // value and forwards live yields to already-registered continuations,
@@ -563,12 +557,8 @@ struct EventHubTransportTests {
         // doesn't matter — the state reaches the iterator either way.
         client.updateCommunicationState(.online)
 
-        let stream: EventStream<CommunicationState> = await client.eventHub.registerStream(
-            key: CommunicationEventHubKeys.communicationState,
-            buffering: .state,
-            onLast: {}
-        )
-        var iterator = await stream.makeAsyncIteratorAndWait()
+        let stream: AsyncStream<CommunicationState> = await client.streams.communicationState.subscribe()
+        var iterator = stream.makeAsyncIterator()
 
         let state = try await nextValue(&iterator, timeout: .milliseconds(500))
         #expect(state == .online)
@@ -624,7 +614,8 @@ private final class FakeStartable: CommunicationClientDelegate {
 }
 
 private final class FakeCommunicationClient: CommunicationClient, @unchecked Sendable {
-    let eventHub = EventHub()
+    var streams: CommunicationStreams!
+    func setStreams(_ streams: CommunicationStreams) { self.streams = streams }
     var delegate: CommunicationClientDelegate
     private(set) var commands: [SubscriptionCommand] = []
     private(set) var publishedTopics: [String] = []
@@ -637,21 +628,42 @@ private final class FakeCommunicationClient: CommunicationClient, @unchecked Sen
 
     func simulateState(_ state: CommunicationState) async {
         delegate.didUpdateCommunicationState(state)
-        await eventHub.yieldState(
-            value: state,
-            to: CommunicationEventHubKeys.communicationState
-        )
+        await streams.communicationState.sendState(state)
     }
 
     func simulateRawMessage(topic: String, payload: [UInt8]) async {
-        await eventHub.yield(
-            value: RawMQTTMessage(topic: topic, payload: payload),
-            to: CommunicationEventHubKeys.rawMQTTMessage
-        )
+        await streams.rawMQTTMessages.send(RawMQTTMessage(topic: topic, payload: payload))
     }
 
-    func emit<E: Sendable>(_ snapshot: E, to key: EventKey<E>) async {
-        await eventHub.yield(value: snapshot, to: key)
+    func emitAdvertise(_ snapshot: AdvertiseEventSnapshot, filter: String, objectType: String? = nil) async {
+        await streams.advertiseFamily.send(snapshot, for: AdvertiseKey(eventTypeFilter: filter, objectTypeFilter: objectType))
+    }
+    func emitDeadvertise(_ snapshot: DeadvertiseEventSnapshot) async {
+        await streams.deadvertise.send(snapshot)
+    }
+    func emitDiscover(_ snapshot: DiscoverEventSnapshot) async {
+        await streams.discover.send(snapshot)
+    }
+    func emitQuery(_ snapshot: QueryEventSnapshot) async {
+        await streams.query.send(snapshot)
+    }
+    func emitCall(_ snapshot: CallEventSnapshot, operation: String) async {
+        await streams.callFamily.send(snapshot, for: operation)
+    }
+    func emitUpdate(_ snapshot: UpdateEventSnapshot, filter: String) async {
+        await streams.updateFamily.send(snapshot, for: filter)
+    }
+    func emitChannel(_ snapshot: ChannelEventSnapshot, channelId: String) async {
+        await streams.channelFamily.send(snapshot, for: channelId)
+    }
+    func emitIoValue(_ snapshot: IoValueEventSnapshot) async {
+        await streams.ioValues.send(snapshot)
+    }
+    func emitResponse(_ snapshot: ResponseEventSnapshot, eventType: CommunicationEventType, correlationId: String) async {
+        await streams.responseFamily.send(snapshot, for: ResponseKey(eventType: eventType, correlationId: correlationId))
+    }
+    func emitOperatingState(_ state: OperatingState) async {
+        await streams.operatingState.sendState(state)
     }
 
     func connect(lastWillTopic _: String, lastWillMessage _: String) {}
@@ -669,6 +681,25 @@ private final class FakeCommunicationClient: CommunicationClient, @unchecked Sen
     func unsubscribe(_ topic: String) async throws {
         commands.append(.unsubscribe(topic))
     }
+}
+
+private func makeTestStreams() -> CommunicationStreams {
+    CommunicationStreams(
+        communicationState: Broadcast(mode: .state),
+        operatingState: Broadcast(mode: .state),
+        rawMQTTMessages: Broadcast(mode: .event),
+        parsedMQTTMessages: Broadcast(mode: .event),
+        ioValues: Broadcast(mode: .event),
+        ioStateFamily: BroadcastFamily(mode: .state),
+        advertiseFamily: BroadcastFamily(mode: .event),
+        deadvertise: Broadcast(mode: .event),
+        discover: Broadcast(mode: .event),
+        query: Broadcast(mode: .event),
+        callFamily: BroadcastFamily(mode: .event),
+        updateFamily: BroadcastFamily(mode: .event),
+        channelFamily: BroadcastFamily(mode: .event),
+        responseFamily: BroadcastFamily(mode: .event)
+    )
 }
 
 private actor SubscriptionAckGate {

@@ -59,51 +59,27 @@ extension CommunicationManager {
         publish(topic: topic, message: event.json)
     }
 
-    private func responseStream(_ eventType: CommunicationEventType, correlationId: String, topic: String) async -> EventStream<ResponseEventSnapshot> {
-        await acquireSubscription(topic: topic)
-        let key = CommunicationEventHubKeys.response(eventType: eventType, correlationId: correlationId)
-
+    private func responseStream(_ eventType: CommunicationEventType, correlationId: String, topic: String) async -> AsyncStream<ResponseEventSnapshot> {
         guard let coordinator = subscriptionCoordinator else {
-            // The manager has no coordinator (e.g. this call raced teardown).
-            // Fail gracefully with an already-finished stream instead of crashing.
-            let stream: EventStream<ResponseEventSnapshot> = await eventHub.registerStream(
-                key: key,
-                buffering: .event,
-                onLast: {}
-            )
-            await eventHub.finish(key: key)
-            return stream
+            return AsyncStream { $0.finish() }
         }
-
-        return await eventHub.registerStream(
-            key: key,
-            buffering: .event,
-            onLast: { _Concurrency.Task { await coordinator.release(topic: topic) } }
+        return await streams.responseFamily.subscribe(
+            for: ResponseKey(eventType: eventType, correlationId: correlationId)
         )
     }
 
     /// Publishes a request event and returns the response stream.
     ///
-    /// - Warning: This returns an ``EventStream`` whose iterator continuation
-    ///   is registered with the ``EventHub`` only when the caller creates an
-    ///   iterator. A fast broker response arriving between this method's
-    ///   return and the caller's iterator registration has no continuation to
-    ///   route to and is silently dropped — this is #70's root cause, the same
-    ///   ``EventStream.makeAsyncIterator()`` registration race documented in
-    ///   #74. Callers that must not lose the response should attach an
-    ///   iterator via ``EventStream.makeAsyncIteratorAndWait()`` (which
-    ///   awaits registration) before relying on the stream, and avoid
-    ///   ``for await`` (the non-`async` ``AsyncSequence`` path) on the
-    ///   returned stream. The in-repo caller
-    ///   (`AxolotyCoreProducerTests.awaitResponse`) already does this; the
-    ///   proper fix is the structured-operation redesign tracked by #70/#74,
-    ///   blocked on the `AsyncSequence` non-`async` contract.
+    /// The returned `AsyncStream`'s continuation is registered eagerly
+    /// inside ``Broadcast/subscribe()`` before this method returns, so a
+    /// fast broker response is buffered and delivered to the first
+    /// iterator — no registration race.
     private func publishWithResponse<D: CommunicationEventData>(
         _ event: CommunicationEvent<D>,
         request eventType: CommunicationEventType,
         response responseType: CommunicationEventType,
         eventTypeFilter: String? = nil
-    ) async -> EventStream<ResponseEventSnapshot> {
+    ) async -> AsyncStream<ResponseEventSnapshot> {
         event.sourceId = identity.objectId
         let correlationId = CoatyUUID().string
         log.debug("Minted request/response correlation id", metadata: [
@@ -144,19 +120,19 @@ extension CommunicationManager {
         publish(topic: topic, message: event.json)
     }
 
-    public func publishUpdate(_ event: UpdateEvent) async -> EventStream<ResponseEventSnapshot> {
+    public func publishUpdate(_ event: UpdateEvent) async -> AsyncStream<ResponseEventSnapshot> {
         await publishWithResponse(event, request: .Update, response: .Complete, eventTypeFilter: event.data.object.coreType.rawValue)
     }
 
-    public func publishDiscover(_ event: DiscoverEvent) async -> EventStream<ResponseEventSnapshot> {
+    public func publishDiscover(_ event: DiscoverEvent) async -> AsyncStream<ResponseEventSnapshot> {
         await publishWithResponse(event, request: .Discover, response: .Resolve)
     }
 
-    public func publishQuery(_ event: QueryEvent) async -> EventStream<ResponseEventSnapshot> {
+    public func publishQuery(_ event: QueryEvent) async -> AsyncStream<ResponseEventSnapshot> {
         await publishWithResponse(event, request: .Query, response: .Retrieve)
     }
 
-    public func publishCall(_ event: CallEvent) async -> EventStream<ResponseEventSnapshot> {
+    public func publishCall(_ event: CallEvent) async -> AsyncStream<ResponseEventSnapshot> {
         await publishWithResponse(event, request: .Call, response: .Return, eventTypeFilter: event.operation)
     }
 

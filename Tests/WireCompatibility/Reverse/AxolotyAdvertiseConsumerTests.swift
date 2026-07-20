@@ -70,7 +70,7 @@ struct AxolotyAdvertiseConsumerTests {
 /// — stream ended or timeout — surfaces as `AxolotyError.runtime` with a
 /// scenario-specific reason.
 private func nextAdvertise(
-    _ iterator: inout EventStream<AdvertiseEventSnapshot>.Iterator,
+    _ iterator: inout AsyncStream<AdvertiseEventSnapshot>.Iterator,
     timeout: Duration
 ) async throws -> AdvertiseEventSnapshot {
     do {

@@ -52,7 +52,7 @@ class MockReceiverController: Controller, @unchecked Sendable {
     /// events published right after subscribing.
     func watchForAdvertiseEvents(logger: AdvertiseEventLogger, objectType: String) async throws -> _Concurrency.Task<Void, Never> {
         let stream = try await communicationManager.observeAdvertiseStream(withObjectType: objectType)
-        let box = EventStreamBox(await stream.makeAsyncIteratorAndWait())
+        let box = AsyncStreamBox(stream.makeAsyncIterator())
         return _Concurrency.Task { @MainActor in
             while let event = await box.iterator.next() {
                 guard let object = event.object.decodeObject() else { continue }
@@ -70,7 +70,7 @@ class MockReceiverController: Controller, @unchecked Sendable {
     /// half of this guarantee).
     func watchForChannelEvents(logger: ChannelEventLogger, channelId: String) async throws -> _Concurrency.Task<Void, Never> {
         let stream = try await communicationManager.observeChannelStream(channelId: channelId)
-        let box = EventStreamBox(await stream.makeAsyncIteratorAndWait())
+        let box = AsyncStreamBox(stream.makeAsyncIterator())
         return _Concurrency.Task { @MainActor in
             while let event = await box.iterator.next() {
                 if let object = event.object.flatMap({ $0.decodeObject() }) {

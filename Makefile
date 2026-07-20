@@ -47,7 +47,7 @@ help:
 		'make test-fast     Run unit, module, fuzz, offline wire, and support self-tests' \
 		'make test-wire     Run offline wire fixtures and capture tests' \
 		'make test-support  Run Python/shell harness self-tests and tier validation' \
-		'make test-observation-linux  Run Observation and EventStream tests on Linux' \
+		'make test-observation-linux  Run Observation and Broadcast tests on Linux' \
 		'make coverage      Run tests with code coverage and report Source/ coverage' \
 		'make coverage-check  Run coverage and fail if it regresses the baseline' \
 		'make test-wire-live  Run live CoatyJS compatibility scenarios' \
@@ -82,7 +82,7 @@ worktree-warm: worktree-bootstrap build
 
 test-communication: image
 	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) \
-		swift test $(SWIFT_LOCKED_ARGS) --filter 'CommunicationSubscriptionCoordinatorTests|EventHubTransportTests'
+		swift test $(SWIFT_LOCKED_ARGS) --filter 'CommunicationSubscriptionCoordinatorTests|BroadcastTransportTests'
 
 test-broker-regressions: image
 	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) \
@@ -153,7 +153,7 @@ test-wire-live:
 test-wire-all: test-wire test-wire-live
 
 test-observation-linux: resolve
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter "ObservationLinuxTests|EventStreamTests"
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter "ObservationLinuxTests|BroadcastTests"
 
 test-fast: test-unit test-module test-fuzz test-wire test-support
 

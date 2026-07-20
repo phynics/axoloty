@@ -24,12 +24,12 @@ open class IoSourceController: Controller {
     }
 
     /// Observes update-rate state snapshots for a source.
-    public func observeUpdateRate(source: IoSource) async -> EventStream<IoStateEventSnapshot> {
+    public func observeUpdateRate(source: IoSource) async -> AsyncStream<IoStateEventSnapshot> {
         await communicationManager.observeIoStateStream(ioPoint: source)
     }
 
     /// Observes association state snapshots for a source.
-    public func observeAssociation(source: IoSource) async -> EventStream<IoStateEventSnapshot> {
+    public func observeAssociation(source: IoSource) async -> AsyncStream<IoStateEventSnapshot> {
         await communicationManager.observeIoStateStream(ioPoint: source)
     }
 

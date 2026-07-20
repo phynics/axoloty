@@ -52,58 +52,14 @@ func waitUntil(
     }
 }
 
-/// Awaits the next element from an ``EventStream`` iterator, failing with a
+/// Awaits the next element from an `AsyncStream` iterator, failing with a
 /// named timeout rather than hanging forever if the awaited stream never
 /// delivers.
 ///
 /// The box is generic over `Element: Sendable` (not over the iterator type),
 /// so the `@Sendable` task-group closure captures `Element.Type` — which is
 /// `Sendable` — rather than the non-`Sendable` iterator metatype that a
-/// generic `I: AsyncIteratorProtocol` parameter would introduce. The box is
-/// the one remaining shared `@unchecked Sendable` iterator wrapper in the
-/// test target: an actor-based holder was attempted (see #148) but cannot
-/// work because ``EventStream/Iterator`` is non-`Sendable` and so cannot
-/// cross the actor's isolation boundary in either direction.
-///
-/// - Throws: ``AsyncWaitTimeoutError`` if no value arrives before `timeout`,
-///   or `CancellationError` if the stream finishes first.
-func nextValue<E: Sendable>(
-    _ iterator: inout EventStream<E>.Iterator,
-    timeout: Duration = .seconds(5)
-) async throws -> E {
-    let box = EventStreamBox(iterator)
-    defer { iterator = box.iterator }
-
-    return try await withThrowingTaskGroup(of: E.self) { group in
-        group.addTask {
-            guard let value = await box.iterator.next() else {
-                throw CancellationError()
-            }
-            return value
-        }
-        group.addTask {
-            try await _Concurrency.Task.sleep(for: timeout)
-            throw AsyncWaitTimeoutError(
-                description: "Timed out after \(timeout) waiting for the next stream value"
-            )
-        }
-
-        guard let value = try await group.next() else {
-            throw AsyncWaitTimeoutError(
-                description: "Timed out after \(timeout) waiting for the next stream value"
-            )
-        }
-        group.cancelAll()
-        return value
-    }
-}
-
-/// Awaits the next element from an `AsyncStream` iterator, failing with a
-/// named timeout rather than hanging forever if the awaited stream never
-/// delivers.
-///
-/// See the ``EventStream`` overload above for why the box is generic over
-/// `Element: Sendable`.
+/// generic `I: AsyncIteratorProtocol` parameter would introduce.
 ///
 /// - Throws: ``AsyncWaitTimeoutError`` if no value arrives before `timeout`,
 ///   or `CancellationError` if the stream finishes first.
@@ -168,22 +124,13 @@ func withTimeout<T: Sendable>(
     }
 }
 
-/// A `@unchecked Sendable` box for an ``EventStream`` iterator, generic over
-/// `Element: Sendable` so the captured metatype is `Sendable`.
-///
-/// Shared by the timeout-racing `nextValue` overloads above and by the
-/// long-lived consumer tasks in `EventStreamTests`, `SensorThingsMocks`, and
-/// `AxolotyLifecycleSubjectTests`, replacing the per-file `@unchecked
-/// Sendable` box copies those files used to carry.
-final class EventStreamBox<E: Sendable>: @unchecked Sendable {
-    var iterator: EventStream<E>.Iterator
-    init(_ iterator: EventStream<E>.Iterator) {
-        self.iterator = iterator
-    }
-}
-
 /// A `@unchecked Sendable` box for an `AsyncStream` iterator, generic over
 /// `Element: Sendable` so the captured metatype is `Sendable`.
+///
+/// Shared by the timeout-racing `nextValue` overload above and by the
+/// long-lived consumer tasks in `BroadcastTests`, `SensorThingsMocks`, and
+/// `AxolotyLifecycleSubjectTests`, replacing the per-file `@unchecked
+/// Sendable` box copies those files used to carry.
 final class AsyncStreamBox<E: Sendable>: @unchecked Sendable {
     var iterator: AsyncStream<E>.Iterator
     init(_ iterator: AsyncStream<E>.Iterator) {
