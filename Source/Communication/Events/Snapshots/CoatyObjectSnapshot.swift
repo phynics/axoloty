@@ -29,9 +29,9 @@ public struct CoatyObjectSnapshot: EventSnapshot, Codable, Equatable, Sendable {
     /// Indicates whether the object has been marked as deactivated.
     public let isDeactivated: Bool?
 
-    /// The raw wire payload of the object, preserving any custom or application-specific
+    /// The raw wire payload text of the object, preserving any custom or application-specific
     /// fields that are not captured in the typed properties above.
-    public let payload: Data?
+    public let payload: String?
 
     /// Creates a snapshot from the typed fields of a Coaty object.
     ///
@@ -44,7 +44,7 @@ public struct CoatyObjectSnapshot: EventSnapshot, Codable, Equatable, Sendable {
     ///   - parentObjectId: An optional parent object identifier.
     ///   - locationId: An optional location object identifier.
     ///   - isDeactivated: An optional deactivation flag.
-    ///   - payload: An optional wire payload for the full encoded object.
+    ///   - payload: An optional wire payload text for the full encoded object.
     public init(
         objectId: String,
         coreType: CoreType,
@@ -54,7 +54,7 @@ public struct CoatyObjectSnapshot: EventSnapshot, Codable, Equatable, Sendable {
         parentObjectId: String? = nil,
         locationId: String? = nil,
         isDeactivated: Bool? = nil,
-        payload: Data? = nil
+        payload: String? = nil
     ) {
         self.objectId = objectId
         self.coreType = coreType
@@ -72,7 +72,7 @@ public struct CoatyObjectSnapshot: EventSnapshot, Codable, Equatable, Sendable {
     /// The common snapshot fields remain available for routing and matching,
     /// while this payload preserves application-specific fields for consumers
     /// that need to decode a concrete object type.
-    public func withPayload(_ payload: Data?) -> CoatyObjectSnapshot {
+    public func withPayload(_ payload: String?) -> CoatyObjectSnapshot {
         CoatyObjectSnapshot(
             objectId: objectId,
             coreType: coreType,
@@ -89,7 +89,7 @@ public struct CoatyObjectSnapshot: EventSnapshot, Codable, Equatable, Sendable {
     /// Decodes the preserved payload into the registered concrete Coaty type.
     public func decodeObject() -> CoatyObject? {
         guard let payload else { return nil }
-        guard let decoded = try? JSONDecoder().decode(AnyCoatyObjectDecodable.self, from: payload) else {
+        guard let decoded = try? JSONDecoder().decode(AnyCoatyObjectDecodable.self, from: Data(payload.utf8)) else {
             return nil
         }
         return decoded.object

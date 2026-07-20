@@ -61,6 +61,7 @@ extension AdvertiseEventSnapshot {
         }
 
         let objectPayload = WirePayloadExtractor.nestedObjectPayload(from: parsedMQTTMessage.payload, key: "object")
+            .map { String(decoding: $0, as: UTF8.self) }
         let privateData = WirePayloadExtractor.nestedPayload(from: parsedMQTTMessage.payload, key: "privateData")
 
         self.init(

@@ -47,6 +47,9 @@ struct EventSnapshotMetadataTests {
         #expect(snapshot.object.objectType == "coaty.Identity")
         #expect(snapshot.object.coreType == .Identity)
         #expect(snapshot.object.payload != nil)
+
+        let decoded = try #require(snapshot.object.decodeObject())
+        #expect(decoded.name == "Test Identity")
     }
 
     @Test
@@ -128,6 +131,20 @@ struct EventSnapshotMetadataTests {
         #expect(roundTripped.sourceId == sourceId)
         #expect(roundTripped.eventTypeFilter == "CoatyObject")
         #expect(roundTripped.object.objectId == objectId)
+    }
+
+    @Test
+    func updateSnapshotDecodesFromParsedMQTTMessage() throws {
+        let topic = try CommunicationTopic("coaty/1/-/UPD:CoatyObject/\(sourceId)/\(objectId)")
+        let parsed = ParsedMQTTMessage(topic: topic, payload: advertisePayload())
+        let snapshot = try #require(UpdateEventSnapshot(parsedMQTTMessage: parsed))
+
+        #expect(snapshot.sourceId == sourceId)
+        #expect(snapshot.object.objectType == "coaty.Identity")
+        #expect(snapshot.object.payload != nil)
+
+        let decoded = try #require(snapshot.object.decodeObject())
+        #expect(decoded.name == "Test Identity")
     }
 
     @Test
@@ -220,7 +237,7 @@ struct EventSnapshotMetadataTests {
 
     @Test
     func coatyObjectSnapshotPreservesTypedFields() throws {
-        let payload = Data("{\"custom\":\"value\"}".utf8)
+        let payload = "{\"custom\":\"value\"}"
         let snapshot = CoatyObjectSnapshot(
             objectId: objectId,
             coreType: .CoatyObject,

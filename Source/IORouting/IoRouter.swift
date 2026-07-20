@@ -315,7 +315,7 @@ public class IoRouter: Controller {
             for await update in stream {
                 guard update.object.objectId == self.ioContext.objectId.string,
                       let payload = update.object.payload,
-                      let object: IoContext = try? PayloadCoder.decode(String(data: payload, encoding: .utf8) ?? "") else { continue }
+                      let object: IoContext = try? PayloadCoder.decode(payload) else { continue }
                 self.ioContext = object
                 self.ioContext.parentObjectId = self.container.identity?.objectId
                 try? self.onIoContextChanged()
