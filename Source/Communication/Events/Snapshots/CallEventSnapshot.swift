@@ -16,11 +16,11 @@ public struct CallEventSnapshot: EventSnapshot, Codable, Equatable, Sendable {
     /// This corresponds to the `typeFilter` used to route the call on the wire.
     public let operation: String
 
-    /// The encoded operation parameters, preserving the wire format.
-    public let parameters: Data?
+    /// The encoded operation parameters, preserving the wire format as JSON text.
+    public let parameters: String?
 
-    /// The encoded context filter, if one was specified.
-    public let filter: Data?
+    /// The encoded context filter, if one was specified, as JSON text.
+    public let filter: String?
 
     /// Creates a snapshot of a Call event.
     ///
@@ -34,8 +34,8 @@ public struct CallEventSnapshot: EventSnapshot, Codable, Equatable, Sendable {
         sourceId: String? = nil,
         correlationId: String? = nil,
         operation: String,
-        parameters: Data? = nil,
-        filter: Data? = nil
+        parameters: String? = nil,
+        filter: String? = nil
     ) {
         self.sourceId = sourceId
         self.correlationId = correlationId
@@ -56,8 +56,10 @@ extension CallEventSnapshot {
             sourceId: parsedMQTTMessage.sourceId,
             correlationId: parsedMQTTMessage.correlationId,
             operation: operation,
-            parameters: WirePayloadExtractor.nestedPayload(from: parsedMQTTMessage.payload, key: "parameters"),
+            parameters: WirePayloadExtractor.nestedPayload(from: parsedMQTTMessage.payload, key: "parameters")
+                .map { String(decoding: $0, as: UTF8.self) },
             filter: WirePayloadExtractor.nestedObjectPayload(from: parsedMQTTMessage.payload, key: "filter")
+                .map { String(decoding: $0, as: UTF8.self) }
         )
     }
 }

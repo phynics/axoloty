@@ -176,20 +176,39 @@ struct EventSnapshotMetadataTests {
         let snapshot = CallEventSnapshot(
             sourceId: sourceId,
             operation: "doThing",
-            parameters: sampleData(),
-            filter: sampleData()
+            parameters: sampleJSON(),
+            filter: sampleJSON()
         )
 
         #expect(snapshot.sourceId == sourceId)
         #expect(snapshot.operation == "doThing")
-        #expect(snapshot.parameters == sampleData())
-        #expect(snapshot.filter == sampleData())
+        #expect(snapshot.parameters == sampleJSON())
+        #expect(snapshot.filter == sampleJSON())
 
         let roundTripped = try roundTrip(snapshot)
         #expect(roundTripped.sourceId == sourceId)
         #expect(roundTripped.operation == "doThing")
-        #expect(roundTripped.parameters == sampleData())
-        #expect(roundTripped.filter == sampleData())
+        #expect(roundTripped.parameters == sampleJSON())
+        #expect(roundTripped.filter == sampleJSON())
+    }
+
+    @Test
+    func callSnapshotDecodesFromParsedMQTTMessage() throws {
+        let topic = try CommunicationTopic("coaty/1/-/CLL:doThing/\(sourceId)/\(objectId)")
+        let payload = """
+        {"parameters":\(samplePrivateDataJSON()),"filter":\(samplePrivateDataJSON())}
+        """
+        let parsed = ParsedMQTTMessage(topic: topic, payload: payload)
+        let snapshot = try #require(CallEventSnapshot(parsedMQTTMessage: parsed))
+
+        #expect(snapshot.sourceId == sourceId)
+        #expect(snapshot.operation == "doThing")
+
+        let parameters = try #require(snapshot.parameters)
+        #expect(try jsonEquivalent(Data(parameters.utf8), to: samplePrivateDataJSON()))
+
+        let filter = try #require(snapshot.filter)
+        #expect(try jsonEquivalent(Data(filter.utf8), to: samplePrivateDataJSON()))
     }
 
     @Test
@@ -278,6 +297,10 @@ private func sampleObject() -> CoatyObjectSnapshot {
 
 private func sampleData() -> Data {
     Data("{\"key\":\"value\"}".utf8)
+}
+
+private func sampleJSON() -> String {
+    "{\"key\":\"value\"}"
 }
 
 private func advertisePayload(withPrivateData: Bool = false) -> String {

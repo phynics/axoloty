@@ -67,8 +67,8 @@ struct EventSnapshotSendabilityTests {
         let snapshot = CallEventSnapshot(
             sourceId: sampleSourceId(),
             operation: "doThing",
-            parameters: sampleData(),
-            filter: sampleData()
+            parameters: sampleJSON(),
+            filter: sampleJSON()
         )
         assertSendable(snapshot)
     }
@@ -106,4 +106,8 @@ private func sampleObject() -> CoatyObjectSnapshot {
 
 private func sampleData() -> Data {
     Data("{\"key\":\"value\"}".utf8)
+}
+
+private func sampleJSON() -> String {
+    "{\"key\":\"value\"}"
 }
