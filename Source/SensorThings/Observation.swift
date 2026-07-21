@@ -20,9 +20,10 @@ open class Observation: CoatyObject {
     /// The time instant or period of when the Observation happens.
     public var phenomenonTime: Double
     
-    /// The estimated value of an ObservedProperty from the Observation.
-    /// Depends on the observationType defined in the associated Datastream.
-    public var result: AnyCodable
+    /// The estimated value of an ObservedProperty from the Observation,
+    /// stored as raw JSON text. Depends on the observationType defined in
+    /// the associated Datastream.
+    public var result: String
     
     /// The time of the Observation's result was generated.
     public var resultTime: Double
@@ -48,7 +49,7 @@ open class Observation: CoatyObject {
     
     // MARK: - Initializers.
     public init(phenomenonTime: Double,
-         result: AnyCodable,
+         result: String,
          resultTime: Double,
          resultQuality: [String]? = nil,
          validTime: CoatyTimeInterval? = nil,
@@ -94,7 +95,7 @@ open class Observation: CoatyObject {
     required public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.phenomenonTime = try container.decode(Double.self, forKey: .phenomenonTime)
-        self.result = try container.decode(AnyCodable.self, forKey: .result)
+        self.result = try JSONValue.decodeRawString(from: container, forKey: .result)
         self.resultTime = try container.decode(Double.self, forKey: .resultTime)
         self.resultQuality = try container.decodeIfPresent([String].self, forKey: .resultQuality)
         self.validTime = try container.decodeIfPresent(CoatyTimeInterval.self, forKey: .validTime)
@@ -108,7 +109,7 @@ open class Observation: CoatyObject {
         try super.encode(to: encoder)
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(phenomenonTime, forKey: .phenomenonTime)
-        try container.encode(result, forKey: .result)
+        try JSONValue.encodeRawString(result, to: &container, forKey: .result)
         try container.encode(resultTime, forKey: .resultTime)
         try container.encode(resultQuality, forKey: .resultQuality)
         try container.encodeIfPresent(validTime, forKey: .validTime)
