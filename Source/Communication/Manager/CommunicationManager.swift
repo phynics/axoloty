@@ -720,6 +720,8 @@ public class CommunicationManager {
     internal func handleAssociate(event: AssociateEvent) {
         let ioSourceId = event.data.ioSourceId
         let ioActorId = event.data.ioActorId
+        // The registry returns the common IoPoint type; only IoActor instances
+        // can satisfy this association request.
         let ioActor = self.findIoPointById(objectId: ioActorId) as? IoActor
         let isIoSourceAssociated = self.findIoPointById(objectId: ioSourceId) != nil
         let isIoActorAssociated = ioActor != nil

@@ -99,7 +99,7 @@ public class RuleBasedIoRouter: IoRouter {
     }
     
     override func onStarted() {
-        if let rules = self.options?.extra["rules"] as? [IoAssociationRule] {
+        if let rules = self.options?.ioAssociationRulesOption {
             self.defineRules(rules: rules)
         }
         
