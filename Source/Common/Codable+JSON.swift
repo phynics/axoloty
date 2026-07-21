@@ -138,7 +138,9 @@ extension KeyedEncodingContainerProtocol where Key == JSONCodingKeys {
             case let value as CGFloat: 
                 try encode(value, forKey: key)
             #endif
-            case let value as [String: Any]: 
+            case let value as CoatyObject:
+                try encode(DynamicCoatyObject(value: value), forKey: key)
+            case let value as [String: Any]:
                 try encode(value, forKey: key)
             case let value as [Any]: 
                 try encode(value, forKey: key)
@@ -188,10 +190,13 @@ extension UnkeyedEncodingContainer {
             case let value as CGFloat: 
                 try encode(value)
             #endif
-            case let value as [String: Any]: 
+            case let value as CoatyObject:
+                try encode(DynamicCoatyObject(value: value))
+            case let value as [String: Any]:
                 try encode(value)
-            case let value as [Any]: 
-                try encode(value)
+            case let value as [Any]:
+                var nested = nestedUnkeyedContainer()
+                try nested.encode(value)
             case Optional<Any>.none: 
                 try encodeNil()
             default: 

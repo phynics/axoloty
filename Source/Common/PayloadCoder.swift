@@ -65,9 +65,10 @@ public class PayloadCoder {
     /// `CoatyObject.json`) that are read from publish call sites that do not
     /// otherwise throw. The failure is logged at `.error` with the full cause
     /// chain.
-    internal static func encodeForJSON<T: Codable>(_ value: T) -> String {
+    internal static func encodeForJSON<T: Encodable>(_ value: T) -> String {
         do {
-            return try encode(value)
+            let data = try JSONEncoder().encode(value)
+            return String(data: data, encoding: .utf8)!
         } catch {
             LogManager.logger(.communication).error("Failed to encode value to JSON", metadata: [
                 "type": .string("\(T.self)"),

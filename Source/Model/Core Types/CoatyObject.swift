@@ -11,6 +11,14 @@ import IkigaJSON
 
 /// The base type of all objects in the Coaty object model. Application-specific object types
 /// extend either CoatyObject directly or any of its derived core types.
+struct DynamicCoatyObject: Encodable {
+    let value: CoatyObject
+
+    func encode(to encoder: Encoder) throws {
+        try value.encode(to: encoder)
+    }
+}
+
 open class CoatyObject: Codable {
     
     // MARK: - Class registration.
@@ -223,7 +231,7 @@ extension CoatyObject {
     ///   sites that do not otherwise throw; see ``PayloadCoder/encode(_:)``.
     public var json: String {
         get {
-            return PayloadCoder.encodeForJSON(self)
+            return PayloadCoder.encodeForJSON(DynamicCoatyObject(value: self))
         }
     }
 }
