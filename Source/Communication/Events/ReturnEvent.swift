@@ -16,11 +16,12 @@ public class ReturnEvent: CommunicationEvent<ReturnEventData> {
     /// successfully yields a result.
     ///
     /// - Parameters:
-    ///   - result: the result value to be returned (any JSON data type)
+    ///   - result: the result value to be returned as raw JSON text (any
+    ///     JSON data type)
     ///   - executionInfo: information about the execution of the operation
-    ///     (optional)
+    ///     as raw JSON text (optional)
     /// - Returns: a Return event with the given parameters
-    public static func with(result: AnyCodable, executionInfo: ExecutionInfo?) -> ReturnEvent {
+    public static func with(result: String, executionInfo: String?) -> ReturnEvent {
         let returnEventData = ReturnEventData.createFrom(result: result, executionInfo: executionInfo, error: nil)
         return .init(eventType: .Return, eventData: returnEventData)
     }
@@ -43,9 +44,9 @@ public class ReturnEvent: CommunicationEvent<ReturnEventData> {
     ///            and the message string providing a short description of the
     ///            error.
     ///   - executionInfo: information about the execution of the operation
-    ///     (optional)
+    ///     as raw JSON text (optional)
     /// - Returns: a Return event with the given parameters
-    public static func with(error: ReturnError, executionInfo: ExecutionInfo?) -> ReturnEvent {
+    public static func with(error: ReturnError, executionInfo: String?) -> ReturnEvent {
         let returnEventData = ReturnEventData.createFrom(result: nil, executionInfo: executionInfo, error: error)
         return .init(eventType: .Return, eventData: returnEventData)
     }
@@ -68,13 +69,14 @@ public class ReturnEventData: CommunicationEventData {
     
     // MARK: - Public attributes.
     
-    /// The result value to be returned (any JSON data type). The value is `nil`,
-    /// if operation execution yielded an error.
-    public var result: ReturnResult?
+    /// The result value to be returned (any JSON data type), stored as raw
+    /// JSON text. The value is `nil` if operation execution yielded an error.
+    public var result: String?
 
-    /// Defines additional information about the execution environment (any JSON value)
-    /// such as the execution time of the operation or the ID of the operated control unit (optional).
-    public var executionInfo: ExecutionInfo?
+    /// Defines additional information about the execution environment (any
+    /// JSON value) such as the execution time of the operation or the ID of
+    /// the operated control unit (optional), stored as raw JSON text.
+    public var executionInfo: String?
     
     /// The error object to be returned in case the operation call yielded an error (optional).
     /// The value is `nil` if the operation executed successfully.
@@ -93,7 +95,7 @@ public class ReturnEventData: CommunicationEventData {
     
     // MARK: - Initializers.
     
-    private init(result: ReturnResult?, executionInfo: ExecutionInfo?, error: ReturnError?) {
+    private init(result: String?, executionInfo: String?, error: ReturnError?) {
         self.result = result
         self.executionInfo = executionInfo
         self.error = error
@@ -102,7 +104,7 @@ public class ReturnEventData: CommunicationEventData {
     
     // MARK: - Factory methods.
     
-    internal static func createFrom(result: ReturnResult?, executionInfo: ExecutionInfo?, error: ReturnError?) -> ReturnEventData {
+    internal static func createFrom(result: String?, executionInfo: String?, error: ReturnError?) -> ReturnEventData {
         
         return .init(result: result, executionInfo: executionInfo, error: error)
     }
@@ -117,24 +119,21 @@ public class ReturnEventData: CommunicationEventData {
     
     required init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.executionInfo = try container.decodeIfPresent(ExecutionInfo.self, forKey: .executionInfo)
-        self.result = try container.decodeIfPresent(ReturnResult.self, forKey: .result)
+        self.executionInfo = try JSONValue.decodeRawStringIfPresent(from: container, forKey: .executionInfo)
+        self.result = try JSONValue.decodeRawStringIfPresent(from: container, forKey: .result)
         self.error = try container.decodeIfPresent(ReturnError.self, forKey: .error)
         try super.init(from: decoder)
     }
     
     override public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encodeIfPresent(self.executionInfo, forKey: .executionInfo)
-        try container.encodeIfPresent(self.result, forKey: .result)
+        try JSONValue.encodeRawStringIfPresent(self.executionInfo, to: &container, forKey: .executionInfo)
+        try JSONValue.encodeRawStringIfPresent(self.result, to: &container, forKey: .result)
         try container.encodeIfPresent(self.error, forKey: .error)
     }
 }
 
 // MARK: - ReturnEvent internal classes.
-
-public typealias ReturnResult = AnyCodable
-public typealias ExecutionInfo = AnyCodable
 
 /// Defines error codes for pre-defined remote call errors.
 ///

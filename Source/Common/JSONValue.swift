@@ -172,6 +172,48 @@ extension JSONValue {
         try container.encode(value, forKey: key)
     }
 
+    /// Decodes an optional field from a keyed decoding container as raw JSON
+    /// text, or `nil` if the key is absent or the value is `null`.
+    ///
+    /// Optional-field counterpart to ``decodeRawString(from:forKey:)``.
+    ///
+    /// - Parameters:
+    ///   - container: The keyed decoding container to read from.
+    ///   - key: The coding key of the optional field to decode.
+    /// - Returns: The raw JSON text of the decoded field, or `nil`.
+    /// - Throws: A ``DecodingError`` if the field is present but cannot be
+    ///   decoded as a ``JSONValue``.
+    static func decodeRawStringIfPresent<K: CodingKey>(
+        from container: KeyedDecodingContainer<K>,
+        forKey key: K
+    ) throws -> String? {
+        guard let value = try container.decodeIfPresent(JSONValue.self, forKey: key) else {
+            return nil
+        }
+        let data = try JSONEncoder().encode(value)
+        return String(data: data, encoding: .utf8)!
+    }
+
+    /// Encodes an optional raw JSON `String` into a keyed encoding container,
+    /// skipping the key entirely if the string is `nil`.
+    ///
+    /// Optional-field counterpart to ``encodeRawString(_:to:forKey:)``.
+    ///
+    /// - Parameters:
+    ///   - string: The optional raw JSON text to encode.
+    ///   - container: The keyed encoding container to write into.
+    ///   - key: The coding key of the optional field to encode.
+    /// - Throws: An ``EncodingError`` if `string` is non-nil but not valid
+    ///   JSON.
+    static func encodeRawStringIfPresent<K: CodingKey>(
+        _ string: String?,
+        to container: inout KeyedEncodingContainer<K>,
+        forKey key: K
+    ) throws {
+        guard let string else { return }
+        try encodeRawString(string, to: &container, forKey: key)
+    }
+
     /// Serializes an `Any` value to raw JSON text.
     ///
     /// Used at boundaries that receive an untyped `Any` (e.g. ``SensorIo``
