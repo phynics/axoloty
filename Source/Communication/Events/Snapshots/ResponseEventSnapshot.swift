@@ -20,4 +20,12 @@ public struct ResponseEventSnapshot: EventSnapshot, Codable, Equatable, Sendable
         self.correlationId = correlationId
         self.payload = payload
     }
+
+    /// Decodes the raw JSON payload into a typed `Decodable` value.
+    ///
+    /// - Parameter type: The type to decode the payload as.
+    /// - Returns: The decoded value, or `nil` if decoding fails.
+    public func decodePayload<T: Decodable>(_ type: T.Type) -> T? {
+        try? JSONDecoder().decode(T.self, from: Data(payload.utf8))
+    }
 }

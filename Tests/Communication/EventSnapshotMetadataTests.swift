@@ -304,6 +304,53 @@ struct EventSnapshotMetadataTests {
         #expect(roundTripped.correlationId == "corr-1")
         #expect(roundTripped.payload == sampleJSON())
     }
+
+    @Test
+    func responseSnapshotDecodePayloadReturnsTypedValue() throws {
+        struct Payload: Decodable { let key: String }
+        let snapshot = ResponseEventSnapshot(
+            eventType: "RTN",
+            sourceId: nil,
+            correlationId: nil,
+            payload: sampleJSON()
+        )
+        let decoded = try #require(snapshot.decodePayload(Payload.self))
+        #expect(decoded.key == "value")
+    }
+
+    @Test
+    func coatyObjectSnapshotDecodePayloadReturnsTypedValue() throws {
+        struct Custom: Decodable { let custom: String }
+        let snapshot = CoatyObjectSnapshot(
+            objectId: objectId,
+            coreType: .CoatyObject,
+            objectType: "coaty.CoatyObject",
+            name: "Test",
+            payload: "{\"custom\":\"value\"}"
+        )
+        let decoded = try #require(snapshot.decodePayload(Custom.self))
+        #expect(decoded.custom == "value")
+    }
+
+    @Test
+    func coatyObjectDecodeCustomReturnsTypedValueForKey() throws {
+        let object = CoatyObject(
+            coreType: .CoatyObject,
+            objectType: "coaty.CoatyObject",
+            objectId: .init(),
+            name: "Test"
+        )
+        object.custom["score"] = "42"
+        object.custom["label"] = "\"hello\""
+
+        let score = try #require(object.decodeCustom(Int.self, forKey: "score"))
+        #expect(score == 42)
+
+        let label = try #require(object.decodeCustom(String.self, forKey: "label"))
+        #expect(label == "hello")
+
+        #expect(object.decodeCustom(Int.self, forKey: "missing") == nil)
+    }
 }
 
 private func sampleObject() -> CoatyObjectSnapshot {

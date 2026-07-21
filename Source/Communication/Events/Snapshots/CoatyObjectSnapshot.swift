@@ -94,4 +94,17 @@ public struct CoatyObjectSnapshot: EventSnapshot, Codable, Equatable, Sendable {
         }
         return decoded.object
     }
+
+    /// Decodes the preserved payload into a typed `Decodable` value.
+    ///
+    /// Use this to decode the raw JSON payload into an application-specific
+    /// type when you know the expected schema.
+    ///
+    /// - Parameter type: The type to decode the payload as.
+    /// - Returns: The decoded value, or `nil` if the payload is absent or
+    ///   decoding fails.
+    public func decodePayload<T: Decodable>(_ type: T.Type) -> T? {
+        guard let payload else { return nil }
+        return try? JSONDecoder().decode(T.self, from: Data(payload.utf8))
+    }
 }

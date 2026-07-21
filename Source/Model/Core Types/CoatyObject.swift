@@ -73,6 +73,22 @@ open class CoatyObject: Codable {
     /// - Note: This property is never encoded. It is only intended to be accessed
     ///   inside your local app.
     internal(set) public var custom: [String: String]
+
+    /// Decodes a custom property value into a typed `Decodable` value.
+    ///
+    /// Custom properties are stored as raw JSON text in the ``custom``
+    /// dictionary. Use this accessor to decode a specific key's value into
+    /// an application-specific type.
+    ///
+    /// - Parameters:
+    ///   - type: The type to decode the custom value as.
+    ///   - key: The custom property key.
+    /// - Returns: The decoded value, or `nil` if the key is absent or
+    ///   decoding fails.
+    public func decodeCustom<T: Decodable>(_ type: T.Type, forKey key: String) -> T? {
+        guard let json = custom[key] else { return nil }
+        return try? JSONDecoder().decode(T.self, from: Data(json.utf8))
+    }
     
     // MARK: - Initializers.
     
