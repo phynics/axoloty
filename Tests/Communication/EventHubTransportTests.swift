@@ -52,6 +52,109 @@ struct BroadcastTransportTests {
         }
     }
 
+    /// Validates the symmetric release half of the coordinator-owned
+    /// subscription lifecycle (#172): dropping the last subscriber of an
+    /// Advertise stream must fire `Broadcast`'s `onLast`, which calls
+    /// `coordinator.release(topic:)`, which emits `.unsubscribe`.
+    ///
+    /// The acquire half (`onFirst` → `coordinator.acquire` → `.subscribe`) is
+    /// covered by `advertiseStreamAcquiresTopicAndDeliversSnapshot`. This test
+    /// restores the release-path coverage deleted in `010df9c` and proves the
+    /// coordinator teardown path works without the `@unchecked Sendable`
+    /// `AdvertiseStreamLifecycleBridge` that was removed.
+    @Test
+    func advertiseStreamReleasesTopicWhenLastSubscriberDrops() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+            eventType: .Advertise,
+            eventTypeFilter: CoreType.Log.rawValue,
+            namespace: manager.namespace
+        )
+
+        let stream = await manager.observeAdvertiseStream(withCoreType: .Log)
+        var iterator = stream.makeAsyncIterator()
+        await client.simulateState(.online)
+        try await waitForCommands(on: client, expecting: [.subscribe(topic)])
+
+        // Cancelling the consuming task terminates its iterator, which fires
+        // `Broadcast`'s `onTermination`. That spawns an unstructured `Task`
+        // running `removeSubscriber` → `onLast` → `coordinator.release` →
+        // `client.unsubscribe`, so the command arrives asynchronously and must
+        // be polled for rather than asserted synchronously.
+        let holder = AsyncStreamBox(iterator)
+        let consumer = _Concurrency.Task {
+            while await holder.iterator.next() != nil {}
+        }
+        consumer.cancel()
+        _ = await consumer.value
+
+        try await waitUntil("advertise topic to be released after last subscriber drops") {
+            client.commands.contains { cmd in
+                if case .unsubscribe(let released) = cmd { return released == topic }
+                return false
+            }
+        }
+    }
+
+    /// Restores `testStreamUnsubscribeAndReuse` from the suite deleted in
+    /// `010df9c`: after the release cycle resets the coordinator's refcount to
+    /// zero, re-subscribing must re-acquire the topic and deliver fresh
+    /// snapshots. This proves acquire/release can cycle multiple times over the
+    /// `Broadcast`'s lifetime (started resets to false on `onLast`, so
+    /// `onFirst` fires again on the next subscriber).
+    @Test
+    func advertiseStreamResubscribesAndDeliversAfterRelease() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+            eventType: .Advertise,
+            eventTypeFilter: CoreType.Log.rawValue,
+            namespace: manager.namespace
+        )
+
+        await client.simulateState(.online)
+
+        // First cycle: acquire, then release by cancelling the consumer.
+        let firstStream = await manager.observeAdvertiseStream(withCoreType: .Log)
+        let firstHolder = AsyncStreamBox(firstStream.makeAsyncIterator())
+        let firstConsumer = _Concurrency.Task {
+            while await firstHolder.iterator.next() != nil {}
+        }
+        try await waitForCommands(on: client, expecting: [.subscribe(topic)])
+        firstConsumer.cancel()
+        _ = await firstConsumer.value
+        try await waitUntil("first cycle to release the advertise topic") {
+            client.commands.contains { cmd in
+                if case .unsubscribe(let released) = cmd { return released == topic }
+                return false
+            }
+        }
+
+        // Second cycle: re-acquire, then deliver and receive a fresh snapshot.
+        let secondStream = await manager.observeAdvertiseStream(withCoreType: .Log)
+        var secondIterator = secondStream.makeAsyncIterator()
+        try await waitUntil("advertise topic to be re-acquired") {
+            client.commands.filter { cmd in
+                if case .subscribe(let subscribed) = cmd { return subscribed == topic }
+                return false
+            }.count == 2
+        }
+
+        let snapshot = AdvertiseEventSnapshot(
+            sourceId: "source",
+            eventTypeFilter: CoreType.Log.rawValue,
+            object: CoatyObjectSnapshot(
+                objectId: "object",
+                coreType: .Log,
+                objectType: Log.objectType,
+                name: "log-again"
+            )
+        )
+        await client.emitAdvertise(snapshot, filter: CoreType.Log.rawValue)
+        #expect(try await nextValue(&secondIterator, timeout: .milliseconds(500)) == snapshot)
+    }
+
     @Test
     func deadvertiseStreamAcquiresTopicAndDeliversSnapshot() async throws {
         let client = FakeCommunicationClient(delegate: FakeStartable())
