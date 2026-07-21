@@ -9,7 +9,7 @@ import Foundation
 
 /// Characterizes `JSONValue`, the internal payload-capture type introduced
 /// for #110 Phase 3. Mirrors the decode-ladder guarantees already pinned for
-/// `AnyCodable`/`FilterOperand` so later snapshot wiring can rely on them.
+/// `FilterOperand` so later snapshot wiring can rely on them.
 @Suite
 struct JSONValueTests {
 
@@ -48,8 +48,8 @@ struct JSONValueTests {
     /// so the ladder recovers `.int(42)` here rather than `.double(42.0)` —
     /// the resulting JSON text loses the decimal point. This is the same
     /// "recovery depends on ladder order, not on what was encoded" quirk
-    /// #110 documents for `AnyCodable`'s identical ladder (and `FilterOperand`
-    /// mirrors it too); pinned here as a known, shared characteristic rather
+    /// #110 documents for `FilterOperand`'s identical ladder;
+    /// pinned here as a known, shared characteristic rather
     /// than a `JSONValue`-specific defect.
     @Test
     func testWholeNumberDoubleLiteralIsRecoveredAsIntByLadderOrder() throws {

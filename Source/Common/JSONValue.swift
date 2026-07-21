@@ -47,7 +47,7 @@ extension JSONValue: Codable {
         let container = try decoder.singleValueContainer()
 
         // Ladder order is load-bearing and mirrors the behavior pinned for
-        // `FilterOperand`/`AnyCodable`:
+        // `FilterOperand`:
         //  - `Bool` before `Int` so that `true` does not become `1`;
         //  - `Int` before `Double` so that `42` stays `42`, not `42.0`.
         if container.decodeNil() {
@@ -99,7 +99,7 @@ extension JSONValue {
     /// JSON-compatible type first.
     ///
     /// Returns `nil` for values that cannot be represented as JSON. The type
-    /// ladder mirrors the one pinned for `AnyCodable`: `Bool` before `Int` so
+    /// ladder mirrors the one pinned for `FilterOperand`: `Bool` before `Int` so
     /// that `true` does not become `1`, and `Int` before `Double` so that `42`
     /// stays `42`, not `42.0`.
     ///
