@@ -23,8 +23,9 @@ public struct ChannelEventSnapshot: EventSnapshot, Codable, Equatable, Sendable 
     /// and matches the channel identifier.
     public let eventTypeFilter: String?
 
-    /// Application-specific private data associated with the broadcast, if any.
-    public let privateData: Data?
+    /// Application-specific private data associated with the broadcast, as
+    /// raw JSON text, if any.
+    public let privateData: String?
 
     /// Creates a snapshot of a Channel event.
     ///
@@ -34,14 +35,14 @@ public struct ChannelEventSnapshot: EventSnapshot, Codable, Equatable, Sendable 
     ///   - objects: An optional collection of objects to be broadcast.
     ///   - channelId: The channel identifier.
     ///   - eventTypeFilter: The optional event type filter used for routing.
-    ///   - privateData: Optional application-specific private data.
+    ///   - privateData: Optional application-specific private data as raw JSON text.
     public init(
         sourceId: String? = nil,
         object: CoatyObjectSnapshot? = nil,
         objects: [CoatyObjectSnapshot]? = nil,
         channelId: String,
         eventTypeFilter: String? = nil,
-        privateData: Data? = nil
+        privateData: String? = nil
     ) {
         self.sourceId = sourceId
         self.object = object
@@ -66,6 +67,7 @@ extension ChannelEventSnapshot {
             return nil
         }
         let privateData = WirePayloadExtractor.nestedPayload(from: parsedMQTTMessage.payload, key: "privateData")
+            .map { String(decoding: $0, as: UTF8.self) }
         self.init(
             sourceId: parsedMQTTMessage.sourceId,
             object: wire.object?.withPayload(

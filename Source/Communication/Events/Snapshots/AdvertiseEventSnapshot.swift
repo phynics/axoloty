@@ -18,8 +18,9 @@ public struct AdvertiseEventSnapshot: EventSnapshot, Codable, Equatable, Sendabl
     /// The object being advertised.
     public let object: CoatyObjectSnapshot
 
-    /// Application-specific private data associated with the advertisement, if any.
-    public let privateData: Data?
+    /// Application-specific private data associated with the advertisement, as
+    /// raw JSON text, if any.
+    public let privateData: String?
 
     /// Creates a snapshot of an Advertise event.
     ///
@@ -27,12 +28,12 @@ public struct AdvertiseEventSnapshot: EventSnapshot, Codable, Equatable, Sendabl
     ///   - sourceId: The identifier of the event source.
     ///   - eventTypeFilter: The optional event type filter used for routing.
     ///   - object: The object being advertised.
-    ///   - privateData: Optional application-specific private data.
+    ///   - privateData: Optional application-specific private data as raw JSON text.
     public init(
         sourceId: String? = nil,
         eventTypeFilter: String? = nil,
         object: CoatyObjectSnapshot,
-        privateData: Data? = nil
+        privateData: String? = nil
     ) {
         self.sourceId = sourceId
         self.eventTypeFilter = eventTypeFilter
@@ -63,6 +64,7 @@ extension AdvertiseEventSnapshot {
         let objectPayload = WirePayloadExtractor.nestedObjectPayload(from: parsedMQTTMessage.payload, key: "object")
             .map { String(decoding: $0, as: UTF8.self) }
         let privateData = WirePayloadExtractor.nestedPayload(from: parsedMQTTMessage.payload, key: "privateData")
+            .map { String(decoding: $0, as: UTF8.self) }
 
         self.init(
             sourceId: parsedMQTTMessage.sourceId,
