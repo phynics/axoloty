@@ -34,6 +34,18 @@ struct IkigaJSONDecoderSeamTests {
     }
 
     @Test
+    func payloadCoderAttachesRawTreeToNestedCoatyObject() throws {
+        _ = Identity.objectType
+        let identity = Identity(name: "agent")
+        let event = try AdvertiseEvent.with(object: identity)
+        let encoded = try PayloadCoder.encode(event)
+        let decoded: AdvertiseEvent = try PayloadCoder.decode(encoded)
+
+        #expect(decoded.data.object.rawJSONObject?["name"]?.string == "agent")
+        #expect(decoded.data.object.rawJSONObject?["objectType"]?.string == Identity.objectType)
+    }
+
+    @Test
     func ikigaDecoderPreservesDecoderContextLikeFoundation() throws {
         struct ContextReader: Decodable {
             let value: String?

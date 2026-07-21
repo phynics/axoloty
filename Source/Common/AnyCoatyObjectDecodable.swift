@@ -83,6 +83,9 @@ public class AnyCoatyObjectDecodable: Decodable {
         }
         
         if let type = CoatyObject.getClassType(forObjectType: objectType) {
+            let rawContext = decoder.getContext(forKey: "rawJSONObject") as? RawJSONObjectContext
+            rawContext?.setCurrentObject(rawContext?.object(at: decoder.codingPath))
+            defer { rawContext?.setCurrentObject(nil) }
             object = try decoder.withContext(
                 nil,
                 forKey: "coreTypeKeys",
@@ -102,6 +105,9 @@ public class AnyCoatyObjectDecodable: Decodable {
         }
 
         let type = CoreType.getClassType(forCoreType: coreType)
+        let rawContext = decoder.getContext(forKey: "rawJSONObject") as? RawJSONObjectContext
+        rawContext?.setCurrentObject(rawContext?.object(at: decoder.codingPath))
+        defer { rawContext?.setCurrentObject(nil) }
         object = try decoder.withContext(
             CoreTypeKeysContext(),
             forKey: "coreTypeKeys",

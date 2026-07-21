@@ -7,6 +7,7 @@
 
 import ErrorKit
 import Foundation
+import IkigaJSON
 
 /// PayloadCoder provides utility methods to encode and decode communication events from and to JSON.
 public class PayloadCoder {
@@ -22,10 +23,15 @@ public class PayloadCoder {
         // `String.data(using: .utf8)` cannot fail for a Swift `String` --
         // Swift strings are always representable in UTF-8.
         let jsonData = jsonString.data(using: .utf8)!
-        let decoder = JSONDecoder()
-        decoder.initPushContext(forKey: "coreTypeKeys")
         do {
-            return try decoder.decode(T.self, from: jsonData)
+            let object = try JSONObject(data: jsonData)
+            var settings = JSONDecoderSettings()
+            let coreTypeKeys = CodingUserInfoKey(rawValue: "coreTypeKeys")!
+            settings.userInfo[coreTypeKeys] = DecodingContextStack()
+            let rawContextKey = CodingUserInfoKey(rawValue: "rawJSONObject")!
+            settings.userInfo[rawContextKey] = RawJSONObjectContext(root: object)
+            let decoder = IkigaJSONDecoder(settings: settings)
+            return try decoder.decode(T.self, from: object)
         } catch {
             throw AxolotyError.decodingFailure(
                 type: String(describing: T.self),
