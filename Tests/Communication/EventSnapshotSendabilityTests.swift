@@ -79,8 +79,8 @@ struct EventSnapshotSendabilityTests {
             sourceId: sampleSourceId(),
             objectTypes: ["coaty.Custom"],
             coreTypes: [.CoatyObject],
-            objectFilter: sampleData(),
-            objectJoinConditions: [sampleData()]
+            objectFilter: sampleJSON(),
+            objectJoinConditions: [sampleJSON()]
         )
         assertSendable(snapshot)
     }
