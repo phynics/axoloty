@@ -32,32 +32,32 @@ Tests/WireCompatibility/Reverse/run-axoloty-core.sh
 Use `WIRE_SCENARIOS` to select a whitespace-separated subset. This harness
 does not claim coverage for any other interoperability direction.
 
-## CoatyJS → Axoloty Advertise (JS → modern)
+## CoatyJS → Axoloty (JS → modern)
 
-`run-coatyjs-to-axoloty-advertise.sh` is the mirror direction: pinned CoatyJS
-2.4.0 is the producer and Axoloty (modern Swift, `AxolotyAdvertiseConsumerTests`)
-is the consumer under test. The runner starts Axoloty detached so it can
-subscribe first, waits for its `"state":"ready"` log line (emitted only after
-`observeAdvertiseStream` has acquired the MQTT topic), then runs the existing
-`Tests/WireCompatibility/Live/coatyjs-advertise-runner.js` producer to
-completion, and finally requires Axoloty's `"state":"ack"` line, which the
-Swift Testing case only prints after asserting the decoded
-`AdvertiseEventSnapshot`'s `coreType`, `objectType`, `objectId`, and `name`
-against the fixture CoatyJS put on the wire.
+`run-coatyjs-to-axoloty-advertise.sh` covers Advertise. The parameterized
+`run-coatyjs-to-axoloty-core.sh` covers Deadvertise, Channel, Discover/Resolve,
+Query/Retrieve, Update/Complete, and Call/Return. Pinned CoatyJS 2.4.0 is the
+producer/requester and Axoloty is the consumer/responder under test. Each
+runner starts Axoloty detached, waits for a file written only after the Swift
+side has acquired its MQTT subscription, then starts CoatyJS. The Swift
+Testing cases assert decoded request/event fields. Request/response cases also
+publish a response with the received correlation ID, while the CoatyJS
+requester asserts the response fields.
 
 Run it only in the supported container environment:
 
 ```sh
 Tests/WireCompatibility/Reverse/run-coatyjs-to-axoloty-advertise.sh
+WIRE_SCENARIOS="deadvertise channel discover-resolve query-retrieve update-complete call-return" \
+  Tests/WireCompatibility/Reverse/run-coatyjs-to-axoloty-core.sh
 ```
 
-This was verified end-to-end on a macOS host outside the container harness
-(local Mosquitto plus `node`/`npm` running the pinned `@coaty/core` reference
-agent directly) before this script was written, so the container-based script
-itself is currently syntax-checked (`bash -n`) and contract-tested rather than
-executed, in environments without `podman`/`docker`.
+The runners use the repository's shared SwiftPM build cache and a mounted
+readiness file rather than polling Swift Testing output. This prevents cold
+worktree builds and test-runtime output buffering from starting CoatyJS after
+the Axoloty receive deadline. The scenarios were verified end-to-end with
+Podman on Linux.
 
-Before this addition, `Tests/WireCompatibility/Live/run-coatyjs-core.sh`
-covering the JS → modern direction only validated the CoatyJS-to-CoatyJS
-reference wire protocol with no Axoloty consumer in the loop; this is the
-first live JS → modern coverage with a real Axoloty subject.
+`Tests/WireCompatibility/Live/run-coatyjs-core.sh` remains the reference-agent
+matrix; the Reverse runners above are the cross-implementation JS → modern
+evidence with a real Axoloty consumer/responder in the loop.

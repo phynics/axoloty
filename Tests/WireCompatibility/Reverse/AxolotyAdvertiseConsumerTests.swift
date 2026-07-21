@@ -45,13 +45,15 @@ struct AxolotyAdvertiseConsumerTests {
         // Printed only after the topic subscription is acquired (see
         // `observeAdvertiseStream`), so a live runner can safely start the
         // CoatyJS producer once this line appears in the process log.
-        print("{\"state\":\"ready\",\"scenario\":\"coatyjs-advertise\"}")
+        try signalLiveReadiness(environment: environment)
+        emitLiveState("{\"state\":\"ready\",\"scenario\":\"coatyjs-advertise\"}")
 
-        // Generous relative to the other reverse scenarios (their JS side
-        // waits up to 60s for a producer): the CoatyJS producer process in a
-        // live run has to load @coaty/core and connect before it can
-        // publish, and that cold start can itself take tens of seconds.
-        let snapshot = try await nextAdvertise(&iterator, timeout: .seconds(45))
+        // The CoatyJS producer process in a live container run has to load
+        // @coaty/core and connect before it can publish. Its cold start can
+        // exceed the old 45-second deadline even after this subscriber has
+        // acquired its topic, causing an unsubscribe immediately before the
+        // matching publish arrives.
+        let snapshot = try await nextAdvertise(&iterator, timeout: .seconds(120))
 
         // The semantic assertions that make this JS → modern rather than
         // just "a packet was delivered": every protocol-significant field
@@ -61,7 +63,7 @@ struct AxolotyAdvertiseConsumerTests {
         #expect((snapshot.object.objectId) == "11111111-1111-4111-8111-111111111111")
         #expect((snapshot.object.name) == "wire-fixture")
 
-        print("{\"state\":\"ack\",\"scenario\":\"coatyjs-advertise\",\"objectId\":\"\(snapshot.object.objectId)\"}")
+        emitLiveState("{\"state\":\"ack\",\"scenario\":\"coatyjs-advertise\",\"objectId\":\"\(snapshot.object.objectId)\"}")
     }
 }
 
@@ -80,4 +82,24 @@ private func nextAdvertise(
     } catch {
         throw AxolotyError.runtime(code: .timedOut, reason: "Timed out waiting for CoatyJS to publish Advertise")
     }
+}
+
+/// Signals that the live consumer has acquired its MQTT subscription.
+///
+/// Swift Testing captures both stdout and stderr until a test exits, so a
+/// detached container cannot use either stream as a readiness handshake. The
+/// runner mounts a signal directory and observes this file instead.
+private func signalLiveReadiness(environment: [String: String]) throws {
+    guard let readyFile = environment["WIRE_READY_FILE"] else {
+        return
+    }
+    try Data("ready\n".utf8).write(to: URL(fileURLWithPath: readyFile), options: .atomic)
+}
+
+/// Writes a live-harness state line to stderr for the final runner log.
+///
+/// The runner checks acknowledgement only after the test exits, when Swift
+/// Testing has released captured output.
+private func emitLiveState(_ line: String) {
+    FileHandle.standardError.write(Data((line + "\n").utf8))
 }
