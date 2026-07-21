@@ -7,6 +7,7 @@
 
 import ErrorKit
 import Foundation
+import IkigaJSON
 
 /// The base type of all objects in the Coaty object model. Application-specific object types
 /// extend either CoatyObject directly or any of its derived core types.
@@ -74,6 +75,9 @@ open class CoatyObject: Codable {
     ///   inside your local app.
     internal(set) public var custom: [String: String]
 
+    /// Parsed wire representation retained for raw filter-path resolution.
+    internal var rawJSONObject: JSONObject?
+
     /// Decodes a custom property value into a typed `Decodable` value.
     ///
     /// Custom properties are stored as raw JSON text in the ``custom``
@@ -99,6 +103,7 @@ open class CoatyObject: Codable {
         self.objectType = objectType
         self.name = name
         self.custom = [String: String]()
+        self.rawJSONObject = nil
     }
     
     // MARK: - Static and instance registration methods.
@@ -160,6 +165,9 @@ open class CoatyObject: Codable {
         // If core type decoding is enabled, decode any attributes not yet decoded
         // by this core type into the custom dictionary attribute.
         custom = [:]
+        if let rawContext = decoder.getContext(forKey: "rawJSONObject") as? RawJSONObjectContext {
+            rawJSONObject = rawContext.decodedObject ?? rawContext.object(at: decoder.codingPath)
+        }
         CoatyObject.addCoreTypeKeys(decoder: decoder, coreTypeKeys: CoatyObjectKeys.self)
         try decodeCustomKeys(decoder)
     }

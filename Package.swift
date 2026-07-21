@@ -23,6 +23,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-log.git", from: "1.14.0"),
         .package(url: "https://github.com/FlineDev/ErrorKit.git", exact: "1.2.1"),
         .package(url: "https://github.com/apple/swift-async-algorithms.git", from: "1.0.0"),
+        .package(url: "https://github.com/orlandos-nl/swift-json.git", exact: "2.5.3"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin.git", from: "1.5.0"),
     ],
     targets: [
@@ -35,12 +36,16 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "ErrorKit", package: "ErrorKit"),
                 .product(name: "AsyncAlgorithms", package: "swift-async-algorithms"),
+                .product(name: "IkigaJSON", package: "swift-json"),
             ],
             path: "Source"
         ),
         .testTarget(
             name: "AxolotyTests",
-            dependencies: ["Axoloty"],
+            dependencies: [
+                "Axoloty",
+                .product(name: "IkigaJSON", package: "swift-json"),
+            ],
             path: "Tests",
             exclude: [
                 "TESTING.md",

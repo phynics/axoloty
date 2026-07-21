@@ -1,5 +1,5 @@
 {
-  "originHash" : "598395f514b79b7458b47c6fd656a422edd08ac72412e33390da81b99d565242",
+  "originHash" : "a8b99d673b554a0fbcac894197ec5e81cadd13f9d19cf80b713d9cd9b4c8e8d3",
   "pins" : [
     {
       "identity" : "errorkit",
@@ -80,6 +80,15 @@
       "state" : {
         "revision" : "b45d1f2ed151d057b54504d653e0da5552844e34",
         "version" : "1.0.0"
+      }
+    },
+    {
+      "identity" : "swift-json",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/orlandos-nl/swift-json.git",
+      "state" : {
+        "revision" : "216e30b22ef3c4180e126f284a4c62d51a1c1049",
+        "version" : "2.5.3"
       }
     },
     {
