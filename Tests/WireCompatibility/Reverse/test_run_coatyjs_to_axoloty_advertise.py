@@ -16,7 +16,8 @@ class CoatyJSToAxolotyAdvertiseRunnerContractTests(unittest.TestCase):
 
         self.assertIn("AxolotyAdvertiseConsumerTests", runner)
         self.assertIn("WIRE_JS_TO_MODERN_LIVE=1", runner)
-        self.assertIn('"state":"ready"', runner)
+        self.assertIn('WIRE_READY_FILE=/signals/ready', runner)
+        self.assertIn('test -s "$SIGNAL_DIR/ready"', runner)
         self.assertIn('"state":"ack"', runner)
 
     def test_runner_reuses_the_pinned_coatyjs_advertise_producer(self):

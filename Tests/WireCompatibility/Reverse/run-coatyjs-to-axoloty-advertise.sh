@@ -19,18 +19,25 @@ RUN_ID="${WIRE_RUN_ID:-$$}"
 NETWORK="axoloty-wire-js-to-modern-$RUN_ID"
 BROKER="axoloty-wire-js-to-modern-broker-$RUN_ID"
 CONSUMER="axoloty-wire-js-to-modern-consumer-$RUN_ID"
+CONSUMER_READY_TIMEOUT_SECONDS="${WIRE_CONSUMER_READY_TIMEOUT_SECONDS:-180}"
 DEV_IMAGE="${DEV_IMAGE:-localhost/coatyswift-dev:latest}"
 JS_IMAGE="${JS_IMAGE:-localhost/coatyswift-wire-coatyjs:2.4.0}"
-SPM_CACHE_DIR="${SPM_CACHE_DIR:-$ROOT_DIR/.swiftpm-cache}"
+CACHE_NAMESPACE="${CACHE_NAMESPACE:-swift-6.3-linux}"
+REPOSITORY_NAME="${REPOSITORY_NAME:-$(git -C "$ROOT_DIR" rev-parse --git-common-dir | sed 's|/.git$||' | xargs basename)}"
+BUILD_DIR="${BUILD_DIR:-/tmp/coaty-swift-build/$REPOSITORY_NAME/$CACHE_NAMESPACE/debug}"
+SPM_CACHE_DIR="${SPM_CACHE_DIR:-$HOME/.cache/coaty-swift/swiftpm/$CACHE_NAMESPACE}"
 CONSUMER_LOG=$(mktemp)
+SIGNAL_DIR=$(mktemp -d)
 
 cleanup() {
     runtime rm -f "$CONSUMER" "$BROKER" >/dev/null 2>&1 || true
     runtime network rm "$NETWORK" >/dev/null 2>&1 || true
     rm -f "$CONSUMER_LOG"
+    rm -rf "$SIGNAL_DIR"
 }
 trap cleanup EXIT INT TERM
 
+mkdir -p "$BUILD_DIR" "$SPM_CACHE_DIR"
 runtime build -t "$DEV_IMAGE" -f "$ROOT_DIR/.devcontainer/Dockerfile" "$ROOT_DIR/.devcontainer"
 runtime build -t "$JS_IMAGE" "$REFERENCE_DIR/coatyjs"
 runtime network create "$NETWORK" >/dev/null
@@ -48,17 +55,17 @@ runtime exec "$BROKER" python3 -c 'import socket; socket.create_connection(("127
 # report a subscription-acquired "ready" line before the CoatyJS producer
 # publishes, then run the CoatyJS producer synchronously to completion.
 runtime run -d --name "$CONSUMER" --network "$NETWORK" \
-    -v "$ROOT_DIR:/workspace" -v "$SPM_CACHE_DIR:/swiftpm-cache" -w /workspace \
+    -v "$ROOT_DIR:/workspace" -v "$BUILD_DIR:/workspace/.build" \
+    -v "$SPM_CACHE_DIR:/workspace/.swiftpm-cache" -v "$SIGNAL_DIR:/signals" -w /workspace \
     -e WIRE_JS_TO_MODERN_LIVE=1 -e WIRE_BROKER_HOST="$BROKER" \
-    -e WIRE_BROKER_PORT=1883 -e WIRE_NAMESPACE=wire-compat-v1 \
-    "$DEV_IMAGE" swift test --cache-path /swiftpm-cache --disable-automatic-resolution --filter AxolotyAdvertiseConsumerTests >/dev/null
+    -e WIRE_BROKER_PORT=1883 -e WIRE_NAMESPACE=wire-compat-v1 -e WIRE_READY_FILE=/signals/ready \
+    "$DEV_IMAGE" swift test --cache-path /workspace/.swiftpm-cache --disable-automatic-resolution --filter AxolotyAdvertiseConsumerTests >/dev/null
 
-for _ in $(seq 1 60); do
-    runtime logs "$CONSUMER" >"$CONSUMER_LOG" 2>&1
-    grep -q '"state":"ready"' "$CONSUMER_LOG" && break
-    sleep 0.5
+for _ in $(seq 1 "$CONSUMER_READY_TIMEOUT_SECONDS"); do
+    test -s "$SIGNAL_DIR/ready" && break
+    sleep 1
 done
-grep -q '"state":"ready"' "$CONSUMER_LOG" || { cat "$CONSUMER_LOG" >&2; echo "Axoloty consumer never reported readiness" >&2; exit 1; }
+test -s "$SIGNAL_DIR/ready" || { runtime logs "$CONSUMER" >&2; echo "Axoloty consumer never reported readiness" >&2; exit 1; }
 
 runtime run --rm --network "$NETWORK" --entrypoint node \
     -v "$LIVE_DIR/coatyjs-advertise-runner.js:/agent/coatyjs-advertise-runner.js:ro" \
