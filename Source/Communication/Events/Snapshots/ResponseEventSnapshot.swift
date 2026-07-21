@@ -10,11 +10,11 @@ public struct ResponseEventSnapshot: EventSnapshot, Codable, Equatable, Sendable
     public let sourceId: String?
     /// The correlation identifier.
     public let correlationId: String?
-    /// The encoded response payload.
-    public let payload: Data
+    /// The response payload as raw JSON text.
+    public let payload: String
 
     /// Creates a response snapshot.
-    public init(eventType: String, sourceId: String?, correlationId: String?, payload: Data) {
+    public init(eventType: String, sourceId: String?, correlationId: String?, payload: String) {
         self.eventType = eventType
         self.sourceId = sourceId
         self.correlationId = correlationId

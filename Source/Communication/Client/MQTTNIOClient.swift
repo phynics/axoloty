@@ -554,13 +554,12 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
 
     private func routeSnapshot(parsed: ParsedMQTTMessage) async {
         if let correlationId = parsed.correlationId,
-           [.Complete, .Resolve, .Retrieve, .Return].contains(parsed.eventType),
-           let payloadData = parsed.payload.data(using: .utf8) {
+           [.Complete, .Resolve, .Retrieve, .Return].contains(parsed.eventType) {
             let snapshot = ResponseEventSnapshot(
                 eventType: parsed.eventType.rawValue,
                 sourceId: parsed.sourceId,
                 correlationId: correlationId,
-                payload: payloadData
+                payload: parsed.payload
             )
             await streams.responseFamily.send(
                 snapshot,

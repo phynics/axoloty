@@ -168,8 +168,7 @@ struct AxolotyCoreProducerTests {
             )
             guard response.eventType == eventType.rawValue,
                   response.sourceId == "33333333-3333-4333-8333-333333333333",
-                  let payload = String(data: response.payload, encoding: .utf8),
-                  let event: Event = try? PayloadCoder.decode(payload)
+                  let event: Event = try? PayloadCoder.decode(response.payload)
             else {
                 continue
             }
