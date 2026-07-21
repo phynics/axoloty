@@ -4,6 +4,7 @@
 //  Axoloty
 
 import Foundation
+import IkigaJSON
 
 /// A JSON literal appearing as an operand in an ``ObjectFilterExpression``.
 ///
@@ -160,66 +161,37 @@ extension FilterOperand {
         self = .string(string)
     }
 
-    /// Converts a ``CoatyObject`` to a ``FilterOperand.object`` by reflecting
-    /// its properties.
-    ///
-    /// A ``CoatyUUID`` is stored as its lowercase string, matching the
-    /// normalization ``FilterOperand`` performs: a UUID property and a
-    /// wire-decoded string operand compare equal. Optional properties that
-    /// are `nil` are omitted (treated as absent), preserving the
-    /// `.NotExists` semantics pinned in Phase 1.
+    /// Converts a ``CoatyObject`` to a ``FilterOperand.object`` using its
+    /// wire-keyed JSON representation.
     public init(_ coatyObject: CoatyObject) {
-        let mirror = Mirror(reflecting: coatyObject)
-        var dict: [String: FilterOperand] = [:]
-        for child in mirror.children {
-            guard let label = child.label else { continue }
-            if let value = FilterOperand.from(child.value) {
-                dict[label] = value
-            }
-        }
-        if let superMirror = mirror.superclassMirror {
-            for child in superMirror.children {
-                guard let label = child.label else { continue }
-                if dict[label] == nil, let value = FilterOperand.from(child.value) {
-                    dict[label] = value
-                }
-            }
-        }
-        self = .object(dict)
+        let object = coatyObject.rawJSONObject ?? (try? JSONObject(data: Data(coatyObject.json.utf8)))
+        self = object.flatMap(FilterOperand.fromJSONObject) ?? .object([:])
     }
 }
 
 extension FilterOperand {
 
-    /// Converts a reflected `Any` value to a `FilterOperand`, returning
-    /// `nil` for values that cannot be represented (including
-    /// `Optional.none`, which is treated as absent to preserve
-    /// `.NotExists` semantics).
-    internal static func from(_ value: Any) -> FilterOperand? {
-        // Mirror reflects optionals with displayStyle .optional; unwrap
-        // .some and return nil for .none.
-        let mirror = Mirror(reflecting: value)
-        if mirror.displayStyle == .optional {
-            guard let unwrapped = mirror.children.first?.value else { return nil }
-            return FilterOperand.from(unwrapped)
-        }
-        if let v = value as? Bool { return .bool(v) }
-        if let v = value as? Int { return .int(v) }
-        if let v = value as? Double { return .double(v) }
-        if let v = value as? String { return .string(v) }
-        if let v = value as? CoatyUUID { return .string(v.string) }
-        if let v = value as? CoatyObject { return FilterOperand(v) }
-        if let v = value as? [Any] {
-            return .array(v.compactMap { FilterOperand.from($0) })
-        }
-        if let v = value as? [String: Any] {
-            var dict: [String: FilterOperand] = [:]
-            for (key, val) in v {
-                if let converted = FilterOperand.from(val) {
-                    dict[key] = converted
-                }
+    /// Converts an IkigaJSON value into the closed filter representation.
+    internal static func fromJSONObject(_ object: JSONObject) -> FilterOperand? {
+        fromJSONValue(object)
+    }
+
+    internal static func fromJSONValue(_ value: any IkigaJSON.JSONValue) -> FilterOperand? {
+        if value.null != nil { return .null }
+        if let value = value.bool { return .bool(value) }
+        if let value = value.int { return .int(value) }
+        if let value = value.double { return .double(value) }
+        if let value = value.string { return .string(value) }
+        if let value = value.object {
+            var result: [String: FilterOperand] = [:]
+            for key in value.keys {
+                guard let child = value[key], let converted = fromJSONValue(child) else { continue }
+                result[key] = converted
             }
-            return .object(dict)
+            return .object(result)
+        }
+        if let value = value.array {
+            return .array(value.compactMap(fromJSONValue))
         }
         return nil
     }

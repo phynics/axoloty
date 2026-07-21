@@ -4,6 +4,7 @@
 //  Axoloty
 
 import Foundation
+import IkigaJSON
 
 /// Provides a static `matchesFilter` method to match an object against a
 /// given object filter. Useful for retrieving matching objects on Query events
@@ -110,10 +111,20 @@ public enum ObjectMatcher {
     ///     - obj: a Coaty object
     /// - Returns: the value of the nested properties of the given object as FilterOperand (nil if no such property has been found or any other error has occured)
     internal static func getFilterPropertyValue(propNames: ObjectFilterProperty, obj: CoatyObject) -> FilterOperand? {
-        let propNamesAsArray = ObjectMatcher.getFilterProperties(propNames: propNames)
-        
-        return ObjectMatcher._getFilterPropertyValue(propNames: propNamesAsArray,
-                                                     obj: obj)
+        let propertyNames = ObjectMatcher.getFilterProperties(propNames: propNames)
+        guard !propertyNames.isEmpty else { return nil }
+
+        let root = obj.rawJSONObject ?? (try? JSONObject(data: Data(obj.json.utf8)))
+        guard var current: any IkigaJSON.JSONValue = root else { return nil }
+
+        for propertyName in propertyNames {
+            guard let object = current.object, let next = object[propertyName] else {
+                return nil
+            }
+            current = next
+        }
+
+        return FilterOperand.fromJSONValue(current)
     }
     
     /// - Note: Internal For internal use in framework only.
@@ -125,31 +136,7 @@ public enum ObjectMatcher {
     ///     - propNames property names as an array of property names (already in a correct format)
     ///     - obj: a Coaty object
     /// - Returns: the value of the nested properties of the given object
-    internal static func _getFilterPropertyValue(propNames: [String], obj: Any) -> FilterOperand? {
-        var nextPropNames = propNames
-        if nextPropNames.isEmpty {
-            return nil
-        }
-        
-        let currentLevelLabel = nextPropNames.remove(at: 0)
-        
-        // Fetch the properties of the obj
-        let properties = ObjectMatcher._fetchProperties(of: obj)
-        let currentLevelProperty = properties.first { (label, _) -> Bool in
-            return label == currentLevelLabel
-        }
-        
-        if let (_, value) = currentLevelProperty {
-            // We have reached the end of the property names.
-            if nextPropNames.count == 0 {
-                return FilterOperand.from(value)
-            } else {
-                return ObjectMatcher._getFilterPropertyValue(propNames: nextPropNames, obj: value)
-            }
-        } else {
-            return nil
-        }
-    }
+
     
     /// - Note: Internal For internal use in framework only.
     ///
@@ -158,29 +145,7 @@ public enum ObjectMatcher {
     /// - Parameters:
     ///     - structure: any object from which properties can be extracted (either a CoatyObject or Dictionary)
     /// - Returns: a tuple list that contains all attributes and their values representes as Any.
-    internal static func _fetchProperties(of structure: Any) -> [(String, Any)] {
-        // Since access to properties in dictionaries is different than access to properties in object perform an if as? distinction.
-        if let structureAsDictionary = structure as? [String: Any] {
-            return structureAsDictionary.map { ($0.key, $0.value) }
-        } else {
-            let mirror = Mirror(reflecting: structure)
-            
-            var result = [(String, Any)]()
-            
-            for child in mirror.children {
-                result.append((child.label!, child.value))
-            }
-            
-            guard let superMirror = mirror.superclassMirror else {
-                return result
-            }
-            
-            // Since we are dealing with a structure which is not a Dictionary, there might be some properties in the superMirror
-            result.insert(contentsOf: ObjectMatcher._fetchPropertiesSuperMirrorHelper(of: superMirror), at: 0)
-            
-            return result
-        }
-    }
+
     
     /// - Note: Internal For internal use in framework only.
     ///
@@ -189,21 +154,7 @@ public enum ObjectMatcher {
     /// - Parameters:
     ///     - mirror: a mirror of an object from which properties are to be extracted.
     /// - Returns: a tuple list that contains all attributes and their values representes as Any.
-    internal static func _fetchPropertiesSuperMirrorHelper(of mirror: Mirror) -> [(String, Any)] {
-        var result = [(String, Any)]()
-        
-        for child in mirror.children {
-            result.append((child.label!, child.value))
-        }
-        
-        guard let superMirror = mirror.superclassMirror else {
-            return result
-        }
-        
-        result.insert(contentsOf: ObjectMatcher._fetchPropertiesSuperMirrorHelper(of: superMirror), at: 0)
-        
-        return result
-    }
+
     
     /// - Note: Internal For internal use in framework only.
     ///
@@ -215,7 +166,7 @@ public enum ObjectMatcher {
     /// - Returns: true if object satisfies the condition; false otherwise
     internal static func _matchesCondition(obj: CoatyObject, condition: ObjectFilterCondition) -> Bool {
         let v = ObjectMatcher.getFilterPropertyValue(propNames: condition.property, obj: obj)
-
+        if v == nil { print("FILTER MISS", condition.property.objectFilterProperty ?? "array") }
         switch condition.expression {
         case .notExists:
             return v == nil

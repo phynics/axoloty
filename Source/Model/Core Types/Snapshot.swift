@@ -70,7 +70,7 @@ open class Snapshot: CoatyObject {
         var container = encoder.container(keyedBy: SnapshotCodingKeys.self)
         try container.encode(creatorId.string, forKey: .creatorId)
         try container.encode(creationTimestamp, forKey: .creationTimestamp)
-        try container.encode(object, forKey: .object)
+        try container.encode(DynamicCoatyObject(value: object), forKey: .object)
         try container.encodeIfPresent(tags, forKey: .tags)
     }
 }
