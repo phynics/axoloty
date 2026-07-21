@@ -74,7 +74,7 @@ open class User: CoatyObject {
         self.photos = try container.decodeIfPresent([ScimMultiValuedAttribute].self, forKey: .photos)
         self.addresses = try container.decodeIfPresent([ScimAddress].self, forKey: .addresses)
         self.groups = try container.decodeIfPresent([ScimMultiValuedAttribute].self, forKey: .groups)
-        self.entitlements = try container.decodeIfPresent(AnyCodable.self, forKey: .entitlements)
+        self.entitlements = try JSONValue.decodeRawStringIfPresent(from: container, forKey: .entitlements)
         self.roles = try container.decodeIfPresent([String].self, forKey: .roles)
         self.x509Certificates = try container.decodeIfPresent([String].self, forKey: .x509Certificates)
         
@@ -101,7 +101,7 @@ open class User: CoatyObject {
         try container.encodeIfPresent(photos, forKey: .photos)
         try container.encodeIfPresent(addresses, forKey: .addresses)
         try container.encodeIfPresent(groups, forKey: .groups)
-        try container.encodeIfPresent(entitlements, forKey: .groups)
+        try JSONValue.encodeRawStringIfPresent(entitlements, to: &container, forKey: .groups)
         try container.encodeIfPresent(roles, forKey: .roles)
         try container.encodeIfPresent(x509Certificates, forKey: .roles)
     }
@@ -296,7 +296,7 @@ open class User: CoatyObject {
     /// determine what the user has access to.  This value has no
     /// canonical types, although a type may be useful as a means to scope
     /// entitlements.
-    public var entitlements: AnyCodable? = []
+    public var entitlements: String? = nil
     
     /// A list of roles for the user that collectively represent who the
     /// user is, e.g., "Student", "Faculty".  No vocabulary or syntax is

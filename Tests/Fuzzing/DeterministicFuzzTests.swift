@@ -59,8 +59,12 @@ struct DeterministicFuzzTests {
             let json = try #require(String(data: data, encoding: .utf8))
             let event: AdvertiseEvent = try PayloadCoder.decode(json)
             #expect((event.data.object.objectId.string) == (uuid))
-            #expect((event.data.object.custom["customString"] as? String) == (customString))
-            #expect((event.data.object.custom["customInteger"] as? Int) == (customInteger))
+            // `custom` values are now raw JSON text ([String: String]).
+            // Decode each into the expected type.
+            let customStringJSON = try #require(event.data.object.custom["customString"])
+            #expect(try JSONDecoder().decode(String.self, from: Data(customStringJSON.utf8)) == customString)
+            let customIntegerJSON = try #require(event.data.object.custom["customInteger"])
+            #expect(try JSONDecoder().decode(Int.self, from: Data(customIntegerJSON.utf8)) == customInteger)
             #expect((event.data.object.custom["customNested"]) != nil)
         }
     }

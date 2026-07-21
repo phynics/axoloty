@@ -65,11 +65,14 @@ open class CoatyObject: Codable {
     /// For any custom object type that has not been registered, this dictionary holds all
     /// custom fields that are not defined by the core type of this Coaty object.
     ///
+    /// Each value is stored as raw JSON text. Decode it into the expected type
+    /// on demand (e.g. via ``JSONDecoder``).
+    ///
     /// - Note: For registered custom object types (and core types), this dictionary is
     ///   always empty.
     /// - Note: This property is never encoded. It is only intended to be accessed
     ///   inside your local app.
-    internal(set) public var custom: [String: Any]
+    internal(set) public var custom: [String: String]
     
     // MARK: - Initializers.
     
@@ -79,7 +82,7 @@ open class CoatyObject: Codable {
         self.objectId = objectId
         self.objectType = objectType
         self.name = name
-        self.custom = [String: Any]()
+        self.custom = [String: String]()
     }
     
     // MARK: - Static and instance registration methods.
@@ -163,8 +166,8 @@ open class CoatyObject: Codable {
                 continue
             }
             
-            let value = try container.decode(AnyCodable.self, forKey: key)
-            self.custom[key.stringValue] = value.value
+            let value = try JSONValue.decodeRawString(from: container, forKey: key)
+            self.custom[key.stringValue] = value
         }
     }
     
