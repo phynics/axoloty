@@ -66,7 +66,7 @@ open class FeatureOfInterest: CoatyObject {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.description = try container.decode(String.self, forKey: .description)
         self.encodingType = try container.decode(String.self, forKey: .encodingType)
-        self.metadata = try JSONValue.decodeRawString(from: container, forKey: .metadata)
+        self.metadata = try RawJSONValue.decodeRawString(from: container, forKey: .metadata)
         try super.init(from: decoder)
     }
     
@@ -75,6 +75,6 @@ open class FeatureOfInterest: CoatyObject {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(description, forKey: .description)
         try container.encode(encodingType, forKey: .encodingType)
-        try JSONValue.encodeRawString(metadata, to: &container, forKey: .metadata)
+        try RawJSONValue.encodeRawString(metadata, to: &container, forKey: .metadata)
     }
 }

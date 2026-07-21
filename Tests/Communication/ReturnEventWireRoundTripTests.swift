@@ -27,7 +27,7 @@ struct ReturnEventWireRoundTripTests {
         let decoded = try JSONDecoder().decode(ReturnEvent.self, from: encoded)
         // Round-trip preserves the semantic content (key order may differ).
         let resultData = try #require(decoded.data.result?.data(using: .utf8))
-        let result = try JSONDecoder().decode([String: JSONValue].self, from: resultData)
+        let result = try JSONDecoder().decode([String: RawJSONValue].self, from: resultData)
         if case .int(let v) = result["answer"] {
             #expect(v == 49)
         } else {

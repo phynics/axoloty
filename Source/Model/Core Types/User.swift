@@ -74,7 +74,7 @@ open class User: CoatyObject {
         self.photos = try container.decodeIfPresent([ScimMultiValuedAttribute].self, forKey: .photos)
         self.addresses = try container.decodeIfPresent([ScimAddress].self, forKey: .addresses)
         self.groups = try container.decodeIfPresent([ScimMultiValuedAttribute].self, forKey: .groups)
-        self.entitlements = try JSONValue.decodeRawStringIfPresent(from: container, forKey: .entitlements)
+        self.entitlements = try RawJSONValue.decodeRawStringIfPresent(from: container, forKey: .entitlements)
         self.roles = try container.decodeIfPresent([String].self, forKey: .roles)
         self.x509Certificates = try container.decodeIfPresent([String].self, forKey: .x509Certificates)
         
@@ -101,7 +101,7 @@ open class User: CoatyObject {
         try container.encodeIfPresent(photos, forKey: .photos)
         try container.encodeIfPresent(addresses, forKey: .addresses)
         try container.encodeIfPresent(groups, forKey: .groups)
-        try JSONValue.encodeRawStringIfPresent(entitlements, to: &container, forKey: .groups)
+        try RawJSONValue.encodeRawStringIfPresent(entitlements, to: &container, forKey: .groups)
         try container.encodeIfPresent(roles, forKey: .roles)
         try container.encodeIfPresent(x509Certificates, forKey: .roles)
     }

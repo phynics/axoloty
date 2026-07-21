@@ -117,7 +117,7 @@ public class CallEventData: CommunicationEventData {
     public func getParameterByName(name: String) -> String? {
         guard let parameters,
               let data = parameters.data(using: .utf8),
-              let object = try? JSONDecoder().decode([String: JSONValue].self, from: data) else {
+              let object = try? JSONDecoder().decode([String: RawJSONValue].self, from: data) else {
             return nil
         }
         guard let value = object[name] else { return nil }
@@ -134,7 +134,7 @@ public class CallEventData: CommunicationEventData {
     public func getParameterByIndex(index: Int) -> String? {
         guard let parameters,
               let data = parameters.data(using: .utf8),
-              let array = try? JSONDecoder().decode([JSONValue].self, from: data) else {
+              let array = try? JSONDecoder().decode([RawJSONValue].self, from: data) else {
             return nil
         }
         guard index >= 0, index < array.count else { return nil }
@@ -183,7 +183,7 @@ public class CallEventData: CommunicationEventData {
     required init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         
-        self.parameters = try JSONValue.decodeRawStringIfPresent(from: container, forKey: .parameters)
+        self.parameters = try RawJSONValue.decodeRawStringIfPresent(from: container, forKey: .parameters)
         self.filter = try container.decodeIfPresent(ContextFilter.self, forKey: .filter)
         
         try super.init(from: decoder)
@@ -192,7 +192,7 @@ public class CallEventData: CommunicationEventData {
     override public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encodeIfPresent(self.filter, forKey: .filter)
-        try JSONValue.encodeRawStringIfPresent(self.parameters, to: &container, forKey: .parameters)
+        try RawJSONValue.encodeRawStringIfPresent(self.parameters, to: &container, forKey: .parameters)
     }
 
 }

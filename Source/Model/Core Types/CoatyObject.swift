@@ -198,7 +198,7 @@ open class CoatyObject: Codable {
                 continue
             }
             
-            let value = try JSONValue.decodeRawString(from: container, forKey: key)
+            let value = try RawJSONValue.decodeRawString(from: container, forKey: key)
             self.custom[key.stringValue] = value
         }
     }

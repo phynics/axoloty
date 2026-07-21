@@ -95,7 +95,7 @@ open class Observation: CoatyObject {
     required public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.phenomenonTime = try container.decode(Double.self, forKey: .phenomenonTime)
-        self.result = try JSONValue.decodeRawString(from: container, forKey: .result)
+        self.result = try RawJSONValue.decodeRawString(from: container, forKey: .result)
         self.resultTime = try container.decode(Double.self, forKey: .resultTime)
         self.resultQuality = try container.decodeIfPresent([String].self, forKey: .resultQuality)
         self.validTime = try container.decodeIfPresent(CoatyTimeInterval.self, forKey: .validTime)
@@ -109,7 +109,7 @@ open class Observation: CoatyObject {
         try super.encode(to: encoder)
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(phenomenonTime, forKey: .phenomenonTime)
-        try JSONValue.encodeRawString(result, to: &container, forKey: .result)
+        try RawJSONValue.encodeRawString(result, to: &container, forKey: .result)
         try container.encode(resultTime, forKey: .resultTime)
         try container.encode(resultQuality, forKey: .resultQuality)
         try container.encodeIfPresent(validTime, forKey: .validTime)

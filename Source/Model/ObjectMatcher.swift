@@ -124,7 +124,7 @@ public enum ObjectMatcher {
             current = next
         }
 
-        return FilterOperand.fromJSONValue(current)
+        return FilterOperand.fromRawJSONValue(current)
     }
     
     /// - Note: Internal For internal use in framework only.

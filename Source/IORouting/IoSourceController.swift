@@ -18,7 +18,7 @@ open class IoSourceController: Controller {
         guard item.associated else { return }
         if source.useRawIoValues == true, let raw = value as? [UInt8], let event = try? IoValueEvent.with(ioSource: source, value: raw, options: .init()) {
             communicationManager.publishIoValue(event: event)
-        } else if let event = try? IoValueEvent.with(ioSource: source, value: JSONValue.serialize(any: value), options: .init()) {
+        } else if let event = try? IoValueEvent.with(ioSource: source, value: RawJSONValue.serialize(any: value), options: .init()) {
             communicationManager.publishIoValue(event: event)
         }
     }

@@ -146,10 +146,10 @@ struct AxolotyIoAssociateTests {
         // matching CoatyJS (which publishes the payload directly, not wrapped
         // under a "payload" key). `jsonPayload` is raw JSON text, so the
         // published message is exactly the String — no re-encoding.
-        #expect(JSONValue.serialize(any: 42) == "42")
-        #expect(JSONValue.serialize(any: "héllo 世界 ✓") == "\"héllo 世界 ✓\"")
-        #expect(JSONValue.serialize(any: ["temp": 23.5]) == "{\"temp\":23.5}")
-        #expect(JSONValue.serialize(any: [1, 2, 3]) == "[1,2,3]")
+        #expect(RawJSONValue.serialize(any: 42) == "42")
+        #expect(RawJSONValue.serialize(any: "héllo 世界 ✓") == "\"héllo 世界 ✓\"")
+        #expect(RawJSONValue.serialize(any: ["temp": 23.5]) == "{\"temp\":23.5}")
+        #expect(RawJSONValue.serialize(any: [1, 2, 3]) == "[1,2,3]")
     }
 
     // MARK: - Live modern -> JS direction (Axoloty produces, CoatyJS consumes)
