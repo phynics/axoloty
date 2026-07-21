@@ -100,7 +100,7 @@ struct AxolotyCoreProducerTests {
         case "call-return":
             let response = try await awaitResponse(
                 from: await manager.communication.publishCall(CallEvent.with(
-                    operation: "wire-fixture-operation", parameters: ["operand": AnyCodable(7)]
+                    operation: "wire-fixture-operation", parameters: "{\"operand\":7}"
                 )),
                 eventType: .Return,
                 as: ReturnEvent.self

@@ -29,39 +29,20 @@ public class CallEvent: CommunicationEvent<CallEventData> {
     /// Create a CallEvent instance for invoking a remote operation call with the given
     /// operation name, parameters (optional), and a context filter (optional).
     ///
-    /// Parameters must be by-name through a JSON object.
+    /// Parameters must be supplied as raw JSON text — either a JSON object
+    /// (by-name parameters) or a JSON array (by-position parameters).
     /// If a context filter is specified, the given remote call is only executed if
     /// the filter conditions match a context object provided by the remote end.
     ///
     /// - Parameters:
     ///     - operation: a non-empty string containing the name of the operation to be invoked
-    ///     - parameters: holds the parameter values to be used during the invocation of
-    ///       the operation (optional)
+    ///     - parameters: raw JSON text holding the parameter values to be used
+    ///       during the invocation of the operation (optional)
     ///     - filter: a context filter that must match a given context object at the remote
     ///       end (optional)
     /// - Returns: a Call event with the given parameters
     /// - Throws: if operation name is invalid
-    public static func with(operation: String, parameters: [String: AnyCodable], filter: ContextFilter? = nil) throws -> CallEvent {
-        let callEventdata = CallEventData.createFrom(parameters: parameters, filter: filter)
-        return try .init(eventType: .Call, eventData: callEventdata, operation: operation)
-    }
-    
-    /// Create a CallEvent instance for invoking a remote operation call with the given
-    /// operation name, parameters (optional), and a context filter (optional).
-    ///
-    /// Parameters must be by-position through a JSON array.
-    /// If a context filter is specified, the given remote call is only executed if
-    /// the filter conditions match a context object provided by the remote end.
-    ///
-    /// - Parameters:
-    ///     - operation: a non-empty string containing the name of the operation to be invoked
-    ///     - parameters: holds the parameter values to be used during the invocation of
-    ///       the operation (optional)
-    ///     - filter: a context filter that must match a given context object at the remote
-    ///       end (optional)
-    /// - Returns: a Call event with the given parameters
-    /// - Throws: if operation name is invalid
-    public static func with(operation: String, parameters: [AnyCodable], filter: ContextFilter? = nil) throws -> CallEvent {
+    public static func with(operation: String, parameters: String?, filter: ContextFilter? = nil) throws -> CallEvent {
         let callEventdata = CallEventData.createFrom(parameters: parameters, filter: filter)
         return try .init(eventType: .Call, eventData: callEventdata, operation: operation)
     }
@@ -103,11 +84,9 @@ public class CallEventData: CommunicationEventData {
     
     // MARK: - Public attributes.
     
-    /// Parameter field that includes the array notation.
-    public var parameterArray: [AnyCodable]?
-    
-    /// Parameter field that includes the object notation.
-    public var parameterDictionary: [String: AnyCodable]?
+    /// The operation parameters as raw JSON text. May be a JSON object
+    /// (by-name parameters) or a JSON array (by-position parameters).
+    public var parameters: String?
     
     /// Defines conditions that must match a context object
     /// provided by the remote end in order to allow execution of the remote operation.
@@ -115,43 +94,52 @@ public class CallEventData: CommunicationEventData {
     
     // MARK: - Initializers.
     
-    private init(_ parameterArray: [AnyCodable]? = nil, _ paramaterDictionary: [String: AnyCodable]? = nil, _ filter: ContextFilter? = nil) {
+    private init(_ parameters: String? = nil, _ filter: ContextFilter? = nil) {
         super.init()
-        self.parameterArray = parameterArray
-        self.parameterDictionary = paramaterDictionary
+        self.parameters = parameters
         self.filter = filter
     }
     
     // MARK: - Factory methods.
     
-    internal static func createFrom(parameters: [AnyCodable], filter: ContextFilter? = nil) -> CallEventData {
-        return .init(parameters, nil, filter)
-    }
-    
-    internal static func createFrom(parameters: [String: AnyCodable], filter: ContextFilter? = nil) -> CallEventData {
-        return .init(nil, parameters, filter)
+    internal static func createFrom(parameters: String?, filter: ContextFilter? = nil) -> CallEventData {
+        return .init(parameters, filter)
     }
     
     // MARK: - Access methods.
     
-    /// Returns the value of the keyword parameter with the given name. Returns `nil`,
-    /// if the given name is missing or if no keyword parameters have been specified.
-    public func getParameterByName(name: String) -> Any? {
-        guard let parameter = parameterDictionary?[name] else {
+    /// Returns the raw JSON text of the keyword parameter with the given name.
+    /// Returns `nil` if the given name is missing, if parameters are not a JSON
+    /// object, or if no parameters have been specified.
+    ///
+    /// - Parameter name: The parameter name to look up.
+    /// - Returns: The raw JSON text of the parameter value, or `nil`.
+    public func getParameterByName(name: String) -> String? {
+        guard let parameters,
+              let data = parameters.data(using: .utf8),
+              let object = try? JSONDecoder().decode([String: JSONValue].self, from: data) else {
             return nil
         }
-        
-        return parameter.value
+        guard let value = object[name] else { return nil }
+        guard let encoded = try? JSONEncoder().encode(value) else { return nil }
+        return String(data: encoded, encoding: .utf8)
     }
     
-    /// Returns the value of the positional parameter with the given index. Returns `nil`,
-    /// if the given index is out of range or if no index parameters have been specified.
-    public func getParameterByIndex(index: Int) -> Any? {
-        guard let parameterArray = parameterArray, index >= 0, index < parameterArray.count else {
+    /// Returns the raw JSON text of the positional parameter at the given index.
+    /// Returns `nil` if the given index is out of range, if parameters are not
+    /// a JSON array, or if no parameters have been specified.
+    ///
+    /// - Parameter index: The zero-based parameter index.
+    /// - Returns: The raw JSON text of the parameter value, or `nil`.
+    public func getParameterByIndex(index: Int) -> String? {
+        guard let parameters,
+              let data = parameters.data(using: .utf8),
+              let array = try? JSONDecoder().decode([JSONValue].self, from: data) else {
             return nil
         }
-        
-        return parameterArray[index].value
+        guard index >= 0, index < array.count else { return nil }
+        guard let encoded = try? JSONEncoder().encode(array[index]) else { return nil }
+        return String(data: encoded, encoding: .utf8)
     }
     
     // MARK: - Filtering methods.
@@ -195,8 +183,7 @@ public class CallEventData: CommunicationEventData {
     required init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         
-        self.parameterDictionary = try? container.decodeIfPresent([String: AnyCodable].self, forKey: .parameters)
-        self.parameterArray = try? container.decodeIfPresent([AnyCodable].self, forKey: .parameters)
+        self.parameters = try JSONValue.decodeRawStringIfPresent(from: container, forKey: .parameters)
         self.filter = try container.decodeIfPresent(ContextFilter.self, forKey: .filter)
         
         try super.init(from: decoder)
@@ -205,8 +192,7 @@ public class CallEventData: CommunicationEventData {
     override public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encodeIfPresent(self.filter, forKey: .filter)
-        try container.encodeIfPresent(self.parameterArray, forKey: .parameters)
-        try container.encodeIfPresent(self.parameterDictionary, forKey: .parameters)
+        try JSONValue.encodeRawStringIfPresent(self.parameters, to: &container, forKey: .parameters)
     }
 
 }

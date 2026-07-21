@@ -27,7 +27,7 @@ struct AxolotyLifecycleSubjectTests {
 
         let stream = try await manager.publishCall(CallEvent.with(
             operation: "wire-fixture-operation",
-            parameters: ["operand": AnyCodable(7)]
+            parameters: "{\"operand\":7}"
         ))
         var iterator = stream.makeAsyncIterator()
         report(state: "ready", scenario: "duplicate-reply")
@@ -65,7 +65,7 @@ struct AxolotyLifecycleSubjectTests {
 
         let stream = try await manager.publishCall(CallEvent.with(
             operation: "wire-fixture-operation",
-            parameters: ["operand": AnyCodable(7)]
+            parameters: "{\"operand\":7}"
         ))
         var iterator = stream.makeAsyncIterator()
         report(state: "ready", scenario: "late-reply")

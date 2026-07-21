@@ -21,11 +21,23 @@ struct ReturnEventWireRoundTripTests {
         let encoded = try JSONEncoder().encode(event)
         let json = try #require(String(data: encoded, encoding: .utf8))
         // `result` must be a raw JSON object, not a string-encoded object.
-        #expect(json.contains("\"result\":{\"answer\":49,\"objectId\":\"abc\"}"))
+        #expect(json.contains("\"result\":{"))
         #expect(!json.contains("\"result\":\"{"))
 
         let decoded = try JSONDecoder().decode(ReturnEvent.self, from: encoded)
-        #expect(decoded.data.result == "{\"answer\":49,\"objectId\":\"abc\"}")
+        // Round-trip preserves the semantic content (key order may differ).
+        let resultData = try #require(decoded.data.result?.data(using: .utf8))
+        let result = try JSONDecoder().decode([String: JSONValue].self, from: resultData)
+        if case .int(let v) = result["answer"] {
+            #expect(v == 49)
+        } else {
+            Issue.record("expected answer as Int, got \(String(describing: result["answer"]))")
+        }
+        if case .string(let v) = result["objectId"] {
+            #expect(v == "abc")
+        } else {
+            Issue.record("expected objectId as String, got \(String(describing: result["objectId"]))")
+        }
     }
 
     @Test
@@ -59,7 +71,9 @@ struct ReturnEventWireRoundTripTests {
         let event = ReturnEvent.with(error: error, executionInfo: nil)
         let encoded = try JSONEncoder().encode(event)
         let json = try #require(String(data: encoded, encoding: .utf8))
-        #expect(json.contains("\"error\":{\"code\":-32602,\"message\":\"Invalid params\"}"))
+        // Key order is not guaranteed; check for both fields independently.
+        #expect(json.contains("\"code\":-32602"))
+        #expect(json.contains("\"message\":\"Invalid params\""))
 
         let decoded = try JSONDecoder().decode(ReturnEvent.self, from: encoded)
         #expect(decoded.data.error?.code == -32602)
