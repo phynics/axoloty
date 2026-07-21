@@ -170,9 +170,9 @@ extension CommunicationManager {
         if let raw = event.data.rawPayload {
             publish(topic: route, message: raw)
         } else if let json = event.data.jsonPayload {
-            // `PayloadCoder.encode` throws; this call site (like `.json`) is
-            // not throwing, so use the same non-throwing, logged fallback.
-            publish(topic: route, message: PayloadCoder.encodeForJSON(json))
+            // `jsonPayload` is already raw JSON text; publish it directly,
+            // matching CoatyJS 2.4.0's bare-value wire shape.
+            publish(topic: route, message: json)
         }
     }
 

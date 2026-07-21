@@ -144,13 +144,12 @@ struct AxolotyIoAssociateTests {
     func ioValueJsonPayloadEncodesAsBareValue() throws {
         // The bare value publishIoValue now puts on the wire for each class,
         // matching CoatyJS (which publishes the payload directly, not wrapped
-        // under a "payload" key).
-        #expect(try PayloadCoder.encode(AnyCodable(42)) == "42")
-        #expect(try PayloadCoder.encode(AnyCodable("héllo 世界 ✓")) == "\"héllo 世界 ✓\"")
-        let object: AnyCodable = ["temp": 23.5]
-        #expect(try PayloadCoder.encode(object) == "{\"temp\":23.5}")
-        let array: AnyCodable = [1, 2, 3]
-        #expect(try PayloadCoder.encode(array) == "[1,2,3]")
+        // under a "payload" key). `jsonPayload` is raw JSON text, so the
+        // published message is exactly the String — no re-encoding.
+        #expect(JSONValue.serialize(any: 42) == "42")
+        #expect(JSONValue.serialize(any: "héllo 世界 ✓") == "\"héllo 世界 ✓\"")
+        #expect(JSONValue.serialize(any: ["temp": 23.5]) == "{\"temp\":23.5}")
+        #expect(JSONValue.serialize(any: [1, 2, 3]) == "[1,2,3]")
     }
 
     // MARK: - Live modern -> JS direction (Axoloty produces, CoatyJS consumes)
@@ -218,7 +217,7 @@ struct AxolotyIoAssociateTests {
         // source's route is registered; settle before publishing the IoValue.
         try await _Concurrency.Task.sleep(for: .milliseconds(1500))
 
-        let event = try IoValueEvent.with(ioSource: source, value: AnyCodable(42), options: [:])
+        let event = try IoValueEvent.with(ioSource: source, value: "42", options: [:])
         cm.publishIoValue(event: event)
         print("{\"state\":\"published-iovalue\",\"scenario\":\"io-associate\",\"route\":\"\(route)\"}")
 

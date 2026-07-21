@@ -65,7 +65,7 @@ struct AxolotyIoNegativeTests {
         let source = IoSource(valueType: "com.coaty.test.WireIoValue", useRawIoValues: true)
 
         #expect(throws: AxolotyError.self) {
-            _ = try IoValueEvent.with(ioSource: source, value: AnyCodable(42), options: [:])
+            _ = try IoValueEvent.with(ioSource: source, value: "42", options: [:])
         }
     }
 
