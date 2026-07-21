@@ -26,12 +26,12 @@ struct DeterministicFuzzTests {
 
     @Test
 
-    func testJSONValueRoundTripsSemantically() throws {
+    func testRawJSONValueRoundTripsSemantically() throws {
         var generator = SeededGenerator(seed: seed)
         for iteration in 0..<iterations {
             let value = generator.jsonValue(depth: 0)
             let data = try JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed])
-            let decoded = try JSONDecoder().decode(JSONValue.self, from: data)
+            let decoded = try JSONDecoder().decode(RawJSONValue.self, from: data)
             let encoded = try JSONEncoder().encode(decoded)
             let actual = try JSONSerialization.jsonObject(with: encoded, options: [.fragmentsAllowed])
             #expect(jsonEqual(value, actual), "seed=\(seed) iteration=\(iteration)")

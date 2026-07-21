@@ -119,16 +119,16 @@ public class ReturnEventData: CommunicationEventData {
     
     required init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.executionInfo = try JSONValue.decodeRawStringIfPresent(from: container, forKey: .executionInfo)
-        self.result = try JSONValue.decodeRawStringIfPresent(from: container, forKey: .result)
+        self.executionInfo = try RawJSONValue.decodeRawStringIfPresent(from: container, forKey: .executionInfo)
+        self.result = try RawJSONValue.decodeRawStringIfPresent(from: container, forKey: .result)
         self.error = try container.decodeIfPresent(ReturnError.self, forKey: .error)
         try super.init(from: decoder)
     }
     
     override public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try JSONValue.encodeRawStringIfPresent(self.executionInfo, to: &container, forKey: .executionInfo)
-        try JSONValue.encodeRawStringIfPresent(self.result, to: &container, forKey: .result)
+        try RawJSONValue.encodeRawStringIfPresent(self.executionInfo, to: &container, forKey: .executionInfo)
+        try RawJSONValue.encodeRawStringIfPresent(self.result, to: &container, forKey: .result)
         try container.encodeIfPresent(self.error, forKey: .error)
     }
 }

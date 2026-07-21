@@ -113,7 +113,7 @@ open class SensorSourceController: Controller {
 
     internal func createObservation(container: SensorContainer, value: Any, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) -> Observation {
         let now = Date().timeIntervalSince1970 * 1000
-        return Observation(phenomenonTime: now, result: JSONValue.serialize(any: value), resultTime: now, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterest: featureOfInterestId, name: "Observation of \(container.sensor.name)", objectId: .init(), externalId: nil, parentObjectId: container.sensor.objectId)
+        return Observation(phenomenonTime: now, result: RawJSONValue.serialize(any: value), resultTime: now, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterest: featureOfInterestId, name: "Observation of \(container.sensor.name)", objectId: .init(), externalId: nil, parentObjectId: container.sensor.objectId)
     }
 
     internal func getChannelId(container: SensorContainer) -> String { container.sensor.objectId.string }

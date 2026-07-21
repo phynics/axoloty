@@ -123,7 +123,7 @@ open class Sensor: CoatyObject {
         
         self.description = try container.decode(String.self, forKey: .description)
         self.encodingType = try container.decode(String.self, forKey: .encodingType)
-        self.metadata = try JSONValue.decodeRawString(from: container, forKey: .metadata)
+        self.metadata = try RawJSONValue.decodeRawString(from: container, forKey: .metadata)
         self.unitOfMeasurement = try container.decode(UnitOfMeasurement.self, forKey: .unitOfMeasurement)
         self.observationType = try container.decode(ObservationType.self, forKey: .observationType)
         self.observedArea = try container.decodeIfPresent(Polygon.self, forKey: .observedArea)
@@ -138,7 +138,7 @@ open class Sensor: CoatyObject {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(description, forKey: .description)
         try container.encode(encodingType, forKey: .encodingType)
-        try JSONValue.encodeRawString(metadata, to: &container, forKey: .metadata)
+        try RawJSONValue.encodeRawString(metadata, to: &container, forKey: .metadata)
         try container.encode(unitOfMeasurement, forKey: .unitOfMeasurement)
         try container.encode(observationType, forKey: .observationType)
         try container.encodeIfPresent(observedArea, forKey: .observedArea)

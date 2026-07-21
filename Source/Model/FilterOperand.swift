@@ -173,10 +173,10 @@ extension FilterOperand {
 
     /// Converts an IkigaJSON value into the closed filter representation.
     internal static func fromJSONObject(_ object: JSONObject) -> FilterOperand? {
-        fromJSONValue(object)
+        fromRawJSONValue(object)
     }
 
-    internal static func fromJSONValue(_ value: any IkigaJSON.JSONValue) -> FilterOperand? {
+    internal static func fromRawJSONValue(_ value: any IkigaJSON.JSONValue) -> FilterOperand? {
         if value.null != nil { return .null }
         if let value = value.bool { return .bool(value) }
         if let value = value.int { return .int(value) }
@@ -185,13 +185,13 @@ extension FilterOperand {
         if let value = value.object {
             var result: [String: FilterOperand] = [:]
             for key in value.keys {
-                guard let child = value[key], let converted = fromJSONValue(child) else { continue }
+                guard let child = value[key], let converted = fromRawJSONValue(child) else { continue }
                 result[key] = converted
             }
             return .object(result)
         }
         if let value = value.array {
-            return .array(value.compactMap(fromJSONValue))
+            return .array(value.compactMap(fromRawJSONValue))
         }
         return nil
     }

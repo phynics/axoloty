@@ -105,13 +105,13 @@ struct SensorThingsWireRoundTripTests {
 
     @Test
     func sensorSourceControllerSerializesAnyToJSONString() throws {
-        // Verify JSONValue.serialize(any:) produces valid raw JSON text
+        // Verify RawJSONValue.serialize(any:) produces valid raw JSON text
         // for the types SensorIo.read closures typically provide.
-        #expect(JSONValue.serialize(any: 42) == "42")
-        #expect(JSONValue.serialize(any: 23.5) == "23.5")
-        #expect(JSONValue.serialize(any: "hello") == "\"hello\"")
-        #expect(JSONValue.serialize(any: true) == "true")
-        #expect(JSONValue.serialize(any: ["key": "value"]) == "{\"key\":\"value\"}")
-        #expect(JSONValue.serialize(any: [1, 2, 3]) == "[1,2,3]")
+        #expect(RawJSONValue.serialize(any: 42) == "42")
+        #expect(RawJSONValue.serialize(any: 23.5) == "23.5")
+        #expect(RawJSONValue.serialize(any: "hello") == "\"hello\"")
+        #expect(RawJSONValue.serialize(any: true) == "true")
+        #expect(RawJSONValue.serialize(any: ["key": "value"]) == "{\"key\":\"value\"}")
+        #expect(RawJSONValue.serialize(any: [1, 2, 3]) == "[1,2,3]")
     }
 }

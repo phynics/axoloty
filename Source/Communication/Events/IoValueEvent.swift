@@ -129,7 +129,7 @@ public class IoValueEventData: CommunicationEventData {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         
         self.rawPayload = try container.decode([UInt8].self, forKey: .payload)
-        self.jsonPayload = try JSONValue.decodeRawStringIfPresent(from: container, forKey: .payload)
+        self.jsonPayload = try RawJSONValue.decodeRawStringIfPresent(from: container, forKey: .payload)
         try super.init(from: decoder)
     }
     
@@ -137,6 +137,6 @@ public class IoValueEventData: CommunicationEventData {
         try super.encode(to: encoder)
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encodeIfPresent(self.rawPayload, forKey: .payload)
-        try JSONValue.encodeRawStringIfPresent(self.jsonPayload, to: &container, forKey: .payload)
+        try RawJSONValue.encodeRawStringIfPresent(self.jsonPayload, to: &container, forKey: .payload)
     }
 }
