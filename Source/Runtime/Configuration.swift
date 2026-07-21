@@ -230,6 +230,15 @@ public class ControllerOptions {
             self.extra = extra
         }
     }
+
+    // Compatibility boundary for the legacy `extra` bag. Controller
+    // implementations consume typed values instead of repeating string-key
+    // lookups and casts at each call site.
+    internal var ioContextOption: IoContext? { extra["ioContext"] as? IoContext }
+    internal var ioAssociationRulesOption: [IoAssociationRule]? { extra["rules"] as? [IoAssociationRule] }
+    internal var sensorDefinitionsOption: [SensorDefinition]? { extra["sensors"] as? [SensorDefinition] }
+    internal var skipsSensorAdvertise: Bool { extra["skipSensorAdvertise"] as? Bool == true }
+    internal var skipsSensorDeadvertise: Bool { extra["skipSensorDeadvertise"] as? Bool == true }
 }
 
 /// Database access options mapped by a unique database key.

@@ -45,7 +45,7 @@ public class IoRouter: Controller {
     public override func onInit() {
         super.onInit()
         
-        guard let ioContext = self.options?.extra["ioContext"] as? IoContext else {
+        guard let ioContext = self.options?.ioContextOption else {
             fatalError("no IO context configured for IO router: specify an IoContext object in controller option 'ioContext'")
         }
         
@@ -223,6 +223,8 @@ public class IoRouter: Controller {
                 guard parsed.eventType == .Advertise,
                       parsed.eventTypeFilter == CoreType.IoNode.rawValue,
                       let event: AdvertiseEvent = try? PayloadCoder.decode(parsed.payload),
+                      // AdvertiseEvent carries a runtime-polymorphic object;
+                      // this cast filters the event to the required subtype.
                       let node = event.data.object as? IoNode,
                       node.name == self.ioContext.name else { continue }
                 self.ioNodeAdvertised(node: node)
@@ -284,6 +286,8 @@ public class IoRouter: Controller {
             for await response in stream {
                 guard response.eventType == CommunicationEventType.Resolve.rawValue,
                       let event: ResolveEvent = try? PayloadCoder.decode(response.payload),
+                      // ResolveEvent carries a runtime-polymorphic object;
+                      // this cast filters the response to the required subtype.
                       let node = event.data.object as? IoNode,
                       node.name == self.ioContext.name else { continue }
                 self.ioNodeAdvertised(node: node)

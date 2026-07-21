@@ -121,6 +121,8 @@ public class Container {
     /// - Parameters:
     ///     - name: the name of the controller
     public func getController<C: Controller>(name: String) -> C? {
+        // Controllers are registered behind their common base type; callers
+        // request the concrete type they registered.
         return self.controllers[name] as? C
     }
 
@@ -270,35 +272,55 @@ public class Container {
     private func createIdentity(options: [String: Any]?) throws -> Identity {
         let identity = Identity(name: "Coaty Agent")
 
-        // Merge property values from CommonOptions.agentIdentity option
+        // Merge property values from CommonOptions.agentIdentity option,
         // ignoring coreType and objectType properties.
-        if options != nil {
-            for (key, value) in options! {
-                switch key {
-                    case "name":
-                        guard let name = value as? String else {
-                            throw AxolotyError.invalidConfiguration(option: "agentIdentity.name", reason: "must be a String")
-                        }
-                        identity.name = name
-                    case "objectId":
-                        guard let objectId = value as? CoatyUUID else {
-                            throw AxolotyError.invalidConfiguration(option: "agentIdentity.objectId", reason: "must be a CoatyUUID")
-                        }
-                        identity.objectId = objectId
-                    case "externalId":
-                        identity.externalId = value as? String
-                    case "parentObjectId":
-                        identity.parentObjectId = value as? CoatyUUID
-                    case "locationId":
-                        identity.locationId = value as? CoatyUUID
-                    case "isDeactivated":
-                        identity.isDeactivated = value as? Bool
-                    default:
-                        break
-                }
-            }
-        }
+        let values = try AgentIdentityOptionValues(options ?? [:])
+        if let name = values.name { identity.name = name }
+        if let objectId = values.objectId { identity.objectId = objectId }
+        identity.externalId = values.externalId
+        identity.parentObjectId = values.parentObjectId
+        identity.locationId = values.locationId
+        identity.isDeactivated = values.isDeactivated
 
         return identity
+    }
+}
+
+/// Typed view of the legacy agent-identity option bag.
+///
+/// The casts are isolated here at the public `[String: Any]` compatibility
+/// boundary. Callers consume typed fields and cannot accidentally associate a
+/// string key with the wrong value type.
+struct AgentIdentityOptionValues {
+    let name: String?
+    let objectId: CoatyUUID?
+    let externalId: String?
+    let parentObjectId: CoatyUUID?
+    let locationId: CoatyUUID?
+    let isDeactivated: Bool?
+
+    init(_ values: [String: Any]) throws {
+        if let value = values["name"] {
+            guard let value = value as? String else {
+                throw AxolotyError.invalidConfiguration(option: "agentIdentity.name", reason: "must be a String")
+            }
+            name = value
+        } else {
+            name = nil
+        }
+
+        if let value = values["objectId"] {
+            guard let value = value as? CoatyUUID else {
+                throw AxolotyError.invalidConfiguration(option: "agentIdentity.objectId", reason: "must be a CoatyUUID")
+            }
+            objectId = value
+        } else {
+            objectId = nil
+        }
+
+        externalId = values["externalId"] as? String
+        parentObjectId = values["parentObjectId"] as? CoatyUUID
+        locationId = values["locationId"] as? CoatyUUID
+        isDeactivated = values["isDeactivated"] as? Bool
     }
 }

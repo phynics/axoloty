@@ -12,7 +12,7 @@ open class SensorSourceController: Controller {
 
     override open func onInit() {
         super.onInit()
-        if let definitions = options?.extra["sensors"] as? [SensorDefinition] {
+        if let definitions = options?.sensorDefinitionsOption {
             for definition in definitions {
                 do {
                     try registerSensor(sensor: definition.sensor, io: definition.io.init(parameters: definition.parameters), observationPublicationType: definition.observationPublicationType, samplingInterval: definition.samplingInterval)
@@ -64,7 +64,7 @@ open class SensorSourceController: Controller {
                 }
             }
         }
-        if options?.extra["skipSensorAdvertise"] as? Bool != true {
+        if options?.skipsSensorAdvertise != true {
             do {
                 try communicationManager.publishAdvertise(AdvertiseEvent.with(object: sensor))
             } catch {
@@ -84,7 +84,7 @@ open class SensorSourceController: Controller {
             throw AxolotyError.runtime(code: .notRegistered, reason: "sensorId \(sensorId.string) is not registered")
         }
         samplingTasks.removeValue(forKey: sensorId.string)?.cancel()
-        if options?.extra["skipSensorDeadvertise"] as? Bool != true { communicationManager.publishDeadvertise(DeadvertiseEvent.with(objectIds: [sensorId])) }
+        if options?.skipsSensorDeadvertise != true { communicationManager.publishDeadvertise(DeadvertiseEvent.with(objectIds: [sensorId])) }
     }
 
     /// Publishes a channeled observation.
