@@ -217,22 +217,22 @@ struct EventSnapshotMetadataTests {
             sourceId: sourceId,
             objectTypes: ["coaty.Custom"],
             coreTypes: [.CoatyObject],
-            objectFilter: sampleData(),
-            objectJoinConditions: [sampleData()],
+            objectFilter: sampleJSON(),
+            objectJoinConditions: [sampleJSON()],
             objectJoinCondition: nil
         )
 
         #expect(snapshot.sourceId == sourceId)
         #expect(snapshot.objectTypes == ["coaty.Custom"])
         #expect(snapshot.coreTypes == [.CoatyObject])
-        #expect(snapshot.objectFilter == sampleData())
+        #expect(snapshot.objectFilter == sampleJSON())
         #expect(snapshot.objectJoinConditions?.count == 1)
 
         let roundTripped = try roundTrip(snapshot)
         #expect(roundTripped.sourceId == sourceId)
         #expect(roundTripped.objectTypes == ["coaty.Custom"])
         #expect(roundTripped.coreTypes == [.CoatyObject])
-        #expect(roundTripped.objectFilter == sampleData())
+        #expect(roundTripped.objectFilter == sampleJSON())
         #expect(roundTripped.objectJoinConditions?.count == 1)
     }
 
@@ -243,14 +243,14 @@ struct EventSnapshotMetadataTests {
             objectTypes: ["coaty.Custom"],
             objectFilter: nil,
             objectJoinConditions: nil,
-            objectJoinCondition: sampleData()
+            objectJoinCondition: sampleJSON()
         )
 
-        #expect(snapshot.objectJoinCondition == sampleData())
+        #expect(snapshot.objectJoinCondition == sampleJSON())
         #expect(snapshot.objectJoinConditions == nil)
 
         let roundTripped = try roundTrip(snapshot)
-        #expect(roundTripped.objectJoinCondition == sampleData())
+        #expect(roundTripped.objectJoinCondition == sampleJSON())
         #expect(roundTripped.objectJoinConditions == nil)
     }
 

@@ -17,18 +17,19 @@ public struct QueryEventSnapshot: EventSnapshot, Codable, Equatable, Sendable {
     /// The core types used to restrict query results.
     public let coreTypes: [CoreType]?
 
-    /// The encoded object filter, if one was specified.
-    public let objectFilter: Data?
+    /// The encoded object filter, if one was specified, as raw JSON text.
+    public let objectFilter: String?
 
-    /// The encoded join conditions, if any were specified.
-    public let objectJoinConditions: [Data]?
+    /// The encoded join conditions, if any were specified, as raw JSON text.
+    public let objectJoinConditions: [String]?
 
-    /// The encoded single join condition, if one was specified.
+    /// The encoded single join condition, if one was specified, as raw JSON
+    /// text.
     ///
     /// Legacy `QueryEventData` stores either a single condition or an array of
     /// conditions under the same coding key; this property preserves the single
     /// condition case without referencing the legacy type.
-    public let objectJoinCondition: Data?
+    public let objectJoinCondition: String?
 
     /// Creates a snapshot of a Query event.
     ///
@@ -37,17 +38,17 @@ public struct QueryEventSnapshot: EventSnapshot, Codable, Equatable, Sendable {
     ///   - correlationId: The correlation identifier for a Retrieve response.
     ///   - objectTypes: An optional list of object types.
     ///   - coreTypes: An optional list of core types.
-    ///   - objectFilter: An optional encoded object filter.
-    ///   - objectJoinConditions: An optional list of encoded join conditions.
-    ///   - objectJoinCondition: An optional encoded single join condition.
+    ///   - objectFilter: An optional encoded object filter as raw JSON text.
+    ///   - objectJoinConditions: An optional list of encoded join conditions as raw JSON text.
+    ///   - objectJoinCondition: An optional encoded single join condition as raw JSON text.
     public init(
         sourceId: String? = nil,
         correlationId: String? = nil,
         objectTypes: [String]? = nil,
         coreTypes: [CoreType]? = nil,
-        objectFilter: Data? = nil,
-        objectJoinConditions: [Data]? = nil,
-        objectJoinCondition: Data? = nil
+        objectFilter: String? = nil,
+        objectJoinConditions: [String]? = nil,
+        objectJoinCondition: String? = nil
     ) {
         self.sourceId = sourceId
         self.correlationId = correlationId
@@ -78,9 +79,12 @@ extension QueryEventSnapshot {
             correlationId: parsedMQTTMessage.correlationId,
             objectTypes: wire.objectTypes,
             coreTypes: wire.coreTypes,
-            objectFilter: WirePayloadExtractor.nestedObjectPayload(from: parsedMQTTMessage.payload, key: "objectFilter"),
-            objectJoinConditions: WirePayloadExtractor.nestedArrayPayload(from: parsedMQTTMessage.payload, key: "objectJoinConditions"),
+            objectFilter: WirePayloadExtractor.nestedObjectPayload(from: parsedMQTTMessage.payload, key: "objectFilter")
+                .map { String(decoding: $0, as: UTF8.self) },
+            objectJoinConditions: WirePayloadExtractor.nestedArrayPayload(from: parsedMQTTMessage.payload, key: "objectJoinConditions")
+                .map { $0.map { String(decoding: $0, as: UTF8.self) } },
             objectJoinCondition: WirePayloadExtractor.nestedObjectPayload(from: parsedMQTTMessage.payload, key: "objectJoinConditions")
+                .map { String(decoding: $0, as: UTF8.self) }
         )
     }
 }
