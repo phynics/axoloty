@@ -131,7 +131,7 @@ struct BroadcastTransportTests {
             eventType: CommunicationEventType.Resolve.rawValue,
             sourceId: "responder",
             correlationId: mintedCorrelationId,
-            payload: Data("{}".utf8)
+            payload: "{}"
         )
         await client.emitResponse(resolveSnapshot, eventType: .Resolve, correlationId: mintedCorrelationId)
 

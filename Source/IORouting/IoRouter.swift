@@ -283,7 +283,7 @@ public class IoRouter: Controller {
             let stream = await communicationManager.publishDiscover(DiscoverEvent.with(coreTypes: [.IoNode]))
             for await response in stream {
                 guard response.eventType == CommunicationEventType.Resolve.rawValue,
-                      let event: ResolveEvent = try? PayloadCoder.decode(String(data: response.payload, encoding: .utf8) ?? ""),
+                      let event: ResolveEvent = try? PayloadCoder.decode(response.payload),
                       let node = event.data.object as? IoNode,
                       node.name == self.ioContext.name else { continue }
                 self.ioNodeAdvertised(node: node)

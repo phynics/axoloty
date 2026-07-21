@@ -259,8 +259,7 @@ struct AxolotyLifecycleSubjectTests {
 
     private func decodeVariant(from response: ResponseEventSnapshot) throws -> String {
         #expect(response.eventType == "RTN")
-        let payload = try #require(String(data: response.payload, encoding: .utf8))
-        let event: ReturnEvent = try PayloadCoder.decode(payload)
+        let event: ReturnEvent = try PayloadCoder.decode(response.payload)
         let resultJSON = try #require(event.data.result)
         let result = try JSONDecoder().decode([String: String].self, from: Data(resultJSON.utf8))
         return try #require(result["variant"])

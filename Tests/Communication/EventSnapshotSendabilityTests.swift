@@ -84,6 +84,17 @@ struct EventSnapshotSendabilityTests {
         )
         assertSendable(snapshot)
     }
+
+    @Test
+    func responseEventSnapshotIsSendable() {
+        let snapshot = ResponseEventSnapshot(
+            eventType: "RTN",
+            sourceId: sampleSourceId(),
+            correlationId: "corr-1",
+            payload: sampleJSON()
+        )
+        assertSendable(snapshot)
+    }
 }
 
 /// A compile-time witness that the given value conforms to `Sendable`.

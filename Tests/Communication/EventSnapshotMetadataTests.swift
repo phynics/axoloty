@@ -284,6 +284,27 @@ struct EventSnapshotMetadataTests {
         #expect(roundTripped.objectType == "coaty.CoatyObject")
         #expect(roundTripped.payload == payload)
     }
+
+    @Test
+    func responseSnapshotPreservesMetadataAndPayload() throws {
+        let snapshot = ResponseEventSnapshot(
+            eventType: "RTN",
+            sourceId: sourceId,
+            correlationId: "corr-1",
+            payload: sampleJSON()
+        )
+
+        #expect(snapshot.eventType == "RTN")
+        #expect(snapshot.sourceId == sourceId)
+        #expect(snapshot.correlationId == "corr-1")
+        #expect(snapshot.payload == sampleJSON())
+
+        let roundTripped = try roundTrip(snapshot)
+        #expect(roundTripped.eventType == "RTN")
+        #expect(roundTripped.sourceId == sourceId)
+        #expect(roundTripped.correlationId == "corr-1")
+        #expect(roundTripped.payload == sampleJSON())
+    }
 }
 
 private func sampleObject() -> CoatyObjectSnapshot {
