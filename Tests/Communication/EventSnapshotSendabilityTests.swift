@@ -15,7 +15,7 @@ struct EventSnapshotSendabilityTests {
             sourceId: sampleSourceId(),
             eventTypeFilter: ":coaty.Custom",
             object: sampleObject(),
-            privateData: sampleData()
+            privateData: sampleJSON()
         )
         assertSendable(snapshot)
     }
@@ -36,7 +36,7 @@ struct EventSnapshotSendabilityTests {
             objects: [sampleObject()],
             channelId: "channel-a",
             eventTypeFilter: "channel-a",
-            privateData: sampleData()
+            privateData: sampleJSON()
         )
         assertSendable(snapshot)
     }

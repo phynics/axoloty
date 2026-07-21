@@ -19,21 +19,21 @@ struct EventSnapshotMetadataTests {
             sourceId: sourceId,
             eventTypeFilter: ":coaty.Custom",
             object: sampleObject(),
-            privateData: sampleData()
+            privateData: sampleJSON()
         )
 
         #expect(snapshot.sourceId == sourceId)
         #expect(snapshot.eventTypeFilter == ":coaty.Custom")
         #expect(snapshot.object.objectId == objectId)
         #expect(snapshot.object.coreType == .CoatyObject)
-        #expect(snapshot.privateData == sampleData())
+        #expect(snapshot.privateData == sampleJSON())
 
         let roundTripped = try roundTrip(snapshot)
         #expect(roundTripped.sourceId == sourceId)
         #expect(roundTripped.eventTypeFilter == ":coaty.Custom")
         #expect(roundTripped.object.objectId == objectId)
         #expect(roundTripped.object.coreType == .CoatyObject)
-        #expect(roundTripped.privateData == sampleData())
+        #expect(roundTripped.privateData == sampleJSON())
     }
 
     @Test
@@ -63,8 +63,7 @@ struct EventSnapshotMetadataTests {
     }
 
     @Test
-    func deadvertiseSnapshotPreservesMetadataAndObjectIds() throws {
-        let snapshot = DeadvertiseEventSnapshot(
+    func deadvertiseSnapshotPreservesMetadataAndObjectIds() throws {        let snapshot = DeadvertiseEventSnapshot(
             sourceId: sourceId,
             objectIds: [objectId]
         )
@@ -84,7 +83,7 @@ struct EventSnapshotMetadataTests {
             objects: [sampleObject()],
             channelId: "channel-a",
             eventTypeFilter: "channel-a",
-            privateData: sampleData()
+            privateData: sampleJSON()
         )
 
         #expect(snapshot.sourceId == sourceId)
@@ -92,7 +91,7 @@ struct EventSnapshotMetadataTests {
         #expect(snapshot.eventTypeFilter == "channel-a")
         #expect(snapshot.objects?.count == 1)
         #expect(snapshot.objects?.first?.objectId == objectId)
-        #expect(snapshot.privateData == sampleData())
+        #expect(snapshot.privateData == sampleJSON())
 
         let roundTripped = try roundTrip(snapshot)
         #expect(roundTripped.sourceId == sourceId)
@@ -348,6 +347,11 @@ private func jsonEquivalent(_ lhs: Data, to rhs: String) throws -> Bool {
     let lhsObject = try JSONSerialization.jsonObject(with: lhs) as? [String: Any]
     let rhsObject = try JSONSerialization.jsonObject(with: Data(rhs.utf8)) as? [String: Any]
     return NSDictionary(dictionary: lhsObject ?? [:]).isEqual(to: rhsObject ?? [:])
+}
+
+/// Compares two JSON-encoded `String` values for semantic equality.
+private func jsonEquivalent(_ lhs: String, to rhs: String) throws -> Bool {
+    try jsonEquivalent(Data(lhs.utf8), to: rhs)
 }
 
 private func roundTrip<T: Codable>(_ value: T) throws -> T {
