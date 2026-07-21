@@ -118,7 +118,7 @@ matrix), plus the field-schema fixtures (Task 8) and forward-compat cases
 (Task 9) which are not yet captured. The four object types
 (`FeatureOfInterest`, `Observation`, `Sensor`, `Thing`) and their nested
 fields (`UnitOfMeasurement`, `ObservedProperty`, polygon `observedArea`,
-heterogeneous `AnyCodable`) are defined in `Source/SensorThings/` and
+heterogeneous raw JSON `String`) are defined in `Source/SensorThings/` and
 exercised same-process by `Tests/SensorThings/`. Columns: `Not tested`, with
 the note that the transport layer is already proven compatible.
 

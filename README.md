@@ -123,8 +123,3 @@ Axoloty is a fork of [coatyio/coaty-swift](https://github.com/coatyio/coaty-swif
 which originated at Siemens AG and is licensed under the
 [MIT License](https://opensource.org/licenses/MIT). All code and documentation
 in this repository is distributed under that same MIT License.
-
-The following vendored software is included in this repository:
-
--   AnyCodable [MIT
-    License](https://github.com/Flight-School/AnyCodable/blob/master/LICENSE)
