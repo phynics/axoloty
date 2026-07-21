@@ -55,11 +55,11 @@ public class IoValueEvent: CommunicationEvent<IoValueEventData> {
     ///
     /// - Parameters:
     ///     - ioSource: the IoSource for publishing
-    ///     - value: an JSON compatible `AnyCodable` value
+    ///     - value: raw JSON text for the IO value
     ///     - options: binding-specific publication options
     /// - Throws: throws if the given value data format does not comply with the
     ///     `IoSource.useRawIoValues` option
-    public static func with(ioSource: IoSource, value: AnyCodable, options: [String: Any]) throws -> IoValueEvent {
+    public static func with(ioSource: IoSource, value: String, options: [String: Any]) throws -> IoValueEvent {
         let ioValueEventData = IoValueEventData.createFrom(jsonPayload: value)
         return try IoValueEvent(eventType: .IoValue, eventData: ioValueEventData, ioSource: ioSource)
     }
@@ -97,13 +97,13 @@ public class IoValueEventData: CommunicationEventData {
     /// The payload represented as raw [UInt8]
     public var rawPayload: [UInt8]?
     
-    /// The payload represented as JSON data.
-    public var jsonPayload: AnyCodable?
+    /// The payload represented as raw JSON text.
+    public var jsonPayload: String?
     
     // MARK: - Initializers.
     
     private init(_ rawPayload: [UInt8]? = nil,
-                 _ jsonPayload: AnyCodable? = nil) {
+                 _ jsonPayload: String? = nil) {
         super.init()
         self.rawPayload = rawPayload
         self.jsonPayload = jsonPayload
@@ -115,7 +115,7 @@ public class IoValueEventData: CommunicationEventData {
         return .init(rawPayload, nil)
     }
     
-    internal static func createFrom(jsonPayload: AnyCodable) -> IoValueEventData {
+    internal static func createFrom(jsonPayload: String) -> IoValueEventData {
         return .init(nil, jsonPayload)
     }
     
@@ -129,7 +129,7 @@ public class IoValueEventData: CommunicationEventData {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         
         self.rawPayload = try container.decode([UInt8].self, forKey: .payload)
-        self.jsonPayload = try container.decodeIfPresent(AnyCodable.self, forKey: .payload)
+        self.jsonPayload = try JSONValue.decodeRawStringIfPresent(from: container, forKey: .payload)
         try super.init(from: decoder)
     }
     
@@ -137,6 +137,6 @@ public class IoValueEventData: CommunicationEventData {
         try super.encode(to: encoder)
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encodeIfPresent(self.rawPayload, forKey: .payload)
-        try container.encodeIfPresent(self.jsonPayload, forKey: .payload)
+        try JSONValue.encodeRawStringIfPresent(self.jsonPayload, to: &container, forKey: .payload)
     }
 }

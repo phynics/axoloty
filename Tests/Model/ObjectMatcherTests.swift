@@ -1390,4 +1390,58 @@ struct ObjectMatcherTests {
 
         #expect(ObjectMatcher.matchesFilter(obj: try Self.objectWithKnownId(), filter: filter))
     }
+
+    // MARK: - Like operator pattern preservation (moved from AnyCodableCharacterizationTests)
+
+    /// A `Like` match does not mutate the filter's operands. The pattern is
+    /// carried in the `.like` enum case alongside its compiled matcher, and
+    /// matching does not rewrite it.
+    @Test
+
+    func testLikeMatchPreservesPattern() throws {
+        let filter = Self.likeFilter()
+
+        #expect(ObjectMatcher.matchesFilter(obj: try Self.helloObject(), filter: filter))
+
+        let expression = try #require(filter.condition).expression
+        guard case .like(let pattern, _) = expression else {
+            Issue.record("Expected .like expression, got \(expression)")
+            return
+        }
+        #expect(pattern == "H%")
+    }
+
+    /// A filter can be re-encoded after a `Like` match because the compiled
+    /// regex is carried in the enum case but excluded from Codable, so
+    /// re-encoding round-trips the pattern.
+    @Test
+
+    func testFilterCanBeReEncodedAfterALikeMatch() throws {
+        let filter = Self.likeFilter()
+        _ = ObjectMatcher.matchesFilter(obj: try Self.helloObject(), filter: filter)
+
+        // Must not throw — the matcher is not part of the Codable wire shape.
+        let encoded = try JSONEncoder().encode(filter)
+        let decoded = try JSONDecoder().decode(ObjectFilter.self, from: encoded)
+        let reExpression = try #require(decoded.condition).expression
+        guard case .like(let pattern, _) = reExpression else {
+            Issue.record("Expected .like expression, got \(reExpression)")
+            return
+        }
+        #expect(pattern == "H%")
+    }
+
+    private static func helloObject() throws -> CoatyObject {
+        return CoatyObject(coreType: .Log,
+                           objectType: Log.objectType,
+                           objectId: .init(),
+                           name: "Hello")
+    }
+
+    private static func likeFilter() -> ObjectFilter {
+        return ObjectFilter(
+            condition: ObjectFilterCondition(
+                property: ObjectFilterProperty("name"),
+                expression: .like("H%")))
+    }
 }

@@ -4,7 +4,7 @@ import Foundation
 
 /// Provides async convenience methods for observing IO actor values and associations.
 open class IoActorController: Controller {
-    private var actorValues: [String: AnyCodable?] = [:]
+    private var actorValues: [String: String?] = [:]
     private var actorAssociations: [String: Bool] = [:]
 
     override open func onInit() {
@@ -18,8 +18,8 @@ open class IoActorController: Controller {
         await communicationManager.observeIoValueStream()
     }
 
-    /// Returns the latest decoded value received for an actor.
-    public func getIoValue(actor: IoActor) -> AnyCodable? {
+    /// Returns the latest decoded value received for an actor, as raw JSON text.
+    public func getIoValue(actor: IoActor) -> String? {
         actorValues[actor.objectId.string] ?? nil
     }
 

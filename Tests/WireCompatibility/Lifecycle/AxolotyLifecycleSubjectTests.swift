@@ -27,7 +27,7 @@ struct AxolotyLifecycleSubjectTests {
 
         let stream = try await manager.publishCall(CallEvent.with(
             operation: "wire-fixture-operation",
-            parameters: ["operand": AnyCodable(7)]
+            parameters: "{\"operand\":7}"
         ))
         var iterator = stream.makeAsyncIterator()
         report(state: "ready", scenario: "duplicate-reply")
@@ -65,7 +65,7 @@ struct AxolotyLifecycleSubjectTests {
 
         let stream = try await manager.publishCall(CallEvent.with(
             operation: "wire-fixture-operation",
-            parameters: ["operand": AnyCodable(7)]
+            parameters: "{\"operand\":7}"
         ))
         var iterator = stream.makeAsyncIterator()
         report(state: "ready", scenario: "late-reply")
@@ -261,8 +261,9 @@ struct AxolotyLifecycleSubjectTests {
         #expect(response.eventType == "RTN")
         let payload = try #require(String(data: response.payload, encoding: .utf8))
         let event: ReturnEvent = try PayloadCoder.decode(payload)
-        let result = try #require(event.data.result?.value as? [String: Any])
-        return try #require(result["variant"] as? String)
+        let resultJSON = try #require(event.data.result)
+        let result = try JSONDecoder().decode([String: String].self, from: Data(resultJSON.utf8))
+        return try #require(result["variant"])
     }
 
     private func report(state: String, scenario: String, extra: [String: String] = [:]) {

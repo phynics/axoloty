@@ -73,7 +73,7 @@ The object-type constants are in `Source/SensorThings/Sensor.swift:203-209`.
 Registration occurs during `Container.resolve` through
 `CoreType.registerSensorThingsTypes`. Capture fixtures must cover the nested
 types used by Sensor (`UnitOfMeasurement`, `ObservedProperty`, polygon and
-time-interval representations) and heterogeneous `AnyCodable` values, not just
+time-interval representations) and heterogeneous raw JSON `String` values, not just
 the four top-level discriminators.
 
 ## Current test evidence and gaps

@@ -46,7 +46,7 @@ extension FilterOperand: Codable {
         let container = try decoder.singleValueContainer()
 
         // Ladder order is load-bearing and mirrors the behavior pinned in
-        // `AnyCodableCharacterizationTests`:
+        // `FilterOperandTests`:
         //  - `Bool` before `Int` so that `true` does not become `1`;
         //  - `Int` before `Double` so that `42` stays `42`, not `42.0`.
         // The *result* of each step is a closed case, not an `Any`, so the
@@ -99,7 +99,7 @@ extension FilterOperand: Codable {
 
 extension FilterOperand: Comparable {
 
-    /// Ordering mirrors the pinned `AnyCodable` behavior: same-type
+    /// Ordering mirrors the pinned behavior: same-type
     /// comparisons use the native operator (strings use
     /// `localizedCompare`), cross-type pairs return `false`.
     public static func < (lhs: FilterOperand, rhs: FilterOperand) -> Bool {
@@ -149,7 +149,7 @@ extension FilterOperand: ExpressibleByArrayLiteral {
 extension FilterOperand {
 
     /// Creates a string operand from a ``CoatyUUID``, normalizing to the
-    /// lowercase string form — matching how ``AnyCodable`` stores UUIDs and
+    /// lowercase string form — matching how ``FilterOperand`` stores UUIDs and
     /// how CoatyJS represents them on the wire (JSON has no UUID type).
     public init(_ uuid: CoatyUUID) {
         self = .string(uuid.string)
@@ -164,7 +164,7 @@ extension FilterOperand {
     /// its properties.
     ///
     /// A ``CoatyUUID`` is stored as its lowercase string, matching the
-    /// normalization ``AnyCodable`` performs: a UUID property and a
+    /// normalization ``FilterOperand`` performs: a UUID property and a
     /// wire-decoded string operand compare equal. Optional properties that
     /// are `nil` are omitted (treated as absent), preserving the
     /// `.NotExists` semantics pinned in Phase 1.

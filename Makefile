@@ -29,7 +29,7 @@ COMMA := ,
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build test-decoder-context-sendable test test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs clean
+.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build test-decoder-context-sendable test-no-anycodable test test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs clean
 
 help:
 	@printf '%s\n' \
@@ -97,6 +97,9 @@ test-decoder-context-sendable:
 	if ! $(MAKE) build >"$$build_log" 2>&1; then cat "$$build_log"; exit 1; fi; \
 	cat "$$build_log"; \
 	sh Tests/Support/check-decoder-context-diagnostic.sh "$$build_log"
+
+test-no-anycodable:
+	@sh Tests/Support/check-no-anycodable.sh
 
 test: resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh sh -c 'pgrep mosquitto >/dev/null 2>&1 || mosquitto -d; swift test $(SWIFT_LOCKED_ARGS)'
@@ -186,7 +189,7 @@ ci-fast: build test-fast
 ci-preflight:
 	@if [ "$${CI:-}" = "true" ] && [ "$(BUILD_LOCK)" != "0" ]; then echo 'CI must set BUILD_LOCK=0 because its workspace-local build directory is not shared' >&2; exit 2; fi
 
-ci: ci-preflight test-decoder-context-sendable
+ci: ci-preflight test-decoder-context-sendable test-no-anycodable
 	$(MAKE) test-support coverage-check
 
 broker: image

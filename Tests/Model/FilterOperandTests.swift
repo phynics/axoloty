@@ -11,7 +11,7 @@ import Foundation
 struct FilterOperandTests {
 
     /// Integers and doubles are distinct cases: `42` must not re-encode as
-    /// `42.0`. Pinned in Phase 1 (`AnyCodableCharacterizationTests`); a
+    /// `42.0`. Pinned in Phase 1; a
     /// replacement modelling JSON numbers as a single `Double` case would
     /// break wire byte-fidelity against the fixture corpus.
     @Test

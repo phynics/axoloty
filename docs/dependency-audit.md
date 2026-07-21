@@ -77,23 +77,15 @@ action needed.
 
 ## Vendored code
 
-`Source/Common/AnyCodable/` ships a vendored fork of
-Flight-School/AnyCodable with one project-specific extension
-(`_AnyDecodable.init(from:)` decodes `CoatyUUID` before `String`). It is not a
-declared SPM dependency and is listed in the README third-party-license
-section. **Actionable removal path:** T-036 replaces it with a declared SPM
-dependency (or a local decode-time conversion) once this audit confirms
-upstream AnyCodable is license-compatible (MIT) and no other vendored code
-exists. This audit confirms both: AnyCodable is MIT-licensed and no other
-vendored third-party source exists under `Source/`.
+No vendored third-party source exists under `Source/`. The previously vendored
+fork of Flight-School/AnyCodable was removed in #110, replaced by the internal
+`JSONValue` type and raw JSON `String` storage across the snapshot, event, and
+model layers. A CI check (`make test-no-anycodable`) enforces that `AnyCodable`
+does not reappear in `Source/`.
 
 ## Actionable recommendations
 
-1. **Replace vendored AnyCodable (T-036).** Confirmed MIT-compatible and
-   unblocked by this audit. Should land after the package rename (T-023) to
-   avoid `Package.swift` edit conflicts.
-
-2. **No version bumps required.** All six runtime dependencies and the docc
+1. **No version bumps required.** All six runtime dependencies and the docc
    plugin are resolved at their latest releases. Future updates flow
    automatically through the `from:` ranges; only ErrorKit's `exact:` pin
    requires an intentional bump.
@@ -103,5 +95,5 @@ vendored third-party source exists under `Source/`.
 This audit does not conflict with any in-flight ticket. It confirms that
 mqtt-nio, swift-nio, swift-nio-ssl, and swift-log are current and remain
 compatible with the container toolchain and the WASI feasibility spike
-(T-030). RxSwift removal is complete (T-028).
-AnyCodable removal is owned by T-036 and is unblocked by this audit.
+(T-030). RxSwift removal is complete (T-028). AnyCodable removal is complete
+(#110, superseding T-036).

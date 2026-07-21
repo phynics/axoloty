@@ -1,34 +1,14 @@
 {
   "schemaVersion": 1,
   "_aggregate": {
-    "covered": 3163,
-    "count": 7997,
-    "percent": 39.5523
+    "covered": 2856,
+    "count": 7450,
+    "percent": 38.3356
   },
   "files": {
     "Source/Common/AnyCoatyObjectDecodable.swift": {
       "count": 46,
       "covered": 44
-    },
-    "Source/Common/AnyCodable/AnyCodable.swift": {
-      "count": 311,
-      "covered": 231
-    },
-    "Source/Common/AnyCodable/AnyDecodable.swift": {
-      "count": 64,
-      "covered": 0
-    },
-    "Source/Common/AnyCodable/AnyEncodable.swift": {
-      "count": 67,
-      "covered": 0
-    },
-    "Source/Common/AnyCodable/_AnyDecodable.swift": {
-      "count": 27,
-      "covered": 24
-    },
-    "Source/Common/AnyCodable/_AnyEncodable.swift": {
-      "count": 78,
-      "covered": 52
     },
     "Source/Common/AxolotyError.swift": {
       "count": 9,

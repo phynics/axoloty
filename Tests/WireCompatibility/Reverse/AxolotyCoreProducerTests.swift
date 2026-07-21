@@ -100,16 +100,18 @@ struct AxolotyCoreProducerTests {
         case "call-return":
             let response = try await awaitResponse(
                 from: await manager.communication.publishCall(CallEvent.with(
-                    operation: "wire-fixture-operation", parameters: ["operand": AnyCodable(7)]
+                    operation: "wire-fixture-operation", parameters: "{\"operand\":7}"
                 )),
                 eventType: .Return,
                 as: ReturnEvent.self
             )
-            let result = try #require(response.data.result?.value as? [String: AnyCodable])
-            #expect(result["answer"]?.value as? Int == 49)
-            #expect(result["objectId"]?.value as? String == fixture.objectId.string)
-            let executionInfo = try #require(response.data.executionInfo?.value as? [String: AnyCodable])
-            #expect(executionInfo["responder"]?.value as? String == "coatyjs-2.4.0")
+            let resultJSON = try #require(response.data.result)
+            let result = try JSONDecoder().decode(CallReturnResult.self, from: Data(resultJSON.utf8))
+            #expect(result.answer == 49)
+            #expect(result.objectId == fixture.objectId.string)
+            let execJSON = try #require(response.data.executionInfo)
+            let execInfo = try JSONDecoder().decode(CallReturnExecInfo.self, from: Data(execJSON.utf8))
+            #expect(execInfo.responder == "coatyjs-2.4.0")
         default:
             Issue.record("Unsupported core wire scenario: \(scenario)")
         }
@@ -204,4 +206,17 @@ struct AxolotyCoreProducerTests {
             }
         }
     }
+}
+
+/// Typed decode of the `call-return` result payload sent by the CoatyJS
+/// reference consumer (`coatyjs-core-consumer.js`). Mirrors the private
+/// `ReturnPayload.Result` struct in `CoatyJsCallReturnCaptureTests.swift`.
+private struct CallReturnResult: Codable {
+    let answer: Int
+    let objectId: String
+}
+
+/// Typed decode of the `call-return` executionInfo payload.
+private struct CallReturnExecInfo: Codable {
+    let responder: String
 }
