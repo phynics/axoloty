@@ -29,13 +29,14 @@ open class FeatureOfInterest: CoatyObject {
     /// Most common encoding types can be accessed using EncodingTypes static properties.
     public var encodingType: String
     
-    /// The detailed description of the feature. The data type is defined by encodingType.
-    public var metadata: AnyCodable
+    /// The detailed description of the feature, stored as raw JSON text.
+    /// The data type is defined by encodingType.
+    public var metadata: String
     
     // MARK: - Initializers.
     public init(description: String,
          encodingType: String,
-         metadata: AnyCodable,
+         metadata: String,
          name: String,
          objectId: CoatyUUID = .init(),
          externalId: String? = nil,
@@ -65,7 +66,7 @@ open class FeatureOfInterest: CoatyObject {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.description = try container.decode(String.self, forKey: .description)
         self.encodingType = try container.decode(String.self, forKey: .encodingType)
-        self.metadata = try container.decode(AnyCodable.self, forKey: .metadata)
+        self.metadata = try JSONValue.decodeRawString(from: container, forKey: .metadata)
         try super.init(from: decoder)
     }
     
@@ -74,6 +75,6 @@ open class FeatureOfInterest: CoatyObject {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(description, forKey: .description)
         try container.encode(encodingType, forKey: .encodingType)
-        try container.encode(metadata, forKey: .metadata)
+        try JSONValue.encodeRawString(metadata, to: &container, forKey: .metadata)
     }
 }

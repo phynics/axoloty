@@ -193,7 +193,7 @@ class SensorThingsCollection {
     private static func _makeSensor() -> Sensor {
         Sensor(description: "A thermometer measures the temperature",
                encodingType: SensorEncodingTypes.UNDEFINED,
-               metadata: AnyCodable(),
+               metadata: "null",
                unitOfMeasurement: UnitOfMeasurement(name: "Celsius",
                                                     symbol: "degC",
                                                     definition: "http://www.qudt.org/qudt/owl/1.0.0/unit/Instances.html#DegreeCelsius"),
@@ -213,7 +213,7 @@ class SensorThingsCollection {
     private static func _makeFeatureOfInterest() -> FeatureOfInterest {
         FeatureOfInterest(description: "feature of interest",
                           encodingType: EncodingTypes.UNDEFINED,
-                          metadata: AnyCodable("interesting"),
+                           metadata: "\"interesting\"",
                           name: "F0I1",
                           objectId: CoatyUUID(uuidString: "b15521af-9077-4b22-978a-5ff8381d53ae")!)
     }
@@ -228,7 +228,7 @@ class SensorThingsCollection {
 
     private static func _makeObservation() -> Observation {
         Observation(phenomenonTime: Double(Date().millisecondsSince1970),
-                    result: AnyCodable("12.50"),
+                    result: "\"12.50\"",
                     resultTime: Double(Date().millisecondsSince1970),
                     featureOfInterest: CoatyUUID(uuidString: "b15521af-9077-4b22-978a-5ff8381d53ae")!,
                     name: "Observation1",

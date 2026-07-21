@@ -32,10 +32,9 @@ open class Sensor: CoatyObject {
     
     /// The detailed description of the Sensor or system.
     /// The metadata type is defined by encodingType.
-    /// Must be JSON encodable/decodable.
-    /// Specific parameters extraction should performed
-    /// by the user who knows how this JSON is structured
-    public var metadata: AnyCodable
+    /// Stored as raw JSON text; specific parameter extraction should be
+    /// performed by the user who knows how this JSON is structured.
+    public var metadata: String
     
     /// The unit of measurement of the datastream, matching UCUM convention.
     ///
@@ -74,7 +73,7 @@ open class Sensor: CoatyObject {
     // MARK: - Initializers
     public init(description: String,
          encodingType: String,
-         metadata: AnyCodable,
+         metadata: String,
          unitOfMeasurement: UnitOfMeasurement,
          observationType: ObservationType,
          observedArea: Polygon? = nil,
@@ -124,7 +123,7 @@ open class Sensor: CoatyObject {
         
         self.description = try container.decode(String.self, forKey: .description)
         self.encodingType = try container.decode(String.self, forKey: .encodingType)
-        self.metadata = try container.decode(AnyCodable.self, forKey: .metadata)
+        self.metadata = try JSONValue.decodeRawString(from: container, forKey: .metadata)
         self.unitOfMeasurement = try container.decode(UnitOfMeasurement.self, forKey: .unitOfMeasurement)
         self.observationType = try container.decode(ObservationType.self, forKey: .observationType)
         self.observedArea = try container.decodeIfPresent(Polygon.self, forKey: .observedArea)
@@ -139,7 +138,7 @@ open class Sensor: CoatyObject {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(description, forKey: .description)
         try container.encode(encodingType, forKey: .encodingType)
-        try container.encode(metadata, forKey: .metadata)
+        try JSONValue.encodeRawString(metadata, to: &container, forKey: .metadata)
         try container.encode(unitOfMeasurement, forKey: .unitOfMeasurement)
         try container.encode(observationType, forKey: .observationType)
         try container.encodeIfPresent(observedArea, forKey: .observedArea)
