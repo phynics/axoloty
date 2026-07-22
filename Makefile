@@ -29,7 +29,7 @@ COMMA := ,
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build test-decoder-context-sendable test-no-anycodable test-no-foundation-types test test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs clean
+.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build embedded-build embedded-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs clean
 
 help:
 	@printf '%s\n' \
@@ -38,6 +38,8 @@ help:
 		'make worktree-bootstrap  Prepare dependency cache and validate Package.resolved' \
 		'make worktree-warm  Bootstrap and compile the current worktree' \
 		'make build         Build Axoloty in the Linux container' \
+		'make embedded-build Compile the Embedded Swift Linux prototype' \
+		'make embedded-test  Run the Embedded Swift Linux prototype' \
 		'make test-decoder-context-sendable  Fail if the former decoder-context Sendable diagnostic returns' \
 		'make test          Run the full test suite (starts Mosquitto)' \
 		'make test-unit     Run ObjectMatcherTests' \
@@ -90,6 +92,13 @@ test-broker-regressions: image
 
 build: resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift build $(SWIFT_LOCKED_ARGS)
+
+embedded-build: image
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \
+		swiftc -enable-experimental-feature Embedded -wmo -parse-as-library Embedded/Probe/main.swift -o .build/embedded-probe
+
+embedded-test: embedded-build
+	@test "$$(CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh .build/embedded-probe)" = '{"message":"embedded"}'
 
 test-decoder-context-sendable:
 	@build_log=$$(mktemp); \
