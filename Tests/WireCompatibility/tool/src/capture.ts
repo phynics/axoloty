@@ -6,7 +6,7 @@ import { randomUUID } from "crypto";
 import { dirname, basename, resolve } from "path";
 
 /** MQTT control packet type byte values (upper nibble of byte 0). */
-const PacketType = {
+const FixedHeader = {
   CONNECT: 0x10,
   CONNACK: 0x20,
   PUBLISH: 0x30,
@@ -43,10 +43,14 @@ interface ParsedPublish {
  * Accumulating buffer that collects 'data' events from the socket and lets
  * callers read exact byte counts asynchronously.
  */
-class ByteQueue {
+export class ByteQueue {
   private chunks: Buffer[] = [];
   private totalBytes = 0;
-  private waiters: ((ok: boolean) => void)[] = [];
+  private waiters: {
+    length: number;
+    resolve: (value: Buffer) => void;
+    reject: (reason: Error) => void;
+  }[] = [];
   private ended = false;
 
   push(data: Buffer): void {
@@ -77,17 +81,7 @@ class ByteQueue {
       return Promise.resolve(this.consume(length));
     }
     return new Promise((resolve, reject) => {
-      this.waiters.push((ok: boolean) => {
-        if (!ok) {
-          reject(new Error("broker closed the connection"));
-          return;
-        }
-        if (this.totalBytes < length) {
-          reject(new Error("broker closed the connection"));
-          return;
-        }
-        resolve(this.consume(length));
-      });
+      this.waiters.push({ length, resolve, reject });
     });
   }
 
@@ -113,9 +107,17 @@ class ByteQueue {
   }
 
   private notify(): void {
-    while (this.waiters.length > 0 && (this.totalBytes > 0 || this.ended)) {
-      const waiter = this.waiters.shift()!;
-      waiter(!this.ended);
+    while (this.waiters.length > 0) {
+      const waiter = this.waiters[0]!;
+      if (this.totalBytes >= waiter.length) {
+        this.waiters.shift();
+        waiter.resolve(this.consume(waiter.length));
+      } else if (this.ended) {
+        this.waiters.shift();
+        waiter.reject(new Error("broker closed the connection"));
+      } else {
+        break;
+      }
     }
   }
 }
@@ -150,30 +152,40 @@ function buildPacket(typeAndFlags: number, body: Buffer): Buffer {
  * Read one complete MQTT packet: the fixed header byte + remaining-length
  * field + the remaining body. Returns the first byte and the body.
  */
-async function readPacket(queue: ByteQueue, timeout: number): Promise<[number, Buffer]> {
-  const timer = timeout > 0
-    ? setTimeout(() => {
-        throw new Error(`timed out reading MQTT packet after ${timeout}s`);
-      }, timeout * 1000)
+export async function readPacket(queue: ByteQueue, timeout: number): Promise<[number, Buffer]> {
+  let timer: NodeJS.Timeout | null = null;
+  const timeoutPromise = timeout > 0
+    ? new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(`timed out reading MQTT packet after ${timeout}s`));
+        }, timeout * 1000);
+      })
     : null;
 
   try {
-    const firstByteBuf = await queue.readExact(1);
+    const read = async (length: number): Promise<Buffer> => {
+      const result = queue.readExact(length);
+      return timeoutPromise === null ? result : Promise.race([result, timeoutPromise]);
+    };
+    const firstByteBuf = await read(1);
     const firstByte = firstByteBuf[0]!;
 
     let remaining = 0;
     let multiplier = 1;
     for (let i = 0; i < 4; i++) {
-      const digitBuf = await queue.readExact(1);
+      const digitBuf = await read(1);
       const digit = digitBuf[0]!;
       remaining += (digit & 0x7f) * multiplier;
       if ((digit & 0x80) === 0) {
         break;
       }
       multiplier *= 128;
+      if (i === 3) {
+        throw new Error("malformed MQTT remaining length");
+      }
     }
 
-    const body = remaining > 0 ? await queue.readExact(remaining) : Buffer.alloc(0);
+    const body = remaining > 0 ? await read(remaining) : Buffer.alloc(0);
     return [firstByte, body];
   } finally {
     if (timer) {
@@ -274,7 +286,7 @@ export async function runCapture(opts: CaptureOptions): Promise<void> {
     Buffer.from([0, 0]), // keep alive = 0
     mqttString(clientId),
   ]);
-  socket.write(buildPacket(PacketType.CONNECT, connectBody));
+  socket.write(buildPacket(FixedHeader.CONNECT, connectBody));
 
   // CONNACK
   const [connackType, connackBody] = await readPacket(queue, opts.timeout);
@@ -288,7 +300,7 @@ export async function runCapture(opts: CaptureOptions): Promise<void> {
     mqttString(opts.topicFilter),
     Buffer.from([opts.qos]),
   ]);
-  socket.write(buildPacket(PacketType.SUBSCRIBE, subscribeBody));
+  socket.write(buildPacket(FixedHeader.SUBSCRIBE, subscribeBody));
 
   // SUBACK
   const [subackType, subackBody] = await readPacket(queue, opts.timeout);
@@ -320,7 +332,7 @@ export async function runCapture(opts: CaptureOptions): Promise<void> {
       // Acknowledge QoS 1.
       if (msg.qos === 1 && msg.packetId !== null) {
         const pubackBody = Buffer.from([(msg.packetId >> 8) & 0xff, msg.packetId & 0xff]);
-        socket.write(buildPacket(PacketType.PUBACK, pubackBody));
+        socket.write(buildPacket(FixedHeader.PUBACK, pubackBody));
       } else if (msg.qos === 2) {
         throw new Error("QoS 2 capture acknowledgement is not implemented; subscribe at QoS 1");
       }

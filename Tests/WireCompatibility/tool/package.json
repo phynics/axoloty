@@ -10,6 +10,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "test": "npm run build && node --test dist/capture.test.js",
     "dev": "tsx src/index.ts"
   },
   "devDependencies": {
