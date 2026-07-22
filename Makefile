@@ -29,7 +29,7 @@ COMMA := ,
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build embedded-build embedded-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs clean
+.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build embedded-build embedded-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs wire-tool clean
 
 help:
 	@printf '%s\n' \
@@ -54,6 +54,7 @@ help:
 		'make coverage-check  Run coverage and fail if it regresses the baseline' \
 		'make test-wire-live  Run live CoatyJS compatibility scenarios' \
 		'make test-wire-all  Run offline and live compatibility suites' \
+		'make wire-tool   Build the npx-runnable wire-compatibility CLI' \
 		'make ci-fast       Run the build and fast test suite' \
 		'make ci            Run the consolidated pull-request checks' \
 		'make broker        Start Mosquitto on localhost:1883' \
@@ -166,6 +167,9 @@ test-wire-live:
 	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/IO/Live/run-io-associate.sh
 
 test-wire-all: test-wire test-wire-live
+
+wire-tool:
+	cd Tests/WireCompatibility/tool && npm ci && npm run build
 
 test-observation-linux: resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter "ObservationLinuxTests|BroadcastTests"
