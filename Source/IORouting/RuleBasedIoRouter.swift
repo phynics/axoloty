@@ -5,6 +5,7 @@
 //
 //
 
+import ErrorKit
 import Foundation
 
 /// Supports rule-based routing of data from IO sources to IO actors based on an
@@ -33,28 +34,46 @@ import Foundation
 /// - `ioContext`: the IO context for which this router is managing routes
 ///    (mandatory)
 /// - `rules`: an array of rule definitions for this router. The rules listed
-///    here override any rules defined in the `onInit` method.
+///   here override any rules defined in the `onInit` method.
 public class RuleBasedIoRouter: IoRouter {
-    
+
     // MARK: - Attributes.
-    
-    /// An array of current association items
-    private var currentAssociations: [(IoSource, IoActor, Int)] = []
-    
+
+    /// An array of current association items.
+    ///
+    /// Exposed `internal` so tests can assert router state directly. Only
+    /// this class mutates it (via `reconcile` / `onStopped`).
+    internal private(set) var currentAssociations: [(IoSource, IoActor, Int)] = []
+
     /// Defined rules hashed by value type.
     ///
-    /// Key: value type, Value: `MutableArrayBox` of `IoAssociationRule`.
-    ///
-    /// - Note: the array of rules for a given value type is wrapped in a
-    ///   `MutableArrayBox` (a small reference-type box, see
-    ///   `Common/MutableBox.swift`) rather than a native `Array`, because
-    ///   `defineRules` fetches the box for a value type via subscript and
-    ///   appends to it in place across multiple rules, relying on the
-    ///   mutation being visible through `rules` without writing the array
-    ///   back on every append. A native (value-type) `Array` would silently
-    ///   drop those appends. This used to be `NSMutableDictionary` of
-    ///   `NSMutableArray` for the same reason (T-001).
-    private var rules: [String: MutableArrayBox<IoAssociationRule>] = [:]
+    /// Key: value type, Value: the array of rules for that value type. An
+    /// empty key (`""`) holds the global rules. A plain value-type `Array`
+    /// is sufficient here: `defineRules` writes each bucket back via
+    /// subscript defaulting, so the per-value-type array accumulates without
+    /// reference semantics.
+    private var rules: [String: [IoAssociationRule]] = [:]
+
+    /// Bucketed index of managed IO sources and actors, keyed by
+    /// `(valueType, useRawIoValues)`, maintained incrementally on node
+    /// lifecycle events. Lets a single node advertise/deadvertise cross only
+    /// the value-type buckets the changed node belongs to, instead of the
+    /// full source x actor product.
+    private var ioIndex: [ValueTypeBucket: IoBucketEntry] = [:]
+
+    /// Reverse map from a managed node's object ID to the IO point IDs and
+    /// buckets currently held for that node in `ioIndex`. Re-advertisement
+    /// replaces a node's points without going through `onIoNodesUnmanaged`,
+    /// so this map lets `registerIoNodeInIndex` remove a node's stale points
+    /// before adding the new ones (see `ioNodesDeadvertised` /
+    /// `sourceRoutes` preservation in `IoRouter`).
+    private var indexedNodes: [String: IndexedNode] = [:]
+
+    /// Test-visible counter of rule-condition invocations, incremented once
+    /// per `IoRoutingRuleConditionFunc` call. Tests assert it against
+    /// bucket-product bounds (not a fixed number, so it does not become a
+    /// change detector). Reset via `resetConditionInvocationCount`.
+    internal private(set) var conditionInvocationCount: Int = 0
 
     // MARK: - Overridden lifecycle methods.
 
@@ -62,10 +81,11 @@ public class RuleBasedIoRouter: IoRouter {
         super.onInit()
         self.currentAssociations = []
         self.rules = [:]
+        self.ioIndex = [:]
+        self.indexedNodes = [:]
+        self.conditionInvocationCount = 0
     }
-    
-    // MARK: - Overridden methods.
-    
+
     /// Invoked when the IO context of this router has changed.
     ///
     /// Triggers reevaluation of all defined rules.
@@ -73,9 +93,9 @@ public class RuleBasedIoRouter: IoRouter {
         try super.onIoContextChanged()
         self.evaluateRules()
     }
-    
-    // MARK: - Class methods.
-    
+
+    // MARK: - Overridden methods.
+
     /// Define all association rules for routing.
     ///
     /// Note that any previously defined rules are discarded.
@@ -88,35 +108,48 @@ public class RuleBasedIoRouter: IoRouter {
 
         rules.forEach { rule in
             let valueType = rule.valueType ?? ""
-            if let vRules = self.rules[valueType] {
-                vRules.append(rule)
-            } else {
-                self.rules[valueType] = MutableArrayBox([rule])
-            }
+            self.rules[valueType, default: []].append(rule)
         }
 
         self.evaluateRules()
     }
-    
+
     override func onStarted() {
         if let rules = self.options?.extra["rules"] as? [IoAssociationRule] {
             self.defineRules(rules: rules)
         }
-        
+
         super.onStarted()
     }
-    
+
     override func onStopped() {
-        // Disassociate all associations
+        // Teardown: nothing observes router state afterward, so disassociate
+        // publishes are best-effort and not propagated. Per the repo's
+        // absorbed-error policy each failure is logged (with its error chain)
+        // rather than silently swallowed; this is the deliberate exception to
+        // the publish-failure-truthfulness invariant enforced in `reconcile`,
+        // which applies to steady-state evaluation only.
         self.currentAssociations.forEach { source, actor, _ in
-            try? self.disassociate(source: source, actor: actor)
+            do {
+                try self.disassociate(source: source, actor: actor)
+            } catch {
+                LogManager.logger(.ioRouting).warning(
+                    "Disassociate publish failed during teardown; continuing best-effort",
+                    metadata: [
+                        "ioSourceId": .string(source.objectId.string),
+                        "ioActorId": .string(actor.objectId.string),
+                        "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+                    ])
+            }
         }
-        
+
         self.currentAssociations = []
-        
+        self.ioIndex = [:]
+        self.indexedNodes = [:]
+
         super.onStopped()
     }
-    
+
     /// The default function used to compute the recommended update rate of an
     /// individual IO source - IO actor association.
     ///
@@ -146,170 +179,319 @@ public class RuleBasedIoRouter: IoRouter {
             return max(a, b)
         }
     }
-    
+
     override func onIoNodeManaged(node: IoNode) {
-        self.evaluateRules()
+        // Re-advertisement: capture the node's previously indexed buckets so
+        // the affected-buckets set covers both the stale points being removed
+        // and the new points being added (a point may even move buckets).
+        let oldBuckets = indexedNodes[node.objectId.string]?.buckets ?? []
+        registerIoNodeInIndex(node)
+        let newBuckets = indexedNodes[node.objectId.string]?.buckets ?? []
+        evaluateRules(affectedBuckets: affectedBucketsForEval(oldBuckets.union(newBuckets)))
     }
-    
+
     override func onIoNodesUnmanaged(nodes: [IoNode]) {
-        self.evaluateRules()
+        // The base class has already removed these nodes from
+        // `managedIoNodes`; capture their buckets from the index (still
+        // populated) before unregistering, then reconcile exactly those
+        // buckets so stale associations are disassociated.
+        var buckets: Set<ValueTypeBucket> = []
+        for node in nodes {
+            if let indexed = indexedNodes[node.objectId.string] {
+                buckets.formUnion(indexed.buckets)
+            }
+        }
+        unregisterIoNodesFromIndex(nodes)
+        evaluateRules(affectedBuckets: affectedBucketsForEval(buckets))
     }
-    
+
+    /// Returns the buckets to restrict evaluation to, or `nil` for a full
+    /// pass. A full pass is used when value-type compatibility has been
+    /// overridden (bucketing is unsound) or when there are no affected
+    /// buckets (e.g. context change / rule definition).
+    private func affectedBucketsForEval(_ buckets: Set<ValueTypeBucket>) -> Set<ValueTypeBucket>? {
+        guard usesDefaultValueTypeCompatibility, !buckets.isEmpty else { return nil }
+        return buckets
+    }
+
+    /// Adds a node's IO points to the bucketed index. Re-advertisement (same
+    /// object ID, changed points) first removes the node's previously indexed
+    /// points so stale entries don't linger.
+    internal func registerIoNodeInIndex(_ node: IoNode) {
+        if indexedNodes[node.objectId.string] != nil {
+            unregisterIoNodeFromIndex(node.objectId.string)
+        }
+        var indexed = IndexedNode()
+        for source in node.ioSources {
+            let bucket = ValueTypeBucket(source)
+            ioIndex[bucket, default: IoBucketEntry()].sources[source.objectId.string] = (source, node)
+            indexed.sourceIds.insert(source.objectId.string)
+            indexed.buckets.insert(bucket)
+        }
+        for actor in node.ioActors {
+            let bucket = ValueTypeBucket(actor)
+            ioIndex[bucket, default: IoBucketEntry()].actors[actor.objectId.string] = (actor, node)
+            indexed.actorIds.insert(actor.objectId.string)
+            indexed.buckets.insert(bucket)
+        }
+        indexedNodes[node.objectId.string] = indexed
+    }
+
+    /// Removes the given nodes' IO points from the bucketed index.
+    internal func unregisterIoNodesFromIndex(_ nodes: [IoNode]) {
+        for node in nodes {
+            unregisterIoNodeFromIndex(node.objectId.string)
+        }
+    }
+
+    private func unregisterIoNodeFromIndex(_ nodeId: String) {
+        guard let indexed = indexedNodes[nodeId] else { return }
+        for id in indexed.sourceIds {
+            for bucket in indexed.buckets {
+                ioIndex[bucket]?.sources.removeValue(forKey: id)
+            }
+        }
+        for id in indexed.actorIds {
+            for bucket in indexed.buckets {
+                ioIndex[bucket]?.actors.removeValue(forKey: id)
+            }
+        }
+        indexedNodes.removeValue(forKey: nodeId)
+    }
+
+    // MARK: - Single-pass rule evaluation.
+
+    /// Reconciles associations in a single pass over the reconciled value-type
+    /// buckets: each bucket is traversed once to compute the desired
+    /// source -> actor associations (applying rules and resolving cumulated
+    /// update rates per source), then the desired set is diffed against the
+    /// currently active associations and Associate/Disassociate events are
+    /// published accordingly.
+    ///
+    /// When `affectedBuckets` is non-nil, only the pairs and current
+    /// associations within those buckets are reconsidered; associations in
+    /// untouched buckets are left as-is. A `nil` value reconciles everything
+    /// (used on context change, rule definition, and whenever value-type
+    /// compatibility is overridden).
+    func evaluateRules(affectedBuckets: Set<ValueTypeBucket>?) {
+        // Desired associations accumulated during the single traversal:
+        // source ID -> actor ID -> (source, actor, per-pair rate). Built and
+        // consumed within this method (no intermediate compatible-pairs list
+        // and no reference-type box handed between stages).
+        var desired: IoAssociationPairs = [:]
+
+        if usesDefaultValueTypeCompatibility {
+            let buckets: [ValueTypeBucket: IoBucketEntry]
+            if let affected = affectedBuckets {
+                buckets = ioIndex.filter { affected.contains($0.key) }
+            } else {
+                buckets = managedBuckets()
+            }
+            for entry in buckets.values {
+                appendDesiredPairs(in: entry, to: &desired)
+            }
+        } else {
+            // Value-type compatibility is overridden: the bucket key can no
+            // longer be assumed to partition compatible pairs, so fall back
+            // to an exhaustive cross that consults `areValueTypesCompatible`
+            // for every candidate pair (honoring the override).
+            appendDesiredPairsExhaustive(to: &desired)
+        }
+
+        resolveCumulatedRates(desired: &desired)
+        reconcile(desired: desired, affectedBuckets: affectedBuckets)
+    }
+
     func evaluateRules() {
-        self.act(resolvedPairs: self.resolve(associationMap: self.match(compatibleAssociations: self.getCompatibleAssociations())))
+        evaluateRules(affectedBuckets: nil)
     }
-    
-    func getCompatibleAssociations() -> [IoCompatibleAssociation] {
-        var compatibleAssociations: [IoCompatibleAssociation] = []
-        /// Key: CoatyUUID string, Value: (IoSource, IoNode)
-        var sources: [String: (IoSource, IoNode)] = [:]
-        /// Key: CoatyUUID string, Value: (IoActor, IoNode)
-        var actors: [String: (IoActor, IoNode)] = [:]
 
+    /// For each source x actor in a bucket, applies the matching rule and
+    /// records the pair with its per-pair update rate. Under the default
+    /// compatibility check, every within-bucket pair is compatible by
+    /// construction, so `areValueTypesCompatible` is not consulted here.
+    private func appendDesiredPairs(in entry: IoBucketEntry, to desired: inout IoAssociationPairs) {
+        entry.sources.forEach { _, sourcePair in
+            let (source, sourceNode) = sourcePair
+            entry.actors.forEach { _, actorPair in
+                let (actor, actorNode) = actorPair
+                if let rate = rateIfRuleMatches(source: source, sourceNode: sourceNode,
+                                                 actor: actor, actorNode: actorNode) {
+                    desired[source.objectId.string, default: [:]][actor.objectId.string] = (source, actor, rate)
+                }
+            }
+        }
+    }
+
+    /// Exhaustive cross of every managed source against every managed actor,
+    /// keeping pairs for which `areValueTypesCompatible` returns true. Used
+    /// when value-type compatibility is overridden (bucketing unsound).
+    private func appendDesiredPairsExhaustive(to desired: inout IoAssociationPairs) {
+        var sources: [(IoSource, IoNode)] = []
+        var actors: [(IoActor, IoNode)] = []
         self.managedIoNodes.forEach { _, node in
-            node.ioSources.forEach { src in
-                sources[src.objectId.string] = (src, node)
-            }
-            node.ioActors.forEach { actor in
-                actors[actor.objectId.string] = (actor, node)
-            }
+            node.ioSources.forEach { sources.append(($0, node)) }
+            node.ioActors.forEach { actors.append(($0, node)) }
         }
-
-        sources.forEach { _, value in
-            let (source, sourceNode) = value
-            actors.forEach { _, value in
-                let (actor, actorNode) = value
-                if self.areValueTypesCompatible(source: source, actor: actor) {
-                    compatibleAssociations.append(IoCompatibleAssociation(source, sourceNode, actor, actorNode))
+        sources.forEach { sourcePair in
+            let (source, sourceNode) = sourcePair
+            actors.forEach { actorPair in
+                let (actor, actorNode) = actorPair
+                guard self.areValueTypesCompatible(source: source, actor: actor) else { return }
+                if let rate = rateIfRuleMatches(source: source, sourceNode: sourceNode,
+                                                 actor: actor, actorNode: actorNode) {
+                    desired[source.objectId.string, default: [:]][actor.objectId.string] = (source, actor, rate)
                 }
             }
         }
-
-        return compatibleAssociations
     }
-    
-    func match(compatibleAssociations: [IoCompatibleAssociation]) -> IoAssociationPairs {
-        var associationMap = IoAssociationPairs()
 
-        compatibleAssociations.forEach { association in
-            let source = association.source
-            let sourceNode = association.sourceNode
-            let actor = association.actor
-            let actorNode = association.actorNode
-            var valueType = source.valueType
-            var rules = self.rules[valueType]
-            if rules == nil {
-                // Apply global rules
-                valueType = ""
-                rules = self.rules[valueType]
+    /// Returns the per-pair update rate if a rule matches the pair, or `nil`
+    /// if no rule matches. Increments `conditionInvocationCount` once per
+    /// condition invocation (including nil-returning ones).
+    private func rateIfRuleMatches(source: IoSource,
+                                   sourceNode: IoNode,
+                                   actor: IoActor,
+                                   actorNode: IoNode) -> Int? {
+        let valueType = source.valueType
+        guard let rules = self.rules[valueType] ?? self.rules[""] else { return nil }
+        for rule in rules {
+            self.conditionInvocationCount += 1
+
+            guard let isMatch = rule.condition(source, sourceNode, actor, actorNode, self.ioContext, self) else {
+                LogManager.logger(.ioRouting).error("Rule condition invocation returned nil", metadata: [
+                    "ioSourceId": .string(source.objectId.string),
+                    "ioActorId": .string(actor.objectId.string),
+                    "valueType": .string(valueType),
+                ])
+                continue
             }
-            if let rules = rules {
-                let len = rules.count
-                for index in 0...len-1 {
-                    let rule = rules[index]
 
-                    guard let isMatch = rule.condition(source, sourceNode, actor, actorNode, self.ioContext, self) else {
-                        LogManager.logger(.ioRouting).error("Rule condition invocation returned nil", metadata: [
-                            "ioSourceId": .string(source.objectId.string),
-                            "ioActorId": .string(actor.objectId.string),
-                            "valueType": .string(valueType),
-                        ])
-                        continue
-                    }
-
-                    if isMatch {
-                        let actors: MutableDictionaryBox<String, IoAssociationInfo>
-                        if let existingActors = associationMap[source.objectId.string] {
-                            actors = existingActors
-                        } else {
-                            actors = MutableDictionaryBox()
-                            associationMap[source.objectId.string] = actors
-                        }
-                        let value = IoAssociationInfo(source,
-                                                       actor,
-                                                       self.computeCumulatedUpdateRate(rate1: source.updateRate, rate2: actor.updateRate) ?? 0)
-                        actors[actor.objectId.string] = value
-
-                        // No need to check remaining rules after the first match
-                        break
-                    }
-                }
+            if isMatch {
+                return self.computeCumulatedUpdateRate(rate1: source.updateRate, rate2: actor.updateRate) ?? 0
             }
         }
-
-        return associationMap
+        return nil
     }
-    
-    func resolve(associationMap: IoAssociationPairs) -> IoAssociationPairs {
-        // Compute cumulated update rates for each resolved IO source.
-        associationMap.forEach { _, actors in
-            var cumulatedRate: Int = .init()
-            actors.forEach { _, value in
-                let rate = value.2
-                cumulatedRate = self.computeCumulatedUpdateRate(rate1: rate, rate2: cumulatedRate) ?? 0
+
+    /// Resolves, per source, the cumulated update rate across all its desired
+    /// actors (the max), and assigns it to every actor of that source.
+    private func resolveCumulatedRates(desired: inout IoAssociationPairs) {
+        for (sourceId, actors) in desired {
+            var cumulatedRate = 0
+            for (_, value) in actors {
+                cumulatedRate = self.computeCumulatedUpdateRate(rate1: value.2, rate2: cumulatedRate) ?? 0
             }
-            actors.forEach { key, value in
+            var updated = actors
+            for (key, value) in updated {
                 var info = value
                 info.2 = cumulatedRate
-
-                /// Tuples are pass by value in Swift, so we need to explicitly mutate the dictionary at the key, so that a change in this tuple is persisted.
-                actors[key] = info
+                updated[key] = info
             }
+            desired[sourceId] = updated
         }
-
-        return associationMap
     }
-    
-    func act(resolvedPairs: IoAssociationPairs) {
-        // `resolvedPairs` is shadowed by a local `var` so that entries fully
-        // consumed below (see `removeValue(forKey:)` calls) can be removed
-        // from the top-level map. The nested `MutableDictionaryBox` values
-        // are reference types, so removing entries from a box fetched via
-        // subscript earlier in this function is still visible on a later
-        // fetch of the same key later in this function - see
-        // `MutableDictionaryBox`'s doc comment for why that matters here:
-        // several `currentAssociations` can share the same source, so the
-        // per-source actors box must accumulate removals across iterations.
-        var resolvedPairs = resolvedPairs
-        var newAssociations = [IoAssociationInfo].init()
+
+    /// Diffs the desired associations against `currentAssociations` and
+    /// publishes Associate/Disassociate events. Only successfully published
+    /// associations are recorded in `currentAssociations`; a failed publish
+    /// leaves the pair out so the next evaluation republishes it
+    /// (self-healing, truthful router state). Associations outside
+    /// `affectedBuckets` (when non-nil) are left untouched.
+    private func reconcile(desired: IoAssociationPairs, affectedBuckets: Set<ValueTypeBucket>?) {
+        var remaining = desired
+        var newAssociations = [IoAssociationInfo]()
 
         self.currentAssociations.forEach { source, actor, rate in
-            if let resolvedActors = resolvedPairs[source.objectId.string] {
-                if let resolvedInfo = resolvedActors[actor.objectId.string] {
-                    let (resolvedSrc, resolvedAct, resolvedRate) = resolvedInfo
-                    if resolvedRate != rate {
-                        // Keep the current association but with the new update rate.
-                        try? self.associate(source: resolvedSrc, actor: resolvedAct, updateRate: resolvedRate)
-                    }
-                    newAssociations.append(IoAssociationInfo(resolvedSrc, resolvedAct, resolvedRate))
-
-                    // Remove the resolved pair so that remaining
-                    // pairs can be identified as being new associations.
-                    resolvedActors.removeValue(forKey: actor.objectId.string)
-                    if resolvedActors.count == 0 {
-                        resolvedPairs.removeValue(forKey: source.objectId.string)
-                    }
-                } else {
-                    try? self.disassociate(source: source, actor: actor)
+            // Outside the reconciled scope (incremental path): leave untouched.
+            if let affected = affectedBuckets, !affected.contains(ValueTypeBucket(source)) {
+                newAssociations.append((source, actor, rate))
+                if var actors = remaining[source.objectId.string] {
+                    actors.removeValue(forKey: actor.objectId.string)
+                    remaining[source.objectId.string] = actors
                 }
-            } else {
-               try? self.disassociate(source: source, actor: actor)
+                return
             }
 
+            if let actors = remaining[source.objectId.string], let info = actors[actor.objectId.string] {
+                let (resolvedSrc, resolvedAct, resolvedRate) = info
+                var shouldKeep = true
+                if resolvedRate != rate {
+                    // Keep the current association but with the new update rate.
+                    do {
+                        try self.associate(source: resolvedSrc, actor: resolvedAct, updateRate: resolvedRate)
+                    } catch {
+                        self.logPublishFailure(error, source: resolvedSrc, actor: resolvedAct, operation: "update")
+                        // Drop from current associations and from `remaining`
+                        // so it isn't retried this round; the next evaluation
+                        // sees the pair as new and republishes (self-healing).
+                        shouldKeep = false
+                    }
+                }
+                if shouldKeep {
+                    newAssociations.append(info)
+                }
+
+                // Remove the resolved pair so that remaining pairs can be
+                // identified as being new associations.
+                if var updated = remaining[source.objectId.string] {
+                    updated.removeValue(forKey: actor.objectId.string)
+                    remaining[source.objectId.string] = updated
+                }
+            } else {
+                do {
+                    try self.disassociate(source: source, actor: actor)
+                } catch {
+                    self.logPublishFailure(error, source: source, actor: actor, operation: "disassociate")
+                }
+            }
         }
 
-        // Add the remaining resolved pairs as new associations.
-        resolvedPairs.forEach { _, newActors in
-            newActors.forEach { _, value in
-                let (src, act, rate) = value
-                try? self.associate(source: src, actor: act, updateRate: rate)
-                newAssociations.append(IoAssociationInfo(src, act, rate))
+        // Add the remaining desired pairs as new associations.
+        remaining.forEach { _, newActors in
+            newActors.forEach { _, info in
+                let (src, act, rate) = info
+                do {
+                    try self.associate(source: src, actor: act, updateRate: rate)
+                    newAssociations.append(info)
+                } catch {
+                    self.logPublishFailure(error, source: src, actor: act, operation: "associate")
+                }
             }
         }
 
         self.currentAssociations = newAssociations
     }
-    
+
+    private func managedBuckets() -> [ValueTypeBucket: IoBucketEntry] {
+        var buckets: [ValueTypeBucket: IoBucketEntry] = [:]
+        self.managedIoNodes.forEach { _, node in
+            node.ioSources.forEach { src in
+                buckets[ValueTypeBucket(src), default: IoBucketEntry()].sources[src.objectId.string] = (src, node)
+            }
+            node.ioActors.forEach { actor in
+                buckets[ValueTypeBucket(actor), default: IoBucketEntry()].actors[actor.objectId.string] = (actor, node)
+            }
+        }
+        return buckets
+    }
+
+    private func logPublishFailure(_ error: Error, source: IoSource, actor: IoActor, operation: String) {
+        LogManager.logger(.ioRouting).error(
+            "Associate/Disassociate publish failed; pair left out of current associations for retry",
+            metadata: [
+                "ioSourceId": .string(source.objectId.string),
+                "ioActorId": .string(actor.objectId.string),
+                "operation": .string(operation),
+                "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+            ])
+    }
+
+    /// Resets the test-visible condition-invocation counter.
+    func resetConditionInvocationCount() {
+        self.conditionInvocationCount = 0
+    }
+
     func computeCumulatedUpdateRate(rate1: Int?, rate2: Int?) -> Int? {
         switch (rate1, rate2) {
         case (.none, .none):
@@ -322,9 +504,61 @@ public class RuleBasedIoRouter: IoRouter {
             return max(a, b)
         }
     }
+
+    /// Whether `areValueTypesCompatible` retains its default semantics, so
+    /// the `(valueType, useRawIoValues)` bucket exactly partitions
+    /// compatible pairs and within-bucket crossing is sound.
+    ///
+    /// Pure Swift cannot portably detect whether a non-`@objc` method has
+    /// been overridden, so the framework treats its own non-overriding
+    /// router types (`RuleBasedIoRouter`, `BasicIoRouter`) as the known-safe
+    /// set and treats any other dynamic type as potentially overriding ->
+    /// exhaustive crossing. This is conservative: a subclass that does not
+    /// override `areValueTypesCompatible` still routes correctly, it just
+    /// does not benefit from the bucketed fast path. A subclass that
+    /// overrides `areValueTypesCompatible` is guaranteed correct behavior
+    /// because the exhaustive fallback consults the override for every pair.
+    internal var usesDefaultValueTypeCompatibility: Bool {
+        let dynamicType = type(of: self)
+        return dynamicType === RuleBasedIoRouter.self || dynamicType === BasicIoRouter.self
+    }
 }
 
 // MARK: - Additional type declarations.
+
+/// A `(valueType, useRawIoValues)` pair used to bucket IO sources and actors
+/// for incremental, within-bucket pair crossing. Under the default
+/// `areValueTypesCompatible` implementation, two IO points are compatible iff
+/// they share this bucket.
+struct ValueTypeBucket: Hashable {
+    let valueType: String
+    let useRawIoValues: Bool?
+
+    init(_ source: IoSource) {
+        self.valueType = source.valueType
+        self.useRawIoValues = source.useRawIoValues
+    }
+
+    init(_ actor: IoActor) {
+        self.valueType = actor.valueType
+        self.useRawIoValues = actor.useRawIoValues
+    }
+}
+
+/// The managed IO sources and actors sharing a `ValueTypeBucket`, as
+/// dictionaries keyed by point object ID (deduplicating re-advertised points).
+struct IoBucketEntry {
+    var sources: [String: (IoSource, IoNode)] = [:]
+    var actors: [String: (IoActor, IoNode)] = [:]
+}
+
+/// Per-node record of the IO point IDs and buckets currently held in `ioIndex`,
+/// used to remove a node's stale points on re-advertisement.
+struct IndexedNode {
+    var sourceIds: Set<String> = []
+    var actorIds: Set<String> = []
+    var buckets: Set<ValueTypeBucket> = []
+}
 
 /// Condition function type for IO routing rules.
 public typealias IoRoutingRuleConditionFunc = (
@@ -339,7 +573,7 @@ public typealias IoRoutingRuleConditionFunc = (
 public struct IoAssociationRule {
     /// The name of the rule. Used for display purposes only.
     var name: String
-    
+
     /// The value type for which the rule is applicable. The rule is applied to
     /// all IO source - IO actor pairs whose value type matches this value type.
     ///
@@ -350,7 +584,7 @@ public struct IoAssociationRule {
     /// value type matches the value type of the corresponding IO source - IO
     /// actor pair.
     var valueType: String?
-    
+
     /// The rule condition function.
     ///
     /// When applied, the condition function is passed a pair of value-compatible
@@ -363,8 +597,16 @@ public struct IoAssociationRule {
     /// applicable rule that returns true; otherwise the association pair
     /// is not associated, i.e. it is actively disassociated if currently
     /// associated.
+    ///
+    /// - Note: Conditions must be pure functions of their arguments. The
+    ///   bucketed evaluation pipeline (#116) restricts pair enumeration to
+    ///   the buckets touched by a triggering event, so a condition whose
+    ///   verdict depends on state outside its own pair would silently keep a
+    ///   stale verdict for untouched pairs. The exhaustive fallback used
+    ///   when `areValueTypesCompatible` is overridden preserves the
+    ///   re-evaluate-everything contract.
     var condition: IoRoutingRuleConditionFunc
-    
+
     /// All public structs need public inits, otherwise the compiler sees them as internal.
     public init(name: String, valueType: String?, condition: @escaping IoRoutingRuleConditionFunc) {
         self.name = name
@@ -373,34 +615,11 @@ public struct IoAssociationRule {
     }
 }
 
-/// Maps value types to an array of compatible IO source - IO source node - IO
-/// actor - IO actor node pairs.
-struct IoCompatibleAssociation {
-    let source: IoSource
-    let sourceNode: IoNode
-    let actor: IoActor
-    let actorNode: IoNode
-
-    init(_ source: IoSource, _ sourceNode: IoNode, _ actor: IoActor, _ actorNode: IoNode) {
-        self.source = source
-        self.sourceNode = sourceNode
-        self.actor = actor
-        self.actorNode = actorNode
-    }
-}
-
 /// A tuple describing an association pair with its update rate.
 typealias IoAssociationInfo = (IoSource, IoActor, Int)
 
-/// Maps source IDs to a map of actor IDs with IoAssociationInfo tuples.
-///
-/// Key: CoatyUUID string, Value: `MutableDictionaryBox` of: Key: CoatyUUID
-/// string, Value: `IoAssociationInfo`.
-///
-/// The nested map is a `MutableDictionaryBox` (see `Common/MutableBox.swift`)
-/// rather than a native `Dictionary` because `match`/`resolve`/`act` fetch it
-/// via subscript and mutate it in place across multiple steps/iterations,
-/// relying on reference semantics for the accumulated mutations to be seen
-/// without writing the nested map back into `IoAssociationPairs` each time.
-/// This used to be nested `NSMutableDictionary` for the same reason (T-001).
-typealias IoAssociationPairs = [String: MutableDictionaryBox<String, IoAssociationInfo>]
+/// Desired associations accumulated during a single evaluation pass:
+/// source ID -> actor ID -> association info. A plain value-type nested
+/// dictionary built and consumed within `evaluateRules` -- no reference-type
+/// box is needed (the box that used to live here is gone, see #116).
+typealias IoAssociationPairs = [String: [String: IoAssociationInfo]]
