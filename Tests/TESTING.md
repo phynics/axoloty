@@ -32,7 +32,7 @@ separate from protocol-scenario execution.
 |---|---|:---:|---|
 | Smoke | `make build` | yes | Proves the package compiles and links |
 | Unit | `make test-unit` | yes | `ObjectMatcherTests` |
-| Module | `make test-module` | yes | Topic, payload, and registry module tests |
+| Module | `make test-module` | yes | Topic, payload, registry, and configuration module tests |
 | Property | `make test-fuzz` | yes | Seeded `DeterministicFuzzTests` |
 | Integration | `make test` | yes | Full suite against a fresh Mosquitto |
 | Wire offline | `make test-wire` | yes | `WireFixtureTests` and lifecycle scenarios |

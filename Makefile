@@ -40,7 +40,11 @@ help:
 		'make build         Build Axoloty in the Linux container' \
 		'make embedded-build Compile the Embedded Swift Linux prototype' \
 		'make embedded-test  Run the Embedded Swift Linux prototype' \
+		'make test-communication  Run communication transport and subscription tests' \
+		'make test-broker-regressions  Run broker-backed regression tests' \
 		'make test-decoder-context-sendable  Fail if the former decoder-context Sendable diagnostic returns' \
+		'make test-no-anycodable  Fail if AnyCodable is used in production source' \
+		'make test-no-foundation-types  Fail if forbidden Foundation types are used in production source' \
 		'make test          Run the full test suite (starts Mosquitto)' \
 		'make test-unit     Run ObjectMatcherTests' \
 		'make test-module   Run targeted infrastructure module tests' \
