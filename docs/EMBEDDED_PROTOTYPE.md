@@ -14,7 +14,9 @@ swiftc -enable-experimental-feature Embedded \
   -o .build/embedded-probe
 ```
 
-The probe emits the statically typed JSON payload:
+The probe now round-trips a statically typed `EmbeddedLog` through
+`WireEncodable` and the failable `WireDecodable` initializer. It emits the
+JSON payload:
 
 ```json
 {"message":"embedded"}
@@ -31,8 +33,11 @@ make embedded-test
 
 - This proves only the host Embedded Swift compiler/runtime seam.
 - It does not claim ESP32-C6 support or provide an ESP32-C6 cross-toolchain.
-- `WireDecodable`, IkigaJSONCore parsing, and the full embedded object model
-  remain subsequent #111 work.
+- `WireDecodable` is currently a minimal cursor reader for one object shape;
+  IkigaJSONCore parsing and the full embedded object model remain subsequent
+  #111 work.
+- Embedded Swift rejects `throws` because it would require an `any Error`
+  existential, so the prototype uses `init?` for malformed input.
 - Foundation, `Codable`, `Any`, reflection, and dynamic protocol casts are not
   used by the probe.
 
