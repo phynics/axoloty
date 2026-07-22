@@ -112,35 +112,7 @@ struct IoAssociationRuleTests {
     }
 }
 
-// MARK: - IoCompatibleAssociation tests
-
-@Suite
-@MainActor
-struct IoCompatibleAssociationTests {
-    @Test
-    func testCreateAssociation() {
-        let source = IoSource(valueType: "Temperature")
-        let actor = IoActor(valueType: "Temperature")
-        let sourceNode = IoNode(
-            coreType: .IoNode, objectType: IoNode.objectType,
-            objectId: CoatyUUID(), name: "sourceNode",
-            ioSources: [source], ioActors: []
-        )
-        let actorNode = IoNode(
-            coreType: .IoNode, objectType: IoNode.objectType,
-            objectId: CoatyUUID(), name: "actorNode",
-            ioSources: [], ioActors: [actor]
-        )
-        let assoc = IoCompatibleAssociation(source, sourceNode, actor, actorNode)
-
-        #expect(assoc.source.objectId == source.objectId)
-        #expect(assoc.sourceNode.objectId == sourceNode.objectId)
-        #expect(assoc.actor.objectId == actor.objectId)
-        #expect(assoc.actorNode.objectId == actorNode.objectId)
-    }
-}
-
-// MARK: - RuleBasedIoRouter pure-logic tests
+// MARK: - RuleBasedIoRouter single-pass evaluation tests
 
 @Suite
 @MainActor
@@ -252,115 +224,64 @@ struct RuleBasedIoRouterLogicTests {
     }
 
     @Test
-    func testDefineRulesDiscardsPrevious() {
+    func testEvaluateRulesWithNoNodesHasNoAssociations() {
         let router = makeRouter()
-        let rule1 = IoAssociationRule(
-            name: "r1", valueType: nil,
-            condition: { _, _, _, _, _, _ in true }
-        )
-        let rule2 = IoAssociationRule(
-            name: "r2", valueType: nil,
-            condition: { _, _, _, _, _, _ in false }
-        )
-        router.defineRules(rules: [rule1])
-        router.defineRules(rules: [rule2])
-        // After redefinition, only rule2 should be in effect
-        let source = IoSource(valueType: "T")
-        let actor = IoActor(valueType: "T")
-        let node = IoNode(
-            coreType: .IoNode, objectType: IoNode.objectType,
-            objectId: CoatyUUID(), name: "n",
-            ioSources: [source, IoSource(valueType: "T")],
-            ioActors: [actor, IoActor(valueType: "T")]
-        )
-        router.managedIoNodes[node.objectId.string] = node
-        let assocs = router.getCompatibleAssociations()
-        let matched = router.match(compatibleAssociations: assocs)
-        #expect(matched.isEmpty)
+        router.defineRules(rules: [
+            IoAssociationRule(name: "all", valueType: nil, condition: { _, _, _, _, _, _ in true })
+        ])
+        router.evaluateRules()
+        #expect(router.currentAssociations.isEmpty)
     }
 
     @Test
-    func testGetCompatibleAssociationsEmptyNodes() {
+    func testCompatiblePairAssociatesWithGlobalRule() {
         let router = makeRouter()
-        let assocs = router.getCompatibleAssociations()
-        #expect(assocs.isEmpty)
-    }
-
-    @Test
-    func testGetCompatibleAssociationsWithMatchingTypes() {
-        let router = makeRouter()
+        router.defineRules(rules: [
+            IoAssociationRule(name: "all", valueType: nil, condition: { _, _, _, _, _, _ in true })
+        ])
         let source = IoSource(valueType: "Temperature")
         let actor = IoActor(valueType: "Temperature")
-        let node = IoNode(
+        installNode(router, IoNode(
             coreType: .IoNode, objectType: IoNode.objectType,
             objectId: CoatyUUID(), name: "n",
-            ioSources: [source], ioActors: [actor]
-        )
-        router.managedIoNodes[node.objectId.string] = node
-        let assocs = router.getCompatibleAssociations()
-        #expect(assocs.count == 1)
-        #expect(assocs[0].source.objectId == source.objectId)
-        #expect(assocs[0].actor.objectId == actor.objectId)
+            ioSources: [source], ioActors: [actor]))
+        router.evaluateRules()
+        #expect(router.currentAssociations.count == 1)
+        #expect(router.currentAssociations[0].0.objectId == source.objectId)
+        #expect(router.currentAssociations[0].1.objectId == actor.objectId)
     }
 
     @Test
-    func testGetCompatibleAssociationsFiltersByType() {
+    func testIncompatiblePairIsNotAssociated() {
         let router = makeRouter()
+        router.defineRules(rules: [
+            IoAssociationRule(name: "all", valueType: nil, condition: { _, _, _, _, _, _ in true })
+        ])
         let source = IoSource(valueType: "Temperature")
         let actor = IoActor(valueType: "Pressure")
-        let node = IoNode(
+        installNode(router, IoNode(
             coreType: .IoNode, objectType: IoNode.objectType,
             objectId: CoatyUUID(), name: "n",
-            ioSources: [source], ioActors: [actor]
-        )
-        router.managedIoNodes[node.objectId.string] = node
-        let assocs = router.getCompatibleAssociations()
-        #expect(assocs.isEmpty)
+            ioSources: [source], ioActors: [actor]))
+        router.evaluateRules()
+        #expect(router.currentAssociations.isEmpty)
     }
 
     @Test
-    func testMatchWithGlobalRule() {
-        let router = makeRouter()
-        let rule = IoAssociationRule(
-            name: "global", valueType: nil,
-            condition: { _, _, _, _, _, _ in true }
-        )
-        router.defineRules(rules: [rule])
-
-        let source = IoSource(valueType: "T")
-        let actor = IoActor(valueType: "T")
-        let node = IoNode(
-            coreType: .IoNode, objectType: IoNode.objectType,
-            objectId: CoatyUUID(), name: "n",
-            ioSources: [source], ioActors: [actor]
-        )
-        router.managedIoNodes[node.objectId.string] = node
-        let assocs = router.getCompatibleAssociations()
-        let matched = router.match(compatibleAssociations: assocs)
-        #expect(matched.count == 1)
-        let actors = matched[source.objectId.string]
-        #expect(actors != nil)
-        #expect(actors!.count == 1)
-    }
-
-    @Test
-    func testMatchWithoutRules() {
+    func testNoRulesYieldsNoAssociations() {
         let router = makeRouter()
         let source = IoSource(valueType: "T")
         let actor = IoActor(valueType: "T")
-        let node = IoNode(
+        installNode(router, IoNode(
             coreType: .IoNode, objectType: IoNode.objectType,
             objectId: CoatyUUID(), name: "n",
-            ioSources: [source], ioActors: [actor]
-        )
-        router.managedIoNodes[node.objectId.string] = node
-        let assocs = router.getCompatibleAssociations()
-        let matched = router.match(compatibleAssociations: assocs)
-        #expect(matched.isEmpty)
+            ioSources: [source], ioActors: [actor]))
+        router.evaluateRules()
+        #expect(router.currentAssociations.isEmpty)
     }
 
     @Test
-    func testMatchPrefersValueTypeRuleOverGlobal() {
+    func testValueTypeSpecificRuleTakesPrecedenceOverGlobal() {
         let router = makeRouter()
         let globalRule = IoAssociationRule(
             name: "global", valueType: nil,
@@ -374,107 +295,102 @@ struct RuleBasedIoRouterLogicTests {
 
         let source = IoSource(valueType: "Pressure")
         let actor = IoActor(valueType: "Pressure")
-        let node = IoNode(
+        installNode(router, IoNode(
             coreType: .IoNode, objectType: IoNode.objectType,
             objectId: CoatyUUID(), name: "n",
-            ioSources: [source], ioActors: [actor]
-        )
-        router.managedIoNodes[node.objectId.string] = node
-        let assocs = router.getCompatibleAssociations()
-        let matched = router.match(compatibleAssociations: assocs)
-        // The specific rule returns false, so no association should be made
-        // despite the global rule matching
-        #expect(matched.isEmpty)
+            ioSources: [source], ioActors: [actor]))
+        router.evaluateRules()
+        // The specific rule returns false and takes precedence, so no
+        // association is made despite the global rule matching.
+        #expect(router.currentAssociations.isEmpty)
     }
 
     @Test
-    func testMatchMultipleSourcesAndActors() {
+    func testMultipleSourcesAndActorsAllAssociated() {
         let router = makeRouter()
-        let rule = IoAssociationRule(
-            name: "all", valueType: nil,
-            condition: { _, _, _, _, _, _ in true }
-        )
-        router.defineRules(rules: [rule])
-
+        router.defineRules(rules: [
+            IoAssociationRule(name: "all", valueType: nil, condition: { _, _, _, _, _, _ in true })
+        ])
         let s1 = IoSource(valueType: "T")
         let s2 = IoSource(valueType: "T")
         let a1 = IoActor(valueType: "T")
         let a2 = IoActor(valueType: "T")
-        let node = IoNode(
+        installNode(router, IoNode(
             coreType: .IoNode, objectType: IoNode.objectType,
             objectId: CoatyUUID(), name: "n",
-            ioSources: [s1, s2], ioActors: [a1, a2]
-        )
-        router.managedIoNodes[node.objectId.string] = node
-        let assocs = router.getCompatibleAssociations()
-        // 2 sources * 2 actors = 4 compatible associations
-        #expect(assocs.count == 4)
-
-        let matched = router.match(compatibleAssociations: assocs)
-        // 2 sources, each with 2 actors matched
-        #expect(matched.count == 2)
-        #expect(matched[s1.objectId.string]?.count == 2)
-        #expect(matched[s2.objectId.string]?.count == 2)
+            ioSources: [s1, s2], ioActors: [a1, a2]))
+        router.evaluateRules()
+        // 2 sources x 2 actors = 4 associations.
+        #expect(router.currentAssociations.count == 4)
     }
 
     @Test
-    func testResolveSingleAssociation() {
+    func testSingleAssociationUsesMaxOfSourceAndActorRate() {
         let router = makeRouter()
+        router.defineRules(rules: [
+            IoAssociationRule(name: "all", valueType: nil, condition: { _, _, _, _, _, _ in true })
+        ])
         let source = IoSource(valueType: "T", updateRate: 100)
         let actor = IoActor(valueType: "T", updateRate: 200)
-
-        var map = IoAssociationPairs()
-        let actors = MutableDictionaryBox<String, IoAssociationInfo>()
-        let info = IoAssociationInfo(source, actor, 200)
-        actors[actor.objectId.string] = info
-        map[source.objectId.string] = actors
-
-        let resolved = router.resolve(associationMap: map)
-        #expect(resolved.count == 1)
-        let resolvedActors = resolved[source.objectId.string]
-        #expect(resolvedActors != nil)
-        let resolvedInfo = resolvedActors![actor.objectId.string]
-        #expect(resolvedInfo != nil)
-        // Cumulated rate should be max(200, 200) = 200
-        #expect(resolvedInfo!.2 == 200)
+        installNode(router, IoNode(
+            coreType: .IoNode, objectType: IoNode.objectType,
+            objectId: CoatyUUID(), name: "n",
+            ioSources: [source], ioActors: [actor]))
+        router.evaluateRules()
+        #expect(router.currentAssociations.count == 1)
+        // Per-pair rate = max(source, actor) = max(100, 200) = 200.
+        #expect(router.currentAssociations[0].2 == 200)
     }
 
     @Test
-    func testResolveMultipleActorsPerSourceCumulatesRate() {
+    func testMultipleActorsPerSourceCumulateRate() {
         let router = makeRouter()
+        router.defineRules(rules: [
+            IoAssociationRule(name: "all", valueType: nil, condition: { _, _, _, _, _, _ in true })
+        ])
         let source = IoSource(valueType: "T", updateRate: 100)
         let a1 = IoActor(valueType: "T", updateRate: 200)
         let a2 = IoActor(valueType: "T", updateRate: 500)
-        let node = IoNode(
+        installNode(router, IoNode(
             coreType: .IoNode, objectType: IoNode.objectType,
             objectId: CoatyUUID(), name: "n",
-            ioSources: [source], ioActors: []
-        )
-        _ = node
-
-        var map = IoAssociationPairs()
-        let actors = MutableDictionaryBox<String, IoAssociationInfo>()
-        actors[a1.objectId.string] = IoAssociationInfo(source, a1, 200)
-        actors[a2.objectId.string] = IoAssociationInfo(source, a2, 500)
-        map[source.objectId.string] = actors
-
-        let resolved = router.resolve(associationMap: map)
-        let resolvedActors = resolved[source.objectId.string]!
-        // Both actors should have the cumulated rate = max(200, 500) = 500
-        #expect(resolvedActors[a1.objectId.string]!.2 == 500)
-        #expect(resolvedActors[a2.objectId.string]!.2 == 500)
+            ioSources: [source], ioActors: [a1, a2]))
+        router.evaluateRules()
+        #expect(router.currentAssociations.count == 2)
+        // Cumulated per source = max(max(100,200), max(100,500)) = max(200, 500) = 500.
+        #expect(router.currentAssociations.allSatisfy { $0.2 == 500 })
     }
 
     @Test
-    func testResolveEmptyMap() {
+    func testDefineRulesDiscardsPreviousRules() {
         let router = makeRouter()
-        let map = IoAssociationPairs()
-        let resolved = router.resolve(associationMap: map)
-        #expect(resolved.isEmpty)
+        let rule1 = IoAssociationRule(
+            name: "r1", valueType: nil,
+            condition: { _, _, _, _, _, _ in true }
+        )
+        let rule2 = IoAssociationRule(
+            name: "r2", valueType: nil,
+            condition: { _, _, _, _, _, _ in false }
+        )
+        let source = IoSource(valueType: "T")
+        let actor = IoActor(valueType: "T")
+        installNode(router, IoNode(
+            coreType: .IoNode, objectType: IoNode.objectType,
+            objectId: CoatyUUID(), name: "n",
+            ioSources: [source], ioActors: [actor]))
+
+        router.defineRules(rules: [rule1])
+        router.evaluateRules()
+        #expect(router.currentAssociations.count == 1)
+
+        // Redefining rules discards rule1; rule2 returns false, so the
+        // existing association is disassociated.
+        router.defineRules(rules: [rule2])
+        #expect(router.currentAssociations.isEmpty)
     }
 
     @Test
-    func testBasicIoRouterDefaultRules() {
+    func testBasicIoRouterAssociatesOnDefaultRule() {
         let ioContext = IoContext(
             coreType: .IoContext, objectType: "test",
             objectId: CoatyUUID(), name: "test"
@@ -489,18 +405,189 @@ struct RuleBasedIoRouterLogicTests {
 
         let source = IoSource(valueType: "AnyType")
         let actor = IoActor(valueType: "AnyType")
-        let node = IoNode(
+        installNode(router, IoNode(
             coreType: .IoNode, objectType: IoNode.objectType,
             objectId: CoatyUUID(), name: "n",
-            ioSources: [source], ioActors: [actor]
-        )
-        router.managedIoNodes[node.objectId.string] = node
-        let assocs = router.getCompatibleAssociations()
-        #expect(assocs.count == 1)
+            ioSources: [source], ioActors: [actor]))
+        router.evaluateRules()
+        #expect(router.currentAssociations.count == 1)
+    }
+}
+
+// MARK: - Bucketed incremental evaluation tests
+
+@Suite
+@MainActor
+struct RuleBasedIoRouterBucketingTests {
+    /// A single node advertise must only re-cross the value-type buckets the
+    /// advertised node belongs to, not the full source x actor product.
+    @Test
+    func testSingleAdvertiseConditionInvocationsBoundedByAffectedBucket() {
+        let router = makeRouter()
+        router.defineRules(rules: [
+            IoAssociationRule(name: "all", valueType: nil, condition: { _, _, _, _, _, _ in true })
+        ])
+
+        // Spread sources/actors across 60 distinct value types (a few hundred
+        // of each: 60 * 5 = 300), one node per bucket, installed without
+        // triggering evaluation.
+        let valueTypeCount = 60
+        let sourcesPerBucket = 5
+        let actorsPerBucket = 5
+        for b in 0..<valueTypeCount {
+            let vt = "T\(b)"
+            let sources = (0..<sourcesPerBucket).map { _ in IoSource(valueType: vt) }
+            let actors = (0..<actorsPerBucket).map { _ in IoActor(valueType: vt) }
+            installNode(router, IoNode(
+                coreType: .IoNode, objectType: IoNode.objectType,
+                objectId: CoatyUUID(), name: vt,
+                ioSources: sources, ioActors: actors))
+        }
+
+        // Advertise a single node contributing 1 source + 1 actor to bucket T0.
+        let advertisedVt = "T0"
+        router.resetConditionInvocationCount()
+        advertiseNode(router, IoNode(
+            coreType: .IoNode, objectType: IoNode.objectType,
+            objectId: CoatyUUID(), name: advertisedVt,
+            ioSources: [IoSource(valueType: advertisedVt)],
+            ioActors: [IoActor(valueType: advertisedVt)]))
+
+        // Affected bucket T0 now has (5+1) sources x (5+1) actors = 36 pairs.
+        let affectedProduct = (sourcesPerBucket + 1) * (actorsPerBucket + 1)
+        // A full cross of every bucket would visit (60-1)*(5*5) + 36 = 1511 pairs.
+        let fullCompatiblePairs = (valueTypeCount - 1) * (sourcesPerBucket * actorsPerBucket) + affectedProduct
+
+        // Bound: the single advertise must not exceed the affected bucket's
+        // product, and must be strictly less than crossing every bucket.
+        #expect(router.conditionInvocationCount <= affectedProduct)
+        #expect(router.conditionInvocationCount < fullCompatiblePairs)
+        // The advertised bucket's associations were actually established.
+        #expect(router.currentAssociations.count == affectedProduct)
+    }
+
+    /// A subclass that overrides `areValueTypesCompatible` must fall back to
+    /// exhaustive crossing (visiting every candidate pair), so the override is
+    /// honored for cross-bucket pairs the default check would reject.
+    @Test
+    func testOverriddenCompatibilityFallsBackToExhaustiveCrossing() {
+        let router = makeCrossBucketRouter()
+        #expect(router.usesDefaultValueTypeCompatibility == false)
+        router.defineRules(rules: [
+            IoAssociationRule(name: "all", valueType: nil, condition: { _, _, _, _, _, _ in true })
+        ])
+
+        // 2 sources of type "A" and 2 actors of type "B": all pairs are
+        // cross-bucket, so the default (bucketed) check would never cross
+        // them. The override accepts every pair, so the exhaustive fallback
+        // must cross every source x actor pair (4) and associate them.
+        let s1 = IoSource(valueType: "A")
+        let s2 = IoSource(valueType: "A")
+        let a1 = IoActor(valueType: "B")
+        let a2 = IoActor(valueType: "B")
+        installNode(router, IoNode(
+            coreType: .IoNode, objectType: IoNode.objectType,
+            objectId: CoatyUUID(), name: "n",
+            ioSources: [s1, s2], ioActors: [a1, a2]))
+
+        router.resetConditionInvocationCount()
+        router.evaluateRules()
+
+        // Full source x actor crossing: 2 x 2 = 4 pairs, each rule-evaluated.
+        #expect(router.conditionInvocationCount == 4)
+        #expect(router.currentAssociations.count == 4)
+    }
+
+    /// An association whose `associate` publish fails must be left out of
+    /// `currentAssociations` so the next evaluation republishes it.
+    @Test
+    func testFailedAssociatePublishIsRetriedOnNextEvaluation() {
+        let router = makeRouter()
+        // An ioContext name containing '/' is not a valid event type filter,
+        // so `publishAssociate` throws `AxolotyError.invalidArgument` before
+        // reaching the broker (no live broker needed for this test).
+        router.ioContext.name = "bad/context"
+        router.defineRules(rules: [
+            IoAssociationRule(name: "all", valueType: nil, condition: { _, _, _, _, _, _ in true })
+        ])
+
+        let source = IoSource(valueType: "T")
+        let actor = IoActor(valueType: "T")
+        installNode(router, IoNode(
+            coreType: .IoNode, objectType: IoNode.objectType,
+            objectId: CoatyUUID(), name: "n",
+            ioSources: [source], ioActors: [actor]))
+
+        router.evaluateRules()
+        // Publish failed: the pair must NOT be recorded as current.
+        #expect(router.currentAssociations.isEmpty)
+
+        // Fix the ioContext name: the pair is still absent from
+        // `currentAssociations`, so the next evaluation sees it as new and
+        // republishes.
+        router.ioContext.name = "valid"
+        router.evaluateRules()
+        #expect(router.currentAssociations.count == 1)
+        let recorded = router.currentAssociations[0]
+        #expect(recorded.0.objectId == source.objectId)
+        #expect(recorded.1.objectId == actor.objectId)
+    }
+
+    /// An incremental (single-node-advertise) evaluation must reconcile only
+    /// the advertised node's buckets; associations in untouched buckets are
+    /// left intact rather than torn down.
+    @Test
+    func testIncrementalEvaluationLeavesUntouchedBucketsIntact() {
+        let router = makeRouter()
+        router.defineRules(rules: [
+            IoAssociationRule(name: "all", valueType: nil, condition: { _, _, _, _, _, _ in true })
+        ])
+
+        let sA = IoSource(valueType: "A")
+        let aA = IoActor(valueType: "A")
+        let sB = IoSource(valueType: "B")
+        let aB = IoActor(valueType: "B")
+        installNode(router, IoNode(
+            coreType: .IoNode, objectType: IoNode.objectType,
+            objectId: CoatyUUID(), name: "A",
+            ioSources: [sA], ioActors: [aA]))
+        installNode(router, IoNode(
+            coreType: .IoNode, objectType: IoNode.objectType,
+            objectId: CoatyUUID(), name: "B",
+            ioSources: [sB], ioActors: [aB]))
+
+        router.evaluateRules()
+        #expect(router.currentAssociations.count == 2)
+
+        // Advertise a new source in bucket A only.
+        let sA2 = IoSource(valueType: "A")
+        advertiseNode(router, IoNode(
+            coreType: .IoNode, objectType: IoNode.objectType,
+            objectId: CoatyUUID(), name: "A",
+            ioSources: [sA2], ioActors: []))
+
+        // Bucket A now has 2 sources x 1 actor = 2 associations; bucket B
+        // must remain associated (1) -> 3 total.
+        #expect(router.currentAssociations.count == 3)
+        let bStillAssociated = router.currentAssociations.contains { info in
+            info.0.objectId == sB.objectId && info.1.objectId == aB.objectId
+        }
+        #expect(bStillAssociated)
     }
 }
 
 // MARK: - Helpers
+
+/// A `RuleBasedIoRouter` subclass that overrides `areValueTypesCompatible` to
+/// accept every pair (including cross-bucket ones the default check rejects).
+/// Because it is not one of the framework's known non-overriding router types,
+/// the router falls back to exhaustive crossing, which consults this override
+/// for every candidate pair.
+final class CrossBucketRouter: RuleBasedIoRouter {
+    override func areValueTypesCompatible(source: IoSource, actor: IoActor) -> Bool {
+        return true
+    }
+}
 
 @MainActor
 private func createMinimalContainer() -> Container {
@@ -530,4 +617,39 @@ private func makeRouter() -> RuleBasedIoRouter {
     )
     router.onInit()
     return router
+}
+
+@MainActor
+private func makeCrossBucketRouter() -> CrossBucketRouter {
+    let ioContext = IoContext(
+        coreType: .IoContext, objectType: "test",
+        objectId: CoatyUUID(), name: "test"
+    )
+    let container = createMinimalContainer()
+    let router = CrossBucketRouter(
+        container: container,
+        options: ControllerOptions(extra: ["ioContext": ioContext]),
+        controllerType: "crossbucket"
+    )
+    router.onInit()
+    return router
+}
+
+/// Registers a node's IO points (in `managedIoNodes` and the bucketed index)
+/// WITHOUT triggering rule evaluation, mirroring the base class's
+/// `managedIoNodes` update without the `onIoNodeManaged` hook. Used to stage
+/// the pre-existing router state before a measured advertise.
+@MainActor
+private func installNode(_ router: RuleBasedIoRouter, _ node: IoNode) {
+    router.managedIoNodes[node.objectId.string] = node
+    router.registerIoNodeInIndex(node)
+}
+
+/// Simulates a node advertise: registers the node in `managedIoNodes` and
+/// the index, then invokes `onIoNodeManaged` (which triggers the incremental
+/// rule evaluation that tests measure).
+@MainActor
+private func advertiseNode(_ router: RuleBasedIoRouter, _ node: IoNode) {
+    router.managedIoNodes[node.objectId.string] = node
+    router.onIoNodeManaged(node: node)
 }
