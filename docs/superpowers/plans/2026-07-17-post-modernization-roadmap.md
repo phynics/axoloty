@@ -31,12 +31,17 @@ surface):
 Replace the Python wire-compatibility harness with an npx-runnable Node CLI
 plus Swift Testing verification, per #120:
 
-- [ ] #121 — Scaffold npx-runnable Node CLI package
-- [ ] #122 — Replace vendored CoatyJS node_modules with real npm dependency
-- [ ] #123 — Rewrite wire-capture semantic verification in Swift Testing
-- [ ] #124 — Wire up Makefile + CI workflow to the new CLI, delete remaining Python
-- [ ] #125 — Add JS -> modern live scenarios (Deadvertise, Discover/Resolve, Query/Retrieve, Update/Complete, Call/Return, Channel)
-- [ ] #119 — Exercise objectFilter in the live Modern → JS Query/Retrieve scenario
+- [x] #121 — Scaffold npx-runnable Node CLI package
+- [x] #122 — Replace vendored CoatyJS node_modules with real npm dependency
+- [x] #123 — Rewrite wire-capture semantic verification in Swift Testing
+- [x] #124 — Wire up Makefile + CI workflow to the new CLI, delete remaining Python
+- [x] #125 — Add JS -> modern live scenarios (Deadvertise, Discover/Resolve, Query/Retrieve, Update/Complete, Call/Return, Channel)
+- [x] #119 — Exercise objectFilter in the live Modern → JS Query/Retrieve scenario
+
+Execution order: #121 → #122 → #123 → #134 → #124. #125 can proceed after
+#123 once the shared harness surface is stable. The capture CLI's passive
+`capture`, `run`, `manifest`, `lifecycle-manifest`, `legacy-manifest`, and
+`proxy` commands are available.
 
 ## Explicitly out of scope for this epic
 

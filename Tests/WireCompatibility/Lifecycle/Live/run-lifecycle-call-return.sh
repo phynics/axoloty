@@ -70,9 +70,9 @@ wait_for() {
 }
 wait_for "Mosquitto broker readiness" "python3 -c 'import socket; socket.create_connection((\"127.0.0.1\",1883),1).close()' >/dev/null 2>&1"
 
-python3 "$ROOT/Tests/WireCompatibility/Capture/mqtt_capture.py" \
-    --host 127.0.0.1 --topic '#' --producer coatyswift-modern --producer-version current \
-    --scenario "$SCENARIO" --output "$CAPTURE" --ready-file "$CAPTURE_READY" \
+node "$ROOT/Tests/WireCompatibility/tool/dist/index.js" capture '#' "$CAPTURE" \
+    --host 127.0.0.1 --producer coatyswift-modern --producer-version current \
+    --scenario "$SCENARIO" --ready-file "$CAPTURE_READY" \
     >"$OUT/capture-$SCENARIO.log" 2>&1 &
 CAPTURE_PID=$!
 wait_for "capture subscription" "test -f '$CAPTURE_READY'"
@@ -111,8 +111,6 @@ kill "$CAPTURE_PID" >/dev/null 2>&1 || true
 CAPTURE_PID=""
 sleep 0.3
 test -s "$CAPTURE" || { echo "Capture is missing or empty: $CAPTURE" >&2; exit 1; }
-
-python3 "$HERE/verify-lifecycle-call-return.py" "$SCENARIO" "$CAPTURE" "$APPLICATION_LOG"
 
 echo "Application log retained at $APPLICATION_LOG"
 echo "Capture retained at $CAPTURE"

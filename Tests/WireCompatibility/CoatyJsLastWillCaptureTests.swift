@@ -6,7 +6,7 @@ import Testing
 
 /// Verifies the semantic and topic contract of a pinned CoatyJS 2.4.0
 /// broker-issued last will exchange, ported from
-/// `Tests/WireCompatibility/Lifecycle/Live/verify-coatyjs-last-will.py`.
+/// the former CoatyJS last-will lifecycle verifier.
 ///
 /// The capture spans a CoatyJS subject that advertises its Identity and is
 /// then killed with SIGKILL — no clean Deadvertise — so the Deadvertise seen

@@ -57,9 +57,9 @@ done
 
 runtime run -d --name "$PROBE" --network "$NETWORK" \
     -v "$ROOT_DIR:/workspace:ro" -v "$OUTPUT_DIR:/artifacts" \
-    "$DEV_IMAGE" python3 /workspace/Tests/WireCompatibility/Capture/mqtt_capture.py \
-    --host "$BROKER" --topic '#' --producer coatyswift-modern --producer-version current \
-    --scenario io-associate --output /artifacts/io-associate.jsonl >/dev/null
+    --entrypoint node --user 0 "$JS_IMAGE" /workspace/Tests/WireCompatibility/tool/dist/index.js capture '#' /artifacts/io-associate.jsonl \
+    --host "$BROKER" --producer coatyswift-modern --producer-version current \
+    --scenario io-associate >/dev/null
 sleep 0.5
 
 # CoatyJS actor first: it subscribes to ASC-<context> on start, so it must be

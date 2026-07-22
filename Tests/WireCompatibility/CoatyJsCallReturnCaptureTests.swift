@@ -6,7 +6,7 @@ import Testing
 
 /// Verifies the semantic and topic contract of a pinned CoatyJS 2.4.0
 /// Call/Return exchange, ported from the `verify_call_return` branch of
-/// `Tests/WireCompatibility/Live/verify-coatyjs-core.py`.
+/// the former CoatyJS core live verifier.
 ///
 /// This is the fourth and final request/response scenario ported (after
 /// Discover/Resolve, Query/Retrieve, and Update/Complete). It exercises

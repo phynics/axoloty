@@ -30,8 +30,8 @@ acknowledgement. Verification requires:
 Set `WIRE_OUTPUT_DIR` to retain captures elsewhere. `DEV_IMAGE` and `JS_IMAGE`
 may be set to reuse prebuilt images with different local names.
 
-All Python tooling runs inside the development container, so the scenario has
-no host Python dependency.
+The Node wire CLI is built by `make wire-tool`; the scenario has no host Python
+dependency.
 
 ## CoatyJS reference-wire core scenarios
 

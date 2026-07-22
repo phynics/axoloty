@@ -95,7 +95,7 @@ struct AxolotyLifecycleSubjectTests {
         report(state: "done", scenario: "late-reply")
     }
 
-    // MARK: - Network-failure scenarios (driven through tcp_proxy.py).
+    // MARK: - Network-failure scenarios (driven through axoloty-wire proxy).
     //
     // These four tests are the Axoloty-subject half of the lifecycle
     // catalog's connectivity scenarios. The orchestrating script
@@ -103,7 +103,7 @@ struct AxolotyLifecycleSubjectTests {
     // severs/restores the TCP path (or stops/starts the broker itself) at
     // the documented points; the subject only ever observes its own
     // communication state stream and reports transitions. Assertions about
-    // what actually crossed the wire live in verify-lifecycle-network.py,
+        // what actually crossed the wire live in the lifecycle capture,
     // against the independent MQTT capture.
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["WIRE_LIFECYCLE_OFFLINE_QUEUEING_LIVE"] == "1"))
@@ -159,7 +159,7 @@ struct AxolotyLifecycleSubjectTests {
         // connects with cleanSession: true (MQTTNIOClient.performConnect), so
         // the subscription being restored after reconnect is the coordinator
         // genuinely re-subscribing, not broker session state. The proxy's
-        // CONNACK log (verified in verify-lifecycle-network.py) proves the
+        // CONNACK log proves the
         // broker reported sessionPresent=false on the reconnect handshake.
         try await runReconnectProbeScenario(named: "clean-session")
     }
@@ -267,8 +267,8 @@ struct AxolotyLifecycleSubjectTests {
 
     private func report(state: String, scenario: String, extra: [String: String] = [:]) {
         // A UTC wall-clock timestamp on every state line, with the same
-        // format as the capture probe's `capturedAt` (see mqtt_capture.py),
-        // so verify-lifecycle-call-return.py can genuinely compare wire
+        // format as the capture probe's `capturedAt`,
+        // so the lifecycle evidence can genuinely compare wire
         // timing against subject timing instead of trusting prose.
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

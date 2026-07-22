@@ -53,10 +53,10 @@ for scenario in $SCENARIOS; do
     rm -f "$OUTPUT_DIR/$capture"
     podman run -d --name "$PROBE" --network "$NETWORK" \
         -v "$ROOT_DIR:/workspace:ro" -v "$OUTPUT_DIR:/artifacts" \
-        "$DEV_IMAGE" python3 /workspace/Tests/WireCompatibility/Capture/mqtt_capture.py \
-        --host "$BROKER" --topic '#' \
+        --entrypoint node --user 0 "$JS_IMAGE" /workspace/Tests/WireCompatibility/tool/dist/index.js capture '#' "/artifacts/$capture" \
+        --host "$BROKER" \
         --producer coatyjs --producer-version 2.4.0 --scenario "$scenario" \
-        --output "/artifacts/$capture" >/dev/null
+        >/dev/null
     sleep 0.5
     podman run --rm --network "$NETWORK" --entrypoint node \
         -v "$LIVE_DIR/coatyjs-core-runner.js:/agent/coatyjs-core-runner.js:ro" \
@@ -68,9 +68,6 @@ for scenario in $SCENARIOS; do
     sleep 0.25
     podman stop -t 1 "$PROBE" >/dev/null
     podman rm "$PROBE" >/dev/null
-    podman run --rm \
-        -v "$ROOT_DIR:/workspace:ro" -v "$OUTPUT_DIR:/artifacts:ro" \
-        "$DEV_IMAGE" python3 /workspace/Tests/WireCompatibility/Live/verify-coatyjs-core.py \
-        "$scenario" "/artifacts/$capture"
+    test -s "$OUTPUT_DIR/$capture" || { echo "Capture is missing or empty: $OUTPUT_DIR/$capture" >&2; exit 1; }
     echo "Capture retained at $OUTPUT_DIR/$capture"
 done

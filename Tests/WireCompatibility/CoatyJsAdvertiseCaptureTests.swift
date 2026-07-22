@@ -5,7 +5,7 @@ import Foundation
 import Testing
 
 /// Verifies the semantic and topic contract of a pinned CoatyJS 2.4.0
-/// Advertise run, ported from `Tests/WireCompatibility/Live/verify-coatyjs-advertise.py`.
+/// Advertise run, ported from the former live verifier.
 ///
 /// The capture is committed under
 /// `Tests/WireCompatibility/Fixtures/coatyjs-2.4.0/coatyjs-advertise.jsonl`

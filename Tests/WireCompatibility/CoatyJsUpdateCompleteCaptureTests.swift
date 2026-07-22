@@ -6,7 +6,7 @@ import Testing
 
 /// Verifies the semantic and topic contract of a pinned CoatyJS 2.4.0
 /// Update/Complete exchange, ported from the `verify_update_complete`
-/// branch of `Tests/WireCompatibility/Live/verify-coatyjs-core.py`.
+/// branch of the former CoatyJS core live verifier.
 ///
 /// This is the third request/response scenario ported (after Discover/
 /// Resolve and Query/Retrieve). It additionally checks that an Update

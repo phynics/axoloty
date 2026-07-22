@@ -1,6 +1,6 @@
 # MQTT wire capture
 
-`mqtt_capture.py` is a dependency-free, passive MQTT 3.1.1 subscriber. It
+The `axoloty-wire capture` command is a passive MQTT 3.1.1 subscriber. It
 records each publication as one JSON object per line without decoding or
 rewriting its payload. Raw payload bytes are base64 encoded, so captures are
 lossless even when a producer sends malformed or non-UTF-8 data.
@@ -8,13 +8,13 @@ lossless even when a producer sends malformed or non-UTF-8 data.
 Run it beside a pinned reference agent:
 
 ```sh
-python3 Tests/WireCompatibility/Capture/mqtt_capture.py \
+make wire-tool
+node Tests/WireCompatibility/tool/dist/index.js capture 'coaty/#' \
   --producer coatyjs \
   --producer-version 2.0.0 \
   --scenario advertise \
-  --topic 'coaty/#' \
   --count 1 \
-  --output /tmp/coatyjs-advertise.jsonl
+  /tmp/coatyjs-advertise.jsonl
 ```
 
 Each record preserves the exact topic, raw payload, requested delivery QoS,

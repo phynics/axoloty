@@ -34,6 +34,16 @@ jobs:
           restore-keys: |
             swiftpm-6.3-linux-
 
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Tests/WireCompatibility/tool/package-lock.json
+
+      - name: Build and test wire CLI
+        run: make wire-tool
+
       - name: Run offline and live wire suites
         run: make test-wire-all CONTAINER_RUNTIME=docker BUILD_DIR=.build BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache
 

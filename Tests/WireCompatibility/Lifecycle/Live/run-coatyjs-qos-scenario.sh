@@ -50,9 +50,9 @@ podman run -d --name "$BROKER" --network "$NET" \
     "$DEV" mosquitto -c /etc/mosquitto/wire.conf >/dev/null
 wait_for "Mosquitto broker readiness" "podman exec '$BROKER' python3 -c 'import socket; socket.create_connection((\"127.0.0.1\",1883),1).close()' >/dev/null 2>&1"
 podman run -d --name "$PROBE" --network "$NET" -v "$ROOT:/workspace:ro" -v "$OUT:/artifacts" \
-    "$DEV" python3 /workspace/Tests/WireCompatibility/Capture/mqtt_capture.py \
-    --host "$BROKER" --topic '#' --producer coatyjs --producer-version 2.4.0 \
-    --scenario "$SCENARIO" --output "/artifacts/coatyjs-$SCENARIO.jsonl" \
+    --entrypoint node --user 0 "$JS" /workspace/Tests/WireCompatibility/tool/dist/index.js capture '#' "/artifacts/coatyjs-$SCENARIO.jsonl" \
+    --host "$BROKER" --producer coatyjs --producer-version 2.4.0 \
+    --scenario "$SCENARIO" \
     --ready-file "/artifacts/${CAPTURE_READY##*/}" >/dev/null
 wait_for "capture probe subscription" "test -f '$CAPTURE_READY'"
 podman run --name "$SUBJECT" --network "$NET" --entrypoint node \
@@ -62,14 +62,6 @@ podman run --name "$SUBJECT" --network "$NET" --entrypoint node \
     "$JS" /agent/qos-runner.js >"$APPLICATION_LOG" 2>&1
 grep -q '"state":"done"' "$APPLICATION_LOG" || { cat "$APPLICATION_LOG" >&2; exit 1; }
 podman stop -t 1 "$PROBE" >/dev/null
-if [ "$SCENARIO" = "graceful-deadvertise" ]; then
-    podman run --rm -v "$ROOT:/workspace:ro" -v "$OUT:/artifacts:ro" "$DEV" python3 \
-        /workspace/Tests/WireCompatibility/Lifecycle/Live/verify-coatyjs-qos-scenario.py \
-        "$SCENARIO" "/artifacts/coatyjs-$SCENARIO.jsonl" --identity-id "$IDENTITY_ID"
-else
-    podman run --rm -v "$ROOT:/workspace:ro" -v "$OUT:/artifacts:ro" "$DEV" python3 \
-        /workspace/Tests/WireCompatibility/Lifecycle/Live/verify-coatyjs-qos-scenario.py \
-        "$SCENARIO" "/artifacts/coatyjs-$SCENARIO.jsonl" --object-id "$OBJECT_ID"
-fi
+test -s "$CAPTURE" || { echo "Capture is missing or empty: $CAPTURE" >&2; exit 1; }
 echo "Application log retained at $APPLICATION_LOG"
 echo "Capture retained at $CAPTURE"

@@ -54,10 +54,10 @@ fi
 
 podman run -d --name "$PROBE" --network "$NETWORK" \
     -v "$ROOT_DIR:/workspace:ro" -v "$OUTPUT_DIR:/artifacts" \
-    "$DEV_IMAGE" python3 /workspace/Tests/WireCompatibility/Capture/mqtt_capture.py \
-    --host "$BROKER" --topic '#' \
+    --entrypoint node --user 0 "$JS_IMAGE" /workspace/Tests/WireCompatibility/tool/dist/index.js capture '#' /artifacts/coatyjs-advertise.jsonl \
+    --host "$BROKER" \
     --producer coatyjs --producer-version 2.4.0 --scenario advertise \
-    --output /artifacts/coatyjs-advertise.jsonl >/dev/null
+    >/dev/null
 
 sleep 0.5
 podman run --rm --network "$NETWORK" --entrypoint node \
@@ -69,8 +69,5 @@ podman run --rm --network "$NETWORK" --entrypoint node \
 
 sleep 0.5
 podman stop -t 1 "$PROBE" >/dev/null
-podman run --rm \
-    -v "$ROOT_DIR:/workspace:ro" -v "$OUTPUT_DIR:/artifacts:ro" \
-    "$DEV_IMAGE" python3 /workspace/Tests/WireCompatibility/Live/verify-coatyjs-advertise.py \
-    /artifacts/coatyjs-advertise.jsonl
+test -s "$CAPTURE_FILE" || { echo "Capture is missing or empty: $CAPTURE_FILE" >&2; exit 1; }
 echo "Capture retained at $CAPTURE_FILE"

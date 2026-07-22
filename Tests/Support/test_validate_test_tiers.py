@@ -27,9 +27,6 @@ def valid_document():
         ],
         "selfTests": [
             {"path": "Tests/Fuzzing/test-run-fuzz.sh", "makeTarget": "test-support", "tier": "property"},
-            {"path": "Tests/WireCompatibility/Capture/test_mqtt_capture.py", "makeTarget": "test-support", "tier": "wire-offline"},
-            {"path": "Tests/WireCompatibility/Legacy/test_legacy_capture.py", "makeTarget": "test-support", "tier": "wire-offline"},
-            {"path": "Tests/WireCompatibility/Live/test_verify_coatyjs_core.py", "makeTarget": "test-support", "tier": "wire-live"},
             {"path": "Tests/Support/test_validate_test_tiers.py", "makeTarget": "test-support", "tier": "unit"},
         ],
         "artifactContract": {
@@ -57,9 +54,6 @@ def valid_discovered():
     return [
         "Tests/Fuzzing/test-run-fuzz.sh",
         "Tests/Support/test_validate_test_tiers.py",
-        "Tests/WireCompatibility/Capture/test_mqtt_capture.py",
-        "Tests/WireCompatibility/Legacy/test_legacy_capture.py",
-        "Tests/WireCompatibility/Live/test_verify_coatyjs_core.py",
     ]
 
 

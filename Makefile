@@ -142,26 +142,17 @@ fuzz-long:
 		Tests/Fuzzing/run-fuzz.sh
 
 test-wire: resolve
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter WireFixtureTests
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter LegacyCaptureFixtureTests
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter LifecycleCompatibilityScenarioTests
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter AxolotyIoAssociateTests
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter AxolotyIoNegativeTests
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter "WireFixtureTests|LegacyCaptureFixtureTests|CoatyJs.*CaptureTests|LifecycleCompatibilityScenarioTests|AxolotyIoAssociateTests|AxolotyIoNegativeTests"
 
 # Harness self-tests intentionally remain host-side Python/shell checks.
 test-support:
 	Tests/Support/test-run-container.sh
 	Tests/Fuzzing/test-run-fuzz.sh
-	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/WireCompatibility/Capture -p 'test_*.py' -v
-	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/WireCompatibility/Legacy -p 'test_*.py' -v
-	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/WireCompatibility/Live -p 'test_*.py' -v
-	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/WireCompatibility/IO/Live -p 'test_*.py' -v
-	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/WireCompatibility/Lifecycle/Live -p 'test_*.py' -v
-	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/WireCompatibility/Reverse -p 'test_*.py' -v
+	cd Tests/WireCompatibility/tool && npm test
 	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/Support -p 'test_*.py' -v
 	python3 Tests/Support/validate_test_tiers.py Tests/Support/test-tiers.json
 
-test-wire-live:
+test-wire-live: test-wire wire-tool
 	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/Live/run-coatyjs-advertise.sh
 	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/Live/run-coatyjs-core.sh
 	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/Lifecycle/Live/run-lifecycle-matrix.sh
@@ -169,11 +160,12 @@ test-wire-live:
 	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/Reverse/run-axoloty-core.sh
 	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/Reverse/run-coatyjs-to-axoloty-advertise.sh
 	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/IO/Live/run-io-associate.sh
+	node Tests/WireCompatibility/tool/dist/index.js manifest .testing/wire .testing/wire/manifest.json
 
 test-wire-all: test-wire test-wire-live
 
 wire-tool:
-	cd Tests/WireCompatibility/tool && npm ci && npm run build
+	cd Tests/WireCompatibility/tool && npm ci && npm test
 
 test-observation-linux: resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter "ObservationLinuxTests|BroadcastTests"

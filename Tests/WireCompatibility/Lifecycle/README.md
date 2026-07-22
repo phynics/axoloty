@@ -57,7 +57,7 @@ Nine of the eleven catalog scenarios are executable end-to-end today:
   the responder.
 - `offline-queueing`, `reconnect-resubscribe`, `broker-restart`,
   `clean-session`: **Axoloty is the live subject** behind a controllable TCP
-  proxy (`Live/tcp_proxy.py`) that genuinely severs and restores its broker
+  proxy (`axoloty-wire proxy`) that genuinely severs and restores its broker
   connectivity -- or, for `broker-restart`, a really stopped-and-restarted
   Mosquitto process -- with the post-reconnect subscription proven by
   decoding an Advertise probe from pinned CoatyJS 2.4.0 and, for

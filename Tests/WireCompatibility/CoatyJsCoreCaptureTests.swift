@@ -6,7 +6,7 @@ import Testing
 
 /// Verifies the semantic and topic contract of pinned CoatyJS 2.4.0 one-way
 /// core event captures (Deadvertise, Channel), ported from the corresponding
-/// branches of `Tests/WireCompatibility/Live/verify-coatyjs-core.py`.
+/// branches of the former CoatyJS core live verifier.
 ///
 /// Captures are committed under
 /// `Tests/WireCompatibility/Fixtures/coatyjs-2.4.0/coatyjs-{deadvertise,channel}.jsonl`

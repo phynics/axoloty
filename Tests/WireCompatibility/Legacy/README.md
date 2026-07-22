@@ -58,28 +58,18 @@ that exact false-positive is what the first bug above produced.
 
 ## Linux validation and replay
 
-Validation is dependency-free and does not claim to run legacy Swift:
+Manifest generation is performed by the Node wire CLI; semantic validation is
+performed by the Swift Testing wire suites:
 
 ```sh
-python3 Tests/WireCompatibility/Legacy/validate_legacy_capture.py \
+node Tests/WireCompatibility/tool/dist/index.js legacy-manifest \
   Tests/WireCompatibility/Fixtures/coatyswift-2.4.0/advertise.jsonl \
-  --manifest Tests/WireCompatibility/Fixtures/coatyswift-2.4.0/advertise.manifest.json
+  Tests/WireCompatibility/Fixtures/coatyswift-2.4.0/advertise.manifest.json \
+  --version 2.4.0 --source-commit COMMIT --scenario advertise
 ```
 
-Replay first performs the same strict validation, then publishes the exact
-topic and decoded payload bytes with the recorded QoS and retain flag:
+Run the wire suites with:
 
 ```sh
-python3 Tests/WireCompatibility/Legacy/replay_legacy_capture.py CAPTURE \
-  --manifest MANIFEST --host 127.0.0.1 --port 1883
-```
-
-Replay is a consumer-compatibility input, not evidence that Axoloty reproduces
-legacy timing, connection lifecycle, MQTT session settings, or duplicate
-delivery behavior. Those require live cross-implementation scenarios.
-
-Run the portable contract tests with:
-
-```sh
-python3 -m unittest discover -s Tests/WireCompatibility/Legacy -p 'test_*.py'
+make test-wire
 ```

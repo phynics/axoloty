@@ -65,7 +65,7 @@ deliberately misbehaving Call responder):
   unobservable by Axoloty, not merely unobserved in this one run.
 
 Both are verified against a cross-referenced independent MQTT capture and the
-Axoloty application log by `verify-lifecycle-call-return.py`, matching the
+Axoloty application log by the lifecycle Swift test suite, matching the
 evidentiary rigor of the CoatyJS-subject scenarios above.
 
 **Axoloty is also the live subject** for the four network-failure scenarios,
@@ -73,7 +73,7 @@ run by `run-lifecycle-network.sh` (via the same
 `AxolotyLifecycleSubjectTests.swift`):
 
 - `offline-queueing`, `reconnect-resubscribe`, `clean-session`: the subject's
-  MQTT connection runs through `tcp_proxy.py`, a controllable local TCP proxy
+  MQTT connection runs through `axoloty-wire proxy`, a controllable local TCP proxy
   the orchestrating script commands to genuinely sever and restore, while the
   passive capture probe stays connected to the broker directly. For
   `offline-queueing` the capture proves both labeled publications queued
@@ -93,7 +93,7 @@ run by `run-lifecycle-network.sh` (via the same
   connections fire mqtt-nio's close listener, so one refused attempt against
   a not-yet-listening broker permanently ended reconnection.
 
-All four are verified by `verify-lifecycle-network.py` against the subject's
+All four are verified by the lifecycle Swift test suite against the subject's
 timestamped application log, the independent MQTT capture, and (for
 clean-session) the proxy's CONNACK log.
 

@@ -8,11 +8,11 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
 HERE="$ROOT/Tests/WireCompatibility/Lifecycle/Live"
+WIRE_TOOL="$ROOT/Tests/WireCompatibility/tool/dist/index.js"
 OUTPUT_ROOT="${WIRE_OUTPUT_DIR:-$ROOT/.testing/wire}/lifecycle"
 SCENARIOS="${WIRE_LIFECYCLE_SCENARIOS:-offline-queueing reconnect-resubscribe broker-restart graceful-deadvertise unexpected-disconnect-last-will clean-session duplicate-reply late-reply qos-0 qos-1 qos-2}"
-# 180s per scenario: the network-failure scenarios include a real
-# sever/reconnect cycle plus a cold-started CoatyJS probe process.
-DEADLINE_SECONDS="${WIRE_LIFECYCLE_DEADLINE_SECONDS:-180}"
+# A cold containerized Swift build can precede the real sever/reconnect cycle.
+DEADLINE_SECONDS="${WIRE_LIFECYCLE_DEADLINE_SECONDS:-600}"
 
 mkdir -p "$OUTPUT_ROOT"
 for scenario in $SCENARIOS; do
@@ -24,27 +24,27 @@ for scenario in $SCENARIOS; do
 
     if [ "$scenario" = "unexpected-disconnect-last-will" ]; then
         WIRE_OUTPUT_DIR="$artifact_dir" "$HERE/run-coatyjs-last-will.sh" >"$verifier_log" 2>&1
-        python3 "$HERE/lifecycle-matrix.py" "$scenario" \
+        node "$WIRE_TOOL" lifecycle-manifest "$scenario" "$manifest" \
             --application-log "$artifact_dir/coatyjs-last-will.application.jsonl" \
-            --capture "$artifact_dir/coatyjs-last-will.jsonl" --output "$manifest"
+            --capture "$artifact_dir/coatyjs-last-will.jsonl"
     elif [ "$scenario" = "qos-0" ] || [ "$scenario" = "graceful-deadvertise" ]; then
         WIRE_OUTPUT_DIR="$artifact_dir" "$HERE/run-coatyjs-qos-scenario.sh" "$scenario" >"$verifier_log" 2>&1
-        python3 "$HERE/lifecycle-matrix.py" "$scenario" \
+        node "$WIRE_TOOL" lifecycle-manifest "$scenario" "$manifest" \
             --application-log "$artifact_dir/coatyjs-$scenario.application.jsonl" \
-            --capture "$artifact_dir/coatyjs-$scenario.jsonl" --output "$manifest"
+            --capture "$artifact_dir/coatyjs-$scenario.jsonl"
     elif [ "$scenario" = "duplicate-reply" ] || [ "$scenario" = "late-reply" ]; then
         WIRE_OUTPUT_DIR="$artifact_dir" "$HERE/run-lifecycle-call-return.sh" "$scenario" >"$verifier_log" 2>&1
-        python3 "$HERE/lifecycle-matrix.py" "$scenario" \
+        node "$WIRE_TOOL" lifecycle-manifest "$scenario" "$manifest" \
             --application-log "$artifact_dir/axoloty-$scenario.application.jsonl" \
-            --capture "$artifact_dir/axoloty-$scenario.jsonl" --output "$manifest"
+            --capture "$artifact_dir/axoloty-$scenario.jsonl"
     elif [ "$scenario" = "offline-queueing" ] || [ "$scenario" = "reconnect-resubscribe" ] \
         || [ "$scenario" = "broker-restart" ] || [ "$scenario" = "clean-session" ]; then
         WIRE_OUTPUT_DIR="$artifact_dir" "$HERE/run-lifecycle-network.sh" "$scenario" >"$verifier_log" 2>&1
-        python3 "$HERE/lifecycle-matrix.py" "$scenario" \
+        node "$WIRE_TOOL" lifecycle-manifest "$scenario" "$manifest" \
             --application-log "$artifact_dir/axoloty-$scenario.application.jsonl" \
-            --capture "$artifact_dir/axoloty-$scenario.jsonl" --output "$manifest"
+            --capture "$artifact_dir/axoloty-$scenario.jsonl"
     else
-        python3 "$HERE/lifecycle-matrix.py" "$scenario" --output "$manifest" >"$verifier_log" 2>&1
+        node "$WIRE_TOOL" lifecycle-manifest "$scenario" "$manifest" >"$verifier_log" 2>&1
     fi
     if [ "$(date +%s)" -gt "$DEADLINE" ]; then
         echo "Scenario exceeded its ${DEADLINE_SECONDS}s deadline: $scenario" >&2

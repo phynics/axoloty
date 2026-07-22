@@ -6,7 +6,7 @@ import Testing
 
 /// Verifies the semantic contract for the qos-0 and graceful-deadvertise
 /// lifecycle scenarios, ported from
-/// `Tests/WireCompatibility/Lifecycle/Live/verify-coatyjs-qos-scenario.py`.
+/// the former CoatyJS QoS lifecycle verifier.
 ///
 /// The captures are committed under
 /// `Tests/WireCompatibility/Fixtures/coatyjs-2.4.0/coatyjs-qos-0.jsonl` and

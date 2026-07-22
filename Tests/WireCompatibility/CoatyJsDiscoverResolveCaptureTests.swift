@@ -6,7 +6,7 @@ import Testing
 
 /// Verifies the semantic and topic contract of a pinned CoatyJS 2.4.0
 /// Discover/Resolve exchange, ported from the `verify_discover_resolve`
-/// branch of `Tests/WireCompatibility/Live/verify-coatyjs-core.py`.
+/// branch of the former CoatyJS core live verifier.
 ///
 /// This is the first request/response scenario ported: it exercises the
 /// correlation-id matching between a Discover (DSC, requester) and its

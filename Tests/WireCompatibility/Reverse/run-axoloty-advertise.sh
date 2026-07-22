@@ -44,9 +44,9 @@ done
 
 runtime run -d --name "$PROBE" --network "$NETWORK" \
     -v "$ROOT_DIR:/workspace:ro" -v "$OUTPUT_DIR:/artifacts" \
-    "$DEV_IMAGE" python3 /workspace/Tests/WireCompatibility/Capture/mqtt_capture.py \
-    --host "$BROKER" --topic '#' --producer coatyswift-modern --producer-version current \
-    --scenario axoloty-advertise --output /artifacts/axoloty-advertise.jsonl >/dev/null
+    --entrypoint node --user 0 "$JS_IMAGE" /workspace/Tests/WireCompatibility/tool/dist/index.js capture '#' /artifacts/axoloty-advertise.jsonl \
+    --host "$BROKER" --producer coatyswift-modern --producer-version current \
+    --scenario axoloty-advertise >/dev/null
 sleep 0.5
 
 runtime run -d --name "$CONSUMER" --network "$NETWORK" --entrypoint node \

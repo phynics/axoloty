@@ -80,7 +80,16 @@ under [#135](https://github.com/phynics/Axoloty/issues/135).
 
 Replaces the Python wire-compatibility harness with an npx-runnable Node CLI
 plus Swift Testing verification, and fills in remaining JS → modern live
-scenario coverage. Tracked under
+scenario coverage. The dependency order is deliberately:
+
+1. CLI scaffold and dependency pinning (#121, #122).
+2. Swift semantic verification (#123), now present for committed captures.
+3. Deterministic Modern → JS readiness (#134), now complete.
+4. Make/CI migration and Python removal (#124).
+5. Additional JS → modern live scenarios (#125), which can proceed in parallel
+   after the shared verification surface exists.
+
+Tracked under
 [#120](https://github.com/phynics/Axoloty/issues/120), sequenced as part of
 [#135](https://github.com/phynics/Axoloty/issues/135).
 

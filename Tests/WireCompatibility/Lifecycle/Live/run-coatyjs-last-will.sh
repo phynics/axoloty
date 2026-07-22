@@ -47,9 +47,9 @@ podman run -d --name "$BROKER" --network "$NET" \
     "$DEV" mosquitto -c /etc/mosquitto/wire.conf >/dev/null
 wait_for "Mosquitto broker readiness" "podman exec '$BROKER' python3 -c 'import socket; socket.create_connection((\"127.0.0.1\",1883),1).close()' >/dev/null 2>&1"
 podman run -d --name "$PROBE" --network "$NET" -v "$ROOT:/workspace:ro" -v "$OUT:/artifacts" \
-    "$DEV" python3 /workspace/Tests/WireCompatibility/Capture/mqtt_capture.py \
-    --host "$BROKER" --topic '#' --producer coatyjs --producer-version 2.4.0 \
-    --scenario unexpected-disconnect-last-will --output /artifacts/coatyjs-last-will.jsonl \
+    --entrypoint node --user 0 "$JS" /workspace/Tests/WireCompatibility/tool/dist/index.js capture '#' /artifacts/coatyjs-last-will.jsonl \
+    --host "$BROKER" --producer coatyjs --producer-version 2.4.0 \
+    --scenario unexpected-disconnect-last-will \
     --ready-file "/artifacts/${CAPTURE_READY##*/}" >/dev/null
 wait_for "capture probe subscription" "test -f '$CAPTURE_READY'"
 podman run -d --name "$SUBJECT" --network "$NET" --entrypoint node \
@@ -58,23 +58,10 @@ podman run -d --name "$SUBJECT" --network "$NET" --entrypoint node \
     "$JS" /agent/last-will.js >/dev/null
 wait_for "CoatyJS application readiness" "podman logs '$SUBJECT' 2>&1 | grep -q '\"state\":\"ready\"'"
 podman logs "$SUBJECT" >"$APPLICATION_LOG" 2>&1
-wait_for "identity advertisement capture" "python3 - '$CAPTURE' <<'PY'
-import json
-import pathlib
-import sys
-path = pathlib.Path(sys.argv[1])
-raise SystemExit(0 if any('/ADV:' in json.loads(line)['mqtt']['topic'] for line in path.read_text(encoding='utf-8').splitlines() if line) else 1)
-PY"
+wait_for "identity advertisement capture" "grep -q '/ADV:' '$CAPTURE'"
 podman kill --signal KILL "$SUBJECT" >/dev/null
-wait_for "broker-issued last will capture" "python3 - '$CAPTURE' <<'PY'
-import json
-import pathlib
-import sys
-path = pathlib.Path(sys.argv[1])
-raise SystemExit(0 if any('/DAD/' in json.loads(line)['mqtt']['topic'] for line in path.read_text(encoding='utf-8').splitlines() if line) else 1)
-PY"
+wait_for "broker-issued last will capture" "grep -q '/DAD/' '$CAPTURE'"
 podman stop -t 1 "$PROBE" >/dev/null
-podman run --rm -v "$ROOT:/workspace:ro" -v "$OUT:/artifacts:ro" "$DEV" python3 \
-    /workspace/Tests/WireCompatibility/Lifecycle/Live/verify-coatyjs-last-will.py /artifacts/coatyjs-last-will.jsonl
+test -s "$CAPTURE" || { echo "Capture is missing or empty: $CAPTURE" >&2; exit 1; }
 echo "Application log retained at $APPLICATION_LOG"
 echo "Capture retained at $CAPTURE"

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 "use strict";
 
-const { Container } = require("@coaty/core");
+const { ChannelEvent, Container } = require("@coaty/core");
 
 const brokerUrl = process.env.BROKER_URL;
 const namespace = process.env.COATY_NAMESPACE || "wire-compat-v1";
@@ -23,6 +23,8 @@ const timeout = setTimeout(() => {
     process.exit(1);
 }, Number(process.env.SCENARIO_TIMEOUT_MS || "10000"));
 
+let readySubscription;
+
 async function run() {
     await container.communicationManager.start({ brokerUrl });
     const subscription = container.communicationManager
@@ -39,16 +41,22 @@ async function run() {
         }
         clearTimeout(timeout);
         subscription.unsubscribe();
+        if (readySubscription) readySubscription.unsubscribe();
         process.stdout.write(`${JSON.stringify({ state: "ack", scenario: "axoloty-advertise", objectId: object.objectId })}\n`);
         container.shutdown();
         setTimeout(() => process.exit(0), 100);
     });
-    // `start()` resolves before a newly requested subscription is guaranteed
-    // to be acknowledged by the broker. Do not release the producer until the
-    // subscription has had a deterministic propagation window.
-    setTimeout(() => {
+    // CoatyJS does not surface SUBACK. A self-ping after requesting the
+    // scenario subscription proves the broker has registered both routes.
+    const readyChannel = `wire-fixture-ready-${process.pid}`;
+    const token = `ready-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    readySubscription = container.communicationManager.observeChannel(readyChannel).subscribe(event => {
+        if (event.data.privateData?.token !== token) return;
+        readySubscription.unsubscribe();
+        readySubscription = undefined;
         process.stdout.write(`${JSON.stringify({ state: "ready", scenario: "axoloty-advertise" })}\n`);
-    }, 500);
+    });
+    container.communicationManager.publishChannel(ChannelEvent.withObject(readyChannel, expected, { token }));
 }
 
 run().catch(error => {

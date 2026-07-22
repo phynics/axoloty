@@ -39,21 +39,25 @@ esac
 : "${EXPECTED_PUBLICATIONS:=$DEFAULT_EXPECTED_PUBLICATIONS}"
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-CAPTURE_TOOL="$SCRIPT_DIR/../Capture/mqtt_capture.py"
+CAPTURE_TOOL="$SCRIPT_DIR/../tool/dist/index.js"
 CAPTURE="$OUTPUT_DIR/$SCENARIO.jsonl"
 MANIFEST="$OUTPUT_DIR/$SCENARIO.manifest.json"
 CAPTURE_READY="$OUTPUT_DIR/$SCENARIO.capture-ready"
 
 mkdir -p "$OUTPUT_DIR"
+if [ ! -f "$CAPTURE_TOOL" ]; then
+  echo "Missing wire CLI at $CAPTURE_TOOL; run 'make wire-tool' first" >&2
+  exit 2
+fi
 if [ -e "$CAPTURE" ] || [ -e "$MANIFEST" ] || [ -e "$CAPTURE_READY" ]; then
   echo "Refusing to overwrite capture artifacts in $OUTPUT_DIR" >&2
   exit 2
 fi
 
-python3 "$CAPTURE_TOOL" \
-  --host "$BROKER_HOST" --port "$BROKER_PORT" --topic 'coaty/#' \
+node "$CAPTURE_TOOL" capture 'coaty/#' "$CAPTURE" \
+  --host "$BROKER_HOST" --port "$BROKER_PORT" \
   --producer coatyswift-legacy --producer-version "$LEGACY_VERSION" \
-  --scenario "$SCENARIO" --count "$EXPECTED_PUBLICATIONS" --output "$CAPTURE" \
+  --scenario "$SCENARIO" --count "$EXPECTED_PUBLICATIONS" \
   --ready-file "$CAPTURE_READY" &
 CAPTURE_PID=$!
 cleanup() {
@@ -85,6 +89,5 @@ wait "$CAPTURE_PID"
 rm -f "$CAPTURE_READY"
 trap - EXIT INT TERM
 
-python3 "$SCRIPT_DIR/create_manifest.py" "$CAPTURE" --output "$MANIFEST" \
+node "$SCRIPT_DIR/../tool/dist/index.js" legacy-manifest "$CAPTURE" "$MANIFEST" \
   --version "$LEGACY_VERSION" --source-commit "$LEGACY_SOURCE_COMMIT" --scenario "$SCENARIO"
-python3 "$SCRIPT_DIR/validate_legacy_capture.py" "$CAPTURE" --manifest "$MANIFEST"

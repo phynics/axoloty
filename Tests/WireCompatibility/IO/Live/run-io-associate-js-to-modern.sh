@@ -51,9 +51,9 @@ done
 
 runtime run -d --name "$PROBE" --network "$NETWORK" \
     -v "$ROOT_DIR:/workspace:ro" -v "$OUTPUT_DIR:/artifacts" \
-    "$DEV_IMAGE" python3 /workspace/Tests/WireCompatibility/Capture/mqtt_capture.py \
-    --host "$BROKER" --topic '#' --producer coatyjs --producer-version 2.4.0 \
-    --scenario io-associate-js-to-modern --output /artifacts/io-associate-js-to-modern.jsonl >/dev/null
+    --entrypoint node --user 0 "$JS_IMAGE" /workspace/Tests/WireCompatibility/tool/dist/index.js capture '#' /artifacts/io-associate-js-to-modern.jsonl \
+    --host "$BROKER" --producer coatyjs --producer-version 2.4.0 \
+    --scenario io-associate-js-to-modern >/dev/null
 sleep 0.5
 
 # Axoloty (actor/consumer) is the subject: start it detached so this script can

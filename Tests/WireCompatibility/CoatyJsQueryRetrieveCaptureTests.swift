@@ -6,7 +6,7 @@ import Testing
 
 /// Verifies the semantic and topic contract of a pinned CoatyJS 2.4.0
 /// Query/Retrieve exchange, ported from the `verify_query_retrieve` branch
-/// of `Tests/WireCompatibility/Live/verify-coatyjs-core.py`.
+/// of the former CoatyJS core live verifier.
 ///
 /// This is the second request/response scenario ported (after Discover/
 /// Resolve): it exercises correlation-id matching between a Query (QRY,
