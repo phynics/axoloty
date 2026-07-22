@@ -33,11 +33,11 @@ function unsupported(reason: string): Scenario {
 }
 
 /** Write the retained evidence manifest for one lifecycle scenario. */
-export function writeLifecycleManifest(scenarioId: string, applicationLog: string | undefined, capture: string | undefined, output: string): void {
+export function writeLifecycleManifest(scenarioId: string, applicationLog: string | undefined, capture: string | undefined, output: string, unsupportedReason?: string): void {
   const scenario = scenarios[scenarioId];
   if (!scenario) throw new Error(`unknown lifecycle scenario: ${scenarioId}`);
-  if (scenario.status === "unsupported") {
-    writeFileSync(output, JSON.stringify({ format: "axoloty-lifecycle-evidence/v1", scenario: scenarioId, status: scenario.status, limitation: scenario.reason, participants: scenario.participants }, null, 2) + "\n");
+  if (unsupportedReason || scenario.status === "unsupported") {
+    writeFileSync(output, JSON.stringify({ format: "axoloty-lifecycle-evidence/v1", scenario: scenarioId, status: "unsupported", limitation: unsupportedReason ?? scenario.reason, participants: scenario.participants }, null, 2) + "\n");
     return;
   }
   if (!applicationLog || !capture) throw new Error(`${scenarioId} requires --application-log and --capture`);

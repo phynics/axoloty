@@ -92,18 +92,7 @@ for scenario in $SCENARIOS; do
     runtime stop -t 1 "$PROBE" >/dev/null || true
     runtime rm "$PROBE" >/dev/null
     test -s "$capture" || { echo "Capture is missing or empty: $capture" >&2; exit 1; }
-    python3 - "$capture" <<'PY'
-import json
-import pathlib
-import sys
-
-capture = pathlib.Path(sys.argv[1])
-records = [line for line in capture.read_text(encoding="utf-8").splitlines() if line]
-if not records:
-    raise SystemExit(f"Capture is empty: {capture}")
-for line in records:
-    json.loads(line)
-PY
+    node -e "const fs=require('fs');const lines=fs.readFileSync(process.argv[1],'utf8').split('\n').filter(l=>l);if(!lines.length){process.stderr.write('Capture is empty\n');process.exit(1)}for(const l of lines){JSON.parse(l)}" "$capture"
     rm -f "$CAPTURE_READY"
     CAPTURE_READY=""
     echo "Capture retained at $capture"

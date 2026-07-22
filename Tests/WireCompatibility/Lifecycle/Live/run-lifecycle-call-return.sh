@@ -26,7 +26,7 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
 HERE="$ROOT/Tests/WireCompatibility/Lifecycle/Live"
 REVERSE="$ROOT/Tests/WireCompatibility/Reverse"
 REF="$ROOT/Tests/WireCompatibility/ReferenceAgents/coatyjs"
-MOSQUITTO="${MOSQUITTO_BIN:-/opt/homebrew/opt/mosquitto/sbin/mosquitto}"
+MOSQUITTO="${MOSQUITTO_BIN:-$(command -v mosquitto 2>/dev/null || echo /opt/homebrew/opt/mosquitto/sbin/mosquitto)}"
 OUT="${WIRE_OUTPUT_DIR:-$ROOT/.testing/wire}"
 RUN_ID="${WIRE_RUN_ID:-$$}"
 NAMESPACE="wire-lifecycle-$SCENARIO-$RUN_ID"
@@ -68,7 +68,7 @@ wait_for() {
         sleep 0.1
     done
 }
-wait_for "Mosquitto broker readiness" "python3 -c 'import socket; socket.create_connection((\"127.0.0.1\",1883),1).close()' >/dev/null 2>&1"
+wait_for "Mosquitto broker readiness" "node -e 'const s=require(\"net\").createConnection({host:\"127.0.0.1\",port:1883},()=>{s.end();process.exit(0)});s.on(\"error\",()=>process.exit(1))' >/dev/null 2>&1"
 
 node "$ROOT/Tests/WireCompatibility/tool/dist/index.js" capture '#' "$CAPTURE" \
     --host 127.0.0.1 --producer coatyswift-modern --producer-version current \

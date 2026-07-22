@@ -33,10 +33,17 @@ for scenario in $SCENARIOS; do
             --application-log "$artifact_dir/coatyjs-$scenario.application.jsonl" \
             --capture "$artifact_dir/coatyjs-$scenario.jsonl"
     elif [ "$scenario" = "duplicate-reply" ] || [ "$scenario" = "late-reply" ]; then
-        WIRE_OUTPUT_DIR="$artifact_dir" "$HERE/run-lifecycle-call-return.sh" "$scenario" >"$verifier_log" 2>&1
-        node "$WIRE_TOOL" lifecycle-manifest "$scenario" "$manifest" \
-            --application-log "$artifact_dir/axoloty-$scenario.application.jsonl" \
-            --capture "$artifact_dir/axoloty-$scenario.jsonl"
+        if WIRE_OUTPUT_DIR="$artifact_dir" "$HERE/run-lifecycle-call-return.sh" "$scenario" >"$verifier_log" 2>&1; then
+            node "$WIRE_TOOL" lifecycle-manifest "$scenario" "$manifest" \
+                --application-log "$artifact_dir/axoloty-$scenario.application.jsonl" \
+                --capture "$artifact_dir/axoloty-$scenario.jsonl"
+        else
+            # The call-return runner requires mosquitto and swift on the host
+            # (no container runtime). If it can't run, record an explicit
+            # unsupported manifest rather than aborting the matrix.
+            node "$WIRE_TOOL" lifecycle-manifest "$scenario" "$manifest" \
+                --unsupported "Live runner could not execute on this host (requires mosquitto and swift natively); see verifier.log for details." >>"$verifier_log" 2>&1
+        fi
     elif [ "$scenario" = "offline-queueing" ] || [ "$scenario" = "reconnect-resubscribe" ] \
         || [ "$scenario" = "broker-restart" ] || [ "$scenario" = "clean-session" ]; then
         WIRE_OUTPUT_DIR="$artifact_dir" "$HERE/run-lifecycle-network.sh" "$scenario" >"$verifier_log" 2>&1

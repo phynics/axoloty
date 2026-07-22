@@ -138,11 +138,12 @@ function runLifecycleManifestCommand(args: string[]): void {
   const output = args[1];
   const applicationLog = option(args, "--application-log");
   const capture = option(args, "--capture");
+  const unsupportedReason = option(args, "--unsupported");
   if (!scenario || !output || args.length < 2) {
-    process.stderr.write("usage: axoloty-wire lifecycle-manifest <scenario> <out.json> [--application-log FILE --capture FILE]\n");
+    process.stderr.write("usage: axoloty-wire lifecycle-manifest <scenario> <out.json> [--application-log FILE --capture FILE] [--unsupported REASON]\n");
     process.exit(2);
   }
-  try { writeLifecycleManifest(scenario, applicationLog, capture, output); }
+  try { writeLifecycleManifest(scenario, applicationLog, capture, output, unsupportedReason); }
   catch (err: unknown) { process.stderr.write(`lifecycle manifest failed: ${err instanceof Error ? err.message : String(err)}\n`); process.exit(1); }
 }
 

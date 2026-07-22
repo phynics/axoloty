@@ -7,6 +7,7 @@ const {
     CompleteEvent,
     Container,
     DiscoverEvent,
+    ObjectMatcher,
     QueryEvent,
     ResolveEvent,
     RetrieveEvent,
@@ -133,24 +134,45 @@ async function run() {
             ack({ objectId: object.objectId });
         }, fail);
     } else if (scenario === "query-retrieve-filter-negative") {
+        // CoatyJS 2.4.0's QueryEventData.matchesObject uses || instead of &&
+        // between type matching and filter matching (see object-matcher.js:
+        // matchesFilter). When _coreTypes is undefined (the common case
+        // where only objectTypes is set), the first clause short-circuits
+        // to true and the objectFilter is never evaluated. Bypass the buggy
+        // wrapper and call ObjectMatcher.matchesFilter directly so the
+        // negative filter is actually checked.
         subscription = manager.observeQuery().subscribe(event => {
-            const matched = event.data.matchesObject(object);
+            const filter = event.data.objectFilter;
+            const matched = filter ? ObjectMatcher.matchesFilter(object, filter) : true;
             if (matched) {
                 event.retrieve(RetrieveEvent.withObjects([object], { responder: "coatyjs-2.4.0" }));
             }
             ack({ objectId: object.objectId, matched });
         }, fail);
     } else if (scenario === "query-retrieve-filter-operands") {
+        // Same matchesObject bypass as query-retrieve-filter-negative.
         const expected = 4;
         let received = 0;
         subscription = manager.observeQuery().subscribe(event => {
+            const filter = event.data.objectFilter;
+            const matched = filter ? ObjectMatcher.matchesFilter(object, filter) : true;
+            if (matched) {
+                event.retrieve(RetrieveEvent.withObjects([object], { responder: "coatyjs-2.4.0" }));
+            }
             received++;
             if (received >= expected) {
                 ack({ objectId: object.objectId, queriesReceived: received });
             }
         }, fail);
     } else if (scenario === "update-complete") {
-        subscription = manager.observeUpdateWithObjectType(object.objectType).subscribe(event => {
+        // Use observeUpdateWithCoreType("CoatyObject") rather than
+        // observeUpdateWithObjectType(object.objectType): Axoloty publishes
+        // UPD topics with the object's coreType, and CoreTypes.getCoreTypeFor
+        // returns undefined for unregistered custom types like
+        // "com.coaty.test.WireFixture", so observeUpdateWithObjectType would
+        // subscribe to UPD::com.coaty.test.WireFixture which never matches.
+        // The objectType check is handled by matchesFixture below.
+        subscription = manager.observeUpdateWithCoreType("CoatyObject").subscribe(event => {
             if (!matchesFixture(event.data.object)) return;
             event.complete(CompleteEvent.withObject({ ...object, name: "wire-fixture-completed" }, { responder: "coatyjs-2.4.0" }));
             ack({ objectId: object.objectId });
