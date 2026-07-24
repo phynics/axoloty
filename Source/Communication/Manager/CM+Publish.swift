@@ -153,10 +153,9 @@ extension CommunicationManager {
     }
 
     public func publishIoValue(event: IoValueEvent) {
-        guard let source = event.ioSource, let item = ioSourceItems[source.objectId.string] else { return }
-        event.topic = item.associatingRoute
+        guard let source = event.ioSource, let route = ioRegistry.associatingRoute(for: source.objectId) else { return }
+        event.topic = route
         event.sourceId = identity.objectId
-        let route = item.associatingRoute
         log.trace("Publishing IoValue", metadata: [
             "ioSourceId": .string(source.objectId.string),
             "ioRoute": .string(route),

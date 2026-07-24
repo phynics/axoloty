@@ -68,37 +68,8 @@ public class CommunicationManager {
     
     // MARK: IORouting properties.
     
-    /// IO state observables for own IO sources and actors (mapped by IO point ID).
-    /// Key: CoatyUUID string, Value: IoStateItem
-    internal var observedIoStateItems: [String: IoStateItem] = [:]
-
-    /// Own IO sources with associating route, actor ids, and updateRate (mapped
-    /// by IO source ID).
-    /// Key: CoatyUUID string, Value: IoSourceItem
-    internal var ioSourceItems: [String: IoSourceItem] = [:]
-
-    /// Own IO actors with associated source ids (mapped by associating route).
-    ///
-    /// Key: route, Value: `MutableDictionaryBox` of: Key: CoatyUUID string
-    /// (IO actor ID), Value: `MutableArrayBox` of CoatyUUID (IO source IDs).
-    ///
-    /// - Note: the nested collections are `MutableDictionaryBox`/
-    ///   `MutableArrayBox` (small reference-type boxes, see
-    ///   `Common/MutableBox.swift`) rather than native `Dictionary`/`Array`.
-    ///   `associateIoActorItems`/`disassociateIoActorItems` (and
-    ///   `CM+Observe.swift`) fetch these nested collections via subscript
-    ///   and mutate them in place, relying on reference semantics for the
-    ///   change to be visible through this outer dictionary without an
-    ///   explicit write-back. A native (value-type) Swift collection would
-    ///   silently drop those mutations. This used to be nested
-    ///   `NSMutableDictionary`/`NSMutableArray` for the same reason (T-001).
-    internal var ioActorItems: [String: MutableDictionaryBox<String, MutableArrayBox<CoatyUUID>>] = [:]
+    internal var ioRegistry: IoAssociationRegistry!
     
-    /// The transport-level IO value stream is routed through ``Broadcast``.
-    
-    /// Associated IONodes.
-    internal var ioNodes: [IoNode] = []
-
     // MARK: - Initializers.
 
     /// Creates a communication manager with the given identity and options.
@@ -162,6 +133,25 @@ public class CommunicationManager {
         let coordinator = self.subscriptionCoordinator!
         self.streams = makeStreams(crossNs: crossNs, coordinator: coordinator)
         self.client.setStreams(self.streams)
+
+        self.ioRegistry = IoAssociationRegistry()
+        self.ioRegistry.onSubscribe = { [weak self] topic in
+            self?.subscribe(topic: topic)
+        }
+        self.ioRegistry.onUnsubscribe = { [weak self] topic in
+            self?.unsubscribe(topic: topic)
+        }
+        self.ioRegistry.onIoStateDispatch = { [weak self] ioPointId, event in
+            let snapshot = IoStateEventSnapshot(
+                ioPointId: ioPointId.string,
+                hasAssociations: event.eventData.hasAssociations(),
+                updateRate: event.eventData.updateRate()
+            )
+            let ioPointIdString = ioPointId.string
+            _Concurrency.Task { [weak self] in
+                await self?.streams.ioStateFamily.sendState(snapshot, for: ioPointIdString)
+            }
+        }
 
         // Fail-fast invariant, not user input.
         // swiftlint:disable:next force_try
@@ -421,7 +411,7 @@ public class CommunicationManager {
         // NOTE: This does not change or adjust the last will.
         deadvertiseIdentity()
 
-        self.unobserveIoStateAndValue()
+        ioRegistry?.unobserveAll()
         
         lifecycleTasks.forEach { $0.cancel() }
         lifecycleTasks.removeAll()
@@ -652,9 +642,8 @@ public class CommunicationManager {
     // MARK: - IO Routing
     
     private func _initIoNodes() throws {
-        // Set up IO Nodes.
         if let ioNodesConfig = self.commonOptions?.ioContextNodes, !ioNodesConfig.isEmpty {
-            self.ioNodes = try ioNodesConfig.keys.filter({ contextName -> Bool in
+            let nodes = try ioNodesConfig.keys.filter({ contextName -> Bool in
                 if CommunicationTopic.isValidEventTypeFilter(filter: contextName) {
                     return true
                 } else {
@@ -664,9 +653,7 @@ public class CommunicationManager {
                     )
                 }
             }).map({ contextName -> IoNode in
-                // Force unwrapping is safe.
                 let ioNodeConfig = ioNodesConfig[contextName]!
-                
                 return IoNode(coreType: .IoNode,
                               objectType: CoreType.IoNode.objectType,
                               objectId: .init(),
@@ -677,6 +664,7 @@ public class CommunicationManager {
             }).filter({ node -> Bool in
                 node.ioSources.count > 0 || node.ioActors.count > 0
             })
+            ioRegistry.setIoNodes(nodes)
         }
     }
     
@@ -706,38 +694,19 @@ public class CommunicationManager {
         )
     }
 
-    internal func findIoPointById(objectId: CoatyUUID) -> IoPoint? {
-        for ioNode in self.ioNodes {
-            if let source = (ioNode.ioSources.first { $0.objectId == objectId }) {
-                return source
-            } else if let actor = (ioNode.ioActors.first { $0.objectId == objectId }) {
-                return actor
-            }
-        }
-        return nil
+    var ioNodes: [IoNode] {
+        ioRegistry?.ioNodes ?? []
     }
-    
+
+    internal func findIoPointById(objectId: CoatyUUID) -> IoPoint? {
+        ioRegistry?.findIoPointById(objectId: objectId)
+    }
+
     internal func handleAssociate(event: AssociateEvent) {
         let ioSourceId = event.data.ioSourceId
         let ioActorId = event.data.ioActorId
-        // The registry returns the common IoPoint type; only IoActor instances
-        // can satisfy this association request.
-        let ioActor = self.findIoPointById(objectId: ioActorId) as? IoActor
-        let isIoSourceAssociated = self.findIoPointById(objectId: ioSourceId) != nil
-        let isIoActorAssociated = ioActor != nil
-
-        if !isIoSourceAssociated && !isIoActorAssociated {
-            return
-        }
-
         let ioRoute = event.data.associatingRoute
 
-        // Associate carries no wire-level correlation id; the (ioSourceId,
-        // ioActorId) pair is stable for the association's lifetime and
-        // sufficient to correlate this Associate with the IoValue traffic it
-        // enables (see publishIoValue / MQTTNIOClient's IoValue handling).
-        // `ioRoute` is absent (key omitted below) exactly when this
-        // Associate is a disassociation.
         var associateMetadata: Logging.Logger.Metadata = [
             "ioSourceId": .string(ioSourceId.string),
             "ioActorId": .string(ioActorId.string),
@@ -747,166 +716,13 @@ public class CommunicationManager {
         }
         log.debug("Handling Associate", metadata: associateMetadata)
 
-        // Update own IO source associations
-        if isIoSourceAssociated {
-            self.updateIoSourceItems(ioSourceId: ioSourceId, ioActorId: ioActorId, ioRoute: ioRoute, updateRate: event.data.updateRate)
-        }
-
-        // Update own IO actor associations
-        if isIoActorAssociated {
-            if let ioRoute = ioRoute {
-                // CoatyJS 2.4.0 never sends `isExternalRoute` on Associate events (#31); default
-                // to false rather than force-unwrapping a field a legacy peer may omit.
-                self.associateIoActorItems(ioSourceId: ioSourceId, ioActor: ioActor!, ioRoute: ioRoute, isExternalRoute: event.data.isExternalRoute ?? false)
-            } else {
-                self.disassociateIoActorItems(ioSourceId: ioSourceId, ioActorId: ioActorId, currentIoRoute: nil, newIoRoute: nil)
-            }
-        }
-
-        // Dispatch IO state events to associated observables
-        if isIoSourceAssociated {
-            if let item = self.observedIoStateItems[ioSourceId.string] {
-                let items = self.ioSourceItems[ioSourceId.string]
-
-                let hasAssociations = (items != nil) && (items!.actorIds.count != 0)
-                let updateRate: Int? = (items != nil) ? items!.updateRate : nil
-                
-                self.dispatchIoState(ioPointId: ioSourceId, item: item,
-                                    message: IoStateEvent.with(hasAssociations: hasAssociations, updateRate: updateRate))
-            }
-        }
-
-        if isIoActorAssociated {
-            if let item = self.observedIoStateItems[ioActorId.string] {
-                var actorIds: MutableDictionaryBox<String, MutableArrayBox<CoatyUUID>>?
-                if let ioRoute = ioRoute {
-                    actorIds = self.ioActorItems[ioRoute]
-                }
-
-                let sourceCount = actorIds?[ioActorId.string]?.count ?? 0
-                self.dispatchIoState(ioPointId: ioActorId, item: item,
-                                    message: IoStateEvent.with(hasAssociations: sourceCount > 0))
-            }
-        }
-    }
-    
-    private func updateIoSourceItems(ioSourceId: CoatyUUID, ioActorId: CoatyUUID, ioRoute: String?, updateRate: Int?) {
-        if let ioRoute = ioRoute {
-            if self.ioSourceItems[ioSourceId.string] == nil {
-                let items = IoSourceItem(associatingRoute: ioRoute, actorsIds: [ioActorId], updateRate: updateRate)
-                self.ioSourceItems[ioSourceId.string] = items
-            } else if let items = self.ioSourceItems[ioSourceId.string] {
-                if items.associatingRoute == ioRoute {
-                    if items.actorIds.firstIndex(of: ioActorId) == nil {
-                        items.actorIds.append(ioActorId)
-                    }
-                } else {
-                    // Disassociate current IO actors due to a route change.
-                    let previousRoute = items.associatingRoute
-                    items.associatingRoute = ioRoute
-                    items.actorIds.forEach { actorId in
-                        self.disassociateIoActorItems(ioSourceId: ioSourceId, ioActorId: actorId, currentIoRoute: previousRoute, newIoRoute: nil)
-                    }
-                    items.actorIds = [ioActorId]
-                }
-                items.updateRate = updateRate
-            }
-        } else {
-            if let items = self.ioSourceItems[ioSourceId.string] {
-                let i = items.actorIds.firstIndex(of: ioActorId)
-                if let i = i {
-                    items.actorIds.remove(at: i)
-                }
-                items.updateRate = updateRate
-                if items.actorIds.isEmpty {
-                    self.ioSourceItems.removeValue(forKey: ioSourceId.string)
-                }
-            }
-        }
-    }
-    
-    private func associateIoActorItems(ioSourceId: CoatyUUID, ioActor: IoActor, ioRoute: String, isExternalRoute: Bool) {
-        let ioActorId = ioActor.objectId
-
-        // Disassociate any active association for the given IO source and IO actor.
-        self.disassociateIoActorItems(ioSourceId: ioSourceId, ioActorId: ioActorId, currentIoRoute: nil, newIoRoute: ioRoute)
-
-        if let items = self.ioActorItems[ioRoute] {
-            if let sourceIds = items[ioActorId.string] {
-                if !sourceIds.contains(ioSourceId) {
-                    sourceIds.append(ioSourceId)
-                }
-            } else {
-                items[ioActorId.string] = MutableArrayBox([ioSourceId])
-            }
-        } else {
-            let newItems = MutableDictionaryBox<String, MutableArrayBox<CoatyUUID>>()
-            newItems[ioActorId.string] = MutableArrayBox([ioSourceId])
-            self.ioActorItems[ioRoute] = newItems
-            self.subscribe(topic: ioRoute)
-        }
-    }
-
-    private func disassociateIoActorItems(ioSourceId: CoatyUUID, ioActorId: CoatyUUID, currentIoRoute: String?, newIoRoute: String?) {
-        var ioRoutesToUnsubscribe: [String] = []
-        let handler = { (items: MutableDictionaryBox<String, MutableArrayBox<CoatyUUID>>, route: String) in
-            if let newIoRoute = newIoRoute, newIoRoute == route {
-                return
-            }
-            if let sourceIds = items[ioActorId.string] {
-                sourceIds.remove(ioSourceId)
-                if sourceIds.count == 0 {
-                    items.removeValue(forKey: ioActorId.string)
-                }
-                if items.count == 0 {
-                    ioRoutesToUnsubscribe.append(route)
-                }
-            }
-        }
-
-        if let currentIoRoute = currentIoRoute {
-            if let items = self.ioActorItems[currentIoRoute] {
-                handler(items, currentIoRoute)
-            }
-        } else {
-            self.ioActorItems.forEach { route, items in
-                handler(items, route)
-            }
-        }
-
-        ioRoutesToUnsubscribe.forEach { route in
-            self.ioActorItems.removeValue(forKey: route)
-            self.unsubscribe(topic: route)
-        }
-    }
-    
-    private func unobserveIoStateAndValue() {
-        // Dispatch IO state events to all IO state observers.
-        self.observedIoStateItems.forEach { _, item in
-            self.dispatchIoState(ioPointId: item.ioPointId, item: item,
-                                message: IoStateEvent.with(hasAssociations: false, updateRate: nil))
-
-            // Ensure subscriptions on IO state observables are unsubscribed automatically.
-            item.dispatchComplete()
-        }
-
-        // Clean up the current IO routes of all IO actors.
-        self.ioActorItems.forEach { ioRoute, _ in
-            self.unsubscribe(topic: ioRoute)
-        }
-    }
-
-    private func dispatchIoState(ioPointId: CoatyUUID, item: IoStateItem, message: IoStateEvent) {
-        item.dispatchNext(message: message)
-        let snapshot = IoStateEventSnapshot(
-            ioPointId: ioPointId.string,
-            hasAssociations: message.eventData.hasAssociations(),
-            updateRate: message.eventData.updateRate()
+        ioRegistry?.handleAssociate(
+            ioSourceId: ioSourceId,
+            ioActorId: ioActorId,
+            ioRoute: ioRoute,
+            updateRate: event.data.updateRate,
+            isExternalRoute: event.data.isExternalRoute
         )
-        let ioPointIdString = ioPointId.string
-        _Concurrency.Task {
-            await self.streams.ioStateFamily.sendState(snapshot, for: ioPointIdString)
-        }
     }
 }
 
@@ -924,37 +740,5 @@ extension CommunicationManager: CommunicationClientDelegate {
                 ])
             }
         }
-    }
-}
-
-class IoStateItem {
-    let ioPointId: CoatyUUID
-    var currentValue: IoStateEvent
-    
-    init(ioPointId: CoatyUUID, initialValue: IoStateEvent) {
-        self.ioPointId = ioPointId
-        self.currentValue = initialValue
-    }
-    
-    func dispatchNext(message: IoStateEvent) {
-        self.currentValue = message
-    }
-    
-    func dispatchComplete() {
-    }
-}
-
-/// Convenience class use by class attribute `IoSourceItems`
-internal class IoSourceItem {
-    var associatingRoute: String
-    
-    var actorIds: [CoatyUUID]
-    
-    var updateRate: Int?
-    
-    init(associatingRoute: String, actorsIds: [CoatyUUID], updateRate: Int?) {
-        self.associatingRoute = associatingRoute
-        self.actorIds = actorsIds
-        self.updateRate = updateRate
     }
 }

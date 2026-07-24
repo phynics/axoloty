@@ -34,20 +34,7 @@ extension CommunicationManager {
     }
 
     internal func _observeIoState(ioPointId: CoatyUUID) -> IoStateEvent {
-        if let item = observedIoStateItems[ioPointId.string] {
-            return item.currentValue
-        }
-        var hasAssociations = false
-        var updateRate: Int?
-        if let source = ioSourceItems[ioPointId.string] {
-            hasAssociations = !source.actorIds.isEmpty
-            updateRate = source.updateRate
-        } else {
-            hasAssociations = ioActorItems.values.contains { $0[ioPointId.string] != nil }
-        }
-        let value = IoStateEvent.with(hasAssociations: hasAssociations, updateRate: updateRate)
-        observedIoStateItems[ioPointId.string] = IoStateItem(ioPointId: ioPointId, initialValue: value)
-        return value
+        ioRegistry.observeIoState(ioPointId: ioPointId)
     }
 
     /// Observes raw IO value messages routed through the communication manager.
