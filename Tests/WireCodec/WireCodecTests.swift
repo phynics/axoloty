@@ -196,6 +196,54 @@ struct WireCodecTests {
     }
 
     @Test
+    func wireReaderReadsFalseBool() throws {
+        let json = #"{"flag":false}"#
+        let bytes = Array(json.utf8)
+        let reader = try bytes.withUnsafeBufferPointer { buf in
+            WireReader(bytes: buf.baseAddress!, length: buf.count)
+        }
+
+        #expect(reader.readBool("flag") == false)
+    }
+
+    @Test
+    func wireReaderTruncatedTrueLiteralDoesNotReadOutOfBounds() throws {
+        // Regression for #221: truncated "tru" must not read past the buffer.
+        let json = #"{"a":tru"#
+        let bytes = Array(json.utf8)
+        let reader = try bytes.withUnsafeBufferPointer { buf in
+            WireReader(bytes: buf.baseAddress!, length: buf.count)
+        }
+
+        #expect(reader.readBool("a") == nil)
+    }
+
+    @Test
+    func wireReaderTruncatedFalseLiteralDoesNotReadOutOfBounds() throws {
+        // Regression for #221: truncated "fals" must not read past the buffer.
+        let json = #"{"a":fals"#
+        let bytes = Array(json.utf8)
+        let reader = try bytes.withUnsafeBufferPointer { buf in
+            WireReader(bytes: buf.baseAddress!, length: buf.count)
+        }
+
+        #expect(reader.readBool("a") == nil)
+    }
+
+    @Test
+    func wireReaderTruncatedNullLiteralDoesNotReadOutOfBounds() throws {
+        // Regression for #221: truncated "nul" must not read past the buffer.
+        let json = #"{"a":nul"#
+        let bytes = Array(json.utf8)
+        let reader = try bytes.withUnsafeBufferPointer { buf in
+            WireReader(bytes: buf.baseAddress!, length: buf.count)
+        }
+
+        #expect(reader.readRaw("a") != nil)
+        #expect(reader.readBool("a") == nil)
+    }
+
+    @Test
     func wireReaderHandlesEscapedStringKeys() throws {
         let json = #"{"weird\"key":"value"}"#
         let bytes = Array(json.utf8)

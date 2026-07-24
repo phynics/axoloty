@@ -182,18 +182,21 @@ public struct WireReader {
 
         case 0x74: // 't' — true
             let start = pos
-            pos += 4
-            return ByteSlice(pointer: bytes.advanced(by: start), length: 4)
+            let end = min(pos + 4, length)
+            pos = end
+            return ByteSlice(pointer: bytes.advanced(by: start), length: end - start)
 
         case 0x66: // 'f' — false
             let start = pos
-            pos += 5
-            return ByteSlice(pointer: bytes.advanced(by: start), length: 5)
+            let end = min(pos + 5, length)
+            pos = end
+            return ByteSlice(pointer: bytes.advanced(by: start), length: end - start)
 
         case 0x6E: // 'n' — null
             let start = pos
-            pos += 4
-            return ByteSlice(pointer: bytes.advanced(by: start), length: 4)
+            let end = min(pos + 4, length)
+            pos = end
+            return ByteSlice(pointer: bytes.advanced(by: start), length: end - start)
 
         default: // number
             let start = pos
