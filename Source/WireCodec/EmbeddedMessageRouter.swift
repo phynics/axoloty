@@ -194,18 +194,9 @@ public final class EmbeddedMessageRouter: MessageRouter, @unchecked Sendable {
         // Keyed dispatch for family events
         switch eventType {
         case .advertise:
-            // Extract the event-type filter from topic level 3 (after '-')
+            // Event-type filter is the part of topic level 3 after ':'.
             if let filter = message.topic.eventTypeFilter {
-                // ByteSlice to String for key lookup — this is a host-side
-                // compatibility path; the embedded target would use ByteSlice
-                // hashing directly
-                let filterStr = filter.withBytes { ptr, len in
-                    String(bytes: UnsafeBufferPointer(
-                        start: ptr.assumingMemoryBound(to: UInt8.self),
-                        count: len
-                    ), encoding: .utf8) ?? ""
-                }
-                advertiseFamily.dispatch(key: filterStr, message)
+                advertiseFamily.dispatch(byBytes: filter, message)
             } else {
                 advertiseFamily.dispatchAll(message)
             }
@@ -217,36 +208,18 @@ public final class EmbeddedMessageRouter: MessageRouter, @unchecked Sendable {
         case .channel:
             // Channel ID is the event-type filter from topic level 3
             if let filter = message.topic.eventTypeFilter {
-                let channelId = filter.withBytes { ptr, len in
-                    String(bytes: UnsafeBufferPointer(
-                        start: ptr.assumingMemoryBound(to: UInt8.self),
-                        count: len
-                    ), encoding: .utf8) ?? ""
-                }
-                channelFamily.dispatch(key: channelId, message)
+                channelFamily.dispatch(byBytes: filter, message)
             }
 
         case .call:
             // Correlation ID is topic level 5
             if let corrId = message.topic.level(5) {
-                let corrIdStr = corrId.withBytes { ptr, len in
-                    String(bytes: UnsafeBufferPointer(
-                        start: ptr.assumingMemoryBound(to: UInt8.self),
-                        count: len
-                    ), encoding: .utf8) ?? ""
-                }
-                callFamily.dispatch(key: corrIdStr, message)
+                callFamily.dispatch(byBytes: corrId, message)
             }
 
         case .update:
             if let corrId = message.topic.level(5) {
-                let corrIdStr = corrId.withBytes { ptr, len in
-                    String(bytes: UnsafeBufferPointer(
-                        start: ptr.assumingMemoryBound(to: UInt8.self),
-                        count: len
-                    ), encoding: .utf8) ?? ""
-                }
-                updateFamily.dispatch(key: corrIdStr, message)
+                updateFamily.dispatch(byBytes: corrId, message)
             }
 
         default:

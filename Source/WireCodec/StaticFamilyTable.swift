@@ -99,3 +99,35 @@ public struct StaticFamilyTable<Key: Hashable & Sendable> {
         entries.reduce(0) { $0 + ($1 != nil ? 1 : 0) }
     }
 }
+
+extension StaticFamilyTable where Key == String {
+
+    /// Dispatches `message` to all subscribers whose stored `String` key
+    /// matches the given byte slice, without allocating a `String` from the
+    /// slice.
+    ///
+    /// The stored keys remain owned `String` values (they must outlive the
+    /// borrowed message); only the lookup avoids the per-dispatch `String`
+    /// allocation by comparing the slice bytes against each stored key's
+    /// UTF-8 view directly.
+    public func dispatch(byBytes keyBytes: ByteSlice, _ message: BorrowedMessage) {
+        for i in 0..<capacity {
+            guard let entry = entries[i] else { continue }
+            if Self.string(entry.key, equals: keyBytes) {
+                entry.table.dispatch(message)
+            }
+        }
+    }
+
+    @inline(__always)
+    private static func string(_ s: String, equals slice: ByteSlice) -> Bool {
+        let utf8 = s.utf8
+        guard utf8.count == slice.length else { return false }
+        var idx = utf8.startIndex
+        for i in 0..<slice.length {
+            if utf8[idx] != slice.byte(at: i) { return false }
+            utf8.formIndex(after: &idx)
+        }
+        return true
+    }
+}

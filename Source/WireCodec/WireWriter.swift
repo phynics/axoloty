@@ -160,34 +160,38 @@ public struct WireWriter {
     }
 
     mutating func writeUUID(_ value: UUID16) throws(WireEncodeError) {
-        // Format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (36 chars)
+        // Format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (36 chars).
+        // Unrolled against a static nibble→hex mapping so no Array or Set
+        // is allocated on the encode hot path.
         guard position + 36 <= capacity else { throw .bufferOverflow }
-        let hexChars: [UInt8] = [
-            0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
-            0x38, 0x39, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66
-        ]
         let b = value.bytes
-        let nibbles: [UInt8] = [
-            b.0 >> 4, b.0 & 0xF, b.1 >> 4, b.1 & 0xF,
-            b.2 >> 4, b.2 & 0xF, b.3 >> 4, b.3 & 0xF,
-            b.4 >> 4, b.4 & 0xF, b.5 >> 4, b.5 & 0xF,
-            b.6 >> 4, b.6 & 0xF, b.7 >> 4, b.7 & 0xF,
-            b.8 >> 4, b.8 & 0xF, b.9 >> 4, b.9 & 0xF,
-            b.10 >> 4, b.10 & 0xF, b.11 >> 4, b.11 & 0xF,
-            b.12 >> 4, b.12 & 0xF, b.13 >> 4, b.13 & 0xF,
-            b.14 >> 4, b.14 & 0xF, b.15 >> 4, b.15 & 0xF,
-        ]
-        let dashes: Set<Int> = [8, 13, 18, 23]
-        var nibIdx = 0
-        for i in 0..<36 {
-            if dashes.contains(i) {
-                buffer[position + i] = 0x2D // '-'
-            } else {
-                buffer[position + i] = hexChars[Int(nibbles[nibIdx])]
-                nibIdx += 1
-            }
-        }
+        let p = position
+        buffer[p] = Self.hexChar(b.0 >> 4); buffer[p + 1] = Self.hexChar(b.0 & 0xF)
+        buffer[p + 2] = Self.hexChar(b.1 >> 4); buffer[p + 3] = Self.hexChar(b.1 & 0xF)
+        buffer[p + 4] = Self.hexChar(b.2 >> 4); buffer[p + 5] = Self.hexChar(b.2 & 0xF)
+        buffer[p + 6] = Self.hexChar(b.3 >> 4); buffer[p + 7] = Self.hexChar(b.3 & 0xF)
+        buffer[p + 8] = 0x2D // '-'
+        buffer[p + 9] = Self.hexChar(b.4 >> 4); buffer[p + 10] = Self.hexChar(b.4 & 0xF)
+        buffer[p + 11] = Self.hexChar(b.5 >> 4); buffer[p + 12] = Self.hexChar(b.5 & 0xF)
+        buffer[p + 13] = 0x2D
+        buffer[p + 14] = Self.hexChar(b.6 >> 4); buffer[p + 15] = Self.hexChar(b.6 & 0xF)
+        buffer[p + 16] = Self.hexChar(b.7 >> 4); buffer[p + 17] = Self.hexChar(b.7 & 0xF)
+        buffer[p + 18] = 0x2D
+        buffer[p + 19] = Self.hexChar(b.8 >> 4); buffer[p + 20] = Self.hexChar(b.8 & 0xF)
+        buffer[p + 21] = Self.hexChar(b.9 >> 4); buffer[p + 22] = Self.hexChar(b.9 & 0xF)
+        buffer[p + 23] = 0x2D
+        buffer[p + 24] = Self.hexChar(b.10 >> 4); buffer[p + 25] = Self.hexChar(b.10 & 0xF)
+        buffer[p + 26] = Self.hexChar(b.11 >> 4); buffer[p + 27] = Self.hexChar(b.11 & 0xF)
+        buffer[p + 28] = Self.hexChar(b.12 >> 4); buffer[p + 29] = Self.hexChar(b.12 & 0xF)
+        buffer[p + 30] = Self.hexChar(b.13 >> 4); buffer[p + 31] = Self.hexChar(b.13 & 0xF)
+        buffer[p + 32] = Self.hexChar(b.14 >> 4); buffer[p + 33] = Self.hexChar(b.14 & 0xF)
+        buffer[p + 34] = Self.hexChar(b.15 >> 4); buffer[p + 35] = Self.hexChar(b.15 & 0xF)
         position += 36
+    }
+
+    @inline(__always)
+    private static func hexChar(_ nibble: UInt8) -> UInt8 {
+        nibble < 10 ? 0x30 + nibble : 0x61 + (nibble - 10)
     }
 }
 
