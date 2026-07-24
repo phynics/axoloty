@@ -12,13 +12,27 @@
 
 // MARK: - AssociateEventData
 
+/// Wire DTO mirroring `AssociateEventData`, decoded from JSON via
+/// ``WireReader`` and encoded via ``WireWriter``.
 public struct AssociateWireData: WireDecodable, WireEncodable, Equatable {
+    /// The UUID of the IO source being associated.
     public let ioSourceId: UUID16
+    /// The UUID of the IO actor the source associates with.
     public let ioActorId: UUID16
+    /// The optional associating route, as borrowed UTF-8 bytes.
     public let associatingRoute: ByteSlice?
+    /// Whether the route is external. Encoded only when `true`.
     public let isExternalRoute: Bool?
+    /// The optional update rate in milliseconds.
     public let updateRate: Int?
 
+    /// Decodes an associate event from `reader`.
+    ///
+    /// `ioSourceId` and `ioActorId` are required; the remaining fields are
+    /// optional and default to nil when absent.
+    ///
+    /// - Parameter reader: A ``WireReader`` over the JSON payload.
+    /// - Throws: ``WireDecodeError`` if `ioSourceId` or `ioActorId` is missing.
     public init(from reader: WireReader) throws(WireDecodeError) {
         guard let sourceId = reader.readUUID("ioSourceId") else {
             throw WireDecodeError(.missingField, field: "ioSourceId")
@@ -33,6 +47,13 @@ public struct AssociateWireData: WireDecodable, WireEncodable, Equatable {
         self.updateRate = reader.readInt("updateRate")
     }
 
+    /// Encodes this event into `writer` as a JSON object.
+    ///
+    /// `ioSourceId` and `ioActorId` are always written; the optional fields
+    /// are written only when present (`isExternalRoute` only when `true`).
+    ///
+    /// - Parameter writer: The ``WireWriter`` to encode into.
+    /// - Throws: ``WireEncodeError`` if the buffer overflows.
     public func encode(to writer: inout WireWriter) throws(WireEncodeError) {
         try writer.beginObject()
         try writer.writeUUIDField("ioSourceId", ioSourceId)
@@ -56,9 +77,16 @@ public struct AssociateWireData: WireDecodable, WireEncodable, Equatable {
 
 // MARK: - AdvertiseEventData
 
+/// Wire DTO mirroring `AdvertiseEventData`, carrying the advertised object
+/// as a raw JSON fragment.
 public struct AdvertiseWireData: WireDecodable, WireEncodable, Equatable {
+    /// The raw JSON bytes of the advertised object.
     public let object: ByteSlice
 
+    /// Decodes an advertise event from `reader`.
+    ///
+    /// - Parameter reader: A ``WireReader`` over the JSON payload.
+    /// - Throws: ``WireDecodeError`` if the `object` field is missing.
     public init(from reader: WireReader) throws(WireDecodeError) {
         guard let obj = reader.readRaw("object") else {
             throw WireDecodeError(.missingField, field: "object")
@@ -66,6 +94,10 @@ public struct AdvertiseWireData: WireDecodable, WireEncodable, Equatable {
         self.object = obj
     }
 
+    /// Encodes this event into `writer` as a JSON object wrapping `object`.
+    ///
+    /// - Parameter writer: The ``WireWriter`` to encode into.
+    /// - Throws: ``WireEncodeError`` if the buffer overflows.
     public func encode(to writer: inout WireWriter) throws(WireEncodeError) {
         try writer.beginObject()
         try writer.writeRawField("object", object)
@@ -75,9 +107,17 @@ public struct AdvertiseWireData: WireDecodable, WireEncodable, Equatable {
 
 // MARK: - DeadvertiseEventData
 
+/// Wire DTO mirroring `DeadvertiseEventData`, carrying the list of object IDs
+/// to remove as parsed ``UUID16`` values.
 public struct DeadvertiseWireData: WireDecodable, WireEncodable, Equatable {
+    /// The object IDs being deadvertised.
     public let objectIds: [UUID16]
 
+    /// Decodes a deadvertise event from `reader`, parsing the `objectIds`
+    /// JSON array of hyphenated UUID strings into ``UUID16`` values.
+    ///
+    /// - Parameter reader: A ``WireReader`` over the JSON payload.
+    /// - Throws: ``WireDecodeError`` if the `objectIds` field is missing.
     public init(from reader: WireReader) throws(WireDecodeError) {
         guard let idsSlice = reader.readRaw("objectIds") else {
             throw WireDecodeError(.missingField, field: "objectIds")
@@ -108,6 +148,11 @@ public struct DeadvertiseWireData: WireDecodable, WireEncodable, Equatable {
         self.objectIds = ids
     }
 
+    /// Encodes this event into `writer`, serializing `objectIds` as a JSON
+    /// array of hyphenated UUID strings.
+    ///
+    /// - Parameter writer: The ``WireWriter`` to encode into.
+    /// - Throws: ``WireEncodeError`` if the buffer overflows.
     public func encode(to writer: inout WireWriter) throws(WireEncodeError) {
         try writer.beginObject()
         try writer.writeBytes("\"objectIds\":[")
@@ -121,6 +166,7 @@ public struct DeadvertiseWireData: WireDecodable, WireEncodable, Equatable {
         try writer.endObject()
     }
 
+    /// Returns `true` if both events reference the same object IDs.
     public static func == (lhs: DeadvertiseWireData, rhs: DeadvertiseWireData) -> Bool {
         lhs.objectIds == rhs.objectIds
     }
@@ -128,9 +174,16 @@ public struct DeadvertiseWireData: WireDecodable, WireEncodable, Equatable {
 
 // MARK: - IoValueEventData
 
+/// Wire DTO mirroring `IoValueEventData`, carrying the IO value payload as a
+/// raw JSON fragment.
 public struct IoValueWireData: WireDecodable, WireEncodable, Equatable {
+    /// The raw JSON bytes of the IO value payload.
     public let payload: ByteSlice
 
+    /// Decodes an IoValue event from `reader`.
+    ///
+    /// - Parameter reader: A ``WireReader`` over the JSON payload.
+    /// - Throws: ``WireDecodeError`` if the `payload` field is missing.
     public init(from reader: WireReader) throws(WireDecodeError) {
         guard let p = reader.readRaw("payload") else {
             throw WireDecodeError(.missingField, field: "payload")
@@ -138,6 +191,10 @@ public struct IoValueWireData: WireDecodable, WireEncodable, Equatable {
         self.payload = p
     }
 
+    /// Encodes this event into `writer` as a JSON object wrapping `payload`.
+    ///
+    /// - Parameter writer: The ``WireWriter`` to encode into.
+    /// - Throws: ``WireEncodeError`` if the buffer overflows.
     public func encode(to writer: inout WireWriter) throws(WireEncodeError) {
         try writer.beginObject()
         try writer.writeRawField("payload", payload)
@@ -147,15 +204,30 @@ public struct IoValueWireData: WireDecodable, WireEncodable, Equatable {
 
 // MARK: - ChannelEventData
 
+/// Wire DTO mirroring `ChannelEventData`, carrying optional object and
+/// private-data fragments.
 public struct ChannelWireData: WireDecodable, WireEncodable, Equatable {
+    /// The optional channel object as raw JSON bytes.
     public let object: ByteSlice?
+    /// The optional private data as raw JSON bytes.
     public let privateData: ByteSlice?
 
+    /// Decodes a channel event from `reader`.
+    ///
+    /// Both `object` and `privateData` are optional; absent fields default
+    /// to nil.
+    ///
+    /// - Parameter reader: A ``WireReader`` over the JSON payload.
     public init(from reader: WireReader) throws(WireDecodeError) {
         self.object = reader.readRaw("object")
         self.privateData = reader.readRaw("privateData")
     }
 
+    /// Encodes this event into `writer` as a JSON object, writing only the
+    /// fields that are present.
+    ///
+    /// - Parameter writer: The ``WireWriter`` to encode into.
+    /// - Throws: ``WireEncodeError`` if the buffer overflows.
     public func encode(to writer: inout WireWriter) throws(WireEncodeError) {
         try writer.beginObject()
         if let obj = object {
@@ -168,6 +240,7 @@ public struct ChannelWireData: WireDecodable, WireEncodable, Equatable {
         try writer.endObject()
     }
 
+    /// Returns `true` if both events carry equal object and private-data bytes.
     public static func == (lhs: ChannelWireData, rhs: ChannelWireData) -> Bool {
         lhs.object == rhs.object && lhs.privateData == rhs.privateData
     }
@@ -175,12 +248,22 @@ public struct ChannelWireData: WireDecodable, WireEncodable, Equatable {
 
 // MARK: - DiscoverEventData
 
+/// Wire DTO mirroring `DiscoverEventData`, carrying optional filter criteria.
 public struct DiscoverWireData: WireDecodable, WireEncodable, Equatable {
+    /// The optional object types filter as raw JSON bytes.
     public let objectTypes: ByteSlice?
+    /// The optional core types filter as raw JSON bytes.
     public let coreTypes: ByteSlice?
+    /// The optional object filter as raw JSON bytes.
     public let objectFilter: ByteSlice?
+    /// Whether the discover is external.
     public let external: Bool?
 
+    /// Decodes a discover event from `reader`.
+    ///
+    /// All fields are optional; absent fields default to nil.
+    ///
+    /// - Parameter reader: A ``WireReader`` over the JSON payload.
     public init(from reader: WireReader) throws(WireDecodeError) {
         self.objectTypes = reader.readRaw("objectTypes")
         self.coreTypes = reader.readRaw("coreTypes")
@@ -188,6 +271,11 @@ public struct DiscoverWireData: WireDecodable, WireEncodable, Equatable {
         self.external = reader.readBool("external")
     }
 
+    /// Encodes this event into `writer` as a JSON object, writing only the
+    /// fields that are present.
+    ///
+    /// - Parameter writer: The ``WireWriter`` to encode into.
+    /// - Throws: ``WireEncodeError`` if the buffer overflows.
     public func encode(to writer: inout WireWriter) throws(WireEncodeError) {
         try writer.beginObject()
         var first = true
@@ -213,12 +301,22 @@ public struct DiscoverWireData: WireDecodable, WireEncodable, Equatable {
 
 // MARK: - QueryEventData
 
+/// Wire DTO mirroring `QueryEventData`, carrying optional filter criteria.
 public struct QueryWireData: WireDecodable, WireEncodable, Equatable {
+    /// The optional object types filter as raw JSON bytes.
     public let objectTypes: ByteSlice?
+    /// The optional core types filter as raw JSON bytes.
     public let coreTypes: ByteSlice?
+    /// The optional object filter as raw JSON bytes.
     public let objectFilter: ByteSlice?
+    /// Whether the query is external.
     public let external: Bool?
 
+    /// Decodes a query event from `reader`.
+    ///
+    /// All fields are optional; absent fields default to nil.
+    ///
+    /// - Parameter reader: A ``WireReader`` over the JSON payload.
     public init(from reader: WireReader) throws(WireDecodeError) {
         self.objectTypes = reader.readRaw("objectTypes")
         self.coreTypes = reader.readRaw("coreTypes")
@@ -226,6 +324,11 @@ public struct QueryWireData: WireDecodable, WireEncodable, Equatable {
         self.external = reader.readBool("external")
     }
 
+    /// Encodes this event into `writer` as a JSON object, writing only the
+    /// fields that are present.
+    ///
+    /// - Parameter writer: The ``WireWriter`` to encode into.
+    /// - Throws: ``WireEncodeError`` if the buffer overflows.
     public func encode(to writer: inout WireWriter) throws(WireEncodeError) {
         try writer.beginObject()
         var first = true
@@ -251,11 +354,21 @@ public struct QueryWireData: WireDecodable, WireEncodable, Equatable {
 
 // MARK: - CallEventData
 
+/// Wire DTO mirroring `CallEventData`, carrying a remote operation request.
 public struct CallWireData: WireDecodable, WireEncodable, Equatable {
+    /// The operation type name, as borrowed UTF-8 bytes.
     public let operationType: ByteSlice
+    /// The optional operation parameters as raw JSON bytes.
     public let parameters: ByteSlice?
+    /// The optional call timeout in milliseconds.
     public let timeout: Int?
 
+    /// Decodes a call event from `reader`.
+    ///
+    /// `operationType` is required; `parameters` and `timeout` are optional.
+    ///
+    /// - Parameter reader: A ``WireReader`` over the JSON payload.
+    /// - Throws: ``WireDecodeError`` if `operationType` is missing.
     public init(from reader: WireReader) throws(WireDecodeError) {
         guard let opType = reader.readString("operationType") else {
             throw WireDecodeError(.missingField, field: "operationType")
@@ -265,6 +378,11 @@ public struct CallWireData: WireDecodable, WireEncodable, Equatable {
         self.timeout = reader.readInt("timeout")
     }
 
+    /// Encodes this event into `writer` as a JSON object. `operationType` is
+    /// always written; `parameters` and `timeout` only when present.
+    ///
+    /// - Parameter writer: The ``WireWriter`` to encode into.
+    /// - Throws: ``WireEncodeError`` if the buffer overflows.
     public func encode(to writer: inout WireWriter) throws(WireEncodeError) {
         try writer.beginObject()
         try writer.writeStringField("operationType", operationType)
@@ -282,17 +400,31 @@ public struct CallWireData: WireDecodable, WireEncodable, Equatable {
 
 // MARK: - ReturnEventData
 
+/// Wire DTO mirroring `ReturnEventData`, carrying a remote operation result.
 public struct ReturnWireData: WireDecodable, WireEncodable, Equatable {
+    /// The optional result as raw JSON bytes.
     public let result: ByteSlice?
+    /// The optional execution info as raw JSON bytes.
     public let executionInfo: ByteSlice?
+    /// The optional status code, as borrowed UTF-8 bytes.
     public let status: ByteSlice?
 
+    /// Decodes a return event from `reader`.
+    ///
+    /// All fields are optional; absent fields default to nil.
+    ///
+    /// - Parameter reader: A ``WireReader`` over the JSON payload.
     public init(from reader: WireReader) throws(WireDecodeError) {
         self.result = reader.readRaw("result")
         self.executionInfo = reader.readRaw("executionInfo")
         self.status = reader.readString("status")
     }
 
+    /// Encodes this event into `writer` as a JSON object, writing only the
+    /// fields that are present.
+    ///
+    /// - Parameter writer: The ``WireWriter`` to encode into.
+    /// - Throws: ``WireEncodeError`` if the buffer overflows.
     public func encode(to writer: inout WireWriter) throws(WireEncodeError) {
         try writer.beginObject()
         var first = true
@@ -314,10 +446,19 @@ public struct ReturnWireData: WireDecodable, WireEncodable, Equatable {
 
 // MARK: - ResolveEventData
 
+/// Wire DTO mirroring `ResolveEventData`, carrying a resolved object.
 public struct ResolveWireData: WireDecodable, WireEncodable, Equatable {
+    /// The resolved object as raw JSON bytes.
     public let object: ByteSlice
+    /// The optional private data as raw JSON bytes.
     public let privateData: ByteSlice?
 
+    /// Decodes a resolve event from `reader`.
+    ///
+    /// `object` is required; `privateData` is optional.
+    ///
+    /// - Parameter reader: A ``WireReader`` over the JSON payload.
+    /// - Throws: ``WireDecodeError`` if the `object` field is missing.
     public init(from reader: WireReader) throws(WireDecodeError) {
         guard let obj = reader.readRaw("object") else {
             throw WireDecodeError(.missingField, field: "object")
@@ -326,6 +467,11 @@ public struct ResolveWireData: WireDecodable, WireEncodable, Equatable {
         self.privateData = reader.readRaw("privateData")
     }
 
+    /// Encodes this event into `writer` as a JSON object. `object` is always
+    /// written; `privateData` only when present.
+    ///
+    /// - Parameter writer: The ``WireWriter`` to encode into.
+    /// - Throws: ``WireEncodeError`` if the buffer overflows.
     public func encode(to writer: inout WireWriter) throws(WireEncodeError) {
         try writer.beginObject()
         try writer.writeRawField("object", object)
@@ -339,9 +485,15 @@ public struct ResolveWireData: WireDecodable, WireEncodable, Equatable {
 
 // MARK: - RetrieveEventData
 
+/// Wire DTO mirroring `RetrieveEventData`, carrying a retrieved object.
 public struct RetrieveWireData: WireDecodable, WireEncodable, Equatable {
+    /// The retrieved object as raw JSON bytes.
     public let object: ByteSlice
 
+    /// Decodes a retrieve event from `reader`.
+    ///
+    /// - Parameter reader: A ``WireReader`` over the JSON payload.
+    /// - Throws: ``WireDecodeError`` if the `object` field is missing.
     public init(from reader: WireReader) throws(WireDecodeError) {
         guard let obj = reader.readRaw("object") else {
             throw WireDecodeError(.missingField, field: "object")
@@ -349,6 +501,10 @@ public struct RetrieveWireData: WireDecodable, WireEncodable, Equatable {
         self.object = obj
     }
 
+    /// Encodes this event into `writer` as a JSON object wrapping `object`.
+    ///
+    /// - Parameter writer: The ``WireWriter`` to encode into.
+    /// - Throws: ``WireEncodeError`` if the buffer overflows.
     public func encode(to writer: inout WireWriter) throws(WireEncodeError) {
         try writer.beginObject()
         try writer.writeRawField("object", object)
@@ -358,9 +514,15 @@ public struct RetrieveWireData: WireDecodable, WireEncodable, Equatable {
 
 // MARK: - UpdateEventData
 
+/// Wire DTO mirroring `UpdateEventData`, carrying an updated object.
 public struct UpdateWireData: WireDecodable, WireEncodable, Equatable {
+    /// The updated object as raw JSON bytes.
     public let object: ByteSlice
 
+    /// Decodes an update event from `reader`.
+    ///
+    /// - Parameter reader: A ``WireReader`` over the JSON payload.
+    /// - Throws: ``WireDecodeError`` if the `object` field is missing.
     public init(from reader: WireReader) throws(WireDecodeError) {
         guard let obj = reader.readRaw("object") else {
             throw WireDecodeError(.missingField, field: "object")
@@ -368,6 +530,10 @@ public struct UpdateWireData: WireDecodable, WireEncodable, Equatable {
         self.object = obj
     }
 
+    /// Encodes this event into `writer` as a JSON object wrapping `object`.
+    ///
+    /// - Parameter writer: The ``WireWriter`` to encode into.
+    /// - Throws: ``WireEncodeError`` if the buffer overflows.
     public func encode(to writer: inout WireWriter) throws(WireEncodeError) {
         try writer.beginObject()
         try writer.writeRawField("object", object)
@@ -377,15 +543,28 @@ public struct UpdateWireData: WireDecodable, WireEncodable, Equatable {
 
 // MARK: - CompleteEventData
 
+/// Wire DTO mirroring `CompleteEventData`, carrying completion state.
 public struct CompleteWireData: WireDecodable, WireEncodable, Equatable {
+    /// The optional object as raw JSON bytes.
     public let object: ByteSlice?
+    /// Whether the operation completed.
     public let completed: Bool?
 
+    /// Decodes a complete event from `reader`.
+    ///
+    /// Both `object` and `completed` are optional; absent fields default to nil.
+    ///
+    /// - Parameter reader: A ``WireReader`` over the JSON payload.
     public init(from reader: WireReader) throws(WireDecodeError) {
         self.object = reader.readRaw("object")
         self.completed = reader.readBool("completed")
     }
 
+    /// Encodes this event into `writer` as a JSON object, writing only the
+    /// fields that are present.
+    ///
+    /// - Parameter writer: The ``WireWriter`` to encode into.
+    /// - Throws: ``WireEncodeError`` if the buffer overflows.
     public func encode(to writer: inout WireWriter) throws(WireEncodeError) {
         try writer.beginObject()
         var first = true
@@ -403,10 +582,19 @@ public struct CompleteWireData: WireDecodable, WireEncodable, Equatable {
 
 // MARK: - IoStateEventData
 
+/// Wire DTO mirroring `IoStateEventData`, carrying IO association state.
 public struct IoStateWireData: WireDecodable, WireEncodable, Equatable {
+    /// Whether the IO source currently has associations.
     public let hasAssociations: Bool
+    /// The optional update rate in milliseconds.
     public let updateRate: Int?
 
+    /// Decodes an IoState event from `reader`.
+    ///
+    /// `hasAssociations` is required; `updateRate` is optional.
+    ///
+    /// - Parameter reader: A ``WireReader`` over the JSON payload.
+    /// - Throws: ``WireDecodeError`` if `hasAssociations` is missing.
     public init(from reader: WireReader) throws(WireDecodeError) {
         guard let ha = reader.readBool("hasAssociations") else {
             throw WireDecodeError(.missingField, field: "hasAssociations")
@@ -415,6 +603,11 @@ public struct IoStateWireData: WireDecodable, WireEncodable, Equatable {
         self.updateRate = reader.readInt("updateRate")
     }
 
+    /// Encodes this event into `writer` as a JSON object. `hasAssociations`
+    /// is always written; `updateRate` only when present.
+    ///
+    /// - Parameter writer: The ``WireWriter`` to encode into.
+    /// - Throws: ``WireEncodeError`` if the buffer overflows.
     public func encode(to writer: inout WireWriter) throws(WireEncodeError) {
         try writer.beginObject()
         try writer.writeBoolField("hasAssociations", hasAssociations)

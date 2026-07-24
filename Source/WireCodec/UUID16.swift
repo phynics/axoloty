@@ -6,11 +6,13 @@
 /// the embedded wire path. Can be parsed from a 36-character hyphenated UUID
 /// string (as bytes) without allocating a String.
 public struct UUID16: Equatable, Hashable, Sendable {
+    /// The 16 raw bytes of the UUID.
     public let bytes: (
         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
     )
 
+    /// Returns `true` if the two UUIDs have identical byte sequences.
     public static func == (lhs: UUID16, rhs: UUID16) -> Bool {
         lhs.bytes.0 == rhs.bytes.0 && lhs.bytes.1 == rhs.bytes.1 &&
         lhs.bytes.2 == rhs.bytes.2 && lhs.bytes.3 == rhs.bytes.3 &&
@@ -22,6 +24,8 @@ public struct UUID16: Equatable, Hashable, Sendable {
         lhs.bytes.14 == rhs.bytes.14 && lhs.bytes.15 == rhs.bytes.15
     }
 
+    /// Feeds all 16 bytes into `hasher` so ``UUID16`` can be used as a
+    /// `Set` or `Dictionary` key.
     public func hash(into hasher: inout Hasher) {
         hasher.combine(bytes.0)
         hasher.combine(bytes.1)
@@ -41,6 +45,9 @@ public struct UUID16: Equatable, Hashable, Sendable {
         hasher.combine(bytes.15)
     }
 
+    /// Creates a UUID from its 16 raw bytes.
+    ///
+    /// - Parameter bytes: The 16 bytes of the UUID.
     public init(bytes: (
         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
         UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8

@@ -10,7 +10,9 @@
 /// The Coaty topic structure is:
 /// `coaty/<version>/<namespace>/<eventType>[filter]/<sourceId>[/<correlationId>]`
 public struct TopicView {
+    /// The raw pointer to the topic byte buffer.
     @usableFromInline let bytes: UnsafeRawPointer
+    /// The number of valid bytes pointed to by ``bytes``.
     @usableFromInline let byteCount: Int
 
     /// Up to 7 levels: protocol, version, namespace, event, sourceId,
@@ -20,9 +22,19 @@ public struct TopicView {
     }
     private var _levelCount: Int
 
+    /// Start offsets of up to 7 parsed topic levels within ``bytes``.
     @usableFromInline internal var levelOffsets: (Int, Int, Int, Int, Int, Int, Int)
+    /// Lengths of up to 7 parsed topic levels within ``bytes``.
     @usableFromInline internal var levelLengths: (Int, Int, Int, Int, Int, Int, Int)
 
+    /// Creates a topic view by parsing the given topic bytes in place.
+    ///
+    /// The view holds the pointer without copying; the caller must ensure the
+    /// buffer remains valid for the view's lifetime.
+    ///
+    /// - Parameters:
+    ///   - topicBytes: A pointer to the UTF-8 topic bytes.
+    ///   - length: The number of valid bytes at `topicBytes`.
     public init(topicBytes: UnsafePointer<UInt8>, length: Int) {
         self.bytes = UnsafeRawPointer(topicBytes)
         self.byteCount = length
@@ -150,20 +162,35 @@ public struct TopicView {
 
 /// Foundation-free event type enum, mirroring `CommunicationEventType`.
 public enum WireEventType: Sendable {
+    /// Advertise event (`ADV`).
     case advertise
+    /// Deadvertise event (`DAD`).
     case deadvertise
+    /// Channel event (`CHN`).
     case channel
+    /// Associate event (`ASC`).
     case associate
+    /// IoValue event (`IOV`).
     case ioValue
+    /// Discover event (`DSC`).
     case discover
+    /// Resolve event (`RSV`).
     case resolve
+    /// Query event (`QRY`).
     case query
+    /// Retrieve event (`RTV`).
     case retrieve
+    /// Update event (`UPD`).
     case update
+    /// Complete event (`CPL`).
     case complete
+    /// Call event (`CLL`).
     case call
+    /// Return event (`RTN`).
     case returnEvent
 
+    /// Returns `true` for fire-and-forget event types that carry no
+    /// correlation ID (advertise, deadvertise, channel, associate, ioValue).
     public var isOneWay: Bool {
         switch self {
         case .advertise, .deadvertise, .channel, .associate, .ioValue:

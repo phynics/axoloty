@@ -23,6 +23,12 @@ public final class EmbeddedMessageRouter: MessageRouter, @unchecked Sendable {
     private var callFamily: StaticFamilyTable<String>
     private var updateFamily: StaticFamilyTable<String>
 
+    /// Creates a router with the given subscriber and family capacity limits.
+    ///
+    /// - Parameters:
+    ///   - maxSubscribers: Maximum subscribers per flat event-type table.
+    ///   - maxFamilyEntries: Maximum keyed entries per family table.
+    ///   - maxFamilySubscribers: Maximum subscribers per family entry.
     public init(
         maxSubscribers: Int = WireBufferConfig.maxSubscribers,
         maxFamilyEntries: Int = WireBufferConfig.maxFamilyEntries,
@@ -59,6 +65,12 @@ public final class EmbeddedMessageRouter: MessageRouter, @unchecked Sendable {
 
     // MARK: - Flat subscribers (per event type)
 
+    /// Subscribes a handler for a specific event type.
+    ///
+    /// - Parameters:
+    ///   - eventType: The event type to observe.
+    ///   - handler: A closure invoked synchronously for each matching message.
+    /// - Returns: A token for later unsubscribe, or nil if the table is full.
     @discardableResult
     public func subscribe(
         _ eventType: WireEventType,
@@ -70,12 +82,21 @@ public final class EmbeddedMessageRouter: MessageRouter, @unchecked Sendable {
         return token
     }
 
+    /// Removes the subscriber for the given event type identified by `token`.
+    ///
+    /// - Parameters:
+    ///   - eventType: The event type the token was issued for.
+    ///   - token: The token returned by ``subscribe(_:_:)``.
     public func unsubscribe(_ eventType: WireEventType, _ token: StaticDispatchTable.Token) {
         guard var table = tables[eventType] else { return }
         table.unsubscribe(token)
         tables[eventType] = table
     }
 
+    /// Subscribes a handler for raw (non-Coaty) topics.
+    ///
+    /// - Parameter handler: A closure invoked synchronously for each raw message.
+    /// - Returns: A token for later unsubscribe, or nil if the table is full.
     @discardableResult
     public func subscribeRaw(
         _ handler: @Sendable @escaping (BorrowedMessage) -> Void
@@ -83,10 +104,17 @@ public final class EmbeddedMessageRouter: MessageRouter, @unchecked Sendable {
         rawTable.subscribe(handler)
     }
 
+    /// Removes the raw-topic subscriber identified by `token`.
+    ///
+    /// - Parameter token: The token returned by ``subscribeRaw(_:)``.
     public func unsubscribeRaw(_ token: StaticDispatchTable.Token) {
         rawTable.unsubscribe(token)
     }
 
+    /// Subscribes a handler for IoValue events.
+    ///
+    /// - Parameter handler: A closure invoked synchronously for each IoValue message.
+    /// - Returns: A token for later unsubscribe, or nil if the table is full.
     @discardableResult
     public func subscribeIoValue(
         _ handler: @Sendable @escaping (BorrowedMessage) -> Void
@@ -94,6 +122,9 @@ public final class EmbeddedMessageRouter: MessageRouter, @unchecked Sendable {
         ioValueTable.subscribe(handler)
     }
 
+    /// Removes the IoValue subscriber identified by `token`.
+    ///
+    /// - Parameter token: The token returned by ``subscribeIoValue(_:)``.
     public func unsubscribeIoValue(_ token: StaticDispatchTable.Token) {
         ioValueTable.unsubscribe(token)
     }
@@ -109,6 +140,9 @@ public final class EmbeddedMessageRouter: MessageRouter, @unchecked Sendable {
         advertiseFamily.subscribe(key: filter, handler)
     }
 
+    /// Removes the Advertise-family subscriber identified by `token`.
+    ///
+    /// - Parameter token: The token returned by ``subscribeAdvertise(filter:_:)``.
     public func unsubscribeAdvertise(_ token: StaticFamilyTable<String>.Token) {
         advertiseFamily.unsubscribe(token)
     }
@@ -122,6 +156,9 @@ public final class EmbeddedMessageRouter: MessageRouter, @unchecked Sendable {
         channelFamily.subscribe(key: channelId, handler)
     }
 
+    /// Removes the Channel-family subscriber identified by `token`.
+    ///
+    /// - Parameter token: The token returned by ``subscribeChannel(channelId:_:)``.
     public func unsubscribeChannel(_ token: StaticFamilyTable<String>.Token) {
         channelFamily.unsubscribe(token)
     }
@@ -135,6 +172,9 @@ public final class EmbeddedMessageRouter: MessageRouter, @unchecked Sendable {
         ioStateFamily.subscribe(key: sourceId, handler)
     }
 
+    /// Removes the IoState-family subscriber identified by `token`.
+    ///
+    /// - Parameter token: The token returned by ``subscribeIoState(sourceId:_:)``.
     public func unsubscribeIoState(_ token: StaticFamilyTable<String>.Token) {
         ioStateFamily.unsubscribe(token)
     }
@@ -148,6 +188,9 @@ public final class EmbeddedMessageRouter: MessageRouter, @unchecked Sendable {
         callFamily.subscribe(key: correlationId, handler)
     }
 
+    /// Removes the Call-family subscriber identified by `token`.
+    ///
+    /// - Parameter token: The token returned by ``subscribeCall(correlationId:_:)``.
     public func unsubscribeCall(_ token: StaticFamilyTable<String>.Token) {
         callFamily.unsubscribe(token)
     }
@@ -161,6 +204,9 @@ public final class EmbeddedMessageRouter: MessageRouter, @unchecked Sendable {
         updateFamily.subscribe(key: correlationId, handler)
     }
 
+    /// Removes the Update-family subscriber identified by `token`.
+    ///
+    /// - Parameter token: The token returned by ``subscribeUpdate(correlationId:_:)``.
     public func unsubscribeUpdate(_ token: StaticFamilyTable<String>.Token) {
         updateFamily.unsubscribe(token)
     }
