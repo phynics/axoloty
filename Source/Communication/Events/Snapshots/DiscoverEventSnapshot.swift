@@ -3,7 +3,7 @@
 import Foundation
 
 /// A value-typed snapshot of a `DiscoverEvent` suitable for concurrent event streams.
-public struct DiscoverEventSnapshot: EventSnapshot, Codable, Equatable, Sendable {
+public struct DiscoverEventSnapshot: Codable, Equatable, Sendable {
 
     /// The identifier of the event source, as derived from the incoming topic.
     public let sourceId: String?

@@ -64,4 +64,22 @@ internal enum CommunicationEventType: String, Sendable {
             self == CommunicationEventType.Associate ||
             self == CommunicationEventType.IoValue
     }
+
+    init?(_ wireType: WireEventType) {
+        switch wireType {
+        case .advertise: self = .Advertise
+        case .deadvertise: self = .Deadvertise
+        case .channel: self = .Channel
+        case .associate: self = .Associate
+        case .ioValue: self = .IoValue
+        case .discover: self = .Discover
+        case .resolve: self = .Resolve
+        case .query: self = .Query
+        case .retrieve: self = .Retrieve
+        case .update: self = .Update
+        case .complete: self = .Complete
+        case .call: self = .Call
+        case .returnEvent: self = .Return
+        }
+    }
 }

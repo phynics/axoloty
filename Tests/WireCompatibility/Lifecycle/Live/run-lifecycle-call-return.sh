@@ -1,19 +1,17 @@
 #!/usr/bin/env bash
 # Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-# Native (no container runtime) live runner for the `duplicate-reply` and
-# `late-reply` lifecycle scenarios. Unlike the other scripts in this
-# directory, these two scenarios use Axoloty (modern Swift) as the live
-# subject -- the Call/Return initiator -- against pinned CoatyJS 2.4.0 as a
-# (deliberately misbehaving, for these scenarios) Call responder. See
+# Containerized live runner for the `duplicate-reply` and `late-reply`
+# lifecycle scenarios. Axoloty (modern Swift) is the Call/Return initiator
+# against pinned CoatyJS 2.4.0 as a (deliberately misbehaving, for these
+# scenarios) Call responder. See
 # Tests/WireCompatibility/Lifecycle/AxolotyLifecycleSubjectTests.swift for the
-# Axoloty side and Tests/WireCompatibility/Reverse/coatyjs-core-consumer.js
-# for the CoatyJS responder side.
+# Axoloty side and
+# Tests/WireCompatibility/Reverse/coatyjs-core-consumer.js for the CoatyJS
+# responder side.
 #
-# This host has no docker/podman, so this script runs mosquitto, node, and
-# `swift test` directly as native macOS processes rather than containers,
-# matching the precedent set by coatyjs-last-will-runner.js /
-# coatyjs-qos-runner.js before they were containerized.
+# Every broker, probe, responder, and subject runs on one isolated runtime
+# network. It does not depend on host Mosquitto/Swift.
 set -euo pipefail
 
 SCENARIO="${1:?Usage: run-lifecycle-call-return.sh <duplicate-reply|late-reply>}"
@@ -22,67 +20,84 @@ case "$SCENARIO" in
     *) echo "Unsupported scenario for this runner: $SCENARIO" >&2; exit 64 ;;
 esac
 
+RUNTIME="${CONTAINER_RUNTIME:-podman}"
+runtime() { "$RUNTIME" "$@"; }
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
 HERE="$ROOT/Tests/WireCompatibility/Lifecycle/Live"
 REVERSE="$ROOT/Tests/WireCompatibility/Reverse"
 REF="$ROOT/Tests/WireCompatibility/ReferenceAgents/coatyjs"
-MOSQUITTO="${MOSQUITTO_BIN:-$(command -v mosquitto 2>/dev/null || echo /opt/homebrew/opt/mosquitto/sbin/mosquitto)}"
+TOOL=/tool/dist/index.js
 OUT="${WIRE_OUTPUT_DIR:-$ROOT/.testing/wire}"
 RUN_ID="${WIRE_RUN_ID:-$$}"
+NETWORK="axoloty-call-return-$SCENARIO-$RUN_ID"
+BROKER="axoloty-callreturn-broker-$RUN_ID"
+PROBE="axoloty-callreturn-probe-$RUN_ID"
+RESPONDER="axoloty-callreturn-responder-$RUN_ID"
+SUBJECT="axoloty-callreturn-subject-$RUN_ID"
+DEV_IMAGE="${DEV_IMAGE:-localhost/coatyswift-dev:latest}"
+JS_IMAGE="${JS_IMAGE:-localhost/coatyswift-wire-coatyjs:2.4.0}"
+SPM_CACHE_DIR="${SPM_CACHE_DIR:-$ROOT/.swiftpm-cache}"
+BUILD_DIR="${BUILD_DIR:-/tmp/coaty-swift-build/.git/swift-6.3-linux/debug}"
 NAMESPACE="wire-lifecycle-$SCENARIO-$RUN_ID"
 CAPTURE="$OUT/axoloty-$SCENARIO.jsonl"
 CAPTURE_READY="$OUT/axoloty-$SCENARIO.capture-ready"
 CONSUMER_LOG="$OUT/coatyjs-$SCENARIO.consumer.log"
 APPLICATION_LOG="$OUT/axoloty-$SCENARIO.application.jsonl"
-DEADLINE_SECONDS="${WIRE_LIFECYCLE_DEADLINE_SECONDS:-30}"
+RAW_LOG="$OUT/axoloty-$SCENARIO.subject.log"
+DEADLINE_SECONDS="${WIRE_LIFECYCLE_DEADLINE_SECONDS:-600}"
 
-MOSQUITTO_PID=""
-CAPTURE_PID=""
-CONSUMER_PID=""
 cleanup() {
-    [ -n "$CONSUMER_PID" ] && kill "$CONSUMER_PID" >/dev/null 2>&1 || true
-    [ -n "$CAPTURE_PID" ] && kill "$CAPTURE_PID" >/dev/null 2>&1 || true
-    [ -n "$MOSQUITTO_PID" ] && kill "$MOSQUITTO_PID" >/dev/null 2>&1 || true
+    runtime logs "$SUBJECT" >"$OUT/subject-container-$SCENARIO.log" 2>&1 || true
+    runtime logs "$RESPONDER" >"$OUT/responder-container-$SCENARIO.log" 2>&1 || true
+    runtime logs "$PROBE" >"$OUT/probe-container-$SCENARIO.log" 2>&1 || true
+    runtime logs "$BROKER" >"$OUT/broker-container-$SCENARIO.log" 2>&1 || true
+    runtime rm -f "$SUBJECT" "$RESPONDER" "$PROBE" "$BROKER" >/dev/null 2>&1 || true
+    runtime network rm "$NETWORK" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT INT TERM
-
 mkdir -p "$OUT"
-rm -f "$CAPTURE" "$CAPTURE_READY" "$CONSUMER_LOG" "$APPLICATION_LOG"
+rm -f "$CAPTURE" "$CAPTURE_READY" "$CONSUMER_LOG" "$APPLICATION_LOG" "$RAW_LOG"
 
-if ! command -v "$MOSQUITTO" >/dev/null 2>&1; then
-    echo "mosquitto binary not found at $MOSQUITTO (set MOSQUITTO_BIN)" >&2
-    exit 1
-fi
+runtime build -t "$DEV_IMAGE" -f "$ROOT/.devcontainer/Dockerfile" "$ROOT/.devcontainer"
+runtime build -t "$JS_IMAGE" "$REF"
+runtime network create "$NETWORK" >/dev/null
 
-"$MOSQUITTO" -c "$HERE/../../Live/mosquitto.conf" >"$OUT/mosquitto-$SCENARIO.log" 2>&1 &
-MOSQUITTO_PID=$!
-
-deadline() { date +%s; }
+start_broker() {
+    runtime run -d --name "$BROKER" --network "$NETWORK" \
+        -v "$HERE/../../Live/mosquitto.conf:/etc/mosquitto/wire-compat.conf:ro" \
+        "$DEV_IMAGE" mosquitto -c /etc/mosquitto/wire-compat.conf >/dev/null
+}
 wait_for() {
-    local description="$1" condition="$2" limit=$(( $(deadline) + DEADLINE_SECONDS ))
+    local description="$1" condition="$2" limit=$(( $(date +%s) + DEADLINE_SECONDS ))
     while ! eval "$condition"; do
-        if [ "$(deadline)" -ge "$limit" ]; then
-            echo "Timed out waiting for $description after ${DEADLINE_SECONDS}s" >&2
-            return 1
-        fi
-        sleep 0.1
+        if [ "$(date +%s)" -ge "$limit" ]; then echo "Timed out waiting for $description" >&2; return 1; fi
+        sleep 0.2
     done
 }
-wait_for "Mosquitto broker readiness" "node -e 'const s=require(\"net\").createConnection({host:\"127.0.0.1\",port:1883},()=>{s.end();process.exit(0)});s.on(\"error\",()=>process.exit(1))' >/dev/null 2>&1"
+broker_ready() { runtime exec "$BROKER" python3 -c 'import socket; socket.create_connection(("127.0.0.1",1883),1).close()' >/dev/null 2>&1; }
+start_broker
+wait_for "Mosquitto broker readiness" broker_ready
 
-node "$ROOT/Tests/WireCompatibility/tool/dist/index.js" capture '#' "$CAPTURE" \
-    --host 127.0.0.1 --producer coatyswift-modern --producer-version current \
-    --scenario "$SCENARIO" --ready-file "$CAPTURE_READY" \
-    >"$OUT/capture-$SCENARIO.log" 2>&1 &
-CAPTURE_PID=$!
+# Start capture probe.
+rm -f "$CAPTURE_READY"
+runtime run -d --name "$PROBE" --network "$NETWORK" -v "$ROOT/Tests/WireCompatibility/tool:/tool:ro,Z" -v "$OUT:/artifacts" \
+    --entrypoint node --user 0 "$JS_IMAGE" "$TOOL" capture '#' "/artifacts/${CAPTURE##*/}" \
+    --host "$BROKER" --producer coatyswift-modern --producer-version current --scenario "$SCENARIO" \
+    --ready-file "/artifacts/${CAPTURE_READY##*/}" >/dev/null
 wait_for "capture subscription" "test -f '$CAPTURE_READY'"
 
-NODE_PATH="$REF/node_modules" BROKER_URL="mqtt://127.0.0.1:1883" COATY_NAMESPACE="$NAMESPACE" \
-    SCENARIO="$SCENARIO" SCENARIO_TIMEOUT_MS=30000 LIFECYCLE_LATE_REPLY_DELAY_MS="${LIFECYCLE_LATE_REPLY_DELAY_MS:-4000}" \
-    node "$REVERSE/coatyjs-core-consumer.js" >"$CONSUMER_LOG" 2>&1 &
-CONSUMER_PID=$!
-wait_for "CoatyJS Call responder readiness" "grep -q '\"state\":\"ready\"' '$CONSUMER_LOG' 2>/dev/null"
+# Start CoatyJS Call responder.
+runtime run -d --name "$RESPONDER" --network "$NETWORK" \
+    --entrypoint node \
+    -v "$REVERSE/coatyjs-core-consumer.js:/agent/coatyjs-core-consumer.js:ro" \
+    -e BROKER_URL="mqtt://$BROKER:1883" -e COATY_NAMESPACE="$NAMESPACE" \
+    -e SCENARIO="$SCENARIO" -e SCENARIO_TIMEOUT_MS=30000 \
+    -e LIFECYCLE_LATE_REPLY_DELAY_MS="${LIFECYCLE_LATE_REPLY_DELAY_MS:-4000}" \
+    "$JS_IMAGE" /agent/coatyjs-core-consumer.js >/dev/null
+responder_ready() { runtime logs "$RESPONDER" 2>&1 >"$CONSUMER_LOG"; grep -q '"state":"ready"' "$CONSUMER_LOG"; }
+wait_for "CoatyJS Call responder readiness" responder_ready
 
+# Run the Swift test subject.
 TEST_NAME="AxolotyLifecycleSubjectTests/$(
     case "$SCENARIO" in
         duplicate-reply) echo duplicateReply ;;
@@ -95,20 +110,23 @@ ENV_FLAG="$(
         late-reply) echo WIRE_LIFECYCLE_LATE_REPLY_LIVE ;;
     esac
 )"
+runtime run -d -t --name "$SUBJECT" --network "$NETWORK" \
+    -v "$ROOT:/workspace" -v "$SPM_CACHE_DIR:/swiftpm-cache" -v "$BUILD_DIR:/swift-build" -w /workspace \
+    -e "$ENV_FLAG=1" -e WIRE_BROKER_HOST="$BROKER" -e WIRE_BROKER_PORT=1883 -e WIRE_NAMESPACE="$NAMESPACE" \
+    "$DEV_IMAGE" swift test --skip-build --scratch-path /swift-build --cache-path /swiftpm-cache --disable-automatic-resolution \
+    --filter "$TEST_NAME" >/dev/null
 
-env "$ENV_FLAG=1" WIRE_BROKER_HOST=127.0.0.1 WIRE_BROKER_PORT=1883 WIRE_NAMESPACE="$NAMESPACE" \
-    swift test --filter "$TEST_NAME" 2>&1 | tee "$APPLICATION_LOG.raw"
-# Retain only the JSONL state lines the Swift subject printed, matching the
-# `application.jsonl` convention used by the other lifecycle runners.
-grep -E '^\{"state":' "$APPLICATION_LOG.raw" >"$APPLICATION_LOG" || true
-rm -f "$APPLICATION_LOG.raw"
+# Wait for the Swift test to complete.
+runtime wait "$SUBJECT" >/dev/null
+runtime logs "$SUBJECT" 2>&1 >"$RAW_LOG"
+grep -E '^\{"state":' "$RAW_LOG" >"$APPLICATION_LOG" || true
 
-wait "$CONSUMER_PID" || { cat "$CONSUMER_LOG" >&2; exit 1; }
-CONSUMER_PID=""
-grep -q '"state":"ack"' "$CONSUMER_LOG"
+# Verify responder ack.
+runtime logs "$RESPONDER" 2>&1 >"$CONSUMER_LOG"
+grep -q '"state":"ack"' "$CONSUMER_LOG" || { echo "CoatyJS responder did not ack; see $CONSUMER_LOG" >&2; exit 1; }
 
-kill "$CAPTURE_PID" >/dev/null 2>&1 || true
-CAPTURE_PID=""
+# Verify capture.
+runtime rm -f "$PROBE" >/dev/null 2>&1 || true
 sleep 0.3
 test -s "$CAPTURE" || { echo "Capture is missing or empty: $CAPTURE" >&2; exit 1; }
 

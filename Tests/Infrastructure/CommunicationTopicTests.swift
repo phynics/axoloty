@@ -76,8 +76,7 @@ struct CommunicationTopicTests {
         #expect(!(CommunicationTopic.isValidPublicationTopic("")))
         #expect(CommunicationTopic.isValidSubscriptionTopic("sensors/+/value"))
         #expect(!(CommunicationTopic.isValidSubscriptionTopic("bad\u{0000}topic")))
-        #expect(!(CommunicationTopic.isRawTopic(topic: "coaty/3/ns/DAD/id")))
-        #expect(CommunicationTopic.isRawTopic(topic: "application/events"))
+        // isRawTopic is now tested via TopicView in WireCodecTests
     }
 
     @Test

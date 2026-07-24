@@ -3,7 +3,7 @@
 import Foundation
 
 /// A value-typed snapshot of the local association state of an IO point.
-public struct IoStateEventSnapshot: EventSnapshot, Codable, Equatable, Sendable {
+public struct IoStateEventSnapshot: Codable, Equatable, Sendable {
     /// The IO point identifier.
     public let ioPointId: String
     /// Whether the point currently has one or more associations.

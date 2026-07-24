@@ -38,4 +38,19 @@ struct ParsedMQTTMessage: Sendable, Hashable {
         self.correlationId = topic.correlationId
         self.payload = payload
     }
+
+    /// Creates a parsed message from a ``TopicView`` (zero-allocation topic
+    /// parse) and its UTF-8 payload string.
+    ///
+    /// - Parameters:
+    ///   - topicView: the parsed topic view.
+    ///   - payload: the UTF-8 payload string.
+    init(topicView: TopicView, payload: String) {
+        self.eventType = CommunicationEventType(topicView.eventType!) ?? .Advertise
+        self.eventTypeFilter = topicView.eventTypeFilter?.asString()
+        self.namespace = topicView.level(2)?.asString() ?? ""
+        self.sourceId = topicView.level(4)?.asString() ?? ""
+        self.correlationId = topicView.level(5)?.asString()
+        self.payload = payload
+    }
 }

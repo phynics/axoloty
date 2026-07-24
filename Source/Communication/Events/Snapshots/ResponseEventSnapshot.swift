@@ -3,7 +3,7 @@
 import Foundation
 
 /// A value-typed snapshot for a correlated response event.
-public struct ResponseEventSnapshot: EventSnapshot, Codable, Equatable, Sendable {
+public struct ResponseEventSnapshot: Codable, Equatable, Sendable {
     /// The response event kind as it appears on the wire.
     public let eventType: String
     /// The response source identifier.

@@ -452,25 +452,20 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                 await self.streams.rawMQTTMessages.send(rawMessage)
             }
 
-            if CommunicationTopic.isRawTopic(topic: info.topicName) {
-                self.delegate.didReceiveRawMQTTMessage(
-                    topic: info.topicName,
-                    payload: bytes
-                )
-                return
-            }
+            var topicName = info.topicName
+            topicName.withUTF8 { topicBuf in
+                guard let base = topicBuf.baseAddress else { return }
+                let topicView = TopicView(topicBytes: base, length: topicBuf.count)
 
-            do {
-                let topic = try CommunicationTopic(info.topicName)
-                var receivedEventMetadata: Logging.Logger.Metadata = [
-                    "topic": .string(info.topicName),
-                    "eventType": .string(topic.eventType.rawValue),
-                ]
-                if let correlationId = topic.correlationId {
-                    receivedEventMetadata["correlationId"] = .string(correlationId)
+                if topicView.isRawTopic {
+                    self.delegate.didReceiveRawMQTTMessage(
+                        topic: info.topicName,
+                        payload: bytes
+                    )
+                    return
                 }
-                log.trace("Received event", metadata: receivedEventMetadata)
-                if topic.eventType == .IoValue {
+
+                if topicView.eventType == .ioValue {
                     self.delegate.didReceiveIoValue(
                         topic: info.topicName,
                         payload: bytes
@@ -479,26 +474,39 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                         guard let self else { return }
                         await self.streams.ioValues.send(IoValueEventSnapshot(topic: info.topicName, payload: bytes))
                     }
-                } else if let payloadString = String(bytes: bytes, encoding: .utf8) {
+                    return
+                }
+
+                guard let wireType = topicView.eventType,
+                      let commEventType = CommunicationEventType(wireType) else {
+                    log.warning("Ignoring incoming event", metadata: [
+                        "topic": .string(info.topicName),
+                    ])
+                    return
+                }
+
+                var receivedEventMetadata: Logging.Logger.Metadata = [
+                    "topic": .string(info.topicName),
+                    "eventType": .string(commEventType.rawValue),
+                ]
+                if let corrIdSlice = topicView.level(5) {
+                    receivedEventMetadata["correlationId"] = .string(corrIdSlice.asString())
+                }
+                log.trace("Received event", metadata: receivedEventMetadata)
+
+                if let payloadString = String(bytes: bytes, encoding: .utf8) {
                     self.delegate.didReceiveMessage(
                         topic: info.topicName,
                         payload: payloadString
                     )
 
-                    let parsed = ParsedMQTTMessage(topic: topic, payload: payloadString)
+                    let parsed = ParsedMQTTMessage(topicView: topicView, payload: payloadString)
                     deliveryContinuation.yield { [weak self] in
                         guard let self else { return }
                         await self.streams.parsedMQTTMessages.send(parsed)
-                        await self.routeAdvertiseSnapshot(parsed: parsed)
-                        await self.routeOneWaySnapshot(parsed: parsed)
-                        await self.routeSnapshot(parsed: parsed)
+                        await Self.routeParsedMessage(parsed: parsed, into: self.streams)
                     }
                 }
-            } catch {
-                log.warning("Ignoring incoming event", metadata: [
-                    "topic": .string(info.topicName),
-                    "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
-                ])
             }
         case .failure(let error):
             log.warning("Error receiving published message", metadata: [
@@ -507,29 +515,32 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
         }
     }
 
-    /// Routes a decoded Advertise snapshot to the per-filter event hub keys so
-    /// that async observers can consume it without an intermediate dispatcher.
-    private func routeAdvertiseSnapshot(parsed: ParsedMQTTMessage) async {
-        guard parsed.eventType == .Advertise,
-              let snapshot = AdvertiseEventSnapshot(parsedMQTTMessage: parsed) else {
-            return
-        }
-
-        let baseKey = AdvertiseKey(eventTypeFilter: parsed.eventTypeFilter ?? "")
-        await streams.advertiseFamily.send(snapshot, for: baseKey)
-
-        if let coreType = CoreType.getCoreType(forObjectType: snapshot.object.objectType),
-           parsed.eventTypeFilter == coreType.rawValue {
-            let objectKey = AdvertiseKey(
-                eventTypeFilter: coreType.rawValue,
-                objectTypeFilter: snapshot.object.objectType
-            )
-            await streams.advertiseFamily.send(snapshot, for: objectKey)
-        }
-    }
-
-    private func routeOneWaySnapshot(parsed: ParsedMQTTMessage) async {
+    /// Routes a parsed MQTT message to the appropriate event streams.
+    ///
+    /// This is the single routing decision point for all non-IoValue, non-raw
+    /// Coaty messages. The exhaustive switch ensures that adding a new event
+    /// type produces a compiler error here.
+    ///
+    /// - Parameters:
+    ///   - parsed: the parsed transport message.
+    ///   - streams: the communication streams to dispatch into.
+    internal static func routeParsedMessage(
+        parsed: ParsedMQTTMessage,
+        into streams: CommunicationStreams
+    ) async {
         switch parsed.eventType {
+        case .Advertise:
+            guard let snapshot = AdvertiseEventSnapshot(parsedMQTTMessage: parsed) else { return }
+            let baseKey = AdvertiseKey(eventTypeFilter: parsed.eventTypeFilter ?? "")
+            await streams.advertiseFamily.send(snapshot, for: baseKey)
+            if let coreType = CoreType.getCoreType(forObjectType: snapshot.object.objectType),
+               parsed.eventTypeFilter == coreType.rawValue {
+                let objectKey = AdvertiseKey(
+                    eventTypeFilter: coreType.rawValue,
+                    objectTypeFilter: snapshot.object.objectType
+                )
+                await streams.advertiseFamily.send(snapshot, for: objectKey)
+            }
         case .Deadvertise:
             if let snapshot = DeadvertiseEventSnapshot(parsedMQTTMessage: parsed) {
                 await streams.deadvertise.send(snapshot)
@@ -547,26 +558,19 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                let operation = parsed.eventTypeFilter {
                 await streams.callFamily.send(snapshot, for: operation)
             }
-        default:
-            break
-        }
-    }
-
-    private func routeSnapshot(parsed: ParsedMQTTMessage) async {
-        if let correlationId = parsed.correlationId,
-           [.Complete, .Resolve, .Retrieve, .Return].contains(parsed.eventType) {
-            let snapshot = ResponseEventSnapshot(
-                eventType: parsed.eventType.rawValue,
-                sourceId: parsed.sourceId,
-                correlationId: correlationId,
-                payload: parsed.payload
-            )
-            await streams.responseFamily.send(
-                snapshot,
-                for: ResponseKey(eventType: parsed.eventType, correlationId: correlationId)
-            )
-        }
-        switch parsed.eventType {
+        case .Complete, .Resolve, .Retrieve, .Return:
+            if let correlationId = parsed.correlationId {
+                let snapshot = ResponseEventSnapshot(
+                    eventType: parsed.eventType.rawValue,
+                    sourceId: parsed.sourceId,
+                    correlationId: correlationId,
+                    payload: parsed.payload
+                )
+                await streams.responseFamily.send(
+                    snapshot,
+                    for: ResponseKey(eventType: parsed.eventType, correlationId: correlationId)
+                )
+            }
         case .Update:
             guard let snapshot = UpdateEventSnapshot(parsedMQTTMessage: parsed),
                   let filter = parsed.eventTypeFilter else { return }
@@ -575,7 +579,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
             guard let snapshot = ChannelEventSnapshot(parsedMQTTMessage: parsed),
                   let channelId = parsed.eventTypeFilter else { return }
             await streams.channelFamily.send(snapshot, for: channelId)
-        default:
+        case .Associate, .IoValue:
             break
         }
     }

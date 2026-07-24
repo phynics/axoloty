@@ -3,7 +3,7 @@
 import Foundation
 
 /// A value-typed snapshot of a `ChannelEvent` suitable for concurrent event streams.
-public struct ChannelEventSnapshot: EventSnapshot, Codable, Equatable, Sendable {
+public struct ChannelEventSnapshot: Codable, Equatable, Sendable {
 
     /// The identifier of the event source, as derived from the incoming topic.
     public let sourceId: String?
@@ -67,12 +67,10 @@ extension ChannelEventSnapshot {
             return nil
         }
         let privateData = WirePayloadExtractor.nestedPayload(from: parsedMQTTMessage.payload, key: "privateData")
-            .map { String(decoding: $0, as: UTF8.self) }
         self.init(
             sourceId: parsedMQTTMessage.sourceId,
             object: wire.object?.withPayload(
                 WirePayloadExtractor.nestedObjectPayload(from: parsedMQTTMessage.payload, key: "object")
-                    .map { String(decoding: $0, as: UTF8.self) }
             ),
             objects: wire.objects,
             channelId: channelId,

@@ -22,8 +22,9 @@ struct AxolotyIoAssociateTests {
 
     /// The Associate event for a generated route carries the source/actor IDs,
     /// the generated IOV route, and the update rate, exactly as audit scenario
-    /// 1 requires. Swift encodes `isExternalRoute: false` (non-nil) for a
-    /// generated route, unlike CoatyJS which omits the field entirely.
+    /// 1 requires. `isExternalRoute` is `false` but omitted from the wire,
+    /// matching CoatyJS 2.4.0 which never serializes it (confirmed by capture:
+    /// T-021 smoke run, coatyjs associate-source role).
     @Test
     func associateEventEncodesGeneratedRouteFieldsAndIsExternalRoute() throws {
         let sourceId = try #require(CoatyUUID(uuidString: "33333333-3333-4333-8333-333333333333"))
@@ -46,12 +47,9 @@ struct AxolotyIoAssociateTests {
         #expect(decoded.ioActorId == actorId)
         #expect(decoded.associatingRoute == route)
         #expect(decoded.updateRate == 250)
-        // Swift emits isExternalRoute whenever it is non-nil, including false.
-        // This is the asymmetry with CoatyJS, whose AssociateEventData
-        // toJsonObject never serializes isExternalRoute (confirmed by capture:
-        // T-021 smoke run, coatyjs associate-source role).
-        #expect(decoded.isExternalRoute == false)
-        #expect(json.contains("\"isExternalRoute\":false"))
+        // false is omitted to match CoatyJS wire behavior; absence decodes to nil.
+        #expect(decoded.isExternalRoute == nil)
+        #expect(!json.contains("\"isExternalRoute\""))
     }
 
     /// A disassociation Associate carries no associating route and no update

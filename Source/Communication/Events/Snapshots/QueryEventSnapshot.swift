@@ -3,7 +3,7 @@
 import Foundation
 
 /// A value-typed snapshot of a `QueryEvent` suitable for concurrent event streams.
-public struct QueryEventSnapshot: EventSnapshot, Codable, Equatable, Sendable {
+public struct QueryEventSnapshot: Codable, Equatable, Sendable {
 
     /// The identifier of the event source, as derived from the incoming topic.
     public let sourceId: String?
@@ -79,12 +79,9 @@ extension QueryEventSnapshot {
             correlationId: parsedMQTTMessage.correlationId,
             objectTypes: wire.objectTypes,
             coreTypes: wire.coreTypes,
-            objectFilter: WirePayloadExtractor.nestedObjectPayload(from: parsedMQTTMessage.payload, key: "objectFilter")
-                .map { String(decoding: $0, as: UTF8.self) },
-            objectJoinConditions: WirePayloadExtractor.nestedArrayPayload(from: parsedMQTTMessage.payload, key: "objectJoinConditions")
-                .map { $0.map { String(decoding: $0, as: UTF8.self) } },
+            objectFilter: WirePayloadExtractor.nestedObjectPayload(from: parsedMQTTMessage.payload, key: "objectFilter"),
+            objectJoinConditions: WirePayloadExtractor.nestedArrayPayload(from: parsedMQTTMessage.payload, key: "objectJoinConditions"),
             objectJoinCondition: WirePayloadExtractor.nestedObjectPayload(from: parsedMQTTMessage.payload, key: "objectJoinConditions")
-                .map { String(decoding: $0, as: UTF8.self) }
         )
     }
 }

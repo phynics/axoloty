@@ -3,7 +3,7 @@
 import Foundation
 
 /// A value-typed snapshot of an `AdvertiseEvent` suitable for concurrent event streams.
-public struct AdvertiseEventSnapshot: EventSnapshot, Codable, Equatable, Sendable {
+public struct AdvertiseEventSnapshot: Codable, Equatable, Sendable {
 
     /// The identifier of the event source, as derived from the incoming topic.
     public let sourceId: String?
@@ -62,9 +62,7 @@ extension AdvertiseEventSnapshot {
         }
 
         let objectPayload = WirePayloadExtractor.nestedObjectPayload(from: parsedMQTTMessage.payload, key: "object")
-            .map { String(decoding: $0, as: UTF8.self) }
         let privateData = WirePayloadExtractor.nestedPayload(from: parsedMQTTMessage.payload, key: "privateData")
-            .map { String(decoding: $0, as: UTF8.self) }
 
         self.init(
             sourceId: parsedMQTTMessage.sourceId,

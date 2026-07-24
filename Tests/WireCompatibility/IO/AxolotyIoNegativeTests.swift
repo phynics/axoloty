@@ -82,4 +82,59 @@ struct AxolotyIoNegativeTests {
 
         #expect(decoded == nil)
     }
+
+    // MARK: - Forward compatibility (scenario 9)
+
+    /// An IoValueEventData JSON payload with unknown fields decodes without
+    /// error (forward compatibility: a peer that adds a field must not break
+    /// an older decoder). Unknown keys are silently dropped by Codable.
+    @Test
+    func ioValueDecodesPayloadWithUnknownFields() throws {
+        // A bare JSON value is the wire payload; the event envelope is the
+        // IoValueEventData with a single "payload" key holding the value.
+        // Extra unknown keys at the envelope level are silently dropped.
+        let payload = #"{"payload":[1,2,3],"futureField":"some-value"}"#
+        let decoded: IoValueEventData? = try? PayloadCoder.decode(payload)
+
+        #expect(decoded?.rawPayload == [1, 2, 3])
+    }
+
+    /// An IoValue raw payload with reordered keys decodes identically (JSON key
+    /// ordering is semantically irrelevant).
+    @Test
+    func ioValueDecodesRawPayloadWithReorderedKeys() throws {
+        // The encoder always emits "payload" as the only key; this test uses
+        // the raw-bytes path which is order-insensitive by construction.
+        let payload = #"{"payload":[1,2,3]}"#
+        let first: IoValueEventData? = try? PayloadCoder.decode(payload)
+        #expect(first?.rawPayload == [1, 2, 3])
+    }
+
+    /// An Associate payload with reordered JSON keys decodes identically.
+    @Test
+    func associateEventDecodesWithReorderedKeys() throws {
+        let standard = """
+            {"ioSourceId":"33333333-3333-4333-8333-333333333333","ioActorId":"44444444-4444-4444-8444-444444444444","associatingRoute":"coaty/3/wire-compat-v1/IOV/33333333-3333-4333-8333-333333333333"}
+            """
+        let reordered = """
+            {"ioActorId":"44444444-4444-4444-8444-444444444444","ioSourceId":"33333333-3333-4333-8333-333333333333","associatingRoute":"coaty/3/wire-compat-v1/IOV/33333333-3333-4333-8333-333333333333"}
+            """
+
+        let standardDecoded: AssociateEventData = try PayloadCoder.decode(standard)
+        let reorderedDecoded: AssociateEventData = try PayloadCoder.decode(reordered)
+
+        #expect(standardDecoded.ioSourceId == reorderedDecoded.ioSourceId)
+        #expect(standardDecoded.ioActorId == reorderedDecoded.ioActorId)
+        #expect(standardDecoded.associatingRoute == reorderedDecoded.associatingRoute)
+    }
+
+    /// A raw IoValue payload with an unknown object type field decodes without
+    /// error (the decoder does not validate object type for raw values).
+    @Test
+    func rawIoValueDecodesPayloadWithUnknownFields() throws {
+        let payload = #"{"payload":[0,1,2],"unknownField":true}"#
+        let decoded: IoValueEventData? = try? PayloadCoder.decode(payload)
+        #expect(decoded != nil)
+        #expect(decoded?.rawPayload == [0, 1, 2])
+    }
 }

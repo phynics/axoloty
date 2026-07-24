@@ -51,3 +51,10 @@ observation if a concrete interop question ever arises (see Consequences).
   host with Xcode is available, at which point the Associate + JSON IoValue
   scenario is the minimal capture that would establish the legacy direction's
   pattern.
+- The macOS runner has been extended with consumer/responder scenarios
+  (`consume-advertise`, `consume-deadvertise`, `consume-channel`,
+  `respond-discover`, `respond-query`, `respond-call`) and a
+  `run-modern-to-legacy.sh` orchestration script. These enable the Modern →
+  legacy matrix direction when a macOS host is available; they cannot be
+  compiled or tested on Linux due to CoatySwift 2.4.0's macOS-only dependency
+  chain.

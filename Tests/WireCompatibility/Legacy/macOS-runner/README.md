@@ -59,6 +59,26 @@ Identity advertisement. That event proves the broker has activated the
 requester subscription, so the deterministic Discover is not released on a
 timing guess.
 
+## Consumer scenarios (Modern → legacy)
+
+The runner also supports consumer/responder scenarios where Axoloty (modern
+Swift) produces events and the legacy CoatySwift 2.4.0 runner subscribes,
+decodes, and reports the observed semantic fields. These are orchestrated by
+`Tests/WireCompatibility/Legacy/run-modern-to-legacy.sh` and require a macOS
+host with Xcode (the same platform constraint as the producer scenarios):
+
+| Scenario | Runner scenario | Legacy role |
+|---|---|---|
+| Advertise | `consume-advertise` | Subscribe to Advertise, decode object |
+| Deadvertise | `consume-deadvertise` | Subscribe to Deadvertise, decode object IDs |
+| Channel | `consume-channel` | Subscribe to Channel, decode message |
+| Discover/Resolve | `respond-discover` | Subscribe to Discover, publish Resolve |
+| Query/Retrieve | `respond-query` | Subscribe to Query, publish Retrieve |
+| Call/Return | `respond-call` | Subscribe to Call, publish Return |
+
+Update/Complete does not yet have a consumer scenario; it can be added when
+a concrete interoperability question requires it.
+
 The requester and responder identities differ starting at their 17th hex
 digit (`8000` vs. `9000`), not only in their trailing digits, because
 CoatySwift derives each client's MQTT ClientID from exactly the first 18 hex
