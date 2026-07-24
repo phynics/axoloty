@@ -342,4 +342,19 @@ struct WireCodecTests {
         let written = String(bytes: buffer[0..<writer.position], encoding: .utf8)
         #expect(written == "-9223372036854775808")
     }
+
+    @Test
+    func wireWriterEncodesUUID() throws {
+        // Regression for #224: writeUUID must produce the canonical
+        // 8-4-4-4-12 lowercase-hex form without heap allocations.
+        let uuid = try #require(UUID16(parsing: "33333333-3333-4333-8333-333333333333"))
+        var buffer = [UInt8](repeating: 0, count: 40)
+        var writer = buffer.withUnsafeMutableBufferPointer { buf in
+            WireWriter(buffer: buf.baseAddress!, capacity: buf.count)
+        }
+        try writer.writeUUID(uuid)
+        let written = String(bytes: buffer[0..<writer.position], encoding: .utf8)
+        #expect(written == "33333333-3333-4333-8333-333333333333")
+        #expect(writer.position == 36)
+    }
 }
