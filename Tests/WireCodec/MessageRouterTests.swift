@@ -20,11 +20,11 @@ struct MessageRouterTests {
             received.value = msg.eventType
         }
 
-        let msg = makeTestMessage(
+        let owned = OwnedMessage(
             topic: "coaty/3/test/ASC:ctx/55555555-5555-4555-8555-555555555555",
             payload: #"{"ioSourceId":"33333333-3333-4333-8333-333333333333","ioActorId":"44444444-4444-4444-8444-444444444444"}"#
         )
-        router.dispatch(msg)
+        router.dispatch(owned.message)
 
         #expect(received.value == .associate)
     }
@@ -38,8 +38,8 @@ struct MessageRouterTests {
             received.value = true
         }
 
-        let msg = makeTestMessage(topic: "external/test/route", payload: "raw")
-        router.dispatch(msg)
+        let owned = OwnedMessage(topic: "external/test/route", payload: "raw")
+        router.dispatch(owned.message)
 
         #expect(received.value == true)
     }
@@ -53,11 +53,11 @@ struct MessageRouterTests {
         router.subscribeIoValue { _ in ioReceived.value = true }
         router.subscribe(.associate) { _ in associateReceived.value = true }
 
-        let ioMsg = makeTestMessage(
+        let ioOwned = OwnedMessage(
             topic: "coaty/3/test/IOV/33333333-3333-4333-8333-333333333333",
             payload: "42"
         )
-        router.dispatch(ioMsg)
+        router.dispatch(ioOwned.message)
         #expect(ioReceived.value == true)
         #expect(associateReceived.value == false)
     }
@@ -70,10 +70,10 @@ struct MessageRouterTests {
         let token = router.subscribe(.discover) { _ in received.value += 1 }
         router.unsubscribe(.discover, try #require(token))
 
-        let msg = makeTestMessage(
+        let owned = OwnedMessage(
             topic: "coaty/3/test/DSC/11111111-1111-4111-8111-111111111111"
         )
-        router.dispatch(msg)
+        router.dispatch(owned.message)
         #expect(received.value == 0)
     }
 
@@ -87,10 +87,10 @@ struct MessageRouterTests {
         router.subscribeAdvertise(filter: "things") { _ in barReceived.value = true }
 
         // Advertise for "sensors" filter → only sensors subscriber receives
-        let msg = makeTestMessage(
+        let owned = OwnedMessage(
             topic: "coaty/3/test/ADV:sensors/11111111-1111-4111-8111-111111111111"
         )
-        router.dispatch(msg)
+        router.dispatch(owned.message)
         #expect(fooReceived.value == true)
         #expect(barReceived.value == false)
     }
@@ -102,10 +102,10 @@ struct MessageRouterTests {
 
         router.subscribeChannel(channelId: "42") { _ in ch42Received.value = true }
 
-        let msg = makeTestMessage(
+        let owned = OwnedMessage(
             topic: "coaty/3/test/CHN:42/11111111-1111-4111-8111-111111111111"
         )
-        router.dispatch(msg)
+        router.dispatch(owned.message)
         #expect(ch42Received.value == true)
     }
 
@@ -119,10 +119,10 @@ struct MessageRouterTests {
         router.subscribeAdvertise(filter: "things") { _ in barReceived.value = true }
 
         // Deadvertise should notify ALL advertise family entries
-        let msg = makeTestMessage(
+        let owned = OwnedMessage(
             topic: "coaty/3/test/DAD/11111111-1111-4111-8111-111111111111"
         )
-        router.dispatch(msg)
+        router.dispatch(owned.message)
         #expect(fooReceived.value == true)
         #expect(barReceived.value == true)
     }
@@ -138,8 +138,8 @@ struct MessageRouterTests {
         }
 
         // A message with nil eventType (raw topic) should go to raw, not these
-        let msg = makeTestMessage(topic: "unknown/topic", payload: "{}")
-        router.dispatch(msg)
+        let owned = OwnedMessage(topic: "unknown/topic", payload: "{}")
+        router.dispatch(owned.message)
         #expect(received.value == false)
     }
 
@@ -152,17 +152,17 @@ struct MessageRouterTests {
         _ = router.subscribe(.query) { _ in count.value += 1 }
         _ = router.subscribe(.query) { _ in count.value += 1 }
 
-        let msg = makeTestMessage(
+        let owned = OwnedMessage(
             topic: "coaty/3/test/QRY/55555555-5555-4555-8555-555555555555/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
         )
-        router.dispatch(msg)
+        router.dispatch(owned.message)
         #expect(count.value == 3)
     }
 
     // MARK: - Protocol polymorphism
 
     @Test
-    func bothRoutersImplementMessageRouter() throws {
+    func embeddedRouterConformsToMessageRouter() throws {
         let embedded: MessageRouter = EmbeddedMessageRouter(maxSubscribers: 4)
         let received = Box(false)
 
@@ -171,10 +171,10 @@ struct MessageRouterTests {
             emb.subscribeAdvertise(filter: "foo") { _ in received.value = true }
         }
 
-        let msg = makeTestMessage(
+        let owned = OwnedMessage(
             topic: "coaty/3/test/ADV:foo/11111111-1111-4111-8111-111111111111"
         )
-        embedded.dispatch(msg)
+        embedded.dispatch(owned.message)
         #expect(received.value == true)
     }
 
@@ -225,17 +225,25 @@ private final class Box<T>: @unchecked Sendable {
     init(_ value: T) { self.value = value }
 }
 
-private func makeTestMessage(topic: String, payload: String = "{}") -> BorrowedMessage {
-    let topicBytes = Array(topic.utf8)
-    let payloadBytes = Array(payload.utf8)
-    return topicBytes.withUnsafeBufferPointer { topicBuf in
-        payloadBytes.withUnsafeBufferPointer { payloadBuf in
-            BorrowedMessage(
-                topicBytes: topicBuf.baseAddress!,
-                topicLength: topicBuf.count,
-                payloadBytes: payloadBuf.baseAddress!,
-                payloadLength: payloadBuf.count
-            )
+private final class OwnedMessage {
+    let topicBytes: [UInt8]
+    let payloadBytes: [UInt8]
+    let message: BorrowedMessage
+
+    init(topic: String, payload: String = "{}") {
+        let tb = Array(topic.utf8)
+        let pb = Array(payload.utf8)
+        self.topicBytes = tb
+        self.payloadBytes = pb
+        self.message = tb.withUnsafeBufferPointer { topicBuf in
+            pb.withUnsafeBufferPointer { payloadBuf in
+                BorrowedMessage(
+                    topicBytes: topicBuf.baseAddress!,
+                    topicLength: topicBuf.count,
+                    payloadBytes: payloadBuf.baseAddress!,
+                    payloadLength: payloadBuf.count
+                )
+            }
         }
     }
 }

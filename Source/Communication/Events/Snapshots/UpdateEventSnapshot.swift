@@ -3,7 +3,7 @@
 import Foundation
 
 /// A value-typed snapshot of an `UpdateEvent` suitable for concurrent event streams.
-public struct UpdateEventSnapshot: EventSnapshot, Codable, Equatable, Sendable {
+public struct UpdateEventSnapshot: Codable, Equatable, Sendable {
 
     /// The identifier of the event source, as derived from the incoming topic.
     public let sourceId: String?

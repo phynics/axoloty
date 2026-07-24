@@ -3,7 +3,7 @@
 import Foundation
 
 /// A value-typed snapshot of a `CoatyObject` suitable for concurrent event streams.
-public struct CoatyObjectSnapshot: EventSnapshot, Codable, Equatable, Sendable {
+public struct CoatyObjectSnapshot: Codable, Equatable, Sendable {
 
     /// The unique identifier of the object.
     public let objectId: String

@@ -3,7 +3,7 @@
 import Foundation
 
 /// A value-typed snapshot of an `AdvertiseEvent` suitable for concurrent event streams.
-public struct AdvertiseEventSnapshot: EventSnapshot, Codable, Equatable, Sendable {
+public struct AdvertiseEventSnapshot: Codable, Equatable, Sendable {
 
     /// The identifier of the event source, as derived from the incoming topic.
     public let sourceId: String?

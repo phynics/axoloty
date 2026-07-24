@@ -3,7 +3,7 @@
 import Foundation
 
 /// A value-typed snapshot of a `ChannelEvent` suitable for concurrent event streams.
-public struct ChannelEventSnapshot: EventSnapshot, Codable, Equatable, Sendable {
+public struct ChannelEventSnapshot: Codable, Equatable, Sendable {
 
     /// The identifier of the event source, as derived from the incoming topic.
     public let sourceId: String?

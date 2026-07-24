@@ -3,7 +3,7 @@
 import Foundation
 
 /// A value-typed snapshot of a raw incoming IO value message.
-public struct IoValueEventSnapshot: EventSnapshot, Codable, Equatable, Sendable {
+public struct IoValueEventSnapshot: Codable, Equatable, Sendable {
     /// The complete MQTT route carrying the IO value.
     public let topic: String
     /// The raw value payload.
