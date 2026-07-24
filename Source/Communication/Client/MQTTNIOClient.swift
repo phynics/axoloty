@@ -504,9 +504,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                     deliveryContinuation.yield { [weak self] in
                         guard let self else { return }
                         await self.streams.parsedMQTTMessages.send(parsed)
-                        await self.routeAdvertiseSnapshot(parsed: parsed)
-                        await self.routeOneWaySnapshot(parsed: parsed)
-                        await self.routeSnapshot(parsed: parsed)
+                        await Self.routeParsedMessage(parsed: parsed, into: self.streams)
                     }
                 }
             }
@@ -517,29 +515,32 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
         }
     }
 
-    /// Routes a decoded Advertise snapshot to the per-filter event hub keys so
-    /// that async observers can consume it without an intermediate dispatcher.
-    private func routeAdvertiseSnapshot(parsed: ParsedMQTTMessage) async {
-        guard parsed.eventType == .Advertise,
-              let snapshot = AdvertiseEventSnapshot(parsedMQTTMessage: parsed) else {
-            return
-        }
-
-        let baseKey = AdvertiseKey(eventTypeFilter: parsed.eventTypeFilter ?? "")
-        await streams.advertiseFamily.send(snapshot, for: baseKey)
-
-        if let coreType = CoreType.getCoreType(forObjectType: snapshot.object.objectType),
-           parsed.eventTypeFilter == coreType.rawValue {
-            let objectKey = AdvertiseKey(
-                eventTypeFilter: coreType.rawValue,
-                objectTypeFilter: snapshot.object.objectType
-            )
-            await streams.advertiseFamily.send(snapshot, for: objectKey)
-        }
-    }
-
-    private func routeOneWaySnapshot(parsed: ParsedMQTTMessage) async {
+    /// Routes a parsed MQTT message to the appropriate event streams.
+    ///
+    /// This is the single routing decision point for all non-IoValue, non-raw
+    /// Coaty messages. The exhaustive switch ensures that adding a new event
+    /// type produces a compiler error here.
+    ///
+    /// - Parameters:
+    ///   - parsed: the parsed transport message.
+    ///   - streams: the communication streams to dispatch into.
+    internal static func routeParsedMessage(
+        parsed: ParsedMQTTMessage,
+        into streams: CommunicationStreams
+    ) async {
         switch parsed.eventType {
+        case .Advertise:
+            guard let snapshot = AdvertiseEventSnapshot(parsedMQTTMessage: parsed) else { return }
+            let baseKey = AdvertiseKey(eventTypeFilter: parsed.eventTypeFilter ?? "")
+            await streams.advertiseFamily.send(snapshot, for: baseKey)
+            if let coreType = CoreType.getCoreType(forObjectType: snapshot.object.objectType),
+               parsed.eventTypeFilter == coreType.rawValue {
+                let objectKey = AdvertiseKey(
+                    eventTypeFilter: coreType.rawValue,
+                    objectTypeFilter: snapshot.object.objectType
+                )
+                await streams.advertiseFamily.send(snapshot, for: objectKey)
+            }
         case .Deadvertise:
             if let snapshot = DeadvertiseEventSnapshot(parsedMQTTMessage: parsed) {
                 await streams.deadvertise.send(snapshot)
@@ -557,26 +558,19 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                let operation = parsed.eventTypeFilter {
                 await streams.callFamily.send(snapshot, for: operation)
             }
-        default:
-            break
-        }
-    }
-
-    private func routeSnapshot(parsed: ParsedMQTTMessage) async {
-        if let correlationId = parsed.correlationId,
-           [.Complete, .Resolve, .Retrieve, .Return].contains(parsed.eventType) {
-            let snapshot = ResponseEventSnapshot(
-                eventType: parsed.eventType.rawValue,
-                sourceId: parsed.sourceId,
-                correlationId: correlationId,
-                payload: parsed.payload
-            )
-            await streams.responseFamily.send(
-                snapshot,
-                for: ResponseKey(eventType: parsed.eventType, correlationId: correlationId)
-            )
-        }
-        switch parsed.eventType {
+        case .Complete, .Resolve, .Retrieve, .Return:
+            if let correlationId = parsed.correlationId {
+                let snapshot = ResponseEventSnapshot(
+                    eventType: parsed.eventType.rawValue,
+                    sourceId: parsed.sourceId,
+                    correlationId: correlationId,
+                    payload: parsed.payload
+                )
+                await streams.responseFamily.send(
+                    snapshot,
+                    for: ResponseKey(eventType: parsed.eventType, correlationId: correlationId)
+                )
+            }
         case .Update:
             guard let snapshot = UpdateEventSnapshot(parsedMQTTMessage: parsed),
                   let filter = parsed.eventTypeFilter else { return }
@@ -585,7 +579,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
             guard let snapshot = ChannelEventSnapshot(parsedMQTTMessage: parsed),
                   let channelId = parsed.eventTypeFilter else { return }
             await streams.channelFamily.send(snapshot, for: channelId)
-        default:
+        case .Associate, .IoValue:
             break
         }
     }
