@@ -106,12 +106,21 @@ public struct WireReader {
             negative = true
             i += 1
         }
+        let firstDigit = i
         while i < slice.length {
             guard let b = slice.byte(at: i), b >= 0x30 && b <= 0x39 else { return nil }
-            value = value * 10 + Int(b - 0x30)
+            let digit = Int(b - 0x30)
+            // Accumulate toward the sign so Int.min stays representable.
+            let (product, prodOverflow) = value.multipliedReportingOverflow(by: 10)
+            let (sum, sumOverflow) = negative
+                ? product.subtractingReportingOverflow(digit)
+                : product.addingReportingOverflow(digit)
+            guard !prodOverflow, !sumOverflow else { return nil }
+            value = sum
             i += 1
         }
-        return negative ? -value : value
+        guard i > firstDigit else { return nil }
+        return value
     }
 
     /// Reads a boolean field.

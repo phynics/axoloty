@@ -135,6 +135,60 @@ struct WireCodecTests {
     }
 
     @Test
+    func wireReaderReadsNegativeInt() throws {
+        let json = #"{"n":-42}"#
+        let bytes = Array(json.utf8)
+        let reader = try bytes.withUnsafeBufferPointer { buf in
+            WireReader(bytes: buf.baseAddress!, length: buf.count)
+        }
+
+        #expect(reader.readInt("n") == -42)
+    }
+
+    @Test
+    func wireReaderReadsIntMinAndIntMax() throws {
+        let minJson = "{\"n\":\(Int.min)}"
+        let maxJson = "{\"n\":\(Int.max)}"
+
+        let minBytes = Array(minJson.utf8)
+        let minReader = try minBytes.withUnsafeBufferPointer { buf in
+            WireReader(bytes: buf.baseAddress!, length: buf.count)
+        }
+        #expect(minReader.readInt("n") == Int.min)
+
+        let maxBytes = Array(maxJson.utf8)
+        let maxReader = try maxBytes.withUnsafeBufferPointer { buf in
+            WireReader(bytes: buf.baseAddress!, length: buf.count)
+        }
+        #expect(maxReader.readInt("n") == Int.max)
+    }
+
+    @Test
+    func wireReaderReadsIntOverflowReturnsNil() throws {
+        // Regression for #222: a value exceeding Int.max must return nil,
+        // not trap on signed-integer overflow.
+        let json = #"{"n":99999999999999999999}"#
+        let bytes = Array(json.utf8)
+        let reader = try bytes.withUnsafeBufferPointer { buf in
+            WireReader(bytes: buf.baseAddress!, length: buf.count)
+        }
+
+        #expect(reader.readInt("n") == nil)
+    }
+
+    @Test
+    func wireReaderReadsLoneMinusSignReturnsNil() throws {
+        // Regression for #222: a lone '-' is not a valid integer.
+        let json = #"{"n":-}"#
+        let bytes = Array(json.utf8)
+        let reader = try bytes.withUnsafeBufferPointer { buf in
+            WireReader(bytes: buf.baseAddress!, length: buf.count)
+        }
+
+        #expect(reader.readInt("n") == nil)
+    }
+
+    @Test
     func wireReaderReadsBoolField() throws {
         let json = #"{"isExternalRoute":true}"#
         let bytes = Array(json.utf8)
