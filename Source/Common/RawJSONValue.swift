@@ -21,7 +21,7 @@ import Foundation
 ///   against the CoatyJS reference and the fixture corpus.
 /// - Important: Built only from stdlib types. Adding a Foundation type (such
 ///   as `Data`, `Date`, `URL`, or `Decimal`) to this enum's stored shape
-///   breaks the Embedded Swift path tracked by #111.
+///   breaks the Embedded Swift path tracked by #208.
 enum RawJSONValue: Equatable {
     /// A JSON `null` literal.
     case null

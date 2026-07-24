@@ -45,51 +45,45 @@ false` for a generated route (`encodeIfPresent` on a non-nil `Bool?`), an
 asymmetry with CoatyJS that is benign for decoding (CoatyJS ignores the
 field) but should be normalized.
 
-**Required remediation (follow-up PR, not this one):** replace the
-force-unwrap with `event.data.isExternalRoute ?? false`, add a regression
-test that an Associate without `isExternalRoute` associates an actor without
-trapping, and re-run the JS → modern live direction. Until then the JS →
-modern column is `Intentional divergence (defect)`.
+**Remediation (#211):** force-unwrap replaced with `event.data.isExternalRoute ?? false`, regression test added, and Associate encoding normalized to omit the field when `false`. The JS → modern column is provisionally `Compatible with normalization` pending live re-run with the updated encoding.
 
-### JSON IoValue: DIVERGE (defect — wire-format mismatch)
+### JSON IoValue: REMEDIATED (bare-value publish shipped)
 
-Axoloty's `IoValueEvent.json` wraps the value under a `payload` key
-(`IoValueEventData.encode`; asserted offline by
-`ioValueEventWrapsJsonValueUnderPayloadKey` → `{"payload":42}`). Pinned
-CoatyJS 2.4.0 publishes the bare JSON value (its
-`IoValueEventData.toJsonObject` returns the payload directly; confirmed by
-capture where the scalar IoValue was the two-byte string `42`). The live
-modern→JS runner proved the consequence: the CoatyJS actor received
-`{"payload":42}` — a structurally wrong value — and acked on receipt.
+Axoloty's `publishIoValue` now emits the bare JSON payload directly
+(`CM+Publish.swift:170-176`), matching CoatyJS 2.4.0's wire shape. The fix
+was shipped as part of the AnyCodable removal (#194) and the JSON value rename
+(#204). Offline regression tests (`AxolotyIoValuePayloadTests`) lock in the
+bare-value encode/decode round-trip for scalar and object JSON payloads. The
+live modern→JS scenario still needs re-running to update the capture evidence;
+the column is provisionally moved to `Compatible with normalization` based on
+the offline assertion, pending live re-confirmation.
 
-This is the JSON-mode form of the raw-IoValue overload defect the audit
-flagged (`IoSourceController.swift:250-257` → `CM+Publish.swift:454-460`):
-`publishIoValue` sends `event.json` through the String publish overload
-rather than emitting the raw payload value CoatyJS expects. Per the audit,
-wire-spelling divergence is "not acceptable accidental divergence."
+### Raw IoValue: REMEDIATED (byte overload shipped)
 
-**Required remediation (follow-up PR):** publish the bare value (not the
-wrapped event) for JSON IoValues so the wire matches CoatyJS, add a
-regression test locking in the bare-value wire shape, and record a migration
-note. Until then both IoValue columns are `Intentional divergence (defect)`.
+The raw path now calls the `[UInt8]` publish overload
+(`CM+Publish.swift:170-171`), preserving the original byte sequence. Offline
+regression tests cover empty, NUL-containing, and invalid-UTF8 raw payloads
+(`AxolotyIoValuePayloadTests`). The live raw capture remains to be run;
+the column is provisionally moved based on the offline evidence.
 
-### Raw IoValue: DIVERGE (defect — code-level, capture pending)
+### External route, fan-out/transitions, negative cases, forward compat: PARTIALLY TESTED
 
-The audit identified that the raw path constructs an `IoValueEvent` but sends
-`event.json` (JSON-wrapped bytes) via the String overload instead of the byte
-overload at `CommunicationManager.swift:390-400`. The `raw-source` role is
-implemented in the CoatyJS runner, but the live raw capture (Task 4 scenario
-3, including NUL and invalid UTF-8) was not run this session. Recorded as a
-defect on code-level evidence; the live capture remains to confirm the exact
-bytes and CoatyJS decode behavior. Column: `Not tested (defect suspected)`.
+Scenarios 4 (external route), 5 (fan-out/transitions), and 6 (negative IO cases live subset) are not yet backed by live capture. The CoatyJS runner implements the `external-source`, `raw-source`, and `actor` roles, and env-gated Swift tests exist for:
+- Raw IoValue JS→modern (`WIRE_IO_RAW_JS_TO_MODERN_LIVE`)
+- Raw IoValue modern→JS (`WIRE_IO_RAW_MODERN_TO_JS_LIVE`)
+- External route JS→modern (`WIRE_IO_EXT_JS_TO_MODERN_LIVE`)
 
-### External route, fan-out/transitions, negative cases: NOT YET TESTED
+Live shell scripts and Makefile entries for these scenarios remain to be written.
 
-Scenarios 4 (external route), 5 (fan-out/transitions), and 6 (negative IO
-cases) are not backed by live capture this session. The CoatyJS runner
-implements the `external-source` role and deterministic multi-actor IDs are
-defined, so the harness is in place; the captures remain to be run. Columns:
-`Not tested`.
+Offline forward-compat tests (scenario 9) have been added:
+- IoValueEventData with unknown fields (`ioValueDecodesPayloadWithUnknownFields`)
+- IoValue raw payload with reordered keys (`ioValueDecodesRawPayloadWithReorderedKeys`)
+- Associate with reordered JSON keys (`associateEventDecodesWithReorderedKeys`)
+- Raw IoValue with unknown fields (`rawIoValueDecodesPayloadWithUnknownFields`)
+
+SensorThings (scenarios 7-8) and lifecycle overlap (scenario 10) remain not tested.
+
+Column: `Not tested`, with the harness in place for live execution.
 
 ### IoState API behavior: KEEP (not a wire contract)
 
@@ -106,27 +100,30 @@ constraint, not an Axoloty defect. Integer IoValues exceeding 2^53 must be
 documented as not reliably round-tripping through a CoatyJS peer; Axoloty
 preserves Int64 exactly. KEEP, with a normalization note in the matrix.
 
-### SensorThings: NOT YET TESTED (reduces to Advertise/Channel compatibility)
+### SensorThings: PARTIALLY TESTED (field-schema fixtures captured)
 
-There is no `@coaty/sensor-things` npm package (E404) and `@coaty/core@2.4.0`
-exports no SensorThings types. Per the audit, SensorThings defines no special
-MQTT event code; its wire contract is ordinary Coaty object JSON with an
-`objectType` of `coaty.sensorThings.*` carried over standard Advertise/Channel
-topics. SensorThings compatibility therefore reduces to the already-established
-Advertise/Channel compatibility (`Compatible with normalization` in the
-matrix), plus the field-schema fixtures (Task 8) and forward-compat cases
-(Task 9) which are not yet captured. The four object types
-(`FeatureOfInterest`, `Observation`, `Sensor`, `Thing`) and their nested
-fields (`UnitOfMeasurement`, `ObservedProperty`, polygon `observedArea`,
-heterogeneous raw JSON `String`) are defined in `Source/SensorThings/` and
-exercised same-process by `Tests/SensorThings/`. Columns: `Not tested`, with
-the note that the transport layer is already proven compatible.
+No `@coaty/sensor-things` npm package (E404) and `@coaty/core@2.4.0` exports
+no SensorThings types, so cross-implementation live coverage is not possible.
+Per the audit, SensorThings defines no special MQTT event code; its wire
+contract is ordinary Coaty object JSON with an `objectType` of
+`coaty.sensorThings.*` over standard Advertise/Channel topics, so transport
+compatibility reduces to the already-proven Advertise/Channel rows.
+
+Offline field-schema fixture tests have been added
+(`SensorThingsWireFixtureTests`): fully-populated and minimal objects of all
+four types (FeatureOfInterest, Observation, Sensor, Thing), covering nested
+UnitOfMeasurement, ObservedProperty, Polygon observedArea, CoatyTimeInterval,
+heterogeneous raw JSON fields (metadata as null/object/string, result as
+number/object/null/string), Unicode, forward-compat (unknown fields, reordered
+keys, unknown observationType rejection), and omitted optionals.
+
+Column: `Compatible with normalization` (transport proven via Advertise/Channel;
+field-schema decode locked in offline). Live cross-implementation capture
+remains unavailable due to the missing SensorThings npm package.
 
 ## Summary matrix update
 
 See `CompatibilityMatrix.md` rows 20 (`Associate / IoState / IoValue`) and 22
-(`SensorThings`) for the per-direction results. Open remediation items
-(isExternalRoute force-unwrap; JSON/raw IoValue wire format) are tracked as
-intentional divergences pending their follow-up PRs; the Phase 6 epic closes
-with those recorded, mirroring how `qos-1`/`qos-2` closed as approved
-divergences.
+(`SensorThings`) for the per-direction results. Both Associate and IoValue
+defects have been remediated (#211, #212); the columns are provisionally
+`Compatible with normalization` pending live re-confirmation.

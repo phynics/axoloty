@@ -132,10 +132,6 @@ class CommunicationTopic {
     ///
     /// - Parameter topic: an incoming topic string
     /// - Returns: false if the topic starts with "coaty/"; true otherwise
-    static func isRawTopic(topic: String) -> Bool {
-        return !topic.hasPrefix(PROTOCOL_NAME_PREFIX)
-    }
-    
     /// Determines whether the given MQTT topic matches the given MQTT topic filter.
     ///
     /// Examples:

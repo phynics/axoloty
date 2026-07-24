@@ -253,6 +253,252 @@ private func runDiscoverResolve(_ arguments: Arguments) throws {
     responderManager.stop()
 }
 
+// MARK: - Consumer scenarios (Modern → legacy)
+
+/// Long-lived consumer that subscribes to Advertise events for the reference
+/// object type, decodes the first one it receives, and reports the semantic
+/// fields. Axoloty acts as the producer.
+private func runConsumeAdvertise(_ arguments: Arguments) throws {
+    let container = makeContainer(
+        arguments: arguments,
+        identityId: requesterIdentityId,
+        identityName: "coatyswift-wire-consumer"
+    )
+    let manager = try communicationManager(for: container)
+    let received = DispatchSemaphore(value: 0)
+
+    let subscription = manager.observeAdvertise(withObjectType: referenceObjectType)
+        .subscribe(onNext: { event in
+            let obj = event.data.object
+            report("observed-advertise", scenario: arguments.scenario,
+                   details: ",\"objectType\":\"\(obj.objectType)\",\"objectId\":\"\(obj.objectId.string)\"")
+            received.signal()
+        })
+    defer { subscription.dispose() }
+
+    report("ready", scenario: arguments.scenario)
+    manager.start()
+    do {
+        try waitUntilOnline(manager)
+    } catch {
+        manager.stop()
+        throw error
+    }
+
+    guard runLoopWait(received, timeout: resolveTimeout) else {
+        manager.stop()
+        throw RunnerError.timeout
+    }
+
+    runLoopSleep(settleInterval)
+    manager.stop()
+}
+
+/// Long-lived consumer that subscribes to Deadvertise events, decodes the
+/// first one, and reports the object IDs. Axoloty acts as the producer.
+private func runConsumeDeadvertise(_ arguments: Arguments) throws {
+    let container = makeContainer(
+        arguments: arguments,
+        identityId: requesterIdentityId,
+        identityName: "coatyswift-wire-consumer"
+    )
+    let manager = try communicationManager(for: container)
+    let received = DispatchSemaphore(value: 0)
+
+    let subscription = manager.observeDeadvertise()
+        .subscribe(onNext: { event in
+            let ids = event.data.objectIds.map { $0.string }
+            report("observed-deadvertise", scenario: arguments.scenario,
+                   details: ",\"objectIds\":\(ids)")
+            received.signal()
+        })
+    defer { subscription.dispose() }
+
+    report("ready", scenario: arguments.scenario)
+    manager.start()
+    do {
+        try waitUntilOnline(manager)
+    } catch {
+        manager.stop()
+        throw error
+    }
+
+    guard runLoopWait(received, timeout: resolveTimeout) else {
+        manager.stop()
+        throw RunnerError.timeout
+    }
+
+    runLoopSleep(settleInterval)
+    manager.stop()
+}
+
+/// Long-lived consumer that subscribes to Channel events on a deterministic
+/// channel ID, decodes the first one, and reports the message. Axoloty acts
+/// as the producer.
+private func runConsumeChannel(_ arguments: Arguments) throws {
+    let container = makeContainer(
+        arguments: arguments,
+        identityId: requesterIdentityId,
+        identityName: "coatyswift-wire-consumer"
+    )
+    let manager = try communicationManager(for: container)
+    let received = DispatchSemaphore(value: 0)
+
+    let subscription = manager.observeChannel(channelId: 42)
+        .subscribe(onNext: { event in
+            report("observed-channel", scenario: arguments.scenario,
+                   details: ",\"channelId\":\(event.data.channelId)")
+            received.signal()
+        })
+    defer { subscription.dispose() }
+
+    report("ready", scenario: arguments.scenario)
+    manager.start()
+    do {
+        try waitUntilOnline(manager)
+    } catch {
+        manager.stop()
+        throw error
+    }
+
+    guard runLoopWait(received, timeout: resolveTimeout) else {
+        manager.stop()
+        throw RunnerError.timeout
+    }
+
+    runLoopSleep(settleInterval)
+    manager.stop()
+}
+
+/// Legacy responder that subscribes to Discover events for the reference
+/// object type and publishes a correlated Resolve. Axoloty acts as the
+/// Discover requester.
+private func runRespondDiscover(_ arguments: Arguments) throws {
+    let container = makeContainer(
+        arguments: arguments,
+        identityId: responderIdentityId,
+        identityName: "coatyswift-wire-responder"
+    )
+    let manager = try communicationManager(for: container)
+    let responded = DispatchSemaphore(value: 0)
+
+    let subscription = manager.observeDiscover().subscribe(onNext: { event in
+        guard event.data.isObjectTypeCompatible(objectType: referenceObjectType) else {
+            return
+        }
+        report("observed-discover", scenario: arguments.scenario)
+        event.resolve(resolveEvent: ResolveEvent.with(
+            object: referenceObject(),
+            privateData: ["reference": "coatyswift-2.4.0"]
+        ))
+        responded.signal()
+    })
+    defer { subscription.dispose() }
+
+    report("ready", scenario: arguments.scenario)
+    manager.start()
+    do {
+        try waitUntilOnline(manager)
+    } catch {
+        manager.stop()
+        throw error
+    }
+
+    guard runLoopWait(responded, timeout: resolveTimeout) else {
+        manager.stop()
+        throw RunnerError.timeout
+    }
+
+    runLoopSleep(settleInterval)
+    manager.stop()
+}
+
+/// Legacy responder that subscribes to Query events for the reference object
+/// type and publishes a correlated Retrieve. Axoloty acts as the Query
+/// requester.
+private func runRespondQuery(_ arguments: Arguments) throws {
+    let container = makeContainer(
+        arguments: arguments,
+        identityId: responderIdentityId,
+        identityName: "coatyswift-wire-responder"
+    )
+    let manager = try communicationManager(for: container)
+    let responded = DispatchSemaphore(value: 0)
+
+    let subscription = manager.observeQuery().subscribe(onNext: { event in
+        guard event.data.objectTypes?.contains(referenceObjectType) == true else {
+            return
+        }
+        report("observed-query", scenario: arguments.scenario)
+        event.retrieve(retrieveEvent: RetrieveEvent.with(
+            object: referenceObject()
+        ))
+        responded.signal()
+    })
+    defer { subscription.dispose() }
+
+    report("ready", scenario: arguments.scenario)
+    manager.start()
+    do {
+        try waitUntilOnline(manager)
+    } catch {
+        manager.stop()
+        throw error
+    }
+
+    guard runLoopWait(responded, timeout: resolveTimeout) else {
+        manager.stop()
+        throw RunnerError.timeout
+    }
+
+    runLoopSleep(settleInterval)
+    manager.stop()
+}
+
+/// Legacy responder that subscribes to Call events for a deterministic
+/// operation and publishes a correlated Return. Axoloty acts as the Call
+/// initiator.
+private func runRespondCall(_ arguments: Arguments) throws {
+    let container = makeContainer(
+        arguments: arguments,
+        identityId: responderIdentityId,
+        identityName: "coatyswift-wire-responder"
+    )
+    let manager = try communicationManager(for: container)
+    let responded = DispatchSemaphore(value: 0)
+    let operationType = "org.axoloty.wire.ReferenceOperation"
+
+    let subscription = manager.observeCall().subscribe(onNext: { event in
+        guard event.data.operationType == operationType else {
+            return
+        }
+        report("observed-call", scenario: arguments.scenario,
+               details: ",\"operationType\":\"\(operationType)\"")
+        event.return(returnEvent: ReturnEvent.with(
+            result: ["status": "ok", "responder": "coatyswift-2.4.0"]
+        ))
+        responded.signal()
+    })
+    defer { subscription.dispose() }
+
+    report("ready", scenario: arguments.scenario)
+    manager.start()
+    do {
+        try waitUntilOnline(manager)
+    } catch {
+        manager.stop()
+        throw error
+    }
+
+    guard runLoopWait(responded, timeout: resolveTimeout) else {
+        manager.stop()
+        throw RunnerError.timeout
+    }
+
+    runLoopSleep(settleInterval)
+    manager.stop()
+}
+
 private func run(_ arguments: Arguments) throws {
     guard arguments.sourceCommit == pinnedCommit else {
         throw RunnerError.invalidPin("requested source commit does not match compiled pin \(pinnedCommit)")
@@ -269,6 +515,21 @@ private func run(_ arguments: Arguments) throws {
         }
     case "discover-resolve":
         try runDiscoverResolve(arguments)
+    // Consumer scenarios: legacy CoatySwift subscribes to events an Axoloty
+    // producer publishes, decodes them, and reports the semantic fields it
+    // observed. These enable the Modern → legacy matrix direction.
+    case "consume-advertise":
+        try runConsumeAdvertise(arguments)
+    case "consume-deadvertise":
+        try runConsumeDeadvertise(arguments)
+    case "consume-channel":
+        try runConsumeChannel(arguments)
+    case "respond-discover":
+        try runRespondDiscover(arguments)
+    case "respond-query":
+        try runRespondQuery(arguments)
+    case "respond-call":
+        try runRespondCall(arguments)
     default:
         throw RunnerError.unsupportedScenario(arguments.scenario)
     }

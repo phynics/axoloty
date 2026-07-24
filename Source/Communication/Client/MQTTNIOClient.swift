@@ -452,7 +452,16 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                 await self.streams.rawMQTTMessages.send(rawMessage)
             }
 
-            if CommunicationTopic.isRawTopic(topic: info.topicName) {
+            // Fast routing decision via TopicView (zero-allocation byte scan)
+            // before falling through to the full CommunicationTopic parse.
+            let topicBytes = Array(info.topicName.utf8)
+            let routing: (isRaw: Bool, eventType: WireEventType?) = topicBytes.withUnsafeBufferPointer { buf in
+                guard let base = buf.baseAddress else { return (true, nil) }
+                let view = TopicView(topicBytes: base, length: buf.count)
+                return (view.isRawTopic, view.eventType)
+            }
+
+            if routing.isRaw {
                 self.delegate.didReceiveRawMQTTMessage(
                     topic: info.topicName,
                     payload: bytes
@@ -460,6 +469,23 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                 return
             }
 
+            // IoValue fast path: skip CommunicationTopic allocation entirely.
+            // IoValue is the high-frequency path; the topic string from mqtt-nio
+            // is already available and needs no further parsing.
+            if routing.eventType == .ioValue {
+                self.delegate.didReceiveIoValue(
+                    topic: info.topicName,
+                    payload: bytes
+                )
+                deliveryContinuation.yield { [weak self] in
+                    guard let self else { return }
+                    await self.streams.ioValues.send(IoValueEventSnapshot(topic: info.topicName, payload: bytes))
+                }
+                return
+            }
+
+            // Full path: CommunicationTopic parse for request/response and
+            // one-way events that need correlation IDs, filters, and namespace.
             do {
                 let topic = try CommunicationTopic(info.topicName)
                 var receivedEventMetadata: Logging.Logger.Metadata = [
@@ -470,16 +496,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                     receivedEventMetadata["correlationId"] = .string(correlationId)
                 }
                 log.trace("Received event", metadata: receivedEventMetadata)
-                if topic.eventType == .IoValue {
-                    self.delegate.didReceiveIoValue(
-                        topic: info.topicName,
-                        payload: bytes
-                    )
-                    deliveryContinuation.yield { [weak self] in
-                        guard let self else { return }
-                        await self.streams.ioValues.send(IoValueEventSnapshot(topic: info.topicName, payload: bytes))
-                    }
-                } else if let payloadString = String(bytes: bytes, encoding: .utf8) {
+                if let payloadString = String(bytes: bytes, encoding: .utf8) {
                     self.delegate.didReceiveMessage(
                         topic: info.topicName,
                         payload: payloadString

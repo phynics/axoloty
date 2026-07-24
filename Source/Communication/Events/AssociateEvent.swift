@@ -158,7 +158,11 @@ public class AssociateEventData: CommunicationEventData {
         try container.encodeIfPresent(ioSourceId, forKey: .ioSourceId)
         try container.encodeIfPresent(ioActorId, forKey: .ioActorId)
         try container.encodeIfPresent(associatingRoute, forKey: .associatingRoute)
-        try container.encodeIfPresent(isExternalRoute, forKey: .isExternalRoute)
+        // CoatyJS 2.4.0 never serializes isExternalRoute; match by omitting
+        // it when false so a wire payload only carries it when meaningful.
+        if isExternalRoute == true {
+            try container.encode(true, forKey: .isExternalRoute)
+        }
         try container.encodeIfPresent(updateRate, forKey: .updateRate)
     }
 }

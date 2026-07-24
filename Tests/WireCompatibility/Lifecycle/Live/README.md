@@ -14,12 +14,9 @@ and last-will observation; polling is only a transport mechanism, never the
 assertion.
 
 Nine of the eleven catalog scenarios are executable, all verified end-to-end
-(not merely syntax-checked) on a macOS host with a local Mosquitto broker and
-`node`/`npm` running `@coaty/core` directly, ahead of writing container-based
-scripts. This host has no `docker`/`podman`; `run-lifecycle-call-return.sh`
-(below) runs mosquitto/node/`swift test` as native processes on purpose,
-matching the precedent the other three scripts set before they were
-containerized.
+(not merely syntax-checked). All runners are now containerized — broker,
+capture probe, CoatyJS responder, and Swift test subject each run on an
+isolated runtime network with no dependency on host Mosquitto or Swift.
 
 CoatyJS 2.4.0 is the live subject (Axoloty is recorded as an unavailable
 subject, not cross-implementation proof) for:
@@ -100,8 +97,7 @@ clean-session) the proxy's CONNACK log.
 `qos-1` and `qos-2` remain the only non-executable catalog entries; see the
 verified reason above.
 
-The Axoloty-subject scenarios can also be run directly (native, no container
-runtime):
+The Axoloty-subject scenarios can also be run directly:
 
 ```sh
 Tests/WireCompatibility/Lifecycle/Live/run-lifecycle-call-return.sh duplicate-reply

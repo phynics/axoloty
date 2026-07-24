@@ -29,7 +29,7 @@ COMMA := ,
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build embedded-build embedded-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs wire-tool clean
+.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs wire-tool clean
 
 help:
 	@printf '%s\n' \
@@ -37,9 +37,8 @@ help:
 		'make resolve       Resolve Package.resolved using the shared SwiftPM cache' \
 		'make worktree-bootstrap  Prepare dependency cache and validate Package.resolved' \
 		'make worktree-warm  Bootstrap and compile the current worktree' \
-		'make build         Build Axoloty in the Linux container' \
-		'make embedded-build Compile the Embedded Swift Linux prototype' \
-		'make embedded-test  Run the Embedded Swift Linux prototype' \
+	'make build         Build Axoloty in the Linux container' \
+	'make wire-codec-test  Run the Foundation-free wire codec unit tests' \
 		'make test-communication  Run communication transport and subscription tests' \
 		'make test-broker-regressions  Run broker-backed regression tests' \
 		'make test-decoder-context-sendable  Fail if the former decoder-context Sendable diagnostic returns' \
@@ -98,12 +97,9 @@ test-broker-regressions: image
 build: resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift build $(SWIFT_LOCKED_ARGS)
 
-embedded-build: image
+wire-codec-test: build
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \
-		swiftc -enable-experimental-feature Embedded -wmo -parse-as-library Embedded/Probe/main.swift -o .build/embedded-probe
-
-embedded-test: embedded-build
-	@test "$$(CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh .build/embedded-probe)" = '{"message":"embedded"}'
+		swift test $(SWIFT_LOCKED_ARGS) --filter 'WireCodecTests|StaticDispatchTests|WireDifferentialTests|MessageRouterTests'
 
 test-decoder-context-sendable:
 	@build_log=$$(mktemp); \

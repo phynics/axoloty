@@ -21,7 +21,7 @@ import IkigaJSON
 ///   compatibility against the CoatyJS reference and the fixture corpus.
 /// - Important: Built only from stdlib types. Adding a Foundation type
 ///   (such as `Data`, `Date`, `URL`, or `Decimal`) to this enum's stored
-///   shape breaks the Embedded Swift path tracked by #111.
+///   shape breaks the Embedded Swift path tracked by #208.
 public enum FilterOperand: Hashable, Sendable {
     /// A JSON string literal.
     case string(String)
