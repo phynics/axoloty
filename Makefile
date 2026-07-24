@@ -144,7 +144,7 @@ test-wire: resolve
 test-support:
 	Tests/Support/test-run-container.sh
 	Tests/Fuzzing/test-run-fuzz.sh
-	cd Tests/WireCompatibility/tool && npm test
+	cd Tests/WireCompatibility/tool && npm ci && npm test
 	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/Support -p 'test_*.py' -v
 	python3 Tests/Support/validate_test_tiers.py Tests/Support/test-tiers.json
 
