@@ -15,8 +15,11 @@
 ///   outlive the `BorrowedMessage`. This type is intentionally not `Sendable`;
 ///   it is designed for synchronous dispatch in the routing hot path.
 public struct BorrowedMessage {
+    /// The parsed topic view borrowing the topic bytes.
     public let topic: TopicView
+    /// The message payload as a borrowed byte slice.
     public let payload: ByteSlice
+    /// The Coaty event type parsed from the topic, or nil for raw topics.
     public let eventType: WireEventType?
 
     /// Creates a borrowed message from raw topic and payload bytes.

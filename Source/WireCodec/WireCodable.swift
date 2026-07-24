@@ -11,6 +11,10 @@
 /// against the existing `Codable` path (`PayloadCoder.decode`) to prove
 /// semantic equivalence before production cutover.
 public protocol WireDecodable {
+    /// Creates an instance by decoding fields from `reader`.
+    ///
+    /// - Parameter reader: A ``WireReader`` over the JSON payload bytes.
+    /// - Throws: ``WireDecodeError`` if a required field is missing or malformed.
     init(from reader: WireReader) throws(WireDecodeError)
 }
 
@@ -21,5 +25,9 @@ public protocol WireDecodable {
 /// writes JSON directly into a fixed-size byte buffer with overflow
 /// protection.
 public protocol WireEncodable {
+    /// Encodes this value into the given writer's buffer as JSON.
+    ///
+    /// - Parameter writer: The ``WireWriter`` to encode into.
+    /// - Throws: ``WireEncodeError`` if the encoded output exceeds the buffer capacity.
     func encode(to writer: inout WireWriter) throws(WireEncodeError)
 }

@@ -6,10 +6,21 @@
 /// buffer and the writer encodes JSON directly into it. Designed for the
 /// wire encode hot path.
 public struct WireWriter {
+    /// The destination buffer the writer encodes into.
     @usableFromInline let buffer: UnsafeMutablePointer<UInt8>
+    /// The total capacity of ``buffer`` in bytes.
     public let capacity: Int
+    /// The current write offset into ``buffer``.
     public private(set) var position: Int
 
+    /// Creates a writer that encodes JSON into the given buffer.
+    ///
+    /// The writer holds the pointer without copying; the caller must ensure
+    /// the buffer remains valid for the writer's lifetime.
+    ///
+    /// - Parameters:
+    ///   - buffer: A caller-owned byte buffer the writer encodes into.
+    ///   - capacity: The number of bytes available at `buffer`.
     public init(buffer: UnsafeMutablePointer<UInt8>, capacity: Int) {
         self.buffer = buffer
         self.capacity = capacity
@@ -197,6 +208,8 @@ public struct WireWriter {
 
 /// Encode error for the wire writer.
 public enum WireEncodeError: Error, Sendable {
+    /// The encoded output would exceed the writer's ``WireWriter/capacity``.
     case bufferOverflow
+    /// The value cannot be represented in the wire format.
     case invalidValue
 }

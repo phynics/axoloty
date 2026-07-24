@@ -10,9 +10,16 @@
 /// Topic format: `coaty/<version>/<namespace>/<eventType>[filter]/<sourceId>[/<correlationId>]`
 public struct TopicBuilder {
     private let buffer: UnsafeMutablePointer<UInt8>
+    /// The total capacity of the buffer in bytes.
     public let capacity: Int
+    /// The current write offset into the buffer.
     public private(set) var position: Int
 
+    /// Creates a topic builder that writes into the given buffer.
+    ///
+    /// - Parameters:
+    ///   - buffer: A caller-owned byte buffer the builder writes into.
+    ///   - capacity: The number of bytes available at `buffer`.
     public init(buffer: UnsafeMutablePointer<UInt8>, capacity: Int) {
         self.buffer = buffer
         self.capacity = capacity

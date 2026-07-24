@@ -10,9 +10,19 @@
 /// compile time (e.g. an `AssociateEvent` has `ioSourceId`, `ioActorId`,
 /// `associatingRoute`, etc.). The caller reads fields by static string key.
 public struct WireReader {
+    /// The raw pointer to the JSON byte buffer being scanned.
     @usableFromInline let bytes: UnsafeRawPointer
+    /// The number of valid bytes pointed to by ``bytes``.
     public let length: Int
 
+    /// Creates a reader over the given JSON byte buffer.
+    ///
+    /// The reader holds the pointer without copying; the caller must ensure
+    /// the buffer remains valid for the reader's lifetime.
+    ///
+    /// - Parameters:
+    ///   - bytes: A pointer to the UTF-8 JSON bytes to scan.
+    ///   - length: The number of valid bytes at `bytes`.
     @inlinable
     public init(bytes: UnsafePointer<UInt8>, length: Int) {
         self.bytes = UnsafeRawPointer(bytes)

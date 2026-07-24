@@ -11,9 +11,16 @@
 ///   for synchronous dispatch in the routing hot path, not for crossing
 ///   isolation boundaries.
 public struct ByteSlice: Equatable, Hashable {
+    /// The raw pointer into the externally-owned byte buffer.
     @usableFromInline let pointer: UnsafeRawPointer
+    /// The number of bytes in this slice.
     public let length: Int
 
+    /// Creates a slice borrowing the given pointer and length.
+    ///
+    /// - Parameters:
+    ///   - pointer: A pointer into an externally-owned byte buffer.
+    ///   - length: The number of bytes in the slice.
     @inlinable
     init(pointer: UnsafeRawPointer, length: Int) {
         self.pointer = pointer
@@ -71,7 +78,7 @@ public struct ByteSlice: Equatable, Hashable {
         return String(decoding: buf, as: UTF8.self)
     }
 
-    /// Compares this slice against an ASCII string's UTF-8 bytes.
+    /// Returns `true` if both slices have the same length and byte contents.
     public static func == (lhs: ByteSlice, rhs: ByteSlice) -> Bool {
         guard lhs.length == rhs.length else { return false }
         for i in 0..<lhs.length {
@@ -82,6 +89,8 @@ public struct ByteSlice: Equatable, Hashable {
         return true
     }
 
+    /// Feeds each byte into `hasher` so ``ByteSlice`` can be used as a
+    /// `Set` or `Dictionary` key.
     public func hash(into hasher: inout Hasher) {
         for i in 0..<length {
             hasher.combine(pointer.load(fromByteOffset: i, as: UInt8.self))
