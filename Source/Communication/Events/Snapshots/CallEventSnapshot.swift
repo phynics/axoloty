@@ -56,10 +56,8 @@ extension CallEventSnapshot {
             sourceId: parsedMQTTMessage.sourceId,
             correlationId: parsedMQTTMessage.correlationId,
             operation: operation,
-            parameters: WirePayloadExtractor.nestedPayload(from: parsedMQTTMessage.payload, key: "parameters")
-                .map { String(decoding: $0, as: UTF8.self) },
+            parameters: WirePayloadExtractor.nestedPayload(from: parsedMQTTMessage.payload, key: "parameters"),
             filter: WirePayloadExtractor.nestedObjectPayload(from: parsedMQTTMessage.payload, key: "filter")
-                .map { String(decoding: $0, as: UTF8.self) }
         )
     }
 }

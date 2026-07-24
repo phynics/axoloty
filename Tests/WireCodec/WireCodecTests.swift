@@ -16,7 +16,7 @@ struct WireCodecTests {
 
     @Test
     func topicViewParsesAdvertiseTopic() throws {
-        let topic = "coaty/3/wire-compat-v1/ADV-sensors/33333333-3333-4333-8333-333333333333"
+        let topic = "coaty/3/wire-compat-v1/ADV:sensors/33333333-3333-4333-8333-333333333333"
         let bytes = Array(topic.utf8)
         let view = try bytes.withUnsafeBufferPointer { buf in
             TopicView(topicBytes: buf.baseAddress!, length: buf.count)
@@ -59,7 +59,7 @@ struct WireCodecTests {
 
     @Test
     func topicViewParsesAssociateWithFilter() throws {
-        let topic = "coaty/3/wire-compat-v1/ASC-io-context-1/55555555-5555-4555-8555-555555555555"
+        let topic = "coaty/3/wire-compat-v1/ASC:io-context-1/55555555-5555-4555-8555-555555555555"
         let bytes = Array(topic.utf8)
         let view = try bytes.withUnsafeBufferPointer { buf in
             TopicView(topicBytes: buf.baseAddress!, length: buf.count)

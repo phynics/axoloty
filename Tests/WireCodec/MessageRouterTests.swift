@@ -21,7 +21,7 @@ struct MessageRouterTests {
         }
 
         let msg = makeTestMessage(
-            topic: "coaty/3/test/ASC-ctx/55555555-5555-4555-8555-555555555555",
+            topic: "coaty/3/test/ASC:ctx/55555555-5555-4555-8555-555555555555",
             payload: #"{"ioSourceId":"33333333-3333-4333-8333-333333333333","ioActorId":"44444444-4444-4444-8444-444444444444"}"#
         )
         router.dispatch(msg)
@@ -88,7 +88,7 @@ struct MessageRouterTests {
 
         // Advertise for "sensors" filter → only sensors subscriber receives
         let msg = makeTestMessage(
-            topic: "coaty/3/test/ADV-sensors/11111111-1111-4111-8111-111111111111"
+            topic: "coaty/3/test/ADV:sensors/11111111-1111-4111-8111-111111111111"
         )
         router.dispatch(msg)
         #expect(fooReceived.value == true)
@@ -103,7 +103,7 @@ struct MessageRouterTests {
         router.subscribeChannel(channelId: "42") { _ in ch42Received.value = true }
 
         let msg = makeTestMessage(
-            topic: "coaty/3/test/CHN-42/11111111-1111-4111-8111-111111111111"
+            topic: "coaty/3/test/CHN:42/11111111-1111-4111-8111-111111111111"
         )
         router.dispatch(msg)
         #expect(ch42Received.value == true)
@@ -172,7 +172,7 @@ struct MessageRouterTests {
         }
 
         let msg = makeTestMessage(
-            topic: "coaty/3/test/ADV-foo/11111111-1111-4111-8111-111111111111"
+            topic: "coaty/3/test/ADV:foo/11111111-1111-4111-8111-111111111111"
         )
         embedded.dispatch(msg)
         #expect(received.value == true)
@@ -196,7 +196,7 @@ struct MessageRouterTests {
             decodedSourceId.value = reader.readUUID("ioSourceId")
         }
 
-        let topic = "coaty/3/test/ASC-ctx/55555555-5555-4555-8555-555555555555"
+        let topic = "coaty/3/test/ASC:ctx/55555555-5555-4555-8555-555555555555"
         let payload = #"{"ioSourceId":"33333333-3333-4333-8333-333333333333","ioActorId":"44444444-4444-4444-8444-444444444444","associatingRoute":"coaty/3/test/IOV/33333333-3333-4333-8333-333333333333","updateRate":250}"#
         let topicBytes = Array(topic.utf8)
         let payloadBytes = Array(payload.utf8)

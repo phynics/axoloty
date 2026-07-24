@@ -47,7 +47,6 @@ extension UpdateEventSnapshot {
             return nil
         }
         let objectPayload = WirePayloadExtractor.nestedObjectPayload(from: parsedMQTTMessage.payload, key: "object")
-            .map { String(decoding: $0, as: UTF8.self) }
 
         self.init(
             sourceId: parsedMQTTMessage.sourceId,

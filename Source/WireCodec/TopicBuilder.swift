@@ -78,7 +78,7 @@ public struct TopicBuilder {
         }
         writeBytes(code)
         if let filter {
-            writeByte(0x2D) // '-'
+            writeByte(0x3A) // ':'
             for i in 0..<filter.length {
                 if let b = filter.byte(at: i) { writeByte(b) }
             }

@@ -32,7 +32,7 @@ struct StaticDispatchTests {
         #expect(token2 != nil)
         #expect(table.subscriberCount == 2)
 
-        let msg = makeTestMessage(topic: "coaty/3/test/ADV-foo/11111111-1111-4111-8111-111111111111")
+        let msg = makeTestMessage(topic: "coaty/3/test/ADV:foo/11111111-1111-4111-8111-111111111111")
         table.dispatch(msg)
 
         #expect(received.value.count == 2)
@@ -50,7 +50,7 @@ struct StaticDispatchTests {
 
         #expect(table.subscriberCount == 0)
 
-        let msg = makeTestMessage(topic: "coaty/3/test/ADV-foo/11111111-1111-4111-8111-111111111111")
+        let msg = makeTestMessage(topic: "coaty/3/test/ADV:foo/11111111-1111-4111-8111-111111111111")
         table.dispatch(msg)
 
         #expect(received.value == 0)
@@ -81,7 +81,7 @@ struct StaticDispatchTests {
         #expect(t2 != nil)
         #expect(table.subscriberCount == 1)
 
-        let msg = makeTestMessage(topic: "coaty/3/test/ADV-foo/11111111-1111-4111-8111-111111111111")
+        let msg = makeTestMessage(topic: "coaty/3/test/ADV:foo/11111111-1111-4111-8111-111111111111")
         table.dispatch(msg)
         #expect(received.value == 1)
     }
@@ -99,7 +99,7 @@ struct StaticDispatchTests {
         #expect(fooToken != nil)
         #expect(barToken != nil)
 
-        let msg = makeTestMessage(topic: "coaty/3/test/ADV-foo/11111111-1111-4111-8111-111111111111")
+        let msg = makeTestMessage(topic: "coaty/3/test/ADV:foo/11111111-1111-4111-8111-111111111111")
 
         table.dispatch(key: "foo", msg)
         #expect(fooReceived.value == 1)
@@ -119,7 +119,7 @@ struct StaticDispatchTests {
         _ = table.subscribe(key: "b") { _ in total.value += 1 }
         _ = table.subscribe(key: "c") { _ in total.value += 1 }
 
-        let msg = makeTestMessage(topic: "coaty/3/test/ADV-foo/11111111-1111-4111-8111-111111111111")
+        let msg = makeTestMessage(topic: "coaty/3/test/ADV:foo/11111111-1111-4111-8111-111111111111")
         table.dispatchAll(msg)
         #expect(total.value == 3)
     }
@@ -147,7 +147,7 @@ struct StaticDispatchTests {
         _ = table.subscribe(key: "ch") { _ in received.value += 1 }
         _ = table.subscribe(key: "ch") { _ in received.value += 1 }
 
-        let msg = makeTestMessage(topic: "coaty/3/test/CHN-42/11111111-1111-4111-8111-111111111111")
+        let msg = makeTestMessage(topic: "coaty/3/test/CHN:42/11111111-1111-4111-8111-111111111111")
         table.dispatch(key: "ch", msg)
         #expect(received.value == 2)
     }
@@ -156,7 +156,7 @@ struct StaticDispatchTests {
 
     @Test
     func borrowedMessageParsesEventType() throws {
-        let msg = makeTestMessage(topic: "coaty/3/test/ADV-sensors/33333333-3333-4333-8333-333333333333")
+        let msg = makeTestMessage(topic: "coaty/3/test/ADV:sensors/33333333-3333-4333-8333-333333333333")
         #expect(msg.eventType == .advertise)
         #expect(msg.isRawTopic == false)
     }
@@ -172,7 +172,7 @@ struct StaticDispatchTests {
     func borrowedMessageReaderAccessesPayload() throws {
         let payload = #"{"ioSourceId":"33333333-3333-4333-8333-333333333333"}"#
         let msg = makeTestMessage(
-            topic: "coaty/3/test/ASC-ctx/55555555-5555-4555-8555-555555555555",
+            topic: "coaty/3/test/ASC:ctx/55555555-5555-4555-8555-555555555555",
             payload: payload
         )
         let reader = msg.reader()
@@ -191,7 +191,7 @@ struct StaticDispatchTests {
 
         let payload = #"{"ioSourceId":"33333333-3333-4333-8333-333333333333","ioActorId":"44444444-4444-4444-8444-444444444444","associatingRoute":"coaty/3/test/IOV/33333333-3333-4333-8333-333333333333","updateRate":250}"#
         let msg = makeTestMessage(
-            topic: "coaty/3/test/ASC-ctx/55555555-5555-4555-8555-555555555555",
+            topic: "coaty/3/test/ASC:ctx/55555555-5555-4555-8555-555555555555",
             payload: payload
         )
 

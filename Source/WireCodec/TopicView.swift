@@ -108,10 +108,10 @@ public struct TopicView {
     }
 
     /// The event type parsed from level 3, or nil if unrecognized.
-    /// Handles event levels with optional filters (e.g. "ADV-sensors").
+    /// Handles event levels with optional filters (e.g. "ADV:sensors").
     public var eventType: WireEventType? {
         guard let eventLevel = level(3) else { return nil }
-        // Event code is the first 3 bytes (before optional '-' filter)
+        // Event code is the first 3 bytes (before optional ':' filter)
         guard eventLevel.length >= 3 else { return nil }
         let code = eventLevel.subSlice(from: 0, length: 3)
         if code.equals("ADV") { return .advertise }
@@ -130,10 +130,10 @@ public struct TopicView {
         return nil
     }
 
-    /// The event-type filter (the part after '-' in level 3), if present.
+    /// The event-type filter (the part after ':' in level 3), if present.
     public var eventTypeFilter: ByteSlice? {
         guard let eventLevel = level(3) else { return nil }
-        return eventLevel.findByte(0x2D) // '-'
+        return eventLevel.findByte(0x3A) // ':'
     }
 
     /// Whether this topic is a raw (non-Coaty) topic.

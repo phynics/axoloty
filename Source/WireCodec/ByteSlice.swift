@@ -60,6 +60,17 @@ public struct ByteSlice: Equatable, Hashable {
         body(pointer, length)
     }
 
+    /// Converts this byte slice to a `String` by copying the bytes.
+    ///
+    /// - Returns: The UTF-8 string representation of this slice.
+    public func asString() -> String {
+        let buf = UnsafeBufferPointer(
+            start: pointer.assumingMemoryBound(to: UInt8.self),
+            count: length
+        )
+        return String(decoding: buf, as: UTF8.self)
+    }
+
     /// Compares this slice against an ASCII string's UTF-8 bytes.
     public static func == (lhs: ByteSlice, rhs: ByteSlice) -> Bool {
         guard lhs.length == rhs.length else { return false }

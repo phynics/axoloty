@@ -452,57 +452,55 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                 await self.streams.rawMQTTMessages.send(rawMessage)
             }
 
-            // Fast routing decision via TopicView (zero-allocation byte scan)
-            // before falling through to the full CommunicationTopic parse.
-            let topicBytes = Array(info.topicName.utf8)
-            let routing: (isRaw: Bool, eventType: WireEventType?) = topicBytes.withUnsafeBufferPointer { buf in
-                guard let base = buf.baseAddress else { return (true, nil) }
-                let view = TopicView(topicBytes: base, length: buf.count)
-                return (view.isRawTopic, view.eventType)
-            }
+            var topicName = info.topicName
+            topicName.withUTF8 { topicBuf in
+                guard let base = topicBuf.baseAddress else { return }
+                let topicView = TopicView(topicBytes: base, length: topicBuf.count)
 
-            if routing.isRaw {
-                self.delegate.didReceiveRawMQTTMessage(
-                    topic: info.topicName,
-                    payload: bytes
-                )
-                return
-            }
-
-            // IoValue fast path: skip CommunicationTopic allocation entirely.
-            // IoValue is the high-frequency path; the topic string from mqtt-nio
-            // is already available and needs no further parsing.
-            if routing.eventType == .ioValue {
-                self.delegate.didReceiveIoValue(
-                    topic: info.topicName,
-                    payload: bytes
-                )
-                deliveryContinuation.yield { [weak self] in
-                    guard let self else { return }
-                    await self.streams.ioValues.send(IoValueEventSnapshot(topic: info.topicName, payload: bytes))
+                if topicView.isRawTopic {
+                    self.delegate.didReceiveRawMQTTMessage(
+                        topic: info.topicName,
+                        payload: bytes
+                    )
+                    return
                 }
-                return
-            }
 
-            // Full path: CommunicationTopic parse for request/response and
-            // one-way events that need correlation IDs, filters, and namespace.
-            do {
-                let topic = try CommunicationTopic(info.topicName)
+                if topicView.eventType == .ioValue {
+                    self.delegate.didReceiveIoValue(
+                        topic: info.topicName,
+                        payload: bytes
+                    )
+                    deliveryContinuation.yield { [weak self] in
+                        guard let self else { return }
+                        await self.streams.ioValues.send(IoValueEventSnapshot(topic: info.topicName, payload: bytes))
+                    }
+                    return
+                }
+
+                guard let wireType = topicView.eventType,
+                      let commEventType = CommunicationEventType(wireType) else {
+                    log.warning("Ignoring incoming event", metadata: [
+                        "topic": .string(info.topicName),
+                    ])
+                    return
+                }
+
                 var receivedEventMetadata: Logging.Logger.Metadata = [
                     "topic": .string(info.topicName),
-                    "eventType": .string(topic.eventType.rawValue),
+                    "eventType": .string(commEventType.rawValue),
                 ]
-                if let correlationId = topic.correlationId {
-                    receivedEventMetadata["correlationId"] = .string(correlationId)
+                if let corrIdSlice = topicView.level(5) {
+                    receivedEventMetadata["correlationId"] = .string(corrIdSlice.asString())
                 }
                 log.trace("Received event", metadata: receivedEventMetadata)
+
                 if let payloadString = String(bytes: bytes, encoding: .utf8) {
                     self.delegate.didReceiveMessage(
                         topic: info.topicName,
                         payload: payloadString
                     )
 
-                    let parsed = ParsedMQTTMessage(topic: topic, payload: payloadString)
+                    let parsed = ParsedMQTTMessage(topicView: topicView, payload: payloadString)
                     deliveryContinuation.yield { [weak self] in
                         guard let self else { return }
                         await self.streams.parsedMQTTMessages.send(parsed)
@@ -511,11 +509,6 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                         await self.routeSnapshot(parsed: parsed)
                     }
                 }
-            } catch {
-                log.warning("Ignoring incoming event", metadata: [
-                    "topic": .string(info.topicName),
-                    "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
-                ])
             }
         case .failure(let error):
             log.warning("Error receiving published message", metadata: [
