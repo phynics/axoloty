@@ -329,4 +329,17 @@ struct WireCodecTests {
         #expect(try #require(route).equals("coaty/3/wire-compat-v1/IOV/33333333-3333-4333-8333-333333333333"))
         #expect(updateRate == 250)
     }
+
+    @Test
+    func wireWriterEncodesIntMinWithSingleMinusSign() throws {
+        // Regression for #223: Int.min must encode as -9223372036854775808,
+        // not --9223372036854775808.
+        var buffer = [UInt8](repeating: 0, count: 32)
+        var writer = buffer.withUnsafeMutableBufferPointer { buf in
+            WireWriter(buffer: buf.baseAddress!, capacity: buf.count)
+        }
+        try writer.writeInt(Int.min)
+        let written = String(bytes: buffer[0..<writer.position], encoding: .utf8)
+        #expect(written == "-9223372036854775808")
+    }
 }

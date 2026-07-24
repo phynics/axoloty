@@ -141,7 +141,7 @@ public struct WireWriter {
             // Write the absolute value digits manually.
             if v == Int.min {
                 // Int.min = -9223372036854775808 (on 64-bit)
-                try writeBytes("-9223372036854775808")
+                try writeBytes("9223372036854775808")
                 return
             }
             v = -v
