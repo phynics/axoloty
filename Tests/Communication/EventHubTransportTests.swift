@@ -677,6 +677,52 @@ struct BroadcastTransportTests {
     }
 
     @Test
+    func rawMQTTMessageDelegateDoesNotDuplicateDeliver() async throws {
+        // The transport's deliveryContinuation path is the sole source of raw
+        // messages on the broadcast stream. The delegate callback must not
+        // re-send — before #238 it delivered each message twice.
+        let manager = makeManager()
+        let fakeClient = FakeCommunicationClient(delegate: manager)
+        manager.client = fakeClient
+        fakeClient.setStreams(manager.streams)
+
+        let stream: AsyncStream<RawMQTTMessage> = await manager.observeRawMQTTMessageStream()
+        var iterator = stream.makeAsyncIterator()
+
+        manager.didReceiveRawMQTTMessage(topic: "external/topic", payload: [0xAB, 0xCD])
+
+        do {
+            _ = try await nextValue(&iterator, timeout: .milliseconds(300))
+            Issue.record("delegate re-sent a raw message (expected no delivery)")
+        } catch {
+            // expected: the delegate must not deliver
+        }
+    }
+
+    @Test
+    func ioValueDelegateDoesNotDuplicateDeliver() async throws {
+        // The transport's deliveryContinuation path is the sole source of
+        // IoValue snapshots. The delegate callback must not re-send — before
+        // #238 it delivered each value twice.
+        let manager = makeManager()
+        let fakeClient = FakeCommunicationClient(delegate: manager)
+        manager.client = fakeClient
+        fakeClient.setStreams(manager.streams)
+
+        let stream = await manager.observeIoValueStream()
+        var iterator = stream.makeAsyncIterator()
+
+        manager.didReceiveIoValue(topic: "coaty/1/ns/source/IOV", payload: [1, 2, 3])
+
+        do {
+            _ = try await nextValue(&iterator, timeout: .milliseconds(300))
+            Issue.record("delegate re-sent an IoValue (expected no delivery)")
+        } catch {
+            // expected: the delegate must not deliver
+        }
+    }
+
+    @Test
     func mQTTNIOClientMirrorsStateChangesToBroadcast() async throws {
         let delegate = FakeStartable()
         let options = MQTTClientOptions(
