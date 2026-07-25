@@ -624,15 +624,15 @@ public class CommunicationManager {
     }
 
     nonisolated func didReceiveRawMQTTMessage(topic: String, payload: [UInt8]) {
-        onMain { manager in
-            await manager.streams.rawMQTTMessages.send(RawMQTTMessage(topic: topic, payload: payload))
-        }
+        // Raw messages are emitted directly by the transport's Broadcast
+        // streams via the deliveryContinuation path, which preserves arrival
+        // order. Re-sending here delivered each message twice (#238).
     }
 
     nonisolated func didReceiveIoValue(topic: String, payload: [UInt8]) {
-        onMain { manager in
-            await manager.streams.ioValues.send(IoValueEventSnapshot(topic: topic, payload: payload))
-        }
+        // IoValue messages are emitted directly by the transport's Broadcast
+        // streams via the deliveryContinuation path, which preserves arrival
+        // order. Re-sending here delivered each message twice (#238).
     }
 
     nonisolated func didReceiveMessage(topic: String, payload: String) {
