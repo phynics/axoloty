@@ -509,11 +509,6 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                 log.trace("Received event", metadata: receivedEventMetadata)
 
                 if let payloadString = String(bytes: bytes, encoding: .utf8) {
-                    self.delegate.didReceiveMessage(
-                        topic: info.topicName,
-                        payload: payloadString
-                    )
-
                     let parsed = ParsedMQTTMessage(topicView: topicView, payload: payloadString)
                     deliveryContinuation.yield { [weak self] in
                         guard let self, let streams = self.streamsOrWarn() else { return }

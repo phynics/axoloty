@@ -635,10 +635,6 @@ public class CommunicationManager {
         // order. Re-sending here delivered each message twice (#238).
     }
 
-    nonisolated func didReceiveMessage(topic: String, payload: String) {
-        // Parsed messages are emitted directly by the transport's Broadcast streams.
-    }
-    
     // MARK: - IO Routing
     
     private func _initIoNodes() throws {

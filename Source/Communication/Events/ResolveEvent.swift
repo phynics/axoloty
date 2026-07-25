@@ -100,13 +100,7 @@ public class ResolveEventData: CommunicationEventData {
     convenience init(object: CoatyObject, relatedObjects: [CoatyObject], privateData: [String: Any]? = nil) {
         self.init(object, relatedObjects, privateData)
     }
-    
-    // MARK: - Factory methods.
-    
-    static func createFrom(eventData: CoatyObject) -> ResolveEventData {
-        return .init(object: eventData)
-    }
-    
+
     // MARK: - Codable methods.
     
     enum CodingKeys: String, CodingKey {

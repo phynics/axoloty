@@ -106,13 +106,7 @@ public class ChannelEventData: CommunicationEventData {
     convenience init(objects: [CoatyObject], privateData: [String: Any]? = nil) {
         self.init(nil, objects, privateData)
     }
-    
-    // MARK: - Factory methods.
-    
-    static func createFrom(eventData: CoatyObject) -> ChannelEventData {
-        return .init(object: eventData)
-    }
-    
+
     // MARK: - Codable methods.
     
     enum CodingKeys: String, CodingKey {

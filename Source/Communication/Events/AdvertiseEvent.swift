@@ -66,11 +66,7 @@ public class AdvertiseEventData: CommunicationEventData {
         self.privateData = privateData
         super.init()
     }
-    
-    static func createFrom(eventData: CoatyObject) -> AdvertiseEventData {
-        return .init(object: eventData)
-    }
-    
+
     // MARK: - Codable methods.
     
     enum CodingKeys: String, CodingKey {
