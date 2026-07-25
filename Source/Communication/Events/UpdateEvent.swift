@@ -8,11 +8,6 @@ import Foundation
 
 /// UpdateEvent provides a generic implementation for updating a CoatyObject.
 public class UpdateEvent: CommunicationEvent<UpdateEventData> {
-    
-    // MARK: - Internal attributes.
-
-    /// Provides a complete handler for reacting to Complete events.
-    internal var completeHandler: ((CompleteEvent) -> Void)?
 
     // MARK: - Static Factory Methods.
     
@@ -30,22 +25,13 @@ public class UpdateEvent: CommunicationEvent<UpdateEventData> {
         let updateEventData = UpdateEventData(object: object)
         return try .init(eventType: .update, eventData: updateEventData, objectType: updateEventData.object.objectType)
     }
-    
-    /// Respond to an observed Update event by sending the given Complete event.
-    ///
-    /// - Parameter completeEvent: a Complete event.
-    public func complete(completeEvent: CompleteEvent) {
-        if let completeHandler = completeHandler {
-            completeHandler(completeEvent)
-        }
-    }
-    
+
     // MARK: - Initializers.
-    
+
     fileprivate override init(eventType: WireEventType, eventData: UpdateEventData) {
         super.init(eventType: eventType, eventData: eventData)
     }
-    
+
     fileprivate init(eventType: WireEventType, eventData: UpdateEventData, objectType: String) throws {
         guard TopicBuilder.isValidEventTypeFilter(filter: objectType) else {
             throw AxolotyError.invalidArgument(argument: "objectType", reason: "\"\(objectType)\" is not a valid object type")
@@ -53,26 +39,11 @@ public class UpdateEvent: CommunicationEvent<UpdateEventData> {
 
         super.init(eventType: eventType, eventData: eventData)
     }
-    
+
     // MARK: - Codable methods.
-    
+
     public required init(from decoder: Decoder) throws {
         try super.init(from: decoder)
-    }
-
-    /// Validates response parameters of Complete event against the
-    /// corresponding Update event.
-    /// - Parameter eventData: event data for Complete response event
-    /// - Returns: Returns false if the given Complete event data does not
-    ///   correspond to the event data of this Update event.
-    internal func ensureValidResponseParameters(eventData: CompleteEventData) -> Bool {
-        
-        if self.data.object.objectId != eventData.object?.objectId {
-            LogManager.logger(.communication).debug("object ID of Complete event doesn't match object ID of Update event")
-            return false
-        }
-        
-        return true
     }
 }
 
