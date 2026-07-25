@@ -47,6 +47,7 @@ playground.xcworkspace
 # Package.pins
 # Package.resolved
 .build/
+.build-output/
 
 # Local test outputs: live captures, fuzz campaigns, and diagnostics
 .testing/
