@@ -44,7 +44,7 @@ public class CallEvent: CommunicationEvent<CallEventData> {
     /// - Throws: if operation name is invalid
     public static func with(operation: String, parameters: String?, filter: ContextFilter? = nil) throws -> CallEvent {
         let callEventdata = CallEventData.createFrom(parameters: parameters, filter: filter)
-        return try .init(eventType: .Call, eventData: callEventdata, operation: operation)
+        return try .init(eventType: .call, eventData: callEventdata, operation: operation)
     }
 
     /// Respond to a Call event with the given Return event.
@@ -58,11 +58,11 @@ public class CallEvent: CommunicationEvent<CallEventData> {
 
     // MARK: - Initializers.
 
-    fileprivate override init(eventType: CommunicationEventType, eventData: CallEventData) {
+    fileprivate override init(eventType: WireEventType, eventData: CallEventData) {
         super.init(eventType: eventType, eventData: eventData)
     }
     
-    fileprivate init(eventType: CommunicationEventType, eventData: CallEventData, operation: String) throws {
+    fileprivate init(eventType: WireEventType, eventData: CallEventData, operation: String) throws {
         guard CommunicationTopic.isValidEventTypeFilter(filter: operation) else {
             throw AxolotyError.invalidArgument(argument: "operation", reason: "\"\(operation)\" is not a valid call operation")
         }

@@ -20,14 +20,14 @@ public class CommunicationEvent<T: CommunicationEventData>: Codable {
     internal(set) public var sourceId: CoatyUUID?
 
     /// Event type of this event.
-    internal var type: CommunicationEventType?
+    internal var type: WireEventType?
 
     /// Event type filter of this event.
     internal var typeFilter: String?
     
     // MARK: - Initializer.
     
-    init(eventType: CommunicationEventType, eventData: T) {
+    init(eventType: WireEventType, eventData: T) {
         self.type = eventType
         self.data = eventData
     }

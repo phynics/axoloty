@@ -18,12 +18,12 @@ public class DeadvertiseEvent: CommunicationEvent<DeadvertiseEventData> {
     /// - Returns: a Deadvertise event with the given parameters
     public static func with(objectIds: [CoatyUUID]) -> DeadvertiseEvent {
         let deadvertiseEventData = DeadvertiseEventData(objectIds: objectIds)
-        return .init(eventType: .Deadvertise, eventData: deadvertiseEventData)
+        return .init(eventType: .deadvertise, eventData: deadvertiseEventData)
     }
 
     // MARK: - Initializers.
 
-    fileprivate override init(eventType: CommunicationEventType, eventData: DeadvertiseEventData) {
+    fileprivate override init(eventType: WireEventType, eventData: DeadvertiseEventData) {
         super.init(eventType: eventType, eventData: eventData)
     }
     

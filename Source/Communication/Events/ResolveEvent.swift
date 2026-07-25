@@ -21,7 +21,7 @@ public class ResolveEvent: CommunicationEvent<ResolveEventData> {
     /// - Returns: a Resolve event with the given parameters
     public static func with(object: CoatyObject, privateData: [String: Any]? = nil) -> ResolveEvent {
         let resolveEventData = ResolveEventData(object: object, privateData: privateData)
-        return .init(eventType: .Resolve, eventData: resolveEventData)
+        return .init(eventType: .resolve, eventData: resolveEventData)
     }
     
     /// Create a ResolveEvent instance for resolving the given related objects
@@ -33,7 +33,7 @@ public class ResolveEvent: CommunicationEvent<ResolveEventData> {
     /// - Returns: a Query event with the given parameters
     public static func with(relatedObjects: [CoatyObject], privateData: [String: Any]? = nil) -> ResolveEvent {
         let resolveEventData = ResolveEventData(relatedObjects: relatedObjects, privateData: privateData)
-        return .init(eventType: .Resolve, eventData: resolveEventData)
+        return .init(eventType: .resolve, eventData: resolveEventData)
     }
     
     /// Create a ResolveEvent instance for resolving the given object, related
@@ -46,12 +46,12 @@ public class ResolveEvent: CommunicationEvent<ResolveEventData> {
     /// - Returns: a Query event with the given parameters
     public static func with(object: CoatyObject, relatedObjects: [CoatyObject], privateData: [String: Any]? = nil) -> ResolveEvent {
         let resolveEventData = ResolveEventData(object: object, relatedObjects: relatedObjects, privateData: privateData)
-        return .init(eventType: .Resolve, eventData: resolveEventData)
+        return .init(eventType: .resolve, eventData: resolveEventData)
     }
 
     // MARK: - Initializers.
 
-    fileprivate override init(eventType: CommunicationEventType, eventData: ResolveEventData) {
+    fileprivate override init(eventType: WireEventType, eventData: ResolveEventData) {
         super.init(eventType: eventType, eventData: eventData)
     }
     

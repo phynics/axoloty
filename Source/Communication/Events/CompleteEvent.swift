@@ -20,12 +20,12 @@ public class CompleteEvent: CommunicationEvent<CompleteEventData> {
     /// - Returns: a Complete event with the given parameters
     public static func with(object: CoatyObject, privateData: [String: Any]? = nil) -> CompleteEvent {
         let completeEventData = CompleteEventData(object, privateData)
-        return .init(eventType: .Complete, eventData: completeEventData)
+        return .init(eventType: .complete, eventData: completeEventData)
     }
 
     // MARK: - Initializers.
 
-    fileprivate override init(eventType: CommunicationEventType, eventData: CompleteEventData) {
+    fileprivate override init(eventType: WireEventType, eventData: CompleteEventData) {
         super.init(eventType: eventType, eventData: eventData)
     }
     

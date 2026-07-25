@@ -220,7 +220,7 @@ public class IoRouter: Controller {
             guard let self else { return }
             let stream = await communicationManager.observeParsedMessages()
             for await parsed in stream {
-                guard parsed.eventType == .Advertise,
+                guard parsed.eventType == .advertise,
                       parsed.eventTypeFilter == CoreType.IoNode.rawValue,
                       let event: AdvertiseEvent = try? PayloadCoder.decode(parsed.payload),
                       // AdvertiseEvent carries a runtime-polymorphic object;
@@ -284,7 +284,7 @@ public class IoRouter: Controller {
             guard let self else { return }
             let stream = await communicationManager.publishDiscover(DiscoverEvent.with(coreTypes: [.IoNode]))
             for await response in stream {
-                guard response.eventType == CommunicationEventType.Resolve.rawValue,
+                guard response.eventType == WireEventType.resolve.rawValue,
                       let event: ResolveEvent = try? PayloadCoder.decode(response.payload),
                       // ResolveEvent carries a runtime-polymorphic object;
                       // this cast filters the response to the required subtype.

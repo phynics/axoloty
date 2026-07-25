@@ -23,7 +23,7 @@ public class ReturnEvent: CommunicationEvent<ReturnEventData> {
     /// - Returns: a Return event with the given parameters
     public static func with(result: String, executionInfo: String?) -> ReturnEvent {
         let returnEventData = ReturnEventData.createFrom(result: result, executionInfo: executionInfo, error: nil)
-        return .init(eventType: .Return, eventData: returnEventData)
+        return .init(eventType: .returnEvent, eventData: returnEventData)
     }
     
     /// Create a ReturnEvent instance for a remote operation call that yields an
@@ -48,12 +48,12 @@ public class ReturnEvent: CommunicationEvent<ReturnEventData> {
     /// - Returns: a Return event with the given parameters
     public static func with(error: ReturnError, executionInfo: String?) -> ReturnEvent {
         let returnEventData = ReturnEventData.createFrom(result: nil, executionInfo: executionInfo, error: error)
-        return .init(eventType: .Return, eventData: returnEventData)
+        return .init(eventType: .returnEvent, eventData: returnEventData)
     }
     
     // MARK: - Initializers.
 
-    fileprivate override init(eventType: CommunicationEventType, eventData: ReturnEventData) {
+    fileprivate override init(eventType: WireEventType, eventData: ReturnEventData) {
         super.init(eventType: eventType, eventData: eventData)
     }
 

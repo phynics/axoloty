@@ -24,16 +24,16 @@ public class AdvertiseEvent: CommunicationEvent<AdvertiseEventData> {
     /// - Throws: if object type of given object is invalid
     public static func with(object: CoatyObject, privateData: [String: Any]? = nil) throws -> AdvertiseEvent {
         let advertiseEventData = AdvertiseEventData(object: object, privateData: privateData)
-        return try .init(eventType: .Advertise, eventData: advertiseEventData, objectType: advertiseEventData.object.objectType)
+        return try .init(eventType: .advertise, eventData: advertiseEventData, objectType: advertiseEventData.object.objectType)
     }
 
     // MARK: - Initializers.
 
-    fileprivate override init(eventType: CommunicationEventType, eventData: AdvertiseEventData) {
+    fileprivate override init(eventType: WireEventType, eventData: AdvertiseEventData) {
         super.init(eventType: eventType, eventData: eventData)
     }
     
-    fileprivate init(eventType: CommunicationEventType, eventData: AdvertiseEventData, objectType: String) throws {
+    fileprivate init(eventType: WireEventType, eventData: AdvertiseEventData, objectType: String) throws {
         guard CommunicationTopic.isValidEventTypeFilter(filter: objectType) else {
             throw AxolotyError.invalidArgument(argument: "objectType", reason: "\"\(objectType)\" is not a valid object type")
         }

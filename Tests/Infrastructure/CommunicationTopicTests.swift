@@ -13,7 +13,7 @@ struct CommunicationTopicTests {
         let topicString = CommunicationTopic.createTopicStringByLevelsForPublish(
             namespace: "factory",
             sourceId: sourceId,
-            eventType: .Advertise,
+            eventType: .advertise,
             eventTypeFilter: "com.example.Sensor"
         )
 
@@ -22,7 +22,7 @@ struct CommunicationTopicTests {
         let topic = try CommunicationTopic(topicString)
         #expect((topic.protocolVersion) == (3))
         #expect((topic.namespace) == ("factory"))
-        #expect((topic.eventType) == (.Advertise))
+        #expect((topic.eventType) == (.advertise))
         #expect((topic.eventTypeFilter) == ("com.example.Sensor"))
         #expect((topic.sourceId) == (sourceId))
         #expect((topic.correlationId) == nil)
@@ -34,18 +34,18 @@ struct CommunicationTopicTests {
         let publication = CommunicationTopic.createTopicStringByLevelsForPublish(
             namespace: "factory",
             sourceId: sourceId,
-            eventType: .Discover,
+            eventType: .discover,
             correlationId: "request-42"
         )
         #expect((publication) == ("coaty/3/factory/DSC/\(sourceId.string)/request-42"))
         #expect((try CommunicationTopic(publication).correlationId) == ("request-42"))
 
         #expect((CommunicationTopic.createTopicStringByLevelsForSubscribe(
-                eventType: .Resolve,
+                eventType: .resolve,
                 namespace: "factory",
                 correlationId: "request-42"
             )) == ("coaty/3/factory/RSV/+/request-42"))
-        #expect((CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .Discover)) == ("coaty/3/+/DSC/+/+"))
+        #expect((CommunicationTopic.createTopicStringByLevelsForSubscribe(eventType: .discover)) == ("coaty/3/+/DSC/+/+"))
     }
 
     @Test

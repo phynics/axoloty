@@ -18,7 +18,7 @@ struct AxolotyUpdateCompleteConsumerTests {
         var iterator = parsedStream.makeAsyncIterator()
         let objectTypeFilter = EVENT_TYPE_FILTER_SEPARATOR + "com.coaty.test.WireFixture"
         let updateTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
-            eventType: .Update,
+            eventType: .update,
             eventTypeFilter: objectTypeFilter,
             namespace: environment["WIRE_NAMESPACE"] ?? "wire-compat-v1"
         )
@@ -26,7 +26,7 @@ struct AxolotyUpdateCompleteConsumerTests {
         try signalUpdateCompleteReadiness(environment: environment)
 
         let parsed = try await nextUpdateCompleteMessage(&iterator)
-        #expect(parsed.eventType == .Update)
+        #expect(parsed.eventType == .update)
         #expect(parsed.eventTypeFilter == objectTypeFilter)
         #expect(parsed.sourceId == "22222222-2222-4222-8222-222222222222")
         let update: UpdateEvent = try PayloadCoder.decode(parsed.payload)
@@ -87,7 +87,7 @@ private func nextUpdateCompleteMessage(
     do {
         while true {
             let message = try await nextValue(&iterator, timeout: .seconds(120))
-            guard message.eventType == .Update,
+            guard message.eventType == .update,
                   message.eventTypeFilter == EVENT_TYPE_FILTER_SEPARATOR + "com.coaty.test.WireFixture"
             else { continue }
             return message

@@ -25,7 +25,7 @@ public class DiscoverEvent: CommunicationEvent<DiscoverEventData> {
     ///     - externalId: the external ID to discover
     public static func with(externalId: String) -> DiscoverEvent {
         let discoverEventData = DiscoverEventData(externalId: externalId)
-        return .init(eventType: .Discover, eventData: discoverEventData)
+        return .init(eventType: .discover, eventData: discoverEventData)
     }
     
     /// Create a DiscoverEvent instance for discovering objects with the given
@@ -36,7 +36,7 @@ public class DiscoverEvent: CommunicationEvent<DiscoverEventData> {
     ///     - coreTypes: an array of core types to discover
     public static func with(externalId: String, coreTypes: [CoreType]) -> DiscoverEvent {
         let discoverEventData = DiscoverEventData(externalId: externalId, coreTypes: coreTypes)
-        return .init(eventType: .Discover, eventData: discoverEventData)
+        return .init(eventType: .discover, eventData: discoverEventData)
     }
     
     /// Create a DiscoverEvent instance for discovering objects with the given
@@ -47,7 +47,7 @@ public class DiscoverEvent: CommunicationEvent<DiscoverEventData> {
     ///   - objectTypes: an array of object types to discover.
     public static func with(externalId: String, objectTypes: [String]) -> DiscoverEvent {
         let discoverEventData = DiscoverEventData(externalId: externalId, objectTypes: objectTypes)
-        return .init(eventType: .Discover, eventData: discoverEventData)
+        return .init(eventType: .discover, eventData: discoverEventData)
     }
     
     /// Create a DiscoverEvent instance for discovering objects with the given
@@ -57,7 +57,7 @@ public class DiscoverEvent: CommunicationEvent<DiscoverEventData> {
     ///   - objectId: the object ID to discover
     public static func with(objectId: CoatyUUID) -> DiscoverEvent {
         let discoverEventData = DiscoverEventData(objectId: objectId)
-        return .init(eventType: .Discover, eventData: discoverEventData)
+        return .init(eventType: .discover, eventData: discoverEventData)
     }
     
     /// Create a DiscoverEvent instance for discovering objects with the given
@@ -68,7 +68,7 @@ public class DiscoverEvent: CommunicationEvent<DiscoverEventData> {
     ///   - objectId: the object ID to discover
     public static func with(externalId: String, objectId: CoatyUUID) -> DiscoverEvent {
         let discoverEventData = DiscoverEventData(externalId: externalId, objectId: objectId)
-        return .init(eventType: .Discover, eventData: discoverEventData)
+        return .init(eventType: .discover, eventData: discoverEventData)
     }
     
     /// Create a DiscoverEvent instance for discovering objects with the given
@@ -78,7 +78,7 @@ public class DiscoverEvent: CommunicationEvent<DiscoverEventData> {
     ///   - coreTypes: coreTypes the core types to discover
     public static func with(coreTypes: [CoreType]) -> DiscoverEvent {
         let discoverEventData = DiscoverEventData(coreTypes: coreTypes)
-        return .init(eventType: .Discover, eventData: discoverEventData)
+        return .init(eventType: .discover, eventData: discoverEventData)
     }
     
     /// Create a DiscoverEvent instance for discovering objects with the given
@@ -88,7 +88,7 @@ public class DiscoverEvent: CommunicationEvent<DiscoverEventData> {
     ///   - objectTypes: the object types to discover
     public static func with(objectTypes: [String]) -> DiscoverEvent {
         let discoverEventData = DiscoverEventData(objectTypes: objectTypes)
-        return .init(eventType: .Discover, eventData: discoverEventData)
+        return .init(eventType: .discover, eventData: discoverEventData)
     }
 
     /// Respond to a Discover event with the given Resolve event.
@@ -102,7 +102,7 @@ public class DiscoverEvent: CommunicationEvent<DiscoverEventData> {
 
     // MARK: - Initializers.
 
-    fileprivate override init(eventType: CommunicationEventType, eventData: DiscoverEventData) {
+    fileprivate override init(eventType: WireEventType, eventData: DiscoverEventData) {
         super.init(eventType: eventType, eventData: eventData)
     }
     

@@ -29,7 +29,7 @@ public class QueryEvent: CommunicationEvent<QueryEventData> {
     public static func with(objectTypes: [String], objectFilter: ObjectFilter? = nil, objectJoinConditions: [ObjectJoinCondition]? = nil) -> QueryEvent {
         
         let queryEventData = QueryEventData.createFrom(objectTypes: objectTypes, objectFilter: objectFilter, objectJoinConditions: objectJoinConditions)
-        return .init(eventType: .Query, eventData: queryEventData)
+        return .init(eventType: .query, eventData: queryEventData)
     }
     
     /// Create a QueryEvent instance for querying the given core types, filter,
@@ -44,7 +44,7 @@ public class QueryEvent: CommunicationEvent<QueryEventData> {
     public static func with(coreTypes: [CoreType], objectFilter: ObjectFilter? = nil, objectJoinConditions: [ObjectJoinCondition]? = nil) -> QueryEvent {
         let queryEventData = QueryEventData.createFrom(coreTypes: coreTypes, objectFilter: objectFilter, objectJoinConditions: objectJoinConditions)
         
-        return .init(eventType: .Query, eventData: queryEventData)
+        return .init(eventType: .query, eventData: queryEventData)
     }
     
     /// Respond to a Query event with the given Retrieve event.
@@ -58,7 +58,7 @@ public class QueryEvent: CommunicationEvent<QueryEventData> {
     
     // MARK: - Initializers.
 
-    fileprivate override init(eventType: CommunicationEventType, eventData: QueryEventData) {
+    fileprivate override init(eventType: WireEventType, eventData: QueryEventData) {
         super.init(eventType: eventType, eventData: eventData)
     }
 

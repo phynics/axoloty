@@ -20,12 +20,12 @@ public class RetrieveEvent: CommunicationEvent<RetrieveEventData> {
     /// - Returns: a Retrieve event with the given parameters
     public static func with(objects: [CoatyObject], privateData: [String: Any]? = nil) -> RetrieveEvent {
         let retrieveEventData = RetrieveEventData(objects: objects, privateData: privateData)
-        return .init(eventType: .Retrieve, eventData: retrieveEventData)
+        return .init(eventType: .retrieve, eventData: retrieveEventData)
     }
 
     // MARK: - Initializers.
     
-    fileprivate override init(eventType: CommunicationEventType, eventData: RetrieveEventData) {
+    fileprivate override init(eventType: WireEventType, eventData: RetrieveEventData) {
         super.init(eventType: eventType, eventData: eventData)
     }
     

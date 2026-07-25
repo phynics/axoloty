@@ -23,10 +23,10 @@ internal struct AdvertiseKey: Hashable, Sendable {
 /// Key for a correlated response stream, identifying a specific
 /// response event type and correlation ID.
 internal struct ResponseKey: Hashable, Sendable {
-    let eventType: CommunicationEventType
+    let eventType: WireEventType
     let correlationId: String
 
-    init(eventType: CommunicationEventType, correlationId: String) {
+    init(eventType: WireEventType, correlationId: String) {
         self.eventType = eventType
         self.correlationId = correlationId
     }
