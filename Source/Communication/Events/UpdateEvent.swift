@@ -61,13 +61,7 @@ public class UpdateEventData: CommunicationEventData {
         self.object = object
         super.init()
     }
-    
-    // MARK: - Factory methods.
-    
-    static func createFrom(eventData: CoatyObject) -> UpdateEventData {
-        return .init(object: eventData)
-    }
-    
+
     // MARK: - Codable methods.
     
     enum CodingKeys: String, CodingKey {

@@ -56,13 +56,7 @@ public class RetrieveEventData: CommunicationEventData {
         self.privateData = privateData
         super.init()
     }
-    
-    // MARK: - Factory methods.
-    
-    static func createFrom(eventData: [CoatyObject]) -> RetrieveEventData {
-        return .init(objects: eventData)
-    }
-    
+
     // MARK: - Codable methods.
     
     enum CodingKeys: String, CodingKey {

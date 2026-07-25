@@ -23,7 +23,7 @@ struct ConfigurationBuilderTests {
         let common = CommonOptions()
         let communication = CommunicationOptions()
         let controllers = ControllerConfig(controllerOptions: [:])
-        let databases = DatabaseOptions(databaseConnections: [:])
+        let databases = DatabaseOptions()
 
         let configuration = try Configuration.build { builder in
             builder.common = common

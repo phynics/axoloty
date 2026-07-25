@@ -198,49 +198,7 @@ public class DiscoverEventData: CommunicationEventData {
         self.objectId = objectId
         super.init()
     }
-    
-    /// Determines whether the given CoreType is compatible with this event data.
-    /// - Parameters:
-    ///     - coreType name of the core type to check
-    /// - Returns: true, if the specified core type is contained in the coreTypes property;
-    /// false otherwise.
-    public func isCoreTypeCompatible(_ coreType: CoreType) -> Bool {
-        return self.coreTypes?.contains(coreType) ?? false
-    }
-    
-    /// Determines whether the given ObjectType is compatible with this event data.
-    /// - Returns: true, if the specified type is contained in the objectTypes property;
-    /// false otherwise.
-    /// 
-    /// - Parameter objectType: name of the object type to check
-    public func isObjectTypeCompatible(objectType: String) -> Bool {
-        return self.objectTypes != nil
-            && (self.objectTypes!.first(where: { t -> Bool in t == objectType }) != nil)
-    }
-    
-    ///  Determines whether this event data discovers an object based on an object ID.
-    public func isDiscoveringObjectId() -> Bool {
-        return externalId == nil && objectId != nil
-    }
 
-    /// Determines whether this event data discovers an object based on an external ID 
-    /// but not an object ID.
-    public func isDiscoveringExternalId() -> Bool {
-        return self.externalId != nil && self.objectId == nil
-    }
-    
-    /// Determines whether this event data discovers an object based on both
-    /// external ID and object ID.
-    public func isDiscoveringExternalAndObjectId() -> Bool {
-        return self.externalId != nil && self.objectId != nil
-    }
-    
-    /// Determines whether this event data discovers an object based
-    /// on types only.
-    public func isDiscoveringTypes() -> Bool {
-        return self.externalId == nil && self.objectId == nil
-    }
-    
     // MARK: - Codable methods.
     
     enum DiscoverKeys: String, CodingKey {

@@ -243,14 +243,9 @@ public class ControllerOptions {
 
 /// Database access options mapped by a unique database key.
 public class DatabaseOptions {
-    
-    /// Database connection info indexed by a database key.
-    public var databaseConnections: [String: DbConnectionInfo]
-    
+
     /// Create a new DatabaseOptions instance.
-    public init(databaseConnections: [String: DbConnectionInfo]) {
-        self.databaseConnections = databaseConnections
-    }
+    public init() {}
 }
 
 /// MQTT client options for the MQTT client.

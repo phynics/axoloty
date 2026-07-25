@@ -16,14 +16,12 @@ protocol CommunicationClientDelegate: Startable {
     func didUpdateCommunicationState(_ state: CommunicationState)
     func didReceiveRawMQTTMessage(topic: String, payload: [UInt8])
     func didReceiveIoValue(topic: String, payload: [UInt8])
-    func didReceiveMessage(topic: String, payload: String)
 }
 
 extension CommunicationClientDelegate {
     func didUpdateCommunicationState(_ state: CommunicationState) {}
     func didReceiveRawMQTTMessage(topic: String, payload: [UInt8]) {}
     func didReceiveIoValue(topic: String, payload: [UInt8]) {}
-    func didReceiveMessage(topic: String, payload: String) {}
 }
 
 /// This protocol defines the networking API of a communication client, such as

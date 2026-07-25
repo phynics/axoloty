@@ -49,11 +49,7 @@ public class DeadvertiseEventData: CommunicationEventData {
         self.objectIds = objectIds
         super.init()
     }
-    
-    static func createFrom(eventData: [CoatyUUID]) -> DeadvertiseEventData {
-        return .init(objectIds: eventData)
-    }
-    
+
     // MARK: - Codable methods.
 
     enum CodingKeys: String, CodingKey {
