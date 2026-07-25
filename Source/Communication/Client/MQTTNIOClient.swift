@@ -492,8 +492,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                     return
                 }
 
-                guard let wireType = topicView.eventType,
-                      let commEventType = CommunicationEventType(wireType) else {
+                guard let wireType = topicView.eventType else {
                     log.warning("Ignoring incoming event", metadata: [
                         "topic": .string(info.topicName),
                     ])
@@ -502,9 +501,9 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
 
                 var receivedEventMetadata: Logging.Logger.Metadata = [
                     "topic": .string(info.topicName),
-                    "eventType": .string(commEventType.rawValue),
+                    "eventType": .string(wireType.rawValue),
                 ]
-                if let corrIdSlice = topicView.level(5) {
+                if let corrIdSlice = topicView.correlationIdLevel {
                     receivedEventMetadata["correlationId"] = .string(corrIdSlice.asString())
                 }
                 log.trace("Received event", metadata: receivedEventMetadata)
@@ -544,7 +543,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
         into streams: CommunicationStreams
     ) async {
         switch parsed.eventType {
-        case .Advertise:
+        case .advertise:
             guard let snapshot = AdvertiseEventSnapshot(parsedMQTTMessage: parsed) else { return }
             let baseKey = AdvertiseKey(eventTypeFilter: parsed.eventTypeFilter ?? "")
             await streams.advertiseFamily.send(snapshot, for: baseKey)
@@ -556,24 +555,24 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                 )
                 await streams.advertiseFamily.send(snapshot, for: objectKey)
             }
-        case .Deadvertise:
+        case .deadvertise:
             if let snapshot = DeadvertiseEventSnapshot(parsedMQTTMessage: parsed) {
                 await streams.deadvertise.send(snapshot)
             }
-        case .Discover:
+        case .discover:
             if let snapshot = DiscoverEventSnapshot(parsedMQTTMessage: parsed) {
                 await streams.discover.send(snapshot)
             }
-        case .Query:
+        case .query:
             if let snapshot = QueryEventSnapshot(parsedMQTTMessage: parsed) {
                 await streams.query.send(snapshot)
             }
-        case .Call:
+        case .call:
             if let snapshot = CallEventSnapshot(parsedMQTTMessage: parsed),
                let operation = parsed.eventTypeFilter {
                 await streams.callFamily.send(snapshot, for: operation)
             }
-        case .Complete, .Resolve, .Retrieve, .Return:
+        case .complete, .resolve, .retrieve, .returnEvent:
             if let correlationId = parsed.correlationId {
                 let snapshot = ResponseEventSnapshot(
                     eventType: parsed.eventType.rawValue,
@@ -586,15 +585,15 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                     for: ResponseKey(eventType: parsed.eventType, correlationId: correlationId)
                 )
             }
-        case .Update:
+        case .update:
             guard let snapshot = UpdateEventSnapshot(parsedMQTTMessage: parsed),
                   let filter = parsed.eventTypeFilter else { return }
             await streams.updateFamily.send(snapshot, for: filter)
-        case .Channel:
+        case .channel:
             guard let snapshot = ChannelEventSnapshot(parsedMQTTMessage: parsed),
                   let channelId = parsed.eventTypeFilter else { return }
             await streams.channelFamily.send(snapshot, for: channelId)
-        case .Associate, .IoValue:
+        case .associate, .ioValue:
             break
         }
     }

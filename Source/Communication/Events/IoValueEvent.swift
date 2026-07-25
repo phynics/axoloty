@@ -40,7 +40,7 @@ public class IoValueEvent: CommunicationEvent<IoValueEventData> {
     ///     `IoSource.useRawIoValues` option
     public static func with(ioSource: IoSource, value: [UInt8], options: [String: Any]) throws -> IoValueEvent {
         let ioValueEventData = IoValueEventData.createFrom(rawPayload: value)
-        return try IoValueEvent(eventType: .IoValue, eventData: ioValueEventData, ioSource: ioSource)
+        return try IoValueEvent(eventType: .ioValue, eventData: ioValueEventData, ioSource: ioSource)
     }
     
     /// Create an IoValueEvent instance for the given IO source and IO value.
@@ -61,16 +61,16 @@ public class IoValueEvent: CommunicationEvent<IoValueEventData> {
     ///     `IoSource.useRawIoValues` option
     public static func with(ioSource: IoSource, value: String, options: [String: Any]) throws -> IoValueEvent {
         let ioValueEventData = IoValueEventData.createFrom(jsonPayload: value)
-        return try IoValueEvent(eventType: .IoValue, eventData: ioValueEventData, ioSource: ioSource)
+        return try IoValueEvent(eventType: .ioValue, eventData: ioValueEventData, ioSource: ioSource)
     }
     
     // MARK: - Initializers.
     
-    fileprivate override init(eventType: CommunicationEventType, eventData: IoValueEventData) {
+    fileprivate override init(eventType: WireEventType, eventData: IoValueEventData) {
         super.init(eventType: eventType, eventData: eventData)
     }
     
-    fileprivate init(eventType: CommunicationEventType, eventData: IoValueEventData, ioSource: IoSource) throws {
+    fileprivate init(eventType: WireEventType, eventData: IoValueEventData, ioSource: IoSource) throws {
         if let useRawIoValues = ioSource.useRawIoValues,
             (eventData.rawPayload != nil && !useRawIoValues) || (eventData.rawPayload == nil && useRawIoValues) {
             throw AxolotyError.invalidArgument(

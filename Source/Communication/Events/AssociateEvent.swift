@@ -42,14 +42,14 @@ public class AssociateEvent: CommunicationEvent<AssociateEventData> {
                                                     associatingRoute: associatingRoute,
                                                     isExternalRoute: isExternalRoute,
                                                     updateRate: updateRate)
-        return .init(eventType: .Associate,
+        return .init(eventType: .associate,
                      eventData: associateEventData,
                      ioContextName: ioContextName)
     }
     
     // MARK: - Initializers.
     
-    fileprivate override init(eventType: CommunicationEventType, eventData: AssociateEventData) {
+    fileprivate override init(eventType: WireEventType, eventData: AssociateEventData) {
         super.init(eventType: eventType, eventData: eventData)
     }
     
@@ -64,7 +64,7 @@ public class AssociateEvent: CommunicationEvent<AssociateEventData> {
     ///     - eventType: type of the event
     ///     - eventData: data associated with this Associate event
     ///     - ioContextName: the name of the IO context
-    fileprivate init(eventType: CommunicationEventType,
+    fileprivate init(eventType: WireEventType,
                      eventData: AssociateEventData,
                      ioContextName: String) {
         

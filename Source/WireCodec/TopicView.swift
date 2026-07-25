@@ -148,6 +148,21 @@ public struct TopicView {
         return eventLevel.findByte(0x3A) // ':'
     }
 
+    /// The namespace level (topic level 2), or nil if absent.
+    public var namespaceLevel: ByteSlice? {
+        level(2)
+    }
+
+    /// The source identifier level (topic level 4), or nil if absent.
+    public var sourceIdLevel: ByteSlice? {
+        level(4)
+    }
+
+    /// The correlation identifier level (topic level 5), or nil if absent.
+    public var correlationIdLevel: ByteSlice? {
+        level(5)
+    }
+
     /// Whether this topic is a raw (non-Coaty) topic.
     public var isRawTopic: Bool {
         guard let proto = level(0) else { return true }
@@ -160,34 +175,39 @@ public struct TopicView {
     }
 }
 
-/// Foundation-free event type enum, mirroring `CommunicationEventType`.
-public enum WireEventType: Sendable {
+/// Foundation-free event type enum for Coaty communication events.
+///
+/// Each case's raw value is the three-letter wire code carried on the
+/// event-type level of a Coaty MQTT topic (e.g. `ADV` for `advertise`).
+/// ``init(rawValue:)`` parses an event code back into a case, removing the
+/// need for a separate bridge enum between the wire and communication layers.
+public enum WireEventType: String, Sendable {
     /// Advertise event (`ADV`).
-    case advertise
+    case advertise = "ADV"
     /// Deadvertise event (`DAD`).
-    case deadvertise
+    case deadvertise = "DAD"
     /// Channel event (`CHN`).
-    case channel
+    case channel = "CHN"
     /// Associate event (`ASC`).
-    case associate
+    case associate = "ASC"
     /// IoValue event (`IOV`).
-    case ioValue
+    case ioValue = "IOV"
     /// Discover event (`DSC`).
-    case discover
+    case discover = "DSC"
     /// Resolve event (`RSV`).
-    case resolve
+    case resolve = "RSV"
     /// Query event (`QRY`).
-    case query
+    case query = "QRY"
     /// Retrieve event (`RTV`).
-    case retrieve
+    case retrieve = "RTV"
     /// Update event (`UPD`).
-    case update
+    case update = "UPD"
     /// Complete event (`CPL`).
-    case complete
+    case complete = "CPL"
     /// Call event (`CLL`).
-    case call
+    case call = "CLL"
     /// Return event (`RTN`).
-    case returnEvent
+    case returnEvent = "RTN"
 
     /// Returns `true` for fire-and-forget event types that carry no
     /// correlation ID (advertise, deadvertise, channel, associate, ioValue).

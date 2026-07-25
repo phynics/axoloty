@@ -114,10 +114,6 @@
       "count": 703,
       "covered": 395
     },
-    "Source/Communication/Misc/CommunicationEventType.swift": {
-      "count": 43,
-      "covered": 35
-    },
     "Source/Communication/Misc/CommunicationTopic.swift": {
       "count": 190,
       "covered": 184

@@ -24,7 +24,7 @@ struct AxolotyCoreProducerTests {
         case "discover-resolve":
             let response = try await awaitResponse(
                 from: await manager.communication.publishDiscover(DiscoverEvent.with(objectTypes: [fixture.objectType])),
-                eventType: .Resolve,
+                eventType: .resolve,
                 as: ResolveEvent.self
             )
             let resolved = try #require(response.data.object)
@@ -48,14 +48,14 @@ struct AxolotyCoreProducerTests {
             do {
                 response = try await awaitResponse(
                     from: await manager.communication.publishQuery(queryEvent),
-                    eventType: .Retrieve,
+                    eventType: .retrieve,
                     as: RetrieveEvent.self
                 )
             } catch let error as AxolotyError {
                 guard case .runtime(code: .timedOut, reason: _) = error else { throw error }
                 response = try await awaitResponse(
                     from: await manager.communication.publishQuery(queryEvent),
-                    eventType: .Retrieve,
+                    eventType: .retrieve,
                     as: RetrieveEvent.self
                 )
             }
@@ -90,7 +90,7 @@ struct AxolotyCoreProducerTests {
         case "update-complete":
             let response = try await awaitResponse(
                 from: await manager.communication.publishUpdate(UpdateEvent.with(object: fixture)),
-                eventType: .Complete,
+                eventType: .complete,
                 as: CompleteEvent.self
             )
             let completed = try #require(response.data.object)
@@ -102,7 +102,7 @@ struct AxolotyCoreProducerTests {
                 from: await manager.communication.publishCall(CallEvent.with(
                     operation: "wire-fixture-operation", parameters: "{\"operand\":7}"
                 )),
-                eventType: .Return,
+                eventType: .returnEvent,
                 as: ReturnEvent.self
             )
             let resultJSON = try #require(response.data.result)
@@ -155,7 +155,7 @@ struct AxolotyCoreProducerTests {
 
     private func awaitResponse<Event: Codable>(
         from stream: AsyncStream<ResponseEventSnapshot>,
-        eventType: CommunicationEventType,
+        eventType: WireEventType,
         as _: Event.Type
     ) async throws -> Event {
         let clock = ContinuousClock()
@@ -194,7 +194,7 @@ struct AxolotyCoreProducerTests {
                     &iterator,
                     timeout: clock.now.duration(to: deadline)
                 )
-                guard response.eventType == CommunicationEventType.Retrieve.rawValue,
+                guard response.eventType == WireEventType.retrieve.rawValue,
                       response.sourceId == "33333333-3333-4333-8333-333333333333" else {
                     continue
                 }

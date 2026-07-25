@@ -16,7 +16,7 @@ class CommunicationTopic {
     
     var protocolVersion: Int
     var namespace: String
-    var eventType: CommunicationEventType
+    var eventType: WireEventType
     var eventTypeFilter: String?
     var sourceId: CoatyUUID
     var correlationId: String?
@@ -70,22 +70,22 @@ class CommunicationTopic {
             if corrId != nil {
                 throw AxolotyError.invalidArgument(argument: "correlationId", reason: "must not be present for one-way \(eventType) event")
             }
-            if (eventType == .Advertise || eventType == .Channel || eventType == .Associate) &&
+            if (eventType == .advertise || eventType == .channel || eventType == .associate) &&
                 (eventTypeFilter == nil || eventTypeFilter!.isEmpty) {
                 throw AxolotyError.invalidArgument(argument: "eventTypeFilter", reason: "required for \(eventType) event")
             }
-            if  eventType != .Advertise && eventType != .Channel && eventType != .Associate && eventTypeFilter != nil {
+            if  eventType != .advertise && eventType != .channel && eventType != .associate && eventTypeFilter != nil {
                 throw AxolotyError.invalidArgument(argument: "eventTypeFilter", reason: "must not be present for \(eventType) event")
             }
         } else {
             if corrId == nil {
                 throw AxolotyError.invalidArgument(argument: "correlationId", reason: "required for two-way event: \(eventType)")
             }
-            if (eventType == .Call || eventType == .Update) &&
+            if (eventType == .call || eventType == .update) &&
                 (eventTypeFilter == nil || eventTypeFilter!.isEmpty) {
                 throw AxolotyError.invalidArgument(argument: "eventTypeFilter", reason: "required for \(eventType) event")
             }
-            if eventType != .Call && eventType != .Update && eventTypeFilter != nil {
+            if eventType != .call && eventType != .update && eventTypeFilter != nil {
                 throw AxolotyError.invalidArgument(argument: "eventTypeFilter", reason: "must not be present for \(eventType) event")
             }
         }
@@ -177,7 +177,7 @@ class CommunicationTopic {
     }
     
     /// Gets the topic event level consisting of the given event type and optional event type filter.
-    static func getEventLevel(eventType: CommunicationEventType, eventTypeFilter: String?) -> String {
+    static func getEventLevel(eventType: WireEventType, eventTypeFilter: String?) -> String {
         var eventLevel = eventType.rawValue
         
         if eventTypeFilter != nil {
@@ -192,11 +192,11 @@ class CommunicationTopic {
     /// - Parameters:
     ///   - namepace: the messaging namespace
     ///   - sourceId: UUID from which this event originates
-    ///   - eventType: CommunicationEventType
+    ///   - eventType: WireEventType
     ///   - eventTypeFilter: optional event filter
     ///   - correlationId: correlation ID for two-way message, or nil for one-way message
     /// - Returns: a topic string that can be used for publication
-    static func createTopicStringByLevelsForPublish(namespace: String, sourceId: CoatyUUID, eventType: CommunicationEventType, eventTypeFilter: String? = nil, correlationId: String? = nil) -> String {
+    static func createTopicStringByLevelsForPublish(namespace: String, sourceId: CoatyUUID, eventType: WireEventType, eventTypeFilter: String? = nil, correlationId: String? = nil) -> String {
         let eventLevel = getEventLevel(eventType: eventType, eventTypeFilter: eventTypeFilter)
         var topic = "\(PROTOCOL_NAME)"
             + "\(TOPIC_SEPARATOR)\(PROTOCOL_VERSION)"
@@ -214,13 +214,13 @@ class CommunicationTopic {
     /// Convenience Method to create a topic string that can be used for subscriptions.
     /// See [Communication Protocol](https://coatyio.github.io/coaty-js/man/communication-protocol/#topic-filters)
     /// - Parameters:
-    ///   - eventType: CommunicationEventType
+    ///   - eventType: WireEventType
     ///   - eventTypeFilter: optional event filter
     ///   - namespace: the messaging namespace or nil for wildcard namespacing
     ///   - correlationId: correlation ID for response message subscription, or nil
     ///     for request message subscription with wildcard
     /// - Returns: a topic string that can be used for subscriptions
-    static func createTopicStringByLevelsForSubscribe(eventType: CommunicationEventType, eventTypeFilter: String? = nil, namespace: String? = nil, correlationId: String? = nil) -> String {
+    static func createTopicStringByLevelsForSubscribe(eventType: WireEventType, eventTypeFilter: String? = nil, namespace: String? = nil, correlationId: String? = nil) -> String {
         let eventLevel = getEventLevel(eventType: eventType, eventTypeFilter: eventTypeFilter)
         var topic = "\(PROTOCOL_NAME)"
             + "\(TOPIC_SEPARATOR)\(PROTOCOL_VERSION)"
@@ -251,13 +251,13 @@ class CommunicationTopic {
     /// existing positional call.
     struct TopicStringComponents {
         let namespace: String
-        let eventType: CommunicationEventType
+        let eventType: WireEventType
         let eventTypeFilter: String?
         let correlationId: String?
 
         init(
             namespace: String,
-            eventType: CommunicationEventType,
+            eventType: WireEventType,
             eventTypeFilter: String? = nil,
             correlationId: String? = nil
         ) {
@@ -287,12 +287,12 @@ class CommunicationTopic {
     
     // MARK: - Parsing helper methods.
     
-    private static func extractEventType(_ eventName: String) throws -> (CommunicationEventType, String?)? {
+    private static func extractEventType(_ eventName: String) throws -> (WireEventType, String?)? {
         let index = eventName.firstIndex(of: EVENT_TYPE_FILTER_SEPARATOR[EVENT_TYPE_FILTER_SEPARATOR.startIndex])
         let eventType = index == nil ? eventName : String(eventName[..<index!])
         let eventTypeFilter = index == nil ? nil : String(eventName[eventName.index(after: index!)...])
         
-        guard let evType = CommunicationEventType.from(eventType) else {
+        guard let evType = WireEventType(rawValue: eventType) else {
             return nil
         }
         return (evType, eventTypeFilter)

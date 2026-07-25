@@ -16,7 +16,7 @@ extension CommunicationManager {
             let task = _Concurrency.Task { @MainActor [weak self] in
                 guard let self else { return }
                 let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
-                    eventType: .Associate,
+                    eventType: .associate,
                     eventTypeFilter: ioNode.name,
                     namespace: communicationOptions.shouldEnableCrossNamespacing ? nil : namespace,
                     correlationId: nil
@@ -24,10 +24,10 @@ extension CommunicationManager {
                 await self.subscriptionCoordinator?.acquire(topic: topic)
                 let stream = await self.observeParsedMessages()
                 for await parsed in stream {
-                    guard parsed.eventType == .Associate,
+                    guard parsed.eventType == .associate,
                           parsed.eventTypeFilter == ioNode.name,
                           let payload: AssociateEvent = try? PayloadCoder.decode(parsed.payload) else { continue }
-                    payload.type = .Associate
+                    payload.type = .associate
                     if let sourceId = CoatyUUID(uuidString: parsed.sourceId) { payload.sourceId = sourceId }
                     self.handleAssociate(event: payload)
                 }

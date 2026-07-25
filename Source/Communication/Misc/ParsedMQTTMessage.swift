@@ -8,7 +8,7 @@ import Foundation
 struct ParsedMQTTMessage: Sendable, Hashable {
 
     /// The Coaty event type carried on the topic's event level.
-    let eventType: CommunicationEventType
+    let eventType: WireEventType
 
     /// The optional event type filter parsed from the topic's event level.
     let eventTypeFilter: String?
@@ -46,11 +46,11 @@ struct ParsedMQTTMessage: Sendable, Hashable {
     ///   - topicView: the parsed topic view.
     ///   - payload: the UTF-8 payload string.
     init(topicView: TopicView, payload: String) {
-        self.eventType = CommunicationEventType(topicView.eventType!) ?? .Advertise
+        self.eventType = topicView.eventType ?? .advertise
         self.eventTypeFilter = topicView.eventTypeFilter?.asString()
-        self.namespace = topicView.level(2)?.asString() ?? ""
-        self.sourceId = topicView.level(4)?.asString() ?? ""
-        self.correlationId = topicView.level(5)?.asString()
+        self.namespace = topicView.namespaceLevel?.asString() ?? ""
+        self.sourceId = topicView.sourceIdLevel?.asString() ?? ""
+        self.correlationId = topicView.correlationIdLevel?.asString()
         self.payload = payload
     }
 }

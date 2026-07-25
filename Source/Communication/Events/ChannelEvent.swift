@@ -31,7 +31,7 @@ public class ChannelEvent: CommunicationEvent<ChannelEventData> {
     /// - Throws: if channel identifier is invalid
     public static func with(object: CoatyObject, channelId: String, privateData: [String: Any]? = nil) throws -> ChannelEvent {
         let channelEventData = ChannelEventData(object: object, privateData: privateData)
-        return try .init(eventType: .Channel, eventData: channelEventData, channelId: channelId)
+        return try .init(eventType: .channel, eventData: channelEventData, channelId: channelId)
     }
     
     /// Create a ChannelEvent instance for delivering the given objects.
@@ -48,16 +48,16 @@ public class ChannelEvent: CommunicationEvent<ChannelEventData> {
     /// - Throws: if channel identifier is invalid
     public static func with(objects: [CoatyObject], channelId: String, privateData: [String: Any]? = nil) throws -> ChannelEvent {
         let channelEventData = ChannelEventData(objects: objects, privateData: privateData)
-        return try .init(eventType: .Channel, eventData: channelEventData, channelId: channelId)
+        return try .init(eventType: .channel, eventData: channelEventData, channelId: channelId)
     }
     
     // MARK: - Initializers.
     
-    fileprivate override init(eventType: CommunicationEventType, eventData: ChannelEventData) {
+    fileprivate override init(eventType: WireEventType, eventData: ChannelEventData) {
         super.init(eventType: eventType, eventData: eventData)
     }
 
-    fileprivate init(eventType: CommunicationEventType, eventData: ChannelEventData, channelId: String) throws {
+    fileprivate init(eventType: WireEventType, eventData: ChannelEventData, channelId: String) throws {
         guard CommunicationTopic.isValidEventTypeFilter(filter: channelId) else {
             throw AxolotyError.invalidArgument(argument: "channelId", reason: "\"\(channelId)\" is not a valid channel identifier")
         }

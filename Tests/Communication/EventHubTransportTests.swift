@@ -16,7 +16,7 @@ struct BroadcastTransportTests {
         let stream = await manager.observeAdvertiseStream(withCoreType: .Log)
         var iterator = stream.makeAsyncIterator()
         let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
-            eventType: .Advertise,
+            eventType: .advertise,
             eventTypeFilter: CoreType.Log.rawValue,
             namespace: manager.namespace
         )
@@ -67,7 +67,7 @@ struct BroadcastTransportTests {
         let client = FakeCommunicationClient(delegate: FakeStartable())
         let manager = makeManager(client: client)
         let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
-            eventType: .Advertise,
+            eventType: .advertise,
             eventTypeFilter: CoreType.Log.rawValue,
             namespace: manager.namespace
         )
@@ -108,7 +108,7 @@ struct BroadcastTransportTests {
         let client = FakeCommunicationClient(delegate: FakeStartable())
         let manager = makeManager(client: client)
         let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
-            eventType: .Advertise,
+            eventType: .advertise,
             eventTypeFilter: CoreType.Log.rawValue,
             namespace: manager.namespace
         )
@@ -162,7 +162,7 @@ struct BroadcastTransportTests {
         let stream = await manager.observeDeadvertiseStream()
         var iterator = stream.makeAsyncIterator()
         let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
-            eventType: .Deadvertise,
+            eventType: .deadvertise,
             namespace: manager.namespace
         )
 
@@ -185,7 +185,7 @@ struct BroadcastTransportTests {
         let stream = await manager.observeDiscoverStream()
         var iterator = stream.makeAsyncIterator()
         let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
-            eventType: .Discover,
+            eventType: .discover,
             namespace: manager.namespace
         )
 
@@ -222,21 +222,21 @@ struct BroadcastTransportTests {
         // `.online` also triggers identity/IoNode advertisements, so filter
         // for the Discover topic rather than assuming publish order.
         try await waitUntil("Discover topic to be published") {
-            try client.publishedTopics.contains { try CommunicationTopic($0).eventType == .Discover }
+            try client.publishedTopics.contains { try CommunicationTopic($0).eventType == .discover }
         }
         let publishedTopic = try #require(
-            try client.publishedTopics.first { try CommunicationTopic($0).eventType == .Discover }
+            try client.publishedTopics.first { try CommunicationTopic($0).eventType == .discover }
         )
         let parsedTopic = try CommunicationTopic(publishedTopic)
         let mintedCorrelationId = try #require(parsedTopic.correlationId)
 
         let resolveSnapshot = ResponseEventSnapshot(
-            eventType: CommunicationEventType.Resolve.rawValue,
+            eventType: WireEventType.resolve.rawValue,
             sourceId: "responder",
             correlationId: mintedCorrelationId,
             payload: "{}"
         )
-        await client.emitResponse(resolveSnapshot, eventType: .Resolve, correlationId: mintedCorrelationId)
+        await client.emitResponse(resolveSnapshot, eventType: .resolve, correlationId: mintedCorrelationId)
 
         let received = try await nextValue(&iterator, timeout: .milliseconds(500))
         #expect(received.correlationId == mintedCorrelationId)
@@ -260,7 +260,7 @@ struct BroadcastTransportTests {
         // Wait for the Discover publish to appear — this implies
         // setOnline has completed and desired topics have been activated.
         try await waitUntil("Discover topic to be published") {
-            try client.publishedTopics.contains { try CommunicationTopic($0).eventType == .Discover }
+            try client.publishedTopics.contains { try CommunicationTopic($0).eventType == .discover }
         }
 
         // The response topic (Resolve with correlation ID) should have been
@@ -285,7 +285,7 @@ struct BroadcastTransportTests {
         let stream = await manager.observeQueryStream()
         var iterator = stream.makeAsyncIterator()
         let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
-            eventType: .Query,
+            eventType: .query,
             namespace: manager.namespace
         )
 
@@ -309,7 +309,7 @@ struct BroadcastTransportTests {
         let stream = try await manager.observeCallStream(operation: "doThing")
         var iterator = stream.makeAsyncIterator()
         let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
-            eventType: .Call,
+            eventType: .call,
             eventTypeFilter: "doThing",
             namespace: manager.namespace
         )
@@ -347,7 +347,7 @@ struct BroadcastTransportTests {
         let stream = await manager.observeUpdateStream(withCoreType: .Log)
         var iterator = stream.makeAsyncIterator()
         let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
-            eventType: .Update,
+            eventType: .update,
             eventTypeFilter: CoreType.Log.rawValue,
             namespace: manager.namespace
         )
@@ -377,7 +377,7 @@ struct BroadcastTransportTests {
         let stream = try await manager.observeChannelStream(channelId: "test-channel")
         var iterator = stream.makeAsyncIterator()
         let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
-            eventType: .Channel,
+            eventType: .channel,
             eventTypeFilter: "test-channel",
             namespace: manager.namespace
         )
@@ -799,7 +799,7 @@ private final class FakeCommunicationClient: CommunicationClient, @unchecked Sen
     func emitIoValue(_ snapshot: IoValueEventSnapshot) async {
         await streams.ioValues.send(snapshot)
     }
-    func emitResponse(_ snapshot: ResponseEventSnapshot, eventType: CommunicationEventType, correlationId: String) async {
+    func emitResponse(_ snapshot: ResponseEventSnapshot, eventType: WireEventType, correlationId: String) async {
         await streams.responseFamily.send(snapshot, for: ResponseKey(eventType: eventType, correlationId: correlationId))
     }
     func emitOperatingState(_ state: OperatingState) async {

@@ -28,7 +28,7 @@ public class UpdateEvent: CommunicationEvent<UpdateEventData> {
     /// - Throws: if object type of given object is invalid
     public static func with(object: CoatyObject) throws -> UpdateEvent {
         let updateEventData = UpdateEventData(object: object)
-        return try .init(eventType: .Update, eventData: updateEventData, objectType: updateEventData.object.objectType)
+        return try .init(eventType: .update, eventData: updateEventData, objectType: updateEventData.object.objectType)
     }
     
     /// Respond to an observed Update event by sending the given Complete event.
@@ -42,11 +42,11 @@ public class UpdateEvent: CommunicationEvent<UpdateEventData> {
     
     // MARK: - Initializers.
     
-    fileprivate override init(eventType: CommunicationEventType, eventData: UpdateEventData) {
+    fileprivate override init(eventType: WireEventType, eventData: UpdateEventData) {
         super.init(eventType: eventType, eventData: eventData)
     }
     
-    fileprivate init(eventType: CommunicationEventType, eventData: UpdateEventData, objectType: String) throws {
+    fileprivate init(eventType: WireEventType, eventData: UpdateEventData, objectType: String) throws {
         guard CommunicationTopic.isValidEventTypeFilter(filter: objectType) else {
             throw AxolotyError.invalidArgument(argument: "objectType", reason: "\"\(objectType)\" is not a valid object type")
         }

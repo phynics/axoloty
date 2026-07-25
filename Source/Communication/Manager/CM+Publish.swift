@@ -21,7 +21,7 @@ extension CommunicationManager {
     public func publishAdvertise(_ event: AdvertiseEvent) {
         event.sourceId = identity.objectId
         let components = CommunicationTopic.TopicStringComponents(
-            namespace: namespace, eventType: .Advertise,
+            namespace: namespace, eventType: .advertise,
             eventTypeFilter: event.data.object.coreType.rawValue
         )
         publish(topic: CommunicationTopic.createTopicStringByLevelsForPublish(components: components, sourceId: identity.objectId),
@@ -29,7 +29,7 @@ extension CommunicationManager {
         if event.data.object.coreType.objectType != event.data.object.objectType {
             let object = CommunicationTopic.createTopicStringByLevelsForPublish(
                 components: .init(
-                    namespace: namespace, eventType: .Advertise,
+                    namespace: namespace, eventType: .advertise,
                     eventTypeFilter: EVENT_TYPE_FILTER_SEPARATOR + event.data.object.objectType
                 ),
                 sourceId: identity.objectId
@@ -44,7 +44,7 @@ extension CommunicationManager {
     public func publishDeadvertise(_ event: DeadvertiseEvent) {
         event.sourceId = identity.objectId
         let topic = CommunicationTopic.createTopicStringByLevelsForPublish(
-            components: .init(namespace: namespace, eventType: .Deadvertise),
+            components: .init(namespace: namespace, eventType: .deadvertise),
             sourceId: identity.objectId
         )
         publish(topic: topic, message: event.json)
@@ -53,13 +53,13 @@ extension CommunicationManager {
     public func publishChannel(_ event: ChannelEvent) {
         event.sourceId = identity.objectId
         let topic = CommunicationTopic.createTopicStringByLevelsForPublish(
-            components: .init(namespace: namespace, eventType: .Channel, eventTypeFilter: event.channelId),
+            components: .init(namespace: namespace, eventType: .channel, eventTypeFilter: event.channelId),
             sourceId: identity.objectId
         )
         publish(topic: topic, message: event.json)
     }
 
-    private func responseStream(_ eventType: CommunicationEventType, correlationId: String, topic: String) async -> AsyncStream<ResponseEventSnapshot> {
+    private func responseStream(_ eventType: WireEventType, correlationId: String, topic: String) async -> AsyncStream<ResponseEventSnapshot> {
         guard let coordinator = subscriptionCoordinator else {
             return AsyncStream { $0.finish() }
         }
@@ -76,8 +76,8 @@ extension CommunicationManager {
     /// iterator — no registration race.
     private func publishWithResponse<D: CommunicationEventData>(
         _ event: CommunicationEvent<D>,
-        request eventType: CommunicationEventType,
-        response responseType: CommunicationEventType,
+        request eventType: WireEventType,
+        response responseType: WireEventType,
         eventTypeFilter: String? = nil
     ) async -> AsyncStream<ResponseEventSnapshot> {
         event.sourceId = identity.objectId
@@ -105,7 +105,7 @@ extension CommunicationManager {
 
     private func publishResponseless<D: CommunicationEventData>(
         _ event: CommunicationEvent<D>,
-        eventType: CommunicationEventType,
+        eventType: WireEventType,
         correlationId: String
     ) {
         event.sourceId = identity.objectId
@@ -121,35 +121,35 @@ extension CommunicationManager {
     }
 
     public func publishUpdate(_ event: UpdateEvent) async -> AsyncStream<ResponseEventSnapshot> {
-        await publishWithResponse(event, request: .Update, response: .Complete, eventTypeFilter: event.data.object.coreType.rawValue)
+        await publishWithResponse(event, request: .update, response: .complete, eventTypeFilter: event.data.object.coreType.rawValue)
     }
 
     public func publishDiscover(_ event: DiscoverEvent) async -> AsyncStream<ResponseEventSnapshot> {
-        await publishWithResponse(event, request: .Discover, response: .Resolve)
+        await publishWithResponse(event, request: .discover, response: .resolve)
     }
 
     public func publishQuery(_ event: QueryEvent) async -> AsyncStream<ResponseEventSnapshot> {
-        await publishWithResponse(event, request: .Query, response: .Retrieve)
+        await publishWithResponse(event, request: .query, response: .retrieve)
     }
 
     public func publishCall(_ event: CallEvent) async -> AsyncStream<ResponseEventSnapshot> {
-        await publishWithResponse(event, request: .Call, response: .Return, eventTypeFilter: event.operation)
+        await publishWithResponse(event, request: .call, response: .returnEvent, eventTypeFilter: event.operation)
     }
 
     internal func publishComplete(event: CompleteEvent, correlationId: String) {
-        publishResponseless(event, eventType: .Complete, correlationId: correlationId)
+        publishResponseless(event, eventType: .complete, correlationId: correlationId)
     }
 
     internal func publishResolve(event: ResolveEvent, correlationId: String) {
-        publishResponseless(event, eventType: .Resolve, correlationId: correlationId)
+        publishResponseless(event, eventType: .resolve, correlationId: correlationId)
     }
 
     internal func publishRetrieve(event: RetrieveEvent, correlationId: String) {
-        publishResponseless(event, eventType: .Retrieve, correlationId: correlationId)
+        publishResponseless(event, eventType: .retrieve, correlationId: correlationId)
     }
 
     internal func publishReturn(event: ReturnEvent, correlationId: String) {
-        publishResponseless(event, eventType: .Return, correlationId: correlationId)
+        publishResponseless(event, eventType: .returnEvent, correlationId: correlationId)
     }
 
     public func publishIoValue(event: IoValueEvent) {
@@ -180,7 +180,7 @@ extension CommunicationManager {
             throw AxolotyError.invalidArgument(argument: "ioContextName", reason: "Associate: not a valid eventTypeFilter")
         }
         let topic = CommunicationTopic.createTopicStringByLevelsForPublish(
-            components: .init(namespace: namespace, eventType: .Associate, eventTypeFilter: name),
+            components: .init(namespace: namespace, eventType: .associate, eventTypeFilter: name),
             sourceId: identity.objectId
         )
         publish(topic: topic, message: event.json)

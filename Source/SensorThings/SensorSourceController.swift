@@ -174,7 +174,7 @@ open class SensorSourceController: Controller {
             guard let self else { return }
             let stream = await communicationManager.observeParsedMessages()
             for await parsed in stream {
-                guard parsed.eventType == .Query,
+                guard parsed.eventType == .query,
                       let correlationId = parsed.correlationId,
                       let request: QueryEvent = try? PayloadCoder.decode(parsed.payload) else { continue }
                 self.handleQueryEvent(request, correlationId: correlationId)
