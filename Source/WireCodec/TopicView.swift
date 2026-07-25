@@ -8,6 +8,10 @@
 ///
 /// The Coaty topic structure is:
 /// `coaty/<version>/<namespace>/<eventType>[filter]/<sourceId>[/<correlationId>]`
+///
+/// - Important: When constructed from ``BorrowedMessage``, use this view and
+///   its returned ``ByteSlice`` levels only in the message's synchronous
+///   borrow scope. Copy data before an `await` or another isolation-domain hop.
 public struct TopicView {
     /// The raw pointer to the topic byte buffer.
     @usableFromInline let bytes: UnsafeRawPointer

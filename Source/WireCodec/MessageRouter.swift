@@ -16,5 +16,9 @@ public protocol MessageRouter: Sendable {
     /// (`ParsedMQTTMessage`) and sends them through the existing `Broadcast`
     /// actor infrastructure. On embedded, this dispatches directly to
     /// `StaticDispatchTable` callbacks with no allocation.
+    ///
+    /// The message and any values derived from it are valid only for the
+    /// synchronous duration of this call. Implementations and handlers must
+    /// copy data before an `await` or another isolation-domain hop.
     func dispatch(_ message: BorrowedMessage)
 }

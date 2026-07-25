@@ -11,9 +11,11 @@
 /// `String.components(separatedBy:)`. The payload is accessed via
 /// `WireReader` for typed field decode without a JSON value tree.
 ///
-/// - Important: The caller must ensure both the topic and payload buffers
-///   outlive the `BorrowedMessage`. This type is intentionally not `Sendable`;
-///   it is designed for synchronous dispatch in the routing hot path.
+/// - Important: Use this type and every value derived from it only while the
+///   topic and payload buffers are pinned. Do not capture it in an escaping
+///   closure, cross an `await`, or send it to another isolation domain. Copy
+///   the needed fields first. This type is intentionally not `Sendable`; it is
+///   designed for synchronous dispatch in the routing hot path.
 public struct BorrowedMessage {
     /// The parsed topic view borrowing the topic bytes.
     public let topic: TopicView
@@ -78,6 +80,39 @@ public struct BorrowedMessage {
             topicBytes: topicBytes, topicLength: topicLength,
             payloadBytes: payloadBytes, payloadLength: payloadLength
         )
+    }
+
+    /// Validates borrowed MQTT bytes and passes their view to a synchronous body.
+    ///
+    /// Prefer this scoped factory at transport boundaries where the topic and
+    /// payload buffers are pinned only for the duration of a callback. The
+    /// `BorrowedMessage` and any ``ByteSlice``, ``TopicView``, or ``WireReader``
+    /// derived from it are valid only while `body` executes. Copy data needed
+    /// after the callback returns, before an `await`, or before sending it to
+    /// another isolation domain.
+    ///
+    /// - Parameters:
+    ///   - topicBytes: A pointer to the UTF-8 topic bytes.
+    ///   - topicLength: The number of valid topic bytes.
+    ///   - payloadBytes: A pointer to the payload bytes.
+    ///   - payloadLength: The number of valid payload bytes.
+    ///   - body: A synchronous operation using the validated borrowed message.
+    /// - Returns: The result returned by `body`.
+    /// - Throws: ``WireDecodeError`` for an oversized topic or payload, or an
+    ///   error thrown by `body`.
+    public static func withValidated<R>(
+        topicBytes: UnsafePointer<UInt8>,
+        topicLength: Int,
+        payloadBytes: UnsafePointer<UInt8>,
+        payloadLength: Int,
+        _ body: (BorrowedMessage) throws -> R
+    ) throws -> R {
+        try body(validated(
+            topicBytes: topicBytes,
+            topicLength: topicLength,
+            payloadBytes: payloadBytes,
+            payloadLength: payloadLength
+        ))
     }
 
     /// Creates a WireReader for the payload, enabling typed field access

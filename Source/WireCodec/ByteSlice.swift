@@ -7,9 +7,10 @@
 /// against known patterns (event codes, UUID strings, etc.).
 ///
 /// - Important: The caller must ensure the underlying buffer outlives the
-///   `ByteSlice`. This type is intentionally not `Sendable`; it is designed
-///   for synchronous dispatch in the routing hot path, not for crossing
-///   isolation boundaries.
+///   `ByteSlice`. When derived from ``BorrowedMessage``, use it only in that
+///   message's synchronous borrow scope. Copy needed bytes before an `await`
+///   or another isolation-domain hop. This type is intentionally not
+///   `Sendable`.
 public struct ByteSlice: Equatable, Hashable {
     /// The raw pointer into the externally-owned byte buffer.
     @usableFromInline let pointer: UnsafeRawPointer
