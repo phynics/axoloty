@@ -60,28 +60,51 @@ public struct QueryEventSnapshot: Codable, Equatable, Sendable {
     }
 }
 
-private struct QueryEventWirePayload: Codable {
-    let objectTypes: [String]?
-    let coreTypes: [CoreType]?
-}
-
 extension QueryEventSnapshot {
 
-    /// Decodes a Query snapshot from a parsed MQTT message.
+    /// Decodes a Query snapshot from a parsed MQTT message via a single
+    /// ``WireReader`` pass.
     init?(parsedMQTTMessage: ParsedMQTTMessage) {
-        guard let wire: QueryEventWirePayload = try? PayloadCoder.decode(
-            parsedMQTTMessage.payload
-        ) else {
-            return nil
-        }
+        var payload = parsedMQTTMessage.payload
+        guard let decoded = payload.withUTF8({ buf -> ([String]?, [CoreType]?, String?, [String]?, String?)? in
+            guard let base = buf.baseAddress else { return nil }
+            let reader = WireReader(bytes: base, length: buf.count)
+            guard let wire = try? QueryWireData(from: reader) else { return nil }
+            let objectTypes = wire.objectTypes.flatMap { WirePayloadExtractor.decodeJSON([String].self, from: $0) }
+            let coreTypes = wire.coreTypes.flatMap { WirePayloadExtractor.decodeJSON([CoreType].self, from: $0) }
+            let objectFilter: String?
+            if let ofSlice = wire.objectFilter, ofSlice.byte(at: 0) == 0x7B {
+                objectFilter = ofSlice.asString()
+            } else {
+                objectFilter = nil
+            }
+            let objectJoinConditions: [String]?
+            let objectJoinCondition: String?
+            if let ojcSlice = wire.objectJoinConditions {
+                if ojcSlice.byte(at: 0) == 0x5B {
+                    objectJoinConditions = WirePayloadExtractor.arrayElements(from: ojcSlice)
+                    objectJoinCondition = nil
+                } else if ojcSlice.byte(at: 0) == 0x7B {
+                    objectJoinConditions = nil
+                    objectJoinCondition = ojcSlice.asString()
+                } else {
+                    objectJoinConditions = nil
+                    objectJoinCondition = nil
+                }
+            } else {
+                objectJoinConditions = nil
+                objectJoinCondition = nil
+            }
+            return (objectTypes, coreTypes, objectFilter, objectJoinConditions, objectJoinCondition)
+        }) else { return nil }
         self.init(
             sourceId: parsedMQTTMessage.sourceId,
             correlationId: parsedMQTTMessage.correlationId,
-            objectTypes: wire.objectTypes,
-            coreTypes: wire.coreTypes,
-            objectFilter: WirePayloadExtractor.nestedObjectPayload(from: parsedMQTTMessage.payload, key: "objectFilter"),
-            objectJoinConditions: WirePayloadExtractor.nestedArrayPayload(from: parsedMQTTMessage.payload, key: "objectJoinConditions"),
-            objectJoinCondition: WirePayloadExtractor.nestedObjectPayload(from: parsedMQTTMessage.payload, key: "objectJoinConditions")
+            objectTypes: decoded.0,
+            coreTypes: decoded.1,
+            objectFilter: decoded.2,
+            objectJoinConditions: decoded.3,
+            objectJoinCondition: decoded.4
         )
     }
 }

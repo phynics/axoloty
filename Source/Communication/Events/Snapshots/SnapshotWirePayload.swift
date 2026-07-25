@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+import Foundation
+
 /// Helper methods for extracting nested JSON values from wire payloads as
 /// `String`, used by event snapshot initializers that need to preserve complex
 /// fields (e.g. `ObjectFilter`, `ObjectJoinCondition`) in their encoded form
@@ -8,6 +10,19 @@
 /// Uses `WireReader` for zero-allocation single-pass scanning instead of
 /// `JSONObject(data:)` which allocates a full JSON tree.
 enum WirePayloadExtractor {
+
+    /// Decodes a `Decodable` value (e.g. a JSON array of strings or a
+    /// ``CoatyObjectSnapshot``) from a borrowed byte slice using
+    /// Foundation's `JSONDecoder`.
+    ///
+    /// Unlike ``PayloadCoder.decode(_:)``, this accepts any top-level JSON
+    /// value (arrays, objects, strings), not just a JSON object.
+    static func decodeJSON<T: Decodable>(_ type: T.Type, from slice: ByteSlice) -> T? {
+        slice.withBytes { ptr, len in
+            let data = Data(bytes: ptr, count: len)
+            return try? JSONDecoder().decode(T.self, from: data)
+        }
+    }
 
     /// Extracts any non-null object or array JSON value at the given key as
     /// a raw JSON string.
@@ -56,6 +71,13 @@ enum WirePayloadExtractor {
             count: slice.length
         )
         return String(decoding: buf, as: UTF8.self)
+    }
+
+    /// Extracts each element of a JSON array byte slice as a raw JSON
+    /// string. Returns nil if the slice is empty or not an array.
+    static func arrayElements(from slice: ByteSlice) -> [String]? {
+        guard slice.length > 0, slice.byte(at: 0) == 0x5B else { return nil }
+        return parseArrayElements(slice)
     }
 
     /// Scans a JSON array byte slice and extracts each element as a string.

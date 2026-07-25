@@ -48,27 +48,29 @@ public struct DiscoverEventSnapshot: Codable, Equatable, Sendable {
     }
 }
 
-private struct DiscoverEventWirePayload: Codable {
-    let externalId: String?
-    let objectId: String?
-    let objectTypes: [String]?
-    let coreTypes: [CoreType]?
-}
-
 extension DiscoverEventSnapshot {
+
+    /// Decodes a Discover snapshot from a parsed MQTT message via a single
+    /// ``WireReader`` pass.
     init?(parsedMQTTMessage: ParsedMQTTMessage) {
-        guard let payload: DiscoverEventWirePayload = try? PayloadCoder.decode(
-            parsedMQTTMessage.payload
-        ) else {
-            return nil
-        }
+        var payload = parsedMQTTMessage.payload
+        guard let decoded = payload.withUTF8({ buf -> (String?, String?, [String]?, [CoreType]?)? in
+            guard let base = buf.baseAddress else { return nil }
+            let reader = WireReader(bytes: base, length: buf.count)
+            guard let wire = try? DiscoverWireData(from: reader) else { return nil }
+            let externalId = wire.externalId?.asString()
+            let objectId = wire.objectId?.asString()
+            let objectTypes = wire.objectTypes.flatMap { WirePayloadExtractor.decodeJSON([String].self, from: $0) }
+            let coreTypes = wire.coreTypes.flatMap { WirePayloadExtractor.decodeJSON([CoreType].self, from: $0) }
+            return (externalId, objectId, objectTypes, coreTypes)
+        }) else { return nil }
         self.init(
             sourceId: parsedMQTTMessage.sourceId,
             correlationId: parsedMQTTMessage.correlationId,
-            externalId: payload.externalId,
-            objectId: payload.objectId,
-            objectTypes: payload.objectTypes,
-            coreTypes: payload.coreTypes
+            externalId: decoded.0,
+            objectId: decoded.1,
+            objectTypes: decoded.2,
+            coreTypes: decoded.3
         )
     }
 }

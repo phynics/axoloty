@@ -153,9 +153,13 @@ struct WireDifferentialTests {
         let codable: DeadvertiseEvent = try PayloadCoder.decode(json)
         let decoded = try decodeWire(json) as DecodedWire<DeadvertiseWireData>; let wire = decoded.value
 
-        #expect(wire.objectIds.count == 2)
-        #expect(wire.objectIds[0] == UUID16(parsing: "33333333-3333-4333-8333-333333333333"))
-        #expect(wire.objectIds[1] == UUID16(parsing: "44444444-4444-4444-8444-444444444444"))
+        // objectIds is carried as a raw JSON ByteSlice; decode it to [String]
+        // to compare against the Codable path (preserving the original UUID
+        // strings rather than normalizing through UUID16).
+        let ids: [String] = try #require(WirePayloadExtractor.decodeJSON([String].self, from: wire.objectIds))
+        #expect(ids.count == 2)
+        #expect(ids[0] == "33333333-3333-4333-8333-333333333333")
+        #expect(ids[1] == "44444444-4444-4444-8444-444444444444")
         #expect(codable.data.objectIds.count == 2)
         #expect(codable.data.objectIds[0].string == "33333333-3333-4333-8333-333333333333")
         #expect(codable.data.objectIds[1].string == "44444444-4444-4444-8444-444444444444")
@@ -167,8 +171,9 @@ struct WireDifferentialTests {
 
         let decoded = try decodeWire(json) as DecodedWire<DeadvertiseWireData>; let wire = decoded.value
 
-        #expect(wire.objectIds.count == 1)
-        #expect(wire.objectIds[0] == UUID16(parsing: "33333333-3333-4333-8333-333333333333"))
+        let ids: [String] = try #require(WirePayloadExtractor.decodeJSON([String].self, from: wire.objectIds))
+        #expect(ids.count == 1)
+        #expect(ids[0] == "33333333-3333-4333-8333-333333333333")
     }
 
     // MARK: - ChannelEventData

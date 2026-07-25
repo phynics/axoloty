@@ -44,31 +44,31 @@ public struct AdvertiseEventSnapshot: Codable, Equatable, Sendable {
 
 // MARK: - Wire decoding
 
-private struct AdvertiseEventWirePayload: Codable {
-    let object: CoatyObjectSnapshot
-}
-
 extension AdvertiseEventSnapshot {
 
-    /// Decodes an Advertise snapshot from a parsed MQTT message, preserving
-    /// source and filter metadata from the topic.
+    /// Decodes an Advertise snapshot from a parsed MQTT message via a single
+    /// ``WireReader`` pass, preserving source and filter metadata from the
+    /// topic and decoding the object's ``CoatyObjectSnapshot`` from the
+    /// borrowed `object` bytes.
     ///
     /// Malformed payloads are surfaced as `nil` so callers can drop them.
     ///
     /// - Parameter parsedMQTTMessage: the parsed transport message.
     init?(parsedMQTTMessage: ParsedMQTTMessage) {
-        guard let wire: AdvertiseEventWirePayload = try? PayloadCoder.decode(parsedMQTTMessage.payload) else {
-            return nil
-        }
-
-        let objectPayload = WirePayloadExtractor.nestedObjectPayload(from: parsedMQTTMessage.payload, key: "object")
-        let privateData = WirePayloadExtractor.nestedPayload(from: parsedMQTTMessage.payload, key: "privateData")
-
+        var payload = parsedMQTTMessage.payload
+        guard let decoded = payload.withUTF8({ buf -> (CoatyObjectSnapshot, String?)? in
+            guard let base = buf.baseAddress else { return nil }
+            let reader = WireReader(bytes: base, length: buf.count)
+            guard let wire = try? AdvertiseWireData(from: reader) else { return nil }
+            let objectJSON = wire.object.asString()
+            guard let coatyObject: CoatyObjectSnapshot = try? PayloadCoder.decode(objectJSON) else { return nil }
+            return (coatyObject.withPayload(objectJSON), wire.privateData?.asString())
+        }) else { return nil }
         self.init(
             sourceId: parsedMQTTMessage.sourceId,
             eventTypeFilter: parsedMQTTMessage.eventTypeFilter,
-            object: wire.object.withPayload(objectPayload),
-            privateData: privateData
+            object: decoded.0,
+            privateData: decoded.1
         )
     }
 }
