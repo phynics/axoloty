@@ -41,7 +41,7 @@ extension CommunicationManager {
     ///   `operation` is not a valid event type filter.
     /// - Returns: An event-buffered `AsyncStream` of immutable Call snapshots.
     public func observeCallStream(operation: String) async throws -> AsyncStream<CallEventSnapshot> {
-        guard CommunicationTopic.isValidEventTypeFilter(filter: operation) else {
+        guard TopicBuilder.isValidEventTypeFilter(filter: operation) else {
             throw AxolotyError.invalidArgument(argument: "operation", reason: "\"\(operation)\" is not a valid call operation")
         }
         return await streams.callFamily.subscribe(for: operation)

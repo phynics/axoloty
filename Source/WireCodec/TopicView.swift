@@ -2,10 +2,9 @@
 
 /// Zero-allocation parsing of a Coaty MQTT topic string.
 ///
-/// Replaces the class-based `CommunicationTopic` and its
-/// `String.components(separatedBy:)` array allocation with a borrowed view
-/// that scans the topic bytes in-place. Topic levels are returned as
-/// `ByteSlice` — no String or Array is allocated.
+/// Scans the topic bytes in place, returning topic levels as `ByteSlice`
+/// without `String.components(separatedBy:)` array allocation. Topic levels
+/// are returned as `ByteSlice` — no String or Array is allocated.
 ///
 /// The Coaty topic structure is:
 /// `coaty/<version>/<namespace>/<eventType>[filter]/<sourceId>[/<correlationId>]`

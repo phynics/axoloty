@@ -32,7 +32,7 @@ extension CommunicationManager {
     public func observeAdvertiseStream(
         withObjectType objectType: String
     ) async throws -> AsyncStream<AdvertiseEventSnapshot> {
-        guard CommunicationTopic.isValidEventTypeFilter(filter: objectType) else {
+        guard TopicBuilder.isValidEventTypeFilter(filter: objectType) else {
             throw AxolotyError.invalidArgument(argument: "objectType", reason: "\"\(objectType)\" is not a valid object type")
         }
 

@@ -186,13 +186,13 @@ public class CommunicationManager {
             advertiseFamily: BroadcastFamily(
                 mode: .event,
                 onFirst: { key in
-                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                    let topic = TopicBuilder.subscribeTopic(
                         eventType: .advertise, eventTypeFilter: key.eventTypeFilter, namespace: crossNs
                     )
                     await coordinator.acquire(topic: topic)
                 },
                 onLast: { key in
-                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                    let topic = TopicBuilder.subscribeTopic(
                         eventType: .advertise, eventTypeFilter: key.eventTypeFilter, namespace: crossNs
                     )
                     await coordinator.release(topic: topic)
@@ -201,13 +201,13 @@ public class CommunicationManager {
             deadvertise: Broadcast(
                 mode: .event,
                 onFirst: {
-                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                    let topic = TopicBuilder.subscribeTopic(
                         eventType: .deadvertise, namespace: crossNs
                     )
                     await coordinator.acquire(topic: topic)
                 },
                 onLast: {
-                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                    let topic = TopicBuilder.subscribeTopic(
                         eventType: .deadvertise, namespace: crossNs
                     )
                     await coordinator.release(topic: topic)
@@ -216,13 +216,13 @@ public class CommunicationManager {
             discover: Broadcast(
                 mode: .event,
                 onFirst: {
-                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                    let topic = TopicBuilder.subscribeTopic(
                         eventType: .discover, namespace: crossNs
                     )
                     await coordinator.acquire(topic: topic)
                 },
                 onLast: {
-                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                    let topic = TopicBuilder.subscribeTopic(
                         eventType: .discover, namespace: crossNs
                     )
                     await coordinator.release(topic: topic)
@@ -231,13 +231,13 @@ public class CommunicationManager {
             query: Broadcast(
                 mode: .event,
                 onFirst: {
-                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                    let topic = TopicBuilder.subscribeTopic(
                         eventType: .query, namespace: crossNs
                     )
                     await coordinator.acquire(topic: topic)
                 },
                 onLast: {
-                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                    let topic = TopicBuilder.subscribeTopic(
                         eventType: .query, namespace: crossNs
                     )
                     await coordinator.release(topic: topic)
@@ -246,13 +246,13 @@ public class CommunicationManager {
             callFamily: BroadcastFamily(
                 mode: .event,
                 onFirst: { operation in
-                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                    let topic = TopicBuilder.subscribeTopic(
                         eventType: .call, eventTypeFilter: operation, namespace: crossNs
                     )
                     await coordinator.acquire(topic: topic)
                 },
                 onLast: { operation in
-                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                    let topic = TopicBuilder.subscribeTopic(
                         eventType: .call, eventTypeFilter: operation, namespace: crossNs
                     )
                     await coordinator.release(topic: topic)
@@ -261,13 +261,13 @@ public class CommunicationManager {
             updateFamily: BroadcastFamily(
                 mode: .event,
                 onFirst: { filter in
-                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                    let topic = TopicBuilder.subscribeTopic(
                         eventType: .update, eventTypeFilter: filter, namespace: crossNs
                     )
                     await coordinator.acquire(topic: topic)
                 },
                 onLast: { filter in
-                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                    let topic = TopicBuilder.subscribeTopic(
                         eventType: .update, eventTypeFilter: filter, namespace: crossNs
                     )
                     await coordinator.release(topic: topic)
@@ -276,13 +276,13 @@ public class CommunicationManager {
             channelFamily: BroadcastFamily(
                 mode: .event,
                 onFirst: { channelId in
-                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                    let topic = TopicBuilder.subscribeTopic(
                         eventType: .channel, eventTypeFilter: channelId, namespace: crossNs
                     )
                     await coordinator.acquire(topic: topic)
                 },
                 onLast: { channelId in
-                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                    let topic = TopicBuilder.subscribeTopic(
                         eventType: .channel, eventTypeFilter: channelId, namespace: crossNs
                     )
                     await coordinator.release(topic: topic)
@@ -292,13 +292,13 @@ public class CommunicationManager {
                 mode: .event,
                 evictOnLast: true,
                 onFirst: { key in
-                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                    let topic = TopicBuilder.subscribeTopic(
                         eventType: key.eventType, namespace: crossNs, correlationId: key.correlationId
                     )
                     await coordinator.acquire(topic: topic)
                 },
                 onLast: { key in
-                    let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                    let topic = TopicBuilder.subscribeTopic(
                         eventType: key.eventType, namespace: crossNs, correlationId: key.correlationId
                     )
                     await coordinator.release(topic: topic)
@@ -446,7 +446,7 @@ public class CommunicationManager {
             ns = DEFAULT_NAMESPACE
         }
         
-        guard CommunicationTopic.isValidEventTypeFilter(filter: ns!) else {
+        guard TopicBuilder.isValidEventTypeFilter(filter: ns!) else {
             throw AxolotyError.invalidConfiguration(option: "CommunicationOptions.namespace", reason: "contains invalid characters")
         }
         
@@ -467,7 +467,7 @@ public class CommunicationManager {
     /// Gets last will message to be published when the connection terminates
     /// abnormally.
     private func getLastWill() -> (topic: String, msg: String) {
-        let lastWillTopic = CommunicationTopic.createTopicStringByLevelsForPublish(
+        let lastWillTopic = TopicBuilder.publishTopic(
             components: .init(namespace: self.namespace, eventType: .deadvertise),
             sourceId: self.identity.objectId
         )
@@ -644,7 +644,7 @@ public class CommunicationManager {
     private func _initIoNodes() throws {
         if let ioNodesConfig = self.commonOptions?.ioContextNodes, !ioNodesConfig.isEmpty {
             let nodes = try ioNodesConfig.keys.filter({ contextName -> Bool in
-                if CommunicationTopic.isValidEventTypeFilter(filter: contextName) {
+                if TopicBuilder.isValidEventTypeFilter(filter: contextName) {
                     return true
                 } else {
                     throw AxolotyError.invalidConfiguration(
@@ -688,7 +688,7 @@ public class CommunicationManager {
     /// - Parameter ioSource: the IO source object
     /// - Returns: an associating topic for routing IO values
     public func createIoRoute(ioSource: IoSource) -> String {
-        return CommunicationTopic.createTopicStringByLevelsForPublish(
+        return TopicBuilder.publishTopic(
             components: .init(namespace: self.namespace, eventType: .ioValue),
             sourceId: ioSource.objectId
         )

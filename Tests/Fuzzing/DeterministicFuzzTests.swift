@@ -113,7 +113,7 @@ struct DeterministicFuzzTests {
         for iteration in 0..<iterations {
             let topic = generator.topic(allowWildcards: false)
             let filter = generator.topic(allowWildcards: true)
-            #expect((CommunicationTopic.matches(topic, filter)) == (referenceMatches(topic: topic, filter: filter)), "seed=\(seed) iteration=\(iteration) topic=\(topic) filter=\(filter)")
+            #expect((TopicBuilder.matches(topic, filter)) == (referenceMatches(topic: topic, filter: filter)), "seed=\(seed) iteration=\(iteration) topic=\(topic) filter=\(filter)")
         }
     }
 
@@ -124,15 +124,15 @@ struct DeterministicFuzzTests {
         for iteration in 0..<iterations {
             let clean = generator.string(maxLength: 24, alphabet: Array("abcXYZ012._-"))
             if clean.isEmpty {
-                #expect(!(CommunicationTopic.isValidPublicationTopic(clean)))
+                #expect(!(TopicBuilder.isValidPublicationTopic(clean)))
             } else {
-                #expect(CommunicationTopic.isValidPublicationTopic(clean), "iteration=\(iteration)")
-                #expect(CommunicationTopic.isValidSubscriptionTopic(clean))
+                #expect(TopicBuilder.isValidPublicationTopic(clean), "iteration=\(iteration)")
+                #expect(TopicBuilder.isValidSubscriptionTopic(clean))
             }
             for forbidden in ["#", "+", "\u{0000}"] {
-                #expect(!(CommunicationTopic.isValidPublicationTopic(clean + forbidden)))
+                #expect(!(TopicBuilder.isValidPublicationTopic(clean + forbidden)))
             }
-            #expect(!(CommunicationTopic.isValidSubscriptionTopic(clean + "\u{0000}")))
+            #expect(!(TopicBuilder.isValidSubscriptionTopic(clean + "\u{0000}")))
         }
     }
 

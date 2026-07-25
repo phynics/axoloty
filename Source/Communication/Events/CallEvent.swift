@@ -63,7 +63,7 @@ public class CallEvent: CommunicationEvent<CallEventData> {
     }
     
     fileprivate init(eventType: WireEventType, eventData: CallEventData, operation: String) throws {
-        guard CommunicationTopic.isValidEventTypeFilter(filter: operation) else {
+        guard TopicBuilder.isValidEventTypeFilter(filter: operation) else {
             throw AxolotyError.invalidArgument(argument: "operation", reason: "\"\(operation)\" is not a valid call operation")
         }
         
