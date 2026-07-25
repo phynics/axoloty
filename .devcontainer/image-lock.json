@@ -1,9 +1,9 @@
 {
   "$comment": "Reviewed lock for the development container image. Update only as a deliberate repository change, using the digest reported by the Development Container Image workflow summary after it publishes a build of this Dockerfile.",
   "image": "ghcr.io/phynics/axoloty-dev",
-  "tag": "swift-6.3-098b94673eafa5d622db995fea5e44311e6edc93f5b43234052038c1a7a344e8",
-  "digest": "sha256:b4a573cbd5726e58b9c6e86e2a592bfd8ad55705ee2e53558e4ca54a785ebb68",
+  "tag": "swift-6.3-b0249fe7e41e68bede5096169c921a6146c78c397f1d2c518700e558b5025e4a",
+  "digest": "sha256:9eb237cdd69d5c2d53d30f3199cbc387139f4f0351cb0ec5e92dce1dcb1877ca",
   "swiftVersion": "6.3",
-  "dockerfileSha256": "098b94673eafa5d622db995fea5e44311e6edc93f5b43234052038c1a7a344e8",
-  "publishedRun": "https://github.com/phynics/axoloty/actions/runs/29476219202"
+  "dockerfileSha256": "b0249fe7e41e68bede5096169c921a6146c78c397f1d2c518700e558b5025e4a",
+  "publishedRun": "https://github.com/phynics/axoloty/actions/runs/30166785118"
 }
