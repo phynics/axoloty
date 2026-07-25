@@ -46,13 +46,28 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
     /// coordinator needed for `onFirst`/`onLast` hooks) and set on this
     /// client via ``setStreams(_:)`` before it starts producing values.
     ///
-    /// - Warning: Accessing `streams` before ``setStreams(_:)`` is called
-    ///   will crash (implicitly-unwrapped optional is nil). The manager
-    ///   calls `setStreams` in its `init`, before `connect()` is called.
-    var streams: CommunicationStreams!
+    /// Held as an optional rather than an implicitly-unwrapped optional so
+    /// that an inbound message arriving before ``setStreams(_:)`` is logged
+    /// and dropped (see ``streamsOrWarn()``) instead of trapping. In
+    /// practice ``CommunicationManager`` calls `setStreams` in its `init`,
+    /// before `connect()`, so this is nil only under a misordered
+    /// initialization.
+    var streams: CommunicationStreams?
 
     func setStreams(_ streams: CommunicationStreams) {
         self.streams = streams
+    }
+
+    /// Returns the broadcast streams if set, otherwise logs a warning and
+    /// returns nil so an inbound message can be dropped without trapping.
+    /// `setStreams` is called in ``CommunicationManager.init`` before
+    /// `connect()`, so a nil return indicates a misordered initialization.
+    private func streamsOrWarn() -> CommunicationStreams? {
+        guard let streams else {
+            log.warning("Streams not set; dropping incoming MQTT message")
+            return nil
+        }
+        return streams
     }
 
     var brokerCandidates = [String]()
@@ -434,8 +449,8 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
         delegate.didUpdateCommunicationState(state)
 
         deliveryContinuation.yield { [weak self] in
-            guard let self else { return }
-            await self.streams.communicationState.sendState(state)
+            guard let self, let streams = self.streamsOrWarn() else { return }
+            await streams.communicationState.sendState(state)
         }
     }
 
@@ -448,8 +463,8 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
             let rawMessage = RawMQTTMessage(topic: info.topicName, payload: bytes)
 
             deliveryContinuation.yield { [weak self] in
-                guard let self else { return }
-                await self.streams.rawMQTTMessages.send(rawMessage)
+                guard let self, let streams = self.streamsOrWarn() else { return }
+                await streams.rawMQTTMessages.send(rawMessage)
             }
 
             var topicName = info.topicName
@@ -471,8 +486,8 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                         payload: bytes
                     )
                     deliveryContinuation.yield { [weak self] in
-                        guard let self else { return }
-                        await self.streams.ioValues.send(IoValueEventSnapshot(topic: info.topicName, payload: bytes))
+                        guard let self, let streams = self.streamsOrWarn() else { return }
+                        await streams.ioValues.send(IoValueEventSnapshot(topic: info.topicName, payload: bytes))
                     }
                     return
                 }
@@ -502,9 +517,9 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
 
                     let parsed = ParsedMQTTMessage(topicView: topicView, payload: payloadString)
                     deliveryContinuation.yield { [weak self] in
-                        guard let self else { return }
-                        await self.streams.parsedMQTTMessages.send(parsed)
-                        await Self.routeParsedMessage(parsed: parsed, into: self.streams)
+                        guard let self, let streams = self.streamsOrWarn() else { return }
+                        await streams.parsedMQTTMessages.send(parsed)
+                        await Self.routeParsedMessage(parsed: parsed, into: streams)
                     }
                 }
             }
