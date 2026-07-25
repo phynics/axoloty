@@ -46,7 +46,7 @@ public class IoStateEvent {
 ///
 /// This data is emitted by the observable returned by
 /// `CommunicationManager.observeIoState`.
-public class IoStateEventData: CommunicationEventData {
+public class IoStateEventData {
     
     // MARK: - Attributes.
     
@@ -68,8 +68,6 @@ public class IoStateEventData: CommunicationEventData {
     init(hasAssociations: Bool, updateRate: Int?) {
         self._hasAssociations = hasAssociations
         self._updateRate = updateRate
-        
-        super.init()
     }
     
     // MARK: - Getters.
@@ -86,31 +84,6 @@ public class IoStateEventData: CommunicationEventData {
     /// an IO source; otherwise undefined.
     public func updateRate() -> Int? {
         return self._updateRate
-    }
-    
-    // MARK: - Codable methods.
-    
-    enum IoStateKeys: String, CodingKey {
-        case hasAssociatons
-        case updateRate
-    }
-    
-    required init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: IoStateKeys.self)
-        
-        // Decode attributes.
-        _hasAssociations = try container.decode(Bool.self, forKey: .hasAssociatons)
-        _updateRate = try container.decode(Int?.self, forKey: .updateRate)
-        try super.init(from: decoder)
-    }
-    
-    override public func encode(to encoder: Encoder) throws {
-        try super.encode(to: encoder)
-        var container = encoder.container(keyedBy: IoStateKeys.self)
-        
-        // Encode attributes.
-        try container.encode(_hasAssociations, forKey: .hasAssociatons)
-        try container.encodeIfPresent(_updateRate, forKey: .updateRate)
     }
     
 }
