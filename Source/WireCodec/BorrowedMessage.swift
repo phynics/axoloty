@@ -23,6 +23,14 @@ public struct BorrowedMessage {
     public let eventType: WireEventType?
 
     /// Creates a borrowed message from raw topic and payload bytes.
+    ///
+    /// - Important: This initializer performs **no size validation**. It is
+    ///   intended for callers that have already bounded the input (e.g. a
+    ///   fixed-size receive buffer). For untrusted input, use
+    ///   ``validated(topicBytes:topicLength:payloadBytes:payloadLength:)``,
+    ///   which enforces ``WireBufferConfig.maxTopicLength`` and
+    ///   ``WireBufferConfig.maxPayloadSize`` and throws a structured
+    ///   ``WireDecodeError`` on overflow.
     public init(
         topicBytes: UnsafePointer<UInt8>,
         topicLength: Int,
@@ -32,6 +40,44 @@ public struct BorrowedMessage {
         self.topic = TopicView(topicBytes: topicBytes, length: topicLength)
         self.payload = ByteSlice(bytes: payloadBytes, length: payloadLength)
         self.eventType = self.topic.eventType
+    }
+
+    /// Creates a borrowed message from raw topic and payload bytes, enforcing
+    /// the bounded-cost limits in ``WireBufferConfig``.
+    ///
+    /// Use this factory for untrusted input (e.g. an MQTT PUBLISH from a
+    /// peer). It checks the topic and payload lengths against
+    /// ``WireBufferConfig.maxTopicLength`` and
+    /// ``WireBufferConfig.maxPayloadSize`` before constructing the view, so an
+    /// oversized message is rejected with a structured ``WireDecodeError``
+    /// rather than driving unbounded allocation or processing on a
+    /// memory-constrained device.
+    ///
+    /// - Parameters:
+    ///   - topicBytes: A pointer to the UTF-8 topic bytes.
+    ///   - topicLength: The number of valid topic bytes.
+    ///   - payloadBytes: A pointer to the payload bytes.
+    ///   - payloadLength: The number of valid payload bytes.
+    /// - Throws: ``WireDecodeError`` with reason
+    ///   ``.topicExceedsLimit`` if `topicLength` exceeds
+    ///   ``WireBufferConfig.maxTopicLength``, or ``.payloadExceedsLimit`` if
+    ///   `payloadLength` exceeds ``WireBufferConfig.maxPayloadSize``.
+    public static func validated(
+        topicBytes: UnsafePointer<UInt8>,
+        topicLength: Int,
+        payloadBytes: UnsafePointer<UInt8>,
+        payloadLength: Int
+    ) throws -> BorrowedMessage {
+        if topicLength > WireBufferConfig.maxTopicLength {
+            throw WireDecodeError(.topicExceedsLimit, byteOffset: topicLength)
+        }
+        if payloadLength > WireBufferConfig.maxPayloadSize {
+            throw WireDecodeError(.payloadExceedsLimit, byteOffset: payloadLength)
+        }
+        return BorrowedMessage(
+            topicBytes: topicBytes, topicLength: topicLength,
+            payloadBytes: payloadBytes, payloadLength: payloadLength
+        )
     }
 
     /// Creates a WireReader for the payload, enabling typed field access

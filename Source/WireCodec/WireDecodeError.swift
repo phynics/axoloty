@@ -31,6 +31,10 @@ public struct WireDecodeError: Error, Sendable {
         case malformedTopic
         /// An integer field's value overflowed the target `Int` width.
         case integerOverflow
+        /// The topic length exceeded ``WireBufferConfig.maxTopicLength``.
+        case topicExceedsLimit
+        /// The payload length exceeded ``WireBufferConfig.maxPayloadSize``.
+        case payloadExceedsLimit
     }
 
     /// Creates a decode error.
