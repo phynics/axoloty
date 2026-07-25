@@ -34,9 +34,11 @@ jobs:
 
       - name: Setup container image
         uses: ./.github/actions/setup-container
+        with:
+          runtime: podman
 
       - name: Lint
-        run: make lint CONTAINER_RUNTIME=docker
+        run: make lint CONTAINER_RUNTIME=podman
 
       - name: Restore SwiftPM dependency cache
         uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
@@ -59,7 +61,7 @@ jobs:
       - name: Run consolidated checks
         env:
           COVERAGE_DIFF_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
-        run: make ci CONTAINER_RUNTIME=docker BUILD_DIR=.build COVERAGE_BUILD_DIR=.build BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache
+        run: make ci CONTAINER_RUNTIME=podman BUILD_DIR=.build COVERAGE_BUILD_DIR=.build BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache
 
       - name: Save SwiftPM dependency cache
         if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'

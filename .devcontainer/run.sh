@@ -44,9 +44,13 @@ fi
 
 mkdir -p "$spm_cache_dir"
 spm_cache_dir=$(cd "$spm_cache_dir" && pwd)
+mount_suffix=
+case "$runtime" in
+    *podman*) mount_suffix=:Z ;;
+esac
 "$runtime" run --rm \
-    -v "$root_dir:$workdir" \
-    -v "$build_dir:$workdir/.build" \
-    -v "$spm_cache_dir:$workdir/.swiftpm-cache" \
+    -v "$root_dir:$workdir$mount_suffix" \
+    -v "$build_dir:$workdir/.build$mount_suffix" \
+    -v "$spm_cache_dir:$workdir/.swiftpm-cache$mount_suffix" \
     -w "$workdir" \
     "$image" "$@"
