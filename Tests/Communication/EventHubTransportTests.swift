@@ -592,7 +592,7 @@ struct BroadcastTransportTests {
         let client = FakeCommunicationClient(delegate: FakeStartable())
         let manager = makeManager(client: client)
 
-        await manager.acquireSubscription(topic: "coaty/test/#")
+        await manager.subscriptionCoordinator.acquire(topic: "coaty/test/#")
         #expect(client.commands == [])
 
         await client.simulateState(.online)
@@ -607,7 +607,7 @@ struct BroadcastTransportTests {
         let gate = SubscriptionAckGate()
         let client = FakeCommunicationClient(delegate: FakeStartable(), subscriptionGate: gate)
         let manager = makeManager(client: client)
-        await manager.acquireSubscription(topic: "coaty/test/#")
+        await manager.subscriptionCoordinator.acquire(topic: "coaty/test/#")
 
         let ready = CompletionFlag()
         let startup = _Concurrency.Task {
