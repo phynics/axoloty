@@ -29,7 +29,7 @@ COMMA := ,
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs wire-tool clean
+.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean
 
 help:
 	@printf '%s\n' \
@@ -220,6 +220,9 @@ docs: resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh sh .github/scripts/write-docs-root-redirect.sh .build/docc
 	@echo "docs: mirroring .build/docc -> .build-output/docc (repo-local, survives reboot)"
 	@CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh sh -c 'rm -rf .build-output/docc && mkdir -p .build-output && cp -R .build/docc .build-output/docc'
+
+lint: image
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" .devcontainer/run.sh swiftlint lint --config .swiftlint.yml
 
 clean:
 	rm -rf "$(BUILD_DIR)" "$(COVERAGE_BUILD_DIR)"

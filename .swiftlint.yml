@@ -6,3 +6,35 @@ disabled_rules:
     - todo
     - vertical_parameter_alignment
     - identifier_name
+    - line_length
+    - large_tuple
+    - trailing_comma
+    - switch_case_alignment
+    - redundant_string_enum_value
+
+# Structural-size rules: kept enabled (warnings still fire at the default
+# warning thresholds) with error thresholds raised just above the current
+# maxima so the existing code passes while significant growth still errors.
+# Splitting MQTTNIOClient / CommunicationManager / ObjectMatcher to fit the
+# default error thresholds is a separate refactor.
+type_body_length:
+    error: 500
+function_body_length:
+    error: 150
+cyclomatic_complexity:
+    error: 35
+
+# Rationale for disabled rules:
+# - trailing_whitespace / todo / vertical_parameter_alignment / identifier_name:
+#   original deliberate tuning (pre-existing).
+# - line_length: the codebase has long lines throughout (110 violations at the
+#   default 120/200 thresholds); enforcing would be a large separate churn.
+# - large_tuple: intentional. The Foundation-free wire codec uses >2-member
+#   tuples for zero-allocation fixed-size buffers (UUID16's 16 bytes,
+#   TopicView's 7 parsed levels).
+# - trailing_comma: the codebase uses trailing commas in multiline collection
+#   literals; a style choice, not a defect.
+# - switch_case_alignment: `case` on its own line is the existing style.
+# - redundant_string_enum_value: fires on WireEventType etc. where the raw
+#   value (wire code) is intentionally distinct from the case name.
+
