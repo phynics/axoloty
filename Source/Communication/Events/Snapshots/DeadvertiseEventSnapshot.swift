@@ -22,17 +22,20 @@ public struct DeadvertiseEventSnapshot: Codable, Equatable, Sendable {
     }
 }
 
-private struct DeadvertiseEventWirePayload: Codable {
-    let objectIds: [String]
-}
-
 extension DeadvertiseEventSnapshot {
+
+    /// Decodes a Deadvertise snapshot from a parsed MQTT message via a single
+    /// ``WireReader`` pass, decoding the `objectIds` array from the borrowed
+    /// bytes (preserving the original UUID strings without normalizing them
+    /// through ``UUID16``).
     init?(parsedMQTTMessage: ParsedMQTTMessage) {
-        guard let payload: DeadvertiseEventWirePayload = try? PayloadCoder.decode(
-            parsedMQTTMessage.payload
-        ) else {
-            return nil
-        }
-        self.init(sourceId: parsedMQTTMessage.sourceId, objectIds: payload.objectIds)
+        var payload = parsedMQTTMessage.payload
+        guard let objectIds = payload.withUTF8({ buf -> [String]? in
+            guard let base = buf.baseAddress else { return nil }
+            let reader = WireReader(bytes: base, length: buf.count)
+            guard let wire = try? DeadvertiseWireData(from: reader) else { return nil }
+            return WirePayloadExtractor.decodeJSON([String].self, from: wire.objectIds)
+        }) else { return nil }
+        self.init(sourceId: parsedMQTTMessage.sourceId, objectIds: objectIds)
     }
 }

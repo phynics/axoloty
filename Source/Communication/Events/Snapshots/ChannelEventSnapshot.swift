@@ -53,29 +53,43 @@ public struct ChannelEventSnapshot: Codable, Equatable, Sendable {
     }
 }
 
-private struct ChannelEventWirePayload: Codable {
-    let object: CoatyObjectSnapshot?
-    let objects: [CoatyObjectSnapshot]?
-}
-
 extension ChannelEventSnapshot {
 
-    /// Decodes a Channel snapshot from a parsed MQTT message.
+    /// Decodes a Channel snapshot from a parsed MQTT message via a single
+    /// ``WireReader`` pass, decoding the object(s) ``CoatyObjectSnapshot``
+    /// from the borrowed bytes.
     init?(parsedMQTTMessage: ParsedMQTTMessage) {
-        guard let wire: ChannelEventWirePayload = try? PayloadCoder.decode(parsedMQTTMessage.payload),
-              let channelId = parsedMQTTMessage.eventTypeFilter else {
-            return nil
-        }
-        let privateData = WirePayloadExtractor.nestedPayload(from: parsedMQTTMessage.payload, key: "privateData")
+        guard let channelId = parsedMQTTMessage.eventTypeFilter else { return nil }
+        var payload = parsedMQTTMessage.payload
+        guard let decoded = payload.withUTF8({ buf -> (CoatyObjectSnapshot?, [CoatyObjectSnapshot]?, String?)? in
+            guard let base = buf.baseAddress else { return nil }
+            let reader = WireReader(bytes: base, length: buf.count)
+            guard let wire = try? ChannelWireData(from: reader) else { return nil }
+            let object: CoatyObjectSnapshot?
+            if let objSlice = wire.object {
+                let objectJSON = objSlice.asString()
+                let coaty: CoatyObjectSnapshot? = try? PayloadCoder.decode(objectJSON)
+                object = coaty?.withPayload(objectJSON)
+            } else {
+                object = nil
+            }
+            let objects: [CoatyObjectSnapshot]?
+            if let objsSlice = wire.objects {
+                let objsJSON = objsSlice.asString()
+                let decoded: [CoatyObjectSnapshot]? = try? PayloadCoder.decode(objsJSON)
+                objects = decoded
+            } else {
+                objects = nil
+            }
+            return (object, objects, wire.privateData?.asString())
+        }) else { return nil }
         self.init(
             sourceId: parsedMQTTMessage.sourceId,
-            object: wire.object?.withPayload(
-                WirePayloadExtractor.nestedObjectPayload(from: parsedMQTTMessage.payload, key: "object")
-            ),
-            objects: wire.objects,
+            object: decoded.0,
+            objects: decoded.1,
             channelId: channelId,
             eventTypeFilter: parsedMQTTMessage.eventTypeFilter,
-            privateData: privateData
+            privateData: decoded.2
         )
     }
 }

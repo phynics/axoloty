@@ -35,23 +35,25 @@ public struct UpdateEventSnapshot: Codable, Equatable, Sendable {
     }
 }
 
-private struct UpdateEventWirePayload: Codable {
-    let object: CoatyObjectSnapshot
-}
-
 extension UpdateEventSnapshot {
 
-    /// Decodes an Update snapshot from a parsed MQTT message.
+    /// Decodes an Update snapshot from a parsed MQTT message via a single
+    /// ``WireReader`` pass, decoding the object's ``CoatyObjectSnapshot``
+    /// from the borrowed `object` bytes.
     init?(parsedMQTTMessage: ParsedMQTTMessage) {
-        guard let wire: UpdateEventWirePayload = try? PayloadCoder.decode(parsedMQTTMessage.payload) else {
-            return nil
-        }
-        let objectPayload = WirePayloadExtractor.nestedObjectPayload(from: parsedMQTTMessage.payload, key: "object")
-
+        var payload = parsedMQTTMessage.payload
+        guard let object = payload.withUTF8({ buf -> CoatyObjectSnapshot? in
+            guard let base = buf.baseAddress else { return nil }
+            let reader = WireReader(bytes: base, length: buf.count)
+            guard let wire = try? UpdateWireData(from: reader) else { return nil }
+            let objectJSON = wire.object.asString()
+            guard let coatyObject: CoatyObjectSnapshot = try? PayloadCoder.decode(objectJSON) else { return nil }
+            return coatyObject.withPayload(objectJSON)
+        }) else { return nil }
         self.init(
             sourceId: parsedMQTTMessage.sourceId,
             eventTypeFilter: parsedMQTTMessage.eventTypeFilter,
-            object: wire.object.withPayload(objectPayload)
+            object: object
         )
     }
 }
