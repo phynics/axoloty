@@ -10,11 +10,6 @@ import Foundation
 /// DiscoverEvent provides a generic implementation for discovering CoatyObjects.
 /// Note that this class should preferably be initialized by its withObject() method.
 public class DiscoverEvent: CommunicationEvent<DiscoverEventData> {
-    
-    // MARK: - Internal attributes.
-    
-    /// Provides a resolve handler for reacting to Discover events.
-    internal var resolveHandler: ((ResolveEvent) -> Void)?
 
     // MARK: - Static Factory Methods.
 
@@ -91,64 +86,18 @@ public class DiscoverEvent: CommunicationEvent<DiscoverEventData> {
         return .init(eventType: .discover, eventData: discoverEventData)
     }
 
-    /// Respond to a Discover event with the given Resolve event.
-    ///
-    /// - Parameter resolveEvent: a Resolve event.
-    public func resolve(resolveEvent: ResolveEvent) {
-        if let resolveHandler = resolveHandler {
-            resolveHandler(resolveEvent)
-        }
-    }
-
     // MARK: - Initializers.
 
     fileprivate override init(eventType: WireEventType, eventData: DiscoverEventData) {
         super.init(eventType: eventType, eventData: eventData)
     }
-    
+
     // MARK: - Codable methods.
-    
+
     public required init(from decoder: Decoder) throws {
         try super.init(from: decoder)
     }
-    
-    /// Validates response parameters of Resolve event against the corresponding
-    /// Discover event.
-    /// - Parameter eventData: event data for Resolve response event
-    /// - Returns: false and logs if the given Resolve event data does not
-    ///   correspond to the event data of this Discover event.
-    internal func ensureValidResponseParameters(eventData: ResolveEventData) -> Bool {
-        if self.data.coreTypes != nil && eventData.object != nil {
-            if !((self.data.coreTypes?.contains(eventData.object!.coreType))!) {
-                LogManager.logger(.communication).debug("resolved coreType not contained in Discover coreTypes")
-                return false
-            }
-        }
-        
-        if self.data.objectTypes != nil && eventData.object != nil {
-            if !((self.data.objectTypes?.contains(eventData.object!.objectType))!) {
-                LogManager.logger(.communication).debug("resolved objectType not contained in Discover objectTypes")
-                return false
-            }
-        }
-            
-        if self.data.objectId != nil && eventData.object != nil {
-            if self.data.objectId != eventData.object?.objectId {
-                LogManager.logger(.communication).debug("resolved object's UUID doesn't match Discover objectId")
-                return false
-            }
-        }
-        
-        if self.data.externalId != nil && eventData.object != nil {
-            if self.data.externalId != eventData.object!.externalId {
-                LogManager.logger(.communication).debug("resolved object's external ID doesn't match Discover externalId")
-                return false
-            }
-        }
-        
-        return true
-    }
-    
+
 }
 
 /// DiscoverEventData provides the entire message payload data of a

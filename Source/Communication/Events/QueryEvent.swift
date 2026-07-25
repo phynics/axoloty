@@ -8,11 +8,6 @@ import Foundation
 
 /// QueryEvent provides a generic implementation for querying CoatyObjects.
 public class QueryEvent: CommunicationEvent<QueryEventData> {
-    
-    // MARK: - Internal attributes.
-    
-    /// Provides a complete handler for reacting to Query events.
-    internal var retrieveHandler: ((RetrieveEvent) -> Void)?
 
     // MARK: - Static Factory Methods.
 
@@ -46,16 +41,7 @@ public class QueryEvent: CommunicationEvent<QueryEventData> {
         
         return .init(eventType: .query, eventData: queryEventData)
     }
-    
-    /// Respond to a Query event with the given Retrieve event.
-    ///
-    /// - Parameter retrieveEvent: a Retrieve event.
-    public func retrieve(retrieveEvent: RetrieveEvent) {
-        if let retrieveHandler = retrieveHandler {
-            retrieveHandler(retrieveEvent)
-        }
-    }
-    
+
     // MARK: - Initializers.
 
     fileprivate override init(eventType: WireEventType, eventData: QueryEventData) {
@@ -63,42 +49,9 @@ public class QueryEvent: CommunicationEvent<QueryEventData> {
     }
 
     // MARK: - Codable methods.
-    
+
     public required init(from decoder: Decoder) throws {
         try super.init(from: decoder)
-    }
-    
-    /// Throws an error if the given Retrieve event data does not correspond to
-    /// the event data of this Query event.
-    ///
-    /// - Parameter eventData:  event data for Retrieve response event
-    /// - Returns: boolean that indicates whether the object is valid
-    internal func ensureValidResponseParameters(eventData: RetrieveEventData) -> Bool {
-        for object in eventData.objects {
-            if let coreTypes = self.data.coreTypes {
-                let coreTypeValid = coreTypes.contains { type -> Bool in
-                    type == object.coreType
-                }
-                
-                if !coreTypeValid {
-                    LogManager.logger(.communication).debug("retrieved coreType not contained in Query coreTypes")
-                    return false
-                }
-            }
-            
-            if let objectTypes = self.data.objectTypes {
-                let objectTypeValid = objectTypes.contains { type -> Bool in
-                    type == object.objectType
-                }
-                
-                if !objectTypeValid {
-                    LogManager.logger(.communication).debug("retrieved objectType not contained in Query objectTypes")
-                    return false
-                }
-            }
-        }
-        
-        return true
     }
 }
 
