@@ -21,7 +21,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     pkg-config \
     mosquitto \
+    curl \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
+
+# SwiftLint for the `make lint` target (also run in CI). Uses the static
+# Linux binary so the image needs no extra runtime libs. Pinned to a
+# released tag; bumped deliberately.
+ARG SWIFTLINT_VERSION=0.65.0
+RUN curl -fsSL -o /tmp/swiftlint.zip \
+        https://github.com/realm/SwiftLint/releases/download/${SWIFTLINT_VERSION}/swiftlint_linux_amd64.zip \
+    && unzip -q /tmp/swiftlint.zip -d /tmp/swiftlint-extract \
+    && install -m 0755 /tmp/swiftlint-extract/swiftlint-static /usr/local/bin/swiftlint \
+    && rm -rf /tmp/swiftlint.zip /tmp/swiftlint-extract \
+    && swiftlint version
 
 # Allow the integration tests to connect to the in-container broker without
 # credentials. The Makefile starts Mosquitto for each test invocation.
