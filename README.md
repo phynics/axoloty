@@ -1,5 +1,9 @@
 # Axoloty
 
+<p align="center">
+  <img src="docs/assets/axoloty-wordmark.svg" alt="Axoloty — IoT application framework" width="480">
+</p>
+
 [![Swift
 version](https://img.shields.io/badge/swift-6.3)](https://developer.apple.com/swift/)
 [![License:
