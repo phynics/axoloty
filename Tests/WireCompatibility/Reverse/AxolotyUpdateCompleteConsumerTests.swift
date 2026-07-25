@@ -22,7 +22,7 @@ struct AxolotyUpdateCompleteConsumerTests {
             eventTypeFilter: objectTypeFilter,
             namespace: environment["WIRE_NAMESPACE"] ?? "wire-compat-v1"
         )
-        await manager.communication.acquireSubscription(topic: updateTopic)
+        await manager.communication.subscriptionCoordinator.acquire(topic: updateTopic)
         try signalUpdateCompleteReadiness(environment: environment)
 
         let parsed = try await nextUpdateCompleteMessage(&iterator)

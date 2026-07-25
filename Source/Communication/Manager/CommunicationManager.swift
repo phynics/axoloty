@@ -514,24 +514,6 @@ public class CommunicationManager {
 
     // MARK: - Communication methods.
 
-    /// Acquires a reference to a topic subscription.
-    ///
-    /// - Parameter topic: topic name.
-    @MainActor
-    internal func acquireSubscription(topic: String) async {
-        let coordinator = self.subscriptionCoordinator!
-        await coordinator.acquire(topic: topic)
-    }
-
-    /// Releases a reference to a topic subscription.
-    ///
-    /// - Parameter topic: topic name.
-    @MainActor
-    internal func releaseSubscription(topic: String) async {
-        let coordinator = self.subscriptionCoordinator!
-        await coordinator.release(topic: topic)
-    }
-
     /// Schedules acquisition of a topic subscription for legacy synchronous
     /// internal call sites during the migration to async event streams.
     ///
