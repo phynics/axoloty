@@ -1,14 +1,45 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+/// Identifies a correlated response subscription in ``EmbeddedMessageRouter``.
+public struct EmbeddedResponseKey: Hashable, Sendable {
+    /// The response event type.
+    public let eventType: WireEventType
+    /// The correlation ID identifying the originating request.
+    public let correlationId: String
+
+    /// Creates a response-subscription key.
+    ///
+    /// - Parameters:
+    ///   - eventType: The response event type.
+    ///   - correlationId: The correlation ID identifying the originating request.
+    public init(eventType: WireEventType, correlationId: String) {
+        self.eventType = eventType
+        self.correlationId = correlationId
+    }
+
+    @inline(__always)
+    func matches(eventType: WireEventType, correlationId: ByteSlice) -> Bool {
+        guard self.eventType == eventType else { return false }
+        let utf8 = self.correlationId.utf8
+        guard utf8.count == correlationId.length else { return false }
+        var index = utf8.startIndex
+        for offset in 0..<correlationId.length {
+            if utf8[index] != correlationId.byte(at: offset) { return false }
+            utf8.formIndex(after: &index)
+        }
+        return true
+    }
+}
+
 /// Embedded-runtime adapter that dispatches `BorrowedMessage` through
 /// `StaticDispatchTable` and `StaticFamilyTable` with zero heap allocation.
 ///
 /// Each event type has its own dispatch table. Keyed families (Advertise by
 /// filter, Channel by channel ID, IoState by source ID, Call/Update by
-/// correlation ID, Response by correlation ID) use `StaticFamilyTable`
+/// correlation ID, Response by event type and correlation ID) use `StaticFamilyTable`
 /// for selective dispatch.
 ///
-/// Subscribers register via `subscribe(_:_)` / `subscribeFamily(key:_)` and
+/// Subscribers register through the subscription methods and
 /// receive a token for later unsubscribe. The subscriber count per event
 /// type is bounded by `WireBufferConfig.maxSubscribers`.
 public final class EmbeddedMessageRouter: MessageRouter, @unchecked Sendable {
@@ -22,6 +53,7 @@ public final class EmbeddedMessageRouter: MessageRouter, @unchecked Sendable {
     private var channelFamily: StaticFamilyTable<String>
     private var callFamily: StaticFamilyTable<String>
     private var updateFamily: StaticFamilyTable<String>
+    private var responseFamily: StaticFamilyTable<EmbeddedResponseKey>
 
     /// Creates a router with the given subscriber and family capacity limits.
     ///
@@ -59,6 +91,9 @@ public final class EmbeddedMessageRouter: MessageRouter, @unchecked Sendable {
             maxEntries: maxFamilyEntries, maxSubscribersPerEntry: maxFamilySubscribers
         )
         self.updateFamily = StaticFamilyTable<String>(
+            maxEntries: maxFamilyEntries, maxSubscribersPerEntry: maxFamilySubscribers
+        )
+        self.responseFamily = StaticFamilyTable<EmbeddedResponseKey>(
             maxEntries: maxFamilyEntries, maxSubscribersPerEntry: maxFamilySubscribers
         )
     }
@@ -211,6 +246,35 @@ public final class EmbeddedMessageRouter: MessageRouter, @unchecked Sendable {
         updateFamily.unsubscribe(token)
     }
 
+    /// Subscribes to responses matching an event type and correlation ID.
+    ///
+    /// - Parameters:
+    ///   - eventType: The response event type: Complete, Resolve, Retrieve, or Return.
+    ///   - correlationId: The correlation ID identifying the originating request.
+    ///   - handler: A closure invoked synchronously for each matching response.
+    /// - Returns: A token for later unsubscribe, or nil if the event type is not a
+    ///   response type or its family table is full.
+    @discardableResult
+    public func subscribeResponse(
+        eventType: WireEventType,
+        correlationId: String,
+        _ handler: @Sendable @escaping (BorrowedMessage) -> Void
+    ) -> StaticFamilyTable<EmbeddedResponseKey>.Token? {
+        guard Self.responseEventTypes.contains(eventType) else { return nil }
+        return responseFamily.subscribe(
+            key: EmbeddedResponseKey(eventType: eventType, correlationId: correlationId),
+            handler
+        )
+    }
+
+    /// Removes a response-family subscriber identified by `token`.
+    ///
+    /// - Parameter token: The token returned by
+    ///   ``subscribeResponse(eventType:correlationId:_:)``.
+    public func unsubscribeResponse(_ token: StaticFamilyTable<EmbeddedResponseKey>.Token) {
+        responseFamily.unsubscribe(token)
+    }
+
     // MARK: - Dispatch
 
     /// Dispatches a message to matching subscribers.
@@ -223,7 +287,9 @@ public final class EmbeddedMessageRouter: MessageRouter, @unchecked Sendable {
     /// 5. Deadvertise → advertiseFamily.dispatchAll (notify all advertise subscribers)
     /// 6. Call → callFamily (by correlation ID from topic)
     /// 7. Update → updateFamily (by correlation ID from topic)
-    /// 8. Other event types → flat table by event type
+    /// 8. Complete, Resolve, Retrieve, and Return → response family (by event
+    ///    type and correlation ID from topic)
+    /// 9. Other event types → flat table by event type
     public func dispatch(_ message: BorrowedMessage) {
         if message.isRawTopic {
             rawTable.dispatch(message)
@@ -268,9 +334,21 @@ public final class EmbeddedMessageRouter: MessageRouter, @unchecked Sendable {
                 updateFamily.dispatch(byBytes: corrId, message)
             }
 
+        case .complete, .resolve, .retrieve, .returnEvent:
+            if let corrId = message.topic.correlationIdLevel {
+                responseFamily.dispatch(
+                    matching: { $0.matches(eventType: eventType, correlationId: corrId) },
+                    message
+                )
+            }
+
         default:
             // Flat dispatch for all other event types
             tables[eventType]?.dispatch(message)
         }
     }
+
+    private static let responseEventTypes: [WireEventType] = [
+        .complete, .resolve, .retrieve, .returnEvent
+    ]
 }
