@@ -508,7 +508,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                 }
                 log.trace("Received event", metadata: receivedEventMetadata)
 
-                if let payloadString = String(bytes: bytes, encoding: .utf8) {
+                if let payloadString = Self.validUTF8Payload(from: info.payload) {
                     let parsed = ParsedMQTTMessage(topicView: topicView, payload: payloadString)
                     deliveryContinuation.yield { [weak self] in
                         guard let self, let streams = self.streamsOrWarn() else { return }
@@ -522,6 +522,14 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                 "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
             ])
         }
+    }
+
+    /// Returns the payload as a UTF-8 string without first copying it into an array.
+    ///
+    /// This preserves `String(bytes:encoding:)`'s rejection of invalid UTF-8,
+    /// unlike the lossy `String(decoding:as:)` initializer.
+    static func validUTF8Payload(from payload: ByteBuffer) -> String? {
+        String(validating: payload.readableBytesView, as: UTF8.self)
     }
 
     /// Routes a parsed MQTT message to the appropriate event streams.
