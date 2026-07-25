@@ -164,12 +164,7 @@ public class ReturnError: Codable {
         self.code = code
         self.message = message
     }
-    
-    public init(code: RemoteCallErrorCode = .invalidParameters, message: RemoteCallErrorMessage = .invalidParameters) {
-        self.code = RemoteCallErrorCode.invalidParameters.rawValue
-        self.message = RemoteCallErrorMessage.invalidParameters.rawValue
-    }
-    
+
     enum CodingKeys: String, CodingKey {
         case code
         case message
