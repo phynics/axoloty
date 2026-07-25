@@ -142,12 +142,12 @@ public class CommunicationManager {
             self?.unsubscribe(topic: topic)
         }
         self.ioRegistry.onIoStateDispatch = { [weak self] ioPointId, event in
+            let ioPointIdString = ioPointId.string
             let snapshot = IoStateEventSnapshot(
-                ioPointId: ioPointId.string,
+                ioPointId: ioPointIdString,
                 hasAssociations: event.eventData.hasAssociations(),
                 updateRate: event.eventData.updateRate()
             )
-            let ioPointIdString = ioPointId.string
             _Concurrency.Task { [weak self] in
                 await self?.streams.ioStateFamily.sendState(snapshot, for: ioPointIdString)
             }

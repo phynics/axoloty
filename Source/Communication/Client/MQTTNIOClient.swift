@@ -323,7 +323,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                 self.connectionAttemptId = nil
                 self.updateCommunicationState(.online)
             case .failure(let error):
-                self.log.debug("Connection error", metadata: [
+                self.log.notice("Connection error", metadata: [
                     "correlationId": .string(attemptId),
                     "broker": "\(client.host):\(client.port)",
                     "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
@@ -423,7 +423,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
         } catch {
             throw AxolotyError.network(
                 error: error,
-                reason: "Error subscribing to topic \(topic): \(ErrorKit.userFriendlyMessage(for: error))"
+                reason: "Error subscribing to topic \(topic)"
             )
         }
     }
@@ -438,7 +438,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
         } catch {
             throw AxolotyError.network(
                 error: error,
-                reason: "Error unsubscribing from topic \(topic): \(ErrorKit.userFriendlyMessage(for: error))"
+                reason: "Error unsubscribing from topic \(topic)"
             )
         }
     }

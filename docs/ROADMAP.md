@@ -59,8 +59,9 @@ Associate scenario are in place, and the keep/diverge/remove decisions are
 documented in
 `Tests/WireCompatibility/Audit/IOAndSensorThingsDecisions.md`. Two defects
 were found and recorded as intentional divergences rather than silently
-normalized: Axoloty's `handleAssociate` force-unwraps the optional
-`isExternalRoute` (CoatyJS omits it, so an Axoloty actor traps), and the
+normalized: Axoloty's `handleAssociate` previously force-unwrapped the
+optional `isExternalRoute` (CoatyJS omits it, so an Axoloty actor trapped)
+— since fixed (`isExternalRoute: isExternalRoute ?? false`) — and the
 IoValue wire format wraps the value under `payload` while CoatyJS publishes
 the bare value. Several scenarios (raw IoValue capture, external route,
 fan-out, SensorThings fixtures) are honestly marked not-yet-tested pending
