@@ -84,6 +84,24 @@ public struct StaticFamilyTable<Key: Hashable & Sendable> {
         }
     }
 
+    /// Dispatches `message` to subscribers whose key satisfies `matches`.
+    ///
+    /// Use this overload when the lookup value is a borrowed representation
+    /// such as a ``ByteSlice`` and creating an owned `Key` solely for the
+    /// lookup would allocate.
+    ///
+    /// - Parameters:
+    ///   - matches: A synchronous predicate evaluated for each active key.
+    ///   - message: The borrowed message to dispatch.
+    public func dispatch(
+        matching matches: (Key) -> Bool,
+        _ message: BorrowedMessage
+    ) {
+        for i in 0..<capacity where entries[i].map({ matches($0.key) }) == true {
+            entries[i]?.table.dispatch(message)
+        }
+    }
+
     /// Dispatches `message` to all subscribers regardless of key.
     /// Used for deadvertise (broadcast to all family entries).
     public func dispatchAll(_ message: BorrowedMessage) {

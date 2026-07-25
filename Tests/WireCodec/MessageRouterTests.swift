@@ -288,6 +288,53 @@ struct MessageRouterTests {
     }
 }
 
+extension MessageRouterTests {
+    @Test
+    func embeddedRouterResponseFamilyDispatchesByEventTypeAndCorrelationId() throws {
+        let router = EmbeddedMessageRouter(maxSubscribers: 4)
+        let correlationId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        let received = Box<[WireEventType]>([])
+        let flatCompleteReceived = Box(false)
+        let otherCorrelationReceived = Box(false)
+        let responseTypes: [WireEventType] = [.complete, .resolve, .retrieve, .returnEvent]
+
+        let completeToken = try #require(router.subscribeResponse(
+            eventType: .complete,
+            correlationId: correlationId
+        ) { _ in
+            received.value.append(.complete)
+        })
+        for eventType in responseTypes.dropFirst() {
+            router.subscribeResponse(eventType: eventType, correlationId: correlationId) { _ in
+                received.value.append(eventType)
+            }
+        }
+        router.subscribe(.complete) { _ in flatCompleteReceived.value = true }
+        router.subscribeResponse(
+            eventType: .complete,
+            correlationId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        ) { _ in otherCorrelationReceived.value = true }
+
+        for eventType in responseTypes {
+            let owned = OwnedMessage(
+                topic: "coaty/3/test/\(eventType.rawValue)/11111111-1111-4111-8111-111111111111/\(correlationId)"
+            )
+            router.dispatch(owned.message)
+        }
+
+        #expect(received.value == responseTypes)
+        #expect(flatCompleteReceived.value == false)
+        #expect(otherCorrelationReceived.value == false)
+
+        router.unsubscribeResponse(completeToken)
+        let postUnsubscribe = OwnedMessage(
+            topic: "coaty/3/test/CPL/11111111-1111-4111-8111-111111111111/\(correlationId)"
+        )
+        router.dispatch(postUnsubscribe.message)
+        #expect(received.value == responseTypes)
+    }
+}
+
 // MARK: - Test helpers
 
 private final class Box<T>: @unchecked Sendable {
