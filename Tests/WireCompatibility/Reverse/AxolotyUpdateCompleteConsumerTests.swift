@@ -17,7 +17,7 @@ struct AxolotyUpdateCompleteConsumerTests {
         let parsedStream = await manager.communication.observeParsedMessages()
         var iterator = parsedStream.makeAsyncIterator()
         let objectTypeFilter = EVENT_TYPE_FILTER_SEPARATOR + "com.coaty.test.WireFixture"
-        let updateTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+        let updateTopic = TopicBuilder.subscribeTopic(
             eventType: .update,
             eventTypeFilter: objectTypeFilter,
             namespace: environment["WIRE_NAMESPACE"] ?? "wire-compat-v1"

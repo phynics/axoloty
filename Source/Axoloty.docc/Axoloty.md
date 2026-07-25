@@ -51,7 +51,8 @@ For a step-by-step introduction including a compiling minimal example, see
 
 - ``CommunicationManager``
 - ``CommunicationEvent``
-- ``CommunicationTopic``
+- ``TopicBuilder``
+- ``TopicView``
 
 ### Configuration
 

@@ -5,14 +5,14 @@ import Foundation
 @MainActor
 extension CommunicationManager {
     public func publishRaw(topic: String, withString value: String) throws {
-        guard CommunicationTopic.isValidPublicationTopic(topic) else {
+        guard TopicBuilder.isValidPublicationTopic(topic) else {
             throw AxolotyError.invalidArgument(argument: "topic", reason: "\"\(topic)\" is not a valid publication topic name")
         }
         publish(topic: topic, message: value)
     }
 
     public func publishRaw(topic: String, withBinary value: [UInt8]) throws {
-        guard CommunicationTopic.isValidPublicationTopic(topic) else {
+        guard TopicBuilder.isValidPublicationTopic(topic) else {
             throw AxolotyError.invalidArgument(argument: "topic", reason: "\"\(topic)\" is not a valid publication topic name")
         }
         publish(topic: topic, message: value)
@@ -20,14 +20,14 @@ extension CommunicationManager {
 
     public func publishAdvertise(_ event: AdvertiseEvent) {
         event.sourceId = identity.objectId
-        let components = CommunicationTopic.TopicStringComponents(
+        let components = TopicStringComponents(
             namespace: namespace, eventType: .advertise,
             eventTypeFilter: event.data.object.coreType.rawValue
         )
-        publish(topic: CommunicationTopic.createTopicStringByLevelsForPublish(components: components, sourceId: identity.objectId),
+        publish(topic: TopicBuilder.publishTopic(components: components, sourceId: identity.objectId),
                 message: event.json)
         if event.data.object.coreType.objectType != event.data.object.objectType {
-            let object = CommunicationTopic.createTopicStringByLevelsForPublish(
+            let object = TopicBuilder.publishTopic(
                 components: .init(
                     namespace: namespace, eventType: .advertise,
                     eventTypeFilter: EVENT_TYPE_FILTER_SEPARATOR + event.data.object.objectType
@@ -43,7 +43,7 @@ extension CommunicationManager {
 
     public func publishDeadvertise(_ event: DeadvertiseEvent) {
         event.sourceId = identity.objectId
-        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(
+        let topic = TopicBuilder.publishTopic(
             components: .init(namespace: namespace, eventType: .deadvertise),
             sourceId: identity.objectId
         )
@@ -52,7 +52,7 @@ extension CommunicationManager {
 
     public func publishChannel(_ event: ChannelEvent) {
         event.sourceId = identity.objectId
-        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(
+        let topic = TopicBuilder.publishTopic(
             components: .init(namespace: namespace, eventType: .channel, eventTypeFilter: event.channelId),
             sourceId: identity.objectId
         )
@@ -86,14 +86,14 @@ extension CommunicationManager {
             "correlationId": .string(correlationId),
             "eventType": .string(eventType.rawValue),
         ])
-        let components = CommunicationTopic.TopicStringComponents(
+        let components = TopicStringComponents(
             namespace: namespace,
             eventType: eventType,
             eventTypeFilter: eventTypeFilter,
             correlationId: correlationId
         )
-        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(components: components, sourceId: identity.objectId)
-        let responseTopic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+        let topic = TopicBuilder.publishTopic(components: components, sourceId: identity.objectId)
+        let responseTopic = TopicBuilder.subscribeTopic(
             eventType: responseType,
             namespace: communicationOptions.shouldEnableCrossNamespacing ? nil : namespace,
             correlationId: correlationId
@@ -113,7 +113,7 @@ extension CommunicationManager {
             "correlationId": .string(correlationId),
             "eventType": .string(eventType.rawValue),
         ])
-        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(
+        let topic = TopicBuilder.publishTopic(
             components: .init(namespace: namespace, eventType: eventType, correlationId: correlationId),
             sourceId: identity.objectId
         )
@@ -176,10 +176,10 @@ extension CommunicationManager {
     }
 
     internal func publishAssociate(event: AssociateEvent) throws {
-        guard let name = event.ioContextName, CommunicationTopic.isValidEventTypeFilter(filter: name) else {
+        guard let name = event.ioContextName, TopicBuilder.isValidEventTypeFilter(filter: name) else {
             throw AxolotyError.invalidArgument(argument: "ioContextName", reason: "Associate: not a valid eventTypeFilter")
         }
-        let topic = CommunicationTopic.createTopicStringByLevelsForPublish(
+        let topic = TopicBuilder.publishTopic(
             components: .init(namespace: namespace, eventType: .associate, eventTypeFilter: name),
             sourceId: identity.objectId
         )

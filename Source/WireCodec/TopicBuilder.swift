@@ -3,9 +3,9 @@
 /// Zero-allocation topic string builder for constructing Coaty MQTT topics.
 ///
 /// Writes topic bytes directly into a caller-provided fixed-size buffer,
-/// mirroring the `WireWriter` pattern. Replaces the 21
-/// `CommunicationTopic.createTopicStringByLevels*` call sites that
-/// allocate `String` objects via interpolation and `joined(separator:)`.
+/// mirroring the `WireWriter` pattern. The host-runtime (Foundation) builders
+/// that allocate owned `String` topics live in an extension in the
+/// Communication layer.
 ///
 /// Topic format: `coaty/<version>/<namespace>/<eventType>[filter]/<sourceId>[/<correlationId>]`
 public struct TopicBuilder {

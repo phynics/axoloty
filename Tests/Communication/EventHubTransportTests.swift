@@ -15,7 +15,7 @@ struct BroadcastTransportTests {
         let manager = makeManager(client: client)
         let stream = await manager.observeAdvertiseStream(withCoreType: .Log)
         var iterator = stream.makeAsyncIterator()
-        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+        let topic = TopicBuilder.subscribeTopic(
             eventType: .advertise,
             eventTypeFilter: CoreType.Log.rawValue,
             namespace: manager.namespace
@@ -66,7 +66,7 @@ struct BroadcastTransportTests {
     func advertiseStreamReleasesTopicWhenLastSubscriberDrops() async throws {
         let client = FakeCommunicationClient(delegate: FakeStartable())
         let manager = makeManager(client: client)
-        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+        let topic = TopicBuilder.subscribeTopic(
             eventType: .advertise,
             eventTypeFilter: CoreType.Log.rawValue,
             namespace: manager.namespace
@@ -107,7 +107,7 @@ struct BroadcastTransportTests {
     func advertiseStreamResubscribesAndDeliversAfterRelease() async throws {
         let client = FakeCommunicationClient(delegate: FakeStartable())
         let manager = makeManager(client: client)
-        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+        let topic = TopicBuilder.subscribeTopic(
             eventType: .advertise,
             eventTypeFilter: CoreType.Log.rawValue,
             namespace: manager.namespace
@@ -161,7 +161,7 @@ struct BroadcastTransportTests {
         let manager = makeManager(client: client)
         let stream = await manager.observeDeadvertiseStream()
         var iterator = stream.makeAsyncIterator()
-        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+        let topic = TopicBuilder.subscribeTopic(
             eventType: .deadvertise,
             namespace: manager.namespace
         )
@@ -184,7 +184,7 @@ struct BroadcastTransportTests {
         let manager = makeManager(client: client)
         let stream = await manager.observeDiscoverStream()
         var iterator = stream.makeAsyncIterator()
-        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+        let topic = TopicBuilder.subscribeTopic(
             eventType: .discover,
             namespace: manager.namespace
         )
@@ -222,13 +222,12 @@ struct BroadcastTransportTests {
         // `.online` also triggers identity/IoNode advertisements, so filter
         // for the Discover topic rather than assuming publish order.
         try await waitUntil("Discover topic to be published") {
-            try client.publishedTopics.contains { try CommunicationTopic($0).eventType == .discover }
+            client.publishedTopics.contains { topicEventType($0) == .discover }
         }
         let publishedTopic = try #require(
-            try client.publishedTopics.first { try CommunicationTopic($0).eventType == .discover }
+            client.publishedTopics.first { topicEventType($0) == .discover }
         )
-        let parsedTopic = try CommunicationTopic(publishedTopic)
-        let mintedCorrelationId = try #require(parsedTopic.correlationId)
+        let mintedCorrelationId = try #require(topicCorrelationId(publishedTopic))
 
         let resolveSnapshot = ResponseEventSnapshot(
             eventType: WireEventType.resolve.rawValue,
@@ -260,7 +259,7 @@ struct BroadcastTransportTests {
         // Wait for the Discover publish to appear — this implies
         // setOnline has completed and desired topics have been activated.
         try await waitUntil("Discover topic to be published") {
-            try client.publishedTopics.contains { try CommunicationTopic($0).eventType == .discover }
+            client.publishedTopics.contains { topicEventType($0) == .discover }
         }
 
         // The response topic (Resolve with correlation ID) should have been
@@ -284,7 +283,7 @@ struct BroadcastTransportTests {
         let manager = makeManager(client: client)
         let stream = await manager.observeQueryStream()
         var iterator = stream.makeAsyncIterator()
-        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+        let topic = TopicBuilder.subscribeTopic(
             eventType: .query,
             namespace: manager.namespace
         )
@@ -308,7 +307,7 @@ struct BroadcastTransportTests {
         let manager = makeManager(client: client)
         let stream = try await manager.observeCallStream(operation: "doThing")
         var iterator = stream.makeAsyncIterator()
-        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+        let topic = TopicBuilder.subscribeTopic(
             eventType: .call,
             eventTypeFilter: "doThing",
             namespace: manager.namespace
@@ -346,7 +345,7 @@ struct BroadcastTransportTests {
         let manager = makeManager(client: client)
         let stream = await manager.observeUpdateStream(withCoreType: .Log)
         var iterator = stream.makeAsyncIterator()
-        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+        let topic = TopicBuilder.subscribeTopic(
             eventType: .update,
             eventTypeFilter: CoreType.Log.rawValue,
             namespace: manager.namespace
@@ -376,7 +375,7 @@ struct BroadcastTransportTests {
         let manager = makeManager(client: client)
         let stream = try await manager.observeChannelStream(channelId: "test-channel")
         var iterator = stream.makeAsyncIterator()
-        let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+        let topic = TopicBuilder.subscribeTopic(
             eventType: .channel,
             eventTypeFilter: "test-channel",
             namespace: manager.namespace
@@ -884,5 +883,21 @@ private actor CompletionFlag {
 
     func mark() {
         value = true
+    }
+}
+
+/// Parses the event type from a published topic string via ``TopicView``.
+private func topicEventType(_ topic: String) -> WireEventType? {
+    let bytes = Array(topic.utf8)
+    return bytes.withUnsafeBufferPointer { buf in
+        TopicView(topicBytes: buf.baseAddress!, length: buf.count).eventType
+    }
+}
+
+/// Parses the correlation-id level from a published topic string via ``TopicView``.
+private func topicCorrelationId(_ topic: String) -> String? {
+    let bytes = Array(topic.utf8)
+    return bytes.withUnsafeBufferPointer { buf in
+        TopicView(topicBytes: buf.baseAddress!, length: buf.count).correlationIdLevel?.asString()
     }
 }

@@ -58,7 +58,7 @@ public class ChannelEvent: CommunicationEvent<ChannelEventData> {
     }
 
     fileprivate init(eventType: WireEventType, eventData: ChannelEventData, channelId: String) throws {
-        guard CommunicationTopic.isValidEventTypeFilter(filter: channelId) else {
+        guard TopicBuilder.isValidEventTypeFilter(filter: channelId) else {
             throw AxolotyError.invalidArgument(argument: "channelId", reason: "\"\(channelId)\" is not a valid channel identifier")
         }
         

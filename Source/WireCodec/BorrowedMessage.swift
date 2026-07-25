@@ -7,8 +7,8 @@
 /// single borrowed view that holds raw pointers into the receive buffer.
 ///
 /// The routing decision is made from `eventType` (a 3-byte comparison via
-/// `TopicView`) without ever constructing a `CommunicationTopic` class or
-/// calling `String.components(separatedBy:)`. The payload is accessed via
+/// `TopicView`) without ever allocating a `String` via
+/// `String.components(separatedBy:)`. The payload is accessed via
 /// `WireReader` for typed field decode without a JSON value tree.
 ///
 /// - Important: The caller must ensure both the topic and payload buffers

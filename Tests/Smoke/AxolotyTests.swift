@@ -15,7 +15,7 @@ struct AxolotyTests {
     func testPublicAPIsAreReachable() throws {
         let uuid = try #require(CoatyUUID(uuidString: "00000000-0000-4000-8000-000000000001"))
         #expect(uuid.string == "00000000-0000-4000-8000-000000000001")
-        #expect(CommunicationTopic.matches("a/b/c", "a/+/c"))
+        #expect(TopicBuilder.matches("a/b/c", "a/+/c"))
     }
 
 }

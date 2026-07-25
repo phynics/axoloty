@@ -34,7 +34,7 @@ public class AdvertiseEvent: CommunicationEvent<AdvertiseEventData> {
     }
     
     fileprivate init(eventType: WireEventType, eventData: AdvertiseEventData, objectType: String) throws {
-        guard CommunicationTopic.isValidEventTypeFilter(filter: objectType) else {
+        guard TopicBuilder.isValidEventTypeFilter(filter: objectType) else {
             throw AxolotyError.invalidArgument(argument: "objectType", reason: "\"\(objectType)\" is not a valid object type")
         }
         

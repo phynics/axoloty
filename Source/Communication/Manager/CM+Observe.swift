@@ -15,7 +15,7 @@ extension CommunicationManager {
         for ioNode in ioNodes {
             let task = _Concurrency.Task { @MainActor [weak self] in
                 guard let self else { return }
-                let topic = CommunicationTopic.createTopicStringByLevelsForSubscribe(
+                let topic = TopicBuilder.subscribeTopic(
                     eventType: .associate,
                     eventTypeFilter: ioNode.name,
                     namespace: communicationOptions.shouldEnableCrossNamespacing ? nil : namespace,

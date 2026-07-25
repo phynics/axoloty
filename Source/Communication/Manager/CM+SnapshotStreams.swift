@@ -14,7 +14,7 @@ extension CommunicationManager {
     ///
     /// - Throws: ``AxolotyError.invalidArgument(argument:reason:)`` when `channelId` is invalid.
     public func observeChannelStream(channelId: String) async throws -> AsyncStream<ChannelEventSnapshot> {
-        guard CommunicationTopic.isValidEventTypeFilter(filter: channelId) else {
+        guard TopicBuilder.isValidEventTypeFilter(filter: channelId) else {
             throw AxolotyError.invalidArgument(argument: "channelId", reason: "\"\(channelId)\" is not a valid channel Id")
         }
         return await streams.channelFamily.subscribe(for: channelId)
