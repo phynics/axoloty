@@ -216,6 +216,76 @@ struct MessageRouterTests {
 
         #expect(decodedSourceId.value == UUID16(parsing: "33333333-3333-4333-8333-333333333333"))
     }
+
+    // MARK: - BorrowedMessage size-limit enforcement (#234)
+
+    @Test
+    func validatedRejectsOversizeTopic() throws {
+        let topic = String(repeating: "a", count: WireBufferConfig.maxTopicLength + 1)
+        let topicBytes = Array(topic.utf8)
+        let payloadBytes = Array("{}".utf8)
+
+        var caught: Error?
+        topicBytes.withUnsafeBufferPointer { topicBuf in
+            payloadBytes.withUnsafeBufferPointer { payloadBuf in
+                do {
+                    _ = try BorrowedMessage.validated(
+                        topicBytes: topicBuf.baseAddress!,
+                        topicLength: topicBuf.count,
+                        payloadBytes: payloadBuf.baseAddress!,
+                        payloadLength: payloadBuf.count
+                    )
+                } catch { caught = error }
+            }
+        }
+        let err = try #require(caught as? WireDecodeError)
+        if case .topicExceedsLimit = err.reason {} else { Issue.record("expected .topicExceedsLimit, got \(err.reason)") }
+        #expect(err.byteOffset == topicBytes.count)
+    }
+
+    @Test
+    func validatedRejectsOversizePayload() throws {
+        let topic = "coaty/3/test/ADV:sensors/33333333-3333-4333-8333-333333333333"
+        let topicBytes = Array(topic.utf8)
+        let payloadBytes = [UInt8](repeating: 0x20, count: WireBufferConfig.maxPayloadSize + 1)
+
+        var caught: Error?
+        topicBytes.withUnsafeBufferPointer { topicBuf in
+            payloadBytes.withUnsafeBufferPointer { payloadBuf in
+                do {
+                    _ = try BorrowedMessage.validated(
+                        topicBytes: topicBuf.baseAddress!,
+                        topicLength: topicBuf.count,
+                        payloadBytes: payloadBuf.baseAddress!,
+                        payloadLength: payloadBuf.count
+                    )
+                } catch { caught = error }
+            }
+        }
+        let err = try #require(caught as? WireDecodeError)
+        if case .payloadExceedsLimit = err.reason {} else { Issue.record("expected .payloadExceedsLimit, got \(err.reason)") }
+        #expect(err.byteOffset == payloadBytes.count)
+    }
+
+    @Test
+    func validatedAcceptsAtLimit() throws {
+        // A topic and payload exactly at the limits must be accepted.
+        let topic = String(repeating: "a", count: WireBufferConfig.maxTopicLength)
+        let topicBytes = Array(topic.utf8)
+        let payloadBytes = [UInt8](repeating: 0x20, count: WireBufferConfig.maxPayloadSize)
+
+        let message = try topicBytes.withUnsafeBufferPointer { topicBuf in
+            try payloadBytes.withUnsafeBufferPointer { payloadBuf in
+                try BorrowedMessage.validated(
+                    topicBytes: topicBuf.baseAddress!,
+                    topicLength: topicBuf.count,
+                    payloadBytes: payloadBuf.baseAddress!,
+                    payloadLength: payloadBuf.count
+                )
+            }
+        }
+        #expect(message.payload.length == WireBufferConfig.maxPayloadSize)
+    }
 }
 
 // MARK: - Test helpers
