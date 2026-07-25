@@ -175,8 +175,18 @@ open class SensorSourceController: Controller {
             let stream = await communicationManager.observeParsedMessages()
             for await parsed in stream {
                 guard parsed.eventType == .query,
-                      let correlationId = parsed.correlationId,
-                      let request: QueryEvent = try? PayloadCoder.decode(parsed.payload) else { continue }
+                      let correlationId = parsed.correlationId else { continue }
+                let request: QueryEvent
+                do {
+                    request = try PayloadCoder.decode(parsed.payload)
+                } catch {
+                    LogManager.logger(.sensorThings).notice("Dropping malformed Query event", metadata: [
+                        "eventType": .string(parsed.eventType.rawValue),
+                        "correlationId": .string(correlationId),
+                        "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+                    ])
+                    continue
+                }
                 self.handleQueryEvent(request, correlationId: correlationId)
             }
         }

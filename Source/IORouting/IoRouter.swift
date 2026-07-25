@@ -5,7 +5,9 @@
 //
 //
 
+import ErrorKit
 import Foundation
+import Logging
 
 /// Base IO router class for context-driven routing of IO values.
 ///
@@ -39,6 +41,7 @@ public class IoRouter: Controller {
     /// Key: CoatyUUID string, Value: (associating route, isExternalRoute)
     internal var sourceRoutes: [String: (String, Bool)] = [:]
     private var observationTasks: [_Concurrency.Task<Void, Never>] = []
+    private let log = LogManager.logger(.ioRouting)
     
     // MARK: - Overridden Controller lifecycle methods.
     
@@ -221,11 +224,21 @@ public class IoRouter: Controller {
             let stream = await communicationManager.observeParsedMessages()
             for await parsed in stream {
                 guard parsed.eventType == .advertise,
-                      parsed.eventTypeFilter == CoreType.IoNode.rawValue,
-                      let event: AdvertiseEvent = try? PayloadCoder.decode(parsed.payload),
-                      // AdvertiseEvent carries a runtime-polymorphic object;
-                      // this cast filters the event to the required subtype.
-                      let node = event.data.object as? IoNode,
+                      parsed.eventTypeFilter == CoreType.IoNode.rawValue else { continue }
+                let event: AdvertiseEvent
+                do {
+                    event = try PayloadCoder.decode(parsed.payload)
+                } catch {
+                    self.log.notice("Dropping malformed Advertise event", metadata: [
+                        "eventType": .string(parsed.eventType.rawValue),
+                        "sourceId": .string(parsed.sourceId),
+                        "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+                    ])
+                    continue
+                }
+                // AdvertiseEvent carries a runtime-polymorphic object;
+                // this cast filters the event to the required subtype.
+                guard let node = event.data.object as? IoNode,
                       node.name == self.ioContext.name else { continue }
                 self.ioNodeAdvertised(node: node)
             }
@@ -284,11 +297,21 @@ public class IoRouter: Controller {
             guard let self else { return }
             let stream = await communicationManager.publishDiscover(DiscoverEvent.with(coreTypes: [.IoNode]))
             for await response in stream {
-                guard response.eventType == WireEventType.resolve.rawValue,
-                      let event: ResolveEvent = try? PayloadCoder.decode(response.payload),
-                      // ResolveEvent carries a runtime-polymorphic object;
-                      // this cast filters the response to the required subtype.
-                      let node = event.data.object as? IoNode,
+                guard response.eventType == WireEventType.resolve.rawValue else { continue }
+                let event: ResolveEvent
+                do {
+                    event = try PayloadCoder.decode(response.payload)
+                } catch {
+                    self.log.notice("Dropping malformed Resolve event", metadata: [
+                        "eventType": .string(response.eventType),
+                        "correlationId": .string(response.correlationId ?? ""),
+                        "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+                    ])
+                    continue
+                }
+                // ResolveEvent carries a runtime-polymorphic object;
+                // this cast filters the response to the required subtype.
+                guard let node = event.data.object as? IoNode,
                       node.name == self.ioContext.name else { continue }
                 self.ioNodeAdvertised(node: node)
             }
@@ -318,8 +341,17 @@ public class IoRouter: Controller {
             let stream = await communicationManager.observeUpdateStream(withCoreType: self.ioContext.coreType)
             for await update in stream {
                 guard update.object.objectId == self.ioContext.objectId.string,
-                      let payload = update.object.payload,
-                      let object: IoContext = try? PayloadCoder.decode(payload) else { continue }
+                      let payload = update.object.payload else { continue }
+                let object: IoContext
+                do {
+                    object = try PayloadCoder.decode(payload)
+                } catch {
+                    self.log.notice("Dropping malformed IoContext update", metadata: [
+                        "objectId": .string(update.object.objectId),
+                        "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+                    ])
+                    continue
+                }
                 self.ioContext = object
                 self.ioContext.parentObjectId = self.container.identity?.objectId
                 try? self.onIoContextChanged()
