@@ -696,7 +696,8 @@ struct BroadcastTransportTests {
         // doesn't matter — the state reaches the iterator either way.
         client.updateCommunicationState(.online)
 
-        let stream: AsyncStream<CommunicationState> = await client.streams.communicationState.subscribe()
+        let streams = try #require(client.streams)
+        let stream: AsyncStream<CommunicationState> = await streams.communicationState.subscribe()
         var iterator = stream.makeAsyncIterator()
 
         let state = try await nextValue(&iterator, timeout: .milliseconds(500))
