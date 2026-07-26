@@ -1,7 +1,10 @@
 # Agent Instructions for Axoloty
 
 This file is the canonical agent and contributor workflow for this repository.
-For modernization context, see [ROADMAP.md](./docs/ROADMAP.md).
+The live release direction is [Axoloty v1.0 — lean, safe,
+embedded-ready](https://github.com/phynics/axoloty/issues/272). The checked-in
+[ROADMAP.md](./docs/ROADMAP.md) is a strategic summary; GitHub Issues and the
+Roadmap Project remain authoritative for scope and status.
 
 ## Build and test
 
@@ -31,6 +34,18 @@ For modernization context, see [ROADMAP.md](./docs/ROADMAP.md).
 The [Axoloty Roadmap](https://github.com/users/phynics/projects/5) Project is
 the live roadmap. GitHub Issues are the complete planning record.
 
+### v1 release direction
+
+Read the v1 tracker [#272](https://github.com/phynics/axoloty/issues/272) and
+its active phase gate before planning or implementing work. It defines the
+north star, sequential phases, architectural invariants, non-goals, and release
+criteria.
+
+Work only from the active phase. Every v1 implementation issue must be its
+sub-issue and carry the matching Project `Phase`, priority, and size. Do not
+create work for a later gate or revive a superseded direction without an
+approved decision linked from #272.
+
 ### Agentic loop
 
 1. **Fetch and check `origin/main` before branching.** This file and the
@@ -46,9 +61,11 @@ the live roadmap. GitHub Issues are the complete planning record.
    round trip closing it.
 3. **Create or refine a GitHub Issue** using the Work Plan template for
    structured tasks, or the Bug report / Feature request templates for
-   lightweight tickets.
+   lightweight tickets. For v1 work, link it as a sub-issue of the active
+   phase gate and set its Project Phase, priority, and size. Do not create
+   speculative implementation issues for later phases.
 4. **Move the issue to `Ready`** on the Roadmap Project once the plan is
-   approved.
+   approved and its phase gate is active.
 5. **Implement from a dedicated worktree** named with the issue number:
    ```sh
    git worktree add .worktree/<#issue-number>-<slug> -b <#issue-number>-<slug> main
