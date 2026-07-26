@@ -9,6 +9,10 @@
 /// Designed for the wire decode hot path where the JSON shape is known at
 /// compile time (e.g. an `AssociateEvent` has `ioSourceId`, `ioActorId`,
 /// `associatingRoute`, etc.). The caller reads fields by static string key.
+///
+/// - Important: When constructed from ``BorrowedMessage``, use the reader and
+///   its returned ``ByteSlice`` values only in the message's synchronous
+///   borrow scope. Copy data before an `await` or another isolation-domain hop.
 public struct WireReader {
     /// The raw pointer to the JSON byte buffer being scanned.
     @usableFromInline let bytes: UnsafeRawPointer
