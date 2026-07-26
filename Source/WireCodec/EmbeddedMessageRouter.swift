@@ -42,7 +42,23 @@ public struct EmbeddedResponseKey: Hashable, Sendable {
 /// Subscribers register through the subscription methods and
 /// receive a token for later unsubscribe. The subscriber count per event
 /// type is bounded by `WireBufferConfig.maxSubscribers`.
-public final class EmbeddedMessageRouter: MessageRouter, @unchecked Sendable {
+///
+/// This router is intentionally non-`Sendable`. It owns mutable dispatch
+/// and family tables that are safe to mutate only from a single execution
+/// context. ``subscribe(_:_:)``, ``unsubscribe(_:_:)``, the keyed
+/// family subscribe/unsubscribe methods, and ``dispatch(_:)`` are all
+/// synchronous and must be called from the same thread/isolation domain
+/// that owns the router. The type carries no internal synchronization
+/// (no actor, lock, or queue) by design: embedded routing is bounded and
+/// single-threaded, and host-side synchronization belongs in a host
+/// adapter, not here.
+///
+/// Handler closures remain `@Sendable` so they can be captured by embedded
+/// composition, but the ``BorrowedMessage`` they receive — and any values
+/// derived from it — are valid only for the synchronous duration of the
+/// callback and must be copied before crossing an `await` or any
+/// isolation-domain boundary.
+public final class EmbeddedMessageRouter: MessageRouter {
     private var tables: [WireEventType: StaticDispatchTable]
     private var rawTable: StaticDispatchTable
     private var ioValueTable: StaticDispatchTable
