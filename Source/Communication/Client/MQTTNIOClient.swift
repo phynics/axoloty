@@ -358,7 +358,32 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
             guard let self = self else {
                 return
             }
-            self.lock.withLock { self.lifecycle.isConnecting = false }
+            // If an explicit disconnect() retired this attempt while it was in
+            // flight, abandon the result: do not go .online and do not
+            // reconnect. disconnect() clears connectionAttemptId, so a mismatch
+            // (nil or a newer id) means this attempt no longer owns the
+            // lifecycle -- and this check is robust to handleClose having
+            // already cleared isIntentionalDisconnect, which would otherwise
+            // let the failure path's scheduleReconnect fire after a disconnect.
+            let superseded = self.lock.withLock { () -> Bool in
+                self.lifecycle.isConnecting = false
+                return self.lifecycle.connectionAttemptId != attemptId
+            }
+            if superseded {
+                // A failed connect fires no close listener, so clear the
+                // intentional-disconnect flag here to unblock future connects.
+                // A successful connect's close is cleared by handleClose; do
+                // not clear it here or a later close of the superseded
+                // connection would be treated as a dropped connection.
+                if case .failure = result {
+                    self.lock.withLock { self.lifecycle.isIntentionalDisconnect = false }
+                }
+                self.log.notice("Abandoning connection result; attempt superseded by disconnect", metadata: [
+                    "correlationId": .string(attemptId),
+                    "broker": "\(client.host):\(client.port)",
+                ])
+                return
+            }
             switch result {
             case .success:
                 self.log.info("Connected to broker", metadata: [
@@ -417,21 +442,22 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
     private func replaceClient(host: String, port: Int) {
         let newClient = makeClient(host: host, port: port)
         attachListeners(to: newClient)
-        // Swap the client reference under the lock; shut down the replaced
-        // client outside it (shutdown is a fire-and-forget NIO operation).
-        let oldClient = lock.withLock { () -> MQTTClient? in
+        // Swap the client reference, read the pending reconnect task, and nil
+        // it in one critical section so a scheduleReconnect racing the swap
+        // cannot install a task targeting the new client only to be cancelled.
+        let (oldClient, reconnectTask) = lock.withLock { () -> (MQTTClient?, _Concurrency.Task<Void, Never>?) in
             let old = lifecycle.client
             lifecycle.client = newClient
-            return old
+            let task = lifecycle.reconnectTask
+            lifecycle.reconnectTask = nil
+            return (old, task)
         }
-        // Cancel any pending reconnect against the old client so a delayed
-        // reconnect cannot fire after the client it was scheduled for is gone.
-        let reconnectTask = lock.withLock { lifecycle.reconnectTask }
-        reconnectTask?.cancel()
-        // Gracefully shut down the replaced client; it shares this object's
-        // `eventLoopGroup`, so this only closes its connection and satisfies
-        // mqtt-nio's shutdown-before-deinit precondition, without touching the
+        // Cancel any pending reconnect against the old client outside the lock,
+        // then gracefully shut down the replaced client; it shares this object's
+        // `eventLoopGroup`, so shutdown only closes its connection and satisfies
+        // mqtt-nio's shutdown-before-deinit precondition without touching the
         // shared event loop group.
+        reconnectTask?.cancel()
         oldClient?.shutdown(queue: .global()) { _ in }
     }
 
