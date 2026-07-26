@@ -5,6 +5,12 @@
 /// No String or Array is allocated — the caller provides a fixed-size byte
 /// buffer and the writer encodes JSON directly into it. Designed for the
 /// wire encode hot path.
+///
+/// This is a synchronous scoped-borrow primitive. Keep the writer and every
+/// value passed to it within the caller's buffer scope: do not cross `await`,
+/// create a `Task`, hop to an actor or another isolation domain, or capture the
+/// writer in an escaping closure. Copy output or input data before any such
+/// hop.
 public struct WireWriter {
     /// The destination buffer the writer encodes into.
     @usableFromInline let buffer: UnsafeMutablePointer<UInt8>

@@ -24,7 +24,9 @@ enum AnyCoatyObjectDiscriminator: String, CodingKey {
 ///
 /// This type is `@unchecked Sendable` because it is pushed onto a
 /// ``DecodingContextStack``. Its mutable state is only accessed synchronously
-/// by one recursive decode operation and is never shared with another decode.
+/// by one recursive decode operation and is never shared with another decode;
+/// the stack's synchronous, single-decode ownership protects the set from
+/// concurrent mutation.
 final class CoreTypeKeysContext: @unchecked Sendable {
     private(set) var keys = Set<String>()
 

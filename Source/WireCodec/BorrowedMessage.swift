@@ -13,9 +13,10 @@
 ///
 /// - Important: Use this type and every value derived from it only while the
 ///   topic and payload buffers are pinned. Do not capture it in an escaping
-///   closure, cross an `await`, or send it to another isolation domain. Copy
-///   the needed fields first. This type is intentionally not `Sendable`; it is
-///   designed for synchronous dispatch in the routing hot path.
+///   closure, cross an `await`, create a `Task`, hop to an actor or another
+///   isolation domain, or yield it to an `AsyncStream`. Copy the needed fields
+///   first. This type is intentionally not `Sendable`; it is designed for
+///   synchronous dispatch in the routing hot path.
 ///
 /// Embedded routing consumes this view synchronously. A host adapter must make
 /// owned values before asynchronous delivery: copy payload bytes into `[UInt8]`

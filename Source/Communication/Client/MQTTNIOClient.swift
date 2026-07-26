@@ -580,12 +580,11 @@ internal class MQTTNIOClient: CommunicationClient {
     /// values (`RawMQTTMessage`, `IoValueEventSnapshot`, or
     /// `ParsedMQTTMessage`), never `TopicView`, `ByteSlice`, or
     /// `BorrowedMessage`.
-    private func handlePublish(_ result: Result<MQTTPublishInfo, Swift.Error>) {
+    func handlePublish(_ result: Result<MQTTPublishInfo, Swift.Error>) {
         switch result {
         case .success(let info):
             let bytes = [UInt8](info.payload.readableBytesView)
             let rawMessage = RawMQTTMessage(topic: info.topicName, payload: bytes)
-
             guard let streams = streamsOrWarn() else {
                 return
             }
@@ -633,12 +632,16 @@ internal class MQTTNIOClient: CommunicationClient {
                 }
                 log.trace("Received event", metadata: receivedEventMetadata)
 
-                if let payloadString = Self.validUTF8Payload(from: info.payload) {
-                    let parsed = ParsedMQTTMessage(topicView: topicView, payload: payloadString)
-                    deliveryContinuation.yield {
-                        await streams.parsedMQTTMessages.send(parsed)
-                        await Self.routeParsedMessage(parsed: parsed, into: streams)
-                    }
+                guard let payloadString = Self.validUTF8Payload(from: info.payload) else {
+                    log.warning("Dropping incoming MQTT message with invalid UTF-8 payload", metadata: [
+                        "topic": .string(info.topicName),
+                    ])
+                    return
+                }
+                let parsed = ParsedMQTTMessage(topicView: topicView, payload: payloadString)
+                deliveryContinuation.yield {
+                    await streams.parsedMQTTMessages.send(parsed)
+                    await Self.routeParsedMessage(parsed: parsed, into: streams)
                 }
             }
         case .failure(let error):
