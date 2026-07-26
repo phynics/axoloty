@@ -158,6 +158,7 @@ test-wire: resolve
 
 # Harness self-tests intentionally remain host-side Python/shell checks.
 test-support:
+	Tests/Support/test-check-axoloty-wire-dependencies.sh
 	Tests/Support/test-run-container.sh
 	Tests/Fuzzing/test-run-fuzz.sh
 	cd Tests/WireCompatibility/tool && npm ci && npm test

@@ -60,6 +60,7 @@ let package = Package(
             ],
             path: "Tests",
             exclude: [
+                "AxolotyWire",
                 "TESTING.md",
                 "Fuzzing/Artifacts",
                 "Fuzzing/run-fuzz.sh",
@@ -92,6 +93,11 @@ let package = Package(
             resources: [
                 .process("WireCompatibility/Fixtures"),
             ]
+        ),
+        .testTarget(
+            name: "AxolotyWireTests",
+            dependencies: ["AxolotyWire"],
+            path: "Tests/AxolotyWire"
         ),
     ],
     swiftLanguageModes: [.v6]

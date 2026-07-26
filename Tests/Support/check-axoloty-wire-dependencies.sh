@@ -3,22 +3,57 @@
 
 set -eu
 
-target_dir='Source/WireCodec'
-forbidden_imports='Foundation Dispatch NIO NIOCore NIOPosix MQTT MQTTNIO ErrorKit Logging OSLog Combine Observation Axoloty'
+root=${1:-.}
 
-found=0
-for module in $forbidden_imports; do
-    if grep -R -n -E "^[[:space:]]*((public|internal|package|private|@preconcurrency)[[:space:]]+)*import[[:space:]]+$module([[:space:]]|$)" "$target_dir"; then
-        echo "error: AxolotyWire must not import $module" >&2
-        found=1
-    fi
-done
+python3 - "$root" <<'PY'
+import pathlib
+import re
+import sys
 
-if grep -A 2 'name: "AxolotyWire"' Package.swift | grep -q 'dependencies:'; then
-    echo 'error: AxolotyWire must not declare runtime dependencies' >&2
-    found=1
-fi
+root = pathlib.Path(sys.argv[1])
+package = root / "Package.swift"
+wire_sources = root / "Source" / "WireCodec"
+errors = []
 
-if [ "$found" -ne 0 ]; then
-    exit 1
-fi
+if not package.is_file():
+    errors.append(f"error: missing package manifest: {package}")
+if not wire_sources.is_dir():
+    errors.append(f"error: missing AxolotyWire source directory: {wire_sources}")
+
+if not errors:
+    manifest = re.sub(r"/\*.*?\*/", "", package.read_text(), flags=re.DOTALL)
+    manifest = re.sub(r"//.*$", "", manifest, flags=re.MULTILINE)
+    target_blocks = []
+    for match in re.finditer(r"\.target\s*\(", manifest):
+        start = manifest.find("(", match.start())
+        depth = 0
+        for index in range(start, len(manifest)):
+            if manifest[index] == "(":
+                depth += 1
+            elif manifest[index] == ")":
+                depth -= 1
+                if depth == 0:
+                    target_blocks.append(manifest[match.start():index + 1])
+                    break
+
+    wire_target = next((block for block in target_blocks if re.search(r'\bname\s*:\s*"AxolotyWire"', block)), None)
+    if wire_target is None:
+        errors.append("error: missing AxolotyWire target")
+    elif re.search(r"\bdependencies\s*:", wire_target):
+        errors.append("error: AxolotyWire must not declare runtime dependencies")
+
+    import_pattern = re.compile(
+        r"^\s*(?:(?:@[A-Za-z_][A-Za-z0-9_]*(?:\([^\n]*\))?|public|internal|package|private)\s+)*import\s+([A-Za-z_][A-Za-z0-9_]*)",
+        re.MULTILINE,
+    )
+    for source in sorted(wire_sources.rglob("*.swift")):
+        contents = re.sub(r"/\*.*?\*/", "", source.read_text(), flags=re.DOTALL)
+        contents = re.sub(r"//.*$", "", contents, flags=re.MULTILINE)
+        for module in import_pattern.findall(contents):
+            if module != "Swift":
+                errors.append(f"error: AxolotyWire must not import {module}: {source}")
+
+if errors:
+    print("\n".join(errors), file=sys.stderr)
+    sys.exit(1)
+PY
