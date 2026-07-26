@@ -321,7 +321,7 @@ public struct QueryWireData: WireDecodable, WireEncodable, Equatable {
         try writer.beginObject()
         var first = true
         if let ot = objectTypes {
-            if !first { try writer.writeComma() }; first = false
+            first = false
             try writer.writeRawField("objectTypes", ot)
         }
         if let ct = coreTypes {
@@ -417,7 +417,7 @@ public struct ReturnWireData: WireDecodable, WireEncodable, Equatable {
         try writer.beginObject()
         var first = true
         if let r = result {
-            if !first { try writer.writeComma() }; first = false
+            first = false
             try writer.writeRawField("result", r)
         }
         if let ei = executionInfo {
@@ -557,7 +557,7 @@ public struct CompleteWireData: WireDecodable, WireEncodable, Equatable {
         try writer.beginObject()
         var first = true
         if let obj = object {
-            if !first { try writer.writeComma() }; first = false
+            first = false
             try writer.writeRawField("object", obj)
         }
         if let comp = completed {

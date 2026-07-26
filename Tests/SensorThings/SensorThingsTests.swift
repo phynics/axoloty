@@ -38,14 +38,14 @@ struct SensorThingsTests {
                                            databases: nil)
         let controllers1: [String: Controller.Type] = ["MockEmitterController": MockEmitterController.self]
         let components1 = Components(controllers: controllers1, objectTypes: [])
-        let container1 = Container.resolve(components: components1, configuration: configuration1)
+        let container1 = try Container.resolve(components: components1, configuration: configuration1)
 
         let mqttClientOptions2 = MQTTClientOptions(host: "127.0.0.1", port: UInt16(1883))
         let communicationOptions2 = CommunicationOptions(mqttClientOptions: mqttClientOptions2, shouldAutoStart: false)
         let configuration2 = Configuration(communication: communicationOptions2)
         let controllers2: [String: Controller.Type] = ["MockReceiverController": MockReceiverController.self]
         let components2 = Components(controllers: controllers2, objectTypes: [])
-        let container2 = Container.resolve(components: components2, configuration: configuration2)
+        let container2 = try Container.resolve(components: components2, configuration: configuration2)
 
         try await withTimeout("container1 ready") { try await container1.startAndWaitUntilReady() }
         try await withTimeout("container2 ready") { try await container2.startAndWaitUntilReady() }
@@ -119,14 +119,14 @@ struct SensorThingsTests {
                                            databases: nil)
         let controllers1: [String: Controller.Type] = ["MockEmitterController": MockEmitterController.self]
         let components1 = Components(controllers: controllers1, objectTypes: [])
-        let container1 = Container.resolve(components: components1, configuration: configuration1)
+        let container1 = try Container.resolve(components: components1, configuration: configuration1)
 
         let mqttClientOptions2 = MQTTClientOptions(host: "127.0.0.1", port: UInt16(1883))
         let communicationOptions2 = CommunicationOptions(mqttClientOptions: mqttClientOptions2, shouldAutoStart: false)
         let configuration2 = Configuration(communication: communicationOptions2)
         let controllers2: [String: Controller.Type] = ["MockReceiverController": MockReceiverController.self]
         let components2 = Components(controllers: controllers2, objectTypes: [])
-        let container2 = Container.resolve(components: components2, configuration: configuration2)
+        let container2 = try Container.resolve(components: components2, configuration: configuration2)
 
         try await withTimeout("container1 ready") { try await container1.startAndWaitUntilReady() }
         try await withTimeout("container2 ready") { try await container2.startAndWaitUntilReady() }

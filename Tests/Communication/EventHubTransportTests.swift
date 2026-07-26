@@ -440,7 +440,7 @@ struct BroadcastTransportTests {
             controllers: ["sensor-observer": SensorObserverController.self],
             objectTypes: []
         )
-        let container = Container.resolve(components: components, configuration: configuration)
+        let container = try Container.resolve(components: components, configuration: configuration)
         let manager = try #require(container.communicationManager)
         let observer = try #require(
             container.getController(name: "sensor-observer") as? SensorObserverController
@@ -487,7 +487,7 @@ struct BroadcastTransportTests {
             controllers: ["thing-observer": ThingObserverController.self],
             objectTypes: []
         )
-        let container = Container.resolve(components: components, configuration: configuration)
+        let container = try Container.resolve(components: components, configuration: configuration)
         let manager = try #require(container.communicationManager)
         let observer = try #require(
             container.getController(name: "thing-observer") as? ThingObserverController
@@ -534,7 +534,7 @@ struct BroadcastTransportTests {
             controllers: ["sensor-observer": SensorObserverController.self],
             objectTypes: []
         )
-        let container = Container.resolve(components: components, configuration: configuration)
+        let container = try Container.resolve(components: components, configuration: configuration)
         let manager = try #require(container.communicationManager)
         let observer = try #require(
             container.getController(name: "sensor-observer") as? SensorObserverController

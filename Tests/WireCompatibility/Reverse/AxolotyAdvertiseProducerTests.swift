@@ -18,7 +18,7 @@ struct AxolotyAdvertiseProducerTests {
             mqttClientOptions: MQTTClientOptions(host: host, port: port),
             shouldAutoStart: false
         )
-        let container = Container.resolve(
+        let container = try Container.resolve(
             components: Components(controllers: [:], objectTypes: []),
             configuration: Configuration(communication: communication)
         )

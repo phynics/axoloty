@@ -48,7 +48,7 @@ let configuration = try Configuration.build { builder in
 }
 
 let components = Components(controllers: [:], objectTypes: [])
-let container = Container.resolve(components: components, configuration: configuration)
+let container = try Container.resolve(components: components, configuration: configuration)
 ```
 
 ## Register a controller
@@ -80,7 +80,7 @@ let configuration = try Configuration.build { builder in
     ])
 }
 
-let container = Container.resolve(components: components, configuration: configuration)
+let container = try Container.resolve(components: components, configuration: configuration)
 ```
 
 ## Shut down

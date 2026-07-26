@@ -25,8 +25,8 @@ struct ObjectLifecycleControllerTests {
         let components1 = Components(controllers: controllers1,
                                      objectTypes: [])
 
-        let coatyAgent1Container = Container.resolve(components: components1,
-                                                     configuration: configuration1)
+        let coatyAgent1Container = try Container.resolve(components: components1,
+                                                      configuration: configuration1)
 
         // Configure the second coaty agent
         let mqttOptions2 = MQTTClientOptions(host: "127.0.0.1",
@@ -39,8 +39,8 @@ struct ObjectLifecycleControllerTests {
         let components2 = Components(controllers: .init(),
                                      objectTypes: [])
 
-        let coatyAgent2Container = Container.resolve(components: components2,
-                                                     configuration: configuration2)
+        let coatyAgent2Container = try Container.resolve(components: components2,
+                                                      configuration: configuration2)
 
         let controller = try #require(
             coatyAgent1Container.getController(name: "ObjectLifecycleController") as? ObjectLifecycleController

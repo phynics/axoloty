@@ -19,7 +19,7 @@ struct DecentralizedLoggingTest {
                                                                                        port: UInt16(1883)),
                                                   shouldAutoStart: false)
         let configuration1 = Configuration(communication: communication1)
-        let coatyContainer1 = Container.resolve(components: components1,
+        let coatyContainer1 = try Container.resolve(components: components1,
                                                 configuration: configuration1)
 
         let components2 = Components(controllers: ["LogReceiverController": LogReceiverController.self],
@@ -29,7 +29,7 @@ struct DecentralizedLoggingTest {
                                                                                        port: UInt16(1883)),
                                                   shouldAutoStart: false)
         let configuration2 = Configuration(communication: communication2)
-        let coatyContainer2 = Container.resolve(components: components2,
+        let coatyContainer2 = try Container.resolve(components: components2,
                                                 configuration: configuration2)
 
         let receiverController = try #require(

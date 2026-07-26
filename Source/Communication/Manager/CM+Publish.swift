@@ -60,7 +60,7 @@ extension CommunicationManager {
     }
 
     private func responseStream(_ eventType: WireEventType, correlationId: String, topic: String) async -> AsyncStream<ResponseEventSnapshot> {
-        guard let coordinator = subscriptionCoordinator else {
+        guard subscriptionCoordinator != nil else {
             return AsyncStream { $0.finish() }
         }
         return await streams.responseFamily.subscribe(

@@ -119,7 +119,7 @@ struct AxolotyIoAssociateTests {
             mqttClientOptions: MQTTClientOptions(host: "127.0.0.1", port: 1883),
             shouldAutoStart: false
         )
-        let container = Container.resolve(
+        let container = try Container.resolve(
             components: Components(controllers: [:], objectTypes: []),
             configuration: Configuration(communication: communication)
         )
@@ -181,7 +181,7 @@ struct AxolotyIoAssociateTests {
             mqttClientOptions: MQTTClientOptions(host: host, port: port),
             shouldAutoStart: false
         )
-        let container = Container.resolve(
+        let container = try Container.resolve(
             components: Components(controllers: [:], objectTypes: []),
             configuration: Configuration(
                 common: CommonOptions(ioContextNodes: [
@@ -259,7 +259,7 @@ struct AxolotyIoAssociateTests {
             mqttClientOptions: MQTTClientOptions(host: host, port: port),
             shouldAutoStart: false
         )
-        let container = Container.resolve(
+        let container = try Container.resolve(
             components: Components(controllers: [:], objectTypes: []),
             configuration: Configuration(
                 common: CommonOptions(ioContextNodes: [

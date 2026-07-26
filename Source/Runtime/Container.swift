@@ -5,7 +5,6 @@
 //
 
 import ErrorKit
-import Foundation
 
 /// An IoC container that uses constructor dependency injection to create
 /// container components and to resolve dependencies. This container defines the
@@ -30,28 +29,30 @@ public class Container {
     private var controllers = [String: Controller]()
     private var isShutdown = false
     private var operatingStateTask: _Concurrency.Task<Void, Never>?
-    
-    /// A dispatch queue handling controller synchronisation issues.
-    private var queue: DispatchQueue!
 
-    /// A queue ID needed to guarantee each container gets one dedicated queue __only__.
-    private var queueID = "coatyswift.containerQueue." + UUID().uuidString
-
-    /// Creates and bootstraps a Coaty container by registering and resolving the given components
-    /// and configuratiuon options.
+    /// Creates and bootstraps a Coaty container by registering and resolving
+    /// the given components and configuration options.
+    ///
+    /// The bootstrap is atomic: either a fully initialized container is
+    /// returned, or an ``AxolotyError`` is thrown before any partially
+    /// constructed container escapes. Failures from agent identity creation
+    /// or ``CommunicationManager`` initialization are propagated rather than
+    /// swallowed with a fallback.
     ///
     /// - Parameters:
     ///   - components: the components to set up within this container
     ///   - configuration: the configuration options for the components
-    public static func resolve(components: Components, configuration: Configuration) -> Container {
+    /// - Throws: ``AxolotyError/invalidConfiguration(option:reason:)`` if the
+    ///   agent identity options are malformed or the MQTT client options are
+    ///   missing for the default MQTT transport.
+    /// - Returns: A fully initialized ``Container`` with identity, runtime, and
+    ///   communication manager resolved.
+    public static func resolve(components: Components, configuration: Configuration) throws -> Container {
         
         // Adjust logging level for Axoloty.
         LogManager.defaultLevel = LogManager.getLogLevel(logLevel: configuration.common?.logLevel ?? AxolotyLogLevel.error)
 
         let container = Container()
-        
-        // Add container specific dispatch queue.
-        container.queue = DispatchQueue(label: container.queueID)
         
         // Ensure all Coaty core object types are registered.
         CoreType.registerCoreObjectTypes()
@@ -59,7 +60,7 @@ public class Container {
         // Ensure all SensorThings object types are registered.
         CoreType.registerSensorThingsTypes()
         
-        container.resolveComponents(components, configuration)
+        try container.resolveComponents(components, configuration)
         return container
     }
     
@@ -184,30 +185,20 @@ public class Container {
         }
     }
     
-    private func resolveComponents(_ components: Components, _ configuration: Configuration) {
+    private func resolveComponents(_ components: Components, _ configuration: Configuration) throws {
         self.registerCustomObjectTypes(components)
 
-        let identity: Identity
-        do {
-            identity = try createIdentity(options: configuration.common?.agentIdentity)
-        } catch {
-            LogManager.logger(.runtime).critical("Failed to create identity", metadata: ["error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))])
-            identity = Identity(name: "Coaty Agent")
-        }
+        let identity = try createIdentity(options: configuration.common?.agentIdentity)
         self.identity = identity
         let runtime = Runtime(commonOptions: configuration.common, databaseOptions: configuration.databases)
         self.runtime = runtime
         
         // Create CommunicationManager.
-        do {
-            self.communicationManager = try CommunicationManager(
-                identity: self.identity!,
-                communicationOptions: configuration.communication,
-                commonOptions: configuration.common
-            )
-        } catch {
-            LogManager.logger(.runtime).critical("Failed to create CommunicationManager", metadata: ["error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error)))])
-        }
+        self.communicationManager = try CommunicationManager(
+            identity: identity,
+            communicationOptions: configuration.communication,
+            commonOptions: configuration.common
+        )
 
         // Create all controllers.
         components.controllers.forEach { (name, controllerType) in
@@ -300,27 +291,35 @@ struct AgentIdentityOptionValues {
     let isDeactivated: Bool?
 
     init(_ values: [String: Any]) throws {
-        if let value = values["name"] {
-            guard let value = value as? String else {
-                throw AxolotyError.invalidConfiguration(option: "agentIdentity.name", reason: "must be a String")
-            }
-            name = value
-        } else {
-            name = nil
-        }
+        name = try Self.optionalValue(
+            values, key: "name", option: "agentIdentity.name", reason: "must be a String"
+        )
+        objectId = try Self.optionalValue(
+            values, key: "objectId", option: "agentIdentity.objectId", reason: "must be a CoatyUUID"
+        )
+        externalId = try Self.optionalValue(
+            values, key: "externalId", option: "agentIdentity.externalId", reason: "must be a String"
+        )
+        parentObjectId = try Self.optionalValue(
+            values, key: "parentObjectId", option: "agentIdentity.parentObjectId", reason: "must be a CoatyUUID"
+        )
+        locationId = try Self.optionalValue(
+            values, key: "locationId", option: "agentIdentity.locationId", reason: "must be a CoatyUUID"
+        )
+        isDeactivated = try Self.optionalValue(
+            values, key: "isDeactivated", option: "agentIdentity.isDeactivated", reason: "must be a Bool"
+        )
+    }
 
-        if let value = values["objectId"] {
-            guard let value = value as? CoatyUUID else {
-                throw AxolotyError.invalidConfiguration(option: "agentIdentity.objectId", reason: "must be a CoatyUUID")
-            }
-            objectId = value
-        } else {
-            objectId = nil
+    private static func optionalValue<T>(
+        _ values: [String: Any], key: String, option: String, reason: String
+    ) throws -> T? {
+        guard let rawValue = values[key] else {
+            return nil
         }
-
-        externalId = values["externalId"] as? String
-        parentObjectId = values["parentObjectId"] as? CoatyUUID
-        locationId = values["locationId"] as? CoatyUUID
-        isDeactivated = values["isDeactivated"] as? Bool
+        guard let value = rawValue as? T else {
+            throw AxolotyError.invalidConfiguration(option: option, reason: reason)
+        }
+        return value
     }
 }
