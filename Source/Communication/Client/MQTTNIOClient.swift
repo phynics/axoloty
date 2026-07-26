@@ -38,7 +38,12 @@ internal class MQTTNIOClient: CommunicationClient {
 
     // MARK: - Protocol fields.
 
-    var delegate: CommunicationClientDelegate
+    private let callbackAdapter: MQTTNIOCallbackAdapter
+
+    var delegate: CommunicationClientDelegate {
+        get { callbackAdapter.delegate }
+        set { callbackAdapter.setDelegate(newValue) }
+    }
 
     /// Typed broadcast streams that mirror communication state and raw MQTT
     /// transport messages to concurrent consumers.
@@ -53,10 +58,17 @@ internal class MQTTNIOClient: CommunicationClient {
     /// practice ``CommunicationManager`` calls `setStreams` in its `init`,
     /// before `connect()`, so this is nil only under a misordered
     /// initialization.
-    var streams: CommunicationStreams?
+    var streams: CommunicationStreams? {
+        get { callbackAdapter.streams }
+        set {
+            if let newValue {
+                callbackAdapter.setStreams(newValue)
+            }
+        }
+    }
 
     func setStreams(_ streams: CommunicationStreams) {
-        self.streams = streams
+        callbackAdapter.setStreams(streams)
     }
 
     /// Returns the broadcast streams if set, otherwise logs a warning and
@@ -174,7 +186,7 @@ internal class MQTTNIOClient: CommunicationClient {
     // MARK: - Initializer.
 
     init(mqttClientOptions: MQTTClientOptions, delegate: CommunicationClientDelegate) {
-        self.delegate = delegate
+        self.callbackAdapter = MQTTNIOCallbackAdapter(delegate: delegate)
 
         let (stream, continuation) = AsyncStream<@Sendable () async -> Void>.makeStream()
         self.deliveryContinuation = continuation
@@ -185,6 +197,7 @@ internal class MQTTNIOClient: CommunicationClient {
         }
 
         configure(mqttClientOptions)
+        callbackAdapter.attach(self)
 
         // `try!` matches the existing fail-fast convention used elsewhere
         // during initialization (see `CommunicationManager.init`).
@@ -291,11 +304,12 @@ internal class MQTTNIOClient: CommunicationClient {
     }
 
     private func attachListeners(to client: MQTTClient) {
-        client.addPublishListener(named: "coatyswift") { [weak self] result in
-            self?.handlePublish(result)
+        let callbackAdapter = self.callbackAdapter
+        client.addPublishListener(named: "coatyswift") { result in
+            callbackAdapter.handlePublish(result)
         }
-        client.addCloseListener(named: "coatyswift") { [weak self] _ in
-            self?.handleClose()
+        client.addCloseListener(named: "coatyswift") { _ in
+            callbackAdapter.handleClose()
         }
     }
 
@@ -357,10 +371,16 @@ internal class MQTTNIOClient: CommunicationClient {
             "broker": "\(client.host):\(client.port)",
         ])
 
-        client.connect(cleanSession: true, will: will).whenComplete { [weak self] result in
-            guard let self = self else {
-                return
-            }
+        client.connect(cleanSession: true, will: will).whenComplete { [callbackAdapter = self.callbackAdapter] result in
+            callbackAdapter.handleConnectionResult(result, attemptId: attemptId, client: client)
+        }
+    }
+
+    fileprivate func handleConnectionResult(
+        _ result: Result<Bool, Swift.Error>,
+        attemptId: String,
+        client: MQTTClient
+    ) {
             // If an explicit disconnect() retired this attempt while it was in
             // flight, abandon the result: do not go .online and do not
             // reconnect. disconnect() clears connectionAttemptId, so a mismatch
@@ -417,6 +437,20 @@ internal class MQTTNIOClient: CommunicationClient {
                     self.scheduleReconnect()
                 }
             }
+        }
+
+    fileprivate func runReconnect(token: UUID) {
+        let mayReconnect = lock.withLock { () -> Bool in
+            guard lifecycle.reconnectToken == token,
+                  !lifecycle.isIntentionalDisconnect else {
+                return false
+            }
+            lifecycle.reconnectToken = nil
+            lifecycle.reconnectWorkItem = nil
+            return true
+        }
+        if mayReconnect {
+            performConnect()
         }
     }
 
@@ -484,7 +518,7 @@ internal class MQTTNIOClient: CommunicationClient {
         snapshot.reconnectWorkItem?.cancel()
         let log = self.log
         snapshot.client?.disconnect().whenFailure { error in
-            log.debug("Error while disconnecting", metadata: [
+            log.notice("Error while disconnecting", metadata: [
                 "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
             ])
         }
@@ -738,7 +772,7 @@ internal class MQTTNIOClient: CommunicationClient {
     /// updates communication state to `.offline`, then falls back to the next
     /// broker candidate if any are queued, or lets `autoReconnect` retry the
     /// same host after `autoReconnectTimeInterval` seconds.
-    private func handleClose() {
+    fileprivate func handleClose() {
         updateCommunicationState(.offline)
 
         // Only the close listener clears the intentional-disconnect flag, so a
@@ -767,26 +801,12 @@ private extension MQTTNIOClient {
     func scheduleReconnect() {
         let delaySeconds = max(mqttClientOptions.autoReconnectTimeInterval, 0)
         let token = UUID()
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self else {
-                return
-            }
+        let callbackAdapter = self.callbackAdapter
+        let workItem = DispatchWorkItem { [callbackAdapter] in
             // Re-check after the delay: a disconnect or replacement that raced
             // with queue cancellation retires this callback's token, so no
             // reconnect fires after explicit teardown.
-            let mayReconnect = self.lock.withLock { () -> Bool in
-                guard self.lifecycle.reconnectToken == token,
-                      !self.lifecycle.isIntentionalDisconnect else {
-                    return false
-                }
-                self.lifecycle.reconnectToken = nil
-                self.lifecycle.reconnectWorkItem = nil
-                return true
-            }
-            guard mayReconnect else {
-                return
-            }
-            self.performConnect()
+            callbackAdapter.reconnect(token: token)
         }
         // Retain the work item so disconnect()/replaceClient()/deinit can
         // cancel it, cancelling any previously scheduled reconnect first. The
@@ -823,5 +843,62 @@ extension MQTTNIOClient: ServiceDiscoveryDelegate {
         replaceClient(host: first.host, port: first.port)
 
         delegate.didReceiveStart()
+    }
+}
+
+/// Owns the mutable callback-facing references for ``MQTTNIOClient``.
+///
+/// mqtt-nio invokes listeners and future completions from contexts that are
+/// independent of the caller that created the client. The adapter is the only
+/// object captured by those callbacks; its lock protects delegate, stream, and
+/// client access while the client remains a non-Sendable implementation detail.
+private final class MQTTNIOCallbackAdapter: @unchecked Sendable {
+    private let lock = NIOLock()
+    private weak var client: MQTTNIOClient?
+    private var _delegate: CommunicationClientDelegate
+    private var _streams: CommunicationStreams?
+
+    var delegate: CommunicationClientDelegate {
+        lock.withLock { _delegate }
+    }
+
+    var streams: CommunicationStreams? {
+        lock.withLock { _streams }
+    }
+
+    init(delegate: CommunicationClientDelegate) {
+        _delegate = delegate
+    }
+
+    func attach(_ client: MQTTNIOClient) {
+        lock.withLock { self.client = client }
+    }
+
+    func setDelegate(_ delegate: CommunicationClientDelegate) {
+        lock.withLock { _delegate = delegate }
+    }
+
+    func setStreams(_ streams: CommunicationStreams) {
+        lock.withLock { _streams = streams }
+    }
+
+    func handlePublish(_ result: Result<MQTTPublishInfo, Swift.Error>) {
+        lock.withLock { client }?.handlePublish(result)
+    }
+
+    func handleClose() {
+        lock.withLock { client }?.handleClose()
+    }
+
+    func handleConnectionResult(
+        _ result: Result<Bool, Swift.Error>,
+        attemptId: String,
+        client: MQTTClient
+    ) {
+        lock.withLock { self.client }?.handleConnectionResult(result, attemptId: attemptId, client: client)
+    }
+
+    func reconnect(token: UUID) {
+        lock.withLock { client }?.runReconnect(token: token)
     }
 }
