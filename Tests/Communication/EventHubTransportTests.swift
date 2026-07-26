@@ -3,6 +3,7 @@
 @testable import Axoloty
 import Foundation
 import Testing
+import AxolotyWire
 
 /// Tests that transport-level state and raw MQTT messages are mirrored into
 /// the Swift concurrency ``Broadcast`` while the legacy Rx subjects remain

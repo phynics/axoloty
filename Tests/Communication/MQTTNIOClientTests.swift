@@ -4,6 +4,7 @@
 @preconcurrency import MQTTNIO
 import NIO
 import Testing
+import AxolotyWire
 
 @Suite
 struct MQTTNIOClientTests {

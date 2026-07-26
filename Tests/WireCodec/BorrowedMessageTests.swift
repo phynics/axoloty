@@ -2,6 +2,7 @@
 
 @testable import Axoloty
 import Testing
+import AxolotyWire
 
 @Suite
 struct BorrowedMessageTests {

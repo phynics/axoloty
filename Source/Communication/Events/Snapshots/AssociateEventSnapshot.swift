@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+import AxolotyWire
+
 /// A value-typed snapshot of an Associate event suitable for concurrent event streams.
 public struct AssociateEventSnapshot: Codable, Equatable, Sendable {
     /// The identifier of the event source, as derived from the incoming topic.
@@ -50,7 +52,7 @@ extension AssociateEventSnapshot {
             return (
                 Self.uuidString(wire.ioSourceId),
                 Self.uuidString(wire.ioActorId),
-                wire.associatingRoute?.asString(),
+                wire.associatingRoute.map(Self.decodeJSONString),
                 wire.isExternalRoute,
                 wire.updateRate
             )
@@ -82,5 +84,45 @@ extension AssociateEventSnapshot {
             result.append(hex[Int(byte & 0x0F)])
         }
         return String(decoding: result, as: UTF8.self)
+    }
+
+    /// Decodes the JSON escapes relevant to an associating route.
+    private static func decodeJSONString(_ slice: ByteSlice) -> String {
+        let input = Array(slice.asString().utf8)
+        var output = [UInt8]()
+        output.reserveCapacity(input.count)
+        var index = 0
+
+        while index < input.count {
+            guard input[index] == 0x5C, index + 1 < input.count else {
+                output.append(input[index])
+                index += 1
+                continue
+            }
+
+            if let byte = unescapedByte(for: input[index + 1]) {
+                output.append(byte)
+            } else {
+                output.append(input[index])
+                output.append(input[index + 1])
+            }
+            index += 2
+        }
+
+        return String(bytes: output, encoding: .utf8) ?? ""
+    }
+
+    private static func unescapedByte(for escaped: UInt8) -> UInt8? {
+        switch escaped {
+        case 0x22: return 0x22
+        case 0x5C: return 0x5C
+        case 0x2F: return 0x2F
+        case 0x62: return 0x08
+        case 0x66: return 0x0C
+        case 0x6E: return 0x0A
+        case 0x72: return 0x0D
+        case 0x74: return 0x09
+        default: return nil
+        }
     }
 }

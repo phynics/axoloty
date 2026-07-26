@@ -5,6 +5,7 @@
 //
 
 import Foundation
+import AxolotyWire
 
 /// CompleteEvent provides a generic implementation for responding to an
 /// `UpdateEvent`.

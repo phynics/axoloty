@@ -146,7 +146,11 @@ public struct WireWriter {
         position += slice.length
     }
 
-    mutating func writeInt(_ value: Int) throws(WireEncodeError) {
+    /// Writes an integer JSON value.
+    ///
+    /// - Parameter value: The integer to encode.
+    /// - Throws: ``WireEncodeError`` if the destination buffer is too small.
+    public mutating func writeInt(_ value: Int) throws(WireEncodeError) {
         if value == 0 {
             try writeByte(0x30)
             return
@@ -176,7 +180,11 @@ public struct WireWriter {
         position += digitCount
     }
 
-    mutating func writeUUID(_ value: UUID16) throws(WireEncodeError) {
+    /// Writes a UUID JSON string value.
+    ///
+    /// - Parameter value: The UUID to encode.
+    /// - Throws: ``WireEncodeError`` if the destination buffer is too small.
+    public mutating func writeUUID(_ value: UUID16) throws(WireEncodeError) {
         // Format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (36 chars).
         // Unrolled against a static nibble→hex mapping so no Array or Set
         // is allocated on the encode hot path.

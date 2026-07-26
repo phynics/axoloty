@@ -31,7 +31,7 @@ COMMA := ,
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean
+.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean
 
 help:
 	@printf '%s\n' \
@@ -117,6 +117,9 @@ test-no-anycodable:
 test-no-foundation-types:
 	@sh Tests/Support/check-no-foundation-types.sh
 
+test-axoloty-wire-dependencies:
+	@sh Tests/Support/check-axoloty-wire-dependencies.sh
+
 test: resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh sh -c 'pgrep mosquitto >/dev/null 2>&1 || mosquitto -d; swift test $(SWIFT_LOCKED_ARGS)'
 
@@ -162,13 +165,13 @@ test-support:
 	python3 Tests/Support/validate_test_tiers.py Tests/Support/test-tiers.json
 
 test-wire-live: test-wire wire-tool
-	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/Live/run-coatyjs-advertise.sh
-	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/Live/run-coatyjs-core.sh
-	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/Lifecycle/Live/run-lifecycle-matrix.sh
-	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/Reverse/run-axoloty-advertise.sh
-	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/Reverse/run-axoloty-core.sh
-	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/Reverse/run-coatyjs-to-axoloty-advertise.sh
-	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) Tests/WireCompatibility/IO/Live/run-io-associate.sh
+	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" Tests/WireCompatibility/Live/run-coatyjs-advertise.sh
+	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" Tests/WireCompatibility/Live/run-coatyjs-core.sh
+	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" Tests/WireCompatibility/Lifecycle/Live/run-lifecycle-matrix.sh
+	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" Tests/WireCompatibility/Reverse/run-axoloty-advertise.sh
+	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" Tests/WireCompatibility/Reverse/run-axoloty-core.sh
+	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" Tests/WireCompatibility/Reverse/run-coatyjs-to-axoloty-advertise.sh
+	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" Tests/WireCompatibility/IO/Live/run-io-associate.sh
 	node Tests/WireCompatibility/tool/dist/index.js manifest .testing/wire .testing/wire/manifest.json
 
 test-wire-all: test-wire test-wire-live
@@ -179,7 +182,7 @@ wire-tool:
 test-observation-linux: resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter "ObservationLinuxTests|BroadcastTests"
 
-test-fast: test-unit test-module test-fuzz test-wire test-support
+test-fast: test-unit test-module test-fuzz test-wire test-support test-axoloty-wire-dependencies
 
 coverage-resolve: image
 	@mkdir -p "$(SPM_CACHE_DIR)"
@@ -210,7 +213,7 @@ ci-fast: build test-fast
 ci-preflight:
 	@if [ "$${CI:-}" = "true" ] && [ "$(BUILD_LOCK)" != "0" ]; then echo 'CI must set BUILD_LOCK=0 because its workspace-local build directory is not shared' >&2; exit 2; fi
 
-ci: ci-preflight test-no-anycodable test-no-foundation-types
+ci: ci-preflight test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies
 	$(MAKE) test-support coverage-check
 	sh Tests/Support/check-decoder-context-diagnostic.sh .testing/coverage/build.log
 

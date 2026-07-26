@@ -5,6 +5,7 @@
 //
 
 import Foundation
+import AxolotyWire
 
 /// Defines criteria for filtering Coaty objects. Used in combination with Call
 /// events, and with the `ObjectMatcher` functionality.

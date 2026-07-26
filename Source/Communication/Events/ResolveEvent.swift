@@ -5,6 +5,7 @@
 //
 
 import Foundation
+import AxolotyWire
 
 /// ResolveEvent provides a generic implementation for responding to a
 /// `DiscoverEvent`.

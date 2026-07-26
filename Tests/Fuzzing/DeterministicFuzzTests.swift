@@ -3,6 +3,7 @@
 import Foundation
 import Testing
 @testable import Axoloty
+import AxolotyWire
 
 /// Deterministic, bounded property tests for protocol-facing primitives.
 ///

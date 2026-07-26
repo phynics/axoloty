@@ -15,6 +15,10 @@ let package = Package(
             name: "Axoloty",
             targets: ["Axoloty"]
         ),
+        .library(
+            name: "AxolotyWire",
+            targets: ["AxolotyWire"]
+        ),
     ],
     dependencies: [
         .package(url: "https://github.com/swift-server-community/mqtt-nio.git", from: "2.13.0"),
@@ -28,8 +32,13 @@ let package = Package(
     ],
     targets: [
         .target(
+            name: "AxolotyWire",
+            path: "Source/WireCodec"
+        ),
+        .target(
             name: "Axoloty",
             dependencies: [
+                .target(name: "AxolotyWire"),
                 .product(name: "MQTTNIO", package: "mqtt-nio"),
                 .product(name: "NIO", package: "swift-nio"),
                 .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
@@ -39,12 +48,14 @@ let package = Package(
                 .product(name: "ErrorKit", package: "ErrorKit"),
                 .product(name: "IkigaJSON", package: "swift-json"),
             ],
-            path: "Source"
+            path: "Source",
+            exclude: ["WireCodec"]
         ),
         .testTarget(
             name: "AxolotyTests",
             dependencies: [
                 "Axoloty",
+                .target(name: "AxolotyWire"),
                 .product(name: "IkigaJSON", package: "swift-json"),
             ],
             path: "Tests",

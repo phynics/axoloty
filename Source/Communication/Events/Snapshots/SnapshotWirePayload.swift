@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
+import AxolotyWire
 
 /// Helper methods for extracting nested JSON values from wire payloads as
 /// `String`, used by event snapshot initializers that need to preserve complex
@@ -66,11 +67,7 @@ enum WirePayloadExtractor {
 
     /// Converts a `ByteSlice` to a `String` by copying the bytes.
     private static func sliceToString(_ slice: ByteSlice) -> String {
-        let buf = UnsafeBufferPointer(
-            start: slice.pointer.assumingMemoryBound(to: UInt8.self),
-            count: slice.length
-        )
-        return String(decoding: buf, as: UTF8.self)
+        slice.asString()
     }
 
     /// Extracts each element of a JSON array byte slice as a raw JSON

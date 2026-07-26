@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import AxolotyWire
 
 /// ChannelEvent provides a generic implementation for broadcasting objects
 /// through a channel.

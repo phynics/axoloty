@@ -5,6 +5,7 @@
 //
 
 import Foundation
+import AxolotyWire
 
 /// QueryEvent provides a generic implementation for querying CoatyObjects.
 public class QueryEvent: CommunicationEvent<QueryEventData> {

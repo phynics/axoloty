@@ -2,6 +2,7 @@
 
 @testable import Axoloty
 import Testing
+import AxolotyWire
 
 /// Differential tests comparing the Foundation-free WireReader decode path
 /// against the existing Codable path (PayloadCoder.decode).

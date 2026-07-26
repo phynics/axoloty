@@ -5,6 +5,7 @@
 //
 
 import Foundation
+import AxolotyWire
 
 /// ReturnEvent provides a generic implementation for responding to a
 /// `CallEvent`.

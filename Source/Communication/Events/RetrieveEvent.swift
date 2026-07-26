@@ -5,6 +5,7 @@
 //
 
 import Foundation
+import AxolotyWire
 
 /// RetrieveEvent provides a generic implementation for responding to a
 /// `QueryEvent`.

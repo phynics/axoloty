@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
+import AxolotyWire
 
 /// Key for a parameterized Advertise event stream, identifying a
 /// specific event-type filter and optional object-type filter.

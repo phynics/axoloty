@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
+import AxolotyWire
 
 /// Bundles the levels that travel together through every publication
 /// topic-string call site — `namespace`, `eventType`, `eventTypeFilter`,

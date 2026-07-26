@@ -8,6 +8,7 @@
 import ErrorKit
 import Foundation
 import Logging
+import AxolotyWire
 
 /// Provides a set of predefined communication events to transfer Coaty objects
 /// between distributed Coaty agents based on the publish-subscribe API of a

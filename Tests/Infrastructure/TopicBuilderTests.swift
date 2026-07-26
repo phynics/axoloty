@@ -2,6 +2,7 @@
 
 @testable import Axoloty
 import Testing
+import AxolotyWire
 
 /// Tests for the host-runtime topic builders, validators, and MQTT filter
 /// matching on ``TopicBuilder``, plus round-trip parsing through ``TopicView``.
