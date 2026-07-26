@@ -121,6 +121,24 @@ commands, workflow, coding conventions, git identity rules), see
 [AGENTS.md](./AGENTS.md). For the modernization plan, see
 [ROADMAP.md](./docs/ROADMAP.md).
 
+### Swift engineering conventions
+
+- **Strict concurrency:** Axoloty builds in Swift 6 language mode. Preserve
+  actor and global-actor isolation, make values and closures `Sendable` when
+  they cross concurrency boundaries, and use `@unchecked Sendable` only for a
+  demonstrably synchronized implementation.
+- **Scoped borrowing:** Wire-codec views such as `BorrowedMessage`, `ByteSlice`,
+  and `TopicView` borrow externally owned bytes for synchronous, zero-copy
+  work. Keep borrowed values inside their callback or buffer lifetime; validate
+  untrusted input first, and copy data before returning, awaiting, creating a
+  task, or crossing an isolation boundary. Do not retain or send borrowed views.
+- **Testing:** Use Swift Testing (`@Test`, `#expect`, `#require`, and
+  `Issue.record`), with explicit timeouts or synchronization for asynchronous
+  work; do not add XCTest.
+- **Logging:** Use `LogManager.logger(.subsystem)` and structured `metadata:`
+  for dynamic values; see [AGENTS.md](./AGENTS.md) for levels, error chains,
+  and correlation IDs.
+
 ## License
 
 Axoloty is a fork of [coatyio/coaty-swift](https://github.com/coatyio/coaty-swift),
