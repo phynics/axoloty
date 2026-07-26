@@ -164,6 +164,7 @@ test-support:
 	Tests/Support/test-check-axoloty-wire-dependencies.sh
 	Tests/Support/test-check-axoloty-wire-independent-resolution.sh
 	Tests/Support/test-check-axoloty-wire-test-isolation.sh
+	Tests/Support/test-check-benchmark-corpus.sh
 	Tests/Support/test-run-container.sh
 	Tests/Fuzzing/test-run-fuzz.sh
 	cd Tests/WireCompatibility/tool && npm ci && npm test

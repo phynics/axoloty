@@ -1,0 +1,64 @@
+#!/bin/sh
+# Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
+
+# Self-test for check-benchmark-corpus.sh (issue #298).
+#
+# 1. Runs the checker against the real corpus; it must succeed.
+# 2. Copies the corpus to a temp dir, appends a byte to one payload; the
+#    checker must fail with a SHA-256 mismatch.
+# 3. Copies the corpus to a temp dir, mutates one manifest entry's family; the
+#    checker must fail.
+# 4. Cleans up. Prints SELF-TEST OK on success.
+
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+checker="$root/Tests/Support/check-benchmark-corpus.sh"
+corpus="$root/Benchmarks/Corpus"
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+# 1. The real corpus must validate.
+if ! sh "$checker" "$corpus" >/dev/null 2>&1; then
+    echo "expected checker to pass against the real corpus" >&2
+    exit 1
+fi
+
+# 2. A modified payload (extra byte) must fail with a SHA mismatch.
+cp -R "$corpus" "$tmp/corpus-sha"
+sha_file="$tmp/corpus-sha/payloads/advertise-small.json"
+printf 'X' >>"$sha_file"
+if sh "$checker" "$tmp/corpus-sha" >/dev/null 2>&1; then
+    echo "expected checker to fail when a payload byte is appended" >&2
+    exit 1
+fi
+# Confirm the failure message names a SHA-256 mismatch.
+if ! sh "$checker" "$tmp/corpus-sha" 2>&1 | grep -qi "SHA-256 mismatch"; then
+    echo "expected SHA-256 mismatch error in checker output" >&2
+    exit 1
+fi
+
+# 3. A mutated manifest family must fail.
+cp -R "$corpus" "$tmp/corpus-family"
+manifest="$tmp/corpus-family/manifest.json"
+python3 - "$manifest" <<'PY'
+import json, sys
+path = sys.argv[1]
+with open(path, encoding="utf-8") as f:
+    m = json.load(f)
+for c in m["cases"]:
+    if c["id"] == "advertise-small":
+        c["family"] = "XXX"
+        c["familyName"] = "nope"
+        break
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(m, f, indent=2)
+    f.write("\n")
+PY
+if sh "$checker" "$tmp/corpus-family" >/dev/null 2>&1; then
+    echo "expected checker to fail when a manifest family is mutated" >&2
+    exit 1
+fi
+
+echo "SELF-TEST OK"
