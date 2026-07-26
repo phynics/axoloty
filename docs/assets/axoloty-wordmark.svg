@@ -15,10 +15,6 @@
     <path d="M107 107q10 9 20 0" fill="none" stroke="#1F2937" stroke-linecap="round" stroke-width="5"/>
   </g>
   <g font-family="system-ui, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif" font-size="112" font-weight="700" letter-spacing="-5">
-    <text x="206" y="125" fill="#1F2937">axo</text>
-    <text x="402" y="125" fill="#14B8A6">I</text>
-    <text x="432" y="125" fill="#14B8A6">o</text>
-    <text x="505" y="125" fill="#14B8A6">T</text>
-    <text x="574" y="125" fill="#1F2937">y</text>
+    <text x="206" y="125"><tspan fill="#1F2937">axo</tspan><tspan fill="#14B8A6">IoT</tspan><tspan fill="#1F2937">y</tspan></text>
   </g>
 </svg>
