@@ -108,7 +108,9 @@ public enum LogManager {
 /// app calls it. Concurrent unsynchronized access to a Swift `Dictionary` is
 /// undefined behavior, not just a stale read, so this needs real
 /// synchronization rather than the `nonisolated(unsafe)` a write-once-then-
-/// read-only global would get away with.
+/// read-only global would get away with. The `NSLock` guards every read and
+/// write of both stored properties, so concurrent log calls and level updates
+/// cannot access the dictionary or default level unsafely.
 private final class LevelStore: @unchecked Sendable {
     private let lock = NSLock()
     private var subsystemLevels: [String: Logging.Logger.Level] = [:]

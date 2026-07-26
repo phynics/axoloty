@@ -21,7 +21,8 @@ import Foundation
 /// ``JSONDecoder/userInfo`` as an `(any Sendable)` value. Its mutable state is
 /// only accessed synchronously during one decode operation; ``JSONDecoder``
 /// does not invoke a decoder concurrently, and this stack is never shared with
-/// another decode operation.
+/// another decode operation. The recursive decoder calls therefore serialize
+/// every push, pop, and read on the owning decode operation.
 final class DecodingContextStack: @unchecked Sendable {
     private var items: [(any Sendable)?] = []
 

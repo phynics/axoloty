@@ -57,7 +57,7 @@ struct BorrowedMessageTests {
         let topic = Array("coaty/3/test/ASC/55555555-5555-4555-8555-555555555555".utf8)
         let truncatedPayload = Array(#"{"ioSourceId":"33333333-3333-4333-8333-33333333333"#.utf8)
 
-        let sourceId = try topic.withUnsafeBufferPointer { topicBuffer in
+        try topic.withUnsafeBufferPointer { topicBuffer in
             try truncatedPayload.withUnsafeBufferPointer { payloadBuffer in
                 try BorrowedMessage.withValidated(
                     topicBytes: try #require(topicBuffer.baseAddress),
@@ -65,11 +65,10 @@ struct BorrowedMessageTests {
                     payloadBytes: try #require(payloadBuffer.baseAddress),
                     payloadLength: payloadBuffer.count
                 ) { message in
-                    message.reader().readUUID("ioSourceId")
+                    let sourceId = message.reader().readUUID("ioSourceId")
+                    #expect(sourceId == nil)
                 }
             }
         }
-
-        #expect(sourceId == nil)
     }
 }

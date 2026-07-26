@@ -8,9 +8,10 @@
 ///
 /// - Important: The caller must ensure the underlying buffer outlives the
 ///   `ByteSlice`. When derived from ``BorrowedMessage``, use it only in that
-///   message's synchronous borrow scope. Copy needed bytes before an `await`
-///   or another isolation-domain hop. This type is intentionally not
-///   `Sendable`.
+///   message's synchronous borrow scope. Copy needed bytes before an `await`,
+///   creating a `Task`, crossing an actor or other isolation-domain hop, or
+///   entering an escaping closure/`AsyncStream`. This type is intentionally
+///   not `Sendable`.
 public struct ByteSlice: Equatable, Hashable {
     /// The raw pointer into the externally-owned byte buffer.
     @usableFromInline let pointer: UnsafeRawPointer

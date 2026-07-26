@@ -3,6 +3,11 @@
 import IkigaJSON
 
 /// Carries the parsed payload tree through a decoding operation.
+///
+/// This type is `@unchecked Sendable` only because decoder context values are
+/// stored in `Sendable` user information. A context is created for one decode
+/// operation, and its mutable `currentObject` is accessed only synchronously
+/// by that operation; no context instance is shared by concurrent decodes.
 final class RawJSONObjectContext: @unchecked Sendable {
     let root: JSONObject
     private var currentObject: JSONObject?
