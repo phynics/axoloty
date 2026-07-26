@@ -3,6 +3,7 @@
 @testable import Axoloty
 import Foundation
 import Testing
+import AxolotyWire
 
 /// A lock-guarded mutable box for capturing values in `@Sendable` test
 /// closures. Every read and write is synchronized through an `NSLock`, so the

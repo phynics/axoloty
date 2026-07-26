@@ -6,6 +6,7 @@
 //
 
 @testable import Axoloty
+import AxolotyWire
 import Testing
 
 @Suite

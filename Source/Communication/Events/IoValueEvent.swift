@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import AxolotyWire
 
 public class IoValueEvent: CommunicationEvent<IoValueEventData> {
     

@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import AxolotyWire
 
 /// DiscoverEvent provides a generic implementation for discovering CoatyObjects.
 /// Note that this class should preferably be initialized by its withObject() method.

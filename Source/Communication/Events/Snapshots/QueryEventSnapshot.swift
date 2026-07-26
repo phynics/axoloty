@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
+import AxolotyWire
 
 /// A value-typed snapshot of a `QueryEvent` suitable for concurrent event streams.
 public struct QueryEventSnapshot: Codable, Equatable, Sendable {

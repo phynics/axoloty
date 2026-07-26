@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
+import AxolotyWire
 
 /// A value-typed snapshot of an `AdvertiseEvent` suitable for concurrent event streams.
 public struct AdvertiseEventSnapshot: Codable, Equatable, Sendable {

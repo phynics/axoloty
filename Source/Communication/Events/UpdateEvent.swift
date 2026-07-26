@@ -5,6 +5,7 @@
 //
 
 import Foundation
+import AxolotyWire
 
 /// UpdateEvent provides a generic implementation for updating a CoatyObject.
 public class UpdateEvent: CommunicationEvent<UpdateEventData> {

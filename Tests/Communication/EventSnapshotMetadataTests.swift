@@ -4,6 +4,7 @@ import Foundation
 import Testing
 
 @testable import Axoloty
+import AxolotyWire
 
 /// Verifies that event snapshots preserve consumer-visible metadata and
 /// representative event data fields without referencing legacy event classes.

@@ -3,6 +3,7 @@
 @testable import Axoloty
 import Foundation
 import Testing
+import AxolotyWire
 
 /// Tests for the MessageRouter adapter bridge — proves both the embedded
 /// and host adapters satisfy the common protocol and route messages

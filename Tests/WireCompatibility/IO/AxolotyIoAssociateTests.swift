@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 @testable import Axoloty
+import AxolotyWire
 import Foundation
 import Testing
 
@@ -101,6 +102,24 @@ struct AxolotyIoAssociateTests {
         // this to false rather than force-unwrapping.
         #expect(decoded.isExternalRoute == nil)
         #expect((decoded.isExternalRoute ?? false) == false)
+    }
+
+    /// Decoding an Associate snapshot unescapes the JSON-encoded route before
+    /// registering it for IoValue publications.
+    @Test
+    func associateSnapshotUnescapesAssociatingRoute() throws {
+        let payload = #"{"ioSourceId":"33333333-3333-4333-8333-333333333333","ioActorId":"44444444-4444-4444-8444-444444444444","associatingRoute":"coaty\/3\/wire-compat-v1\/IOV\/33333333-3333-4333-8333-333333333333"}"#
+        let topic = Array("coaty/3/wire-compat-v1/ASC:wire-compat-io-context-1/55555555-5555-4555-8555-555555555555".utf8)
+        let message = topic.withUnsafeBufferPointer { buffer in
+            ParsedMQTTMessage(
+                topicView: TopicView(topicBytes: buffer.baseAddress!, length: buffer.count),
+                payload: payload
+            )
+        }
+
+        let snapshot = try #require(AssociateEventSnapshot(parsedMQTTMessage: message))
+
+        #expect(snapshot.associatingRoute == "coaty/3/wire-compat-v1/IOV/33333333-3333-4333-8333-333333333333")
     }
 
     /// The default generated IOV route is `coaty/3/<namespace>/IOV/<ioSource

@@ -3,6 +3,7 @@
 @testable import Axoloty
 import Foundation
 import Testing
+import AxolotyWire
 
 /// Verifies the CoatyJS Update -> modern Swift Complete direction.
 @MainActor

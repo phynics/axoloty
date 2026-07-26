@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
+import AxolotyWire
 
 /// A value-typed, concurrency-safe representation of a parsed MQTT `PUBLISH`
 /// that carries enough topic metadata for manager-level routing, parsed from

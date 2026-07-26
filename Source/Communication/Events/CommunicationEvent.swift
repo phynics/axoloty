@@ -7,6 +7,7 @@
 
 import ErrorKit
 import Foundation
+import AxolotyWire
 
 /// CommunicationEvent is a generic supertype for all defined Coaty event types.
 public class CommunicationEvent<T: CommunicationEventData>: Codable {

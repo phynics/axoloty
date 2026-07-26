@@ -8,6 +8,7 @@
 import ErrorKit
 import Foundation
 import Logging
+import AxolotyWire
 @preconcurrency import MQTTNIO
 import NIO
 import NIOConcurrencyHelpers

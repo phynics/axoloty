@@ -2,6 +2,7 @@
 
 @testable import Axoloty
 import Testing
+import AxolotyWire
 
 /// Tests for the Foundation-free wire codec primitives.
 ///
