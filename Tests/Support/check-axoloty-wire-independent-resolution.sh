@@ -11,7 +11,8 @@ fixture="$root/Packages/AxolotyWire/Fixtures/DownstreamConsumer"
 
 cd "$fixture"
 swift package resolve
-deps=$(swift package show-dependencies --format flat 2>/dev/null || true)
+swift build
+deps=$(swift package show-dependencies --format flat)
 
 for forbidden in mqtt-nio swift-nio swift-nio-ssl swift-nio-transport-services swift-log ErrorKit swift-json IkigaJSON swift-docc-plugin; do
     if echo "$deps" | grep -qi "$forbidden"; then

@@ -1,9 +1,8 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-@testable import Axoloty
+import AxolotyWire
 import Foundation
 import Testing
-import AxolotyWire
 
 /// Tests for the MessageRouter adapter bridge — proves both the embedded
 /// and host adapters satisfy the common protocol and route messages
