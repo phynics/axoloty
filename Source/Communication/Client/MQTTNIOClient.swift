@@ -8,7 +8,7 @@
 import ErrorKit
 import Foundation
 import Logging
-import MQTTNIO
+@preconcurrency import MQTTNIO
 import NIO
 import NIOConcurrencyHelpers
 
@@ -32,7 +32,7 @@ import NIOSSL
 ///   CocoaMQTT) — see `addPublishListener(named:_:)`/`addCloseListener(named:_:)`.
 ///   Those listener callbacks are plain synchronous closures, so they bridge
 ///   directly into the synchronous delegate and ``Broadcast`` surfaces.
-internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
+internal class MQTTNIOClient: CommunicationClient {
 
     private let log = LogManager.logger(.mqtt)
 
@@ -84,11 +84,9 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
     /// methods) never read a half-transitioned reference or flag. The lock is
     /// never held across an `await` or an NIO future: callers snapshot the
     /// needed state under the lock, release it, then operate on the snapshot.
-    private let lock = NIOLock()
-    private let lifecycle = LifecycleState()
+    private let lock = NIOLock(), lifecycle = LifecycleState()
 
-    private var mqttClientOptions: MQTTClientOptions!
-    private var configuration: MQTTClient.Configuration!
+    private var mqttClientOptions: MQTTClientOptions!, configuration: MQTTClient.Configuration!
     private var qos: MQTTQoS = .atMostOnce
     private var discovery: ServiceDiscovery?
 
@@ -125,7 +123,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
 
     /// Mutable connection-lifecycle state guarded by ``lock``. Grouped into one
     /// box so every read/write of the client reference, connection flags, and
-    /// reconnect task is a single locked critical section, never split across a
+        /// reconnect work item is a single locked critical section, never split across a
     /// suspension point.
     private final class LifecycleState {
         /// The currently targeted broker candidate's mqtt-nio client.
@@ -162,10 +160,15 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
         /// Port shared by all broker candidates.
         var brokerPort: UInt16 = 1883
 
-        /// The delayed reconnect task, retained so `disconnect()`,
+        /// The delayed reconnect work item, retained so `disconnect()`,
         /// `replaceClient()`, and `deinit` can cancel it and prevent a
         /// reconnect after an explicit disconnect.
-        var reconnectTask: _Concurrency.Task<Void, Never>?
+        var reconnectWorkItem: DispatchWorkItem?
+
+        /// Identifies the reconnect work item that is still entitled to run.
+        /// Clearing or replacing it retires the previous callback even if its
+        /// queue cancellation races with execution.
+        var reconnectToken: UUID?
     }
 
     // MARK: - Initializer.
@@ -194,12 +197,12 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
         deliveryContinuation.finish()
         discovery?.stopDiscovery()
         // deinit runs with exclusive access to the instance, so the lifecycle
-        // state is read without the lock. Cancel any pending reconnect so it
+        // state is read without the lock. Cancel any pending reconnect work item so it
         // cannot fire after the client is gone, then flip mqtt-nio's internal
         // `isShutdown` flag synchronously, which is enough to satisfy its
         // deinit precondition even though the rest of shutdown completes
         // asynchronously.
-        lifecycle.reconnectTask?.cancel()
+        lifecycle.reconnectWorkItem?.cancel()
         lifecycle.client?.shutdown(queue: .global()) { _ in }
         eventLoopGroup.shutdownGracefully { _ in }
     }
@@ -445,79 +448,43 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
         // Swap the client reference, read the pending reconnect task, and nil
         // it in one critical section so a scheduleReconnect racing the swap
         // cannot install a task targeting the new client only to be cancelled.
-        let (oldClient, reconnectTask) = lock.withLock { () -> (MQTTClient?, _Concurrency.Task<Void, Never>?) in
+        let (oldClient, reconnectWorkItem) = lock.withLock { () -> (MQTTClient?, DispatchWorkItem?) in
             let old = lifecycle.client
             lifecycle.client = newClient
-            let task = lifecycle.reconnectTask
-            lifecycle.reconnectTask = nil
-            return (old, task)
+            let workItem = lifecycle.reconnectWorkItem
+            lifecycle.reconnectWorkItem = nil
+            lifecycle.reconnectToken = nil
+            return (old, workItem)
         }
         // Cancel any pending reconnect against the old client outside the lock,
         // then gracefully shut down the replaced client; it shares this object's
         // `eventLoopGroup`, so shutdown only closes its connection and satisfies
         // mqtt-nio's shutdown-before-deinit precondition without touching the
         // shared event loop group.
-        reconnectTask?.cancel()
+        reconnectWorkItem?.cancel()
         oldClient?.shutdown(queue: .global()) { _ in }
-    }
-
-    private func scheduleReconnect() {
-        // Refuse to schedule while an intentional disconnect is active.
-        guard lock.withLock({ !lifecycle.isIntentionalDisconnect }) else {
-            return
-        }
-        let delaySeconds = max(mqttClientOptions.autoReconnectTimeInterval, 0)
-        let task = _Concurrency.Task<Void, Never> { [weak self] in
-            do {
-                try await _Concurrency.Task<Never, Never>.sleep(
-                    nanoseconds: UInt64(delaySeconds) * 1_000_000_000
-                )
-            } catch {
-                // Cancelled during the delay (disconnect/replaceClient/deinit).
-                // Bail without reconnecting even if the close listener has
-                // already cleared `isIntentionalDisconnect`: this task was
-                // explicitly retired, so a reconnect here would violate the
-                // "no reconnect after explicit disconnect" contract.
-                return
-            }
-            guard let self else {
-                return
-            }
-            // Re-check after the delay: a disconnect that lost the cancellation
-            // race is caught here so no reconnect fires after explicit teardown.
-            guard self.lock.withLock({ !self.lifecycle.isIntentionalDisconnect }) else {
-                return
-            }
-            self.performConnect()
-        }
-        // Retain the task so disconnect()/replaceClient()/deinit can cancel it,
-        // cancelling any previously scheduled (not-yet-fired) reconnect first.
-        let previous = lock.withLock { () -> _Concurrency.Task<Void, Never>? in
-            let previous = lifecycle.reconnectTask
-            lifecycle.reconnectTask = task
-            return previous
-        }
-        previous?.cancel()
     }
 
     func disconnect() {
         // Mark the disconnect, clear the attempt id, and snapshot the client and
-        // pending reconnect task under one lock so a racing reconnect path
+        // pending reconnect work item under one lock so a racing reconnect path
         // observes the intentional-disconnect flag. The close listener is the
         // only path that later clears `isIntentionalDisconnect`.
-        let snapshot = lock.withLock { () -> (client: MQTTClient?, reconnectTask: _Concurrency.Task<Void, Never>?) in
+        let snapshot = lock.withLock { () -> (client: MQTTClient?, reconnectWorkItem: DispatchWorkItem?) in
             lifecycle.isIntentionalDisconnect = true
             lifecycle.connectionAttemptId = nil
             let client = lifecycle.client
-            let task = lifecycle.reconnectTask
-            lifecycle.reconnectTask = nil
-            return (client, task)
+            let workItem = lifecycle.reconnectWorkItem
+            lifecycle.reconnectWorkItem = nil
+            lifecycle.reconnectToken = nil
+            return (client, workItem)
         }
-        // Cancel the pending reconnect outside the lock; a cancelled task's
-        // post-sleep guard still observes `isIntentionalDisconnect` and bails.
-        snapshot.reconnectTask?.cancel()
-        snapshot.client?.disconnect().whenFailure { [weak self] error in
-            self?.log.debug("Error while disconnecting", metadata: [
+        // Cancel the pending reconnect outside the lock; its retired token
+        // also prevents execution if queue cancellation races with dispatch.
+        snapshot.reconnectWorkItem?.cancel()
+        let log = self.log
+        snapshot.client?.disconnect().whenFailure { error in
+            log.debug("Error while disconnecting", metadata: [
                 "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
             ])
         }
@@ -526,9 +493,10 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
     func publish(_ topic: String, message: String) {
         log.trace("Publishing", metadata: ["topic": .string(topic), "qos": "\(qos)"])
         let client = lock.withLock { lifecycle.client }
+        let log = self.log
         client?.publish(to: topic, payload: byteBuffer(from: message), qos: qos, retain: false)
-            .whenFailure { [weak self] error in
-                self?.log.warning("Error publishing", metadata: [
+            .whenFailure { error in
+                log.warning("Error publishing", metadata: [
                     "topic": .string(topic),
                     "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
                 ])
@@ -542,16 +510,17 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
         // "fixed".
         log.trace("Publishing", metadata: ["topic": .string(topic), "qos": "atMostOnce"])
         let client = lock.withLock { lifecycle.client }
+        let log = self.log
         client?.publish(to: topic, payload: byteBuffer(from: message), qos: .atMostOnce, retain: false)
-            .whenFailure { [weak self] error in
-                self?.log.warning("Error publishing", metadata: [
+            .whenFailure { error in
+                log.warning("Error publishing", metadata: [
                     "topic": .string(topic),
                     "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
                 ])
             }
     }
 
-    func subscribe(_ topic: String) async throws {
+    @MainActor func subscribe(_ topic: String) async throws {
         let client = lock.withLock { lifecycle.client }
         guard let client else {
             throw AxolotyError.runtime(code: .notStarted, reason: "Cannot subscribe before the MQTT client is initialized.")
@@ -569,7 +538,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
         }
     }
 
-    func unsubscribe(_ topic: String) async throws {
+    @MainActor func unsubscribe(_ topic: String) async throws {
         let client = lock.withLock { lifecycle.client }
         guard let client else {
             throw AxolotyError.runtime(code: .notStarted, reason: "Cannot unsubscribe before the MQTT client is initialized.")
@@ -590,8 +559,10 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
     func updateCommunicationState(_ state: CommunicationState) {
         delegate.didUpdateCommunicationState(state)
 
-        deliveryContinuation.yield { [weak self] in
-            guard let self, let streams = self.streamsOrWarn() else { return }
+        guard let streams = streamsOrWarn() else {
+            return
+        }
+        deliveryContinuation.yield {
             await streams.communicationState.sendState(state)
         }
     }
@@ -615,8 +586,10 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
             let bytes = [UInt8](info.payload.readableBytesView)
             let rawMessage = RawMQTTMessage(topic: info.topicName, payload: bytes)
 
-            deliveryContinuation.yield { [weak self] in
-                guard let self, let streams = self.streamsOrWarn() else { return }
+            guard let streams = streamsOrWarn() else {
+                return
+            }
+            deliveryContinuation.yield {
                 await streams.rawMQTTMessages.send(rawMessage)
             }
 
@@ -638,8 +611,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
                         topic: info.topicName,
                         payload: bytes
                     )
-                    deliveryContinuation.yield { [weak self] in
-                        guard let self, let streams = self.streamsOrWarn() else { return }
+                    deliveryContinuation.yield {
                         await streams.ioValues.send(IoValueEventSnapshot(topic: info.topicName, payload: bytes))
                     }
                     return
@@ -663,8 +635,7 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
 
                 if let payloadString = Self.validUTF8Payload(from: info.payload) {
                     let parsed = ParsedMQTTMessage(topicView: topicView, payload: payloadString)
-                    deliveryContinuation.yield { [weak self] in
-                        guard let self, let streams = self.streamsOrWarn() else { return }
+                    deliveryContinuation.yield {
                         await streams.parsedMQTTMessages.send(parsed)
                         await Self.routeParsedMessage(parsed: parsed, into: streams)
                     }
@@ -785,6 +756,53 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
         } else if mqttClientOptions.autoReconnect {
             scheduleReconnect()
         }
+    }
+}
+
+private extension MQTTNIOClient {
+
+    func scheduleReconnect() {
+        let delaySeconds = max(mqttClientOptions.autoReconnectTimeInterval, 0)
+        let token = UUID()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else {
+                return
+            }
+            // Re-check after the delay: a disconnect or replacement that raced
+            // with queue cancellation retires this callback's token, so no
+            // reconnect fires after explicit teardown.
+            let mayReconnect = self.lock.withLock { () -> Bool in
+                guard self.lifecycle.reconnectToken == token,
+                      !self.lifecycle.isIntentionalDisconnect else {
+                    return false
+                }
+                self.lifecycle.reconnectToken = nil
+                self.lifecycle.reconnectWorkItem = nil
+                return true
+            }
+            guard mayReconnect else {
+                return
+            }
+            self.performConnect()
+        }
+        // Retain the work item so disconnect()/replaceClient()/deinit can
+        // cancel it, cancelling any previously scheduled reconnect first. The
+        // intentional-disconnect check and installation share one critical
+        // section so disconnect cannot miss a just-created reconnect.
+        let scheduling = lock.withLock { () -> (shouldSchedule: Bool, previous: DispatchWorkItem?) in
+            guard !lifecycle.isIntentionalDisconnect else {
+                return (false, nil)
+            }
+            let previous = lifecycle.reconnectWorkItem
+            lifecycle.reconnectWorkItem = workItem
+            lifecycle.reconnectToken = token
+            return (true, previous)
+        }
+        guard scheduling.shouldSchedule else {
+            return
+        }
+        scheduling.previous?.cancel()
+        DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(delaySeconds), execute: workItem)
     }
 }
 

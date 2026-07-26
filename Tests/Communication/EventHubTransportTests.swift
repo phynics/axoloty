@@ -73,7 +73,7 @@ struct BroadcastTransportTests {
         )
 
         let stream = await manager.observeAdvertiseStream(withCoreType: .Log)
-        var iterator = stream.makeAsyncIterator()
+        let iterator = stream.makeAsyncIterator()
         await client.simulateState(.online)
         try await waitForCommands(on: client, expecting: [.subscribe(topic)])
 
@@ -779,6 +779,7 @@ private func makeManager(client: CommunicationClient? = nil) -> CommunicationMan
     )
 }
 
+@MainActor
 private func waitForCommands(
     on client: FakeCommunicationClient,
     expecting expected: [SubscriptionCommand]
@@ -798,7 +799,7 @@ private final class FakeStartable: CommunicationClientDelegate {
     func didReceiveStart() {}
 }
 
-private final class FakeCommunicationClient: CommunicationClient, @unchecked Sendable {
+private final class FakeCommunicationClient: CommunicationClient {
     var streams: CommunicationStreams!
     func setStreams(_ streams: CommunicationStreams) { self.streams = streams }
     var delegate: CommunicationClientDelegate
@@ -818,43 +819,43 @@ private final class FakeCommunicationClient: CommunicationClient, @unchecked Sen
         self.subscriptionGate = subscriptionGate
     }
 
-    func simulateState(_ state: CommunicationState) async {
+    @MainActor func simulateState(_ state: CommunicationState) async {
         delegate.didUpdateCommunicationState(state)
         await streams.communicationState.sendState(state)
     }
 
-    func simulateRawMessage(topic: String, payload: [UInt8]) async {
+    @MainActor func simulateRawMessage(topic: String, payload: [UInt8]) async {
         await streams.rawMQTTMessages.send(RawMQTTMessage(topic: topic, payload: payload))
     }
 
-    func emitAdvertise(_ snapshot: AdvertiseEventSnapshot, filter: String, objectType: String? = nil) async {
+    @MainActor func emitAdvertise(_ snapshot: AdvertiseEventSnapshot, filter: String, objectType: String? = nil) async {
         await streams.advertiseFamily.send(snapshot, for: AdvertiseKey(eventTypeFilter: filter, objectTypeFilter: objectType))
     }
-    func emitDeadvertise(_ snapshot: DeadvertiseEventSnapshot) async {
+    @MainActor func emitDeadvertise(_ snapshot: DeadvertiseEventSnapshot) async {
         await streams.deadvertise.send(snapshot)
     }
-    func emitDiscover(_ snapshot: DiscoverEventSnapshot) async {
+    @MainActor func emitDiscover(_ snapshot: DiscoverEventSnapshot) async {
         await streams.discover.send(snapshot)
     }
-    func emitQuery(_ snapshot: QueryEventSnapshot) async {
+    @MainActor func emitQuery(_ snapshot: QueryEventSnapshot) async {
         await streams.query.send(snapshot)
     }
-    func emitCall(_ snapshot: CallEventSnapshot, operation: String) async {
+    @MainActor func emitCall(_ snapshot: CallEventSnapshot, operation: String) async {
         await streams.callFamily.send(snapshot, for: operation)
     }
-    func emitUpdate(_ snapshot: UpdateEventSnapshot, filter: String) async {
+    @MainActor func emitUpdate(_ snapshot: UpdateEventSnapshot, filter: String) async {
         await streams.updateFamily.send(snapshot, for: filter)
     }
-    func emitChannel(_ snapshot: ChannelEventSnapshot, channelId: String) async {
+    @MainActor func emitChannel(_ snapshot: ChannelEventSnapshot, channelId: String) async {
         await streams.channelFamily.send(snapshot, for: channelId)
     }
-    func emitIoValue(_ snapshot: IoValueEventSnapshot) async {
+    @MainActor func emitIoValue(_ snapshot: IoValueEventSnapshot) async {
         await streams.ioValues.send(snapshot)
     }
-    func emitResponse(_ snapshot: ResponseEventSnapshot, eventType: WireEventType, correlationId: String) async {
+    @MainActor func emitResponse(_ snapshot: ResponseEventSnapshot, eventType: WireEventType, correlationId: String) async {
         await streams.responseFamily.send(snapshot, for: ResponseKey(eventType: eventType, correlationId: correlationId))
     }
-    func emitOperatingState(_ state: OperatingState) async {
+    @MainActor func emitOperatingState(_ state: OperatingState) async {
         await streams.operatingState.sendState(state)
     }
 
@@ -862,7 +863,7 @@ private final class FakeCommunicationClient: CommunicationClient, @unchecked Sen
     func disconnect() {}
     func publish(_ topic: String, message _: String) { stateLock.withLock { _publishedTopics.append(topic) } }
     func publish(_ topic: String, message _: [UInt8]) { stateLock.withLock { _publishedTopics.append(topic) } }
-    func subscribe(_ topic: String) async throws {
+    @MainActor func subscribe(_ topic: String) async throws {
         stateLock.withLock { _commands.append(.subscribe(topic)) }
         if let subscriptionGate {
             await subscriptionGate.markStarted()
@@ -870,7 +871,7 @@ private final class FakeCommunicationClient: CommunicationClient, @unchecked Sen
         }
     }
 
-    func unsubscribe(_ topic: String) async throws {
+    @MainActor func unsubscribe(_ topic: String) async throws {
         stateLock.withLock { _commands.append(.unsubscribe(topic)) }
     }
 }

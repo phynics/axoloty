@@ -35,7 +35,7 @@ func waitUntil(
     _ description: String,
     timeout: Duration = .seconds(5),
     pollInterval: Duration = .milliseconds(20),
-    condition: @Sendable () async throws -> Bool
+    condition: @MainActor @Sendable () async throws -> Bool
 ) async throws {
     let clock = ContinuousClock()
     let deadline = clock.now.advanced(by: timeout)

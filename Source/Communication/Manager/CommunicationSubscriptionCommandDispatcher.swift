@@ -10,7 +10,8 @@ import Foundation
 /// actor entry, so a later `.unsubscribe` cannot begin (and possibly complete)
 /// before an earlier `.subscribe` -- the reentrancy that arose when the actor
 /// suspended on `await client.subscribe(...)` and let a second `deliver` run.
-actor CommunicationSubscriptionCommandDispatcher {
+@MainActor
+final class CommunicationSubscriptionCommandDispatcher {
 
     private let client: CommunicationClient
 
@@ -31,7 +32,7 @@ actor CommunicationSubscriptionCommandDispatcher {
             pending.append((command, continuation))
             if !isDraining {
                 isDraining = true
-                _Concurrency.Task<Void, Never> {
+                _Concurrency.Task<Void, Never> { @MainActor in
                     await self.drainLoop()
                 }
             }
