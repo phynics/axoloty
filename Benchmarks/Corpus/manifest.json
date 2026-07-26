@@ -1,0 +1,690 @@
+{
+  "version": 1,
+  "description": "AxolotyWire benchmark corpus - 13 wire families x 3 size classes",
+  "limits": {
+    "maxTopicLength": 128,
+    "maxPayloadSize": 512
+  },
+  "cases": [
+    {
+      "id": "advertise-small",
+      "family": "ADV",
+      "familyName": "advertise",
+      "sizeClass": "small",
+      "topic": "coaty/3/bench/ADV:Identity/00000000-0000-4000-8000-000000000001",
+      "payloadFile": "payloads/advertise-small.json",
+      "payloadSha256": "74c8f4debe59c28e96e6ae93ebcec89b6a2d4f52e66ebfc739dc90f210007226",
+      "payloadBytes": 62,
+      "source": {
+        "type": "reference",
+        "provenance": "coatyjs-2.4.0/coatyjs-advertise.jsonl:1"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Minimal advertise with required object field only"
+    },
+    {
+      "id": "advertise-typical",
+      "family": "ADV",
+      "familyName": "advertise",
+      "sizeClass": "typical",
+      "topic": "coaty/3/bench/ADV:Identity/00000000-0000-4000-8000-000000000001",
+      "payloadFile": "payloads/advertise-typical.json",
+      "payloadSha256": "807852370be738197e2d05b63e4d839af91c45fad93fb0c1f6a6c8e914e75b91",
+      "payloadBytes": 138,
+      "source": {
+        "type": "reference",
+        "provenance": "coatyjs-2.4.0/coatyjs-advertise.jsonl:1"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Realistic advertise with reordered keys and common object fields"
+    },
+    {
+      "id": "advertise-maximum",
+      "family": "ADV",
+      "familyName": "advertise",
+      "sizeClass": "maximum",
+      "topic": "coaty/3/bench/ADV:CoatyObject/00000000-0000-4000-8000-000000000001",
+      "payloadFile": "payloads/advertise-maximum.json",
+      "payloadSha256": "a4c3a0be9714b10dd21444ed0870cac58f5813171a97c367fb277a531cf503fd",
+      "payloadBytes": 511,
+      "source": {
+        "type": "generated",
+        "seed": 42,
+        "method": "manual"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Maximum advertise with large object, nested privateData and escaped UTF-8"
+    },
+    {
+      "id": "associate-small",
+      "family": "ASC",
+      "familyName": "associate",
+      "sizeClass": "small",
+      "topic": "coaty/3/bench/ASC:bench-io-context/00000000-0000-4000-8000-000000000002",
+      "payloadFile": "payloads/associate-small.json",
+      "payloadSha256": "444107fd53675c981d2ffa3524322b4d0b6da7df4196919ff92c675d06998252",
+      "payloadBytes": 104,
+      "source": {
+        "type": "generated",
+        "seed": 42,
+        "method": "manual"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Minimal associate with required source and actor IDs only"
+    },
+    {
+      "id": "associate-typical",
+      "family": "ASC",
+      "familyName": "associate",
+      "sizeClass": "typical",
+      "topic": "coaty/3/bench/ASC:bench-io-context/00000000-0000-4000-8000-000000000002",
+      "payloadFile": "payloads/associate-typical.json",
+      "payloadSha256": "5e8339ef7788973cb0938df55e34fecebfb957a8007fd6014a5e2bfd16b7f964",
+      "payloadBytes": 197,
+      "source": {
+        "type": "generated",
+        "seed": 42,
+        "method": "manual"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Typical associate with generated route and update rate; isExternalRoute omitted"
+    },
+    {
+      "id": "associate-maximum",
+      "family": "ASC",
+      "familyName": "associate",
+      "sizeClass": "maximum",
+      "topic": "coaty/3/bench/ASC:bench-io-context/00000000-0000-4000-8000-000000000002",
+      "payloadFile": "payloads/associate-maximum.json",
+      "payloadSha256": "517631b4566c293d1032b6be882be2e73001fa0ce27b3b9952e9215239cda560",
+      "payloadBytes": 503,
+      "source": {
+        "type": "generated",
+        "seed": 42,
+        "method": "manual"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Maximum associate with all optionals, updateRate boundary 1, padded to near max size"
+    },
+    {
+      "id": "call-small",
+      "family": "CLL",
+      "familyName": "call",
+      "sizeClass": "small",
+      "topic": "coaty/3/bench/CLL:bench-operation/00000000-0000-4000-8000-000000000003/10000000-0000-4000-8000-000000000003",
+      "payloadFile": "payloads/call-small.json",
+      "payloadSha256": "c5a5ae6298896505c4e08f5640a5462683a183334b4910fee2ff099293af9cb2",
+      "payloadBytes": 35,
+      "source": {
+        "type": "reference",
+        "provenance": "coatyjs-2.4.0/coatyjs-call-return.jsonl:3"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Minimal call with required operationType only"
+    },
+    {
+      "id": "call-typical",
+      "family": "CLL",
+      "familyName": "call",
+      "sizeClass": "typical",
+      "topic": "coaty/3/bench/CLL:bench-operation/00000000-0000-4000-8000-000000000003/10000000-0000-4000-8000-000000000003",
+      "payloadFile": "payloads/call-typical.json",
+      "payloadSha256": "d174695268b2c38ac6a82edd71ad21add98589ca2bc4e829b375710dc111258d",
+      "payloadBytes": 102,
+      "source": {
+        "type": "reference",
+        "provenance": "coatyjs-2.4.0/coatyjs-call-return.jsonl:3"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Typical call with parameters and timeout boundary 0"
+    },
+    {
+      "id": "call-maximum",
+      "family": "CLL",
+      "familyName": "call",
+      "sizeClass": "maximum",
+      "topic": "coaty/3/bench/CLL:bench.max-operation-type/00000000-0000-4000-8000-000000000003/10000000-0000-4000-8000-000000000003",
+      "payloadFile": "payloads/call-maximum.json",
+      "payloadSha256": "030fbefbe91503b92d83f6dc92eea4ca2acc3d72b599f9bcd34232ec99cae480",
+      "payloadBytes": 503,
+      "source": {
+        "type": "generated",
+        "seed": 42,
+        "method": "manual"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Maximum call with nested parameters and timeout Int32.max boundary"
+    },
+    {
+      "id": "channel-small",
+      "family": "CHN",
+      "familyName": "channel",
+      "sizeClass": "small",
+      "topic": "coaty/3/bench/CHN/00000000-0000-4000-8000-000000000004",
+      "payloadFile": "payloads/channel-small.json",
+      "payloadSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "payloadBytes": 2,
+      "source": {
+        "type": "reference",
+        "provenance": "coatyjs-2.4.0/coatyjs-channel.jsonl:2"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Minimal channel with all-optional fields omitted"
+    },
+    {
+      "id": "channel-typical",
+      "family": "CHN",
+      "familyName": "channel",
+      "sizeClass": "typical",
+      "topic": "coaty/3/bench/CHN:bench-channel/00000000-0000-4000-8000-000000000004",
+      "payloadFile": "payloads/channel-typical.json",
+      "payloadSha256": "2d7007fc31770b55b4b9b16319c68228c8e959a9bd6cd51c19944193348321c8",
+      "payloadBytes": 212,
+      "source": {
+        "type": "reference",
+        "provenance": "coatyjs-2.4.0/coatyjs-channel.jsonl:2"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Typical channel with object and privateData"
+    },
+    {
+      "id": "channel-maximum",
+      "family": "CHN",
+      "familyName": "channel",
+      "sizeClass": "maximum",
+      "topic": "coaty/3/bench/CHN:benchmark.channel.maximum.topic.length.stress.identifier.representative--/00000000-0000-4000-8000-000000000004",
+      "payloadFile": "payloads/channel-maximum.json",
+      "payloadSha256": "6aa9804992887f618222dc9b7d3a8468a0928ab807afeda755c068f270c97929",
+      "payloadBytes": 503,
+      "source": {
+        "type": "generated",
+        "seed": 42,
+        "method": "manual"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Maximum channel with objects array and near-128-byte topic filter"
+    },
+    {
+      "id": "complete-small",
+      "family": "CPL",
+      "familyName": "complete",
+      "sizeClass": "small",
+      "topic": "coaty/3/bench/CPL/00000000-0000-4000-8000-000000000005/10000000-0000-4000-8000-000000000005",
+      "payloadFile": "payloads/complete-small.json",
+      "payloadSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "payloadBytes": 2,
+      "source": {
+        "type": "reference",
+        "provenance": "coatyjs-2.4.0/coatyjs-update-complete.jsonl:5"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Minimal complete with all-optional fields omitted"
+    },
+    {
+      "id": "complete-typical",
+      "family": "CPL",
+      "familyName": "complete",
+      "sizeClass": "typical",
+      "topic": "coaty/3/bench/CPL/00000000-0000-4000-8000-000000000005/10000000-0000-4000-8000-000000000005",
+      "payloadFile": "payloads/complete-typical.json",
+      "payloadSha256": "b0ce5e6a8fd8db36ff1175157b0ab566e3088b8d85ab627e49a75ce531efeb10",
+      "payloadBytes": 18,
+      "source": {
+        "type": "reference",
+        "provenance": "coatyjs-2.4.0/coatyjs-update-complete.jsonl:5"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Typical complete with completed flag set"
+    },
+    {
+      "id": "complete-maximum",
+      "family": "CPL",
+      "familyName": "complete",
+      "sizeClass": "maximum",
+      "topic": "coaty/3/bench/CPL/00000000-0000-4000-8000-000000000005/10000000-0000-4000-8000-000000000005",
+      "payloadFile": "payloads/complete-maximum.json",
+      "payloadSha256": "3321c26794cc9749ece0e3ebb5d1ef10071bf7e645f5c95f656f99d91c7ba1d1",
+      "payloadBytes": 503,
+      "source": {
+        "type": "generated",
+        "seed": 42,
+        "method": "manual"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Maximum complete with large object and explicit null for optional completed"
+    },
+    {
+      "id": "deadvertise-small",
+      "family": "DAD",
+      "familyName": "deadvertise",
+      "sizeClass": "small",
+      "topic": "coaty/3/bench/DAD/00000000-0000-4000-8000-000000000006",
+      "payloadFile": "payloads/deadvertise-small.json",
+      "payloadSha256": "9ef1ead0d99697d63100c11e98d199ff3892cdc83cfafb03837ca5bbefc9e696",
+      "payloadBytes": 54,
+      "source": {
+        "type": "reference",
+        "provenance": "coatyjs-2.4.0/coatyjs-deadvertise.jsonl:2"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Minimal deadvertise with a single object ID"
+    },
+    {
+      "id": "deadvertise-typical",
+      "family": "DAD",
+      "familyName": "deadvertise",
+      "sizeClass": "typical",
+      "topic": "coaty/3/bench/DAD/00000000-0000-4000-8000-000000000006",
+      "payloadFile": "payloads/deadvertise-typical.json",
+      "payloadSha256": "a03f3ce210d92fd00c1425ff9217dac1ef0a7d01d325ba2c63caa640e6874ecc",
+      "payloadBytes": 132,
+      "source": {
+        "type": "reference",
+        "provenance": "coatyjs-2.4.0/coatyjs-deadvertise.jsonl:2"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Typical deadvertise with three object IDs"
+    },
+    {
+      "id": "deadvertise-maximum",
+      "family": "DAD",
+      "familyName": "deadvertise",
+      "sizeClass": "maximum",
+      "topic": "coaty/3/bench/DAD/00000000-0000-4000-8000-000000000006",
+      "payloadFile": "payloads/deadvertise-maximum.json",
+      "payloadSha256": "ca08a5b8ab9b16fbaaa8e625b3ca86f4783b151e34a6dd0bc56fad6683ff1cd8",
+      "payloadBytes": 483,
+      "source": {
+        "type": "generated",
+        "seed": 42,
+        "method": "manual"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Maximum deadvertise with twelve object IDs filling near-max payload"
+    },
+    {
+      "id": "discover-small",
+      "family": "DSC",
+      "familyName": "discover",
+      "sizeClass": "small",
+      "topic": "coaty/3/bench/DSC/00000000-0000-4000-8000-000000000007/10000000-0000-4000-8000-000000000007",
+      "payloadFile": "payloads/discover-small.json",
+      "payloadSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "payloadBytes": 2,
+      "source": {
+        "type": "reference",
+        "provenance": "coatyjs-2.4.0/coatyjs-discover-resolve.jsonl:3"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Minimal discover with all-optional fields omitted"
+    },
+    {
+      "id": "discover-typical",
+      "family": "DSC",
+      "familyName": "discover",
+      "sizeClass": "typical",
+      "topic": "coaty/3/bench/DSC/00000000-0000-4000-8000-000000000007/10000000-0000-4000-8000-000000000007",
+      "payloadFile": "payloads/discover-typical.json",
+      "payloadSha256": "7b8221893b4ccfcd30f3d26e6fba8b73fdf2cd52fdb182fd9b30175763a23a40",
+      "payloadBytes": 78,
+      "source": {
+        "type": "reference",
+        "provenance": "coatyjs-2.4.0/coatyjs-discover-resolve.jsonl:3"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Typical discover with externalId and objectId"
+    },
+    {
+      "id": "discover-maximum",
+      "family": "DSC",
+      "familyName": "discover",
+      "sizeClass": "maximum",
+      "topic": "coaty/3/bench/DSC/00000000-0000-4000-8000-000000000007/10000000-0000-4000-8000-000000000007",
+      "payloadFile": "payloads/discover-maximum.json",
+      "payloadSha256": "0a447752feab6c05698b57914a5930527895a0a9ccec4014b4eba78f818e9b69",
+      "payloadBytes": 503,
+      "source": {
+        "type": "generated",
+        "seed": 42,
+        "method": "manual"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Maximum discover with all filter fields and large arrays"
+    },
+    {
+      "id": "ioValue-small",
+      "family": "IOV",
+      "familyName": "ioValue",
+      "sizeClass": "small",
+      "topic": "coaty/3/bench/IOV/00000000-0000-4000-8000-000000000008",
+      "payloadFile": "payloads/ioValue-small.json",
+      "payloadSha256": "536d58551392d10c4bc2ad887f1c4f50d5ab021f6c04e62f42a417be26d5bc4c",
+      "payloadBytes": 13,
+      "source": {
+        "type": "generated",
+        "seed": 42,
+        "method": "manual"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Minimal ioValue with a scalar payload"
+    },
+    {
+      "id": "ioValue-typical",
+      "family": "IOV",
+      "familyName": "ioValue",
+      "sizeClass": "typical",
+      "topic": "coaty/3/bench/IOV/00000000-0000-4000-8000-000000000008",
+      "payloadFile": "payloads/ioValue-typical.json",
+      "payloadSha256": "d40f3c7ba7e7988a7a583ae19082e9417bbc7df481473ee5cb21e236d021f826",
+      "payloadBytes": 40,
+      "source": {
+        "type": "generated",
+        "seed": 42,
+        "method": "manual"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Typical ioValue with object payload and ignored extra field"
+    },
+    {
+      "id": "ioValue-maximum",
+      "family": "IOV",
+      "familyName": "ioValue",
+      "sizeClass": "maximum",
+      "topic": "coaty/3/bench/IOV/00000000-0000-4000-8000-000000000008",
+      "payloadFile": "payloads/ioValue-maximum.json",
+      "payloadSha256": "7596c63bf0e58bbbb778ea570c721aa26c85a177daf97ef140e5b1d4efa92c8b",
+      "payloadBytes": 503,
+      "source": {
+        "type": "generated",
+        "seed": 42,
+        "method": "manual"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Maximum ioValue with deeply nested payload and escaped UTF-8"
+    },
+    {
+      "id": "query-small",
+      "family": "QRY",
+      "familyName": "query",
+      "sizeClass": "small",
+      "topic": "coaty/3/bench/QRY/00000000-0000-4000-8000-000000000009/10000000-0000-4000-8000-000000000009",
+      "payloadFile": "payloads/query-small.json",
+      "payloadSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "payloadBytes": 2,
+      "source": {
+        "type": "reference",
+        "provenance": "coatyjs-2.4.0/coatyjs-query-retrieve.jsonl:3"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Minimal query with all-optional fields omitted"
+    },
+    {
+      "id": "query-typical",
+      "family": "QRY",
+      "familyName": "query",
+      "sizeClass": "typical",
+      "topic": "coaty/3/bench/QRY/00000000-0000-4000-8000-000000000009/10000000-0000-4000-8000-000000000009",
+      "payloadFile": "payloads/query-typical.json",
+      "payloadSha256": "63e279da67a43e8ac574cfe9de245285ebabf835787689c77adf051c23276c48",
+      "payloadBytes": 63,
+      "source": {
+        "type": "reference",
+        "provenance": "coatyjs-2.4.0/coatyjs-query-retrieve.jsonl:3"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Typical query with objectTypes and empty objectFilter"
+    },
+    {
+      "id": "query-maximum",
+      "family": "QRY",
+      "familyName": "query",
+      "sizeClass": "maximum",
+      "topic": "coaty/3/bench/QRY/00000000-0000-4000-8000-000000000009/10000000-0000-4000-8000-000000000009",
+      "payloadFile": "payloads/query-maximum.json",
+      "payloadSha256": "4bc075f7e9afea799b9ee149673b6fc02ea5706926b5900f4d2f4eec8c803cdf",
+      "payloadBytes": 503,
+      "source": {
+        "type": "generated",
+        "seed": 42,
+        "method": "manual"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Maximum query with all filter fields and large arrays"
+    },
+    {
+      "id": "resolve-small",
+      "family": "RSV",
+      "familyName": "resolve",
+      "sizeClass": "small",
+      "topic": "coaty/3/bench/RSV/00000000-0000-4000-8000-00000000000a/10000000-0000-4000-8000-00000000000a",
+      "payloadFile": "payloads/resolve-small.json",
+      "payloadSha256": "93e545d9b7be3cd54d93d60f7c9cbb656b085cfce85b905cd46c116e3de4d2b1",
+      "payloadBytes": 62,
+      "source": {
+        "type": "reference",
+        "provenance": "coatyjs-2.4.0/coatyjs-discover-resolve.jsonl:4"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Minimal resolve with required object field only"
+    },
+    {
+      "id": "resolve-typical",
+      "family": "RSV",
+      "familyName": "resolve",
+      "sizeClass": "typical",
+      "topic": "coaty/3/bench/RSV/00000000-0000-4000-8000-00000000000a/10000000-0000-4000-8000-00000000000a",
+      "payloadFile": "payloads/resolve-typical.json",
+      "payloadSha256": "f88ffab19a0c652d821c1c8ba6cae726b717fdae8443aedf552bc71c7b85b7bc",
+      "payloadBytes": 199,
+      "source": {
+        "type": "reference",
+        "provenance": "coatyjs-2.4.0/coatyjs-discover-resolve.jsonl:4"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Typical resolve with object and privateData"
+    },
+    {
+      "id": "resolve-maximum",
+      "family": "RSV",
+      "familyName": "resolve",
+      "sizeClass": "maximum",
+      "topic": "coaty/3/bench/RSV/00000000-0000-4000-8000-00000000000a/10000000-0000-4000-8000-00000000000a",
+      "payloadFile": "payloads/resolve-maximum.json",
+      "payloadSha256": "239055e4dd5ae88e0ec56c8242a5b54cece711d018cde00ee7613fa6f4b77d31",
+      "payloadBytes": 503,
+      "source": {
+        "type": "generated",
+        "seed": 42,
+        "method": "manual"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Maximum resolve with large object and nested privateData"
+    },
+    {
+      "id": "retrieve-small",
+      "family": "RTV",
+      "familyName": "retrieve",
+      "sizeClass": "small",
+      "topic": "coaty/3/bench/RTV/00000000-0000-4000-8000-00000000000b/10000000-0000-4000-8000-00000000000b",
+      "payloadFile": "payloads/retrieve-small.json",
+      "payloadSha256": "cfcd56463268a51093576f4c26ce4954e4ceca544074f38d8fd1499c91947b81",
+      "payloadBytes": 62,
+      "source": {
+        "type": "reference",
+        "provenance": "coatyjs-2.4.0/coatyjs-query-retrieve.jsonl:4"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Minimal retrieve with required object field only"
+    },
+    {
+      "id": "retrieve-typical",
+      "family": "RTV",
+      "familyName": "retrieve",
+      "sizeClass": "typical",
+      "topic": "coaty/3/bench/RTV/00000000-0000-4000-8000-00000000000b/10000000-0000-4000-8000-00000000000b",
+      "payloadFile": "payloads/retrieve-typical.json",
+      "payloadSha256": "71588faaad4c95dff897b45a9008230452e1c40db2fe1a847dc049cd3a2335f7",
+      "payloadBytes": 156,
+      "source": {
+        "type": "reference",
+        "provenance": "coatyjs-2.4.0/coatyjs-query-retrieve.jsonl:4"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Typical retrieve with a realistic object"
+    },
+    {
+      "id": "retrieve-maximum",
+      "family": "RTV",
+      "familyName": "retrieve",
+      "sizeClass": "maximum",
+      "topic": "coaty/3/bench/RTV/00000000-0000-4000-8000-00000000000b/10000000-0000-4000-8000-00000000000b",
+      "payloadFile": "payloads/retrieve-maximum.json",
+      "payloadSha256": "366088c85f5f5147700af115a82649ab782f5598dd5d49585628a8a765a360e1",
+      "payloadBytes": 503,
+      "source": {
+        "type": "generated",
+        "seed": 42,
+        "method": "manual"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Maximum retrieve with large nested object"
+    },
+    {
+      "id": "return-small",
+      "family": "RTN",
+      "familyName": "return",
+      "sizeClass": "small",
+      "topic": "coaty/3/bench/RTN/00000000-0000-4000-8000-00000000000c/10000000-0000-4000-8000-00000000000c",
+      "payloadFile": "payloads/return-small.json",
+      "payloadSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "payloadBytes": 2,
+      "source": {
+        "type": "reference",
+        "provenance": "coatyjs-2.4.0/coatyjs-call-return.jsonl:4"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Minimal return with all-optional fields omitted"
+    },
+    {
+      "id": "return-typical",
+      "family": "RTN",
+      "familyName": "return",
+      "sizeClass": "typical",
+      "topic": "coaty/3/bench/RTN/00000000-0000-4000-8000-00000000000c/10000000-0000-4000-8000-00000000000c",
+      "payloadFile": "payloads/return-typical.json",
+      "payloadSha256": "cf8d32836c137014c4b66125cbf4adcaa46c95dc606a58600fd7a7b9e8491816",
+      "payloadBytes": 88,
+      "source": {
+        "type": "reference",
+        "provenance": "coatyjs-2.4.0/coatyjs-call-return.jsonl:4"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Typical return with result and status"
+    },
+    {
+      "id": "return-maximum",
+      "family": "RTN",
+      "familyName": "return",
+      "sizeClass": "maximum",
+      "topic": "coaty/3/bench/RTN/00000000-0000-4000-8000-00000000000c/10000000-0000-4000-8000-00000000000c",
+      "payloadFile": "payloads/return-maximum.json",
+      "payloadSha256": "d1b25e8c558f6c05f3a57b725d882c6ddd31d0742714157fba9222fcdce6aa53",
+      "payloadBytes": 503,
+      "source": {
+        "type": "generated",
+        "seed": 42,
+        "method": "manual"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Maximum return with nested result, executionInfo and status"
+    },
+    {
+      "id": "update-small",
+      "family": "UPD",
+      "familyName": "update",
+      "sizeClass": "small",
+      "topic": "coaty/3/bench/UPD/00000000-0000-4000-8000-00000000000d/10000000-0000-4000-8000-00000000000d",
+      "payloadFile": "payloads/update-small.json",
+      "payloadSha256": "4d4378ddeb2c92f57ff17fb908bbf4ed6796c9dc023fb0fa1ffe81191c5e8d88",
+      "payloadBytes": 62,
+      "source": {
+        "type": "reference",
+        "provenance": "coatyjs-2.4.0/coatyjs-update-complete.jsonl:3"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Minimal update with required object field only"
+    },
+    {
+      "id": "update-typical",
+      "family": "UPD",
+      "familyName": "update",
+      "sizeClass": "typical",
+      "topic": "coaty/3/bench/UPD:CoatyObject/00000000-0000-4000-8000-00000000000d/10000000-0000-4000-8000-00000000000d",
+      "payloadFile": "payloads/update-typical.json",
+      "payloadSha256": "8a0134c77e8ee4fe13ded28e533384835d6bac3a615ea3f4c0a246f9b599745c",
+      "payloadBytes": 154,
+      "source": {
+        "type": "reference",
+        "provenance": "coatyjs-2.4.0/coatyjs-update-complete.jsonl:3"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Typical update with a realistic object"
+    },
+    {
+      "id": "update-maximum",
+      "family": "UPD",
+      "familyName": "update",
+      "sizeClass": "maximum",
+      "topic": "coaty/3/bench/UPD:CoatyObject/00000000-0000-4000-8000-00000000000d/10000000-0000-4000-8000-00000000000d",
+      "payloadFile": "payloads/update-maximum.json",
+      "payloadSha256": "c591451ccc412bd02deb35de173e1d3b068b8844d8804f8b5be5d56651d885d0",
+      "payloadBytes": 503,
+      "source": {
+        "type": "generated",
+        "seed": 42,
+        "method": "manual"
+      },
+      "expectedDecode": "success",
+      "normalizationRule": "coaty-v1",
+      "notes": "Maximum update with large nested object and escaped UTF-8"
+    }
+  ]
+}
