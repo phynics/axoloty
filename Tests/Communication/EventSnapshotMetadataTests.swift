@@ -346,6 +346,23 @@ struct EventSnapshotMetadataTests {
 
         #expect(object.decodeCustom(Int.self, forKey: "missing") == nil)
     }
+
+    @Test
+    func associateSnapshotDecodesCoatyJsShapeFromParsedMessage() throws {
+        let source = "550e8400-e29b-41d4-a716-446655440001"
+        let parsed = parseMessage(
+            topic: "coaty/1/-/ASC:io-context/\(source)",
+            payload: #"{"ioSourceId":"33333333-3333-4333-8333-333333333333","ioActorId":"44444444-4444-4444-8444-444444444444","associatingRoute":"coaty/1/-/IOV/33333333-3333-4333-8333-333333333333","updateRate":250}"#
+        )
+        let snapshot = try #require(AssociateEventSnapshot(parsedMQTTMessage: parsed))
+
+        #expect(snapshot.sourceId == source)
+        #expect(snapshot.ioContextName == "io-context")
+        #expect(snapshot.ioSourceId == "33333333-3333-4333-8333-333333333333")
+        #expect(snapshot.ioActorId == "44444444-4444-4444-8444-444444444444")
+        #expect(snapshot.isExternalRoute == nil)
+        #expect(snapshot.updateRate == 250)
+    }
 }
 
 private func sampleObject() -> CoatyObjectSnapshot {

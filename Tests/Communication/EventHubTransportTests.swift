@@ -876,6 +876,7 @@ private func makeTestStreams() -> CommunicationStreams {
         parsedMQTTMessages: Broadcast(mode: .event),
         ioValues: Broadcast(mode: .event),
         ioStateFamily: BroadcastFamily(mode: .state),
+        associateFamily: BroadcastFamily(mode: .event),
         advertiseFamily: BroadcastFamily(mode: .event),
         deadvertise: Broadcast(mode: .event),
         discover: Broadcast(mode: .event),

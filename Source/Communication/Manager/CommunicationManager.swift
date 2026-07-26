@@ -183,6 +183,7 @@ public class CommunicationManager {
             parsedMQTTMessages: Broadcast(mode: .event),
             ioValues: Broadcast(mode: .event),
             ioStateFamily: BroadcastFamily(mode: .state),
+            associateFamily: BroadcastFamily(mode: .event),
             advertiseFamily: BroadcastFamily(
                 mode: .event,
                 onFirst: { key in
@@ -700,6 +701,18 @@ public class CommunicationManager {
             ioRoute: ioRoute,
             updateRate: event.data.updateRate,
             isExternalRoute: event.data.isExternalRoute
+        )
+    }
+
+    internal func handleAssociate(snapshot: AssociateEventSnapshot) {
+        guard let ioSourceId = CoatyUUID(uuidString: snapshot.ioSourceId),
+              let ioActorId = CoatyUUID(uuidString: snapshot.ioActorId) else { return }
+        ioRegistry?.handleAssociate(
+            ioSourceId: ioSourceId,
+            ioActorId: ioActorId,
+            ioRoute: snapshot.associatingRoute,
+            updateRate: snapshot.updateRate,
+            isExternalRoute: snapshot.isExternalRoute
         )
     }
 }

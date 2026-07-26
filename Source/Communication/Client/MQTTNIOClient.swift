@@ -596,7 +596,11 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
             guard let snapshot = ChannelEventSnapshot(parsedMQTTMessage: parsed),
                   let channelId = parsed.eventTypeFilter else { return }
             await streams.channelFamily.send(snapshot, for: channelId)
-        case .associate, .ioValue:
+        case .associate:
+            guard let snapshot = AssociateEventSnapshot(parsedMQTTMessage: parsed),
+                  let contextName = snapshot.ioContextName else { return }
+            await streams.associateFamily.send(snapshot, for: contextName)
+        case .ioValue:
             break
         }
     }

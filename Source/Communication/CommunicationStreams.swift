@@ -53,6 +53,7 @@ internal struct CommunicationStreams: Sendable {
     let ioValues: Broadcast<IoValueEventSnapshot>
 
     let ioStateFamily: BroadcastFamily<String, IoStateEventSnapshot>
+    let associateFamily: BroadcastFamily<String, AssociateEventSnapshot>
     let advertiseFamily: BroadcastFamily<AdvertiseKey, AdvertiseEventSnapshot>
     let deadvertise: Broadcast<DeadvertiseEventSnapshot>
     let discover: Broadcast<DiscoverEventSnapshot>

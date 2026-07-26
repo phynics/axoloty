@@ -1,6 +1,5 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-import ErrorKit
 import Foundation
 
 @MainActor
@@ -23,24 +22,9 @@ extension CommunicationManager {
                     correlationId: nil
                 )
                 await self.subscriptionCoordinator?.acquire(topic: topic)
-                let stream = await self.observeParsedMessages()
-                for await parsed in stream {
-                    guard parsed.eventType == .associate,
-                          parsed.eventTypeFilter == ioNode.name else { continue }
-                    let payload: AssociateEvent
-                    do {
-                        payload = try PayloadCoder.decode(parsed.payload)
-                    } catch {
-                        self.log.notice("Dropping malformed Associate event", metadata: [
-                            "eventType": .string(parsed.eventType.rawValue),
-                            "sourceId": .string(parsed.sourceId),
-                            "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
-                        ])
-                        continue
-                    }
-                    payload.type = .associate
-                    if let sourceId = CoatyUUID(uuidString: parsed.sourceId) { payload.sourceId = sourceId }
-                    self.handleAssociate(event: payload)
+                let stream = await self.streams.associateFamily.subscribe(for: ioNode.name)
+                for await snapshot in stream {
+                    self.handleAssociate(snapshot: snapshot)
                 }
             }
             lifecycleTasks.append(task)
