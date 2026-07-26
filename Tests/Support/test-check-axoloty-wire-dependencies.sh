@@ -55,6 +55,11 @@ EOF
 expect_failure
 
 write_manifest <<'EOF'
+let package = Package(targets: [.target(name: "AxolotyWire", path: "Source/Elsewhere")])
+EOF
+expect_failure
+
+write_manifest <<'EOF'
 let package = Package(targets: [.target(name: "AxolotyWire", path: "Source/WireCodec")])
 EOF
 write_source <<'EOF'
@@ -64,5 +69,16 @@ expect_failure
 
 write_source <<'EOF'
 internal import Axoloty
+EOF
+expect_failure
+
+write_source <<'EOF'
+let fixture = #"embedded \" quote and inert import Foundation"#
+EOF
+sh "$checker" "$fixture"
+
+write_source <<'EOF'
+let fixture = #"embedded \" quote"#
+import Foundation
 EOF
 expect_failure
