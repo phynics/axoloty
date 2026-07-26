@@ -51,7 +51,7 @@ private let callReturnConsumerIsEnabled =
 private func makeCallReturnConsumerManager(environment: [String: String]) throws ->
     (container: Container, communication: CommunicationManager)
 {
-    let container = Container.resolve(
+    let container = try Container.resolve(
         components: Components(controllers: [:], objectTypes: []),
         configuration: Configuration(
             common: CommonOptions(agentIdentity: [

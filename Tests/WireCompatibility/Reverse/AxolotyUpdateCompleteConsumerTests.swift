@@ -58,7 +58,7 @@ private let updateCompleteConsumerIsEnabled =
 private func makeUpdateCompleteConsumerManager(environment: [String: String]) throws ->
     (container: Container, communication: CommunicationManager)
 {
-    let container = Container.resolve(
+    let container = try Container.resolve(
         components: Components(controllers: [:], objectTypes: []),
         configuration: Configuration(
             common: CommonOptions(agentIdentity: [

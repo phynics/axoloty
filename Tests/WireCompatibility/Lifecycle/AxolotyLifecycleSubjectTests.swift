@@ -240,7 +240,7 @@ struct AxolotyLifecycleSubjectTests {
             "name": "axoloty-lifecycle-subject",
             "objectId": #require(CoatyUUID(uuidString: "44444444-4444-4444-8444-444444444444")),
         ])
-        let container = Container.resolve(
+        let container = try Container.resolve(
             components: Components(controllers: [:], objectTypes: []),
             configuration: Configuration(
                 common: common,

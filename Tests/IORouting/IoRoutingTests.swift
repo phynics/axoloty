@@ -31,7 +31,7 @@ struct IoAssociationRuleTests {
     }
 
     @Test
-    func testConditionReturnsTrue() {
+    func testConditionReturnsTrue() throws {
         let rule = IoAssociationRule(
             name: "always",
             valueType: nil,
@@ -49,7 +49,7 @@ struct IoAssociationRuleTests {
             objectId: CoatyUUID(), name: "ctx"
         )
         let router = RuleBasedIoRouter(
-            container: createMinimalContainer(),
+            container: try createMinimalContainer(),
             options: ControllerOptions(extra: ["ioContext": ctx]),
             controllerType: "test"
         )
@@ -58,7 +58,7 @@ struct IoAssociationRuleTests {
     }
 
     @Test
-    func testConditionReturnsFalse() {
+    func testConditionReturnsFalse() throws {
         let rule = IoAssociationRule(
             name: "never",
             valueType: nil,
@@ -76,7 +76,7 @@ struct IoAssociationRuleTests {
             objectId: CoatyUUID(), name: "ctx"
         )
         let router = RuleBasedIoRouter(
-            container: createMinimalContainer(),
+            container: try createMinimalContainer(),
             options: ControllerOptions(extra: ["ioContext": ctx]),
             controllerType: "test"
         )
@@ -85,7 +85,7 @@ struct IoAssociationRuleTests {
     }
 
     @Test
-    func testConditionReturnsNil() {
+    func testConditionReturnsNil() throws {
         let rule = IoAssociationRule(
             name: "nil",
             valueType: nil,
@@ -103,7 +103,7 @@ struct IoAssociationRuleTests {
             objectId: CoatyUUID(), name: "ctx"
         )
         let router = RuleBasedIoRouter(
-            container: createMinimalContainer(),
+            container: try createMinimalContainer(),
             options: ControllerOptions(extra: ["ioContext": ctx]),
             controllerType: "test"
         )
@@ -118,38 +118,38 @@ struct IoAssociationRuleTests {
 @MainActor
 struct RuleBasedIoRouterLogicTests {
     @Test
-    func testComputeCumulatedUpdateRateBothNil() {
-        let router = makeRouter()
+    func testComputeCumulatedUpdateRateBothNil() throws {
+        let router = try makeRouter()
         #expect(router.computeCumulatedUpdateRate(rate1: nil, rate2: nil) == nil)
     }
 
     @Test
-    func testComputeCumulatedUpdateRateFirstNil() {
-        let router = makeRouter()
+    func testComputeCumulatedUpdateRateFirstNil() throws {
+        let router = try makeRouter()
         #expect(router.computeCumulatedUpdateRate(rate1: nil, rate2: 100) == 100)
     }
 
     @Test
-    func testComputeCumulatedUpdateRateSecondNil() {
-        let router = makeRouter()
+    func testComputeCumulatedUpdateRateSecondNil() throws {
+        let router = try makeRouter()
         #expect(router.computeCumulatedUpdateRate(rate1: 200, rate2: nil) == 200)
     }
 
     @Test
-    func testComputeCumulatedUpdateRateBothSet() {
-        let router = makeRouter()
+    func testComputeCumulatedUpdateRateBothSet() throws {
+        let router = try makeRouter()
         #expect(router.computeCumulatedUpdateRate(rate1: 100, rate2: 200) == 200)
     }
 
     @Test
-    func testComputeCumulatedUpdateRateEqualRates() {
-        let router = makeRouter()
+    func testComputeCumulatedUpdateRateEqualRates() throws {
+        let router = try makeRouter()
         #expect(router.computeCumulatedUpdateRate(rate1: 150, rate2: 150) == 150)
     }
 
     @Test
-    func testComputeDefaultUpdateRateBothNil() {
-        let router = makeRouter()
+    func testComputeDefaultUpdateRateBothNil() throws {
+        let router = try makeRouter()
         let source = IoSource(valueType: "T", updateRate: nil)
         let actor = IoActor(valueType: "T", updateRate: nil)
         let node = IoNode(
@@ -161,8 +161,8 @@ struct RuleBasedIoRouterLogicTests {
     }
 
     @Test
-    func testComputeDefaultUpdateRateOnlySourceRate() {
-        let router = makeRouter()
+    func testComputeDefaultUpdateRateOnlySourceRate() throws {
+        let router = try makeRouter()
         let source = IoSource(valueType: "T", updateRate: 300)
         let actor = IoActor(valueType: "T", updateRate: nil)
         let node = IoNode(
@@ -174,8 +174,8 @@ struct RuleBasedIoRouterLogicTests {
     }
 
     @Test
-    func testComputeDefaultUpdateRateOnlyActorRate() {
-        let router = makeRouter()
+    func testComputeDefaultUpdateRateOnlyActorRate() throws {
+        let router = try makeRouter()
         let source = IoSource(valueType: "T", updateRate: nil)
         let actor = IoActor(valueType: "T", updateRate: 500)
         let node = IoNode(
@@ -187,8 +187,8 @@ struct RuleBasedIoRouterLogicTests {
     }
 
     @Test
-    func testComputeDefaultUpdateRateTakesMax() {
-        let router = makeRouter()
+    func testComputeDefaultUpdateRateTakesMax() throws {
+        let router = try makeRouter()
         let source = IoSource(valueType: "T", updateRate: 100)
         let actor = IoActor(valueType: "T", updateRate: 1000)
         let node = IoNode(
@@ -200,32 +200,32 @@ struct RuleBasedIoRouterLogicTests {
     }
 
     @Test
-    func testAreValueTypesCompatibleSameTypeSameFormat() {
-        let router = makeRouter()
+    func testAreValueTypesCompatibleSameTypeSameFormat() throws {
+        let router = try makeRouter()
         let source = IoSource(valueType: "Temperature", useRawIoValues: false)
         let actor = IoActor(valueType: "Temperature", useRawIoValues: false)
         #expect(router.areValueTypesCompatible(source: source, actor: actor))
     }
 
     @Test
-    func testAreValueTypesCompatibleDifferentType() {
-        let router = makeRouter()
+    func testAreValueTypesCompatibleDifferentType() throws {
+        let router = try makeRouter()
         let source = IoSource(valueType: "Temperature")
         let actor = IoActor(valueType: "Pressure")
         #expect(!router.areValueTypesCompatible(source: source, actor: actor))
     }
 
     @Test
-    func testAreValueTypesCompatibleDifferentFormat() {
-        let router = makeRouter()
+    func testAreValueTypesCompatibleDifferentFormat() throws {
+        let router = try makeRouter()
         let source = IoSource(valueType: "Temperature", useRawIoValues: false)
         let actor = IoActor(valueType: "Temperature", useRawIoValues: true)
         #expect(!router.areValueTypesCompatible(source: source, actor: actor))
     }
 
     @Test
-    func testEvaluateRulesWithNoNodesHasNoAssociations() {
-        let router = makeRouter()
+    func testEvaluateRulesWithNoNodesHasNoAssociations() throws {
+        let router = try makeRouter()
         router.defineRules(rules: [
             IoAssociationRule(name: "all", valueType: nil, condition: { _, _, _, _, _, _ in true })
         ])
@@ -234,8 +234,8 @@ struct RuleBasedIoRouterLogicTests {
     }
 
     @Test
-    func testCompatiblePairAssociatesWithGlobalRule() {
-        let router = makeRouter()
+    func testCompatiblePairAssociatesWithGlobalRule() throws {
+        let router = try makeRouter()
         router.defineRules(rules: [
             IoAssociationRule(name: "all", valueType: nil, condition: { _, _, _, _, _, _ in true })
         ])
@@ -252,8 +252,8 @@ struct RuleBasedIoRouterLogicTests {
     }
 
     @Test
-    func testIncompatiblePairIsNotAssociated() {
-        let router = makeRouter()
+    func testIncompatiblePairIsNotAssociated() throws {
+        let router = try makeRouter()
         router.defineRules(rules: [
             IoAssociationRule(name: "all", valueType: nil, condition: { _, _, _, _, _, _ in true })
         ])
@@ -268,8 +268,8 @@ struct RuleBasedIoRouterLogicTests {
     }
 
     @Test
-    func testNoRulesYieldsNoAssociations() {
-        let router = makeRouter()
+    func testNoRulesYieldsNoAssociations() throws {
+        let router = try makeRouter()
         let source = IoSource(valueType: "T")
         let actor = IoActor(valueType: "T")
         installNode(router, IoNode(
@@ -281,8 +281,8 @@ struct RuleBasedIoRouterLogicTests {
     }
 
     @Test
-    func testValueTypeSpecificRuleTakesPrecedenceOverGlobal() {
-        let router = makeRouter()
+    func testValueTypeSpecificRuleTakesPrecedenceOverGlobal() throws {
+        let router = try makeRouter()
         let globalRule = IoAssociationRule(
             name: "global", valueType: nil,
             condition: { _, _, _, _, _, _ in true }
@@ -306,8 +306,8 @@ struct RuleBasedIoRouterLogicTests {
     }
 
     @Test
-    func testMultipleSourcesAndActorsAllAssociated() {
-        let router = makeRouter()
+    func testMultipleSourcesAndActorsAllAssociated() throws {
+        let router = try makeRouter()
         router.defineRules(rules: [
             IoAssociationRule(name: "all", valueType: nil, condition: { _, _, _, _, _, _ in true })
         ])
@@ -325,8 +325,8 @@ struct RuleBasedIoRouterLogicTests {
     }
 
     @Test
-    func testSingleAssociationUsesMaxOfSourceAndActorRate() {
-        let router = makeRouter()
+    func testSingleAssociationUsesMaxOfSourceAndActorRate() throws {
+        let router = try makeRouter()
         router.defineRules(rules: [
             IoAssociationRule(name: "all", valueType: nil, condition: { _, _, _, _, _, _ in true })
         ])
@@ -343,8 +343,8 @@ struct RuleBasedIoRouterLogicTests {
     }
 
     @Test
-    func testMultipleActorsPerSourceCumulateRate() {
-        let router = makeRouter()
+    func testMultipleActorsPerSourceCumulateRate() throws {
+        let router = try makeRouter()
         router.defineRules(rules: [
             IoAssociationRule(name: "all", valueType: nil, condition: { _, _, _, _, _, _ in true })
         ])
@@ -362,8 +362,8 @@ struct RuleBasedIoRouterLogicTests {
     }
 
     @Test
-    func testDefineRulesDiscardsPreviousRules() {
-        let router = makeRouter()
+    func testDefineRulesDiscardsPreviousRules() throws {
+        let router = try makeRouter()
         let rule1 = IoAssociationRule(
             name: "r1", valueType: nil,
             condition: { _, _, _, _, _, _ in true }
@@ -390,12 +390,12 @@ struct RuleBasedIoRouterLogicTests {
     }
 
     @Test
-    func testBasicIoRouterAssociatesOnDefaultRule() {
+    func testBasicIoRouterAssociatesOnDefaultRule() throws {
         let ioContext = IoContext(
             coreType: .IoContext, objectType: "test",
             objectId: CoatyUUID(), name: "test"
         )
-        let container = createMinimalContainer()
+        let container = try createMinimalContainer()
         let router = BasicIoRouter(
             container: container,
             options: ControllerOptions(extra: ["ioContext": ioContext]),
@@ -422,8 +422,8 @@ struct RuleBasedIoRouterBucketingTests {
     /// A single node advertise must only re-cross the value-type buckets the
     /// advertised node belongs to, not the full source x actor product.
     @Test
-    func testSingleAdvertiseConditionInvocationsBoundedByAffectedBucket() {
-        let router = makeRouter()
+    func testSingleAdvertiseConditionInvocationsBoundedByAffectedBucket() throws {
+        let router = try makeRouter()
         router.defineRules(rules: [
             IoAssociationRule(name: "all", valueType: nil, condition: { _, _, _, _, _, _ in true })
         ])
@@ -470,8 +470,8 @@ struct RuleBasedIoRouterBucketingTests {
     /// exhaustive crossing (visiting every candidate pair), so the override is
     /// honored for cross-bucket pairs the default check would reject.
     @Test
-    func testOverriddenCompatibilityFallsBackToExhaustiveCrossing() {
-        let router = makeCrossBucketRouter()
+    func testOverriddenCompatibilityFallsBackToExhaustiveCrossing() throws {
+        let router = try makeCrossBucketRouter()
         #expect(router.usesDefaultValueTypeCompatibility == false)
         router.defineRules(rules: [
             IoAssociationRule(name: "all", valueType: nil, condition: { _, _, _, _, _, _ in true })
@@ -501,8 +501,8 @@ struct RuleBasedIoRouterBucketingTests {
     /// An association whose `associate` publish fails must be left out of
     /// `currentAssociations` so the next evaluation republishes it.
     @Test
-    func testFailedAssociatePublishIsRetriedOnNextEvaluation() {
-        let router = makeRouter()
+    func testFailedAssociatePublishIsRetriedOnNextEvaluation() throws {
+        let router = try makeRouter()
         // An ioContext name containing '/' is not a valid event type filter,
         // so `publishAssociate` throws `AxolotyError.invalidArgument` before
         // reaching the broker (no live broker needed for this test).
@@ -537,8 +537,8 @@ struct RuleBasedIoRouterBucketingTests {
     /// the advertised node's buckets; associations in untouched buckets are
     /// left intact rather than torn down.
     @Test
-    func testIncrementalEvaluationLeavesUntouchedBucketsIntact() {
-        let router = makeRouter()
+    func testIncrementalEvaluationLeavesUntouchedBucketsIntact() throws {
+        let router = try makeRouter()
         router.defineRules(rules: [
             IoAssociationRule(name: "all", valueType: nil, condition: { _, _, _, _, _, _ in true })
         ])
@@ -590,7 +590,7 @@ final class CrossBucketRouter: RuleBasedIoRouter {
 }
 
 @MainActor
-private func createMinimalContainer() -> Container {
+private func createMinimalContainer() throws -> Container {
     let options = CommunicationOptions(
         mqttClientOptions: MQTTClientOptions(),
         shouldAutoStart: false
@@ -600,16 +600,16 @@ private func createMinimalContainer() -> Container {
         communication: options
     )
     let components = Components(controllers: [:], objectTypes: [])
-    return Container.resolve(components: components, configuration: config)
+    return try Container.resolve(components: components, configuration: config)
 }
 
 @MainActor
-private func makeRouter() -> RuleBasedIoRouter {
+private func makeRouter() throws -> RuleBasedIoRouter {
     let ioContext = IoContext(
         coreType: .IoContext, objectType: "test",
         objectId: CoatyUUID(), name: "test"
     )
-    let container = createMinimalContainer()
+    let container = try createMinimalContainer()
     let router = RuleBasedIoRouter(
         container: container,
         options: ControllerOptions(extra: ["ioContext": ioContext]),
@@ -620,12 +620,12 @@ private func makeRouter() -> RuleBasedIoRouter {
 }
 
 @MainActor
-private func makeCrossBucketRouter() -> CrossBucketRouter {
+private func makeCrossBucketRouter() throws -> CrossBucketRouter {
     let ioContext = IoContext(
         coreType: .IoContext, objectType: "test",
         objectId: CoatyUUID(), name: "test"
     )
-    let container = createMinimalContainer()
+    let container = try createMinimalContainer()
     let router = CrossBucketRouter(
         container: container,
         options: ControllerOptions(extra: ["ioContext": ioContext]),

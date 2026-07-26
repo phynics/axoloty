@@ -91,7 +91,7 @@ private func makeCoreRequestConsumerManager(environment: [String: String]) throw
     let host = environment["WIRE_BROKER_HOST"] ?? "127.0.0.1"
     let port = UInt16(environment["WIRE_BROKER_PORT"] ?? "1883") ?? 1883
     let namespace = environment["WIRE_NAMESPACE"] ?? "wire-compat-v1"
-    let container = Container.resolve(
+    let container = try Container.resolve(
         components: Components(controllers: [:], objectTypes: []),
         configuration: Configuration(communication: CommunicationOptions(
             namespace: namespace,
