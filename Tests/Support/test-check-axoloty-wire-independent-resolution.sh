@@ -12,14 +12,14 @@ cat >"$fake_bin/swift" <<'EOF'
 #!/bin/sh
 if [ "${AXOLOTY_FAKE_SWIFT_MODE:-}" = "fail-build" ]; then
     case "$*" in
-        "package resolve"|"package show-dependencies --format flat") exit 0 ;;
+        "package resolve"|"package show-dependencies --format flatlist") exit 0 ;;
         "build") exit 42 ;;
         *) echo "unexpected swift invocation: $*" >&2; exit 1 ;;
     esac
 else
     case "$*" in
         "package resolve") exit 0 ;;
-        "package show-dependencies --format flat") exit 42 ;;
+        "package show-dependencies --format flatlist") exit 42 ;;
         *) echo "unexpected swift invocation: $*" >&2; exit 1 ;;
     esac
 fi
