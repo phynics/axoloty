@@ -13,6 +13,7 @@ REPOSITORY_NAME ?= $(shell git rev-parse --git-common-dir 2>/dev/null | sed 's|/
 BUILD_CACHE_ROOT ?= /tmp/coaty-swift-build/$(REPOSITORY_NAME)/$(CACHE_NAMESPACE)
 BUILD_DIR ?= $(BUILD_CACHE_ROOT)/debug
 COVERAGE_BUILD_DIR ?= $(BUILD_DIR)-coverage
+TSAN_BUILD_DIR ?= $(BUILD_DIR)-tsan
 BUILD_LOCK ?= 1
 export BUILD_LOCK
 ifeq ($(AXOLOTY_DEVCONTAINER),1)
@@ -30,7 +31,7 @@ COMMA := ,
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean
+.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean
 
 help:
 	@printf '%s\n' \
@@ -46,6 +47,7 @@ help:
 		'make test-no-anycodable  Fail if AnyCodable is used in production source' \
 		'make test-no-foundation-types  Fail if forbidden Foundation types are used in production source' \
 		'make test          Run the full test suite (starts Mosquitto)' \
+		'make test-tsan     Run broker-backed transport/lifecycle tests under Thread Sanitizer' \
 		'make test-unit     Run ObjectMatcherTests' \
 		'make test-module   Run targeted infrastructure module tests' \
 		'make test-fuzz     Run deterministic property/fuzz tests' \
@@ -117,6 +119,16 @@ test-no-foundation-types:
 
 test: resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh sh -c 'pgrep mosquitto >/dev/null 2>&1 || mosquitto -d; swift test $(SWIFT_LOCKED_ARGS)'
+
+tsan-resolve: image
+	@mkdir -p "$(SPM_CACHE_DIR)"
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(TSAN_BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh .devcontainer/resolve.sh
+	@git diff --exit-code -- Package.resolved
+
+test-tsan: tsan-resolve
+	CONTAINER_SECURITY_OPTS="--security-opt seccomp=unconfined" \
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(TSAN_BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \
+		bash -o pipefail -c 'set -e; pgrep mosquitto >/dev/null 2>&1 || mosquitto -d; swift test $(SWIFT_LOCKED_ARGS) --no-parallel --sanitize=thread --filter "CommunicationSubscriptionCoordinatorTests|BroadcastTransportTests|ObjectLifecycleControllerTests|DecentralizedLoggingTest"'
 
 test-unit: resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter ObjectMatcherTests

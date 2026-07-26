@@ -42,6 +42,32 @@ struct CommunicationSubscriptionCoordinatorTests {
     }
 
     @Test
+    func dispatcherSerializesCommandsInFifoOrder() async throws {
+        let gate = SubscriptionGate()
+        let client = RecordingCommunicationClient(gate: gate)
+        let dispatcher = CommunicationSubscriptionCommandDispatcher(client: client)
+
+        // A subscribe that blocks on the gate occupies the single drain slot.
+        let subscribeTask = _Concurrency.Task { try? await dispatcher.deliver(.subscribe("first")) }
+        await gate.waitUntilStarted()
+        await _Concurrency.Task.yield()
+
+        // A rapid unsubscribe arrives while the subscribe is still in flight. It
+        // must not begin (and must not append its command) until the subscribe
+        // completes, so subscribe/unsubscribe finish in arrival order rather
+        // than racing through the actor's reentrant suspension.
+        let unsubscribeTask = _Concurrency.Task { try? await dispatcher.deliver(.unsubscribe("first")) }
+        await _Concurrency.Task.yield()
+        #expect(client.commands == [.subscribe("first")])
+
+        // Releasing the subscribe lets the unsubscribe run, strictly after it.
+        await gate.open()
+        _ = await subscribeTask.value
+        _ = await unsubscribeTask.value
+        #expect(client.commands == [.subscribe("first"), .unsubscribe("first")])
+    }
+
+    @Test
     func firstAcquireOnlineEmitsOneSubscribe() async {
         let log = CommandLog()
         let coordinator = CommunicationSubscriptionCoordinator(commandSink: { await log.append($0) })

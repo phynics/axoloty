@@ -802,8 +802,15 @@ private final class FakeCommunicationClient: CommunicationClient, @unchecked Sen
     var streams: CommunicationStreams!
     func setStreams(_ streams: CommunicationStreams) { self.streams = streams }
     var delegate: CommunicationClientDelegate
-    private(set) var commands: [SubscriptionCommand] = []
-    private(set) var publishedTopics: [String] = []
+    // `commands`/`publishedTopics` are mutated from the dispatcher's drain
+    // thread (subscribe/unsubscribe/publish) and polled from the test thread
+    // (`waitForCommands`); guard both with a lock so TSan sees the
+    // happens-before, not an unsynchronized access race.
+    private let stateLock = NSLock()
+    private var _commands: [SubscriptionCommand] = []
+    private var _publishedTopics: [String] = []
+    var commands: [SubscriptionCommand] { stateLock.withLock { _commands } }
+    var publishedTopics: [String] { stateLock.withLock { _publishedTopics } }
     private let subscriptionGate: SubscriptionAckGate?
 
     init(delegate: CommunicationClientDelegate, subscriptionGate: SubscriptionAckGate? = nil) {
@@ -853,10 +860,10 @@ private final class FakeCommunicationClient: CommunicationClient, @unchecked Sen
 
     func connect(lastWillTopic _: String, lastWillMessage _: String) {}
     func disconnect() {}
-    func publish(_ topic: String, message _: String) { publishedTopics.append(topic) }
-    func publish(_ topic: String, message _: [UInt8]) { publishedTopics.append(topic) }
+    func publish(_ topic: String, message _: String) { stateLock.withLock { _publishedTopics.append(topic) } }
+    func publish(_ topic: String, message _: [UInt8]) { stateLock.withLock { _publishedTopics.append(topic) } }
     func subscribe(_ topic: String) async throws {
-        commands.append(.subscribe(topic))
+        stateLock.withLock { _commands.append(.subscribe(topic)) }
         if let subscriptionGate {
             await subscriptionGate.markStarted()
             await subscriptionGate.waitUntilOpen()
@@ -864,7 +871,7 @@ private final class FakeCommunicationClient: CommunicationClient, @unchecked Sen
     }
 
     func unsubscribe(_ topic: String) async throws {
-        commands.append(.unsubscribe(topic))
+        stateLock.withLock { _commands.append(.unsubscribe(topic)) }
     }
 }
 
