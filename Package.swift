@@ -32,6 +32,7 @@ let package = Package(
             dependencies: [
                 .product(name: "MQTTNIO", package: "mqtt-nio"),
                 .product(name: "NIO", package: "swift-nio"),
+                .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
                 .product(name: "NIOSSL", package: "swift-nio-ssl", condition: .when(platforms: [.linux])),
                 .product(name: "NIOTransportServices", package: "swift-nio-transport-services", condition: .when(platforms: [.macOS, .iOS])),
                 .product(name: "Logging", package: "swift-log"),

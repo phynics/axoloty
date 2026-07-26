@@ -48,7 +48,12 @@ mount_suffix=
 case "$runtime" in
     *podman*) mount_suffix=:Z ;;
 esac
-"$runtime" run --rm \
+# Extra `podman run`/`docker run` flags for targets that need a relaxed
+# sandbox. Used by `make test-tsan`: ThreadSanitizer must disable ASLR via
+# the `personality` syscall, which the default seccomp profile denies. Empty
+# by default so other targets are unaffected.
+security_opts=${CONTAINER_SECURITY_OPTS:-}
+"$runtime" run --rm $security_opts \
     -v "$root_dir:$workdir$mount_suffix" \
     -v "$build_dir:$workdir/.build$mount_suffix" \
     -v "$spm_cache_dir:$workdir/.swiftpm-cache$mount_suffix" \
