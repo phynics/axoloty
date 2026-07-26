@@ -10,42 +10,55 @@ import Foundation
 /// Custom implementation of a UUID that actually is compatible with the RFC
 /// 4122 V4 specification of defining UUIDs (lowercase in contrast to
 /// Apple's uppercase implementation).
-public class CoatyUUID: Codable, CustomStringConvertible, Hashable {
-    
-    private var uuid: UUID
-    
+///
+/// `CoatyUUID` is an immutable, `Sendable` value type. The lowercase string
+/// representation is computed once at construction time and cached, so
+/// repeated ``string`` reads allocate nothing.
+public struct CoatyUUID: Codable, CustomStringConvertible, Hashable, Sendable {
+
+    private let uuid: UUID
+
     /// The UUID as a lowercased string.
-    public var string: String {
-        return uuid.uuidString.lowercased()
-    }
-    
-    /// Default initializer for a `CoatyUUID` object which assigns a new UUID.
+    ///
+    /// Computed once per instance at construction time and cached, so repeated
+    /// reads allocate nothing.
+    public let string: String
+
+    /// Creates a `CoatyUUID` assigned a new random UUID.
     public init() {
-        self.uuid = .init()
+        let uuid = UUID()
+        self.uuid = uuid
+        self.string = uuid.uuidString.lowercased()
     }
-    
+
+    /// Creates a `CoatyUUID` from the given UUID string.
+    ///
+    /// Returns `nil` if `uuidString` is not a valid RFC 4122 UUID.
+    ///
+    /// - Parameter uuidString: A UUID string, upper- or lowercase.
     public init?(uuidString: String) {
         guard let uuid = UUID(uuidString: uuidString) else {
             return nil
         }
-        
         self.uuid = uuid
+        self.string = uuid.uuidString.lowercased()
     }
-    
+
     // MARK: - Codable methods.
-    
-    public required init(from decoder: Decoder) throws {
+
+    public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         self.uuid = try container.decode(UUID.self)
+        self.string = uuid.uuidString.lowercased()
     }
-    
+
     public func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         try container.encode(self.string)
     }
-    
+
     // MARK: - Hashable / Equatable methods.
-    
+
     public static func == (lhs: CoatyUUID, rhs: CoatyUUID) -> Bool {
         return lhs.uuid == rhs.uuid
     }
@@ -53,9 +66,9 @@ public class CoatyUUID: Codable, CustomStringConvertible, Hashable {
     public func hash(into hasher: inout Hasher) {
         hasher.combine(self.uuid)
     }
-    
+
     // MARK: - Custom String Convertible.
-    
+
     public var description: String {
         return self.string
     }
