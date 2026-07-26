@@ -51,4 +51,25 @@ struct BorrowedMessageTests {
         let error = try #require(caught as? WireDecodeError)
         if case .payloadExceedsLimit = error.reason {} else { Issue.record("expected .payloadExceedsLimit, got \(error.reason)") }
     }
+
+    @Test
+    func truncatedPayloadReturnsNilInsideSynchronousBorrowScope() throws {
+        let topic = Array("coaty/3/test/ASC/55555555-5555-4555-8555-555555555555".utf8)
+        let truncatedPayload = Array(#"{"ioSourceId":"33333333-3333-4333-8333-33333333333"#.utf8)
+
+        let sourceId = try topic.withUnsafeBufferPointer { topicBuffer in
+            try truncatedPayload.withUnsafeBufferPointer { payloadBuffer in
+                try BorrowedMessage.withValidated(
+                    topicBytes: try #require(topicBuffer.baseAddress),
+                    topicLength: topicBuffer.count,
+                    payloadBytes: try #require(payloadBuffer.baseAddress),
+                    payloadLength: payloadBuffer.count
+                ) { message in
+                    message.reader().readUUID("ioSourceId")
+                }
+            }
+        }
+
+        #expect(sourceId == nil)
+    }
 }
