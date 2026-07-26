@@ -335,6 +335,104 @@ extension MessageRouterTests {
     }
 }
 
+// MARK: - Synchronous lifecycle & bounded capacity (#283)
+
+extension MessageRouterTests {
+    /// Proves the synchronous subscribe → dispatch → unsubscribe lifecycle on a
+    /// flat event-type table: a handler receives while subscribed, then stops
+    /// receiving after unsubscribe, with no `await` or isolation hop.
+    @Test
+    func embeddedRouterFlatLifecycleSubscribeDispatchUnsubscribe() throws {
+        let router = EmbeddedMessageRouter(maxSubscribers: 4)
+        let received = Box(0)
+
+        let token = try #require(router.subscribe(.discover) { _ in received.value += 1 })
+
+        let owned = OwnedMessage(
+            topic: "coaty/3/test/DSC/11111111-1111-4111-8111-111111111111"
+        )
+        router.dispatch(owned.message)
+        #expect(received.value == 1)
+
+        router.unsubscribe(.discover, token)
+        router.dispatch(owned.message)
+        #expect(received.value == 1)
+    }
+
+    /// Proves the synchronous subscribe → dispatch → unsubscribe lifecycle on a
+    /// keyed family table.
+    @Test
+    func embeddedRouterFamilyLifecycleSubscribeDispatchUnsubscribe() throws {
+        let router = EmbeddedMessageRouter(maxSubscribers: 4)
+        let received = Box(0)
+
+        let token = try #require(router.subscribeChannel(channelId: "42") { _ in received.value += 1 })
+
+        let owned = OwnedMessage(
+            topic: "coaty/3/test/CHN:42/11111111-1111-4111-8111-111111111111"
+        )
+        router.dispatch(owned.message)
+        #expect(received.value == 1)
+
+        router.unsubscribeChannel(try #require(token))
+        router.dispatch(owned.message)
+        #expect(received.value == 1)
+    }
+
+    /// Flat table rejects the (maxSubscribers + 1)-th subscriber without growing.
+    @Test
+    func embeddedRouterFlatTableRejectsBeyondCapacity() throws {
+        let capacity = 3
+        let router = EmbeddedMessageRouter(maxSubscribers: capacity)
+        let received = Box(0)
+
+        for _ in 0..<capacity {
+            #expect(router.subscribe(.query) { _ in received.value += 1 } != nil)
+        }
+        // Next subscribe must be rejected — table is bounded, no heap growth.
+        #expect(router.subscribe(.query) { _ in received.value += 1 } == nil)
+
+        let owned = OwnedMessage(
+            topic: "coaty/3/test/QRY/55555555-5555-4555-8555-555555555555/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        )
+        router.dispatch(owned.message)
+        #expect(received.value == capacity)
+    }
+
+    /// Family table rejects new entries beyond `maxFamilyEntries` and extra
+    /// subscribers beyond `maxFamilySubscribers` for an existing key.
+    @Test
+    func embeddedRouterFamilyTableRejectsBeyondCapacity() throws {
+        let entryCapacity = 2
+        let perEntryCapacity = 2
+        let router = EmbeddedMessageRouter(
+            maxSubscribers: 4,
+            maxFamilyEntries: entryCapacity,
+            maxFamilySubscribers: perEntryCapacity
+        )
+        let received = Box(0)
+
+        // Fill per-entry subscriber capacity for a single channel.
+        for _ in 0..<perEntryCapacity {
+            #expect(router.subscribeChannel(channelId: "42") { _ in received.value += 1 } != nil)
+        }
+        // Next subscriber on the same key is rejected — per-entry table full.
+        #expect(router.subscribeChannel(channelId: "42") { _ in received.value += 1 } == nil)
+
+        // Fill remaining family entry capacity with a distinct key.
+        #expect(router.subscribeChannel(channelId: "7") { _ in received.value += 1 } != nil)
+        // Family entry table is now full (entryCapacity distinct keys).
+        #expect(router.subscribeChannel(channelId: "99") { _ in received.value += 1 } == nil)
+
+        // Only the channel "42" subscriber(s) receive on a "42" dispatch.
+        let owned = OwnedMessage(
+            topic: "coaty/3/test/CHN:42/11111111-1111-4111-8111-111111111111"
+        )
+        router.dispatch(owned.message)
+        #expect(received.value == perEntryCapacity)
+    }
+}
+
 // MARK: - Test helpers
 
 private final class Box<T>: @unchecked Sendable {
