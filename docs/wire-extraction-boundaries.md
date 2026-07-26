@@ -53,6 +53,12 @@ codec implementation; both products refer to the same sources.
 only on the local `AxolotyWire` package — and fails if any host runtime
 dependency appears in the resolved graph.
 
+The codec, borrowed-message, static-dispatch, and embedded-router regression
+suites live in the root package's `AxolotyWireTests` target, which depends only
+on `AxolotyWire`. Host differential and compatibility tests remain in
+`AxolotyTests` because they deliberately compare the wire module with host
+types and behavior.
+
 ### Distribution and migration
 
 A downstream consumer that needs only the wire codec should depend on the

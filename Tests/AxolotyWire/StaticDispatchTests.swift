@@ -1,9 +1,8 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-@testable import Axoloty
+import AxolotyWire
 import Foundation
 import Testing
-import AxolotyWire
 
 /// A lock-guarded mutable box for capturing values in `@Sendable` test
 /// closures. Every read and write is synchronized through an `NSLock`, so the
