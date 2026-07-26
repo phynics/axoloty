@@ -1,23 +1,29 @@
 #!/bin/sh
 # Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+# Validates that the AxolotyWire package is dependency-free: no package-level
+# dependencies, no target-level dependencies, and no non-Swift imports in its
+# sources. The argument is the sub-package directory (default Packages/AxolotyWire).
+
 set -eu
 
-root=${1:-.}
+wire_package=${1:-Packages/AxolotyWire}
 
-python3 - "$root" <<'PY'
+python3 - "$wire_package" <<'PY'
 import pathlib
 import re
 import sys
 
-root = pathlib.Path(sys.argv[1])
-package = root / "Package.swift"
+pkg = pathlib.Path(sys.argv[1])
+manifest_path = pkg / "Package.swift"
+wire_sources = pkg / "Sources" / "AxolotyWire"
 errors = []
 
-if not package.is_file():
-    errors.append(f"error: missing package manifest: {package}")
+if not manifest_path.is_file():
+    errors.append(f"error: missing AxolotyWire package manifest: {manifest_path}")
+
 if not errors:
-    manifest = package.read_text()
+    manifest = manifest_path.read_text()
 
     def code_mask(text):
         masked = list(text)
@@ -87,6 +93,11 @@ if not errors:
         return "".join(masked)
 
     structure = code_mask(manifest)
+
+    # The AxolotyWire package must not declare any package-level dependencies.
+    if re.search(r"\.package\s*\(", structure):
+        errors.append("error: AxolotyWire package must not declare package dependencies")
+
     target_blocks = []
     for match in re.finditer(r"\.target\s*\(", structure):
         start = structure.find("(", match.start())
@@ -105,12 +116,11 @@ if not errors:
         errors.append("error: missing AxolotyWire target")
     else:
         path = re.search(r'\bpath\s*:\s*"([^"]+)"', wire_target)
-        if path is None or path.group(1) != "Source/WireCodec":
-            errors.append("error: AxolotyWire must declare path: Source/WireCodec")
+        if path is None or path.group(1) != "Sources/AxolotyWire":
+            errors.append("error: AxolotyWire must declare path: Sources/AxolotyWire")
         elif re.search(r"\bdependencies\s*:", code_mask(wire_target)):
-            errors.append("error: AxolotyWire must not declare runtime dependencies")
+            errors.append("error: AxolotyWire target must not declare runtime dependencies")
 
-    wire_sources = root / "Source" / "WireCodec"
     if not wire_sources.is_dir():
         errors.append(f"error: missing AxolotyWire source directory: {wire_sources}")
 

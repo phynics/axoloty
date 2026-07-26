@@ -15,12 +15,9 @@ let package = Package(
             name: "Axoloty",
             targets: ["Axoloty"]
         ),
-        .library(
-            name: "AxolotyWire",
-            targets: ["AxolotyWire"]
-        ),
     ],
     dependencies: [
+        .package(path: "Packages/AxolotyWire"),
         .package(url: "https://github.com/swift-server-community/mqtt-nio.git", from: "2.13.0"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.101.2"),
         .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.37.1"),
@@ -32,13 +29,9 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "AxolotyWire",
-            path: "Source/WireCodec"
-        ),
-        .target(
             name: "Axoloty",
             dependencies: [
-                .target(name: "AxolotyWire"),
+                .product(name: "AxolotyWire", package: "AxolotyWire"),
                 .product(name: "MQTTNIO", package: "mqtt-nio"),
                 .product(name: "NIO", package: "swift-nio"),
                 .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
@@ -48,14 +41,13 @@ let package = Package(
                 .product(name: "ErrorKit", package: "ErrorKit"),
                 .product(name: "IkigaJSON", package: "swift-json"),
             ],
-            path: "Source",
-            exclude: ["WireCodec"]
+            path: "Source"
         ),
         .testTarget(
             name: "AxolotyTests",
             dependencies: [
                 "Axoloty",
-                .target(name: "AxolotyWire"),
+                .product(name: "AxolotyWire", package: "AxolotyWire"),
                 .product(name: "IkigaJSON", package: "swift-json"),
             ],
             path: "Tests",
@@ -96,7 +88,9 @@ let package = Package(
         ),
         .testTarget(
             name: "AxolotyWireTests",
-            dependencies: ["AxolotyWire"],
+            dependencies: [
+                .product(name: "AxolotyWire", package: "AxolotyWire"),
+            ],
             path: "Tests/AxolotyWire"
         ),
     ],
