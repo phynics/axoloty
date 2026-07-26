@@ -1,12 +1,22 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 @testable import Axoloty
+import Foundation
 import Testing
 
-/// A mutable box for capturing values in @Sendable test closures.
+/// A lock-guarded mutable box for capturing values in `@Sendable` test
+/// closures. Every read and write is synchronized through an `NSLock`, so the
+/// `@unchecked Sendable` conformance is truthful rather than merely asserted.
 private final class Box<T>: @unchecked Sendable {
-    var value: T
-    init(_ value: T) { self.value = value }
+    private let lock = NSLock()
+    private var stored: T
+
+    init(_ value: T) { self.stored = value }
+
+    var value: T {
+        get { lock.withLock { stored } }
+        set { lock.withLock { stored = newValue } }
+    }
 }
 
 /// Tests for the static dispatch infrastructure that will replace
@@ -32,8 +42,9 @@ struct StaticDispatchTests {
         #expect(token2 != nil)
         #expect(table.subscriberCount == 2)
 
-        let owned = OwnedMessage(topic: "coaty/3/test/ADV:foo/11111111-1111-4111-8111-111111111111")
-        table.dispatch(owned.message)
+        withBorrowedMessage(topic: "coaty/3/test/ADV:foo/11111111-1111-4111-8111-111111111111") { message in
+            table.dispatch(message)
+        }
 
         #expect(received.value.count == 2)
         #expect(received.value.contains("handler1"))
@@ -50,8 +61,9 @@ struct StaticDispatchTests {
 
         #expect(table.subscriberCount == 0)
 
-        let owned = OwnedMessage(topic: "coaty/3/test/ADV:foo/11111111-1111-4111-8111-111111111111")
-        table.dispatch(owned.message)
+        withBorrowedMessage(topic: "coaty/3/test/ADV:foo/11111111-1111-4111-8111-111111111111") { message in
+            table.dispatch(message)
+        }
 
         #expect(received.value == 0)
     }
@@ -81,8 +93,9 @@ struct StaticDispatchTests {
         #expect(t2 != nil)
         #expect(table.subscriberCount == 1)
 
-        let owned = OwnedMessage(topic: "coaty/3/test/ADV:foo/11111111-1111-4111-8111-111111111111")
-        table.dispatch(owned.message)
+        withBorrowedMessage(topic: "coaty/3/test/ADV:foo/11111111-1111-4111-8111-111111111111") { message in
+            table.dispatch(message)
+        }
         #expect(received.value == 1)
     }
 
@@ -99,15 +112,15 @@ struct StaticDispatchTests {
         #expect(fooToken != nil)
         #expect(barToken != nil)
 
-        let owned = OwnedMessage(topic: "coaty/3/test/ADV:foo/11111111-1111-4111-8111-111111111111")
+        withBorrowedMessage(topic: "coaty/3/test/ADV:foo/11111111-1111-4111-8111-111111111111") { message in
+            table.dispatch(key: "foo", message)
+            #expect(fooReceived.value == 1)
+            #expect(barReceived.value == 0)
 
-        table.dispatch(key: "foo", owned.message)
-        #expect(fooReceived.value == 1)
-        #expect(barReceived.value == 0)
-
-        table.dispatch(key: "bar", owned.message)
-        #expect(fooReceived.value == 1)
-        #expect(barReceived.value == 1)
+            table.dispatch(key: "bar", message)
+            #expect(fooReceived.value == 1)
+            #expect(barReceived.value == 1)
+        }
     }
 
     @Test
@@ -119,8 +132,9 @@ struct StaticDispatchTests {
         _ = table.subscribe(key: "b") { _ in total.value += 1 }
         _ = table.subscribe(key: "c") { _ in total.value += 1 }
 
-        let owned = OwnedMessage(topic: "coaty/3/test/ADV:foo/11111111-1111-4111-8111-111111111111")
-        table.dispatchAll(owned.message)
+        withBorrowedMessage(topic: "coaty/3/test/ADV:foo/11111111-1111-4111-8111-111111111111") { message in
+            table.dispatchAll(message)
+        }
         #expect(total.value == 3)
     }
 
@@ -147,8 +161,9 @@ struct StaticDispatchTests {
         _ = table.subscribe(key: "ch") { _ in received.value += 1 }
         _ = table.subscribe(key: "ch") { _ in received.value += 1 }
 
-        let owned = OwnedMessage(topic: "coaty/3/test/CHN:42/11111111-1111-4111-8111-111111111111")
-        table.dispatch(key: "ch", owned.message)
+        withBorrowedMessage(topic: "coaty/3/test/CHN:42/11111111-1111-4111-8111-111111111111") { message in
+            table.dispatch(key: "ch", message)
+        }
         #expect(received.value == 2)
     }
 
@@ -156,28 +171,31 @@ struct StaticDispatchTests {
 
     @Test
     func borrowedMessageParsesEventType() throws {
-        let owned = OwnedMessage(topic: "coaty/3/test/ADV:sensors/33333333-3333-4333-8333-333333333333")
-        #expect(owned.message.eventType == .advertise)
-        #expect(owned.message.isRawTopic == false)
+        withBorrowedMessage(topic: "coaty/3/test/ADV:sensors/33333333-3333-4333-8333-333333333333") { message in
+            #expect(message.eventType == .advertise)
+            #expect(message.isRawTopic == false)
+        }
     }
 
     @Test
     func borrowedMessageIdentifiesRawTopic() throws {
-        let owned = OwnedMessage(topic: "external/test/route", payload: "{}")
-        #expect(owned.message.isRawTopic == true)
-        #expect(owned.message.eventType == nil)
+        withBorrowedMessage(topic: "external/test/route", payload: "{}") { message in
+            #expect(message.isRawTopic == true)
+            #expect(message.eventType == nil)
+        }
     }
 
     @Test
     func borrowedMessageReaderAccessesPayload() throws {
         let payload = #"{"ioSourceId":"33333333-3333-4333-8333-333333333333"}"#
-        let owned = OwnedMessage(
+        withBorrowedMessage(
             topic: "coaty/3/test/ASC:ctx/55555555-5555-4555-8555-555555555555",
             payload: payload
-        )
-        let reader = owned.message.reader()
-        let sourceId = reader.readUUID("ioSourceId")
-        #expect(sourceId != nil)
+        ) { message in
+            let reader = message.reader()
+            let sourceId = reader.readUUID("ioSourceId")
+            #expect(sourceId != nil)
+        }
     }
 
     @Test
@@ -190,37 +208,38 @@ struct StaticDispatchTests {
         }
 
         let payload = #"{"ioSourceId":"33333333-3333-4333-8333-333333333333","ioActorId":"44444444-4444-4444-8444-444444444444","associatingRoute":"coaty/3/test/IOV/33333333-3333-4333-8333-333333333333","updateRate":250}"#
-        let owned = OwnedMessage(
+        withBorrowedMessage(
             topic: "coaty/3/test/ASC:ctx/55555555-5555-4555-8555-555555555555",
             payload: payload
-        )
-
-        table.dispatch(owned.message)
+        ) { message in
+            table.dispatch(message)
+        }
         #expect(capturedEvent.value == .associate)
     }
 }
 
 // MARK: - Test helpers
 
-private final class OwnedMessage {
-    let topicBytes: [UInt8]
-    let payloadBytes: [UInt8]
-    let message: BorrowedMessage
-
-    init(topic: String, payload: String = "{}") {
-        let tb = Array(topic.utf8)
-        let pb = Array(payload.utf8)
-        self.topicBytes = tb
-        self.payloadBytes = pb
-        self.message = tb.withUnsafeBufferPointer { topicBuf in
-            pb.withUnsafeBufferPointer { payloadBuf in
-                BorrowedMessage(
-                    topicBytes: topicBuf.baseAddress!,
-                    topicLength: topicBuf.count,
-                    payloadBytes: payloadBuf.baseAddress!,
-                    payloadLength: payloadBuf.count
-                )
-            }
+/// Pins the topic and payload byte buffers for the synchronous duration of
+/// `body`, so the `BorrowedMessage` and every value derived from it
+/// (`ByteSlice`, `WireReader`, `TopicView`) never outlive their
+/// `withUnsafeBufferPointer` scopes.
+private func withBorrowedMessage<R>(
+    topic: String,
+    payload: String = "{}",
+    _ body: (BorrowedMessage) throws -> R
+) rethrows -> R {
+    let topicBytes = Array(topic.utf8)
+    let payloadBytes = Array(payload.utf8)
+    return try topicBytes.withUnsafeBufferPointer { topicBuf in
+        try payloadBytes.withUnsafeBufferPointer { payloadBuf in
+            let message = BorrowedMessage(
+                topicBytes: topicBuf.baseAddress!,
+                topicLength: topicBuf.count,
+                payloadBytes: payloadBuf.baseAddress!,
+                payloadLength: payloadBuf.count
+            )
+            return try body(message)
         }
     }
 }
