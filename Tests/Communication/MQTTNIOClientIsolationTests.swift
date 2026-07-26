@@ -121,7 +121,7 @@ private func race(
     second: @escaping @Sendable () -> Void
 ) async throws {
     let gate = RaceStartGate()
-    try await withTimeout(description: description, timeout: .seconds(2)) {
+    try await withTimeout(description, timeout: .seconds(2)) {
         await withTaskGroup(of: Void.self) { group in
             group.addTask {
                 await gate.wait()
