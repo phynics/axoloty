@@ -1,106 +1,88 @@
-# Axoloty Modernization Roadmap
+# Axoloty v1.0 Roadmap
 
-This document is a strategic overview. The live roadmap — with per-item status,
-phase, and priority — is tracked on the
-[Axoloty Roadmap](https://github.com/users/phynics/projects/5) GitHub Project.
+Axoloty v1.0 — lean, safe, embedded-ready. This document is a strategic
+summary; the live roadmap — with per-item status, phase, and priority — is
+tracked on the
+[Axoloty Roadmap](https://github.com/users/phynics/projects/5) GitHub Project,
+and GitHub Issues are the complete planning record. For the agentic workflow
+driving planning and execution, see [AGENTS.md](../AGENTS.md).
 
-For the agentic workflow driving planning and execution, see
-[AGENTS.md](../AGENTS.md).
+The v1 tracker is
+[#272 — Axoloty v1.0 — lean, safe, embedded-ready](https://github.com/phynics/axoloty/issues/272).
+
+## North star
+
+Axoloty provides a small, bounded-resource, Coaty-compatible edge core with a
+safe host runtime layered on top. Host conveniences impose no dependency,
+allocation, or platform cost on embedded builds.
+
+## v1 outcome
+
+Version 1.0 ships a stable host library and a separately consumable
+Foundation-free wire module, with an ESP32-C6 proof completing
+Advertise/Deadvertise and Discover/Resolve against Axoloty and pinned CoatyJS
+within explicit resource budgets.
+
+## Design choices
+
+- Share a deep wire module, not the complete host runtime.
+- Preserve the Coaty JSON contract and the existing compatibility suite.
+- Keep borrowed bytes synchronous and scoped; materialize owned bytes before
+  any async hop.
+- Keep embedded routing bounded and single-threaded; host synchronization
+  belongs in a host adapter.
+- Use static embedded composition and retain dynamic registration only in the
+  host runtime.
+- Keep the current WireReader/WireWriter unless measurements prove replacement
+  is necessary.
+- Create implementation tickets for a phase only when the preceding gate
+  passes.
+
+## Non-goals
+
+- Porting Foundation, NIO, ErrorKit, swift-log, the host IoC container, or
+  every controller to Embedded Swift.
+- A parallel WASM roadmap without a concrete consumer.
+- A SwiftData/SwiftUI facade before the v1 core is stable.
+- Zero-copy borrowed buffers crossing actors, tasks, or suspension points.
+- Expanding the first embedded release beyond Advertise/Deadvertise and
+  Discover/Resolve.
 
 ## Phases
 
-### Phase 0 — Workspace, workflow & CI/container scaffolding (complete)
+Gates are sequential: a later phase stays in Backlog until the preceding gate
+closes. Each gate's tracking issue carries the full scope, non-goals, gate
+criteria, and validation commands.
 
-Container-based build/test flow, root Makefile, GitHub Actions CI, removal of
-stale packaging artifacts, and this roadmap and AGENTS.md.
+| Phase | Gate | Outcome |
+|---|---|---|
+| 0 | [#273](https://github.com/phynics/axoloty/issues/273) | Finish and clear the inherited backlog; leave no pre-roadmap ambiguity. |
+| 1 | [#274](https://github.com/phynics/axoloty/issues/274) | Establish the host safety boundary: atomic bootstrap, owned bytes before async delivery, no falsely `Sendable` mutable transport/router state. |
+| 2 | [#275](https://github.com/phynics/axoloty/issues/275) | Extract `AxolotyWire`, a dependency-free Foundation-free wire module the host consumes without changing wire behavior. |
+| 3 | [#276](https://github.com/phynics/axoloty/issues/276) | Establish resource and performance budgets: latency, allocations, binary size, malformed-input bounds, and ESP32-C6 RAM/stack/flash/rate budgets. |
+| 4 | [#277](https://github.com/phynics/axoloty/issues/277) | Prove the ESP32-C6 vertical slice: Advertise/Deadvertise and Discover/Resolve against Axoloty and pinned CoatyJS within budget. |
+| 5 | [#278](https://github.com/phynics/axoloty/issues/278) | Lean the host, document the v1 interface and support matrix, and tag v1.0.0. |
 
-### Phase 1 — swift-foundation migration (complete)
+## Cross-cutting success metrics
 
-Migrated Apple-platform Foundation usage to swift-foundation's portable API
-surface; isolated Apple-only functionality (Bonjour) behind protocol seams.
+- `AxolotyWire` has zero external runtime dependencies.
+- `AxolotyWire` imports no Foundation, NIO, MQTT, ErrorKit, or logging modules
+  and uses no actors.
+- Borrowed values never cross asynchronous seams.
+- No mutable transport or router state relies on `@unchecked Sendable`.
+- Existing CoatyJS fixture, live-wire, IO, lifecycle, and SensorThings
+  compatibility gates remain green.
+- Advertise/Deadvertise and Discover/Resolve run on the selected ESP32-C6
+  within recorded RAM, stack, flash, payload-size, and sustained-rate budgets.
+- The roadmap contains one active deployment direction and no competing
+  speculative epics.
 
-### Phase 2 — SPM-only cleanup (complete)
+## Release criteria
 
-SPM is the sole installation path. Jazzy replaced by DocC. A DocC catalog
-exists with a landing page and getting-started article.
-
-### Phase 3 — Dependency modernization (complete)
-
-RxSwift → async/await/AsyncSequence/actors; CocoaMQTT → mqtt-nio;
-XCGLogger → swift-log; ErrorKit adopted as `AxolotyError` base.
-
-### Phase 4 — Linux compatibility hardening (complete)
-
-`swift build && swift test` pass on Linux. Portable APIs preferred over
-platform branching. Package builds portably without platform declarations.
-
-### Phase 5 — Testing harness improvements (complete)
-
-Tests organized into subsystem subfolders. Mosquitto auto-starts in containers.
-Swift Testing is the sole framework. Tier ownership, coverage, and fuzz
-artifacts have executable Make/CI gates.
-
-### Phase 6 — CoatyJS protocol/version compatibility audit (in progress)
-
-Maintaining wire-compatibility harness; auditing protocol/event versioning
-against CoatyJS; per-area decisions on kept vs. dropped vs. diverged features.
-Wire fixture harness, pinned/containerized reference agents, captured
-reference fixtures, the live core interoperability matrix, and lifecycle and
-failure compatibility are complete (T-016–T-020). The lifecycle catalog's
-final disposition: 9 of 11 scenarios execute live (6 with Axoloty as the
-genuine subject via a controllable TCP proxy and real broker restarts);
-`qos-1`/`qos-2` are approved divergences (CoatyJS 2.4.0 hardcodes QoS 0);
-legacy CoatySwift lifecycle coverage is descoped by recorded decision
-(`Tests/WireCompatibility/Audit/LegacySwiftLifecycleScopeDecision.md`).
-
-The IO/SensorThings compatibility decision (T-021, #31) is recorded: the IO
-reference runner, offline wire-format evidence, and a live modern→JS
-Associate scenario are in place, and the keep/diverge/remove decisions are
-documented in
-`Tests/WireCompatibility/Audit/IOAndSensorThingsDecisions.md`. Two defects
-were found and recorded as intentional divergences rather than silently
-normalized: Axoloty's `handleAssociate` previously force-unwrapped the
-optional `isExternalRoute` (CoatyJS omits it, so an Axoloty actor trapped)
-— since fixed (`isExternalRoute: isExternalRoute ?? false`) — and the
-IoValue wire format wraps the value under `payload` while CoatyJS publishes
-the bare value. Several scenarios (raw IoValue capture, external route,
-fan-out, SensorThings fixtures) are honestly marked not-yet-tested pending
-follow-up captures; legacy CoatySwift IO directions are descoped by recorded
-decision (`LegacySwiftIOScopeDecision.md`). Remaining in this phase: the
-compatibility CI gates (T-022, #32) wiring the new offline suites into the PR
-tier and the live IO runner into the nightly tier.
-
-### Phase 7 — Runtime correctness (Broadcast/streaming + IO routing)
-
-Closes out correctness gaps left by the Phase 3 RxSwift → async/await
-migration: lost/dropped events, unstructured task spawning breaking MQTT
-ordering, stream lifecycle leaks, and IO-routing data-clump cleanup. Tracked
-under [#135](https://github.com/phynics/Axoloty/issues/135).
-
-### Phase 8 — Wire test infrastructure
-
-Replaces the Python wire-compatibility harness with an npx-runnable Node CLI
-plus Swift Testing verification, and fills in remaining JS → modern live
-scenario coverage. The dependency order is deliberately:
-
-1. CLI scaffold and dependency pinning (#121, #122).
-2. Swift semantic verification (#123), now present for committed captures.
-3. Deterministic Modern → JS readiness (#134), now complete.
-4. Make/CI migration and Python removal (#124).
-5. Additional JS → modern live scenarios (#125), which can proceed in parallel
-   after the shared verification surface exists.
-
-Tracked under
-[#120](https://github.com/phynics/Axoloty/issues/120), sequenced as part of
-[#135](https://github.com/phynics/Axoloty/issues/135).
-
----
-
-The modernization roadmap epic ([#43](https://github.com/phynics/Axoloty/issues/43))
-is closing out: T-021 (#31) is complete with its decisions recorded, leaving
-only the compatibility CI gates T-022 (#32). Phases 7–8 continue under a new epic,
-[#135](https://github.com/phynics/Axoloty/issues/135) (Post-Modernization
-Roadmap), per
-`docs/superpowers/plans/2026-07-17-post-modernization-roadmap.md`. WASM
-exploration (#127), Embedded Swift (#96), and the IO routing bounded-cost
-epic (#115) remain tracked separately and are not gated on #135.
+- Every phase gate closes in order.
+- Canonical build, test, lint, documentation, and wire-compatibility commands
+  pass.
+- Public interfaces and migration notes are documented for v1.
+- Supported host and embedded capabilities are stated explicitly.
+- A release candidate is validated from a clean checkout before tagging
+  v1.0.0.
