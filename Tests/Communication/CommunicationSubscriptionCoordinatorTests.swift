@@ -6,7 +6,7 @@ import Testing
 
 /// Tests the lifecycle of ``CommunicationSubscriptionCoordinator`` and verifies
 /// that it emits subscribe and unsubscribe commands with exact counts.
-@Suite
+@Suite @MainActor
 struct CommunicationSubscriptionCoordinatorTests {
 
     @Test
@@ -282,7 +282,7 @@ private actor CommandLog {
     }
 }
 
-private final class RecordingCommunicationClient: CommunicationClient, @unchecked Sendable {
+private final class RecordingCommunicationClient: CommunicationClient {
     var streams: CommunicationStreams!
     func setStreams(_ streams: CommunicationStreams) { self.streams = streams }
     var delegate: CommunicationClientDelegate = RecordingStartable()
@@ -298,7 +298,7 @@ private final class RecordingCommunicationClient: CommunicationClient, @unchecke
     func publish(_ topic: String, message: String) {}
     func publish(_ topic: String, message: [UInt8]) {}
 
-    func subscribe(_ topic: String) async throws {
+    @MainActor func subscribe(_ topic: String) async throws {
         commands.append(.subscribe(topic))
         if let gate {
             await gate.markStarted()
@@ -306,7 +306,7 @@ private final class RecordingCommunicationClient: CommunicationClient, @unchecke
         }
     }
 
-    func unsubscribe(_ topic: String) async throws {
+    @MainActor func unsubscribe(_ topic: String) async throws {
         commands.append(.unsubscribe(topic))
     }
 }

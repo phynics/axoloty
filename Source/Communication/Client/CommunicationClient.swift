@@ -28,7 +28,7 @@ extension CommunicationClientDelegate {
 /// the `MQTTNIOClient` class.
 ///
 /// Note: We expect our clients to use publish-subscribe communication.
-protocol CommunicationClient: Sendable {
+protocol CommunicationClient {
 
     /// The delegate that receives synchronous transport callbacks (state changes
     /// and incoming messages) and is started once the broker is discovered over
@@ -51,6 +51,9 @@ protocol CommunicationClient: Sendable {
 
     func publish(_ topic: String, message: String)
     func publish(_ topic: String, message: [UInt8])
-    func subscribe(_ topic: String) async throws
-    func unsubscribe(_ topic: String) async throws
+    /// Sends a subscription command from the manager's serialization domain.
+    @MainActor func subscribe(_ topic: String) async throws
+
+    /// Sends an unsubscription command from the manager's serialization domain.
+    @MainActor func unsubscribe(_ topic: String) async throws
 }
