@@ -16,6 +16,11 @@
 ///   closure, cross an `await`, or send it to another isolation domain. Copy
 ///   the needed fields first. This type is intentionally not `Sendable`; it is
 ///   designed for synchronous dispatch in the routing hot path.
+///
+/// Embedded routing consumes this view synchronously. A host adapter must make
+/// owned values before asynchronous delivery: copy payload bytes into `[UInt8]`
+/// and materialize topic metadata into `String` values before yielding an
+/// `AsyncStream` closure, creating a task, or sending into an actor.
 public struct BorrowedMessage {
     /// The parsed topic view borrowing the topic bytes.
     public let topic: TopicView

@@ -598,6 +598,17 @@ internal class MQTTNIOClient: CommunicationClient, @unchecked Sendable {
 
     // MARK: - mqtt-nio listener callbacks.
 
+    /// Processes one mqtt-nio PUBLISH at the synchronous-to-async ownership
+    /// boundary.
+    ///
+    /// mqtt-nio owns `info.payload` only for this listener callback. This
+    /// method first copies it into `[UInt8]`, then uses `TopicView` only inside
+    /// the scoped `String.withUTF8` borrow to make routing decisions and
+    /// materialize `ParsedMQTTMessage` metadata as `String`s. Every closure
+    /// yielded to ``deliveryContinuation`` captures only owned `Sendable`
+    /// values (`RawMQTTMessage`, `IoValueEventSnapshot`, or
+    /// `ParsedMQTTMessage`), never `TopicView`, `ByteSlice`, or
+    /// `BorrowedMessage`.
     private func handlePublish(_ result: Result<MQTTPublishInfo, Swift.Error>) {
         switch result {
         case .success(let info):
