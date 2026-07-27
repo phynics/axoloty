@@ -10,7 +10,7 @@ REPETITIONS=${AXOLOTY_FUZZ_REPETITIONS:-1}
 JOBS=${AXOLOTY_FUZZ_JOBS:-2}
 OUTPUT_BASE=${AXOLOTY_FUZZ_OUTPUT_DIR:-"$ROOT_DIR/.testing/fuzz"}
 RUNTIME=${CONTAINER_RUNTIME:-}
-IMAGE=${IMAGE:-coatyswift-dev}
+IMAGE=${IMAGE:-axoloty-dev}
 MODE=auto
 FAIL_FAST=0
 QUIET=0
@@ -32,7 +32,7 @@ Options:
   --jobs N             Parallel workers with isolated build artifacts (default: 2)
   --output DIR         Parent directory for timestamped campaign artifacts
   --runtime RUNTIME    podman or docker when running outside a container
-  --image IMAGE        Development image (default: coatyswift-dev)
+  --image IMAGE        Development image (default: axoloty-dev)
   --container          Force container execution
   --direct             Force direct Swift execution inside a container
   --fail-fast          Stop after the first failing case
