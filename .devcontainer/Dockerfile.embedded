@@ -23,15 +23,17 @@ ARG ESPFLASH_VERSION
 # ESP-IDF build prerequisites. The base image (swift:6.3-jammy) already has
 # git, curl, and unzip; the packages below are the remaining IDF requirements
 # (see https://docs.espressif.com/projects/esp-idf/en/v5.4/esp32c6/get-started/linux-macos-setup.html).
+# CMake is installed via pip (not apt) because the espressif/idf_swift component
+# requires CMake >= 3.29, and the apt version on Ubuntu 22.04 is 3.22.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        cmake \
         ninja-build \
         python3 \
         python3-pip \
         python3-venv \
         libusb-1.0-0-dev \
         libudev-dev \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && pip3 install --no-cache-dir "cmake>=3.29"
 
 # Clone ESP-IDF at the pinned tag. --depth 1 keeps the layer small; the tag
 # (not a branch) pins the exact IDF release. `install.sh esp32c6` downloads
