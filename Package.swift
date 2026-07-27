@@ -109,6 +109,16 @@ let package = Package(
             dependencies: ["Axoloty"],
             path: "Benchmarks/Consumers/AxolotyConsumer"
         ),
+        // Release-only wire benchmark executable (issue #300). Measures
+        // p50/p95 latency for topic parse, DTO decode/encode, borrowed-message
+        // validation, and combined parse-decode on every corpus case.
+        .executableTarget(
+            name: "WireBenchmark",
+            dependencies: [
+                .product(name: "AxolotyWire", package: "AxolotyWire"),
+            ],
+            path: "Benchmarks/WireBenchmark"
+        ),
     ],
     swiftLanguageModes: [.v6]
 )

@@ -26,6 +26,7 @@ RUN chmod 1777 /tmp \
     mosquitto \
     curl \
     unzip \
+    heaptrack \
     && rm -rf /var/lib/apt/lists/*
 
 # SwiftLint for the `make lint` target (also run in CI). Uses the static
