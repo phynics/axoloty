@@ -31,7 +31,7 @@ COMMA := ,
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-image embedded-toolchain-doctor embedded-device-info embedded-device-smoke embedded-reproducible-build
+.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-image embedded-toolchain-doctor embedded-device-info embedded-device-smoke embedded-reproducible-build benchmark-size
 
 help:
 	@printf '%s\n' \
@@ -66,6 +66,7 @@ help:
 		'make embedded-device-info  Query the board and record a device manifest' \
 		'make embedded-device-smoke  Build, flash, and capture the smoke marker' \
 		'make embedded-reproducible-build  Verify the firmware bin is reproducible' \
+		'make benchmark-size  Build release consumers and compare binary-size baselines' \
 		'make ci-fast       Run the build and fast test suite' \
 		'make ci            Run the consolidated pull-request checks' \
 		'make broker        Start Mosquitto on localhost:1883' \
@@ -284,6 +285,11 @@ docs: resolve
 
 lint: image
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" .devcontainer/run.sh swiftlint lint --config .swiftlint.yml
+
+benchmark-size: resolve
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
+	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+	.devcontainer/run.sh /workspace/Tests/Support/check-benchmark-size.sh
 
 clean:
 	rm -rf "$(BUILD_DIR)" "$(COVERAGE_BUILD_DIR)"

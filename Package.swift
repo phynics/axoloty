@@ -93,6 +93,22 @@ let package = Package(
             ],
             path: "Tests/AxolotyWire"
         ),
+        // Build-only release consumers for binary-size and dependency-closure
+        // benchmarking (issue #299). Not shipped as products — they exist so
+        // `make benchmark-size` can measure the linked binary size and verify
+        // the AxolotyWire consumer pulls no host runtime dependencies.
+        .executableTarget(
+            name: "AxolotyWireConsumer",
+            dependencies: [
+                .product(name: "AxolotyWire", package: "AxolotyWire"),
+            ],
+            path: "Benchmarks/Consumers/AxolotyWireConsumer"
+        ),
+        .executableTarget(
+            name: "AxolotyConsumer",
+            dependencies: ["Axoloty"],
+            path: "Benchmarks/Consumers/AxolotyConsumer"
+        ),
     ],
     swiftLanguageModes: [.v6]
 )
