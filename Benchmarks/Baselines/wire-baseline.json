@@ -1,3 +1,1264 @@
 {
-  "$comment": "Wire benchmark latency and allocation baseline. Updated by `make benchmark-wire` when the baseline intentionally changes. Do not edit manually — run `make benchmark-wire` and review the diff."
+  "environment": {
+    "swiftVersion": "Swift 6.3",
+    "targetTriple": "x86_64-unknown-linux-gnu",
+    "optimization": "release",
+    "cpu": "model name : AMD Ryzen 3 PRO 3200G with Radeon Vega Graphics",
+    "kernel": "Linux version 7.1.3-zen2 (nixbld@localhost) (gcc (GCC) 15.2.0, GNU ld (GNU Binutils) 2.46) #1-NixOS ZEN SMP PREEMPT_DYNAMIC Tue Jan  1 00:00:00 UTC 1980",
+    "corpusHash": "0000000000006549-2895e65bc7b36ca9",
+    "commit": "357facd",
+    "clean": false
+  },
+  "cpuGovernor": "schedutil",
+  "cases": [
+    {
+      "caseId": "advertise-small",
+      "family": "ADV",
+      "sizeClass": "small",
+      "operations": {
+        "topicParse": {
+          "p50ns": 56,
+          "p95ns": 62,
+          "batchSize": 8388608
+        },
+        "dtoDecode": {
+          "p50ns": 177,
+          "p95ns": 217,
+          "batchSize": 2097152
+        },
+        "dtoEncode": {
+          "p50ns": 226,
+          "p95ns": 264,
+          "batchSize": 2097152
+        },
+        "borrowedValidation": {
+          "p50ns": 81,
+          "p95ns": 135,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 329,
+          "p95ns": 469,
+          "batchSize": 524288
+        }
+      }
+    },
+    {
+      "caseId": "advertise-typical",
+      "family": "ADV",
+      "sizeClass": "typical",
+      "operations": {
+        "topicParse": {
+          "p50ns": 67,
+          "p95ns": 103,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 549,
+          "p95ns": 751,
+          "batchSize": 524288
+        },
+        "dtoEncode": {
+          "p50ns": 659,
+          "p95ns": 783,
+          "batchSize": 524288
+        },
+        "borrowedValidation": {
+          "p50ns": 83,
+          "p95ns": 113,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 681,
+          "p95ns": 937,
+          "batchSize": 524288
+        }
+      }
+    },
+    {
+      "caseId": "advertise-maximum",
+      "family": "ADV",
+      "sizeClass": "maximum",
+      "operations": {
+        "topicParse": {
+          "p50ns": 71,
+          "p95ns": 99,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 1351,
+          "p95ns": 1856,
+          "batchSize": 262144
+        },
+        "dtoEncode": {
+          "p50ns": 1735,
+          "p95ns": 2108,
+          "batchSize": 262144
+        },
+        "borrowedValidation": {
+          "p50ns": 89,
+          "p95ns": 111,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 1434,
+          "p95ns": 2197,
+          "batchSize": 262144
+        }
+      }
+    },
+    {
+      "caseId": "associate-small",
+      "family": "ASC",
+      "sizeClass": "small",
+      "operations": {
+        "topicParse": {
+          "p50ns": 77,
+          "p95ns": 110,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 952,
+          "p95ns": 1212,
+          "batchSize": 262144
+        },
+        "dtoEncode": {
+          "p50ns": 1011,
+          "p95ns": 1386,
+          "batchSize": 524288
+        },
+        "borrowedValidation": {
+          "p50ns": 95,
+          "p95ns": 129,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 1062,
+          "p95ns": 1471,
+          "batchSize": 524288
+        }
+      }
+    },
+    {
+      "caseId": "associate-typical",
+      "family": "ASC",
+      "sizeClass": "typical",
+      "operations": {
+        "topicParse": {
+          "p50ns": 77,
+          "p95ns": 111,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 1253,
+          "p95ns": 1639,
+          "batchSize": 262144
+        },
+        "dtoEncode": {
+          "p50ns": 1522,
+          "p95ns": 1880,
+          "batchSize": 262144
+        },
+        "borrowedValidation": {
+          "p50ns": 95,
+          "p95ns": 124,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 1421,
+          "p95ns": 2063,
+          "batchSize": 262144
+        }
+      }
+    },
+    {
+      "caseId": "associate-maximum",
+      "family": "ASC",
+      "sizeClass": "maximum",
+      "operations": {
+        "topicParse": {
+          "p50ns": 76,
+          "p95ns": 92,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 1295,
+          "p95ns": 1671,
+          "batchSize": 262144
+        },
+        "dtoEncode": {
+          "p50ns": 1428,
+          "p95ns": 2077,
+          "batchSize": 262144
+        },
+        "borrowedValidation": {
+          "p50ns": 93,
+          "p95ns": 119,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 1183,
+          "p95ns": 1407,
+          "batchSize": 131072
+        }
+      }
+    },
+    {
+      "caseId": "call-small",
+      "family": "CLL",
+      "sizeClass": "small",
+      "operations": {
+        "topicParse": {
+          "p50ns": 119,
+          "p95ns": 138,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 180,
+          "p95ns": 237,
+          "batchSize": 2097152
+        },
+        "dtoEncode": {
+          "p50ns": 236,
+          "p95ns": 296,
+          "batchSize": 2097152
+        },
+        "borrowedValidation": {
+          "p50ns": 126,
+          "p95ns": 150,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 352,
+          "p95ns": 461,
+          "batchSize": 1048576
+        }
+      }
+    },
+    {
+      "caseId": "call-typical",
+      "family": "CLL",
+      "sizeClass": "typical",
+      "operations": {
+        "topicParse": {
+          "p50ns": 120,
+          "p95ns": 157,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 415,
+          "p95ns": 511,
+          "batchSize": 1048576
+        },
+        "dtoEncode": {
+          "p50ns": 556,
+          "p95ns": 783,
+          "batchSize": 1048576
+        },
+        "borrowedValidation": {
+          "p50ns": 133,
+          "p95ns": 191,
+          "batchSize": 2097152
+        },
+        "combinedParseDecode": {
+          "p50ns": 651,
+          "p95ns": 820,
+          "batchSize": 524288
+        }
+      }
+    },
+    {
+      "caseId": "call-maximum",
+      "family": "CLL",
+      "sizeClass": "maximum",
+      "operations": {
+        "topicParse": {
+          "p50ns": 120,
+          "p95ns": 148,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 1222,
+          "p95ns": 1508,
+          "batchSize": 262144
+        },
+        "dtoEncode": {
+          "p50ns": 1676,
+          "p95ns": 2191,
+          "batchSize": 262144
+        },
+        "borrowedValidation": {
+          "p50ns": 114,
+          "p95ns": 175,
+          "batchSize": 2097152
+        },
+        "combinedParseDecode": {
+          "p50ns": 1263,
+          "p95ns": 1678,
+          "batchSize": 262144
+        }
+      }
+    },
+    {
+      "caseId": "channel-small",
+      "family": "CHN",
+      "sizeClass": "small",
+      "operations": {
+        "topicParse": {
+          "p50ns": 53,
+          "p95ns": 57,
+          "batchSize": 8388608
+        },
+        "dtoDecode": {
+          "p50ns": 17,
+          "p95ns": 18,
+          "batchSize": 16777216
+        },
+        "dtoEncode": {
+          "p50ns": 23,
+          "p95ns": 29,
+          "batchSize": 16777216
+        },
+        "borrowedValidation": {
+          "p50ns": 81,
+          "p95ns": 106,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 86,
+          "p95ns": 120,
+          "batchSize": 4194304
+        }
+      }
+    },
+    {
+      "caseId": "channel-typical",
+      "family": "CHN",
+      "sizeClass": "typical",
+      "operations": {
+        "topicParse": {
+          "p50ns": 56,
+          "p95ns": 58,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 943,
+          "p95ns": 1006,
+          "batchSize": 524288
+        },
+        "dtoEncode": {
+          "p50ns": 1060,
+          "p95ns": 1153,
+          "batchSize": 262144
+        },
+        "borrowedValidation": {
+          "p50ns": 67,
+          "p95ns": 73,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 1042,
+          "p95ns": 1132,
+          "batchSize": 262144
+        }
+      }
+    },
+    {
+      "caseId": "channel-maximum",
+      "family": "CHN",
+      "sizeClass": "maximum",
+      "operations": {
+        "topicParse": {
+          "p50ns": 87,
+          "p95ns": 123,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 2040,
+          "p95ns": 2367,
+          "batchSize": 131072
+        },
+        "dtoEncode": {
+          "p50ns": 2316,
+          "p95ns": 2866,
+          "batchSize": 131072
+        },
+        "borrowedValidation": {
+          "p50ns": 92,
+          "p95ns": 96,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 2189,
+          "p95ns": 2274,
+          "batchSize": 131072
+        }
+      }
+    },
+    {
+      "caseId": "complete-small",
+      "family": "CPL",
+      "sizeClass": "small",
+      "operations": {
+        "topicParse": {
+          "p50ns": 72,
+          "p95ns": 72,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 39,
+          "p95ns": 44,
+          "batchSize": 8388608
+        },
+        "dtoEncode": {
+          "p50ns": 48,
+          "p95ns": 52,
+          "batchSize": 8388608
+        },
+        "borrowedValidation": {
+          "p50ns": 82,
+          "p95ns": 89,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 139,
+          "p95ns": 174,
+          "batchSize": 2097152
+        }
+      }
+    },
+    {
+      "caseId": "complete-typical",
+      "family": "CPL",
+      "sizeClass": "typical",
+      "operations": {
+        "topicParse": {
+          "p50ns": 75,
+          "p95ns": 112,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 71,
+          "p95ns": 74,
+          "batchSize": 4194304
+        },
+        "dtoEncode": {
+          "p50ns": 92,
+          "p95ns": 113,
+          "batchSize": 4194304
+        },
+        "borrowedValidation": {
+          "p50ns": 82,
+          "p95ns": 85,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 192,
+          "p95ns": 198,
+          "batchSize": 2097152
+        }
+      }
+    },
+    {
+      "caseId": "complete-maximum",
+      "family": "CPL",
+      "sizeClass": "maximum",
+      "operations": {
+        "topicParse": {
+          "p50ns": 74,
+          "p95ns": 90,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 853,
+          "p95ns": 863,
+          "batchSize": 524288
+        },
+        "dtoEncode": {
+          "p50ns": 1069,
+          "p95ns": 1108,
+          "batchSize": 262144
+        },
+        "borrowedValidation": {
+          "p50ns": 81,
+          "p95ns": 89,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 988,
+          "p95ns": 1005,
+          "batchSize": 262144
+        }
+      }
+    },
+    {
+      "caseId": "deadvertise-small",
+      "family": "DAD",
+      "sizeClass": "small",
+      "operations": {
+        "topicParse": {
+          "p50ns": 53,
+          "p95ns": 57,
+          "batchSize": 8388608
+        },
+        "dtoDecode": {
+          "p50ns": 79,
+          "p95ns": 81,
+          "batchSize": 4194304
+        },
+        "dtoEncode": {
+          "p50ns": 135,
+          "p95ns": 138,
+          "batchSize": 2097152
+        },
+        "borrowedValidation": {
+          "p50ns": 61,
+          "p95ns": 63,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 145,
+          "p95ns": 147,
+          "batchSize": 2097152
+        }
+      }
+    },
+    {
+      "caseId": "deadvertise-typical",
+      "family": "DAD",
+      "sizeClass": "typical",
+      "operations": {
+        "topicParse": {
+          "p50ns": 52,
+          "p95ns": 53,
+          "batchSize": 8388608
+        },
+        "dtoDecode": {
+          "p50ns": 190,
+          "p95ns": 190,
+          "batchSize": 2097152
+        },
+        "dtoEncode": {
+          "p50ns": 287,
+          "p95ns": 287,
+          "batchSize": 1048576
+        },
+        "borrowedValidation": {
+          "p50ns": 62,
+          "p95ns": 62,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 257,
+          "p95ns": 258,
+          "batchSize": 1048576
+        }
+      }
+    },
+    {
+      "caseId": "deadvertise-maximum",
+      "family": "DAD",
+      "sizeClass": "maximum",
+      "operations": {
+        "topicParse": {
+          "p50ns": 51,
+          "p95ns": 53,
+          "batchSize": 8388608
+        },
+        "dtoDecode": {
+          "p50ns": 651,
+          "p95ns": 652,
+          "batchSize": 524288
+        },
+        "dtoEncode": {
+          "p50ns": 927,
+          "p95ns": 930,
+          "batchSize": 524288
+        },
+        "borrowedValidation": {
+          "p50ns": 61,
+          "p95ns": 62,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 720,
+          "p95ns": 721,
+          "batchSize": 524288
+        }
+      }
+    },
+    {
+      "caseId": "discover-small",
+      "family": "DSC",
+      "sizeClass": "small",
+      "operations": {
+        "topicParse": {
+          "p50ns": 73,
+          "p95ns": 73,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 28,
+          "p95ns": 28,
+          "batchSize": 16777216
+        },
+        "dtoEncode": {
+          "p50ns": 37,
+          "p95ns": 37,
+          "batchSize": 8388608
+        },
+        "borrowedValidation": {
+          "p50ns": 80,
+          "p95ns": 81,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 107,
+          "p95ns": 107,
+          "batchSize": 4194304
+        }
+      }
+    },
+    {
+      "caseId": "discover-typical",
+      "family": "DSC",
+      "sizeClass": "typical",
+      "operations": {
+        "topicParse": {
+          "p50ns": 72,
+          "p95ns": 73,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 282,
+          "p95ns": 284,
+          "batchSize": 1048576
+        },
+        "dtoEncode": {
+          "p50ns": 361,
+          "p95ns": 374,
+          "batchSize": 1048576
+        },
+        "borrowedValidation": {
+          "p50ns": 80,
+          "p95ns": 85,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 414,
+          "p95ns": 419,
+          "batchSize": 1048576
+        }
+      }
+    },
+    {
+      "caseId": "discover-maximum",
+      "family": "DSC",
+      "sizeClass": "maximum",
+      "operations": {
+        "topicParse": {
+          "p50ns": 73,
+          "p95ns": 77,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 909,
+          "p95ns": 919,
+          "batchSize": 524288
+        },
+        "dtoEncode": {
+          "p50ns": 1181,
+          "p95ns": 1186,
+          "batchSize": 262144
+        },
+        "borrowedValidation": {
+          "p50ns": 81,
+          "p95ns": 83,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 1063,
+          "p95ns": 1075,
+          "batchSize": 262144
+        }
+      }
+    },
+    {
+      "caseId": "ioValue-small",
+      "family": "IOV",
+      "sizeClass": "small",
+      "operations": {
+        "topicParse": {
+          "p50ns": 52,
+          "p95ns": 54,
+          "batchSize": 8388608
+        },
+        "dtoDecode": {
+          "p50ns": 36,
+          "p95ns": 36,
+          "batchSize": 8388608
+        },
+        "dtoEncode": {
+          "p50ns": 63,
+          "p95ns": 65,
+          "batchSize": 4194304
+        },
+        "borrowedValidation": {
+          "p50ns": 61,
+          "p95ns": 62,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 115,
+          "p95ns": 117,
+          "batchSize": 4194304
+        }
+      }
+    },
+    {
+      "caseId": "ioValue-typical",
+      "family": "IOV",
+      "sizeClass": "typical",
+      "operations": {
+        "topicParse": {
+          "p50ns": 51,
+          "p95ns": 53,
+          "batchSize": 8388608
+        },
+        "dtoDecode": {
+          "p50ns": 48,
+          "p95ns": 51,
+          "batchSize": 8388608
+        },
+        "dtoEncode": {
+          "p50ns": 84,
+          "p95ns": 86,
+          "batchSize": 4194304
+        },
+        "borrowedValidation": {
+          "p50ns": 62,
+          "p95ns": 62,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 140,
+          "p95ns": 145,
+          "batchSize": 2097152
+        }
+      }
+    },
+    {
+      "caseId": "ioValue-maximum",
+      "family": "IOV",
+      "sizeClass": "maximum",
+      "operations": {
+        "topicParse": {
+          "p50ns": 52,
+          "p95ns": 53,
+          "batchSize": 8388608
+        },
+        "dtoDecode": {
+          "p50ns": 319,
+          "p95ns": 326,
+          "batchSize": 1048576
+        },
+        "dtoEncode": {
+          "p50ns": 458,
+          "p95ns": 460,
+          "batchSize": 1048576
+        },
+        "borrowedValidation": {
+          "p50ns": 62,
+          "p95ns": 62,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 408,
+          "p95ns": 412,
+          "batchSize": 1048576
+        }
+      }
+    },
+    {
+      "caseId": "query-small",
+      "family": "QRY",
+      "sizeClass": "small",
+      "operations": {
+        "topicParse": {
+          "p50ns": 72,
+          "p95ns": 73,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 33,
+          "p95ns": 34,
+          "batchSize": 8388608
+        },
+        "dtoEncode": {
+          "p50ns": 40,
+          "p95ns": 41,
+          "batchSize": 8388608
+        },
+        "borrowedValidation": {
+          "p50ns": 81,
+          "p95ns": 82,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 114,
+          "p95ns": 129,
+          "batchSize": 4194304
+        }
+      }
+    },
+    {
+      "caseId": "query-typical",
+      "family": "QRY",
+      "sizeClass": "typical",
+      "operations": {
+        "topicParse": {
+          "p50ns": 72,
+          "p95ns": 73,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 421,
+          "p95ns": 455,
+          "batchSize": 1048576
+        },
+        "dtoEncode": {
+          "p50ns": 497,
+          "p95ns": 582,
+          "batchSize": 524288
+        },
+        "borrowedValidation": {
+          "p50ns": 86,
+          "p95ns": 106,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 571,
+          "p95ns": 666,
+          "batchSize": 524288
+        }
+      }
+    },
+    {
+      "caseId": "query-maximum",
+      "family": "QRY",
+      "sizeClass": "maximum",
+      "operations": {
+        "topicParse": {
+          "p50ns": 77,
+          "p95ns": 87,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 1589,
+          "p95ns": 1982,
+          "batchSize": 262144
+        },
+        "dtoEncode": {
+          "p50ns": 1794,
+          "p95ns": 2204,
+          "batchSize": 262144
+        },
+        "borrowedValidation": {
+          "p50ns": 81,
+          "p95ns": 96,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 1715,
+          "p95ns": 1869,
+          "batchSize": 262144
+        }
+      }
+    },
+    {
+      "caseId": "resolve-small",
+      "family": "RSV",
+      "sizeClass": "small",
+      "operations": {
+        "topicParse": {
+          "p50ns": 72,
+          "p95ns": 81,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 193,
+          "p95ns": 198,
+          "batchSize": 2097152
+        },
+        "dtoEncode": {
+          "p50ns": 249,
+          "p95ns": 256,
+          "batchSize": 1048576
+        },
+        "borrowedValidation": {
+          "p50ns": 100,
+          "p95ns": 107,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 356,
+          "p95ns": 402,
+          "batchSize": 1048576
+        }
+      }
+    },
+    {
+      "caseId": "resolve-typical",
+      "family": "RSV",
+      "sizeClass": "typical",
+      "operations": {
+        "topicParse": {
+          "p50ns": 85,
+          "p95ns": 101,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 657,
+          "p95ns": 917,
+          "batchSize": 524288
+        },
+        "dtoEncode": {
+          "p50ns": 814,
+          "p95ns": 981,
+          "batchSize": 524288
+        },
+        "borrowedValidation": {
+          "p50ns": 95,
+          "p95ns": 110,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 695,
+          "p95ns": 964,
+          "batchSize": 524288
+        }
+      }
+    },
+    {
+      "caseId": "resolve-maximum",
+      "family": "RSV",
+      "sizeClass": "maximum",
+      "operations": {
+        "topicParse": {
+          "p50ns": 72,
+          "p95ns": 75,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 1203,
+          "p95ns": 1212,
+          "batchSize": 262144
+        },
+        "dtoEncode": {
+          "p50ns": 1460,
+          "p95ns": 1468,
+          "batchSize": 262144
+        },
+        "borrowedValidation": {
+          "p50ns": 81,
+          "p95ns": 82,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 1318,
+          "p95ns": 1327,
+          "batchSize": 262144
+        }
+      }
+    },
+    {
+      "caseId": "retrieve-small",
+      "family": "RTV",
+      "sizeClass": "small",
+      "operations": {
+        "topicParse": {
+          "p50ns": 72,
+          "p95ns": 73,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 112,
+          "p95ns": 113,
+          "batchSize": 4194304
+        },
+        "dtoEncode": {
+          "p50ns": 177,
+          "p95ns": 181,
+          "batchSize": 2097152
+        },
+        "borrowedValidation": {
+          "p50ns": 82,
+          "p95ns": 96,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 229,
+          "p95ns": 255,
+          "batchSize": 2097152
+        }
+      }
+    },
+    {
+      "caseId": "retrieve-typical",
+      "family": "RTV",
+      "sizeClass": "typical",
+      "operations": {
+        "topicParse": {
+          "p50ns": 72,
+          "p95ns": 81,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 256,
+          "p95ns": 284,
+          "batchSize": 1048576
+        },
+        "dtoEncode": {
+          "p50ns": 370,
+          "p95ns": 371,
+          "batchSize": 1048576
+        },
+        "borrowedValidation": {
+          "p50ns": 81,
+          "p95ns": 85,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 370,
+          "p95ns": 373,
+          "batchSize": 1048576
+        }
+      }
+    },
+    {
+      "caseId": "retrieve-maximum",
+      "family": "RTV",
+      "sizeClass": "maximum",
+      "operations": {
+        "topicParse": {
+          "p50ns": 72,
+          "p95ns": 88,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 566,
+          "p95ns": 592,
+          "batchSize": 524288
+        },
+        "dtoEncode": {
+          "p50ns": 804,
+          "p95ns": 807,
+          "batchSize": 524288
+        },
+        "borrowedValidation": {
+          "p50ns": 81,
+          "p95ns": 81,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 684,
+          "p95ns": 720,
+          "batchSize": 524288
+        }
+      }
+    },
+    {
+      "caseId": "return-small",
+      "family": "RTN",
+      "sizeClass": "small",
+      "operations": {
+        "topicParse": {
+          "p50ns": 72,
+          "p95ns": 73,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 49,
+          "p95ns": 52,
+          "batchSize": 8388608
+        },
+        "dtoEncode": {
+          "p50ns": 52,
+          "p95ns": 53,
+          "batchSize": 8388608
+        },
+        "borrowedValidation": {
+          "p50ns": 80,
+          "p95ns": 81,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 130,
+          "p95ns": 140,
+          "batchSize": 2097152
+        }
+      }
+    },
+    {
+      "caseId": "return-typical",
+      "family": "RTN",
+      "sizeClass": "typical",
+      "operations": {
+        "topicParse": {
+          "p50ns": 72,
+          "p95ns": 74,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 406,
+          "p95ns": 409,
+          "batchSize": 1048576
+        },
+        "dtoEncode": {
+          "p50ns": 501,
+          "p95ns": 510,
+          "batchSize": 524288
+        },
+        "borrowedValidation": {
+          "p50ns": 80,
+          "p95ns": 81,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 549,
+          "p95ns": 553,
+          "batchSize": 524288
+        }
+      }
+    },
+    {
+      "caseId": "return-maximum",
+      "family": "RTN",
+      "sizeClass": "maximum",
+      "operations": {
+        "topicParse": {
+          "p50ns": 72,
+          "p95ns": 73,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 1463,
+          "p95ns": 1475,
+          "batchSize": 262144
+        },
+        "dtoEncode": {
+          "p50ns": 1713,
+          "p95ns": 1723,
+          "batchSize": 262144
+        },
+        "borrowedValidation": {
+          "p50ns": 81,
+          "p95ns": 84,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 1636,
+          "p95ns": 1644,
+          "batchSize": 262144
+        }
+      }
+    },
+    {
+      "caseId": "update-small",
+      "family": "UPD",
+      "sizeClass": "small",
+      "operations": {
+        "topicParse": {
+          "p50ns": 72,
+          "p95ns": 73,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 115,
+          "p95ns": 115,
+          "batchSize": 4194304
+        },
+        "dtoEncode": {
+          "p50ns": 176,
+          "p95ns": 176,
+          "batchSize": 2097152
+        },
+        "borrowedValidation": {
+          "p50ns": 81,
+          "p95ns": 81,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 231,
+          "p95ns": 233,
+          "batchSize": 2097152
+        }
+      }
+    },
+    {
+      "caseId": "update-typical",
+      "family": "UPD",
+      "sizeClass": "typical",
+      "operations": {
+        "topicParse": {
+          "p50ns": 85,
+          "p95ns": 85,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 252,
+          "p95ns": 259,
+          "batchSize": 1048576
+        },
+        "dtoEncode": {
+          "p50ns": 359,
+          "p95ns": 365,
+          "batchSize": 1048576
+        },
+        "borrowedValidation": {
+          "p50ns": 96,
+          "p95ns": 97,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 385,
+          "p95ns": 388,
+          "batchSize": 1048576
+        }
+      }
+    },
+    {
+      "caseId": "update-maximum",
+      "family": "UPD",
+      "sizeClass": "maximum",
+      "operations": {
+        "topicParse": {
+          "p50ns": 85,
+          "p95ns": 85,
+          "batchSize": 4194304
+        },
+        "dtoDecode": {
+          "p50ns": 597,
+          "p95ns": 599,
+          "batchSize": 524288
+        },
+        "dtoEncode": {
+          "p50ns": 836,
+          "p95ns": 838,
+          "batchSize": 524288
+        },
+        "borrowedValidation": {
+          "p50ns": 96,
+          "p95ns": 97,
+          "batchSize": 4194304
+        },
+        "combinedParseDecode": {
+          "p50ns": 734,
+          "p95ns": 739,
+          "batchSize": 524288
+        }
+      }
+    }
+  ],
+  "$comment": "Wire benchmark latency baseline. Single clean run (run 1 of 2). p50/p95 via nearest-rank from 30 raw samples. 2-run max budget confirmation pending (#303). Updated by `make benchmark-wire`."
 }
