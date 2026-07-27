@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "corpusVersion": 1,
+  "moduleApiVersion": "AxolotyWire-1.0",
+  "$comment": "Approved performance and resource budgets. Host baselines are pending until `make benchmark-wire` and `make benchmark-size` are run on the NixOS host. Device baselines are from the verified on-device run (issue #302). Do not edit manually — update via PR with evidence.",
+  "noisePolicy": {
+    "relativeMAD": 0.05,
+    "allocationVariance": "exact-zero",
+    "runs": 5,
+    "samplesPerRun": 30
+  },
+  "regressionPolicy": {
+    "matchingFingerprintOnly": true,
+    "noisyRunsFailCollection": true,
+    "budgetIncreasesRequireEvidence": true,
+    "failedBudgetsOpenFinding": true,
+    "zeroAllocationHotPaths": "exact-zero"
+  },
+  "environments": {
+    "host": {
+      "compiler": "Swift 6.3",
+      "optimization": "release",
+      "targetTriple": "x86_64-unknown-linux-gnu",
+      "latency": {
+        "topicParse": { "p50ns": null, "p95ns": null, "status": "pending-baseline" },
+        "dtoDecode": { "p50ns": null, "p95ns": null, "status": "pending-baseline" },
+        "dtoEncode": { "p50ns": null, "p95ns": null, "status": "pending-baseline" },
+        "borrowedValidation": { "p50ns": null, "p95ns": null, "status": "pending-baseline" },
+        "combinedParseDecode": { "p50ns": null, "p95ns": null, "status": "pending-baseline" }
+      },
+      "binarySize": {
+        "AxolotyWireConsumer": { "unstrippedBytes": null, "strippedBytes": null, "status": "pending-baseline" },
+        "AxolotyConsumer": { "unstrippedBytes": null, "strippedBytes": null, "status": "pending-baseline" }
+      },
+      "dependencyClosure": {
+        "AxolotyWireConsumer": { "hostDeps": [], "status": "passed" },
+        "AxolotyConsumer": { "hostDeps": ["mqtt-nio", "swift-nio", "NIOSSL", "NIOTransportServices", "swift-log", "ErrorKit", "IkigaJSON"], "status": "expected" }
+      }
+    },
+    "esp32c6": {
+      "board": "ESP32-C6 (QFN40) rev v0.0",
+      "compiler": "RISC-V GCC 14.2.0",
+      "toolchain": "ESP-IDF v5.4, RISC-V GCC 14.2.0",
+      "optimization": "release",
+      "latency": {
+        "topicParse": { "measuredP50us": 2, "measuredP95us": 2, "budgetP50us": 4, "budgetP95us": 4 },
+        "dtoDecodeAdvertise": { "measuredP50us": 6, "measuredP95us": 6, "budgetP50us": 12, "budgetP95us": 12 },
+        "dtoDecodeIoValue": { "measuredP50us": 3, "measuredP95us": 3, "budgetP50us": 6, "budgetP95us": 6 },
+        "dtoDecodeAssociate": { "measuredP50us": 5, "measuredP95us": 5, "budgetP50us": 10, "budgetP95us": 10 },
+        "combinedParseDecode": { "measuredP50us": 7, "measuredP95us": 8, "budgetP50us": 14, "budgetP95us": 16 }
+      },
+      "resources": {
+        "freeHeap": { "measured": 458684, "budgetMin": 400000, "unit": "bytes" },
+        "minFreeHeap": { "measured": 458684, "budgetMin": 400000, "unit": "bytes" },
+        "stackHighWater": { "measured": 6580, "budgetMin": 4000, "unit": "bytes" },
+        "sustainedRate": { "measured": 100, "budgetMin": 90, "unit": "msg/s" },
+        "flashImage": { "measured": 163000, "budgetMax": 1048576, "unit": "bytes" }
+      },
+      "sizeLimits": {
+        "maxPayloadSize": { "limit": 512, "overLimitRejected": true },
+        "maxTopicLength": { "limit": 128, "overLimitRejected": true },
+        "maxSubscribers": { "limit": 8, "overLimitRejected": true },
+        "maxFamilyEntries": { "limit": 16, "overLimitRejected": true },
+        "maxFamilySubscribers": { "limit": 4, "overLimitRejected": true }
+      }
+    }
+  },
+  "phase4KillGates": [
+    { "id": "clean-cross-build-flash", "description": "make embedded-image + make embedded-device-smoke succeed from clean checkout", "threshold": "pass/fail" },
+    { "id": "max-size-wire-pass", "description": "make benchmark-wire-bounds passes with all bounds tests green", "threshold": "36/36 tests" },
+    { "id": "no-reset-watchdog-race-exhaustion", "description": "Device benchmark completes without watchdog reset, heap exhaustion, or stack overflow", "threshold": "pass/fail" },
+    { "id": "min-heap-stack-headroom", "description": "Free heap >= 400000 bytes; stack high-water >= 4000 bytes", "threshold": "numeric" },
+    { "id": "sustained-rate-pass", "description": "100 msg/s for 10s with zero missed messages and zero allocation", "threshold": "0 missed, 0 allocation" },
+    { "id": "mqtt-vertical-slice-within-budgets", "description": "MQTT vertical slice operates within same latency, heap, and stack budgets", "threshold": "within-budget" }
+  ]
+}
