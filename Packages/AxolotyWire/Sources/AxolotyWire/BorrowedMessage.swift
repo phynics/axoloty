@@ -75,7 +75,7 @@ public struct BorrowedMessage {
         topicLength: Int,
         payloadBytes: UnsafePointer<UInt8>,
         payloadLength: Int
-    ) throws -> BorrowedMessage {
+    ) throws(WireDecodeError) -> BorrowedMessage {
         if topicLength > WireBufferConfig.maxTopicLength {
             throw WireDecodeError(.topicExceedsLimit, byteOffset: topicLength)
         }
@@ -104,15 +104,15 @@ public struct BorrowedMessage {
     ///   - payloadLength: The number of valid payload bytes.
     ///   - body: A synchronous operation using the validated borrowed message.
     /// - Returns: The result returned by `body`.
-    /// - Throws: ``WireDecodeError`` for an oversized topic or payload, or an
-    ///   error thrown by `body`.
+    /// - Throws: ``WireDecodeError`` for an oversized topic or payload, or a
+    ///   ``WireDecodeError`` thrown by `body`.
     public static func withValidated<R>(
         topicBytes: UnsafePointer<UInt8>,
         topicLength: Int,
         payloadBytes: UnsafePointer<UInt8>,
         payloadLength: Int,
-        _ body: (BorrowedMessage) throws -> R
-    ) throws -> R {
+        _ body: (BorrowedMessage) throws(WireDecodeError) -> R
+    ) throws(WireDecodeError) -> R {
         try body(validated(
             topicBytes: topicBytes,
             topicLength: topicLength,
