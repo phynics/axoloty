@@ -484,7 +484,7 @@ cp "$root/Packages/AxolotyWire/Package.swift" "$raw_dir/wire-package-swift.txt"
 current_json=$(sh "$0" --parse "$raw_dir")
 
 # Write output JSON and preserve raw outputs for debugging.
-echo "$current_json" > "$output_dir/size-baseline.json"
+printf '%s\n' "$current_json" > "$output_dir/size-baseline.json"
 mkdir -p "$output_dir/raw"
 cp -R "$raw_dir/"* "$output_dir/raw/" 2>/dev/null || true
 

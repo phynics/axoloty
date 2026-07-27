@@ -161,7 +161,7 @@ print(json.dumps(output, indent=2))
 PYEOF
 )
 
-echo "$AGGREGATED" > "$OUT_DIR/wire-baseline.json"
+printf '%s\n' "$AGGREGATED" > "$OUT_DIR/wire-baseline.json"
 
 # Check for noisy results.
 noisy=$(echo "$AGGREGATED" | python3 -c "import json,sys; d=json.load(sys.stdin); print('\n'.join(d.get('noisy',[])))")
