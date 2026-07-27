@@ -1,0 +1,15 @@
+# Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
+
+# Target chip
+CONFIG_IDF_TARGET="esp32c6"
+
+# Enable reproducible builds
+CONFIG_APP_REPRODUCIBLE_BUILD=y
+
+# Benchmark task tuning
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+CONFIG_FREERTOS_HZ=1000
+
+# Enable heap debugging
+CONFIG_HEAP_TRACING_STANDALONE=y
+CONFIG_HEAP_TASK_TRACKING=y

@@ -31,7 +31,7 @@ COMMA := ,
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-image embedded-toolchain-doctor embedded-device-info embedded-device-smoke embedded-reproducible-build benchmark-size benchmark-wire benchmark-wire-bounds
+.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-image embedded-toolchain-doctor embedded-device-info embedded-device-smoke embedded-reproducible-build benchmark-size benchmark-wire benchmark-wire-bounds benchmark-wire-device
 
 help:
 	@printf '%s\n' \
@@ -69,6 +69,7 @@ help:
 		'make benchmark-size  Build release consumers and compare binary-size baselines' \
 		'make benchmark-wire  Run release wire benchmarks (p50/p95 latency + allocations)' \
 		'make benchmark-wire-bounds  Run malformed-input and capacity bounds tests' \
+		'make benchmark-wire-device  Run ESP32-C6 on-device wire benchmarks' \
 		'make ci-fast       Run the build and fast test suite' \
 		'make ci            Run the consolidated pull-request checks' \
 		'make broker        Start Mosquitto on localhost:1883' \
@@ -302,6 +303,13 @@ benchmark-wire-bounds: resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
 	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
 	.devcontainer/run.sh /workspace/Tests/Support/check-benchmark-wire-bounds.sh
+
+benchmark-wire-device: resolve
+	SUDO="$(SUDO)" \
+	CONTAINER_DEVICES=/dev/ttyACM0 \
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(EMBEDDED_IMAGE)" \
+	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+	.devcontainer/run.sh /workspace/Tests/Support/check-benchmark-wire-device.sh
 
 clean:
 	rm -rf "$(BUILD_DIR)" "$(COVERAGE_BUILD_DIR)"
