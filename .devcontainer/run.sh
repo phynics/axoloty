@@ -53,7 +53,18 @@ esac
 # the `personality` syscall, which the default seccomp profile denies. Empty
 # by default so other targets are unaffected.
 security_opts=${CONTAINER_SECURITY_OPTS:-}
-"$runtime" run --rm $security_opts \
+# Optional USB device passthrough for embedded targets. Empty by default so
+# non-embedded targets are unaffected. Set CONTAINER_DEVICES to a
+# space-separated list of device paths (e.g. "/dev/ttyACM0") to forward them
+# into the container.
+container_devices=${CONTAINER_DEVICES:-}
+device_opts=""
+if [ -n "$container_devices" ]; then
+    for dev in $container_devices; do
+        device_opts="$device_opts --device $dev"
+    done
+fi
+"$runtime" run --rm $security_opts $device_opts \
     -v "$root_dir:$workdir$mount_suffix" \
     -v "$build_dir:$workdir/.build$mount_suffix" \
     -v "$spm_cache_dir:$workdir/.swiftpm-cache$mount_suffix" \

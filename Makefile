@@ -31,7 +31,7 @@ COMMA := ,
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean
+.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-image embedded-toolchain-doctor embedded-device-info embedded-device-smoke embedded-reproducible-build
 
 help:
 	@printf '%s\n' \
@@ -61,6 +61,11 @@ help:
 		'make test-wire-live  Run live CoatyJS compatibility scenarios' \
 		'make test-wire-all  Run offline and live compatibility suites' \
 		'make wire-tool   Build the npx-runnable wire-compatibility CLI' \
+		'make embedded-image  Build the ESP32-C6 toolchain container image' \
+		'make embedded-toolchain-doctor  Verify embedded tool versions and device access' \
+		'make embedded-device-info  Query the board and record a device manifest' \
+		'make embedded-device-smoke  Build, flash, and capture the smoke marker' \
+		'make embedded-reproducible-build  Verify the firmware bin is reproducible' \
 		'make ci-fast       Run the build and fast test suite' \
 		'make ci            Run the consolidated pull-request checks' \
 		'make broker        Start Mosquitto on localhost:1883' \
@@ -185,6 +190,38 @@ test-wire-all: test-wire test-wire-live
 
 wire-tool:
 	cd Tests/WireCompatibility/tool && npm ci && npm test
+
+# ESP32-C6 embedded toolchain image. Extends the base dev image with ESP-IDF,
+# the RISC-V GCC cross-toolchain, OpenOCD, and espflash. See
+# .devcontainer/Dockerfile.embedded and docs/embedded-toolchain.md.
+EMBEDDED_IMAGE := $(IMAGE)-embedded
+
+embedded-image:
+	$(CONTAINER_RUNTIME) build -f .devcontainer/Dockerfile.embedded -t $(EMBEDDED_IMAGE) .
+
+embedded-toolchain-doctor:
+	CONTAINER_DEVICES=/dev/ttyACM0 \
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(EMBEDDED_IMAGE)" \
+	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+	.devcontainer/run.sh /workspace/Tests/Support/check-embedded-toolchain.sh
+
+embedded-device-info:
+	CONTAINER_DEVICES=/dev/ttyACM0 \
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(EMBEDDED_IMAGE)" \
+	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+	.devcontainer/run.sh /workspace/Tests/Support/embedded-device-info.sh
+
+embedded-device-smoke:
+	CONTAINER_DEVICES=/dev/ttyACM0 \
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(EMBEDDED_IMAGE)" \
+	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+	.devcontainer/run.sh /workspace/Tests/Support/embedded-device-smoke.sh
+
+embedded-reproducible-build:
+	CONTAINER_DEVICES=/dev/ttyACM0 \
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(EMBEDDED_IMAGE)" \
+	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+	.devcontainer/run.sh /workspace/Tests/Support/embedded-reproducible-build.sh
 
 test-observation-linux: resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter "ObservationLinuxTests|BroadcastTests"

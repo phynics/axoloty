@@ -1,0 +1,64 @@
+# ESP32-C6 embedded toolchain image for Axoloty.
+#
+# Extends the base dev image (coatyswift-dev, built from Dockerfile) with the
+# Espressif IDF v5.4, the RISC-V GCC cross-toolchain it downloads for
+# esp32c6, OpenOCD, and the espflash Rust binary. The base image already
+# provides Swift 6.3, SwiftLint, git, and mosquitto; this layer only adds the
+# embedded-specific pieces.
+#
+# The image is intentionally source-free: the Axoloty repository is
+# bind-mounted at runtime (see .devcontainer/run.sh and the Makefile
+# `embedded-*` targets), so editing source does not require a rebuild.
+#
+# Build with: make embedded-image
+
+ARG ESP_IDF_VERSION=v5.4
+ARG ESPFLASH_VERSION=3.3.0
+
+FROM coatyswift-dev
+
+ARG ESP_IDF_VERSION
+ARG ESPFLASH_VERSION
+
+# ESP-IDF build prerequisites. The base image (swift:6.3-jammy) already has
+# git, curl, and unzip; the packages below are the remaining IDF requirements
+# (see https://docs.espressif.com/projects/esp-idf/en/v5.4/esp32c6/get-started/linux-macos-setup.html).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        cmake \
+        ninja-build \
+        python3 \
+        python3-pip \
+        python3-venv \
+        libusb-1.0-0-dev \
+        libudev-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Clone ESP-IDF at the pinned tag. --depth 1 keeps the layer small; the tag
+# (not a branch) pins the exact IDF release. `install.sh esp32c6` downloads
+# only the RISC-V GCC toolchain, OpenOCD, and Python deps needed for that
+# target rather than every chip IDF supports.
+RUN git clone --depth 1 --branch ${ESP_IDF_VERSION} \
+        https://github.com/espressif/esp-idf.git /opt/esp/idf \
+    && cd /opt/esp/idf \
+    && ./install.sh esp32c6
+
+# espflash (Rust) for board-info / flashing without the full IDF monitor.
+# Downloaded as a prebuilt static binary from GitHub releases so the image
+# needs no Rust toolchain. The asset is a zip containing the `espflash`
+# binary at the archive root.
+RUN curl -fsSL -o /tmp/espflash.zip \
+        https://github.com/esp-rs/espflash/releases/download/v${ESPFLASH_VERSION}/espflash-x86_64-unknown-linux-gnu.zip \
+    && unzip -q -o /tmp/espflash.zip -d /tmp/espflash-extract \
+    && install -m 0755 /tmp/espflash-extract/espflash /usr/local/bin/espflash \
+    && rm -rf /tmp/espflash.zip /tmp/espflash-extract \
+    && espflash --version
+
+# Non-root user for direct device access when the container is run as a
+# regular user. The dialout group owns /dev/ttyACM* on most Linux distros.
+RUN useradd --no-create-home --shell /usr/sbin/nologin esp \
+    && usermod -a -G dialout esp
+
+ENV IDF_PATH=/opt/esp/idf
+ENV PATH="${IDF_PATH}/tools:${PATH}"
+
+WORKDIR /workspace

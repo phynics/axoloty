@@ -1,0 +1,9 @@
+# Target chip
+CONFIG_IDF_TARGET="esp32c6"
+
+# Enable reproducible builds (deterministic .bin output)
+CONFIG_APP_REPRODUCIBLE_BUILD=y
+
+# Smoke app tuning
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=4096
+CONFIG_FREERTOS_HZ=1000
