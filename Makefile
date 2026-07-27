@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 
-IMAGE ?= coatyswift-dev
+IMAGE ?= axoloty-dev
 BROKER_NAME ?= coatyswift-mosquitto
 CONTAINER_RUNTIME ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 WORKDIR := /workspace
@@ -31,11 +31,11 @@ COMMA := ,
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-image embedded-toolchain-doctor embedded-device-info embedded-device-smoke embedded-reproducible-build benchmark-size benchmark-wire benchmark-wire-bounds benchmark-wire-device check-budget-manifest check-embedded-swift embedded-swift-build embedded-swift-flash
+.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-toolchain-doctor embedded-device-info embedded-device-smoke embedded-reproducible-build benchmark-size benchmark-wire benchmark-wire-bounds benchmark-wire-device check-budget-manifest check-embedded-swift embedded-swift-build embedded-swift-flash
 
 help:
 	@printf '%s\n' \
-		'make image         Build the Linux Swift development image' \
+		'make image         Build the dev container image (includes ESP32-C6 toolchain)' \
 		'make resolve       Resolve Package.resolved using the shared SwiftPM cache' \
 		'make worktree-bootstrap  Prepare dependency cache and validate Package.resolved' \
 		'make worktree-warm  Bootstrap and compile the current worktree' \
@@ -61,7 +61,6 @@ help:
 		'make test-wire-live  Run live CoatyJS compatibility scenarios' \
 		'make test-wire-all  Run offline and live compatibility suites' \
 		'make wire-tool   Build the npx-runnable wire-compatibility CLI' \
-		'make embedded-image  Build the ESP32-C6 toolchain container image' \
 		'make embedded-toolchain-doctor  Verify embedded tool versions and device access' \
 		'make embedded-device-info  Query the board and record a device manifest' \
 		'make embedded-device-smoke  Build, flash, and capture the smoke marker' \
@@ -199,47 +198,42 @@ test-wire-all: test-wire test-wire-live
 wire-tool:
 	cd Tests/WireCompatibility/tool && npm ci && npm test
 
-# ESP32-C6 embedded toolchain image. Extends the base dev image with ESP-IDF,
-# the RISC-V GCC cross-toolchain, OpenOCD, and espflash. See
-# .devcontainer/Dockerfile.embedded and docs/embedded-toolchain.md.
-EMBEDDED_IMAGE := $(IMAGE)-embedded
-
-embedded-image:
-	$(CONTAINER_RUNTIME) build -f .devcontainer/Dockerfile.embedded -t $(EMBEDDED_IMAGE) .
+# ESP32-C6 embedded toolchain is included in the single dev image.
+# See .devcontainer/Dockerfile and docs/embedded-toolchain.md.
 
 embedded-toolchain-doctor:
 	CONTAINER_DEVICES=/dev/ttyACM0 \
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(EMBEDDED_IMAGE)" \
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
 	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
 	.devcontainer/run.sh /workspace/Tests/Support/check-embedded-toolchain.sh
 
 embedded-device-info:
 	CONTAINER_DEVICES=/dev/ttyACM0 \
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(EMBEDDED_IMAGE)" \
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
 	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
 	.devcontainer/run.sh /workspace/Tests/Support/embedded-device-info.sh
 
 embedded-device-smoke:
 	CONTAINER_DEVICES=/dev/ttyACM0 \
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(EMBEDDED_IMAGE)" \
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
 	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
 	.devcontainer/run.sh /workspace/Tests/Support/embedded-device-smoke.sh
 
 embedded-reproducible-build:
 	CONTAINER_DEVICES=/dev/ttyACM0 \
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(EMBEDDED_IMAGE)" \
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
 	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
 	.devcontainer/run.sh /workspace/Tests/Support/embedded-reproducible-build.sh
 
 embedded-swift-build:
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(EMBEDDED_IMAGE)" \
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
 	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
 	.devcontainer/run.sh bash -c '. $${IDF_PATH:-/opt/esp/idf}/export.sh >/dev/null 2>&1 && cd /workspace/Embedded/swift && idf.py set-target esp32c6 && idf.py build'
 
 embedded-swift-flash: embedded-swift-build
 	SUDO="$(SUDO)" \
 	CONTAINER_DEVICES=/dev/ttyACM0 \
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(EMBEDDED_IMAGE)" \
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
 	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
 	.devcontainer/run.sh /workspace/Tests/Support/embedded-swift-smoke.sh
 
@@ -323,7 +317,7 @@ benchmark-wire-bounds: resolve
 benchmark-wire-device: resolve
 	SUDO="$(SUDO)" \
 	CONTAINER_DEVICES=/dev/ttyACM0 \
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(EMBEDDED_IMAGE)" \
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
 	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
 	.devcontainer/run.sh /workspace/Tests/Support/check-benchmark-wire-device.sh
 

@@ -11,7 +11,7 @@
 # existentials, dynamic dispatch, etc.) before they reach the device build.
 #
 # Usage: check-embedded-swift.sh
-#   Runs inside the coatyswift-dev container (needs swiftc on PATH).
+#   Runs inside the axoloty-dev container (needs swiftc on PATH).
 
 set -eu
 

@@ -8,7 +8,7 @@
 # heaptrack allocation profiling (if available), and compares against
 # the checked-in baseline.
 #
-# Runs inside the base dev container (IMAGE=coatyswift-dev).
+# Runs inside the base dev container (IMAGE=axoloty-dev).
 
 set -eu
 

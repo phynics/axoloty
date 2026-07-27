@@ -50,4 +50,4 @@ runs:
           echo "::error::Locked image $image@$digest is unavailable. The lock matches the current Dockerfile, so the image is expected to exist." >&2
           exit 1
         fi
-        "$RUNTIME" tag "$image@$digest" coatyswift-dev
+        "$RUNTIME" tag "$image@$digest" axoloty-dev

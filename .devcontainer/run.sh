@@ -5,7 +5,7 @@ set -eu
 
 root_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 runtime=${CONTAINER_RUNTIME:-}
-image=${IMAGE:-coatyswift-dev}
+image=${IMAGE:-axoloty-dev}
 workdir=${WORKDIR:-/workspace}
 build_dir=${BUILD_DIR:-"$root_dir/.build"}
 spm_cache_dir=${SPM_CACHE_DIR:-"${HOME}/.cache/coaty-swift/swiftpm/swift-6.3-linux"}

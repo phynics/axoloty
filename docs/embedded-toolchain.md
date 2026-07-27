@@ -1,11 +1,9 @@
 # ESP32-C6 toolchain pinning and workflow
 
-Status: implements issue #297. Pins the ESP32-C6 toolchain inside an
-extension of the base dev image and defines Makefile targets for toolchain
-verification, device discovery, the smoke run, and reproducible-build checks.
-The Swift RISC-V cross-compile path is intentionally stubbed (see
-[Embedded Swift status](#embedded-swift-status)); the smoke image is a C
-program built with ESP-IDF's RISC-V GCC.
+Status: implements issue #297, updated by #320 and #321. The ESP32-C6
+toolchain is included in the single dev image (`axoloty-dev`). Embedded
+Swift cross-compilation is working — AxolotyWire compiles and runs
+on-device via the `espressif/idf_swift` component.
 
 ## NixOS host prerequisites
 
@@ -34,9 +32,9 @@ all Swift/container work goes through the Makefile.
   rootless Podman to open the device, the host user must own or be in the
   group that owns it (the udev rule above arranges this). If rootless Podman
   still cannot open the device (some userns configurations block device
-  nodes), fall back to Docker with `sudo`:
+  nodes), fall back to rootful Podman with `sudo`:
   ```sh
-  CONTAINER_RUNTIME=docker sudo -E make embedded-device-smoke
+  SUDO=/run/wrappers/bin/sudo make embedded-swift-flash
   ```
 
 - **Never run native `swift` on the host.** The host has no Swift toolchain
@@ -45,29 +43,36 @@ all Swift/container work goes through the Makefile.
 
 ## Toolchain pinning
 
+All toolchain components are in the single `Dockerfile`:
+
 | Component | Version | Source |
 |---|---|---|
-| ESP-IDF | `v5.4` (pinned tag) | `git clone --depth 1 --branch v5.4` in `Dockerfile.embedded` |
-| RISC-V GCC | the build ESP-IDF v5.4 ships | installed by `./install.sh esp32c6` |
+| Swift | `6.3` | `swift:6.3-jammy` base image |
+| ESP-IDF | `v5.4` (pinned tag) | `git clone --depth 1 --branch v5.4` |
+| RISC-V GCC | ESP-IDF v5.4 bundled | installed by `./install.sh esp32c6` |
 | OpenOCD | Espressif build, bundled with ESP-IDF | installed by `./install.sh esp32c6` |
 | espflash | `3.3.0` | prebuilt binary from `esp-rs/espflash` releases |
-| Swift | `6.3` (from base image) | `swift:6.3-jammy`; RISC-V cross-compile not yet available |
+| CMake | `>= 3.29` (via pip) | required by `espressif/idf_swift` component |
+| SwiftLint | `0.65.0` | prebuilt static binary |
 
-All versions are declared as `ARG`s at the top of `.devcontainer/Dockerfile.embedded`
-and bumped deliberately. Rebuilding the image is required to change any of them.
+All versions are declared as `ARG`s at the top of `.devcontainer/Dockerfile`
+and bumped deliberately. Rebuilding the image is required to change any of
+them: `make image`.
 
 ## Build / flash / monitor workflow
 
 ```sh
-make embedded-image                # build the ESP32-C6 toolchain image
-make embedded-toolchain-doctor     # verify tool versions + /dev/ttyACM0 access
+make image                        # build the dev image (includes ESP32-C6 toolchain)
+make embedded-toolchain-doctor    # verify tool versions + /dev/ttyACM0 access
 make embedded-device-info          # query the board, write .testing/embedded/device-manifest.json
-make embedded-device-smoke         # build, flash, monitor for AXOLOTY_SMOKE_OK (30s deadline)
-make embedded-reproducible-build   # build twice from clean, compare .bin SHA-256
+make embedded-device-smoke         # build, flash, monitor C smoke image (30s deadline)
+make embedded-swift-build          # build the Embedded Swift firmware
+make embedded-swift-flash           # build, flash, monitor Swift smoke + AxolotyWire exercise
+make embedded-reproducible-build    # build twice from clean, compare .bin SHA-256
 ```
 
-Every target forwards `/dev/ttyACM0` via `CONTAINER_DEVICES` and runs the
-script inside the `$(IMAGE)-embedded` container. Output artifacts land under
+Every target forwards `/dev/ttyACM0` via `CONTAINER_DEVICES` and runs inside
+the `axoloty-dev` container. Output artifacts land under
 `.testing/embedded/` (outside `/tmp`, so they survive the container):
 
 | File | Produced by |
@@ -75,59 +80,27 @@ script inside the `$(IMAGE)-embedded` container. Output artifacts land under
 | `device-manifest.json` | `embedded-device-info` |
 | `device-info-raw.txt` | `embedded-device-info` |
 | `smoke-log.txt` | `embedded-device-smoke` |
+| `swift-smoke-log.txt` | `embedded-swift-flash` |
 | `reproducible-build.json` | `embedded-reproducible-build` |
-
-### Device manifest shape
-
-`device-manifest.json` is generated at runtime (it is gitignored because it
-contains device-specific data like the MAC address). Its shape:
-
-```json
-{
-  "$comment": "Populated by make embedded-device-info. Do not edit manually.",
-  "device": {
-    "chipModel": "",
-    "chipRevision": "",
-    "macAddress": "",
-    "flashId": "",
-    "flashSize": "",
-    "usbSerial": "",
-    "boardModel": ""
-  },
-  "toolchain": {
-    "espIdfVersion": "",
-    "riscvGccVersion": "",
-    "openocdVersion": "",
-    "espflashVersion": "",
-    "swiftRiscvCapable": false
-  },
-  "capturedAt": ""
-}
-```
-
-`boardModel` is left empty by the script — it is the silkscreen/declared
-carrier model and is filled in manually.
 
 ## Embedded Swift status
 
-Swift 6.3 (the toolchain in the base image) recognizes the
-`riscv32-unknown-none-elf` target triple but **cannot cross-compile** to it:
-the standard library is unavailable for that target, `-parse-as-library` does
-not bypass the stdlib requirement, and `-disable-stdlib-import` is not a
-recognized flag. `check-embedded-toolchain.sh` runs this probe and reports
-the result as **informational** (it does not fail the doctor — the C
-toolchain is sufficient for the smoke image).
+Swift 6.3 compiles AxolotyWire for `riscv32-none-none-eabi` using
+`-enable-experimental-feature Embedded`. The `espressif/idf_swift` ESP-IDF
+component (v1.0.1) integrates the Swift compiler into the ESP-IDF build
+system via `idf_component_register_swift()`.
 
-Consequences:
+The Swift firmware (`Embedded/swift/`) compiles all 16 AxolotyWire source
+files into a 160 KB firmware. Verified on physical ESP32-C6:
+`AXOLOTY_SMOKE_OK` captured, `WireReader.readUUID` and `TopicView.eventType`
+work on-device.
 
-- The smoke image (`Embedded/main/main.c`) is a C program built with ESP-IDF's
-  RISC-V GCC. It prints `AXOLOTY_SMOKE_OK` and restarts.
-- `Embedded/main/smoke.swift` is the intended Embedded Swift entry point,
-  kept in the tree as a placeholder. It is **not** registered in
-  `Embedded/main/CMakeLists.txt`, so the ESP-IDF build ignores it.
-- `Embedded/main/CMakeLists.txt` documents why the Swift file is excluded.
-- Full Embedded Swift support requires a custom Swift toolchain with a
-  RISC-V backend. This is tracked for Phase 4; see the v1 tracker (#272).
+Known limitations:
+- `print()` and `String` pull in Unicode normalization runtime symbols that
+  are not linked. Use `axoloty_print` (C wrapper around `esp_rom_printf`)
+  and `StaticString` instead.
+- Variadic C functions (`printf`, `ESP_LOGI`) are unavailable in Embedded
+  Swift. The `log_helper.c` wrapper provides a fixed-signature alternative.
 
 ## Reproducible builds
 
