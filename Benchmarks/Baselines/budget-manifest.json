@@ -2,7 +2,8 @@
   "version": 1,
   "corpusVersion": 1,
   "moduleApiVersion": "AxolotyWire-1.0",
-  "$comment": "Approved performance and resource budgets. Host baselines are pending until `make benchmark-wire` and `make benchmark-size` are run on the NixOS host. Device baselines are from the verified on-device run (issue #302). Do not edit manually — update via PR with evidence.",
+  "approvalStatus": "provisional",
+  "$comment": "Provisional performance and resource budgets. Host baselines are pending until `make benchmark-wire` and `make benchmark-size` are run on the NixOS host (issue #303). Device measurements are provisional: the esp32c6 values retained here originate from the C surrogate benchmark (issue #302), which did not execute production AxolotyWire Swift interfaces; production Embedded Swift device evidence is tracked in issue #322. The manifest may only move to approvalStatus=approved once host baselines are populated and Embedded Swift device evidence satisfies every approval gate enforced by Tests/Support/check-budget-manifest.sh. Do not edit manually — update via PR with evidence.",
   "noisePolicy": {
     "relativeMAD": 0.05,
     "allocationVariance": "exact-zero",
@@ -16,21 +17,117 @@
     "failedBudgetsOpenFinding": true,
     "zeroAllocationHotPaths": "exact-zero"
   },
+  "historicalEvidence": {
+    "esp32c6-c-surrogate": {
+      "approvalEligible": false,
+      "supersededBy": "#322",
+      "description": "C surrogate benchmark from issue #302. Did not execute production AxolotyWire Swift interfaces. Retained as historical engineering data only."
+    }
+  },
   "environments": {
     "host": {
       "compiler": "Swift 6.3",
       "optimization": "release",
       "targetTriple": "x86_64-unknown-linux-gnu",
+      "fingerprint": {
+        "boardModel": "",
+        "boardRevision": "",
+        "cpuFrequencyMhz": "",
+        "swiftCompilerVersion": "",
+        "idfSwiftVersion": "",
+        "espIdfVersion": "",
+        "gccBinutilsVersion": "",
+        "optimizationMode": "",
+        "compilerFlags": "",
+        "containerImageDigest": "",
+        "corpusVersion": "",
+        "corpusHash": "",
+        "moduleApiVersion": "",
+        "gitCommit": "",
+        "gitClean": "",
+        "benchmarkHarnessVersion": "",
+        "freeRtosTickRate": "",
+        "taskStackSizes": ""
+      },
       "latency": {
-        "topicParse": { "p50ns": null, "p95ns": null, "status": "pending-baseline" },
-        "dtoDecode": { "p50ns": null, "p95ns": null, "status": "pending-baseline" },
-        "dtoEncode": { "p50ns": null, "p95ns": null, "status": "pending-baseline" },
-        "borrowedValidation": { "p50ns": null, "p95ns": null, "status": "pending-baseline" },
-        "combinedParseDecode": { "p50ns": null, "p95ns": null, "status": "pending-baseline" }
+        "topicParse": {
+          "p50ns": null,
+          "p95ns": null,
+          "budgetP50ns": null,
+          "budgetP95ns": null,
+          "headroomP50": null,
+          "headroomP95": null,
+          "budgetFormula": "ceil(max(clean run 1, clean run 2) × 1.5)",
+          "status": "pending-baseline"
+        },
+        "dtoDecode": {
+          "p50ns": null,
+          "p95ns": null,
+          "budgetP50ns": null,
+          "budgetP95ns": null,
+          "headroomP50": null,
+          "headroomP95": null,
+          "budgetFormula": "ceil(max(clean run 1, clean run 2) × 1.5)",
+          "status": "pending-baseline"
+        },
+        "dtoEncode": {
+          "p50ns": null,
+          "p95ns": null,
+          "budgetP50ns": null,
+          "budgetP95ns": null,
+          "headroomP50": null,
+          "headroomP95": null,
+          "budgetFormula": "ceil(max(clean run 1, clean run 2) × 1.5)",
+          "status": "pending-baseline"
+        },
+        "borrowedValidation": {
+          "p50ns": null,
+          "p95ns": null,
+          "budgetP50ns": null,
+          "budgetP95ns": null,
+          "headroomP50": null,
+          "headroomP95": null,
+          "budgetFormula": "ceil(max(clean run 1, clean run 2) × 1.5)",
+          "status": "pending-baseline"
+        },
+        "combinedParseDecode": {
+          "p50ns": null,
+          "p95ns": null,
+          "budgetP50ns": null,
+          "budgetP95ns": null,
+          "headroomP50": null,
+          "headroomP95": null,
+          "budgetFormula": "ceil(max(clean run 1, clean run 2) × 1.5)",
+          "status": "pending-baseline"
+        }
       },
       "binarySize": {
-        "AxolotyWireConsumer": { "unstrippedBytes": null, "strippedBytes": null, "status": "pending-baseline" },
-        "AxolotyConsumer": { "unstrippedBytes": null, "strippedBytes": null, "status": "pending-baseline" }
+        "AxolotyWireConsumer": {
+          "unstrippedBytes": 576192,
+          "strippedBytes": 129960,
+          "sections": { "text": 60956, "rodata": 5912, "data": 864, "bss": 4536 },
+          "dynamicLibraries": ["libswiftCore.so", "libswift_Concurrency.so", "libswift_StringProcessing.so", "libswift_RegexParser.so", "libc.so.6"],
+          "dependencyClosure": ["AxolotyWire"],
+          "sha256": "fc06f7e5353d1b98030005cde6eb2bdb085bd92aae7d90b27bfb559ba55b1b4e",
+          "budgetUnstrippedBytes": null,
+          "budgetStrippedBytes": null,
+          "budgetFormula": "ceil(max(clean build 1, clean build 2) × 1.2)",
+          "sourceRun": "size-baseline.json@357facd (single clean build; 2-build max pending)",
+          "status": "measured"
+        },
+        "AxolotyConsumer": {
+          "unstrippedBytes": 52508352,
+          "strippedBytes": 11760384,
+          "sections": { "text": 6770881, "rodata": 979698, "data": 96208, "bss": 277424 },
+          "dynamicLibraries": ["libswiftCore.so", "libswift_Concurrency.so", "libswift_StringProcessing.so", "libswift_RegexParser.so", "libswiftSynchronization.so", "libswiftGlibc.so", "libBlocksRuntime.so", "libdispatch.so", "libswiftDispatch.so", "libFoundation.so", "libFoundationEssentials.so", "libFoundationInternationalization.so", "libFoundationNetworking.so", "libm.so.6", "libstdc++.so.6", "libgcc_s.so.1", "libc.so.6", "ld-linux-x86-64.so.2"],
+          "dependencyClosure": ["Axoloty", "axolotywire", "errorkit", "mqtt-nio", "swift-asn1", "swift-atomics", "swift-collections", "swift-crypto", "swift-docc-plugin", "swift-docc-symbolkit", "swift-json", "swift-log", "swift-nio", "swift-nio-ssl", "swift-nio-transport-services", "swift-system"],
+          "sha256": "7aa63c15a36a0d4a2541be06f70f83144d4fa5d7bc1de57801f468e6855f1a47",
+          "budgetUnstrippedBytes": null,
+          "budgetStrippedBytes": null,
+          "budgetFormula": "ceil(max(clean build 1, clean build 2) × 1.2)",
+          "sourceRun": "size-baseline.json@357facd (single clean build; 2-build max pending)",
+          "status": "measured"
+        }
       },
       "dependencyClosure": {
         "AxolotyWireConsumer": { "hostDeps": [], "status": "passed" },
@@ -39,22 +136,106 @@
     },
     "esp32c6": {
       "board": "ESP32-C6 (QFN40) rev v0.0",
+      "implementation": "embedded-swift",
+      "sourceRun": null,
       "compiler": "RISC-V GCC 14.2.0",
       "toolchain": "ESP-IDF v5.4, RISC-V GCC 14.2.0",
       "optimization": "release",
+      "fingerprint": {
+        "boardModel": "",
+        "boardRevision": "",
+        "cpuFrequencyMhz": "",
+        "swiftCompilerVersion": "",
+        "idfSwiftVersion": "",
+        "espIdfVersion": "",
+        "gccBinutilsVersion": "",
+        "optimizationMode": "",
+        "compilerFlags": "",
+        "containerImageDigest": "",
+        "corpusVersion": "",
+        "corpusHash": "",
+        "moduleApiVersion": "",
+        "gitCommit": "",
+        "gitClean": "",
+        "benchmarkHarnessVersion": "",
+        "freeRtosTickRate": "",
+        "taskStackSizes": ""
+      },
       "latency": {
-        "topicParse": { "measuredP50us": 2, "measuredP95us": 2, "budgetP50us": 4, "budgetP95us": 4 },
-        "dtoDecodeAdvertise": { "measuredP50us": 6, "measuredP95us": 6, "budgetP50us": 12, "budgetP95us": 12 },
-        "dtoDecodeIoValue": { "measuredP50us": 3, "measuredP95us": 3, "budgetP50us": 6, "budgetP95us": 6 },
-        "dtoDecodeAssociate": { "measuredP50us": 5, "measuredP95us": 5, "budgetP50us": 10, "budgetP95us": 10 },
-        "combinedParseDecode": { "measuredP50us": 7, "measuredP95us": 8, "budgetP50us": 14, "budgetP95us": 16 }
+        "topicParse": {
+          "measuredP50us": 2,
+          "measuredP95us": 2,
+          "budgetP50us": 4,
+          "budgetP95us": 4,
+          "budgetFormula": "ceil(max(power-cycle run 1, run 2) × 2)"
+        },
+        "dtoDecodeAdvertise": {
+          "measuredP50us": 6,
+          "measuredP95us": 6,
+          "budgetP50us": 12,
+          "budgetP95us": 12,
+          "budgetFormula": "ceil(max(power-cycle run 1, run 2) × 2)"
+        },
+        "dtoDecodeIoValue": {
+          "measuredP50us": 3,
+          "measuredP95us": 3,
+          "budgetP50us": 6,
+          "budgetP95us": 6,
+          "budgetFormula": "ceil(max(power-cycle run 1, run 2) × 2)"
+        },
+        "dtoDecodeAssociate": {
+          "measuredP50us": 5,
+          "measuredP95us": 5,
+          "budgetP50us": 10,
+          "budgetP95us": 10,
+          "budgetFormula": "ceil(max(power-cycle run 1, run 2) × 2)"
+        },
+        "combinedParseDecode": {
+          "measuredP50us": 7,
+          "measuredP95us": 8,
+          "budgetP50us": 14,
+          "budgetP95us": 16,
+          "budgetFormula": "ceil(max(power-cycle run 1, run 2) × 2)"
+        }
       },
       "resources": {
-        "freeHeap": { "measured": 458684, "budgetMin": 400000, "unit": "bytes" },
-        "minFreeHeap": { "measured": 458684, "budgetMin": 400000, "unit": "bytes" },
-        "stackHighWater": { "measured": 6580, "budgetMin": 4000, "unit": "bytes" },
-        "sustainedRate": { "measured": 100, "budgetMin": 90, "unit": "msg/s" },
-        "flashImage": { "measured": 163000, "budgetMax": 1048576, "unit": "bytes" }
+        "freeHeap": {
+          "measured": 458684,
+          "budgetMin": 400000,
+          "unit": "bytes",
+          "budgetFormula": "floor(worst observed minimum × 0.8)"
+        },
+        "minFreeHeap": {
+          "measured": 458684,
+          "budgetMin": 400000,
+          "unit": "bytes",
+          "budgetFormula": "floor(worst observed minimum × 0.8)"
+        },
+        "stackHighWater": {
+          "measured": 6580,
+          "budgetMin": 4000,
+          "unit": "bytes",
+          "budgetFormula": "floor(worst observed minimum × 0.8)"
+        },
+        "sustainedRate": {
+          "measured": 100,
+          "budgetMin": 90,
+          "capacityHeadroomMsgPerS": null,
+          "unit": "msg/s",
+          "budgetFormula": "100 msg/s for 10 min; approved only at >=125 msg/s measured clean capacity"
+        },
+        "flashImage": {
+          "measured": 163000,
+          "budgetMax": 1048576,
+          "partitionLimitBytes": 2097152,
+          "unit": "bytes",
+          "budgetFormula": "ceil(worst observed size × 1.2)"
+        }
+      },
+      "hotPathAllocations": {
+        "budget": 0,
+        "measured": null,
+        "status": "pending"
       },
       "sizeLimits": {
         "maxPayloadSize": { "limit": 512, "overLimitRejected": true },
@@ -65,12 +246,62 @@
       }
     }
   },
-  "phase4KillGates": [
-    { "id": "clean-cross-build-flash", "description": "make embedded-image + make embedded-device-smoke succeed from clean checkout", "threshold": "pass/fail" },
-    { "id": "max-size-wire-pass", "description": "make benchmark-wire-bounds passes with all bounds tests green", "threshold": "36/36 tests" },
-    { "id": "no-reset-watchdog-race-exhaustion", "description": "Device benchmark completes without watchdog reset, heap exhaustion, or stack overflow", "threshold": "pass/fail" },
-    { "id": "min-heap-stack-headroom", "description": "Free heap >= 400000 bytes; stack high-water >= 4000 bytes", "threshold": "numeric" },
-    { "id": "sustained-rate-pass", "description": "100 msg/s for 10s with zero missed messages and zero allocation", "threshold": "0 missed, 0 allocation" },
-    { "id": "mqtt-vertical-slice-within-budgets", "description": "MQTT vertical slice operates within same latency, heap, and stack budgets", "threshold": "within-budget" }
+  "phase4EntryEvidenceGates": [
+    {
+      "id": "clean-cross-build-flash",
+      "description": "make embedded-image + make embedded-device-smoke succeed from clean checkout",
+      "threshold": "pass/fail",
+      "thresholdType": "pass-fail"
+    },
+    {
+      "id": "max-size-wire-pass",
+      "description": "make benchmark-wire-bounds passes with all bounds tests green",
+      "threshold": "36/36 tests",
+      "thresholdType": "numeric"
+    },
+    {
+      "id": "no-reset-watchdog-race-exhaustion",
+      "description": "Device benchmark completes without watchdog reset, heap exhaustion, or stack overflow",
+      "threshold": "pass/fail",
+      "thresholdType": "pass-fail"
+    },
+    {
+      "id": "min-heap-stack-headroom",
+      "description": "Free heap >= 400000 bytes; stack high-water >= 4000 bytes",
+      "threshold": "heap>=400000, stack>=4000",
+      "thresholdType": "numeric"
+    },
+    {
+      "id": "sustained-rate-pass",
+      "description": "100 msg/s for 10s with zero missed messages and zero allocation",
+      "threshold": "0 missed, 0 allocation",
+      "thresholdType": "numeric"
+    }
+  ],
+  "phase4CompletionGates": [
+    {
+      "id": "mqtt-vertical-slice-within-budgets",
+      "description": "MQTT vertical slice operates within same latency, heap, and stack budgets",
+      "threshold": "within-budget",
+      "thresholdType": "pass-fail"
+    },
+    {
+      "id": "required-broker-backed-exchanges-pass",
+      "description": "All required broker-backed exchange integration tests pass under deadlines",
+      "threshold": "all required exchanges green",
+      "thresholdType": "pass-fail"
+    },
+    {
+      "id": "reconnect-last-will-under-deadlines",
+      "description": "Reconnect and last-will semantics meet their configured deadlines under load",
+      "threshold": "within-deadline",
+      "thresholdType": "numeric"
+    },
+    {
+      "id": "host-axoloty-coatyjs-interoperability",
+      "description": "Host Axoloty ↔ CoatyJS reference agent wire interoperability suite passes",
+      "threshold": "interop suite green",
+      "thresholdType": "pass-fail"
+    }
   ]
 }

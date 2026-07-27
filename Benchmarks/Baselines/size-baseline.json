@@ -1,3 +1,80 @@
 {
-  "$comment": "Binary-size and dependency-closure baseline. Updated by `make benchmark-size` when the baseline intentionally changes. Do not edit manually — run `make benchmark-size` and review the diff."
+  "commit": "357facd",
+  "swiftVersion": "Swift version 6.3.3 (swift-6.3.3-RELEASE)\nTarget: x86_64-unknown-linux-gnu",
+  "buildMode": "release",
+  "buildFlags": "-c release -Xswiftc -O -Xswiftc -wmo",
+  "consumers": {
+    "AxolotyWireConsumer": {
+      "unstrippedBytes": 576192,
+      "strippedBytes": 129960,
+      "sections": {
+        "text": 60956,
+        "rodata": 5912,
+        "data": 864,
+        "bss": 4536
+      },
+      "dynamicLibraries": [
+        "libswiftCore.so",
+        "libswift_Concurrency.so",
+        "libswift_StringProcessing.so",
+        "libswift_RegexParser.so",
+        "libc.so.6"
+      ],
+      "sha256": "fc06f7e5353d1b98030005cde6eb2bdb085bd92aae7d90b27bfb559ba55b1b4e",
+      "dependencyClosure": [
+        "AxolotyWire"
+      ],
+      "hostDependencyCheck": "passed"
+    },
+    "AxolotyConsumer": {
+      "unstrippedBytes": 52508352,
+      "strippedBytes": 11760384,
+      "sections": {
+        "text": 6770881,
+        "rodata": 979698,
+        "data": 96208,
+        "bss": 277424
+      },
+      "dynamicLibraries": [
+        "libswiftCore.so",
+        "libswift_Concurrency.so",
+        "libswift_StringProcessing.so",
+        "libswift_RegexParser.so",
+        "libswiftSynchronization.so",
+        "libswiftGlibc.so",
+        "libBlocksRuntime.so",
+        "libdispatch.so",
+        "libswiftDispatch.so",
+        "libFoundation.so",
+        "libFoundationEssentials.so",
+        "libFoundationInternationalization.so",
+        "libFoundationNetworking.so",
+        "libm.so.6",
+        "libstdc++.so.6",
+        "libgcc_s.so.1",
+        "libc.so.6",
+        "ld-linux-x86-64.so.2"
+      ],
+      "sha256": "7aa63c15a36a0d4a2541be06f70f83144d4fa5d7bc1de57801f468e6855f1a47",
+      "dependencyClosure": [
+        "Axoloty",
+        "axolotywire",
+        "errorkit",
+        "mqtt-nio",
+        "swift-asn1",
+        "swift-atomics",
+        "swift-collections",
+        "swift-crypto",
+        "swift-docc-plugin",
+        "swift-docc-symbolkit",
+        "swift-json",
+        "swift-log",
+        "swift-nio",
+        "swift-nio-ssl",
+        "swift-nio-transport-services",
+        "swift-system"
+      ],
+      "hostDependencyCheck": "n/a"
+    }
+  }
 }
