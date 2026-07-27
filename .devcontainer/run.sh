@@ -64,7 +64,18 @@ if [ -n "$container_devices" ]; then
         device_opts="$device_opts --device $dev"
     done
 fi
-"$runtime" run --rm $security_opts $device_opts \
+# Optional sudo prefix for targets that need rootful container access
+# (e.g. device benchmarks that need --privileged + /dev/ttyACM0). Empty
+# by default so non-device targets are unaffected. Set SUDO to "sudo" or
+# a path like "/run/wrappers/bin/sudo" to enable rootful container runs.
+sudo_prefix=${SUDO:-}
+# --privileged is only needed for rootful device access; omit it for
+# regular rootless targets so CI and non-device builds are unaffected.
+privileged_opt=""
+if [ -n "$sudo_prefix" ]; then
+    privileged_opt="--privileged"
+fi
+$sudo_prefix "$runtime" run --rm $security_opts $device_opts $privileged_opt \
     -v "$root_dir:$workdir$mount_suffix" \
     -v "$build_dir:$workdir/.build$mount_suffix" \
     -v "$spm_cache_dir:$workdir/.swiftpm-cache$mount_suffix" \

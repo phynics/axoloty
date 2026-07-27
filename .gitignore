@@ -85,3 +85,5 @@ node_modules/
 .testing/embedded/smoke-log.txt
 Embedded/build/
 Embedded/sdkconfig
+Embedded/benchmark/build/
+Embedded/benchmark/sdkconfig
