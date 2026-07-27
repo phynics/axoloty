@@ -1,0 +1,7 @@
+AxolotyWireConsumer  :
+section           size         addr
+.text             42000       4194304
+.rodata            8000       2101248
+.data               480       6291456
+.bss                160       6291936
+Total             50640

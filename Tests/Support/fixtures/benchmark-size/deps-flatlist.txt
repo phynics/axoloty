@@ -1,0 +1,9 @@
+AxolotyWire
+mqtt-nio
+swift-nio
+swift-nio-ssl
+swift-nio-transport-services
+swift-log
+ErrorKit
+swift-json
+swift-docc-plugin

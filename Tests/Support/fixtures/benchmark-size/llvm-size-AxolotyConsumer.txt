@@ -1,0 +1,7 @@
+AxolotyConsumer  :
+section           size         addr
+.text           2200000       4194304
+.rodata          450000       2101248
+.data              2000       6291456
+.bss                800       6291936
+Total           2652800

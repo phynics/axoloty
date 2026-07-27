@@ -1,0 +1,18 @@
+Dynamic section at offset 0x33e8 contains 14 entries:
+  Tag        Type                         Name/Value
+ 0x0000000000000001 (NEEDED)             Shared library: [libswiftCore.so]
+ 0x0000000000000001 (NEEDED)             Shared library: [libswift_Concurrency.so]
+ 0x0000000000000001 (NEEDED)             Shared library: [libswift_StringProcessing.so]
+ 0x0000000000000001 (NEEDED)             Shared library: [libstdc++.so.6]
+ 0x0000000000000001 (NEEDED)             Shared library: [libm.so.6]
+ 0x0000000000000001 (NEEDED)             Shared library: [libgcc_s.so.1]
+ 0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]
+ 0x0000000000000001 (NEEDED)             Shared library: [libcrypto.so.3]
+ 0x0000000000000001 (NEEDED)             Shared library: [libssl.so.3]
+ 0x000000000000000c (INIT)               0x401000
+ 0x000000000000000d (FINI)               0x401020
+ 0x000000006ffffef5 (GNU_HASH)           0x4001c0
+ 0x0000000000000005 (STRTAB)             0x400860
+ 0x0000000000000006 (SYMTAB)             0x400860
+ 0x000000000000000a (STRSZ)              874 (bytes)
+ 0x000000000000000b (SYMENT)             24 (bytes)
