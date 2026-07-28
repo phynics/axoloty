@@ -8,12 +8,12 @@ interop target.
 
 The machine-readable companion to this document is
 [`Support/test-tiers.json`](Support/test-tiers.json). Each directly executable
-tier records its canonical Make target, and every maintained `Tests/**/test_*.py` /
+tier records its canonical Make target, and every maintained `Tests/**/*.test.mjs` /
 `Tests/**/test-*.sh` harness self-test is mapped to exactly one owning Make
 target. Validate the contract with:
 
 ```sh
-python3 Tests/Support/validate_test_tiers.py
+node Tests/Support/validate-test-tiers.mjs
 ```
 
 The validator checks tier metadata, resolves every `makeTarget` and self-test

@@ -218,8 +218,9 @@ test-support:
 	Tests/Support/test-run-container.sh
 	Tests/Fuzzing/test-run-fuzz.sh
 	cd Tests/WireCompatibility/tool && npm ci && npm test
+	node --test Tests/Support/*.test.mjs
 	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/Support -p 'test_*.py' -v
-	python3 Tests/Support/validate_test_tiers.py Tests/Support/test-tiers.json
+	node Tests/Support/validate-test-tiers.mjs Tests/Support/test-tiers.json
 
 test-wire-live: test-wire wire-tool
 	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" Tests/WireCompatibility/Live/run-coatyjs-advertise.sh
