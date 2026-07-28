@@ -31,7 +31,7 @@ COMMA := ,
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-toolchain-doctor embedded-device-info embedded-device-smoke embedded-reproducible-build benchmark-size benchmark-wire benchmark-wire-bounds benchmark-wire-device check-budget-manifest check-embedded-swift embedded-swift-build embedded-swift-flash
+.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-toolchain-doctor embedded-device-info embedded-device-smoke embedded-reproducible-build embedded-swift-reproducible-build benchmark-size benchmark-wire benchmark-wire-bounds benchmark-wire-device check-budget-manifest check-embedded-swift embedded-swift-build embedded-swift-flash
 
 help:
 	@printf '%s\n' \
@@ -70,9 +70,10 @@ help:
 		'make benchmark-wire-bounds  Run malformed-input and capacity bounds tests' \
 		'make benchmark-wire-device  Run ESP32-C6 on-device wire benchmarks' \
 		'make check-budget-manifest  Validate the performance budget manifest' \
-		'make check-embedded-swift  Verify AxolotyWire compiles under Embedded Swift' \
+		'make check-embedded-swift  Verify AxolotyWire compiles and links under Embedded Swift' \
 		'make embedded-swift-build  Build the ESP32-C6 Embedded Swift firmware' \
 		'make embedded-swift-flash  Build, flash, and capture the Swift smoke marker' \
+		'make embedded-swift-reproducible-build  Verify firmware is bit-for-bit reproducible' \
 		'make ci-fast       Run the build and fast test suite' \
 		'make ci            Run the consolidated pull-request checks' \
 		'make broker        Start Mosquitto on localhost:1883' \
@@ -236,6 +237,11 @@ embedded-swift-flash: embedded-swift-build
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
 	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
 	.devcontainer/run.sh /workspace/Tests/Support/embedded-swift-smoke.sh
+
+embedded-swift-reproducible-build:
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
+	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+	.devcontainer/run.sh /workspace/Tests/Support/embedded-swift-reproducible-build.sh
 
 test-observation-linux: resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter "ObservationLinuxTests|BroadcastTests"
