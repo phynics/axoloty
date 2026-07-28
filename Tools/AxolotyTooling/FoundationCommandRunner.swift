@@ -36,6 +36,9 @@ public struct FoundationCommandRunner: AxolotyCheckCommandRunning {
         let process = Process()
         process.executableURL = URL(filePath: "/usr/bin/env")
         process.arguments = [command.executable] + command.arguments
+        if !command.environment.isEmpty {
+            process.environment = ProcessInfo.processInfo.environment.merging(command.environment) { _, value in value }
+        }
         process.standardOutput = try FileHandle(forWritingTo: standardOutputURL)
         process.standardError = try FileHandle(forWritingTo: standardErrorURL)
 

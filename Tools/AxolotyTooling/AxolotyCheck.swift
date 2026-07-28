@@ -18,11 +18,14 @@ public struct AxolotyCommandPlan: Codable, Equatable, Sendable {
     public let executable: String
     /// Arguments passed to the executable.
     public let arguments: [String]
+    /// Environment values added for the command.
+    public let environment: [String: String]
 
     /// Creates a command plan.
-    public init(executable: String, arguments: [String] = []) {
+    public init(executable: String, arguments: [String] = [], environment: [String: String] = [:]) {
         self.executable = executable
         self.arguments = arguments
+        self.environment = environment
     }
 }
 
@@ -100,15 +103,43 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
     /// This intentionally does not claim to replace the repository's complete
     /// non-hardware gate while the remaining test and support tiers still use
     /// their established Makefile entry points.
-    public static let initialOffline = AxolotyCheckPlan(nodes: [
+    /// The platform used when selecting platform-specific checks.
+    public enum Platform: String, Codable, Equatable, Sendable {
+        /// Apple macOS.
+        case macOS
+        /// Linux.
+        case linux
+    }
+
+    /// The host platform selected at compile time.
+    public static let currentPlatform: Platform = {
+        #if os(Linux)
+        .linux
+        #else
+        .macOS
+        #endif
+    }()
+
+    /// The initial offline checks for the current host platform.
+    public static let initialOffline = initialOffline(for: currentPlatform)
+
+    /// Creates initial offline checks for a selected host platform.
+    public static func initialOffline(for platform: Platform) -> AxolotyCheckPlan {
+        var nodes: [AxolotyCheckNode] = [
         AxolotyCheckNode(name: "resolve", command: AxolotyCommandPlan(executable: "swift", arguments: ["package", "resolve", "--cache-path", ".swiftpm-cache"])),
         AxolotyCheckNode(name: "build", dependencies: ["resolve"], command: AxolotyCommandPlan(executable: "swift", arguments: ["build", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution"])),
         AxolotyCheckNode(name: "lint", command: AxolotyCommandPlan(executable: "swiftlint", arguments: ["lint", "--config", ".swiftlint.yml"])),
         AxolotyCheckNode(name: "test-ax", dependencies: ["build"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--filter", "AxolotyToolingTests"])),
         AxolotyCheckNode(name: "test-wire", dependencies: ["build"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--filter", "WireFixtureTests|LegacyCaptureFixtureTests|CoatyJs.*CaptureTests|LifecycleCompatibilityScenarioTests|AxolotyIoAssociateTests|AxolotyIoNegativeTests"])),
-        AxolotyCheckNode(name: "embedded-build", dependencies: ["build"], command: AxolotyCommandPlan(executable: "Tests/Support/build-embedded-swift.sh")),
-        AxolotyCheckNode(name: "embedded-linker", dependencies: ["embedded-build"], command: AxolotyCommandPlan(executable: "Tests/Support/check-embedded-swift-linker.sh")),
-    ])
+        ]
+        if platform == .linux {
+            nodes += [
+                AxolotyCheckNode(name: "embedded-build", dependencies: ["build"], command: AxolotyCommandPlan(executable: "Tests/Support/build-embedded-swift.sh")),
+                AxolotyCheckNode(name: "embedded-linker", dependencies: ["embedded-build"], command: AxolotyCommandPlan(executable: "Tests/Support/check-embedded-swift-linker.sh")),
+            ]
+        }
+        return AxolotyCheckPlan(nodes: nodes)
+    }
 }
 
 /// Errors found while expanding a check dependency graph.

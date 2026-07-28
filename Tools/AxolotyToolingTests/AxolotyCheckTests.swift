@@ -68,6 +68,18 @@ func modelsEncodeAndDecode() throws {
 }
 
 @Test
+func offlinePlanOmitsEmbeddedChecksOnMacOS() {
+    let plan = AxolotyCheckPlan.initialOffline(for: .macOS)
+    #expect(!plan.nodes.contains { $0.name.hasPrefix("embedded-") })
+}
+
+@Test
+func offlinePlanIncludesEmbeddedChecksOnLinux() {
+    let plan = AxolotyCheckPlan.initialOffline(for: .linux)
+    #expect(plan.nodes.map(\.name).suffix(2) == ["embedded-build", "embedded-linker"])
+}
+
+@Test
 func executorRunsIndependentNodesAfterFailure() throws {
     let plan = try AxolotyCheckPlanner().plan([
         node("blocked", dependencies: ["failed"]),
