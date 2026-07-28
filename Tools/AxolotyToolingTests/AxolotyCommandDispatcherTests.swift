@@ -29,4 +29,5 @@ func checkPlanPrintsStableJSON() {
     #expect(result.standardError.isEmpty)
     #expect(result.standardOutput.contains("\"nodes\""))
     #expect(result.standardOutput.contains("\"name\" : \"resolve\""))
+    #expect(!result.standardOutput.contains("embedded-build"))
 }
