@@ -8,6 +8,17 @@ private func node(_ name: String, dependencies: [String] = []) -> AxolotyCheckNo
     AxolotyCheckNode(name: name, dependencies: dependencies, command: AxolotyCommandPlan(executable: name))
 }
 
+private struct StubCommandRunner: AxolotyCheckCommandRunning {
+    let failedCommands: Set<String>
+
+    func run(_ command: AxolotyCommandPlan) throws -> AxolotyCheckCommandResult {
+        AxolotyCheckCommandResult(
+            exitCode: failedCommands.contains(command.executable) ? 1 : 0,
+            standardOutput: command.executable
+        )
+    }
+}
+
 @Test
 func plannerOrdersDependenciesBeforeDependants() throws {
     let plan = try AxolotyCheckPlanner().plan([node("app", dependencies: ["core"]), node("core")])
@@ -54,4 +65,34 @@ func modelsEncodeAndDecode() throws {
     let plan = try AxolotyCheckPlanner().plan(AxolotyCheckPlan.canonicalNonHardware.nodes)
     let data = try JSONEncoder().encode(plan)
     #expect(try JSONDecoder().decode(AxolotyCheckPlan.self, from: data) == plan)
+}
+
+@Test
+func executorRunsIndependentNodesAfterFailure() throws {
+    let plan = try AxolotyCheckPlanner().plan([
+        node("blocked", dependencies: ["failed"]),
+        node("independent"),
+        node("failed"),
+    ])
+
+    let results = AxolotyCheckExecutor(commandRunner: StubCommandRunner(failedCommands: ["failed"])).execute(plan)
+
+    #expect(results.map(\.name) == ["failed", "blocked", "independent"])
+    #expect(results.map(\.status) == [.failed, .skipped, .passed])
+    #expect(results[1].command == nil)
+}
+
+@Test
+func executorCapturesCommandResult() throws {
+    let plan = try AxolotyCheckPlanner().plan([node("success")])
+
+    let results = AxolotyCheckExecutor(commandRunner: StubCommandRunner(failedCommands: [])).execute(plan)
+
+    #expect(results == [
+        AxolotyCheckResult(
+            name: "success",
+            status: .passed,
+            command: AxolotyCheckCommandResult(exitCode: 0, standardOutput: "success")
+        ),
+    ])
 }

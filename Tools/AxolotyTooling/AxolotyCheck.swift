@@ -97,10 +97,13 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
 
     /// The repository's non-hardware checks, in their canonical dependency graph.
     public static let canonicalNonHardware = AxolotyCheckPlan(nodes: [
-        AxolotyCheckNode(name: "resolve", command: AxolotyCommandPlan(executable: "swift", arguments: ["package", "resolve"])),
-        AxolotyCheckNode(name: "build", dependencies: ["resolve"], command: AxolotyCommandPlan(executable: "swift", arguments: ["build"])),
-        AxolotyCheckNode(name: "test-ax", dependencies: ["build"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--filter", "AxolotyToolingTests"])),
-        AxolotyCheckNode(name: "test", dependencies: ["build"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test"])),
+        AxolotyCheckNode(name: "resolve", command: AxolotyCommandPlan(executable: "swift", arguments: ["package", "resolve", "--cache-path", ".swiftpm-cache"])),
+        AxolotyCheckNode(name: "build", dependencies: ["resolve"], command: AxolotyCommandPlan(executable: "swift", arguments: ["build", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution"])),
+        AxolotyCheckNode(name: "lint", command: AxolotyCommandPlan(executable: "swiftlint", arguments: ["lint", "--config", ".swiftlint.yml"])),
+        AxolotyCheckNode(name: "test-ax", dependencies: ["build"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--filter", "AxolotyToolingTests"])),
+        AxolotyCheckNode(name: "test-wire", dependencies: ["build"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--filter", "WireFixtureTests|LegacyCaptureFixtureTests|CoatyJs.*CaptureTests|LifecycleCompatibilityScenarioTests|AxolotyIoAssociateTests|AxolotyIoNegativeTests"])),
+        AxolotyCheckNode(name: "embedded-build", dependencies: ["build"], command: AxolotyCommandPlan(executable: "Tests/Support/build-embedded-swift.sh")),
+        AxolotyCheckNode(name: "embedded-linker", dependencies: ["build"], command: AxolotyCommandPlan(executable: "Tests/Support/check-embedded-swift-linker.sh")),
     ])
 }
 
@@ -155,5 +158,63 @@ public struct AxolotyCheckPlanner: Sendable {
 
         for root in roots { try visit(root) }
         return AxolotyCheckPlan(nodes: ordered)
+    }
+}
+
+/// Runs an ``AxolotyCommandPlan`` and captures its externally visible result.
+public protocol AxolotyCheckCommandRunning: Sendable {
+    /// Executes a command.
+    ///
+    /// - Parameter command: The command to execute.
+    /// - Returns: Its captured process result.
+    func run(_ command: AxolotyCommandPlan) throws -> AxolotyCheckCommandResult
+}
+
+/// Executes a planned check graph while preserving prerequisite failures.
+public struct AxolotyCheckExecutor: Sendable {
+    private let commandRunner: any AxolotyCheckCommandRunning
+
+    /// Creates an executor with the command runner used for every node.
+    ///
+    /// - Parameter commandRunner: The boundary that starts child commands.
+    public init(commandRunner: any AxolotyCheckCommandRunning) {
+        self.commandRunner = commandRunner
+    }
+
+    /// Runs a plan in dependency order.
+    ///
+    /// A node whose prerequisite failed or was skipped is skipped without
+    /// invoking the runner. Execution continues after independent failures so
+    /// the manifest describes every planned check.
+    ///
+    /// - Parameter plan: The plan to execute.
+    /// - Returns: Results in the plan's deterministic order.
+    public func execute(_ plan: AxolotyCheckPlan) -> [AxolotyCheckResult] {
+        var statuses: [String: AxolotyCheckStatus] = [:]
+        var results: [AxolotyCheckResult] = []
+
+        for node in plan.nodes {
+            guard node.dependencies.allSatisfy({ statuses[$0] == .passed }) else {
+                statuses[node.name] = .skipped
+                results.append(AxolotyCheckResult(name: node.name, status: .skipped))
+                continue
+            }
+
+            do {
+                let commandResult = try commandRunner.run(node.command)
+                let status: AxolotyCheckStatus = commandResult.exitCode == 0 ? .passed : .failed
+                statuses[node.name] = status
+                results.append(AxolotyCheckResult(name: node.name, status: status, command: commandResult))
+            } catch {
+                let commandResult = AxolotyCheckCommandResult(
+                    exitCode: 70,
+                    standardError: "unable to start command: \(node.command.executable)"
+                )
+                statuses[node.name] = .failed
+                results.append(AxolotyCheckResult(name: node.name, status: .failed, command: commandResult))
+            }
+        }
+
+        return results
     }
 }

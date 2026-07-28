@@ -22,15 +22,6 @@ func versionCommandPrintsVersion() {
 }
 
 @Test
-func checkExecutionIsNotWired() {
-    let result = AxolotyCommandDispatcher().run(arguments: ["check"])
-
-    #expect(result.exitCode != 0)
-    #expect(result.standardOutput.isEmpty)
-    #expect(result.standardError.contains("execution is not wired yet"))
-}
-
-@Test
 func checkPlanPrintsStableJSON() {
     let result = AxolotyCommandDispatcher().run(arguments: ["check", "--plan"])
 

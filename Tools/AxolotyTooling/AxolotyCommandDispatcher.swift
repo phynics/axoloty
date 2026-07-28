@@ -20,10 +20,7 @@ public struct AxolotyCommandDispatcher: Sendable {
         case ["check", "--plan"]:
             Self.planResult()
         case ["check"]:
-            AxolotyCommandResult(
-                standardError: "error: check execution is not wired yet; use 'ax check --plan'\n",
-                exitCode: 69
-            )
+            Self.checkResult()
         default:
             AxolotyCommandResult(
                 standardError: "error: unsupported ax command\n\n\(Self.usage)\n",
@@ -43,7 +40,7 @@ public struct AxolotyCommandDispatcher: Sendable {
       help, --help, -h     Show this help.
       version, --version   Show the CLI version.
       check --plan         Print the non-hardware check plan as JSON.
-      check                Explain that check execution is not wired yet.
+      check                Run the non-hardware check plan and print JSON.
 
     The initial command surface is intentionally small. Workflow commands are
     introduced only when their execution contracts and structured results exist.
@@ -52,13 +49,34 @@ public struct AxolotyCommandDispatcher: Sendable {
     private static func planResult() -> AxolotyCommandResult {
         do {
             let plan = try AxolotyCheckPlanner().plan(AxolotyCheckPlan.canonicalNonHardware.nodes)
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(plan)
-            return AxolotyCommandResult(standardOutput: String(decoding: data, as: UTF8.self))
+            return try jsonResult(plan)
         } catch {
             return AxolotyCommandResult(standardError: "error: unable to plan checks\n", exitCode: 70)
         }
+    }
+
+    private static func checkResult() -> AxolotyCommandResult {
+        do {
+            let plan = try AxolotyCheckPlanner().plan(AxolotyCheckPlan.canonicalNonHardware.nodes)
+            let results = AxolotyCheckExecutor(commandRunner: FoundationCommandRunner()).execute(plan)
+            let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
+            return try jsonResult(results, exitCode: exitCode)
+        } catch {
+            return AxolotyCommandResult(standardError: "error: unable to plan checks\n", exitCode: 70)
+        }
+    }
+
+    private static func jsonResult<Value: Encodable>(
+        _ value: Value,
+        exitCode: Int32 = 0
+    ) throws -> AxolotyCommandResult {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(value)
+        return AxolotyCommandResult(
+            standardOutput: String(decoding: data, as: UTF8.self),
+            exitCode: exitCode
+        )
     }
 }
 
