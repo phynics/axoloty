@@ -33,7 +33,8 @@ idf_component_register_swift(
 # Override the Swift module name to AxolotyWire (defaults to the CMake
 # target name __idf_axoloty_wire otherwise).
 target_compile_options(${COMPONENT_LIB} PRIVATE
-    "$<$<COMPILE_LANGUAGE:Swift>:-module-name AxolotyWire>"
+    "$<$<COMPILE_LANGUAGE:Swift>:-module-name>"
+    "$<$<COMPILE_LANGUAGE:Swift>:AxolotyWire>"
 )
 
 # Expose the .swiftmodule directory to dependent components.
