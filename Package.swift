@@ -15,6 +15,10 @@ let package = Package(
             name: "Axoloty",
             targets: ["Axoloty"]
         ),
+        .executable(
+            name: "ax",
+            targets: ["AxolotyCLI"]
+        ),
     ],
     dependencies: [
         .package(path: "Packages/AxolotyWire"),
@@ -92,6 +96,12 @@ let package = Package(
                 .product(name: "AxolotyWire", package: "AxolotyWire"),
             ],
             path: "Tests/AxolotyWire"
+        ),
+        // The tooling control plane. It intentionally has no product-runtime
+        // dependencies so it can bootstrap repository workflows independently.
+        .executableTarget(
+            name: "AxolotyCLI",
+            path: "Tools/ax"
         ),
         // Build-only release consumers for binary-size and dependency-closure
         // benchmarking (issue #299). Not shipped as products — they exist so
