@@ -159,10 +159,13 @@ public struct WireWriter {
         if v < 0 {
             try writeByte(0x2D) // '-'
             // Handle Int.min: |Int.min| can't be represented as positive Int.
-            // Write the absolute value digits manually.
+            // Use unsigned arithmetic to avoid the overflow.
             if v == Int.min {
-                // Int.min = -9223372036854775808 (on 64-bit)
-                try writeBytes("9223372036854775808")
+                // Convert to the unsigned representation of the absolute value.
+                // On 64-bit: UInt(bitPattern: Int.min) = 9223372036854775808
+                // On 32-bit: UInt(bitPattern: Int.min) = 2147483648
+                let absVal = UInt(bitPattern: v)
+                try writeUInt(absVal)
                 return
             }
             v = -v
@@ -173,6 +176,27 @@ public struct WireWriter {
         while temp > 0 { temp /= 10; digitCount += 1 }
         guard position + digitCount <= capacity else { throw .bufferOverflow }
         // Write digits in reverse
+        for i in stride(from: digitCount - 1, through: 0, by: -1) {
+            buffer[position + i] = 0x30 + UInt8(v % 10)
+            v /= 10
+        }
+        position += digitCount
+    }
+
+    /// Writes an unsigned integer JSON value.
+    ///
+    /// - Parameter value: The unsigned integer to encode.
+    /// - Throws: ``WireEncodeError`` if the destination buffer is too small.
+    private mutating func writeUInt(_ value: UInt) throws(WireEncodeError) {
+        if value == 0 {
+            try writeByte(0x30)
+            return
+        }
+        var v = value
+        var digitCount = 0
+        var temp = v
+        while temp > 0 { temp /= 10; digitCount += 1 }
+        guard position + digitCount <= capacity else { throw .bufferOverflow }
         for i in stride(from: digitCount - 1, through: 0, by: -1) {
             buffer[position + i] = 0x30 + UInt8(v % 10)
             v /= 10

@@ -102,7 +102,12 @@ public struct UUID16: Equatable, Hashable, Sendable {
         self.init(bytes: raw)
     }
 
+    #if !hasFeature(Embedded)
     /// Convenience init from a Swift String (host path only).
+    ///
+    /// - Note: Unavailable in Embedded Swift to avoid pulling in the
+    ///   Unicode normalization runtime. Use ``init?(parsing:)`` with a
+    ///   ``ByteSlice`` for byte-level parsing in Embedded builds.
     public init?(parsing string: String) {
         let utf8 = Array(string.utf8)
         guard utf8.count == 36 else { return nil }
@@ -146,6 +151,7 @@ public struct UUID16: Equatable, Hashable, Sendable {
         guard idx == 16 else { return nil }
         self.init(bytes: raw)
     }
+    #endif
 
     @inline(__always)
     private static func hexDigit(_ byte: UInt8) -> UInt8? {
