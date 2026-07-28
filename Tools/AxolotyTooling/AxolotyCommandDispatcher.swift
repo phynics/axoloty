@@ -73,7 +73,15 @@ public struct AxolotyCommandDispatcher: Sendable {
         case ["check", "--plan"]:
             Self.planResult()
         case ["check"]:
-            Self.checkResult()
+            checkResult()
+        case ["test", "offline"]:
+            checkResult()
+        case ["wire", "verify"]:
+            checkResult(requested: ["test-wire"])
+        case ["embedded", "build"]:
+            checkResult(requested: ["embedded-build"])
+        case ["embedded", "verify"]:
+            checkResult(requested: ["embedded-linker"])
         case ["hardware", "check"]:
             hardwareResult(required: false, device: nil)
         case ["hardware", "require"]:
@@ -98,9 +106,13 @@ public struct AxolotyCommandDispatcher: Sendable {
       version, --version   Show the CLI version.
       check --plan         Print the initial offline check plan as JSON.
       check                Run the initial offline check plan and print JSON.
-      hardware check      Run the optional embedded hardware smoke check.
-      hardware require    Require and run the embedded hardware smoke check.
-        --device PATH     Override AXOLOTY_DEVICE (default: /dev/ttyACM0).
+      test offline         Run the same offline plan as check.
+      wire verify          Verify wire fixtures directly without MQTT.
+      embedded build       Cross-compile the ESP32-C6 firmware on Linux.
+      embedded verify      Build and verify the ESP32-C6 linker contract.
+      hardware check       Run or skip the sporadic hardware smoke check.
+      hardware require     Require an attached device and run its smoke check.
+        --device PATH      Override AXOLOTY_DEVICE (default: /dev/ttyACM0).
 
     The initial command surface is intentionally small. Workflow commands are
     introduced only when their execution contracts and structured results exist.
@@ -115,12 +127,21 @@ public struct AxolotyCommandDispatcher: Sendable {
         }
     }
 
-    private static func checkResult() -> AxolotyCommandResult {
+    private func checkResult(requested: [String]? = nil) -> AxolotyCommandResult {
         do {
-            let plan = try AxolotyCheckPlanner().plan(AxolotyCheckPlan.initialOffline.nodes)
-            let results = AxolotyCheckExecutor(commandRunner: FoundationCommandRunner()).execute(plan)
+            let availablePlan = AxolotyCheckPlan.initialOffline
+            guard requested?.allSatisfy({ requestedName in
+                availablePlan.nodes.contains { $0.name == requestedName }
+            }) != false else {
+                return AxolotyCommandResult(
+                    standardError: "error: requested check is unavailable on this platform\n",
+                    exitCode: 69
+                )
+            }
+            let plan = try AxolotyCheckPlanner().plan(availablePlan.nodes, requested: requested)
+            let results = AxolotyCheckExecutor(commandRunner: commandRunner).execute(plan)
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
-            return try jsonResult(results, exitCode: exitCode)
+            return try Self.jsonResult(results, exitCode: exitCode)
         } catch {
             return AxolotyCommandResult(standardError: "error: unable to plan checks\n", exitCode: 70)
         }

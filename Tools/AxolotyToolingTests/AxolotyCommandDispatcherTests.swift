@@ -87,3 +87,33 @@ func presentHardwareRunsSmokeCommand() throws {
     #expect(runner.command?.executable == "Tests/Support/embedded-swift-smoke.sh")
     #expect(runner.command?.environment["EMBEDDED_DEVICE"] == "/dev/test")
 }
+
+@Test
+func wireVerifyRunsOnlyItsDependencyClosure() throws {
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
+        fileSystem: StubFileSystem(paths: []),
+        environment: [:]
+    )
+
+    let result = dispatcher.run(arguments: ["wire", "verify"])
+    let checks = try JSONDecoder().decode([AxolotyCheckResult].self, from: Data(result.standardOutput.utf8))
+
+    #expect(result.exitCode == 0)
+    #expect(checks.map(\.name) == ["resolve", "build", "test-wire"])
+}
+
+@Test
+func testOfflineUsesTheCheckPlan() throws {
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
+        fileSystem: StubFileSystem(paths: []),
+        environment: [:]
+    )
+
+    let result = dispatcher.run(arguments: ["test", "offline"])
+    let checks = try JSONDecoder().decode([AxolotyCheckResult].self, from: Data(result.standardOutput.utf8))
+
+    #expect(result.exitCode == 0)
+    #expect(checks.map(\.name) == AxolotyCheckPlan.initialOffline.nodes.map(\.name))
+}
