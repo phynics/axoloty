@@ -19,135 +19,51 @@ corpus=${1:-Benchmarks/Corpus}
 # Resolve to an absolute path so payload lookups work regardless of CWD.
 corpus_abs=$(CDPATH= cd -- "$corpus" && pwd)
 
-python3 - "$corpus_abs" <<'PY'
-import hashlib
-import json
-import os
-import sys
-
-corpus = sys.argv[1]
-manifest_path = os.path.join(corpus, "manifest.json")
-
-errors = []
-
-if not os.path.isfile(manifest_path):
-    print(f"error: missing manifest: {manifest_path}", file=sys.stderr)
-    sys.exit(1)
-
-with open(manifest_path, encoding="utf-8") as f:
-    manifest = json.load(f)
-
-MAX_TOPIC = 128
-MAX_PAYLOAD = 512
-EXPECTED_FAMILIES = {
-    "ADV", "ASC", "CHN", "CLL", "CPL", "DAD", "DSC",
-    "IOV", "QRY", "RSV", "RTN", "RTV", "UPD",
+node - "$corpus_abs" <<'JS'
+const fs = require("node:fs");
+const path = require("node:path");
+const crypto = require("node:crypto");
+const corpus = process.argv[2];
+const manifestPath = path.join(corpus, "manifest.json");
+if (!fs.existsSync(manifestPath)) { console.error(`error: missing manifest: ${manifestPath}`); process.exit(1); }
+const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+const cases = manifest.cases;
+if (!Array.isArray(cases)) { console.error("error: manifest 'cases' is not a list"); process.exit(1); }
+const expectedFamilies = new Set(["ADV", "ASC", "CHN", "CLL", "CPL", "DAD", "DSC", "IOV", "QRY", "RSV", "RTN", "RTV", "UPD"]);
+const expectedSizes = ["small", "typical", "maximum"];
+const errors = [];
+const families = new Set(cases.map(item => item.family));
+const sizes = new Set(cases.map(item => item.sizeClass));
+const combinations = new Set(cases.map(item => `${item.family}:${item.sizeClass}`));
+if (cases.length !== 39) errors.push(`expected 39 cases, found ${cases.length}`);
+const missingFamilies = [...expectedFamilies].filter(item => !families.has(item)).sort();
+const extraFamilies = [...families].filter(item => !expectedFamilies.has(item)).sort();
+const missingSizes = expectedSizes.filter(item => !sizes.has(item));
+if (missingFamilies.length) errors.push(`missing families: ${JSON.stringify(missingFamilies)}`);
+if (extraFamilies.length) errors.push(`unexpected families: ${JSON.stringify(extraFamilies)}`);
+if (missingSizes.length) errors.push(`missing size classes: ${JSON.stringify(missingSizes)}`);
+for (const family of [...expectedFamilies].sort()) for (const size of expectedSizes) {
+  if (!combinations.has(`${family}:${size}`)) errors.push(`missing case for family ${family} size ${size}`);
 }
-EXPECTED_SIZES = {"small", "typical", "maximum"}
-
-cases = manifest.get("cases", [])
-if not isinstance(cases, list):
-    print("error: manifest 'cases' is not a list", file=sys.stderr)
-    sys.exit(1)
-
-# 3. Verify all 13 families x 3 size classes are present (39 cases).
-seen_combos = set()
-seen_families = set()
-seen_sizes = set()
-for case in cases:
-    family = case.get("family")
-    size = case.get("sizeClass")
-    seen_combos.add((family, size))
-    seen_families.add(family)
-    seen_sizes.add(size)
-
-if len(cases) != 39:
-    errors.append(f"expected 39 cases, found {len(cases)}")
-
-missing_families = EXPECTED_FAMILIES - seen_families
-if missing_families:
-    errors.append(f"missing families: {sorted(missing_families)}")
-
-extra_families = seen_families - EXPECTED_FAMILIES
-if extra_families:
-    errors.append(f"unexpected families: {sorted(extra_families)}")
-
-missing_sizes = EXPECTED_SIZES - seen_sizes
-if missing_sizes:
-    errors.append(f"missing size classes: {sorted(missing_sizes)}")
-
-for family in sorted(EXPECTED_FAMILIES):
-    for size in sorted(EXPECTED_SIZES, key=lambda s: {"small": 0, "typical": 1, "maximum": 2}[s]):
-        if (family, size) not in seen_combos:
-            errors.append(f"missing case for family {family} size {size}")
-
-# 4-9. Per-case checks.
-for case in cases:
-    cid = case.get("id", "<no id>")
-
-    payload_rel = case.get("payloadFile")
-    if not payload_rel:
-        errors.append(f"{cid}: missing payloadFile")
-        continue
-    payload_path = os.path.join(corpus, payload_rel)
-
-    # 4. payloadFile exists.
-    if not os.path.isfile(payload_path):
-        errors.append(f"{cid}: payload file not found: {payload_rel}")
-        continue
-
-    with open(payload_path, "rb") as f:
-        payload_bytes = f.read()
-
-    # 8. payload file size <= 512.
-    if len(payload_bytes) > MAX_PAYLOAD:
-        errors.append(
-            f"{cid}: payload {len(payload_bytes)} bytes exceeds {MAX_PAYLOAD}"
-        )
-
-    # 5. SHA-256 matches.
-    actual_sha = hashlib.sha256(payload_bytes).hexdigest()
-    expected_sha = case.get("payloadSha256")
-    if expected_sha is None:
-        errors.append(f"{cid}: missing payloadSha256")
-    elif actual_sha != expected_sha:
-        errors.append(
-            f"{cid}: SHA-256 mismatch (expected {expected_sha}, got {actual_sha})"
-        )
-
-    # 6. byte count matches.
-    expected_bytes = case.get("payloadBytes")
-    if expected_bytes is None:
-        errors.append(f"{cid}: missing payloadBytes")
-    elif len(payload_bytes) != expected_bytes:
-        errors.append(
-            f"{cid}: byte count mismatch (expected {expected_bytes}, got {len(payload_bytes)})"
-        )
-
-    # 7. topic length <= 128 bytes.
-    topic = case.get("topic", "")
-    topic_len = len(topic.encode("utf-8"))
-    if topic_len > MAX_TOPIC:
-        errors.append(
-            f"{cid}: topic {topic_len} bytes exceeds {MAX_TOPIC}: {topic}"
-        )
-
-    # 9. source.type is reference or generated; generated must have a seed.
-    source = case.get("source", {})
-    stype = source.get("type")
-    if stype == "reference":
-        if not source.get("provenance"):
-            errors.append(f"{cid}: reference source missing provenance")
-    elif stype == "generated":
-        if "seed" not in source:
-            errors.append(f"{cid}: generated source missing seed")
-    else:
-        errors.append(f"{cid}: invalid source type {stype!r}")
-
-if errors:
-    for e in errors:
-        print(f"error: {e}", file=sys.stderr)
-    sys.exit(1)
-
-print(f"BENCHMARK CORPUS OK ({len(cases)} cases verified)")
-PY
+for (const item of cases) {
+  const id = item.id ?? "<no id>";
+  if (!item.payloadFile) { errors.push(`${id}: missing payloadFile`); continue; }
+  const payloadPath = path.join(corpus, item.payloadFile);
+  if (!fs.existsSync(payloadPath)) { errors.push(`${id}: payload file not found: ${item.payloadFile}`); continue; }
+  const payload = fs.readFileSync(payloadPath);
+  if (payload.length > 512) errors.push(`${id}: payload ${payload.length} bytes exceeds 512`);
+  const digest = crypto.createHash("sha256").update(payload).digest("hex");
+  if (item.payloadSha256 === undefined) errors.push(`${id}: missing payloadSha256`);
+  else if (item.payloadSha256 !== digest) errors.push(`${id}: SHA-256 mismatch (expected ${item.payloadSha256}, got ${digest})`);
+  if (item.payloadBytes === undefined) errors.push(`${id}: missing payloadBytes`);
+  else if (item.payloadBytes !== payload.length) errors.push(`${id}: byte count mismatch (expected ${item.payloadBytes}, got ${payload.length})`);
+  const topicLength = Buffer.byteLength(item.topic ?? "", "utf8");
+  if (topicLength > 128) errors.push(`${id}: topic ${topicLength} bytes exceeds 128: ${item.topic ?? ""}`);
+  const source = item.source ?? {};
+  if (source.type === "reference" && !source.provenance) errors.push(`${id}: reference source missing provenance`);
+  else if (source.type === "generated" && !("seed" in source)) errors.push(`${id}: generated source missing seed`);
+  else if (!["reference", "generated"].includes(source.type)) errors.push(`${id}: invalid source type ${JSON.stringify(source.type)}`);
+}
+if (errors.length) { for (const error of errors) console.error(`error: ${error}`); process.exit(1); }
+console.log(`BENCHMARK CORPUS OK (${cases.length} cases verified)`);
+JS

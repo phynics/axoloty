@@ -44,6 +44,8 @@ RUN chmod 1777 /tmp \
         unzip \
         heaptrack \
         ninja-build \
+        nodejs \
+        npm \
         python3 \
         python3-pip \
         python3-venv \

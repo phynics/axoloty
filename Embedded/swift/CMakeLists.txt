@@ -16,7 +16,7 @@ project(axoloty-swift)
 # longer matches.
 idf_build_get_property(project_elf EXECUTABLE)
 add_custom_command(TARGET ${project_elf} PRE_LINK
-    COMMAND ${PYTHON} ${CMAKE_CURRENT_LIST_DIR}/main/patch_swift_got.py
+    COMMAND node ${CMAKE_CURRENT_LIST_DIR}/main/patch-swift-got.mjs
         ${CMAKE_BINARY_DIR}/esp-idf/esp_system/ld/sections.ld
     VERBATIM
 )

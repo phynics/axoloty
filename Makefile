@@ -219,7 +219,6 @@ test-support:
 	Tests/Fuzzing/test-run-fuzz.sh
 	cd Tests/WireCompatibility/tool && npm ci && npm test
 	node --test Tests/Support/*.test.mjs
-	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/Support -p 'test_*.py' -v
 	node Tests/Support/validate-test-tiers.mjs Tests/Support/test-tiers.json
 
 test-wire-live: test-wire wire-tool
@@ -320,11 +319,11 @@ coverage: coverage-resolve
 		  PROFDATA=$$(find .build -name default.profdata | head -1); \
 		  mkdir -p .testing/coverage; \
 		  llvm-cov export "$$BIN" -instr-profile="$$PROFDATA" -format=text > .testing/coverage/coverage.json; \
-		  PYTHONDONTWRITEBYTECODE=1 python3 Tests/Support/coverage_ratchet.py summary .testing/coverage/coverage.json --report .testing/coverage/report.json; \
-		  PYTHONDONTWRITEBYTECODE=1 python3 Tests/Support/coverage_report.py .testing/coverage/coverage.json .testing/coverage/changed.diff'
+		  node Tests/Support/coverage-tools.mjs summary .testing/coverage/coverage.json --report .testing/coverage/report.json; \
+		  node Tests/Support/coverage-tools.mjs report .testing/coverage/coverage.json .testing/coverage/changed.diff'
 
 coverage-check: coverage
-	python3 Tests/Support/coverage_ratchet.py check .testing/coverage/coverage.json Tests/Support/coverage-baseline.json
+	node Tests/Support/coverage-tools.mjs check .testing/coverage/coverage.json Tests/Support/coverage-baseline.json
 
 ci-fast: build test-fast
 

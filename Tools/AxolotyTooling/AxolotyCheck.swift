@@ -136,7 +136,7 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
         AxolotyCheckNode(name: "test-wire", dependencies: ["test-ax"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--skip-build", "--filter", "WireFixtureTests|LegacyCaptureFixtureTests|CoatyJs.*CaptureTests|LifecycleCompatibilityScenarioTests|AxolotyIoAssociateTests|AxolotyIoNegativeTests"])),
         AxolotyCheckNode(name: "no-anycodable", command: AxolotyCommandPlan(executable: "Tests/Support/check-no-anycodable.sh")),
         AxolotyCheckNode(name: "no-foundation-wire", command: AxolotyCommandPlan(executable: "Tests/Support/check-no-foundation-types.sh")),
-        AxolotyCheckNode(name: "wire-dependencies", command: AxolotyCommandPlan(executable: "Tests/Support/check-axoloty-wire-dependencies.sh", arguments: ["Packages/AxolotyWire"])),
+        AxolotyCheckNode(name: "wire-dependencies", command: AxolotyCommandPlan(executable: "sh", arguments: ["Tests/Support/check-axoloty-wire-dependencies.sh", "Packages/AxolotyWire"])),
         AxolotyCheckNode(name: "wire-independent-resolution", command: AxolotyCommandPlan(executable: "Tests/Support/check-axoloty-wire-independent-resolution.sh")),
         ]
         if platform == .linux {
