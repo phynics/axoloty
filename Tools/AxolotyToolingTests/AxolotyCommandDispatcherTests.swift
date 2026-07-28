@@ -29,5 +29,5 @@ func checkPlanPrintsStableJSON() {
     #expect(result.exitCode == 0)
     #expect(result.standardError.isEmpty)
     let plan = try? JSONDecoder().decode(AxolotyCheckPlan.self, from: Data(result.standardOutput.utf8))
-    #expect(plan?.nodes.map(\.name) == ["resolve", "build", "lint", "test-ax", "test-wire"])
+    #expect(plan?.nodes.map(\.name) == ["resolve", "build", "lint", "test-ax", "test-wire", "embedded-build", "embedded-linker"])
 }
