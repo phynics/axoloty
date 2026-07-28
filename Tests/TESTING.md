@@ -22,6 +22,25 @@ is unmapped or owned by more than one target. It does not invoke Swift; run it
 through `make test-support` for the standard Makefile path. Build and test
 execution must always use the root Makefile and Podman.
 
+## Initial `ax` workflow
+
+The Swift `ax` executable is the in-progress replacement for build and test
+orchestration. During the migration, invoke it through the lightweight Makefile
+wrapper so Linux execution continues to use the pinned development container:
+
+```sh
+make ax AX_ARGS='check --plan'
+make check
+```
+
+`make check` runs the initial broker-free slice: dependency resolution, package
+build, lint, `ax` tooling tests, and offline wire fixtures. It emits one JSON
+result manifest on standard output; container/bootstrap diagnostics are written
+to standard error. It does **not** yet replace the full Makefile test matrix,
+broker-backed integration, live wire capture, embedded checks, or physical
+hardware gates. Continue to use the focused Make targets below for those
+capabilities until their `ax` commands are implemented.
+
 ## Command-to-tier map
 
 Tiers with a direct Make target record it in the contract. The manual macOS
