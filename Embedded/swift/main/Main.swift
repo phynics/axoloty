@@ -18,16 +18,23 @@ func app_main() -> Int32 {
     var failed: UInt32 = 0
 
     @inline(__always)
+    func printStatic(_ value: StaticString) {
+        axoloty_print(
+            UnsafeRawPointer(value.utf8Start).assumingMemoryBound(to: CChar.self)
+        )
+    }
+
+    @inline(__always)
     func record(_ name: StaticString, _ ok: Bool) {
         if ok {
             passed &+= 1
             axoloty_print("{\"test\":\"")
-            axoloty_print(name)
+            printStatic(name)
             axoloty_print("\",\"status\":\"passed\"}\n")
         } else {
             failed &+= 1
             axoloty_print("{\"test\":\"")
-            axoloty_print(name)
+            printStatic(name)
             axoloty_print("\",\"status\":\"failed\"}\n")
         }
     }
