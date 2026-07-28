@@ -22,11 +22,20 @@ func versionCommandPrintsVersion() {
 }
 
 @Test
-func unknownCommandReturnsUsageError() {
+func checkExecutionIsNotWired() {
     let result = AxolotyCommandDispatcher().run(arguments: ["check"])
 
-    #expect(result.exitCode == 64)
+    #expect(result.exitCode != 0)
     #expect(result.standardOutput.isEmpty)
-    #expect(result.standardError.contains("unsupported ax command"))
-    #expect(result.standardError.contains("Usage: ax <command>"))
+    #expect(result.standardError.contains("execution is not wired yet"))
+}
+
+@Test
+func checkPlanPrintsStableJSON() {
+    let result = AxolotyCommandDispatcher().run(arguments: ["check", "--plan"])
+
+    #expect(result.exitCode == 0)
+    #expect(result.standardError.isEmpty)
+    #expect(result.standardOutput.contains("\"nodes\""))
+    #expect(result.standardOutput.contains("\"name\" : \"resolve\""))
 }

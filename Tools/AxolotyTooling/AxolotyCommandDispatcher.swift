@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+import Foundation
+
 /// Parses the stable command surface of the ``ax`` tooling executable.
 public struct AxolotyCommandDispatcher: Sendable {
     /// Creates a command dispatcher.
@@ -15,6 +17,13 @@ public struct AxolotyCommandDispatcher: Sendable {
             AxolotyCommandResult(standardOutput: Self.usage)
         case ["version"], ["--version"]:
             AxolotyCommandResult(standardOutput: "ax \(Self.version)")
+        case ["check", "--plan"]:
+            Self.planResult()
+        case ["check"]:
+            AxolotyCommandResult(
+                standardError: "error: check execution is not wired yet; use 'ax check --plan'\n",
+                exitCode: 69
+            )
         default:
             AxolotyCommandResult(
                 standardError: "error: unsupported ax command\n\n\(Self.usage)\n",
@@ -33,10 +42,24 @@ public struct AxolotyCommandDispatcher: Sendable {
     Commands:
       help, --help, -h     Show this help.
       version, --version   Show the CLI version.
+      check --plan         Print the non-hardware check plan as JSON.
+      check                Explain that check execution is not wired yet.
 
     The initial command surface is intentionally small. Workflow commands are
     introduced only when their execution contracts and structured results exist.
     """
+
+    private static func planResult() -> AxolotyCommandResult {
+        do {
+            let plan = try AxolotyCheckPlanner().plan(AxolotyCheckPlan.canonicalNonHardware.nodes)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(plan)
+            return AxolotyCommandResult(standardOutput: String(decoding: data, as: UTF8.self))
+        } catch {
+            return AxolotyCommandResult(standardError: "error: unable to plan checks\n", exitCode: 70)
+        }
+    }
 }
 
 /// The standard streams and status produced by an ``AxolotyCommandDispatcher``.
@@ -65,4 +88,5 @@ public struct AxolotyCommandResult: Equatable, Sendable {
         self.standardError = standardError
         self.exitCode = exitCode
     }
+
 }
