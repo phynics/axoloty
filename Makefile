@@ -31,7 +31,7 @@ COMMA := ,
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-toolchain-doctor embedded-device-info embedded-device-smoke embedded-reproducible-build embedded-swift-reproducible-build benchmark-size benchmark-wire benchmark-wire-bounds benchmark-wire-device check-budget-manifest check-embedded-swift embedded-swift-build embedded-swift-flash
+.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-toolchain-doctor embedded-device-info embedded-device-smoke embedded-reproducible-build benchmark-size benchmark-wire benchmark-wire-bounds benchmark-wire-device check-budget-manifest check-embedded-swift check-embedded-swift-linker embedded-swift-build embedded-swift-flash
 
 help:
 	@printf '%s\n' \
@@ -71,6 +71,7 @@ help:
 		'make benchmark-wire-device  Run ESP32-C6 on-device wire benchmarks' \
 		'make check-budget-manifest  Validate the performance budget manifest' \
 		'make check-embedded-swift  Verify AxolotyWire compiles and links under Embedded Swift' \
+		'make check-embedded-swift-linker  Verify Unicode runtime links for ESP32-C6' \
 		'make embedded-swift-build  Build the ESP32-C6 Embedded Swift firmware' \
 		'make embedded-swift-flash  Build, flash, and capture the Swift smoke marker' \
 		'make embedded-swift-reproducible-build  Verify firmware is bit-for-bit reproducible' \
@@ -178,6 +179,7 @@ test-support:
 	Tests/Support/test-check-axoloty-wire-independent-resolution.sh
 	Tests/Support/test-check-axoloty-wire-test-isolation.sh
 	Tests/Support/test-check-benchmark-corpus.sh
+	Tests/Support/test-embedded-swift-smoke.sh
 	Tests/Support/test-run-container.sh
 	Tests/Fuzzing/test-run-fuzz.sh
 	cd Tests/WireCompatibility/tool && npm ci && npm test
@@ -229,14 +231,30 @@ embedded-reproducible-build:
 embedded-swift-build:
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
 	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-	.devcontainer/run.sh bash -c '. $${IDF_PATH:-/opt/esp/idf}/export.sh >/dev/null 2>&1 && cd /workspace/Embedded/swift && idf.py set-target esp32c6 && idf.py build'
+	.devcontainer/run.sh /workspace/Tests/Support/build-embedded-swift.sh
 
 embedded-swift-flash: embedded-swift-build
-	SUDO="$(SUDO)" \
-	CONTAINER_DEVICES=/dev/ttyACM0 \
+	@CONTAINER_DEVICES=/dev/ttyACM0 \
+	CONTAINER_RECLAIM_BUILD_DIR=1 EMBEDDED_SKIP_BUILD=1 \
+	EMBEDDED_BUILD_DIR=/workspace/.build/embedded-swift \
+	EMBEDDED_OUTPUT_DIR=/workspace/.build/embedded-results \
+	CONTAINER_ENV_VARS="EMBEDDED_SKIP_BUILD EMBEDDED_BUILD_DIR EMBEDDED_OUTPUT_DIR" \
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
 	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-	.devcontainer/run.sh /workspace/Tests/Support/embedded-swift-smoke.sh
+	.devcontainer/run.sh /workspace/Tests/Support/embedded-swift-smoke.sh; \
+	status=$$?; \
+	mkdir -p .testing/embedded || exit 1; \
+	for artifact in swift-smoke-log.txt swift-smoke-result.json; do \
+		if [ -f "$(BUILD_DIR)/embedded-results/$$artifact" ]; then \
+			cp "$(BUILD_DIR)/embedded-results/$$artifact" .testing/embedded/ || exit 1; \
+		fi; \
+	done; \
+	exit $$status
+
+check-embedded-swift-linker:
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
+	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+	.devcontainer/run.sh /workspace/Tests/Support/check-embedded-swift-linker.sh
 
 embedded-swift-reproducible-build:
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
@@ -321,8 +339,8 @@ benchmark-wire-bounds: resolve
 	.devcontainer/run.sh /workspace/Tests/Support/check-benchmark-wire-bounds.sh
 
 benchmark-wire-device: resolve
-	SUDO="$(SUDO)" \
 	CONTAINER_DEVICES=/dev/ttyACM0 \
+	CONTAINER_RECLAIM_BUILD_DIR=1 \
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
 	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
 	.devcontainer/run.sh /workspace/Tests/Support/check-benchmark-wire-device.sh

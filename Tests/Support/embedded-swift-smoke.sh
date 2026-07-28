@@ -7,16 +7,20 @@
 # target, builds, flashes, then captures serial output for up to 30 seconds
 # looking for the AXOLOTY_SMOKE_OK marker emitted by Main.swift.
 #
-# Writes the monitor log to .testing/embedded/swift-smoke-log.txt.
+# Writes a monitor log and structured result to EMBEDDED_OUTPUT_DIR. The Make
+# target mirrors both files into the durable .testing/embedded directory.
 
 set -eu
 
 device=${EMBEDDED_DEVICE:-/dev/ttyACM0}
 out_dir="${EMBEDDED_OUTPUT_DIR:-/workspace/.testing/embedded}"
 smoke_log="$out_dir/swift-smoke-log.txt"
+result_file="$out_dir/swift-smoke-result.json"
 project_dir="${EMBEDDED_PROJECT_DIR:-/workspace/Embedded/swift}"
+build_dir="${EMBEDDED_BUILD_DIR:-$project_dir/build}"
 marker="AXOLOTY_SMOKE_OK"
 deadline=30
+skip_build=${EMBEDDED_SKIP_BUILD:-0}
 
 if [ ! -e "$device" ]; then
     echo "SMOKE FAIL: $device does not exist (check CONTAINER_DEVICES)" >&2
@@ -28,35 +32,58 @@ fi
 mkdir -p "$out_dir"
 cd "$project_dir"
 
-echo "== set-target =="
-idf.py set-target esp32c6
-
-echo "== build =="
-idf.py build
+if [ "$skip_build" = "0" ]; then
+    echo "== set-target =="
+    idf.py -B "$build_dir" set-target esp32c6
+    echo "== build =="
+    idf.py -B "$build_dir" build
+fi
 
 echo "== flash =="
-idf.py -p "$device" flash
+if [ "$skip_build" = "1" ]; then
+    if [ ! -f "$build_dir/flash_args" ]; then
+        echo "SMOKE FAIL: flash-only build metadata missing: $build_dir/flash_args" >&2
+        exit 1
+    fi
+    (
+        cd "$build_dir"
+        python "$IDF_PATH/components/esptool_py/esptool/esptool.py" \
+            --chip esp32c6 --port "$device" \
+            --before default_reset --after hard_reset \
+            write_flash @flash_args
+    )
+else
+    idf.py -B "$build_dir" -p "$device" flash
+fi
 
 echo "== monitor (deadline ${deadline}s, marker: ${marker}) =="
-python3 - "$device" "$deadline" "$marker" "$smoke_log" <<'PY'
-import serial, sys, time
+python3 - "$device" "$deadline" "$marker" "$smoke_log" "$result_file" <<'PY'
+import json, serial, sys, time
 
-device, deadline, marker, log_path = sys.argv[1:5]
+device, deadline, marker, log_path, result_path = sys.argv[1:6]
 deadline = int(deadline)
 
-ser = serial.Serial(device, 115200, timeout=1)
-ser.reset_input_buffer()
+try:
+    ser = serial.Serial(device, 115200, timeout=1)
+    ser.reset_input_buffer()
+except serial.SerialException as error:
+    print(f"SMOKE FAIL: cannot open {device}: {error}", file=sys.stderr)
+    sys.exit(1)
 
 start = time.time()
 lines = []
 found = False
+fatal = None
 
 while time.time() - start < deadline:
-    line = ser.readline().decode("utf-8", errors="replace").strip()
+    line = ser.readline().decode("utf-8", errors="replace").rstrip("\r\n")
     if line:
         print(line)
         lines.append(line)
-        if marker in line:
+        if any(token in line for token in ("Guru Meditation", "abort()", "Backtrace:")):
+            fatal = line
+            break
+        if line == marker:
             found = True
             break
 
@@ -65,7 +92,18 @@ ser.close()
 with open(log_path, "w") as f:
     f.write("\n".join(lines) + "\n")
 
-if found:
+with open(result_path, "w") as f:
+    json.dump({
+        "device": device,
+        "marker": marker,
+        "found": found,
+        "fatalLine": fatal,
+        "deadlineSeconds": deadline,
+        "linesCaptured": len(lines),
+    }, f, indent=2)
+    f.write("\n")
+
+if found and fatal is None:
     print("SMOKE OK")
     sys.exit(0)
 else:

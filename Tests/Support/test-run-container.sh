@@ -36,3 +36,48 @@ mkdir "$lock_dir"
 AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" BUILD_LOCK=0 "$ROOT_DIR/.devcontainer/run.sh" true
 [[ -d "$lock_dir" ]]
 rmdir "$lock_dir"
+
+# Device runs auto-select a usable non-interactive sudo wrapper. Use fakes so
+# the behavior is deterministic and does not require a real device or sudo.
+fake_bin="$TEMP_DIR/bin"
+capture="$TEMP_DIR/runtime-args.txt"
+capture_env="$TEMP_DIR/runtime-env.txt"
+mkdir -p "$fake_bin"
+cat > "$fake_bin/fake-sudo" <<'SH'
+#!/bin/sh
+if [ "$1" = "-n" ]; then shift; fi
+exec "$@"
+SH
+cat > "$fake_bin/fake-runtime" <<SH
+#!/bin/sh
+printf '%s\n' "\$*" >> "$capture"
+while [ "\$#" -gt 0 ]; do
+    if [ "\$1" = "--env-file" ]; then
+        cp "\$2" "$capture_env"
+        break
+    fi
+    shift
+done
+SH
+chmod +x "$fake_bin/fake-sudo" "$fake_bin/fake-runtime"
+device="$TEMP_DIR/device"
+: > "$device"
+SUDO_CANDIDATES="$fake_bin/fake-sudo" \
+CONTAINER_DEVICES="$device" CONTAINER_RUNTIME="$fake_bin/fake-runtime" \
+CONTAINER_ENV_VARS="EMBEDDED_SKIP_BUILD EMBEDDED_BUILD_DIR" \
+EMBEDDED_SKIP_BUILD=1 EMBEDDED_BUILD_DIR=/workspace/.build/embedded-swift \
+CONTAINER_RECLAIM_BUILD_DIR=1 BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+grep -q -- '--privileged' "$capture"
+grep -q -- "--device $device" "$capture"
+grep -q -- '--env-file ' "$capture"
+grep -qx -- 'EMBEDDED_SKIP_BUILD=1' "$capture_env"
+grep -qx -- 'EMBEDDED_BUILD_DIR=/workspace/.build/embedded-swift' "$capture_env"
+grep -q -- 'chown -R ' "$capture"
+
+if CONTAINER_RUNTIME="$fake_bin/fake-runtime" CONTAINER_ENV_VARS=1 \
+    BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true 2>/dev/null; then
+    echo "expected an invalid container environment name to fail" >&2
+    exit 1
+fi
