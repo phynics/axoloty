@@ -75,6 +75,17 @@ grep -qx -- 'EMBEDDED_SKIP_BUILD=1' "$capture_env"
 grep -qx -- 'EMBEDDED_BUILD_DIR=/workspace/.build/embedded-swift' "$capture_env"
 grep -q -- 'chown -R ' "$capture"
 
+# Optional devices are forwarded when present and ignored when absent.
+: > "$capture"
+CONTAINER_OPTIONAL_DEVICES="$device $TEMP_DIR/absent-device" \
+CONTAINER_RUNTIME="$fake_bin/fake-runtime" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+grep -q -- "--device $device" "$capture"
+if grep -q -- "$TEMP_DIR/absent-device" "$capture"; then
+    echo "absent optional device was forwarded" >&2
+    exit 1
+fi
+
 if CONTAINER_RUNTIME="$fake_bin/fake-runtime" CONTAINER_ENV_VARS=1 \
     BUILD_DIR="$build_dir" BUILD_LOCK=0 \
     "$ROOT_DIR/.devcontainer/run.sh" true 2>/dev/null; then

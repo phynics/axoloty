@@ -64,11 +64,12 @@ func optionalHardwareCheckSkipsAbsentDevice() throws {
 }
 
 @Test
-func requiredHardwareCheckFailsAbsentDevice() {
+func requiredHardwareCheckFailsAbsentDevice() throws {
     let dispatcher = AxolotyCommandDispatcher(fileSystem: StubFileSystem(paths: []), environment: [:])
     let result = dispatcher.run(arguments: ["hardware", "require"])
+    let outcome = try JSONDecoder().decode(AxolotyHardwareOutcome.self, from: Data(result.standardOutput.utf8))
     #expect(result.exitCode != 0)
-    #expect(result.standardOutput.contains("\"status\" : \"skipped\""))
+    #expect(outcome.status == .failed)
 }
 
 @Test

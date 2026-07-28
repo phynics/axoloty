@@ -92,6 +92,14 @@ fi
 # space-separated list of device paths (e.g. "/dev/ttyACM0") to forward them
 # into the container.
 container_devices=${CONTAINER_DEVICES:-}
+optional_container_devices=${CONTAINER_OPTIONAL_DEVICES:-}
+if [ -n "$optional_container_devices" ]; then
+    for dev in $optional_container_devices; do
+        if [ -e "$dev" ]; then
+            container_devices="$container_devices $dev"
+        fi
+    done
+fi
 device_opts=""
 if [ -n "$container_devices" ]; then
     for dev in $container_devices; do

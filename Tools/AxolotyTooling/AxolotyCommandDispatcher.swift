@@ -129,7 +129,11 @@ public struct AxolotyCommandDispatcher: Sendable {
     private func hardwareResult(required: Bool, device: String?) -> AxolotyCommandResult {
         let selectedDevice = device ?? environment["AXOLOTY_DEVICE"] ?? "/dev/ttyACM0"
         guard fileSystem.exists(atPath: selectedDevice) else {
-            let outcome = AxolotyHardwareOutcome(status: .skipped, device: selectedDevice, reason: "device is not present")
+            let outcome = AxolotyHardwareOutcome(
+                status: required ? .failed : .skipped,
+                device: selectedDevice,
+                reason: "device is not present"
+            )
             return (try? Self.jsonResult(outcome, exitCode: required ? 1 : 0)) ?? AxolotyCommandResult(exitCode: 70)
         }
         let command = AxolotyCommandPlan(
