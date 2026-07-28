@@ -11,7 +11,18 @@ public struct FoundationCommandRunner: AxolotyCheckCommandRunning {
     ///
     /// - Parameter command: The command to execute.
     /// - Returns: Its exit status and captured output.
-    public func run(_ command: AxolotyCommandPlan) throws -> AxolotyCheckCommandResult {
+    public func run(_ command: AxolotyCommandPlan) -> AxolotyCheckCommandResult {
+        do {
+            return try execute(command)
+        } catch {
+            return AxolotyCheckCommandResult(
+                exitCode: 70,
+                standardError: "unable to start command \(command.executable): \(error.localizedDescription)"
+            )
+        }
+    }
+
+    private func execute(_ command: AxolotyCommandPlan) throws -> AxolotyCheckCommandResult {
         let artifactDirectory = FileManager.default.temporaryDirectory
             .appending(path: "ax-command-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)

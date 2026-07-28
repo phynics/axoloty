@@ -11,7 +11,7 @@ private func node(_ name: String, dependencies: [String] = []) -> AxolotyCheckNo
 private struct StubCommandRunner: AxolotyCheckCommandRunning {
     let failedCommands: Set<String>
 
-    func run(_ command: AxolotyCommandPlan) throws -> AxolotyCheckCommandResult {
+    func run(_ command: AxolotyCommandPlan) -> AxolotyCheckCommandResult {
         AxolotyCheckCommandResult(
             exitCode: failedCommands.contains(command.executable) ? 1 : 0,
             standardOutput: command.executable
@@ -62,7 +62,7 @@ func plannerReportsCycles() {
 
 @Test
 func modelsEncodeAndDecode() throws {
-    let plan = try AxolotyCheckPlanner().plan(AxolotyCheckPlan.canonicalNonHardware.nodes)
+    let plan = try AxolotyCheckPlanner().plan(AxolotyCheckPlan.initialOffline.nodes)
     let data = try JSONEncoder().encode(plan)
     #expect(try JSONDecoder().decode(AxolotyCheckPlan.self, from: data) == plan)
 }

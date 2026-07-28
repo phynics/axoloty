@@ -95,8 +95,12 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
         self.nodes = nodes
     }
 
-    /// The repository's non-hardware checks, in their canonical dependency graph.
-    public static let canonicalNonHardware = AxolotyCheckPlan(nodes: [
+    /// The initial broker-free checks migrated to the CLI.
+    ///
+    /// This intentionally does not claim to replace the repository's complete
+    /// non-hardware gate while the remaining test and support tiers still use
+    /// their established Makefile entry points.
+    public static let initialOffline = AxolotyCheckPlan(nodes: [
         AxolotyCheckNode(name: "resolve", command: AxolotyCommandPlan(executable: "swift", arguments: ["package", "resolve", "--cache-path", ".swiftpm-cache"])),
         AxolotyCheckNode(name: "build", dependencies: ["resolve"], command: AxolotyCommandPlan(executable: "swift", arguments: ["build", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution"])),
         AxolotyCheckNode(name: "lint", command: AxolotyCommandPlan(executable: "swiftlint", arguments: ["lint", "--config", ".swiftlint.yml"])),
@@ -165,7 +169,7 @@ public protocol AxolotyCheckCommandRunning: Sendable {
     ///
     /// - Parameter command: The command to execute.
     /// - Returns: Its captured process result.
-    func run(_ command: AxolotyCommandPlan) throws -> AxolotyCheckCommandResult
+    func run(_ command: AxolotyCommandPlan) -> AxolotyCheckCommandResult
 }
 
 /// Executes a planned check graph while preserving prerequisite failures.
@@ -198,19 +202,10 @@ public struct AxolotyCheckExecutor: Sendable {
                 continue
             }
 
-            do {
-                let commandResult = try commandRunner.run(node.command)
-                let status: AxolotyCheckStatus = commandResult.exitCode == 0 ? .passed : .failed
-                statuses[node.name] = status
-                results.append(AxolotyCheckResult(name: node.name, status: status, command: commandResult))
-            } catch {
-                let commandResult = AxolotyCheckCommandResult(
-                    exitCode: 70,
-                    standardError: "unable to start command: \(node.command.executable)"
-                )
-                statuses[node.name] = .failed
-                results.append(AxolotyCheckResult(name: node.name, status: .failed, command: commandResult))
-            }
+            let commandResult = commandRunner.run(node.command)
+            let status: AxolotyCheckStatus = commandResult.exitCode == 0 ? .passed : .failed
+            statuses[node.name] = status
+            results.append(AxolotyCheckResult(name: node.name, status: status, command: commandResult))
         }
 
         return results

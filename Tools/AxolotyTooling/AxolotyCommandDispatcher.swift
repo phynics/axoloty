@@ -39,8 +39,8 @@ public struct AxolotyCommandDispatcher: Sendable {
     Commands:
       help, --help, -h     Show this help.
       version, --version   Show the CLI version.
-      check --plan         Print the non-hardware check plan as JSON.
-      check                Run the non-hardware check plan and print JSON.
+      check --plan         Print the initial offline check plan as JSON.
+      check                Run the initial offline check plan and print JSON.
 
     The initial command surface is intentionally small. Workflow commands are
     introduced only when their execution contracts and structured results exist.
@@ -48,7 +48,7 @@ public struct AxolotyCommandDispatcher: Sendable {
 
     private static func planResult() -> AxolotyCommandResult {
         do {
-            let plan = try AxolotyCheckPlanner().plan(AxolotyCheckPlan.canonicalNonHardware.nodes)
+            let plan = try AxolotyCheckPlanner().plan(AxolotyCheckPlan.initialOffline.nodes)
             return try jsonResult(plan)
         } catch {
             return AxolotyCommandResult(standardError: "error: unable to plan checks\n", exitCode: 70)
@@ -57,7 +57,7 @@ public struct AxolotyCommandDispatcher: Sendable {
 
     private static func checkResult() -> AxolotyCommandResult {
         do {
-            let plan = try AxolotyCheckPlanner().plan(AxolotyCheckPlan.canonicalNonHardware.nodes)
+            let plan = try AxolotyCheckPlanner().plan(AxolotyCheckPlan.initialOffline.nodes)
             let results = AxolotyCheckExecutor(commandRunner: FoundationCommandRunner()).execute(plan)
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
             return try jsonResult(results, exitCode: exitCode)

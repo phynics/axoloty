@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import AxolotyTooling
+import Foundation
 import Testing
 
 @Test
@@ -27,7 +28,6 @@ func checkPlanPrintsStableJSON() {
 
     #expect(result.exitCode == 0)
     #expect(result.standardError.isEmpty)
-    #expect(result.standardOutput.contains("\"nodes\""))
-    #expect(result.standardOutput.contains("\"name\" : \"resolve\""))
-    #expect(!result.standardOutput.contains("embedded-build"))
+    let plan = try? JSONDecoder().decode(AxolotyCheckPlan.self, from: Data(result.standardOutput.utf8))
+    #expect(plan?.nodes.map(\.name) == ["resolve", "build", "lint", "test-ax", "test-wire"])
 }
