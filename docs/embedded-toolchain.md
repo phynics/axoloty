@@ -27,12 +27,13 @@ all Swift/container work goes through the Makefile.
   ```
   then `sudo nixos-rebuild switch` and replug the board.
 
-- **Rootless Podman device access.** `make embedded-*` forwards `/dev/ttyACM0`
+- **Rootless Podman device access.** Device targets forward `/dev/ttyACM0`
   into the container via `CONTAINER_DEVICES` (see `.devcontainer/run.sh`). For
   rootless Podman to open the device, the host user must own or be in the
   group that owns it (the udev rule above arranges this). If rootless Podman
   still cannot open the device (some userns configurations block device
-  nodes), fall back to rootful Podman with `sudo`:
+  nodes), the runner automatically selects a working non-interactive sudo
+  wrapper. It can also be selected explicitly:
   ```sh
   SUDO=/run/wrappers/bin/sudo make embedded-swift-flash
   ```
@@ -71,9 +72,11 @@ make embedded-swift-flash           # build, flash, monitor Swift smoke + Axolot
 make embedded-reproducible-build    # build twice from clean, compare .bin SHA-256
 ```
 
-Every target forwards `/dev/ttyACM0` via `CONTAINER_DEVICES` and runs inside
-the `axoloty-dev` container. Output artifacts land under
-`.testing/embedded/` (outside `/tmp`, so they survive the container):
+Every target runs inside the `axoloty-dev` container; hardware targets forward
+`/dev/ttyACM0` via `CONTAINER_DEVICES`. The incremental Swift build cache is
+external, while its firmware is mirrored to
+`.build-output/embedded-swift/axoloty-swift.bin`. Runtime evidence lands under
+`.testing/embedded/` (outside `/tmp`, so it survives the container):
 
 | File | Produced by |
 |---|---|
@@ -81,6 +84,7 @@ the `axoloty-dev` container. Output artifacts land under
 | `device-info-raw.txt` | `embedded-device-info` |
 | `smoke-log.txt` | `embedded-device-smoke` |
 | `swift-smoke-log.txt` | `embedded-swift-flash` |
+| `swift-smoke-result.json` | `embedded-swift-flash` |
 | `reproducible-build.json` | `embedded-reproducible-build` |
 
 ## Embedded Swift status
@@ -90,8 +94,9 @@ Swift 6.3 compiles AxolotyWire for `riscv32-none-none-eabi` using
 component (v1.0.1) integrates the Swift compiler into the ESP-IDF build
 system via `idf_component_register_swift()`.
 
-The Swift firmware (`Embedded/swift/`) compiles all 16 AxolotyWire source
-files into a 160 KB firmware. Verified on physical ESP32-C6:
+The Swift firmware (`Embedded/swift/`) compiles AxolotyWire as a separate
+Embedded Swift module and links it into the application. Verified on physical
+ESP32-C6:
 `AXOLOTY_SMOKE_OK` captured, `WireReader.readUUID` and `TopicView.eventType`
 work on-device.
 

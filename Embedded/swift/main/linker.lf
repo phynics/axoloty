@@ -1,0 +1,15 @@
+# Keep Swift UnicodeDataTables' GOT/PLT sections. ESP-IDF v5.4 otherwise
+# discards them via the generic GCC-382 rule in sections.ld.in.
+[sections:swift_unicode_got]
+entries:
+    .got+
+    .got.plt+
+
+[scheme:swift_unicode]
+entries:
+    swift_unicode_got -> dram0_data
+
+[mapping:swift_unicode]
+archive: *
+entries:
+    * (swift_unicode)
