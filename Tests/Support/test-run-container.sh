@@ -14,28 +14,32 @@ TEMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TEMP_DIR"' EXIT
 
 build_dir="$TEMP_DIR/build"
-lock_dir="${build_dir}.lock"
+lock_file="${build_dir}.lock"
+lock_owner="${build_dir}.lock.owner"
 
 # The lock must be released after a direct devcontainer command exits.
 AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" "$ROOT_DIR/.devcontainer/run.sh" true
-[[ ! -e "$lock_dir" ]]
+[[ ! -e "$lock_owner" ]]
 
 # A second operation waits for the owner instead of touching the shared cache.
-mkdir "$lock_dir"
-( sleep 1; rmdir "$lock_dir" ) &
+( exec 8>"$lock_file"; flock 8; sleep 1 ) &
+holder=$!
+sleep 0.1
 start=$(date +%s)
 AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" "$ROOT_DIR/.devcontainer/run.sh" true
 elapsed=$(( $(date +%s) - start ))
 
 [[ "$elapsed" -ge 1 ]]
-[[ ! -e "$lock_dir" ]]
+wait "$holder"
+[[ ! -e "$lock_owner" ]]
 
 # Isolated CI runners do not share a build directory, so they must not wait
 # behind an unrelated lock directory.
-mkdir "$lock_dir"
+( exec 8>"$lock_file"; flock 8; sleep 2 ) &
+holder=$!
 AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" BUILD_LOCK=0 "$ROOT_DIR/.devcontainer/run.sh" true
-[[ -d "$lock_dir" ]]
-rmdir "$lock_dir"
+kill "$holder" 2>/dev/null || true
+wait "$holder" 2>/dev/null || true
 
 # Device runs auto-select a usable non-interactive sudo wrapper. Use fakes so
 # the behavior is deterministic and does not require a real device or sudo.

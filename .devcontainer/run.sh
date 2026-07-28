@@ -11,12 +11,17 @@ build_dir=${BUILD_DIR:-"$root_dir/.build"}
 spm_cache_dir=${SPM_CACHE_DIR:-"${HOME}/.cache/coaty-swift/swiftpm/swift-6.3-linux"}
 build_lock=${BUILD_LOCK:-1}
 env_file=""
+lock_kind=""
+lock_owner=""
 
 cleanup() {
     if [ -n "$env_file" ]; then
         rm -f "$env_file"
     fi
-    if [ "$build_lock" = "1" ]; then
+    if [ -n "$lock_owner" ]; then
+        rm -f "$lock_owner"
+    fi
+    if [ "$lock_kind" = "directory" ]; then
         rmdir "$lock_dir" 2>/dev/null || true
     fi
 }
@@ -26,13 +31,24 @@ cleanup() {
 # absolute host paths for bind mounts, so resolve them before use.
 mkdir -p "$build_dir"
 build_dir=$(cd "$build_dir" && pwd)
-lock_dir="${build_dir}.lock"
+lock_file="${build_dir}.lock"
+lock_dir="${build_dir}.lock.d"
+lock_owner_file="${build_dir}.lock.owner"
 trap cleanup EXIT INT TERM
 
 if [ "$build_lock" = "1" ]; then
-    while ! mkdir "$lock_dir" 2>/dev/null; do
-        sleep 1
-    done
+    if command -v flock >/dev/null 2>&1; then
+        exec 9>"$lock_file"
+        flock 9
+        lock_kind="flock"
+    else
+        while ! mkdir "$lock_dir" 2>/dev/null; do
+            sleep 1
+        done
+        lock_kind="directory"
+    fi
+    lock_owner=$lock_owner_file
+    printf 'pid=%s\nworkdir=%s\n' "$$" "$root_dir" > "$lock_owner"
 
 elif [ "$build_lock" != "0" ]; then
     echo "BUILD_LOCK must be 0 or 1, got: $build_lock" >&2

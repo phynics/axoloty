@@ -28,6 +28,18 @@ author or silently regenerate them. Review capture diffs together with
 `normalization-rules.json`; normalization must not hide topic, QoS, retain,
 field-presence, numeric-value, or array-order changes.
 
+Offline verification is separate from capture:
+
+```sh
+make ax AX_ARGS='wire verify'
+```
+
+This feeds checked-in topics and payload bytes directly to Swift tests and does
+not start MQTT. Live capture remains an explicit evidence-production operation;
+its manifest records producer/reference version, scenario, normalization
+profile, and content hashes. Release workflows should retain raw capture and
+manifest artifacts rather than relying on prose or screenshots.
+
 The probe supports QoS 0 and 1 subscriptions. Coaty compatibility scenarios
 currently need no QoS 2 handshake; the probe fails explicitly if one is
 received instead of producing a misleading partial capture.

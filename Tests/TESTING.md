@@ -33,13 +33,18 @@ make ax AX_ARGS='check --plan'
 make check
 ```
 
-`make check` runs the initial broker-free slice: dependency resolution, package
+`make check` runs the broker-free slice: dependency resolution, package
 build, lint, `ax` tooling tests, offline wire fixtures, and ESP32-C6 Embedded
 Swift build/linker checks. It emits one JSON result manifest on standard output;
 container/bootstrap diagnostics are written to standard error. It does **not**
 yet replace the full Makefile test matrix, broker-backed integration, live wire
 capture, or physical hardware gates. Continue to use the focused Make targets
 below for those capabilities until their `ax` commands are implemented.
+
+On macOS, `ax check` selects the same host and offline-wire checks but omits the
+Linux-only ESP-IDF nodes. This is an explicit platform capability difference,
+not a silent skip. MQTT-backed integration remains a separate tier; wire parser
+correctness never requires a broker.
 
 ## Command-to-tier map
 

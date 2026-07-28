@@ -11,7 +11,8 @@ CACHE_NAMESPACE ?= swift-6.3-linux
 # GNU Make 3.81 (shipped by macOS). See issue #100.
 REPOSITORY_NAME ?= $(shell git rev-parse --git-common-dir 2>/dev/null | sed 's|/.git$$||' | xargs basename 2>/dev/null || basename "$(CURDIR)")
 BUILD_CACHE_ROOT ?= /tmp/coaty-swift-build/$(REPOSITORY_NAME)/$(CACHE_NAMESPACE)
-BUILD_DIR ?= $(BUILD_CACHE_ROOT)/debug
+WORKTREE_NAME ?= $(notdir $(CURDIR))
+BUILD_DIR ?= $(BUILD_CACHE_ROOT)/worktrees/$(WORKTREE_NAME)/debug
 COVERAGE_BUILD_DIR ?= $(BUILD_DIR)-coverage
 TSAN_BUILD_DIR ?= $(BUILD_DIR)-tsan
 BUILD_LOCK ?= 1
