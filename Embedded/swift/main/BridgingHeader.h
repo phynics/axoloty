@@ -1,12 +1,6 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 // Bridging header exposing ESP-IDF C APIs to Embedded Swift.
-//
-// This header is imported by the Swift compiler via
-// idf_component_register_swift(BRIDGING_HEADER ...). It provides the
-// C function declarations needed by Main.swift and future Swift device
-// code. Only headers that are needed should be listed here to keep
-// compile times reasonable.
 
 #include <stdio.h>
 
@@ -21,6 +15,7 @@
 
 #include "sdkconfig.h"
 
-// C helper for Swift logging (variadic functions like printf are unavailable
+// C helpers for Swift logging (variadic functions like printf are unavailable
 // in Embedded Swift).
 void axoloty_print(const char *msg);
+void axoloty_print_uint(const char *label, unsigned int value);

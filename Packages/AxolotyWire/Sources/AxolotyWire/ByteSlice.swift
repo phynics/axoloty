@@ -69,9 +69,14 @@ public struct ByteSlice: Equatable, Hashable {
         body(pointer, length)
     }
 
+    #if !hasFeature(Embedded)
     /// Converts this byte slice to a `String` by copying the bytes.
     ///
     /// - Returns: The UTF-8 string representation of this slice.
+    ///
+    /// - Note: Unavailable in Embedded Swift to avoid pulling in the
+    ///   Unicode normalization runtime. Use byte-level comparison
+    ///   (``equals(_:)``) instead.
     public func asString() -> String {
         let buf = UnsafeBufferPointer(
             start: pointer.assumingMemoryBound(to: UInt8.self),
@@ -79,6 +84,7 @@ public struct ByteSlice: Equatable, Hashable {
         )
         return String(decoding: buf, as: UTF8.self)
     }
+    #endif
 
     /// Returns `true` if both slices have the same length and byte contents.
     public static func == (lhs: ByteSlice, rhs: ByteSlice) -> Bool {

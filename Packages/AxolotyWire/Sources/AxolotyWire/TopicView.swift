@@ -129,20 +129,7 @@ public struct TopicView {
         // Event code is the first 3 bytes (before optional ':' filter)
         guard eventLevel.length >= 3 else { return nil }
         let code = eventLevel.subSlice(from: 0, length: 3)
-        if code.equals("ADV") { return .advertise }
-        if code.equals("DAD") { return .deadvertise }
-        if code.equals("CHN") { return .channel }
-        if code.equals("ASC") { return .associate }
-        if code.equals("IOV") { return .ioValue }
-        if code.equals("DSC") { return .discover }
-        if code.equals("RSV") { return .resolve }
-        if code.equals("QRY") { return .query }
-        if code.equals("RTV") { return .retrieve }
-        if code.equals("UPD") { return .update }
-        if code.equals("CPL") { return .complete }
-        if code.equals("CLL") { return .call }
-        if code.equals("RTN") { return .returnEvent }
-        return nil
+        return WireEventType(wireCode: code)
     }
 
     /// The event-type filter (the part after ':' in level 3), if present.
@@ -180,37 +167,81 @@ public struct TopicView {
 
 /// Foundation-free event type enum for Coaty communication events.
 ///
-/// Each case's raw value is the three-letter wire code carried on the
-/// event-type level of a Coaty MQTT topic (e.g. `ADV` for `advertise`).
-/// ``init(rawValue:)`` parses an event code back into a case, removing the
-/// need for a separate bridge enum between the wire and communication layers.
-public enum WireEventType: String, Sendable {
+/// Each case has a three-letter wire code (e.g. `ADV` for `advertise`) carried
+/// on the event-type level of a Coaty MQTT topic. The wire code is exposed via
+/// ``wireCode`` as a `StaticString` for byte-level comparison without String
+/// allocation. Host callers can use ``rawValue`` via the
+/// `RawRepresentable<String>` bridge available in non-Embedded builds.
+public enum WireEventType: Sendable {
     /// Advertise event (`ADV`).
-    case advertise = "ADV"
+    case advertise
     /// Deadvertise event (`DAD`).
-    case deadvertise = "DAD"
+    case deadvertise
     /// Channel event (`CHN`).
-    case channel = "CHN"
+    case channel
     /// Associate event (`ASC`).
-    case associate = "ASC"
+    case associate
     /// IoValue event (`IOV`).
-    case ioValue = "IOV"
+    case ioValue
     /// Discover event (`DSC`).
-    case discover = "DSC"
+    case discover
     /// Resolve event (`RSV`).
-    case resolve = "RSV"
+    case resolve
     /// Query event (`QRY`).
-    case query = "QRY"
+    case query
     /// Retrieve event (`RTV`).
-    case retrieve = "RTV"
+    case retrieve
     /// Update event (`UPD`).
-    case update = "UPD"
+    case update
     /// Complete event (`CPL`).
-    case complete = "CPL"
+    case complete
     /// Call event (`CLL`).
-    case call = "CLL"
+    case call
     /// Return event (`RTN`).
-    case returnEvent = "RTN"
+    case returnEvent
+
+    /// The three-letter wire code as a `StaticString` (e.g. `"ADV"`).
+    ///
+    /// Use this property for byte-level comparison without String allocation.
+    /// In Embedded Swift, this is the canonical wire-code accessor.
+    public var wireCode: StaticString {
+        switch self {
+        case .advertise: return "ADV"
+        case .deadvertise: return "DAD"
+        case .channel: return "CHN"
+        case .associate: return "ASC"
+        case .ioValue: return "IOV"
+        case .discover: return "DSC"
+        case .resolve: return "RSV"
+        case .query: return "QRY"
+        case .retrieve: return "RTV"
+        case .update: return "UPD"
+        case .complete: return "CPL"
+        case .call: return "CLL"
+        case .returnEvent: return "RTN"
+        }
+    }
+
+    /// Parses a wire code from a `ByteSlice` (e.g. the first 3 bytes of an
+    /// event-type topic level).
+    ///
+    /// Returns nil if the slice does not match any known wire code.
+    public init?(wireCode slice: ByteSlice) {
+        if slice.equals("ADV") { self = .advertise }
+        else if slice.equals("DAD") { self = .deadvertise }
+        else if slice.equals("CHN") { self = .channel }
+        else if slice.equals("ASC") { self = .associate }
+        else if slice.equals("IOV") { self = .ioValue }
+        else if slice.equals("DSC") { self = .discover }
+        else if slice.equals("RSV") { self = .resolve }
+        else if slice.equals("QRY") { self = .query }
+        else if slice.equals("RTV") { self = .retrieve }
+        else if slice.equals("UPD") { self = .update }
+        else if slice.equals("CPL") { self = .complete }
+        else if slice.equals("CLL") { self = .call }
+        else if slice.equals("RTN") { self = .returnEvent }
+        else { return nil }
+    }
 
     /// Returns `true` for fire-and-forget event types that carry no
     /// correlation ID (advertise, deadvertise, channel, associate, ioValue).
@@ -223,6 +254,53 @@ public enum WireEventType: String, Sendable {
         }
     }
 }
+
+#if !hasFeature(Embedded)
+extension WireEventType: RawRepresentable {
+    /// The String raw value (e.g. `"ADV"`) for host callers.
+    ///
+    /// This bridge is unavailable in Embedded Swift. Use ``wireCode`` for
+    /// byte-level access in Embedded builds.
+    public typealias RawValue = String
+
+    public var rawValue: String {
+        switch self {
+        case .advertise: return "ADV"
+        case .deadvertise: return "DAD"
+        case .channel: return "CHN"
+        case .associate: return "ASC"
+        case .ioValue: return "IOV"
+        case .discover: return "DSC"
+        case .resolve: return "RSV"
+        case .query: return "QRY"
+        case .retrieve: return "RTV"
+        case .update: return "UPD"
+        case .complete: return "CPL"
+        case .call: return "CLL"
+        case .returnEvent: return "RTN"
+        }
+    }
+
+    public init?(rawValue: String) {
+        switch rawValue {
+        case "ADV": self = .advertise
+        case "DAD": self = .deadvertise
+        case "CHN": self = .channel
+        case "ASC": self = .associate
+        case "IOV": self = .ioValue
+        case "DSC": self = .discover
+        case "RSV": self = .resolve
+        case "QRY": self = .query
+        case "RTV": self = .retrieve
+        case "UPD": self = .update
+        case "CPL": self = .complete
+        case "CLL": self = .call
+        case "RTN": self = .returnEvent
+        default: return nil
+        }
+    }
+}
+#endif
 
 extension ByteSlice {
     /// Finds a byte value and returns the sub-slice after it, or nil.

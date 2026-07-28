@@ -1,22 +1,23 @@
 #!/bin/sh
 # Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-# Validates that AxolotyWire compiles under Embedded Swift for RISC-V
-# (issue #320).
+# Validates that AxolotyWire compiles AND links under Embedded Swift for
+# RISC-V (issues #321, #322).
 #
-# Compiles every .swift file in Packages/AxolotyWire/Sources/AxolotyWire/
-# with -target riscv32-none-none-eabi -enable-experimental-feature Embedded
-# and reports the object file size. This catches any use of language
-# features that Embedded Swift does not support (untyped throws, protocol
-# existentials, dynamic dispatch, etc.) before they reach the device build.
+# 1. Compiles AxolotyWire as a separate Swift module (-module-name AxolotyWire)
+# 2. Compiles a link probe that `import AxolotyWire` and exercises all
+#    runtime-relevant public APIs
+# 3. Links the probe against the AxolotyWire module
 #
-# Usage: check-embedded-swift.sh
-#   Runs inside the axoloty-dev container (needs swiftc on PATH).
+# This catches both compile-time and link-time issues that a compile-only
+# check would miss (e.g. missing Unicode runtime symbols, unresolved
+# relocations, ABI mismatches).
 
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 wire_dir="$root/Packages/AxolotyWire/Sources/AxolotyWire"
+probe="$root/Tests/Support/embedded-swift-link-probe.swift"
 
 if [ ! -d "$wire_dir" ]; then
     echo "FAIL: AxolotyWire source directory not found at $wire_dir" >&2
@@ -38,22 +39,83 @@ if [ -z "$swift_files" ]; then
     exit 1
 fi
 
-tmpfile=$(mktemp)
-trap 'rm -f "$tmpfile"' EXIT
+workdir=$(mktemp -d)
+trap 'rm -rf "$workdir"' EXIT
 
-echo "Compiling AxolotyWire for riscv32-none-none-eabi (Embedded Swift)..."
+echo "Compiling AxolotyWire as Embedded Swift module..."
 
+# Step 1: Compile AxolotyWire into a .swiftmodule + object file.
 if ! swiftc \
     -target riscv32-none-none-eabi \
     -enable-experimental-feature Embedded \
     -parse-as-library \
     -Osize \
     -wmo \
+    -module-name AxolotyWire \
+    -emit-module \
+    -emit-module-interface \
     -c $swift_files \
-    -o "$tmpfile" 2>&1; then
+    -o "$workdir/AxolotyWire.o" \
+    -emit-module-path "$workdir/AxolotyWire.swiftmodule" 2>&1; then
     echo "FAIL: AxolotyWire does not compile under Embedded Swift" >&2
     exit 1
 fi
 
-size=$(wc -c < "$tmpfile")
-echo "EMBEDDED SWIFT OK — riscv32 object: ${size} bytes"
+module_size=$(wc -c < "$workdir/AxolotyWire.o")
+echo "  Module object: ${module_size} bytes"
+
+# Step 2: Compile the link probe that imports AxolotyWire.
+echo "Compiling link probe..."
+if ! swiftc \
+    -target riscv32-none-none-eabi \
+    -enable-experimental-feature Embedded \
+    -parse-as-library \
+    -Osize \
+    -wmo \
+    -I "$workdir" \
+    -c "$probe" \
+    -o "$workdir/probe.o" 2>&1; then
+    echo "FAIL: link probe does not compile" >&2
+    exit 1
+fi
+
+probe_size=$(wc -c < "$workdir/probe.o")
+echo "  Probe object: ${probe_size} bytes"
+
+# Step 3: Link the probe against the AxolotyWire module.
+#
+# The host ld/ld.gold cannot handle RISC-V objects (EM: 243). We need
+# a cross-platform linker: ld.lld (from LLVM/Swift toolchain) or
+# riscv32-esp-elf-ld (from ESP-IDF toolchain).
+echo "Linking..."
+
+# Find a linker that can handle RISC-V objects.
+RV_LINKER=""
+for candidate in \
+    /usr/lib/swift/llvm/bin/ld.lld \
+    /usr/bin/ld.lld \
+    /root/.espressif/tools/riscv32-esp-elf/*/riscv32-esp-elf/bin/ld; do
+    if [ -x "$candidate" ]; then
+        RV_LINKER="$candidate"
+        break
+    fi
+done
+
+if [ -z "$RV_LINKER" ]; then
+    echo "FAIL: no RISC-V-capable linker found (tried ld.lld, riscv32-esp-elf-ld)" >&2
+    exit 1
+fi
+
+# Partial relocatable link: merges the object files and reports unresolved
+# cross-module symbols without requiring a runtime entry point or libc.
+if ! "$RV_LINKER" -r \
+    -o "$workdir/linked.o" \
+    "$workdir/probe.o" \
+    "$workdir/AxolotyWire.o" 2>"$workdir/link_err.txt"; then
+    echo "FAIL: link failed — unresolved symbols or ABI mismatch" >&2
+    cat "$workdir/link_err.txt" >&2
+    exit 1
+fi
+
+linked_size=$(wc -c < "$workdir/linked.o")
+echo "EMBEDDED SWIFT OK — compiled and linked: ${module_size} + ${probe_size} = ${linked_size} bytes"
