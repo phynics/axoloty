@@ -32,7 +32,7 @@ AX_ARGS ?= --help
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm ax test-ax build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-toolchain-doctor embedded-device-info embedded-device-smoke embedded-reproducible-build benchmark-size benchmark-wire benchmark-wire-bounds benchmark-wire-device check-budget-manifest check-embedded-swift check-embedded-swift-linker embedded-swift-build embedded-swift-flash
+.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm ax check test-ax build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-toolchain-doctor embedded-device-info embedded-device-smoke embedded-reproducible-build benchmark-size benchmark-wire benchmark-wire-bounds benchmark-wire-device check-budget-manifest check-embedded-swift check-embedded-swift-linker embedded-swift-build embedded-swift-flash
 
 help:
 	@printf '%s\n' \
@@ -41,6 +41,7 @@ help:
 		'make worktree-bootstrap  Prepare dependency cache and validate Package.resolved' \
 		'make worktree-warm  Bootstrap and compile the current worktree' \
 		'make ax AX_ARGS="--help"  Run the Swift tooling CLI in the Linux container' \
+		'make check         Run the initial broker-free ax check plan' \
 		'make test-ax       Run the Swift tooling CLI tests' \
 		'make build         Build Axoloty in the Linux container' \
 	'make wire-codec-test  Run the Foundation-free wire codec unit tests' \
@@ -112,6 +113,9 @@ ax:
 	@$(MAKE) resolve >&2
 	@CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift build $(SWIFT_LOCKED_ARGS) --product ax >&2
 	@CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift run $(SWIFT_LOCKED_ARGS) --skip-build ax $(AX_ARGS)
+
+check:
+	@$(MAKE) --no-print-directory ax AX_ARGS=check
 
 test-ax: resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter AxolotyToolingTests
