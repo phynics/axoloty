@@ -34,12 +34,12 @@ make check
 ```
 
 `make check` runs the initial broker-free slice: dependency resolution, package
-build, lint, `ax` tooling tests, and offline wire fixtures. It emits one JSON
-result manifest on standard output; container/bootstrap diagnostics are written
-to standard error. It does **not** yet replace the full Makefile test matrix,
-broker-backed integration, live wire capture, embedded checks, or physical
-hardware gates. Continue to use the focused Make targets below for those
-capabilities until their `ax` commands are implemented.
+build, lint, `ax` tooling tests, offline wire fixtures, and ESP32-C6 Embedded
+Swift build/linker checks. It emits one JSON result manifest on standard output;
+container/bootstrap diagnostics are written to standard error. It does **not**
+yet replace the full Makefile test matrix, broker-backed integration, live wire
+capture, or physical hardware gates. Continue to use the focused Make targets
+below for those capabilities until their `ax` commands are implemented.
 
 ## Command-to-tier map
 

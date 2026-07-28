@@ -25,7 +25,15 @@ endif()
 idf_component_register(
     SRCS "log_helper.c"
     PRIV_INCLUDE_DIRS "."
-    PRIV_REQUIRES idf_swift axoloty_wire
+    PRIV_REQUIRES
+        idf_swift
+        axoloty_wire
+        esp_system
+        esp_timer
+        heap
+        esp_rom
+        freertos
+        log
     LDFRAGMENTS "linker.lf"
 )
 
