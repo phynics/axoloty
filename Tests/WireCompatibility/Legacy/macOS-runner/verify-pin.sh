@@ -10,14 +10,8 @@ if [ ! -f "$RESOLVED" ]; then
   echo "Missing committed Package.resolved." >&2
   exit 2
 fi
-python3 - "$RESOLVED" "$PIN" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as stream:
-    resolved = json.load(stream)
-pins = resolved.get("object", {}).get("pins", resolved.get("pins", []))
-coaty = next((pin for pin in pins if pin.get("package", pin.get("identity", "")).lower() == "coatyswift"), None)
-if coaty is None or coaty.get("state", {}).get("revision") != sys.argv[2]:
-    raise SystemExit("Package.resolved does not contain the required CoatySwift revision")
-PY
+node --input-type=module - "$RESOLVED" "$PIN" <<'JS'
+import fs from "node:fs";
+const resolved=JSON.parse(fs.readFileSync(process.argv[2])), pins=resolved.object?.pins ?? resolved.pins ?? [], coaty=pins.find(pin=>(pin.package??pin.identity??"").toLowerCase()==="coatyswift");
+if(!coaty || coaty.state?.revision!==process.argv[3]) throw new Error("Package.resolved does not contain the required CoatySwift revision");
+JS

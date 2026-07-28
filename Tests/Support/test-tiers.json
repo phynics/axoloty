@@ -27,7 +27,9 @@
     {"path": "Tests/Fuzzing/test-run-fuzz.sh", "makeTarget": "test-support", "tier": "property"},
     {"path": "Tests/Support/validate-test-tiers.test.mjs", "makeTarget": "test-support", "tier": "unit"},
     {"path": "Tests/Support/coverage-tools.test.mjs", "makeTarget": "test-support", "tier": "unit"},
+    {"path": "Tests/Support/fuzz-summary.test.mjs", "makeTarget": "test-support", "tier": "unit"},
     {"path": "Tests/Support/patch-swift-got.test.mjs", "makeTarget": "test-support", "tier": "unit"},
+    {"path": "Tests/Support/serial-tools.test.mjs", "makeTarget": "test-support", "tier": "unit"},
     {"path": "Tests/Support/work-plan-issue-form.test.mjs", "makeTarget": "test-support", "tier": "unit"}
   ],
   "artifactContract": {

@@ -74,7 +74,7 @@ wait_for() {
         sleep 0.2
     done
 }
-broker_ready() { runtime exec "$BROKER" python3 -c 'import socket; socket.create_connection(("127.0.0.1",1883),1).close()' >/dev/null 2>&1; }
+broker_ready() { runtime exec "$BROKER" node -e 'const s=require("node:net").createConnection({host:"127.0.0.1",port:1883},()=>s.end()); s.on("error",()=>process.exit(1))' >/dev/null 2>&1; }
 start_broker
 wait_for "Mosquitto broker readiness" broker_ready
 
