@@ -47,7 +47,12 @@ func checkPlanPrintsStableJSON() {
     #expect(result.exitCode == 0)
     #expect(result.standardError.isEmpty)
     let plan = try? JSONDecoder().decode(AxolotyCheckPlan.self, from: Data(result.standardOutput.utf8))
-    #expect(plan?.nodes.map(\.name) == ["resolve", "build", "lint", "test-ax", "test-wire", "embedded-build", "embedded-linker"])
+    #expect(plan?.nodes.map(\.name) == [
+        "resolve", "build", "lint", "test-ax", "test-unit", "test-module",
+        "test-fuzz", "test-wire", "no-anycodable", "no-foundation-wire",
+        "wire-dependencies", "wire-independent-resolution", "embedded-build",
+        "embedded-linker",
+    ])
 }
 
 @Test
@@ -100,7 +105,7 @@ func wireVerifyRunsOnlyItsDependencyClosure() throws {
     let checks = try JSONDecoder().decode([AxolotyCheckResult].self, from: Data(result.standardOutput.utf8))
 
     #expect(result.exitCode == 0)
-    #expect(checks.map(\.name) == ["resolve", "build", "test-wire"])
+    #expect(checks.map(\.name) == ["resolve", "build", "test-ax", "test-wire"])
 }
 
 @Test

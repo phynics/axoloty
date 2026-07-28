@@ -130,7 +130,14 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
         AxolotyCheckNode(name: "build", dependencies: ["resolve"], command: AxolotyCommandPlan(executable: "swift", arguments: ["build", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution"])),
         AxolotyCheckNode(name: "lint", command: AxolotyCommandPlan(executable: "swiftlint", arguments: ["lint", "--config", ".swiftlint.yml"])),
         AxolotyCheckNode(name: "test-ax", dependencies: ["build"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--filter", "AxolotyToolingTests"])),
-        AxolotyCheckNode(name: "test-wire", dependencies: ["build"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--filter", "WireFixtureTests|LegacyCaptureFixtureTests|CoatyJs.*CaptureTests|LifecycleCompatibilityScenarioTests|AxolotyIoAssociateTests|AxolotyIoNegativeTests"])),
+        AxolotyCheckNode(name: "test-unit", dependencies: ["test-ax"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--skip-build", "--filter", "ObjectMatcherTests|CoatyUUIDTests"])),
+        AxolotyCheckNode(name: "test-module", dependencies: ["test-ax"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--skip-build", "--filter", "CommunicationTopicTests|PayloadCoderTests|ObjectTypeRegistryTests|ConfigurationBuilderTests"])),
+        AxolotyCheckNode(name: "test-fuzz", dependencies: ["test-ax"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--skip-build", "--filter", "DeterministicFuzzTests"], environment: ["AXOLOTY_FUZZ_ITERATIONS": "250", "AXOLOTY_FUZZ_SEED": "0x41584f4c4f5459"])),
+        AxolotyCheckNode(name: "test-wire", dependencies: ["test-ax"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--skip-build", "--filter", "WireFixtureTests|LegacyCaptureFixtureTests|CoatyJs.*CaptureTests|LifecycleCompatibilityScenarioTests|AxolotyIoAssociateTests|AxolotyIoNegativeTests"])),
+        AxolotyCheckNode(name: "no-anycodable", command: AxolotyCommandPlan(executable: "Tests/Support/check-no-anycodable.sh")),
+        AxolotyCheckNode(name: "no-foundation-wire", command: AxolotyCommandPlan(executable: "Tests/Support/check-no-foundation-types.sh")),
+        AxolotyCheckNode(name: "wire-dependencies", command: AxolotyCommandPlan(executable: "Tests/Support/check-axoloty-wire-dependencies.sh", arguments: ["Packages/AxolotyWire"])),
+        AxolotyCheckNode(name: "wire-independent-resolution", command: AxolotyCommandPlan(executable: "Tests/Support/check-axoloty-wire-independent-resolution.sh")),
         ]
         if platform == .linux {
             nodes += [
