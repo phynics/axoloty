@@ -51,54 +51,64 @@
       },
       "latency": {
         "topicParse": {
-          "p50ns": null,
-          "p95ns": null,
+          "p50ns": 120,
+          "p95ns": 157,
           "budgetP50ns": null,
           "budgetP95ns": null,
           "headroomP50": null,
           "headroomP95": null,
           "budgetFormula": "ceil(max(clean run 1, clean run 2) × 1.5)",
-          "status": "pending-baseline"
+          "aggregation": "max across 39 corpus cases; nearest-rank p50/p95 from 30 samples",
+          "sourceRun": "wire-baseline.json@357facd (single clean run; 2-run max pending)",
+          "status": "measured"
         },
         "dtoDecode": {
-          "p50ns": null,
-          "p95ns": null,
+          "p50ns": 2040,
+          "p95ns": 2367,
           "budgetP50ns": null,
           "budgetP95ns": null,
           "headroomP50": null,
           "headroomP95": null,
           "budgetFormula": "ceil(max(clean run 1, clean run 2) × 1.5)",
-          "status": "pending-baseline"
+          "aggregation": "max across 39 corpus cases; nearest-rank p50/p95 from 30 samples",
+          "sourceRun": "wire-baseline.json@357facd (single clean run; 2-run max pending)",
+          "status": "measured"
         },
         "dtoEncode": {
-          "p50ns": null,
-          "p95ns": null,
+          "p50ns": 2316,
+          "p95ns": 2866,
           "budgetP50ns": null,
           "budgetP95ns": null,
           "headroomP50": null,
           "headroomP95": null,
           "budgetFormula": "ceil(max(clean run 1, clean run 2) × 1.5)",
-          "status": "pending-baseline"
+          "aggregation": "max across 39 corpus cases; nearest-rank p50/p95 from 30 samples",
+          "sourceRun": "wire-baseline.json@357facd (single clean run; 2-run max pending)",
+          "status": "measured"
         },
         "borrowedValidation": {
-          "p50ns": null,
-          "p95ns": null,
+          "p50ns": 133,
+          "p95ns": 191,
           "budgetP50ns": null,
           "budgetP95ns": null,
           "headroomP50": null,
           "headroomP95": null,
           "budgetFormula": "ceil(max(clean run 1, clean run 2) × 1.5)",
-          "status": "pending-baseline"
+          "aggregation": "max across 39 corpus cases; nearest-rank p50/p95 from 30 samples",
+          "sourceRun": "wire-baseline.json@357facd (single clean run; 2-run max pending)",
+          "status": "measured"
         },
         "combinedParseDecode": {
-          "p50ns": null,
-          "p95ns": null,
+          "p50ns": 2189,
+          "p95ns": 2274,
           "budgetP50ns": null,
           "budgetP95ns": null,
           "headroomP50": null,
           "headroomP95": null,
           "budgetFormula": "ceil(max(clean run 1, clean run 2) × 1.5)",
-          "status": "pending-baseline"
+          "aggregation": "max across 39 corpus cases; nearest-rank p50/p95 from 30 samples",
+          "sourceRun": "wire-baseline.json@357facd (single clean run; 2-run max pending)",
+          "status": "measured"
         }
       },
       "binarySize": {

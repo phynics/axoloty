@@ -325,7 +325,16 @@ func readProcLine(_ path: String, key: String?) -> String? {
     if let key {
         for line in content.components(separatedBy: "\n") {
             if line.hasPrefix(key) {
-                return line.replacingOccurrences(of: "\(key):", with: "").trimmingCharacters(in: .whitespaces)
+                // /proc/cpuinfo lines look like "key\t: value" — split on the
+                // first colon so the key prefix and tab do not leak a control
+                // character into the emitted JSON (Swift string interpolation
+                // does not escape control characters).
+                if let colonRange = line.range(of: ":") {
+                    return String(line[colonRange.upperBound...])
+                        .trimmingCharacters(in: .whitespaces)
+                }
+                return line.replacingOccurrences(of: key, with: "")
+                    .trimmingCharacters(in: .whitespaces)
             }
         }
         return nil
