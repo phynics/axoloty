@@ -65,13 +65,21 @@ import { execFileSync } from "node:child_process";
 const { captureSerial } = await import(process.env.SERIAL_TOOLS);
 const { createEmbeddedAgentValidator } = await import(process.env.AGENT_VALIDATOR);
 const [deviceA, deviceB, output] = process.argv.slice(2);
+const controller = new AbortController();
 
 const capture = (device, role) => {
   const validator = createEmbeddedAgentValidator();
   return captureSerial(device, 180, line => {
     console.log(`[${role}] ${line}`);
     return validator.observe(line);
-  }).then(lines => ({ role, device, lines, validation: validator.result() }));
+  }, controller.signal).then(lines => {
+    const validation = validator.result();
+    if (!validation.passed) controller.abort();
+    return { role, device, lines, validation };
+  }, error => {
+    controller.abort();
+    throw error;
+  });
 };
 
 const captureA = capture(deviceA, "A");

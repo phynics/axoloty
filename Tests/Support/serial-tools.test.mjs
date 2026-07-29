@@ -20,3 +20,26 @@ test("captureSerial parses regular-file fixture lines and stops on callback", as
   assert.deepEqual(seen, lines);
   fs.rmSync(directory, { recursive: true, force: true });
 });
+
+test("captureSerial stops promptly when aborted", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-serial-abort-"));
+  const device = path.join(directory, "device");
+  fs.writeFileSync(device, "");
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 25);
+  const started = Date.now();
+  await captureSerial(device, 10, () => false, controller.signal);
+  assert.ok(Date.now() - started < 1000);
+  fs.rmSync(directory, { recursive: true, force: true });
+});
+
+test("captureSerial rejects captures larger than the retained-byte limit", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-serial-limit-"));
+  const device = path.join(directory, "device");
+  fs.writeFileSync(device, "0123456789\n");
+  await assert.rejects(
+    captureSerial(device, 1, () => false, undefined, { maxBytes: 5 }),
+    /serial capture exceeded 5 bytes/
+  );
+  fs.rmSync(directory, { recursive: true, force: true });
+});

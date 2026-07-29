@@ -4,8 +4,8 @@ FROM ${NODE_IMAGE}
 WORKDIR /agent
 COPY package.json package-lock.json ./
 RUN npm ci --omit=optional
-COPY scenario-runner.js ./
-RUN chown -R node:node /agent && chmod 0444 /agent/scenario-runner.js
+COPY scenario-runner.js embedded-interoperability-runner.js ./
+RUN chown -R node:node /agent && chmod 0444 /agent/*.js
 
 USER node
 ENTRYPOINT ["node", "scenario-runner.js"]

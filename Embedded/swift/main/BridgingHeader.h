@@ -32,5 +32,6 @@ unsigned int axoloty_heap_trace_end(void);
 // crosses this boundary.
 int axoloty_network_configured(void);
 unsigned int axoloty_network_role(void);
+unsigned int axoloty_network_scenario(void);
 unsigned int axoloty_network_test(unsigned int overall_deadline_ms);
 unsigned int axoloty_agent_test(unsigned int overall_deadline_ms);

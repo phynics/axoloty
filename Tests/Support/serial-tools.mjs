@@ -9,15 +9,17 @@ export function configureSerial(device) {
   return true;
 }
 
-export async function captureSerial(device, deadline, onLine) {
+export async function captureSerial(device, deadline, onLine, signal, options = {}) {
   configureSerial(device);
   const descriptor = fs.openSync(device, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK);
   const started = Date.now();
+  const maxBytes = options.maxBytes ?? 1024 * 1024;
   const lines = [];
+  let capturedBytes = 0;
   let pending = "";
   let stopped = false;
   try {
-    while (!stopped && Date.now() - started < deadline * 1000) {
+    while (!stopped && !signal?.aborted && Date.now() - started < deadline * 1000) {
       const buffer = Buffer.alloc(4096);
       let count = 0;
       try {
@@ -28,6 +30,10 @@ export async function captureSerial(device, deadline, onLine) {
       if (!count) {
         await new Promise(resolve => setTimeout(resolve, 25));
         continue;
+      }
+      capturedBytes += count;
+      if (capturedBytes > maxBytes) {
+        throw new Error(`serial capture exceeded ${maxBytes} bytes`);
       }
       pending += buffer.subarray(0, count).toString("utf8");
       const completeLines = pending.split(/\r?\n/);
@@ -42,7 +48,7 @@ export async function captureSerial(device, deadline, onLine) {
       // before this high-volume stream reads the next chunk.
       if (!stopped) await new Promise(resolve => setImmediate(resolve));
     }
-    if (pending && !stopped) {
+    if (pending && !stopped && !signal?.aborted) {
       lines.push(pending);
       onLine(pending);
     }

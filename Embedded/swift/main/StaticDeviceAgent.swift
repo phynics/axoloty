@@ -58,7 +58,14 @@ struct StaticDeviceAgent {
             hasAdvertisedPeer = false
             return .deadvertise
         case .discover:
-            guard (try? DiscoverWireData(from: message.reader())) != nil else { return .malformed }
+            guard let discover = try? DiscoverWireData(from: message.reader()) else { return .malformed }
+            let matchesObjectId = discover.objectId?.equals(
+                "32400000-0000-4000-8000-000000000002"
+            ) ?? false
+            let matchesObjectType = discover.objectTypes?.equals(
+                "[\"coaty.test.Device\"]"
+            ) ?? false
+            guard matchesObjectId || matchesObjectType else { return .unsupported }
             return .discover
         case .resolve:
             guard (try? ResolveWireData(from: message.reader())) != nil else { return .malformed }
@@ -87,7 +94,11 @@ struct StaticDeviceAgent {
         var topic = TopicBuilder(buffer: topicBuffer, capacity: topicCapacity)
         try topic.writePrefix()
         try topic.writeNamespace(Self.namespace)
-        try topic.writeEventType(eventType)
+        let objectTypeFilter: StaticString = ":coaty.test.Device"
+        let filter = eventType == .advertise
+            ? ByteSlice(bytes: objectTypeFilter.utf8Start, length: objectTypeFilter.utf8CodeUnitCount)
+            : nil
+        try topic.writeEventType(eventType, filter: filter)
         try topic.writeSourceId(agentId)
         if let correlationId { try topic.writeCorrelationId(correlationId) }
 
@@ -112,6 +123,7 @@ private func phase4Agent(_ role: Int32) -> StaticDeviceAgent {
 private func preparePhase4Message(
     role: Int32,
     kind: Int32,
+    responseCorrelationId: UUID16? = nil,
     topicBuffer: UnsafeMutablePointer<UInt8>,
     topicCapacity: Int32,
     payloadBuffer: UnsafeMutablePointer<UInt8>,
@@ -124,14 +136,14 @@ private func preparePhase4Message(
     let correlationId: UUID16?
     switch (role, kind) {
     case (1, 1):
-        source = "{\"object\":{\"objectId\":\"32400000-0000-4000-8000-000000000002\",\"objectType\":\"coaty.test.Device\",\"name\":\"ESP32-C6 A\"}}"
+        source = "{\"object\":{\"coreType\":\"CoatyObject\",\"objectId\":\"32400000-0000-4000-8000-000000000002\",\"objectType\":\"coaty.test.Device\",\"name\":\"ESP32-C6 A\"}}"
         eventType = .advertise; correlationId = nil
     case (2, 2):
         source = "{\"objectTypes\":[\"coaty.test.Device\"]}"
         eventType = .discover; correlationId = phase4Correlation
     case (1, 3):
-        source = "{\"object\":{\"objectId\":\"32400000-0000-4000-8000-000000000002\",\"objectType\":\"coaty.test.Device\",\"name\":\"ESP32-C6 A\"}}"
-        eventType = .resolve; correlationId = phase4Correlation
+        source = "{\"object\":{\"coreType\":\"CoatyObject\",\"objectId\":\"32400000-0000-4000-8000-000000000002\",\"objectType\":\"coaty.test.Device\",\"name\":\"ESP32-C6 A\"}}"
+        eventType = .resolve; correlationId = responseCorrelationId ?? phase4Correlation
     case (1, 4):
         source = "{\"objectIds\":[\"32400000-0000-4000-8000-000000000002\"]}"
         eventType = .deadvertise; correlationId = nil
@@ -217,8 +229,9 @@ func axolotyStaticAgentReceive(
     var agent = phase4Agent(role)
     if role == 1 && message.eventType == .discover {
         guard agent.dispatch(message) == .discover else { return -1 }
+        guard let correlationId = message.topic.correlationIdLevel.flatMap(UUID16.init(parsing:)) else { return -1 }
         return preparePhase4Message(
-            role: role, kind: 3,
+            role: role, kind: 3, responseCorrelationId: correlationId,
             topicBuffer: outputTopic, topicCapacity: outputTopicCapacity,
             payloadBuffer: outputPayload, payloadCapacity: outputPayloadCapacity,
             topicLength: outputTopicLength, payloadLength: outputPayloadLength

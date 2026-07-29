@@ -55,6 +55,10 @@ static char network_topic[NETWORK_MAX_TOPIC];
 static char network_payload[NETWORK_MAX_PAYLOAD];
 static size_t network_payload_length;
 static unsigned int network_agent_role;
+static unsigned int network_agent_scenario;
+static volatile unsigned int agent_connect_count;
+static volatile unsigned int wifi_retry_count;
+static volatile int network_forced_wifi_disconnect;
 static uint8_t agent_output_topic[NETWORK_MAX_TOPIC];
 static uint8_t agent_output_payload[NETWORK_MAX_PAYLOAD];
 static uint8_t agent_will_topic[NETWORK_MAX_TOPIC];
@@ -62,19 +66,44 @@ static uint8_t agent_will_payload[NETWORK_MAX_PAYLOAD];
 
 static void network_ip_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
     (void)arg; (void)base; (void)data;
-    if (id == IP_EVENT_STA_GOT_IP) xEventGroupSetBits(network_events, IP_BIT);
+    if (id == IP_EVENT_STA_GOT_IP) {
+        wifi_retry_count = 0;
+        xEventGroupSetBits(network_events, IP_BIT);
+    }
 }
 
 static void network_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
     (void)arg; (void)base; (void)data;
     if (id == WIFI_EVENT_STA_START) esp_wifi_connect();
-    else if (id == WIFI_EVENT_STA_DISCONNECTED) xEventGroupSetBits(network_events, WIFI_FAIL_BIT);
+    else if (id == WIFI_EVENT_STA_DISCONNECTED) {
+        if (network_forced_wifi_disconnect) {
+            xEventGroupSetBits(network_events, WIFI_FAIL_BIT);
+        } else if (wifi_retry_count < 5U) {
+            wifi_retry_count += 1U;
+            esp_wifi_connect();
+        } else {
+            xEventGroupSetBits(network_events, WIFI_FAIL_BIT);
+        }
+    }
 }
 
 static void network_mqtt_event(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data) {
     (void)handler_args; (void)base;
     esp_mqtt_event_handle_t event = (esp_mqtt_event_handle_t)event_data;
-    if (event_id == MQTT_EVENT_CONNECTED) network_mqtt_bits |= network_agent_role ? AGENT_CONNECTED_BIT : 4U;
+    if (event_id == MQTT_EVENT_CONNECTED) {
+        if (network_agent_role) {
+            agent_connect_count += 1U;
+            network_mqtt_bits |= AGENT_CONNECTED_BIT;
+            if (agent_connect_count > 1U) {
+                esp_mqtt_client_subscribe(mqtt_client, "coaty/3/axoloty-embedded/#", 0);
+            }
+        } else {
+            network_mqtt_bits |= 4U;
+        }
+    }
+    else if (event_id == MQTT_EVENT_DISCONNECTED && network_agent_role) {
+        network_mqtt_bits &= ~(AGENT_CONNECTED_BIT | AGENT_SUBSCRIBED_BIT);
+    }
     else if (event_id == MQTT_EVENT_SUBSCRIBED) network_mqtt_bits |= network_agent_role ? AGENT_SUBSCRIBED_BIT : 8U;
     else if (event_id == MQTT_EVENT_PUBLISHED) network_mqtt_bits |= 16U;
     else if (event_id == MQTT_EVENT_DATA && network_agent_role && event && event->topic && event->data &&
@@ -91,6 +120,7 @@ static void network_mqtt_event(void *handler_args, esp_event_base_t base, int32_
         if (action == 1) {
             if (network_agent_role == 1U) network_mqtt_bits |= AGENT_DISCOVER_BIT;
             else network_mqtt_bits |= AGENT_ADVERTISE_BIT;
+            if (network_agent_scenario == 1U && network_agent_role == 2U) return;
             if (output_topic_length > 0 && output_topic_length < (int32_t)sizeof(agent_output_topic)) {
                 agent_output_topic[output_topic_length] = 0;
             }
@@ -135,12 +165,22 @@ unsigned int axoloty_network_role(void) {
 #endif
 }
 
+unsigned int axoloty_network_scenario(void) {
+#if AXOLOTY_NETWORK_CONFIGURED
+    return axoloty_agent_scenario;
+#else
+    return 0;
+#endif
+}
+
 unsigned int axoloty_network_test(unsigned int overall_deadline_ms) {
 #if !AXOLOTY_NETWORK_CONFIGURED
     (void)overall_deadline_ms;
     return 0;
 #else
     const uint32_t overall_start = (uint32_t)(esp_timer_get_time() / 1000ULL);
+    wifi_retry_count = 0;
+    network_forced_wifi_disconnect = 0;
     unsigned result = 0;
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -222,7 +262,10 @@ unsigned int axoloty_agent_test(unsigned int overall_deadline_ms) {
     return 0;
 #else
     if (axoloty_device_role != 1U && axoloty_device_role != 2U) return 0;
+    esp_log_level_set("*", ESP_LOG_WARN);
     const uint32_t overall_start = (uint32_t)(esp_timer_get_time() / 1000ULL);
+    wifi_retry_count = 0;
+    network_forced_wifi_disconnect = 0;
     unsigned int result = 0;
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -276,6 +319,8 @@ unsigned int axoloty_agent_test(unsigned int overall_deadline_ms) {
         config.session.last_will.retain = 0;
     }
     network_agent_role = axoloty_device_role;
+    network_agent_scenario = axoloty_agent_scenario;
+    agent_connect_count = 0;
     network_mqtt_bits = 0;
     mqtt_client = esp_mqtt_client_init(&config);
     if (!mqtt_client || esp_mqtt_client_register_event(mqtt_client, ESP_EVENT_ANY_ID, network_mqtt_event, NULL) != ESP_OK ||
@@ -292,6 +337,34 @@ unsigned int axoloty_agent_test(unsigned int overall_deadline_ms) {
     if (!(network_mqtt_bits & AGENT_SUBSCRIBED_BIT)) goto agent_done;
     result |= 8U;
 
+    xEventGroupClearBits(network_events, WIFI_FAIL_BIT | IP_BIT);
+    network_mqtt_bits &= ~(AGENT_CONNECTED_BIT | AGENT_SUBSCRIBED_BIT);
+    network_forced_wifi_disconnect = 1;
+    if (esp_wifi_disconnect() != ESP_OK) goto agent_done;
+    EventBits_t disconnected = xEventGroupWaitBits(
+        network_events, WIFI_FAIL_BIT, pdTRUE, pdFALSE, pdMS_TO_TICKS(5000));
+    if (!(disconnected & WIFI_FAIL_BIT)) goto agent_done;
+    vTaskDelay(pdMS_TO_TICKS(500));
+    network_forced_wifi_disconnect = 0;
+    if (esp_wifi_connect() != ESP_OK) goto agent_done;
+    while (network_deadline(overall_start, overall_deadline_ms) &&
+           (!(network_mqtt_bits & AGENT_CONNECTED_BIT) || !(network_mqtt_bits & AGENT_SUBSCRIBED_BIT))) {
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+    if (!(network_mqtt_bits & AGENT_CONNECTED_BIT) || !(network_mqtt_bits & AGENT_SUBSCRIBED_BIT)) goto agent_done;
+    result |= 512U;
+
+    if (network_agent_scenario == 2U) {
+        if (esp_mqtt_client_publish(
+                mqtt_client, "axoloty/test/agent-ready/B", "ready", 5, 0, 0) < 0) goto agent_done;
+        while (network_deadline(overall_start, overall_deadline_ms) &&
+               (agent_connect_count < 3U || !(network_mqtt_bits & AGENT_SUBSCRIBED_BIT))) {
+            vTaskDelay(pdMS_TO_TICKS(20));
+        }
+        if (agent_connect_count < 3U || !(network_mqtt_bits & AGENT_SUBSCRIBED_BIT)) goto agent_done;
+        result |= 1024U;
+    }
+
     if (axoloty_device_role == 1U) {
         int32_t topic_length = 0;
         int32_t payload_length = 0;
@@ -300,6 +373,17 @@ unsigned int axoloty_agent_test(unsigned int overall_deadline_ms) {
                 agent_output_payload, sizeof(agent_output_payload),
                 &topic_length, &payload_length) || topic_length >= (int32_t)sizeof(agent_output_topic)) goto agent_done;
         agent_output_topic[topic_length] = 0;
+        if (network_agent_scenario == 1U) {
+            while (network_deadline(overall_start, overall_deadline_ms)) {
+                if (esp_mqtt_client_publish(
+                        mqtt_client, (const char *)agent_output_topic,
+                        (const char *)agent_output_payload, payload_length, 0, 0) >= 0) {
+                    network_mqtt_bits |= AGENT_ADVERTISE_BIT;
+                }
+                vTaskDelay(pdMS_TO_TICKS(1000));
+            }
+            goto agent_done;
+        }
         while (network_deadline(overall_start, overall_deadline_ms) &&
                !(network_mqtt_bits & AGENT_DISCOVER_BIT)) {
             if (esp_mqtt_client_publish(
@@ -347,6 +431,9 @@ agent_done:
     esp_err_t mqtt_destroy_result = mqtt_client ? esp_mqtt_client_destroy(mqtt_client) : ESP_FAIL;
     mqtt_client = NULL;
     network_agent_role = 0;
+    network_agent_scenario = 0;
+    network_forced_wifi_disconnect = 0;
+    agent_connect_count = 0;
     esp_event_handler_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, network_wifi_event);
     esp_event_handler_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, network_ip_event);
     esp_err_t wifi_disconnect_result = esp_wifi_disconnect();

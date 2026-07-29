@@ -19,6 +19,7 @@ func app_main() -> Int32 {
     var passed: UInt32 = 0
     var failed: UInt32 = 0
     let networkRole = axoloty_network_role()
+    let networkScenario = axoloty_network_scenario()
     var emittingExchangeEvidence = false
 
     @inline(__always)
@@ -359,6 +360,18 @@ func app_main() -> Int32 {
         payload: "{\"objectTypes\":[\"coaty.test.Device\"]}",
         expected: .discover
     )
+    agentVector(
+        "agent:discoverById",
+        topic: "coaty/3/axoloty-embedded/DSC/32400000-0000-4000-8000-000000000003/32400000-0000-4000-8000-000000000004",
+        payload: "{\"objectId\":\"32400000-0000-4000-8000-000000000002\"}",
+        expected: .discover
+    )
+    agentVector(
+        "agent:rejectWrongFilter",
+        topic: "coaty/3/axoloty-embedded/DSC/32400000-0000-4000-8000-000000000003/32400000-0000-4000-8000-000000000004",
+        payload: "{\"objectTypes\":[\"coaty.test.Other\"]}",
+        expected: .unsupported
+    )
     staticAgent.beginDiscover(correlationId: expectedCorrelation)
     agentVector(
         "agent:wrongCorrelation",
@@ -417,9 +430,22 @@ func app_main() -> Int32 {
         } else {
             emittingExchangeEvidence = true
             let exchangeBits = axoloty_agent_test(90_000)
-            let exchangeChecks: [(StaticString, UInt32)] = [
+            let exchangeChecks: [(StaticString, UInt32)] = networkScenario == 1 ? [
                 ("exchange:wifi", 1), ("exchange:ip", 2),
                 ("exchange:mqttConnect", 4), ("exchange:subscribe", 8),
+                ("exchange:reconnect", 512), ("exchange:advertise", 16),
+                ("exchange:deadvertise", 128), ("exchange:disconnect", 256),
+            ] : networkScenario == 2 ? [
+                ("exchange:wifi", 1), ("exchange:ip", 2),
+                ("exchange:mqttConnect", 4), ("exchange:subscribe", 8),
+                ("exchange:reconnect", 512), ("exchange:brokerReconnect", 1024),
+                ("exchange:advertise", 16), ("exchange:discover", 32),
+                ("exchange:resolve", 64), ("exchange:deadvertise", 128),
+                ("exchange:disconnect", 256),
+            ] : [
+                ("exchange:wifi", 1), ("exchange:ip", 2),
+                ("exchange:mqttConnect", 4), ("exchange:subscribe", 8),
+                ("exchange:reconnect", 512),
                 ("exchange:advertise", 16), ("exchange:discover", 32),
                 ("exchange:resolve", 64), ("exchange:deadvertise", 128),
                 ("exchange:disconnect", 256),
