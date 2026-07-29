@@ -16,7 +16,7 @@ let package = Package(
             targets: ["Axoloty"]
         ),
         .executable(
-            name: "ax",
+            name: "axoloty-tool",
             targets: ["AxolotyCLI"]
         ),
     ],
@@ -102,7 +102,7 @@ let package = Package(
         .executableTarget(
             name: "AxolotyCLI",
             dependencies: ["AxolotyTooling"],
-            path: "Tools/ax"
+            path: "Tools/axoloty-tool"
         ),
         .target(
             name: "AxolotyTooling",

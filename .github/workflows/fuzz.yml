@@ -110,27 +110,7 @@ jobs:
         if: always()
         shell: bash
         run: |
-          python3 - <<'PY'
-          import glob
-          import json
-          import os
-
-          manifests = sorted(glob.glob(".testing/fuzz/fuzz-*/manifest.json"))
-          if not manifests:
-              print("No fuzz manifest was produced.")
-              raise SystemExit(0)
-          with open(manifests[-1], encoding="utf-8") as stream:
-              manifest = json.load(stream)
-          summary = os.environ["GITHUB_STEP_SUMMARY"]
-          with open(summary, "a", encoding="utf-8") as stream:
-              stream.write("## Fuzz Campaign\n\n")
-              stream.write(f"- Status: `{manifest.get('status', 'unknown')}`\n")
-              stream.write(f"- Seeds: `{','.join(manifest.get('seeds', []))}`\n")
-              stream.write(f"- Iterations: `{manifest.get('iterations')}`\n")
-              stream.write(f"- Repetitions: `{manifest.get('repetitions')}`\n")
-              stream.write(f"- Duration: `{manifest.get('durationSeconds')}s`\n")
-              stream.write(f"- Failed cases: `{manifest.get('failedCases')}`\n")
-          PY
+          node Tests/Support/fuzz-summary.mjs .testing/fuzz
 
       - name: Upload campaign evidence
         if: always()

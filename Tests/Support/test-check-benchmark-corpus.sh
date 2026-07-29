@@ -42,20 +42,10 @@ fi
 # 3. A mutated manifest family must fail.
 cp -R "$corpus" "$tmp/corpus-family"
 manifest="$tmp/corpus-family/manifest.json"
-python3 - "$manifest" <<'PY'
-import json, sys
-path = sys.argv[1]
-with open(path, encoding="utf-8") as f:
-    m = json.load(f)
-for c in m["cases"]:
-    if c["id"] == "advertise-small":
-        c["family"] = "XXX"
-        c["familyName"] = "nope"
-        break
-with open(path, "w", encoding="utf-8") as f:
-    json.dump(m, f, indent=2)
-    f.write("\n")
-PY
+node --input-type=module - "$manifest" <<'JS'
+import fs from "node:fs";
+const path=process.argv[2], m=JSON.parse(fs.readFileSync(path)); const item=m.cases.find(c=>c.id==="advertise-small"); item.family="XXX"; item.familyName="nope"; fs.writeFileSync(path,JSON.stringify(m,null,2)+"\n");
+JS
 if sh "$checker" "$tmp/corpus-family" >/dev/null 2>&1; then
     echo "expected checker to fail when a manifest family is mutated" >&2
     exit 1

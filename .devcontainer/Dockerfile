@@ -17,12 +17,26 @@ ARG SWIFT_VERSION=6.3
 ARG ESP_IDF_VERSION=v5.4
 ARG ESPFLASH_VERSION=3.3.0
 ARG SWIFTLINT_VERSION=0.65.0
+ARG NODE_VERSION=22.17.1
+
+FROM swift:${SWIFT_VERSION}-jammy AS axoloty-tool-builder
+
+WORKDIR /axoloty-tool
+COPY Tools/Package.swift ./Package.swift
+COPY Tools/AxolotyTooling ./AxolotyTooling
+COPY Tools/axoloty-tool ./axoloty-tool
+RUN swift build -c release --product axoloty-tool \
+        -Xswiftc -static-executable -Xlinker --no-gc-sections \
+    && mkdir -p /axoloty-tool-output \
+    && cp "$(swift build -c release --show-bin-path)/axoloty-tool" /axoloty-tool-output/axoloty-tool \
+    && /axoloty-tool-output/axoloty-tool --version
 
 FROM swift:${SWIFT_VERSION}-jammy
 
 ARG ESP_IDF_VERSION
 ARG ESPFLASH_VERSION
 ARG SWIFTLINT_VERSION
+ARG NODE_VERSION
 
 # Build essentials commonly required by Swift Package Manager on Linux,
 # in particular for Foundation's networking stack (URLSession/curl backend)
@@ -38,7 +52,9 @@ RUN chmod 1777 /tmp \
         libcurl4-openssl-dev \
         libssl-dev \
         git \
+        make \
         pkg-config \
+        ripgrep \
         mosquitto \
         curl \
         unzip \
@@ -51,6 +67,16 @@ RUN chmod 1777 /tmp \
         libudev-dev \
     && rm -rf /var/lib/apt/lists/* \
     && pip3 install --no-cache-dir "cmake>=3.29"
+
+# Node drives repository-owned JavaScript validation and capture tools. Ubuntu
+# Jammy's Node 12 package cannot parse the modern syntax used by those tools,
+# so install a pinned LTS distribution instead of relying on apt.
+RUN curl -fsSL -o /tmp/node.tar.xz \
+        https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz \
+    && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \
+    && rm /tmp/node.tar.xz \
+    && node --version \
+    && npm --version
 
 # SwiftLint for the `make lint` target (also run in CI). Uses the static
 # Linux binary so the image needs no extra runtime libs. Pinned to a
@@ -95,5 +121,9 @@ RUN useradd --no-create-home --shell /usr/sbin/nologin esp \
 
 ENV IDF_PATH=/opt/esp/idf
 ENV PATH="${IDF_PATH}/tools:${PATH}"
+
+# Keep the project-specific CLI in the final layer so changing orchestration
+# source does not invalidate the expensive, immutable ESP-IDF toolchain layers.
+COPY --from=axoloty-tool-builder /axoloty-tool-output/axoloty-tool /opt/axoloty/bin/axoloty-tool
 
 WORKDIR /workspace

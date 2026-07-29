@@ -81,23 +81,29 @@ the related [coaty-examples](https://github.com/coatyio/coaty-examples) repo.
 
 ## Building & Testing
 
-Building and testing Axoloty is container-based (via
-[podman](https://podman.io)), so no local Swift toolchain installation is
-required. The devcontainer is the normal long-lived environment; Podman or
-Docker disposable containers remain the fallback when working outside it. This
-also works around dynamic-linking failures with the native
-Swift toolchain on the NixOS development machine used for this project:
+The Swift `axoloty-tool` executable is the orchestration control plane. Linux development
+extracts its static binary from the pinned Podman/Docker image and runs it
+through the lightweight Makefile; product commands remain containerized.
+macOS runs the same offline plan with native Swift:
 
 ```sh
 make worktree-bootstrap  # resolve dependencies into the shared SwiftPM cache
-make build   # build the package inside the container
-make test    # run the test suite inside the container
-make ci      # support checks plus one coverage-enabled Swift test pass
+make check               # Linux: offline host, wire, and embedded checks
+make hardware-check      # run or skip the sporadically attached ESP32-C6
+make hardware-require    # require the ESP32-C6 for an explicit release gate
+make release-snapshots   # produce and verify provenance-rich wire evidence
+
+# macOS
+swift run --package-path Tools axoloty-tool check
 ```
 
-Worktrees share a locked incremental build cache under
-`/tmp/coaty-swift-build/`, scoped by repository and Swift toolchain. SwiftPM
-downloads are shared through `SPM_CACHE_DIR`, which defaults to a
+Focused compatibility Make targets remain available for specialized workflows.
+See [`docs/tooling.md`](docs/tooling.md) for command tiers, platform behavior,
+cache policy, release evidence, and structured results.
+
+Worktrees keep separate locked mutable build directories under
+`/tmp/coaty-swift-build/`, scoped by repository, Swift toolchain, and worktree.
+SwiftPM downloads are shared through `SPM_CACHE_DIR`, which defaults to a
 toolchain-specific cache under `~/.cache/coaty-swift/swiftpm/`. Coverage uses
 the separate `COVERAGE_BUILD_DIR` cache to avoid mixing instrumented artifacts
 with normal builds. Override `BUILD_DIR`, `COVERAGE_BUILD_DIR`, or

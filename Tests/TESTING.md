@@ -8,12 +8,12 @@ interop target.
 
 The machine-readable companion to this document is
 [`Support/test-tiers.json`](Support/test-tiers.json). Each directly executable
-tier records its canonical Make target, and every maintained `Tests/**/test_*.py` /
+tier records its canonical Make target, and every maintained `Tests/**/*.test.mjs` /
 `Tests/**/test-*.sh` harness self-test is mapped to exactly one owning Make
 target. Validate the contract with:
 
 ```sh
-python3 Tests/Support/validate_test_tiers.py
+node Tests/Support/validate-test-tiers.mjs
 ```
 
 The validator checks tier metadata, resolves every `makeTarget` and self-test
@@ -22,24 +22,29 @@ is unmapped or owned by more than one target. It does not invoke Swift; run it
 through `make test-support` for the standard Makefile path. Build and test
 execution must always use the root Makefile and Podman.
 
-## Initial `ax` workflow
+## Initial `axoloty-tool` workflow
 
-The Swift `ax` executable is the in-progress replacement for build and test
+The Swift `axoloty-tool` executable is the in-progress replacement for build and test
 orchestration. During the migration, invoke it through the lightweight Makefile
 wrapper so Linux execution continues to use the pinned development container:
 
 ```sh
-make ax AX_ARGS='check --plan'
+make axoloty-tool AXOLOTY_TOOL_ARGS='check --plan'
 make check
 ```
 
-`make check` runs the initial broker-free slice: dependency resolution, package
-build, lint, `ax` tooling tests, offline wire fixtures, and ESP32-C6 Embedded
+`make check` runs the broker-free slice: dependency resolution, package
+build, lint, `axoloty-tool` tooling tests, offline wire fixtures, and ESP32-C6 Embedded
 Swift build/linker checks. It emits one JSON result manifest on standard output;
 container/bootstrap diagnostics are written to standard error. It does **not**
 yet replace the full Makefile test matrix, broker-backed integration, live wire
 capture, or physical hardware gates. Continue to use the focused Make targets
-below for those capabilities until their `ax` commands are implemented.
+below for those capabilities until their `axoloty-tool` commands are implemented.
+
+On macOS, `axoloty-tool check` selects the same host and offline-wire checks but omits the
+Linux-only ESP-IDF nodes. This is an explicit platform capability difference,
+not a silent skip. MQTT-backed integration remains a separate tier; wire parser
+correctness never requires a broker.
 
 ## Command-to-tier map
 

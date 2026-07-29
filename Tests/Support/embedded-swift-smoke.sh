@@ -21,6 +21,7 @@ build_dir="${EMBEDDED_BUILD_DIR:-$project_dir/build}"
 marker="AXOLOTY_SMOKE_OK"
 deadline=30
 skip_build=${EMBEDDED_SKIP_BUILD:-0}
+support_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 if [ ! -e "$device" ]; then
     echo "SMOKE FAIL: $device does not exist (check CONTAINER_DEVICES)" >&2
@@ -47,7 +48,7 @@ if [ "$skip_build" = "1" ]; then
     fi
     (
         cd "$build_dir"
-        python "$IDF_PATH/components/esptool_py/esptool/esptool.py" \
+        "$IDF_PATH/components/esptool_py/esptool/esptool.py" \
             --chip esp32c6 --port "$device" \
             --before default_reset --after hard_reset \
             write_flash @flash_args
@@ -57,56 +58,9 @@ else
 fi
 
 echo "== monitor (deadline ${deadline}s, marker: ${marker}) =="
-python3 - "$device" "$deadline" "$marker" "$smoke_log" "$result_file" <<'PY'
-import json, serial, sys, time
-
-device, deadline, marker, log_path, result_path = sys.argv[1:6]
-deadline = int(deadline)
-
-try:
-    ser = serial.Serial(device, 115200, timeout=1)
-    ser.reset_input_buffer()
-except serial.SerialException as error:
-    print(f"SMOKE FAIL: cannot open {device}: {error}", file=sys.stderr)
-    sys.exit(1)
-
-start = time.time()
-lines = []
-found = False
-fatal = None
-
-while time.time() - start < deadline:
-    line = ser.readline().decode("utf-8", errors="replace").rstrip("\r\n")
-    if line:
-        print(line)
-        lines.append(line)
-        if any(token in line for token in ("Guru Meditation", "abort()", "Backtrace:")):
-            fatal = line
-            break
-        if line == marker:
-            found = True
-            break
-
-ser.close()
-
-with open(log_path, "w") as f:
-    f.write("\n".join(lines) + "\n")
-
-with open(result_path, "w") as f:
-    json.dump({
-        "device": device,
-        "marker": marker,
-        "found": found,
-        "fatalLine": fatal,
-        "deadlineSeconds": deadline,
-        "linesCaptured": len(lines),
-    }, f, indent=2)
-    f.write("\n")
-
-if found and fatal is None:
-    print("SMOKE OK")
-    sys.exit(0)
-else:
-    print(f"SMOKE FAIL: marker not found within {deadline}s", file=sys.stderr)
-    sys.exit(1)
-PY
+SERIAL_TOOLS="$support_dir/serial-tools.mjs" node --input-type=module - "$device" "$deadline" "$marker" "$smoke_log" "$result_file" <<'JS'
+import fs from "node:fs"; const { captureSerial } = await import(process.env.SERIAL_TOOLS);
+const [device,deadline,marker,log,result]=process.argv.slice(2); let found=false,fatal=null;
+try { const lines=await captureSerial(device,Number(deadline),line=>{console.log(line);if(["Guru Meditation","abort()","Backtrace:"].some(x=>line.includes(x))){fatal=line;return true;}if(line===marker){found=true;return true;}return false;}); fs.writeFileSync(log,lines.join("\n")+"\n"); fs.writeFileSync(result,JSON.stringify({device,marker,found,fatalLine:fatal,deadlineSeconds:Number(deadline),linesCaptured:lines.length},null,2)+"\n"); } catch(error) { console.error(`SMOKE FAIL: cannot open ${device}: ${error.message}`); process.exit(1); }
+if(found&&!fatal){console.log("SMOKE OK");}else{console.error(`SMOKE FAIL: marker not found within ${deadline}s`);process.exit(1);}
+JS

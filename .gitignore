@@ -92,3 +92,4 @@ Embedded/swift/sdkconfig
 Embedded/swift/sdkconfig.old
 Embedded/swift/managed_components/
 # Embedded/swift/dependencies.lock is committed for reproducibility
+.build-tools/

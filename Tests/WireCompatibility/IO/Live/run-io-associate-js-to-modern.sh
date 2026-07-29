@@ -37,7 +37,7 @@ trap cleanup EXIT INT TERM
 mkdir -p "$OUTPUT_DIR"
 rm -f "$OUTPUT_DIR/io-associate-js-to-modern.jsonl"
 
-runtime build -t "$DEV_IMAGE" -f "$ROOT_DIR/.devcontainer/Dockerfile" "$ROOT_DIR/.devcontainer"
+runtime build -t "$DEV_IMAGE" -f "$ROOT_DIR/.devcontainer/Dockerfile" "$ROOT_DIR"
 runtime build -t "$JS_IMAGE" "$REFERENCE_DIR/coatyjs"
 runtime network create "$NETWORK" >/dev/null
 runtime run -d --name "$BROKER" --network "$NETWORK" \
@@ -45,7 +45,7 @@ runtime run -d --name "$BROKER" --network "$NETWORK" \
     "$DEV_IMAGE" mosquitto -c /etc/mosquitto/wire-compat.conf >/dev/null
 
 for _ in $(seq 1 30); do
-    runtime exec "$BROKER" python3 -c 'import socket; socket.create_connection(("127.0.0.1", 1883), 1).close()' >/dev/null 2>&1 && break
+    runtime exec "$BROKER" node -e 'const s=require("node:net").createConnection({host:"127.0.0.1",port:1883},()=>s.end()); s.on("error",()=>process.exit(1))' >/dev/null 2>&1 && break
     sleep 0.2
 done
 

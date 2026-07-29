@@ -25,11 +25,14 @@
     {"path": "Tests/Support/test-embedded-swift-smoke.sh", "makeTarget": "test-support", "tier": "unit"},
     {"path": "Tests/Support/test-run-container.sh", "makeTarget": "test-support", "tier": "unit"},
     {"path": "Tests/Fuzzing/test-run-fuzz.sh", "makeTarget": "test-support", "tier": "property"},
-    {"path": "Tests/Support/test_validate_test_tiers.py", "makeTarget": "test-support", "tier": "unit"},
-    {"path": "Tests/Support/test_coverage_ratchet.py", "makeTarget": "test-support", "tier": "unit"},
-    {"path": "Tests/Support/test_coverage_report.py", "makeTarget": "test-support", "tier": "unit"},
-    {"path": "Tests/Support/test_patch_swift_got.py", "makeTarget": "test-support", "tier": "unit"},
-    {"path": "Tests/Support/test_work_plan_issue_form.py", "makeTarget": "test-support", "tier": "unit"}
+    {"path": "Tests/Support/validate-test-tiers.test.mjs", "makeTarget": "test-support", "tier": "unit"},
+    {"path": "Tests/Support/coverage-tools.test.mjs", "makeTarget": "test-support", "tier": "unit"},
+    {"path": "Tests/Support/fuzz-summary.test.mjs", "makeTarget": "test-support", "tier": "unit"},
+    {"path": "Tests/Support/make-tooling-wrappers.test.mjs", "makeTarget": "test-support", "tier": "unit"},
+    {"path": "Tests/Support/patch-swift-got.test.mjs", "makeTarget": "test-support", "tier": "unit"},
+    {"path": "Tests/Support/release-snapshots.test.mjs", "makeTarget": "test-support", "tier": "unit"},
+    {"path": "Tests/Support/serial-tools.test.mjs", "makeTarget": "test-support", "tier": "unit"},
+    {"path": "Tests/Support/work-plan-issue-form.test.mjs", "makeTarget": "test-support", "tier": "unit"}
   ],
   "artifactContract": {
     "requiredOnFailure": ["manifest.json", "verifier.log"],

@@ -42,13 +42,13 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 mkdir -p "$OUT"; rm -f "$CAPTURE" "$APPLICATION_LOG" "$CAPTURE_READY"
-podman build -t "$DEV" -f "$ROOT/.devcontainer/Dockerfile" "$ROOT/.devcontainer"
+podman build -t "$DEV" -f "$ROOT/.devcontainer/Dockerfile" "$ROOT"
 podman build -t "$JS" "$REF/coatyjs"
 podman network create "$NET" >/dev/null
 podman run -d --name "$BROKER" --network "$NET" \
     -v "$LIVE/mosquitto.conf:/etc/mosquitto/wire.conf:ro" \
     "$DEV" mosquitto -c /etc/mosquitto/wire.conf >/dev/null
-wait_for "Mosquitto broker readiness" "podman exec '$BROKER' python3 -c 'import socket; socket.create_connection((\"127.0.0.1\",1883),1).close()' >/dev/null 2>&1"
+wait_for "Mosquitto broker readiness" "podman exec '$BROKER' node -e 'const s=require(\"node:net\").createConnection({host:\"127.0.0.1\",port:1883},()=>s.end()); s.on(\"error\",()=>process.exit(1))' >/dev/null 2>&1"
 podman run -d --name "$PROBE" --network "$NET" -v "$ROOT:/workspace:ro" -v "$OUT:/artifacts" \
     --entrypoint node --user 0 "$JS" /workspace/Tests/WireCompatibility/tool/dist/index.js capture '#' "/artifacts/coatyjs-$SCENARIO.jsonl" \
     --host "$BROKER" --producer coatyjs --producer-version 2.4.0 \

@@ -11,7 +11,8 @@ CACHE_NAMESPACE ?= swift-6.3-linux
 # GNU Make 3.81 (shipped by macOS). See issue #100.
 REPOSITORY_NAME ?= $(shell git rev-parse --git-common-dir 2>/dev/null | sed 's|/.git$$||' | xargs basename 2>/dev/null || basename "$(CURDIR)")
 BUILD_CACHE_ROOT ?= /tmp/coaty-swift-build/$(REPOSITORY_NAME)/$(CACHE_NAMESPACE)
-BUILD_DIR ?= $(BUILD_CACHE_ROOT)/debug
+WORKTREE_NAME ?= $(notdir $(CURDIR))
+BUILD_DIR ?= $(BUILD_CACHE_ROOT)/worktrees/$(WORKTREE_NAME)/debug
 COVERAGE_BUILD_DIR ?= $(BUILD_DIR)-coverage
 TSAN_BUILD_DIR ?= $(BUILD_DIR)-tsan
 BUILD_LOCK ?= 1
@@ -25,14 +26,19 @@ CONTAINER_MOUNTS := -v "$(CURDIR):$(WORKDIR)$(CONTAINER_MOUNT_SUFFIX)" -v "$(BUI
 SWIFT_CACHE_ARGS := --cache-path /workspace/.swiftpm-cache
 SWIFT_LOCKED_ARGS := $(SWIFT_CACHE_ARGS) --disable-automatic-resolution
 COMMA := ,
-AX_ARGS ?= --help
+AXOLOTY_TOOL_ARGS ?= --help
+AXOLOTY_DEVICE ?= /dev/ttyACM0
+AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES ?=
+AXOLOTY_TOOL_CONTAINER_ENV_VARS ?=
+AXOLOTY_TOOL_HOST_DIR ?= .build-tools
+AXOLOTY_TOOL_HOST_BINARY ?= $(AXOLOTY_TOOL_HOST_DIR)/axoloty-tool
 
 # Hosting base path for static DocC output. Set this to the repository name
 # when publishing to a GitHub Pages project site (e.g. "axoloty" for
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm ax check test-ax build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-toolchain-doctor embedded-device-info embedded-device-smoke embedded-reproducible-build benchmark-size benchmark-wire benchmark-wire-bounds benchmark-wire-device check-budget-manifest check-embedded-swift check-embedded-swift-linker embedded-swift-build embedded-swift-flash
+.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm axoloty-tool-bootstrap axoloty-tool check hardware-check hardware-require release-snapshots test-tooling build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-toolchain-doctor embedded-device-info embedded-device-smoke embedded-reproducible-build benchmark-size benchmark-wire benchmark-wire-bounds benchmark-wire-device check-budget-manifest check-embedded-swift check-embedded-swift-linker embedded-swift-build embedded-swift-flash
 
 help:
 	@printf '%s\n' \
@@ -40,9 +46,13 @@ help:
 		'make resolve       Resolve Package.resolved using the shared SwiftPM cache' \
 		'make worktree-bootstrap  Prepare dependency cache and validate Package.resolved' \
 		'make worktree-warm  Bootstrap and compile the current worktree' \
-		'make ax AX_ARGS="--help"  Run the Swift tooling CLI in the Linux container' \
-		'make check         Run the initial broker-free ax check plan' \
-		'make test-ax       Run the Swift tooling CLI tests' \
+		'make axoloty-tool-bootstrap  Extract the static Linux axoloty-tool binary from the image' \
+		'make axoloty-tool AXOLOTY_TOOL_ARGS="--help"  Run the Swift tooling CLI' \
+		'make check         Run the initial broker-free axoloty-tool check plan' \
+		'make hardware-check  Run or skip the sporadic ESP32-C6 smoke check' \
+		'make hardware-require  Require an attached ESP32-C6 smoke check' \
+		'make release-snapshots  Generate and verify a provenance-rich wire bundle' \
+		'make test-tooling  Run the Swift tooling CLI tests' \
 		'make build         Build Axoloty in the Linux container' \
 	'make wire-codec-test  Run the Foundation-free wire codec unit tests' \
 		'make test-communication  Run communication transport and subscription tests' \
@@ -58,7 +68,7 @@ help:
 		'make fuzz-long     Run an auditable multi-seed fuzz campaign' \
 		'make test-fast     Run unit, module, fuzz, offline wire, and support self-tests' \
 		'make test-wire     Run offline wire fixtures and capture tests' \
-		'make test-support  Run Python/shell harness self-tests and tier validation' \
+		'make test-support  Run support harness self-tests and tier validation' \
 		'make test-observation-linux  Run Observation and Broadcast tests on Linux' \
 		'make coverage      Run tests with code coverage and report Source/ coverage' \
 		'make coverage-check  Run coverage and fail if it regresses the baseline' \
@@ -95,7 +105,7 @@ image:
 	@if [ "$(AXOLOTY_DEVCONTAINER)" = "1" ]; then exit 0; fi
 	@test -n "$(CONTAINER_RUNTIME)" || (echo 'No podman or docker runtime found' >&2; exit 1)
 	@mkdir -p "$(BUILD_DIR)" "$(SPM_CACHE_DIR)"
-	$(CONTAINER_RUNTIME) build -t $(IMAGE) -f .devcontainer/Dockerfile .devcontainer
+	$(CONTAINER_RUNTIME) build -t $(IMAGE) -f .devcontainer/Dockerfile .
 
 resolve: image
 	@mkdir -p "$(SPM_CACHE_DIR)"
@@ -107,17 +117,49 @@ worktree-bootstrap: resolve
 
 worktree-warm: worktree-bootstrap build
 
+# Extract the self-contained Linux CLI delivered by the complete image. The
+# binary runs on the host so it can own Podman/Docker lifecycle directly.
+axoloty-tool-bootstrap:
+	@$(MAKE) --no-print-directory image >&2
+	@mkdir -p "$(AXOLOTY_TOOL_HOST_DIR)"
+	@$(CONTAINER_RUNTIME) run --rm $(IMAGE) cat /opt/axoloty/bin/axoloty-tool > "$(AXOLOTY_TOOL_HOST_BINARY).tmp"
+	@chmod 0755 "$(AXOLOTY_TOOL_HOST_BINARY).tmp" && mv "$(AXOLOTY_TOOL_HOST_BINARY).tmp" "$(AXOLOTY_TOOL_HOST_BINARY)"
+	@"$(AXOLOTY_TOOL_HOST_BINARY)" --version >&2
+
 # Compatibility/documentation wrapper for the typed tooling control plane.
-# Workflow policy belongs to `ax`, not to this Makefile.
-ax:
-	@$(MAKE) resolve >&2
-	@CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift build $(SWIFT_LOCKED_ARGS) --product ax >&2
-	@CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift run $(SWIFT_LOCKED_ARGS) --skip-build ax $(AX_ARGS)
+# Workflow policy belongs to `axoloty-tool`, not to this Makefile.
+axoloty-tool: axoloty-tool-bootstrap
+	@AXOLOTY_TOOL_HOST=1 CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
+		BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+		AXOLOTY_DEVICE="$(AXOLOTY_DEVICE)" \
+		CONTAINER_OPTIONAL_DEVICES="$(AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES)" \
+		CONTAINER_ENV_VARS="$(AXOLOTY_TOOL_CONTAINER_ENV_VARS)" \
+		"$(AXOLOTY_TOOL_HOST_BINARY)" $(AXOLOTY_TOOL_ARGS)
 
 check:
-	@$(MAKE) --no-print-directory ax AX_ARGS=check
+	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS=check
 
-test-ax: resolve
+hardware-check:
+	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='hardware check' \
+		AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES='$(AXOLOTY_DEVICE)' AXOLOTY_TOOL_CONTAINER_ENV_VARS='AXOLOTY_DEVICE' \
+		AXOLOTY_DEVICE='$(AXOLOTY_DEVICE)'
+
+hardware-require:
+	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='hardware require' \
+		AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES='$(AXOLOTY_DEVICE)' AXOLOTY_TOOL_CONTAINER_ENV_VARS='AXOLOTY_DEVICE' \
+		AXOLOTY_DEVICE='$(AXOLOTY_DEVICE)'
+
+release-snapshots:
+	@AXOLOTY_IMAGE_IDENTITY="$$( $(CONTAINER_RUNTIME) image inspect --format '{{.Id}}' "$(IMAGE)" )"; \
+		AXOLOTY_GIT_COMMIT="$$(git rev-parse HEAD)"; \
+		if test -z "$$(git status --porcelain)"; then AXOLOTY_GIT_CLEAN=true; else AXOLOTY_GIT_CLEAN=false; fi; \
+		export AXOLOTY_IMAGE_IDENTITY AXOLOTY_GIT_COMMIT AXOLOTY_GIT_CLEAN; \
+		$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='release snapshots' \
+			AXOLOTY_TOOL_CONTAINER_ENV_VARS='AXOLOTY_IMAGE_IDENTITY AXOLOTY_GIT_COMMIT AXOLOTY_GIT_CLEAN' \
+			AXOLOTY_IMAGE_IDENTITY="$$AXOLOTY_IMAGE_IDENTITY" AXOLOTY_GIT_COMMIT="$$AXOLOTY_GIT_COMMIT" \
+			AXOLOTY_GIT_CLEAN="$$AXOLOTY_GIT_CLEAN"
+
+test-tooling: resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter AxolotyToolingTests
 
 test-communication: image
@@ -128,8 +170,8 @@ test-broker-regressions: image
 	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) \
 		sh -c 'pgrep mosquitto >/dev/null 2>&1 || mosquitto -d; swift test $(SWIFT_LOCKED_ARGS) --filter "DecentralizedLoggingTest|ObjectLifecycleControllerTests"'
 
-build: resolve
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift build $(SWIFT_LOCKED_ARGS)
+build:
+	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS=build
 
 wire-codec-test: build
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \
@@ -187,10 +229,10 @@ fuzz-long:
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
 		Tests/Fuzzing/run-fuzz.sh
 
-test-wire: resolve
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter "WireFixtureTests|LegacyCaptureFixtureTests|CoatyJs.*CaptureTests|LifecycleCompatibilityScenarioTests|AxolotyIoAssociateTests|AxolotyIoNegativeTests"
+test-wire:
+	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='wire verify'
 
-# Harness self-tests intentionally remain host-side Python/shell checks.
+# Harness self-tests intentionally remain host-side Shell/JavaScript checks.
 test-support:
 	Tests/Support/test-check-axoloty-wire-dependencies.sh
 	Tests/Support/test-check-axoloty-wire-independent-resolution.sh
@@ -200,18 +242,11 @@ test-support:
 	Tests/Support/test-run-container.sh
 	Tests/Fuzzing/test-run-fuzz.sh
 	cd Tests/WireCompatibility/tool && npm ci && npm test
-	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests/Support -p 'test_*.py' -v
-	python3 Tests/Support/validate_test_tiers.py Tests/Support/test-tiers.json
+	node --test Tests/Support/*.test.mjs
+	node Tests/Support/validate-test-tiers.mjs Tests/Support/test-tiers.json
 
-test-wire-live: test-wire wire-tool
-	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" Tests/WireCompatibility/Live/run-coatyjs-advertise.sh
-	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" Tests/WireCompatibility/Live/run-coatyjs-core.sh
-	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" Tests/WireCompatibility/Lifecycle/Live/run-lifecycle-matrix.sh
-	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" Tests/WireCompatibility/Reverse/run-axoloty-advertise.sh
-	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" Tests/WireCompatibility/Reverse/run-axoloty-core.sh
-	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" Tests/WireCompatibility/Reverse/run-coatyjs-to-axoloty-advertise.sh
-	CONTAINER_RUNTIME=$(CONTAINER_RUNTIME) BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" Tests/WireCompatibility/IO/Live/run-io-associate.sh
-	node Tests/WireCompatibility/tool/dist/index.js manifest .testing/wire .testing/wire/manifest.json
+test-wire-live:
+	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='wire capture'
 
 test-wire-all: test-wire test-wire-live
 
@@ -246,9 +281,7 @@ embedded-reproducible-build:
 	.devcontainer/run.sh /workspace/Tests/Support/embedded-reproducible-build.sh
 
 embedded-swift-build:
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
-	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-	.devcontainer/run.sh /workspace/Tests/Support/build-embedded-swift.sh
+	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='embedded build'
 
 embedded-swift-flash: embedded-swift-build
 	@CONTAINER_DEVICES=/dev/ttyACM0 \
@@ -269,9 +302,7 @@ embedded-swift-flash: embedded-swift-build
 	exit $$status
 
 check-embedded-swift-linker:
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
-	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-	.devcontainer/run.sh /workspace/Tests/Support/check-embedded-swift-linker.sh
+	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='embedded verify'
 
 embedded-swift-reproducible-build:
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
@@ -301,11 +332,11 @@ coverage: coverage-resolve
 		  PROFDATA=$$(find .build -name default.profdata | head -1); \
 		  mkdir -p .testing/coverage; \
 		  llvm-cov export "$$BIN" -instr-profile="$$PROFDATA" -format=text > .testing/coverage/coverage.json; \
-		  PYTHONDONTWRITEBYTECODE=1 python3 Tests/Support/coverage_ratchet.py summary .testing/coverage/coverage.json --report .testing/coverage/report.json; \
-		  PYTHONDONTWRITEBYTECODE=1 python3 Tests/Support/coverage_report.py .testing/coverage/coverage.json .testing/coverage/changed.diff'
+		  node Tests/Support/coverage-tools.mjs summary .testing/coverage/coverage.json --report .testing/coverage/report.json; \
+		  node Tests/Support/coverage-tools.mjs report .testing/coverage/coverage.json .testing/coverage/changed.diff'
 
 coverage-check: coverage
-	python3 Tests/Support/coverage_ratchet.py check .testing/coverage/coverage.json Tests/Support/coverage-baseline.json
+	node Tests/Support/coverage-tools.mjs check .testing/coverage/coverage.json Tests/Support/coverage-baseline.json
 
 ci-fast: build test-fast
 
@@ -371,4 +402,4 @@ check-embedded-swift:
 	.devcontainer/run.sh /workspace/Tests/Support/check-embedded-swift.sh
 
 clean:
-	rm -rf "$(BUILD_DIR)" "$(COVERAGE_BUILD_DIR)"
+	rm -rf "$(BUILD_DIR)" "$(COVERAGE_BUILD_DIR)" "$(AXOLOTY_TOOL_HOST_DIR)"

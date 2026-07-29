@@ -8,26 +8,40 @@ Roadmap Project remain authoritative for scope and status.
 
 ## Build and test
 
-- Never run native `swift` commands on the host. Use the root Makefile, which
-  runs directly inside the devcontainer and falls back to Podman or Docker:
-  `make build`, `make test`, `make shell`, and `make docs`.
-- By default, worktrees share a repository- and toolchain-scoped incremental
-  build cache under `/tmp/coaty-swift-build/`. Every Makefile-driven SwiftPM
-  operation waits for the cache lock, so concurrent worktrees must not bypass
-  the Makefile. Coverage uses a separate sibling cache. Override `BUILD_DIR`,
+- `axoloty-tool` is the typed orchestration control plane. On Linux, invoke it through
+  the lightweight root Makefile so product and ESP-IDF work stays in the
+  pinned container: `make check`, `make hardware-check`, and focused wrappers.
+  The image delivers a static host `axoloty-tool`, extracted to `.build-tools/axoloty-tool`; do not
+  commit that generated binary. Host execution owns container and live-capture
+  lifecycle while project commands still execute in the pinned image.
+  On macOS, native Swift is supported through the isolated tooling package:
+  `swift run --package-path Tools axoloty-tool check`. Do not run native Swift product
+  builds on Linux hosts.
+- The Makefile is executable documentation and a compatibility/bootstrap
+  surface. New orchestration policy belongs in `AxolotyTooling`, not in Make
+  recipes or new shell front controllers.
+- By default, worktrees use separate mutable build directories under the
+  repository- and toolchain-scoped `/tmp/coaty-swift-build/` root while sharing
+  SwiftPM downloads. Every Makefile-driven operation holds a process-aware lock
+  for its build directory. Coverage uses a separate sibling cache. Override `BUILD_DIR`,
   `COVERAGE_BUILD_DIR`, `SPM_CACHE_DIR`, or `BUILD_LOCK` for isolation or CI;
   CI uses its workspace-local `.build` directory with `BUILD_LOCK=0` and fails
   in preflight if that bypass is missing. `/tmp` is volatile and must not be
   the sole copy of generated output. Use `make worktree-bootstrap` to resolve
   dependencies and `make worktree-warm` only when an explicit prebuild is
   useful.
-- Prefer adding a Makefile target to using native Swift tooling.
+- Prefer adding an `axoloty-tool` command with a thin Make alias over adding substantive
+  Make, Bash, or Python orchestration.
 - Swift tests use Swift Testing only: `import Testing`, `@Test`, `#expect`,
   `#require`, and `Issue.record`. Do not add XCTest.
 - Broker-backed tests must synchronize with Swift concurrency primitives or
   explicit deadlines.
-- A Swift binary exported from a development container is acceptable for editor
-  tooling, but Makefile targets remain the canonical build and test flow.
+- Physical ESP32-C6 checks are sporadic and opt-in. Ordinary checks must not
+  probe, reserve, flash, or request privileges for a device. `hardware check`
+  skips successfully when absent; `hardware require` fails when absent.
+- Release wire evidence is generated with `make release-snapshots` on Linux or
+  `axoloty-tool release snapshots` on macOS. Keep generated bundles under `.testing/`;
+  only reviewed stable fixtures belong in source control.
 
 ## GitHub-centered planning workflow
 

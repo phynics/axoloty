@@ -7,8 +7,9 @@ on-device via the `espressif/idf_swift` component.
 
 ## NixOS host prerequisites
 
-Everything below runs on the NixOS host. None of it invokes `swift` directly —
-all Swift/container work goes through the Makefile.
+Everything below runs on the NixOS host. Product and Embedded Swift work goes
+through the Makefile into the pinned container. Native Swift is supported only
+for the macOS offline workflow.
 
 - **dialout group.** The user that runs rootless Podman must be able to open
   the serial device:
@@ -38,9 +39,8 @@ all Swift/container work goes through the Makefile.
   SUDO=/run/wrappers/bin/sudo make embedded-swift-flash
   ```
 
-- **Never run native `swift` on the host.** The host has no Swift toolchain
-  wired to this repo; every Swift invocation goes through `make` (which runs
-  inside the container). See `AGENTS.md`.
+- **Do not run native Swift on Linux.** The Linux host has no supported Swift
+  product toolchain; use `make check` or a focused Make wrapper. See `AGENTS.md`.
 
 ## Toolchain pinning
 
@@ -70,10 +70,13 @@ make embedded-device-smoke         # build, flash, monitor C smoke image (30s de
 make embedded-swift-build          # build the Embedded Swift firmware
 make embedded-swift-flash           # build, flash, monitor Swift smoke + AxolotyWire exercise
 make embedded-reproducible-build    # build twice from clean, compare .bin SHA-256
+make hardware-check                 # skip successfully when no board is attached
+make hardware-require               # fail unless the selected board is attached
 ```
 
-Every target runs inside the `axoloty-dev` container; hardware targets forward
-`/dev/ttyACM0` via `CONTAINER_DEVICES`. The incremental Swift build cache is
+Every target runs inside the `axoloty-dev` container. The `axoloty-tool` hardware targets
+forward `AXOLOTY_DEVICE` (default `/dev/ttyACM0`) only when that path exists;
+ordinary checks never request device access. The incremental Swift build cache is
 external, while its firmware is mirrored to
 `.build-output/embedded-swift/axoloty-swift.bin`. Runtime evidence lands under
 `.testing/embedded/` (outside `/tmp`, so it survives the container):

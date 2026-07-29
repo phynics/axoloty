@@ -14,28 +14,32 @@ TEMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TEMP_DIR"' EXIT
 
 build_dir="$TEMP_DIR/build"
-lock_dir="${build_dir}.lock"
+lock_file="${build_dir}.lock"
+lock_owner="${build_dir}.lock.owner"
 
 # The lock must be released after a direct devcontainer command exits.
 AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" "$ROOT_DIR/.devcontainer/run.sh" true
-[[ ! -e "$lock_dir" ]]
+[[ ! -e "$lock_owner" ]]
 
 # A second operation waits for the owner instead of touching the shared cache.
-mkdir "$lock_dir"
-( sleep 1; rmdir "$lock_dir" ) &
+( exec 8>"$lock_file"; flock 8; sleep 1 ) &
+holder=$!
+sleep 0.1
 start=$(date +%s)
 AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" "$ROOT_DIR/.devcontainer/run.sh" true
 elapsed=$(( $(date +%s) - start ))
 
 [[ "$elapsed" -ge 1 ]]
-[[ ! -e "$lock_dir" ]]
+wait "$holder"
+[[ ! -e "$lock_owner" ]]
 
 # Isolated CI runners do not share a build directory, so they must not wait
 # behind an unrelated lock directory.
-mkdir "$lock_dir"
+( exec 8>"$lock_file"; flock 8; sleep 2 ) &
+holder=$!
 AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" BUILD_LOCK=0 "$ROOT_DIR/.devcontainer/run.sh" true
-[[ -d "$lock_dir" ]]
-rmdir "$lock_dir"
+kill "$holder" 2>/dev/null || true
+wait "$holder" 2>/dev/null || true
 
 # Device runs auto-select a usable non-interactive sudo wrapper. Use fakes so
 # the behavior is deterministic and does not require a real device or sudo.
@@ -74,6 +78,17 @@ grep -q -- '--env-file ' "$capture"
 grep -qx -- 'EMBEDDED_SKIP_BUILD=1' "$capture_env"
 grep -qx -- 'EMBEDDED_BUILD_DIR=/workspace/.build/embedded-swift' "$capture_env"
 grep -q -- 'chown -R ' "$capture"
+
+# Optional devices are forwarded when present and ignored when absent.
+: > "$capture"
+CONTAINER_OPTIONAL_DEVICES="$device $TEMP_DIR/absent-device" \
+CONTAINER_RUNTIME="$fake_bin/fake-runtime" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+grep -q -- "--device $device" "$capture"
+if grep -q -- "$TEMP_DIR/absent-device" "$capture"; then
+    echo "absent optional device was forwarded" >&2
+    exit 1
+fi
 
 if CONTAINER_RUNTIME="$fake_bin/fake-runtime" CONTAINER_ENV_VARS=1 \
     BUILD_DIR="$build_dir" BUILD_LOCK=0 \
