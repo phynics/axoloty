@@ -58,23 +58,29 @@ const runner = spawn("node", [process.env.RUNNER], {
   env: { ...process.env, BROKER_URL: `mqtt://${host}:${port}`, SCENARIO: "embedded-last-will-observer" },
   stdio: ["ignore", "pipe", "pipe"]
 });
-const runnerLines = []; let readyResolve; let advertisedResolve;
+const runnerLines = []; let readyResolve; let deviceReadyResolve; let advertisedResolve; let peerAdvertisedResolve;
 const ready = new Promise(resolve => { readyResolve = resolve; });
+const deviceReady = new Promise(resolve => { deviceReadyResolve = resolve; });
 const advertised = new Promise(resolve => { advertisedResolve = resolve; });
+const peerAdvertised = new Promise(resolve => { peerAdvertisedResolve = resolve; });
 runner.stdout.on("data", chunk => {
   const text = chunk.toString(); process.stdout.write(`[observer] ${text}`);
   for (const line of text.trimEnd().split("\n")) {
     if (!line) continue; runnerLines.push(line);
     if (line.includes('"state":"ready"')) readyResolve();
+    if (line.includes('"state":"observed-device-ready"')) deviceReadyResolve();
     if (line.includes('"state":"observed-advertise"')) advertisedResolve();
+    if (line.includes('"state":"observed-peer-advertise"')) peerAdvertisedResolve();
   }
 });
 const errors = []; runner.stderr.on("data", chunk => { process.stderr.write(`[observer] ${chunk}`); errors.push(chunk.toString()); });
 const runnerExit = new Promise((resolve, reject) => { runner.once("error", reject); runner.once("exit", (code, signal) => { if (code !== 0) controller.abort(); resolve({ code, signal }); }); });
 await Promise.race([ready, new Promise((_, reject) => setTimeout(() => reject(new Error("last-will observer not ready")), 15000))]);
 execFileSync("python3", [process.env.ESPTOOL, "--chip", "esp32c6", "--port", deviceB, "run"]);
+await Promise.race([deviceReady, new Promise((_, reject) => setTimeout(() => reject(new Error("embedded observer did not become ready")), 90000))]);
 execFileSync("python3", [process.env.ESPTOOL, "--chip", "esp32c6", "--port", deviceA, "run"]);
 await Promise.race([advertised, new Promise((_, reject) => setTimeout(() => reject(new Error("embedded Advertise not observed")), 90000))]);
+await Promise.race([peerAdvertised, new Promise((_, reject) => setTimeout(() => reject(new Error("device B did not observe embedded Advertise")), 15000))]);
 const forcedResetAt = new Date().toISOString();
 execFileSync("python3", [process.env.ESPTOOL, "--chip", "esp32c6", "--port", deviceA, "run"]);
 const [serialLines, observerExit] = await Promise.all([capture, runnerExit]);

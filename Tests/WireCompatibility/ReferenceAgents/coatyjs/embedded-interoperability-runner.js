@@ -72,11 +72,19 @@ async function run() {
         report("published", { event: "deadvertise", objectId: objectA });
     } else if (scenario === "embedded-last-will-observer") {
         await subscribe(client, `coaty/3/${ns}/#`);
+        await subscribe(client, "axoloty/test/agent-ready/B");
+        await subscribe(client, "axoloty/test/agent-observed/B");
+        const readinessPromise = waitFor(client, "axoloty/test/agent-ready/B");
+        const peerAdvertisePromise = waitFor(client, "axoloty/test/agent-observed/B");
         const advertisePromise = waitFor(client, `coaty/3/${ns}/ADV`);
-        const deadvertisePromise = waitFor(client, topic("DAD", agentA));
         report("ready", { namespace: ns, direction: "last-will-observer" });
+        await readinessPromise;
+        report("observed-device-ready", { sourceId: agentB });
         await advertisePromise;
         report("observed-advertise", { sourceId: agentA, objectId: objectA });
+        await peerAdvertisePromise;
+        report("observed-peer-advertise", { sourceId: agentB, objectId: objectA });
+        const deadvertisePromise = waitFor(client, topic("DAD", agentA));
         const deadvertise = await deadvertisePromise;
         if (!deadvertise.payload.objectIds?.includes(objectA)) throw new Error("invalid embedded last will");
         report("observed-last-will", { sourceId: agentA, objectId: objectA });
