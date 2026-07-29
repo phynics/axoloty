@@ -67,7 +67,23 @@ function generatedAt(environment) {
   return new Date().toISOString();
 }
 
+function safeDestination(source, destination, environment) {
+  const root = path.resolve(environment.AXOLOTY_SNAPSHOT_ROOT ?? ".testing");
+  const resolvedSource = path.resolve(source);
+  const resolvedDestination = path.resolve(destination);
+  if (resolvedDestination === root || !resolvedDestination.startsWith(`${root}${path.sep}`)) {
+    throw new Error(`snapshot output must be a child of ${root}`);
+  }
+  if (resolvedDestination === resolvedSource
+    || resolvedDestination.startsWith(`${resolvedSource}${path.sep}`)
+    || resolvedSource.startsWith(`${resolvedDestination}${path.sep}`)) {
+    throw new Error("snapshot source and output must not overlap");
+  }
+  return resolvedDestination;
+}
+
 export function generateBundle(source, destination, environment = process.env) {
+  destination = safeDestination(source, destination, environment);
   const files = capturesBelow(source);
   if (!files.length) throw new Error(`no JSONL captures found in ${source}`);
   fs.rmSync(destination, { recursive: true, force: true });

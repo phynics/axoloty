@@ -31,6 +31,7 @@ test("release bundle carries provenance and verifies content hashes", () => {
     SOURCE_DATE_EPOCH: "0",
     AXOLOTY_IMAGE_IDENTITY: "sha256:test",
     AXOLOTY_NORMALIZATION_RULES: normalizationRules,
+    AXOLOTY_SNAPSHOT_ROOT: temporary,
   });
   assert.equal(manifest.format, "axoloty-wire-snapshot-bundle/v1");
   assert.equal(manifest.generatedAt, "1970-01-01T00:00:00.000Z");
@@ -40,5 +41,17 @@ test("release bundle carries provenance and verifies content hashes", () => {
 
   fs.appendFileSync(path.join(output, manifest.captures[0].file), "tampered");
   assert.throws(() => verifyBundle(output), /SHA-256 mismatch/);
+  fs.rmSync(temporary, { recursive: true, force: true });
+});
+
+test("release bundle rejects destructive and overlapping outputs", () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-release-safety-"));
+  const source = path.join(temporary, "source");
+  fs.mkdirSync(source);
+  const environment = { AXOLOTY_SNAPSHOT_ROOT: temporary };
+
+  assert.throws(() => generateBundle(source, temporary, environment), /must be a child/);
+  assert.throws(() => generateBundle(source, path.join(source, "output"), environment), /must not overlap/);
+  assert.ok(fs.existsSync(source));
   fs.rmSync(temporary, { recursive: true, force: true });
 });

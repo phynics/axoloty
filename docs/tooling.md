@@ -80,6 +80,10 @@ then verifies the bundle without MQTT. `AXOLOTY_SNAPSHOT_SOURCE` and
 `AXOLOTY_SNAPSHOT_OUTPUT` override the source and destination for a release
 workflow. The bundle is generated evidence; stable fixtures enter source
 control only through normal review and the compatibility-matrix policy.
+Pass a persisted or downloaded bundle to `ax wire verify PATH` to rerun both
+the Swift semantic fixture contract and the bundle's hash/metadata checks.
+Snapshot output overrides must remain below `.testing/` and cannot overlap the
+source captures.
 
 ## Adding tooling
 

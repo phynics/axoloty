@@ -44,6 +44,7 @@ private struct FoundationFileSystem: AxolotyFileSystem {
 public struct AxolotyCommandDispatcher: Sendable {
     private let commandRunner: any AxolotyCheckCommandRunning
     private let integrationRunner: any AxolotyIntegrationRunning
+    private let deviceLeaseManager: any AxolotyDeviceLeasing
     private let fileSystem: any AxolotyFileSystem
     private let environment: [String: String]
 
@@ -51,11 +52,13 @@ public struct AxolotyCommandDispatcher: Sendable {
     public init(
         commandRunner: any AxolotyCheckCommandRunning = FoundationCommandRunner(),
         integrationRunner: (any AxolotyIntegrationRunning)? = nil,
+        deviceLeaseManager: any AxolotyDeviceLeasing = FoundationDeviceLeaseManager(),
         fileSystem: (any AxolotyFileSystem)? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) {
         self.commandRunner = commandRunner
         self.integrationRunner = integrationRunner ?? FoundationIntegrationRunner(commandRunner: commandRunner)
+        self.deviceLeaseManager = deviceLeaseManager
         self.fileSystem = fileSystem ?? FoundationFileSystem()
         self.environment = environment
     }
@@ -67,6 +70,9 @@ public struct AxolotyCommandDispatcher: Sendable {
     public func run(arguments: [String]) -> AxolotyCommandResult {
         if arguments.count == 4, arguments[0] == "hardware", ["check", "require"].contains(arguments[1]), arguments[2] == "--device" {
             return hardwareResult(required: arguments[1] == "require", device: arguments[3])
+        }
+        if arguments.count == 3, arguments[0] == "wire", arguments[1] == "verify" {
+            return wireBundleResult(path: arguments[2])
         }
         return switch arguments {
         case [], ["help"], ["--help"], ["-h"]:
@@ -118,7 +124,7 @@ public struct AxolotyCommandDispatcher: Sendable {
       build                Build the host package and its prerequisites.
       test offline         Run the same offline plan as check.
       test integration     Run transport tests against local Mosquitto.
-      wire verify          Verify wire fixtures directly without MQTT.
+      wire verify [BUNDLE] Verify fixtures and an optional bundle without MQTT.
       embedded build       Cross-compile the ESP32-C6 firmware on Linux.
       embedded verify      Build and verify the ESP32-C6 linker contract.
       hardware check       Run or skip the sporadic hardware smoke check.
@@ -185,6 +191,28 @@ public struct AxolotyCommandDispatcher: Sendable {
         }
     }
 
+    private func wireBundleResult(path: String) -> AxolotyCommandResult {
+        do {
+            let bundleNode = AxolotyCheckNode(
+                name: "wire-bundle-verify",
+                dependencies: ["test-wire"],
+                command: AxolotyCommandPlan(
+                    executable: "node",
+                    arguments: ["Tests/Support/release-snapshots.mjs", "verify", path]
+                )
+            )
+            let plan = try AxolotyCheckPlanner().plan(
+                AxolotyCheckPlan.initialOffline.nodes + [bundleNode],
+                requested: [bundleNode.name]
+            )
+            let results = AxolotyCheckExecutor(commandRunner: commandRunner).execute(plan)
+            let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
+            return try Self.jsonResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
+        } catch {
+            return AxolotyCommandResult(standardError: "error: unable to verify wire bundle\n", exitCode: 70)
+        }
+    }
+
     private func integrationResult() -> AxolotyCommandResult {
         let command = integrationRunner.run()
         let result = AxolotyCheckResult(
@@ -208,11 +236,20 @@ public struct AxolotyCommandDispatcher: Sendable {
             )
             return (try? Self.jsonResult(outcome, exitCode: required ? 1 : 0)) ?? AxolotyCommandResult(exitCode: 70)
         }
+        guard let lease = deviceLeaseManager.acquire(device: selectedDevice) else {
+            let outcome = AxolotyHardwareOutcome(
+                status: required ? .failed : .skipped,
+                device: selectedDevice,
+                reason: "device lease is unavailable"
+            )
+            return (try? Self.jsonResult(outcome, exitCode: required ? 1 : 0)) ?? AxolotyCommandResult(exitCode: 70)
+        }
         let command = AxolotyCommandPlan(
             executable: "Tests/Support/embedded-swift-smoke.sh",
             environment: ["EMBEDDED_DEVICE": selectedDevice]
         )
         let result = commandRunner.run(command)
+        withExtendedLifetime(lease) {}
         let outcome = AxolotyHardwareOutcome(
             status: result.exitCode == 0 ? .passed : .failed,
             device: selectedDevice,

@@ -14,6 +14,15 @@ private struct StubRunner: AxolotyCheckCommandRunning {
     func run(_ command: AxolotyCommandPlan) -> AxolotyCheckCommandResult { result }
 }
 
+private final class StubDeviceLease: AxolotyDeviceLease, @unchecked Sendable {}
+
+private struct StubDeviceLeaseManager: AxolotyDeviceLeasing {
+    let available: Bool
+    func acquire(device: String) -> (any AxolotyDeviceLease)? {
+        available ? StubDeviceLease() : nil
+    }
+}
+
 private final class RecordingRunner: AxolotyCheckCommandRunning, @unchecked Sendable {
     var command: AxolotyCommandPlan?
     func run(_ command: AxolotyCommandPlan) -> AxolotyCheckCommandResult {
@@ -53,8 +62,8 @@ func checkPlanPrintsStableJSON() {
         "wire-dependencies", "wire-independent-resolution", "support-wire-dependencies",
         "support-wire-resolution", "support-wire-isolation", "support-benchmark-corpus",
         "support-benchmark-size", "support-benchmark-wire", "support-benchmark-bounds",
-        "support-budget-manifest", "support-container", "support-fuzz-runner",
-        "support-node-tests", "support-tier-contract", "support-embedded-compile",
+        "support-budget-manifest", "support-node-tests", "support-tier-contract",
+        "support-container", "support-fuzz-runner", "support-embedded-compile",
         "support-embedded-smoke", "embedded-build", "embedded-linker",
     ])
 }
@@ -98,6 +107,23 @@ func presentHardwareRunsSmokeCommand() throws {
 }
 
 @Test
+func optionalHardwareSkipsWhenDeviceLeaseIsContended() throws {
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
+        deviceLeaseManager: StubDeviceLeaseManager(available: false),
+        fileSystem: StubFileSystem(paths: ["/dev/test"]),
+        environment: [:]
+    )
+
+    let result = dispatcher.run(arguments: ["hardware", "check", "--device", "/dev/test"])
+    let outcome = try JSONDecoder().decode(AxolotyHardwareOutcome.self, from: Data(result.standardOutput.utf8))
+
+    #expect(result.exitCode == 0)
+    #expect(outcome.status == .skipped)
+    #expect(outcome.reason == "device lease is unavailable")
+}
+
+@Test
 func wireVerifyRunsOnlyItsDependencyClosure() throws {
     let dispatcher = AxolotyCommandDispatcher(
         commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
@@ -111,6 +137,25 @@ func wireVerifyRunsOnlyItsDependencyClosure() throws {
     #expect(result.exitCode == 0)
     #expect(manifest.schemaVersion == 1)
     #expect(manifest.results.map(\.name) == ["resolve", "build", "test-ax", "test-wire"])
+}
+
+@Test
+func wireVerifyBundleRunsSemanticAndHashVerification() throws {
+    let runner = RecordingSequenceRunner()
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: runner,
+        fileSystem: StubFileSystem(paths: []),
+        environment: [:]
+    )
+
+    let result = dispatcher.run(arguments: ["wire", "verify", ".testing/downloaded"])
+    let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
+
+    #expect(result.exitCode == 0)
+    #expect(manifest.results.map(\.name) == ["resolve", "build", "test-ax", "test-wire", "wire-bundle-verify"])
+    #expect(runner.commands.last?.arguments == [
+        "Tests/Support/release-snapshots.mjs", "verify", ".testing/downloaded",
+    ])
 }
 
 @Test

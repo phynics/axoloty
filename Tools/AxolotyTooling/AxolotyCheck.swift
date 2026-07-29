@@ -151,8 +151,6 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
             ("support-benchmark-wire", "Tests/Support/test-check-benchmark-wire.sh"),
             ("support-benchmark-bounds", "Tests/Support/test-check-benchmark-wire-bounds.sh"),
             ("support-budget-manifest", "Tests/Support/test-check-budget-manifest.sh"),
-            ("support-container", "Tests/Support/test-run-container.sh"),
-            ("support-fuzz-runner", "Tests/Fuzzing/test-run-fuzz.sh"),
         ]
         nodes += supportSelfTests.map { name, executable in
             AxolotyCheckNode(name: name, command: AxolotyCommandPlan(executable: executable))
@@ -180,6 +178,8 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
         ))
         if platform == .linux {
             nodes += [
+                AxolotyCheckNode(name: "support-container", command: AxolotyCommandPlan(executable: "Tests/Support/test-run-container.sh")),
+                AxolotyCheckNode(name: "support-fuzz-runner", command: AxolotyCommandPlan(executable: "Tests/Fuzzing/test-run-fuzz.sh")),
                 AxolotyCheckNode(name: "support-embedded-compile", command: AxolotyCommandPlan(executable: "Tests/Support/test-check-embedded-swift.sh")),
                 AxolotyCheckNode(name: "support-embedded-smoke", command: AxolotyCommandPlan(executable: "Tests/Support/test-embedded-swift-smoke.sh")),
                 AxolotyCheckNode(name: "embedded-build", dependencies: ["build"], command: AxolotyCommandPlan(executable: "Tests/Support/build-embedded-swift.sh")),

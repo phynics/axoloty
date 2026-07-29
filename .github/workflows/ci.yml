@@ -28,6 +28,10 @@ jobs:
         run: |
           swift --version
           brew list swiftlint >/dev/null 2>&1 || brew install swiftlint
+          brew list ripgrep >/dev/null 2>&1 || brew install ripgrep
+          brew list node@22 >/dev/null 2>&1 || brew install node@22
+          export PATH="$(brew --prefix node@22)/bin:$PATH"
+          node --version
           mkdir -p .testing
           swift package resolve --cache-path .swiftpm-cache
           swift run --cache-path .swiftpm-cache --disable-automatic-resolution ax check > .testing/ax-check-macos.json

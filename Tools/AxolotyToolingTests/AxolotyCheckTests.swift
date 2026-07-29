@@ -71,6 +71,7 @@ func modelsEncodeAndDecode() throws {
 func offlinePlanOmitsEmbeddedChecksOnMacOS() {
     let plan = AxolotyCheckPlan.initialOffline(for: .macOS)
     #expect(!plan.nodes.contains { $0.name.hasPrefix("embedded-") })
+    #expect(!plan.nodes.contains { ["support-container", "support-fuzz-runner"].contains($0.name) })
 }
 
 @Test
