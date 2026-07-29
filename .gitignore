@@ -91,5 +91,7 @@ Embedded/swift/build/
 Embedded/swift/sdkconfig
 Embedded/swift/sdkconfig.old
 Embedded/swift/managed_components/
+Embedded/swift/.network-build/
+Embedded/swift/main/axoloty_network_config.h
 # Embedded/swift/dependencies.lock is committed for reproducibility
 .build-tools/

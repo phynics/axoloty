@@ -38,7 +38,7 @@ AXOLOTY_TOOL_HOST_BINARY ?= $(AXOLOTY_TOOL_HOST_DIR)/axoloty-tool
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm axoloty-tool-bootstrap axoloty-tool check hardware-check hardware-require release-snapshots test-tooling build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-toolchain-doctor embedded-device-info embedded-device-smoke embedded-reproducible-build benchmark-size benchmark-wire benchmark-wire-bounds benchmark-wire-device check-budget-manifest check-embedded-swift check-embedded-swift-linker embedded-swift-build embedded-swift-flash
+.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm axoloty-tool-bootstrap axoloty-tool check hardware-check hardware-require release-snapshots test-tooling build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-toolchain-doctor embedded-device-info embedded-device-smoke embedded-reproducible-build benchmark-size benchmark-wire benchmark-wire-bounds benchmark-wire-device check-budget-manifest check-embedded-swift check-embedded-swift-linker embedded-swift-build embedded-swift-flash embedded-swift-test embedded-network-test
 
 help:
 	@printf '%s\n' \
@@ -239,6 +239,8 @@ test-support:
 	Tests/Support/test-check-axoloty-wire-test-isolation.sh
 	Tests/Support/test-check-benchmark-corpus.sh
 	Tests/Support/test-embedded-swift-smoke.sh
+	Tests/Support/test-embedded-swift-test.sh
+	Tests/Support/test-embedded-network.sh
 	Tests/Support/test-run-container.sh
 	Tests/Fuzzing/test-run-fuzz.sh
 	cd Tests/WireCompatibility/tool && npm ci && npm test
@@ -300,6 +302,30 @@ embedded-swift-flash: embedded-swift-build
 		fi; \
 	done; \
 	exit $$status
+
+embedded-swift-test: embedded-swift-build
+	@CONTAINER_DEVICES=/dev/ttyACM0 CONTAINER_RECLAIM_BUILD_DIR=1 EMBEDDED_SKIP_BUILD=1 \
+	EMBEDDED_BUILD_DIR=/workspace/.build/embedded-swift EMBEDDED_OUTPUT_DIR=/workspace/.build/embedded-results \
+	EMBEDDED_VALIDATOR=/workspace/Tests/Support/embedded-swift-test-validator.mjs \
+	CONTAINER_ENV_VARS="EMBEDDED_SKIP_BUILD EMBEDDED_BUILD_DIR EMBEDDED_OUTPUT_DIR EMBEDDED_VALIDATOR EMBEDDED_VALIDATOR_FACTORY" \
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+	.devcontainer/run.sh /workspace/Tests/Support/embedded-swift-test.sh; \
+	status=$$?; \
+	mkdir -p .testing/embedded || exit 1; \
+	for artifact in swift-smoke-log.txt swift-smoke-result.json; do \
+		if [ -f "$(BUILD_DIR)/embedded-results/$$artifact" ]; then \
+			cp "$(BUILD_DIR)/embedded-results/$$artifact" ".testing/embedded/vector-$$artifact" || exit 1; \
+		fi; \
+	done; \
+	exit $$status
+
+embedded-network-test:
+	@test -n "$$AXOLOTY_WIFI_SSID" && test -n "$$AXOLOTY_WIFI_PASSWORD" || { echo 'embedded network test requires AXOLOTY_WIFI_SSID and AXOLOTY_WIFI_PASSWORD' >&2; exit 2; }
+	@CONTAINER_DEVICES=/dev/ttyACM0 CONTAINER_RECLAIM_BUILD_DIR=1 \
+	EMBEDDED_BUILD_DIR=/workspace/.build/embedded-swift-network EMBEDDED_OUTPUT_DIR=/workspace/.build/embedded-network-results \
+	CONTAINER_ENV_VARS="AXOLOTY_WIFI_SSID AXOLOTY_WIFI_PASSWORD AXOLOTY_MQTT_HOST AXOLOTY_MQTT_PORT EMBEDDED_BUILD_DIR EMBEDDED_OUTPUT_DIR" \
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+	.devcontainer/run.sh /workspace/Tests/Support/embedded-network-test.sh
 
 check-embedded-swift-linker:
 	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='embedded verify'

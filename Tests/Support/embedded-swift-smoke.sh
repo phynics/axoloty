@@ -19,7 +19,7 @@ smoke_log="$out_dir/swift-smoke-log.txt"
 result_file="$out_dir/swift-smoke-result.json"
 project_dir="${EMBEDDED_PROJECT_DIR:-/workspace/Embedded/swift}"
 build_dir="${EMBEDDED_BUILD_DIR:-$project_dir/build}"
-deadline=30
+deadline=${EMBEDDED_DEADLINE:-120}
 skip_build=${EMBEDDED_SKIP_BUILD:-0}
 support_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
@@ -58,12 +58,16 @@ else
 fi
 
 echo "== monitor (deadline ${deadline}s, structured protocol) =="
-SERIAL_TOOLS="$support_dir/serial-tools.mjs" SMOKE_VALIDATOR="$support_dir/embedded-swift-smoke-validator.mjs" node --input-type=module - "$device" "$deadline" "$smoke_log" "$result_file" <<'JS'
+SERIAL_TOOLS="$support_dir/serial-tools.mjs" SMOKE_VALIDATOR="${EMBEDDED_VALIDATOR:-$support_dir/embedded-swift-smoke-validator.mjs}" SMOKE_VALIDATOR_FACTORY="${EMBEDDED_VALIDATOR_FACTORY:-createEmbeddedSwiftSmokeValidator}" node --input-type=module - "$device" "$deadline" "$smoke_log" "$result_file" <<'JS'
 import fs from "node:fs";
 const { captureSerial } = await import(process.env.SERIAL_TOOLS);
-const { createEmbeddedSwiftSmokeValidator } = await import(process.env.SMOKE_VALIDATOR);
+const validatorModule = await import(process.env.SMOKE_VALIDATOR);
+const createValidator = validatorModule[process.env.SMOKE_VALIDATOR_FACTORY];
 const [device, deadline, log, result] = process.argv.slice(2);
-const validator = createEmbeddedSwiftSmokeValidator();
+if (typeof createValidator !== "function") {
+  throw new Error(`missing validator factory: ${process.env.SMOKE_VALIDATOR_FACTORY}`);
+}
+const validator = createValidator();
 let lines = [];
 try {
   lines = await captureSerial(device, Number(deadline), line => {

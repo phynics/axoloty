@@ -16,6 +16,23 @@ option(AXOLOTY_SWIFT_UNICODE_LINKER_PROBE
 set(AXOLOTY_SWIFT_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/Main.swift
 )
+set(AXOLOTY_CORPUS_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/GeneratedCorpus.swift")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    ${AXOLOTY_ROOT}/Tests/Support/generate-embedded-corpus.mjs
+    ${AXOLOTY_ROOT}/Benchmarks/Corpus/manifest.json
+    ${AXOLOTY_ROOT}/Benchmarks/Corpus/payloads/*.json
+)
+execute_process(
+    COMMAND node
+        ${AXOLOTY_ROOT}/Tests/Support/generate-embedded-corpus.mjs
+        ${AXOLOTY_ROOT}/Benchmarks/Corpus/manifest.json
+        ${AXOLOTY_CORPUS_SOURCE}
+    RESULT_VARIABLE AXOLOTY_CORPUS_GENERATION_RESULT
+)
+if(NOT AXOLOTY_CORPUS_GENERATION_RESULT EQUAL 0)
+    message(FATAL_ERROR "Failed to generate Embedded Swift corpus vectors")
+endif()
+list(APPEND AXOLOTY_SWIFT_SOURCES ${AXOLOTY_CORPUS_SOURCE})
 if(AXOLOTY_SWIFT_UNICODE_LINKER_PROBE)
     list(APPEND AXOLOTY_SWIFT_SOURCES
         ${CMAKE_CURRENT_LIST_DIR}/UnicodeLinkerProbe.swift
@@ -23,8 +40,8 @@ if(AXOLOTY_SWIFT_UNICODE_LINKER_PROBE)
 endif()
 
 idf_component_register(
-    SRCS "log_helper.c"
-    PRIV_INCLUDE_DIRS "."
+    SRCS "log_helper.c" "network_bootstrap.c"
+    PRIV_INCLUDE_DIRS "." "${CMAKE_CURRENT_BINARY_DIR}"
     PRIV_REQUIRES
         idf_swift
         axoloty_wire
@@ -34,6 +51,11 @@ idf_component_register(
         esp_rom
         freertos
         log
+        esp_wifi
+        esp_event
+        esp_netif
+        nvs_flash
+        mqtt
     LDFRAGMENTS "linker.lf"
 )
 
