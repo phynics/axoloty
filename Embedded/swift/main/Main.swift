@@ -136,7 +136,7 @@ func app_main() -> Int32 {
 
     axoloty_print_uint("{\"tests\":{\"passed\":", passed)
     axoloty_print_uint(",\"failed\":", failed)
-    axoloty_print("}\n")
+    axoloty_print("}}\n")
 
     if failed == 0 {
         axoloty_print("{\"phase\":\"smoke\",\"status\":\"completed\"}\n")
