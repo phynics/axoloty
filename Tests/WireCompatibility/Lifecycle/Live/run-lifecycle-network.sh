@@ -48,7 +48,7 @@ trap cleanup EXIT INT TERM
 mkdir -p "$OUT"
 rm -f "$CAPTURE" "$CAPTURE.post-restart" "$CAPTURE_READY" "$APPLICATION_LOG" "$RAW_LOG" "$CONNACK_LOG" "$PROXY_READY"
 
-runtime build -t "$DEV_IMAGE" -f "$ROOT/.devcontainer/Dockerfile" "$ROOT/.devcontainer"
+runtime build -t "$DEV_IMAGE" -f "$ROOT/.devcontainer/Dockerfile" "$ROOT"
 runtime build -t "$JS_IMAGE" "$REF"
 runtime network create "$NETWORK" >/dev/null
 start_broker() {

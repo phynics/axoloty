@@ -33,15 +33,15 @@ jobs:
           export PATH="$(brew --prefix node@22)/bin:$PATH"
           node --version
           mkdir -p .testing
-          swift package resolve --cache-path .swiftpm-cache
-          swift run --cache-path .swiftpm-cache --disable-automatic-resolution ax check > .testing/ax-check-macos.json
+          swift build --package-path Tools --product axoloty-tool >&2
+          swift run --package-path Tools --skip-build axoloty-tool check > .testing/axoloty-tool-check-macos.json
 
-      - name: Upload Apple ax check manifest
+      - name: Upload Apple axoloty-tool check manifest
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ax-check-macos-${{ github.run_id }}
-          path: .testing/ax-check-macos.json
+          name: axoloty-tool-check-macos-${{ github.run_id }}
+          path: .testing/axoloty-tool-check-macos.json
           if-no-files-found: warn
           retention-days: 7
 
@@ -91,16 +91,16 @@ jobs:
           COVERAGE_DIFF_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
         run: |
           mkdir -p .testing
-          make check CONTAINER_RUNTIME=podman BUILD_DIR=.build BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache > .testing/ax-check-linux.json
+          make check CONTAINER_RUNTIME=podman BUILD_DIR=.build BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache > .testing/axoloty-tool-check-linux.json
           make coverage-check CONTAINER_RUNTIME=podman BUILD_DIR=.build COVERAGE_BUILD_DIR=.build BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache
           sh Tests/Support/check-decoder-context-diagnostic.sh .testing/coverage/build.log
 
-      - name: Upload ax check manifests
+      - name: Upload axoloty-tool check manifests
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ax-check-${{ github.run_id }}
-          path: .testing/ax-check-*.json
+          name: axoloty-tool-check-${{ github.run_id }}
+          path: .testing/axoloty-tool-check-*.json
           if-no-files-found: warn
           retention-days: 7
 

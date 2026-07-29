@@ -8,7 +8,7 @@ import test from "node:test";
 import { discardRule, patchSwiftGOT, replacement } from "../../Embedded/swift/main/patch-swift-got.mjs";
 
 function fixture(contents) {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ax-got-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-tool-got-"));
   const script = path.join(directory, "sections.ld");
   fs.writeFileSync(script, contents);
   return script;

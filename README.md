@@ -81,8 +81,9 @@ the related [coaty-examples](https://github.com/coatyio/coaty-examples) repo.
 
 ## Building & Testing
 
-The Swift `ax` executable is the orchestration control plane. Linux development
-uses it through the lightweight Makefile and the pinned Podman/Docker image;
+The Swift `axoloty-tool` executable is the orchestration control plane. Linux development
+extracts its static binary from the pinned Podman/Docker image and runs it
+through the lightweight Makefile; product commands remain containerized.
 macOS runs the same offline plan with native Swift:
 
 ```sh
@@ -93,8 +94,7 @@ make hardware-require    # require the ESP32-C6 for an explicit release gate
 make release-snapshots   # produce and verify provenance-rich wire evidence
 
 # macOS
-swift package resolve --cache-path .swiftpm-cache
-swift run --cache-path .swiftpm-cache --disable-automatic-resolution ax check
+swift run --package-path Tools axoloty-tool check
 ```
 
 Focused compatibility Make targets remain available for specialized workflows.

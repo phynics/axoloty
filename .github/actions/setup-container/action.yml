@@ -1,5 +1,5 @@
 name: Setup container image
-description: Pull the reviewed pinned development image by digest, or build the local Dockerfile fallback when the lock is stale.
+description: Pull the reviewed pinned development image by digest, or build locally when its inputs are stale.
 
 inputs:
   runtime:
@@ -7,7 +7,7 @@ inputs:
     required: false
     default: docker
   lock-file:
-    description: Reviewed image lock recording the image, digest, and Dockerfile hash.
+    description: Reviewed image lock recording the image, digest, and build-input hash.
     required: false
     default: .devcontainer/image-lock.json
   allow-build-fallback:
@@ -29,25 +29,32 @@ runs:
 
         image=$(jq -er '.image' "$LOCK_FILE")
         digest=$(jq -er '.digest' "$LOCK_FILE")
-        locked_hash=$(jq -er '.dockerfileSha256' "$LOCK_FILE")
-        actual_hash=$(sha256sum .devcontainer/Dockerfile | awk '{print $1}')
+        locked_hash=$(jq -er '.buildInputsSha256' "$LOCK_FILE")
+        actual_hash=$(
+          sha256sum \
+            .devcontainer/Dockerfile \
+            Tools/Package.swift \
+            Tools/AxolotyTooling/*.swift \
+            Tools/axoloty-tool/*.swift \
+            | sha256sum | awk '{print $1}'
+        )
 
-        # A hash mismatch means this revision changed the Dockerfile and no
+        # A hash mismatch means this revision changed an image build input and no
         # reviewed image has been published for it yet, so building locally is
         # the expected path. A matching hash promises the image exists, so a
         # failed pull is a real error rather than a cue to build.
         if [[ "$locked_hash" != "$actual_hash" ]]; then
           if [[ "$ALLOW_BUILD_FALLBACK" != "true" ]]; then
-            echo "::error::$LOCK_FILE is stale (locks $locked_hash, Dockerfile is $actual_hash) and the build fallback is disabled." >&2
+            echo "::error::$LOCK_FILE is stale (locks $locked_hash, build inputs are $actual_hash) and the build fallback is disabled." >&2
             exit 1
           fi
-          echo "::warning::$LOCK_FILE is stale (locks $locked_hash, Dockerfile is $actual_hash); building the Dockerfile locally. Refresh the lock once the image publishes." >&2
+          echo "::warning::$LOCK_FILE is stale (locks $locked_hash, build inputs are $actual_hash); building the image locally. Refresh the lock once the image publishes." >&2
           make image CONTAINER_RUNTIME="$RUNTIME"
           exit 0
         fi
 
         if ! "$RUNTIME" pull "$image@$digest"; then
-          echo "::error::Locked image $image@$digest is unavailable. The lock matches the current Dockerfile, so the image is expected to exist." >&2
+          echo "::error::Locked image $image@$digest is unavailable. The lock matches the current build inputs, so the image is expected to exist." >&2
           exit 1
         fi
         "$RUNTIME" tag "$image@$digest" axoloty-dev

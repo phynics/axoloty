@@ -40,7 +40,7 @@ private struct FoundationFileSystem: AxolotyFileSystem {
     func exists(atPath path: String) -> Bool { FileManager.default.fileExists(atPath: path) }
 }
 
-/// Parses the stable command surface of the ``ax`` tooling executable.
+/// Parses the stable command surface of the ``axoloty-tool`` executable.
 public struct AxolotyCommandDispatcher: Sendable {
     private let commandRunner: any AxolotyCheckCommandRunning
     private let integrationRunner: any AxolotyIntegrationRunning
@@ -78,7 +78,7 @@ public struct AxolotyCommandDispatcher: Sendable {
         case [], ["help"], ["--help"], ["-h"]:
             AxolotyCommandResult(standardOutput: Self.usage)
         case ["version"], ["--version"]:
-            AxolotyCommandResult(standardOutput: "ax \(Self.version)")
+            AxolotyCommandResult(standardOutput: "axoloty-tool \(Self.version)")
         case ["check", "--plan"]:
             Self.planResult()
         case ["check"]:
@@ -91,6 +91,8 @@ public struct AxolotyCommandDispatcher: Sendable {
             integrationResult()
         case ["wire", "verify"]:
             checkResult(requested: ["test-wire"])
+        case ["wire", "capture"]:
+            execute(plan: AxolotyCheckPlan.wireCapture)
         case ["embedded", "build"]:
             checkResult(requested: ["embedded-build"])
         case ["embedded", "verify"]:
@@ -103,7 +105,7 @@ public struct AxolotyCommandDispatcher: Sendable {
             hardwareResult(required: true, device: nil)
         default:
             AxolotyCommandResult(
-                standardError: "error: unsupported ax command\n\n\(Self.usage)\n",
+                standardError: "error: unsupported axoloty-tool command\n\n\(Self.usage)\n",
                 exitCode: 64
             )
         }
@@ -112,7 +114,7 @@ public struct AxolotyCommandDispatcher: Sendable {
     private static let version = "0.1.0"
 
     private static let usage = """
-    Usage: ax <command>
+    Usage: axoloty-tool <command>
 
     Axoloty's typed build and test orchestration CLI.
 
@@ -125,6 +127,7 @@ public struct AxolotyCommandDispatcher: Sendable {
       test offline         Run the same offline plan as check.
       test integration     Run transport tests against local Mosquitto.
       wire verify [BUNDLE] Verify fixtures and an optional bundle without MQTT.
+      wire capture         Run live MQTT captures with pinned reference agents.
       embedded build       Cross-compile the ESP32-C6 firmware on Linux.
       embedded verify      Build and verify the ESP32-C6 linker contract.
       hardware check       Run or skip the sporadic hardware smoke check.
@@ -214,6 +217,18 @@ public struct AxolotyCommandDispatcher: Sendable {
     }
 
     private func integrationResult() -> AxolotyCommandResult {
+        if environment["AXOLOTY_TOOL_HOST"] == "1" {
+            let result = commandRunner.run(AxolotyCommandPlan(
+                executable: "/opt/axoloty/bin/axoloty-tool",
+                arguments: ["test", "integration"],
+                environment: ["AXOLOTY_IN_CONTAINER": "1"]
+            ))
+            return AxolotyCommandResult(
+                standardOutput: result.standardOutput,
+                standardError: result.standardError,
+                exitCode: result.exitCode
+            )
+        }
         let command = integrationRunner.run()
         let result = AxolotyCheckResult(
             name: "integration-tests",
@@ -224,6 +239,17 @@ public struct AxolotyCommandDispatcher: Sendable {
             AxolotyCheckManifest(results: [result]),
             exitCode: command.exitCode == 0 ? 0 : 1
         )) ?? AxolotyCommandResult(exitCode: 70)
+    }
+
+    private func execute(plan availablePlan: AxolotyCheckPlan) -> AxolotyCommandResult {
+        do {
+            let plan = try AxolotyCheckPlanner().plan(availablePlan.nodes)
+            let results = AxolotyCheckExecutor(commandRunner: commandRunner).execute(plan)
+            let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
+            return try Self.jsonResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
+        } catch {
+            return AxolotyCommandResult(standardError: "error: unable to plan checks\n", exitCode: 70)
+        }
     }
 
     private func hardwareResult(required: Bool, device: String?) -> AxolotyCommandResult {

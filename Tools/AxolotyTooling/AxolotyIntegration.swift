@@ -28,7 +28,7 @@ public struct FoundationIntegrationRunner: AxolotyIntegrationRunning {
             )
         }
         let artifacts = FileManager.default.temporaryDirectory
-            .appending(path: "ax-integration-\(UUID().uuidString)", directoryHint: .isDirectory)
+            .appending(path: "axoloty-tool-integration-\(UUID().uuidString)", directoryHint: .isDirectory)
         let configuration = artifacts.appending(path: "mosquitto.conf")
         let log = artifacts.appending(path: "mosquitto.log")
         do {

@@ -20,14 +20,14 @@ test("checked-in contract covers discovered self-tests", () => {
 });
 
 test("make parser ignores assignments and special targets", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ax-tiers-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-tool-tiers-"));
   const makefile = path.join(directory, "Makefile");
   fs.writeFileSync(makefile, "VALUE := x\n.PHONY: test\ntest: dependency\nname-with-dot.x:\n");
   assert.deepEqual([...parseMakeTargets(makefile)].sort(), ["name-with-dot.x", "test"]);
 });
 
 test("discovery includes shell and Node self-tests", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ax-tests-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-tool-tests-"));
   const tests = path.join(directory, "Tests");
   fs.mkdirSync(path.join(tests, "Support"), { recursive: true });
   fs.writeFileSync(path.join(tests, "Support/test-one.sh"), "");

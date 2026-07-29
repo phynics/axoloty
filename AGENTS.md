@@ -8,12 +8,15 @@ Roadmap Project remain authoritative for scope and status.
 
 ## Build and test
 
-- `ax` is the typed orchestration control plane. On Linux, invoke it through
+- `axoloty-tool` is the typed orchestration control plane. On Linux, invoke it through
   the lightweight root Makefile so product and ESP-IDF work stays in the
   pinned container: `make check`, `make hardware-check`, and focused wrappers.
-  On macOS, native Swift is supported: resolve with the pinned toolchain and
-  run `swift run --cache-path .swiftpm-cache ax check`. Do not run native Swift
-  product builds on Linux hosts.
+  The image delivers a static host `axoloty-tool`, extracted to `.build-tools/axoloty-tool`; do not
+  commit that generated binary. Host execution owns container and live-capture
+  lifecycle while project commands still execute in the pinned image.
+  On macOS, native Swift is supported through the isolated tooling package:
+  `swift run --package-path Tools axoloty-tool check`. Do not run native Swift product
+  builds on Linux hosts.
 - The Makefile is executable documentation and a compatibility/bootstrap
   surface. New orchestration policy belongs in `AxolotyTooling`, not in Make
   recipes or new shell front controllers.
@@ -27,7 +30,7 @@ Roadmap Project remain authoritative for scope and status.
   the sole copy of generated output. Use `make worktree-bootstrap` to resolve
   dependencies and `make worktree-warm` only when an explicit prebuild is
   useful.
-- Prefer adding an `ax` command with a thin Make alias over adding substantive
+- Prefer adding an `axoloty-tool` command with a thin Make alias over adding substantive
   Make, Bash, or Python orchestration.
 - Swift tests use Swift Testing only: `import Testing`, `@Test`, `#expect`,
   `#require`, and `Issue.record`. Do not add XCTest.
@@ -37,7 +40,7 @@ Roadmap Project remain authoritative for scope and status.
   probe, reserve, flash, or request privileges for a device. `hardware check`
   skips successfully when absent; `hardware require` fails when absent.
 - Release wire evidence is generated with `make release-snapshots` on Linux or
-  `ax release snapshots` on macOS. Keep generated bundles under `.testing/`;
+  `axoloty-tool release snapshots` on macOS. Keep generated bundles under `.testing/`;
   only reviewed stable fixtures belong in source control.
 
 ## GitHub-centered planning workflow

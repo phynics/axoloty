@@ -1,8 +1,8 @@
 # Build and test tooling
 
-`ax` is Axoloty's typed command-line control plane. Its plans, process results,
+`axoloty-tool` is Axoloty's typed command-line control plane. Its plans, process results,
 hardware outcomes, and JSON manifests are defined in Swift and tested with
-Swift Testing. The principal root Make targets forward to `ax`; the Makefile
+Swift Testing. The principal root Make targets forward to `axoloty-tool`; the Makefile
 also retains compatibility recipes for specialized evidence workflows that do
 not belong to the canonical offline check.
 
@@ -12,16 +12,20 @@ Linux product and ESP-IDF work is containerized:
 
 ```sh
 make check
-make ax AX_ARGS='wire verify'
+make axoloty-tool AXOLOTY_TOOL_ARGS='wire verify'
 make hardware-check
 make release-snapshots
 ```
 
+The complete image carries a self-contained static Linux `axoloty-tool`. `make axoloty-tool-bootstrap`
+extracts it to the ignored `.build-tools/axoloty-tool` path, and principal Make targets
+run it on the host. The host CLI can therefore own Podman/Docker and live-capture
+lifecycle while project build/test commands remain inside the pinned image.
+
 macOS uses its pinned native Swift toolchain:
 
 ```sh
-swift package resolve --cache-path .swiftpm-cache
-swift run --cache-path .swiftpm-cache --disable-automatic-resolution ax check
+swift run --package-path Tools axoloty-tool check
 ```
 
 The macOS plan runs host build, lint, tooling tests, and offline wire fixtures.
@@ -32,14 +36,15 @@ plan starts MQTT or accesses hardware.
 
 | Command | MQTT | Hardware | Purpose |
 |---|:---:|:---:|---|
-| `ax check` / `ax test offline` | no | no | Deterministic platform plan |
-| `ax test integration` | local | no | Broker-backed transport behavior |
-| `ax wire verify` | no | no | Direct fixture and snapshot verification |
-| `ax embedded build` | no | no | ESP32-C6 cross-compilation on Linux |
-| `ax embedded verify` | no | no | Build plus linker contract verification |
-| `ax hardware check` | no | optional | Run when attached; otherwise structured skip |
-| `ax hardware require` | no | required | Explicit device/release gate |
-| `ax release snapshots` | no | no | Generate and verify an immutable wire bundle |
+| `axoloty-tool check` / `axoloty-tool test offline` | no | no | Deterministic platform plan |
+| `axoloty-tool test integration` | local | no | Broker-backed transport behavior |
+| `axoloty-tool wire verify` | no | no | Direct fixture and snapshot verification |
+| `axoloty-tool wire capture` | local | no | Host-controlled live reference-agent capture |
+| `axoloty-tool embedded build` | no | no | ESP32-C6 cross-compilation on Linux |
+| `axoloty-tool embedded verify` | no | no | Build plus linker contract verification |
+| `axoloty-tool hardware check` | no | optional | Run when attached; otherwise structured skip |
+| `axoloty-tool hardware require` | no | required | Explicit device/release gate |
+| `axoloty-tool release snapshots` | no | no | Generate and verify an immutable wire bundle |
 
 Broker-backed transport, live CoatyJS capture, coverage, and long fuzz campaigns
 retain focused Make targets while their existing evidence contracts remain in
@@ -48,7 +53,7 @@ transport behavior.
 
 ## Structured output
 
-`ax` writes its result JSON to standard output and child/bootstrap diagnostics
+`axoloty-tool` writes its result JSON to standard output and child/bootstrap diagnostics
 to standard error. Check output uses schema version 1 and records the platform,
 stable node names, statuses, exit codes, and captured streams. Failed
 prerequisites cause dependent nodes to be reported as skipped while independent
@@ -74,14 +79,14 @@ volatile `/tmp`.
 
 ## Release snapshots
 
-`ax release snapshots` copies the reviewed wire captures into
+`axoloty-tool release snapshots` copies the reviewed wire captures into
 `.testing/release-snapshots`, records byte hashes, scenario and reference-agent
 metadata, normalization profiles, repository/toolchain/image provenance, and
 then verifies the bundle without MQTT. `AXOLOTY_SNAPSHOT_SOURCE` and
 `AXOLOTY_SNAPSHOT_OUTPUT` override the source and destination for a release
 workflow. The bundle is generated evidence; stable fixtures enter source
 control only through normal review and the compatibility-matrix policy.
-Pass a persisted or downloaded bundle to `ax wire verify PATH` to rerun both
+Pass a persisted or downloaded bundle to `axoloty-tool wire verify PATH` to rerun both
 the Swift semantic fixture contract and the bundle's hash/metadata checks.
 Snapshot output overrides must remain below `.testing/` and cannot overlap the
 source captures.
@@ -90,6 +95,6 @@ source captures.
 
 Add orchestration behavior to the `AxolotyTooling` target with injected process,
 filesystem, environment, clock, or platform boundaries as applicable. Add
-Swift Testing coverage and expose the behavior through `ax`; add a short Make
+Swift Testing coverage and expose the behavior through `axoloty-tool`; add a short Make
 alias only when Linux contributors need a documented container entry point.
 Do not add a new Bash or Python front controller.

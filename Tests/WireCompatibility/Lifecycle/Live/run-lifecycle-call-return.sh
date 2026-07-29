@@ -58,7 +58,7 @@ trap cleanup EXIT INT TERM
 mkdir -p "$OUT"
 rm -f "$CAPTURE" "$CAPTURE_READY" "$CONSUMER_LOG" "$APPLICATION_LOG" "$RAW_LOG"
 
-runtime build -t "$DEV_IMAGE" -f "$ROOT/.devcontainer/Dockerfile" "$ROOT/.devcontainer"
+runtime build -t "$DEV_IMAGE" -f "$ROOT/.devcontainer/Dockerfile" "$ROOT"
 runtime build -t "$JS_IMAGE" "$REF"
 runtime network create "$NETWORK" >/dev/null
 

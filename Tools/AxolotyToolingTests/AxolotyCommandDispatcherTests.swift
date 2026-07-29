@@ -36,7 +36,7 @@ func helpCommandPrintsUsage() {
     let result = AxolotyCommandDispatcher().run(arguments: ["help"])
 
     #expect(result.exitCode == 0)
-    #expect(result.standardOutput.contains("Usage: ax <command>"))
+    #expect(result.standardOutput.contains("Usage: axoloty-tool <command>"))
     #expect(result.standardError.isEmpty)
 }
 
@@ -45,7 +45,7 @@ func versionCommandPrintsVersion() {
     let result = AxolotyCommandDispatcher().run(arguments: ["--version"])
 
     #expect(result.exitCode == 0)
-    #expect(result.standardOutput == "ax 0.1.0")
+    #expect(result.standardOutput == "axoloty-tool 0.1.0")
     #expect(result.standardError.isEmpty)
 }
 
@@ -57,7 +57,7 @@ func checkPlanPrintsStableJSON() {
     #expect(result.standardError.isEmpty)
     let plan = try? JSONDecoder().decode(AxolotyCheckPlan.self, from: Data(result.standardOutput.utf8))
     #expect(plan?.nodes.map(\.name) == [
-        "resolve", "build", "lint", "test-ax", "test-unit", "test-module",
+        "resolve", "build", "lint", "test-tooling", "test-unit", "test-module",
         "test-fuzz", "test-wire", "no-anycodable", "no-foundation-wire",
         "wire-dependencies", "wire-independent-resolution", "support-wire-dependencies",
         "support-wire-resolution", "support-wire-isolation", "support-benchmark-corpus",
@@ -136,7 +136,7 @@ func wireVerifyRunsOnlyItsDependencyClosure() throws {
 
     #expect(result.exitCode == 0)
     #expect(manifest.schemaVersion == 1)
-    #expect(manifest.results.map(\.name) == ["resolve", "build", "test-ax", "test-wire"])
+    #expect(manifest.results.map(\.name) == ["resolve", "build", "test-tooling", "test-wire"])
 }
 
 @Test
@@ -152,10 +152,29 @@ func wireVerifyBundleRunsSemanticAndHashVerification() throws {
     let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
 
     #expect(result.exitCode == 0)
-    #expect(manifest.results.map(\.name) == ["resolve", "build", "test-ax", "test-wire", "wire-bundle-verify"])
+    #expect(manifest.results.map(\.name) == ["resolve", "build", "test-tooling", "test-wire", "wire-bundle-verify"])
     #expect(runner.commands.last?.arguments == [
         "Tests/Support/release-snapshots.mjs", "verify", ".testing/downloaded",
     ])
+}
+
+@Test
+func wireCaptureKeepsContainerBuildsAndHostLifecycleExplicit() throws {
+    let runner = RecordingSequenceRunner()
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: runner,
+        fileSystem: StubFileSystem(paths: []),
+        environment: [:]
+    )
+
+    let result = dispatcher.run(arguments: ["wire", "capture"])
+    let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
+
+    #expect(result.exitCode == 0)
+    #expect(manifest.results.count == 10)
+    #expect(runner.commands.first?.executionContext == .project)
+    #expect(runner.commands.first { $0.executable.hasSuffix("run-coatyjs-advertise.sh") }?.executionContext == .host)
+    #expect(runner.commands.last?.executionContext == .project)
 }
 
 @Test

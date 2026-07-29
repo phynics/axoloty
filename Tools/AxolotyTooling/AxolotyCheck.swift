@@ -14,18 +14,34 @@ public enum AxolotyCheckStatus: String, Codable, Equatable, Sendable {
 
 /// A command that a check executor may run later.
 public struct AxolotyCommandPlan: Codable, Equatable, Sendable {
+    /// Where a Linux host-delivered CLI executes the command.
+    public enum ExecutionContext: String, Codable, Equatable, Sendable {
+        /// Run in the pinned project container on Linux, or natively on macOS.
+        case project
+        /// Run directly beside the host-delivered CLI.
+        case host
+    }
+
     /// The executable name.
     public let executable: String
     /// Arguments passed to the executable.
     public let arguments: [String]
     /// Environment values added for the command.
     public let environment: [String: String]
+    /// The command execution boundary.
+    public let executionContext: ExecutionContext
 
     /// Creates a command plan.
-    public init(executable: String, arguments: [String] = [], environment: [String: String] = [:]) {
+    public init(
+        executable: String,
+        arguments: [String] = [],
+        environment: [String: String] = [:],
+        executionContext: ExecutionContext = .project
+    ) {
         self.executable = executable
         self.arguments = arguments
         self.environment = environment
+        self.executionContext = executionContext
     }
 }
 
@@ -128,11 +144,11 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
         AxolotyCheckNode(name: "resolve", command: AxolotyCommandPlan(executable: "swift", arguments: ["package", "resolve", "--cache-path", ".swiftpm-cache"])),
         AxolotyCheckNode(name: "build", dependencies: ["resolve"], command: AxolotyCommandPlan(executable: "swift", arguments: ["build", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution"])),
         AxolotyCheckNode(name: "lint", command: AxolotyCommandPlan(executable: "swiftlint", arguments: ["lint", "--config", ".swiftlint.yml"])),
-        AxolotyCheckNode(name: "test-ax", dependencies: ["build"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--filter", "AxolotyToolingTests"])),
-        AxolotyCheckNode(name: "test-unit", dependencies: ["test-ax"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--skip-build", "--filter", "ObjectMatcherTests|CoatyUUIDTests"])),
-        AxolotyCheckNode(name: "test-module", dependencies: ["test-ax"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--skip-build", "--filter", "CommunicationTopicTests|PayloadCoderTests|ObjectTypeRegistryTests|ConfigurationBuilderTests"])),
-        AxolotyCheckNode(name: "test-fuzz", dependencies: ["test-ax"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--skip-build", "--filter", "DeterministicFuzzTests"], environment: ["AXOLOTY_FUZZ_ITERATIONS": "250", "AXOLOTY_FUZZ_SEED": "0x41584f4c4f5459"])),
-        AxolotyCheckNode(name: "test-wire", dependencies: ["test-ax"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--skip-build", "--filter", "WireFixtureTests|LegacyCaptureFixtureTests|CoatyJs.*CaptureTests|LifecycleCompatibilityScenarioTests|AxolotyIoAssociateTests|AxolotyIoNegativeTests"])),
+        AxolotyCheckNode(name: "test-tooling", dependencies: ["build"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--filter", "AxolotyToolingTests"])),
+        AxolotyCheckNode(name: "test-unit", dependencies: ["test-tooling"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--skip-build", "--filter", "ObjectMatcherTests|CoatyUUIDTests"])),
+        AxolotyCheckNode(name: "test-module", dependencies: ["test-tooling"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--skip-build", "--filter", "CommunicationTopicTests|PayloadCoderTests|ObjectTypeRegistryTests|ConfigurationBuilderTests"])),
+        AxolotyCheckNode(name: "test-fuzz", dependencies: ["test-tooling"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--skip-build", "--filter", "DeterministicFuzzTests"], environment: ["AXOLOTY_FUZZ_ITERATIONS": "250", "AXOLOTY_FUZZ_SEED": "0x41584f4c4f5459"])),
+        AxolotyCheckNode(name: "test-wire", dependencies: ["test-tooling"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--skip-build", "--filter", "WireFixtureTests|LegacyCaptureFixtureTests|CoatyJs.*CaptureTests|LifecycleCompatibilityScenarioTests|AxolotyIoAssociateTests|AxolotyIoNegativeTests"])),
         AxolotyCheckNode(name: "no-anycodable", command: AxolotyCommandPlan(executable: "Tests/Support/check-no-anycodable.sh")),
         AxolotyCheckNode(name: "no-foundation-wire", command: AxolotyCommandPlan(executable: "Tests/Support/check-no-foundation-types.sh")),
         AxolotyCheckNode(name: "wire-dependencies", command: AxolotyCommandPlan(executable: "sh", arguments: ["Tests/Support/check-axoloty-wire-dependencies.sh", "Packages/AxolotyWire"])),
@@ -157,7 +173,7 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
                 "--test",
                 "Tests/Support/coverage-tools.test.mjs",
                 "Tests/Support/fuzz-summary.test.mjs",
-                "Tests/Support/make-ax-wrappers.test.mjs",
+                "Tests/Support/make-tooling-wrappers.test.mjs",
                 "Tests/Support/patch-swift-got.test.mjs",
                 "Tests/Support/release-snapshots.test.mjs",
                 "Tests/Support/serial-tools.test.mjs",
@@ -212,9 +228,98 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
         ])
     }
 
+    /// Creates the explicit host/container plan for live wire capture.
+    public static var wireCapture: AxolotyCheckPlan {
+        let host: AxolotyCommandPlan.ExecutionContext = .host
+        return AxolotyCheckPlan(nodes: [
+            AxolotyCheckNode(
+                name: "wire-tool-install",
+                command: AxolotyCommandPlan(
+                    executable: "npm",
+                    arguments: ["ci", "--prefix", "Tests/WireCompatibility/tool"]
+                )
+            ),
+            AxolotyCheckNode(
+                name: "wire-tool-test",
+                dependencies: ["wire-tool-install"],
+                command: AxolotyCommandPlan(
+                    executable: "npm",
+                    arguments: ["test", "--prefix", "Tests/WireCompatibility/tool"]
+                )
+            ),
+            AxolotyCheckNode(
+                name: "wire-capture-advertise",
+                dependencies: ["wire-tool-test"],
+                command: AxolotyCommandPlan(
+                    executable: "Tests/WireCompatibility/Live/run-coatyjs-advertise.sh",
+                    executionContext: host
+                )
+            ),
+            AxolotyCheckNode(
+                name: "wire-capture-core",
+                dependencies: ["wire-capture-advertise"],
+                command: AxolotyCommandPlan(
+                    executable: "Tests/WireCompatibility/Live/run-coatyjs-core.sh",
+                    executionContext: host
+                )
+            ),
+            AxolotyCheckNode(
+                name: "wire-capture-lifecycle",
+                dependencies: ["wire-capture-core"],
+                command: AxolotyCommandPlan(
+                    executable: "Tests/WireCompatibility/Lifecycle/Live/run-lifecycle-matrix.sh",
+                    executionContext: host
+                )
+            ),
+            AxolotyCheckNode(
+                name: "wire-capture-reverse-advertise",
+                dependencies: ["wire-capture-lifecycle"],
+                command: AxolotyCommandPlan(
+                    executable: "Tests/WireCompatibility/Reverse/run-axoloty-advertise.sh",
+                    executionContext: host
+                )
+            ),
+            AxolotyCheckNode(
+                name: "wire-capture-reverse-core",
+                dependencies: ["wire-capture-reverse-advertise"],
+                command: AxolotyCommandPlan(
+                    executable: "Tests/WireCompatibility/Reverse/run-axoloty-core.sh",
+                    executionContext: host
+                )
+            ),
+            AxolotyCheckNode(
+                name: "wire-capture-js-to-axoloty",
+                dependencies: ["wire-capture-reverse-core"],
+                command: AxolotyCommandPlan(
+                    executable: "Tests/WireCompatibility/Reverse/run-coatyjs-to-axoloty-advertise.sh",
+                    executionContext: host
+                )
+            ),
+            AxolotyCheckNode(
+                name: "wire-capture-io",
+                dependencies: ["wire-capture-js-to-axoloty"],
+                command: AxolotyCommandPlan(
+                    executable: "Tests/WireCompatibility/IO/Live/run-io-associate.sh",
+                    executionContext: host
+                )
+            ),
+            AxolotyCheckNode(
+                name: "wire-capture-manifest",
+                dependencies: ["wire-capture-io"],
+                command: AxolotyCommandPlan(
+                    executable: "node",
+                    arguments: [
+                        "Tests/WireCompatibility/tool/dist/index.js", "manifest",
+                        ".testing/wire", ".testing/wire/manifest.json",
+                    ]
+                )
+            ),
+        ])
+    }
+
 }
 
-/// A versioned machine-readable result from an ``ax`` check plan.
+/// A versioned machine-readable result from an ``axoloty-tool`` check plan.
 public struct AxolotyCheckManifest: Codable, Equatable, Sendable {
     /// The result schema version.
     public let schemaVersion: Int

@@ -19,6 +19,18 @@ ARG ESPFLASH_VERSION=3.3.0
 ARG SWIFTLINT_VERSION=0.65.0
 ARG NODE_VERSION=22.17.1
 
+FROM swift:${SWIFT_VERSION}-jammy AS axoloty-tool-builder
+
+WORKDIR /axoloty-tool
+COPY Tools/Package.swift ./Package.swift
+COPY Tools/AxolotyTooling ./AxolotyTooling
+COPY Tools/axoloty-tool ./axoloty-tool
+RUN swift build -c release --product axoloty-tool \
+        -Xswiftc -static-executable -Xlinker --no-gc-sections \
+    && mkdir -p /axoloty-tool-output \
+    && cp "$(swift build -c release --show-bin-path)/axoloty-tool" /axoloty-tool-output/axoloty-tool \
+    && /axoloty-tool-output/axoloty-tool --version
+
 FROM swift:${SWIFT_VERSION}-jammy
 
 ARG ESP_IDF_VERSION
@@ -109,5 +121,9 @@ RUN useradd --no-create-home --shell /usr/sbin/nologin esp \
 
 ENV IDF_PATH=/opt/esp/idf
 ENV PATH="${IDF_PATH}/tools:${PATH}"
+
+# Keep the project-specific CLI in the final layer so changing orchestration
+# source does not invalidate the expensive, immutable ESP-IDF toolchain layers.
+COPY --from=axoloty-tool-builder /axoloty-tool-output/axoloty-tool /opt/axoloty/bin/axoloty-tool
 
 WORKDIR /workspace

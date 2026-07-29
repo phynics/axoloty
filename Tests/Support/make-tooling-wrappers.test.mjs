@@ -9,18 +9,19 @@ function recipe(makefile, target) {
   return match[1];
 }
 
-test("principal Make workflows are direct ax compatibility wrappers", () => {
+test("principal Make workflows are direct axoloty-tool wrappers", () => {
   const makefile = fs.readFileSync("Makefile", "utf8");
   for (const target of [
     "check",
     "build",
     "test-wire",
+    "test-wire-live",
     "embedded-swift-build",
     "check-embedded-swift-linker",
     "hardware-check",
     "hardware-require",
     "release-snapshots",
   ]) {
-    assert.match(recipe(makefile, target), /\$\(MAKE\).*\bax\b/, `${target} must forward to ax`);
+    assert.match(recipe(makefile, target), /\$\(MAKE\).*\baxoloty-tool\b/, `${target} must forward to axoloty-tool`);
   }
 });

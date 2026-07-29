@@ -74,7 +74,7 @@ make hardware-check                 # skip successfully when no board is attache
 make hardware-require               # fail unless the selected board is attached
 ```
 
-Every target runs inside the `axoloty-dev` container. The `ax` hardware targets
+Every target runs inside the `axoloty-dev` container. The `axoloty-tool` hardware targets
 forward `AXOLOTY_DEVICE` (default `/dev/ttyACM0`) only when that path exists;
 ordinary checks never request device access. The incremental Swift build cache is
 external, while its firmware is mirrored to

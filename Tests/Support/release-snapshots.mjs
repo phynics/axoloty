@@ -118,7 +118,7 @@ export function generateBundle(source, destination, environment = process.env) {
       sha256: sha256(normalizationBytes),
     },
     verification: {
-      command: "ax wire verify",
+      command: "axoloty-tool wire verify",
       semantics: "Swift fixture tests decode byte-exact topics and base64 payloads offline",
     },
     captures,

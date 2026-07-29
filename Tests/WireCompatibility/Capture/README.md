@@ -31,7 +31,7 @@ field-presence, numeric-value, or array-order changes.
 Offline verification is separate from capture:
 
 ```sh
-make ax AX_ARGS='wire verify'
+make axoloty-tool AXOLOTY_TOOL_ARGS='wire verify'
 ```
 
 This feeds checked-in topics and payload bytes directly to Swift tests and does
@@ -41,7 +41,7 @@ profile, and content hashes. Release workflows should retain raw capture and
 manifest artifacts rather than relying on prose or screenshots.
 
 Generate a release evidence bundle with `make release-snapshots` on Linux or
-`swift run --cache-path .swiftpm-cache ax release snapshots` on macOS. The
+`swift run --package-path Tools axoloty-tool release snapshots` on macOS. The
 generated `.testing/release-snapshots/manifest.json` records SHA-256 content
 hashes, producer/scenario metadata, normalization profiles, and repository,
 toolchain, and image provenance. Generation immediately performs an offline

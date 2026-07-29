@@ -27,7 +27,7 @@ trap cleanup EXIT INT TERM
 mkdir -p "$OUTPUT_DIR"
 rm -f "$CAPTURE_FILE"
 
-podman build -t "$DEV_IMAGE" -f "$ROOT_DIR/.devcontainer/Dockerfile" "$ROOT_DIR/.devcontainer"
+podman build -t "$DEV_IMAGE" -f "$ROOT_DIR/.devcontainer/Dockerfile" "$ROOT_DIR"
 podman build -t "$JS_IMAGE" "$REFERENCE_DIR/coatyjs"
 podman network create "$NETWORK" >/dev/null
 

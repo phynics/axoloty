@@ -39,7 +39,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 mkdir -p "$OUT"; rm -f "$CAPTURE" "$APPLICATION_LOG" "$CAPTURE_READY"
-podman build -t "$DEV" -f "$ROOT/.devcontainer/Dockerfile" "$ROOT/.devcontainer"
+podman build -t "$DEV" -f "$ROOT/.devcontainer/Dockerfile" "$ROOT"
 podman build -t "$JS" "$REF/coatyjs"
 podman network create "$NET" >/dev/null
 podman run -d --name "$BROKER" --network "$NET" \
