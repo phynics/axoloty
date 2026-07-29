@@ -32,9 +32,14 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-mkdir -p "$OUTPUT_DIR"
-runtime build -t "$DEV_IMAGE" -f "$ROOT_DIR/.devcontainer/Dockerfile" "$ROOT_DIR/.devcontainer"
+mkdir -p "$OUTPUT_DIR" "$BUILD_DIR" "$SPM_CACHE_DIR"
+runtime build -t "$DEV_IMAGE" -f "$ROOT_DIR/.devcontainer/Dockerfile" "$ROOT_DIR"
 runtime build -t "$JS_IMAGE" "$REFERENCE_DIR/coatyjs"
+# Build before starting timeout-bound consumers. A clean test build can take
+# longer than their 60-second protocol deadline and must not consume it.
+runtime run --rm -v "$ROOT_DIR:/workspace" -v "$BUILD_DIR:/workspace/.build" \
+    -v "$SPM_CACHE_DIR:/swiftpm-cache" -w /workspace \
+    "$DEV_IMAGE" swift build --build-tests --cache-path /swiftpm-cache --disable-automatic-resolution
 runtime network create "$NETWORK" >/dev/null
 runtime run -d --name "$BROKER" --network "$NETWORK" \
     -v "$LIVE_DIR/mosquitto.conf:/etc/mosquitto/wire-compat.conf:ro" \
@@ -79,10 +84,10 @@ for scenario in $SCENARIOS; do
     done
     grep -q '"state":"ready"' "$CONSUMER_LOG" || { cat "$CONSUMER_LOG" >&2; exit 1; }
 
-    runtime run --rm --network "$NETWORK" -v "$ROOT_DIR:/workspace" -v "$SPM_CACHE_DIR:/swiftpm-cache" -w /workspace \
+    runtime run --rm --network "$NETWORK" -v "$ROOT_DIR:/workspace" -v "$BUILD_DIR:/workspace/.build" -v "$SPM_CACHE_DIR:/swiftpm-cache" -w /workspace \
         -e WIRE_REVERSE_LIVE=1 -e WIRE_SCENARIO="$scenario" \
         -e WIRE_BROKER_HOST="$BROKER" -e WIRE_BROKER_PORT=1883 -e WIRE_NAMESPACE=wire-compat-v1 \
-        "$DEV_IMAGE" swift test --cache-path /swiftpm-cache --disable-automatic-resolution --filter AxolotyCoreProducerTests
+        "$DEV_IMAGE" swift test --skip-build --cache-path /swiftpm-cache --disable-automatic-resolution --filter AxolotyCoreProducerTests
 
     runtime wait "$CONSUMER" >/dev/null
     runtime logs "$CONSUMER" >"$CONSUMER_LOG" 2>&1
