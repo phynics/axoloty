@@ -40,6 +40,15 @@ The `contract-seed` fixtures exercise the harness only. They are supplemented, f
 Reference-agent pins, build instructions, and the documented legacy Swift
 platform constraint live in `ReferenceAgents/README.md`.
 
+The ESP32-C6 embedded-to-embedded Phase 4 slice is backed by
+`make embedded-agent-test`. Two physical boards use production AxolotyWire,
+fixed-capacity topic and payload buffers, and the ESP-IDF MQTT client against a
+real broker. Both independently validate checksummed serial evidence for
+Advertise, correlated Discover/Resolve, graceful Deadvertise, and disconnect.
+The capture is intentionally recorded under `.testing/embedded/`; it does not
+change the JS/modern columns above, which require separate pinned CoatyJS
+directions.
+
 `Associate / IoState / IoValue` is backed by `Tests/WireCompatibility/IO/`
 (T-021). The generated IOV route and ASC topic, and the required Associate
 fields, are compatible in both directions; the rows are marked

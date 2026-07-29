@@ -18,6 +18,8 @@ func app_main() -> Int32 {
     var rollingChecksum: UInt32 = 0
     var passed: UInt32 = 0
     var failed: UInt32 = 0
+    let networkRole = axoloty_network_role()
+    var emittingExchangeEvidence = false
 
     @inline(__always)
     func printStatic(_ value: StaticString) {
@@ -89,13 +91,16 @@ func app_main() -> Int32 {
     printPrefix("boot", "boot", "started", rollingChecksum)
     axoloty_print("}\n")
     sequence &+= 1
+    vTaskDelay(1)
 
     @inline(__always)
     func record(_ name: StaticString, _ ok: Bool) {
+        if networkRole != 0 && !emittingExchangeEvidence { return }
         let status: StaticString = ok ? "passed" : "failed"
         let checksum = nextChecksum(name, "smokeCheck", status, rollingChecksum, sequence)
         printPrefix(name, "smokeCheck", status, checksum)
         axoloty_print("}\n")
+        vTaskDelay(1)
         rollingChecksum = checksum
         sequence &+= 1
         if ok {
@@ -310,6 +315,88 @@ func app_main() -> Int32 {
         }
     }
 
+    // === Static Phase 4 device agent ===
+
+    var staticAgent = StaticDeviceAgent()
+    record("agent:identity", StaticDeviceAgent.agentId != .zero &&
+           StaticDeviceAgent.agentId != StaticDeviceAgent.deviceObjectId)
+
+    @inline(__always)
+    func agentVector(
+        _ id: StaticString,
+        topic: StaticString,
+        payload: StaticString,
+        expected: StaticDeviceDispatchResult
+    ) {
+        let message = try? BorrowedMessage.validated(
+            topicBytes: topic.utf8Start, topicLength: topic.utf8CodeUnitCount,
+            payloadBytes: payload.utf8Start, payloadLength: payload.utf8CodeUnitCount
+        )
+        record(id, message.map { staticAgent.dispatch($0) == expected } ?? false)
+    }
+
+    let expectedCorrelation = UUID16(bytes: (
+        0x32, 0x40, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00,
+        0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04
+    ))
+    agentVector(
+        "agent:advertise",
+        topic: "coaty/3/axoloty-embedded/ADV/32400000-0000-4000-8000-000000000003",
+        payload: "{\"object\":{\"objectId\":\"32400000-0000-4000-8000-000000000003\"}}",
+        expected: .advertise
+    )
+    let advertised = staticAgent.hasAdvertisedPeer
+    agentVector(
+        "agent:deadvertise",
+        topic: "coaty/3/axoloty-embedded/DAD/32400000-0000-4000-8000-000000000003",
+        payload: "{\"objectIds\":[\"32400000-0000-4000-8000-000000000003\"]}",
+        expected: .deadvertise
+    )
+    record("agent:advertisedState", advertised && !staticAgent.hasAdvertisedPeer)
+    agentVector(
+        "agent:discover",
+        topic: "coaty/3/axoloty-embedded/DSC/32400000-0000-4000-8000-000000000003/32400000-0000-4000-8000-000000000004",
+        payload: "{\"objectTypes\":[\"coaty.test.Device\"]}",
+        expected: .discover
+    )
+    staticAgent.beginDiscover(correlationId: expectedCorrelation)
+    agentVector(
+        "agent:wrongCorrelation",
+        topic: "coaty/3/axoloty-embedded/RSV/32400000-0000-4000-8000-000000000003/32400000-0000-4000-8000-000000000005",
+        payload: "{\"object\":{\"objectId\":\"32400000-0000-4000-8000-000000000003\"}}",
+        expected: .wrongCorrelation
+    )
+    agentVector(
+        "agent:resolve",
+        topic: "coaty/3/axoloty-embedded/RSV/32400000-0000-4000-8000-000000000003/32400000-0000-4000-8000-000000000004",
+        payload: "{\"object\":{\"objectId\":\"32400000-0000-4000-8000-000000000003\"}}",
+        expected: .resolve
+    )
+
+    let advertisePayload: StaticString = "{\"object\":{\"objectId\":\"32400000-0000-4000-8000-000000000003\"}}"
+    let advertiseData = try? AdvertiseWireData(from: WireReader(
+        bytes: advertisePayload.utf8Start, length: advertisePayload.utf8CodeUnitCount
+    ))
+    withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 128) { topicBuffer in
+        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 512) { payloadBuffer in
+            guard let advertiseData,
+                  let encoded = try? staticAgent.encode(
+                    advertiseData, eventType: .advertise, correlationId: nil,
+                    topicBuffer: topicBuffer.baseAddress!, topicCapacity: topicBuffer.count,
+                    payloadBuffer: payloadBuffer.baseAddress!, payloadCapacity: payloadBuffer.count
+                  ) else {
+                record("agent:fixedPublish", false)
+                return
+            }
+            let topic = TopicView(topicBytes: topicBuffer.baseAddress!, length: encoded.topicLength)
+            let decoded = try? AdvertiseWireData(from: WireReader(
+                bytes: payloadBuffer.baseAddress!, length: encoded.payloadLength
+            ))
+            record("agent:fixedPublish", topic.eventType == .advertise &&
+                   topic.sourceIdLevel.flatMap(UUID16.init(parsing:)) == StaticDeviceAgent.agentId &&
+                   decoded != nil && encoded.payloadLength <= WireBufferConfig.maxPayloadSize)
+        }
+    }
     // === Generated 39-case benchmark corpus ===
 
     runGeneratedCorpus(record)
@@ -318,14 +405,27 @@ func app_main() -> Int32 {
     // network build supplies the C-owned configuration and appends evidence
     // without changing the existing corpus or its counts.
     if axoloty_network_configured() != 0 {
-        let networkBits = axoloty_network_test(90_000)
-        let networkChecks: [(StaticString, UInt32)] = [
-            ("network:wifi", 1), ("network:ip", 2),
-            ("network:mqttConnect", 4), ("network:subscribe", 8),
-            ("network:publish", 16), ("network:receive", 32),
-            ("network:disconnect", 64),
-        ]
-        for (name, bit) in networkChecks { record(name, (networkBits & bit) != 0) }
+        if networkRole == 0 {
+            let networkBits = axoloty_network_test(90_000)
+            let networkChecks: [(StaticString, UInt32)] = [
+                ("network:wifi", 1), ("network:ip", 2),
+                ("network:mqttConnect", 4), ("network:subscribe", 8),
+                ("network:publish", 16), ("network:receive", 32),
+                ("network:disconnect", 64),
+            ]
+            for (name, bit) in networkChecks { record(name, (networkBits & bit) != 0) }
+        } else {
+            emittingExchangeEvidence = true
+            let exchangeBits = axoloty_agent_test(90_000)
+            let exchangeChecks: [(StaticString, UInt32)] = [
+                ("exchange:wifi", 1), ("exchange:ip", 2),
+                ("exchange:mqttConnect", 4), ("exchange:subscribe", 8),
+                ("exchange:advertise", 16), ("exchange:discover", 32),
+                ("exchange:resolve", 64), ("exchange:deadvertise", 128),
+                ("exchange:disconnect", 256),
+            ]
+            for (name, bit) in exchangeChecks { record(name, (exchangeBits & bit) != 0) }
+        }
     }
 
     // Prove that a warmed corpus pass performs no heap allocation. The second

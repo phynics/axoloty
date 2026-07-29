@@ -38,6 +38,9 @@ export async function captureSerial(device, deadline, onLine) {
         stopped = onLine(line) === true;
         if (stopped) break;
       }
+      // Let another concurrently captured serial port drain its kernel buffer
+      // before this high-volume stream reads the next chunk.
+      if (!stopped) await new Promise(resolve => setImmediate(resolve));
     }
     if (pending && !stopped) {
       lines.push(pending);

@@ -69,6 +69,8 @@ make embedded-device-info          # query the board, write .testing/embedded/de
 make embedded-device-smoke         # build, flash, monitor C smoke image (30s deadline)
 make embedded-swift-build          # build the Embedded Swift firmware
 make embedded-swift-flash           # build, flash, monitor Swift smoke + AxolotyWire exercise
+make embedded-network-test          # prove Wi-Fi and MQTT loopback on /dev/ttyACM0
+make embedded-agent-test            # prove the two-device Phase 4 exchange
 make embedded-reproducible-build    # build twice from clean, compare .bin SHA-256
 make hardware-check                 # skip successfully when no board is attached
 make hardware-require               # fail unless the selected board is attached
@@ -109,6 +111,27 @@ Known limitations:
   and `StaticString` instead.
 - Variadic C functions (`printf`, `ESP_LOGI`) are unavailable in Embedded
   Swift. The `log_helper.c` wrapper provides a fixed-signature alternative.
+
+## Embedded network security posture
+
+The Phase 4 vertical slice uses plaintext MQTT 3.1.1 with QoS 0. It is an
+interoperability proof for a trusted local network, not a secure production
+deployment. TLS, server-name verification, trust-anchor provisioning, and
+client certificates are not enabled. ESP-IDF supports PEM or DER certificate
+inputs and certificate bundles, but Axoloty does not yet define a provisioning
+or rotation mechanism for embedded trust anchors.
+
+Wi-Fi credentials are accepted only through `AXOLOTY_WIFI_SSID` and
+`AXOLOTY_WIFI_PASSWORD`. The test harness converts them to numeric byte arrays
+in an ignored, mode-0600 build header, never places them on compiler command
+lines, and removes the header after each build or failure. Credentials are not
+included in the JSONL evidence. The broker receives no Wi-Fi credential as an
+MQTT username or password.
+
+`make embedded-agent-test` builds distinct static A/B identities, flashes
+`/dev/ttyACM0` and `/dev/ttyACM1`, starts both images together, and requires
+both devices to validate Advertise → Discover → Resolve → Deadvertise through
+a real broker. Raw serial evidence is stored under `.testing/embedded/`.
 
 ## Reproducible builds
 

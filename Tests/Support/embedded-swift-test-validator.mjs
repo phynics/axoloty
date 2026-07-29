@@ -26,6 +26,8 @@ export const expectedVectorTests = new Set([
   "malformed:missing", "malformed:unknown", "malformed:duplicate",
   "malformed:reordered", "malformed:trailing", "malformed:nesting",
   "borrowed:topicView", "borrowed:reader", "router:subscribe", "router:dispatch",
+  "agent:identity", "agent:advertise", "agent:deadvertise", "agent:advertisedState",
+  "agent:discover", "agent:wrongCorrelation", "agent:resolve", "agent:fixedPublish",
 ]);
 
 export const expectedEmbeddedSwiftTests = new Set([
