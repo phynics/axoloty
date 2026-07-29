@@ -419,14 +419,70 @@ func app_main() -> Int32 {
     // without changing the existing corpus or its counts.
     if axoloty_network_configured() != 0 {
         if networkRole == 0 {
-            let networkBits = axoloty_network_test(90_000)
-            let networkChecks: [(StaticString, UInt32)] = [
-                ("network:wifi", 1), ("network:ip", 2),
-                ("network:mqttConnect", 4), ("network:subscribe", 8),
-                ("network:publish", 16), ("network:receive", 32),
-                ("network:disconnect", 64),
-            ]
-            for (name, bit) in networkChecks { record(name, (networkBits & bit) != 0) }
+            let networkBits = axoloty_network_prepare(90_000)
+            record("network:wifi", (networkBits & 1) != 0)
+            record("network:ip", (networkBits & 2) != 0)
+            if (networkBits & 3) == 3 {
+                var probe = EmbeddedMQTTClient()
+                record("network:rejectOutOfOrder", !probe.disconnect())
+                var client = EmbeddedMQTTClient()
+                let willTopic: StaticString = "axoloty/network/will"
+                let willPayload: StaticString = "axoloty-network-offline"
+                let lastWillConfigured = client.configureLastWill(
+                    topic: willTopic.utf8Start, topicLength: Int32(willTopic.utf8CodeUnitCount),
+                    payload: willPayload.utf8Start, payloadLength: Int32(willPayload.utf8CodeUnitCount)
+                )
+                record("network:lastWillConfigured", lastWillConfigured)
+                let connected = lastWillConfigured && client.connect(deadlineMS: 15_000)
+                record("network:mqttConnect", connected)
+                var subscribed = false
+                var reconnected = false
+                var rejectedOversize = false
+                var published = false
+                var received = false
+                if connected {
+                    withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 129) { topic in
+                        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 513) { payload in
+                            let topicLength = axoloty_network_copy_topic(topic.baseAddress!, Int32(topic.count))
+                            let payloadLength = axoloty_network_copy_payload(payload.baseAddress!, Int32(payload.count))
+                            if topicLength > 0 && payloadLength >= 0 {
+                                subscribed = client.subscribe(
+                                    topic: topic.baseAddress!, topicLength: Int32(topicLength),
+                                    deadlineMS: 10_000
+                                )
+                                reconnected = subscribed && client.waitForReconnect(deadlineMS: 20_000)
+                                rejectedOversize = reconnected && !client.publish(
+                                    topic: topic.baseAddress!, topicLength: 129,
+                                    payload: payload.baseAddress!, payloadLength: 0
+                                )
+                                published = reconnected && client.publish(
+                                    topic: topic.baseAddress!, topicLength: Int32(topicLength),
+                                    payload: payload.baseAddress!, payloadLength: Int32(payloadLength)
+                                )
+                                received = published && client.waitForLoopback(deadlineMS: 10_000)
+                            }
+                        }
+                    }
+                }
+                record("network:subscribe", subscribed)
+                record("network:reconnect", reconnected)
+                record("network:rejectOversize", rejectedOversize)
+                record("network:publish", published)
+                record("network:receive", received)
+                let disconnected = client.disconnect()
+                let cleanedUp = axoloty_network_cleanup() != 0
+                record("network:disconnect", disconnected && cleanedUp)
+            } else {
+                record("network:mqttConnect", false)
+                record("network:lastWillConfigured", false)
+                record("network:subscribe", false)
+                record("network:reconnect", false)
+                record("network:rejectOutOfOrder", false)
+                record("network:rejectOversize", false)
+                record("network:publish", false)
+                record("network:receive", false)
+                record("network:disconnect", axoloty_network_cleanup() != 0)
+            }
         } else {
             emittingExchangeEvidence = true
             let exchangeBits = axoloty_agent_test(90_000)

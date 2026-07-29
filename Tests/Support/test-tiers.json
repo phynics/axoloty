@@ -25,6 +25,7 @@
     {"path": "Tests/Support/test-embedded-swift-smoke.sh", "makeTarget": "test-support", "tier": "unit"},
     {"path": "Tests/Support/test-embedded-swift-test.sh", "makeTarget": "test-support", "tier": "unit"},
     {"path": "Tests/Support/test-embedded-network.sh", "makeTarget": "test-support", "tier": "unit"},
+    {"path": "Tests/Support/test-embedded-mqtt-client.sh", "makeTarget": "test-support", "tier": "unit"},
     {"path": "Tests/Support/test-embedded-coatyjs.sh", "makeTarget": "test-support", "tier": "unit"},
     {"path": "Tests/Support/test-run-container.sh", "makeTarget": "test-support", "tier": "unit"},
     {"path": "Tests/Fuzzing/test-run-fuzz.sh", "makeTarget": "test-support", "tier": "property"},

@@ -72,6 +72,7 @@ make embedded-device-smoke         # build, flash, monitor C smoke image (30s de
 make embedded-swift-build          # build the Embedded Swift firmware
 make embedded-swift-flash           # build, flash, monitor Swift smoke + AxolotyWire exercise
 make embedded-network-test          # prove Wi-Fi and MQTT loopback on the selected device
+make embedded-mqtt-test             # acceptance gate for the Swift MQTT overlay
 make embedded-agent-test            # prove the two-device Phase 4 exchange
 make embedded-reproducible-build    # build twice from clean, compare .bin SHA-256
 make hardware-check                 # skip successfully when no board is attached
@@ -144,9 +145,20 @@ The configured 129-byte topic and 513-byte payload buffers cover the approved
 constructing a `BorrowedMessage`. The synchronous Swift router returns before
 ESP-IDF invalidates the callback buffers.
 
+`EmbeddedMQTTClient` is the firmware-local Swift overlay for bounded QoS 0
+last-will configuration, connect, subscribe, publish, reconnect/resubscribe,
+loopback receipt, and disconnect operations. It enforces operation order and
+the 128/512-byte limits before entering its narrow C bridge. ESP-MQTT handles
+and callbacks remain C-owned; input bytes are copied synchronously into fixed
+storage, and callback pointers never enter Swift or survive callback return.
+`make embedded-mqtt-test` exercises this API on a selected physical device and
+records each operation, rejected out-of-order call, and rejected oversize
+publish in the checksummed serial stream.
+
 Additional opt-in physical gates are:
 
 ```sh
+make embedded-mqtt-test
 make embedded-host-test EMBEDDED_HOST_ROLE=A
 make embedded-host-test EMBEDDED_HOST_ROLE=B
 make embedded-coatyjs-test EMBEDDED_COATY_ROLE=A
