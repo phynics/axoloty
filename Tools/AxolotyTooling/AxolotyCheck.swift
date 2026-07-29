@@ -101,11 +101,7 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
         self.nodes = nodes
     }
 
-    /// The initial broker-free checks migrated to the CLI.
-    ///
-    /// This intentionally does not claim to replace the repository's complete
-    /// non-hardware gate while the remaining test and support tiers still use
-    /// their established Makefile entry points.
+    /// The canonical broker-free project checks owned by the CLI.
     /// The platform used when selecting platform-specific checks.
     public enum Platform: String, Codable, Equatable, Sendable {
         /// Apple macOS.
@@ -161,6 +157,7 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
                 "--test",
                 "Tests/Support/coverage-tools.test.mjs",
                 "Tests/Support/fuzz-summary.test.mjs",
+                "Tests/Support/make-ax-wrappers.test.mjs",
                 "Tests/Support/patch-swift-got.test.mjs",
                 "Tests/Support/release-snapshots.test.mjs",
                 "Tests/Support/serial-tools.test.mjs",

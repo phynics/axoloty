@@ -157,8 +157,8 @@ test-broker-regressions: image
 	$(CONTAINER_RUNTIME) run --rm $(CONTAINER_MOUNTS) -w $(WORKDIR) $(IMAGE) \
 		sh -c 'pgrep mosquitto >/dev/null 2>&1 || mosquitto -d; swift test $(SWIFT_LOCKED_ARGS) --filter "DecentralizedLoggingTest|ObjectLifecycleControllerTests"'
 
-build: resolve
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift build $(SWIFT_LOCKED_ARGS)
+build:
+	@$(MAKE) --no-print-directory ax AX_ARGS=build
 
 wire-codec-test: build
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \
@@ -216,8 +216,8 @@ fuzz-long:
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
 		Tests/Fuzzing/run-fuzz.sh
 
-test-wire: resolve
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter "WireFixtureTests|LegacyCaptureFixtureTests|CoatyJs.*CaptureTests|LifecycleCompatibilityScenarioTests|AxolotyIoAssociateTests|AxolotyIoNegativeTests"
+test-wire:
+	@$(MAKE) --no-print-directory ax AX_ARGS='wire verify'
 
 # Harness self-tests intentionally remain host-side Shell/JavaScript checks.
 test-support:
@@ -275,9 +275,7 @@ embedded-reproducible-build:
 	.devcontainer/run.sh /workspace/Tests/Support/embedded-reproducible-build.sh
 
 embedded-swift-build:
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
-	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-	.devcontainer/run.sh /workspace/Tests/Support/build-embedded-swift.sh
+	@$(MAKE) --no-print-directory ax AX_ARGS='embedded build'
 
 embedded-swift-flash: embedded-swift-build
 	@CONTAINER_DEVICES=/dev/ttyACM0 \
@@ -298,9 +296,7 @@ embedded-swift-flash: embedded-swift-build
 	exit $$status
 
 check-embedded-swift-linker:
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
-	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-	.devcontainer/run.sh /workspace/Tests/Support/check-embedded-swift-linker.sh
+	@$(MAKE) --no-print-directory ax AX_ARGS='embedded verify'
 
 embedded-swift-reproducible-build:
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \

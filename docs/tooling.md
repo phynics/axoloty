@@ -2,8 +2,9 @@
 
 `ax` is Axoloty's typed command-line control plane. Its plans, process results,
 hardware outcomes, and JSON manifests are defined in Swift and tested with
-Swift Testing. The root Makefile remains a lightweight command index and Linux
-container bootstrap rather than a second orchestration implementation.
+Swift Testing. The principal root Make targets forward to `ax`; the Makefile
+also retains compatibility recipes for specialized evidence workflows that do
+not belong to the canonical offline check.
 
 ## Platform entry points
 

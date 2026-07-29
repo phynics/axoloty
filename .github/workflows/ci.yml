@@ -92,7 +92,8 @@ jobs:
         run: |
           mkdir -p .testing
           make check CONTAINER_RUNTIME=podman BUILD_DIR=.build BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache > .testing/ax-check-linux.json
-          make ci CONTAINER_RUNTIME=podman BUILD_DIR=.build COVERAGE_BUILD_DIR=.build BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache
+          make coverage-check CONTAINER_RUNTIME=podman BUILD_DIR=.build COVERAGE_BUILD_DIR=.build BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache
+          sh Tests/Support/check-decoder-context-diagnostic.sh .testing/coverage/build.log
 
       - name: Upload ax check manifests
         if: always()
