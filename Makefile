@@ -28,13 +28,15 @@ SWIFT_LOCKED_ARGS := $(SWIFT_CACHE_ARGS) --disable-automatic-resolution
 COMMA := ,
 AX_ARGS ?= --help
 AXOLOTY_DEVICE ?= /dev/ttyACM0
+AX_CONTAINER_OPTIONAL_DEVICES ?=
+AX_CONTAINER_ENV_VARS ?=
 
 # Hosting base path for static DocC output. Set this to the repository name
 # when publishing to a GitHub Pages project site (e.g. "axoloty" for
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm ax check hardware-check hardware-require test-ax build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-toolchain-doctor embedded-device-info embedded-device-smoke embedded-reproducible-build benchmark-size benchmark-wire benchmark-wire-bounds benchmark-wire-device check-budget-manifest check-embedded-swift check-embedded-swift-linker embedded-swift-build embedded-swift-flash
+.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm ax check hardware-check hardware-require release-snapshots test-ax build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-toolchain-doctor embedded-device-info embedded-device-smoke embedded-reproducible-build benchmark-size benchmark-wire benchmark-wire-bounds benchmark-wire-device check-budget-manifest check-embedded-swift check-embedded-swift-linker embedded-swift-build embedded-swift-flash
 
 help:
 	@printf '%s\n' \
@@ -46,6 +48,7 @@ help:
 		'make check         Run the initial broker-free ax check plan' \
 		'make hardware-check  Run or skip the sporadic ESP32-C6 smoke check' \
 		'make hardware-require  Require an attached ESP32-C6 smoke check' \
+		'make release-snapshots  Generate and verify a provenance-rich wire bundle' \
 		'make test-ax       Run the Swift tooling CLI tests' \
 		'make build         Build Axoloty in the Linux container' \
 	'make wire-codec-test  Run the Foundation-free wire codec unit tests' \
@@ -62,7 +65,7 @@ help:
 		'make fuzz-long     Run an auditable multi-seed fuzz campaign' \
 		'make test-fast     Run unit, module, fuzz, offline wire, and support self-tests' \
 		'make test-wire     Run offline wire fixtures and capture tests' \
-		'make test-support  Run Python/shell harness self-tests and tier validation' \
+		'make test-support  Run support harness self-tests and tier validation' \
 		'make test-observation-linux  Run Observation and Broadcast tests on Linux' \
 		'make coverage      Run tests with code coverage and report Source/ coverage' \
 		'make coverage-check  Run coverage and fail if it regresses the baseline' \
@@ -116,24 +119,32 @@ worktree-warm: worktree-bootstrap build
 ax:
 	@$(MAKE) resolve >&2
 	@CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift build $(SWIFT_LOCKED_ARGS) --product ax >&2
-	@CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift run $(SWIFT_LOCKED_ARGS) --skip-build ax $(AX_ARGS)
+	@CONTAINER_OPTIONAL_DEVICES="$(AX_CONTAINER_OPTIONAL_DEVICES)" CONTAINER_ENV_VARS="$(AX_CONTAINER_ENV_VARS)" \
+		CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+		.devcontainer/run.sh swift run $(SWIFT_LOCKED_ARGS) --skip-build ax $(AX_ARGS)
 
 check:
 	@$(MAKE) --no-print-directory ax AX_ARGS=check
 
 hardware-check:
-	@$(MAKE) resolve >&2
-	@CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift build $(SWIFT_LOCKED_ARGS) --product ax >&2
-	@CONTAINER_OPTIONAL_DEVICES="$(AXOLOTY_DEVICE)" CONTAINER_ENV_VARS="AXOLOTY_DEVICE" AXOLOTY_DEVICE="$(AXOLOTY_DEVICE)" \
-		CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-		.devcontainer/run.sh swift run $(SWIFT_LOCKED_ARGS) --skip-build ax hardware check
+	@$(MAKE) --no-print-directory ax AX_ARGS='hardware check' \
+		AX_CONTAINER_OPTIONAL_DEVICES='$(AXOLOTY_DEVICE)' AX_CONTAINER_ENV_VARS='AXOLOTY_DEVICE' \
+		AXOLOTY_DEVICE='$(AXOLOTY_DEVICE)'
 
 hardware-require:
-	@$(MAKE) resolve >&2
-	@CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift build $(SWIFT_LOCKED_ARGS) --product ax >&2
-	@CONTAINER_OPTIONAL_DEVICES="$(AXOLOTY_DEVICE)" CONTAINER_ENV_VARS="AXOLOTY_DEVICE" AXOLOTY_DEVICE="$(AXOLOTY_DEVICE)" \
-		CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-		.devcontainer/run.sh swift run $(SWIFT_LOCKED_ARGS) --skip-build ax hardware require
+	@$(MAKE) --no-print-directory ax AX_ARGS='hardware require' \
+		AX_CONTAINER_OPTIONAL_DEVICES='$(AXOLOTY_DEVICE)' AX_CONTAINER_ENV_VARS='AXOLOTY_DEVICE' \
+		AXOLOTY_DEVICE='$(AXOLOTY_DEVICE)'
+
+release-snapshots:
+	@AXOLOTY_IMAGE_IDENTITY="$$( $(CONTAINER_RUNTIME) image inspect --format '{{.Id}}' "$(IMAGE)" )"; \
+		AXOLOTY_GIT_COMMIT="$$(git rev-parse HEAD)"; \
+		if test -z "$$(git status --porcelain)"; then AXOLOTY_GIT_CLEAN=true; else AXOLOTY_GIT_CLEAN=false; fi; \
+		export AXOLOTY_IMAGE_IDENTITY AXOLOTY_GIT_COMMIT AXOLOTY_GIT_CLEAN; \
+		$(MAKE) --no-print-directory ax AX_ARGS='release snapshots' \
+			AX_CONTAINER_ENV_VARS='AXOLOTY_IMAGE_IDENTITY AXOLOTY_GIT_COMMIT AXOLOTY_GIT_CLEAN' \
+			AXOLOTY_IMAGE_IDENTITY="$$AXOLOTY_IMAGE_IDENTITY" AXOLOTY_GIT_COMMIT="$$AXOLOTY_GIT_COMMIT" \
+			AXOLOTY_GIT_CLEAN="$$AXOLOTY_GIT_CLEAN"
 
 test-ax: resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter AxolotyToolingTests
@@ -208,7 +219,7 @@ fuzz-long:
 test-wire: resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter "WireFixtureTests|LegacyCaptureFixtureTests|CoatyJs.*CaptureTests|LifecycleCompatibilityScenarioTests|AxolotyIoAssociateTests|AxolotyIoNegativeTests"
 
-# Harness self-tests intentionally remain host-side Python/shell checks.
+# Harness self-tests intentionally remain host-side Shell/JavaScript checks.
 test-support:
 	Tests/Support/test-check-axoloty-wire-dependencies.sh
 	Tests/Support/test-check-axoloty-wire-independent-resolution.sh

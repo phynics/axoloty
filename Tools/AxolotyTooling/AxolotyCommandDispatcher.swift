@@ -74,6 +74,8 @@ public struct AxolotyCommandDispatcher: Sendable {
             Self.planResult()
         case ["check"]:
             checkResult()
+        case ["build"]:
+            checkResult(requested: ["build"])
         case ["test", "offline"]:
             checkResult()
         case ["wire", "verify"]:
@@ -82,6 +84,8 @@ public struct AxolotyCommandDispatcher: Sendable {
             checkResult(requested: ["embedded-build"])
         case ["embedded", "verify"]:
             checkResult(requested: ["embedded-linker"])
+        case ["release", "snapshots"]:
+            releaseSnapshotsResult()
         case ["hardware", "check"]:
             hardwareResult(required: false, device: nil)
         case ["hardware", "require"]:
@@ -106,12 +110,14 @@ public struct AxolotyCommandDispatcher: Sendable {
       version, --version   Show the CLI version.
       check --plan         Print the initial offline check plan as JSON.
       check                Run the initial offline check plan and print JSON.
+      build                Build the host package and its prerequisites.
       test offline         Run the same offline plan as check.
       wire verify          Verify wire fixtures directly without MQTT.
       embedded build       Cross-compile the ESP32-C6 firmware on Linux.
       embedded verify      Build and verify the ESP32-C6 linker contract.
       hardware check       Run or skip the sporadic hardware smoke check.
       hardware require     Require an attached device and run its smoke check.
+      release snapshots    Generate and verify a provenance-rich wire bundle.
         --device PATH      Override AXOLOTY_DEVICE (default: /dev/ttyACM0).
 
     The initial command surface is intentionally small. Workflow commands are
@@ -141,9 +147,35 @@ public struct AxolotyCommandDispatcher: Sendable {
             let plan = try AxolotyCheckPlanner().plan(availablePlan.nodes, requested: requested)
             let results = AxolotyCheckExecutor(commandRunner: commandRunner).execute(plan)
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
-            return try Self.jsonResult(results, exitCode: exitCode)
+            return try Self.jsonResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
         } catch {
             return AxolotyCommandResult(standardError: "error: unable to plan checks\n", exitCode: 70)
+        }
+    }
+
+    private func releaseSnapshotsResult() -> AxolotyCommandResult {
+        do {
+            let source = environment["AXOLOTY_SNAPSHOT_SOURCE"] ?? "Tests/WireCompatibility/Fixtures"
+            let destination = environment["AXOLOTY_SNAPSHOT_OUTPUT"] ?? ".testing/release-snapshots"
+            let forwardedEnvironment = ["AXOLOTY_IMAGE_IDENTITY", "AXOLOTY_GIT_COMMIT", "AXOLOTY_GIT_CLEAN"]
+                .reduce(into: [String: String]()) { values, name in
+                    values[name] = environment[name]
+                }
+            let plan = try AxolotyCheckPlanner().plan(
+                AxolotyCheckPlan.releaseSnapshots(
+                    source: source,
+                    destination: destination,
+                    environment: forwardedEnvironment
+                ).nodes
+            )
+            let results = AxolotyCheckExecutor(commandRunner: commandRunner).execute(plan)
+            let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
+            return try Self.jsonResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
+        } catch {
+            return AxolotyCommandResult(
+                standardError: "error: unable to generate release snapshots\n",
+                exitCode: 70
+            )
         }
     }
 

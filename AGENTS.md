@@ -36,6 +36,9 @@ Roadmap Project remain authoritative for scope and status.
 - Physical ESP32-C6 checks are sporadic and opt-in. Ordinary checks must not
   probe, reserve, flash, or request privileges for a device. `hardware check`
   skips successfully when absent; `hardware require` fails when absent.
+- Release wire evidence is generated with `make release-snapshots` on Linux or
+  `ax release snapshots` on macOS. Keep generated bundles under `.testing/`;
+  only reviewed stable fixtures belong in source control.
 
 ## GitHub-centered planning workflow
 

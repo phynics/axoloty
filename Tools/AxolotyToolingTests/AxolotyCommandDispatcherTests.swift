@@ -50,8 +50,12 @@ func checkPlanPrintsStableJSON() {
     #expect(plan?.nodes.map(\.name) == [
         "resolve", "build", "lint", "test-ax", "test-unit", "test-module",
         "test-fuzz", "test-wire", "no-anycodable", "no-foundation-wire",
-        "wire-dependencies", "wire-independent-resolution", "embedded-build",
-        "embedded-linker",
+        "wire-dependencies", "wire-independent-resolution", "support-wire-dependencies",
+        "support-wire-resolution", "support-wire-isolation", "support-benchmark-corpus",
+        "support-benchmark-size", "support-benchmark-wire", "support-benchmark-bounds",
+        "support-budget-manifest", "support-container", "support-fuzz-runner",
+        "support-node-tests", "support-tier-contract", "support-embedded-compile",
+        "support-embedded-smoke", "embedded-build", "embedded-linker",
     ])
 }
 
@@ -102,10 +106,11 @@ func wireVerifyRunsOnlyItsDependencyClosure() throws {
     )
 
     let result = dispatcher.run(arguments: ["wire", "verify"])
-    let checks = try JSONDecoder().decode([AxolotyCheckResult].self, from: Data(result.standardOutput.utf8))
+    let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
 
     #expect(result.exitCode == 0)
-    #expect(checks.map(\.name) == ["resolve", "build", "test-ax", "test-wire"])
+    #expect(manifest.schemaVersion == 1)
+    #expect(manifest.results.map(\.name) == ["resolve", "build", "test-ax", "test-wire"])
 }
 
 @Test
@@ -117,8 +122,44 @@ func testOfflineUsesTheCheckPlan() throws {
     )
 
     let result = dispatcher.run(arguments: ["test", "offline"])
-    let checks = try JSONDecoder().decode([AxolotyCheckResult].self, from: Data(result.standardOutput.utf8))
+    let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
 
     #expect(result.exitCode == 0)
-    #expect(checks.map(\.name) == AxolotyCheckPlan.initialOffline.nodes.map(\.name))
+    #expect(manifest.results.map(\.name) == AxolotyCheckPlan.initialOffline.nodes.map(\.name))
+}
+
+@Test
+func releaseSnapshotsGenerateThenVerifyConfiguredBundle() throws {
+    let runner = RecordingSequenceRunner()
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: runner,
+        fileSystem: StubFileSystem(paths: []),
+        environment: [
+            "AXOLOTY_SNAPSHOT_SOURCE": "fixtures",
+            "AXOLOTY_SNAPSHOT_OUTPUT": "artifacts",
+            "AXOLOTY_IMAGE_IDENTITY": "sha256:test",
+            "AXOLOTY_GIT_COMMIT": "abc123",
+            "AXOLOTY_GIT_CLEAN": "true",
+        ]
+    )
+
+    let result = dispatcher.run(arguments: ["release", "snapshots"])
+    let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
+
+    #expect(result.exitCode == 0)
+    #expect(manifest.results.map(\.name) == ["release-snapshots-generate", "release-snapshots-verify"])
+    #expect(runner.commands.map(\.arguments) == [
+        ["Tests/Support/release-snapshots.mjs", "generate", "fixtures", "artifacts"],
+        ["Tests/Support/release-snapshots.mjs", "verify", "artifacts"],
+    ])
+    #expect(runner.commands.first?.environment["AXOLOTY_IMAGE_IDENTITY"] == "sha256:test")
+    #expect(runner.commands.first?.environment["AXOLOTY_GIT_COMMIT"] == "abc123")
+}
+
+private final class RecordingSequenceRunner: AxolotyCheckCommandRunning, @unchecked Sendable {
+    var commands: [AxolotyCommandPlan] = []
+    func run(_ command: AxolotyCommandPlan) -> AxolotyCheckCommandResult {
+        commands.append(command)
+        return AxolotyCheckCommandResult(exitCode: 0)
+    }
 }

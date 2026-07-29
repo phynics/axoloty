@@ -90,11 +90,14 @@ public struct AxolotyCheckResult: Codable, Equatable, Sendable {
 
 /// A deterministic collection of check nodes in execution order.
 public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
+    /// The plan schema version.
+    public let schemaVersion: Int
     /// Nodes ordered so every prerequisite precedes its dependants.
     public let nodes: [AxolotyCheckNode]
 
     /// Creates a check plan.
-    public init(nodes: [AxolotyCheckNode]) {
+    public init(schemaVersion: Int = 1, nodes: [AxolotyCheckNode]) {
+        self.schemaVersion = schemaVersion
         self.nodes = nodes
     }
 
@@ -139,13 +142,98 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
         AxolotyCheckNode(name: "wire-dependencies", command: AxolotyCommandPlan(executable: "sh", arguments: ["Tests/Support/check-axoloty-wire-dependencies.sh", "Packages/AxolotyWire"])),
         AxolotyCheckNode(name: "wire-independent-resolution", command: AxolotyCommandPlan(executable: "Tests/Support/check-axoloty-wire-independent-resolution.sh")),
         ]
+        let supportSelfTests = [
+            ("support-wire-dependencies", "Tests/Support/test-check-axoloty-wire-dependencies.sh"),
+            ("support-wire-resolution", "Tests/Support/test-check-axoloty-wire-independent-resolution.sh"),
+            ("support-wire-isolation", "Tests/Support/test-check-axoloty-wire-test-isolation.sh"),
+            ("support-benchmark-corpus", "Tests/Support/test-check-benchmark-corpus.sh"),
+            ("support-benchmark-size", "Tests/Support/test-check-benchmark-size.sh"),
+            ("support-benchmark-wire", "Tests/Support/test-check-benchmark-wire.sh"),
+            ("support-benchmark-bounds", "Tests/Support/test-check-benchmark-wire-bounds.sh"),
+            ("support-budget-manifest", "Tests/Support/test-check-budget-manifest.sh"),
+            ("support-container", "Tests/Support/test-run-container.sh"),
+            ("support-fuzz-runner", "Tests/Fuzzing/test-run-fuzz.sh"),
+        ]
+        nodes += supportSelfTests.map { name, executable in
+            AxolotyCheckNode(name: name, command: AxolotyCommandPlan(executable: executable))
+        }
+        nodes.append(AxolotyCheckNode(
+            name: "support-node-tests",
+            command: AxolotyCommandPlan(executable: "node", arguments: [
+                "--test",
+                "Tests/Support/coverage-tools.test.mjs",
+                "Tests/Support/fuzz-summary.test.mjs",
+                "Tests/Support/patch-swift-got.test.mjs",
+                "Tests/Support/release-snapshots.test.mjs",
+                "Tests/Support/serial-tools.test.mjs",
+                "Tests/Support/validate-test-tiers.test.mjs",
+                "Tests/Support/work-plan-issue-form.test.mjs",
+            ])
+        ))
+        nodes.append(AxolotyCheckNode(
+            name: "support-tier-contract",
+            dependencies: ["support-node-tests"],
+            command: AxolotyCommandPlan(
+                executable: "node",
+                arguments: ["Tests/Support/validate-test-tiers.mjs", "Tests/Support/test-tiers.json"]
+            )
+        ))
         if platform == .linux {
             nodes += [
+                AxolotyCheckNode(name: "support-embedded-compile", command: AxolotyCommandPlan(executable: "Tests/Support/test-check-embedded-swift.sh")),
+                AxolotyCheckNode(name: "support-embedded-smoke", command: AxolotyCommandPlan(executable: "Tests/Support/test-embedded-swift-smoke.sh")),
                 AxolotyCheckNode(name: "embedded-build", dependencies: ["build"], command: AxolotyCommandPlan(executable: "Tests/Support/build-embedded-swift.sh")),
                 AxolotyCheckNode(name: "embedded-linker", dependencies: ["embedded-build"], command: AxolotyCommandPlan(executable: "Tests/Support/check-embedded-swift-linker.sh")),
             ]
         }
         return AxolotyCheckPlan(nodes: nodes)
+    }
+
+    /// Creates the release snapshot generation and offline verification plan.
+    public static func releaseSnapshots(
+        source: String = "Tests/WireCompatibility/Fixtures",
+        destination: String = ".testing/release-snapshots",
+        environment: [String: String] = [:]
+    ) -> AxolotyCheckPlan {
+        AxolotyCheckPlan(nodes: [
+            AxolotyCheckNode(
+                name: "release-snapshots-generate",
+                command: AxolotyCommandPlan(
+                    executable: "node",
+                    arguments: ["Tests/Support/release-snapshots.mjs", "generate", source, destination],
+                    environment: environment
+                )
+            ),
+            AxolotyCheckNode(
+                name: "release-snapshots-verify",
+                dependencies: ["release-snapshots-generate"],
+                command: AxolotyCommandPlan(
+                    executable: "node",
+                    arguments: ["Tests/Support/release-snapshots.mjs", "verify", destination]
+                )
+            ),
+        ])
+    }
+}
+
+/// A versioned machine-readable result from an ``ax`` check plan.
+public struct AxolotyCheckManifest: Codable, Equatable, Sendable {
+    /// The result schema version.
+    public let schemaVersion: Int
+    /// The platform whose plan was executed.
+    public let platform: AxolotyCheckPlan.Platform
+    /// Results in deterministic plan order.
+    public let results: [AxolotyCheckResult]
+
+    /// Creates a check manifest.
+    public init(
+        schemaVersion: Int = 1,
+        platform: AxolotyCheckPlan.Platform = AxolotyCheckPlan.currentPlatform,
+        results: [AxolotyCheckResult]
+    ) {
+        self.schemaVersion = schemaVersion
+        self.platform = platform
+        self.results = results
     }
 }
 

@@ -40,7 +40,9 @@ RUN chmod 1777 /tmp \
         libcurl4-openssl-dev \
         libssl-dev \
         git \
+        make \
         pkg-config \
+        ripgrep \
         mosquitto \
         curl \
         unzip \

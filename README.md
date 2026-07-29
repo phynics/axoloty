@@ -90,15 +90,16 @@ make worktree-bootstrap  # resolve dependencies into the shared SwiftPM cache
 make check               # Linux: offline host, wire, and embedded checks
 make hardware-check      # run or skip the sporadically attached ESP32-C6
 make hardware-require    # require the ESP32-C6 for an explicit release gate
+make release-snapshots   # produce and verify provenance-rich wire evidence
 
 # macOS
 swift package resolve --cache-path .swiftpm-cache
 swift run --cache-path .swiftpm-cache --disable-automatic-resolution ax check
 ```
 
-Focused legacy Make targets remain available while their implementation moves
-behind `ax`. See [`docs/tooling.md`](docs/tooling.md) for command tiers,
-platform behavior, cache policy, and structured results.
+Focused compatibility Make targets remain available for specialized workflows.
+See [`docs/tooling.md`](docs/tooling.md) for command tiers, platform behavior,
+cache policy, release evidence, and structured results.
 
 Worktrees keep separate locked mutable build directories under
 `/tmp/coaty-swift-build/`, scoped by repository, Swift toolchain, and worktree.

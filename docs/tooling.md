@@ -13,6 +13,7 @@ Linux product and ESP-IDF work is containerized:
 make check
 make ax AX_ARGS='wire verify'
 make hardware-check
+make release-snapshots
 ```
 
 macOS uses its pinned native Swift toolchain:
@@ -36,6 +37,7 @@ plan starts MQTT or accesses hardware.
 | `ax embedded verify` | no | no | Build plus linker contract verification |
 | `ax hardware check` | no | optional | Run when attached; otherwise structured skip |
 | `ax hardware require` | no | required | Explicit device/release gate |
+| `ax release snapshots` | no | no | Generate and verify an immutable wire bundle |
 
 Broker-backed transport, live CoatyJS capture, coverage, and long fuzz campaigns
 retain focused Make targets while their existing evidence contracts remain in
@@ -45,10 +47,10 @@ transport behavior.
 ## Structured output
 
 `ax` writes its result JSON to standard output and child/bootstrap diagnostics
-to standard error. A check result records the stable node name, status, exit
-code, and captured streams. Failed prerequisites cause dependent nodes to be
-reported as skipped while independent nodes continue, so a single invocation
-describes the complete planned pass.
+to standard error. Check output uses schema version 1 and records the platform,
+stable node names, statuses, exit codes, and captured streams. Failed
+prerequisites cause dependent nodes to be reported as skipped while independent
+nodes continue, so a single invocation describes the complete planned pass.
 
 Hardware results record `passed`, `skipped`, or `failed`, the selected device
 path, and a reason. `hardware check` returns success for an absent device;
@@ -67,6 +69,16 @@ per-worktree `BUILD_DIR` and are guarded by a process-aware `flock` unless isola
 `BUILD_LOCK=0`. CI always uses workspace-local mutable directories. Generated
 evidence that must survive a run belongs under `.testing/`, never only in
 volatile `/tmp`.
+
+## Release snapshots
+
+`ax release snapshots` copies the reviewed wire captures into
+`.testing/release-snapshots`, records byte hashes, scenario and reference-agent
+metadata, normalization profiles, repository/toolchain/image provenance, and
+then verifies the bundle without MQTT. `AXOLOTY_SNAPSHOT_SOURCE` and
+`AXOLOTY_SNAPSHOT_OUTPUT` override the source and destination for a release
+workflow. The bundle is generated evidence; stable fixtures enter source
+control only through normal review and the compatibility-matrix policy.
 
 ## Adding tooling
 

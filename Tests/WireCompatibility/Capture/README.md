@@ -40,6 +40,13 @@ its manifest records producer/reference version, scenario, normalization
 profile, and content hashes. Release workflows should retain raw capture and
 manifest artifacts rather than relying on prose or screenshots.
 
+Generate a release evidence bundle with `make release-snapshots` on Linux or
+`swift run --cache-path .swiftpm-cache ax release snapshots` on macOS. The
+generated `.testing/release-snapshots/manifest.json` records SHA-256 content
+hashes, producer/scenario metadata, normalization profiles, and repository,
+toolchain, and image provenance. Generation immediately performs an offline
+hash and metadata verification pass.
+
 The probe supports QoS 0 and 1 subscriptions. Coaty compatibility scenarios
 currently need no QoS 2 handshake; the probe fails explicitly if one is
 received instead of producing a misleading partial capture.
