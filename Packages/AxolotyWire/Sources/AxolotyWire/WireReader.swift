@@ -101,7 +101,7 @@ public struct WireReader {
     /// Reads a string field, returning the value bytes (without quotes).
     public func readString(_ key: StaticString) -> ByteSlice? {
         guard let slice = readField(key) else { return nil }
-        return slice
+        return hasValidEscapes(slice) && hasValidUTF8(slice) ? slice : nil
     }
 
     /// Reads a UUID field, returning a fixed 16-byte UUID.
@@ -177,10 +177,68 @@ public struct WireReader {
         return true
     }
 
+    /// Validates JSON escape sequences in a borrowed string slice.
+    private func hasValidEscapes(_ slice: ByteSlice) -> Bool {
+        var index = 0
+        while index < slice.length {
+            guard let byte = slice.byte(at: index), byte >= 0x20 else { return false }
+            guard byte == 0x5C else {
+                index += 1
+                continue
+            }
+            index += 1
+            guard let escaped = slice.byte(at: index) else { return false }
+            switch escaped {
+            case 0x22, 0x5C, 0x2F, 0x62, 0x66, 0x6E, 0x72, 0x74:
+                index += 1
+            case 0x75:
+                guard index + 4 < slice.length else { return false }
+                for offset in 1...4 {
+                    guard let hex = slice.byte(at: index + offset),
+                          (hex >= 0x30 && hex <= 0x39) ||
+                          (hex >= 0x41 && hex <= 0x46) ||
+                          (hex >= 0x61 && hex <= 0x66)
+                    else { return false }
+                }
+                index += 5
+            default:
+                return false
+            }
+        }
+        return true
+    }
+
+    /// Validates that a borrowed string slice contains well-formed UTF-8.
+    private func hasValidUTF8(_ slice: ByteSlice) -> Bool {
+        var index = 0
+        while index < slice.length {
+            guard let lead = slice.byte(at: index) else { return false }
+            if lead < 0x80 {
+                index += 1
+                continue
+            }
+            let continuationCount: Int
+            switch lead {
+            case 0xC2...0xDF: continuationCount = 1
+            case 0xE0...0xEF: continuationCount = 2
+            case 0xF0...0xF4: continuationCount = 3
+            default: return false
+            }
+            guard index + continuationCount < slice.length else { return false }
+            for offset in 1...continuationCount {
+                guard let continuation = slice.byte(at: index + offset),
+                      continuation >= 0x80, continuation <= 0xBF
+                else { return false }
+            }
+            index += continuationCount + 1
+        }
+        return true
+    }
+
     /// Reads a JSON value starting at `pos` and advances `pos` past it.
     /// Returns the value bytes (for strings, without quotes).
-    private func readValue(at pos: inout Int) -> ByteSlice {
-        guard pos < length else { return ByteSlice(pointer: bytes.advanced(by: pos), length: 0) }
+    private func readValue(at pos: inout Int) -> ByteSlice? {
+        guard pos < length else { return nil }
         let b = bytes.load(fromByteOffset: pos, as: UInt8.self)
 
         switch b {
@@ -189,10 +247,15 @@ public struct WireReader {
             let start = pos
             while pos < length {
                 let c = bytes.load(fromByteOffset: pos, as: UInt8.self)
-                if c == 0x5C { pos += 2; continue } // escape
+                if c == 0x5C {
+                    guard pos + 1 < length else { return nil }
+                    pos += 2
+                    continue
+                }
                 if c == 0x22 { break } // closing quote
                 pos += 1
             }
+            guard pos < length else { return nil }
             let end = pos
             pos += 1 // skip closing quote
             return ByteSlice(pointer: bytes.advanced(by: start), length: end - start)

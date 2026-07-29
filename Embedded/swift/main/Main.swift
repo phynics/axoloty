@@ -4,7 +4,7 @@
 //
 // Runs AxolotyWire test vectors on-device using the real Swift wire codec.
 // Emits structured JSON Lines records over serial. The host harness parses
-// these records and validates pass/fail counts.
+// these records and validates their evidence chain.
 //
 // Success is NEVER emitted before all checks complete.
 
@@ -12,10 +12,15 @@ import AxolotyWire
 
 @_cdecl("app_main")
 func app_main() -> Int32 {
-    axoloty_print("{\"phase\":\"boot\",\"status\":\"started\"}\n")
-
+    let schemaVersion: UInt32 = 1
+    let runId: StaticString = "embedded-swift-smoke-v1"
+    var sequence: UInt32 = 0
+    var rollingChecksum: UInt32 = 0
     var passed: UInt32 = 0
     var failed: UInt32 = 0
+    let networkRole = axoloty_network_role()
+    let networkScenario = axoloty_network_scenario()
+    var emittingExchangeEvidence = false
 
     @inline(__always)
     func printStatic(_ value: StaticString) {
@@ -25,17 +30,132 @@ func app_main() -> Int32 {
     }
 
     @inline(__always)
+    func mix(_ hash: UInt32, _ byte: UInt8) -> UInt32 {
+        (hash ^ UInt32(byte)) &* 16777619
+    }
+
+    @inline(__always)
+    func mix(_ hash: UInt32, _ value: StaticString) -> UInt32 {
+        var result = hash
+        let bytes = value.utf8Start
+        for index in 0..<value.utf8CodeUnitCount {
+            result = mix(result, UInt8(bytes[index]))
+        }
+        return result
+    }
+
+    @inline(__always)
+    func mix(_ hash: UInt32, _ value: UInt32) -> UInt32 {
+        var result = hash
+        result = mix(result, UInt8(truncatingIfNeeded: value))
+        result = mix(result, UInt8(truncatingIfNeeded: value >> 8))
+        result = mix(result, UInt8(truncatingIfNeeded: value >> 16))
+        result = mix(result, UInt8(truncatingIfNeeded: value >> 24))
+        return result
+    }
+
+    @inline(__always)
+    func nextChecksum(_ caseId: StaticString, _ operation: StaticString,
+                      _ status: StaticString, _ prior: UInt32,
+                      _ currentSequence: UInt32, _ currentPassed: UInt32 = 0,
+                      _ currentFailed: UInt32 = 0) -> UInt32 {
+        var result: UInt32 = 2166136261
+        result = mix(result, schemaVersion)
+        result = mix(result, runId)
+        result = mix(result, currentSequence)
+        result = mix(result, caseId)
+        result = mix(result, operation)
+        result = mix(result, status)
+        result = mix(result, currentPassed)
+        result = mix(result, currentFailed)
+        return mix(result, prior)
+    }
+
+    @inline(__always)
+    func printPrefix(_ caseId: StaticString, _ operation: StaticString,
+                     _ status: StaticString, _ checksum: UInt32) {
+        axoloty_print("{\"schemaVersion\":1,\"runId\":\"")
+        printStatic(runId)
+        axoloty_print("\",\"sequence\":")
+        axoloty_print_uint("", sequence)
+        axoloty_print(",\"caseId\":\"")
+        printStatic(caseId)
+        axoloty_print("\",\"operation\":\"")
+        printStatic(operation)
+        axoloty_print("\",\"status\":\"")
+        printStatic(status)
+        axoloty_print("\",\"checksum\":")
+        axoloty_print_uint("", checksum)
+    }
+
+    rollingChecksum = nextChecksum("boot", "boot", "started", 0, sequence)
+    printPrefix("boot", "boot", "started", rollingChecksum)
+    axoloty_print("}\n")
+    sequence &+= 1
+    vTaskDelay(1)
+
+    @inline(__always)
     func record(_ name: StaticString, _ ok: Bool) {
+        if networkRole != 0 && !emittingExchangeEvidence { return }
+        let status: StaticString = ok ? "passed" : "failed"
+        let checksum = nextChecksum(name, "smokeCheck", status, rollingChecksum, sequence)
+        printPrefix(name, "smokeCheck", status, checksum)
+        axoloty_print("}\n")
+        vTaskDelay(1)
+        rollingChecksum = checksum
+        sequence &+= 1
         if ok {
             passed &+= 1
-            axoloty_print("{\"test\":\"")
-            printStatic(name)
-            axoloty_print("\",\"status\":\"passed\"}\n")
         } else {
             failed &+= 1
-            axoloty_print("{\"test\":\"")
-            printStatic(name)
-            axoloty_print("\",\"status\":\"failed\"}\n")
+        }
+    }
+
+    // Vector checks deliberately use the production APIs and fixed storage.
+    // The identifiers below are also the stable corpus consumed by the host
+    // validator; keep additions deterministic and grouped by category.
+    @inline(__always)
+    func reader(_ payload: StaticString) -> WireReader {
+        WireReader(bytes: payload.utf8Start, length: payload.utf8CodeUnitCount)
+    }
+
+    @inline(__always)
+    func writeIntVector(_ id: StaticString, _ value: Int, _ expected: StaticString) {
+        try? withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 32) { storage in
+            var writer = WireWriter(buffer: storage.baseAddress!, capacity: storage.count)
+            var ok = (try? writer.writeInt(value)) != nil
+            if ok && writer.position == expected.utf8CodeUnitCount {
+                for index in 0..<writer.position where storage[index] != expected.utf8Start[index] { ok = false }
+            } else { ok = false }
+            record(id, ok)
+        }
+    }
+
+    @inline(__always)
+    func topicVector(_ id: StaticString, _ capacity: Int, _ suffix: StaticString, _ shouldFit: Bool) {
+        try? withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 129) { storage in
+            var builder = TopicBuilder(buffer: storage.baseAddress!, capacity: capacity)
+            var ok = (try? builder.writePrefix()) != nil
+            if ok { ok = (try? builder.writeNamespace("ns")) != nil }
+            if ok { ok = (try? builder.writeEventType(.advertise)) != nil }
+            if ok { ok = (try? builder.writeSourceId(UUID16.zero)) != nil }
+            if ok && suffix.utf8CodeUnitCount > 0 {
+                ok = (try? builder.writeCorrelationId(UUID16.zero)) != nil
+            }
+            record(id, ok == shouldFit)
+        }
+    }
+
+    @inline(__always)
+    func boundedVector(_ id: StaticString, _ topicLength: Int, _ payloadLength: Int, _ shouldFit: Bool) {
+        try? withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 513) { payload in
+            try? withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 130) { topic in
+                let ok = (try? BorrowedMessage.validated(
+                    topicBytes: topic.baseAddress!, topicLength: topicLength,
+                    payloadBytes: payload.baseAddress!, payloadLength: payloadLength
+                )) != nil
+                record(id, ok == shouldFit)
+            }
         }
     }
 
@@ -132,17 +252,275 @@ func app_main() -> Int32 {
     record("config:maxSubscribers8", WireBufferConfig.maxSubscribers == 8)
     record("config:maxFamilyEntries16", WireBufferConfig.maxFamilyEntries == 16)
 
-    // === Summary ===
+    // === Deterministic vector corpus ===
+    writeIntVector("writer:zero", 0, "0")
+    writeIntVector("writer:one", 1, "1")
+    writeIntVector("writer:minusOne", -1, "-1")
+    // ESP32-C6 Embedded Swift uses a 32-bit `Int`; keep these expectations
+    // target-specific so the device vector detects a width-dependent encoding.
+    writeIntVector("writer:max", Int.max, "2147483647")
+    writeIntVector("writer:min", Int.min, "-2147483648")
 
-    axoloty_print_uint("{\"tests\":{\"passed\":", passed)
-    axoloty_print_uint(",\"failed\":", failed)
-    axoloty_print("}}\n")
+    topicVector("topic:exact", 51, "", true)
+    topicVector("topic:underCapacity", 50, "", false)
+    topicVector("topic:overflow", 51, "corr", false)
+    boundedVector("capacity:payload0", 0, 0, true)
+    boundedVector("capacity:payload1", 0, 1, true)
+    boundedVector("capacity:payload511", 0, 511, true)
+    boundedVector("capacity:payload512", 0, 512, true)
+    boundedVector("capacity:payload513", 0, 513, false)
+    boundedVector("capacity:topic0", 0, 0, true)
+    boundedVector("capacity:topic1", 1, 0, true)
+    boundedVector("capacity:topic128", 128, 0, true)
+    boundedVector("capacity:topic129", 129, 0, false)
 
-    if failed == 0 {
-        axoloty_print("{\"phase\":\"smoke\",\"status\":\"completed\"}\n")
-    } else {
-        axoloty_print("{\"phase\":\"smoke\",\"status\":\"failed\"}\n")
+    record("malformed:truncation", reader(#"{"objectId":"33333333"#).readUUID("objectId") == nil)
+    record("malformed:corruption", reader(#"{"objectId":@}"#).readUUID("objectId") == nil)
+    withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 12) { bytes in
+        bytes[0] = 0x7B; bytes[1] = 0x22; bytes[2] = 0x6E; bytes[3] = 0x22
+        bytes[4] = 0x3A; bytes[5] = 0x22; bytes[6] = 0xFF; bytes[7] = 0x22
+        bytes[8] = 0x7D
+        record("malformed:utf8", WireReader(bytes: bytes.baseAddress!, length: 9).readString("n") == nil)
     }
+    record("malformed:escape", reader(#"{"name":"bad\q"}"#).readString("name") == nil)
+    record("malformed:literal", reader(#"{"value":tru}"#).readBool("value") == nil)
+    record("malformed:number", reader(#"{"value":1e}"#).readInt("value") == nil)
+    record("malformed:missing", reader(#"{"other":1}"#).readString("name") == nil)
+    record("malformed:unknown", reader(#"{"unknown":1}"#).readString("name") == nil)
+    record("malformed:duplicate", reader(#"{"name":1,"name":2}"#).readString("name") != nil)
+    record("malformed:reordered", reader(#"{"value":1,"name":"x"}"#).readString("name") != nil)
+    record("malformed:trailing", reader(#"{"value":1}x"#).readInt("value") != nil)
+    record("malformed:nesting", reader(#"{"value":{"x":[1,2]}}"#).readRaw("value") != nil)
+
+    withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 32) { payload in
+        let rawMessage = BorrowedMessage(topicBytes: payload.baseAddress!, topicLength: 0,
+                                         payloadBytes: payload.baseAddress!, payloadLength: 0)
+        record("borrowed:topicView", rawMessage.isRawTopic)
+        record("borrowed:reader", rawMessage.reader().length == 0)
+
+        let discoverTopic: StaticString = "coaty/3/ns/DSC/source-id/correlation-id"
+        let discoverMessage = BorrowedMessage(
+            topicBytes: discoverTopic.utf8Start,
+            topicLength: discoverTopic.utf8CodeUnitCount,
+            payloadBytes: payload.baseAddress!,
+            payloadLength: 0
+        )
+        let router = EmbeddedMessageRouter()
+        withUnsafeTemporaryAllocation(of: Bool.self, capacity: 1) { dispatched in
+            dispatched[0] = false
+            let dispatchedPointer = dispatched.baseAddress!
+            let token = router.subscribe(.discover) { _ in dispatchedPointer.pointee = true }
+            record("router:subscribe", token != nil)
+            router.dispatch(discoverMessage)
+            record("router:dispatch", dispatchedPointer.pointee)
+        }
+    }
+
+    // === Static Phase 4 device agent ===
+
+    var staticAgent = StaticDeviceAgent()
+    record("agent:identity", StaticDeviceAgent.agentId != .zero &&
+           StaticDeviceAgent.agentId != StaticDeviceAgent.deviceObjectId)
+
+    @inline(__always)
+    func agentVector(
+        _ id: StaticString,
+        topic: StaticString,
+        payload: StaticString,
+        expected: StaticDeviceDispatchResult
+    ) {
+        let message = try? BorrowedMessage.validated(
+            topicBytes: topic.utf8Start, topicLength: topic.utf8CodeUnitCount,
+            payloadBytes: payload.utf8Start, payloadLength: payload.utf8CodeUnitCount
+        )
+        record(id, message.map { staticAgent.dispatch($0) == expected } ?? false)
+    }
+
+    let expectedCorrelation = UUID16(bytes: (
+        0x32, 0x40, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00,
+        0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04
+    ))
+    agentVector(
+        "agent:advertise",
+        topic: "coaty/3/axoloty-embedded/ADV/32400000-0000-4000-8000-000000000003",
+        payload: "{\"object\":{\"objectId\":\"32400000-0000-4000-8000-000000000003\"}}",
+        expected: .advertise
+    )
+    let advertised = staticAgent.hasAdvertisedPeer
+    agentVector(
+        "agent:deadvertise",
+        topic: "coaty/3/axoloty-embedded/DAD/32400000-0000-4000-8000-000000000003",
+        payload: "{\"objectIds\":[\"32400000-0000-4000-8000-000000000003\"]}",
+        expected: .deadvertise
+    )
+    record("agent:advertisedState", advertised && !staticAgent.hasAdvertisedPeer)
+    agentVector(
+        "agent:discover",
+        topic: "coaty/3/axoloty-embedded/DSC/32400000-0000-4000-8000-000000000003/32400000-0000-4000-8000-000000000004",
+        payload: "{\"objectTypes\":[\"coaty.test.Device\"]}",
+        expected: .discover
+    )
+    agentVector(
+        "agent:discoverById",
+        topic: "coaty/3/axoloty-embedded/DSC/32400000-0000-4000-8000-000000000003/32400000-0000-4000-8000-000000000004",
+        payload: "{\"objectId\":\"32400000-0000-4000-8000-000000000002\"}",
+        expected: .discover
+    )
+    agentVector(
+        "agent:rejectWrongFilter",
+        topic: "coaty/3/axoloty-embedded/DSC/32400000-0000-4000-8000-000000000003/32400000-0000-4000-8000-000000000004",
+        payload: "{\"objectTypes\":[\"coaty.test.Other\"]}",
+        expected: .unsupported
+    )
+    staticAgent.beginDiscover(correlationId: expectedCorrelation)
+    agentVector(
+        "agent:wrongCorrelation",
+        topic: "coaty/3/axoloty-embedded/RSV/32400000-0000-4000-8000-000000000003/32400000-0000-4000-8000-000000000005",
+        payload: "{\"object\":{\"objectId\":\"32400000-0000-4000-8000-000000000003\"}}",
+        expected: .wrongCorrelation
+    )
+    agentVector(
+        "agent:resolve",
+        topic: "coaty/3/axoloty-embedded/RSV/32400000-0000-4000-8000-000000000003/32400000-0000-4000-8000-000000000004",
+        payload: "{\"object\":{\"objectId\":\"32400000-0000-4000-8000-000000000003\"}}",
+        expected: .resolve
+    )
+
+    let advertisePayload: StaticString = "{\"object\":{\"objectId\":\"32400000-0000-4000-8000-000000000003\"}}"
+    let advertiseData = try? AdvertiseWireData(from: WireReader(
+        bytes: advertisePayload.utf8Start, length: advertisePayload.utf8CodeUnitCount
+    ))
+    withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 128) { topicBuffer in
+        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 512) { payloadBuffer in
+            guard let advertiseData,
+                  let encoded = try? staticAgent.encode(
+                    advertiseData, eventType: .advertise, correlationId: nil,
+                    topicBuffer: topicBuffer.baseAddress!, topicCapacity: topicBuffer.count,
+                    payloadBuffer: payloadBuffer.baseAddress!, payloadCapacity: payloadBuffer.count
+                  ) else {
+                record("agent:fixedPublish", false)
+                return
+            }
+            let topic = TopicView(topicBytes: topicBuffer.baseAddress!, length: encoded.topicLength)
+            let decoded = try? AdvertiseWireData(from: WireReader(
+                bytes: payloadBuffer.baseAddress!, length: encoded.payloadLength
+            ))
+            record("agent:fixedPublish", topic.eventType == .advertise &&
+                   topic.sourceIdLevel.flatMap(UUID16.init(parsing:)) == StaticDeviceAgent.agentId &&
+                   decoded != nil && encoded.payloadLength <= WireBufferConfig.maxPayloadSize)
+        }
+    }
+    // === Generated 39-case benchmark corpus ===
+
+    runGeneratedCorpus(record)
+
+    // The ordinary vector image is deliberately credential-free. A dedicated
+    // network build supplies the C-owned configuration and appends evidence
+    // without changing the existing corpus or its counts.
+    if axoloty_network_configured() != 0 {
+        if networkRole == 0 {
+            let networkBits = axoloty_network_test(90_000)
+            let networkChecks: [(StaticString, UInt32)] = [
+                ("network:wifi", 1), ("network:ip", 2),
+                ("network:mqttConnect", 4), ("network:subscribe", 8),
+                ("network:publish", 16), ("network:receive", 32),
+                ("network:disconnect", 64),
+            ]
+            for (name, bit) in networkChecks { record(name, (networkBits & bit) != 0) }
+        } else {
+            emittingExchangeEvidence = true
+            let exchangeBits = axoloty_agent_test(90_000)
+            let exchangeChecks: [(StaticString, UInt32)] = networkScenario == 1 ? [
+                ("exchange:wifi", 1), ("exchange:ip", 2),
+                ("exchange:mqttConnect", 4), ("exchange:subscribe", 8),
+                ("exchange:reconnect", 512), ("exchange:advertise", 16),
+                ("exchange:deadvertise", 128), ("exchange:disconnect", 256),
+            ] : networkScenario == 2 ? [
+                ("exchange:wifi", 1), ("exchange:ip", 2),
+                ("exchange:mqttConnect", 4), ("exchange:subscribe", 8),
+                ("exchange:reconnect", 512), ("exchange:brokerReconnect", 1024),
+                ("exchange:advertise", 16), ("exchange:discover", 32),
+                ("exchange:resolve", 64), ("exchange:deadvertise", 128),
+                ("exchange:disconnect", 256),
+            ] : [
+                ("exchange:wifi", 1), ("exchange:ip", 2),
+                ("exchange:mqttConnect", 4), ("exchange:subscribe", 8),
+                ("exchange:reconnect", 512),
+                ("exchange:advertise", 16), ("exchange:discover", 32),
+                ("exchange:resolve", 64), ("exchange:deadvertise", 128),
+                ("exchange:disconnect", 256),
+            ]
+            for (name, bit) in exchangeChecks { record(name, (exchangeBits & bit) != 0) }
+        }
+    }
+
+    // Prove that a warmed corpus pass performs no heap allocation. The second
+    // pass suppresses serial output so the trace covers only AxolotyWire work.
+    var hotPathAllocations = UInt32.max
+    if axoloty_heap_trace_begin() != 0 {
+        runGeneratedCorpus { _, _ in }
+        hotPathAllocations = axoloty_heap_trace_end()
+    }
+    let benchmarkMetrics = benchmarkGeneratedCorpus()
+
+    // === Summary and completion ===
+
+    let summaryStatus: StaticString = failed == 0 ? "completed" : "failed"
+    rollingChecksum = nextChecksum("summary", "summary", summaryStatus,
+                                   rollingChecksum, sequence, passed, failed)
+    printPrefix("summary", "summary", summaryStatus, rollingChecksum)
+    axoloty_print(",\"counts\":{\"passed\":")
+    axoloty_print_uint("", passed)
+    axoloty_print(",\"failed\":")
+    axoloty_print_uint("", failed)
+    axoloty_print("}}\n")
+    sequence &+= 1
+
+    let completionChecksum = nextChecksum("completion", "complete", summaryStatus,
+                                          rollingChecksum, sequence, passed, failed)
+    printPrefix("completion", "complete", summaryStatus, completionChecksum)
+    axoloty_print(",\"counts\":{\"passed\":")
+    axoloty_print_uint("", passed)
+    axoloty_print(",\"failed\":")
+    axoloty_print_uint("", failed)
+    axoloty_print("},\"finalChecksum\":")
+    axoloty_print_uint("", completionChecksum)
+    axoloty_print(",\"metrics\":{\"freeInternalHeap\":")
+    axoloty_print_uint("", axoloty_free_internal_heap())
+    axoloty_print(",\"minimumFreeInternalHeap\":")
+    axoloty_print_uint("", axoloty_min_free_internal_heap())
+    axoloty_print(",\"largestInternalBlock\":")
+    axoloty_print_uint("", axoloty_largest_internal_block())
+    axoloty_print(",\"mainStackHighWater\":")
+    axoloty_print_uint("", axoloty_main_stack_high_water())
+    axoloty_print(",\"mainStackSize\":")
+    axoloty_print_uint("", axoloty_main_stack_size())
+    axoloty_print(",\"resetReason\":")
+    axoloty_print_uint("", axoloty_reset_reason())
+    axoloty_print(",\"hotPathAllocations\":")
+    axoloty_print_uint("", hotPathAllocations)
+    axoloty_print(",\"topicParseP50ns\":")
+    axoloty_print_uint("", benchmarkMetrics.topicParseP50ns)
+    axoloty_print(",\"topicParseP95ns\":")
+    axoloty_print_uint("", benchmarkMetrics.topicParseP95ns)
+    axoloty_print(",\"dtoDecodeP50ns\":")
+    axoloty_print_uint("", benchmarkMetrics.dtoDecodeP50ns)
+    axoloty_print(",\"dtoDecodeP95ns\":")
+    axoloty_print_uint("", benchmarkMetrics.dtoDecodeP95ns)
+    axoloty_print(",\"dtoEncodeP50ns\":")
+    axoloty_print_uint("", benchmarkMetrics.dtoEncodeP50ns)
+    axoloty_print(",\"dtoEncodeP95ns\":")
+    axoloty_print_uint("", benchmarkMetrics.dtoEncodeP95ns)
+    axoloty_print(",\"combinedP50ns\":")
+    axoloty_print_uint("", benchmarkMetrics.combinedP50ns)
+    axoloty_print(",\"combinedP95ns\":")
+    axoloty_print_uint("", benchmarkMetrics.combinedP95ns)
+    axoloty_print(",\"borrowedP50ns\":")
+    axoloty_print_uint("", benchmarkMetrics.borrowedP50ns)
+    axoloty_print(",\"borrowedP95ns\":")
+    axoloty_print_uint("", benchmarkMetrics.borrowedP95ns)
+    axoloty_print("}")
+    axoloty_print("}\n")
 
     vTaskDelay(1000)
     esp_restart()

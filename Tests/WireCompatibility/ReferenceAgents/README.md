@@ -28,8 +28,10 @@ podman run --rm --network host \
 
 The runner emits one JSON status record per line. `ready` means it has created
 the reference container; `published` identifies the deterministic fixture
-object; `done` means it shut down cleanly. The currently supported scenario is
-`advertise`. T-019 extends this runner with the live core matrix.
+object; `done` means it shut down cleanly. Supported scenarios include
+`advertise` plus the Phase 4 `embedded-requester` and `embedded-responder`
+modes. Those modes use pinned CoatyJS payload constructors and a raw QoS 0
+client to preserve the fixed embedded correlation vector.
 
 ## Legacy Swift constraint
 
