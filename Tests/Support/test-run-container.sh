@@ -50,11 +50,27 @@ mkdir -p "$fake_bin"
 cat > "$fake_bin/fake-sudo" <<'SH'
 #!/bin/sh
 if [ "$1" = "-n" ]; then shift; fi
-exec "$@"
+FAKE_RUNTIME_ROOTFUL=1 exec "$@"
 SH
-cat > "$fake_bin/fake-runtime" <<SH
+cat > "$fake_bin/fake-podman" <<SH
 #!/bin/sh
 printf '%s\n' "\$*" >> "$capture"
+if [ "\$1" = "image" ] && [ "\$2" = "inspect" ]; then
+    if [ "\${FAKE_RUNTIME_ROOTFUL:-0}" = "1" ]; then
+        printf '%s\n' "\${FAKE_RUNTIME_ROOTFUL_IMAGE_ID:-rootful-image}"
+    else
+        printf '%s\n' rootless-image
+    fi
+    exit 0
+fi
+if [ "\$1" = "save" ]; then
+    printf '%s' fake-image
+    exit 0
+fi
+if [ "\$1" = "load" ]; then
+    cat >/dev/null
+    exit 0
+fi
 while [ "\$#" -gt 0 ]; do
     if [ "\$1" = "--env-file" ]; then
         cp "\$2" "$capture_env"
@@ -63,11 +79,11 @@ while [ "\$#" -gt 0 ]; do
     shift
 done
 SH
-chmod +x "$fake_bin/fake-sudo" "$fake_bin/fake-runtime"
+chmod +x "$fake_bin/fake-sudo" "$fake_bin/fake-podman"
 device="$TEMP_DIR/device"
 : > "$device"
 SUDO_CANDIDATES="$fake_bin/fake-sudo" \
-CONTAINER_DEVICES="$device" CONTAINER_RUNTIME="$fake_bin/fake-runtime" \
+CONTAINER_DEVICES="$device" CONTAINER_RUNTIME="$fake_bin/fake-podman" \
 CONTAINER_ENV_VARS="EMBEDDED_SKIP_BUILD EMBEDDED_BUILD_DIR" \
 EMBEDDED_SKIP_BUILD=1 EMBEDDED_BUILD_DIR=/workspace/.build/embedded-swift \
 CONTAINER_RECLAIM_BUILD_DIR=1 BUILD_DIR="$build_dir" BUILD_LOCK=0 \
@@ -78,19 +94,40 @@ grep -q -- '--env-file ' "$capture"
 grep -qx -- 'EMBEDDED_SKIP_BUILD=1' "$capture_env"
 grep -qx -- 'EMBEDDED_BUILD_DIR=/workspace/.build/embedded-swift' "$capture_env"
 grep -q -- 'chown -R ' "$capture"
+grep -q -- 'save axoloty-dev' "$capture"
+grep -q -- 'load' "$capture"
+save_line=$(grep -n -- 'save axoloty-dev' "$capture" | cut -d: -f1)
+run_line=$(grep -n -m1 -- 'run --rm' "$capture" | cut -d: -f1)
+[[ "$save_line" -lt "$run_line" ]]
+
+# Matching rootless and rootful image IDs do not transfer the image again.
+: > "$capture"
+FAKE_RUNTIME_ROOTFUL_IMAGE_ID=rootless-image \
+SUDO_CANDIDATES="$fake_bin/fake-sudo" \
+CONTAINER_DEVICES="$device" CONTAINER_RUNTIME="$fake_bin/fake-podman" \
+BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+if grep -q -- 'save axoloty-dev\|load' "$capture"; then
+    echo "matching rootful image was transferred again" >&2
+    exit 1
+fi
 
 # Optional devices are forwarded when present and ignored when absent.
 : > "$capture"
 CONTAINER_OPTIONAL_DEVICES="$device $TEMP_DIR/absent-device" \
-CONTAINER_RUNTIME="$fake_bin/fake-runtime" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
     "$ROOT_DIR/.devcontainer/run.sh" true
 grep -q -- "--device $device" "$capture"
 if grep -q -- "$TEMP_DIR/absent-device" "$capture"; then
     echo "absent optional device was forwarded" >&2
     exit 1
 fi
+if grep -q -- 'save axoloty-dev\|load' "$capture"; then
+    echo "rootless optional-device run synchronized an image" >&2
+    exit 1
+fi
 
-if CONTAINER_RUNTIME="$fake_bin/fake-runtime" CONTAINER_ENV_VARS=1 \
+if CONTAINER_RUNTIME="$fake_bin/fake-podman" CONTAINER_ENV_VARS=1 \
     BUILD_DIR="$build_dir" BUILD_LOCK=0 \
     "$ROOT_DIR/.devcontainer/run.sh" true 2>/dev/null; then
     echo "expected an invalid container environment name to fail" >&2
