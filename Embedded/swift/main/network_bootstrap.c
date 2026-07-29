@@ -47,6 +47,7 @@ extern int32_t axoloty_static_agent_receive(
     uint8_t *output_topic, int32_t output_topic_capacity,
     uint8_t *output_payload, int32_t output_payload_capacity,
     int32_t *output_topic_length, int32_t *output_payload_length);
+extern int32_t axoloty_static_agent_expire(int32_t role);
 unsigned int axoloty_network_cleanup(void);
 
 static EventGroupHandle_t network_events;
@@ -690,6 +691,7 @@ unsigned int axoloty_agent_test(unsigned int overall_deadline_ms) {
     } else {
         while (network_deadline(overall_start, overall_deadline_ms) &&
                !(network_mqtt_bits & AGENT_DEADVERTISE_BIT)) {
+            axoloty_static_agent_expire(2);
             vTaskDelay(pdMS_TO_TICKS(20));
         }
         if (network_mqtt_bits & AGENT_ADVERTISE_BIT) result |= 16U;

@@ -8,6 +8,7 @@ enum StaticDeviceDispatchResult: Equatable {
     case discover
     case resolve
     case wrongCorrelation
+    case duplicateResolve
     case malformed
     case unsupported
 }
@@ -37,17 +38,43 @@ struct StaticDeviceAgent {
     let deviceObjectId: UUID16
     private(set) var hasAdvertisedPeer = false
     private var pendingCorrelation: UUID16?
+    private var pendingDeadlineMS: UInt32?
+    private var resolvedCorrelation: UUID16?
+
+    // A missing Resolve expires after five seconds; the C wait loop polls this
+    // synchronous state while the MQTT client remains connected.
+    private static let discoverTimeoutMS: UInt32 = 5_000
 
     init(agentId: UUID16 = Self.agentAId, deviceObjectId: UUID16 = Self.objectAId) {
         self.agentId = agentId
         self.deviceObjectId = deviceObjectId
     }
 
-    mutating func beginDiscover(correlationId: UUID16) {
+    /// Starts the one bounded outstanding Discover request.
+    ///
+    /// Returns `false` when a request is already awaiting a Resolve.
+    mutating func beginDiscover(correlationId: UUID16, nowMS: UInt32) -> Bool {
+        guard pendingCorrelation == nil else { return false }
         pendingCorrelation = correlationId
+        pendingDeadlineMS = nowMS &+ Self.discoverTimeoutMS
+        resolvedCorrelation = nil
+        return true
     }
 
-    mutating func dispatch(_ message: BorrowedMessage) -> StaticDeviceDispatchResult {
+    /// Expires the outstanding Discover once its deadline has passed.
+    ///
+    /// Time is supplied by the caller so this static router remains
+    /// deterministic and does not need an asynchronous task.
+    mutating func expireDiscover(nowMS: UInt32) -> Bool {
+        guard let deadlineMS = pendingDeadlineMS,
+              Int32(bitPattern: nowMS &- deadlineMS) >= 0 else { return false }
+        pendingCorrelation = nil
+        pendingDeadlineMS = nil
+        return true
+    }
+
+    mutating func dispatch(_ message: BorrowedMessage, nowMS: UInt32) -> StaticDeviceDispatchResult {
+        if expireDiscover(nowMS: nowMS), message.eventType == .resolve { return .wrongCorrelation }
         switch message.eventType {
         case .advertise:
             guard (try? AdvertiseWireData(from: message.reader())) != nil else { return .malformed }
@@ -69,11 +96,14 @@ struct StaticDeviceAgent {
             return .discover
         case .resolve:
             guard (try? ResolveWireData(from: message.reader())) != nil else { return .malformed }
-            guard let expected = pendingCorrelation,
-                  message.topic.correlationIdLevel.flatMap(UUID16.init(parsing:)) == expected else {
+            guard let correlationId = message.topic.correlationIdLevel.flatMap(UUID16.init(parsing:)) else {
                 return .wrongCorrelation
             }
+            if correlationId == resolvedCorrelation { return .duplicateResolve }
+            guard pendingCorrelation == correlationId else { return .wrongCorrelation }
             pendingCorrelation = nil
+            pendingDeadlineMS = nil
+            resolvedCorrelation = correlationId
             return .resolve
         case .none:
             return .malformed
@@ -112,6 +142,21 @@ private let phase4Correlation = UUID16(bytes: (
     0x32, 0x40, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00,
     0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04
 ))
+
+private var phase4AgentB = StaticDeviceAgent(
+    agentId: StaticDeviceAgent.agentBId,
+    deviceObjectId: StaticDeviceAgent.objectBId
+)
+
+@inline(__always)
+private func phase4NowMS() -> UInt32 {
+    UInt32(truncatingIfNeeded: esp_timer_get_time() / 1_000)
+}
+
+@_cdecl("axoloty_static_agent_expire")
+func axolotyStaticAgentExpire(_ role: Int32) -> Int32 {
+    role == 2 && phase4AgentB.expireDiscover(nowMS: phase4NowMS()) ? 1 : 0
+}
 
 @inline(__always)
 private func phase4Agent(_ role: Int32) -> StaticDeviceAgent {
@@ -226,9 +271,10 @@ func axolotyStaticAgentReceive(
         payloadBytes: payloadBytes, payloadLength: Int(payloadLength)
     ) else { return -1 }
 
-    var agent = phase4Agent(role)
+    let nowMS = phase4NowMS()
     if role == 1 && message.eventType == .discover {
-        guard agent.dispatch(message) == .discover else { return -1 }
+        var agent = phase4Agent(role)
+        guard agent.dispatch(message, nowMS: nowMS) == .discover else { return -1 }
         guard let correlationId = message.topic.correlationIdLevel.flatMap(UUID16.init(parsing:)) else { return -1 }
         return preparePhase4Message(
             role: role, kind: 3, responseCorrelationId: correlationId,
@@ -238,20 +284,20 @@ func axolotyStaticAgentReceive(
         ) ? 1 : -1
     }
     if role == 2 && message.eventType == .advertise {
-        guard agent.dispatch(message) == .advertise else { return -1 }
-        return preparePhase4Message(
+        guard phase4AgentB.dispatch(message, nowMS: nowMS) == .advertise else { return -1 }
+        let prepared = preparePhase4Message(
             role: role, kind: 2,
             topicBuffer: outputTopic, topicCapacity: outputTopicCapacity,
             payloadBuffer: outputPayload, payloadCapacity: outputPayloadCapacity,
             topicLength: outputTopicLength, payloadLength: outputPayloadLength
-        ) ? 1 : -1
+        )
+        return prepared && phase4AgentB.beginDiscover(correlationId: phase4Correlation, nowMS: nowMS) ? 1 : -1
     }
     if role == 2 && message.eventType == .resolve {
-        agent.beginDiscover(correlationId: phase4Correlation)
-        return agent.dispatch(message) == .resolve ? 2 : -1
+        return phase4AgentB.dispatch(message, nowMS: nowMS) == .resolve ? 2 : -1
     }
     if role == 2 && message.eventType == .deadvertise {
-        return agent.dispatch(message) == .deadvertise ? 3 : -1
+        return phase4AgentB.dispatch(message, nowMS: nowMS) == .deadvertise ? 3 : -1
     }
     return 0
 }
