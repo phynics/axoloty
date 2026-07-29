@@ -129,6 +129,28 @@ func testOfflineUsesTheCheckPlan() throws {
 }
 
 @Test
+func integrationTestStartsBrokerBeforeTransportTests() throws {
+    let runner = StubIntegrationRunner(result: AxolotyCheckCommandResult(exitCode: 0, standardOutput: "passed"))
+    let dispatcher = AxolotyCommandDispatcher(
+        integrationRunner: runner,
+        fileSystem: StubFileSystem(paths: []),
+        environment: [:]
+    )
+
+    let result = dispatcher.run(arguments: ["test", "integration"])
+    let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
+
+    #expect(result.exitCode == 0)
+    #expect(manifest.results.map(\.name) == ["integration-tests"])
+    #expect(manifest.results.first?.command?.standardOutput == "passed")
+}
+
+private struct StubIntegrationRunner: AxolotyIntegrationRunning {
+    let result: AxolotyCheckCommandResult
+    func run() -> AxolotyCheckCommandResult { result }
+}
+
+@Test
 func releaseSnapshotsGenerateThenVerifyConfiguredBundle() throws {
     let runner = RecordingSequenceRunner()
     let dispatcher = AxolotyCommandDispatcher(

@@ -214,6 +214,7 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
             ),
         ])
     }
+
 }
 
 /// A versioned machine-readable result from an ``ax`` check plan.

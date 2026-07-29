@@ -43,16 +43,19 @@ private struct FoundationFileSystem: AxolotyFileSystem {
 /// Parses the stable command surface of the ``ax`` tooling executable.
 public struct AxolotyCommandDispatcher: Sendable {
     private let commandRunner: any AxolotyCheckCommandRunning
+    private let integrationRunner: any AxolotyIntegrationRunning
     private let fileSystem: any AxolotyFileSystem
     private let environment: [String: String]
 
     /// Creates a command dispatcher.
     public init(
         commandRunner: any AxolotyCheckCommandRunning = FoundationCommandRunner(),
+        integrationRunner: (any AxolotyIntegrationRunning)? = nil,
         fileSystem: (any AxolotyFileSystem)? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) {
         self.commandRunner = commandRunner
+        self.integrationRunner = integrationRunner ?? FoundationIntegrationRunner(commandRunner: commandRunner)
         self.fileSystem = fileSystem ?? FoundationFileSystem()
         self.environment = environment
     }
@@ -78,6 +81,8 @@ public struct AxolotyCommandDispatcher: Sendable {
             checkResult(requested: ["build"])
         case ["test", "offline"]:
             checkResult()
+        case ["test", "integration"]:
+            integrationResult()
         case ["wire", "verify"]:
             checkResult(requested: ["test-wire"])
         case ["embedded", "build"]:
@@ -112,6 +117,7 @@ public struct AxolotyCommandDispatcher: Sendable {
       check                Run the initial offline check plan and print JSON.
       build                Build the host package and its prerequisites.
       test offline         Run the same offline plan as check.
+      test integration     Run transport tests against local Mosquitto.
       wire verify          Verify wire fixtures directly without MQTT.
       embedded build       Cross-compile the ESP32-C6 firmware on Linux.
       embedded verify      Build and verify the ESP32-C6 linker contract.
@@ -177,6 +183,19 @@ public struct AxolotyCommandDispatcher: Sendable {
                 exitCode: 70
             )
         }
+    }
+
+    private func integrationResult() -> AxolotyCommandResult {
+        let command = integrationRunner.run()
+        let result = AxolotyCheckResult(
+            name: "integration-tests",
+            status: command.exitCode == 0 ? .passed : .failed,
+            command: command
+        )
+        return (try? Self.jsonResult(
+            AxolotyCheckManifest(results: [result]),
+            exitCode: command.exitCode == 0 ? 0 : 1
+        )) ?? AxolotyCommandResult(exitCode: 70)
     }
 
     private func hardwareResult(required: Bool, device: String?) -> AxolotyCommandResult {

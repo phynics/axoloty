@@ -32,6 +32,7 @@ plan starts MQTT or accesses hardware.
 | Command | MQTT | Hardware | Purpose |
 |---|:---:|:---:|---|
 | `ax check` / `ax test offline` | no | no | Deterministic platform plan |
+| `ax test integration` | local | no | Broker-backed transport behavior |
 | `ax wire verify` | no | no | Direct fixture and snapshot verification |
 | `ax embedded build` | no | no | ESP32-C6 cross-compilation on Linux |
 | `ax embedded verify` | no | no | Build plus linker contract verification |
