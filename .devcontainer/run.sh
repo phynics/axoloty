@@ -152,6 +152,28 @@ if [ -n "$container_devices" ] && [ -z "$sudo_prefix" ]; then
         fi
     done
 fi
+
+# Rootless and rootful Podman use separate image stores. A device run needs
+# rootful Podman for /dev access, so synchronize the freshly built local image
+# when its image ID differs from the rootful copy. Docker has one image store
+# and does not need this handoff.
+if [ -n "$container_devices" ] && [ -n "$sudo_prefix" ]; then
+    case "$runtime" in
+        *podman*)
+            local_image_id=$($runtime image inspect --format '{{.Id}}' "$image" 2>/dev/null || true)
+            rootful_image_id=$($sudo_prefix "$runtime" image inspect --format '{{.Id}}' "$image" 2>/dev/null || true)
+            if [ -z "$local_image_id" ]; then
+                echo "Local image $image is unavailable for rootful device synchronization" >&2
+                exit 1
+            fi
+            if [ "$local_image_id" != "$rootful_image_id" ]; then
+                echo "Synchronizing $image into rootful Podman storage" >&2
+                $runtime save "$image" | $sudo_prefix "$runtime" load
+            fi
+            ;;
+    esac
+fi
+
 # --privileged is only needed for rootful device access; omit it for
 # regular rootless targets so CI and non-device builds are unaffected.
 privileged_opt=""
