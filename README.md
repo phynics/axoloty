@@ -1,11 +1,11 @@
-# Axoloty
+
 
 <p align="center">
   <img src="docs/assets/axoloty-wordmark.svg" alt="Axoloty — IoT application framework" width="480">
 </p>
 
 [![Swift
-version](https://img.shields.io/badge/swift-6.3)](https://developer.apple.com/swift/)
+version](https://img.shields.io/badge/swift-6.3-%23F05138?logo=swift)](https://developer.apple.com/swift/)
 [![License:
 MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
