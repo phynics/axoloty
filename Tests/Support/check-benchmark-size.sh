@@ -12,12 +12,18 @@ output_dir=${1:-$root/.testing/benchmarks/$(cd "$root" && git rev-parse --short 
 mkdir -p "$output_dir"; cd "$root"
 swift build -c release --product AxolotyWireConsumer --cache-path .swiftpm-cache --disable-automatic-resolution
 swift build -c release --product AxolotyConsumer --cache-path .swiftpm-cache --disable-automatic-resolution
+swift build -c release --product CommunicationConsumer --cache-path .swiftpm-cache --disable-automatic-resolution
+swift build -c release --product IoRoutingConsumer --cache-path .swiftpm-cache --disable-automatic-resolution
+swift build -c release --product SensorThingsConsumer --cache-path .swiftpm-cache --disable-automatic-resolution
 raw_dir=$(mktemp -d); trap 'rm -rf "$raw_dir"' EXIT
 size_tool=""; for candidate in llvm-size /usr/local/swift/usr/bin/llvm-size size; do command -v "$candidate" >/dev/null 2>&1 && { size_tool=$candidate; break; }; done
 [ -n "$size_tool" ] || { echo "error: no size tool found (tried llvm-size, size)" >&2; exit 1; }
 measure() { bin=$1; name=$2; wc -c < "$bin" > "$raw_dir/wc-unstripped-$name.txt"; stripped=$(mktemp); cp "$bin" "$stripped"; strip "$stripped" 2>/dev/null || true; wc -c < "$stripped" > "$raw_dir/wc-stripped-$name.txt"; rm -f "$stripped"; "$size_tool" -A "$bin" > "$raw_dir/llvm-size-$name.txt" 2>&1 || true; readelf -d "$bin" > "$raw_dir/readelf-d-$name.txt" 2>&1 || true; sha256sum "$bin" | cut -d' ' -f1 > "$raw_dir/sha256-$name.txt"; }
 measure "$root/.build/release/AxolotyWireConsumer" AxolotyWireConsumer
 measure "$root/.build/release/AxolotyConsumer" AxolotyConsumer
+measure "$root/.build/release/CommunicationConsumer" CommunicationConsumer
+measure "$root/.build/release/IoRoutingConsumer" IoRoutingConsumer
+measure "$root/.build/release/SensorThingsConsumer" SensorThingsConsumer
 swift --version > "$raw_dir/swift-version.txt" 2>&1
 swift package show-dependencies --format flatlist > "$raw_dir/deps-flatlist.txt" 2>&1 || true
 cp "$root/Package.swift" "$raw_dir/package-swift.txt"

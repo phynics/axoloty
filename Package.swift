@@ -129,6 +129,24 @@ let package = Package(
             dependencies: ["Axoloty"],
             path: "Benchmarks/Consumers/AxolotyConsumer"
         ),
+        // Additional release consumers for binary-size attribution (issue
+        // #353). Each anchors a different subsystem so `make benchmark-size`
+        // can measure its incremental contribution to binary size.
+        .executableTarget(
+            name: "CommunicationConsumer",
+            dependencies: ["Axoloty"],
+            path: "Benchmarks/Consumers/CommunicationConsumer"
+        ),
+        .executableTarget(
+            name: "IoRoutingConsumer",
+            dependencies: ["Axoloty"],
+            path: "Benchmarks/Consumers/IoRoutingConsumer"
+        ),
+        .executableTarget(
+            name: "SensorThingsConsumer",
+            dependencies: ["Axoloty"],
+            path: "Benchmarks/Consumers/SensorThingsConsumer"
+        ),
         // Release-only wire benchmark executable (issue #300). Measures
         // p50/p95 latency for topic parse, DTO decode/encode, borrowed-message
         // validation, and combined parse-decode on every corpus case.
