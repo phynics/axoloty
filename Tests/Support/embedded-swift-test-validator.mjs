@@ -28,7 +28,13 @@ export const expectedVectorTests = new Set([
   "borrowed:topicView", "borrowed:reader", "router:subscribe", "router:dispatch",
   "agent:identity", "agent:advertise", "agent:deadvertise", "agent:advertisedState",
   "agent:discover", "agent:discoverById", "agent:rejectWrongFilter",
-  "agent:wrongCorrelation", "agent:resolve", "agent:fixedPublish",
+  "agent:beginDiscover", "agent:boundedOutstanding",
+  "agent:wrongCorrelation", "agent:resolve", "agent:duplicateResolve",
+  "agent:beginTimedDiscover", "agent:resolveTimeout",
+  "agent:fixedPublish", "agent:fixedDeadvertise",
+  "agent:fixedDiscover", "agent:fixedResolve",
+  "agent:callbackRejectUnsolicitedResolve", "agent:callbackAdvertise",
+  "agent:callbackResolve", "agent:callbackRejectDuplicateResolve",
 ]);
 
 export const expectedEmbeddedSwiftTests = new Set([

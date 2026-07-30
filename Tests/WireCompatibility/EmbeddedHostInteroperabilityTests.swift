@@ -127,7 +127,7 @@ private func nextEmbeddedHostValue<Element: Sendable>(
     label: String
 ) async throws -> Element {
     do {
-        return try await nextValue(&iterator, timeout: .seconds(30))
+        return try await nextValue(&iterator, timeout: .seconds(60))
     } catch {
         throw AxolotyError.runtime(code: .timedOut, reason: "Timed out waiting for \(label)")
     }

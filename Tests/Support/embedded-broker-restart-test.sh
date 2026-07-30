@@ -12,7 +12,7 @@ output_dir=${EMBEDDED_OUTPUT_DIR:-/workspace/.testing/embedded}
 managed_broker=${EMBEDDED_BROKER_RESTART_MANAGED:-1}
 support_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 reference_dir=$(CDPATH= cd -- "$support_dir/../WireCompatibility/ReferenceAgents/coatyjs" && pwd)
-port=${EMBEDDED_BROKER_RESTART_PORT:-18884}
+port=${EMBEDDED_BROKER_RESTART_PORT:-1883}
 esptool="${IDF_PATH:-/opt/esp/idf}/components/esptool_py/esptool/esptool.py"
 config="$build_dir/esp-idf/main/axoloty_network_config.h"
 broker_config="$build_dir/mosquitto.conf"
