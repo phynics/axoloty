@@ -21,7 +21,7 @@ export function parseSize(rawDir, rootDir = "") {
     key, Number(new RegExp(`\\.${key}\\s+(\\d+)`).exec(text)?.[1] ?? 0),
   ]));
   const libs = text => [...text.matchAll(/\(NEEDED\).*?\[([^\]]+)\]/g)].map(match => match[1]);
-  const deps = text => text.split(/\r?\n/).map(line => line.trim().replace(/^[│├└─ ]+/, "").split("@")[0]).filter(Boolean);
+  const deps = text => text.split(/\r?\n/).map(line => line.trim().replace(/^[│├└─ ]+/, "").split("@")[0]).filter(Boolean).filter(line => !line.startsWith("warning:"));
   const packageText = read(path.join(rawDir, "package-swift.txt"));
   const targetDeps = name => {
     const pattern = `\\.(?:executable)?Target\\(\\s*name:\\s*"${name}"\\s*,\\s*dependencies:\\s*\\[([^\\]]*)\\]`;
@@ -30,7 +30,7 @@ export function parseSize(rawDir, rootDir = "") {
   };
   const closureCheck = list => !list.some(dep => HOST_DEPS.some(host => dep.toLowerCase().includes(host.toLowerCase())));
   const consumers = {};
-  for (const name of ["AxolotyWireConsumer", "AxolotyConsumer"]) {
+  for (const name of ["AxolotyWireConsumer", "AxolotyConsumer", "CommunicationConsumer", "IoRoutingConsumer", "SensorThingsConsumer"]) {
     const direct = targetDeps(name);
     const closure = name === "AxolotyWireConsumer"
       ? [...new Set(direct)].sort()
@@ -52,13 +52,13 @@ export function parseSize(rawDir, rootDir = "") {
 export function compareSize(current, baseline, baselinePath) {
   if (!("consumers" in baseline)) { fs.writeFileSync(baselinePath, `${JSON.stringify(current, null, 2)}\n`); return [0, "BASELINE CREATED"]; }
   const wire = current.consumers?.AxolotyWireConsumer ?? {}; if (wire.hostDependencyCheck === "FAILED") return [1, "BENCHMARK SIZE FAIL: host dependencies leaked into AxolotyWire consumer"];
-  const diffs = []; for (const name of ["AxolotyWireConsumer", "AxolotyConsumer"]) { const cur = current.consumers?.[name] ?? {}, base = baseline.consumers?.[name] ?? {};
-    for (const field of ["unstrippedBytes", "strippedBytes"]) if (Math.abs((cur[field] ?? 0) - (base[field] ?? 0)) > 64) diffs.push(`  ${name}.${field}: ${base[field] ?? 0} -> ${cur[field] ?? 0} (diff ${(cur[field] ?? 0) - (base[field] ?? 0)} , tolerance +/-64)`);
-    for (const sec of ["text", "rodata", "data", "bss"]) if (Math.abs((cur.sections?.[sec] ?? 0) - (base.sections?.[sec] ?? 0)) > 64) diffs.push(`  ${name}.sections.${sec}: ${base.sections?.[sec] ?? 0} -> ${cur.sections?.[sec] ?? 0}`);
+  const diffs = []; for (const name of ["AxolotyWireConsumer", "AxolotyConsumer", "CommunicationConsumer", "IoRoutingConsumer", "SensorThingsConsumer"]) { const cur = current.consumers?.[name] ?? {}, base = baseline.consumers?.[name] ?? {};
+    for (const field of ["unstrippedBytes", "strippedBytes"]) if (base[field] !== undefined && Math.abs((cur[field] ?? 0) - (base[field] ?? 0)) > 64) diffs.push(`  ${name}.${field}: ${base[field] ?? 0} -> ${cur[field] ?? 0} (diff ${(cur[field] ?? 0) - (base[field] ?? 0)} , tolerance +/-64)`);
+    for (const sec of ["text", "rodata", "data", "bss"]) if (base.sections?.[sec] !== undefined && Math.abs((cur.sections?.[sec] ?? 0) - (base.sections?.[sec] ?? 0)) > 64) diffs.push(`  ${name}.sections.${sec}: ${base.sections?.[sec] ?? 0} -> ${cur.sections?.[sec] ?? 0}`);
     if (name === "AxolotyWireConsumer" && cur.sha256 !== base.sha256) diffs.push(`  ${name}.sha256: ${base.sha256 ?? ""} -> ${cur.sha256 ?? ""} (must match exactly)`);
-    if (JSON.stringify([...(cur.dynamicLibraries ?? [])].sort()) !== JSON.stringify([...(base.dynamicLibraries ?? [])].sort())) diffs.push(`  ${name}.dynamicLibraries differ`);
-    if (JSON.stringify([...(cur.dependencyClosure ?? [])].sort()) !== JSON.stringify([...(base.dependencyClosure ?? [])].sort())) diffs.push(`  ${name}.dependencyClosure differ`);
-    if (cur.hostDependencyCheck !== base.hostDependencyCheck) diffs.push(`  ${name}.hostDependencyCheck: ${base.hostDependencyCheck ?? ""} -> ${cur.hostDependencyCheck ?? ""}`);
+    if (base.dynamicLibraries && JSON.stringify([...(cur.dynamicLibraries ?? [])].sort()) !== JSON.stringify([...(base.dynamicLibraries ?? [])].sort())) diffs.push(`  ${name}.dynamicLibraries differ`);
+    if (base.dependencyClosure && JSON.stringify([...(cur.dependencyClosure ?? [])].sort()) !== JSON.stringify([...(base.dependencyClosure ?? [])].sort())) diffs.push(`  ${name}.dependencyClosure differ`);
+    if (base.hostDependencyCheck !== undefined && cur.hostDependencyCheck !== base.hostDependencyCheck) diffs.push(`  ${name}.hostDependencyCheck: ${base.hostDependencyCheck ?? ""} -> ${cur.hostDependencyCheck ?? ""}`);
   }
   return diffs.length ? [1, `BENCHMARK SIZE FAIL: measurements differ from baseline\n${diffs.join("\n")}\n\nBaseline changes require an explicit update to Benchmarks/Baselines/size-baseline.json.`] : [0, "BENCHMARK SIZE OK"];
 }

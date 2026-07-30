@@ -1,17 +1,17 @@
 {
-  "commit": "357facd",
+  "commit": "12a8355",
   "swiftVersion": "Swift version 6.3.3 (swift-6.3.3-RELEASE)\nTarget: x86_64-unknown-linux-gnu",
   "buildMode": "release",
   "buildFlags": "-c release -Xswiftc -O -Xswiftc -wmo",
   "consumers": {
     "AxolotyWireConsumer": {
-      "unstrippedBytes": 576192,
-      "strippedBytes": 129960,
+      "unstrippedBytes": 588680,
+      "strippedBytes": 133832,
       "sections": {
-        "text": 60956,
-        "rodata": 5912,
-        "data": 864,
-        "bss": 4536
+        "text": 65276,
+        "rodata": 6216,
+        "data": 360,
+        "bss": 4552
       },
       "dynamicLibraries": [
         "libswiftCore.so",
@@ -20,19 +20,119 @@
         "libswift_RegexParser.so",
         "libc.so.6"
       ],
-      "sha256": "fc06f7e5353d1b98030005cde6eb2bdb085bd92aae7d90b27bfb559ba55b1b4e",
+      "sha256": "41b42088158ab0cf4c826861d2b11dd486b8c3af093db00e6d6a702704ca91c6",
       "dependencyClosure": [
         "AxolotyWire"
       ],
       "hostDependencyCheck": "passed"
     },
     "AxolotyConsumer": {
-      "unstrippedBytes": 52508352,
-      "strippedBytes": 11760384,
+      "unstrippedBytes": 52523664,
+      "strippedBytes": 11764480,
       "sections": {
-        "text": 6770881,
+        "text": 6775937,
         "rodata": 979698,
-        "data": 96208,
+        "data": 95704,
+        "bss": 277440
+      },
+      "dynamicLibraries": [
+        "libswiftCore.so",
+        "libswift_Concurrency.so",
+        "libswift_StringProcessing.so",
+        "libswift_RegexParser.so",
+        "libswiftSynchronization.so",
+        "libswiftGlibc.so",
+        "libBlocksRuntime.so",
+        "libdispatch.so",
+        "libswiftDispatch.so",
+        "libFoundation.so",
+        "libFoundationEssentials.so",
+        "libFoundationInternationalization.so",
+        "libFoundationNetworking.so",
+        "libm.so.6",
+        "libstdc++.so.6",
+        "libgcc_s.so.1",
+        "libc.so.6",
+        "ld-linux-x86-64.so.2"
+      ],
+      "sha256": "8aa86d83b55f55b6a063a98dc864faaa8e222d72d12946bd7851cd0e8287f6e4",
+      "dependencyClosure": [
+        "Axoloty",
+        "axolotywire",
+        "errorkit",
+        "mqtt-nio",
+        "swift-asn1",
+        "swift-atomics",
+        "swift-collections",
+        "swift-crypto",
+        "swift-docc-plugin",
+        "swift-docc-symbolkit",
+        "swift-json",
+        "swift-log",
+        "swift-nio",
+        "swift-nio-ssl",
+        "swift-nio-transport-services",
+        "swift-system"
+      ],
+      "hostDependencyCheck": "n/a"
+    },
+    "CommunicationConsumer": {
+      "unstrippedBytes": 52527968,
+      "strippedBytes": 11768576,
+      "sections": {
+        "text": 6776097,
+        "rodata": 979698,
+        "data": 95704,
+        "bss": 277392
+      },
+      "dynamicLibraries": [
+        "libswiftCore.so",
+        "libswift_Concurrency.so",
+        "libswift_StringProcessing.so",
+        "libswift_RegexParser.so",
+        "libswiftSynchronization.so",
+        "libswiftGlibc.so",
+        "libBlocksRuntime.so",
+        "libdispatch.so",
+        "libswiftDispatch.so",
+        "libFoundation.so",
+        "libFoundationEssentials.so",
+        "libFoundationInternationalization.so",
+        "libFoundationNetworking.so",
+        "libm.so.6",
+        "libstdc++.so.6",
+        "libgcc_s.so.1",
+        "libc.so.6",
+        "ld-linux-x86-64.so.2"
+      ],
+      "sha256": "23d0a57e96a3d29964c97c78dfb4faf647c00ef49862abe005cf93f82420a7bb",
+      "dependencyClosure": [
+        "Axoloty",
+        "axolotywire",
+        "errorkit",
+        "mqtt-nio",
+        "swift-asn1",
+        "swift-atomics",
+        "swift-collections",
+        "swift-crypto",
+        "swift-docc-plugin",
+        "swift-docc-symbolkit",
+        "swift-json",
+        "swift-log",
+        "swift-nio",
+        "swift-nio-ssl",
+        "swift-nio-transport-services",
+        "swift-system"
+      ],
+      "hostDependencyCheck": "n/a"
+    },
+    "IoRoutingConsumer": {
+      "unstrippedBytes": 52523888,
+      "strippedBytes": 11764480,
+      "sections": {
+        "text": 6775953,
+        "rodata": 979698,
+        "data": 95704,
         "bss": 277424
       },
       "dynamicLibraries": [
@@ -55,7 +155,57 @@
         "libc.so.6",
         "ld-linux-x86-64.so.2"
       ],
-      "sha256": "7aa63c15a36a0d4a2541be06f70f83144d4fa5d7bc1de57801f468e6855f1a47",
+      "sha256": "9f3f88423d63f1267627ea4288e84ba4285aec88f8d08c6386dc6257acbd164f",
+      "dependencyClosure": [
+        "Axoloty",
+        "axolotywire",
+        "errorkit",
+        "mqtt-nio",
+        "swift-asn1",
+        "swift-atomics",
+        "swift-collections",
+        "swift-crypto",
+        "swift-docc-plugin",
+        "swift-docc-symbolkit",
+        "swift-json",
+        "swift-log",
+        "swift-nio",
+        "swift-nio-ssl",
+        "swift-nio-transport-services",
+        "swift-system"
+      ],
+      "hostDependencyCheck": "n/a"
+    },
+    "SensorThingsConsumer": {
+      "unstrippedBytes": 52528400,
+      "strippedBytes": 11768576,
+      "sections": {
+        "text": 6776161,
+        "rodata": 979698,
+        "data": 95704,
+        "bss": 277392
+      },
+      "dynamicLibraries": [
+        "libswiftCore.so",
+        "libswift_Concurrency.so",
+        "libswift_StringProcessing.so",
+        "libswift_RegexParser.so",
+        "libswiftSynchronization.so",
+        "libswiftGlibc.so",
+        "libBlocksRuntime.so",
+        "libdispatch.so",
+        "libswiftDispatch.so",
+        "libFoundation.so",
+        "libFoundationEssentials.so",
+        "libFoundationInternationalization.so",
+        "libFoundationNetworking.so",
+        "libm.so.6",
+        "libstdc++.so.6",
+        "libgcc_s.so.1",
+        "libc.so.6",
+        "ld-linux-x86-64.so.2"
+      ],
+      "sha256": "9d051bece1501c5a36fa97ce6d4e3f76a9d404320d0be88c3eec192ea1f5ea9c",
       "dependencyClosure": [
         "Axoloty",
         "axolotywire",
