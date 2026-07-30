@@ -40,39 +40,33 @@ The `contract-seed` fixtures exercise the harness only. They are supplemented, f
 Reference-agent pins, build instructions, and the documented legacy Swift
 platform constraint live in `ReferenceAgents/README.md`.
 
-The ESP32-C6 embedded-to-embedded Phase 4 slice is backed by
-`make embedded-agent-test`. Two physical boards use production AxolotyWire,
+The ESP32-C6 embedded-to-embedded Phase 4 slice uses production AxolotyWire,
 fixed-capacity topic and payload buffers, and the ESP-IDF MQTT client against a
-real broker. Both independently validate checksummed serial evidence for
-Advertise, correlated Discover/Resolve, graceful Deadvertise, and disconnect.
-The capture is intentionally recorded under `.testing/embedded/`; it does not
-change the JS/modern columns above, which require separate pinned CoatyJS
-directions.
+real broker. The static device agent validates checksummed serial evidence for
+Advertise, correlated Discover/Resolve, graceful Deadvertise, and disconnect,
+plus the failure-mode contract added in #325: a single bounded outstanding
+Discover request, a deterministic 5-second Resolve timeout polled by the C
+wait loop, wrong-correlation Resolve rejection, and duplicate-Resolve
+rejection. Byte-exact device vectors lock the generated Advertise, Deadvertise,
+Discover, and Resolve topics and payloads against the
+`coaty/<version>/<namespace>/<eventType>:<filter>/<sourceId>[/<correlationId>]`
+contract. Physical two-device, host Axoloty, pinned CoatyJS, last-will, and
+broker-restart evidence is deferred to the end of Phase 4 under #326; the
+capture will be recorded under `.testing/embedded/` and does not change the
+JS/modern columns above, which require separate pinned CoatyJS directions.
 
 The Phase 4 embedded↔CoatyJS harness is implemented by
 `make embedded-coatyjs-test`. It runs one pinned `@coaty/core@2.4.0` runner
 per physical direction: CoatyJS requests the fixed embedded A exchange, or
-CoatyJS advertises/responds to embedded B. Serial and runner evidence is
-written to `.testing/embedded/`. Both reviewed physical artifacts pass:
-`.testing/embedded/coatyjs-a-result.json` covers the CoatyJS requester and
-embedded responder, while `.testing/embedded/coatyjs-b-result.json` covers
-the embedded requester and CoatyJS responder. These embedded physical results
-document the Phase 4 gate; the table above continues to describe the host
-modern implementation rather than the constrained embedded slice.
-
-The matching host Axoloty harness is `make embedded-host-test`, with role A
-covering host Discover → embedded Resolve and role B covering host Advertise →
-embedded Discover → host Resolve → host Deadvertise. `make
-embedded-last-will-test` distinguishes a broker-issued Deadvertise after a
-forced device reset from the graceful path, while `make
-embedded-broker-restart-test` requires a received message after automatic
-reconnect and wildcard resubscription. These harnesses are implemented but are
-backed by reviewed passing artifacts under `.testing/embedded/`: both host
-directions (`embedded-host-a-result.json` and `embedded-host-b-result.json`),
-the forced-reset last-will gate (`embedded-last-will-result.json`), and the
-broker-restart gate (`embedded-broker-restart-result.json`, all 11 checks).
-These embedded physical results document the Phase 4 gate only; they do not
-alter the JS/modern cells above.
+CoatyJS advertises/responds to embedded B. The matching host Axoloty harness
+is `make embedded-host-test`, with role A covering host Discover → embedded
+Resolve and role B covering host Advertise → embedded Discover → host Resolve
+→ host Deadvertise. `make embedded-last-will-test` distinguishes a
+broker-issued Deadvertise after a forced device reset from the graceful path,
+while `make embedded-broker-restart-test` requires a received message after
+automatic reconnect and wildcard resubscription. These harnesses are
+implemented; their physical evidence runs are deferred to #326 at the end of
+Phase 4.
 
 `Associate / IoState / IoValue` is backed by `Tests/WireCompatibility/IO/`
 (T-021). The generated IOV route and ASC topic, and the required Associate
