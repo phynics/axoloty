@@ -39,6 +39,18 @@ Roadmap Project remain authoritative for scope and status.
 - Physical ESP32-C6 checks are sporadic and opt-in. Ordinary checks must not
   probe, reserve, flash, or request privileges for a device. `hardware check`
   skips successfully when absent; `hardware require` fails when absent.
+- Device test targets hardcode `/dev/ttyACM0` (or `ACM0`/`ACM1` for two-device
+  tests). If devices are at different ports, override `EMBEDDED_DEVICE` (and
+  `EMBEDDED_DEVICE_A`/`EMBEDDED_DEVICE_B` for two-device tests) and also add it
+  to `CONTAINER_ENV_VARS` when invoking `.devcontainer/run.sh` directly. The
+  container runtime must have `CONTAINER_DEVICES` set to the actual device path
+  so the serial port is passed through. A Mosquitto broker must be running and
+  reachable from both the host and the WiFi network the devices join; start one
+  with `podman run -d --name axoloty-broker --network host axoloty-dev mosquitto
+  -c /etc/mosquitto/conf.d/coatyswift.conf`. Pass `AXOLOTY_WIFI_SSID`,
+  `AXOLOTY_WIFI_PASSWORD`, `AXOLOTY_MQTT_HOST`, and `AXOLOTY_MQTT_PORT` as env
+  vars; WiFi credentials are compiled into a gitignored build header that is
+  removed after the test — never commit them.
 - Release wire evidence is generated with `make release-snapshots` on Linux or
   `axoloty-tool release snapshots` on macOS. Keep generated bundles under `.testing/`;
   only reviewed stable fixtures belong in source control.

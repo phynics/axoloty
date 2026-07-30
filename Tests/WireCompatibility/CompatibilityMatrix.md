@@ -50,10 +50,43 @@ wait loop, wrong-correlation Resolve rejection, and duplicate-Resolve
 rejection. Byte-exact device vectors lock the generated Advertise, Deadvertise,
 Discover, and Resolve topics and payloads against the
 `coaty/<version>/<namespace>/<eventType>:<filter>/<sourceId>[/<correlationId>]`
-contract. Physical two-device, host Axoloty, pinned CoatyJS, last-will, and
-broker-restart evidence is deferred to the end of Phase 4 under #326; the
-capture will be recorded under `.testing/embedded/` and does not change the
-JS/modern columns above, which require separate pinned CoatyJS directions.
+contract. Physical evidence was captured under #326 and is recorded under
+`.testing/embedded/`; it does not change the JS/modern columns above, which
+require separate pinned CoatyJS directions.
+
+**Captured physical evidence (#326):**
+
+- `make embedded-agent-test` — two ESP32-C6 devices (A↔B): 10/10 exchange
+  checks passed on both devices (WiFi, IP, MQTT connect, subscribe, reconnect,
+  Advertise, Discover, Resolve, Deadvertise, disconnect). Zero hot-path
+  allocations. Artifacts: `agent-a-result.json`, `agent-b-result.json`.
+- `make embedded-swift-test` — on-device vector corpus: 313/313 tests passed
+  including the #325 lifecycle vectors (bounded Discover, timeout, duplicate
+  rejection, callback-boundary state, byte-exact topic/payload fixtures). Zero
+  hot-path allocations. Artifacts: `vector-swift-smoke-result.json`.
+- `make embedded-host-test` — host Axoloty ↔ ESP32-C6 (role A): Swift
+  `EmbeddedHostInteroperabilityTests` passed (host discovers embedded Advertise,
+  publishes Discover, receives Resolve, observes Deadvertise). Device serial:
+  10/10 exchange checks passed. Artifacts: `embedded-host-a-result.json`.
+- `make embedded-coatyjs-test` (role A) — pinned `@coaty/core@2.4.0` requester
+  → embedded responder: CoatyJS published Discover, received Resolve with
+  correct correlation ID and object ID. Device: 10/10 checks passed.
+  Artifacts: `coatyjs-a-result.json`.
+- `make embedded-coatyjs-test` (role B) — embedded requester → pinned
+  `@coaty/core@2.4.0` responder: CoatyJS published Resolve and Deadvertise in
+  response to the embedded Discover. Device: 10/10 checks passed.
+  Artifacts: `coatyjs-b-result.json`.
+- `make embedded-last-will-test` — forced-reset last-will: observer saw
+  device Advertise, then broker-issued Deadvertise after forced reset. Device:
+  8/8 exchange checks passed (no Discover/Resolve in this scenario).
+  Artifacts: `embedded-last-will-result.json`, `embedded-last-will-observer.jsonl`.
+- `make check-budget-manifest` — budget manifest validation passed.
+- `make embedded-broker-restart-test` — managed broker restart/reconnect:
+  device connected, broker was killed and restarted, device reconnected and
+  received Advertise/Resolve/Deadvertise from the responder. 11/11 exchange
+  checks passed (including `exchange:brokerReconnect`). Zero hot-path
+  allocations. Artifacts: `embedded-broker-restart-result.json`,
+  `embedded-broker-restart-serial.log`.
 
 The Phase 4 embedded↔CoatyJS harness is implemented by
 `make embedded-coatyjs-test`. It runs one pinned `@coaty/core@2.4.0` runner
@@ -64,9 +97,8 @@ Resolve and role B covering host Advertise → embedded Discover → host Resolv
 → host Deadvertise. `make embedded-last-will-test` distinguishes a
 broker-issued Deadvertise after a forced device reset from the graceful path,
 while `make embedded-broker-restart-test` requires a received message after
-automatic reconnect and wildcard resubscription. These harnesses are
-implemented; their physical evidence runs are deferred to #326 at the end of
-Phase 4.
+automatic reconnect and wildcard resubscription. All harnesses passed with
+reviewed physical evidence under `.testing/embedded/`.
 
 `Associate / IoState / IoValue` is backed by `Tests/WireCompatibility/IO/`
 (T-021). The generated IOV route and ASC topic, and the required Associate
