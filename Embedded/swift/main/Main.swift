@@ -333,7 +333,7 @@ func app_main() -> Int32 {
             topicBytes: topic.utf8Start, topicLength: topic.utf8CodeUnitCount,
             payloadBytes: payload.utf8Start, payloadLength: payload.utf8CodeUnitCount
         )
-        record(id, message.map { staticAgent.dispatch($0) == expected } ?? false)
+        record(id, message.map { staticAgent.dispatch($0, nowMS: 101) == expected } ?? false)
     }
 
     let expectedCorrelation = UUID16(bytes: (
@@ -372,7 +372,8 @@ func app_main() -> Int32 {
         payload: "{\"objectTypes\":[\"coaty.test.Other\"]}",
         expected: .unsupported
     )
-    staticAgent.beginDiscover(correlationId: expectedCorrelation)
+    record("agent:beginDiscover", staticAgent.beginDiscover(correlationId: expectedCorrelation, nowMS: 100))
+    record("agent:boundedOutstanding", !staticAgent.beginDiscover(correlationId: UUID16.zero, nowMS: 100))
     agentVector(
         "agent:wrongCorrelation",
         topic: "coaty/3/axoloty-embedded/RSV/32400000-0000-4000-8000-000000000003/32400000-0000-4000-8000-000000000005",
@@ -385,6 +386,50 @@ func app_main() -> Int32 {
         payload: "{\"object\":{\"objectId\":\"32400000-0000-4000-8000-000000000003\"}}",
         expected: .resolve
     )
+    agentVector(
+        "agent:duplicateResolve",
+        topic: "coaty/3/axoloty-embedded/RSV/32400000-0000-4000-8000-000000000003/32400000-0000-4000-8000-000000000004",
+        payload: "{\"object\":{\"objectId\":\"32400000-0000-4000-8000-000000000003\"}}",
+        expected: .duplicateResolve
+    )
+    record("agent:beginTimedDiscover", staticAgent.beginDiscover(correlationId: UUID16.zero, nowMS: 100))
+    record("agent:resolveTimeout", staticAgent.expireDiscover(nowMS: 5_100))
+
+    @inline(__always)
+    func receiveAgentMessage(topic: StaticString, payload: StaticString) -> Int32 {
+        var result: Int32 = -1
+        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 128) { outputTopic in
+            withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 512) { outputPayload in
+                withUnsafeTemporaryAllocation(of: Int32.self, capacity: 1) { outputTopicLength in
+                    withUnsafeTemporaryAllocation(of: Int32.self, capacity: 1) { outputPayloadLength in
+                        result = axolotyStaticAgentReceive(
+                            2, topic.utf8Start, Int32(topic.utf8CodeUnitCount),
+                            payload.utf8Start, Int32(payload.utf8CodeUnitCount),
+                            outputTopic.baseAddress!, Int32(outputTopic.count),
+                            outputPayload.baseAddress!, Int32(outputPayload.count),
+                            outputTopicLength.baseAddress!, outputPayloadLength.baseAddress!
+                        )
+                    }
+                }
+            }
+        }
+        return result
+    }
+    let callbackAdvertiseTopic: StaticString = "coaty/3/axoloty-embedded/ADV/32400000-0000-4000-8000-000000000003"
+    let callbackResolveTopic: StaticString = "coaty/3/axoloty-embedded/RSV/32400000-0000-4000-8000-000000000003/32400000-0000-4000-8000-000000000004"
+    let callbackPayload: StaticString = "{\"object\":{\"objectId\":\"32400000-0000-4000-8000-000000000003\"}}"
+    record("agent:callbackRejectUnsolicitedResolve", receiveAgentMessage(
+        topic: callbackResolveTopic, payload: callbackPayload
+    ) == -1)
+    record("agent:callbackAdvertise", receiveAgentMessage(
+        topic: callbackAdvertiseTopic, payload: callbackPayload
+    ) == 1)
+    record("agent:callbackResolve", receiveAgentMessage(
+        topic: callbackResolveTopic, payload: callbackPayload
+    ) == 2)
+    record("agent:callbackRejectDuplicateResolve", receiveAgentMessage(
+        topic: callbackResolveTopic, payload: callbackPayload
+    ) == -1)
 
     let advertisePayload: StaticString = "{\"object\":{\"objectId\":\"32400000-0000-4000-8000-000000000003\"}}"
     let advertiseData = try? AdvertiseWireData(from: WireReader(
@@ -406,10 +451,61 @@ func app_main() -> Int32 {
                 bytes: payloadBuffer.baseAddress!, length: encoded.payloadLength
             ))
             record("agent:fixedPublish", topic.eventType == .advertise &&
-                   topic.sourceIdLevel.flatMap(UUID16.init(parsing:)) == StaticDeviceAgent.agentId &&
-                   decoded != nil && encoded.payloadLength <= WireBufferConfig.maxPayloadSize)
+                    topic.sourceIdLevel.flatMap(UUID16.init(parsing:)) == StaticDeviceAgent.agentId &&
+                    decoded != nil && encoded.payloadLength <= WireBufferConfig.maxPayloadSize &&
+                    ByteSlice(bytes: topicBuffer.baseAddress!, length: encoded.topicLength).equals(
+                        "coaty/3/axoloty-embedded/ADV:coaty.test.Device/32400000-0000-4000-8000-000000000001"
+                    ) && ByteSlice(bytes: payloadBuffer.baseAddress!, length: encoded.payloadLength).equals(
+                        "{\"object\":{\"objectId\":\"32400000-0000-4000-8000-000000000003\"}}"
+                    ))
         }
     }
+    @inline(__always)
+    func matchesFixedWire<T: WireEncodable>(
+        _ data: T,
+        eventType: WireEventType,
+        correlationId: UUID16?,
+        topic expectedTopic: StaticString,
+        payload expectedPayload: StaticString
+    ) -> Bool {
+        var matches = false
+        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 128) { topicBuffer in
+            withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 512) { payloadBuffer in
+                guard let encoded = try? staticAgent.encode(
+                    data, eventType: eventType, correlationId: correlationId,
+                    topicBuffer: topicBuffer.baseAddress!, topicCapacity: topicBuffer.count,
+                    payloadBuffer: payloadBuffer.baseAddress!, payloadCapacity: payloadBuffer.count
+                ) else { return }
+                matches = ByteSlice(bytes: topicBuffer.baseAddress!, length: encoded.topicLength).equals(expectedTopic) &&
+                    ByteSlice(bytes: payloadBuffer.baseAddress!, length: encoded.payloadLength).equals(expectedPayload)
+            }
+        }
+        return matches
+    }
+    let deadvertisePayload: StaticString = "{\"objectIds\":[\"32400000-0000-4000-8000-000000000003\"]}"
+    let discoverPayload: StaticString = "{\"objectTypes\":[\"coaty.test.Device\"]}"
+    let resolvePayload: StaticString = advertisePayload
+    record("agent:fixedDeadvertise", (try? DeadvertiseWireData(from: WireReader(
+        bytes: deadvertisePayload.utf8Start, length: deadvertisePayload.utf8CodeUnitCount
+    ))).map {
+        matchesFixedWire($0, eventType: .deadvertise, correlationId: nil,
+                         topic: "coaty/3/axoloty-embedded/DAD/32400000-0000-4000-8000-000000000001",
+                         payload: deadvertisePayload)
+    } ?? false)
+    record("agent:fixedDiscover", (try? DiscoverWireData(from: WireReader(
+        bytes: discoverPayload.utf8Start, length: discoverPayload.utf8CodeUnitCount
+    ))).map {
+        matchesFixedWire($0, eventType: .discover, correlationId: expectedCorrelation,
+                         topic: "coaty/3/axoloty-embedded/DSC/32400000-0000-4000-8000-000000000001/32400000-0000-4000-8000-000000000004",
+                         payload: discoverPayload)
+    } ?? false)
+    record("agent:fixedResolve", (try? ResolveWireData(from: WireReader(
+        bytes: resolvePayload.utf8Start, length: resolvePayload.utf8CodeUnitCount
+    ))).map {
+        matchesFixedWire($0, eventType: .resolve, correlationId: expectedCorrelation,
+                         topic: "coaty/3/axoloty-embedded/RSV/32400000-0000-4000-8000-000000000001/32400000-0000-4000-8000-000000000004",
+                         payload: resolvePayload)
+    } ?? false)
     // === Generated 39-case benchmark corpus ===
 
     runGeneratedCorpus(record)
