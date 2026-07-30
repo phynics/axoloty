@@ -50,8 +50,8 @@ It is compatible with the following deployment targets:
 
 | Deployment Target | Compatibility |
 | ----------------- | ------------- |
-| iOS               | 12.0+         |
-| macOS             | 10.14+        |
+| iOS               | 26.0+         |
+| macOS             | 26.0+        |
 | Linux             | Yes (containerized) |
 
 See [ROADMAP.md](./docs/ROADMAP.md) for the current project direction.
@@ -66,7 +66,7 @@ Once you have your Swift package set up, add Axoloty by modifying the
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/coaty-swift", from: "2.4.0"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.2.0"),
 ]
 ```
 

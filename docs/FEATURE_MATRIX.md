@@ -48,18 +48,18 @@ wire-evidence section and `../Tests/WireCompatibility/CompatibilityMatrix.md`.
 
 | Feature | CoatyJS 2.4.x | CoatySwift 2.4.0 | Axoloty | Notes |
 |---|---|---|---|---|
-| Advertise / Deadvertise | Yes | Yes | Yes | Axoloty has a verified live CoatyJS→wire Advertise slice. |
-| Discover / Resolve | Yes | Yes | Yes | API present; new differential matrix pending. |
-| Query / Retrieve | Yes | Yes | Yes | API present; new differential matrix pending. |
-| Update / Complete | Yes | Yes | Yes | API present; new differential matrix pending. |
-| Call / Return | Yes | Yes | Yes | API present; new differential matrix pending. |
-| Channel | Yes | Yes | Yes | Current Swift integration tests cover Swift↔Swift behavior. |
+| Advertise / Deadvertise | Yes | Yes | Yes | Validated: offline fixtures (3 sources), live both directions, embedded physical evidence. |
+| Discover / Resolve | Yes | Yes | Yes | Validated: offline fixtures, live both directions, embedded physical evidence. |
+| Query / Retrieve | Yes | Yes | Yes | Validated: offline fixtures, live both directions with filter coverage. Legacy direction unverified. |
+| Update / Complete | Yes | Yes | Yes | Validated: offline fixtures, live both directions. Legacy directions unverified. |
+| Call / Return | Yes | Yes | Yes | Validated: offline fixtures, live both directions, lifecycle failure scenarios. |
+| Channel | Yes | Yes | Yes | Validated: offline fixtures, live both directions. |
 | Raw string/binary topics | Yes | Yes | Yes | Exact cross-language binary behavior is not yet fully captured. |
-| Deferred offline publication/subscription | Yes | Yes | Yes | Axoloty has scenario contracts; live failure execution remains pending. |
-| Distributed lifecycle / MQTT last will | Yes | Yes | Yes | Live cross-version lifecycle evidence remains pending. |
+| Deferred offline publication/subscription | Yes | Yes | Yes | Validated: four live network-failure scenarios (reconnect, broker-restart, clean-session, offline-queueing). |
+| Distributed lifecycle / MQTT last will | Yes | Yes | Yes | Validated: offline fixtures, live captures, embedded physical evidence. Cross-implementation last-will direction unverified. |
 | MQTT transport | Yes | Yes | Yes | JS uses MQTT.js; legacy Swift used CocoaMQTT; Axoloty uses mqtt-nio. |
 | WAMP transport | Yes | No | No | JS documents MQTT and WAMP bindings; Swift implements MQTT only. |
-| TLS MQTT | Yes | Yes | Yes | Axoloty uses Network.framework on Apple platforms and NIOSSL on Linux. |
+| TLS MQTT | Yes | Yes | Yes | Supported: platform-conditional impl (NIOSSL/Network.framework). Manual macOS oracle only; no automated TLS tests. |
 | MQTT QoS configuration | Yes | Yes | Yes | Axoloty preserves the old Swift API, including known raw-byte publish quirks. |
 | Broker discovery via mDNS | Yes | Partial | Partial | JS can publish/discover services; Swift discovery is Apple-only, and Axoloty explicitly errors on unsupported platforms. |
 | Broker/router service publication via mDNS | Yes | No | No | Node-specific JS utility; Swift only has discovery support. |
@@ -69,14 +69,14 @@ wire-evidence section and `../Tests/WireCompatibility/CompatibilityMatrix.md`.
 | Feature | CoatyJS 2.4.x | CoatySwift 2.4.0 | Axoloty | Notes |
 |---|---|---|---|---|
 | IO routing core model/events | Yes | Yes | Yes | Associate, IoValue, IoState, router/source/actor controllers exist in Swift. |
-| Rule-based/context-driven IO routing | Yes | Yes | Yes | Cross-language routes and backpressure behavior are not yet proven. |
-| IO backpressure strategies | Yes | Yes | Yes | Raw-value behavior is an open Axoloty audit item. |
+| Rule-based/context-driven IO routing | Yes | Yes | Partial | Cross-language routes and backpressure behavior are not yet proven. Two recorded wire divergences (isExternalRoute force-unwrap, IoValue payload wrapping). |
+| IO backpressure strategies | Yes | Yes | Partial | Raw-value behavior is an open audit item; one live direction verified. |
 | Unified Storage API | Yes | No | No | Swift has database configuration value types, not JS's storage API. |
 | In-memory database adapter | Yes | No | No | JS specialized module. |
 | PostgreSQL adapter | Yes | No | No | JS/Node specialized module. |
 | SQLite Node/Cordova adapters | Yes | No | No | JS platform-specific modules. |
 | SensorThings object model | Yes | Yes | Yes | Swift includes Sensor, Thing, Observation, and FeatureOfInterest. |
-| SensorThings controllers/workflows | Yes | Yes | Yes | Swift has source/observer controllers; full parity with JS is unproven. |
+| SensorThings controllers/workflows | Yes | Yes | Yes | Supported: source/observer controllers with broker-backed tests. Full parity with JS is unproven. |
 | Sensor hardware IO helpers | Yes | Partial | Partial | Both expose SensorThings IO concepts, but JS has broader platform-specific modules. |
 | Object lifecycle controller | Yes | Yes | Yes | Swift implementation and tests exist. |
 | Decentralized structured logging | Yes | Yes | Yes | Axoloty migrated its local logging backend to swift-log. |
@@ -96,15 +96,20 @@ wire-evidence section and `../Tests/WireCompatibility/CompatibilityMatrix.md`.
 
 ## Current wire-compatibility evidence
 
+See [SUPPORT_MATRIX.md](SUPPORT_MATRIX.md) for the full 0.2 support
+classification and [Tests/WireCompatibility/CompatibilityMatrix.md](../Tests/WireCompatibility/CompatibilityMatrix.md)
+for per-direction wire evidence.
+
 | Direction/capability | Status |
 |---|---|
-| CoatyJS 2.4.0 → Axoloty Advertise | **Verified** for deterministic object payload, both core/object-type topics, QoS 0, and retain=false. |
-| Axoloty → CoatyJS | Not yet verified live. |
-| Legacy CoatySwift 2.4.0 → Axoloty | Reference pin exists; captured fixtures and macOS oracle runner pending. |
-| Axoloty → legacy CoatySwift 2.4.0 | Pending macOS oracle runner. |
-| Discover/Resolve, Query/Retrieve, Update/Complete, Call/Return | APIs exist in all implementations; four-direction differential evidence pending. |
-| IO routing and SensorThings | Source-backed audit complete; reference captures and keep/diverge/remove decisions pending. |
-| Reconnect, broker restart, clean session, last will, QoS | Machine-checkable scenario catalog exists; live cross-version execution pending. |
+| CoatyJS 2.4.0 → Axoloty (all event families) | **Validated** — offline fixtures + live captures for Advertise, Deadvertise, Discover/Resolve, Query/Retrieve, Update/Complete, Call/Return, Channel. |
+| Axoloty → CoatyJS 2.4.0 (all event families) | **Validated** — offline fixtures + live captures for all event families. |
+| Legacy CoatySwift 2.4.0 → Axoloty | Compatibility-unverified — fixtures captured; live macOS oracle runner pending. |
+| Axoloty → legacy CoatySwift 2.4.0 | Compatibility-unverified — live macOS oracle runner pending. |
+| Associate / IoValue | **Partial** — one live direction verified; two recorded wire divergences (isExternalRoute force-unwrap blocks JS→modern; IoValue payload wrapping remediated). |
+| Reconnect, broker restart, clean session, last will, QoS | **Validated** — four live network-failure scenarios with Axoloty as subject; embedded physical evidence for broker-restart and last-will. |
+| Axoloty ↔ ESP32-C6 (Advertise/Deadvertise, Discover/Resolve) | **Validated** — physical evidence: two-device exchange, host interop, CoatyJS bidirectional, last-will, broker-restart. |
+| CoatyJS ↔ ESP32-C6 (Advertise/Deadvertise, Discover/Resolve) | **Validated** — physical evidence: both directions on real hardware. |
 
 ## Interpretation
 
