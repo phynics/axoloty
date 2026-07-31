@@ -24,8 +24,9 @@ struct InspectorRecordEncodingTests {
         let line = try NDJSONFormatter().format(record)
 
         #expect(!line.contains("\n"))
-        #expect(line.contains("\"schema\":\"axoloty.inspect/v1\""))
-        #expect(line.contains("\"kind\":\"advertise\""))
+        let json = try #require(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+        #expect(json["schema"] as? String == "axoloty.inspect/v1")
+        #expect(json["kind"] as? String == "advertise")
         #expect(line.contains("\"timestamp\":\"2026-07-31T17:30:00Z\""))
     }
 
@@ -36,7 +37,8 @@ struct InspectorRecordEncodingTests {
             timestamp: "2026-07-31T00:00:00Z"
         )
         let line = try NDJSONFormatter().format(record)
-        #expect(line.contains("\"schema\":\"axoloty.inspect/v1\""))
+        let json = try #require(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+        #expect(json["schema"] as? String == "axoloty.inspect/v1")
     }
 
     @Test
