@@ -9,6 +9,9 @@ version](https://img.shields.io/badge/swift-6.3-%23F05138?logo=swift)](https://d
 [![License:
 MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
+> **Development checkpoint.** Axoloty 0.2 is a development checkpoint, not
+> a stable release. Public APIs may continue to change before 1.0.
+
 ## About Axoloty
 
 __Axoloty__ is a Swift framework for building distributed, collaborative IoT
@@ -17,9 +20,9 @@ Agents communicate with each other in (soft) real time over a publish-subscribe
 messaging backbone (MQTT), and can run on IoT devices, mobile devices, in
 microservices, or in cloud and backend services.
 
-Axoloty provides a production-ready application and communication layer
-foundation for collaborative IoT prosumer scenarios where smart agents act in
-an autonomous, collaborative, and ad-hoc fashion. Its key properties include:
+Axoloty provides an application and communication layer foundation for
+collaborative IoT prosumer scenarios where smart agents act in an autonomous,
+collaborative, and ad-hoc fashion. Its key properties include:
 
 * a lightweight, modular, object-oriented software architecture favoring a
   resource-oriented and declarative programming style,
@@ -34,35 +37,31 @@ an autonomous, collaborative, and ad-hoc fashion. Its key properties include:
   query, and persist hierarchically typed data,
 * structured error handling through [ErrorKit](https://github.com/FlineDev/ErrorKit),
   with `AxolotyError` as the package's `Throwable` base error type,
-* and a structured logging facade backed by [swift-log](https://github.com/apple/swift-log).
+* a structured logging facade backed by [swift-log](https://github.com/apple/swift-log),
+* a dependency-free, Foundation-free `AxolotyWire` module for embedded targets,
+* and an ESP32-C6 embedded proof in Embedded Swift.
 
 Axoloty is a modernized fork of
 [coatyio/coaty-swift](https://github.com/coatyio/coaty-swift) and follows its
 own direction documented in [ROADMAP.md](./docs/ROADMAP.md). For an explicit
 comparison against CoatyJS and legacy CoatySwift, see
-[FEATURE_MATRIX.md](./docs/FEATURE_MATRIX.md).
+[FEATURE_MATRIX.md](./docs/FEATURE_MATRIX.md). For support levels per
+capability, see [SUPPORT_MATRIX.md](./docs/SUPPORT_MATRIX.md).
 
 ## Getting started
 
 Axoloty is distributed via Swift Package Manager only.
 
-It is compatible with the following deployment targets:
-
 | Deployment Target | Compatibility |
 | ----------------- | ------------- |
 | iOS               | 26.0+         |
-| macOS             | 26.0+        |
+| macOS             | 26.0+         |
 | Linux             | Yes (containerized) |
-
-See [ROADMAP.md](./docs/ROADMAP.md) for the current project direction.
+| ESP32-C6          | Embedded Swift (Advertise/Deadvertise, Discover/Resolve) |
 
 ### Swift Package Manager
 
-To use Axoloty with Swift Package Manager you need XCode 11.0 or higher. The
-Swift Package Manager is a package manager integrated into the swift compiler.
-
-Once you have your Swift package set up, add Axoloty by modifying the
-`dependencies` attribute in your `Package.swift` file.
+Add Axoloty to your `Package.swift`:
 
 ```swift
 dependencies: [
@@ -70,20 +69,83 @@ dependencies: [
 ]
 ```
 
+For wire-only usage (no host runtime, no Foundation, no MQTT):
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/phynics/axoloty", from: "0.2.0"),
+]
+// Target dependency:
+.product(name: "AxolotyWire", package: "AxolotyWire"),
+```
+
+### Minimal host example
+
+```swift
+import Axoloty
+
+let config = Configuration.build(
+    communication: CommunicationOptions(
+        brokerHost: "localhost",
+        brokerPort: 1883
+    ),
+    common: CommonOptions()
+)
+let container = try Container.resolve(config)
+let manager = try container.resolveCommunicationManager()
+try await manager.start()
+
+let identity = Identity(name: "my-agent")
+let stream = try await manager.observeAdvertiseStream(for: Identity.objectType)
+try await manager.publishAdvertise(try .with(object: identity))
+
+for await snapshot in stream {
+    print("Discovered: \(snapshot.data.object.name)")
+}
+```
+
+### Minimal AxolotyWire example
+
+```swift
+import AxolotyWire
+
+let payload = #"{"object":{"objectId":"00000000-0000-4000-8000-000000000001"}}"#
+let bytes = Array(payload.utf8)
+let result = bytes.withUnsafeBufferPointer { buffer -> String in
+    guard let base = buffer.baseAddress else { return "nil" }
+    let reader = WireReader(bytes: base, length: buffer.count)
+    let object = reader.readRaw("object")
+    return object != nil ? "found" : "nil"
+}
+print("Result: \(result)")
+```
+
+### Embedded limitations
+
+The ESP32-C6 embedded target supports only Advertise/Deadvertise and
+Discover/Resolve. It uses a static composition model (no dynamic
+registration) with bounded capacities:
+
+- Max topic length: 128 bytes
+- Max payload size: 512 bytes
+- Max subscribers: 8
+- Max family entries: 16
+- QoS: 0 only
+- TLS: not supported
+- No IO routing, Channel, Query/Retrieve, Update/Complete, or Call/Return
+
+See [docs/embedded-toolchain.md](./docs/embedded-toolchain.md) for toolchain
+setup and [SUPPORT_MATRIX.md](./docs/SUPPORT_MATRIX.md) for the full
+capability matrix.
+
 API documentation is built from in-source DocC comments and published to
 GitHub Pages: <https://phynics.github.io/axoloty/documentation/Axoloty/>.
 
-## Examples
-
-Examples are available in the original
-[coatyio/coaty-swift](https://github.com/coatyio/coaty-swift) repository and
-the related [coaty-examples](https://github.com/coatyio/coaty-examples) repo.
-
 ## Building & Testing
 
-The Swift `axoloty-tool` executable is the orchestration control plane. Linux development
-extracts its static binary from the pinned Podman/Docker image and runs it
-through the lightweight Makefile; product commands remain containerized.
+The Swift `axoloty-tool` executable is the orchestration control plane. Linux
+development extracts its static binary from the pinned Podman/Docker image and
+runs it through the lightweight Makefile; product commands remain containerized.
 macOS runs the same offline plan with native Swift:
 
 ```sh
@@ -97,34 +159,14 @@ make release-snapshots   # produce and verify provenance-rich wire evidence
 swift run --package-path Tools axoloty-tool check
 ```
 
-Focused compatibility Make targets remain available for specialized workflows.
-See [`docs/tooling.md`](docs/tooling.md) for command tiers, platform behavior,
-cache policy, release evidence, and structured results.
-
-Worktrees keep separate locked mutable build directories under
-`/tmp/coaty-swift-build/`, scoped by repository, Swift toolchain, and worktree.
-SwiftPM downloads are shared through `SPM_CACHE_DIR`, which defaults to a
-toolchain-specific cache under `~/.cache/coaty-swift/swiftpm/`. Coverage uses
-the separate `COVERAGE_BUILD_DIR` cache to avoid mixing instrumented artifacts
-with normal builds. Override `BUILD_DIR`, `COVERAGE_BUILD_DIR`, or
-`SPM_CACHE_DIR` for another disk or a CI-local cache; `/tmp` is intentionally
-volatile. CI passes `BUILD_LOCK=0` because each runner uses its own local build
-directory; the Makefile preflight rejects a CI invocation that would wait on a
-shared lock. `make worktree-warm` is an optional explicit prebuild; bootstrap
-itself resolves dependencies but does not compile.
-
-Coverage reports are written to `.testing/coverage/`. The aggregate ratchet is
-enforced, while changed-line coverage is displayed in CI summaries and native
-workflow warnings for information only.
-
-See [AGENTS.md](./AGENTS.md) for the full set of Makefile targets (including
-`make shell` and `make docs`) and how the containerized flow is set up.
+For migrating from legacy CoatySwift, see
+[0.2-MIGRATION.md](./docs/0.2-MIGRATION.md).
 
 ## Contributing
 
 For agent- and maintainer-facing conventions used in this fork (build/test
 commands, workflow, coding conventions, git identity rules), see
-[AGENTS.md](./AGENTS.md). For the modernization plan, see
+[AGENTS.md](./AGENTS.md). For the roadmap, see
 [ROADMAP.md](./docs/ROADMAP.md).
 
 ### Swift engineering conventions
