@@ -17,10 +17,10 @@ make hardware-check
 make release-snapshots
 ```
 
-The complete image carries a self-contained static Linux `axoloty-tool`. `make axoloty-tool-bootstrap`
-extracts it to the ignored `.build-tools/axoloty-tool` path, and principal Make targets
-run it on the host. The host CLI can therefore own Podman/Docker and live-capture
-lifecycle while project build/test commands remain inside the pinned image.
+The container image carries a prebuilt `axoloty-tool` at
+`/opt/axoloty/bin/axoloty-tool`. Make targets invoke it inside the
+container via `.devcontainer/run.sh`; the binary is not extracted to the
+host. All build, test, and lint commands execute directly in-container.
 
 macOS uses its pinned native Swift toolchain:
 
@@ -39,7 +39,7 @@ plan starts MQTT or accesses hardware.
 | `axoloty-tool check` / `axoloty-tool test offline` | no | no | Deterministic platform plan |
 | `axoloty-tool test integration` | local | no | Broker-backed transport behavior |
 | `axoloty-tool wire verify` | no | no | Direct fixture and snapshot verification |
-| `axoloty-tool wire capture` | local | no | Host-controlled live reference-agent capture |
+| `axoloty-tool wire capture` | local | no | Live reference-agent capture (host-side orchestration) |
 | `axoloty-tool embedded build` | no | no | ESP32-C6 cross-compilation on Linux |
 | `axoloty-tool embedded verify` | no | no | Build plus linker contract verification |
 | `axoloty-tool hardware check` | no | optional | Run when attached; otherwise structured skip |

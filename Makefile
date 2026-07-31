@@ -30,15 +30,13 @@ AXOLOTY_TOOL_ARGS ?= --help
 AXOLOTY_DEVICE ?= /dev/ttyACM0
 AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES ?=
 AXOLOTY_TOOL_CONTAINER_ENV_VARS ?=
-AXOLOTY_TOOL_HOST_DIR ?= .build-tools
-AXOLOTY_TOOL_HOST_BINARY ?= $(AXOLOTY_TOOL_HOST_DIR)/axoloty-tool
 
 # Hosting base path for static DocC output. Set this to the repository name
 # when publishing to a GitHub Pages project site (e.g. "axoloty" for
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm axoloty-tool-bootstrap axoloty-tool check hardware-check hardware-require release-snapshots checkpoint checkpoint-hardware test-tooling build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-toolchain-doctor embedded-device-info embedded-device-smoke embedded-reproducible-build benchmark-size benchmark-wire benchmark-wire-bounds benchmark-wire-device check-budget-manifest check-embedded-swift check-embedded-swift-linker embedded-swift-build embedded-swift-flash embedded-swift-test embedded-mqtt-test embedded-network-test embedded-agent-test embedded-coatyjs-test embedded-host-test embedded-last-will-test embedded-broker-restart-test embedded-interop-test
+.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm axoloty-tool check hardware-check hardware-require release-snapshots checkpoint checkpoint-hardware test-tooling build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-toolchain-doctor embedded-device-info embedded-device-smoke embedded-reproducible-build benchmark-size benchmark-wire benchmark-wire-bounds benchmark-wire-device check-budget-manifest check-embedded-swift check-embedded-swift-linker embedded-swift-build embedded-swift-flash embedded-swift-test embedded-mqtt-test embedded-network-test embedded-agent-test embedded-coatyjs-test embedded-host-test embedded-last-will-test embedded-broker-restart-test embedded-interop-test
 
 help:
 	@printf '%s\n' \
@@ -46,8 +44,7 @@ help:
 		'make resolve       Resolve Package.resolved using the shared SwiftPM cache' \
 		'make worktree-bootstrap  Prepare dependency cache and validate Package.resolved' \
 		'make worktree-warm  Bootstrap and compile the current worktree' \
-		'make axoloty-tool-bootstrap  Extract the static Linux axoloty-tool binary from the image' \
-		'make axoloty-tool AXOLOTY_TOOL_ARGS="--help"  Run the Swift tooling CLI' \
+		'make axoloty-tool AXOLOTY_TOOL_ARGS="--help"  Run the Swift tooling CLI in-container' \
 		'make check         Run the initial broker-free axoloty-tool check plan' \
 		'make hardware-check  Run or skip the sporadic ESP32-C6 smoke check' \
 		'make hardware-require  Require an attached ESP32-C6 smoke check' \
@@ -125,24 +122,16 @@ worktree-bootstrap: resolve
 
 worktree-warm: worktree-bootstrap build
 
-# Extract the self-contained Linux CLI delivered by the complete image. The
-# binary runs on the host so it can own Podman/Docker lifecycle directly.
-axoloty-tool-bootstrap:
-	@$(MAKE) --no-print-directory image >&2
-	@mkdir -p "$(AXOLOTY_TOOL_HOST_DIR)"
-	@$(CONTAINER_RUNTIME) run --rm $(IMAGE) cat /opt/axoloty/bin/axoloty-tool > "$(AXOLOTY_TOOL_HOST_BINARY).tmp"
-	@chmod 0755 "$(AXOLOTY_TOOL_HOST_BINARY).tmp" && mv "$(AXOLOTY_TOOL_HOST_BINARY).tmp" "$(AXOLOTY_TOOL_HOST_BINARY)"
-	@"$(AXOLOTY_TOOL_HOST_BINARY)" --version >&2
-
-# Compatibility/documentation wrapper for the typed tooling control plane.
-# Workflow policy belongs to `axoloty-tool`, not to this Makefile.
-axoloty-tool: axoloty-tool-bootstrap
-	@AXOLOTY_TOOL_HOST=1 CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
-		BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-		AXOLOTY_DEVICE="$(AXOLOTY_DEVICE)" \
-		CONTAINER_OPTIONAL_DEVICES="$(AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES)" \
-		CONTAINER_ENV_VARS="$(AXOLOTY_TOOL_CONTAINER_ENV_VARS)" \
-		"$(AXOLOTY_TOOL_HOST_BINARY)" $(AXOLOTY_TOOL_ARGS)
+# Run axoloty-tool inside the container. The tool binary is prebuilt in the
+# image at /opt/axoloty/bin/axoloty-tool. All commands execute in the
+# container; no host extraction is needed.
+axoloty-tool: image
+	@CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
+	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+	AXOLOTY_DEVICE="$(AXOLOTY_DEVICE)" \
+	CONTAINER_OPTIONAL_DEVICES="$(AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES)" \
+	CONTAINER_ENV_VARS="$(AXOLOTY_TOOL_CONTAINER_ENV_VARS)" \
+	.devcontainer/run.sh /opt/axoloty/bin/axoloty-tool $(AXOLOTY_TOOL_ARGS)
 
 check:
 	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS=check
@@ -505,4 +494,4 @@ check-embedded-swift:
 	.devcontainer/run.sh /workspace/Tests/Support/check-embedded-swift.sh
 
 clean:
-	rm -rf "$(BUILD_DIR)" "$(COVERAGE_BUILD_DIR)" "$(AXOLOTY_TOOL_HOST_DIR)"
+	rm -rf "$(BUILD_DIR)" "$(COVERAGE_BUILD_DIR)"

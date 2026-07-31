@@ -223,18 +223,6 @@ public struct AxolotyCommandDispatcher: Sendable {
     }
 
     private func integrationResult() -> AxolotyCommandResult {
-        if environment["AXOLOTY_TOOL_HOST"] == "1" {
-            let result = commandRunner.run(AxolotyCommandPlan(
-                executable: "/opt/axoloty/bin/axoloty-tool",
-                arguments: ["test", "integration"],
-                environment: ["AXOLOTY_IN_CONTAINER": "1"]
-            ))
-            return AxolotyCommandResult(
-                standardOutput: result.standardOutput,
-                standardError: result.standardError,
-                exitCode: result.exitCode
-            )
-        }
         let command = integrationRunner.run()
         let result = AxolotyCheckResult(
             name: "integration-tests",
