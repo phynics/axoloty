@@ -136,7 +136,7 @@ let package = Package(
         ),
         .testTarget(
             name: "AxolotyInspectorCLITests",
-            dependencies: ["Axoloty", "AxolotyInspectorCore"],
+            dependencies: ["Axoloty", "AxolotyInspectorCore", "AxolotyInspectorCLI"],
             path: "Tools/AxolotyInspectorCLITests"
         ),
         // Build-only release consumers for binary-size and dependency-closure
