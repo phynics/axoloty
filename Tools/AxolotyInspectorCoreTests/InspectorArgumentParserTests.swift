@@ -64,13 +64,100 @@ struct InspectorArgumentParserTests {
         }
     }
 
-    // MARK: - Discover rejected in Phase A
+    // MARK: - Discover parsing
 
     @Test
-    func discoverRejectedAsUnsupported() {
+    func discoverRequiresAtLeastOneSelector() {
         let outcome = InspectorArgumentParser().parse(["discover"])
         if case let .error(error) = outcome {
-            #expect(error == .invalidArguments(reason: "discover is not yet supported"))
+            #expect(error == .invalidArguments(
+                reason: "discover requires at least one selector: --core-type, --object-type, or --object-id"
+            ))
+        } else {
+            Issue.record("Expected error outcome")
+        }
+    }
+
+    @Test
+    func discoverWithCoreType() {
+        let outcome = InspectorArgumentParser().parse(["discover", "--core-type", "Identity"])
+        guard case let .run(config) = outcome else {
+            Issue.record("Expected run outcome")
+            return
+        }
+        guard case .discover(let cmd) = config.command else {
+            Issue.record("Expected discover command")
+            return
+        }
+        #expect(cmd.coreType == "Identity")
+        #expect(cmd.objectType == nil)
+        #expect(cmd.objectId == nil)
+        #expect(cmd.timeout == .unlimited)
+    }
+
+    @Test
+    func discoverWithObjectType() {
+        let outcome = InspectorArgumentParser().parse(["discover", "--object-type", "com.example.Sensor"])
+        guard case let .run(config) = outcome else {
+            Issue.record("Expected run outcome")
+            return
+        }
+        guard case .discover(let cmd) = config.command else {
+            Issue.record("Expected discover command")
+            return
+        }
+        #expect(cmd.coreType == nil)
+        #expect(cmd.objectType == "com.example.Sensor")
+    }
+
+    @Test
+    func discoverWithObjectId() {
+        let outcome = InspectorArgumentParser().parse(["discover", "--object-id", "abc-123"])
+        guard case let .run(config) = outcome else {
+            Issue.record("Expected run outcome")
+            return
+        }
+        guard case .discover(let cmd) = config.command else {
+            Issue.record("Expected discover command")
+            return
+        }
+        #expect(cmd.objectId == "abc-123")
+    }
+
+    @Test
+    func discoverWithTimeout() {
+        let outcome = InspectorArgumentParser().parse(["discover", "--core-type", "Identity", "--timeout", "5s"])
+        guard case let .run(config) = outcome else {
+            Issue.record("Expected run outcome")
+            return
+        }
+        guard case .discover(let cmd) = config.command else {
+            Issue.record("Expected discover command")
+            return
+        }
+        #expect(cmd.timeout.value == .seconds(5))
+    }
+
+    @Test
+    func discoverWithConnectionOptions() {
+        let outcome = InspectorArgumentParser().parse([
+            "discover", "--core-type", "Identity",
+            "--host", "broker.local", "--port", "8883", "--namespace", "test-ns",
+        ])
+        guard case let .run(config) = outcome else {
+            Issue.record("Expected run outcome")
+            return
+        }
+        #expect(config.connection.host == "broker.local")
+        #expect(config.connection.port == 8883)
+        #expect(config.connection.namespace == "test-ns")
+    }
+
+    @Test
+    func discoverRejectsUnknownOption() {
+        let outcome = InspectorArgumentParser().parse(["discover", "--core-type", "Identity", "--duration", "5s"])
+        if case let .error(error) = outcome {
+            #expect(error == .invalidArguments(reason: "unknown option: --duration"))
         } else {
             Issue.record("Expected error outcome")
         }

@@ -17,6 +17,9 @@ protocol InspectorSession {
     func advertiseEvents() async -> AsyncStream<AdvertiseEventSnapshot>
     /// Returns the Deadvertise event stream.
     func deadvertiseEvents() async -> AsyncStream<DeadvertiseEventSnapshot>
+    /// Publishes a Discover event and returns the correlated Resolve
+    /// response stream.
+    func discover(_ event: DiscoverEvent) async -> AsyncStream<ResponseEventSnapshot>
     /// Stops the session and disconnects from the broker.
     func stop()
 }
@@ -103,6 +106,10 @@ final class AxolotyInspectorSession: InspectorSession {
 
     func deadvertiseEvents() async -> AsyncStream<DeadvertiseEventSnapshot> {
         await manager.observeDeadvertiseStream()
+    }
+
+    func discover(_ event: DiscoverEvent) async -> AsyncStream<ResponseEventSnapshot> {
+        await manager.publishDiscover(event)
     }
 
     func stop() {

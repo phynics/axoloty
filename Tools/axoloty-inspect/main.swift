@@ -21,12 +21,12 @@ case let .error(error):
     FileHandle.standardError.write(Data("error: \(error.userFriendlyMessage)\n".utf8))
     Foundation.exit(error.exitCode)
 case let .run(config):
-    let exitCode = await runCatalog(config)
+    let exitCode = await runInspector(config)
     Foundation.exit(exitCode)
 }
 
 @MainActor
-func runCatalog(_ config: InspectorConfiguration) async -> Int32 {
+func runInspector(_ config: InspectorConfiguration) async -> Int32 {
     var connectionConfig = config.connection
     if config.passwordFromStdin {
         guard let password = InspectorPasswordReader.readLineFromStdin() else {
@@ -58,23 +58,43 @@ func runCatalog(_ config: InspectorConfiguration) async -> Int32 {
     let signalHandler = InspectorSignalHandler()
     signalHandler.install()
 
-    let app = InspectorApplication(
-        configuration: config,
-        session: session,
-        writeOutput: { line in
-            print(line)
-        },
-        writeDiagnostic: { line in
-            FileHandle.standardError.write(Data("\(line)\n".utf8))
-        },
-        timestamp: {
-            dateFormatter.string(from: Date())
-        },
-        isTerminal: InspectorTerminal.isStdoutTerminal,
-        signalHandler: signalHandler
+    let updatedConfig = InspectorConfiguration(
+        command: config.command,
+        connection: connectionConfig,
+        output: config.output,
+        logLevel: config.logLevel,
+        passwordFromStdin: false
     )
 
-    let result = await app.run()
+    let result: InspectorError?
+    switch config.command {
+    case .catalog:
+        let app = InspectorApplication(
+            configuration: updatedConfig,
+            session: session,
+            writeOutput: { line in print(line) },
+            writeDiagnostic: { line in
+                FileHandle.standardError.write(Data("\(line)\n".utf8))
+            },
+            timestamp: { dateFormatter.string(from: Date()) },
+            isTerminal: InspectorTerminal.isStdoutTerminal,
+            signalHandler: signalHandler
+        )
+        result = await app.run()
+    case .discover:
+        let app = InspectorDiscoverApplication(
+            configuration: updatedConfig,
+            session: session,
+            writeOutput: { line in print(line) },
+            writeDiagnostic: { line in
+                FileHandle.standardError.write(Data("\(line)\n".utf8))
+            },
+            timestamp: { dateFormatter.string(from: Date()) },
+            isTerminal: InspectorTerminal.isStdoutTerminal,
+            signalHandler: signalHandler
+        )
+        result = await app.run()
+    }
 
     if let error = result {
         if error == .interrupted {

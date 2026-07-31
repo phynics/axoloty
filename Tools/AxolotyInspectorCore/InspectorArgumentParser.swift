@@ -92,7 +92,7 @@ public struct InspectorArgumentParser: Sendable {
         case "catalog":
             return parseCatalog(Array(arguments.dropFirst()), environment: environment)
         case "discover":
-            return .error(.invalidArguments(reason: "discover is not yet supported"))
+            return parseDiscover(Array(arguments.dropFirst()), environment: environment)
         default:
             return .error(.invalidArguments(reason: "unknown command: \(arguments[0])"))
         }
@@ -271,6 +271,157 @@ private extension InspectorArgumentParser {
             command: command,
             connection: connection,
             output: output,
+            logLevel: logLevel,
+            passwordFromStdin: passwordFromStdin
+        )
+        return .run(config)
+    }
+
+    // MARK: - Discover parsing
+
+    func parseDiscover(
+        _ args: [String],
+        environment: InspectorEnvironmentValues
+    ) -> InspectorParseOutcome {
+        var host = environment.host
+        var port = environment.port
+        var namespace = environment.namespace
+        var usesTLS = false
+        var username = environment.username
+        var password = environment.password
+        var passwordFromStdin = false
+        var connectTimeout = Duration.seconds(10)
+        var logLevel = "info"
+        var coreType: String?
+        var objectType: String?
+        var objectId: String?
+        var timeout = InspectorDuration.unlimited
+
+        var seenSingletons = Set<String>()
+
+        var i = 0
+        while i < args.count {
+            let arg = args[i]
+
+            switch arg {
+            case "--host":
+                guard let (value, next) = consumeValue(args, at: i) else {
+                    return .error(.invalidArguments(reason: "--host requires a value"))
+                }
+                host = value
+                i = next
+            case "--port":
+                guard let (value, next) = consumeValue(args, at: i) else {
+                    return .error(.invalidArguments(reason: "--port requires a value"))
+                }
+                guard let parsedPort = UInt16(value), parsedPort > 0 else {
+                    return .error(.invalidConfiguration(field: "port", reason: "must be a positive integer ≤ 65535"))
+                }
+                port = parsedPort
+                i = next
+            case "--namespace":
+                guard let (value, next) = consumeValue(args, at: i) else {
+                    return .error(.invalidArguments(reason: "--namespace requires a value"))
+                }
+                namespace = value
+                i = next
+            case "--tls":
+                usesTLS = true
+                i += 1
+            case "--username":
+                guard let (value, next) = consumeValue(args, at: i) else {
+                    return .error(.invalidArguments(reason: "--username requires a value"))
+                }
+                username = value
+                i = next
+            case "--password-stdin":
+                passwordFromStdin = true
+                password = nil
+                i += 1
+            case "--connect-timeout":
+                guard let (value, next) = consumeValue(args, at: i) else {
+                    return .error(.invalidArguments(reason: "--connect-timeout requires a value"))
+                }
+                guard let parsed = InspectorDuration(rawValue: value) else {
+                    return .error(.invalidConfiguration(field: "connect-timeout", reason: "invalid duration: \(value)"))
+                }
+                connectTimeout = parsed.value ?? .seconds(10)
+                i = next
+            case "--log-level":
+                guard let (value, next) = consumeValue(args, at: i) else {
+                    return .error(.invalidArguments(reason: "--log-level requires a value"))
+                }
+                logLevel = value
+                i = next
+            case "--core-type":
+                guard let (value, next) = consumeValue(args, at: i) else {
+                    return .error(.invalidArguments(reason: "--core-type requires a value"))
+                }
+                if seenSingletons.contains("core-type") {
+                    return .error(.invalidArguments(reason: "--core-type specified more than once"))
+                }
+                seenSingletons.insert("core-type")
+                coreType = value
+                i = next
+            case "--object-type":
+                guard let (value, next) = consumeValue(args, at: i) else {
+                    return .error(.invalidArguments(reason: "--object-type requires a value"))
+                }
+                if seenSingletons.contains("object-type") {
+                    return .error(.invalidArguments(reason: "--object-type specified more than once"))
+                }
+                seenSingletons.insert("object-type")
+                objectType = value
+                i = next
+            case "--object-id":
+                guard let (value, next) = consumeValue(args, at: i) else {
+                    return .error(.invalidArguments(reason: "--object-id requires a value"))
+                }
+                if seenSingletons.contains("object-id") {
+                    return .error(.invalidArguments(reason: "--object-id specified more than once"))
+                }
+                seenSingletons.insert("object-id")
+                objectId = value
+                i = next
+            case "--timeout":
+                guard let (value, next) = consumeValue(args, at: i) else {
+                    return .error(.invalidArguments(reason: "--timeout requires a value"))
+                }
+                guard let parsed = InspectorDuration(rawValue: value) else {
+                    return .error(.invalidConfiguration(field: "timeout", reason: "invalid duration: \(value)"))
+                }
+                timeout = parsed
+                i = next
+            default:
+                return .error(.invalidArguments(reason: "unknown option: \(arg)"))
+            }
+        }
+
+        guard coreType != nil || objectType != nil || objectId != nil else {
+            return .error(.invalidArguments(
+                reason: "discover requires at least one selector: --core-type, --object-type, or --object-id"
+            ))
+        }
+
+        let connection = InspectorConnectionConfiguration(
+            host: host,
+            port: port,
+            namespace: namespace,
+            usesTLS: usesTLS,
+            username: username,
+            password: password,
+            connectTimeout: connectTimeout
+        )
+        let command = InspectorCommand.discover(DiscoverCommand(
+            coreType: coreType,
+            objectType: objectType,
+            objectId: objectId,
+            timeout: timeout
+        ))
+        let config = InspectorConfiguration(
+            command: command,
+            connection: connection,
+            output: .auto,
             logLevel: logLevel,
             passwordFromStdin: passwordFromStdin
         )

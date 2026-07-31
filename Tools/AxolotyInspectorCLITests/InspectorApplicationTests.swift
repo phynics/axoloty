@@ -16,12 +16,14 @@ final class FakeInspectorSession: InspectorSession {
 
     private var advertiseContinuation: AsyncStream<AdvertiseEventSnapshot>.Continuation?
     private var deadvertiseContinuation: AsyncStream<DeadvertiseEventSnapshot>.Continuation?
+    private var discoverContinuation: AsyncStream<ResponseEventSnapshot>.Continuation?
 
     private var advertiseStreamCreated = false
     private var deadvertiseStreamCreated = false
 
     var queuedAdvertises: [AdvertiseEventSnapshot] = []
     var queuedDeadvertises: [DeadvertiseEventSnapshot] = []
+    var queuedResponses: [ResponseEventSnapshot] = []
 
     func connect() async throws {
         if connectShouldFail {
@@ -55,6 +57,17 @@ final class FakeInspectorSession: InspectorSession {
         stopped = true
         advertiseContinuation?.finish()
         deadvertiseContinuation?.finish()
+        discoverContinuation?.finish()
+    }
+
+    func discover(_ event: DiscoverEvent) async -> AsyncStream<ResponseEventSnapshot> {
+        let (stream, cont) = AsyncStream.makeStream(of: ResponseEventSnapshot.self)
+        discoverContinuation = cont
+        for response in queuedResponses {
+            cont.yield(response)
+        }
+        cont.finish()
+        return stream
     }
 
     func emitAdvertise(_ snapshot: AdvertiseEventSnapshot) {
@@ -372,5 +385,141 @@ struct InspectorApplicationTests {
         #expect(result == .interrupted)
         let errorLines = output.filter { $0.contains("\"kind\":\"error\"") }
         #expect(errorLines.isEmpty)
+    }
+}
+
+// MARK: - Discover application tests
+
+@MainActor
+@Suite
+struct InspectorDiscoverApplicationTests {
+
+    private func makeDiscoverConfig(
+        timeout: Duration = .milliseconds(200),
+        coreType: String? = "Identity",
+        objectType: String? = nil,
+        objectId: String? = nil
+    ) -> InspectorConfiguration {
+        InspectorConfiguration(
+            command: .discover(DiscoverCommand(
+                coreType: coreType,
+                objectType: objectType,
+                objectId: objectId,
+                timeout: InspectorDuration(value: timeout)
+            )),
+            connection: InspectorConnectionConfiguration(
+                host: "localhost", port: 1883, namespace: "test"
+            ),
+            output: .ndjson
+        )
+    }
+
+    private func makeResolveResponse(
+        objectId: String = "obj-1",
+        coreType: CoreType = .Identity,
+        objectType: String = "coaty.object.Identity",
+        name: String = "Agent"
+    ) -> ResponseEventSnapshot {
+        let objectJSON = "{\"objectId\":\"\(objectId)\",\"coreType\":\"\(coreType.rawValue)\",\"objectType\":\"\(objectType)\",\"name\":\"\(name)\"}"
+        let payload = "{\"object\":\(objectJSON)}"
+        return ResponseEventSnapshot(
+            eventType: "resolve",
+            sourceId: "src-1",
+            correlationId: "corr-1",
+            payload: payload
+        )
+    }
+
+    @Test
+    func discoverCollectsResolveResponses() async {
+        let session = FakeInspectorSession()
+        session.queuedResponses = [
+            makeResolveResponse(objectId: "obj-1", name: "Agent A"),
+            makeResolveResponse(objectId: "obj-2", name: "Agent B"),
+        ]
+
+        var output: [String] = []
+        let app = InspectorDiscoverApplication(
+            configuration: makeDiscoverConfig(),
+            session: session,
+            writeOutput: { output.append($0) },
+            writeDiagnostic: { _ in },
+            timestamp: { "2026-07-31T00:00:00Z" },
+            isTerminal: false
+        )
+        let result = await app.run()
+
+        #expect(result == nil)
+        #expect(session.stopped)
+
+        let resultLines = output.filter { $0.contains("\"kind\":\"discovery-result\"") }
+        #expect(resultLines.count == 1)
+        #expect(resultLines[0].contains("\"objects\""))
+    }
+
+    @Test
+    func discoverDeduplicatesByObjectId() async {
+        let session = FakeInspectorSession()
+        session.queuedResponses = [
+            makeResolveResponse(objectId: "dup-id", name: "Agent"),
+            makeResolveResponse(objectId: "dup-id", name: "Agent"),
+        ]
+
+        var output: [String] = []
+        let app = InspectorDiscoverApplication(
+            configuration: makeDiscoverConfig(),
+            session: session,
+            writeOutput: { output.append($0) },
+            writeDiagnostic: { _ in },
+            timestamp: { "2026-07-31T00:00:00Z" },
+            isTerminal: false
+        )
+        _ = await app.run()
+
+        let resultLines = output.filter { $0.contains("\"kind\":\"discovery-result\"") }
+        let json = try! JSONSerialization.jsonObject(with: Data(resultLines[0].utf8)) as! [String: Any]
+        let objects = json["objects"] as! [[String: Any]]
+        #expect(objects.count == 1)
+    }
+
+    @Test
+    func discoverZeroResultsIsSuccessful() async {
+        let session = FakeInspectorSession()
+        session.queuedResponses = []
+
+        var output: [String] = []
+        let app = InspectorDiscoverApplication(
+            configuration: makeDiscoverConfig(timeout: .milliseconds(100)),
+            session: session,
+            writeOutput: { output.append($0) },
+            writeDiagnostic: { _ in },
+            timestamp: { "2026-07-31T00:00:00Z" },
+            isTerminal: false
+        )
+        let result = await app.run()
+
+        #expect(result == nil)
+        let resultLines = output.filter { $0.contains("\"kind\":\"discovery-result\"") }
+        #expect(resultLines.count == 1)
+        #expect(resultLines[0].contains("\"timedOut\":true"))
+    }
+
+    @Test
+    func discoverSessionStopsAfterConnectFailure() async {
+        let session = FakeInspectorSession()
+        session.connectShouldFail = true
+
+        let app = InspectorDiscoverApplication(
+            configuration: makeDiscoverConfig(),
+            session: session,
+            writeOutput: { _ in },
+            writeDiagnostic: { _ in },
+            timestamp: { "2026-07-31T00:00:00Z" },
+            isTerminal: false
+        )
+        let result = await app.run()
+
+        #expect(result != nil)
+        #expect(session.stopped)
     }
 }
