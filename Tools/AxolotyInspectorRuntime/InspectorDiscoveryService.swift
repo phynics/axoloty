@@ -30,7 +30,7 @@ public struct InspectorDiscoveryRequest: Sendable, Equatable {
 }
 
 /// The result of an active discovery operation.
-public struct InspectorDiscoveryResult: Sendable, Equatable {
+public struct InspectorDiscoveryResult: Codable, Sendable, Equatable {
     /// Whether the discovery timed out before all expected responses arrived.
     public let timedOut: Bool
     /// The discovered objects, deduplicated by object ID.

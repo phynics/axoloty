@@ -27,6 +27,10 @@ let package = Package(
             name: "axoloty-inspect",
             targets: ["AxolotyInspectorCLI"]
         ),
+        .executable(
+            name: "axoloty-mcp",
+            targets: ["AxolotyMCPServer"]
+        ),
     ],
     dependencies: [
         .package(path: "Packages/AxolotyWire"),
@@ -37,6 +41,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-log.git", from: "1.14.0"),
         .package(url: "https://github.com/FlineDev/ErrorKit.git", exact: "1.2.1"),
         .package(url: "https://github.com/orlandos-nl/swift-json.git", exact: "2.5.3"),
+        .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", exact: "0.12.1"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin.git", from: "1.5.0"),
     ],
     targets: [
@@ -152,6 +157,23 @@ let package = Package(
             name: "AxolotyInspectorCLITests",
             dependencies: ["Axoloty", "AxolotyInspectorCore", "AxolotyInspectorRuntime", "AxolotyInspectorCLI"],
             path: "Tools/AxolotyInspectorCLITests"
+        ),
+        // Axoloty MCP server. Depends on the inspector runtime for broker
+        // connectivity and the official MCP Swift SDK for protocol.
+        .target(
+            name: "AxolotyMCP",
+            dependencies: [
+                "Axoloty",
+                "AxolotyInspectorCore",
+                "AxolotyInspectorRuntime",
+                .product(name: "MCP", package: "swift-sdk"),
+            ],
+            path: "Tools/AxolotyMCP"
+        ),
+        .executableTarget(
+            name: "AxolotyMCPServer",
+            dependencies: ["AxolotyMCP", "Axoloty", "AxolotyInspectorCore", "AxolotyInspectorRuntime"],
+            path: "Tools/axoloty-mcp"
         ),
         // Build-only release consumers for binary-size and dependency-closure
         // benchmarking (issue #299). Not shipped as products — they exist so
