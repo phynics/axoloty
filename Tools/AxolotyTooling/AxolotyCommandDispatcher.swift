@@ -99,6 +99,10 @@ public struct AxolotyCommandDispatcher: Sendable {
             checkResult(requested: ["embedded-linker"])
         case ["release", "snapshots"]:
             releaseSnapshotsResult()
+        case ["release", "checkpoint"]:
+            checkpointResult(hardware: false)
+        case ["release", "checkpoint-hardware"]:
+            checkpointResult(hardware: true)
         case ["hardware", "check"]:
             hardwareResult(required: false, device: nil)
         case ["hardware", "require"]:
@@ -133,7 +137,9 @@ public struct AxolotyCommandDispatcher: Sendable {
       hardware check       Run or skip the sporadic hardware smoke check.
       hardware require     Require an attached device and run its smoke check.
       release snapshots    Generate and verify a provenance-rich wire bundle.
-        --device PATH      Override AXOLOTY_DEVICE (default: /dev/ttyACM0).
+      release checkpoint   Run the 0.2 checkpoint validation (no hardware).
+      release checkpoint-hardware  Run checkpoint with ESP32-C6 smoke test.
+         --device PATH      Override AXOLOTY_DEVICE (default: /dev/ttyACM0).
 
     The initial command surface is intentionally small. Workflow commands are
     introduced only when their execution contracts and structured results exist.
@@ -239,6 +245,57 @@ public struct AxolotyCommandDispatcher: Sendable {
             AxolotyCheckManifest(results: [result]),
             exitCode: command.exitCode == 0 ? 0 : 1
         )) ?? AxolotyCommandResult(exitCode: 70)
+    }
+
+    private func checkpointResult(hardware: Bool) -> AxolotyCommandResult {
+        let plan: AxolotyCheckPlan
+        if hardware {
+            let device = environment["AXOLOTY_DEVICE"] ?? "/dev/ttyACM0"
+            guard fileSystem.exists(atPath: device) else {
+                return AxolotyCommandResult(
+                    standardError: "error: checkpoint-hardware requires a device at \(device)\n",
+                    exitCode: 1
+                )
+            }
+            plan = AxolotyCheckPlan.checkpointHardware(device: device)
+        } else {
+            plan = AxolotyCheckPlan.checkpoint
+        }
+        do {
+            let planned = try AxolotyCheckPlanner().plan(plan.nodes)
+            let results = AxolotyCheckExecutor(commandRunner: commandRunner).execute(planned)
+            let gitCommit = environment["AXOLOTY_GIT_COMMIT"]
+                ?? commandRunner.run(AxolotyCommandPlan(
+                    executable: "git", arguments: ["rev-parse", "--short", "HEAD"]
+                )).standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+            let gitStatus = commandRunner.run(AxolotyCommandPlan(
+                executable: "git", arguments: ["status", "--porcelain"]
+            )).standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+            let gitBranch = commandRunner.run(AxolotyCommandPlan(
+                executable: "git", arguments: ["rev-parse", "--abbrev-ref", "HEAD"]
+            )).standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+            let swiftVersion = commandRunner.run(AxolotyCommandPlan(
+                executable: "swift", arguments: ["--version"]
+            )).standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+            let timestamp = ISO8601DateFormatter().string(from: Date())
+            let manifest = AxolotyCheckpointManifest(
+                releaseVersion: "0.2.0",
+                gitCommit: gitCommit,
+                gitClean: gitStatus.isEmpty,
+                gitBranch: gitBranch,
+                swiftVersion: swiftVersion,
+                hardwareIncluded: hardware,
+                results: results,
+                timestamp: timestamp
+            )
+            let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
+            return try Self.jsonResult(manifest, exitCode: exitCode)
+        } catch {
+            return AxolotyCommandResult(
+                standardError: "error: unable to plan checkpoint\n",
+                exitCode: 70
+            )
+        }
     }
 
     private func execute(plan availablePlan: AxolotyCheckPlan) -> AxolotyCommandResult {

@@ -317,6 +317,47 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
         ])
     }
 
+    /// Creates the 0.2 checkpoint validation plan.
+    ///
+    /// Runs all ordinary offline checks plus binary-size benchmarks and
+    /// release snapshot verification. Does not flash or probe hardware.
+    public static var checkpoint: AxolotyCheckPlan {
+        var nodes = initialOffline.nodes
+        nodes.append(AxolotyCheckNode(
+            name: "checkpoint-benchmark-size",
+            dependencies: nodes.contains(where: { $0.name == "build" }) ? ["build"] : [],
+            command: AxolotyCommandPlan(
+                executable: "Tests/Support/check-benchmark-size.sh"
+            )
+        ))
+        nodes.append(AxolotyCheckNode(
+            name: "checkpoint-release-snapshots",
+            dependencies: ["checkpoint-benchmark-size"],
+            command: AxolotyCommandPlan(
+                executable: "node",
+                arguments: ["Tests/Support/release-snapshots.mjs", "verify", "Tests/WireCompatibility/Fixtures"]
+            )
+        ))
+        return AxolotyCheckPlan(nodes: nodes)
+    }
+
+    /// Creates the 0.2 checkpoint hardware validation plan.
+    ///
+    /// Runs the checkpoint plan, then requires an attached ESP32-C6 device
+    /// and runs its smoke test. Fails if no device is present.
+    public static func checkpointHardware(device: String = "/dev/ttyACM0") -> AxolotyCheckPlan {
+        var nodes = checkpoint.nodes
+        nodes.append(AxolotyCheckNode(
+            name: "checkpoint-hardware-smoke",
+            dependencies: ["checkpoint-release-snapshots"],
+            command: AxolotyCommandPlan(
+                executable: "Tests/Support/embedded-swift-smoke.sh",
+                environment: ["EMBEDDED_DEVICE": device]
+            )
+        ))
+        return AxolotyCheckPlan(nodes: nodes)
+    }
+
 }
 
 /// A versioned machine-readable result from an ``axoloty-tool`` check plan.
@@ -340,7 +381,54 @@ public struct AxolotyCheckManifest: Codable, Equatable, Sendable {
     }
 }
 
-/// Errors found while expanding a check dependency graph.
+/// A versioned machine-readable manifest for a 0.2 checkpoint run.
+public struct AxolotyCheckpointManifest: Codable, Equatable, Sendable {
+    /// The manifest schema version.
+    public let schemaVersion: Int
+    /// The release version being validated.
+    public let releaseVersion: String
+    /// The git commit hash.
+    public let gitCommit: String
+    /// Whether the working tree was clean.
+    public let gitClean: Bool
+    /// The git branch name.
+    public let gitBranch: String
+    /// The Swift compiler version string.
+    public let swiftVersion: String
+    /// The platform the checkpoint ran on.
+    public let platform: AxolotyCheckPlan.Platform
+    /// Whether hardware was included.
+    public let hardwareIncluded: Bool
+    /// Check results in deterministic plan order.
+    public let results: [AxolotyCheckResult]
+    /// ISO 8601 timestamp of when the checkpoint was generated.
+    public let timestamp: String
+
+    /// Creates a checkpoint manifest.
+    public init(
+        schemaVersion: Int = 1,
+        releaseVersion: String,
+        gitCommit: String,
+        gitClean: Bool,
+        gitBranch: String,
+        swiftVersion: String,
+        platform: AxolotyCheckPlan.Platform = AxolotyCheckPlan.currentPlatform,
+        hardwareIncluded: Bool,
+        results: [AxolotyCheckResult],
+        timestamp: String
+    ) {
+        self.schemaVersion = schemaVersion
+        self.releaseVersion = releaseVersion
+        self.gitCommit = gitCommit
+        self.gitClean = gitClean
+        self.gitBranch = gitBranch
+        self.swiftVersion = swiftVersion
+        self.platform = platform
+        self.hardwareIncluded = hardwareIncluded
+        self.results = results
+        self.timestamp = timestamp
+    }
+}
 public enum AxolotyCheckPlanningError: Error, Equatable, Sendable {
     /// A dependency name is not present in the supplied nodes.
     case missingDependency(node: String, dependency: String)
