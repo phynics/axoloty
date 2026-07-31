@@ -159,6 +159,19 @@ make release-snapshots   # produce and verify provenance-rich wire evidence
 swift run --package-path Tools axoloty-tool check
 ```
 
+### MQTT object inspector
+
+`axoloty-inspect` connects to a live MQTT broker and inspects Coaty objects
+without writing a custom agent — passive catalogue (`catalog`) or active
+discovery (`discover`):
+
+```sh
+swift run --package-path Tools axoloty-inspect catalog --duration 10s
+swift run --package-path Tools axoloty-inspect discover --core-type Identity
+```
+
+See [docs/inspector.md](./docs/inspector.md) for the full reference.
+
 For migrating from legacy CoatySwift, see
 [0.2-MIGRATION.md](./docs/0.2-MIGRATION.md).
 

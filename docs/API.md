@@ -40,6 +40,9 @@ The following public API operations may suspend (`async` or `async throws`):
 All `observe*Stream()` methods return `AsyncStream<T>` which suspends while
 waiting for the next event:
 - `observeAdvertiseStream(for:)` — `async`
+- `observeAdvertiseStream(withCoreType:)` — `async`
+- `observeAdvertiseStream(withObjectType:)` — `async throws`
+- `observeAdvertiseStream()` — `async` (namespace-wide, no type filter)
 - `observeDeadvertiseStream()` — `async`
 - `observeDiscoverStream()` — `async`
 - `observeQueryStream()` — `async`

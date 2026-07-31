@@ -16,6 +16,11 @@ axoloty-inspect catalog --core-type Identity --namespace test-ns
 axoloty-inspect catalog --output ndjson | jq -c .
 ```
 
+Valid core types: `CoatyObject`, `User`, `Annotation`, `Task`, `IoSource`,
+`IoActor`, `IoNode`, `IoContext`, `Identity`, `Log`, `Location`, `Snapshot`.
+For SensorThings types (e.g. `Sensor`, `Thing`, `Observation`) use
+`--object-type` instead.
+
 ### `discover` — active discovery
 
 Send one Discover request, collect Resolve responses, and print a finite
@@ -51,7 +56,7 @@ Filters are ANDed: an object must match all specified fields.
 
 | Option | Description |
 |---|---|
-| `--core-type TYPE` | Filter by core type (e.g. `Identity`, `Sensor`) |
+| `--core-type TYPE` | Filter by core type (e.g. `Identity`, `Task`, `Log`) |
 | `--object-type TYPE` | Filter by full object type |
 | `--object-id UUID` | Filter by object UUID |
 | `--source-id UUID` | Filter by source (advertiser) UUID |
@@ -177,14 +182,33 @@ All tests use Swift Testing (`import Testing`, `@Test`, `#expect`).
 
 ## Build
 
+On macOS:
+
 ```sh
 swift build --product axoloty-inspect
 swift test --filter AxolotyInspector
 ```
 
-On Linux, use the container:
+On Linux, use the pinned container via the Makefile env or `.devcontainer/run.sh`:
 
 ```sh
-.devcontainer/run.sh swift build --product axoloty-inspect
-.devcontainer/run.sh swift test --filter AxolotyInspector
+CONTAINER_RUNTIME=podman IMAGE=axoloty-dev \
+BUILD_DIR=.build BUILD_LOCK=0 \
+SPM_CACHE_DIR="$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux" \
+.devcontainer/run.sh swift build \
+  --cache-path /workspace/.swiftpm-cache \
+  --disable-automatic-resolution \
+  --product axoloty-inspect
+
+CONTAINER_RUNTIME=podman IMAGE=axoloty-dev \
+BUILD_DIR=.build BUILD_LOCK=0 \
+SPM_CACHE_DIR="$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux" \
+.devcontainer/run.sh swift test \
+  --cache-path /workspace/.swiftpm-cache \
+  --disable-automatic-resolution \
+  --filter AxolotyInspector
 ```
+
+The `--disable-automatic-resolution` flag is mandatory because
+`Package.resolved` is checked in. See
+[AGENTS.md](../AGENTS.md) for the full container build/test reference.

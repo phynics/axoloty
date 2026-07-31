@@ -43,6 +43,7 @@ The v1 north star remains:
 | 3 | [#276](https://github.com/phynics/axoloty/issues/276) | Establish resource and performance budgets. | ✅ Closed |
 | 4 | [#277](https://github.com/phynics/axoloty/issues/277) | Prove the ESP32-C6 vertical slice: Advertise/Deadvertise and Discover/Resolve. | ✅ Closed |
 | 0.2 | [#278](https://github.com/phynics/axoloty/issues/278) | Stabilize, document, and release the 0.2 checkpoint. | 🔄 In progress |
+| Inspector | [#344](https://github.com/phynics/axoloty/issues/344) | MQTT object inspector CLI (`axoloty-inspect`) for passive catalogue and active discovery. | ✅ Closed |
 
 ## Design choices
 

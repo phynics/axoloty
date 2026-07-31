@@ -98,3 +98,31 @@ filesystem, environment, clock, or platform boundaries as applicable. Add
 Swift Testing coverage and expose the behavior through `axoloty-tool`; add a short Make
 alias only when Linux contributors need a documented container entry point.
 Do not add a new Bash or Python front controller.
+
+## `axoloty-inspect` — MQTT object inspector
+
+`axoloty-inspect` is a separate executable product that connects to a live
+MQTT broker through Axoloty and inspects Coaty objects without writing a
+custom agent. It has two subcommands:
+
+- **`catalog`** — passively observes Advertise/Deadvertise events and
+  maintains an in-memory object catalogue. Publishes no Coaty events.
+- **`discover`** — sends one Discover request, collects Resolve responses,
+  and prints a finite result.
+
+```sh
+# macOS
+swift run --package-path Tools axoloty-inspect catalog --duration 10s
+swift run --package-path Tools axoloty-inspect discover --core-type Identity
+
+# Linux (container)
+.devcontainer/run.sh swift run --product axoloty-inspect catalog --duration 10s
+```
+
+The inspector is built from two targets: `AxolotyInspectorCore` (zero external
+dependencies, pure catalogue/filter/reducer/record logic) and
+`axoloty-inspect` (CLI, depends on `Axoloty` for broker connectivity).
+`AxolotyTooling`'s dependency closure is unaffected.
+
+See [inspector.md](inspector.md) for the full reference: connection options,
+catalogue filters, output modes, NDJSON schema, exit codes, and credentials.
