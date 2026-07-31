@@ -51,4 +51,18 @@ extension CommunicationManager {
             for: AdvertiseKey(eventTypeFilter: eventTypeFilter)
         )
     }
+
+    /// Observes all Advertise snapshots in the manager's namespace,
+    /// regardless of core type or object type.
+    ///
+    /// The returned stream subscribes to the namespace-wide Advertise topic
+    /// (`coaty/3/<ns>/ADV/+`) when its first iterator is created and
+    /// releases it when its final iterator terminates. This is useful for
+    /// diagnostic and inspection tools that need to discover all advertised
+    /// objects without knowing their types in advance.
+    ///
+    /// - Returns: An event-buffered `AsyncStream` of immutable Advertise snapshots.
+    public func observeAdvertiseStream() async -> AsyncStream<AdvertiseEventSnapshot> {
+        await streams.advertiseAll.subscribe()
+    }
 }

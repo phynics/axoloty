@@ -720,6 +720,7 @@ internal class MQTTNIOClient: CommunicationClient {
                 )
                 await streams.advertiseFamily.send(snapshot, for: objectKey)
             }
+            await streams.advertiseAll.send(snapshot)
         case .deadvertise:
             if let snapshot = DeadvertiseEventSnapshot(parsedMQTTMessage: parsed) {
                 await streams.deadvertise.send(snapshot)
