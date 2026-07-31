@@ -143,9 +143,9 @@ GitHub Pages: <https://phynics.github.io/axoloty/documentation/Axoloty/>.
 
 ## Building & Testing
 
-The Swift `axoloty-tool` executable is the orchestration control plane. Linux
-development extracts its static binary from the pinned Podman/Docker image and
-runs it through the lightweight Makefile; product commands remain containerized.
+The Swift `axoloty-tool` executable is the orchestration control plane. It is
+prebuilt inside the pinned container image and runs in-container via the
+lightweight Makefile and `.devcontainer/run.sh`.
 macOS runs the same offline plan with native Swift:
 
 ```sh

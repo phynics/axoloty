@@ -14,11 +14,12 @@ public enum AxolotyCheckStatus: String, Codable, Equatable, Sendable {
 
 /// A command that a check executor may run later.
 public struct AxolotyCommandPlan: Codable, Equatable, Sendable {
-    /// Where a Linux host-delivered CLI executes the command.
+    /// The execution context for a command.
     public enum ExecutionContext: String, Codable, Equatable, Sendable {
-        /// Run in the pinned project container on Linux, or natively on macOS.
+        /// Run in the pinned project container (default).
         case project
-        /// Run directly beside the host-delivered CLI.
+        /// Run directly on the host (used by wire-capture scripts that
+        /// need host-level container orchestration).
         case host
     }
 
