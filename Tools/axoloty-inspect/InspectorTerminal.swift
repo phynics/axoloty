@@ -6,7 +6,7 @@ import Foundation
 enum InspectorTerminal {
     /// Returns `true` when stdout is a TTY (interactive terminal).
     static var isStdoutTerminal: Bool {
-        isatty(fileno(stdout)) != 0
+        isatty(1) != 0
     }
 }
 

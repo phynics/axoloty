@@ -134,7 +134,7 @@ public struct InspectorRecordFactory: Sendable {
                 payload: payload(from: object),
                 privateData: privateData(from: object)
             )
-        case let .updated(previous, current):
+        case let .updated(_, current):
             return InspectorRecord(
                 kind: .objectUpdated,
                 timestamp: timestamp,

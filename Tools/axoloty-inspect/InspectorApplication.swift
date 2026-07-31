@@ -116,7 +116,7 @@ final class InspectorApplication {
 
         let (eventStream, continuation) = AsyncStream.makeStream(of: ApplicationEvent.self)
 
-        let advertTask = Task {
+        let advertTask = _Concurrency.Task {
             var it = advertiseStream.makeAsyncIterator()
             while let snapshot = await it.next() {
                 continuation.yield(.advertise(snapshot))
@@ -124,7 +124,7 @@ final class InspectorApplication {
             continuation.yield(.streamEnded)
         }
 
-        let deadvertTask = Task {
+        let deadvertTask = _Concurrency.Task {
             var it = deadvertiseStream.makeAsyncIterator()
             while let snapshot = await it.next() {
                 continuation.yield(.deadvertise(snapshot))
@@ -132,17 +132,17 @@ final class InspectorApplication {
             continuation.yield(.streamEnded)
         }
 
-        let timerTask = Task {
+        let timerTask = _Concurrency.Task {
             if let duration = cmd.duration.value {
-                try? await Task.sleep(for: duration)
+                try? await _Concurrency.Task.sleep(for: duration)
                 continuation.yield(.durationExpired)
             }
         }
 
-        let signalTask = Task {
+        let signalTask = _Concurrency.Task {
             guard let handler = signalHandler else { return }
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(100))
+            while !_Concurrency.Task.isCancelled {
+                try? await _Concurrency.Task.sleep(for: .milliseconds(100))
                 if handler.wasInterrupted {
                     continuation.yield(.interrupted)
                     return
@@ -192,7 +192,6 @@ final class InspectorApplication {
         _ = await deadvertTask.value
         _ = await timerTask.value
         _ = await signalTask.value
-
         emit(factory.sessionEnded(timestamp: timestamp()))
 
         session.stop()

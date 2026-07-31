@@ -49,7 +49,7 @@ public struct InspectorObject: Codable, Equatable, Sendable {
 /// inspector objects.
 public struct ObjectCatalogue: Equatable, Sendable {
     /// The current objects keyed by object ID.
-    public private(set) var objectsById: [String: InspectorObject]
+    public internal(set) var objectsById: [String: InspectorObject]
 
     /// Creates an empty catalogue.
     public init() {

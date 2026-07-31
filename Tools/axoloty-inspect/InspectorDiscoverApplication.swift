@@ -97,9 +97,9 @@ final class InspectorDiscoverApplication {
         var discoveredObjects: [String: InspectorObject] = [:]
         var timedOut = false
 
-        let (eventStream, continuation) = AsyncStream.makeStream(of: ResponseEvent?.self)
+        let (eventStream, continuation) = AsyncStream.makeStream(of: ResponseEventSnapshot?.self)
 
-        let responseTask = Task {
+        let responseTask = _Concurrency.Task {
             var it = responseStream.makeAsyncIterator()
             while let response = await it.next() {
                 continuation.yield(response)
@@ -107,15 +107,15 @@ final class InspectorDiscoverApplication {
             continuation.yield(nil)
         }
 
-        let timerTask = Task {
-            try? await Task.sleep(for: timeout)
+        let timerTask = _Concurrency.Task {
+            try? await _Concurrency.Task.sleep(for: timeout)
             continuation.yield(nil)
         }
 
-        let signalTask = Task {
+        let signalTask = _Concurrency.Task {
             guard let handler = signalHandler else { return }
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(100))
+            while !_Concurrency.Task.isCancelled {
+                try? await _Concurrency.Task.sleep(for: .milliseconds(100))
                 if handler.wasInterrupted {
                     continuation.yield(nil)
                     return

@@ -58,7 +58,7 @@ extension InspectorConnectionConfiguration: CustomStringConvertible {
     public var description: String {
         let creds = username != nil ? "username=***" : "no-credentials"
         let pass = password != nil ? " password=***" : ""
-        "InspectorConnectionConfiguration(host: \(host), port: \(port), namespace: \(namespace), tls: \(usesTLS), \(creds)\(pass), connectTimeout: \(connectTimeout))"
+        return "InspectorConnectionConfiguration(host: \(host), port: \(port), namespace: \(namespace), tls: \(usesTLS), \(creds)\(pass), connectTimeout: \(connectTimeout))"
     }
 }
 

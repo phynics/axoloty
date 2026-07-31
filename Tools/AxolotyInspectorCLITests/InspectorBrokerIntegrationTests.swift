@@ -73,9 +73,9 @@ struct InspectorBrokerIntegrationTests {
             isTerminal: false
         )
 
-        let runTask = Task { await app.run() }
+        let runTask = _Concurrency.Task { await app.run() }
 
-        try await Task.sleep(for: .milliseconds(500))
+        try await _Concurrency.Task.sleep(for: .milliseconds(500))
 
         let objectId = CoatyUUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!
         let object = CoatyObject(
@@ -87,7 +87,7 @@ struct InspectorBrokerIntegrationTests {
         let cm = producer.communicationManager!
         cm.publishAdvertise(try AdvertiseEvent.with(object: object))
 
-        try await Task.sleep(for: .milliseconds(500))
+        try await _Concurrency.Task.sleep(for: .milliseconds(500))
 
         cm.publishDeadvertise(DeadvertiseEvent.with(objectIds: [objectId]))
 
@@ -135,14 +135,14 @@ struct InspectorBrokerIntegrationTests {
             isTerminal: false
         )
 
-        let runTask = Task { await app.run() }
+        let runTask = _Concurrency.Task { await app.run() }
 
-        try await Task.sleep(for: .milliseconds(500))
+        try await _Concurrency.Task.sleep(for: .milliseconds(500))
 
         let objectId = CoatyUUID(uuidString: "11111111-2222-3333-4444-555555555555")!
         let customObject = CoatyObject(
-            coreType: .Sensor,
-            objectType: "com.example.CustomSensor",
+            coreType: .Identity,
+            objectType: "com.example.CustomAgent",
             objectId: objectId,
             name: "Custom Sensor"
         )
@@ -155,6 +155,6 @@ struct InspectorBrokerIntegrationTests {
 
         let advertiseLines = output.filter { $0.contains("\"kind\":\"advertise\"") }
         #expect(advertiseLines.count == 1)
-        #expect(advertiseLines[0].contains("\"objectType\":\"com.example.CustomSensor\""))
+        #expect(advertiseLines[0].contains("\"objectType\":\"com.example.CustomAgent\""))
     }
 }

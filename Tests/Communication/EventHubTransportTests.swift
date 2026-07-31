@@ -888,6 +888,7 @@ private func makeTestStreams() -> CommunicationStreams {
         ioStateFamily: BroadcastFamily(mode: .state),
         associateFamily: BroadcastFamily(mode: .event),
         advertiseFamily: BroadcastFamily(mode: .event),
+        advertiseAll: Broadcast(mode: .event),
         deadvertise: Broadcast(mode: .event),
         discover: Broadcast(mode: .event),
         query: Broadcast(mode: .event),
@@ -1029,7 +1030,7 @@ struct NamespaceAdvertiseStreamTests {
             eventTypeFilter: ":" + customObjectType,
             object: CoatyObjectSnapshot(
                 objectId: "obj-2",
-                coreType: .Sensor,
+                coreType: .Identity,
                 objectType: customObjectType,
                 name: "custom-sensor"
             )

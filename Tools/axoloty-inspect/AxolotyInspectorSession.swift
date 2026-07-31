@@ -79,7 +79,7 @@ final class AxolotyInspectorSession: InspectorSession {
                 }
             }
             group.addTask {
-                try? await Task.sleep(for: self.connectTimeout)
+                try? await _Concurrency.Task.sleep(for: self.connectTimeout)
                 return .timedOut
             }
 
