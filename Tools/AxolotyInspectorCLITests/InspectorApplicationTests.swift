@@ -3,6 +3,7 @@
 @testable import AxolotyInspectorCLI
 import Axoloty
 import AxolotyInspectorCore
+import AxolotyInspectorRuntime
 import Foundation
 import Testing
 

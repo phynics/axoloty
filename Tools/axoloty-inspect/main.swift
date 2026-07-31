@@ -2,6 +2,7 @@
 
 import Axoloty
 import AxolotyInspectorCore
+import AxolotyInspectorRuntime
 import Foundation
 
 let environment = InspectorEnvironmentValues(environment: ProcessInfo.processInfo.environment)

@@ -122,15 +122,20 @@ let package = Package(
             path: "Tools/AxolotyToolingTests"
         ),
         // MQTT object inspector. The core target has no product-runtime
-        // dependencies; the CLI target depends on Axoloty for broker
-        // connectivity via CommunicationManager (#344).
+        // dependencies; the runtime target adds Axoloty-backed session and
+        // application logic; the CLI target adds the entry point.
         .target(
             name: "AxolotyInspectorCore",
             path: "Tools/AxolotyInspectorCore"
         ),
+        .target(
+            name: "AxolotyInspectorRuntime",
+            dependencies: ["Axoloty", "AxolotyInspectorCore"],
+            path: "Tools/AxolotyInspectorRuntime"
+        ),
         .executableTarget(
             name: "AxolotyInspectorCLI",
-            dependencies: ["Axoloty", "AxolotyInspectorCore"],
+            dependencies: ["Axoloty", "AxolotyInspectorCore", "AxolotyInspectorRuntime"],
             path: "Tools/axoloty-inspect"
         ),
         .testTarget(
@@ -139,8 +144,13 @@ let package = Package(
             path: "Tools/AxolotyInspectorCoreTests"
         ),
         .testTarget(
+            name: "AxolotyInspectorRuntimeTests",
+            dependencies: ["AxolotyInspectorRuntime", "AxolotyInspectorCore"],
+            path: "Tools/AxolotyInspectorRuntimeTests"
+        ),
+        .testTarget(
             name: "AxolotyInspectorCLITests",
-            dependencies: ["Axoloty", "AxolotyInspectorCore", "AxolotyInspectorCLI"],
+            dependencies: ["Axoloty", "AxolotyInspectorCore", "AxolotyInspectorRuntime", "AxolotyInspectorCLI"],
             path: "Tools/AxolotyInspectorCLITests"
         ),
         // Build-only release consumers for binary-size and dependency-closure
