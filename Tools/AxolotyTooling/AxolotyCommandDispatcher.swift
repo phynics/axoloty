@@ -42,6 +42,7 @@ private struct FoundationFileSystem: AxolotyFileSystem {
 
 /// Parses the stable command surface of the ``axoloty-tool`` executable.
 public struct AxolotyCommandDispatcher: Sendable {
+    private let executableName: String
     private let commandRunner: any AxolotyCheckCommandRunning
     private let integrationRunner: any AxolotyIntegrationRunning
     private let deviceLeaseManager: any AxolotyDeviceLeasing
@@ -49,13 +50,23 @@ public struct AxolotyCommandDispatcher: Sendable {
     private let environment: [String: String]
 
     /// Creates a command dispatcher.
+    ///
+    /// - Parameters:
+    ///   - executableName: The name used in version output and help text (default: `axoloty-tool`).
+    ///   - commandRunner: The process runner for executing check commands.
+    ///   - integrationRunner: The integration test runner for broker-backed tests.
+    ///   - deviceLeaseManager: The device lease manager for hardware checks.
+    ///   - fileSystem: The filesystem boundary for existence checks.
+    ///   - environment: The environment variable map.
     public init(
+        executableName: String = "axoloty-tool",
         commandRunner: any AxolotyCheckCommandRunning = FoundationCommandRunner(),
         integrationRunner: (any AxolotyIntegrationRunning)? = nil,
         deviceLeaseManager: any AxolotyDeviceLeasing = FoundationDeviceLeaseManager(),
         fileSystem: (any AxolotyFileSystem)? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) {
+        self.executableName = executableName
         self.commandRunner = commandRunner
         self.integrationRunner = integrationRunner ?? FoundationIntegrationRunner(commandRunner: commandRunner)
         self.deviceLeaseManager = deviceLeaseManager
@@ -68,6 +79,9 @@ public struct AxolotyCommandDispatcher: Sendable {
     /// - Parameter arguments: Arguments after the executable name.
     /// - Returns: Text streams and exit status for the requested command.
     public func run(arguments: [String]) -> AxolotyCommandResult {
+        if arguments.first == "serve" {
+            return serveResult(arguments: Array(arguments.dropFirst()))
+        }
         if arguments.count == 4, arguments[0] == "hardware", ["check", "require"].contains(arguments[1]), arguments[2] == "--device" {
             return hardwareResult(required: arguments[1] == "require", device: arguments[3])
         }
@@ -76,9 +90,9 @@ public struct AxolotyCommandDispatcher: Sendable {
         }
         return switch arguments {
         case [], ["help"], ["--help"], ["-h"]:
-            AxolotyCommandResult(standardOutput: Self.usage)
+            AxolotyCommandResult(standardOutput: Self.usage(executableName: executableName))
         case ["version"], ["--version"]:
-            AxolotyCommandResult(standardOutput: "axoloty-tool \(Self.version)")
+            AxolotyCommandResult(standardOutput: "\(executableName) \(Self.version)")
         case ["check", "--plan"]:
             Self.planResult()
         case ["check"]:
@@ -140,10 +154,33 @@ public struct AxolotyCommandDispatcher: Sendable {
       release checkpoint   Run the 0.2 checkpoint validation (no hardware).
       release checkpoint-hardware  Run checkpoint with ESP32-C6 smoke test.
          --device PATH      Override AXOLOTY_DEVICE (default: /dev/ttyACM0).
+      serve mqtt           Start a local Mosquitto broker in the foreground.
+      serve mcp            Start an Axoloty MCP server (stdio or HTTP).
+      serve dev            Start MQTT + MCP as a supervised development stack.
 
     The initial command surface is intentionally small. Workflow commands are
     introduced only when their execution contracts and structured results exist.
     """
+
+    private static func usage(executableName: String) -> String {
+        usage.replacingOccurrences(of: "axoloty-tool", with: executableName)
+    }
+
+    private func serveResult(arguments: [String]) -> AxolotyCommandResult {
+        let parser = AxolotyServeParser()
+        switch parser.parse(arguments: arguments, environment: environment) {
+        case .success:
+            return AxolotyCommandResult(
+                standardError: "error: serve is not yet implemented\n",
+                exitCode: 70
+            )
+        case .failure(let error):
+            return AxolotyCommandResult(
+                standardError: "error: \(error.userFriendlyMessage)\n",
+                exitCode: 64
+            )
+        }
+    }
 
     private static func planResult() -> AxolotyCommandResult {
         do {

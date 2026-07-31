@@ -20,6 +20,10 @@ let package = Package(
             targets: ["AxolotyCLI"]
         ),
         .executable(
+            name: "ax",
+            targets: ["AxolotyCLI"]
+        ),
+        .executable(
             name: "axoloty-inspect",
             targets: ["AxolotyInspectorCLI"]
         ),

@@ -3,7 +3,11 @@
 import AxolotyTooling
 import Foundation
 
-let result = AxolotyCommandDispatcher().run(arguments: Array(CommandLine.arguments.dropFirst()))
+let executableName = (CommandLine.arguments.first as NSString?)?
+    .lastPathComponent ?? "axoloty-tool"
+
+let result = AxolotyCommandDispatcher(executableName: executableName)
+    .run(arguments: Array(CommandLine.arguments.dropFirst()))
 
 if !result.standardOutput.isEmpty {
     print(result.standardOutput)
