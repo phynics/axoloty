@@ -331,11 +331,20 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
             )
         ))
         nodes.append(AxolotyCheckNode(
-            name: "checkpoint-release-snapshots",
+            name: "checkpoint-release-snapshots-generate",
             dependencies: ["checkpoint-benchmark-size"],
             command: AxolotyCommandPlan(
                 executable: "node",
-                arguments: ["Tests/Support/release-snapshots.mjs", "verify", "Tests/WireCompatibility/Fixtures"]
+                arguments: ["Tests/Support/release-snapshots.mjs", "generate",
+                            "Tests/WireCompatibility/Fixtures", ".testing/release-snapshots"]
+            )
+        ))
+        nodes.append(AxolotyCheckNode(
+            name: "checkpoint-release-snapshots-verify",
+            dependencies: ["checkpoint-release-snapshots-generate"],
+            command: AxolotyCommandPlan(
+                executable: "node",
+                arguments: ["Tests/Support/release-snapshots.mjs", "verify", ".testing/release-snapshots"]
             )
         ))
         return AxolotyCheckPlan(nodes: nodes)
@@ -349,7 +358,7 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
         var nodes = checkpoint.nodes
         nodes.append(AxolotyCheckNode(
             name: "checkpoint-hardware-smoke",
-            dependencies: ["checkpoint-release-snapshots"],
+            dependencies: ["checkpoint-release-snapshots-verify"],
             command: AxolotyCommandPlan(
                 executable: "Tests/Support/embedded-swift-smoke.sh",
                 environment: ["EMBEDDED_DEVICE": device]
