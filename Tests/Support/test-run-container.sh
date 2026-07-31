@@ -133,3 +133,71 @@ if CONTAINER_RUNTIME="$fake_bin/fake-podman" CONTAINER_ENV_VARS=1 \
     echo "expected an invalid container environment name to fail" >&2
     exit 1
 fi
+
+# --- CONTAINER_PORTS tests ---
+
+# Single port mapping produces -p flag.
+: > "$capture"
+CONTAINER_PORTS="127.0.0.1:1883:1883" \
+CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+grep -q -- '-p 127.0.0.1:1883:1883' "$capture"
+
+# Multiple port mappings each produce -p flags.
+: > "$capture"
+CONTAINER_PORTS="127.0.0.1:1883:1883 127.0.0.1:8765:8765" \
+CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+grep -q -- '-p 127.0.0.1:1883:1883' "$capture"
+grep -q -- '-p 127.0.0.1:8765:8765' "$capture"
+
+# No port flags when CONTAINER_PORTS is not set.
+: > "$capture"
+CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+if grep -q -- '-p ' "$capture"; then
+    echo "unexpected -p flag in ordinary command" >&2
+    exit 1
+fi
+
+# Invalid port spec with shell metacharacter is rejected.
+if CONTAINER_PORTS="127.0.0.1:1883:1883;echo pwned" \
+CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true 2>/dev/null; then
+    echo "expected shell-metacharacter port spec to fail" >&2
+    exit 1
+fi
+
+# Newline in port spec is rejected.
+if CONTAINER_PORTS="127.0.0.1:1883:1883
+8765" \
+CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true 2>/dev/null; then
+    echo "expected newline port spec to fail" >&2
+    exit 1
+fi
+
+# --- CONTAINER_STDIN tests ---
+
+# CONTAINER_STDIN=1 produces -i.
+: > "$capture"
+CONTAINER_STDIN=1 \
+CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+grep -q -- '-i' "$capture"
+
+# CONTAINER_STDIN=1 never produces -t.
+if grep -q -- '-t' "$capture"; then
+    echo "unexpected -t flag with CONTAINER_STDIN=1" >&2
+    exit 1
+fi
+
+# No -i flag when CONTAINER_STDIN is not set.
+: > "$capture"
+CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+run_args=$(cat "$capture")
+if echo "$run_args" | grep -qw -- '-i'; then
+    echo "unexpected -i flag in ordinary command" >&2
+    exit 1
+fi
