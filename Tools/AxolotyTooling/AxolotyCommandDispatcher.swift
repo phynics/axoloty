@@ -48,6 +48,9 @@ public struct AxolotyCommandDispatcher: Sendable {
     private let deviceLeaseManager: any AxolotyDeviceLeasing
     private let fileSystem: any AxolotyFileSystem
     private let environment: [String: String]
+    private let processRunner: any AxolotyManagedProcessRunning
+    private let portProbe: any AxolotyServiceProbing
+    private let tempDirProvider: any AxolotyTempDirectoryProvider
 
     /// Creates a command dispatcher.
     ///
@@ -58,13 +61,19 @@ public struct AxolotyCommandDispatcher: Sendable {
     ///   - deviceLeaseManager: The device lease manager for hardware checks.
     ///   - fileSystem: The filesystem boundary for existence checks.
     ///   - environment: The environment variable map.
+    ///   - processRunner: The process runner for managed service commands.
+    ///   - portProbe: The TCP probe for service readiness checks.
+    ///   - tempDirProvider: The temporary directory provider for service configs.
     public init(
         executableName: String = "axoloty-tool",
         commandRunner: any AxolotyCheckCommandRunning = FoundationCommandRunner(),
         integrationRunner: (any AxolotyIntegrationRunning)? = nil,
         deviceLeaseManager: any AxolotyDeviceLeasing = FoundationDeviceLeaseManager(),
         fileSystem: (any AxolotyFileSystem)? = nil,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        processRunner: (any AxolotyManagedProcessRunning)? = nil,
+        portProbe: (any AxolotyServiceProbing)? = nil,
+        tempDirProvider: (any AxolotyTempDirectoryProvider)? = nil
     ) {
         self.executableName = executableName
         self.commandRunner = commandRunner
@@ -72,6 +81,9 @@ public struct AxolotyCommandDispatcher: Sendable {
         self.deviceLeaseManager = deviceLeaseManager
         self.fileSystem = fileSystem ?? FoundationFileSystem()
         self.environment = environment
+        self.processRunner = processRunner ?? FoundationProcessRunner()
+        self.portProbe = portProbe ?? FoundationServiceProbe()
+        self.tempDirProvider = tempDirProvider ?? FoundationTempDirectoryProvider()
     }
 
     /// Resolves command-line arguments to their externally visible result.
@@ -169,11 +181,24 @@ public struct AxolotyCommandDispatcher: Sendable {
     private func serveResult(arguments: [String]) -> AxolotyCommandResult {
         let parser = AxolotyServeParser()
         switch parser.parse(arguments: arguments, environment: environment) {
-        case .success:
-            return AxolotyCommandResult(
-                standardError: "error: serve is not yet implemented\n",
-                exitCode: 70
-            )
+        case .success(let command):
+            switch command {
+            case .mqtt(let config):
+                let runner = AxolotyMQTTServiceRunner(
+                    processRunner: processRunner,
+                    portProbe: portProbe,
+                    fileSystem: fileSystem,
+                    tempDirProvider: tempDirProvider,
+                    mosquittoExecutable: environment["AXOLOTY_MOSQUITTO_EXECUTABLE"] ?? "/usr/sbin/mosquitto"
+                )
+                let exitCode = runner.run(config)
+                return AxolotyCommandResult(exitCode: exitCode)
+            case .mcp, .development:
+                return AxolotyCommandResult(
+                    standardError: "error: serve is not yet implemented for this subcommand\n",
+                    exitCode: 70
+                )
+            }
         case .failure(let error):
             return AxolotyCommandResult(
                 standardError: "error: \(error.userFriendlyMessage)\n",

@@ -365,11 +365,13 @@ func serveMqttCLIOverridesEnvPort() {
 // MARK: - Dispatcher integration tests
 
 @Test
-func dispatcherServesMqttReturnsNotImplemented() {
-    let dispatcher = AxolotyCommandDispatcher(environment: [:])
+func dispatcherServesMqttReturns69WhenMosquittoMissing() {
+    let dispatcher = AxolotyCommandDispatcher(
+        fileSystem: StubFileSystem(paths: []),
+        environment: [:]
+    )
     let result = dispatcher.run(arguments: ["serve", "mqtt"])
-    #expect(result.exitCode == 70)
-    #expect(result.standardError.contains("not yet implemented"))
+    #expect(result.exitCode == 69)
 }
 
 @Test
