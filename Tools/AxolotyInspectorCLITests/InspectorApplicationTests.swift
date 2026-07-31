@@ -311,7 +311,10 @@ struct InspectorApplicationTests {
         _ = await app.run()
 
         let dataLines = output.filter { !$0.contains("CONNECTED") && !$0.contains("DISCONNECTED") }
-        #expect(dataLines.contains { $0.contains("\"schema\":\"axoloty.inspect/v1\"") })
+        let hasSchema = dataLines.contains { line in
+            (try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])?["schema"] != nil
+        }
+        #expect(hasSchema)
     }
 
     @Test

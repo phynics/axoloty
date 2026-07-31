@@ -4,6 +4,14 @@ import Axoloty
 import AxolotyInspectorCore
 import Foundation
 
+/// Internal event type for the discover event loop.
+private enum DiscoverLoopEvent: Sendable {
+    case response(ResponseEventSnapshot)
+    case responsesExhausted
+    case timeoutExpired
+    case interrupted
+}
+
 /// Decoded payload of a Resolve response.
 private struct ResolveResponsePayload: Decodable {
     let object: CoatyObjectSnapshot
@@ -92,24 +100,23 @@ final class InspectorDiscoverApplication {
         let responseStream = await session.discover(discoverEvent)
 
         let timeout = cmd.timeout.value ?? .seconds(10)
-        let inactivityWindow: Duration = .seconds(1)
 
         var discoveredObjects: [String: InspectorObject] = [:]
         var timedOut = false
 
-        let (eventStream, continuation) = AsyncStream.makeStream(of: ResponseEventSnapshot?.self)
+        let (eventStream, continuation) = AsyncStream.makeStream(of: DiscoverLoopEvent.self)
 
         let responseTask = _Concurrency.Task {
             var it = responseStream.makeAsyncIterator()
             while let response = await it.next() {
-                continuation.yield(response)
+                continuation.yield(.response(response))
             }
-            continuation.yield(nil)
+            continuation.yield(.responsesExhausted)
         }
 
         let timerTask = _Concurrency.Task {
             try? await _Concurrency.Task.sleep(for: timeout)
-            continuation.yield(nil)
+            continuation.yield(.timeoutExpired)
         }
 
         let signalTask = _Concurrency.Task {
@@ -117,49 +124,40 @@ final class InspectorDiscoverApplication {
             while !_Concurrency.Task.isCancelled {
                 try? await _Concurrency.Task.sleep(for: .milliseconds(100))
                 if handler.wasInterrupted {
-                    continuation.yield(nil)
+                    continuation.yield(.interrupted)
                     return
                 }
             }
         }
 
-        var lastResponseTime = ContinuousClock.now
         var done = false
         var interrupted = false
 
         var eventIterator = eventStream.makeAsyncIterator()
         while !done, let event = await eventIterator.next() {
-            if let handler = signalHandler, handler.wasInterrupted {
-                interrupted = true
-                done = true
-                break
-            }
-
-            guard let response = event else {
-                if !discoveredObjects.isEmpty {
-                    let now = ContinuousClock.now
-                    if now - lastResponseTime < inactivityWindow {
-                        continue
+            switch event {
+            case .response(let response):
+                if let payload = response.decodePayload(ResolveResponsePayload.self) {
+                    let object = payload.object
+                    if discoveredObjects[object.objectId] == nil {
+                        discoveredObjects[object.objectId] = InspectorObject(
+                            objectId: object.objectId,
+                            coreType: object.coreType.rawValue,
+                            objectType: object.objectType,
+                            name: object.name.isEmpty ? nil : object.name,
+                            sourceId: response.sourceId
+                        )
                     }
                 }
+            case .responsesExhausted:
                 timedOut = true
                 done = true
-                break
-            }
-
-            lastResponseTime = ContinuousClock.now
-
-            if let payload = response.decodePayload(ResolveResponsePayload.self) {
-                let object = payload.object
-                if discoveredObjects[object.objectId] == nil {
-                    discoveredObjects[object.objectId] = InspectorObject(
-                        objectId: object.objectId,
-                        coreType: object.coreType.rawValue,
-                        objectType: object.objectType,
-                        name: object.name.isEmpty ? nil : object.name,
-                        sourceId: response.sourceId
-                    )
-                }
+            case .timeoutExpired:
+                timedOut = true
+                done = true
+            case .interrupted:
+                interrupted = true
+                done = true
             }
         }
 
