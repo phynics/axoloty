@@ -111,7 +111,7 @@ public struct AxolotyCommandDispatcher: Sendable {
         }
     }
 
-    private static let version = "0.1.0"
+    private static let version = "0.2.0"
 
     private static let usage = """
     Usage: axoloty-tool <command>
