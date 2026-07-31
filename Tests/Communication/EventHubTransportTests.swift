@@ -831,6 +831,7 @@ private final class FakeCommunicationClient: CommunicationClient {
 
     @MainActor func emitAdvertise(_ snapshot: AdvertiseEventSnapshot, filter: String, objectType: String? = nil) async {
         await streams.advertiseFamily.send(snapshot, for: AdvertiseKey(eventTypeFilter: filter, objectTypeFilter: objectType))
+        await streams.advertiseAll.send(snapshot)
     }
     @MainActor func emitDeadvertise(_ snapshot: DeadvertiseEventSnapshot) async {
         await streams.deadvertise.send(snapshot)
@@ -887,6 +888,7 @@ private func makeTestStreams() -> CommunicationStreams {
         ioStateFamily: BroadcastFamily(mode: .state),
         associateFamily: BroadcastFamily(mode: .event),
         advertiseFamily: BroadcastFamily(mode: .event),
+        advertiseAll: Broadcast(mode: .event),
         deadvertise: Broadcast(mode: .event),
         discover: Broadcast(mode: .event),
         query: Broadcast(mode: .event),
@@ -955,5 +957,145 @@ private func topicCorrelationId(_ topic: String) -> String? {
     let bytes = Array(topic.utf8)
     return bytes.withUnsafeBufferPointer { buf in
         TopicView(topicBytes: buf.baseAddress!, length: buf.count).correlationIdLevel?.asString()
+    }
+}
+
+// MARK: - Namespace-wide Advertise stream tests
+
+@MainActor
+@Suite
+struct NamespaceAdvertiseStreamTests {
+
+    @Test
+    func namespaceWideStreamAcquiresWildcardTopic() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        let expectedTopic = TopicBuilder.subscribeTopic(
+            eventType: .advertise,
+            namespace: manager.namespace
+        )
+
+        let stream = await manager.observeAdvertiseStream()
+        let iterator = stream.makeAsyncIterator()
+        await client.simulateState(.online)
+        try await waitForCommands(on: client, expecting: [.subscribe(expectedTopic)])
+
+        let holder = AsyncStreamBox(iterator)
+        let consumer = _Concurrency.Task { while await holder.iterator.next() != nil {} }
+        consumer.cancel()
+        _ = await consumer.value
+
+        try await waitUntil("advertise-all topic to be released") {
+            client.commands.contains { cmd in
+                if case .unsubscribe(let released) = cmd { return released == expectedTopic }
+                return false
+            }
+        }
+    }
+
+    @Test
+    func namespaceWideStreamReceivesCoreTypeAdvertise() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        let stream = await manager.observeAdvertiseStream()
+        var iterator = stream.makeAsyncIterator()
+        await client.simulateState(.online)
+
+        let snapshot = AdvertiseEventSnapshot(
+            sourceId: "source-1",
+            eventTypeFilter: CoreType.Log.rawValue,
+            object: CoatyObjectSnapshot(
+                objectId: "obj-1",
+                coreType: .Log,
+                objectType: Log.objectType,
+                name: "log-object"
+            )
+        )
+        await client.emitAdvertise(snapshot, filter: CoreType.Log.rawValue)
+
+        #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == snapshot)
+    }
+
+    @Test
+    func namespaceWideStreamReceivesCustomObjectTypeAdvertise() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        let stream = await manager.observeAdvertiseStream()
+        var iterator = stream.makeAsyncIterator()
+        await client.simulateState(.online)
+
+        let customObjectType = "com.example.CustomSensor"
+        let snapshot = AdvertiseEventSnapshot(
+            sourceId: "source-2",
+            eventTypeFilter: ":" + customObjectType,
+            object: CoatyObjectSnapshot(
+                objectId: "obj-2",
+                coreType: .Identity,
+                objectType: customObjectType,
+                name: "custom-sensor"
+            )
+        )
+        await client.emitAdvertise(snapshot, filter: ":" + customObjectType)
+
+        #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == snapshot)
+    }
+
+    @Test
+    func namespaceWideStreamAndCoreTypeStreamBothReceiveSameEvent() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        let allStream = await manager.observeAdvertiseStream()
+        let coreStream = await manager.observeAdvertiseStream(withCoreType: .Log)
+        var allIterator = allStream.makeAsyncIterator()
+        var coreIterator = coreStream.makeAsyncIterator()
+        await client.simulateState(.online)
+
+        let snapshot = AdvertiseEventSnapshot(
+            sourceId: "source-3",
+            eventTypeFilter: CoreType.Log.rawValue,
+            object: CoatyObjectSnapshot(
+                objectId: "obj-3",
+                coreType: .Log,
+                objectType: Log.objectType,
+                name: "dual-recv"
+            )
+        )
+        await client.emitAdvertise(snapshot, filter: CoreType.Log.rawValue)
+
+        #expect(try await nextValue(&allIterator, timeout: .milliseconds(500)) == snapshot)
+        #expect(try await nextValue(&coreIterator, timeout: .milliseconds(500)) == snapshot)
+    }
+
+    @Test
+    func namespaceWideStreamUsesCorrectNamespaceInTopic() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let mqttOptions = MQTTClientOptions(
+            host: "127.0.0.1",
+            port: 1883,
+            shouldTryMDNSDiscovery: false,
+            autoReconnect: false
+        )
+        let communicationOptions = CommunicationOptions(
+            namespace: "test-ns-42",
+            shouldEnableCrossNamespacing: false,
+            mqttClientOptions: mqttOptions,
+            shouldAutoStart: false
+        )
+        let manager = try! CommunicationManager(
+            identity: Identity(name: "NS-Test"),
+            communicationOptions: communicationOptions,
+            commonOptions: nil,
+            client: client
+        )
+
+        let expectedTopic = TopicBuilder.subscribeTopic(
+            eventType: .advertise,
+            namespace: "test-ns-42"
+        )
+
+        let stream = await manager.observeAdvertiseStream()
+        _ = stream.makeAsyncIterator()
+        await client.simulateState(.online)
+        try await waitForCommands(on: client, expecting: [.subscribe(expectedTopic)])
     }
 }

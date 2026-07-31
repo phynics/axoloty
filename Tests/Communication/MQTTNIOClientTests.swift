@@ -144,6 +144,7 @@ private func makeHostIngressClient() -> (MQTTNIOClient, CommunicationStreams) {
         ioStateFamily: BroadcastFamily(mode: .state),
         associateFamily: BroadcastFamily(mode: .event),
         advertiseFamily: BroadcastFamily(mode: .event),
+        advertiseAll: Broadcast(mode: .event),
         deadvertise: Broadcast(mode: .event),
         discover: Broadcast(mode: .event),
         query: Broadcast(mode: .event),

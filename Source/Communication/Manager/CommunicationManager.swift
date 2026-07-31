@@ -200,6 +200,21 @@ public class CommunicationManager {
                     await coordinator.release(topic: topic)
                 }
             ),
+            advertiseAll: Broadcast(
+                mode: .event,
+                onFirst: {
+                    let topic = TopicBuilder.subscribeTopic(
+                        eventType: .advertise, namespace: crossNs
+                    )
+                    await coordinator.acquire(topic: topic)
+                },
+                onLast: {
+                    let topic = TopicBuilder.subscribeTopic(
+                        eventType: .advertise, namespace: crossNs
+                    )
+                    await coordinator.release(topic: topic)
+                }
+            ),
             deadvertise: Broadcast(
                 mode: .event,
                 onFirst: {

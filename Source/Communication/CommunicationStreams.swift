@@ -56,6 +56,10 @@ internal struct CommunicationStreams: Sendable {
     let ioStateFamily: BroadcastFamily<String, IoStateEventSnapshot>
     let associateFamily: BroadcastFamily<String, AssociateEventSnapshot>
     let advertiseFamily: BroadcastFamily<AdvertiseKey, AdvertiseEventSnapshot>
+    /// Namespace-wide Advertise stream that receives every Advertise event
+    /// in the manager's namespace, regardless of core type or object type.
+    /// Subscribes to the wildcard topic `coaty/3/<ns>/ADV/+`.
+    let advertiseAll: Broadcast<AdvertiseEventSnapshot>
     let deadvertise: Broadcast<DeadvertiseEventSnapshot>
     let discover: Broadcast<DiscoverEventSnapshot>
     let query: Broadcast<QueryEventSnapshot>

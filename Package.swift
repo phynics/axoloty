@@ -19,6 +19,10 @@ let package = Package(
             name: "axoloty-tool",
             targets: ["AxolotyCLI"]
         ),
+        .executable(
+            name: "axoloty-inspect",
+            targets: ["AxolotyInspectorCLI"]
+        ),
     ],
     dependencies: [
         .package(path: "Packages/AxolotyWire"),
@@ -112,6 +116,28 @@ let package = Package(
             name: "AxolotyToolingTests",
             dependencies: ["AxolotyTooling"],
             path: "Tools/AxolotyToolingTests"
+        ),
+        // MQTT object inspector. The core target has no product-runtime
+        // dependencies; the CLI target depends on Axoloty for broker
+        // connectivity via CommunicationManager (#344).
+        .target(
+            name: "AxolotyInspectorCore",
+            path: "Tools/AxolotyInspectorCore"
+        ),
+        .executableTarget(
+            name: "AxolotyInspectorCLI",
+            dependencies: ["Axoloty", "AxolotyInspectorCore"],
+            path: "Tools/axoloty-inspect"
+        ),
+        .testTarget(
+            name: "AxolotyInspectorCoreTests",
+            dependencies: ["AxolotyInspectorCore"],
+            path: "Tools/AxolotyInspectorCoreTests"
+        ),
+        .testTarget(
+            name: "AxolotyInspectorCLITests",
+            dependencies: ["Axoloty", "AxolotyInspectorCore", "AxolotyInspectorCLI"],
+            path: "Tools/AxolotyInspectorCLITests"
         ),
         // Build-only release consumers for binary-size and dependency-closure
         // benchmarking (issue #299). Not shipped as products — they exist so
