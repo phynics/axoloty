@@ -11,6 +11,7 @@ JOBS=${AXOLOTY_FUZZ_JOBS:-2}
 OUTPUT_BASE=${AXOLOTY_FUZZ_OUTPUT_DIR:-"$ROOT_DIR/.testing/fuzz"}
 RUNTIME=${CONTAINER_RUNTIME:-}
 IMAGE=${IMAGE:-axoloty-dev}
+SPM_CACHE_DIR=${SPM_CACHE_DIR:-"$ROOT_DIR/.swiftpm-cache"}
 MODE=auto
 FAIL_FAST=0
 QUIET=0
@@ -97,6 +98,8 @@ done
 timestamp=$(date -u '+%Y%m%dT%H%M%SZ')
 campaign_dir="$OUTPUT_BASE/fuzz-$timestamp-$$"
 mkdir -p "$campaign_dir/logs" || die "cannot create $campaign_dir"
+mkdir -p "$SPM_CACHE_DIR" || die "cannot create $SPM_CACHE_DIR"
+SPM_CACHE_DIR=$(cd "$SPM_CACHE_DIR" && pwd)
 manifest="$campaign_dir/manifest.json"
 summary="$campaign_dir/summary.tsv"
 campaign_log="$campaign_dir/campaign.log"
@@ -214,10 +217,10 @@ run_worker() {
     if [[ "$MODE" == container ]]; then scratch_path="/workspace/.build/fuzz/$(basename "$campaign_dir")/worker-$worker"; fi
     mkdir -p "$scratch_host"
     if [[ "$MODE" == direct ]]; then
-        build_command=(swift build --build-tests --scratch-path "$scratch_path")
+        build_command=(swift build --build-tests --cache-path .swiftpm-cache --disable-automatic-resolution --scratch-path "$scratch_path")
     else
-        build_command=("$RUNTIME" run --rm -v "$ROOT_DIR:/workspace" -w /workspace
-            "$IMAGE" swift build --build-tests --scratch-path "$scratch_path")
+        build_command=("$RUNTIME" run --rm -v "$ROOT_DIR:/workspace" -v "$SPM_CACHE_DIR:/workspace/.swiftpm-cache" -w /workspace
+            "$IMAGE" swift build --build-tests --cache-path .swiftpm-cache --disable-automatic-resolution --scratch-path "$scratch_path")
     fi
     {
         printf 'build command:'; printf ' %q' "${build_command[@]}"; printf '\n'
@@ -237,11 +240,11 @@ run_worker() {
             ((QUIET)) || echo "[$case_number] worker=$worker seed=$seed repetition=$repetition starting"
             echo "===== $case_name worker=$worker seed=$seed repetition=$repetition =====" >> "$campaign_log"
             if [[ "$MODE" == direct ]]; then
-                command=(env AXOLOTY_FUZZ_ITERATIONS="$ITERATIONS" AXOLOTY_FUZZ_SEED="$seed" swift test --skip-build --scratch-path "$scratch_path" --filter DeterministicFuzzTests)
+                command=(env AXOLOTY_FUZZ_ITERATIONS="$ITERATIONS" AXOLOTY_FUZZ_SEED="$seed" swift test --skip-build --cache-path .swiftpm-cache --disable-automatic-resolution --scratch-path "$scratch_path" --filter DeterministicFuzzTests)
             else
-                command=("$RUNTIME" run --rm -v "$ROOT_DIR:/workspace" -w /workspace
+                command=("$RUNTIME" run --rm -v "$ROOT_DIR:/workspace" -v "$SPM_CACHE_DIR:/workspace/.swiftpm-cache" -w /workspace
                     -e "AXOLOTY_FUZZ_ITERATIONS=$ITERATIONS" -e "AXOLOTY_FUZZ_SEED=$seed"
-                    "$IMAGE" swift test --skip-build --scratch-path "$scratch_path" --filter DeterministicFuzzTests)
+                    "$IMAGE" swift test --skip-build --cache-path .swiftpm-cache --disable-automatic-resolution --scratch-path "$scratch_path" --filter DeterministicFuzzTests)
             fi
             {
                 printf 'command:'; printf ' %q' "${command[@]}"; printf '\n'

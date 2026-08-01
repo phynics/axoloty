@@ -30,14 +30,7 @@ runs:
         image=$(jq -er '.image' "$LOCK_FILE")
         digest=$(jq -er '.digest' "$LOCK_FILE")
         locked_hash=$(jq -er '.buildInputsSha256' "$LOCK_FILE")
-        actual_hash=$(
-          sha256sum \
-            .devcontainer/Dockerfile \
-            Tools/Package.swift \
-            Tools/AxolotyTooling/*.swift \
-            Tools/axoloty-tool/*.swift \
-            | sha256sum | awk '{print $1}'
-        )
+        actual_hash=$(./.devcontainer/image-inputs.sh | sha256sum | awk '{print $1}')
 
         # A hash mismatch means this revision changed an image build input and no
         # reviewed image has been published for it yet, so building locally is

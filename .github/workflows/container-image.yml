@@ -5,9 +5,15 @@ on:
     branches: [main]
     paths:
       - .devcontainer/Dockerfile
-      - Tools/Package.swift
-      - Tools/AxolotyTooling/**
-      - Tools/axoloty-tool/**
+      - .devcontainer/image-inputs.sh
+      - .dockerignore
+      - Package.swift
+      - Package.resolved
+      - Packages/**
+      - Source/**
+      - Tests/**
+      - Benchmarks/**
+      - Tools/**
       - .github/workflows/container-image.yml
   workflow_dispatch:
 
@@ -47,14 +53,7 @@ jobs:
           IMAGE_BASE: ghcr.io/${{ github.repository_owner }}/axoloty-dev
         run: |
           set -euo pipefail
-          build_inputs_hash=$(
-            sha256sum \
-              .devcontainer/Dockerfile \
-              Tools/Package.swift \
-              Tools/AxolotyTooling/*.swift \
-              Tools/axoloty-tool/*.swift \
-              | sha256sum | awk '{print $1}'
-          )
+          build_inputs_hash=$(./.devcontainer/image-inputs.sh | sha256sum | awk '{print $1}')
           image_tag="$IMAGE_BASE:swift-6.3-$build_inputs_hash"
           docker buildx build \
             --file .devcontainer/Dockerfile \

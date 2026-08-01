@@ -18,6 +18,7 @@ ARG ESP_IDF_VERSION=v5.4
 ARG ESPFLASH_VERSION=3.3.0
 ARG SWIFTLINT_VERSION=0.65.0
 ARG NODE_VERSION=22.17.1
+ARG CMAKE_VERSION=3.29.6
 
 FROM swift:${SWIFT_VERSION}-jammy AS axoloty-tool-builder
 
@@ -53,6 +54,7 @@ ARG ESP_IDF_VERSION
 ARG ESPFLASH_VERSION
 ARG SWIFTLINT_VERSION
 ARG NODE_VERSION
+ARG CMAKE_VERSION
 
 # Build essentials commonly required by Swift Package Manager on Linux,
 # in particular for Foundation's networking stack (URLSession/curl backend)
@@ -82,7 +84,7 @@ RUN chmod 1777 /tmp \
         libusb-1.0-0-dev \
         libudev-dev \
     && rm -rf /var/lib/apt/lists/* \
-    && pip3 install --no-cache-dir "cmake>=3.29"
+     && pip3 install --no-cache-dir "cmake==${CMAKE_VERSION}"
 
 # Node drives repository-owned JavaScript validation and capture tools. Ubuntu
 # Jammy's Node 12 package cannot parse the modern syntax used by those tools,
