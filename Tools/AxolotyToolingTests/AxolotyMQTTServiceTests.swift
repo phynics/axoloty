@@ -338,7 +338,7 @@ func dispatcherServeMcpWithFakeDepsReturnsExitCode() {
     let dispatcher = AxolotyCommandDispatcher(
         fileSystem: StubFileSystem(paths: ["/opt/axoloty/bin/axoloty-mcp"]),
         environment: [:],
-        processRunner: processRunner,
+        processRunnerFactory: { processRunner },
         portProbe: FakePortProbe(),
         tempDirProvider: FakeTempDirProvider(),
         installSignalHandler: false
@@ -360,7 +360,7 @@ func dispatcherServeMqttWithFakeDepsReturnsExitCode() {
     let dispatcher = AxolotyCommandDispatcher(
         fileSystem: StubFileSystem(paths: ["/usr/sbin/mosquitto"]),
         environment: [:],
-        processRunner: processRunner,
+        processRunnerFactory: { processRunner },
         portProbe: FakePortProbe(),
         tempDirProvider: FakeTempDirProvider(),
         installSignalHandler: false

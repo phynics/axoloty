@@ -393,10 +393,13 @@ func dispatcherServesMcpMissingTransportReturnsError() {
 }
 
 @Test
-func dispatcherServesDevReturnsNotImplemented() {
-    let dispatcher = AxolotyCommandDispatcher(environment: [:])
+func dispatcherServesDevReturns69WhenExecutablesMissing() {
+    let dispatcher = AxolotyCommandDispatcher(
+        fileSystem: StubFileSystem(paths: []),
+        environment: [:]
+    )
     let result = dispatcher.run(arguments: ["serve", "dev"])
-    #expect(result.exitCode == 70)
+    #expect(result.exitCode == 69)
 }
 
 @Test

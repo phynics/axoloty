@@ -32,7 +32,7 @@ public struct AxolotyMCPServiceRunner: Sendable {
             return 69
         }
 
-        let args = buildArguments(from: configuration)
+        let args = Self.buildArguments(from: configuration)
         let spec = ManagedProcessSpecification(
             executable: mcpExecutable,
             arguments: args,
@@ -100,7 +100,7 @@ public struct AxolotyMCPServiceRunner: Sendable {
         }
     }
 
-    private func buildArguments(from config: MCPServiceConfiguration) -> [String] {
+    static func buildArguments(from config: MCPServiceConfiguration) -> [String] {
         var args: [String] = [
             "--transport", config.transport.rawValue,
             "--broker-host", config.brokerHost,
@@ -134,8 +134,8 @@ public struct AxolotyMCPServiceRunner: Sendable {
 }
 
 private struct MCPReadinessManifest: Codable, Sendable {
-    let schemaVersion = 1
-    let status = "ready"
+    let schemaVersion: Int
+    let status: String
     let services: Services
 
     struct Services: Codable, Sendable {
@@ -143,11 +143,13 @@ private struct MCPReadinessManifest: Codable, Sendable {
     }
 
     struct MCP: Codable, Sendable {
-        let transport = "streamable-http"
+        let transport: String
         let url: String
     }
 
     init(url: String) {
-        self.services = Services(mcp: MCP(url: url))
+        self.schemaVersion = 1
+        self.status = "ready"
+        self.services = Services(mcp: MCP(transport: "streamable-http", url: url))
     }
 }
