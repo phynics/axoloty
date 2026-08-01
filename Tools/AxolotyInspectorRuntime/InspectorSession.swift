@@ -67,31 +67,42 @@ public final class AxolotyInspectorSession: InspectorSession {
     }
 
     public func connect() async throws {
-        let outcome: ConnectOutcome = try await withTaskGroup(of: ConnectOutcome.self) { group in
-            group.addTask { [self] in
-                do {
-                    try await self.container.startAndWaitUntilReady()
-                    return .connected
-                } catch let error as AxolotyError {
-                    return .failed(error.userFriendlyMessage)
-                } catch {
-                    return .failed(String(describing: error))
-                }
+        let (outcomes, continuation) = AsyncStream.makeStream(of: ConnectOutcome.self)
+        let connectionTask = _Concurrency.Task { [container] in
+            do {
+                try await container.startAndWaitUntilReady()
+                continuation.yield(.connected)
+            } catch let error as AxolotyError {
+                continuation.yield(.failed(error.userFriendlyMessage))
+            } catch {
+                continuation.yield(.failed(String(describing: error)))
             }
-            group.addTask {
-                try? await _Concurrency.Task.sleep(for: self.connectTimeout)
-                return .timedOut
+        }
+        let timeoutTask = _Concurrency.Task {
+            do {
+                try await _Concurrency.Task.sleep(for: self.connectTimeout)
+            } catch {
+                return
             }
+            guard !_Concurrency.Task.isCancelled else { return }
+            continuation.yield(.timedOut)
+        }
+        defer {
+            continuation.finish()
+            connectionTask.cancel()
+            timeoutTask.cancel()
+        }
 
-            let first = await group.next()!
-            group.cancelAll()
-            return first
+        var iterator = outcomes.makeAsyncIterator()
+        guard let outcome = await iterator.next() else {
+            throw InspectorError.connectionUnavailable(reason: "connection attempt ended without an outcome")
         }
 
         switch outcome {
         case .connected:
             return
         case .timedOut:
+            container.shutdown()
             throw InspectorError.connectionUnavailable(
                 reason: "connect timeout after \(connectTimeout)"
             )
