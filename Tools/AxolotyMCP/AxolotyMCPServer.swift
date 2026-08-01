@@ -53,9 +53,47 @@ public final class AxolotyMCPServer {
     ///   `MCPError` if the transport cannot be established.
     public func startStdio() async throws {
         try await catalogueService.start()
-        await registerHandlers()
+        await registerHandlers(on: server)
         let transport = StdioTransport()
         try await server.start(transport: transport)
+    }
+
+    /// Starts the MCP server with Streamable HTTP transport.
+    ///
+    /// Binds a loopback-only HTTP server that fronts the MCP SDK's
+    /// ``MCP/StatefulHTTPServerTransport``. A new ``MCP/Server`` is created
+    /// per session, all sharing the same broker-backed catalogue so concurrent
+    /// clients observe the same live objects.
+    ///
+    /// - Parameters:
+    ///   - listenHost: Loopback bind address (`127.0.0.1`, `localhost`, `::1`).
+    ///   - listenPort: TCP port to bind.
+    ///   - path: MCP endpoint path (defaults to `/mcp`).
+    /// - Throws: ``InspectorError`` if the broker connection fails,
+    ///   ``AxolotyError`` if `listenHost` is not loopback, or an `MCPError` if
+    ///   the HTTP server cannot start.
+    public func startHTTP(listenHost: String, listenPort: UInt16, path: String = "/mcp") async throws {
+        try await catalogueService.start()
+
+        let httpServer = MCPHTTPServer(
+            host: listenHost,
+            port: listenPort,
+            endpoint: path,
+            serverFactory: { _, transport in
+                let server = Server(
+                    name: "axoloty-mcp",
+                    version: "0.2.0",
+                    capabilities: .init(
+                        resources: .init(subscribe: false, listChanged: false),
+                        tools: .init(listChanged: false)
+                    )
+                )
+                await self.registerHandlers(on: server)
+                try await server.start(transport: transport)
+                return server
+            }
+        )
+        try await httpServer.start()
     }
 
     /// Stops the MCP server and disconnects from MQTT.
@@ -66,7 +104,7 @@ public final class AxolotyMCPServer {
 
     // MARK: - Handler registration
 
-    private func registerHandlers() async {
+    private func registerHandlers(on server: Server) async {
         let service = catalogueService
 
         // List tools
