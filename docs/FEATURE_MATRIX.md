@@ -36,7 +36,7 @@ wire-evidence section and `../Tests/WireCompatibility/CompatibilityMatrix.md`.
 
 | Feature | CoatyJS 2.4.x | CoatySwift 2.4.0 | Axoloty | Notes |
 |---|---|---|---|---|
-| Coaty core object hierarchy | Yes | Yes | Yes | CoatyObject, Identity, User, Task, Log, IO types, etc. |
+| Coaty core object hierarchy | Yes | Yes | Yes | CoatyObject, Identity, User, `CoatyTask` (wire core type `Task`), Log, IO types, etc. |
 | Application-specific object types | Yes | Yes | Yes | Type registration exists in both Swift lines. |
 | Unknown/custom property decoding | Yes | Yes | Yes | Axoloty retains Swift's `custom` property behavior. |
 | Runtime schema validation | Yes | No | No | JS validates core object shapes; Swift relies primarily on `Codable` decoding. |

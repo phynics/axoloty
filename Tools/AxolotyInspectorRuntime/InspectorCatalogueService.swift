@@ -20,7 +20,7 @@ public final class InspectorCatalogueService {
     /// main actor) can read the store directly. Safe because the store is
     /// an actor that serializes its own access.
     public nonisolated let store: InspectorCatalogueStore
-    private var streamTask: _Concurrency.Task<Void, Never>?
+    private var streamTask: Task<Void, Never>?
     private var started = false
 
     /// Creates the service.
@@ -48,7 +48,7 @@ public final class InspectorCatalogueService {
         try await session.connect()
 
         let store = self.store
-        streamTask = _Concurrency.Task.detached { [weak self] in
+        streamTask = Task.detached { [weak self] in
             await self?.consumeStreams(
                 advertise: advertiseStream,
                 deadvertise: deadvertiseStream,

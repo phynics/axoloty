@@ -202,7 +202,7 @@
       "count": 29,
       "covered": 10
     },
-    "Source/Model/Core Types/Task.swift": {
+    "Source/Model/Core Types/CoatyTask.swift": {
       "count": 81,
       "covered": 3
     },

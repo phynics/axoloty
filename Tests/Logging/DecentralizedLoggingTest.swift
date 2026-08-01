@@ -76,12 +76,12 @@ class LogCreatorController: Controller {
 
 class LogReceiverController: Controller {
     fileprivate let logStorage = SnapshotStore()
-    private var consumptionTask: _Concurrency.Task<Void, Never>?
+    private var consumptionTask: Task<Void, Never>?
 
     override func prepareForCommunication() async {
         let stream = await communicationManager.observeAdvertiseStream(withCoreType: .Log)
         let storage = logStorage
-        consumptionTask = _Concurrency.Task {
+        consumptionTask = Task {
             var iterator = stream.makeAsyncIterator()
             while let snapshot = await iterator.next() {
                 await storage.append(snapshot)

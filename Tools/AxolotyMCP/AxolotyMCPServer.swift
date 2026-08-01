@@ -240,7 +240,7 @@ public final class AxolotyMCPServer {
 
         let (eventStream, continuation) = AsyncStream.makeStream(of: DiscoverLoopEvent.self)
 
-        let responseTask = _Concurrency.Task {
+        let responseTask = Task {
             var it = responseStream.makeAsyncIterator()
             while let response = await it.next() {
                 continuation.yield(.response(response))
@@ -248,8 +248,8 @@ public final class AxolotyMCPServer {
             continuation.yield(.responsesExhausted)
         }
 
-        let timerTask = _Concurrency.Task {
-            try? await _Concurrency.Task.sleep(for: timeout)
+        let timerTask = Task {
+            try? await Task.sleep(for: timeout)
             continuation.yield(.timeoutExpired)
         }
 

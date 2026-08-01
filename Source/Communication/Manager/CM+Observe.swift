@@ -14,7 +14,7 @@ extension CommunicationManager {
     /// Starts the internal Associate-event consumer for each configured IO node.
     internal func _observeAssociate() {
         for ioNode in ioNodes {
-            let task = _Concurrency.Task { @MainActor [weak self] in
+            let task = Task { @MainActor [weak self] in
                 guard let self else { return }
                 let topic = TopicBuilder.subscribeTopic(
                     eventType: .associate,
@@ -42,7 +42,7 @@ extension CommunicationManager {
         matching predicate: @escaping @MainActor @Sendable (CommunicationManager, DiscoverEventSnapshot) -> Bool,
         resolve: @escaping @MainActor @Sendable (CommunicationManager, DiscoverEventSnapshot, String) -> Void
     ) {
-        let task = _Concurrency.Task { @MainActor [weak self] in
+        let task = Task { @MainActor [weak self] in
             guard let self else { return }
             let stream = await self.observeDiscoverStream()
             for await event in stream {

@@ -71,7 +71,7 @@ struct SensorThingsTests {
         // caller) reached the broker, silently dropping the first events
         // published right after. See https://github.com/phynics/axoloty/issues/51.
         var loggers: [String: AdvertiseEventLogger] = [:]
-        var watchTasks: [_Concurrency.Task<Void, Never>] = []
+        var watchTasks: [Task<Void, Never>] = []
         for element in SensorThingsTests.SENSOR_THINGS_TYPES_SET {
             let logger = AdvertiseEventLogger()
             loggers[element] = logger

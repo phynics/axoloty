@@ -6,9 +6,9 @@ import Foundation
 /// Manages registered Sensors and publishes SensorThings observations.
 open class SensorSourceController: Controller {
     private var sensors: [String: SensorContainer] = [:]
-    private var samplingTasks: [String: _Concurrency.Task<Void, Never>] = [:]
-    private var discoverTask: _Concurrency.Task<Void, Never>?
-    private var queryTask: _Concurrency.Task<Void, Never>?
+    private var samplingTasks: [String: Task<Void, Never>] = [:]
+    private var discoverTask: Task<Void, Never>?
+    private var queryTask: Task<Void, Never>?
 
     override open func onInit() {
         super.onInit()
@@ -52,14 +52,14 @@ open class SensorSourceController: Controller {
         }
         sensors[sensor.objectId.string] = SensorContainer(sensor: sensor, io: io)
         if observationPublicationType != .none, let interval = samplingInterval {
-            samplingTasks[sensor.objectId.string] = _Concurrency.Task { @MainActor [weak self] in
-                while !_Concurrency.Task.isCancelled {
+            samplingTasks[sensor.objectId.string] = Task { @MainActor [weak self] in
+                while !Task.isCancelled {
                     do {
-                        try await _Concurrency.Task.sleep(for: .milliseconds(interval))
+                        try await Task.sleep(for: .milliseconds(interval))
                     } catch {
                         return
                     }
-                    guard !_Concurrency.Task.isCancelled else { return }
+                    guard !Task.isCancelled else { return }
                     try? self?._publishObservation(sensorId: sensor.objectId, channeled: observationPublicationType == .channel)
                 }
             }
@@ -130,7 +130,7 @@ open class SensorSourceController: Controller {
     /// manager.
     private func observeDiscoverForSensors() {
         guard discoverTask == nil else { return }
-        discoverTask = _Concurrency.Task { @MainActor [weak self] in
+        discoverTask = Task { @MainActor [weak self] in
             guard let self else { return }
             let stream = await communicationManager.observeDiscoverStream()
             for await event in stream {
@@ -170,7 +170,7 @@ open class SensorSourceController: Controller {
     /// issue #55).
     private func observeQueryForSensors() {
         guard queryTask == nil else { return }
-        queryTask = _Concurrency.Task { @MainActor [weak self] in
+        queryTask = Task { @MainActor [weak self] in
             guard let self else { return }
             let stream = await communicationManager.observeParsedMessages()
             for await parsed in stream {

@@ -109,7 +109,7 @@ public final class InspectorDiscoverApplication {
 
         let (eventStream, continuation) = AsyncStream.makeStream(of: DiscoverLoopEvent.self)
 
-        let responseTask = _Concurrency.Task {
+        let responseTask = Task {
             var it = responseStream.makeAsyncIterator()
             while let response = await it.next() {
                 continuation.yield(.response(response))
@@ -117,15 +117,15 @@ public final class InspectorDiscoverApplication {
             continuation.yield(.responsesExhausted)
         }
 
-        let timerTask = _Concurrency.Task {
-            try? await _Concurrency.Task.sleep(for: timeout)
+        let timerTask = Task {
+            try? await Task.sleep(for: timeout)
             continuation.yield(.timeoutExpired)
         }
 
-        let signalTask = _Concurrency.Task {
+        let signalTask = Task {
             guard let handler = signalHandler else { return }
-            while !_Concurrency.Task.isCancelled {
-                try? await _Concurrency.Task.sleep(for: .milliseconds(100))
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(100))
                 if handler.wasInterrupted {
                     continuation.yield(.interrupted)
                     return

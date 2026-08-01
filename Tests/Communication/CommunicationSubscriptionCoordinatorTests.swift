@@ -27,13 +27,13 @@ struct CommunicationSubscriptionCoordinatorTests {
         let client = RecordingCommunicationClient(gate: gate)
         let dispatcher = CommunicationSubscriptionCommandDispatcher(client: client)
 
-        let delivery = _Concurrency.Task {
+        let delivery = Task {
             try? await dispatcher.deliver(.subscribe("first"))
             await completed.mark()
         }
 
         await gate.waitUntilStarted()
-        await _Concurrency.Task.yield()
+        await Task.yield()
         #expect(await completed.value == false)
 
         await gate.open()
@@ -48,16 +48,16 @@ struct CommunicationSubscriptionCoordinatorTests {
         let dispatcher = CommunicationSubscriptionCommandDispatcher(client: client)
 
         // A subscribe that blocks on the gate occupies the single drain slot.
-        let subscribeTask = _Concurrency.Task { try? await dispatcher.deliver(.subscribe("first")) }
+        let subscribeTask = Task { try? await dispatcher.deliver(.subscribe("first")) }
         await gate.waitUntilStarted()
-        await _Concurrency.Task.yield()
+        await Task.yield()
 
         // A rapid unsubscribe arrives while the subscribe is still in flight. It
         // must not begin (and must not append its command) until the subscribe
         // completes, so subscribe/unsubscribe finish in arrival order rather
         // than racing through the actor's reentrant suspension.
-        let unsubscribeTask = _Concurrency.Task { try? await dispatcher.deliver(.unsubscribe("first")) }
-        await _Concurrency.Task.yield()
+        let unsubscribeTask = Task { try? await dispatcher.deliver(.unsubscribe("first")) }
+        await Task.yield()
         #expect(client.commands == [.subscribe("first")])
 
         // Releasing the subscribe lets the unsubscribe run, strictly after it.

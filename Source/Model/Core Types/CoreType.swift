@@ -49,7 +49,7 @@ public enum CoreType: String, Codable, Sendable {
         case .Annotation: 
             return Axoloty.Annotation.self
         case .Task: 
-            return Axoloty.Task.self
+            return Axoloty.CoatyTask.self
         case .IoSource: 
             return Axoloty.IoSource.self
         case .IoActor: 
@@ -107,7 +107,7 @@ public enum CoreType: String, Codable, Sendable {
         _ = Axoloty.CoatyObject.objectType
         _ = Axoloty.User.objectType
         _ = Axoloty.Annotation.objectType
-        _ = Axoloty.Task.objectType
+        _ = Axoloty.CoatyTask.objectType
         _ = Axoloty.IoSource.objectType
         _ = Axoloty.IoActor.objectType
         _ = Axoloty.IoNode.objectType
