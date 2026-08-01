@@ -187,6 +187,14 @@ fi
 container_ports=${CONTAINER_PORTS:-}
 port_opts=""
 if [ -n "$container_ports" ]; then
+    # Reject control characters (newlines, tabs) before word splitting
+    # would silently turn them into spec separators.
+    case "$container_ports" in
+        *[![:print:]]*)
+            echo "Invalid CONTAINER_PORTS: control characters are not allowed" >&2
+            exit 2
+            ;;
+    esac
     for port_spec in $container_ports; do
         case "$port_spec" in
             ""|*[!0-9A-Za-z.:-]*)
