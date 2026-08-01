@@ -9,6 +9,7 @@ trap 'rm -rf "$TEMP_DIR"' EXIT
 
 runtime_log="$TEMP_DIR/runtime.log"
 fake_runtime="$TEMP_DIR/fake-runtime"
+resolved_hash=$(sha256sum "$ROOT_DIR/Package.resolved")
 
 cat > "$fake_runtime" <<'EOF'
 #!/usr/bin/env bash
@@ -55,8 +56,8 @@ FAKE_RUNTIME_EXIT_CODE=0 \
     --output "$TEMP_DIR/output-success" \
     --quiet
 
-build_count=$(grep -cF 'swift build --build-tests --scratch-path' "$runtime_log" || true)
-test_count=$(grep -cF 'swift test --skip-build --scratch-path' "$runtime_log" || true)
+build_count=$(grep -cF 'swift build --build-tests ' "$runtime_log" || true)
+test_count=$(grep -cF 'swift test --skip-build ' "$runtime_log" || true)
 
 [[ "$build_count" -eq 2 ]]
 [[ "$test_count" -eq 4 ]]
@@ -74,6 +75,9 @@ if grep -qF 'swift test --filter DeterministicFuzzTests' "$runtime_log"; then
     echo 'unexpected build-capable fuzz test command' >&2
     exit 1
 fi
+grep -qF -- '--cache-path .swiftpm-cache --disable-automatic-resolution' "$runtime_log"
+grep -qF -- '-v '"$ROOT_DIR/.swiftpm-cache"':/workspace/.swiftpm-cache' "$runtime_log"
+[[ "$(sha256sum "$ROOT_DIR/Package.resolved")" == "$resolved_hash" ]]
 
 # Failure path: a deliberately failing campaign finalizes the manifest with a failed status
 # and preserves per-case data consistent with the summary.tsv rows.

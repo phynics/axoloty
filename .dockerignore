@@ -15,3 +15,5 @@
 !Benchmarks/**
 !Tools/
 !Tools/**
+!.devcontainer/
+!.devcontainer/image-inputs.sh

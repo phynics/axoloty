@@ -33,6 +33,16 @@ elapsed=$(( $(date +%s) - start ))
 wait "$holder"
 [[ ! -e "$lock_owner" ]]
 
+# The mkdir fallback cannot wait forever when flock is unavailable.
+fallback_lock_dir="${build_dir}.lock.d"
+mkdir "$fallback_lock_dir"
+if BUILD_LOCK_FORCE_DIRECTORY=1 BUILD_LOCK_TIMEOUT=0 AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" \
+    "$ROOT_DIR/.devcontainer/run.sh" true 2>/dev/null; then
+    echo "expected the fallback lock timeout to fail" >&2
+    exit 1
+fi
+rmdir "$fallback_lock_dir"
+
 # Isolated CI runners do not share a build directory, so they must not wait
 # behind an unrelated lock directory.
 ( exec 8>"$lock_file"; flock 8; sleep 2 ) &
@@ -71,6 +81,12 @@ if [ "\$1" = "load" ]; then
     cat >/dev/null
     exit 0
 fi
+if [[ "\${FAKE_RECLAIM_FAILURE:-0}" == "1" && "\$*" == *chown* ]]; then
+    exit 42
+fi
+if [[ "\${FAKE_RUNTIME_EXIT_CODE:-0}" != "0" && "\$*" != *chown* ]]; then
+    exit "\${FAKE_RUNTIME_EXIT_CODE}"
+fi
 while [ "\$#" -gt 0 ]; do
     if [ "\$1" = "--env-file" ]; then
         cp "\$2" "$capture_env"
@@ -90,6 +106,10 @@ CONTAINER_RECLAIM_BUILD_DIR=1 BUILD_DIR="$build_dir" BUILD_LOCK=0 \
     "$ROOT_DIR/.devcontainer/run.sh" true
 grep -q -- '--privileged' "$capture"
 grep -q -- "--device $device" "$capture"
+if grep -q -- '--user ' "$capture"; then
+    echo "device run unexpectedly set an ordinary user" >&2
+    exit 1
+fi
 grep -q -- '--env-file ' "$capture"
 grep -qx -- 'EMBEDDED_SKIP_BUILD=1' "$capture_env"
 grep -qx -- 'EMBEDDED_BUILD_DIR=/workspace/.build/embedded-swift' "$capture_env"
@@ -117,6 +137,19 @@ fi
 CONTAINER_OPTIONAL_DEVICES="$device $TEMP_DIR/absent-device" \
 CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
     "$ROOT_DIR/.devcontainer/run.sh" true
+grep -q -- "--user $(id -u):$(id -g)" "$capture"
+grep -q -- '--env HOME=/tmp' "$capture"
+
+# Reclaim failures are warnings and must not replace the container command's status.
+: > "$capture"
+set +e
+FAKE_RECLAIM_FAILURE=1 FAKE_RUNTIME_EXIT_CODE=7 \
+SUDO_CANDIDATES="$fake_bin/fake-sudo" CONTAINER_DEVICES="$device" \
+CONTAINER_RUNTIME="$fake_bin/fake-podman" CONTAINER_RECLAIM_BUILD_DIR=1 \
+BUILD_DIR="$build_dir" BUILD_LOCK=0 "$ROOT_DIR/.devcontainer/run.sh" true
+reclaim_status=$?
+set -e
+[[ "$reclaim_status" -eq 7 ]]
 grep -q -- "--device $device" "$capture"
 if grep -q -- "$TEMP_DIR/absent-device" "$capture"; then
     echo "absent optional device was forwarded" >&2
@@ -204,7 +237,7 @@ CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
 grep -q -- '-i' "$capture"
 
 # CONTAINER_STDIN=1 never produces -t.
-if grep -q -- '-t' "$capture"; then
+if grep -qw -- '-t' "$capture"; then
     echo "unexpected -t flag with CONTAINER_STDIN=1" >&2
     exit 1
 fi

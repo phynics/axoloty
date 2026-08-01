@@ -55,7 +55,7 @@ All toolchain components are in the single `Dockerfile`:
 | RISC-V GCC | ESP-IDF v5.4 bundled | installed by `./install.sh esp32c6` |
 | OpenOCD | Espressif build, bundled with ESP-IDF | installed by `./install.sh esp32c6` |
 | espflash | `3.3.0` | prebuilt binary from `esp-rs/espflash` releases |
-| CMake | `>= 3.29` (via pip) | required by `espressif/idf_swift` component |
+| CMake | `3.29.6` (via pip) | required by `Embedded/swift/CMakeLists.txt` and `espressif/idf_swift` |
 | SwiftLint | `0.65.0` | prebuilt static binary |
 
 All versions are declared as `ARG`s at the top of `.devcontainer/Dockerfile`

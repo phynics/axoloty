@@ -10,6 +10,7 @@ workdir=${WORKDIR:-/workspace}
 build_dir=${BUILD_DIR:-"$root_dir/.build"}
 spm_cache_dir=${SPM_CACHE_DIR:-"${HOME}/.cache/coaty-swift/swiftpm/swift-6.3-linux"}
 build_lock=${BUILD_LOCK:-1}
+lock_timeout=${BUILD_LOCK_TIMEOUT:-300}
 env_file=""
 lock_kind=""
 lock_owner=""
@@ -37,12 +38,17 @@ lock_owner_file="${build_dir}.lock.owner"
 trap cleanup EXIT INT TERM
 
 if [ "$build_lock" = "1" ]; then
-    if command -v flock >/dev/null 2>&1; then
+    if [ "${BUILD_LOCK_FORCE_DIRECTORY:-0}" != "1" ] && command -v flock >/dev/null 2>&1; then
         exec 9>"$lock_file"
         flock 9
         lock_kind="flock"
     else
+        lock_started=$(date +%s)
         while ! mkdir "$lock_dir" 2>/dev/null; do
+            if [ "$lock_timeout" -ge 0 ] && [ "$(( $(date +%s) - lock_started ))" -ge "$lock_timeout" ]; then
+                echo "Timed out waiting for build lock: $lock_dir" >&2
+                exit 75
+            fi
             sleep 1
         done
         lock_kind="directory"
@@ -177,8 +183,17 @@ fi
 # --privileged is only needed for rootful device access; omit it for
 # regular rootless targets so CI and non-device builds are unaffected.
 privileged_opt=""
+user_opt=""
+userns_opt=""
+home_opt=""
 if [ -n "$sudo_prefix" ]; then
     privileged_opt="--privileged"
+else
+    user_opt="--user $(id -u):$(id -g)"
+    home_opt="--env HOME=/tmp"
+    case "$runtime" in
+        *podman*) userns_opt="--userns=keep-id" ;;
+    esac
 fi
 
 # Optional port forwarding for serve commands. Empty by default so
@@ -227,7 +242,7 @@ if [ "${CONTAINER_STDIN:-0}" = "1" ]; then
 fi
 
 set +e
-$sudo_prefix "$runtime" run --rm $security_opts $device_opts $privileged_opt $env_opts $port_opts $stdin_opt $network_opt \
+$sudo_prefix "$runtime" run --rm $security_opts $device_opts $privileged_opt $userns_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
     -v "$root_dir:$workdir$mount_suffix" \
     -v "$build_dir:$workdir/.build$mount_suffix" \
     -v "$spm_cache_dir:$workdir/.swiftpm-cache$mount_suffix" \
@@ -241,13 +256,17 @@ set -e
 # when the container command fails so subsequent host and rootless operations
 # retain a usable feedback loop.
 if [ -n "$sudo_prefix" ] && [ "${CONTAINER_RECLAIM_BUILD_DIR:-0}" = "1" ]; then
+    reclaim_status=0
     "$sudo_prefix" "$runtime" run --rm \
         -v "$build_dir:/build$mount_suffix" \
-        "$image" chown -R "$(id -u):$(id -g)" /build
+        "$image" chown -R "$(id -u):$(id -g)" /build || reclaim_status=$?
     if [ -d "$root_dir/.testing" ]; then
         "$sudo_prefix" "$runtime" run --rm \
             -v "$root_dir/.testing:/testing$mount_suffix" \
-            "$image" chown -R "$(id -u):$(id -g)" /testing
+            "$image" chown -R "$(id -u):$(id -g)" /testing || reclaim_status=$?
+    fi
+    if [ "$reclaim_status" -ne 0 ]; then
+        echo "warning: failed to reclaim root-owned container artifacts" >&2
     fi
 fi
 
