@@ -91,6 +91,7 @@ public enum BorrowedWireEvent {
 public enum OwnedWireEvent: Sendable, Equatable {
     case advertise(OwnedAdvertiseWireData), deadvertise(OwnedDeadvertiseWireData), channel(OwnedChannelWireData), associate(OwnedAssociateWireData), ioValue(OwnedIoValueWireData), discover(OwnedDiscoverWireData), resolve(OwnedResolveWireData), query(OwnedQueryWireData), retrieve(OwnedRetrieveWireData), update(OwnedUpdateWireData), complete(OwnedCompleteWireData), call(OwnedCallWireData), returnEvent(OwnedReturnWireData)
 
+    // swiftlint:disable cyclomatic_complexity
     /// Encodes every owned event through the same fixed-buffer writer used by borrowed events.
     public func encode(to writer: inout WireWriter) throws(WireEncodeError) {
         switch self {
@@ -122,6 +123,7 @@ public enum OwnedWireEvent: Sendable, Equatable {
         case .returnEvent(let x): try writer.beginObject(); var first = true; if let value = x.result { try ownedComma(&writer, &first); try ownedRaw(&writer, "result", value) }; if let value = x.executionInfo { try ownedComma(&writer, &first); try ownedRaw(&writer, "executionInfo", value) }; if let value = x.error { try ownedComma(&writer, &first); try ownedRaw(&writer, "error", value) }; try writer.endObject()
         }
     }
+    // swiftlint:enable cyclomatic_complexity
 }
 
 private func ownedString(_ writer: inout WireWriter, _ key: StaticString, _ bytes: [UInt8]) throws(WireEncodeError) {

@@ -139,6 +139,8 @@ public struct WireReader {
         var failure: WireDecodeError? { get { index.failure } set { index.failure = newValue } }
     }
 
+    // Strict lexical completion necessarily dispatches every JSON token class.
+    // swiftlint:disable:next cyclomatic_complexity
     private static func preflight(_ bytes: UnsafeBufferPointer<UInt8>) -> WireDecodeError? {
         var stack = (UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0)); var stackCount = 0; var depth = 0; var index = 0
         while index < bytes.count {
@@ -154,7 +156,7 @@ public struct WireReader {
             case 0x7D, 0x5D:
                 guard stackCount > 0 else { return WireDecodeError(.invalidNesting, byteOffset: index) }
                 let top: UInt8; switch stackCount { case 1: top = stack.0; case 2: top = stack.1; case 3: top = stack.2; case 4: top = stack.3; case 5: top = stack.4; case 6: top = stack.5; case 7: top = stack.6; default: top = stack.7 }
-                guard (byte == 0x7D ? top == 0x7B : top == 0x5B) else { return WireDecodeError(.invalidNesting, byteOffset: index) }
+                guard byte == 0x7D ? top == 0x7B : top == 0x5B else { return WireDecodeError(.invalidNesting, byteOffset: index) }
                 stackCount -= 1; depth -= 1; index += 1
             case 0x74: guard literal(bytes, index: index, length: 4, first: (0x74, 0x72, 0x75, 0x65, 0)) else { return WireDecodeError(.invalidLiteral, byteOffset: index) }; index += 4
             case 0x66: guard literal(bytes, index: index, length: 5, first: (0x66, 0x61, 0x6C, 0x73, 0x65)) else { return WireDecodeError(.invalidLiteral, byteOffset: index) }; index += 5
