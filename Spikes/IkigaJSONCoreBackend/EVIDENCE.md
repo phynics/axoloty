@@ -46,8 +46,10 @@ SwiftPM on Swift 6.3 until upstream adds it to the version-specific manifest.
 
 ## Revised verdict
 
-`_JSONCore` is technically viable under Embedded Swift and is materially
-smaller than the native proof object, but the pinned package has a Swift 6.3
-manifest defect for external consumption and its tokenizer still requires an
+`_JSONCore` is technically viable under Embedded Swift. Its 32,412-byte object
+is larger than the 20,584-byte native strict-parser proof object, although the
+two prototypes do not yet implement identical behavior and final linked size
+may differ after dead stripping. The pinned package also has a Swift 6.3
+manifest defect for external consumption, and its tokenizer still requires an
 Axoloty strictness layer for number grammar, Unicode escapes, and likely UTF-8
 validation. It remains a viable candidate, not a drop-in complete parser.
