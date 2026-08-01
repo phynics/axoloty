@@ -40,15 +40,23 @@ current graph unless the consumer pins them.
 
 ## Package-seam decision
 
-The preferred durable seam is an upstream manifest fix followed by an upstream
-standalone or conditionally declared core package that does not resolve NIO.
-Upstream issue
+Axoloty accepts swift-nio and its transitives in package resolution as long as
+they do not prevent Linux or Embedded compilation and no NIO target is built or
+linked into AxolotyWire. This distinguishes dependency resolution cost from the
+runtime and firmware dependency closure; a standalone or conditionally declared
+core package would be an optimization, not a production prerequisite.
+
+The selected distribution is the pinned upstream swift-json package with the
+minimal product exposure fix. Upstream issue
 [`orlandos-nl/swift-json#63`](https://github.com/orlandos-nl/swift-json/issues/63)
 already tracks the missing Swift 6.2+ product. The minimal manifest correction
 has been submitted upstream as
 [`orlandos-nl/swift-json#68`](https://github.com/orlandos-nl/swift-json/pull/68).
 
-Until upstream provides a no-NIO resolution seam, production AxolotyWire should
-not silently add swift-json to its standalone package. Root-only adapter work
-can proceed, and a temporary pinned fork is acceptable for integration testing,
-but vendoring parser sources is not selected by this issue.
+Axoloty will keep the swift-json revision locked in `Package.resolved`, review
+upstream source and license changes before updating it, and rerun this host and
+Embedded compile/link check for each update. An update is rejected if NIO begins
+building or linking, or if swift-json no longer compiles on either platform.
+Until pull request #68 is available in an upstream release, integration may use
+a minimal pinned fork containing only that manifest correction. Vendoring parser
+sources is not selected by this issue.
