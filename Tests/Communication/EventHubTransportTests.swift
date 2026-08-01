@@ -970,10 +970,7 @@ struct NamespaceAdvertiseStreamTests {
     func namespaceWideStreamAcquiresWildcardTopic() async throws {
         let client = FakeCommunicationClient(delegate: FakeStartable())
         let manager = makeManager(client: client)
-        let expectedTopic = TopicBuilder.subscribeTopic(
-            eventType: .advertise,
-            namespace: manager.namespace
-        )
+        let expectedTopic = TopicBuilder.subscribeAllOneWayTopics(namespace: manager.namespace)
 
         let stream = await manager.observeAdvertiseStream()
         let iterator = stream.makeAsyncIterator()
@@ -1088,10 +1085,7 @@ struct NamespaceAdvertiseStreamTests {
             client: client
         )
 
-        let expectedTopic = TopicBuilder.subscribeTopic(
-            eventType: .advertise,
-            namespace: "test-ns-42"
-        )
+        let expectedTopic = TopicBuilder.subscribeAllOneWayTopics(namespace: "test-ns-42")
 
         let stream = await manager.observeAdvertiseStream()
         _ = stream.makeAsyncIterator()

@@ -55,9 +55,11 @@ extension CommunicationManager {
     /// Observes all Advertise snapshots in the manager's namespace,
     /// regardless of core type or object type.
     ///
-    /// The returned stream subscribes to the namespace-wide Advertise topic
-    /// (`coaty/3/<ns>/ADV/+`) when its first iterator is created and
-    /// releases it when its final iterator terminates. This is useful for
+    /// The returned stream subscribes to namespace-wide one-way events
+    /// (`coaty/3/<ns>/+/+`) when its first iterator is created and routes only
+    /// Advertise events to the stream. The broad event-level wildcard is
+    /// required because MQTT cannot express an `ADV:*` prefix wildcard. It
+    /// releases the subscription when its final iterator terminates. This is useful for
     /// diagnostic and inspection tools that need to discover all advertised
     /// objects without knowing their types in advance.
     ///

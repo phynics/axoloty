@@ -203,15 +203,11 @@ public class CommunicationManager {
             advertiseAll: Broadcast(
                 mode: .event,
                 onFirst: {
-                    let topic = TopicBuilder.subscribeTopic(
-                        eventType: .advertise, namespace: crossNs
-                    )
+                    let topic = TopicBuilder.subscribeAllOneWayTopics(namespace: crossNs)
                     await coordinator.acquire(topic: topic)
                 },
                 onLast: {
-                    let topic = TopicBuilder.subscribeTopic(
-                        eventType: .advertise, namespace: crossNs
-                    )
+                    let topic = TopicBuilder.subscribeAllOneWayTopics(namespace: crossNs)
                     await coordinator.release(topic: topic)
                 }
             ),

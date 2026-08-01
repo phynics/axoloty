@@ -111,6 +111,38 @@ struct MQTTNIOClientTests {
         let delivered = await ParsedMessageActor().echo(parsed)
         #expect(delivered == parsed)
     }
+
+    @Test
+    func broadOneWaySubscriptionRoutesOnlyAdvertiseToAdvertiseAll() async throws {
+        let (_, streams) = makeHostIngressClient()
+        let advertiseStream = await streams.advertiseAll.subscribe()
+        var advertiseIterator = advertiseStream.makeAsyncIterator()
+        let deadvertiseStream = await streams.deadvertise.subscribe()
+        var deadvertiseIterator = deadvertiseStream.makeAsyncIterator()
+        let sourceId = "11111111-1111-4111-8111-111111111111"
+        let objectId = "22222222-2222-4222-8222-222222222222"
+        let topic = "coaty/3/test/DAD/\(sourceId)"
+        let topicBytes = Array(topic.utf8)
+        let parsed = try topicBytes.withUnsafeBufferPointer { buffer in
+            ParsedMQTTMessage(
+                topicView: TopicView(
+                    topicBytes: try #require(buffer.baseAddress),
+                    length: buffer.count
+                ),
+                payload: #"{"objectIds":["22222222-2222-4222-8222-222222222222"]}"#
+            )
+        }
+
+        await MQTTNIOClient.routeParsedMessage(parsed: parsed, into: streams)
+
+        let deadvertise = try await nextValue(&deadvertiseIterator, timeout: .milliseconds(100))
+        #expect(deadvertise.objectIds == [objectId])
+        do {
+            _ = try await nextValue(&advertiseIterator, timeout: .milliseconds(100))
+            Issue.record("non-Advertise one-way event was routed to advertiseAll")
+        } catch {
+        }
+    }
 }
 
 private let hostIngressTopic = "coaty/3/test/ADV:sensors/11111111-1111-4111-8111-111111111111"

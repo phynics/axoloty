@@ -86,8 +86,9 @@ public struct FoundationIntegrationRunner: AxolotyIntegrationRunning {
             arguments: [
                 "test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution",
                 "--filter",
-                "CommunicationSubscriptionCoordinatorTests|BroadcastTransportTests|MQTTNIOClientTests|DecentralizedLoggingTest|ObjectLifecycleControllerTests",
-            ]
+                "CommunicationSubscriptionCoordinatorTests|BroadcastTransportTests|MQTTNIOClientTests|DecentralizedLoggingTest|ObjectLifecycleControllerTests|InspectorBrokerIntegrationTests",
+            ],
+            environment: ["AXOLOTY_INSPECTOR_LIVE": "1"]
         ))
     }
 
