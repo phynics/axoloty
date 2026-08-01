@@ -63,13 +63,15 @@ public struct AxolotyMQTTServiceRunner: Sendable {
     private let tempDirProvider: any AxolotyTempDirectoryProvider
     private let configGenerator: MosquittoConfigGenerator
     private let mosquittoExecutable: String
+    private let installSignalHandler: Bool
 
     public init(
         processRunner: any AxolotyManagedProcessRunning,
         portProbe: any AxolotyServiceProbing,
         fileSystem: any AxolotyFileSystem,
         tempDirProvider: any AxolotyTempDirectoryProvider = FoundationTempDirectoryProvider(),
-        mosquittoExecutable: String = "/usr/sbin/mosquitto"
+        mosquittoExecutable: String = "/usr/sbin/mosquitto",
+        installSignalHandler: Bool = true
     ) {
         self.processRunner = processRunner
         self.portProbe = portProbe
@@ -77,6 +79,7 @@ public struct AxolotyMQTTServiceRunner: Sendable {
         self.tempDirProvider = tempDirProvider
         self.configGenerator = MosquittoConfigGenerator()
         self.mosquittoExecutable = mosquittoExecutable
+        self.installSignalHandler = installSignalHandler
     }
 
     /// Runs the MQTT broker service and blocks until interrupted or the process exits.
@@ -144,12 +147,12 @@ public struct AxolotyMQTTServiceRunner: Sendable {
         let mqttURL = "mqtt://\(configuration.listenHost):\(configuration.port)"
         writeReadiness(mqttURL: mqttURL, output: output)
 
-        let signalHandler = ServiceSignalHandler()
-        signalHandler.install()
-        defer { signalHandler.uninstall() }
+        let signalHandler = installSignalHandler ? ServiceSignalHandler() : nil
+        signalHandler?.install()
+        defer { signalHandler?.uninstall() }
 
         while true {
-            if signalHandler.isInterrupted {
+            if signalHandler?.isInterrupted == true {
                 processRunner.terminate()
                 let deadline = Date().addingTimeInterval(5.0)
                 while Date() < deadline {

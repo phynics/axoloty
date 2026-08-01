@@ -13,10 +13,15 @@ private final class FakeProcessRunner: AxolotyManagedProcessRunning, @unchecked 
     var terminateCalled = false
     var forceKillCalled = false
     var running = false
+    /// Number of ``isRunning`` polls before the fake process "exits".
+    var pollsUntilExit: Int?
+
+    private var pollCount = 0
 
     func start(_ specification: ManagedProcessSpecification) throws {
         startSpec = specification
         running = true
+        pollCount = 0
     }
 
     func waitForExit() -> ManagedProcessExit {
@@ -35,7 +40,16 @@ private final class FakeProcessRunner: AxolotyManagedProcessRunning, @unchecked 
     }
 
     var processIdentifier: Int32? { 12345 }
-    var isRunning: Bool { running }
+    var isRunning: Bool {
+        guard running else { return false }
+        if let pollsUntilExit {
+            pollCount += 1
+            if pollCount >= pollsUntilExit {
+                running = false
+            }
+        }
+        return running
+    }
 }
 
 private struct FakePortProbe: AxolotyServiceProbing {
@@ -139,7 +153,8 @@ func mqttServiceFailsWhenPortInUse() {
         portProbe: FakePortProbe(portAvailable: false),
         fileSystem: MQTTStubFileSystem(paths: ["/usr/sbin/mosquitto"]),
         tempDirProvider: FakeTempDirProvider(),
-        mosquittoExecutable: "/usr/sbin/mosquitto"
+        mosquittoExecutable: "/usr/sbin/mosquitto",
+        installSignalHandler: false
     )
     let exitCode = runner.run(MQTTServiceConfiguration())
     #expect(exitCode == 69)
@@ -150,6 +165,7 @@ func mqttServiceStartsAndExitsCleanly() {
     let processRunner = FakeProcessRunner()
     processRunner.exitCode = 0
     processRunner.running = true
+    processRunner.pollsUntilExit = 2
 
     let tempProvider = FakeTempDirProvider()
     let runner = AxolotyMQTTServiceRunner(
@@ -157,16 +173,9 @@ func mqttServiceStartsAndExitsCleanly() {
         portProbe: FakePortProbe(),
         fileSystem: MQTTStubFileSystem(paths: ["/usr/sbin/mosquitto"]),
         tempDirProvider: tempProvider,
-        mosquittoExecutable: "/usr/sbin/mosquitto"
+        mosquittoExecutable: "/usr/sbin/mosquitto",
+        installSignalHandler: false
     )
-
-    // Simulate process exiting after readiness by setting running=false
-    // The runner polls isRunning in a loop; once false it calls waitForExit.
-    // We need to set running=false after a brief delay to simulate the process exiting.
-    _Concurrency.Task {
-        try? await _Concurrency.Task.sleep(for: .milliseconds(200))
-        processRunner.running = false
-    }
 
     let exitCode = runner.run(MQTTServiceConfiguration())
     #expect(exitCode == 0)
@@ -188,7 +197,8 @@ func mqttServiceFailsWhenNotReady() {
         portProbe: FakePortProbe(tcpReady: false),
         fileSystem: MQTTStubFileSystem(paths: ["/usr/sbin/mosquitto"]),
         tempDirProvider: FakeTempDirProvider(),
-        mosquittoExecutable: "/usr/sbin/mosquitto"
+        mosquittoExecutable: "/usr/sbin/mosquitto",
+        installSignalHandler: false
     )
 
     let exitCode = runner.run(MQTTServiceConfiguration())
@@ -201,23 +211,141 @@ func mqttServiceReturns1OnChildCrash() {
     let processRunner = FakeProcessRunner()
     processRunner.exitCode = 1
     processRunner.running = true
+    processRunner.pollsUntilExit = 2
 
     let runner = AxolotyMQTTServiceRunner(
         processRunner: processRunner,
         portProbe: FakePortProbe(),
         fileSystem: MQTTStubFileSystem(paths: ["/usr/sbin/mosquitto"]),
         tempDirProvider: FakeTempDirProvider(),
-        mosquittoExecutable: "/usr/sbin/mosquitto"
+        mosquittoExecutable: "/usr/sbin/mosquitto",
+        installSignalHandler: false
     )
-
-    // Simulate process exiting after readiness
-    _Concurrency.Task {
-        try? await _Concurrency.Task.sleep(for: .milliseconds(200))
-        processRunner.running = false
-    }
 
     let exitCode = runner.run(MQTTServiceConfiguration())
     #expect(exitCode == 1)
+}
+
+// MARK: - MCP service runner tests
+
+@Test
+func mcpServiceFailsWhenExecutableMissing() {
+    let runner = AxolotyMCPServiceRunner(
+        processRunner: FakeProcessRunner(),
+        portProbe: FakePortProbe(),
+        fileSystem: MQTTStubFileSystem(paths: []),
+        mcpExecutable: "/nonexistent/axoloty-mcp"
+    )
+    let exitCode = runner.run(MCPServiceConfiguration(transport: .stdio))
+    #expect(exitCode == 69)
+}
+
+@Test
+func mcpServiceStdioStartsAndExitsCleanly() {
+    let processRunner = FakeProcessRunner()
+    processRunner.exitCode = 0
+    processRunner.running = true
+    processRunner.pollsUntilExit = 2
+
+    let runner = AxolotyMCPServiceRunner(
+        processRunner: processRunner,
+        portProbe: FakePortProbe(),
+        fileSystem: MQTTStubFileSystem(paths: ["/opt/axoloty/bin/axoloty-mcp"]),
+        mcpExecutable: "/opt/axoloty/bin/axoloty-mcp",
+        installSignalHandler: false
+    )
+
+    let exitCode = runner.run(MCPServiceConfiguration(transport: .stdio, brokerHost: "localhost", brokerPort: 1883, namespace: "test"))
+    #expect(exitCode == 0)
+    #expect(processRunner.startSpec?.executable == "/opt/axoloty/bin/axoloty-mcp")
+    let args = processRunner.startSpec?.arguments ?? []
+    #expect(args.contains("--transport"))
+    #expect(args.contains("stdio"))
+    #expect(args.contains("--broker-host"))
+    #expect(args.contains("localhost"))
+}
+
+@Test
+func mcpServiceHTTPFailsWhenNotReady() {
+    let processRunner = FakeProcessRunner()
+    processRunner.running = true
+
+    let runner = AxolotyMCPServiceRunner(
+        processRunner: processRunner,
+        portProbe: FakePortProbe(tcpReady: false),
+        fileSystem: MQTTStubFileSystem(paths: ["/opt/axoloty/bin/axoloty-mcp"]),
+        mcpExecutable: "/opt/axoloty/bin/axoloty-mcp"
+    )
+
+    let exitCode = runner.run(MCPServiceConfiguration(transport: .http, brokerHost: "localhost", brokerPort: 1883, namespace: "test"))
+    #expect(exitCode == 70)
+    #expect(processRunner.forceKillCalled)
+}
+
+@Test
+func mcpServiceHTTPStartsAndExitsCleanly() {
+    let processRunner = FakeProcessRunner()
+    processRunner.exitCode = 0
+    processRunner.running = true
+    processRunner.pollsUntilExit = 2
+
+    let runner = AxolotyMCPServiceRunner(
+        processRunner: processRunner,
+        portProbe: FakePortProbe(),
+        fileSystem: MQTTStubFileSystem(paths: ["/opt/axoloty/bin/axoloty-mcp"]),
+        mcpExecutable: "/opt/axoloty/bin/axoloty-mcp",
+        installSignalHandler: false
+    )
+
+    let exitCode = runner.run(MCPServiceConfiguration(transport: .http, listenHost: "127.0.0.1", listenPort: 8765, path: "/mcp", brokerHost: "localhost", brokerPort: 1883, namespace: "test"))
+    #expect(exitCode == 0)
+    let args = processRunner.startSpec?.arguments ?? []
+    #expect(args.contains("--transport"))
+    #expect(args.contains("http"))
+    #expect(args.contains("--listen-host"))
+    #expect(args.contains("--listen-port"))
+    #expect(args.contains("8765"))
+}
+
+@Test
+func mcpServiceReturns1OnChildCrash() {
+    let processRunner = FakeProcessRunner()
+    processRunner.exitCode = 1
+    processRunner.running = true
+    processRunner.pollsUntilExit = 2
+
+    let runner = AxolotyMCPServiceRunner(
+        processRunner: processRunner,
+        portProbe: FakePortProbe(),
+        fileSystem: MQTTStubFileSystem(paths: ["/opt/axoloty/bin/axoloty-mcp"]),
+        mcpExecutable: "/opt/axoloty/bin/axoloty-mcp",
+        installSignalHandler: false
+    )
+
+    let exitCode = runner.run(MCPServiceConfiguration(transport: .stdio, brokerHost: "localhost", brokerPort: 1883, namespace: "test"))
+    #expect(exitCode == 1)
+}
+
+// MARK: - Dispatcher integration for MCP
+
+@Test
+func dispatcherServeMcpWithFakeDepsReturnsExitCode() {
+    let processRunner = FakeProcessRunner()
+    processRunner.exitCode = 0
+    processRunner.running = true
+    processRunner.pollsUntilExit = 2
+
+    let dispatcher = AxolotyCommandDispatcher(
+        fileSystem: StubFileSystem(paths: ["/opt/axoloty/bin/axoloty-mcp"]),
+        environment: [:],
+        processRunner: processRunner,
+        portProbe: FakePortProbe(),
+        tempDirProvider: FakeTempDirProvider(),
+        installSignalHandler: false
+    )
+
+    let result = dispatcher.run(arguments: ["serve", "mcp", "--transport", "stdio"])
+    #expect(result.exitCode == 0)
 }
 
 // MARK: - Dispatcher integration
@@ -227,19 +355,16 @@ func dispatcherServeMqttWithFakeDepsReturnsExitCode() {
     let processRunner = FakeProcessRunner()
     processRunner.exitCode = 0
     processRunner.running = true
+    processRunner.pollsUntilExit = 2
 
     let dispatcher = AxolotyCommandDispatcher(
-        fileSystem: MQTTStubFileSystem(paths: ["/usr/sbin/mosquitto"]),
+        fileSystem: StubFileSystem(paths: ["/usr/sbin/mosquitto"]),
         environment: [:],
         processRunner: processRunner,
         portProbe: FakePortProbe(),
-        tempDirProvider: FakeTempDirProvider()
+        tempDirProvider: FakeTempDirProvider(),
+        installSignalHandler: false
     )
-
-    _Concurrency.Task {
-        try? await _Concurrency.Task.sleep(for: .milliseconds(200))
-        processRunner.running = false
-    }
 
     let result = dispatcher.run(arguments: ["serve", "mqtt"])
     #expect(result.exitCode == 0)

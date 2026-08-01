@@ -375,10 +375,13 @@ func dispatcherServesMqttReturns69WhenMosquittoMissing() {
 }
 
 @Test
-func dispatcherServesMcpStdioReturnsNotImplemented() {
-    let dispatcher = AxolotyCommandDispatcher(environment: [:])
+func dispatcherServesMcpStdioReturns69WhenMCPMissing() {
+    let dispatcher = AxolotyCommandDispatcher(
+        fileSystem: StubFileSystem(paths: []),
+        environment: [:]
+    )
     let result = dispatcher.run(arguments: ["serve", "mcp", "--transport", "stdio"])
-    #expect(result.exitCode == 70)
+    #expect(result.exitCode == 69)
 }
 
 @Test

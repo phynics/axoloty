@@ -51,6 +51,7 @@ public struct AxolotyCommandDispatcher: Sendable {
     private let processRunner: any AxolotyManagedProcessRunning
     private let portProbe: any AxolotyServiceProbing
     private let tempDirProvider: any AxolotyTempDirectoryProvider
+    private let installSignalHandler: Bool
 
     /// Creates a command dispatcher.
     ///
@@ -73,7 +74,8 @@ public struct AxolotyCommandDispatcher: Sendable {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         processRunner: (any AxolotyManagedProcessRunning)? = nil,
         portProbe: (any AxolotyServiceProbing)? = nil,
-        tempDirProvider: (any AxolotyTempDirectoryProvider)? = nil
+        tempDirProvider: (any AxolotyTempDirectoryProvider)? = nil,
+        installSignalHandler: Bool = true
     ) {
         self.executableName = executableName
         self.commandRunner = commandRunner
@@ -84,6 +86,7 @@ public struct AxolotyCommandDispatcher: Sendable {
         self.processRunner = processRunner ?? FoundationProcessRunner()
         self.portProbe = portProbe ?? FoundationServiceProbe()
         self.tempDirProvider = tempDirProvider ?? FoundationTempDirectoryProvider()
+        self.installSignalHandler = installSignalHandler
     }
 
     /// Resolves command-line arguments to their externally visible result.
@@ -189,11 +192,22 @@ public struct AxolotyCommandDispatcher: Sendable {
                     portProbe: portProbe,
                     fileSystem: fileSystem,
                     tempDirProvider: tempDirProvider,
-                    mosquittoExecutable: environment["AXOLOTY_MOSQUITTO_EXECUTABLE"] ?? "/usr/sbin/mosquitto"
+                    mosquittoExecutable: environment["AXOLOTY_MOSQUITTO_EXECUTABLE"] ?? "/usr/sbin/mosquitto",
+                    installSignalHandler: installSignalHandler
                 )
                 let exitCode = runner.run(config)
                 return AxolotyCommandResult(exitCode: exitCode)
-            case .mcp, .development:
+            case .mcp(let config):
+                let runner = AxolotyMCPServiceRunner(
+                    processRunner: processRunner,
+                    portProbe: portProbe,
+                    fileSystem: fileSystem,
+                    mcpExecutable: environment["AXOLOTY_MCP_EXECUTABLE"] ?? "/opt/axoloty/bin/axoloty-mcp",
+                    installSignalHandler: installSignalHandler
+                )
+                let exitCode = runner.run(config)
+                return AxolotyCommandResult(exitCode: exitCode)
+            case .development:
                 return AxolotyCommandResult(
                     standardError: "error: serve is not yet implemented for this subcommand\n",
                     exitCode: 70
