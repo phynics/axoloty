@@ -9,7 +9,7 @@ import Foundation
 /// Tests provide a fake implementation; production code uses
 /// ``AxolotyInspectorSession``.
 @MainActor
-protocol InspectorSession {
+public protocol InspectorSession {
     /// Starts the connection and waits until the broker is ready and
     /// desired subscriptions are activated.
     func connect() async throws
@@ -32,13 +32,13 @@ protocol InspectorSession {
 /// the subscription race where events arrive before the topic subscription
 /// is active.
 @MainActor
-final class AxolotyInspectorSession: InspectorSession {
+public final class AxolotyInspectorSession: InspectorSession {
     private let container: Container
     private let manager: CommunicationManager
     private let connectTimeout: Duration
 
     /// Creates a session from the given connection configuration.
-    init(configuration: InspectorConnectionConfiguration) throws {
+    public init(configuration: InspectorConnectionConfiguration) throws {
         let mqttOptions = MQTTClientOptions(
             host: configuration.host,
             port: configuration.port,
@@ -66,7 +66,7 @@ final class AxolotyInspectorSession: InspectorSession {
         self.connectTimeout = configuration.connectTimeout
     }
 
-    func connect() async throws {
+    public func connect() async throws {
         let outcome: ConnectOutcome = try await withTaskGroup(of: ConnectOutcome.self) { group in
             group.addTask { [self] in
                 do {
@@ -100,19 +100,19 @@ final class AxolotyInspectorSession: InspectorSession {
         }
     }
 
-    func advertiseEvents() async -> AsyncStream<AdvertiseEventSnapshot> {
+    public func advertiseEvents() async -> AsyncStream<AdvertiseEventSnapshot> {
         await manager.observeAdvertiseStream()
     }
 
-    func deadvertiseEvents() async -> AsyncStream<DeadvertiseEventSnapshot> {
+    public func deadvertiseEvents() async -> AsyncStream<DeadvertiseEventSnapshot> {
         await manager.observeDeadvertiseStream()
     }
 
-    func discover(_ event: DiscoverEvent) async -> AsyncStream<ResponseEventSnapshot> {
+    public func discover(_ event: DiscoverEvent) async -> AsyncStream<ResponseEventSnapshot> {
         await manager.publishDiscover(event)
     }
 
-    func stop() {
+    public func stop() {
         container.shutdown()
     }
 }

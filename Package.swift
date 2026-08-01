@@ -20,8 +20,16 @@ let package = Package(
             targets: ["AxolotyCLI"]
         ),
         .executable(
+            name: "ax",
+            targets: ["AxolotyCLI"]
+        ),
+        .executable(
             name: "axoloty-inspect",
             targets: ["AxolotyInspectorCLI"]
+        ),
+        .executable(
+            name: "axoloty-mcp",
+            targets: ["AxolotyMCPServer"]
         ),
     ],
     dependencies: [
@@ -33,6 +41,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-log.git", from: "1.14.0"),
         .package(url: "https://github.com/FlineDev/ErrorKit.git", exact: "1.2.1"),
         .package(url: "https://github.com/orlandos-nl/swift-json.git", exact: "2.5.3"),
+        .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", exact: "0.12.1"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin.git", from: "1.5.0"),
     ],
     targets: [
@@ -118,15 +127,20 @@ let package = Package(
             path: "Tools/AxolotyToolingTests"
         ),
         // MQTT object inspector. The core target has no product-runtime
-        // dependencies; the CLI target depends on Axoloty for broker
-        // connectivity via CommunicationManager (#344).
+        // dependencies; the runtime target adds Axoloty-backed session and
+        // application logic; the CLI target adds the entry point.
         .target(
             name: "AxolotyInspectorCore",
             path: "Tools/AxolotyInspectorCore"
         ),
+        .target(
+            name: "AxolotyInspectorRuntime",
+            dependencies: ["Axoloty", "AxolotyInspectorCore"],
+            path: "Tools/AxolotyInspectorRuntime"
+        ),
         .executableTarget(
             name: "AxolotyInspectorCLI",
-            dependencies: ["Axoloty", "AxolotyInspectorCore"],
+            dependencies: ["Axoloty", "AxolotyInspectorCore", "AxolotyInspectorRuntime"],
             path: "Tools/axoloty-inspect"
         ),
         .testTarget(
@@ -135,9 +149,34 @@ let package = Package(
             path: "Tools/AxolotyInspectorCoreTests"
         ),
         .testTarget(
+            name: "AxolotyInspectorRuntimeTests",
+            dependencies: ["AxolotyInspectorRuntime", "AxolotyInspectorCore"],
+            path: "Tools/AxolotyInspectorRuntimeTests"
+        ),
+        .testTarget(
             name: "AxolotyInspectorCLITests",
-            dependencies: ["Axoloty", "AxolotyInspectorCore", "AxolotyInspectorCLI"],
+            dependencies: ["Axoloty", "AxolotyInspectorCore", "AxolotyInspectorRuntime", "AxolotyInspectorCLI"],
             path: "Tools/AxolotyInspectorCLITests"
+        ),
+        // Axoloty MCP server. Depends on the inspector runtime for broker
+        // connectivity and the official MCP Swift SDK for protocol.
+        .target(
+            name: "AxolotyMCP",
+            dependencies: [
+                "Axoloty",
+                "AxolotyInspectorCore",
+                "AxolotyInspectorRuntime",
+                .product(name: "MCP", package: "swift-sdk"),
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOHTTP1", package: "swift-nio"),
+            ],
+            path: "Tools/AxolotyMCP"
+        ),
+        .executableTarget(
+            name: "AxolotyMCPServer",
+            dependencies: ["AxolotyMCP", "Axoloty", "AxolotyInspectorCore", "AxolotyInspectorRuntime"],
+            path: "Tools/axoloty-mcp"
         ),
         // Build-only release consumers for binary-size and dependency-closure
         // benchmarking (issue #299). Not shipped as products — they exist so

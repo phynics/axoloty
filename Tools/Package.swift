@@ -8,6 +8,7 @@ let package = Package(
     platforms: [.macOS(.v15)],
     products: [
         .executable(name: "axoloty-tool", targets: ["AxolotyCLI"]),
+        .executable(name: "ax", targets: ["AxolotyCLI"]),
     ],
     targets: [
         .target(name: "AxolotyTooling", path: "AxolotyTooling"),

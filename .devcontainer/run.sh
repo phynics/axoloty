@@ -181,8 +181,40 @@ if [ -n "$sudo_prefix" ]; then
     privileged_opt="--privileged"
 fi
 
+# Optional port forwarding for serve commands. Empty by default so
+# ordinary build and test commands are unaffected. Set CONTAINER_PORTS to
+# a space-separated list of port mappings (e.g. "127.0.0.1:1883:1883").
+container_ports=${CONTAINER_PORTS:-}
+port_opts=""
+if [ -n "$container_ports" ]; then
+    # Reject control characters (newlines, tabs) before word splitting
+    # would silently turn them into spec separators.
+    case "$container_ports" in
+        *[![:print:]]*)
+            echo "Invalid CONTAINER_PORTS: control characters are not allowed" >&2
+            exit 2
+            ;;
+    esac
+    for port_spec in $container_ports; do
+        case "$port_spec" in
+            ""|*[!0-9A-Za-z.:-]*)
+                echo "Invalid CONTAINER_PORTS entry: $port_spec" >&2
+                exit 2
+                ;;
+        esac
+        port_opts="$port_opts -p $port_spec"
+    done
+fi
+
+# Optional stdin forwarding for MCP stdio mode. Adds -i but never -t.
+# Allocating a TTY could corrupt or buffer protocol traffic.
+stdin_opt=""
+if [ "${CONTAINER_STDIN:-0}" = "1" ]; then
+    stdin_opt="-i"
+fi
+
 set +e
-$sudo_prefix "$runtime" run --rm $security_opts $device_opts $privileged_opt $env_opts \
+$sudo_prefix "$runtime" run --rm $security_opts $device_opts $privileged_opt $env_opts $port_opts $stdin_opt \
     -v "$root_dir:$workdir$mount_suffix" \
     -v "$build_dir:$workdir/.build$mount_suffix" \
     -v "$spm_cache_dir:$workdir/.swiftpm-cache$mount_suffix" \

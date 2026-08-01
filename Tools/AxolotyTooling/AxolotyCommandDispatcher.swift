@@ -42,25 +42,51 @@ private struct FoundationFileSystem: AxolotyFileSystem {
 
 /// Parses the stable command surface of the ``axoloty-tool`` executable.
 public struct AxolotyCommandDispatcher: Sendable {
+    private let executableName: String
     private let commandRunner: any AxolotyCheckCommandRunning
     private let integrationRunner: any AxolotyIntegrationRunning
     private let deviceLeaseManager: any AxolotyDeviceLeasing
     private let fileSystem: any AxolotyFileSystem
     private let environment: [String: String]
+    private let processRunnerFactory: @Sendable () -> any AxolotyManagedProcessRunning
+    private let portProbe: any AxolotyServiceProbing
+    private let tempDirProvider: any AxolotyTempDirectoryProvider
+    private let installSignalHandler: Bool
 
     /// Creates a command dispatcher.
+    ///
+    /// - Parameters:
+    ///   - executableName: The name used in version output and help text (default: `axoloty-tool`).
+    ///   - commandRunner: The process runner for executing check commands.
+    ///   - integrationRunner: The integration test runner for broker-backed tests.
+    ///   - deviceLeaseManager: The device lease manager for hardware checks.
+    ///   - fileSystem: The filesystem boundary for existence checks.
+    ///   - environment: The environment variable map.
+    ///   - processRunnerFactory: A factory for process runners used by managed service commands.
+    ///   - portProbe: The TCP probe for service readiness checks.
+    ///   - tempDirProvider: The temporary directory provider for service configs.
     public init(
+        executableName: String = "axoloty-tool",
         commandRunner: any AxolotyCheckCommandRunning = FoundationCommandRunner(),
         integrationRunner: (any AxolotyIntegrationRunning)? = nil,
         deviceLeaseManager: any AxolotyDeviceLeasing = FoundationDeviceLeaseManager(),
         fileSystem: (any AxolotyFileSystem)? = nil,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        processRunnerFactory: (@Sendable () -> any AxolotyManagedProcessRunning)? = nil,
+        portProbe: (any AxolotyServiceProbing)? = nil,
+        tempDirProvider: (any AxolotyTempDirectoryProvider)? = nil,
+        installSignalHandler: Bool = true
     ) {
+        self.executableName = executableName
         self.commandRunner = commandRunner
         self.integrationRunner = integrationRunner ?? FoundationIntegrationRunner(commandRunner: commandRunner)
         self.deviceLeaseManager = deviceLeaseManager
         self.fileSystem = fileSystem ?? FoundationFileSystem()
         self.environment = environment
+        self.processRunnerFactory = processRunnerFactory ?? { FoundationProcessRunner() }
+        self.portProbe = portProbe ?? FoundationServiceProbe()
+        self.tempDirProvider = tempDirProvider ?? FoundationTempDirectoryProvider()
+        self.installSignalHandler = installSignalHandler
     }
 
     /// Resolves command-line arguments to their externally visible result.
@@ -68,6 +94,9 @@ public struct AxolotyCommandDispatcher: Sendable {
     /// - Parameter arguments: Arguments after the executable name.
     /// - Returns: Text streams and exit status for the requested command.
     public func run(arguments: [String]) -> AxolotyCommandResult {
+        if arguments.first == "serve" {
+            return serveResult(arguments: Array(arguments.dropFirst()))
+        }
         if arguments.count == 4, arguments[0] == "hardware", ["check", "require"].contains(arguments[1]), arguments[2] == "--device" {
             return hardwareResult(required: arguments[1] == "require", device: arguments[3])
         }
@@ -76,9 +105,9 @@ public struct AxolotyCommandDispatcher: Sendable {
         }
         return switch arguments {
         case [], ["help"], ["--help"], ["-h"]:
-            AxolotyCommandResult(standardOutput: Self.usage)
+            AxolotyCommandResult(standardOutput: Self.usage(executableName: executableName))
         case ["version"], ["--version"]:
-            AxolotyCommandResult(standardOutput: "axoloty-tool \(Self.version)")
+            AxolotyCommandResult(standardOutput: "\(executableName) \(Self.version)")
         case ["check", "--plan"]:
             Self.planResult()
         case ["check"]:
@@ -140,10 +169,64 @@ public struct AxolotyCommandDispatcher: Sendable {
       release checkpoint   Run the 0.2 checkpoint validation (no hardware).
       release checkpoint-hardware  Run checkpoint with ESP32-C6 smoke test.
          --device PATH      Override AXOLOTY_DEVICE (default: /dev/ttyACM0).
+      serve mqtt           Start a local Mosquitto broker in the foreground.
+      serve mcp            Start an Axoloty MCP server (stdio or HTTP).
+      serve dev            Start MQTT + MCP as a supervised development stack.
 
     The initial command surface is intentionally small. Workflow commands are
     introduced only when their execution contracts and structured results exist.
     """
+
+    private static func usage(executableName: String) -> String {
+        usage.replacingOccurrences(of: "axoloty-tool", with: executableName)
+    }
+
+    private func serveResult(arguments: [String]) -> AxolotyCommandResult {
+        let parser = AxolotyServeParser()
+        switch parser.parse(arguments: arguments, environment: environment) {
+        case .success(let command):
+            switch command {
+            case .mqtt(let config):
+                let runner = AxolotyMQTTServiceRunner(
+                    processRunner: processRunnerFactory(),
+                    portProbe: portProbe,
+                    fileSystem: fileSystem,
+                    tempDirProvider: tempDirProvider,
+                    mosquittoExecutable: environment["AXOLOTY_MOSQUITTO_EXECUTABLE"] ?? "/usr/sbin/mosquitto",
+                    installSignalHandler: installSignalHandler
+                )
+                let exitCode = runner.run(config)
+                return AxolotyCommandResult(exitCode: exitCode)
+            case .mcp(let config):
+                let runner = AxolotyMCPServiceRunner(
+                    processRunner: processRunnerFactory(),
+                    portProbe: portProbe,
+                    fileSystem: fileSystem,
+                    mcpExecutable: environment["AXOLOTY_MCP_EXECUTABLE"] ?? "/opt/axoloty/bin/axoloty-mcp",
+                    installSignalHandler: installSignalHandler
+                )
+                let exitCode = runner.run(config)
+                return AxolotyCommandResult(exitCode: exitCode)
+            case .development(let config):
+                let runner = AxolotyDevelopmentServiceRunner(
+                    processRunnerFactory: processRunnerFactory,
+                    portProbe: portProbe,
+                    fileSystem: fileSystem,
+                    tempDirProvider: tempDirProvider,
+                    mosquittoExecutable: environment["AXOLOTY_MOSQUITTO_EXECUTABLE"] ?? "/usr/sbin/mosquitto",
+                    mcpExecutable: environment["AXOLOTY_MCP_EXECUTABLE"] ?? "/opt/axoloty/bin/axoloty-mcp",
+                    installSignalHandler: installSignalHandler
+                )
+                let exitCode = runner.run(config)
+                return AxolotyCommandResult(exitCode: exitCode)
+            }
+        case .failure(let error):
+            return AxolotyCommandResult(
+                standardError: "error: \(error.userFriendlyMessage)\n",
+                exitCode: 64
+            )
+        }
+    }
 
     private static func planResult() -> AxolotyCommandResult {
         do {

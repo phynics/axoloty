@@ -21,7 +21,7 @@ private enum ApplicationEvent: Sendable {
 /// faked, output/diagnostic sinks are closures, and the timestamp
 /// provider is injectable.
 @MainActor
-final class InspectorApplication {
+public final class InspectorApplication {
     private let configuration: InspectorConfiguration
     private let session: InspectorSession
     private let writeOutput: (String) -> Void
@@ -31,7 +31,7 @@ final class InspectorApplication {
     private let signalHandler: InspectorSignalHandling?
 
     /// Creates the application.
-    init(
+    public init(
         configuration: InspectorConfiguration,
         session: InspectorSession,
         writeOutput: @escaping (String) -> Void,
@@ -51,7 +51,7 @@ final class InspectorApplication {
 
     /// Runs the catalogue observation and returns `nil` on success or an
     /// ``InspectorError`` on failure.
-    func run() async -> InspectorError? {
+    public func run() async -> InspectorError? {
         guard case let .catalog(cmd) = configuration.command else {
             return .invalidArguments(reason: "non-catalog command passed to catalog application")
         }

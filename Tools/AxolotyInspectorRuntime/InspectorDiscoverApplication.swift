@@ -21,7 +21,7 @@ private struct ResolveResponsePayload: Decodable {
 /// collects Resolve responses, deduplicates by object ID, and emits a
 /// finite discovery-result record.
 @MainActor
-final class InspectorDiscoverApplication {
+public final class InspectorDiscoverApplication {
     private let configuration: InspectorConfiguration
     private let session: InspectorSession
     private let writeOutput: (String) -> Void
@@ -30,7 +30,8 @@ final class InspectorDiscoverApplication {
     private let isTerminal: Bool
     private let signalHandler: InspectorSignalHandling?
 
-    init(
+    /// Creates the application.
+    public init(
         configuration: InspectorConfiguration,
         session: InspectorSession,
         writeOutput: @escaping (String) -> Void,
@@ -48,7 +49,9 @@ final class InspectorDiscoverApplication {
         self.signalHandler = signalHandler
     }
 
-    func run() async -> InspectorError? {
+    /// Runs the discovery and returns `nil` on success or an
+    /// ``InspectorError`` on failure.
+    public func run() async -> InspectorError? {
         guard case let .discover(cmd) = configuration.command else {
             return .invalidArguments(reason: "non-discover command passed to discover application")
         }

@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-@testable import AxolotyInspectorCLI
 import Axoloty
 import AxolotyInspectorCore
+import AxolotyInspectorRuntime
 import Foundation
 import Testing
 

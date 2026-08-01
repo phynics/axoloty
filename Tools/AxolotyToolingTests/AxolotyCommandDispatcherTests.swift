@@ -4,7 +4,7 @@ import AxolotyTooling
 import Foundation
 import Testing
 
-private struct StubFileSystem: AxolotyFileSystem {
+struct StubFileSystem: AxolotyFileSystem {
     let paths: Set<String>
     func exists(atPath path: String) -> Bool { paths.contains(path) }
 }
