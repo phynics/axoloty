@@ -57,7 +57,11 @@ export function validateWirePackage(packageDirectory) {
   if (!fs.existsSync(manifestPath)) return [`error: missing AxolotyWire package manifest: ${manifestPath}`];
   const manifest = fs.readFileSync(manifestPath, "utf8");
   const structure = codeMask(manifest);
-  if (/\.package\s*\(/.test(structure)) errors.push("error: AxolotyWire package must not declare package dependencies");
+  const packageDependencies = [...structure.matchAll(/\.package\s*\(/g)];
+  const approvedPackage = /\.package\s*\(\s*url\s*:\s*"https:\/\/github\.com\/phynics\/swift-json\.git"\s*,\s*revision\s*:\s*"ec81216be5bbe2f02f45831d05256de2af452be8"\s*,\s*traits\s*:\s*\[\s*\]\s*\)/s;
+  if (packageDependencies.length > 1 || (packageDependencies.length === 1 && !approvedPackage.test(manifest))) {
+    errors.push("error: AxolotyWire may declare only pinned phynics/swift-json ec81216be5bbe2f02f45831d05256de2af452be8 with disabled traits");
+  }
   const blocks = [];
   for (const match of structure.matchAll(/\.target\s*\(/g)) {
     const start = structure.indexOf("(", match.index);
@@ -72,12 +76,18 @@ export function validateWirePackage(packageDirectory) {
   else {
     const targetPath = /\bpath\s*:\s*"([^"]+)"/.exec(target)?.[1];
     if (targetPath !== "Sources/AxolotyWire") errors.push("error: AxolotyWire must declare path: Sources/AxolotyWire");
-    else if (/\bdependencies\s*:/.test(codeMask(target))) errors.push("error: AxolotyWire target must not declare runtime dependencies");
+    else if (/\bdependencies\s*:/.test(codeMask(target))) {
+      const products = [...codeMask(target).matchAll(/\.product\s*\(/g)];
+      const approvedProduct = /\.product\s*\(\s*name\s*:\s*"IkigaJSONCore"\s*,\s*package\s*:\s*"swift-json"\s*\)/s;
+      if (products.length !== 1 || !approvedProduct.test(target)) {
+        errors.push("error: AxolotyWire target may depend only on the IkigaJSONCore product");
+      }
+    }
   }
   if (!fs.existsSync(sourceDirectory)) errors.push(`error: missing AxolotyWire source directory: ${sourceDirectory}`);
   const importPattern = /^\s*(?:(?:@[A-Za-z_][A-Za-z0-9_]*(?:\([^\n]*\))?|public|internal|package|private)\s+)*import\s+([A-Za-z_][A-Za-z0-9_]*)/gm;
   for (const source of swiftFiles(sourceDirectory)) for (const match of codeMask(fs.readFileSync(source, "utf8")).matchAll(importPattern)) {
-    if (match[1] !== "Swift") errors.push(`error: AxolotyWire must not import ${match[1]}: ${source}`);
+    if (match[1] !== "Swift" && match[1] !== "_JSONCore") errors.push(`error: AxolotyWire must not import ${match[1]}: ${source}`);
   }
   return errors;
 }

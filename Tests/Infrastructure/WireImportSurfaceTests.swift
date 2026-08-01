@@ -33,7 +33,12 @@ struct AxolotyWireImportSurfaceTests {
 
         // Wire DTO struct + codec protocols are visible through the shim.
         #expect(wireCodecConformance(AssociateWireData.self))
+        #expect(wireEventSurface(BorrowedWireEvent.self, OwnedWireEvent.self))
     }
+}
+
+private func wireEventSurface(_ borrowed: BorrowedWireEvent.Type, _ owned: OwnedWireEvent.Type) -> Bool {
+    borrowed == BorrowedWireEvent.self && owned == OwnedWireEvent.self
 }
 
 /// Proves the ``WireDecodable`` and ``WireEncodable`` protocols (and a

@@ -72,6 +72,12 @@ to resolve the host runtime graph, which is expected for host consumers.
 
 ## Dependency rule for AxolotyWire
 
+AxolotyWire uses the pinned `phynics/swift-json` `ec81216` fork with the
+`IkigaJSONCore` product and disabled `FoundationSupport` trait. The fork's
+swift-nio dependency may therefore appear during resolution, but NIO targets
+must not be built or linked by the standalone wire fixture. The independent
+resolution check treats this as an intentional resolution-only dependency.
+
 The extracted target has no external runtime dependencies and must import none
 of Foundation, NIO, MQTT, ErrorKit, logging, transport, host model, or actor
 modules. Phase 2 must add automated import/dependency checks for this rule and

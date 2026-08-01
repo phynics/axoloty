@@ -53,14 +53,17 @@ public struct ByteSlice: Equatable, Hashable {
     /// Returns the byte at the given index, or nil if out of bounds.
     @inlinable
     public func byte(at index: Int) -> UInt8? {
-        guard index < length else { return nil }
+        guard index >= 0, index < length else { return nil }
         return pointer.load(fromByteOffset: index, as: UInt8.self)
     }
 
     /// Returns a sub-slice of this slice.
     @inlinable
     public func subSlice(from start: Int, length len: Int) -> ByteSlice {
-        ByteSlice(pointer: pointer.advanced(by: start), length: len)
+        guard start >= 0, len >= 0, start <= self.length, len <= self.length - start else {
+            return ByteSlice(pointer: pointer, length: 0)
+        }
+        return ByteSlice(pointer: pointer.advanced(by: start), length: len)
     }
 
     /// Iterates over the bytes in this slice.

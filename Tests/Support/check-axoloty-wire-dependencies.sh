@@ -1,9 +1,9 @@
 #!/bin/sh
 # Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-# Validates that the AxolotyWire package is dependency-free: no package-level
-# dependencies, no target-level dependencies, and no non-Swift imports in its
-# sources. The argument is the sub-package directory (default Packages/AxolotyWire).
+# Validates that AxolotyWire depends only on the approved pinned `_JSONCore`
+# package seam and imports no host runtime modules. The argument is the
+# sub-package directory (default Packages/AxolotyWire).
 
 set -eu
 

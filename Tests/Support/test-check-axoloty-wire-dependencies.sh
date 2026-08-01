@@ -41,6 +41,33 @@ import Swift
 EOF
 sh "$checker" "$fixture"
 
+# The approved pinned `_JSONCore` package seam passes.
+write_manifest <<'EOF'
+let package = Package(
+    name: "AxolotyWire",
+    dependencies: [
+        .package(
+            url: "https://github.com/phynics/swift-json.git",
+            revision: "ec81216be5bbe2f02f45831d05256de2af452be8",
+            traits: []
+        ),
+    ],
+    targets: [
+        .target(
+            name: "AxolotyWire",
+            dependencies: [
+                .product(name: "IkigaJSONCore", package: "swift-json"),
+            ],
+            path: "Sources/AxolotyWire"
+        ),
+    ]
+)
+EOF
+write_source <<'EOF'
+import _JSONCore
+EOF
+sh "$checker" "$fixture"
+
 # Target-level dependency is rejected.
 write_manifest <<'EOF'
 let package = Package(
@@ -58,12 +85,30 @@ let package = Package(
 EOF
 expect_failure
 
-# Package-level dependency is rejected (#293 invariant).
+# Unapproved package-level dependency is rejected.
 write_manifest <<'EOF'
 let package = Package(
     name: "AxolotyWire",
     dependencies: [
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.101.2"),
+    ],
+    targets: [
+        .target(name: "AxolotyWire", path: "Sources/AxolotyWire"),
+    ]
+)
+EOF
+expect_failure
+
+# A different swift-json revision is rejected.
+write_manifest <<'EOF'
+let package = Package(
+    name: "AxolotyWire",
+    dependencies: [
+        .package(
+            url: "https://github.com/phynics/swift-json.git",
+            revision: "unreviewed",
+            traits: []
+        ),
     ],
     targets: [
         .target(name: "AxolotyWire", path: "Sources/AxolotyWire"),

@@ -293,7 +293,7 @@ struct WireCodecTests {
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 
-        #expect(reader.readRaw("a") != nil)
+        #expect(reader.readRaw("a") == nil)
         #expect(reader.readBool("a") == nil)
     }
 
@@ -356,5 +356,82 @@ struct WireCodecTests {
         let written = String(bytes: buffer[0..<writer.position], encoding: .utf8)
         #expect(written == "33333333-3333-4333-8333-333333333333")
         #expect(writer.position == 36)
+    }
+
+    @Test
+    func strictReaderRejectsTrailingAndMalformedJSON() throws {
+        let malformed = Array(#"{"payload":{"x":1}extra"#.utf8)
+        let trailing = Array(#"{"payload":1} trailing"#.utf8)
+        for bytes in [malformed, trailing] {
+            let reader = bytes.withUnsafeBufferPointer {
+                WireReader(bytes: $0.baseAddress!, length: $0.count)
+            }
+            #expect((try? reader.validate()) == nil)
+        }
+    }
+
+    @Test
+    func ownedWireEventCopiesPayload() throws {
+        var source = Array(#"{"payload":{"value":1}}"#.utf8)
+        let owned = source.withUnsafeBufferPointer { buffer -> OwnedWireEvent in
+            let reader = WireReader(bytes: buffer.baseAddress!, length: buffer.count)
+            return BorrowedWireEvent.ioValue(try! IoValueWireData(from: reader)).owned()
+        }
+        source[2] = 0x58
+        if case .ioValue(let value) = owned {
+            #expect(value.payload.first == 0x7B)
+        } else { Issue.record("wrong owned event family") }
+    }
+
+    @Test
+    func byteSliceBoundsAreNonTrapping() {
+        let bytes: [UInt8] = [1, 2, 3]
+        let slice = bytes.withUnsafeBufferPointer { ByteSlice(bytes: $0.baseAddress!, length: $0.count) }
+        #expect(slice.byte(at: -1) == nil)
+        #expect(slice.byte(at: 3) == nil)
+        #expect(slice.subSlice(from: -1, length: 1).length == 0)
+        #expect(slice.subSlice(from: 2, length: 2).length == 0)
+    }
+
+    @Test
+    func rawWriterAcceptsScalarArrayAndStringValues() throws {
+        let fragments = ["1", "true", "null", "[1,2]", #""text""#]
+        for fragment in fragments {
+            let bytes = Array(fragment.utf8)
+            var output = [UInt8](repeating: 0, count: 64)
+            try bytes.withUnsafeBufferPointer { input in
+                try output.withUnsafeMutableBufferPointer { destination in
+                    var writer = WireWriter(buffer: destination.baseAddress!, capacity: destination.count)
+                    try writer.writeRawField("value", ByteSlice(bytes: input.baseAddress!, length: input.count))
+                }
+            }
+        }
+    }
+
+    @Test
+    func stringWriterDistinguishesPlainAndEncodedContent() throws {
+        let plain = Array(#"line\nbreak"#.utf8)
+        var plainOutput = [UInt8](repeating: 0, count: 64)
+        let plainCount = try plain.withUnsafeBufferPointer { input in
+            try plainOutput.withUnsafeMutableBufferPointer { output in
+                var writer = WireWriter(buffer: output.baseAddress!, capacity: output.count)
+                try writer.writeStringField("value", ByteSlice(bytes: input.baseAddress!, length: input.count))
+                return writer.position
+            }
+        }
+        #expect(String(decoding: plainOutput[..<plainCount], as: UTF8.self) == #""value":"line\\nbreak""#)
+
+        let source = Array(#"{"externalId":"line\nbreak"}"#.utf8)
+        var encodedOutput = [UInt8](repeating: 0, count: 64)
+        let encodedCount = try source.withUnsafeBufferPointer { input in
+            let reader = WireReader(bytes: input.baseAddress!, length: input.count)
+            let encoded = try DiscoverWireData(from: reader)
+            return try encodedOutput.withUnsafeMutableBufferPointer { output in
+                var writer = WireWriter(buffer: output.baseAddress!, capacity: output.count)
+                try encoded.encode(to: &writer)
+                return writer.position
+            }
+        }
+        #expect(String(decoding: encodedOutput[..<encodedCount], as: UTF8.self) == #"{"externalId":"line\nbreak"}"#)
     }
 }
