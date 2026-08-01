@@ -1,48 +1,54 @@
 #!/bin/sh
 # Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-# Issue #392: prove whether the pinned swift-json checkout exports the
-# proposed IkigaJSONCore module. Failure is the expected result for this
-# throwaway spike; any other result is an unexpected change in the dependency.
+# Issue #392: prove whether the pinned swift-json IkigaJSONCore product,
+# whose Swift module is named _JSONCore, builds for host and Embedded Swift.
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-build_dir="$root/.build"
-log=$(mktemp)
-trap 'rm -f "$log"' EXIT
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
 
-if swift build --package-path "$root" --build-path "$build_dir" \
-    --disable-automatic-resolution >"$log" 2>&1; then
-    echo "UNEXPECTED: IkigaJSONCore imported successfully"
-    exit 1
-fi
+swift package resolve --package-path "$root"
+checkout="$root/.build/checkouts/swift-json/Sources/_JSONCore"
 
-if ! grep -Eq "no such module ['\"]IkigaJSONCore['\"]|missing product ['\"]IkigaJSONCore['\"]" "$log"; then
-    echo "UNEXPECTED: build failed for a reason other than missing IkigaJSONCore" >&2
-    cat "$log" >&2
-    exit 1
-fi
+core_files=""
+for file in "$checkout"/*.swift "$checkout"/Parser/*.swift "$checkout"/SIMD/*.swift; do
+    core_files="$core_files $file"
+done
 
-echo "HOST LINUX: expected blocker — IkigaJSONCore is not importable"
-grep -E "no such module|missing product" "$log" || true
+swiftc -enable-experimental-feature Lifetimes \
+    -enable-experimental-feature StrictConcurrency \
+    -parse-as-library -O -wmo -package-name IkigaJSON -module-name _JSONCore \
+    -emit-module -c $core_files \
+    -o "$work/JSONCore-host.o" \
+    -emit-module-path "$work/_JSONCore.swiftmodule"
 
-embedded_log=$(mktemp)
-trap 'rm -f "$log" "$embedded_log"' EXIT
-if swiftc -target riscv32-none-none-eabi \
-    -enable-experimental-feature Embedded -parse-as-library -Osize \
-    -wmo \
-    -c "$root/Sources/IkigaJSONCoreBackendProbe/main.swift" \
-    -o "$root/.build/embedded-probe.o" >"$embedded_log" 2>&1; then
-    echo "UNEXPECTED: Embedded Swift imported IkigaJSONCore successfully"
-    exit 1
-fi
+swiftc -O -I "$work" \
+    "$root/Sources/IkigaJSONCoreBackendProbe/ProbeCore.swift" \
+    "$root/Sources/IkigaJSONCoreBackendProbe/main.swift" \
+    "$work/JSONCore-host.o" \
+    -o "$work/host-probe"
+"$work/host-probe"
 
-if ! grep -Eq "no such module ['\"]IkigaJSONCore['\"]|cannot find module" "$embedded_log"; then
-    echo "UNEXPECTED: Embedded Swift failed for an unrelated reason" >&2
-    cat "$embedded_log" >&2
-    exit 1
-fi
+swiftc -target riscv32-none-none-eabi \
+    -enable-experimental-feature Embedded \
+    -enable-experimental-feature Lifetimes \
+    -enable-experimental-feature StrictConcurrency \
+    -parse-as-library -Osize -wmo -package-name IkigaJSON -module-name _JSONCore \
+    -emit-module -c $core_files \
+    -o "$work/JSONCore.o" \
+    -emit-module-path "$work/_JSONCore.swiftmodule"
 
-echo "EMBEDDED SWIFT: expected blocker — IkigaJSONCore is not importable"
-grep -E "no such module|cannot find module" "$embedded_log" || true
-echo "RESULT: pinned swift-json exposes IkigaJSON only; no adapter was attempted."
+swiftc -target riscv32-none-none-eabi \
+    -enable-experimental-feature Embedded \
+    -enable-experimental-feature Lifetimes \
+    -parse-as-library -Osize -wmo -I "$work" \
+    -c "$root/Sources/IkigaJSONCoreBackendProbe/ProbeCore.swift" \
+       "$root/embedded-probe.swift" \
+    -o "$work/embedded-probe.o"
+
+echo "embeddedJSONCoreObjectBytes=$(wc -c < "$work/JSONCore.o")"
+echo "embeddedProbeObjectBytes=$(wc -c < "$work/embedded-probe.o")"
+echo "hostProbeBytes=$(wc -c < "$work/host-probe")"
+echo "IKIGA JSON CORE HOST + EMBEDDED COMPILE OK"

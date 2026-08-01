@@ -13,6 +13,11 @@ let package = Package(
         .executableTarget(
             name: "IkigaJSONCoreBackendProbe",
             dependencies: [
+                // Swift 6.3 selects swift-json's Package@swift-6.2.3.swift,
+                // which omits the otherwise-declared IkigaJSONCore product.
+                // This public product keeps resolution reproducible while the
+                // probe compiles _JSONCore directly to model a corrected
+                // upstream manifest.
                 .product(name: "IkigaJSON", package: "swift-json"),
             ]
         ),
