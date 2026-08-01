@@ -253,6 +253,38 @@ struct MessageRouterTests {
     }
 
     @Test
+    func validatedRejectsNegativeLengths() throws {
+        let topicBytes = Array("topic".utf8)
+        let payloadBytes = Array("{}".utf8)
+        var topicError: WireDecodeError?
+        var payloadError: WireDecodeError?
+
+        topicBytes.withUnsafeBufferPointer { topicBuf in
+            payloadBytes.withUnsafeBufferPointer { payloadBuf in
+                do {
+                    _ = try BorrowedMessage.validated(
+                        topicBytes: topicBuf.baseAddress!, topicLength: -1,
+                        payloadBytes: payloadBuf.baseAddress!, payloadLength: payloadBuf.count
+                    )
+                } catch { topicError = error as? WireDecodeError }
+                do {
+                    _ = try BorrowedMessage.validated(
+                        topicBytes: topicBuf.baseAddress!, topicLength: topicBuf.count,
+                        payloadBytes: payloadBuf.baseAddress!, payloadLength: -1
+                    )
+                } catch { payloadError = error as? WireDecodeError }
+            }
+        }
+
+        if case .malformedTopic = try #require(topicError).reason {} else {
+            Issue.record("expected .malformedTopic")
+        }
+        if case .unexpectedEndOfInput = try #require(payloadError).reason {} else {
+            Issue.record("expected .unexpectedEndOfInput")
+        }
+    }
+
+    @Test
     func validatedAcceptsAtLimit() throws {
         // A topic and payload exactly at the limits must be accepted.
         let topic = String(repeating: "a", count: WireBufferConfig.maxTopicLength)

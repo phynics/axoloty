@@ -3,8 +3,8 @@
 /// The complete set of Coaty event payloads accepted by the wire codec.
 ///
 /// Values in this enum borrow the reader's input buffer and are consequently
-/// synchronous values. Use ``OwnedWireEvent/init(_:)`` before crossing an
-/// asynchronous boundary.
+/// synchronous values. Use ``owned()`` before crossing an asynchronous
+/// boundary.
 public enum BorrowedWireEvent {
     case advertise(AdvertiseWireData)
     case deadvertise(DeadvertiseWireData)
