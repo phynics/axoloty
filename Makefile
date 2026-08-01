@@ -30,6 +30,12 @@ AXOLOTY_TOOL_ARGS ?= --help
 AXOLOTY_DEVICE ?= /dev/ttyACM0
 AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES ?=
 AXOLOTY_TOOL_CONTAINER_ENV_VARS ?=
+SERVE_MQTT_ARGS ?=
+SERVE_MCP_ARGS ?= --transport stdio
+SERVE_DEV_ARGS ?=
+export SERVE_MQTT_ARGS SERVE_MCP_ARGS SERVE_DEV_ARGS
+
+.PHONY: serve-mqtt serve-mcp serve-dev
 
 # Hosting base path for static DocC output. Set this to the repository name
 # when publishing to a GitHub Pages project site (e.g. "axoloty" for
@@ -53,7 +59,10 @@ help:
 		'make checkpoint-hardware  Run checkpoint with ESP32-C6 smoke test' \
 		'make test-tooling  Run the Swift tooling CLI tests' \
 		'make build         Build Axoloty in the Linux container' \
-	'make wire-codec-test  Run the Foundation-free wire codec unit tests' \
+		'make serve-mqtt    Run the local MQTT broker in the container' \
+		'make serve-mcp     Run the MCP service in the container' \
+		'make serve-dev     Run the MQTT + MCP development stack' \
+		'make wire-codec-test  Run the Foundation-free wire codec unit tests' \
 		'make test-communication  Run communication transport and subscription tests' \
 		'make test-broker-regressions  Run broker-backed regression tests' \
 		'make test-decoder-context-sendable  Fail if the former decoder-context Sendable diagnostic returns' \
@@ -132,6 +141,24 @@ axoloty-tool: image
 	CONTAINER_OPTIONAL_DEVICES="$(AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES)" \
 	CONTAINER_ENV_VARS="$(AXOLOTY_TOOL_CONTAINER_ENV_VARS)" \
 	.devcontainer/run.sh /opt/axoloty/bin/axoloty-tool $(AXOLOTY_TOOL_ARGS)
+
+serve-mqtt: image
+	@args="$$SERVE_MQTT_ARGS"; \
+	case "$$args" in *[!-[:space:]0-9A-Za-z._/:=+,]*) echo "Invalid SERVE_MQTT_ARGS" >&2; exit 2;; esac; \
+	set -f; set -- $$args; \
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" CONTAINER_NETWORK=host .devcontainer/run.sh /opt/axoloty/bin/ax serve mqtt "$$@"
+
+serve-mcp: image
+	@args="$$SERVE_MCP_ARGS"; \
+	case "$$args" in *[!-[:space:]0-9A-Za-z._/:=+,]*) echo "Invalid SERVE_MCP_ARGS" >&2; exit 2;; esac; \
+	set -f; set -- $$args; \
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" CONTAINER_NETWORK=host CONTAINER_STDIN=1 .devcontainer/run.sh /opt/axoloty/bin/ax serve mcp "$$@"
+
+serve-dev: image
+	@args="$$SERVE_DEV_ARGS"; \
+	case "$$args" in *[!-[:space:]0-9A-Za-z._/:=+,]*) echo "Invalid SERVE_DEV_ARGS" >&2; exit 2;; esac; \
+	set -f; set -- $$args; \
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" CONTAINER_NETWORK=host .devcontainer/run.sh /opt/axoloty/bin/ax serve dev "$$@"
 
 check:
 	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS=check
@@ -440,11 +467,13 @@ ci: ci-preflight test-no-anycodable test-no-foundation-types test-axoloty-wire-d
 	sh Tests/Support/check-decoder-context-diagnostic.sh .testing/coverage/build.log
 
 broker: image
+	@printf '%s\n' 'warning: make broker is deprecated; use make serve-mqtt' >&2
 	@$(CONTAINER_RUNTIME) rm -f $(BROKER_NAME) >/dev/null 2>&1 || true
 	$(CONTAINER_RUNTIME) run -d --name $(BROKER_NAME) -p 1883:1883 $(IMAGE) \
-		mosquitto -c /etc/mosquitto/mosquitto.conf
+		mosquitto -c /etc/mosquitto/conf.d/coatyswift.conf
 
 broker-stop:
+	@printf '%s\n' 'warning: make broker-stop is deprecated; use Ctrl-C on make serve-mqtt' >&2
 	$(CONTAINER_RUNTIME) rm -f $(BROKER_NAME)
 
 shell: image

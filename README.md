@@ -155,9 +155,17 @@ make hardware-check      # run or skip the sporadically attached ESP32-C6
 make hardware-require    # require the ESP32-C6 for an explicit release gate
 make release-snapshots   # produce and verify provenance-rich wire evidence
 
+# local services
+make serve-mqtt
+make serve-mcp SERVE_MCP_ARGS='--transport http'
+make serve-dev
+
 # macOS
 swift run --package-path Tools axoloty-tool check
 ```
+
+See [docs/services.md](./docs/services.md) for MQTT/MCP installation and
+transport details.
 
 ### MQTT object inspector
 

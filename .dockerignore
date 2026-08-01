@@ -1,3 +1,17 @@
 *
+!Package.swift
+!Package.resolved
+!Packages
+!Packages/
+!Packages/**
+!Source
+!Source/
+!Source/**
+!Tests
+!Tests/
+!Tests/**
+!Benchmarks
+!Benchmarks/
+!Benchmarks/**
 !Tools/
 !Tools/**
