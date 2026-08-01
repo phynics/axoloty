@@ -1,0 +1,16 @@
+diff --git a/Package@swift-6.2.3.swift b/Package@swift-6.2.3.swift
+--- a/Package@swift-6.2.3.swift
++++ b/Package@swift-6.2.3.swift
+@@ -20,7 +20,11 @@ let package = Package(
+     .library(
+       name: "IkigaJSON",
+       targets: ["IkigaJSON"]
+-    )
++    ),
++    .library(
++      name: "IkigaJSONCore",
++      targets: ["_JSONCore"]
++    ),
+   ],
+   traits: [
+     .default(enabledTraits: ["ByteBufferSupport", "FoundationSupport"]),
