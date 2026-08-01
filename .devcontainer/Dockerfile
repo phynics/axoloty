@@ -31,6 +31,22 @@ RUN swift build -c release --product axoloty-tool \
     && cp "$(swift build -c release --show-bin-path)/axoloty-tool" /axoloty-tool-output/axoloty-tool \
     && /axoloty-tool-output/axoloty-tool --version
 
+FROM swift:${SWIFT_VERSION}-jammy AS axoloty-service-builder
+
+WORKDIR /axoloty
+COPY Package.swift Package.resolved ./
+COPY Packages ./Packages
+COPY Source ./Source
+COPY Tests ./Tests
+COPY Benchmarks ./Benchmarks
+COPY Tools ./Tools
+RUN swift build -c release --product ax \
+        -Xswiftc -static-executable -Xlinker --no-gc-sections \
+    && swift build -c release --product axoloty-mcp \
+    && mkdir -p /axoloty-service-output \
+    && cp "$(swift build -c release --show-bin-path)/ax" /axoloty-service-output/ax \
+    && cp "$(swift build -c release --show-bin-path)/axoloty-mcp" /axoloty-service-output/axoloty-mcp
+
 FROM swift:${SWIFT_VERSION}-jammy
 
 ARG ESP_IDF_VERSION
@@ -125,5 +141,8 @@ ENV PATH="${IDF_PATH}/tools:${PATH}"
 # Keep the project-specific CLI in the final layer so changing orchestration
 # source does not invalidate the expensive, immutable ESP-IDF toolchain layers.
 COPY --from=axoloty-tool-builder /axoloty-tool-output/axoloty-tool /opt/axoloty/bin/axoloty-tool
+COPY --from=axoloty-service-builder /axoloty-service-output/ax /opt/axoloty/bin/ax
+COPY --from=axoloty-service-builder /axoloty-service-output/axoloty-mcp /opt/axoloty/bin/axoloty-mcp
+RUN ln -sfn ax /opt/axoloty/bin/axoloty-tool
 
 WORKDIR /workspace

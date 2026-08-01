@@ -28,6 +28,11 @@ macOS uses its pinned native Swift toolchain:
 swift run --package-path Tools axoloty-tool check
 ```
 
+The root package also publishes `ax` and `axoloty-mcp`. Linux images install
+both under `/opt/axoloty/bin`; `axoloty-tool` is retained as a symlink to `ax`.
+Use `make serve-mqtt`, `make serve-mcp`, or `make serve-dev` for thin container
+entry points. Service policy remains in `AxolotyTooling`, not Make or shell.
+
 The macOS plan runs host build, lint, tooling tests, and offline wire fixtures.
 The Linux plan adds ESP32-C6 cross-compilation and linker verification. Neither
 plan starts MQTT or accesses hardware.

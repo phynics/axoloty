@@ -177,6 +177,23 @@ CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
     exit 1
 fi
 
+# --- CONTAINER_NETWORK tests ---
+
+# Host networking produces the expected runtime flag.
+: > "$capture"
+CONTAINER_NETWORK=host \
+CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+grep -q -- '--network host' "$capture"
+
+# Arbitrary runtime flags are rejected.
+if CONTAINER_NETWORK='host --privileged' \
+CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true 2>/dev/null; then
+    echo "expected invalid container network to fail" >&2
+    exit 1
+fi
+
 # --- CONTAINER_STDIN tests ---
 
 # CONTAINER_STDIN=1 produces -i.

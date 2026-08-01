@@ -206,6 +206,19 @@ if [ -n "$container_ports" ]; then
     done
 fi
 
+# Local services bind to loopback, so the wrappers use host networking to
+# expose them without weakening their listen-host policy. Do not accept
+# arbitrary runtime flags through the environment.
+network_opt=""
+case "${CONTAINER_NETWORK:-}" in
+    "") ;;
+    host) network_opt="--network host" ;;
+    *)
+        echo "Invalid CONTAINER_NETWORK: only host is supported" >&2
+        exit 2
+        ;;
+esac
+
 # Optional stdin forwarding for MCP stdio mode. Adds -i but never -t.
 # Allocating a TTY could corrupt or buffer protocol traffic.
 stdin_opt=""
@@ -214,7 +227,7 @@ if [ "${CONTAINER_STDIN:-0}" = "1" ]; then
 fi
 
 set +e
-$sudo_prefix "$runtime" run --rm $security_opts $device_opts $privileged_opt $env_opts $port_opts $stdin_opt \
+$sudo_prefix "$runtime" run --rm $security_opts $device_opts $privileged_opt $env_opts $port_opts $stdin_opt $network_opt \
     -v "$root_dir:$workdir$mount_suffix" \
     -v "$build_dir:$workdir/.build$mount_suffix" \
     -v "$spm_cache_dir:$workdir/.swiftpm-cache$mount_suffix" \
