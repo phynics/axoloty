@@ -1,13 +1,13 @@
 //  Copyright (c) 2019 Siemens AG. Licensed under the MIT License.
 //
-//  Task.swift
+//  CoatyTask.swift
 //  Axoloty
 //
 
 import Foundation
 
 /// Represents a task or task request.
-open class Task: CoatyObject {
+open class CoatyTask: CoatyObject {
     
     // MARK: - Class registration.
     
@@ -56,12 +56,12 @@ open class Task: CoatyObject {
 
     // MARK: - Initializers.
 
-    /// Default initializer for a `Task` object.
+    /// Default initializer for a ``CoatyTask`` object.
     public init(creatorId: CoatyUUID,
                 creationTimestamp: Double,
                 status: TaskStatus,
                 name: String = "TaskObject",
-                objectType: String = Task.objectType,
+                objectType: String = CoatyTask.objectType,
                 objectId: CoatyUUID = .init(),
                 lastModificationTimestamp: Double? = nil,
                 dueTimestamp: Double? = nil,

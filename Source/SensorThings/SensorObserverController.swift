@@ -35,7 +35,7 @@ open class SensorObserverController: Controller {
 
     private func filteredStream<Element: Sendable>(_ source: AsyncStream<Element>, _ predicate: @escaping @Sendable (Element) -> Bool) -> AsyncStream<Element> {
         let (stream, continuation) = AsyncStream<Element>.makeStream(bufferingPolicy: .bufferingNewest(256))
-        let task = _Concurrency.Task {
+        let task = Task {
             for await element in source where predicate(element) { continuation.yield(element) }
             continuation.finish()
         }

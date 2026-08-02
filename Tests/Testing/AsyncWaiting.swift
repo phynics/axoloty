@@ -48,7 +48,7 @@ func waitUntil(
                 description: "Timed out after \(timeout) waiting for: \(description)"
             )
         }
-        try await _Concurrency.Task.sleep(for: pollInterval)
+        try await Task.sleep(for: pollInterval)
     }
 }
 
@@ -78,7 +78,7 @@ func nextValue<E: Sendable>(
             return value
         }
         group.addTask {
-            try await _Concurrency.Task.sleep(for: timeout)
+            try await Task.sleep(for: timeout)
             throw AsyncWaitTimeoutError(
                 description: "Timed out after \(timeout) waiting for the next stream value"
             )
@@ -109,7 +109,7 @@ func withTimeout<T: Sendable>(
     try await withThrowingTaskGroup(of: T.self) { group in
         group.addTask { try await operation() }
         group.addTask {
-            try await _Concurrency.Task.sleep(for: timeout)
+            try await Task.sleep(for: timeout)
             throw AsyncWaitTimeoutError(
                 description: "Timed out after \(timeout) waiting for: \(description)"
             )

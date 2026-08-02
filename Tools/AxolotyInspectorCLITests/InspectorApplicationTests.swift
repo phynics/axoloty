@@ -353,9 +353,9 @@ struct InspectorApplicationTests {
             isTerminal: false
         )
 
-        let runTask = _Concurrency.Task { await app.run() }
+        let runTask = Task { await app.run() }
 
-        try? await _Concurrency.Task.sleep(for: .milliseconds(100))
+        try? await Task.sleep(for: .milliseconds(100))
         session.endStreams()
 
         let result = await runTask.value

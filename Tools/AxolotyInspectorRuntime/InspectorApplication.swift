@@ -116,7 +116,7 @@ public final class InspectorApplication {
 
         let (eventStream, continuation) = AsyncStream.makeStream(of: ApplicationEvent.self)
 
-        let advertTask = _Concurrency.Task {
+        let advertTask = Task {
             var it = advertiseStream.makeAsyncIterator()
             while let snapshot = await it.next() {
                 continuation.yield(.advertise(snapshot))
@@ -124,7 +124,7 @@ public final class InspectorApplication {
             continuation.yield(.streamEnded)
         }
 
-        let deadvertTask = _Concurrency.Task {
+        let deadvertTask = Task {
             var it = deadvertiseStream.makeAsyncIterator()
             while let snapshot = await it.next() {
                 continuation.yield(.deadvertise(snapshot))
@@ -132,17 +132,17 @@ public final class InspectorApplication {
             continuation.yield(.streamEnded)
         }
 
-        let timerTask = _Concurrency.Task {
+        let timerTask = Task {
             if let duration = cmd.duration.value {
-                try? await _Concurrency.Task.sleep(for: duration)
+                try? await Task.sleep(for: duration)
                 continuation.yield(.durationExpired)
             }
         }
 
-        let signalTask = _Concurrency.Task {
+        let signalTask = Task {
             guard let handler = signalHandler else { return }
-            while !_Concurrency.Task.isCancelled {
-                try? await _Concurrency.Task.sleep(for: .milliseconds(100))
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(100))
                 if handler.wasInterrupted {
                     continuation.yield(.interrupted)
                     return

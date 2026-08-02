@@ -52,10 +52,10 @@ struct EmbeddedHostInteroperabilityTests {
         let discovers = await manager.communication.observeDiscoverStream()
         var discoverIterator = discovers.makeAsyncIterator()
         try signalEmbeddedHostReadiness(environment)
-        let advertiser = _Concurrency.Task { @MainActor in
-            while !_Concurrency.Task.isCancelled {
+        let advertiser = Task { @MainActor in
+            while !Task.isCancelled {
                 try? manager.communication.publishAdvertise(AdvertiseEvent.with(object: deviceObject))
-                try? await _Concurrency.Task.sleep(for: .seconds(1))
+                try? await Task.sleep(for: .seconds(1))
             }
         }
         defer { advertiser.cancel() }
@@ -69,7 +69,7 @@ struct EmbeddedHostInteroperabilityTests {
             event: ResolveEvent.with(object: deviceObject),
             correlationId: correlationId
         )
-        try await _Concurrency.Task.sleep(for: .milliseconds(500))
+        try await Task.sleep(for: .milliseconds(500))
         manager.communication.publishDeadvertise(DeadvertiseEvent.with(objectIds: [deviceObject.objectId]))
         emitEmbeddedHostState("host-responder", sourceId: embeddedRequesterId)
     }

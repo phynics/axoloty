@@ -28,7 +28,7 @@ public class Container {
 
     private var controllers = [String: Controller]()
     private var isShutdown = false
-    private var operatingStateTask: _Concurrency.Task<Void, Never>?
+    private var operatingStateTask: Task<Void, Never>?
 
     /// Creates and bootstraps a Coaty container by registering and resolving
     /// the given components and configuration options.
@@ -103,7 +103,7 @@ public class Container {
             
             // Trigger onCommunicationManagerStarting() when a dynamically
             // registered controller joins an already-started manager.
-        _Concurrency.Task { @MainActor [weak self, weak controller] in
+        Task { @MainActor [weak self, weak controller] in
                 guard let self,
                       let controller,
                       let communicationManager = self.communicationManager else {
@@ -213,7 +213,7 @@ public class Container {
         }
         
         // Observe operating state and dispatch to registered controllers.
-        self.operatingStateTask = _Concurrency.Task { @MainActor [weak self] in
+        self.operatingStateTask = Task { @MainActor [weak self] in
             guard let self,
                   let communicationManager = self.communicationManager else {
                 return
