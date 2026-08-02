@@ -82,6 +82,12 @@ per-worktree `BUILD_DIR` and are guarded by a process-aware `flock` unless isola
 evidence that must survive a run belongs under `.testing/`, never only in
 volatile `/tmp`.
 
+Required CI checks restore separate SwiftPM download and coverage-build caches.
+Only successful `main` runs save them, so pull requests can reuse compiled
+dependencies without writing trusted caches. Development image publishing uses
+a GHCR-backed BuildKit cache; ordinary source checks pull the reviewed image by
+digest instead of rebuilding it.
+
 ## Release snapshots
 
 `axoloty-tool release snapshots` copies the reviewed wire captures into
