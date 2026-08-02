@@ -40,7 +40,10 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio-transport-services.git", from: "1.28.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.14.0"),
         .package(url: "https://github.com/FlineDev/ErrorKit.git", exact: "1.2.1"),
-        .package(url: "https://github.com/orlandos-nl/swift-json.git", exact: "2.5.3"),
+        .package(
+            url: "https://github.com/phynics/swift-json.git",
+            revision: "ec81216be5bbe2f02f45831d05256de2af452be8"
+        ),
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", exact: "0.12.1"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin.git", from: "1.5.0"),
     ],

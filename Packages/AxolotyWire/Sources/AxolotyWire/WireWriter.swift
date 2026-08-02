@@ -57,10 +57,7 @@ public struct WireWriter {
     public mutating func writeStringField(
         _ key: StaticString, _ value: ByteSlice
     ) throws(WireEncodeError) {
-        try writeKey(key)
-        try writeByte(0x22) // '"'
-        try writeByteSlice(value)
-        try writeByte(0x22) // '"'
+        try writePlainStringField(key, value)
     }
 
     /// Writes a key-value pair where the value is a raw JSON fragment
@@ -68,8 +65,101 @@ public struct WireWriter {
     public mutating func writeRawField(
         _ key: StaticString, _ value: ByteSlice
     ) throws(WireEncodeError) {
+        guard WireReader.isValidJSON(value) else { throw .invalidValue }
         try writeKey(key)
         try writeByteSlice(value)
+    }
+
+    /// Writes a raw fragment previously validated by ``WireReader``.
+    /// Borrowed DTO fields use this path because their slice may begin at an
+    /// unaligned offset inside the caller's input buffer.
+    @usableFromInline
+    mutating func writeTrustedRawField(_ key: StaticString, _ value: ByteSlice) throws(WireEncodeError) {
+        try writeKey(key)
+        try writeByteSlice(value)
+    }
+
+    /// Writes a UTF-8 byte slice as a JSON string, escaping quotes, reverse
+    /// solidus, controls, and the standard JSON control escapes.
+    public mutating func writeEscapedStringField(
+        _ key: StaticString, _ value: ByteSlice
+    ) throws(WireEncodeError) {
+        try writePlainStringField(key, value)
+    }
+
+    /// Writes validated string content already containing JSON escapes.
+    @usableFromInline
+    mutating func writeEncodedStringField(
+        _ key: StaticString, _ value: ByteSlice
+    ) throws(WireEncodeError) {
+        guard Self.isValidUTF8(value) else { throw .invalidValue }
+        try writeKey(key)
+        try writeByte(0x22)
+        var index = 0
+        while index < value.length {
+            let byte = value.byte(at: index)!
+            switch byte {
+            case 0x08: try writeBytes("\\b")
+            case 0x09: try writeBytes("\\t")
+            case 0x0A: try writeBytes("\\n")
+            case 0x0C: try writeBytes("\\f")
+            case 0x0D: try writeBytes("\\r")
+            case 0x22:
+                try writeByte(0x5C); try writeByte(byte)
+            case 0x5C:
+                guard index + 1 < value.length else { throw .invalidValue }
+                let escaped = value.byte(at: index + 1)!
+                guard escaped == 0x22 || escaped == 0x5C || escaped == 0x2F || escaped == 0x62 || escaped == 0x66 || escaped == 0x6E || escaped == 0x72 || escaped == 0x74 || escaped == 0x75 else { throw .invalidValue }
+                try writeByte(0x5C); try writeByte(escaped); index += 1
+                if escaped == 0x75 {
+                    guard index + 4 < value.length,
+                          let first = Self.hexValue(value, start: index + 1)
+                    else { throw .invalidValue }
+                    for offset in 1...4 { try writeByte(value.byte(at: index + offset)!) }
+                    index += 4
+                    if first >= 0xD800 && first <= 0xDBFF {
+                        guard index + 6 < value.length,
+                              value.byte(at: index + 1) == 0x5C,
+                              value.byte(at: index + 2) == 0x75,
+                              let second = Self.hexValue(value, start: index + 3),
+                              second >= 0xDC00, second <= 0xDFFF
+                        else { throw .invalidValue }
+                        try writeByte(0x5C); try writeByte(0x75)
+                        for offset in 3...6 { try writeByte(value.byte(at: index + offset)!) }
+                        index += 6
+                    } else if first >= 0xDC00 && first <= 0xDFFF {
+                        throw .invalidValue
+                    }
+                }
+            case 0..<0x20:
+                try writeBytes("\\u00")
+                try writeByte(Self.hexChar(byte >> 4)); try writeByte(Self.hexChar(byte & 0xF))
+            default: try writeByte(byte)
+            }
+            index += 1
+        }
+        try writeByte(0x22)
+    }
+
+    private mutating func writePlainStringField(
+        _ key: StaticString, _ value: ByteSlice
+    ) throws(WireEncodeError) {
+        guard Self.isValidUTF8(value) else { throw .invalidValue }
+        try writeKey(key); try writeByte(0x22)
+        for index in 0..<value.length {
+            let byte = value.byte(at: index)!
+            switch byte {
+            case 0x08: try writeBytes("\\b")
+            case 0x09: try writeBytes("\\t")
+            case 0x0A: try writeBytes("\\n")
+            case 0x0C: try writeBytes("\\f")
+            case 0x0D: try writeBytes("\\r")
+            case 0x22, 0x5C: try writeByte(0x5C); try writeByte(byte)
+            case 0..<0x20: try writeBytes("\\u00"); try writeByte(Self.hexChar(byte >> 4)); try writeByte(Self.hexChar(byte & 0xF))
+            default: try writeByte(byte)
+            }
+        }
+        try writeByte(0x22)
     }
 
     /// Writes a key-value pair where the value is an integer.
@@ -241,6 +331,38 @@ public struct WireWriter {
     @inline(__always)
     private static func hexChar(_ nibble: UInt8) -> UInt8 {
         nibble < 10 ? 0x30 + nibble : 0x61 + (nibble - 10)
+    }
+
+    private static func isValidUTF8(_ value: ByteSlice) -> Bool {
+        var index = 0
+        while index < value.length {
+            let lead = value.byte(at: index)!
+            let count: Int
+            switch lead { case 0..<0x80: count = 1; case 0xC2...0xDF: count = 2; case 0xE0...0xEF: count = 3; case 0xF0...0xF4: count = 4; default: return false }
+            guard index + count <= value.length else { return false }
+            for offset in 1..<count { guard let byte = value.byte(at: index + offset), byte >= 0x80 && byte <= 0xBF else { return false } }
+            if count == 3 && ((lead == 0xE0 && value.byte(at: index + 1)! < 0xA0) || (lead == 0xED && value.byte(at: index + 1)! >= 0xA0)) { return false }
+            if count == 4 && ((lead == 0xF0 && value.byte(at: index + 1)! < 0x90) || (lead == 0xF4 && value.byte(at: index + 1)! >= 0x90)) { return false }
+            index += count
+        }
+        return true
+    }
+
+    private static func hexValue(_ value: ByteSlice, start: Int) -> Int? {
+        guard start >= 0, start + 4 <= value.length else { return nil }
+        var result = 0
+        for offset in 0..<4 {
+            guard let byte = value.byte(at: start + offset) else { return nil }
+            let digit: Int
+            switch byte {
+            case 0x30...0x39: digit = Int(byte - 0x30)
+            case 0x41...0x46: digit = Int(byte - 0x41) + 10
+            case 0x61...0x66: digit = Int(byte - 0x61) + 10
+            default: return nil
+            }
+            result = result * 16 + digit
+        }
+        return result
     }
 }
 

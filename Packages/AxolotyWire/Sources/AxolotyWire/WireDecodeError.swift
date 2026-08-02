@@ -35,6 +35,18 @@ public struct WireDecodeError: Error, Sendable {
         case topicExceedsLimit
         /// The payload length exceeded ``WireBufferConfig.maxPayloadSize``.
         case payloadExceedsLimit
+        /// The bounded top-level field index could not accept another field.
+        case fieldIndexOverflow
+        /// A top-level key occurred more than once.
+        case duplicateField
+        /// A JSON number did not follow the required grammar.
+        case invalidNumber
+        /// A JSON string contained an invalid escape or surrogate sequence.
+        case invalidEscape
+        /// JSON containers were mismatched or exceeded the nesting limit.
+        case invalidNesting
+        /// A JSON literal was misspelled or truncated.
+        case invalidLiteral
     }
 
     /// Creates a decode error.

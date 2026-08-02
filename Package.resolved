@@ -1,5 +1,5 @@
 {
-  "originHash" : "28428302846efd8f57a5921e186d3f901450f7542d5c6321eae29e7a3ae1aa20",
+  "originHash" : "c37335b4efb9e2dfcd763838b0e4c8fe54555e671bff29d56c560159da15b712",
   "pins" : [
     {
       "identity" : "errorkit",
@@ -85,10 +85,10 @@
     {
       "identity" : "swift-json",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/orlandos-nl/swift-json.git",
+      "location" : "https://github.com/phynics/swift-json.git",
       "state" : {
-        "revision" : "216e30b22ef3c4180e126f284a4c62d51a1c1049",
-        "version" : "2.5.3"
+        "branch" : "ec81216",
+        "revision" : "ec81216be5bbe2f02f45831d05256de2af452be8"
       }
     },
     {

@@ -3,12 +3,12 @@
 
 import PackageDescription
 
-/// Standalone, dependency-free wire codec package.
+/// Standalone wire codec package with the pinned Foundation-free `_JSONCore` parser.
 ///
 /// `AxolotyWire` is intentionally a separate package so a downstream
 /// SwiftPM consumer can resolve and build it without fetching the host
 /// runtime graph (MQTTNIO, NIO, NIOSSL, NIOTransportServices, Logging,
-/// ErrorKit, IkigaJSON). The root Axoloty package consumes this package
+/// ErrorKit). The root Axoloty package consumes this package
 /// via a local path dependency and re-exports its public symbols through
 /// ``WireImportShim`` so existing `import Axoloty` clients keep working.
 ///
@@ -21,9 +21,19 @@ let package = Package(
             targets: ["AxolotyWire"]
         ),
     ],
+    dependencies: [
+        .package(
+            url: "https://github.com/phynics/swift-json.git",
+            revision: "ec81216be5bbe2f02f45831d05256de2af452be8",
+            traits: []
+        ),
+    ],
     targets: [
         .target(
             name: "AxolotyWire",
+            dependencies: [
+                .product(name: "IkigaJSONCore", package: "swift-json"),
+            ],
             path: "Sources/AxolotyWire"
         ),
     ],
