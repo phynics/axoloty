@@ -227,6 +227,14 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
                     arguments: ["Tests/Support/release-snapshots.mjs", "verify", destination]
                 )
             ),
+            AxolotyCheckNode(
+                name: "release-semver-consumer",
+                dependencies: ["release-snapshots-verify"],
+                command: AxolotyCommandPlan(
+                    executable: "Tests/Support/check-axoloty-semver-consumer.sh",
+                    environment: environment
+                )
+            ),
         ])
     }
 
@@ -324,6 +332,12 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
     /// Runs all ordinary offline checks plus binary-size benchmarks and
     /// release snapshot verification. Does not flash or probe hardware.
     public static var checkpoint: AxolotyCheckPlan {
+        checkpoint(consumerEnvironment: [:])
+    }
+
+    /// Creates the checkpoint plan with external-consumer settings forwarded
+    /// to the semantic-version consumer gate.
+    public static func checkpoint(consumerEnvironment: [String: String]) -> AxolotyCheckPlan {
         var nodes = initialOffline.nodes
         nodes.append(AxolotyCheckNode(
             name: "checkpoint-benchmark-size",
@@ -349,6 +363,14 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
                 arguments: ["Tests/Support/release-snapshots.mjs", "verify", ".testing/release-snapshots"]
             )
         ))
+        nodes.append(AxolotyCheckNode(
+            name: "checkpoint-semver-consumer",
+            dependencies: ["checkpoint-release-snapshots-verify"],
+            command: AxolotyCommandPlan(
+                executable: "Tests/Support/check-axoloty-semver-consumer.sh",
+                environment: consumerEnvironment
+            )
+        ))
         return AxolotyCheckPlan(nodes: nodes)
     }
 
@@ -356,8 +378,11 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
     ///
     /// Runs the checkpoint plan, then requires an attached ESP32-C6 device
     /// and runs its smoke test. Fails if no device is present.
-    public static func checkpointHardware(device: String = "/dev/ttyACM0") -> AxolotyCheckPlan {
-        var nodes = checkpoint.nodes
+    public static func checkpointHardware(
+        device: String = "/dev/ttyACM0",
+        consumerEnvironment: [String: String] = [:]
+    ) -> AxolotyCheckPlan {
+        var nodes = checkpoint(consumerEnvironment: consumerEnvironment).nodes
         nodes.append(AxolotyCheckNode(
             name: "checkpoint-hardware-smoke",
             dependencies: ["checkpoint-release-snapshots-verify"],
