@@ -39,13 +39,20 @@ public final class AxolotyMCPServer {
     ///   - host: MQTT broker host.
     ///   - port: MQTT broker port.
     ///   - namespace: Coaty namespace.
+    ///   - connectTimeout: Broker readiness timeout.
     /// - Throws: ``InspectorError`` if the underlying inspector session
     ///   cannot be configured.
-    public init(host: String, port: UInt16, namespace: String) throws {
-        let connectionConfig = InspectorConnectionConfiguration(
+    public init(
+        host: String,
+        port: UInt16,
+        namespace: String,
+        connectTimeout: Duration = .seconds(10)
+    ) throws {
+        let connectionConfig = Self.makeConnectionConfiguration(
             host: host,
             port: port,
-            namespace: namespace
+            namespace: namespace,
+            connectTimeout: connectTimeout
         )
         let session = try AxolotyInspectorSession(configuration: connectionConfig)
         self.session = session
@@ -57,6 +64,20 @@ public final class AxolotyMCPServer {
                 resources: .init(subscribe: false, listChanged: false),
                 tools: .init(listChanged: false)
             )
+        )
+    }
+
+    nonisolated static func makeConnectionConfiguration(
+        host: String,
+        port: UInt16,
+        namespace: String,
+        connectTimeout: Duration
+    ) -> InspectorConnectionConfiguration {
+        InspectorConnectionConfiguration(
+            host: host,
+            port: port,
+            namespace: namespace,
+            connectTimeout: connectTimeout
         )
     }
 

@@ -107,15 +107,19 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
             return 70
         }
 
+        let mcpReadinessTimeout = AxolotyMCPServiceRunner.readinessTimeoutSeconds(for: mcpConfig)
         let mcpReady = portProbe.waitForTCP(
             host: mcpConfig.listenHost,
             port: mcpConfig.listenPort,
-            timeoutSeconds: 10.0
+            timeoutSeconds: mcpReadinessTimeout
         )
         if !mcpReady {
             mcpRunner.forceKill()
             mqttRunner.forceKill()
-            writeError("error: axoloty-mcp did not become ready within 10 seconds\n", output: output)
+            writeError(
+                "error: axoloty-mcp did not become ready within \(mcpReadinessTimeout) seconds\n",
+                output: output
+            )
             return 70
         }
 
