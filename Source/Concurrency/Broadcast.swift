@@ -84,7 +84,7 @@ internal actor Broadcast<Element: Sendable> {
         }
 
         continuation.onTermination = { [weak self] _ in
-            _Concurrency.Task { [weak self] in
+            Task { [weak self] in
                 await self?.removeSubscriber(id)
             }
         }

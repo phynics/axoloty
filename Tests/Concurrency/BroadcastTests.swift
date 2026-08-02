@@ -22,7 +22,7 @@ struct BroadcastTests {
         var stream: AsyncStream<Int>? = await broadcast.subscribe()
         stream = nil
 
-        try? await _Concurrency.Task.sleep(for: .milliseconds(200))
+        try? await Task.sleep(for: .milliseconds(200))
 
         #expect(counter.lastCount == 1, "onLast should fire when an uniterated stream is dropped")
     }
@@ -35,13 +35,13 @@ struct BroadcastTests {
         let stream = await broadcast.subscribe()
 
         let it = stream.makeAsyncIterator()
-        try? await _Concurrency.Task.sleep(for: .milliseconds(100))
+        try? await Task.sleep(for: .milliseconds(100))
 
         let it2 = stream.makeAsyncIterator()
-        try? await _Concurrency.Task.sleep(for: .milliseconds(100))
+        try? await Task.sleep(for: .milliseconds(100))
 
         await broadcast.finish()
-        try? await _Concurrency.Task.sleep(for: .milliseconds(100))
+        try? await Task.sleep(for: .milliseconds(100))
 
         withExtendedLifetime((it, it2)) {
             #expect(counter.lastCount == 1, "onLast should fire once")
@@ -76,7 +76,7 @@ struct BroadcastTests {
         await broadcast.send(42)
 
         var it = stream.makeAsyncIterator()
-        try? await _Concurrency.Task.sleep(for: .milliseconds(150))
+        try? await Task.sleep(for: .milliseconds(150))
 
         await broadcast.finish()
 
@@ -124,7 +124,7 @@ struct BroadcastTests {
 
         await broadcast.send(42)
         await broadcast.finish()
-        try? await _Concurrency.Task.sleep(for: .milliseconds(50))
+        try? await Task.sleep(for: .milliseconds(50))
 
         // After finish, the replay state is gone.
         let stream2 = await broadcast.subscribe()
@@ -167,7 +167,7 @@ struct BroadcastTests {
         let stream = await broadcast.subscribe()
 
         var it = stream.makeAsyncIterator()
-        try? await _Concurrency.Task.sleep(for: .milliseconds(100))
+        try? await Task.sleep(for: .milliseconds(100))
 
         await broadcast.send(100)
         await broadcast.finish()
@@ -186,7 +186,7 @@ struct BroadcastTests {
         let stream = await broadcast.subscribe()
 
         var it1 = stream.makeAsyncIterator()
-        try? await _Concurrency.Task.sleep(for: .milliseconds(100))
+        try? await Task.sleep(for: .milliseconds(100))
 
         await broadcast.send(1)
         await broadcast.finish()
@@ -200,7 +200,7 @@ struct BroadcastTests {
         // After finish, a new subscribe works.
         let stream2 = await broadcast.subscribe()
         var it2 = stream2.makeAsyncIterator()
-        try? await _Concurrency.Task.sleep(for: .milliseconds(100))
+        try? await Task.sleep(for: .milliseconds(100))
 
         await broadcast.send(2)
         await broadcast.finish()
@@ -218,10 +218,10 @@ struct BroadcastTests {
         let stream = await broadcast.subscribe()
 
         let it = stream.makeAsyncIterator()
-        try? await _Concurrency.Task.sleep(for: .milliseconds(100))
+        try? await Task.sleep(for: .milliseconds(100))
 
         let holder = AsyncStreamBox(it)
-        let task = _Concurrency.Task {
+        let task = Task {
             var count = 0
             while let _ = await holder.iterator.next() {
                 count += 1
@@ -229,7 +229,7 @@ struct BroadcastTests {
             return count
         }
 
-        try? await _Concurrency.Task.sleep(for: .milliseconds(50))
+        try? await Task.sleep(for: .milliseconds(50))
 
         await broadcast.send(1)
         await broadcast.send(2)
@@ -249,18 +249,18 @@ struct BroadcastTests {
         let stream = await broadcast.subscribe()
 
         let it = stream.makeAsyncIterator()
-        try? await _Concurrency.Task.sleep(for: .milliseconds(100))
+        try? await Task.sleep(for: .milliseconds(100))
 
         let holder = AsyncStreamBox(it)
-        let task = _Concurrency.Task {
+        let task = Task {
             while let _ = await holder.iterator.next() {}
         }
 
-        try? await _Concurrency.Task.sleep(for: .milliseconds(50))
+        try? await Task.sleep(for: .milliseconds(50))
         task.cancel()
         _ = await task.value
 
-        try? await _Concurrency.Task.sleep(for: .milliseconds(200))
+        try? await Task.sleep(for: .milliseconds(200))
 
         #expect(counter.lastCount == 1, "onLast should fire when the last iterator is cancelled")
     }
@@ -275,7 +275,7 @@ struct BroadcastTests {
 
         let stream = await broadcast.subscribe()
         var it = stream.makeAsyncIterator()
-        try? await _Concurrency.Task.sleep(for: .milliseconds(100))
+        try? await Task.sleep(for: .milliseconds(100))
         await broadcast.finish()
 
         var values: [Int] = []
@@ -300,7 +300,7 @@ struct BroadcastTests {
 
         let stream = await broadcast.subscribe()
         var it = stream.makeAsyncIterator()
-        try? await _Concurrency.Task.sleep(for: .milliseconds(50))
+        try? await Task.sleep(for: .milliseconds(50))
         await broadcast.finish()
 
         let value = await it.next()
@@ -313,11 +313,11 @@ struct BroadcastTests {
         let broadcast = Broadcast<Int>(mode: .event, onFirst: { counter.incFirst() })
 
         let stream1 = await broadcast.subscribe()
-        try? await _Concurrency.Task.sleep(for: .milliseconds(50))
+        try? await Task.sleep(for: .milliseconds(50))
         #expect(counter.firstCount == 1, "onFirst should fire on first subscriber")
 
         let stream2 = await broadcast.subscribe()
-        try? await _Concurrency.Task.sleep(for: .milliseconds(50))
+        try? await Task.sleep(for: .milliseconds(50))
         #expect(counter.firstCount == 1, "onFirst should NOT fire again for second subscriber")
 
         _ = stream1
@@ -331,16 +331,16 @@ struct BroadcastTests {
 
         // First subscriber attaches → onFirst fires.
         var stream1: AsyncStream<Int>? = await broadcast.subscribe()
-        try? await _Concurrency.Task.sleep(for: .milliseconds(50))
+        try? await Task.sleep(for: .milliseconds(50))
         #expect(counter.firstCount == 1)
 
         // Drop the stream → onLast fires (nil), started resets.
         stream1 = nil
-        try? await _Concurrency.Task.sleep(for: .milliseconds(200))
+        try? await Task.sleep(for: .milliseconds(200))
 
         // New subscriber → onFirst fires again.
         let stream2 = await broadcast.subscribe()
-        try? await _Concurrency.Task.sleep(for: .milliseconds(50))
+        try? await Task.sleep(for: .milliseconds(50))
         #expect(counter.firstCount == 2, "onFirst should fire again after all subscribers left")
 
         _ = stream2
@@ -356,7 +356,7 @@ struct BroadcastTests {
                 group.addTask {
                     let stream = await broadcast.subscribe()
                     var it = stream.makeAsyncIterator()
-                    try? await _Concurrency.Task.sleep(for: .milliseconds(10))
+                    try? await Task.sleep(for: .milliseconds(10))
                     _ = await it.next()
                 }
             }
@@ -368,7 +368,7 @@ struct BroadcastTests {
             }
             // A finisher.
             group.addTask {
-                try? await _Concurrency.Task.sleep(for: .milliseconds(50))
+                try? await Task.sleep(for: .milliseconds(50))
                 await broadcast.finish()
             }
         }
@@ -435,7 +435,7 @@ struct BroadcastFamilyTests {
 
         let stream = await family.subscribe(for: "state-key")
         var it = stream.makeAsyncIterator()
-        try? await _Concurrency.Task.sleep(for: .milliseconds(50))
+        try? await Task.sleep(for: .milliseconds(50))
         await family.finishAll()
 
         let value = await it.next()
@@ -452,11 +452,11 @@ struct BroadcastFamilyTests {
         )
 
         var stream: AsyncStream<String>? = await family.subscribe(for: "key1")
-        try? await _Concurrency.Task.sleep(for: .milliseconds(50))
+        try? await Task.sleep(for: .milliseconds(50))
         #expect(counter.firstCount == 1, "onFirst should fire for key1")
 
         stream = nil
-        try? await _Concurrency.Task.sleep(for: .milliseconds(200))
+        try? await Task.sleep(for: .milliseconds(200))
         #expect(counter.lastCount == 1, "onLast should fire for key1")
     }
 
@@ -530,7 +530,7 @@ struct BroadcastFamilyEvictionTests {
         stream = nil
 
         // Wait for onLast to fire and evict.
-        try? await _Concurrency.Task.sleep(for: .milliseconds(200))
+        try? await Task.sleep(for: .milliseconds(200))
 
         // Send to the evicted key — should be dropped (no Broadcast exists).
         await family.send("dropped", for: "key1")
@@ -566,7 +566,7 @@ struct BroadcastFamilyEvictionTests {
         }
 
         // Give eviction tasks time to run.
-        try? await _Concurrency.Task.sleep(for: .milliseconds(300))
+        try? await Task.sleep(for: .milliseconds(300))
 
         // The family should have zero retained Broadcasts (all evicted).
         // We verify indirectly: sending to any old key should be a no-op.

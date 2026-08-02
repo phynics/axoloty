@@ -116,7 +116,7 @@ internal class MQTTNIOClient: CommunicationClient {
     /// from a single long-lived `Task` restores that guarantee. See issue
     /// #56.
     private let deliveryContinuation: AsyncStream<@Sendable () async -> Void>.Continuation
-    private let deliveryTask: _Concurrency.Task<Void, Never>
+    private let deliveryTask: Task<Void, Never>
 
     /// Shared event loop group for all `MQTTClient` instances created by this
     /// object (one per broker candidate attempt). Using a shared group avoids
@@ -191,7 +191,7 @@ internal class MQTTNIOClient: CommunicationClient {
 
         let (stream, continuation) = AsyncStream<@Sendable () async -> Void>.makeStream()
         self.deliveryContinuation = continuation
-        self.deliveryTask = _Concurrency.Task<Void, Never>(priority: .userInitiated) {
+        self.deliveryTask = Task<Void, Never>(priority: .userInitiated) {
             for await job in stream {
                 await job()
             }

@@ -50,10 +50,10 @@ class MockReceiverController: Controller, @unchecked Sendable {
     /// between "the broker acknowledged the subscription" and "this consumer
     /// can actually receive events", which intermittently dropped the first
     /// events published right after subscribing.
-    func watchForAdvertiseEvents(logger: AdvertiseEventLogger, objectType: String) async throws -> _Concurrency.Task<Void, Never> {
+    func watchForAdvertiseEvents(logger: AdvertiseEventLogger, objectType: String) async throws -> Task<Void, Never> {
         let stream = try await communicationManager.observeAdvertiseStream(withObjectType: objectType)
         let box = AsyncStreamBox(stream.makeAsyncIterator())
-        return _Concurrency.Task { @MainActor in
+        return Task { @MainActor in
             while let event = await box.iterator.next() {
                 guard let object = event.object.decodeObject() else { continue }
                 logger.count += 1
@@ -68,10 +68,10 @@ class MockReceiverController: Controller, @unchecked Sendable {
     /// `for await` isn't sufficient, and
     /// https://github.com/phynics/axoloty/issues/51 for the subscription-ack
     /// half of this guarantee).
-    func watchForChannelEvents(logger: ChannelEventLogger, channelId: String) async throws -> _Concurrency.Task<Void, Never> {
+    func watchForChannelEvents(logger: ChannelEventLogger, channelId: String) async throws -> Task<Void, Never> {
         let stream = try await communicationManager.observeChannelStream(channelId: channelId)
         let box = AsyncStreamBox(stream.makeAsyncIterator())
-        return _Concurrency.Task { @MainActor in
+        return Task { @MainActor in
             while let event = await box.iterator.next() {
                 if let object = event.object.flatMap({ $0.decodeObject() }) {
                     logger.count += 1
@@ -82,7 +82,7 @@ class MockReceiverController: Controller, @unchecked Sendable {
     }
 
     func watchForRawEvents(logger: RawEventLogger, topic: String) {
-        _Concurrency.Task { @MainActor in
+        Task { @MainActor in
             let stream = await self.communicationManager.observeRawMQTTMessageStream()
             for await value in stream where value.topic == topic {
                 logger.count += 1
@@ -155,7 +155,7 @@ class MockEmitterController: Controller, @unchecked Sendable {
     ///     - logger: A logger for advertise event
     ///     - objectType: Type to look the advertise events for.
     func watchForAdvertiseEvents(logger: AdvertiseEventLogger, objectTypes: String) {
-        _Concurrency.Task { @MainActor in
+        Task { @MainActor in
             guard let stream = try? await self.communicationManager.observeAdvertiseStream(withObjectType: objectTypes) else { return }
             for await event in stream {
                 guard let object = event.object.decodeObject() else { continue }
