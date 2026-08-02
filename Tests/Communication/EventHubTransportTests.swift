@@ -84,7 +84,7 @@ struct BroadcastTransportTests {
         // `client.unsubscribe`, so the command arrives asynchronously and must
         // be polled for rather than asserted synchronously.
         let holder = AsyncStreamBox(iterator)
-        let consumer = _Concurrency.Task {
+        let consumer = Task {
             while await holder.iterator.next() != nil {}
         }
         consumer.cancel()
@@ -119,7 +119,7 @@ struct BroadcastTransportTests {
         // First cycle: acquire, then release by cancelling the consumer.
         let firstStream = await manager.observeAdvertiseStream(withCoreType: .Log)
         let firstHolder = AsyncStreamBox(firstStream.makeAsyncIterator())
-        let firstConsumer = _Concurrency.Task {
+        let firstConsumer = Task {
             while await firstHolder.iterator.next() != nil {}
         }
         try await waitForCommands(on: client, expecting: [.subscribe(topic)])
@@ -549,13 +549,13 @@ struct BroadcastTransportTests {
             sensorId: sensorId,
             channelId: "observations"
         )
-        let next = _Concurrency.Task { () -> ChannelEventSnapshot? in
+        let next = Task { () -> ChannelEventSnapshot? in
             for await snapshot in stream {
                 return snapshot
             }
             return nil
         }
-        await _Concurrency.Task.yield()
+        await Task.yield()
 
         let unrelated = ChannelEventSnapshot(
             sourceId: "source",
@@ -611,14 +611,14 @@ struct BroadcastTransportTests {
         await manager.subscriptionCoordinator.acquire(topic: "coaty/test/#")
 
         let ready = CompletionFlag()
-        let startup = _Concurrency.Task {
+        let startup = Task {
             try? await manager.startAndWaitUntilReady()
             await ready.mark()
         }
 
         await client.simulateState(.online)
         await gate.waitUntilStarted()
-        await _Concurrency.Task.yield()
+        await Task.yield()
         #expect(await ready.value == false)
 
         await gate.open()
@@ -789,7 +789,7 @@ private func waitForCommands(
         if client.commands == expected {
             return
         }
-        try await _Concurrency.Task.sleep(for: .milliseconds(25))
+        try await Task.sleep(for: .milliseconds(25))
     }
     #expect(client.commands == expected)
 }
@@ -978,7 +978,7 @@ struct NamespaceAdvertiseStreamTests {
         try await waitForCommands(on: client, expecting: [.subscribe(expectedTopic)])
 
         let holder = AsyncStreamBox(iterator)
-        let consumer = _Concurrency.Task { while await holder.iterator.next() != nil {} }
+        let consumer = Task { while await holder.iterator.next() != nil {} }
         consumer.cancel()
         _ = await consumer.value
 

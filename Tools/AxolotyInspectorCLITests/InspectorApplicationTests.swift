@@ -172,25 +172,47 @@ struct InspectorApplicationTests {
     }
 
     @Test
-    func deadvertiseRemovesFromCatalogue() async {
+    func deadvertiseRemovesFromCatalogue() async throws {
         let session = FakeInspectorSession()
         session.queuedAdvertises = [makeSnapshot(objectId: "obj-1", name: "Agent")]
-        session.queuedDeadvertises = [DeadvertiseEventSnapshot(sourceId: "src-1", objectIds: ["obj-1"])]
 
-        var output: [String] = []
+        let (outputStream, outputContinuation) = AsyncStream.makeStream(of: String.self)
         let app = InspectorApplication(
             configuration: makeConfig(),
             session: session,
-            writeOutput: { output.append($0) },
+            writeOutput: { outputContinuation.yield($0) },
             writeDiagnostic: { _ in },
             timestamp: { "2026-07-31T00:00:00Z" },
             isTerminal: false
         )
-        _ = await app.run()
+        let runTask = Task {
+            let result = await app.run()
+            outputContinuation.finish()
+            return result
+        }
+        var outputIterator = outputStream.makeAsyncIterator()
 
-        let deadvertiseLines = output.filter { $0.contains("\"kind\":\"deadvertise\"") }
-        #expect(deadvertiseLines.count == 1)
-        #expect(deadvertiseLines[0].contains("\"objectId\":\"obj-1\""))
+        var advertise: String?
+        while let line = await outputIterator.next() {
+            if line.contains("\"kind\":\"advertise\"") {
+                advertise = line
+                break
+            }
+        }
+        _ = try #require(advertise)
+
+        session.emitDeadvertise(DeadvertiseEventSnapshot(sourceId: "src-1", objectIds: ["obj-1"]))
+
+        var deadvertise: String?
+        while let line = await outputIterator.next() {
+            if line.contains("\"kind\":\"deadvertise\"") {
+                deadvertise = line
+                break
+            }
+        }
+        let deadvertiseLine = try #require(deadvertise)
+        #expect(deadvertiseLine.contains("\"objectId\":\"obj-1\""))
+        #expect(await runTask.value == nil)
     }
 
     @Test
@@ -353,9 +375,9 @@ struct InspectorApplicationTests {
             isTerminal: false
         )
 
-        let runTask = _Concurrency.Task { await app.run() }
+        let runTask = Task { await app.run() }
 
-        try? await _Concurrency.Task.sleep(for: .milliseconds(100))
+        try? await Task.sleep(for: .milliseconds(100))
         session.endStreams()
 
         let result = await runTask.value

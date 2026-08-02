@@ -73,7 +73,7 @@ struct InspectorBrokerIntegrationTests {
             isTerminal: false
         )
 
-        let runTask = _Concurrency.Task {
+        let runTask = Task {
             let result = await app.run()
             outputContinuation.finish()
             return result
@@ -151,7 +151,7 @@ struct InspectorBrokerIntegrationTests {
             isTerminal: false
         )
 
-        let runTask = _Concurrency.Task {
+        let runTask = Task {
             let result = await app.run()
             outputContinuation.finish()
             return result

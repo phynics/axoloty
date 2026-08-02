@@ -17,6 +17,22 @@ public final class AxolotyMCPServer {
     private let catalogueService: InspectorCatalogueService
     private let session: InspectorSession
 
+    nonisolated static let discoverObjectsTool = Tool(
+        name: "axoloty_discover_objects",
+        description: "Actively discover objects by publishing one Discover event and collecting Resolve responses.",
+        inputSchema: .object([
+            "properties": .object([
+                "coreType": .string("Filter by core type"),
+                "objectType": .string("Filter by object type"),
+                "objectId": .string("Filter by object UUID"),
+                "timeoutMilliseconds": .object([
+                    "type": .string("integer"),
+                    "description": .string("Timeout in milliseconds (default: 5000, max: 30000)")
+                ])
+            ])
+        ])
+    )
+
     /// Creates the MCP server.
     ///
     /// - Parameters:
@@ -132,18 +148,7 @@ public final class AxolotyMCPServer {
                         "required": .array([.string("objectId")])
                     ])
                 ),
-                Tool(
-                    name: "axoloty_discover_objects",
-                    description: "Actively discover objects by publishing one Discover event and collecting Resolve responses.",
-                    inputSchema: .object([
-                        "properties": .object([
-                            "coreType": .string("Filter by core type"),
-                            "objectType": .string("Filter by object type"),
-                            "objectId": .string("Filter by object UUID"),
-                            "timeoutMilliseconds": .string("Timeout in milliseconds (default: 5000, max: 30000)")
-                        ])
-                    ])
-                ),
+                Self.discoverObjectsTool,
                 Tool(
                     name: "axoloty_server_status",
                     description: "Get the current server status including MQTT connection state and catalogue metrics.",
@@ -214,18 +219,7 @@ public final class AxolotyMCPServer {
     }
 
     private func handleDiscoverObjects(_ args: [String: Value]?, service: InspectorCatalogueService) async -> CallTool.Result {
-        let coreType = args?["coreType"]?.stringValue
-        let objectType = args?["objectType"]?.stringValue
-        let objectId = args?["objectId"]?.stringValue
-        let timeoutMs = args?["timeoutMilliseconds"]?.intValue ?? 5000
-        let clampedTimeout = min(max(timeoutMs, 1000), 30000)
-
-        let request = InspectorDiscoveryRequest(
-            coreType: coreType,
-            objectType: objectType,
-            objectId: objectId,
-            timeoutMilliseconds: clampedTimeout
-        )
+        let request = Self.makeDiscoveryRequest(from: args)
 
         guard request.hasSelector else {
             return .init(content: [.text("At least one selector (coreType, objectType, or objectId) is required")], isError: true)
@@ -233,14 +227,14 @@ public final class AxolotyMCPServer {
 
         let discoverEvent = Self.makeDiscoverEvent(from: request)
         let responseStream = await session.discover(discoverEvent)
-        let timeout = Duration.milliseconds(clampedTimeout)
+        let timeout = Duration.milliseconds(request.timeoutMilliseconds)
 
         var discoveredObjects: [String: InspectorObject] = [:]
         var timedOut = false
 
         let (eventStream, continuation) = AsyncStream.makeStream(of: DiscoverLoopEvent.self)
 
-        let responseTask = _Concurrency.Task {
+        let responseTask = Task {
             var it = responseStream.makeAsyncIterator()
             while let response = await it.next() {
                 continuation.yield(.response(response))
@@ -248,8 +242,8 @@ public final class AxolotyMCPServer {
             continuation.yield(.responsesExhausted)
         }
 
-        let timerTask = _Concurrency.Task {
-            try? await _Concurrency.Task.sleep(for: timeout)
+        let timerTask = Task {
+            try? await Task.sleep(for: timeout)
             continuation.yield(.timeoutExpired)
         }
 
@@ -289,6 +283,16 @@ public final class AxolotyMCPServer {
         let result = InspectorDiscoveryResult(timedOut: timedOut, objects: objects)
         let json = (try? Self.encodeDiscoveryResult(result)) ?? "{}"
         return .init(content: [.text(json)], isError: false)
+    }
+
+    nonisolated static func makeDiscoveryRequest(from args: [String: Value]?) -> InspectorDiscoveryRequest {
+        let timeoutMs = args?["timeoutMilliseconds"]?.intValue ?? 5000
+        return InspectorDiscoveryRequest(
+            coreType: args?["coreType"]?.stringValue,
+            objectType: args?["objectType"]?.stringValue,
+            objectId: args?["objectId"]?.stringValue,
+            timeoutMilliseconds: min(max(timeoutMs, 1000), 30000)
+        )
     }
 
     private func handleServerStatus(service: InspectorCatalogueService) async -> CallTool.Result {

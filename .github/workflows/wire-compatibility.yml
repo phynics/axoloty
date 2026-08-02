@@ -1,19 +1,7 @@
-name: Wire Compatibility
+name: Live Wire Compatibility (Manual)
 
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - Package.swift
-      - Package.resolved
-      - Packages/AxolotyWire/**
-      - Source/**
-      - Tests/WireCompatibility/**
-      - Tests/**/Wire*.swift
-      - Tools/AxolotyTooling/**
-      - .github/workflows/wire-compatibility.yml
-  schedule:
-    - cron: "17 3 * * 1"
 
 jobs:
   live-coatyjs:

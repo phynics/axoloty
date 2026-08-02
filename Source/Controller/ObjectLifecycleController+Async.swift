@@ -60,7 +60,7 @@ extension ObjectLifecycleController {
         )
         let ready = LifecycleReadyBox(expected: 2)
         let taskBox = LifecycleTaskBox()
-        let task = _Concurrency.Task {
+        let task = Task {
             await withTaskGroup(of: Void.self) { group in
                 group.addTask {
                     var iterator = advertiseStream.makeAsyncIterator()
@@ -81,7 +81,7 @@ extension ObjectLifecycleController {
         await ready.waitUntilReady()
         await taskBox.set(task)
         continuation.onTermination = { _ in
-            _Concurrency.Task {
+            Task {
                 await taskBox.cancel()
             }
         }
@@ -146,9 +146,9 @@ private actor SnapshotLifecycleRegistry {
 }
 
 private actor LifecycleTaskBox {
-    private var task: _Concurrency.Task<Void, Never>?
+    private var task: Task<Void, Never>?
 
-    func set(_ task: _Concurrency.Task<Void, Never>) {
+    func set(_ task: Task<Void, Never>) {
         self.task = task
     }
 

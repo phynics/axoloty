@@ -27,7 +27,7 @@ public class CommunicationManager {
     // MARK: - Properties.
 
     private var isDisposed = false
-    internal var lifecycleTasks: [_Concurrency.Task<Void, Never>] = []
+    internal var lifecycleTasks: [Task<Void, Never>] = []
 
     /// Gets the namespace for communication as specified in the configuration
     /// options. Returns the default namespace used, if no namespace has been
@@ -149,7 +149,7 @@ public class CommunicationManager {
                 hasAssociations: event.eventData.hasAssociations(),
                 updateRate: event.eventData.updateRate()
             )
-            _Concurrency.Task { [weak self] in
+            Task { [weak self] in
                 await self?.streams.ioStateFamily.sendState(snapshot, for: ioPointIdString)
             }
         }
@@ -432,7 +432,7 @@ public class CommunicationManager {
         self.deferredPublications = []
         self.deadvertiseIds = []
         let coordinator = self.subscriptionCoordinator!
-        _Concurrency.Task {
+        Task {
             await coordinator.setOnline(false)
             await coordinator.reset()
         }
@@ -533,14 +533,14 @@ public class CommunicationManager {
     /// - Parameter topic: topic name.
     internal func subscribe(topic: String) {
         let coordinator = self.subscriptionCoordinator!
-        _Concurrency.Task {
+        Task {
             await coordinator.acquire(topic: topic)
         }
     }
 
     internal func unsubscribe(topic: String) {
         let coordinator = self.subscriptionCoordinator!
-        _Concurrency.Task {
+        Task {
             await coordinator.release(topic: topic)
         }
     }
@@ -581,7 +581,7 @@ public class CommunicationManager {
     private func updateOperatingState(_ state: OperatingState) {
         self.operatingState = state
         self.log.debug("Operating state changed", metadata: ["operatingState": .string(String(describing: state))])
-        _Concurrency.Task {
+        Task {
             await self.streams.operatingState.sendState(state)
         }
     }
@@ -593,7 +593,7 @@ public class CommunicationManager {
     /// the `nonisolated` transport delegate callbacks, which are invoked off the
     /// main actor.
     private nonisolated func onMain(_ body: @escaping @MainActor (_ manager: CommunicationManager) async -> Void) {
-        _Concurrency.Task { @MainActor [weak self] in
+        Task { @MainActor [weak self] in
             guard let self else { return }
             await body(self)
         }

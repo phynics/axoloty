@@ -14,7 +14,7 @@ struct AxolotyCoreProducerTests {
         let manager = try makeManager(environment: environment)
         defer { manager.container.shutdown() }
 
-        try await _Concurrency.Task.sleep(for: .seconds(1))
+        try await Task.sleep(for: .seconds(1))
         switch scenario {
         case "deadvertise":
             manager.communication.publishDeadvertise(DeadvertiseEvent.with(objectIds: [fixture.objectId]))
@@ -116,7 +116,7 @@ struct AxolotyCoreProducerTests {
         default:
             Issue.record("Unsupported core wire scenario: \(scenario)")
         }
-        try await _Concurrency.Task.sleep(for: .milliseconds(250))
+        try await Task.sleep(for: .milliseconds(250))
     }
 
     private var fixture: CoatyObject {

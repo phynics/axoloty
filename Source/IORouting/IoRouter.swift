@@ -41,7 +41,7 @@ public class IoRouter: Controller {
     internal var managedIoNodes: [String: IoNode] = [:]
     /// Key: CoatyUUID string, Value: (associating route, isExternalRoute)
     internal var sourceRoutes: [String: (String, Bool)] = [:]
-    private var observationTasks: [_Concurrency.Task<Void, Never>] = []
+    private var observationTasks: [Task<Void, Never>] = []
     private let log = LogManager.logger(.ioRouting)
     
     // MARK: - Overridden Controller lifecycle methods.
@@ -220,7 +220,7 @@ public class IoRouter: Controller {
     internal func onStopped() { }
     
     private func observeAdvertisedIoNode() {
-        let task = _Concurrency.Task { @MainActor [weak self] in
+        let task = Task { @MainActor [weak self] in
             guard let self else { return }
             let stream = await communicationManager.observeParsedMessages()
             for await parsed in stream {
@@ -248,7 +248,7 @@ public class IoRouter: Controller {
     }
     
     private func observeDeadvertisedIoNodes() {
-        let task = _Concurrency.Task { @MainActor [weak self] in
+        let task = Task { @MainActor [weak self] in
             guard let self else { return }
             let stream = await communicationManager.observeDeadvertiseStream()
             for await event in stream {
@@ -294,7 +294,7 @@ public class IoRouter: Controller {
     }
     
     private func discoverIoNodes() {
-        let task = _Concurrency.Task { @MainActor [weak self] in
+        let task = Task { @MainActor [weak self] in
             guard let self else { return }
             let stream = await communicationManager.publishDiscover(DiscoverEvent.with(coreTypes: [.IoNode]))
             for await response in stream {
@@ -321,7 +321,7 @@ public class IoRouter: Controller {
     }
     
     private func observeDiscoverIoContext() {
-        let task = _Concurrency.Task { @MainActor [weak self] in
+        let task = Task { @MainActor [weak self] in
             guard let self else { return }
             let stream = await communicationManager.observeDiscoverStream()
             for await event in stream {
@@ -337,7 +337,7 @@ public class IoRouter: Controller {
     }
     
     private func observeUpdateIoContext() {
-        let task = _Concurrency.Task { @MainActor [weak self] in
+        let task = Task { @MainActor [weak self] in
             guard let self else { return }
             let stream = await communicationManager.observeUpdateStream(withCoreType: self.ioContext.coreType)
             for await update in stream {

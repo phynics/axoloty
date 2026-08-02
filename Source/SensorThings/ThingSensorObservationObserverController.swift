@@ -9,7 +9,7 @@ open class ThingSensorObservationObserverController: ThingObserverController {
     public func observeSensorsStream(for thingId: CoatyUUID) async throws -> AsyncStream<AdvertiseEventSnapshot> {
         let stream = try await communicationManager.observeAdvertiseStream(withObjectType: SensorThingsTypes.OBJECT_TYPE_SENSOR)
         let (filtered, continuation) = AsyncStream<AdvertiseEventSnapshot>.makeStream(bufferingPolicy: .bufferingNewest(256))
-        let task = _Concurrency.Task {
+        let task = Task {
             for await item in stream where item.object.parentObjectId == thingId.string { continuation.yield(item) }
             continuation.finish()
         }

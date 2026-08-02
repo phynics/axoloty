@@ -68,7 +68,7 @@ public final class AxolotyInspectorSession: InspectorSession {
 
     public func connect() async throws {
         let (outcomes, continuation) = AsyncStream.makeStream(of: ConnectOutcome.self)
-        let connectionTask = _Concurrency.Task { [container] in
+        let connectionTask = Task { [container] in
             do {
                 try await container.startAndWaitUntilReady()
                 continuation.yield(.connected)
@@ -78,13 +78,13 @@ public final class AxolotyInspectorSession: InspectorSession {
                 continuation.yield(.failed(String(describing: error)))
             }
         }
-        let timeoutTask = _Concurrency.Task {
+        let timeoutTask = Task {
             do {
-                try await _Concurrency.Task.sleep(for: self.connectTimeout)
+                try await Task.sleep(for: self.connectTimeout)
             } catch {
                 return
             }
-            guard !_Concurrency.Task.isCancelled else { return }
+            guard !Task.isCancelled else { return }
             continuation.yield(.timedOut)
         }
         defer {
