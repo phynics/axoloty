@@ -76,7 +76,7 @@ dependencies: [
     .package(url: "https://github.com/phynics/axoloty", from: "0.2.0"),
 ]
 // Target dependency:
-.product(name: "AxolotyWire", package: "AxolotyWire"),
+.product(name: "AxolotyWire", package: "Axoloty"),
 ```
 
 ### Minimal host example

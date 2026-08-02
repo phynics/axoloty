@@ -8,9 +8,9 @@ import PackageDescription
 /// `AxolotyWire` is intentionally a separate package so a downstream
 /// SwiftPM consumer can resolve and build it without fetching the host
 /// runtime graph (MQTTNIO, NIO, NIOSSL, NIOTransportServices, Logging,
-/// ErrorKit). The root Axoloty package consumes this package
-/// via a local path dependency and re-exports its public symbols through
-/// ``WireImportShim`` so existing `import Axoloty` clients keep working.
+/// ErrorKit). The root Axoloty package declares the same target directly and
+/// re-exports its public symbols through ``WireImportShim`` so existing
+/// `import Axoloty` clients keep working.
 ///
 /// See `docs/wire-extraction-boundaries.md` for the boundary contract.
 let package = Package(
@@ -24,7 +24,7 @@ let package = Package(
     dependencies: [
         .package(
             url: "https://github.com/phynics/swift-json.git",
-            revision: "ec81216be5bbe2f02f45831d05256de2af452be8",
+            exact: "2.5.3",
             traits: []
         ),
     ],
