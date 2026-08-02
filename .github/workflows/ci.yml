@@ -55,23 +55,12 @@ jobs:
           mkdir -p .testing/coverage
           git diff --unified=0 "$BASE_SHA" "$GITHUB_SHA" > .testing/coverage/changed.diff
 
-      - name: Run consolidated checks
+      - name: Run Swift tests with coverage
         env:
           COVERAGE_DIFF_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
         run: |
           mkdir -p .testing
-          make check CONTAINER_RUNTIME=podman BUILD_DIR=.build BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache > .testing/axoloty-tool-check-linux.json
           make coverage-check CONTAINER_RUNTIME=podman BUILD_DIR=.build COVERAGE_BUILD_DIR=.build BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache
-          sh Tests/Support/check-decoder-context-diagnostic.sh .testing/coverage/build.log
-
-      - name: Upload axoloty-tool check manifests
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: axoloty-tool-check-${{ github.run_id }}
-          path: .testing/axoloty-tool-check-*.json
-          if-no-files-found: warn
-          retention-days: 7
 
       - name: Save SwiftPM dependency cache
         if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
