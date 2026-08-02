@@ -69,6 +69,7 @@ struct InspectorDurationTests {
     func rejectsExceedsMax() {
         #expect(InspectorDuration(rawValue: "25h") == nil)
         #expect(InspectorDuration(rawValue: "99999s") == nil)
+        #expect(InspectorDuration(rawValue: "9223372036854775807m") == nil)
     }
 
     @Test

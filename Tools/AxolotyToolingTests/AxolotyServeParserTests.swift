@@ -158,6 +158,31 @@ func serveMcpRequiresTransport() {
 }
 
 @Test
+func serveMcpRejectsInvalidConnectTimeout() {
+    let result = AxolotyServeParser().parse(
+        arguments: ["mcp", "--transport", "stdio", "--connect-timeout", "0s"],
+        environment: [:]
+    )
+    guard case .failure(.invalidDuration("0s")) = result else {
+        Issue.record("expected invalidDuration")
+        return
+    }
+}
+
+@Test
+func serveMcpAcceptsBoundedConnectTimeout() {
+    let result = AxolotyServeParser().parse(
+        arguments: ["mcp", "--transport", "stdio", "--connect-timeout", "2m"],
+        environment: [:]
+    )
+    guard case .success(.mcp(let config)) = result else {
+        Issue.record("expected success")
+        return
+    }
+    #expect(config.connectTimeout == "2m")
+}
+
+@Test
 func serveMcpRejectsInvalidTransport() {
     let result = AxolotyServeParser().parse(arguments: ["mcp", "--transport", "ws"], environment: [:])
     guard case .failure(.invalidTransport("ws")) = result else {

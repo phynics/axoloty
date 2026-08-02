@@ -44,30 +44,28 @@ public struct InspectorDuration: Equatable, Sendable {
         guard amount > 0 else {
             return nil
         }
-        let seconds: Int64
+        let multiplier: Int64
         switch unit {
-        case "s":
-            seconds = Int64(amount)
-        case "m":
-            seconds = Int64(amount) * 60
-        case "h":
-            seconds = Int64(amount) * 3_600
+        case "s": multiplier = 1
+        case "m": multiplier = 60
+        case "h": multiplier = 3_600
         default:
             return nil
         }
-        guard seconds > 0, seconds <= Self.maxSeconds else {
+        let (seconds, overflow) = amount.multipliedReportingOverflow(by: multiplier)
+        guard !overflow, seconds > 0, seconds <= Self.maxSeconds else {
             return nil
         }
         self.value = .seconds(seconds)
     }
 
-    private static func splitSuffix(_ s: String) -> (Int, String)? {
+    private static func splitSuffix(_ s: String) -> (Int64, String)? {
         guard let lastChar = s.last, lastChar.isLetter else {
             return nil
         }
         let unit = String(lastChar).lowercased()
         let numberPart = String(s.dropLast())
-        guard let amount = Int(numberPart) else {
+        guard let amount = Int64(numberPart) else {
             return nil
         }
         return (amount, unit)

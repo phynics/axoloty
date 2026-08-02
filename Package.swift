@@ -188,7 +188,7 @@ let package = Package(
         ),
         .testTarget(
             name: "AxolotyMCPTests",
-            dependencies: ["AxolotyMCP"],
+            dependencies: ["AxolotyMCP", "AxolotyMCPServer"],
             path: "Tools/AxolotyMCPTests"
         ),
         .executableTarget(

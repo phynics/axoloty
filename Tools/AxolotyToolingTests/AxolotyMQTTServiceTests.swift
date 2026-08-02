@@ -52,12 +52,21 @@ private final class FakeProcessRunner: AxolotyManagedProcessRunning, @unchecked 
     }
 }
 
-private struct FakePortProbe: AxolotyServiceProbing {
+private final class FakePortProbe: AxolotyServiceProbing, @unchecked Sendable {
     var portAvailable = true
     var tcpReady = true
+    var lastTimeoutSeconds: Double?
+
+    init(portAvailable: Bool = true, tcpReady: Bool = true) {
+        self.portAvailable = portAvailable
+        self.tcpReady = tcpReady
+    }
 
     func isPortAvailable(host: String, port: UInt16) -> Bool { portAvailable }
-    func waitForTCP(host: String, port: UInt16, timeoutSeconds: Double) -> Bool { tcpReady }
+    func waitForTCP(host: String, port: UInt16, timeoutSeconds: Double) -> Bool {
+        lastTimeoutSeconds = timeoutSeconds
+        return tcpReady
+    }
 }
 
 private final class FakeTempDirProvider: AxolotyTempDirectoryProvider, @unchecked Sendable {
@@ -263,6 +272,34 @@ func mcpServiceStdioStartsAndExitsCleanly() {
     #expect(args.contains("stdio"))
     #expect(args.contains("--broker-host"))
     #expect(args.contains("localhost"))
+    #expect(args.contains("--connect-timeout"))
+    #expect(args.contains("10s"))
+}
+
+@Test
+func mcpServiceForwardsConfiguredConnectTimeout() {
+    let processRunner = FakeProcessRunner()
+    let portProbe = FakePortProbe()
+    processRunner.exitCode = 0
+    processRunner.running = true
+    processRunner.pollsUntilExit = 1
+
+    let runner = AxolotyMCPServiceRunner(
+        processRunner: processRunner,
+        portProbe: portProbe,
+        fileSystem: MQTTStubFileSystem(paths: ["/opt/axoloty/bin/axoloty-mcp"]),
+        mcpExecutable: "/opt/axoloty/bin/axoloty-mcp",
+        installSignalHandler: false
+    )
+
+    _ = runner.run(MCPServiceConfiguration(transport: .http, connectTimeout: "37s"))
+    let args = processRunner.startSpec?.arguments ?? []
+    guard let index = args.firstIndex(of: "--connect-timeout") else {
+        Issue.record("expected connect-timeout argument")
+        return
+    }
+    #expect(args[index + 1] == "37s")
+    #expect(portProbe.lastTimeoutSeconds == 42)
 }
 
 @Test

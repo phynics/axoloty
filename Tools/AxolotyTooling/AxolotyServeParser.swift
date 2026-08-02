@@ -10,6 +10,8 @@ public enum AxolotyServeError: Error, Equatable, Sendable {
     case missingSubcommand
     /// A port value was not a valid positive ``UInt16``.
     case invalidPort(String)
+    /// A broker readiness timeout was not a positive bounded duration.
+    case invalidDuration(String)
     /// The transport was not ``MCPTransport/stdio`` or ``MCPTransport/http``.
     case invalidTransport(String)
     /// The endpoint path did not start with ``/``.
@@ -40,6 +42,8 @@ public enum AxolotyServeError: Error, Equatable, Sendable {
             return "serve requires a subcommand: mqtt, mcp, or dev"
         case .invalidPort(let value):
             return "invalid port: \(value) (must be 1–65535)"
+        case .invalidDuration(let value):
+            return "invalid connect timeout: \(value) (use a positive duration such as 10s, 2m, or 1h; maximum 24h)"
         case .invalidTransport(let value):
             return "invalid transport: \(value) (must be stdio or http)"
         case .invalidPath(let value):
@@ -289,6 +293,9 @@ public struct AxolotyServeParser: Sendable {
         }
 
         let connectTimeout = flags.values["connect-timeout"] ?? "10s"
+        guard Self.isValidConnectTimeout(connectTimeout) else {
+            return .failure(.invalidDuration(connectTimeout))
+        }
 
         let output: ServeOutputMode
         switch resolveOutputMode(flags.values["output"]) {
@@ -420,5 +427,33 @@ public struct AxolotyServeParser: Sendable {
 
     private func isLoopback(_ host: String) -> Bool {
         host == "127.0.0.1" || host == "localhost" || host == "::1"
+    }
+
+    private static func isValidConnectTimeout(_ value: String) -> Bool {
+        guard let duration = parseBoundedDuration(value) else { return false }
+        return duration > 0
+    }
+
+    static func connectTimeoutSeconds(_ value: String) -> Double? {
+        parseBoundedDuration(value).map(Double.init)
+    }
+
+    /// Mirrors the duration syntax used by the inspector CLI without making
+    /// the orchestration target depend on the product runtime target.
+    private static func parseBoundedDuration(_ rawValue: String) -> Int64? {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let unit = trimmed.last else { return nil }
+        let amount = String(trimmed.dropLast())
+        guard let number = Int64(amount), number > 0 else { return nil }
+        let multiplier: Int64
+        switch unit.lowercased() {
+        case "s": multiplier = 1
+        case "m": multiplier = 60
+        case "h": multiplier = 3_600
+        default: return nil
+        }
+        let (seconds, overflow) = number.multipliedReportingOverflow(by: multiplier)
+        guard !overflow, seconds <= 86_400 else { return nil }
+        return seconds
     }
 }

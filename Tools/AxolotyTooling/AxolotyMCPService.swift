@@ -49,15 +49,16 @@ public struct AxolotyMCPServiceRunner: Sendable {
         }
 
         if configuration.transport == .http {
+            let readinessTimeout = Self.readinessTimeoutSeconds(for: configuration)
             let ready = portProbe.waitForTCP(
                 host: configuration.listenHost,
                 port: configuration.listenPort,
-                timeoutSeconds: 10.0
+                timeoutSeconds: readinessTimeout
             )
             if !ready {
                 processRunner.forceKill()
                 FileHandle.standardError.write(Data(
-                    "error: axoloty-mcp did not become ready within 10 seconds\n".utf8
+                    "error: axoloty-mcp did not become ready within \(readinessTimeout) seconds\n".utf8
                 ))
                 return 70
             }
@@ -106,6 +107,7 @@ public struct AxolotyMCPServiceRunner: Sendable {
             "--broker-host", config.brokerHost,
             "--broker-port", String(config.brokerPort),
             "--namespace", config.namespace,
+            "--connect-timeout", config.connectTimeout,
         ]
         if config.transport == .http {
             args.append(contentsOf: [
@@ -115,6 +117,11 @@ public struct AxolotyMCPServiceRunner: Sendable {
             ])
         }
         return args
+    }
+
+    static func readinessTimeoutSeconds(for config: MCPServiceConfiguration) -> Double {
+        let brokerTimeout = AxolotyServeParser.connectTimeoutSeconds(config.connectTimeout) ?? 10
+        return brokerTimeout + 5
     }
 
     private func writeReadiness(mcpURL: String, output: ServeOutputMode) {

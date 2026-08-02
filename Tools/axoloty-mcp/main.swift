@@ -1,18 +1,20 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import AxolotyMCP
+import AxolotyInspectorCore
 import Foundation
 
 let args = Array(CommandLine.arguments.dropFirst())
 
 var brokerHost = ProcessInfo.processInfo.environment["AXOLOTY_MQTT_HOST"] ?? "localhost"
-var brokerPort = UInt16(ProcessInfo.processInfo.environment["AXOLOTY_MQTT_PORT"] ?? "1883") ?? 1883
+var brokerPortRaw = ProcessInfo.processInfo.environment["AXOLOTY_MQTT_PORT"] ?? "1883"
 var namespace = ProcessInfo.processInfo.environment["AXOLOTY_NAMESPACE"] ?? "-"
 
 var transport = "stdio"
 var listenHost = "127.0.0.1"
-var listenPort: UInt16 = 8765
+var listenPortRaw = ProcessInfo.processInfo.environment["AXOLOTY_MCP_PORT"] ?? "8765"
 var mcpPath = "/mcp"
+var connectTimeout: Duration = .seconds(10)
 
 var i = 0
 while i < args.count {
@@ -29,7 +31,7 @@ while i < args.count {
             FileHandle.standardError.write(Data("error: --broker-port requires a value\n".utf8))
             Foundation.exit(64)
         }
-        brokerPort = UInt16(args[i + 1]) ?? 1883
+        brokerPortRaw = args[i + 1]
         i += 2
     case "--namespace":
         guard i + 1 < args.count else {
@@ -37,6 +39,17 @@ while i < args.count {
             Foundation.exit(64)
         }
         namespace = args[i + 1]
+        i += 2
+    case "--connect-timeout":
+        guard i + 1 < args.count else {
+            FileHandle.standardError.write(Data("error: --connect-timeout requires a value\n".utf8))
+            Foundation.exit(64)
+        }
+        guard let value = InspectorDuration(rawValue: args[i + 1])?.value else {
+            FileHandle.standardError.write(Data("error: invalid connect timeout: \(args[i + 1]) (use a positive duration such as 10s, 2m, or 1h; maximum 24h)\n".utf8))
+            Foundation.exit(64)
+        }
+        connectTimeout = value
         i += 2
     case "--transport":
         guard i + 1 < args.count else {
@@ -57,7 +70,7 @@ while i < args.count {
             FileHandle.standardError.write(Data("error: --listen-port requires a value\n".utf8))
             Foundation.exit(64)
         }
-        listenPort = UInt16(args[i + 1]) ?? 8765
+        listenPortRaw = args[i + 1]
         i += 2
     case "--path":
         guard i + 1 < args.count else {
@@ -72,6 +85,15 @@ while i < args.count {
     }
 }
 
+guard let brokerPort = UInt16(brokerPortRaw), brokerPort > 0 else {
+    FileHandle.standardError.write(Data("error: invalid broker port: \(brokerPortRaw) (must be 1–65535)\n".utf8))
+    Foundation.exit(64)
+}
+guard let listenPort = UInt16(listenPortRaw), listenPort > 0 else {
+    FileHandle.standardError.write(Data("error: invalid listen port: \(listenPortRaw) (must be 1–65535)\n".utf8))
+    Foundation.exit(64)
+}
+
 let exitCode = await runMCPServer(
     host: brokerHost,
     port: brokerPort,
@@ -79,7 +101,8 @@ let exitCode = await runMCPServer(
     transport: transport,
     listenHost: listenHost,
     listenPort: listenPort,
-    path: mcpPath
+    path: mcpPath,
+    connectTimeout: connectTimeout
 )
 Foundation.exit(exitCode)
 
@@ -91,10 +114,16 @@ func runMCPServer(
     transport: String,
     listenHost: String,
     listenPort: UInt16,
-    path: String
+    path: String,
+    connectTimeout: Duration
 ) async -> Int32 {
     do {
-        let server = try AxolotyMCPServer(host: host, port: port, namespace: namespace)
+        let server = try AxolotyMCPServer(
+            host: host,
+            port: port,
+            namespace: namespace,
+            connectTimeout: connectTimeout
+        )
         switch transport {
         case "stdio":
             try await server.startStdio()
