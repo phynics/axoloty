@@ -65,6 +65,10 @@ SH
 cat > "$fake_bin/fake-podman" <<SH
 #!/bin/sh
 printf '%s\n' "\$*" >> "$capture"
+if [ "\$1" = "system" ] && [ "\$2" = "service" ]; then
+    python3 -c 'import socket,sys,time; p=sys.argv[1][7:]; s=socket.socket(socket.AF_UNIX); s.bind(p); s.listen(1); time.sleep(300)' "\$4"
+    exit 0
+fi
 if [ "\$1" = "image" ] && [ "\$2" = "inspect" ]; then
     if [ "\${FAKE_RUNTIME_ROOTFUL:-0}" = "1" ]; then
         printf '%s\n' "\${FAKE_RUNTIME_ROOTFUL_IMAGE_ID:-rootful-image}"
@@ -81,12 +85,14 @@ if [ "\$1" = "load" ]; then
     cat >/dev/null
     exit 0
 fi
-if [[ "\${FAKE_RECLAIM_FAILURE:-0}" == "1" && "\$*" == *chown* ]]; then
-    exit 42
-fi
-if [[ "\${FAKE_RUNTIME_EXIT_CODE:-0}" != "0" && "\$*" != *chown* ]]; then
-    exit "\${FAKE_RUNTIME_EXIT_CODE}"
-fi
+case "\$*" in
+    *chown*)
+        if [ "\${FAKE_RECLAIM_FAILURE:-0}" = "1" ]; then exit 42; fi
+        ;;
+    *)
+        if [ "\${FAKE_RUNTIME_EXIT_CODE:-0}" != "0" ]; then exit "\${FAKE_RUNTIME_EXIT_CODE}"; fi
+        ;;
+esac
 while [ "\$#" -gt 0 ]; do
     if [ "\$1" = "--env-file" ]; then
         cp "\$2" "$capture_env"
@@ -119,6 +125,58 @@ grep -q -- 'load' "$capture"
 save_line=$(grep -n -- 'save axoloty-dev' "$capture" | cut -d: -f1)
 run_line=$(grep -n -m1 -- 'run --rm' "$capture" | cut -d: -f1)
 [[ "$save_line" -lt "$run_line" ]]
+
+# Host Podman is opt-in: ordinary project commands do not receive a host
+# socket, while the wire bridge reuses an already-running service and keeps
+# the repository's host path as the container workdir for remote bind mounts.
+: > "$capture"
+CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+if grep -Eq -- 'CONTAINER_HOST|DOCKER_HOST' "$capture"; then
+    echo "ordinary container run unexpectedly enabled host Podman" >&2
+    exit 1
+fi
+
+host_socket="$TEMP_DIR/podman socket.sock"
+python3 - "$host_socket" <<'PY' &
+import socket
+import sys
+server = socket.socket(socket.AF_UNIX)
+server.bind(sys.argv[1])
+server.listen(1)
+server.accept()
+PY
+socket_server=$!
+for _ in 1 2 3 4 5; do
+    [ -S "$host_socket" ] && break
+    sleep 0.1
+done
+: > "$capture"
+AXOLOTY_HOST_RUNTIME_BRIDGE=1 CONTAINER_HOST="unix://$host_socket" \
+    CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+grep -q -- "-w $ROOT_DIR" "$capture"
+grep -q -- "CONTAINER_RUNTIME=$ROOT_DIR/.devcontainer/container-runtime-remote.sh" "$capture"
+grep -q -- "DOCKER_HOST=unix://$host_socket" "$capture"
+grep -q -- "BUILD_DIR=$build_dir" "$capture"
+grep -q -- "SPM_CACHE_DIR=$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux" "$capture"
+grep -q -- "REPOSITORY_NAME=axoloty" "$capture"
+grep -q -- "TMPDIR=$ROOT_DIR/.testing/tmp" "$capture"
+grep -q -- "$build_dir:$build_dir" "$capture"
+grep -q -- "$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux:$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux" "$capture"
+grep -q -- '--security-opt label=disable' "$capture"
+[ -S "$host_socket" ]
+kill "$socket_server" 2>/dev/null || true
+wait "$socket_server" 2>/dev/null || true
+
+# When no socket exists, the bridge starts a temporary service and removes it
+# after the container exits.
+rm -f "$host_socket"
+: > "$capture"
+AXOLOTY_HOST_RUNTIME_BRIDGE=1 CONTAINER_HOST="unix://$host_socket" \
+    CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+[ ! -e "$host_socket" ]
 
 # Matching rootless and rootful image IDs do not transfer the image again.
 : > "$capture"

@@ -14,6 +14,10 @@ lock_timeout=${BUILD_LOCK_TIMEOUT:-300}
 env_file=""
 lock_kind=""
 lock_owner=""
+host_service_pid=""
+host_service_socket=""
+host_service_dir=""
+bridge_socket=""
 
 cleanup() {
     if [ -n "$env_file" ]; then
@@ -21,6 +25,16 @@ cleanup() {
     fi
     if [ -n "$lock_owner" ]; then
         rm -f "$lock_owner"
+    fi
+    if [ -n "$host_service_pid" ]; then
+        kill "$host_service_pid" 2>/dev/null || true
+        wait "$host_service_pid" 2>/dev/null || true
+    fi
+    if [ -n "$host_service_socket" ]; then
+        rm -f "$host_service_socket"
+    fi
+    if [ -n "$host_service_dir" ]; then
+        rmdir "$host_service_dir" 2>/dev/null || true
     fi
     if [ "$lock_kind" = "directory" ]; then
         rmdir "$lock_dir" 2>/dev/null || true
@@ -69,6 +83,50 @@ fi
 if [ -z "$runtime" ]; then
     echo "No podman or docker runtime found" >&2
     exit 1
+fi
+
+bridge_workdir="$workdir"
+if [ "${AXOLOTY_HOST_RUNTIME_BRIDGE:-0}" = "1" ]; then
+    case "$runtime" in
+        *podman*) ;;
+        *) echo "AXOLOTY_HOST_RUNTIME_BRIDGE requires a Podman host runtime" >&2; exit 2 ;;
+    esac
+    bridge_workdir="$root_dir"
+    existing_socket=${CONTAINER_HOST:-}
+    existing_socket=${existing_socket#unix://}
+    if [ -z "${CONTAINER_HOST:-}" ]; then
+        existing_socket="/run/user/$(id -u)/podman/podman.sock"
+    fi
+    if [ -S "$existing_socket" ]; then
+        bridge_socket="$existing_socket"
+    else
+        host_service_dir=$(mktemp -d "${TMPDIR:-/tmp}/axoloty-podman.XXXXXX")
+        host_service_socket="$host_service_dir/podman.sock"
+        "$runtime" system service --time=0 "unix://$host_service_socket" >/dev/null 2>&1 &
+        host_service_pid=$!
+        ready=0
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+            if [ -S "$host_service_socket" ]; then ready=1; break; fi
+            sleep 1
+        done
+        if [ "$ready" -ne 1 ]; then
+            echo "Timed out waiting for host Podman service" >&2
+            exit 1
+        fi
+        bridge_socket="$host_service_socket"
+    fi
+    bridge_runtime="$root_dir/.devcontainer/container-runtime-remote.sh"
+    bridge_tmpdir="$root_dir/.testing/tmp"
+    mkdir -p "$bridge_tmpdir"
+    repository_name=${REPOSITORY_NAME:-}
+    if [ -z "$repository_name" ]; then
+        common_git_dir=$(git -C "$root_dir" rev-parse --git-common-dir 2>/dev/null || true)
+        if [ -n "$common_git_dir" ]; then
+            repository_name=$(basename "${common_git_dir%/.git}")
+        else
+            repository_name=$(basename "$root_dir")
+        fi
+    fi
 fi
 
 mkdir -p "$spm_cache_dir"
@@ -242,12 +300,34 @@ if [ "${CONTAINER_STDIN:-0}" = "1" ]; then
 fi
 
 set +e
-$sudo_prefix "$runtime" run --rm $security_opts $device_opts $privileged_opt $userns_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
-    -v "$root_dir:$workdir$mount_suffix" \
-    -v "$build_dir:$workdir/.build$mount_suffix" \
-    -v "$spm_cache_dir:$workdir/.swiftpm-cache$mount_suffix" \
-    -w "$workdir" \
-    "$image" "$@"
+if [ "${AXOLOTY_HOST_RUNTIME_BRIDGE:-0}" = "1" ]; then
+    # Keep bridge paths as discrete arguments. Disabling SELinux separation for
+    # this opt-in container avoids relabeling a live rootless Podman socket.
+    $sudo_prefix "$runtime" run --rm $security_opts $device_opts $privileged_opt $userns_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
+        --security-opt label=disable \
+        -e "CONTAINER_RUNTIME=$bridge_runtime" \
+        -e "DOCKER_HOST=unix://$bridge_socket" \
+        -e "WORKDIR=$root_dir" \
+        -e "BUILD_DIR=$build_dir" \
+        -e "SPM_CACHE_DIR=$spm_cache_dir" \
+        -e "REPOSITORY_NAME=$repository_name" \
+        -e "TMPDIR=$bridge_tmpdir" \
+        -v "$bridge_socket:$bridge_socket" \
+        -v "$build_dir:$build_dir" \
+        -v "$spm_cache_dir:$spm_cache_dir" \
+        -v "$root_dir:$bridge_workdir$mount_suffix" \
+        -v "$build_dir:$bridge_workdir/.build$mount_suffix" \
+        -v "$spm_cache_dir:$bridge_workdir/.swiftpm-cache$mount_suffix" \
+        -w "$bridge_workdir" \
+        "$image" "$@"
+else
+    $sudo_prefix "$runtime" run --rm $security_opts $device_opts $privileged_opt $userns_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
+        -v "$root_dir:$bridge_workdir$mount_suffix" \
+        -v "$build_dir:$bridge_workdir/.build$mount_suffix" \
+        -v "$spm_cache_dir:$bridge_workdir/.swiftpm-cache$mount_suffix" \
+        -w "$bridge_workdir" \
+        "$image" "$@"
+fi
 status=$?
 set -e
 
