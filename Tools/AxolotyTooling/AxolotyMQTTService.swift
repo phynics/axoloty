@@ -144,7 +144,7 @@ public struct AxolotyMQTTServiceRunner: Sendable {
             return 70
         }
 
-        let mqttURL = "mqtt://\(configuration.listenHost):\(configuration.port)"
+        let mqttURL = "mqtt://\(urlAuthorityHost(configuration.listenHost)):\(configuration.port)"
         writeReadiness(mqttURL: mqttURL, output: output)
 
         let signalHandler = installSignalHandler ? ServiceSignalHandler() : nil

@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-import AxolotyTooling
+@testable import AxolotyTooling
 import Foundation
 import Testing
 #if canImport(Glibc)
@@ -305,6 +305,127 @@ private func freePort() throws -> UInt16 {
     }
     guard getResult == 0 else { throw CocoaError(.fileReadUnknown) }
     return UInt16(bigEndian: name.sin_port)
+}
+
+/// Creates a listening loopback socket on an ephemeral port.
+private func listeningLoopbackSocket(host: String) throws -> (fd: Int32, port: UInt16) {
+    if host == "::1" {
+        let fd = socket(AF_INET6, 1, 0) // SOCK_STREAM
+        guard fd >= 0 else { throw CocoaError(.fileReadNoSuchFile) }
+
+        var address = sockaddr_in6()
+        address.sin6_family = sa_family_t(AF_INET6)
+        address.sin6_port = 0
+        inet_pton(AF_INET6, "::1", &address.sin6_addr)
+        let bindResult = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketAddress in
+                bind(fd, socketAddress, socklen_t(MemoryLayout<sockaddr_in6>.size))
+            }
+        }
+        guard bindResult == 0, listen(fd, 1) == 0 else {
+            close(fd)
+            throw CocoaError(.fileWriteUnknown)
+        }
+
+        var boundAddress = sockaddr_in6()
+        var addressLength = socklen_t(MemoryLayout<sockaddr_in6>.size)
+        let nameResult = withUnsafeMutablePointer(to: &boundAddress) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketAddress in
+                getsockname(fd, socketAddress, &addressLength)
+            }
+        }
+        guard nameResult == 0 else {
+            close(fd)
+            throw CocoaError(.fileReadUnknown)
+        }
+        return (fd, UInt16(bigEndian: boundAddress.sin6_port))
+    }
+
+    let fd = socket(AF_INET, 1, 0) // SOCK_STREAM
+    guard fd >= 0 else { throw CocoaError(.fileReadNoSuchFile) }
+
+    var address = sockaddr_in()
+    address.sin_family = sa_family_t(AF_INET)
+    address.sin_port = 0
+    inet_pton(AF_INET, host, &address.sin_addr)
+    let bindResult = withUnsafePointer(to: &address) { pointer in
+        pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketAddress in
+            bind(fd, socketAddress, socklen_t(MemoryLayout<sockaddr_in>.size))
+        }
+    }
+    guard bindResult == 0, listen(fd, 1) == 0 else {
+        close(fd)
+        throw CocoaError(.fileWriteUnknown)
+    }
+
+    var boundAddress = sockaddr_in()
+    var addressLength = socklen_t(MemoryLayout<sockaddr_in>.size)
+    let nameResult = withUnsafeMutablePointer(to: &boundAddress) { pointer in
+        pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketAddress in
+            getsockname(fd, socketAddress, &addressLength)
+        }
+    }
+    guard nameResult == 0 else {
+        close(fd)
+        throw CocoaError(.fileReadUnknown)
+    }
+    return (fd, UInt16(bigEndian: boundAddress.sin_port))
+}
+
+private func ipv6LoopbackAvailable() -> Bool {
+    guard let listener = try? listeningLoopbackSocket(host: "::1") else { return false }
+    close(listener.fd)
+    return true
+}
+
+@Test
+func foundationServiceProbeConnectsToIPv4Loopback() throws {
+    let listener = try listeningLoopbackSocket(host: "127.0.0.1")
+    defer { close(listener.fd) }
+    #expect(FoundationServiceProbe().waitForTCP(host: "127.0.0.1", port: listener.port, timeoutSeconds: 1))
+}
+
+@Test
+func foundationServiceProbeConnectsToLocalhost() throws {
+    let probe = FoundationServiceProbe()
+    var connected = false
+    if let listener = try? listeningLoopbackSocket(host: "127.0.0.1") {
+        connected = probe.waitForTCP(host: "localhost", port: listener.port, timeoutSeconds: 1)
+        close(listener.fd)
+    }
+    if !connected, ipv6LoopbackAvailable(), let listener = try? listeningLoopbackSocket(host: "::1") {
+        connected = probe.waitForTCP(host: "localhost", port: listener.port, timeoutSeconds: 1)
+        close(listener.fd)
+    }
+    #expect(connected)
+}
+
+@Test(.enabled(if: ipv6LoopbackAvailable()))
+func foundationServiceProbeConnectsToIPv6Loopback() throws {
+    let listener = try listeningLoopbackSocket(host: "::1")
+    defer { close(listener.fd) }
+    #expect(FoundationServiceProbe().waitForTCP(host: "::1", port: listener.port, timeoutSeconds: 1))
+}
+
+@Test
+func foundationServiceProbeReportsOccupiedIPv4PortUnavailable() throws {
+    let listener = try listeningLoopbackSocket(host: "127.0.0.1")
+    defer { close(listener.fd) }
+    #expect(!FoundationServiceProbe().isPortAvailable(host: "127.0.0.1", port: listener.port))
+}
+
+@Test(.enabled(if: ipv6LoopbackAvailable()))
+func foundationServiceProbeReportsOccupiedIPv6PortUnavailable() throws {
+    let listener = try listeningLoopbackSocket(host: "::1")
+    defer { close(listener.fd) }
+    #expect(!FoundationServiceProbe().isPortAvailable(host: "::1", port: listener.port))
+}
+
+@Test
+func urlAuthorityHostBracketsIPv6Literals() {
+    #expect(urlAuthorityHost("::1") == "[::1]")
+    #expect(urlAuthorityHost("127.0.0.1") == "127.0.0.1")
+    #expect(urlAuthorityHost("localhost") == "localhost")
 }
 
 /// Locates a runnable ``axoloty-mcp`` binary for integration testing.
