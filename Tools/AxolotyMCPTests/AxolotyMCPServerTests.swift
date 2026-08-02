@@ -1,9 +1,30 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 @testable import AxolotyMCP
+import Axoloty
+import AxolotyInspectorCore
+import AxolotyInspectorRuntime
 import Foundation
 import MCP
 import Testing
+
+@MainActor
+private final class StatusSession: InspectorSession {
+    var state: CommunicationState = .online
+
+    func connect() async throws {}
+    func communicationState() async -> CommunicationState { state }
+    func advertiseEvents() async -> AsyncStream<AdvertiseEventSnapshot> {
+        AsyncStream { $0.finish() }
+    }
+    func deadvertiseEvents() async -> AsyncStream<DeadvertiseEventSnapshot> {
+        AsyncStream { $0.finish() }
+    }
+    func discover(_ event: DiscoverEvent) async -> AsyncStream<ResponseEventSnapshot> {
+        AsyncStream { $0.finish() }
+    }
+    func stop() {}
+}
 
 @Test("Discover tool advertises and consumes an integer timeout")
 func discoverToolTimeoutContract() throws {
@@ -24,6 +45,18 @@ func discoverToolTimeoutClamp() {
 
     #expect(belowMinimum.timeoutMilliseconds == 1000)
     #expect(aboveMaximum.timeoutMilliseconds == 30_000)
+}
+
+@Test("Status reflects live online and offline communication state")
+@MainActor
+func statusReflectsCommunicationState() async throws {
+    let session = StatusSession()
+    let server = AxolotyMCPServer(session: session, namespace: "test")
+
+    #expect((await server.collectStatus()).mqttConnected)
+
+    session.state = .offline
+    #expect(!(await server.collectStatus()).mqttConnected)
 }
 
 @MainActor

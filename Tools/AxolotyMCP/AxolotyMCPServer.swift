@@ -81,6 +81,19 @@ public final class AxolotyMCPServer {
         )
     }
 
+    init(session: InspectorSession, namespace: String) {
+        self.session = session
+        self.catalogueService = InspectorCatalogueService(session: session, namespace: namespace)
+        self.server = Server(
+            name: "axoloty-mcp",
+            version: "0.2.0",
+            capabilities: .init(
+                resources: .init(subscribe: false, listChanged: false),
+                tools: .init(listChanged: false)
+            )
+        )
+    }
+
     /// Starts the MCP server with stdio transport.
     ///
     /// stdin and stdout are reserved for MCP protocol messages.
@@ -188,7 +201,7 @@ public final class AxolotyMCPServer {
             case "axoloty_discover_objects":
                 return await self.handleDiscoverObjects(params.arguments)
             case "axoloty_server_status":
-                return await self.handleServerStatus(service: service)
+                return await self.handleServerStatus()
             default:
                 return .init(content: [.text("Unknown tool: \(params.name)")], isError: true)
             }
@@ -206,7 +219,7 @@ public final class AxolotyMCPServer {
         await server.withMethodHandler(ReadResource.self) { [self] params in
             switch params.uri {
             case "axoloty://status":
-                let status = await self.collectStatus(service: service)
+                let status = await self.collectStatus()
                 let json = try Self.encodeStatus(status)
                 return .init(contents: [.text(json, uri: params.uri, mimeType: "application/json")])
             case "axoloty://catalogue":
@@ -330,26 +343,27 @@ public final class AxolotyMCPServer {
         )
     }
 
-    private func handleServerStatus(service: InspectorCatalogueService) async -> CallTool.Result {
-        let status = await collectStatus(service: service)
+    private func handleServerStatus() async -> CallTool.Result {
+        let status = await collectStatus()
         let json = (try? Self.encodeStatus(status)) ?? "{}"
         return .init(content: [.text(json)], isError: false)
     }
 
     // MARK: - Helpers
 
-    private func collectStatus(service: InspectorCatalogueService) async -> ServerStatus {
-        let count = await service.store.count
-        let snapshot = await service.store.snapshot(filter: ObjectCatalogueFilter())
+    func collectStatus() async -> ServerStatus {
+        let count = await catalogueService.store.count
+        let snapshot = await catalogueService.store.snapshot(filter: ObjectCatalogueFilter())
+        let communicationState = await catalogueService.communicationState()
         return ServerStatus(
-            mqttConnected: true,
+            mqttConnected: communicationState == .online,
             namespace: snapshot.namespace,
             catalogueObservedSince: snapshot.observedSince,
             catalogueObjectCount: count
         )
     }
 
-    private struct ServerStatus: Codable, Sendable {
+    struct ServerStatus: Codable, Sendable {
         let mqttConnected: Bool
         let namespace: String
         let catalogueObservedSince: String

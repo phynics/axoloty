@@ -92,6 +92,13 @@ public final class InspectorCatalogueService {
         started = false
     }
 
+    /// Returns the session's current communication state.
+    ///
+    /// - Returns: The latest broker communication state.
+    public func communicationState() async -> CommunicationState {
+        await session.communicationState()
+    }
+
     private func consumeStreams(
         advertise: AsyncStream<AdvertiseEventSnapshot>,
         deadvertise: AsyncStream<DeadvertiseEventSnapshot>,
