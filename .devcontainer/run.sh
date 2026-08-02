@@ -117,6 +117,7 @@ if [ "${AXOLOTY_HOST_RUNTIME_BRIDGE:-0}" = "1" ]; then
     fi
     bridge_runtime="$root_dir/.devcontainer/container-runtime-remote.sh"
     bridge_tmpdir="$root_dir/.testing/tmp"
+    bridge_run_id=${WIRE_RUN_ID:-"$$-$(date +%s)"}
     mkdir -p "$bridge_tmpdir"
     repository_name=${REPOSITORY_NAME:-}
     if [ -z "$repository_name" ]; then
@@ -312,12 +313,11 @@ if [ "${AXOLOTY_HOST_RUNTIME_BRIDGE:-0}" = "1" ]; then
         -e "SPM_CACHE_DIR=$spm_cache_dir" \
         -e "REPOSITORY_NAME=$repository_name" \
         -e "TMPDIR=$bridge_tmpdir" \
+        -e "WIRE_RUN_ID=$bridge_run_id" \
         -v "$bridge_socket:$bridge_socket" \
         -v "$build_dir:$build_dir" \
         -v "$spm_cache_dir:$spm_cache_dir" \
         -v "$root_dir:$bridge_workdir$mount_suffix" \
-        -v "$build_dir:$bridge_workdir/.build$mount_suffix" \
-        -v "$spm_cache_dir:$bridge_workdir/.swiftpm-cache$mount_suffix" \
         -w "$bridge_workdir" \
         "$image" "$@"
 else

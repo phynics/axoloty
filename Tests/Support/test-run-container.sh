@@ -162,12 +162,23 @@ grep -q -- "BUILD_DIR=$build_dir" "$capture"
 grep -q -- "SPM_CACHE_DIR=$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux" "$capture"
 grep -q -- "REPOSITORY_NAME=axoloty" "$capture"
 grep -q -- "TMPDIR=$ROOT_DIR/.testing/tmp" "$capture"
+grep -Eq -- 'WIRE_RUN_ID=[0-9]+-[0-9]+' "$capture"
 grep -q -- "$build_dir:$build_dir" "$capture"
 grep -q -- "$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux:$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux" "$capture"
 grep -q -- '--security-opt label=disable' "$capture"
 [ -S "$host_socket" ]
 kill "$socket_server" 2>/dev/null || true
 wait "$socket_server" 2>/dev/null || true
+
+# CI already uses worktree-local cache paths. Each destination must appear
+# once rather than as both a same-path mount and a worktree-relative alias.
+: > "$capture"
+AXOLOTY_HOST_RUNTIME_BRIDGE=1 CONTAINER_HOST="unix://$host_socket" \
+    CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$ROOT_DIR/.build" \
+    SPM_CACHE_DIR="$ROOT_DIR/.swiftpm-cache" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+[[ $(grep -o -- "$ROOT_DIR/.build:$ROOT_DIR/.build" "$capture" | wc -l) -eq 1 ]]
+[[ $(grep -o -- "$ROOT_DIR/.swiftpm-cache:$ROOT_DIR/.swiftpm-cache" "$capture" | wc -l) -eq 1 ]]
 
 # When no socket exists, the bridge starts a temporary service and removes it
 # after the container exits.
