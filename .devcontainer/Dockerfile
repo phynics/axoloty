@@ -145,6 +145,13 @@ ENV PATH="${IDF_PATH}/tools:${PATH}"
 COPY --from=axoloty-tool-builder /axoloty-tool-output/axoloty-tool /opt/axoloty/bin/axoloty-tool
 COPY --from=axoloty-service-builder /axoloty-service-output/ax /opt/axoloty/bin/ax
 COPY --from=axoloty-service-builder /axoloty-service-output/axoloty-mcp /opt/axoloty/bin/axoloty-mcp
+ARG DOCKER_CLI_VERSION=27.5.1
+RUN curl -fsSL -o /tmp/docker.tgz \
+        https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz \
+    && tar -xzf /tmp/docker.tgz -C /tmp \
+    && install -m 0755 /tmp/docker/docker /usr/local/bin/docker \
+    && rm -rf /tmp/docker /tmp/docker.tgz \
+    && docker --version
 RUN ln -sfn ax /opt/axoloty/bin/axoloty-tool
 
 WORKDIR /workspace

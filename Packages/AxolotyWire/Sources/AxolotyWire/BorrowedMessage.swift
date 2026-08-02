@@ -54,8 +54,8 @@ public struct BorrowedMessage {
     /// the bounded-cost limits in ``WireBufferConfig``.
     ///
     /// Use this factory for untrusted input (e.g. an MQTT PUBLISH from a
-    /// peer). It checks the topic and payload lengths against
-    /// ``WireBufferConfig.maxTopicLength`` and
+    /// peer). It checks that the topic and payload lengths are nonnegative and
+    /// no greater than ``WireBufferConfig.maxTopicLength`` and
     /// ``WireBufferConfig.maxPayloadSize`` before constructing the view, so an
     /// oversized message is rejected with a structured ``WireDecodeError``
     /// rather than driving unbounded allocation or processing on a
@@ -67,6 +67,8 @@ public struct BorrowedMessage {
     ///   - payloadBytes: A pointer to the payload bytes.
     ///   - payloadLength: The number of valid payload bytes.
     /// - Throws: ``WireDecodeError`` with reason
+    ///   ``.malformedTopic`` if `topicLength` is negative,
+    ///   ``.unexpectedEndOfInput`` if `payloadLength` is negative,
     ///   ``.topicExceedsLimit`` if `topicLength` exceeds
     ///   ``WireBufferConfig.maxTopicLength``, or ``.payloadExceedsLimit`` if
     ///   `payloadLength` exceeds ``WireBufferConfig.maxPayloadSize``.
@@ -76,6 +78,12 @@ public struct BorrowedMessage {
         payloadBytes: UnsafePointer<UInt8>,
         payloadLength: Int
     ) throws(WireDecodeError) -> BorrowedMessage {
+        if topicLength < 0 {
+            throw WireDecodeError(.malformedTopic)
+        }
+        if payloadLength < 0 {
+            throw WireDecodeError(.unexpectedEndOfInput)
+        }
         if topicLength > WireBufferConfig.maxTopicLength {
             throw WireDecodeError(.topicExceedsLimit, byteOffset: topicLength)
         }

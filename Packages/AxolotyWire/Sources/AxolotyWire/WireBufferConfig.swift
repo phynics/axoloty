@@ -13,6 +13,9 @@ public enum WireBufferConfig {
     /// Maximum payload size (bytes) for a single MQTT PUBLISH.
     public static let maxPayloadSize: Int = 512
 
+    /// Maximum top-level fields retained by the borrowed JSON index.
+    public static let maxIndexedFields: Int = 24
+
     /// Maximum topic levels in a Coaty topic (protocol, version, namespace,
     /// event, sourceId, correlationId, postfix = 7).
     public static let maxTopicLevels: Int = 7
