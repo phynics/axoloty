@@ -46,6 +46,8 @@ jobs:
         uses: ./.github/actions/setup-container
         with:
           runtime: podman
+          # Documentation is generated from the bind-mounted checkout.
+          require-current-build-inputs: "false"
 
       - name: Configure GitHub Pages
         id: pages

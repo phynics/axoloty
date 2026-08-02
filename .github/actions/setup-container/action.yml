@@ -1,5 +1,5 @@
 name: Setup container image
-description: Pull the reviewed pinned development image by digest, or build locally when its inputs are stale.
+description: Pull the reviewed pinned development image by digest, optionally rebuilding when its inputs are stale.
 
 inputs:
   runtime:
@@ -11,7 +11,11 @@ inputs:
     required: false
     default: .devcontainer/image-lock.json
   allow-build-fallback:
-    description: Build the repository Dockerfile when the lock does not describe the current Dockerfile.
+    description: Build the repository Dockerfile when the lock does not describe the current image inputs.
+    required: false
+    default: "true"
+  require-current-build-inputs:
+    description: Require the pinned image to contain binaries built from the current checkout.
     required: false
     default: "true"
 
@@ -24,30 +28,40 @@ runs:
         RUNTIME: ${{ inputs.runtime }}
         LOCK_FILE: ${{ inputs.lock-file }}
         ALLOW_BUILD_FALLBACK: ${{ inputs.allow-build-fallback }}
+        REQUIRE_CURRENT_BUILD_INPUTS: ${{ inputs.require-current-build-inputs }}
       run: |
         set -euo pipefail
 
         image=$(jq -er '.image' "$LOCK_FILE")
         digest=$(jq -er '.digest' "$LOCK_FILE")
-        locked_hash=$(jq -er '.buildInputsSha256' "$LOCK_FILE")
-        actual_hash=$(./.devcontainer/image-inputs.sh | sha256sum | awk '{print $1}')
 
-        # A hash mismatch means this revision changed an image build input and no
-        # reviewed image has been published for it yet, so building locally is
-        # the expected path. A matching hash promises the image exists, so a
-        # failed pull is a real error rather than a cue to build.
-        if [[ "$locked_hash" != "$actual_hash" ]]; then
-          if [[ "$ALLOW_BUILD_FALLBACK" != "true" ]]; then
-            echo "::error::$LOCK_FILE is stale (locks $locked_hash, build inputs are $actual_hash) and the build fallback is disabled." >&2
-            exit 1
-          fi
-          echo "::warning::$LOCK_FILE is stale (locks $locked_hash, build inputs are $actual_hash); building the image locally. Refresh the lock once the image publishes." >&2
-          make image CONTAINER_RUNTIME="$RUNTIME"
-          exit 0
-        fi
+        case "$REQUIRE_CURRENT_BUILD_INPUTS" in
+          true)
+            locked_hash=$(jq -er '.buildInputsSha256' "$LOCK_FILE")
+            actual_hash=$(./.devcontainer/image-inputs.sh | sha256sum | awk '{print $1}')
+            # A mismatch means this revision changed an embedded binary or
+            # another image input and no reviewed image exists for it yet.
+            if [[ "$locked_hash" != "$actual_hash" ]]; then
+              if [[ "$ALLOW_BUILD_FALLBACK" != "true" ]]; then
+                echo "::error::$LOCK_FILE is stale (locks $locked_hash, build inputs are $actual_hash) and the build fallback is disabled." >&2
+                exit 1
+              fi
+              echo "::warning::$LOCK_FILE is stale (locks $locked_hash, build inputs are $actual_hash); building the image locally. Refresh the lock once the image publishes." >&2
+              make image CONTAINER_RUNTIME="$RUNTIME"
+              exit 0
+            fi
+            ;;
+          false) ;;
+          *)
+            echo "::error::require-current-build-inputs must be true or false, got: $REQUIRE_CURRENT_BUILD_INPUTS" >&2
+            exit 2
+            ;;
+        esac
 
+        # A matching lock promises the image exists, so a failed pull is a real
+        # error rather than a cue to rebuild an expensive image on this runner.
         if ! "$RUNTIME" pull "$image@$digest"; then
-          echo "::error::Locked image $image@$digest is unavailable. The lock matches the current build inputs, so the image is expected to exist." >&2
+          echo "::error::Locked image $image@$digest is unavailable; reviewed locked images are expected to exist." >&2
           exit 1
         fi
         "$RUNTIME" tag "$image@$digest" axoloty-dev
