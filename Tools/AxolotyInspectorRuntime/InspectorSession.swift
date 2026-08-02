@@ -13,6 +13,8 @@ public protocol InspectorSession {
     /// Starts the connection and waits until the broker is ready and
     /// desired subscriptions are activated.
     func connect() async throws
+    /// Returns the current communication state, including live reconnect transitions.
+    func communicationState() async -> CommunicationState
     /// Returns the namespace-wide Advertise event stream.
     func advertiseEvents() async -> AsyncStream<AdvertiseEventSnapshot>
     /// Returns the Deadvertise event stream.
@@ -109,6 +111,15 @@ public final class AxolotyInspectorSession: InspectorSession {
         case let .failed(message):
             throw InspectorError.connectionUnavailable(reason: message)
         }
+    }
+
+    /// Returns the current communication state from the manager's replaying state stream.
+    ///
+    /// - Returns: The latest broker communication state, or ``CommunicationState/offline``
+    ///   if the stream ends without replaying a value.
+    public func communicationState() async -> CommunicationState {
+        var iterator = (await manager.observeCommunicationStateStream()).makeAsyncIterator()
+        return await iterator.next() ?? .offline
     }
 
     public func advertiseEvents() async -> AsyncStream<AdvertiseEventSnapshot> {

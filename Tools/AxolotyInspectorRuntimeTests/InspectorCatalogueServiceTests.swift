@@ -13,6 +13,7 @@ private final class RetryInspectorSession: InspectorSession {
     private(set) var connectAttempts = 0
     private(set) var streamsCreatedBeforeConnect: [Bool] = []
     private(set) var connectStarted = false
+    var currentCommunicationState: CommunicationState = .offline
 
     private var advertiseStreamCreated = false
     private var deadvertiseStreamCreated = false
@@ -40,6 +41,11 @@ private final class RetryInspectorSession: InspectorSession {
             failuresRemaining -= 1
             throw InspectorError.connectionUnavailable(reason: "fake failure")
         }
+        currentCommunicationState = .online
+    }
+
+    func communicationState() async -> CommunicationState {
+        currentCommunicationState
     }
 
     func advertiseEvents() async -> AsyncStream<AdvertiseEventSnapshot> {

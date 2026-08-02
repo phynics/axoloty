@@ -12,6 +12,7 @@ final class FakeInspectorSession: InspectorSession {
     var connectShouldFail = false
     var connectError: InspectorError?
     var connected = false
+    var communicationState: CommunicationState = .offline
     var stopped = false
     var discoverCallCount = 0
     var streamsCreatedBeforeConnect = false
@@ -32,6 +33,7 @@ final class FakeInspectorSession: InspectorSession {
             throw connectError ?? .connectionUnavailable(reason: "fake failure")
         }
         connected = true
+        communicationState = .online
         streamsCreatedBeforeConnect = advertiseStreamCreated && deadvertiseStreamCreated
         for snapshot in queuedAdvertises {
             advertiseContinuation?.yield(snapshot)
@@ -46,6 +48,10 @@ final class FakeInspectorSession: InspectorSession {
         advertiseContinuation = cont
         advertiseStreamCreated = true
         return stream
+    }
+
+    func communicationState() async -> CommunicationState {
+        communicationState
     }
 
     func deadvertiseEvents() async -> AsyncStream<DeadvertiseEventSnapshot> {
