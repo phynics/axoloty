@@ -27,6 +27,59 @@ public struct InspectorDiscoveryRequest: Sendable, Equatable {
     public var hasSelector: Bool {
         coreType != nil || objectType != nil || objectId != nil
     }
+
+    /// Builds the Coaty Discover event after validating its typed selectors.
+    ///
+    /// Object IDs must be valid Coaty UUIDs and core types must be known
+    /// ``CoreType`` values. When multiple selectors are supplied, the
+    /// existing precedence is preserved: object ID, object type, then core
+    /// type.
+    ///
+    /// - Returns: The event to publish for this request.
+    /// - Throws: ``InspectorError/invalidArguments(reason:)`` when a typed
+    ///   selector is malformed or unknown.
+    public func makeDiscoverEvent() throws(InspectorError) -> DiscoverEvent {
+        guard hasSelector else {
+            throw InspectorError.invalidArguments(
+                reason: "at least one selector (coreType, objectType, or objectId) is required"
+            )
+        }
+
+        let uuid: CoatyUUID?
+        if let objectId {
+            guard let parsedUUID = CoatyUUID(uuidString: objectId) else {
+                throw InspectorError.invalidArguments(
+                    reason: "objectId must be a valid UUID: \(objectId)"
+                )
+            }
+            uuid = parsedUUID
+        } else {
+            uuid = nil
+        }
+
+        let parsedCoreType: CoreType?
+        if let coreType {
+            guard let parsed = CoreType(rawValue: coreType) else {
+                throw InspectorError.invalidArguments(
+                    reason: "coreType must be a known core type: \(coreType)"
+                )
+            }
+            parsedCoreType = parsed
+        } else {
+            parsedCoreType = nil
+        }
+
+        if let uuid {
+            return DiscoverEvent.with(objectId: uuid)
+        }
+        if let objectType {
+            return DiscoverEvent.with(objectTypes: [objectType])
+        }
+        if let parsedCoreType {
+            return DiscoverEvent.with(coreTypes: [parsedCoreType])
+        }
+        throw InspectorError.invalidArguments(reason: "discovery selector could not be represented")
+    }
 }
 
 /// The result of an active discovery operation.

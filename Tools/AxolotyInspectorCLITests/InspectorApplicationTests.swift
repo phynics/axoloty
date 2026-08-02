@@ -13,6 +13,7 @@ final class FakeInspectorSession: InspectorSession {
     var connectError: InspectorError?
     var connected = false
     var stopped = false
+    var discoverCallCount = 0
     var streamsCreatedBeforeConnect = false
 
     private var advertiseContinuation: AsyncStream<AdvertiseEventSnapshot>.Continuation?
@@ -62,6 +63,7 @@ final class FakeInspectorSession: InspectorSession {
     }
 
     func discover(_ event: DiscoverEvent) async -> AsyncStream<ResponseEventSnapshot> {
+        discoverCallCount += 1
         let (stream, cont) = AsyncStream.makeStream(of: ResponseEventSnapshot.self)
         discoverContinuation = cont
         for response in queuedResponses {
@@ -547,5 +549,43 @@ struct InspectorDiscoverApplicationTests {
 
         #expect(result != nil)
         #expect(session.stopped)
+    }
+
+    @Test
+    func invalidObjectIdDoesNotInvokeDiscovery() async {
+        let session = FakeInspectorSession()
+        var diagnostics: [String] = []
+        let app = InspectorDiscoverApplication(
+            configuration: makeDiscoverConfig(objectId: "not-a-uuid"),
+            session: session,
+            writeOutput: { _ in },
+            writeDiagnostic: { diagnostics.append($0) },
+            timestamp: { "2026-07-31T00:00:00Z" },
+            isTerminal: false
+        )
+
+        let result = await app.run()
+
+        #expect(result == .invalidArguments(reason: "objectId must be a valid UUID: not-a-uuid"))
+        #expect(session.discoverCallCount == 0)
+        #expect(diagnostics.contains { $0.contains("valid UUID") })
+    }
+
+    @Test
+    func invalidCoreTypeDoesNotInvokeDiscovery() async {
+        let session = FakeInspectorSession()
+        let app = InspectorDiscoverApplication(
+            configuration: makeDiscoverConfig(coreType: "UnknownCoreType"),
+            session: session,
+            writeOutput: { _ in },
+            writeDiagnostic: { _ in },
+            timestamp: { "2026-07-31T00:00:00Z" },
+            isTerminal: false
+        )
+
+        let result = await app.run()
+
+        #expect(result == .invalidArguments(reason: "coreType must be a known core type: UnknownCoreType"))
+        #expect(session.discoverCallCount == 0)
     }
 }
