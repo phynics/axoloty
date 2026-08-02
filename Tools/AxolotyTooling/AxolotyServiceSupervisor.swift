@@ -64,6 +64,10 @@ public protocol AxolotyServiceProbing: Sendable {
 
 // MARK: - Foundation implementations
 
+func urlAuthorityHost(_ host: String) -> String {
+    host.contains(":") ? "[\(host)]" : host
+}
+
 /// Foundation ``Process``-backed implementation of ``AxolotyManagedProcessRunning``.
 public final class FoundationProcessRunner: AxolotyManagedProcessRunning, @unchecked Sendable {
     private var process: Process?
@@ -134,53 +138,65 @@ public struct FoundationServiceProbe: AxolotyServiceProbing {
     public init() {}
 
     public func isPortAvailable(host: String, port: UInt16) -> Bool {
-        let fd = socket(AF_INET, 1, 0)  // SOCK_STREAM
-        guard fd >= 0 else { return false }
-        defer { close(fd) }
-
-        var reuse: Int32 = 1
-        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
-
-        var addr = sockaddr_in()
-        addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_port = port.bigEndian
-        inet_pton(AF_INET, host, &addr.sin_addr)
-
-        let result = withUnsafePointer(to: &addr) { ptr in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
-                bind(fd, sa, socklen_t(MemoryLayout<sockaddr_in>.size))
+        withResolvedAddresses(host: host, port: port) { info in
+            var current: UnsafeMutablePointer<addrinfo>? = info
+            while let address = current {
+                let fd = socket(address.pointee.ai_family, address.pointee.ai_socktype, address.pointee.ai_protocol)
+                if fd >= 0 {
+                    defer { close(fd) }
+                    var reuse: Int32 = 1
+                    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
+                    if bind(fd, address.pointee.ai_addr, address.pointee.ai_addrlen) == 0 {
+                        return true
+                    }
+                }
+                current = address.pointee.ai_next
             }
+            return false
         }
-        return result == 0
     }
 
     public func waitForTCP(host: String, port: UInt16, timeoutSeconds: Double) -> Bool {
         let deadline = Date().addingTimeInterval(timeoutSeconds)
-        while Date() < deadline {
-            if tcpConnect(host: host, port: port) {
-                return true
+        return withResolvedAddresses(host: host, port: port) { info in
+            while Date() < deadline {
+                var current: UnsafeMutablePointer<addrinfo>? = info
+                while let address = current {
+                    let fd = socket(address.pointee.ai_family, address.pointee.ai_socktype, address.pointee.ai_protocol)
+                    if fd >= 0 {
+                        defer { close(fd) }
+                        if connect(fd, address.pointee.ai_addr, address.pointee.ai_addrlen) == 0 {
+                            return true
+                        }
+                    }
+                    current = address.pointee.ai_next
+                }
+                usleep(100_000)
             }
-            usleep(100_000)
+            return false
         }
-        return false
     }
 
-    private func tcpConnect(host: String, port: UInt16) -> Bool {
-        let fd = socket(AF_INET, 1, 0)  // SOCK_STREAM
-        guard fd >= 0 else { return false }
-        defer { close(fd) }
-
-        var addr = sockaddr_in()
-        addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_port = port.bigEndian
-        inet_pton(AF_INET, host, &addr.sin_addr)
-
-        let result = withUnsafePointer(to: &addr) { ptr in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
-                connect(fd, sa, socklen_t(MemoryLayout<sockaddr_in>.size))
+    private func withResolvedAddresses(
+        host: String,
+        port: UInt16,
+        _ body: (UnsafeMutablePointer<addrinfo>) -> Bool
+    ) -> Bool {
+        var hints = addrinfo()
+        hints.ai_family = AF_UNSPEC
+        hints.ai_socktype = 1 // SOCK_STREAM
+        var results: UnsafeMutablePointer<addrinfo>?
+        let service = String(port)
+        let resolutionResult = host.withCString { hostPointer in
+            service.withCString { servicePointer in
+                getaddrinfo(hostPointer, servicePointer, &hints, &results)
             }
         }
-        return result == 0
+        guard resolutionResult == 0, let results else {
+            return false
+        }
+        defer { freeaddrinfo(results) }
+        return body(results)
     }
 }
 

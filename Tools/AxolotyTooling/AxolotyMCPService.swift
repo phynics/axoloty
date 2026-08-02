@@ -62,7 +62,7 @@ public struct AxolotyMCPServiceRunner: Sendable {
                 return 70
             }
 
-            let mcpURL = "http://\(configuration.listenHost):\(configuration.listenPort)\(configuration.path)"
+            let mcpURL = "http://\(urlAuthorityHost(configuration.listenHost)):\(configuration.listenPort)\(configuration.path)"
             writeReadiness(mcpURL: mcpURL, output: configuration.output)
         }
 

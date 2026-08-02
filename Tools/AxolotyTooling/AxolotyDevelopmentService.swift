@@ -167,8 +167,8 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
     }
 
     private func writeReadiness(mqtt: MQTTServiceConfiguration, mcp: MCPServiceConfiguration, output: ServeOutputMode) {
-        let mqttURL = "mqtt://\(mqtt.listenHost):\(mqtt.port)"
-        let mcpURL = "http://\(mcp.listenHost):\(mcp.listenPort)\(mcp.path)"
+        let mqttURL = "mqtt://\(urlAuthorityHost(mqtt.listenHost)):\(mqtt.port)"
+        let mcpURL = "http://\(urlAuthorityHost(mcp.listenHost)):\(mcp.listenPort)\(mcp.path)"
         switch output {
         case .human:
             FileHandle.standardError.write(Data(
