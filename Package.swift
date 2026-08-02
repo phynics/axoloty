@@ -176,6 +176,11 @@ let package = Package(
             ],
             path: "Tools/AxolotyMCP"
         ),
+        .testTarget(
+            name: "AxolotyMCPTests",
+            dependencies: ["AxolotyMCP"],
+            path: "Tools/AxolotyMCPTests"
+        ),
         .executableTarget(
             name: "AxolotyMCPServer",
             dependencies: ["AxolotyMCP", "Axoloty", "AxolotyInspectorCore", "AxolotyInspectorRuntime"],
