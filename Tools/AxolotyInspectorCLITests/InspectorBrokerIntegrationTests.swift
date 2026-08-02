@@ -11,7 +11,7 @@ import Testing
 /// Disabled by default. Enable by setting `AXOLOTY_INSPECTOR_LIVE=1` and
 /// ensuring a Mosquitto broker is reachable at the configured host/port.
 @MainActor
-@Suite
+@Suite(.serialized)
 struct InspectorBrokerIntegrationTests {
 
     private func brokerHost() -> String {
@@ -55,7 +55,7 @@ struct InspectorBrokerIntegrationTests {
             connectTimeout: .seconds(5)
         ))
 
-        var output: [String] = []
+        let (outputStream, outputContinuation) = AsyncStream.makeStream(of: String.self)
         let app = InspectorApplication(
             configuration: InspectorConfiguration(
                 command: .catalog(CatalogCommand(
@@ -67,15 +67,22 @@ struct InspectorBrokerIntegrationTests {
                 output: .ndjson
             ),
             session: session,
-            writeOutput: { output.append($0) },
+            writeOutput: { outputContinuation.yield($0) },
             writeDiagnostic: { _ in },
             timestamp: { "2026-07-31T00:00:00Z" },
             isTerminal: false
         )
 
-        let runTask = Task { await app.run() }
+        let runTask = Task {
+            let result = await app.run()
+            outputContinuation.finish()
+            return result
+        }
+        defer { outputContinuation.finish() }
+        var outputIterator = outputStream.makeAsyncIterator()
 
-        try await Task.sleep(for: .milliseconds(500))
+        let sessionStarted = try #require(await outputIterator.next())
+        #expect(sessionStarted.contains("\"kind\":\"session-started\""))
 
         let objectId = CoatyUUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!
         let object = CoatyObject(
@@ -87,20 +94,29 @@ struct InspectorBrokerIntegrationTests {
         let cm = producer.communicationManager!
         cm.publishAdvertise(try AdvertiseEvent.with(object: object))
 
-        try await Task.sleep(for: .milliseconds(500))
+        var matchedAdvertise: String?
+        while let line = await outputIterator.next() {
+            if line.contains("\"objectId\":\"\(objectId.string)\"") {
+                matchedAdvertise = line
+                break
+            }
+        }
+        let advertise = try #require(matchedAdvertise)
+        #expect(advertise.contains("\"kind\":\"advertise\""))
+        #expect(advertise.contains("\"name\":\"Test Agent\""))
 
         cm.publishDeadvertise(DeadvertiseEvent.with(objectIds: [objectId]))
 
-        let result = await runTask.value
-
-        #expect(result == nil)
-
-        let advertiseLines = output.filter { $0.contains("\"kind\":\"advertise\"") }
-        #expect(advertiseLines.count == 1)
-        #expect(advertiseLines[0].contains("\"name\":\"Test Agent\""))
-
-        let deadvertiseLines = output.filter { $0.contains("\"kind\":\"deadvertise\"") }
-        #expect(!deadvertiseLines.isEmpty)
+        var matchedDeadvertise: String?
+        while let line = await outputIterator.next() {
+            if line.contains("\"kind\":\"deadvertise\"") {
+                matchedDeadvertise = line
+                break
+            }
+        }
+        let deadvertise = try #require(matchedDeadvertise)
+        #expect(deadvertise.contains("\"kind\":\"deadvertise\""))
+        #expect(await runTask.value == nil)
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["AXOLOTY_INSPECTOR_LIVE"] == "1"))
@@ -117,7 +133,7 @@ struct InspectorBrokerIntegrationTests {
             connectTimeout: .seconds(5)
         ))
 
-        var output: [String] = []
+        let (outputStream, outputContinuation) = AsyncStream.makeStream(of: String.self)
         let app = InspectorApplication(
             configuration: InspectorConfiguration(
                 command: .catalog(CatalogCommand(
@@ -129,15 +145,22 @@ struct InspectorBrokerIntegrationTests {
                 output: .ndjson
             ),
             session: session,
-            writeOutput: { output.append($0) },
+            writeOutput: { outputContinuation.yield($0) },
             writeDiagnostic: { _ in },
             timestamp: { "2026-07-31T00:00:00Z" },
             isTerminal: false
         )
 
-        let runTask = Task { await app.run() }
+        let runTask = Task {
+            let result = await app.run()
+            outputContinuation.finish()
+            return result
+        }
+        defer { outputContinuation.finish() }
+        var outputIterator = outputStream.makeAsyncIterator()
 
-        try await Task.sleep(for: .milliseconds(500))
+        let sessionStarted = try #require(await outputIterator.next())
+        #expect(sessionStarted.contains("\"kind\":\"session-started\""))
 
         let objectId = CoatyUUID(uuidString: "11111111-2222-3333-4444-555555555555")!
         let customObject = CoatyObject(
@@ -149,12 +172,16 @@ struct InspectorBrokerIntegrationTests {
         let cm = producer.communicationManager!
         cm.publishAdvertise(try AdvertiseEvent.with(object: customObject))
 
-        let result = await runTask.value
-
-        #expect(result == nil)
-
-        let advertiseLines = output.filter { $0.contains("\"kind\":\"advertise\"") }
-        #expect(advertiseLines.count == 1)
-        #expect(advertiseLines[0].contains("\"objectType\":\"com.example.CustomAgent\""))
+        var matchedAdvertise: String?
+        while let line = await outputIterator.next() {
+            if line.contains("\"objectId\":\"\(objectId.string)\"") {
+                matchedAdvertise = line
+                break
+            }
+        }
+        let advertise = try #require(matchedAdvertise)
+        #expect(advertise.contains("\"kind\":\"advertise\""))
+        #expect(advertise.contains("\"objectType\":\"com.example.CustomAgent\""))
+        #expect(await runTask.value == nil)
     }
 }

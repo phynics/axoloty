@@ -58,6 +58,7 @@ struct TopicBuilderTests {
             correlationId: "request-42"
         ) == "coaty/3/factory/RSV/+/request-42")
         #expect(TopicBuilder.subscribeTopic(eventType: .discover) == "coaty/3/+/DSC/+/+")
+        #expect(TopicBuilder.subscribeAllOneWayTopics(namespace: "factory") == "coaty/3/factory/+/+")
     }
 
     @Test

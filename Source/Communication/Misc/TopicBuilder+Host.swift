@@ -134,6 +134,20 @@ extension TopicBuilder {
         return topic
     }
 
+    /// Builds a namespace-scoped filter for every one-way event topic.
+    ///
+    /// MQTT wildcards must occupy an entire topic level, so matching every
+    /// filtered Advertise level (`ADV:<filter>`) requires wildcarding the
+    /// complete event level. Callers must discard non-Advertise events after
+    /// parsing.
+    ///
+    /// - Parameter namespace: The messaging namespace, or nil to subscribe
+    ///   across namespaces.
+    /// - Returns: A filter matching one-way event and source levels.
+    static func subscribeAllOneWayTopics(namespace: String? = nil) -> String {
+        "coaty/3/\(namespace ?? "+")/+/+"
+    }
+
     // MARK: - Topic validation
 
     /// Determines whether the given name is a valid topic name for

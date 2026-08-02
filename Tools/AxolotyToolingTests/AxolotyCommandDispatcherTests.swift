@@ -77,6 +77,14 @@ func checkPlanPrintsStableJSON() {
 }
 
 @Test
+func checkPlanDisablesSwiftLintCache() throws {
+    let plan = AxolotyCheckPlan.initialOffline(for: .linux)
+    let lint = try #require(plan.nodes.first { $0.name == "lint" })
+
+    #expect(lint.command.arguments == ["lint", "--no-cache", "--config", ".swiftlint.yml"])
+}
+
+@Test
 func optionalHardwareCheckSkipsAbsentDevice() throws {
     let dispatcher = AxolotyCommandDispatcher(
         commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
