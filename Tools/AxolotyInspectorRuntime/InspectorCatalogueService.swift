@@ -21,6 +21,8 @@ public final class InspectorCatalogueService {
     /// an actor that serializes its own access.
     public nonisolated let store: InspectorCatalogueStore
     private var streamTask: Task<Void, Never>?
+    private var startTask: Task<Void, Error>?
+    private var startGeneration = 0
     private var started = false
 
     /// Creates the service.
@@ -40,12 +42,35 @@ public final class InspectorCatalogueService {
     /// Connects to the broker and starts consuming event streams.
     public func start() async throws {
         guard !started else { return }
-        started = true
+
+        if let startTask {
+            try await startTask.value
+            return
+        }
+
+        startGeneration += 1
+        let generation = startGeneration
+        let startTask = Task { @MainActor [self] in
+            try await self.connectAndStartConsuming(generation: generation)
+        }
+        self.startTask = startTask
+        defer {
+            if self.startGeneration == generation {
+                self.startTask = nil
+            }
+        }
+        try await startTask.value
+    }
+
+    private func connectAndStartConsuming(generation: Int) async throws {
 
         let advertiseStream = await session.advertiseEvents()
         let deadvertiseStream = await session.deadvertiseEvents()
 
         try await session.connect()
+        try Task.checkCancellation()
+        guard startGeneration == generation else { return }
+        started = true
 
         let store = self.store
         streamTask = Task.detached { [weak self] in
@@ -59,6 +84,9 @@ public final class InspectorCatalogueService {
 
     /// Stops the service and disconnects.
     public func stop() {
+        startGeneration += 1
+        startTask?.cancel()
+        startTask = nil
         streamTask?.cancel()
         session.stop()
         started = false
