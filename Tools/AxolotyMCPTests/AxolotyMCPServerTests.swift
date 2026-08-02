@@ -24,3 +24,39 @@ func discoverToolTimeoutClamp() {
     #expect(belowMinimum.timeoutMilliseconds == 1000)
     #expect(aboveMaximum.timeoutMilliseconds == 30_000)
 }
+
+@MainActor
+@Test("Discover handler rejects invalid object ID before discovery")
+func discoverHandlerRejectsInvalidObjectId() async {
+    var discoveryCount = 0
+    let result = await AxolotyMCPServer.handleDiscoverObjects(["objectId": .string("not-a-uuid")]) { _ in
+        discoveryCount += 1
+        return AsyncStream { $0.finish() }
+    }
+
+    #expect(result.isError == true)
+    #expect(discoveryCount == 0)
+    guard case let .text(message, _, _)? = result.content.first else {
+        Issue.record("expected text error content")
+        return
+    }
+    #expect(message.contains("valid UUID"))
+}
+
+@MainActor
+@Test("Discover handler rejects unknown core type before discovery")
+func discoverHandlerRejectsUnknownCoreType() async {
+    var discoveryCount = 0
+    let result = await AxolotyMCPServer.handleDiscoverObjects(["coreType": .string("UnknownCoreType")]) { _ in
+        discoveryCount += 1
+        return AsyncStream { $0.finish() }
+    }
+
+    #expect(result.isError == true)
+    #expect(discoveryCount == 0)
+    guard case let .text(message, _, _)? = result.content.first else {
+        Issue.record("expected text error content")
+        return
+    }
+    #expect(message.contains("known core type"))
+}

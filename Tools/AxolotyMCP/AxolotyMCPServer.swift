@@ -165,7 +165,7 @@ public final class AxolotyMCPServer {
             case "axoloty_get_object":
                 return await self.handleGetObject(params.arguments, service: service)
             case "axoloty_discover_objects":
-                return await self.handleDiscoverObjects(params.arguments, service: service)
+                return await self.handleDiscoverObjects(params.arguments)
             case "axoloty_server_status":
                 return await self.handleServerStatus(service: service)
             default:
@@ -218,15 +218,29 @@ public final class AxolotyMCPServer {
         return .init(content: [.text("Object not found: \(objectId)")], isError: false)
     }
 
-    private func handleDiscoverObjects(_ args: [String: Value]?, service: InspectorCatalogueService) async -> CallTool.Result {
+    private func handleDiscoverObjects(_ args: [String: Value]?) async -> CallTool.Result {
+        await Self.handleDiscoverObjects(args) { [session] event in
+            await session.discover(event)
+        }
+    }
+
+    static func handleDiscoverObjects(
+        _ args: [String: Value]?,
+        discover: (DiscoverEvent) async -> AsyncStream<ResponseEventSnapshot>
+    ) async -> CallTool.Result {
         let request = Self.makeDiscoveryRequest(from: args)
 
         guard request.hasSelector else {
             return .init(content: [.text("At least one selector (coreType, objectType, or objectId) is required")], isError: true)
         }
 
-        let discoverEvent = Self.makeDiscoverEvent(from: request)
-        let responseStream = await session.discover(discoverEvent)
+        let discoverEvent: DiscoverEvent
+        do {
+            discoverEvent = try request.makeDiscoverEvent()
+        } catch {
+            return .init(content: [.text(error.userFriendlyMessage)], isError: true)
+        }
+        let responseStream = await discover(discoverEvent)
         let timeout = Duration.milliseconds(request.timeoutMilliseconds)
 
         var discoveredObjects: [String: InspectorObject] = [:]
@@ -332,21 +346,6 @@ public final class AxolotyMCPServer {
             objectId: args?["objectId"]?.stringValue,
             sourceId: args?["sourceId"]?.stringValue
         )
-    }
-
-    private static func makeDiscoverEvent(from request: InspectorDiscoveryRequest) -> DiscoverEvent {
-        if let objectIdString = request.objectId,
-           let uuid = CoatyUUID(uuidString: objectIdString) {
-            return DiscoverEvent.with(objectId: uuid)
-        }
-        if let objectTypes = request.objectType.map({ [$0] }) {
-            return DiscoverEvent.with(objectTypes: objectTypes)
-        }
-        if let coreTypeString = request.coreType,
-           let coreType = CoreType(rawValue: coreTypeString) {
-            return DiscoverEvent.with(coreTypes: [coreType])
-        }
-        return DiscoverEvent.with(coreTypes: [])
     }
 
     nonisolated private static func encodeSnapshot(_ snapshot: InspectorCatalogueSnapshot) throws -> String {
