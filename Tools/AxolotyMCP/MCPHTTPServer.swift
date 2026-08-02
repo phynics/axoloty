@@ -104,7 +104,7 @@ public actor MCPHTTPServer {
         let channel = try await bootstrap.bind(host: host, port: Int(port)).get()
         self.channel = channel
 
-        _Concurrency.Task { await sessionCleanupLoop() }
+        Task { await sessionCleanupLoop() }
 
         try await channel.closeFuture.get()
     }
@@ -235,7 +235,7 @@ public actor MCPHTTPServer {
 
     private func sessionCleanupLoop() async {
         while true {
-            try? await _Concurrency.Task.sleep(for: .seconds(60))
+            try? await Task.sleep(for: .seconds(60))
 
             let now = Date()
             let expired = sessions.filter { _, context in
@@ -287,7 +287,7 @@ private final class HTTPHandler: ChannelInboundHandler, @unchecked Sendable {
             requestState = nil
 
             nonisolated(unsafe) let ctx = context
-            _Concurrency.Task { @MainActor in
+            Task { @MainActor in
                 await self.handleRequest(state: state, context: ctx)
             }
         }

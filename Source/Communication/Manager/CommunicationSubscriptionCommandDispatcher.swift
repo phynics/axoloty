@@ -32,7 +32,7 @@ final class CommunicationSubscriptionCommandDispatcher {
             pending.append((command, continuation))
             if !isDraining {
                 isDraining = true
-                _Concurrency.Task<Void, Never> { @MainActor in
+                Task<Void, Never> { @MainActor in
                     await self.drainLoop()
                 }
             }

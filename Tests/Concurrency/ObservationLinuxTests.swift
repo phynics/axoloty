@@ -44,7 +44,7 @@ struct ObservationLinuxTests {
         await broadcast.send(23.5)
 
         var it = stream.makeAsyncIterator()
-        try? await _Concurrency.Task.sleep(for: .milliseconds(100))
+        try? await Task.sleep(for: .milliseconds(100))
 
         await broadcast.finish()
 
@@ -63,7 +63,7 @@ struct ObservationLinuxTests {
         let stream = await broadcast.subscribe()
 
         var it = stream.makeAsyncIterator()
-        try? await _Concurrency.Task.sleep(for: .milliseconds(100))
+        try? await Task.sleep(for: .milliseconds(100))
 
         await broadcast.send("hello")
         await broadcast.send("world")

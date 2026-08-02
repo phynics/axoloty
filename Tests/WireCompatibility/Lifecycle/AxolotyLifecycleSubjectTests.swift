@@ -91,7 +91,7 @@ struct AxolotyLifecycleSubjectTests {
         // time to actually reach the broker, so the independent MQTT capture
         // this scenario is verified against has a genuine late PUBLISH to
         // compare timestamps with -- not just an absence of one.
-        try await _Concurrency.Task.sleep(for: .seconds(5))
+        try await Task.sleep(for: .seconds(5))
         report(state: "done", scenario: "late-reply")
     }
 
@@ -139,7 +139,7 @@ struct AxolotyLifecycleSubjectTests {
 
         // publish is fire-and-forget (see AxolotyAdvertiseProducerTests);
         // give the flushed queue time to reach the broker before shutdown.
-        try await _Concurrency.Task.sleep(for: .seconds(2))
+        try await Task.sleep(for: .seconds(2))
         report(state: "done", scenario: "offline-queueing")
     }
 
@@ -223,7 +223,7 @@ struct AxolotyLifecycleSubjectTests {
                 throw TimeoutGivingUp()
             }
             group.addTask {
-                try await _Concurrency.Task.sleep(for: .seconds(60))
+                try await Task.sleep(for: .seconds(60))
                 throw TimeoutGivingUp()
             }
             try await group.next()

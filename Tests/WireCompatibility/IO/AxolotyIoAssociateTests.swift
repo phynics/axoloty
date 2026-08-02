@@ -232,14 +232,14 @@ struct AxolotyIoAssociateTests {
 
         // The Associate is delivered back through the broker before the local
         // source's route is registered; settle before publishing the IoValue.
-        try await _Concurrency.Task.sleep(for: .milliseconds(1500))
+        try await Task.sleep(for: .milliseconds(1500))
 
         let event = try IoValueEvent.with(ioSource: source, value: "42", options: [:])
         cm.publishIoValue(event: event)
         print("{\"state\":\"published-iovalue\",\"scenario\":\"io-associate\",\"route\":\"\(route)\"}")
 
         // publish is fire-and-forget; allow the packet to flush before teardown.
-        try await _Concurrency.Task.sleep(for: .milliseconds(1500))
+        try await Task.sleep(for: .milliseconds(1500))
 
         // Disassociate cleanly.
         try cm.publishAssociate(event: AssociateEvent.with(
@@ -248,7 +248,7 @@ struct AxolotyIoAssociateTests {
             ioActorId: actorId,
             associatingRoute: nil
         ))
-        try await _Concurrency.Task.sleep(for: .milliseconds(1000))
+        try await Task.sleep(for: .milliseconds(1000))
     }
 
     // MARK: - Live JS -> modern direction (Axoloty is the actor)

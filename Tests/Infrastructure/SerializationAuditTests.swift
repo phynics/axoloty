@@ -25,6 +25,70 @@ struct SerializationAuditTests {
         #expect(event.data.object.name == "registered-agent")
     }
 
+    @Test
+    func coatyTaskRoundTripPreservesWireIdentityAndFields() throws {
+        let creatorId = CoatyUUID()
+        let task = CoatyTask(
+            creatorId: creatorId,
+            creationTimestamp: 1_234,
+            status: .inProgress,
+            lastModificationTimestamp: 2_345,
+            dueTimestamp: 3_456,
+            doneTimestamp: 4_567,
+            requirements: ["role": "operator"],
+            description: "Inspect equipment",
+            assigneeObjectId: CoatyUUID()
+        )
+        let event = try AdvertiseEvent.with(object: task)
+        let encoded = try PayloadCoder.encode(event)
+        let json = try #require(
+            JSONSerialization.jsonObject(with: Data(encoded.utf8)) as? [String: Any]
+        )
+        let encodedObject = try #require(json["object"] as? [String: Any])
+        let decoded: AdvertiseEvent = try PayloadCoder.decode(encoded)
+        let decodedTask = try #require(decoded.data.object as? CoatyTask)
+
+        #expect(encodedObject["coreType"] as? String == "Task")
+        #expect(encodedObject["objectType"] as? String == "coaty.Task")
+        #expect(encodedObject["name"] as? String == "TaskObject")
+        #expect(encodedObject["creatorId"] as? String == creatorId.string)
+        #expect(encodedObject["creationTimestamp"] as? Double == 1_234)
+        #expect(encodedObject["status"] as? Int == TaskStatus.inProgress.rawValue)
+        #expect(encodedObject["lastModificationTimestamp"] as? Double == 2_345)
+        #expect(encodedObject["dueTimestamp"] as? Double == 3_456)
+        #expect(encodedObject["doneTimestamp"] as? Double == 4_567)
+        #expect(encodedObject["requirements"] is [String: Any])
+        #expect(encodedObject["description"] as? String == "Inspect equipment")
+        #expect(encodedObject["desc"] == nil)
+        #expect(encodedObject["assigneeObjectId"] as? String == task.assigneeObjectId?.string)
+        #expect(decodedTask.coreType == .Task)
+        #expect(decodedTask.objectType == "coaty.Task")
+        #expect(decodedTask.name == "TaskObject")
+        #expect(decodedTask.creatorId == creatorId)
+        #expect(decodedTask.creationTimestamp == 1_234)
+        #expect(decodedTask.status == .inProgress)
+        #expect(decodedTask.lastModificationTimestamp == 2_345)
+        #expect(decodedTask.dueTimestamp == 3_456)
+        #expect(decodedTask.doneTimestamp == 4_567)
+        #expect(decodedTask.requirements?["role"] != nil)
+        #expect(decodedTask.desc == "Inspect equipment")
+        #expect(decodedTask.assigneeObjectId == task.assigneeObjectId)
+    }
+
+    @Test
+    func coatyTaskDynamicDecodeUsesRenamedModel() throws {
+        let json = """
+        {"object":{"objectId":"01234567-89ab-4cde-8fab-0123456789ab","coreType":"Task","objectType":"coaty.Task","name":"TaskObject","creatorId":"01234567-89ab-4cde-8fab-0123456789ab","creationTimestamp":1234,"status":0,"description":"queued"}}
+        """
+        let event: AdvertiseEvent = try PayloadCoder.decode(json)
+        let task = try #require(event.data.object as? CoatyTask)
+
+        #expect(task.coreType == .Task)
+        #expect(task.objectType == "coaty.Task")
+        #expect(task.status == .pending)
+        #expect(task.desc == "queued")
+    }
+
     // MARK: - Unknown object-type fallback
 
     @Test

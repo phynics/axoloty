@@ -48,6 +48,6 @@ struct AxolotyAdvertiseProducerTests {
         // (deferred above) could tear down the MQTT connection before this
         // publish is flushed. This is the one wait in this suite with no
         // observable condition to poll instead of a fixed duration.
-        try await _Concurrency.Task.sleep(for: .milliseconds(500))
+        try await Task.sleep(for: .milliseconds(500))
     }
 }

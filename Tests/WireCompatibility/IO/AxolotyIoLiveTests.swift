@@ -138,7 +138,7 @@ struct AxolotyIoLiveTests {
             isExternalRoute: false,
             updateRate: 250
         ))
-        try await _Concurrency.Task.sleep(for: .milliseconds(1500))
+        try await Task.sleep(for: .milliseconds(1500))
 
         // Publish raw IoValue (NUL byte + invalid UTF-8).
         let rawPayload: [UInt8] = [0x00, 0x01, 0x02, 0xFF, 0xFE, 0x41, 0x42]
@@ -146,7 +146,7 @@ struct AxolotyIoLiveTests {
         cm.publishIoValue(event: event)
         print("{\"state\":\"published-iovalue\",\"scenario\":\"io-raw-modern-to-js\",\"route\":\"\(route)\"}")
 
-        try await _Concurrency.Task.sleep(for: .milliseconds(1500))
+        try await Task.sleep(for: .milliseconds(1500))
 
         // Disassociate.
         try cm.publishAssociate(event: AssociateEvent.with(
@@ -155,7 +155,7 @@ struct AxolotyIoLiveTests {
             ioActorId: actorId,
             associatingRoute: nil
         ))
-        try await _Concurrency.Task.sleep(for: .milliseconds(1000))
+        try await Task.sleep(for: .milliseconds(1000))
     }
 
     // MARK: - External route: JS -> modern (Axoloty is the actor)
