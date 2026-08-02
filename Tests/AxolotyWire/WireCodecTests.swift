@@ -227,6 +227,18 @@ struct WireCodecTests {
     }
 
     @Test
+    func wireReaderReadsSiblingsAfterNestedObjectAndArray() throws {
+        let json = #"{"object":{"value":1},"privateData":{"foo":"bar"},"objects":[{"id":1}],"filter":["one"]}"#
+        let bytes = Array(json.utf8)
+        let reader = try bytes.withUnsafeBufferPointer { buf in
+            WireReader(bytes: buf.baseAddress!, length: buf.count)
+        }
+
+        #expect(reader.readRaw("privateData") != nil)
+        #expect(reader.readRaw("filter") != nil)
+    }
+
+    @Test
     func wireReaderReturnsNilForMissingField() throws {
         let json = #"{"foo":"bar"}"#
         let bytes = Array(json.utf8)
