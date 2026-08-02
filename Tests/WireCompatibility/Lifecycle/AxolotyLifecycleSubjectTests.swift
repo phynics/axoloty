@@ -261,8 +261,8 @@ struct AxolotyLifecycleSubjectTests {
         #expect(response.eventType == "RTN")
         let event: ReturnEvent = try PayloadCoder.decode(response.payload)
         let resultJSON = try #require(event.data.result)
-        let result = try JSONDecoder().decode([String: String].self, from: Data(resultJSON.utf8))
-        return try #require(result["variant"])
+        let result = try JSONDecoder().decode(LifecycleReturnResult.self, from: Data(resultJSON.utf8))
+        return result.variant
     }
 
     private func report(state: String, scenario: String, extra: [String: String] = [:]) {
@@ -291,6 +291,10 @@ struct AxolotyLifecycleSubjectTests {
 }
 
 private struct TimeoutGivingUp: Swift.Error {}
+
+private struct LifecycleReturnResult: Decodable {
+    let variant: String
+}
 
 private func nextAdvertise(
     _ iterator: inout AsyncStream<AdvertiseEventSnapshot>.Iterator,

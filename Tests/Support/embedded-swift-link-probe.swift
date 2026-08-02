@@ -157,6 +157,15 @@ func exerciseBorrowedMessage() -> Bool {
     return msg.eventType == .advertise && reader.readUUID("objectId") != nil
 }
 
+@inline(__always)
+func exerciseTypedWireEvent() -> Bool {
+    let payload: StaticString = #"{"payload":1}"#
+    let reader = WireReader(bytes: payload.utf8Start, length: payload.utf8CodeUnitCount)
+    guard let value = try? BorrowedWireEvent(eventType: .ioValue, from: reader) else { return false }
+    if case .ioValue = value { return true }
+    return false
+}
+
 // Main entry — call all exercise functions to ensure they are linked.
 @inline(__always)
 func runAllExercises() -> UInt8 {
@@ -185,6 +194,7 @@ func runAllExercises() -> UInt8 {
     result &+= exerciseConfig() ? 1 : 0
     result &+= exerciseByteSlice() ? 1 : 0
     result &+= exerciseBorrowedMessage() ? 1 : 0
+    result &+= exerciseTypedWireEvent() ? 1 : 0
     return result
 }
 

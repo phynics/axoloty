@@ -21,7 +21,7 @@ file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/empty_bridging_header.h "")
 
 idf_component_register(
     SRCS "component_anchor.c"
-    PRIV_REQUIRES idf_swift
+    PRIV_REQUIRES idf_swift json_core
 )
 
 idf_component_register_swift(

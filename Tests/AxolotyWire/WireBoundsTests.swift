@@ -27,7 +27,7 @@ private let familyPayloads: [(family: String, payload: [UInt8])] = [
     ("RTV", Array(#"{"object":{"id":"x"}}"#.utf8)),
     ("UPD", Array(#"{"object":{"id":"x"}}"#.utf8)),
     ("CPL", Array(#"{}"#.utf8)),
-    ("CLL", Array(#"{"operationType":"op"}"#.utf8)),
+    ("CLL", Array(#"{"parameters":{"value":1},"filter":null}"#.utf8)),
     ("RTN", Array(#"{}"#.utf8)),
 ]
 
@@ -119,6 +119,65 @@ struct TruncationBoundsTests {
     }
 }
 
+@Suite("Exhaustive wire event round trips")
+struct ExhaustiveWireEventRoundTripTests {
+    @Test("all 13 event families survive borrowed and owned encode", arguments: familyPayloads)
+    func allFamilies(_ entry: (family: String, payload: [UInt8])) throws {
+        let type: WireEventType = switch entry.family {
+        case "ADV": .advertise; case "DAD": .deadvertise; case "CHN": .channel; case "ASC": .associate
+        case "IOV": .ioValue; case "DSC": .discover; case "RSV": .resolve; case "QRY": .query
+        case "RTV": .retrieve; case "UPD": .update; case "CPL": .complete; case "CLL": .call; default: .returnEvent
+        }
+        var source = entry.payload
+        let (first, owned) = try source.withUnsafeBufferPointer { buffer in
+            guard let base = buffer.baseAddress else { throw WireDecodeError(.unexpectedEndOfInput) }
+            let reader = WireReader(bytes: base, length: buffer.count)
+            let borrowed = try BorrowedWireEvent(eventType: type, from: reader)
+            let first = try encodeEvent(borrowed)
+            return (first, borrowed.owned())
+        }
+        source = Array(repeating: 0xA5, count: source.count)
+
+        let second = try first.withUnsafeBufferPointer { output -> [UInt8] in
+            let decoded = try BorrowedWireEvent(
+                eventType: type,
+                from: WireReader(bytes: output.baseAddress!, length: output.count)
+            )
+            #expect(eventFamily(decoded) == entry.family)
+            return try encodeEvent(decoded)
+        }
+        #expect(second == first)
+
+        let ownedBytes = try encodeOwned(owned)
+        #expect(ownedBytes == first)
+        let ownedSecond = try ownedBytes.withUnsafeBufferPointer { output -> [UInt8] in
+            let decoded = try BorrowedWireEvent(
+                eventType: type,
+                from: WireReader(bytes: output.baseAddress!, length: output.count)
+            )
+            #expect(eventFamily(decoded) == entry.family)
+            return try encodeEvent(decoded)
+        }
+        #expect(ownedSecond == ownedBytes)
+    }
+}
+
+private func encodeEvent(_ event: BorrowedWireEvent) throws(WireEncodeError) -> [UInt8] {
+    var bytes = [UInt8](repeating: 0, count: 512)
+    let count = try bytes.withUnsafeMutableBufferPointer { (buffer) throws(WireEncodeError) in var writer = WireWriter(buffer: buffer.baseAddress!, capacity: buffer.count); try event.encode(to: &writer); return writer.position }
+    return Array(bytes[..<count])
+}
+
+private func encodeOwned(_ event: OwnedWireEvent) throws(WireEncodeError) -> [UInt8] {
+    var bytes = [UInt8](repeating: 0, count: 512)
+    let count = try bytes.withUnsafeMutableBufferPointer { (buffer) throws(WireEncodeError) in var writer = WireWriter(buffer: buffer.baseAddress!, capacity: buffer.count); try event.encode(to: &writer); return writer.position }
+    return Array(bytes[..<count])
+}
+
+private func eventFamily(_ event: BorrowedWireEvent) -> String {
+    switch event { case .advertise: "ADV"; case .deadvertise: "DAD"; case .channel: "CHN"; case .associate: "ASC"; case .ioValue: "IOV"; case .discover: "DSC"; case .resolve: "RSV"; case .query: "QRY"; case .retrieve: "RTV"; case .update: "UPD"; case .complete: "CPL"; case .call: "CLL"; case .returnEvent: "RTN" }
+}
+
 // MARK: - Corruption tests
 
 @Suite("Corruption bounds")
@@ -144,6 +203,18 @@ struct CorruptionBoundsTests {
 
 @Suite("Malformed input bounds")
 struct MalformedInputTests {
+    private func decodeError(_ bytes: [UInt8]) -> WireDecodeError? {
+        bytes.withUnsafeBufferPointer { buffer -> WireDecodeError? in
+            let reader = WireReader(bytes: buffer.baseAddress!, length: buffer.count)
+            do {
+                try reader.validate()
+                return nil
+            } catch {
+                return error as? WireDecodeError
+            }
+        }
+    }
+
     @Test("Empty input")
     func emptyInput() {
         #expect(!attemptDecode(family: "ADV", bytes: []))
@@ -171,6 +242,68 @@ struct MalformedInputTests {
     func invalidLiteral() {
         let bytes = Array(#"{"payload":tru}"#.utf8)
         _ = attemptDecode(family: "IOV", bytes: bytes) // must not trap
+    }
+
+    @Test("Strict lexical vectors are rejected")
+    func strictLexicalVectors() {
+        let textVectors = [
+            #"{"payload":01}"#,
+            #"{"payload":"\uD800"}"#,
+            #"{"payload":"\uDC00"}"#,
+            #"{"payload":"\x"}"#,
+            #"{"payload":truth}"#,
+            #"{"payload":[{]}}"#,
+            #"{"payload":1} trailing"#,
+            #"{"payload":1,"payload":2}"#,
+        ]
+        for vector in textVectors {
+            #expect(decodeError(Array(vector.utf8)) != nil, "Accepted invalid JSON: \(vector)")
+        }
+
+        let invalidUTF8Sequences: [[UInt8]] = [
+            [0xC0, 0x80],
+            [0xE0, 0x80, 0x80],
+            [0xED, 0xA0, 0x80],
+            [0xF0, 0x80, 0x80, 0x80],
+            [0xF4, 0x90, 0x80, 0x80],
+            [0xF5, 0x80, 0x80, 0x80],
+        ]
+        for sequence in invalidUTF8Sequences {
+            let bytes = Array(#"{"payload":""#.utf8) + sequence + Array(#""}"#.utf8)
+            let error = decodeError(bytes)
+            #expect(error != nil)
+            if let error {
+                guard case .invalidUTF8 = error.reason else {
+                    Issue.record("Expected invalidUTF8, got \(error.reason)")
+                    continue
+                }
+            }
+        }
+    }
+
+    @Test("Nesting and field index bounds are enforced")
+    func structuralBounds() {
+        let tooDeep = #"{"payload":[[[[[[[[[]]]]]]]]]}"#
+        let fields = (0...24).map { #""k\#($0)":\#($0)"# }.joined(separator: ",")
+        let tooManyFields = "{\(fields)}"
+
+        let depthError = decodeError(Array(tooDeep.utf8))
+        #expect(depthError != nil)
+        if let depthError {
+            guard case .invalidNesting = depthError.reason else {
+                Issue.record("Expected invalidNesting, got \(depthError.reason)")
+                return
+            }
+        }
+
+        let fieldError = decodeError(Array(tooManyFields.utf8))
+        #expect(fieldError != nil)
+        if let fieldError {
+            guard case .fieldIndexOverflow = fieldError.reason else {
+                Issue.record("Expected fieldIndexOverflow, got \(fieldError.reason)")
+                return
+            }
+        }
     }
 
     @Test("Duplicate fields")

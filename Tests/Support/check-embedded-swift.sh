@@ -42,6 +42,30 @@ fi
 workdir=$(mktemp -d)
 trap 'rm -rf "$workdir"' EXIT
 
+jsoncore_dir="$root/.build/checkouts/swift-json/Sources/_JSONCore"
+if [ ! -d "$jsoncore_dir" ]; then
+    echo "FAIL: pinned swift-json checkout not available at $jsoncore_dir" >&2
+    exit 1
+fi
+jsoncore_files="$jsoncore_dir"/*.swift
+jsoncore_files="$jsoncore_files $jsoncore_dir/Parser/*.swift $jsoncore_dir/SIMD/*.swift"
+
+echo "Compiling _JSONCore as Embedded Swift module..."
+if ! swiftc \
+    -target riscv32-none-none-eabi \
+    -enable-experimental-feature Embedded \
+    -enable-experimental-feature Lifetimes \
+    -enable-experimental-feature StrictConcurrency \
+    -package-name IkigaJSON \
+    -parse-as-library -Osize -wmo \
+    -module-name _JSONCore \
+    -emit-module -c $jsoncore_files \
+    -o "$workdir/JSONCore.o" \
+    -emit-module-path "$workdir/_JSONCore.swiftmodule" 2>&1; then
+    echo "FAIL: _JSONCore does not compile under Embedded Swift" >&2
+    exit 1
+fi
+
 echo "Compiling AxolotyWire as Embedded Swift module..."
 
 # Step 1: Compile AxolotyWire into a .swiftmodule + object file.
@@ -52,6 +76,7 @@ if ! swiftc \
     -Osize \
     -wmo \
     -module-name AxolotyWire \
+    -I "$workdir" \
     -emit-module \
     -emit-module-interface \
     -c $swift_files \
@@ -111,7 +136,8 @@ fi
 if ! "$RV_LINKER" -r \
     -o "$workdir/linked.o" \
     "$workdir/probe.o" \
-    "$workdir/AxolotyWire.o" 2>"$workdir/link_err.txt"; then
+    "$workdir/AxolotyWire.o" \
+    "$workdir/JSONCore.o" 2>"$workdir/link_err.txt"; then
     echo "FAIL: link failed — unresolved symbols or ABI mismatch" >&2
     cat "$workdir/link_err.txt" >&2
     exit 1

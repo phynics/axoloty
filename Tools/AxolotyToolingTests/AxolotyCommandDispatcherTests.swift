@@ -71,6 +71,9 @@ func checkPlanPrintsStableJSON() {
     ]
     #endif
     #expect(plan?.nodes.map(\.name) == expectedNames)
+    #expect(plan?.nodes.first(where: { $0.name == "lint" })?.command.arguments == [
+        "lint", "--no-cache", "--config", ".swiftlint.yml",
+    ])
 }
 
 @Test
