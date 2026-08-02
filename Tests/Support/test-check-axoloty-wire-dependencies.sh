@@ -41,14 +41,14 @@ import Swift
 EOF
 sh "$checker" "$fixture"
 
-# The approved pinned `_JSONCore` package seam passes.
+# The approved exact-version `_JSONCore` package seam passes.
 write_manifest <<'EOF'
 let package = Package(
     name: "AxolotyWire",
     dependencies: [
         .package(
             url: "https://github.com/phynics/swift-json.git",
-            revision: "ec81216be5bbe2f02f45831d05256de2af452be8",
+            exact: "2.5.3",
             traits: []
         ),
     ],

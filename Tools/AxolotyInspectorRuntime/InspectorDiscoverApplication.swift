@@ -80,6 +80,20 @@ public final class InspectorDiscoverApplication {
             }
         }
 
+        let discoveryRequest = InspectorDiscoveryRequest(
+            coreType: cmd.coreType,
+            objectType: cmd.objectType,
+            objectId: cmd.objectId
+        )
+        let discoverEvent: DiscoverEvent
+        do {
+            discoverEvent = try discoveryRequest.makeDiscoverEvent()
+        } catch {
+            writeDiagnostic("error: \(error.userFriendlyMessage)")
+            session.stop()
+            return error
+        }
+
         do {
             try await session.connect()
         } catch let error as InspectorError {
@@ -99,7 +113,6 @@ public final class InspectorDiscoverApplication {
             brokerPort: configuration.connection.port
         ))
 
-        let discoverEvent = makeDiscoverEvent(from: cmd)
         let responseStream = await session.discover(discoverEvent)
 
         let timeout = cmd.timeout.value ?? .seconds(10)
@@ -191,20 +204,5 @@ public final class InspectorDiscoverApplication {
             return .interrupted
         }
         return nil
-    }
-
-    private func makeDiscoverEvent(from cmd: DiscoverCommand) -> DiscoverEvent {
-        if let objectIdString = cmd.objectId,
-           let uuid = CoatyUUID(uuidString: objectIdString) {
-            return DiscoverEvent.with(objectId: uuid)
-        }
-        if let objectTypes = cmd.objectType.map({ [$0] }) {
-            return DiscoverEvent.with(objectTypes: objectTypes)
-        }
-        if let coreTypeString = cmd.coreType,
-           let coreType = CoreType(rawValue: coreTypeString) {
-            return DiscoverEvent.with(coreTypes: [coreType])
-        }
-        return DiscoverEvent.with(coreTypes: [])
     }
 }

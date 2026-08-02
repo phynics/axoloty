@@ -58,9 +58,9 @@ export function validateWirePackage(packageDirectory) {
   const manifest = fs.readFileSync(manifestPath, "utf8");
   const structure = codeMask(manifest);
   const packageDependencies = [...structure.matchAll(/\.package\s*\(/g)];
-  const approvedPackage = /\.package\s*\(\s*url\s*:\s*"https:\/\/github\.com\/phynics\/swift-json\.git"\s*,\s*revision\s*:\s*"ec81216be5bbe2f02f45831d05256de2af452be8"\s*,\s*traits\s*:\s*\[\s*\]\s*\)/s;
+  const approvedPackage = /\.package\s*\(\s*url\s*:\s*"https:\/\/github\.com\/phynics\/swift-json\.git"\s*,\s*exact\s*:\s*"2\.5\.3"\s*,\s*traits\s*:\s*\[\s*\]\s*\)/s;
   if (packageDependencies.length > 1 || (packageDependencies.length === 1 && !approvedPackage.test(manifest))) {
-    errors.push("error: AxolotyWire may declare only pinned phynics/swift-json ec81216be5bbe2f02f45831d05256de2af452be8 with disabled traits");
+    errors.push("error: AxolotyWire may declare only exact phynics/swift-json 2.5.3 with disabled traits");
   }
   const blocks = [];
   for (const match of structure.matchAll(/\.target\s*\(/g)) {

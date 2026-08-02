@@ -261,7 +261,11 @@ public struct AxolotyCommandDispatcher: Sendable {
         do {
             let source = environment["AXOLOTY_SNAPSHOT_SOURCE"] ?? "Tests/WireCompatibility/Fixtures"
             let destination = environment["AXOLOTY_SNAPSHOT_OUTPUT"] ?? ".testing/release-snapshots"
-            let forwardedEnvironment = ["AXOLOTY_IMAGE_IDENTITY", "AXOLOTY_GIT_COMMIT", "AXOLOTY_GIT_CLEAN"]
+            let forwardedEnvironment = [
+                "AXOLOTY_IMAGE_IDENTITY", "AXOLOTY_GIT_COMMIT", "AXOLOTY_GIT_CLEAN",
+                "AXOLOTY_CONSUMER_REPOSITORY_URL", "AXOLOTY_CONSUMER_VERSION",
+                "AXOLOTY_CONSUMER_LOCAL", "AXOLOTY_CONSUMER_LOCAL_VERSION",
+            ]
                 .reduce(into: [String: String]()) { values, name in
                     values[name] = environment[name]
                 }
@@ -320,6 +324,12 @@ public struct AxolotyCommandDispatcher: Sendable {
 
     private func checkpointResult(hardware: Bool) -> AxolotyCommandResult {
         let plan: AxolotyCheckPlan
+        let consumerEnvironment = [
+            "AXOLOTY_CONSUMER_REPOSITORY_URL", "AXOLOTY_CONSUMER_VERSION",
+            "AXOLOTY_CONSUMER_LOCAL", "AXOLOTY_CONSUMER_LOCAL_VERSION",
+        ].reduce(into: [String: String]()) { values, name in
+            values[name] = environment[name]
+        }
         if hardware {
             let device = environment["AXOLOTY_DEVICE"] ?? "/dev/ttyACM0"
             guard fileSystem.exists(atPath: device) else {
@@ -328,9 +338,12 @@ public struct AxolotyCommandDispatcher: Sendable {
                     exitCode: 1
                 )
             }
-            plan = AxolotyCheckPlan.checkpointHardware(device: device)
+            plan = AxolotyCheckPlan.checkpointHardware(
+                device: device,
+                consumerEnvironment: consumerEnvironment
+            )
         } else {
-            plan = AxolotyCheckPlan.checkpoint
+            plan = AxolotyCheckPlan.checkpoint(consumerEnvironment: consumerEnvironment)
         }
         do {
             let planned = try AxolotyCheckPlanner().plan(plan.nodes)

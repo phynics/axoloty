@@ -242,6 +242,8 @@ func releaseSnapshotsGenerateThenVerifyConfiguredBundle() throws {
             "AXOLOTY_IMAGE_IDENTITY": "sha256:test",
             "AXOLOTY_GIT_COMMIT": "abc123",
             "AXOLOTY_GIT_CLEAN": "true",
+            "AXOLOTY_CONSUMER_REPOSITORY_URL": "file:///tmp/axoloty.git",
+            "AXOLOTY_CONSUMER_VERSION": "9.9.9",
         ]
     )
 
@@ -249,13 +251,16 @@ func releaseSnapshotsGenerateThenVerifyConfiguredBundle() throws {
     let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
 
     #expect(result.exitCode == 0)
-    #expect(manifest.results.map(\.name) == ["release-snapshots-generate", "release-snapshots-verify"])
+    #expect(manifest.results.map(\.name) == ["release-snapshots-generate", "release-snapshots-verify", "release-semver-consumer"])
     #expect(runner.commands.map(\.arguments) == [
         ["Tests/Support/release-snapshots.mjs", "generate", "fixtures", "artifacts"],
         ["Tests/Support/release-snapshots.mjs", "verify", "artifacts"],
+        [],
     ])
     #expect(runner.commands.first?.environment["AXOLOTY_IMAGE_IDENTITY"] == "sha256:test")
     #expect(runner.commands.first?.environment["AXOLOTY_GIT_COMMIT"] == "abc123")
+    #expect(runner.commands.last?.executable == "Tests/Support/check-axoloty-semver-consumer.sh")
+    #expect(runner.commands.last?.environment["AXOLOTY_CONSUMER_VERSION"] == "9.9.9")
 }
 
 private final class RecordingSequenceRunner: AxolotyCheckCommandRunning, @unchecked Sendable {

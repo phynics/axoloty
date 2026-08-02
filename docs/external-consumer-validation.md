@@ -2,13 +2,22 @@
 
 ## Result
 
-Both `Axoloty` and `AxolotyWire` are consumable as external Swift Package
-Manager dependencies. Clean temporary packages resolve, build (debug and
-release), and execute minimal API usage.
+Both `Axoloty` and `AxolotyWire` are published products of the root package.
+`Tests/Support/check-axoloty-semver-consumer.sh` creates a clean consumer with
+a `from:` semantic-version requirement, then builds both product imports in
+debug and release. By default, the gate creates a temporary bare `file://`
+remote and synthetic semver tag so pre-release checkpoints test the stable
+version topology. Set `AXOLOTY_CONSUMER_LOCAL=0` together with
+`AXOLOTY_CONSUMER_REPOSITORY_URL` and `AXOLOTY_CONSUMER_VERSION` to validate a
+published release.
+
+The wire boundary pins `phynics/swift-json` exactly at `2.5.3`; that release
+is published from commit `ec81216be5bbe2f02f45831d05256de2af452be8`, so
+the checked-in root `Package.resolved` can be regenerated remotely.
 
 ## Axoloty consumer
 
-**Package dependency:**
+**Package dependency (standalone development fixture only):**
 ```swift
 .package(path: "/path/to/axoloty")
 // Target:

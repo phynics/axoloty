@@ -72,7 +72,8 @@ to resolve the host runtime graph, which is expected for host consumers.
 
 ## Dependency rule for AxolotyWire
 
-AxolotyWire uses the pinned `phynics/swift-json` `ec81216` fork with the
+AxolotyWire uses exact `phynics/swift-json` version `2.5.3`, published from
+the upstream `ec81216` fork commit, with the
 `IkigaJSONCore` product and disabled `FoundationSupport` trait. The fork's
 swift-nio dependency may therefore appear during resolution, but NIO targets
 must not be built or linked by the standalone wire fixture. The independent

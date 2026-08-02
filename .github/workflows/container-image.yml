@@ -59,6 +59,8 @@ jobs:
             --file .devcontainer/Dockerfile \
             --tag "$image_tag" \
             --tag "$IMAGE_BASE:swift-6.3" \
+            --cache-from "type=registry,ref=$IMAGE_BASE:buildcache" \
+            --cache-to "type=registry,ref=$IMAGE_BASE:buildcache,mode=max" \
             --provenance=true \
             --sbom=true \
             --push .

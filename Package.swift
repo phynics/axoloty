@@ -15,6 +15,10 @@ let package = Package(
             name: "Axoloty",
             targets: ["Axoloty"]
         ),
+        .library(
+            name: "AxolotyWire",
+            targets: ["AxolotyWire"]
+        ),
         .executable(
             name: "axoloty-tool",
             targets: ["AxolotyCLI"]
@@ -33,7 +37,6 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(path: "Packages/AxolotyWire"),
         .package(url: "https://github.com/swift-server-community/mqtt-nio.git", from: "2.13.0"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.101.2"),
         .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.37.1"),
@@ -42,16 +45,23 @@ let package = Package(
         .package(url: "https://github.com/FlineDev/ErrorKit.git", exact: "1.2.1"),
         .package(
             url: "https://github.com/phynics/swift-json.git",
-            revision: "ec81216be5bbe2f02f45831d05256de2af452be8"
+            exact: "2.5.3"
         ),
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", exact: "0.12.1"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin.git", from: "1.5.0"),
     ],
     targets: [
         .target(
+            name: "AxolotyWire",
+            dependencies: [
+                .product(name: "IkigaJSONCore", package: "swift-json"),
+            ],
+            path: "Packages/AxolotyWire/Sources/AxolotyWire"
+        ),
+        .target(
             name: "Axoloty",
             dependencies: [
-                .product(name: "AxolotyWire", package: "AxolotyWire"),
+                "AxolotyWire",
                 .product(name: "MQTTNIO", package: "mqtt-nio"),
                 .product(name: "NIO", package: "swift-nio"),
                 .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
@@ -67,7 +77,7 @@ let package = Package(
             name: "AxolotyTests",
             dependencies: [
                 "Axoloty",
-                .product(name: "AxolotyWire", package: "AxolotyWire"),
+                "AxolotyWire",
                 .product(name: "IkigaJSON", package: "swift-json"),
             ],
             path: "Tests",
@@ -109,7 +119,7 @@ let package = Package(
         .testTarget(
             name: "AxolotyWireTests",
             dependencies: [
-                .product(name: "AxolotyWire", package: "AxolotyWire"),
+                "AxolotyWire",
             ],
             path: "Tests/AxolotyWire"
         ),
@@ -193,7 +203,7 @@ let package = Package(
         .executableTarget(
             name: "AxolotyWireConsumer",
             dependencies: [
-                .product(name: "AxolotyWire", package: "AxolotyWire"),
+                "AxolotyWire",
             ],
             path: "Benchmarks/Consumers/AxolotyWireConsumer"
         ),
@@ -226,7 +236,7 @@ let package = Package(
         .executableTarget(
             name: "WireBenchmark",
             dependencies: [
-                .product(name: "AxolotyWire", package: "AxolotyWire"),
+                "AxolotyWire",
             ],
             path: "Benchmarks/WireBenchmark"
         ),

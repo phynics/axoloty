@@ -31,6 +31,7 @@ jobs:
       - name: Compute cache key
         run: |
           echo "SWIFT_CACHE_KEY=swiftpm-6.3-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile') }}" >> "$GITHUB_ENV"
+          echo "SWIFT_BUILD_CACHE_KEY=swift-build-coverage-6.3-linux-${{ hashFiles('Package.resolved', '**/Package.swift', '.devcontainer/Dockerfile') }}" >> "$GITHUB_ENV"
 
       - name: Setup container image
         uses: ./.github/actions/setup-container
@@ -47,6 +48,16 @@ jobs:
           key: ${{ env.SWIFT_CACHE_KEY }}
           restore-keys: |
             swiftpm-6.3-linux-
+
+      # Keep this separate from the download cache: SwiftPM can incrementally
+      # rebuild changed project sources while reusing compiled dependencies.
+      - name: Restore Swift coverage build cache
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: .build
+          key: ${{ env.SWIFT_BUILD_CACHE_KEY }}
+          restore-keys: |
+            swift-build-coverage-6.3-linux-
 
       - name: Prepare changed-line diff
         if: github.event_name == 'pull_request'
@@ -71,6 +82,13 @@ jobs:
         with:
           path: .swiftpm-cache
           key: ${{ env.SWIFT_CACHE_KEY }}
+
+      - name: Save Swift coverage build cache
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: .build
+          key: ${{ env.SWIFT_BUILD_CACHE_KEY }}
 
       - name: Upload coverage summary
         if: always()

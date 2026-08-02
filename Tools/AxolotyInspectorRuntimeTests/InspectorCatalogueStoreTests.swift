@@ -92,6 +92,38 @@ func discoveryRequestHasSelectorWhenAnyFieldProvided() {
 }
 
 @Test
+func discoveryRequestRejectsInvalidTypedSelectors() {
+    let missingSelector = InspectorDiscoveryRequest()
+    let invalidUUID = InspectorDiscoveryRequest(objectId: "not-a-uuid")
+    let invalidCoreType = InspectorDiscoveryRequest(coreType: "UnknownCoreType")
+
+    #expect(throws: InspectorError.invalidArguments(reason: "at least one selector (coreType, objectType, or objectId) is required")) {
+        try missingSelector.makeDiscoverEvent()
+    }
+    #expect(throws: InspectorError.invalidArguments(reason: "objectId must be a valid UUID: not-a-uuid")) {
+        try invalidUUID.makeDiscoverEvent()
+    }
+    #expect(throws: InspectorError.invalidArguments(reason: "coreType must be a known core type: UnknownCoreType")) {
+        try invalidCoreType.makeDiscoverEvent()
+    }
+}
+
+@Test
+func discoveryRequestPreservesSelectorPrecedenceForValidSelectors() throws {
+    let request = InspectorDiscoveryRequest(
+        coreType: "Identity",
+        objectType: "coaty.object.Identity",
+        objectId: "00000000-0000-4000-8000-000000000001"
+    )
+
+    let event = try request.makeDiscoverEvent()
+
+    #expect(event.data.objectId?.string == "00000000-0000-4000-8000-000000000001")
+    #expect(event.data.objectTypes == nil)
+    #expect(event.data.coreTypes == nil)
+}
+
+@Test
 func catalogueSnapshotIsCodable() throws {
     let snapshot = InspectorCatalogueSnapshot(
         complete: false,
