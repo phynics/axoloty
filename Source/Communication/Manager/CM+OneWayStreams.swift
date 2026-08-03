@@ -33,9 +33,10 @@ extension CommunicationManager {
 
     /// Observes incoming Call snapshots for a specific operation.
     ///
-    /// Use the snapshot's ``CallEventSnapshot/correlationId`` to publish a
-    /// ``ReturnEvent`` response via
-    /// ``CommunicationManager/publishReturn(event:correlationId:)``.
+    /// This low-level stream remains available for consumers that need raw,
+    /// multi-owner Call observation. Providers that want owned correlation,
+    /// cancellation, filtering, and Return publication should use
+    /// ``CommunicationManager/registerCallHandler(operation:context:handler:)``.
     ///
     /// - Parameter operation: The remote operation name to observe.
     /// - Throws: ``AxolotyError.invalidArgument(argument:reason:)`` when

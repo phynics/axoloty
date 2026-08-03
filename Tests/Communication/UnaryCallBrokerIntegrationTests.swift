@@ -22,10 +22,22 @@ struct UnaryCallBrokerIntegrationTests {
         try await providerA.startAndWaitUntilReady()
         try await providerB.startAndWaitUntilReady()
 
-        let streamA = try await providerA.observeCallStream(operation: "selected-provider")
-        let streamB = try await providerB.observeCallStream(operation: "selected-provider")
-        let responderA = unaryResponder(manager: providerA, stream: streamA)
-        let responderB = unaryResponder(manager: providerB, stream: streamB)
+        let registrationA = try await providerA.registerCallHandler(
+            operation: "selected-provider",
+            context: providerA.identity
+        ) { _ in
+            .success(result: #""provider-a""#)
+        }
+        let registrationB = try await providerB.registerCallHandler(
+            operation: "selected-provider",
+            context: providerB.identity
+        ) { _ in
+            .success(result: #""provider-b""#)
+        }
+        defer {
+            registrationA.cancel()
+            registrationB.cancel()
+        }
 
         let context = ObjectFilter(condition: ObjectFilterCondition(
             property: ObjectFilterProperty("name"),
@@ -40,29 +52,6 @@ struct UnaryCallBrokerIntegrationTests {
 
         #expect(result.result == #""provider-b""#)
         #expect(result.sourceId == providerB.identity.objectId.string)
-        _ = await responderA.value
-        _ = await responderB.value
-    }
-}
-
-@MainActor
-private func unaryResponder(
-    manager: CommunicationManager,
-    stream: AsyncStream<CallEventSnapshot>
-) -> Task<Void, Never> {
-    Task {
-        var iterator = stream.makeAsyncIterator()
-        guard let call = await iterator.next(),
-              let correlationId = call.correlationId,
-              let filterJSON = call.filter,
-              let filter = try? JSONDecoder().decode(ContextFilter.self, from: Data(filterJSON.utf8)),
-              ObjectMatcher.matchesFilter(obj: manager.identity, filter: filter) else {
-            return
-        }
-        manager.publishReturn(
-            event: ReturnEvent.with(result: #""\#(manager.identity.name)""#, executionInfo: nil),
-            correlationId: correlationId
-        )
     }
 }
 

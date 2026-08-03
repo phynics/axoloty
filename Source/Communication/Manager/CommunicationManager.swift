@@ -28,6 +28,7 @@ public class CommunicationManager {
 
     private var isDisposed = false
     internal var lifecycleTasks: [Task<Void, Never>] = []
+    internal var callHandlerRegistrations: [UUID: CallHandlerRegistration] = [:]
 
     /// Gets the namespace for communication as specified in the configuration
     /// options. Returns the default namespace used, if no namespace has been
@@ -420,6 +421,10 @@ public class CommunicationManager {
     /// Gracefully ends the client.
     /// - NOTE: This triggers explicit identity deadvertisements.
     private func endClient() {
+        let registrations = Array(callHandlerRegistrations.values)
+        registrations.forEach { $0.cancel() }
+        callHandlerRegistrations.removeAll()
+
         // Gracefully send deadvertise messages to others.
         // NOTE: This does not change or adjust the last will.
         deadvertiseIdentity()

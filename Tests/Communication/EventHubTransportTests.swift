@@ -897,6 +897,160 @@ struct BroadcastTransportTests {
     }
 
     @Test
+    func callHandlerFiltersContextAndPublishesOneCorrelatedResult() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        try await bringOnline(manager, client: client)
+        let invocations = LockedCounter()
+        let registration = try await manager.registerCallHandler(
+            operation: "provide",
+            context: manager.identity
+        ) { request in
+            invocations.increment()
+            return .success(result: request.parameters ?? "null", executionInfo: #"{"provider":"test"}"#)
+        }
+        defer { registration.cancel() }
+
+        let matchingFilter = ObjectFilter(condition: ObjectFilterCondition(
+            property: ObjectFilterProperty("name"),
+            expression: .equals(FilterOperand(manager.identity.name))
+        ))
+        let filterData = try JSONEncoder().encode(matchingFilter)
+        let filter = String(decoding: filterData, as: UTF8.self)
+        let request = CallEventSnapshot(
+            sourceId: "caller",
+            correlationId: "correlation-1",
+            operation: "provide",
+            parameters: #"{"value":41}"#,
+            filter: filter
+        )
+        await client.emitCall(request, operation: "provide")
+        await client.emitCall(request, operation: "provide")
+
+        let publication = try await waitForReturnPublication(on: client)
+        #expect(publication.topic.hasSuffix("/correlation-1"))
+        let event = try JSONDecoder().decode(ReturnEvent.self, from: Data(publication.message.utf8))
+        #expect(event.data.result == #"{"value":41}"#)
+        #expect(event.data.executionInfo == #"{"provider":"test"}"#)
+        #expect(invocations.value == 1)
+
+        let nonmatchingFilter = ObjectFilter(condition: ObjectFilterCondition(
+            property: ObjectFilterProperty("name"),
+            expression: .equals("someone-else")
+        ))
+        let nonmatchingData = try JSONEncoder().encode(nonmatchingFilter)
+        await client.emitCall(
+            CallEventSnapshot(
+                correlationId: "correlation-2",
+                operation: "provide",
+                filter: String(decoding: nonmatchingData, as: UTF8.self)
+            ),
+            operation: "provide"
+        )
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(returnPublications(on: client).count == 1)
+        #expect(invocations.value == 1)
+    }
+
+    @Test
+    func callHandlerMapsFailuresAndMalformedRequestsDeterministically() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        try await bringOnline(manager, client: client)
+        let registration = try await manager.registerCallHandler(operation: "fail") { request in
+            if request.parameters == #"{"throw":true}"# {
+                throw AxolotyError.runtime(code: .notRegistered, reason: "Provider dependency is unavailable")
+            }
+            return .failure(code: 7, message: "Rejected", executionInfo: nil)
+        }
+        defer { registration.cancel() }
+
+        await client.emitCall(
+            CallEventSnapshot(correlationId: "structured", operation: "fail"),
+            operation: "fail"
+        )
+        let structured = try await waitForReturnPublication(on: client, count: 1)
+        let structuredEvent = try JSONDecoder().decode(ReturnEvent.self, from: Data(structured.message.utf8))
+        #expect(structuredEvent.data.error?.code == 7)
+        #expect(structuredEvent.data.error?.message == "Rejected")
+
+        await client.emitCall(
+            CallEventSnapshot(correlationId: "thrown", operation: "fail", parameters: #"{"throw":true}"#),
+            operation: "fail"
+        )
+        let thrown = try await waitForReturnPublication(on: client, count: 2)
+        let thrownEvent = try JSONDecoder().decode(ReturnEvent.self, from: Data(thrown.message.utf8))
+        #expect(thrownEvent.data.error?.code == -32000)
+        #expect(thrownEvent.data.error?.message == "Provider dependency is unavailable")
+
+        await client.emitCall(
+            CallEventSnapshot(correlationId: "malformed", operation: "fail", filter: "{"),
+            operation: "fail"
+        )
+        let malformed = try await waitForReturnPublication(on: client, count: 3)
+        let malformedEvent = try JSONDecoder().decode(ReturnEvent.self, from: Data(malformed.message.utf8))
+        #expect(malformedEvent.data.error?.code == -32602)
+        #expect(malformedEvent.data.error?.message == "Malformed context filter")
+
+        await client.emitCall(
+            CallEventSnapshot(correlationId: "malformed-parameters", operation: "fail", parameters: "{"),
+            operation: "fail"
+        )
+        let malformedParameters = try await waitForReturnPublication(on: client, count: 4)
+        let malformedParametersEvent = try JSONDecoder().decode(
+            ReturnEvent.self,
+            from: Data(malformedParameters.message.utf8)
+        )
+        #expect(malformedParametersEvent.data.error?.code == -32602)
+        #expect(malformedParametersEvent.data.error?.message == "Malformed Call parameters")
+
+        await client.emitCall(CallEventSnapshot(operation: "fail"), operation: "fail")
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(returnPublications(on: client).count == 4)
+    }
+
+    @Test
+    func callHandlerCancellationShutdownAndOfflineCompletionPreventPublication() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        try await bringOnline(manager, client: client)
+        let cancellations = LockedCounter()
+        let registration = try await manager.registerCallHandler(operation: "slow") { _ in
+            do {
+                try await Task.sleep(for: .seconds(5))
+            } catch {
+                cancellations.increment()
+                throw error
+            }
+            return .success(result: "true")
+        }
+        await client.emitCall(
+            CallEventSnapshot(correlationId: "cancelled", operation: "slow"),
+            operation: "slow"
+        )
+        try await Task.sleep(for: .milliseconds(25))
+        registration.cancel()
+        try await Task.sleep(for: .milliseconds(25))
+        #expect(cancellations.value == 1)
+        #expect(returnPublications(on: client).isEmpty)
+
+        let offlineRegistration = try await manager.registerCallHandler(operation: "offline") { _ in
+            try await Task.sleep(for: .milliseconds(30))
+            return .success(result: "true")
+        }
+        await client.emitCall(
+            CallEventSnapshot(correlationId: "offline", operation: "offline"),
+            operation: "offline"
+        )
+        await client.simulateState(.offline)
+        try await Task.sleep(for: .milliseconds(75))
+        #expect(returnPublications(on: client).isEmpty)
+
+        manager.stop()
+        #expect(offlineRegistration.isCancelled)
+    }
+
+    @Test
     func publishCallStillDeliversMultipleResponses() async throws {
         let client = FakeCommunicationClient(delegate: FakeStartable())
         let manager = makeManager(client: client)
@@ -997,6 +1151,27 @@ private func waitForCommandCount(on client: FakeCommunicationClient, count: Int)
     throw AxolotyError.runtime(code: .timedOut, reason: "Test subscription command was not observed")
 }
 
+private func returnPublications(on client: FakeCommunicationClient) -> [(topic: String, message: String)] {
+    client.publishedMessages.filter {
+        $0.topic.split(separator: "/").dropFirst(3).first == "RTN"
+    }
+}
+
+@MainActor
+private func waitForReturnPublication(
+    on client: FakeCommunicationClient,
+    count: Int = 1
+) async throws -> (topic: String, message: String) {
+    for _ in 0 ..< 40 {
+        let publications = returnPublications(on: client)
+        if publications.count >= count, let publication = publications.last {
+            return publication
+        }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    throw AxolotyError.runtime(code: .timedOut, reason: "Test Return publication was not observed")
+}
+
 private func responseTopic(_ correlationId: String) -> String {
     TopicBuilder.subscribeTopic(eventType: .returnEvent, namespace: DEFAULT_NAMESPACE, correlationId: correlationId)
 }
@@ -1009,6 +1184,17 @@ private func unaryResponse(_ event: ReturnEvent, correlationId: String) -> Respo
 
 private final class FakeStartable: CommunicationClientDelegate {
     func didReceiveStart() {}
+}
+
+private final class LockedCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage = 0
+
+    var value: Int { lock.withLock { storage } }
+
+    func increment() {
+        lock.withLock { storage += 1 }
+    }
 }
 
 private final class FakeCommunicationClient: CommunicationClient {
