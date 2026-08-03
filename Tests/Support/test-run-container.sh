@@ -11,7 +11,24 @@ unset BUILD_LOCK
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 TEMP_DIR=$(mktemp -d)
-trap 'rm -rf "$TEMP_DIR"' EXIT
+socket_server=""
+
+cleanup() {
+    if [ -n "$socket_server" ]; then
+        kill "$socket_server" 2>/dev/null || true
+        wait "$socket_server" 2>/dev/null || true
+    fi
+    rm -rf "$TEMP_DIR"
+}
+
+trap cleanup EXIT
+
+common_git_dir=$(git -C "$ROOT_DIR" rev-parse --git-common-dir 2>/dev/null || true)
+if [ -n "$common_git_dir" ]; then
+    expected_repository_name=$(basename "${common_git_dir%/.git}")
+else
+    expected_repository_name=$(basename "$ROOT_DIR")
+fi
 
 build_dir="$TEMP_DIR/build"
 lock_file="${build_dir}.lock"
@@ -66,8 +83,7 @@ cat > "$fake_bin/fake-podman" <<SH
 #!/bin/sh
 printf '%s\n' "\$*" >> "$capture"
 if [ "\$1" = "system" ] && [ "\$2" = "service" ]; then
-    python3 -c 'import socket,sys,time; p=sys.argv[1][7:]; s=socket.socket(socket.AF_UNIX); s.bind(p); s.listen(1); time.sleep(300)' "\$4"
-    exit 0
+    exec python3 -c 'import socket,sys,time; p=sys.argv[1][7:]; s=socket.socket(socket.AF_UNIX); s.bind(p); s.listen(1); time.sleep(300)' "\$4"
 fi
 if [ "\$1" = "image" ] && [ "\$2" = "inspect" ]; then
     if [ "\${FAKE_RUNTIME_ROOTFUL:-0}" = "1" ]; then
@@ -160,7 +176,7 @@ grep -q -- "CONTAINER_RUNTIME=$ROOT_DIR/.devcontainer/container-runtime-remote.s
 grep -q -- "DOCKER_HOST=unix://$host_socket" "$capture"
 grep -q -- "BUILD_DIR=$build_dir" "$capture"
 grep -q -- "SPM_CACHE_DIR=$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux" "$capture"
-grep -q -- "REPOSITORY_NAME=axoloty" "$capture"
+grep -q -- "REPOSITORY_NAME=$expected_repository_name" "$capture"
 grep -q -- "TMPDIR=$ROOT_DIR/.testing/tmp" "$capture"
 grep -Eq -- 'WIRE_RUN_ID=[0-9]+-[0-9]+' "$capture"
 grep -q -- "$build_dir:$build_dir" "$capture"
@@ -169,6 +185,7 @@ grep -q -- '--security-opt label=disable' "$capture"
 [ -S "$host_socket" ]
 kill "$socket_server" 2>/dev/null || true
 wait "$socket_server" 2>/dev/null || true
+socket_server=""
 
 # CI already uses worktree-local cache paths. Each destination must appear
 # once rather than as both a same-path mount and a worktree-relative alias.
