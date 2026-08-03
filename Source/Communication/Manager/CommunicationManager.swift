@@ -493,7 +493,16 @@ public class CommunicationManager {
 
         deadvertiseEvent.sourceId = self.identity.objectId
 
-        return (lastWillTopic, deadvertiseEvent.json)
+        do {
+            let bytes = try HostWireAdapter.encodeEvent(deadvertiseEvent)
+            return (lastWillTopic, String(decoding: bytes, as: UTF8.self))
+        } catch {
+            log.error("Failed to encode MQTT last will", metadata: [
+                "topic": .string(lastWillTopic),
+                "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+            ])
+            return (lastWillTopic, "{}")
+        }
     }
 
     // MARK: - Identity and IoNodes lifecycle management.
