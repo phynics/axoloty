@@ -12,6 +12,14 @@ import AxolotyWire
 /// `JSONObject(data:)` which allocates a full JSON tree.
 enum WirePayloadExtractor {
 
+    /// Extracts raw elements from an owned JSON array.
+    static func arrayElements(from bytes: [UInt8]) -> [String]? {
+        bytes.withUnsafeBufferPointer { buffer in
+            guard let base = buffer.baseAddress else { return nil }
+            return arrayElements(from: ByteSlice(bytes: base, length: buffer.count))
+        }
+    }
+
     /// Decodes a `Decodable` value (e.g. a JSON array of strings or a
     /// ``CoatyObjectSnapshot``) from a borrowed byte slice using
     /// Foundation's `JSONDecoder`.

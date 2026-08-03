@@ -89,10 +89,7 @@ public struct CoatyObjectSnapshot: Codable, Equatable, Sendable {
     /// Decodes the preserved payload into the registered concrete Coaty type.
     public func decodeObject() -> CoatyObject? {
         guard let payload else { return nil }
-        guard let decoded = try? JSONDecoder().decode(AnyCoatyObjectDecodable.self, from: Data(payload.utf8)) else {
-            return nil
-        }
-        return decoded.object
+        return try? HostWireAdapter.decodeObject(from: Array(payload.utf8))
     }
 
     /// Decodes the preserved payload into a typed `Decodable` value.

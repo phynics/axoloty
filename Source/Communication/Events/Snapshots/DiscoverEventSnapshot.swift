@@ -54,24 +54,14 @@ extension DiscoverEventSnapshot {
     /// Decodes a Discover snapshot from a parsed MQTT message via a single
     /// ``WireReader`` pass.
     init?(parsedMQTTMessage: ParsedMQTTMessage) {
-        var payload = parsedMQTTMessage.payload
-        guard let decoded = payload.withUTF8({ buf -> (String?, String?, [String]?, [CoreType]?)? in
-            guard let base = buf.baseAddress else { return nil }
-            let reader = WireReader(bytes: base, length: buf.count)
-            guard let wire = try? DiscoverWireData(from: reader) else { return nil }
-            let externalId = wire.externalId?.asString()
-            let objectId = wire.objectId?.asString()
-            let objectTypes = wire.objectTypes.flatMap { WirePayloadExtractor.decodeJSON([String].self, from: $0) }
-            let coreTypes = wire.coreTypes.flatMap { WirePayloadExtractor.decodeJSON([CoreType].self, from: $0) }
-            return (externalId, objectId, objectTypes, coreTypes)
-        }) else { return nil }
+        guard case .discover(let wire) = parsedMQTTMessage.event else { return nil }
         self.init(
             sourceId: parsedMQTTMessage.sourceId,
             correlationId: parsedMQTTMessage.correlationId,
-            externalId: decoded.0,
-            objectId: decoded.1,
-            objectTypes: decoded.2,
-            coreTypes: decoded.3
+            externalId: wire.externalId.flatMap { String(bytes: $0, encoding: .utf8) },
+            objectId: wire.objectId.flatMap { String(bytes: $0, encoding: .utf8) },
+            objectTypes: wire.objectTypes.flatMap { try? JSONDecoder().decode([String].self, from: Data($0)) },
+            coreTypes: wire.coreTypes.flatMap { try? JSONDecoder().decode([CoreType].self, from: Data($0)) }
         )
     }
 }

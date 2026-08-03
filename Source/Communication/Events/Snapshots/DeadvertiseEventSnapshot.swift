@@ -30,13 +30,8 @@ extension DeadvertiseEventSnapshot {
     /// bytes (preserving the original UUID strings without normalizing them
     /// through ``UUID16``).
     init?(parsedMQTTMessage: ParsedMQTTMessage) {
-        var payload = parsedMQTTMessage.payload
-        guard let objectIds = payload.withUTF8({ buf -> [String]? in
-            guard let base = buf.baseAddress else { return nil }
-            let reader = WireReader(bytes: base, length: buf.count)
-            guard let wire = try? DeadvertiseWireData(from: reader) else { return nil }
-            return WirePayloadExtractor.decodeJSON([String].self, from: wire.objectIds)
-        }) else { return nil }
+        guard case .deadvertise(let wire) = parsedMQTTMessage.event,
+              let objectIds = try? JSONDecoder().decode([String].self, from: Data(wire.objectIds)) else { return nil }
         self.init(sourceId: parsedMQTTMessage.sourceId, objectIds: objectIds)
     }
 }

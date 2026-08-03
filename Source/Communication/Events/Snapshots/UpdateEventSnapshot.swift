@@ -42,15 +42,8 @@ extension UpdateEventSnapshot {
     /// ``WireReader`` pass, decoding the object's ``CoatyObjectSnapshot``
     /// from the borrowed `object` bytes.
     init?(parsedMQTTMessage: ParsedMQTTMessage) {
-        var payload = parsedMQTTMessage.payload
-        guard let object = payload.withUTF8({ buf -> CoatyObjectSnapshot? in
-            guard let base = buf.baseAddress else { return nil }
-            let reader = WireReader(bytes: base, length: buf.count)
-            guard let wire = try? UpdateWireData(from: reader) else { return nil }
-            let objectJSON = wire.object.asString()
-            guard let coatyObject: CoatyObjectSnapshot = try? PayloadCoder.decode(objectJSON) else { return nil }
-            return coatyObject.withPayload(objectJSON)
-        }) else { return nil }
+        guard case .update(let wire) = parsedMQTTMessage.event,
+              let object = try? HostWireAdapter.snapshot(from: wire.object) else { return nil }
         self.init(
             sourceId: parsedMQTTMessage.sourceId,
             eventTypeFilter: parsedMQTTMessage.eventTypeFilter,

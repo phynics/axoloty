@@ -12,13 +12,16 @@ public struct ResponseEventSnapshot: Codable, Equatable, Sendable {
     public let correlationId: String?
     /// The response payload as raw JSON text.
     public let payload: String
+    /// A hydrated object carried by Resolve or Complete, when present.
+    public let object: CoatyObjectSnapshot?
 
     /// Creates a response snapshot.
-    public init(eventType: String, sourceId: String?, correlationId: String?, payload: String) {
+    public init(eventType: String, sourceId: String?, correlationId: String?, payload: String, object: CoatyObjectSnapshot? = nil) {
         self.eventType = eventType
         self.sourceId = sourceId
         self.correlationId = correlationId
         self.payload = payload
+        self.object = object
     }
 
     /// Decodes the raw JSON payload into a typed `Decodable` value.

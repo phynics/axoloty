@@ -56,20 +56,13 @@ extension AdvertiseEventSnapshot {
     ///
     /// - Parameter parsedMQTTMessage: the parsed transport message.
     init?(parsedMQTTMessage: ParsedMQTTMessage) {
-        var payload = parsedMQTTMessage.payload
-        guard let decoded = payload.withUTF8({ buf -> (CoatyObjectSnapshot, String?)? in
-            guard let base = buf.baseAddress else { return nil }
-            let reader = WireReader(bytes: base, length: buf.count)
-            guard let wire = try? AdvertiseWireData(from: reader) else { return nil }
-            let objectJSON = wire.object.asString()
-            guard let coatyObject: CoatyObjectSnapshot = try? PayloadCoder.decode(objectJSON) else { return nil }
-            return (coatyObject.withPayload(objectJSON), wire.privateData?.asString())
-        }) else { return nil }
+        guard case .advertise(let wire) = parsedMQTTMessage.event,
+              let object = try? HostWireAdapter.snapshot(from: wire.object) else { return nil }
         self.init(
             sourceId: parsedMQTTMessage.sourceId,
             eventTypeFilter: parsedMQTTMessage.eventTypeFilter,
-            object: decoded.0,
-            privateData: decoded.1
+            object: object,
+            privateData: wire.privateData.flatMap { String(bytes: $0, encoding: .utf8) }
         )
     }
 }

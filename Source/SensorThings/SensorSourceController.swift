@@ -172,30 +172,21 @@ open class SensorSourceController: Controller {
         guard queryTask == nil else { return }
         queryTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            let stream = await communicationManager.observeParsedMessages()
-            for await parsed in stream {
-                guard parsed.eventType == .query,
-                      let correlationId = parsed.correlationId else { continue }
-                let request: QueryEvent
-                do {
-                    request = try PayloadCoder.decode(parsed.payload)
-                } catch {
-                    LogManager.logger(.sensorThings).notice("Dropping malformed Query event", metadata: [
-                        "eventType": .string(parsed.eventType.rawValue),
-                        "correlationId": .string(correlationId),
-                        "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
-                    ])
-                    continue
-                }
+            let stream = await communicationManager.observeQueryStream()
+            for await request in stream {
+                guard let correlationId = request.correlationId else { continue }
                 self.handleQueryEvent(request, correlationId: correlationId)
             }
         }
     }
 
     @MainActor
-    private func handleQueryEvent(_ request: QueryEvent, correlationId: String) {
+    private func handleQueryEvent(_ request: QueryEventSnapshot, correlationId: String) {
+        let filter = request.objectFilter.flatMap {
+            try? JSONDecoder().decode(ObjectFilter.self, from: Data($0.utf8))
+        }
         let result = sensors.values.map(\.sensor).filter {
-            request.data.objectFilter == nil || ObjectMatcher.matchesFilter(obj: $0, filter: request.data.objectFilter!)
+            filter == nil || ObjectMatcher.matchesFilter(obj: $0, filter: filter!)
         }
         if !result.isEmpty {
             communicationManager.publishRetrieve(

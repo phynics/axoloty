@@ -49,15 +49,16 @@ extension CallEventSnapshot {
 
     /// Decodes a Call snapshot from a parsed MQTT message.
     init?(parsedMQTTMessage: ParsedMQTTMessage) {
-        guard let operation = parsedMQTTMessage.eventTypeFilter else {
+        guard let operation = parsedMQTTMessage.eventTypeFilter,
+              case .call(let wire) = parsedMQTTMessage.event else {
             return nil
         }
         self.init(
             sourceId: parsedMQTTMessage.sourceId,
             correlationId: parsedMQTTMessage.correlationId,
             operation: operation,
-            parameters: WirePayloadExtractor.nestedPayload(from: parsedMQTTMessage.payload, key: "parameters"),
-            filter: WirePayloadExtractor.nestedObjectPayload(from: parsedMQTTMessage.payload, key: "filter")
+            parameters: wire.parameters.flatMap { String(bytes: $0, encoding: .utf8) },
+            filter: wire.filter.flatMap { String(bytes: $0, encoding: .utf8) }
         )
     }
 }

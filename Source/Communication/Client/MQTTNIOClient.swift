@@ -667,13 +667,34 @@ internal class MQTTNIOClient: CommunicationClient {
                 }
                 log.trace("Received event", metadata: receivedEventMetadata)
 
-                guard let payloadString = Self.validUTF8Payload(from: info.payload) else {
-                    log.warning("Dropping incoming MQTT message with invalid UTF-8 payload", metadata: [
+                let ownedEvent: OwnedWireEvent
+                do {
+                    ownedEvent = try bytes.withUnsafeBufferPointer { payloadBuffer in
+                        guard let payloadBase = payloadBuffer.baseAddress else {
+                            throw WireDecodeError(.unexpectedEndOfInput)
+                        }
+                        let message = BorrowedMessage(
+                            topicBytes: base,
+                            topicLength: topicBuf.count,
+                            payloadBytes: payloadBase,
+                            payloadLength: payloadBuffer.count
+                        )
+                        return try BorrowedWireEvent(message: message).owned()
+                    }
+                } catch {
+                    let wrapped = AxolotyError.decodingFailure(
+                        type: wireType.rawValue,
+                        reason: ErrorKit.userFriendlyMessage(for: error),
+                        payload: String(bytes: bytes, encoding: .utf8)
+                    )
+                    log.notice("Dropping malformed incoming event", metadata: [
                         "topic": .string(info.topicName),
+                        "eventType": .string(wireType.rawValue),
+                        "error": .string(ErrorKit.errorChainDescription(for: wrapped)),
                     ])
                     return
                 }
-                let parsed = ParsedMQTTMessage(topicView: topicView, payload: payloadString)
+                let parsed = ParsedMQTTMessage(topicView: topicView, event: ownedEvent, payload: bytes)
                 deliveryContinuation.yield {
                     await streams.parsedMQTTMessages.send(parsed)
                     await Self.routeParsedMessage(parsed: parsed, into: streams)
@@ -740,11 +761,18 @@ internal class MQTTNIOClient: CommunicationClient {
             }
         case .complete, .resolve, .retrieve, .returnEvent:
             if let correlationId = parsed.correlationId {
+                let object: CoatyObjectSnapshot?
+                switch parsed.event {
+                case .resolve(let wire): object = try? HostWireAdapter.snapshot(from: wire.object)
+                case .complete(let wire): object = wire.object.flatMap { try? HostWireAdapter.snapshot(from: $0) }
+                default: object = nil
+                }
                 let snapshot = ResponseEventSnapshot(
                     eventType: parsed.eventType.rawValue,
                     sourceId: parsed.sourceId,
                     correlationId: correlationId,
-                    payload: parsed.payload
+                    payload: parsed.payloadString ?? "",
+                    object: object
                 )
                 await streams.responseFamily.send(
                     snapshot,

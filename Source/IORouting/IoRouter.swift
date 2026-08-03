@@ -226,9 +226,10 @@ public class IoRouter: Controller {
             for await parsed in stream {
                 guard parsed.eventType == .advertise,
                       parsed.eventTypeFilter == CoreType.IoNode.rawValue else { continue }
-                let event: AdvertiseEvent
+                let node: CoatyObject
                 do {
-                    event = try PayloadCoder.decode(parsed.payload)
+                    guard case .advertise(let wire) = parsed.event else { continue }
+                    node = try HostWireAdapter.decodeObject(from: wire.object)
                 } catch {
                     self.log.notice("Dropping malformed Advertise event", metadata: [
                         "eventType": .string(parsed.eventType.rawValue),
@@ -239,7 +240,7 @@ public class IoRouter: Controller {
                 }
                 // AdvertiseEvent carries a runtime-polymorphic object;
                 // this cast filters the event to the required subtype.
-                guard let node = event.data.object as? IoNode,
+                guard let node = node as? IoNode,
                       node.name == self.ioContext.name else { continue }
                 self.ioNodeAdvertised(node: node)
             }
@@ -299,20 +300,7 @@ public class IoRouter: Controller {
             let stream = await communicationManager.publishDiscover(DiscoverEvent.with(coreTypes: [.IoNode]))
             for await response in stream {
                 guard response.eventType == WireEventType.resolve.rawValue else { continue }
-                let event: ResolveEvent
-                do {
-                    event = try PayloadCoder.decode(response.payload)
-                } catch {
-                    self.log.notice("Dropping malformed Resolve event", metadata: [
-                        "eventType": .string(response.eventType),
-                        "correlationId": .string(response.correlationId ?? ""),
-                        "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
-                    ])
-                    continue
-                }
-                // ResolveEvent carries a runtime-polymorphic object;
-                // this cast filters the response to the required subtype.
-                guard let node = event.data.object as? IoNode,
+                guard let node = response.object?.decodeObject() as? IoNode,
                       node.name == self.ioContext.name else { continue }
                 self.ioNodeAdvertised(node: node)
             }
@@ -345,7 +333,10 @@ public class IoRouter: Controller {
                       let payload = update.object.payload else { continue }
                 let object: IoContext
                 do {
-                    object = try PayloadCoder.decode(payload)
+                    guard let decoded = try HostWireAdapter.decodeObject(from: Array(payload.utf8)) as? IoContext else {
+                        throw AxolotyError.decodingFailure(type: "IoContext", reason: "hydrated object has the wrong core type", payload: payload)
+                    }
+                    object = decoded
                 } catch {
                     self.log.notice("Dropping malformed IoContext update", metadata: [
                         "objectId": .string(update.object.objectId),
