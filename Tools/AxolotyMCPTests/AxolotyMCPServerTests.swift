@@ -107,6 +107,60 @@ func brokerConnectionTimeoutIsApplied() {
     #expect(configuration.connectTimeout == .seconds(37))
 }
 
+@Test("HTTP server repeatedly starts and stops without leaking its listener")
+func httpServerRepeatedStartStop() async throws {
+    let server = makeHTTPServer(port: 0)
+
+    for _ in 0..<3 {
+        let startTask = Task { try await server.start() }
+        await server.waitUntilListening()
+        try await withDeadline("HTTP server stop") {
+            await server.stop()
+            try await startTask.value
+        }
+    }
+}
+
+@Test("HTTP server releases its port for immediate rebinding")
+func httpServerReleasesPortForRebinding() async throws {
+    let firstServer = makeHTTPServer(port: 0)
+    let firstStartTask = Task { try await firstServer.start() }
+    await firstServer.waitUntilListening()
+    let port = try #require(await firstServer.listeningPort())
+
+    try await withDeadline("first HTTP server stop") {
+        await firstServer.stop()
+        try await firstStartTask.value
+    }
+
+    let reboundServer = makeHTTPServer(port: UInt16(port))
+    let reboundStartTask = Task { try await reboundServer.start() }
+    await reboundServer.waitUntilListening()
+    #expect(await reboundServer.listeningPort() == port)
+
+    try await withDeadline("rebound HTTP server stop") {
+        await reboundServer.stop()
+        try await reboundStartTask.value
+    }
+}
+
+@Test("HTTP shutdown stops every active session")
+func httpShutdownStopsActiveSessions() async throws {
+    let server = makeHTTPServer(port: 0)
+    let startTask = Task { try await server.start() }
+    await server.waitUntilListening()
+
+    let response = await server.handleHTTPRequest(try makeInitializeRequest())
+    #expect(response.statusCode == 200)
+    #expect(await server.activeSessionCount() == 1)
+
+    try await withDeadline("HTTP shutdown with an active session") {
+        await server.stop()
+        try await startTask.value
+    }
+    #expect(await server.activeSessionCount() == 0)
+}
+
 @Test("MCP executable rejects invalid broker port")
 func executableRejectsInvalidBrokerPort() throws {
     let result = try runMCPExecutable(arguments: ["--broker-port", "0"])
@@ -188,4 +242,61 @@ private func runMCPExecutable(
     process.waitUntilExit()
     let errorData = standardError.fileHandleForReading.readDataToEndOfFile()
     return (process.terminationStatus, String(decoding: errorData, as: UTF8.self))
+}
+
+private func makeHTTPServer(port: UInt16) -> MCPHTTPServer {
+    MCPHTTPServer(
+        host: "127.0.0.1",
+        port: port,
+        validationPipeline: StandardValidationPipeline(validators: []),
+        serverFactory: { _, transport in
+            let server = Server(
+                name: "axoloty-mcp-lifecycle-test",
+                version: "1.0.0",
+                capabilities: .init()
+            )
+            try await server.start(transport: transport)
+            return server
+        }
+    )
+}
+
+private func makeInitializeRequest() throws -> HTTPRequest {
+    let body = try JSONSerialization.data(withJSONObject: [
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": [
+            "protocolVersion": "2025-11-25",
+            "capabilities": [:] as [String: Any],
+            "clientInfo": ["name": "lifecycle-test", "version": "1.0.0"],
+        ] as [String: Any],
+    ])
+    return HTTPRequest(
+        method: "POST",
+        headers: [
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        ],
+        body: body
+    )
+}
+
+private struct TestDeadlineExceeded: Error {}
+
+private func withDeadline(
+    _ description: String,
+    timeout: Duration = .seconds(5),
+    operation: @escaping @Sendable () async throws -> Void
+) async throws {
+    try await withThrowingTaskGroup(of: Void.self) { group in
+        group.addTask { try await operation() }
+        group.addTask {
+            try await Task.sleep(for: timeout)
+            Issue.record("Timed out waiting for \(description)")
+            throw TestDeadlineExceeded()
+        }
+        _ = try await group.next()
+        group.cancelAll()
+    }
 }
