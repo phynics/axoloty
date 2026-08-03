@@ -46,6 +46,8 @@ public enum AxolotyError: Throwable, Catching {
         case notStarted
         /// A wait for a runtime condition exceeded its deadline.
         case timedOut
+        /// An asynchronous operation was cancelled by its caller.
+        case cancelled
         /// An event or state stream ended before delivering an expected value.
         case streamEnded
         /// No broker could be reached or discovered.

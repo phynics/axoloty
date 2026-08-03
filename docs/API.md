@@ -63,6 +63,23 @@ suspends while waiting for peer replies:
 - `publishUpdate(_:)` — `async`
 - `publishCall(_:)` — `async`
 
+For a single generic Call/Return exchange, use
+`call(operation:parameters:context:timeout:)` — `async throws`. It installs
+the correlated Return observation before publishing the Call and returns a
+`UnaryCallResult` for the first Return. Observation ownership is released on
+success, remote error, malformed response, timeout, or caller cancellation, so
+duplicate and late Returns are ignored. `publishCall(_:)` remains the API for
+multi-response behavior.
+
+The unary API accepts parameters as optional raw JSON object or array text and
+an optional domain-neutral `ContextFilter` used by providers for selection.
+Its successful `result` and `executionInfo` remain raw JSON text and its
+`sourceId` identifies the responding provider when the wire topic supplies it.
+Remote Return errors throw `RemoteCallFailure`, preserving the remote numeric
+`code` and `message`. A malformed Return throws `AxolotyError.decodingFailure`;
+timeout and caller cancellation throw `AxolotyError.runtime` with `.timedOut`
+and `.cancelled`, respectively. The timeout must be greater than zero.
+
 ### Raw publish
 - `publishRaw(topic:withString:)` — synchronous (no suspension)
 - `publishRaw(topic:withBinary:)` — synchronous (no suspension)
@@ -90,6 +107,7 @@ switches on it, so additions are additive-only:
 |---|---|
 | `.notStarted` | A component was used before being started. |
 | `.timedOut` | A wait for a runtime condition exceeded its deadline. |
+| `.cancelled` | An asynchronous operation was cancelled by its caller. |
 | `.streamEnded` | An event or state stream ended before delivering an expected value. |
 | `.brokerUnavailable` | No broker could be reached or discovered. |
 | `.subscriptionFailed` | A topic subscription was rejected by the transport. |
