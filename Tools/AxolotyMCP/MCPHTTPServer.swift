@@ -40,7 +40,10 @@ public actor MCPHTTPServer {
     private let endpoint: String
     private let serverFactory: ServerFactory
     private let validationPipeline: (any HTTPRequestValidationPipeline)?
+    private var eventLoopGroup: MultiThreadedEventLoopGroup?
     private var channel: Channel?
+    private var cleanupTask: Task<Void, Never>?
+    private var listeningContinuations: [CheckedContinuation<Void, Never>] = []
     private var sessions: [String: SessionContext] = [:]
 
     private struct SessionContext {
@@ -89,6 +92,7 @@ public actor MCPHTTPServer {
         }
 
         let group = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount)
+        eventLoopGroup = group
 
         let bootstrap = ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.backlog, value: 256)
@@ -101,19 +105,55 @@ public actor MCPHTTPServer {
             .childChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .childChannelOption(ChannelOptions.maxMessagesPerRead, value: 1)
 
-        let channel = try await bootstrap.bind(host: host, port: Int(port)).get()
-        self.channel = channel
+        do {
+            let channel = try await bootstrap.bind(host: host, port: Int(port)).get()
+            self.channel = channel
+            resumeListeningWaiters()
+            cleanupTask = Task { await self.sessionCleanupLoop() }
 
-        Task { await sessionCleanupLoop() }
-
-        try await channel.closeFuture.get()
+            try await channel.closeFuture.get()
+            await stop()
+        } catch {
+            resumeListeningWaiters()
+            await stop()
+            throw error
+        }
     }
 
     /// Stops the HTTP server, closing all active sessions and the channel.
     public func stop() async {
-        await closeAllSessions()
+        cleanupTask?.cancel()
+        cleanupTask = nil
+        let channel = channel
+        self.channel = nil
         try? await channel?.close()
-        channel = nil
+        await closeAllSessions()
+        let eventLoopGroup = eventLoopGroup
+        self.eventLoopGroup = nil
+        if let eventLoopGroup {
+            try? await eventLoopGroup.shutdownGracefully()
+        }
+    }
+
+    func waitUntilListening() async {
+        if channel != nil { return }
+        await withCheckedContinuation { continuation in
+            listeningContinuations.append(continuation)
+        }
+    }
+
+    func listeningPort() -> Int? {
+        channel?.localAddress?.port
+    }
+
+    func activeSessionCount() -> Int {
+        sessions.count
+    }
+
+    private func resumeListeningWaiters() {
+        let continuations = listeningContinuations
+        listeningContinuations.removeAll()
+        continuations.forEach { $0.resume() }
     }
 
     // MARK: - Request Routing
@@ -123,7 +163,7 @@ public actor MCPHTTPServer {
     }
 
     /// Routes an incoming HTTP request to the appropriate session transport.
-    fileprivate func handleHTTPRequest(_ request: HTTPRequest) async -> HTTPResponse {
+    func handleHTTPRequest(_ request: HTTPRequest) async -> HTTPResponse {
         let sessionID = request.header(HTTPHeaderName.sessionID)
 
         if let sessionID, var session = sessions[sessionID] {
@@ -133,7 +173,7 @@ public actor MCPHTTPServer {
             let response = await session.transport.handleRequest(request)
 
             if request.method.uppercased() == "DELETE" && response.statusCode == 200 {
-                sessions.removeValue(forKey: sessionID)
+                await closeSession(sessionID)
             }
 
             return response
@@ -208,8 +248,7 @@ public actor MCPHTTPServer {
             let response = await transport.handleRequest(request)
 
             if case .error = response {
-                sessions.removeValue(forKey: sessionID)
-                await transport.disconnect()
+                await closeSession(sessionID)
             }
 
             return response
@@ -224,18 +263,24 @@ public actor MCPHTTPServer {
 
     private func closeSession(_ sessionID: String) async {
         guard let session = sessions.removeValue(forKey: sessionID) else { return }
+        await session.server.stop()
         await session.transport.disconnect()
     }
 
     private func closeAllSessions() async {
-        for sessionID in sessions.keys {
+        let sessionIDs = Array(sessions.keys)
+        for sessionID in sessionIDs {
             await closeSession(sessionID)
         }
     }
 
     private func sessionCleanupLoop() async {
-        while true {
-            try? await Task.sleep(for: .seconds(60))
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(for: .seconds(60))
+            } catch {
+                return
+            }
 
             let now = Date()
             let expired = sessions.filter { _, context in

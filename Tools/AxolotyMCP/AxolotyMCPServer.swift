@@ -16,6 +16,7 @@ public final class AxolotyMCPServer {
     private let server: Server
     private let catalogueService: InspectorCatalogueService
     private let session: InspectorSession
+    private var httpServer: MCPHTTPServer?
 
     nonisolated static let discoverObjectsTool = Tool(
         name: "axoloty_discover_objects",
@@ -143,11 +144,21 @@ public final class AxolotyMCPServer {
                 return server
             }
         )
-        try await httpServer.start()
+        self.httpServer = httpServer
+        do {
+            try await httpServer.start()
+        } catch {
+            self.httpServer = nil
+            await httpServer.stop()
+            throw error
+        }
     }
 
     /// Stops the MCP server and disconnects from MQTT.
     public func stop() async {
+        let httpServer = httpServer
+        self.httpServer = nil
+        await httpServer?.stop()
         await server.stop()
         catalogueService.stop()
     }
