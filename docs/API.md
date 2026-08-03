@@ -55,6 +55,15 @@ waiting for the next event:
 - `observeCommunicationStateStream()` — `async`
 - `observeRawMQTTMessageStream()` — `async`
 
+For provider-side unary handling, use
+`registerCallHandler(operation:context:handler:)` — `async throws`. It returns a
+`CallHandlerRegistration` that explicitly owns observation and in-flight task
+lifetime. Retain it while active and call `cancel()` to unregister. Incoming
+context filters are matched before provider code runs, correlation identifiers
+are handled at most once, and the registration publishes the correlated
+`ReturnEvent` internally from a `CallHandlerResult`. The raw
+`observeCallStream(operation:)` API remains available for lower-level consumers.
+
 ### Request/response publishing
 These publish an event and return an `AsyncStream` of responses, which
 suspends while waiting for peer replies:
