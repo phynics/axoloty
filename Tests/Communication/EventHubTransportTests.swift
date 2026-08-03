@@ -22,7 +22,7 @@ struct BroadcastTransportTests {
             namespace: manager.namespace
         )
 
-        await client.simulateState(.online)
+        try await bringOnline(manager, client: client)
         try await waitForCommands(on: client, expecting: [.subscribe(topic)])
 
         let snapshot = AdvertiseEventSnapshot(
@@ -75,7 +75,7 @@ struct BroadcastTransportTests {
 
         let stream = await manager.observeAdvertiseStream(withCoreType: .Log)
         let iterator = stream.makeAsyncIterator()
-        await client.simulateState(.online)
+        try await bringOnline(manager, client: client)
         try await waitForCommands(on: client, expecting: [.subscribe(topic)])
 
         // Cancelling the consuming task terminates its iterator, which fires
@@ -749,6 +749,168 @@ struct BroadcastTransportTests {
         let state = try await nextValue(&iterator, timeout: .milliseconds(500))
         #expect(state == .online)
     }
+
+    @Test
+    func unaryCallReturnsFirstResponseAndReleasesObservation() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        await client.simulateState(.online)
+        let call = Task {
+            try await manager.call(operation: "calculate", parameters: #"{"value":41}"#, timeout: .seconds(1))
+        }
+        let correlationId = try await waitForPublishedCorrelation(on: client)
+
+        await client.emitResponse(
+            unaryResponse(ReturnEvent.with(result: "42", executionInfo: #"{"provider":"primary"}"#), correlationId: correlationId),
+            eventType: .returnEvent,
+            correlationId: correlationId
+        )
+        let result = try await call.value
+
+        #expect(result == UnaryCallResult(result: "42", executionInfo: #"{"provider":"primary"}"#, sourceId: "provider"))
+        try await waitForCommandCount(on: client, count: 2)
+        #expect(client.commands.last == .unsubscribe(responseTopic(correlationId)))
+
+        // Genuine duplicate and late publishes have no owner after success.
+        await client.emitResponse(
+            unaryResponse(ReturnEvent.with(result: "99", executionInfo: nil), correlationId: correlationId),
+            eventType: .returnEvent,
+            correlationId: correlationId
+        )
+        #expect(client.commands.count == 2)
+    }
+
+    @Test
+    func unaryCallMapsRemoteErrorAndMalformedReturn() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        await client.simulateState(.online)
+        let remoteCall = Task {
+            try await manager.call(operation: "fail", timeout: .seconds(1))
+        }
+        let remoteCorrelation = try await waitForPublishedCorrelation(on: client)
+        await client.emitResponse(
+            unaryResponse(
+                ReturnEvent.with(error: ReturnError(code: -32602, message: "Invalid params"), executionInfo: nil),
+                correlationId: remoteCorrelation
+            ),
+            eventType: .returnEvent,
+            correlationId: remoteCorrelation
+        )
+        do {
+            _ = try await remoteCall.value
+            Issue.record("Expected the remote error to fail the unary call")
+        } catch let error as RemoteCallFailure {
+            #expect(error == RemoteCallFailure(code: -32602, message: "Invalid params"))
+            #expect(error.userFriendlyMessage == "Remote call failed (-32602): Invalid params")
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        let malformedCall = Task {
+            try await manager.call(operation: "malformed", timeout: .seconds(1))
+        }
+        let malformedCorrelation = try await waitForPublishedCorrelation(on: client, publicationCount: 2)
+        await client.emitResponse(
+            ResponseEventSnapshot(
+                eventType: "RTN", sourceId: "provider", correlationId: malformedCorrelation,
+                payload: #"{"result":1,"error":{"code":7,"message":"both"}}"#
+            ),
+            eventType: .returnEvent,
+            correlationId: malformedCorrelation
+        )
+        do {
+            _ = try await malformedCall.value
+            Issue.record("Expected the malformed Return to fail the unary call")
+        } catch let AxolotyError.decodingFailure(type, reason, payload) {
+            #expect(type == "ReturnEvent")
+            #expect(reason == "The correlated Return must contain exactly one of result or error")
+            #expect(payload != nil)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test
+    func unaryCallTimesOutAndCallerCancellationIsStructured() async throws {
+        let timeoutClient = FakeCommunicationClient(delegate: FakeStartable())
+        let timeoutManager = makeManager(client: timeoutClient)
+        try await bringOnline(timeoutManager, client: timeoutClient)
+        do {
+            _ = try await timeoutManager.call(operation: "slow", timeout: .milliseconds(25))
+            Issue.record("Expected unary call timeout")
+        } catch let AxolotyError.runtime(code, message) {
+            #expect(code == .timedOut)
+            #expect(message == "The unary call timed out")
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        let cancelClient = FakeCommunicationClient(delegate: FakeStartable())
+        let cancelManager = makeManager(client: cancelClient)
+        try await bringOnline(cancelManager, client: cancelClient)
+        let pending = Task {
+            try await cancelManager.call(operation: "cancel", timeout: .seconds(5))
+        }
+        _ = try await waitForPublishedCorrelation(on: cancelClient)
+        pending.cancel()
+        do {
+            _ = try await pending.value
+            Issue.record("Expected caller cancellation")
+        } catch let AxolotyError.runtime(code, message) {
+            #expect(code == .cancelled)
+            #expect(message == "The unary call was cancelled")
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test
+    func unaryCallPublishesContextAfterResponseSubscriptionIsInstalled() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        try await bringOnline(manager, client: client)
+        let context = ObjectFilter(condition: ObjectFilterCondition(
+            property: ObjectFilterProperty("name"),
+            expression: .equals("provider-b")
+        ))
+        let call = Task {
+            try await manager.call(operation: "route", context: context, timeout: .seconds(1))
+        }
+        let correlationId = try await waitForPublishedCorrelation(on: client)
+
+        let subscribeIndex = try #require(client.actions.firstIndex(of: "subscribe:\(responseTopic(correlationId))"))
+        let publishIndex = try #require(client.actions.firstIndex {
+            $0.contains("/CLL:route/") && $0.hasSuffix("/\(correlationId)")
+        })
+        #expect(subscribeIndex < publishIndex)
+        let payload = try #require(client.publishedMessages.last { $0.topic.contains("/CLL:route/") }?.message)
+        let decoded = try JSONDecoder().decode(CallEvent.self, from: Data(payload.utf8))
+        #expect(decoded.data.filter?.condition?.property.objectFilterProperty == "name")
+
+        await client.emitResponse(
+            unaryResponse(ReturnEvent.with(result: #""provider-b""#, executionInfo: nil), correlationId: correlationId),
+            eventType: .returnEvent,
+            correlationId: correlationId
+        )
+        #expect(try await call.value.result == #""provider-b""#)
+    }
+
+    @Test
+    func publishCallStillDeliversMultipleResponses() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        try await bringOnline(manager, client: client)
+        let stream = await manager.publishCall(try CallEvent.with(operation: "stream", parameters: nil))
+        let correlationId = try await waitForPublishedCorrelation(on: client)
+        var iterator = stream.makeAsyncIterator()
+        let first = unaryResponse(ReturnEvent.with(result: "1", executionInfo: nil), correlationId: correlationId)
+        let second = unaryResponse(ReturnEvent.with(result: "2", executionInfo: nil), correlationId: correlationId)
+        await client.emitResponse(first, eventType: .returnEvent, correlationId: correlationId)
+        await client.emitResponse(second, eventType: .returnEvent, correlationId: correlationId)
+        #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == first)
+        #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == second)
+    }
 }
 
 // MARK: - Helpers
@@ -794,6 +956,55 @@ private func waitForCommands(
     #expect(client.commands == expected)
 }
 
+@MainActor
+private func bringOnline(_ manager: CommunicationManager, client: FakeCommunicationClient) async throws {
+    await client.simulateState(.online)
+    for _ in 0 ..< 40 {
+        if manager.communicationState == .online { return }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    throw AxolotyError.runtime(code: .timedOut, reason: "Test manager did not become online")
+}
+
+@MainActor
+private func waitForPublishedCorrelation(
+    on client: FakeCommunicationClient,
+    publicationCount: Int = 1
+) async throws -> String {
+    for _ in 0 ..< 40 {
+        let calls = client.publishedMessages.filter {
+            $0.topic.split(separator: "/").dropFirst(3).first?.hasPrefix("CLL") == true
+        }
+        if calls.count >= publicationCount,
+           let topic = calls.last?.topic,
+           let correlationId = topic.split(separator: "/").last {
+            return String(correlationId)
+        }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    throw AxolotyError.runtime(
+        code: .timedOut,
+        reason: "Test Call publication was not observed; topics: \(client.publishedTopics)"
+    )
+}
+
+@MainActor
+private func waitForCommandCount(on client: FakeCommunicationClient, count: Int) async throws {
+    for _ in 0 ..< 40 {
+        if client.commands.count >= count { return }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    throw AxolotyError.runtime(code: .timedOut, reason: "Test subscription command was not observed")
+}
+
+private func responseTopic(_ correlationId: String) -> String {
+    TopicBuilder.subscribeTopic(eventType: .returnEvent, namespace: DEFAULT_NAMESPACE, correlationId: correlationId)
+}
+
+private func unaryResponse(_ event: ReturnEvent, correlationId: String) -> ResponseEventSnapshot {
+    ResponseEventSnapshot(eventType: "RTN", sourceId: "provider", correlationId: correlationId, payload: event.json)
+}
+
 // MARK: - Test seam
 
 private final class FakeStartable: CommunicationClientDelegate {
@@ -811,8 +1022,12 @@ private final class FakeCommunicationClient: CommunicationClient {
     private let stateLock = NSLock()
     private var _commands: [SubscriptionCommand] = []
     private var _publishedTopics: [String] = []
+    private var _publishedMessages: [(topic: String, message: String)] = []
+    private var _actions: [String] = []
     var commands: [SubscriptionCommand] { stateLock.withLock { _commands } }
     var publishedTopics: [String] { stateLock.withLock { _publishedTopics } }
+    var publishedMessages: [(topic: String, message: String)] { stateLock.withLock { _publishedMessages } }
+    var actions: [String] { stateLock.withLock { _actions } }
     private let subscriptionGate: SubscriptionAckGate?
 
     init(delegate: CommunicationClientDelegate, subscriptionGate: SubscriptionAckGate? = nil) {
@@ -863,10 +1078,24 @@ private final class FakeCommunicationClient: CommunicationClient {
 
     func connect(lastWillTopic _: String, lastWillMessage _: String) {}
     func disconnect() {}
-    func publish(_ topic: String, message _: String) { stateLock.withLock { _publishedTopics.append(topic) } }
-    func publish(_ topic: String, message _: [UInt8]) { stateLock.withLock { _publishedTopics.append(topic) } }
+    func publish(_ topic: String, message: String) {
+        stateLock.withLock {
+            _publishedTopics.append(topic)
+            _publishedMessages.append((topic, message))
+            _actions.append("publish:\(topic)")
+        }
+    }
+    func publish(_ topic: String, message _: [UInt8]) {
+        stateLock.withLock {
+            _publishedTopics.append(topic)
+            _actions.append("publish:\(topic)")
+        }
+    }
     @MainActor func subscribe(_ topic: String) async throws {
-        stateLock.withLock { _commands.append(.subscribe(topic)) }
+        stateLock.withLock {
+            _commands.append(.subscribe(topic))
+            _actions.append("subscribe:\(topic)")
+        }
         if let subscriptionGate {
             await subscriptionGate.markStarted()
             await subscriptionGate.waitUntilOpen()
@@ -874,7 +1103,10 @@ private final class FakeCommunicationClient: CommunicationClient {
     }
 
     @MainActor func unsubscribe(_ topic: String) async throws {
-        stateLock.withLock { _commands.append(.unsubscribe(topic)) }
+        stateLock.withLock {
+            _commands.append(.unsubscribe(topic))
+            _actions.append("unsubscribe:\(topic)")
+        }
     }
 }
 
