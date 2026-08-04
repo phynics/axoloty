@@ -85,6 +85,25 @@ struct PayloadCoderTests {
     }
 
     @Test
+    func malformedNestedArraysThrowTypedDecodingFailures() {
+        // These truncated nested arrays exercise the tokenizer path that
+        // previously trapped during the seed-2 fuzz campaign (#433).
+        for payload in ["[", "[[", "[[]"] {
+            do {
+                let _: Identity = try PayloadCoder.decode(payload)
+                Issue.record("Expected decoding to fail for malformed payload: \(payload)")
+            } catch let error as AxolotyError {
+                guard case .decodingFailure = error else {
+                    Issue.record("Expected decodingFailure for \(payload), got \(error)")
+                    continue
+                }
+            } catch {
+                Issue.record("Expected AxolotyError for \(payload), got \(error)")
+            }
+        }
+    }
+
+    @Test
 
     func encodeWrapsUnencodableValueInAxolotyErrorRatherThanCrashing() throws {
         struct HoldsNaN: Codable { let value = Double.nan }

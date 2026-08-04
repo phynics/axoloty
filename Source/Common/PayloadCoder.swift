@@ -24,6 +24,12 @@ public class PayloadCoder {
         // Swift strings are always representable in UTF-8.
         let jsonData = jsonString.data(using: .utf8)!
         do {
+            // Validate untrusted input with Foundation before handing it to
+            // IkigaJSON. The pinned tokenizer has unchecked indexing in a
+            // few malformed nested-array paths, which can otherwise trap
+            // instead of throwing an error that this public boundary can
+            // translate to `AxolotyError.decodingFailure`.
+            _ = try JSONSerialization.jsonObject(with: jsonData)
             let object = try JSONObject(data: jsonData)
             var settings = JSONDecoderSettings()
             let coreTypeKeys = CodingUserInfoKey(rawValue: "coreTypeKeys")!
