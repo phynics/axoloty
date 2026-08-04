@@ -114,12 +114,15 @@ RUN printf 'listener 1883\nallow_anonymous true\n' \
 # Clone ESP-IDF at the pinned tag and materialize every submodule in the image.
 # This keeps offline embedded checks from mutating the toolchain or downloading
 # dependencies at first use. `install.sh esp32c6` downloads only the RISC-V
-# GCC toolchain, OpenOCD, and Python deps needed for that target.
+# GCC toolchain, OpenOCD, and Python deps needed for that target. Keep the
+# recursive checkout shallow and parallel: ESP-IDF v5.4 has 23 top-level
+# submodules plus nested test dependencies, and serial full-history clones can
+# leave cold image builds silent for several minutes.
 ENV IDF_TOOLS_PATH=/opt/esp/tools
-RUN git clone --depth 1 --branch ${ESP_IDF_VERSION} \
+RUN git clone --depth 1 --filter=blob:none --branch ${ESP_IDF_VERSION} \
         https://github.com/espressif/esp-idf.git /opt/esp/idf \
     && cd /opt/esp/idf \
-    && git submodule update --init --recursive \
+    && git submodule update --init --recursive --depth 1 --jobs 8 --recommend-shallow \
     && ./install.sh esp32c6
 
 # espflash (Rust) for board-info / flashing without the full IDF monitor.
