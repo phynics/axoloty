@@ -2,9 +2,20 @@
 
 import Foundation
 import AxolotyWire
+import ErrorKit
 
 @MainActor
 extension CommunicationManager {
+    private func publishEvent(topic: String, event: Any) {
+        do {
+            publish(topic: topic, message: try HostWireAdapter.encodeEvent(event))
+        } catch {
+            log.error("Failed to encode communication event", metadata: [
+                "topic": .string(topic),
+                "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+            ])
+        }
+    }
     public func publishRaw(topic: String, withString value: String) throws {
         guard TopicBuilder.isValidPublicationTopic(topic) else {
             throw AxolotyError.invalidArgument(argument: "topic", reason: "\"\(topic)\" is not a valid publication topic name")
@@ -25,8 +36,7 @@ extension CommunicationManager {
             namespace: namespace, eventType: .advertise,
             eventTypeFilter: event.data.object.coreType.rawValue
         )
-        publish(topic: TopicBuilder.publishTopic(components: components, sourceId: identity.objectId),
-                message: event.json)
+        publishEvent(topic: TopicBuilder.publishTopic(components: components, sourceId: identity.objectId), event: event)
         if event.data.object.coreType.objectType != event.data.object.objectType {
             let object = TopicBuilder.publishTopic(
                 components: .init(
@@ -35,7 +45,7 @@ extension CommunicationManager {
                 ),
                 sourceId: identity.objectId
             )
-            publish(topic: object, message: event.json)
+            publishEvent(topic: object, event: event)
         }
         if [.Identity, .IoNode].contains(event.data.object.coreType), !deadvertiseIds.contains(event.data.object.objectId) {
             deadvertiseIds.append(event.data.object.objectId)
@@ -48,7 +58,7 @@ extension CommunicationManager {
             components: .init(namespace: namespace, eventType: .deadvertise),
             sourceId: identity.objectId
         )
-        publish(topic: topic, message: event.json)
+        publishEvent(topic: topic, event: event)
     }
 
     public func publishChannel(_ event: ChannelEvent) {
@@ -57,7 +67,7 @@ extension CommunicationManager {
             components: .init(namespace: namespace, eventType: .channel, eventTypeFilter: event.channelId),
             sourceId: identity.objectId
         )
-        publish(topic: topic, message: event.json)
+        publishEvent(topic: topic, event: event)
     }
 
     private func responseStream(_ eventType: WireEventType, correlationId: String, topic: String) async -> AsyncStream<ResponseEventSnapshot> {
@@ -100,7 +110,7 @@ extension CommunicationManager {
             correlationId: correlationId
         )
         let stream = await responseStream(responseType, correlationId: correlationId, topic: responseTopic)
-        publish(topic: topic, message: event.json)
+        publishEvent(topic: topic, event: event)
         return stream
     }
 
@@ -118,7 +128,7 @@ extension CommunicationManager {
             components: .init(namespace: namespace, eventType: eventType, correlationId: correlationId),
             sourceId: identity.objectId
         )
-        publish(topic: topic, message: event.json)
+        publishEvent(topic: topic, event: event)
     }
 
     public func publishUpdate(_ event: UpdateEvent) async -> AsyncStream<ResponseEventSnapshot> {
@@ -184,6 +194,6 @@ extension CommunicationManager {
             components: .init(namespace: namespace, eventType: .associate, eventTypeFilter: name),
             sourceId: identity.objectId
         )
-        publish(topic: topic, message: event.json)
+        publishEvent(topic: topic, event: event)
     }
 }

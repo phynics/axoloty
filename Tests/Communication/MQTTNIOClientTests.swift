@@ -97,7 +97,11 @@ struct MQTTNIOClientTests {
                 topicBytes: try #require(buffer.baseAddress),
                 length: buffer.count
             )
-            return ParsedMQTTMessage(topicView: view, payload: "{}")
+            return ParsedMQTTMessage(
+                topicView: view,
+                event: .advertise(.init(object: Array(#"{"objectId":"22222222-2222-4222-8222-222222222222","coreType":"CoatyObject","objectType":"coaty.CoatyObject","name":"test"}"#.utf8), privateData: nil)),
+                payload: Array("{}".utf8)
+            )
         }
 
         // Mutating the source bytes after the scoped TopicView borrow proves
@@ -123,13 +127,16 @@ struct MQTTNIOClientTests {
         let objectId = "22222222-2222-4222-8222-222222222222"
         let topic = "coaty/3/test/DAD/\(sourceId)"
         let topicBytes = Array(topic.utf8)
+        let payload = #"{"objectIds":["22222222-2222-4222-8222-222222222222"]}"#
+        let payloadBytes = Array(payload.utf8)
         let parsed = try topicBytes.withUnsafeBufferPointer { buffer in
             ParsedMQTTMessage(
                 topicView: TopicView(
                     topicBytes: try #require(buffer.baseAddress),
                     length: buffer.count
                 ),
-                payload: #"{"objectIds":["22222222-2222-4222-8222-222222222222"]}"#
+                event: .deadvertise(.init(objectIds: Array(#"["22222222-2222-4222-8222-222222222222"]"#.utf8))),
+                payload: payloadBytes
             )
         }
 

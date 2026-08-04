@@ -379,9 +379,20 @@ private func sampleObject() -> CoatyObjectSnapshot {
 /// into a `ParsedMQTTMessage`, mirroring the production receive path.
 private func parseMessage(topic: String, payload: String) -> ParsedMQTTMessage {
     let bytes = Array(topic.utf8)
+    let payloadBytes = Array(payload.utf8)
     return bytes.withUnsafeBufferPointer { buf in
         let view = TopicView(topicBytes: buf.baseAddress!, length: buf.count)
-        return ParsedMQTTMessage(topicView: view, payload: payload)
+        return payloadBytes.withUnsafeBufferPointer { payloadBuffer in
+            let message = BorrowedMessage(
+                topicBytes: buf.baseAddress!, topicLength: buf.count,
+                payloadBytes: payloadBuffer.baseAddress!, payloadLength: payloadBuffer.count
+            )
+            return ParsedMQTTMessage(
+                topicView: view,
+                event: try! BorrowedWireEvent(message: message).owned(),
+                payload: payloadBytes
+            )
+        }
     }
 }
 

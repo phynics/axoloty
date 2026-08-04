@@ -61,36 +61,16 @@ extension ChannelEventSnapshot {
     /// from the borrowed bytes.
     init?(parsedMQTTMessage: ParsedMQTTMessage) {
         guard let channelId = parsedMQTTMessage.eventTypeFilter else { return nil }
-        var payload = parsedMQTTMessage.payload
-        guard let decoded = payload.withUTF8({ buf -> (CoatyObjectSnapshot?, [CoatyObjectSnapshot]?, String?)? in
-            guard let base = buf.baseAddress else { return nil }
-            let reader = WireReader(bytes: base, length: buf.count)
-            guard let wire = try? ChannelWireData(from: reader) else { return nil }
-            let object: CoatyObjectSnapshot?
-            if let objSlice = wire.object {
-                let objectJSON = objSlice.asString()
-                let coaty: CoatyObjectSnapshot? = try? PayloadCoder.decode(objectJSON)
-                object = coaty?.withPayload(objectJSON)
-            } else {
-                object = nil
-            }
-            let objects: [CoatyObjectSnapshot]?
-            if let objsSlice = wire.objects {
-                let objsJSON = objsSlice.asString()
-                let decoded: [CoatyObjectSnapshot]? = try? PayloadCoder.decode(objsJSON)
-                objects = decoded
-            } else {
-                objects = nil
-            }
-            return (object, objects, wire.privateData?.asString())
-        }) else { return nil }
+        guard case .channel(let wire) = parsedMQTTMessage.event else { return nil }
+        let object = wire.object.flatMap { try? HostWireAdapter.snapshot(from: $0) }
+        let objects = wire.objects.flatMap { try? HostWireAdapter.snapshots(from: $0) }
         self.init(
             sourceId: parsedMQTTMessage.sourceId,
-            object: decoded.0,
-            objects: decoded.1,
+            object: object,
+            objects: objects,
             channelId: channelId,
             eventTypeFilter: parsedMQTTMessage.eventTypeFilter,
-            privateData: decoded.2
+            privateData: wire.privateData.flatMap { String(bytes: $0, encoding: .utf8) }
         )
     }
 }

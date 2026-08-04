@@ -27,7 +27,7 @@ struct AxolotyIoValuePayloadTests {
             objectId: sourceId
         )
         let event = try IoValueEvent.with(ioSource: source, value: [UInt8](), options: [:])
-        let data: IoValueEventData = try PayloadCoder.decode(event.json)
+        let data = try JSONDecoder().decode(IoValueEventData.self, from: JSONEncoder().encode(event))
 
         #expect(data.rawPayload == [])
     }
@@ -44,7 +44,7 @@ struct AxolotyIoValuePayloadTests {
         )
         let payload: [UInt8] = [0x01, 0x02, 0x03, 0xFF]
         let event = try IoValueEvent.with(ioSource: source, value: payload, options: [:])
-        let data: IoValueEventData = try PayloadCoder.decode(event.json)
+        let data = try JSONDecoder().decode(IoValueEventData.self, from: JSONEncoder().encode(event))
 
         #expect(data.rawPayload == payload)
     }
@@ -61,7 +61,7 @@ struct AxolotyIoValuePayloadTests {
         )
         let payload: [UInt8] = [0x00, 0x41, 0x00, 0x42, 0x00]
         let event = try IoValueEvent.with(ioSource: source, value: payload, options: [:])
-        let data: IoValueEventData = try PayloadCoder.decode(event.json)
+        let data = try JSONDecoder().decode(IoValueEventData.self, from: JSONEncoder().encode(event))
 
         #expect(data.rawPayload == payload)
     }
@@ -79,7 +79,7 @@ struct AxolotyIoValuePayloadTests {
         )
         let payload: [UInt8] = [0xFF, 0xFE, 0x80, 0x00]
         let event = try IoValueEvent.with(ioSource: source, value: payload, options: [:])
-        let data: IoValueEventData = try PayloadCoder.decode(event.json)
+        let data = try JSONDecoder().decode(IoValueEventData.self, from: JSONEncoder().encode(event))
 
         #expect(data.rawPayload == payload)
     }

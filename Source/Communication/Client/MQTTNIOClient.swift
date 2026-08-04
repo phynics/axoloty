@@ -667,13 +667,34 @@ internal class MQTTNIOClient: CommunicationClient {
                 }
                 log.trace("Received event", metadata: receivedEventMetadata)
 
-                guard let payloadString = Self.validUTF8Payload(from: info.payload) else {
-                    log.warning("Dropping incoming MQTT message with invalid UTF-8 payload", metadata: [
+                let ownedEvent: OwnedWireEvent
+                do {
+                    ownedEvent = try bytes.withUnsafeBufferPointer { payloadBuffer in
+                        guard let payloadBase = payloadBuffer.baseAddress else {
+                            throw WireDecodeError(.unexpectedEndOfInput)
+                        }
+                        let message = BorrowedMessage(
+                            topicBytes: base,
+                            topicLength: topicBuf.count,
+                            payloadBytes: payloadBase,
+                            payloadLength: payloadBuffer.count
+                        )
+                        return try BorrowedWireEvent(message: message).owned()
+                    }
+                } catch {
+                    let wrapped = AxolotyError.decodingFailure(
+                        type: wireType.rawValue,
+                        reason: ErrorKit.userFriendlyMessage(for: error),
+                        payload: String(bytes: bytes, encoding: .utf8)
+                    )
+                    log.notice("Dropping malformed incoming event", metadata: [
                         "topic": .string(info.topicName),
+                        "eventType": .string(wireType.rawValue),
+                        "error": .string(ErrorKit.errorChainDescription(for: wrapped)),
                     ])
                     return
                 }
-                let parsed = ParsedMQTTMessage(topicView: topicView, payload: payloadString)
+                let parsed = ParsedMQTTMessage(topicView: topicView, event: ownedEvent, payload: bytes)
                 deliveryContinuation.yield {
                     await streams.parsedMQTTMessages.send(parsed)
                     await Self.routeParsedMessage(parsed: parsed, into: streams)
@@ -692,80 +713,6 @@ internal class MQTTNIOClient: CommunicationClient {
     /// unlike the lossy `String(decoding:as:)` initializer.
     static func validUTF8Payload(from payload: ByteBuffer) -> String? {
         String(validating: payload.readableBytesView, as: UTF8.self)
-    }
-
-    /// Routes a parsed MQTT message to the appropriate event streams.
-    ///
-    /// This is the single routing decision point for all non-IoValue, non-raw
-    /// Coaty messages. The exhaustive switch ensures that adding a new event
-    /// type produces a compiler error here.
-    ///
-    /// - Parameters:
-    ///   - parsed: the parsed transport message.
-    ///   - streams: the communication streams to dispatch into.
-    internal static func routeParsedMessage(
-        parsed: ParsedMQTTMessage,
-        into streams: CommunicationStreams
-    ) async {
-        switch parsed.eventType {
-        case .advertise:
-            guard let snapshot = AdvertiseEventSnapshot(parsedMQTTMessage: parsed) else { return }
-            let baseKey = AdvertiseKey(eventTypeFilter: parsed.eventTypeFilter ?? "")
-            await streams.advertiseFamily.send(snapshot, for: baseKey)
-            if let coreType = CoreType.getCoreType(forObjectType: snapshot.object.objectType),
-               parsed.eventTypeFilter == coreType.rawValue {
-                let objectKey = AdvertiseKey(
-                    eventTypeFilter: coreType.rawValue,
-                    objectTypeFilter: snapshot.object.objectType
-                )
-                await streams.advertiseFamily.send(snapshot, for: objectKey)
-            }
-            await streams.advertiseAll.send(snapshot)
-        case .deadvertise:
-            if let snapshot = DeadvertiseEventSnapshot(parsedMQTTMessage: parsed) {
-                await streams.deadvertise.send(snapshot)
-            }
-        case .discover:
-            if let snapshot = DiscoverEventSnapshot(parsedMQTTMessage: parsed) {
-                await streams.discover.send(snapshot)
-            }
-        case .query:
-            if let snapshot = QueryEventSnapshot(parsedMQTTMessage: parsed) {
-                await streams.query.send(snapshot)
-            }
-        case .call:
-            if let snapshot = CallEventSnapshot(parsedMQTTMessage: parsed),
-               let operation = parsed.eventTypeFilter {
-                await streams.callFamily.send(snapshot, for: operation)
-            }
-        case .complete, .resolve, .retrieve, .returnEvent:
-            if let correlationId = parsed.correlationId {
-                let snapshot = ResponseEventSnapshot(
-                    eventType: parsed.eventType.rawValue,
-                    sourceId: parsed.sourceId,
-                    correlationId: correlationId,
-                    payload: parsed.payload
-                )
-                await streams.responseFamily.send(
-                    snapshot,
-                    for: ResponseKey(eventType: parsed.eventType, correlationId: correlationId)
-                )
-            }
-        case .update:
-            guard let snapshot = UpdateEventSnapshot(parsedMQTTMessage: parsed),
-                  let filter = parsed.eventTypeFilter else { return }
-            await streams.updateFamily.send(snapshot, for: filter)
-        case .channel:
-            guard let snapshot = ChannelEventSnapshot(parsedMQTTMessage: parsed),
-                  let channelId = parsed.eventTypeFilter else { return }
-            await streams.channelFamily.send(snapshot, for: channelId)
-        case .associate:
-            guard let snapshot = AssociateEventSnapshot(parsedMQTTMessage: parsed),
-                  let contextName = snapshot.ioContextName else { return }
-            await streams.associateFamily.send(snapshot, for: contextName)
-        case .ioValue:
-            break
-        }
     }
 
     /// Called whenever the underlying connection closes, whether due to an

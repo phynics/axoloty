@@ -43,28 +43,15 @@ extension AssociateEventSnapshot {
     /// Decodes an Associate snapshot from a parsed MQTT message via a single
     /// ``WireReader`` pass.
     init?(parsedMQTTMessage: ParsedMQTTMessage) {
-        var payload = parsedMQTTMessage.payload
-        guard let decoded = payload.withUTF8({ buffer -> (String, String, String?, Bool?, Int?)? in
-            guard let base = buffer.baseAddress,
-                  let wire = try? AssociateWireData(from: WireReader(bytes: base, length: buffer.count)) else {
-                return nil
-            }
-            return (
-                Self.uuidString(wire.ioSourceId),
-                Self.uuidString(wire.ioActorId),
-                wire.associatingRoute.map(Self.decodeJSONString),
-                wire.isExternalRoute,
-                wire.updateRate
-            )
-        }) else { return nil }
+        guard case .associate(let wire) = parsedMQTTMessage.event else { return nil }
         self.init(
             sourceId: parsedMQTTMessage.sourceId,
             ioContextName: parsedMQTTMessage.eventTypeFilter,
-            ioSourceId: decoded.0,
-            ioActorId: decoded.1,
-            associatingRoute: decoded.2,
-            isExternalRoute: decoded.3,
-            updateRate: decoded.4
+            ioSourceId: Self.uuidString(wire.ioSourceId),
+            ioActorId: Self.uuidString(wire.ioActorId),
+            associatingRoute: wire.associatingRoute.map { Self.decodeJSONString($0) },
+            isExternalRoute: wire.isExternalRoute,
+            updateRate: wire.updateRate
         )
     }
 
@@ -87,8 +74,8 @@ extension AssociateEventSnapshot {
     }
 
     /// Decodes the JSON escapes relevant to an associating route.
-    private static func decodeJSONString(_ slice: ByteSlice) -> String {
-        let input = Array(slice.asString().utf8)
+    private static func decodeJSONString(_ bytes: [UInt8]) -> String {
+        let input = bytes
         var output = [UInt8]()
         output.reserveCapacity(input.count)
         var index = 0

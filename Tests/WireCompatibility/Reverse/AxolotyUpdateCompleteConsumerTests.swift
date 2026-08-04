@@ -30,7 +30,7 @@ struct AxolotyUpdateCompleteConsumerTests {
         #expect(parsed.eventType == .update)
         #expect(parsed.eventTypeFilter == objectTypeFilter)
         #expect(parsed.sourceId == "22222222-2222-4222-8222-222222222222")
-        let update: UpdateEvent = try PayloadCoder.decode(parsed.payload)
+        let update: UpdateEvent = try PayloadCoder.decode(try #require(parsed.payloadString))
         #expect(update.data.object.coreType == .CoatyObject)
         #expect(update.data.object.objectType == "com.coaty.test.WireFixture")
         #expect(update.data.object.objectId.string == "11111111-1111-4111-8111-111111111111")
