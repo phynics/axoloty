@@ -48,6 +48,8 @@ extern int32_t axoloty_static_agent_receive(
     uint8_t *output_payload, int32_t output_payload_capacity,
     int32_t *output_topic_length, int32_t *output_payload_length);
 extern int32_t axoloty_static_agent_expire(int32_t role);
+extern int32_t axoloty_static_agent_copy_actor_route(
+    int32_t role, uint8_t *route, int32_t route_capacity);
 unsigned int axoloty_network_cleanup(void);
 
 static EventGroupHandle_t network_events;
@@ -80,20 +82,8 @@ static uint8_t agent_output_topic[NETWORK_MAX_TOPIC];
 static uint8_t agent_output_payload[NETWORK_MAX_PAYLOAD];
 static uint8_t agent_will_topic[NETWORK_MAX_TOPIC];
 static uint8_t agent_will_payload[NETWORK_MAX_PAYLOAD];
-static uint8_t agent_fragment_topic[NETWORK_MAX_TOPIC];
-static uint8_t agent_fragment_payload[NETWORK_MAX_PAYLOAD];
-static int32_t agent_fragment_topic_length;
-static int32_t agent_fragment_total_length;
-static int32_t agent_fragment_received_length;
-static int agent_fragment_active;
-
-static void network_reset_agent_fragment(void) {
-    agent_fragment_topic_length = 0;
-    agent_fragment_total_length = 0;
-    agent_fragment_received_length = 0;
-    agent_fragment_active = 0;
-}
-
+static uint8_t agent_actor_route[NETWORK_MAX_TOPIC];
+static int32_t agent_actor_route_length;
 static void network_ip_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
     (void)arg; (void)base; (void)data;
     if (id == IP_EVENT_STA_GOT_IP) {
@@ -126,6 +116,10 @@ static void network_mqtt_event(void *handler_args, esp_event_base_t base, int32_
             network_mqtt_bits |= AGENT_CONNECTED_BIT;
             if (agent_connect_count > 1U) {
                 esp_mqtt_client_subscribe(mqtt_client, "coaty/3/axoloty-embedded/#", 0);
+                if (agent_actor_route_length > 0) {
+                    esp_mqtt_client_subscribe(
+                        mqtt_client, (const char *)agent_actor_route, 0);
+                }
             }
         } else {
             network_connect_count += 1U;
@@ -136,7 +130,6 @@ static void network_mqtt_event(void *handler_args, esp_event_base_t base, int32_
         }
     }
     else if (event_id == MQTT_EVENT_DISCONNECTED && network_agent_role) {
-        network_reset_agent_fragment();
         network_mqtt_bits &= ~(AGENT_CONNECTED_BIT | AGENT_SUBSCRIBED_BIT);
     }
     else if (event_id == MQTT_EVENT_DISCONNECTED) network_mqtt_bits &= ~(4U | 8U);
@@ -150,41 +143,18 @@ static void network_mqtt_event(void *handler_args, esp_event_base_t base, int32_
             event->current_data_offset <= event->total_data_len &&
             event->data_len <= event->total_data_len - event->current_data_offset &&
             event->data;
-        int complete = 0;
-        if (valid && event->current_data_offset == 0) {
-            network_reset_agent_fragment();
-            valid = event->topic && event->topic_len > 0;
-            if (valid) {
-                memcpy(agent_fragment_topic, event->topic, (size_t)event->topic_len);
-                agent_fragment_topic_length = event->topic_len;
-                agent_fragment_total_length = event->total_data_len;
-                memcpy(agent_fragment_payload, event->data, (size_t)event->data_len);
-                agent_fragment_received_length = event->data_len;
-                complete = event->data_len == event->total_data_len;
-                agent_fragment_active = !complete;
-            }
-        } else if (valid && agent_fragment_active &&
-                   event->total_data_len == agent_fragment_total_length &&
-                   event->current_data_offset == agent_fragment_received_length &&
-                   (!event->topic || event->topic_len == 0 ||
-                    (event->topic_len == agent_fragment_topic_length &&
-                      memcmp(event->topic, agent_fragment_topic,
-                             (size_t)agent_fragment_topic_length) == 0))) {
-            memcpy(agent_fragment_payload + agent_fragment_received_length,
-                   event->data, (size_t)event->data_len);
-            agent_fragment_received_length += event->data_len;
-            complete = agent_fragment_received_length == agent_fragment_total_length;
-        } else {
-            network_reset_agent_fragment();
-        }
-        if (complete) {
-            agent_fragment_active = 0;
+        // The static endpoint profile has no reassembly buffer. A fragmented
+        // PUBLISH is rejected at the transport boundary instead of retaining
+        // partial untrusted data or allocating a continuation buffer.
+        valid = valid && event->topic && event->topic_len > 0 &&
+            event->current_data_offset == 0 && event->data_len == event->total_data_len;
+        if (valid) {
             int32_t output_topic_length = 0;
             int32_t output_payload_length = 0;
             int32_t action = axoloty_static_agent_receive(
                 (int32_t)network_agent_role,
-                agent_fragment_topic, agent_fragment_topic_length,
-                agent_fragment_payload, agent_fragment_total_length,
+                (const uint8_t *)event->topic, event->topic_len,
+                (const uint8_t *)event->data, event->data_len,
                 agent_output_topic, sizeof(agent_output_topic),
                 agent_output_payload, sizeof(agent_output_payload),
                 &output_topic_length, &output_payload_length);
@@ -213,6 +183,20 @@ static void network_mqtt_event(void *handler_args, esp_event_base_t base, int32_
                     (network_mqtt_bits & AGENT_ADVERTISE_BIT)) {
                     network_mqtt_bits |= AGENT_DEADVERTISE_BIT;
                 }
+            } else if (action == 4) {
+                int32_t route_length = axoloty_static_agent_copy_actor_route(
+                    (int32_t)network_agent_role, agent_actor_route,
+                    sizeof(agent_actor_route) - 1);
+                if (route_length > 0 && route_length < (int32_t)sizeof(agent_actor_route)) {
+                    agent_actor_route[route_length] = 0;
+                    agent_actor_route_length = route_length;
+                    esp_mqtt_client_subscribe(
+                        mqtt_client, (const char *)agent_actor_route, 0);
+                }
+            } else if (action == 5 && agent_actor_route_length > 0) {
+                esp_mqtt_client_unsubscribe(
+                    mqtt_client, (const char *)agent_actor_route);
+                agent_actor_route_length = 0;
             }
         }
     } else if (event_id == MQTT_EVENT_DATA && event && event->topic && event->data &&
@@ -586,7 +570,7 @@ unsigned int axoloty_agent_test(unsigned int overall_deadline_ms) {
     network_agent_role = axoloty_device_role;
     network_agent_scenario = axoloty_agent_scenario;
     agent_connect_count = 0;
-    network_reset_agent_fragment();
+    agent_actor_route_length = 0;
     network_mqtt_bits = 0;
     mqtt_client = esp_mqtt_client_init(&config);
     if (!mqtt_client || esp_mqtt_client_register_event(mqtt_client, ESP_EVENT_ANY_ID, network_mqtt_event, NULL) != ESP_OK ||
