@@ -11,6 +11,11 @@ enum StaticDeviceDispatchResult: Equatable {
     case duplicateResolve
     case malformed
     case unsupported
+    case ioSourceAssociated
+    case ioSourceDisassociated
+    case ioActorAssociated
+    case ioActorDisassociated
+    case ioValueDelivered
 }
 
 struct StaticDeviceAgent {
@@ -34,12 +39,33 @@ struct StaticDeviceAgent {
     static let deviceObjectId = objectAId
     static let namespace: StaticString = "axoloty-embedded"
 
+    // The firmware has a deliberately small, static endpoint profile. These
+    // UUIDs are endpoint identities, not agent identities, and stay stable so
+    // a host IoRouter can associate them without on-device discovery.
+    static let sourceAId = UUID16(bytes: (
+        0x32, 0x40, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00,
+        0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21
+    ))
+    static let actorAId = UUID16(bytes: (
+        0x32, 0x40, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00,
+        0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x22
+    ))
+    static let sourceBId = UUID16(bytes: (
+        0x32, 0x40, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00,
+        0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x31
+    ))
+    static let actorBId = UUID16(bytes: (
+        0x32, 0x40, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00,
+        0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x32
+    ))
+
     let agentId: UUID16
     let deviceObjectId: UUID16
     private(set) var hasAdvertisedPeer = false
     private var pendingCorrelation: UUID16?
     private var pendingDeadlineMS: UInt32?
     private var resolvedCorrelation: UUID16?
+    private var ioEndpoints: StaticIoEndpoints
 
     // A missing Resolve expires after five seconds; the C wait loop polls this
     // synchronous state while the MQTT client remains connected.
@@ -48,6 +74,22 @@ struct StaticDeviceAgent {
     init(agentId: UUID16 = Self.agentAId, deviceObjectId: UUID16 = Self.objectAId) {
         self.agentId = agentId
         self.deviceObjectId = deviceObjectId
+        let isA = agentId == Self.agentAId
+        self.ioEndpoints = StaticIoEndpoints(
+            sources: [StaticIoEndpointDescriptor(
+                id: isA ? Self.sourceAId : Self.sourceBId,
+                valueType: "com.axoloty.embedded.StaticIoValue",
+                mode: .json
+            )],
+            actors: [StaticIoEndpointDescriptor(
+                id: isA ? Self.actorAId : Self.actorBId,
+                valueType: "com.axoloty.embedded.StaticIoValue",
+                mode: .json
+            )],
+            // Application firmware replaces this fixed synchronous callback
+            // with its sensor/actuator action. It must not retain the borrow.
+            actorHandlers: [{ _ in }]
+        )
     }
 
     /// Starts the one bounded outstanding Discover request.
@@ -105,6 +147,18 @@ struct StaticDeviceAgent {
             pendingDeadlineMS = nil
             resolvedCorrelation = correlationId
             return .resolve
+        case .associate:
+            guard let associate = try? AssociateWireData(from: message.reader()) else { return .malformed }
+            let localActorId = agentId == Self.agentAId ? Self.actorAId : Self.actorBId
+            switch ioEndpoints.consumeAssociate(message) {
+            case .associated:
+                return associate.ioActorId == localActorId ? .ioActorAssociated : .ioSourceAssociated
+            case .disassociated:
+                return associate.ioActorId == localActorId ? .ioActorDisassociated : .ioSourceDisassociated
+            default: return .malformed
+            }
+        case .ioValue:
+            return ioEndpoints.consumeIoValue(message) == .delivered ? .ioValueDelivered : .malformed
         case .none:
             return .malformed
         default:
@@ -136,12 +190,26 @@ struct StaticDeviceAgent {
         try value.encode(to: &payload)
         return (topic.position, payload.position)
     }
+
+    /// Copies the currently associated local actor route into fixed caller
+    /// storage for ESP-MQTT subscribe/reconnect operations.
+    func copyActorRoute(
+        to output: UnsafeMutablePointer<UInt8>, capacity: Int
+    ) -> Int? {
+        let actorId = agentId == Self.agentAId ? Self.actorAId : Self.actorBId
+        return ioEndpoints.copyActorRoute(actorId: actorId, to: output, capacity: capacity)
+    }
 }
 
 private let phase4Correlation = UUID16(bytes: (
     0x32, 0x40, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00,
     0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04
 ))
+
+private var phase4AgentA = StaticDeviceAgent(
+    agentId: StaticDeviceAgent.agentAId,
+    deviceObjectId: StaticDeviceAgent.objectAId
+)
 
 private var phase4AgentB = StaticDeviceAgent(
     agentId: StaticDeviceAgent.agentBId,
@@ -158,13 +226,21 @@ func axolotyStaticAgentExpire(_ role: Int32) -> Int32 {
     role == 2 && phase4AgentB.expireDiscover(nowMS: phase4NowMS()) ? 1 : 0
 }
 
-@inline(__always)
-private func phase4Agent(_ role: Int32) -> StaticDeviceAgent {
-    role == 1
-        ? StaticDeviceAgent(agentId: StaticDeviceAgent.agentAId, deviceObjectId: StaticDeviceAgent.objectAId)
-        : StaticDeviceAgent(agentId: StaticDeviceAgent.agentBId, deviceObjectId: StaticDeviceAgent.objectBId)
+/// Copies the active actor route for the selected static endpoint profile.
+/// The C MQTT adapter invokes this only to subscribe or re-subscribe; route
+/// bytes never escape into asynchronous Swift state.
+@_cdecl("axoloty_static_agent_copy_actor_route")
+func axolotyStaticAgentCopyActorRoute(
+    _ role: Int32, _ output: UnsafeMutablePointer<UInt8>, _ capacity: Int32
+) -> Int32 {
+    guard capacity > 0 else { return -1 }
+    let length = role == 1
+        ? phase4AgentA.copyActorRoute(to: output, capacity: Int(capacity))
+        : phase4AgentB.copyActorRoute(to: output, capacity: Int(capacity))
+    return Int32(length ?? -1)
 }
 
+@inline(__always)
 private func preparePhase4Message(
     role: Int32,
     kind: Int32,
@@ -196,7 +272,7 @@ private func preparePhase4Message(
         return false
     }
 
-    let agent = phase4Agent(role)
+    let agent = role == 1 ? phase4AgentA : phase4AgentB
     let result: (topicLength: Int, payloadLength: Int)?
     let reader = WireReader(bytes: source.utf8Start, length: source.utf8CodeUnitCount)
     switch eventType {
@@ -273,8 +349,7 @@ func axolotyStaticAgentReceive(
 
     let nowMS = phase4NowMS()
     if role == 1 && message.eventType == .discover {
-        var agent = phase4Agent(role)
-        guard agent.dispatch(message, nowMS: nowMS) == .discover else { return -1 }
+        guard phase4AgentA.dispatch(message, nowMS: nowMS) == .discover else { return -1 }
         guard let correlationId = message.topic.correlationIdLevel.flatMap(UUID16.init(parsing:)) else { return -1 }
         return preparePhase4Message(
             role: role, kind: 3, responseCorrelationId: correlationId,
@@ -298,6 +373,23 @@ func axolotyStaticAgentReceive(
     }
     if role == 2 && message.eventType == .deadvertise {
         return phase4AgentB.dispatch(message, nowMS: nowMS) == .deadvertise ? 3 : -1
+    }
+    if message.eventType == .associate {
+        let result = role == 1
+            ? phase4AgentA.dispatch(message, nowMS: nowMS)
+            : phase4AgentB.dispatch(message, nowMS: nowMS)
+        switch result {
+        case .ioActorAssociated: return 4
+        case .ioActorDisassociated: return 5
+        case .ioSourceAssociated, .ioSourceDisassociated: return 0
+        default: return -1
+        }
+    }
+    if message.eventType == .ioValue {
+        let result = role == 1
+            ? phase4AgentA.dispatch(message, nowMS: nowMS)
+            : phase4AgentB.dispatch(message, nowMS: nowMS)
+        return result == .ioValueDelivered ? 6 : -1
     }
     return 0
 }
