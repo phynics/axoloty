@@ -761,7 +761,7 @@ struct BroadcastTransportTests {
         let correlationId = try await waitForPublishedCorrelation(on: client)
 
         await client.emitResponse(
-            unaryResponse(ReturnEvent.with(result: "42", executionInfo: #"{"provider":"primary"}"#), correlationId: correlationId),
+            try unaryResponse(ReturnEvent.with(result: "42", executionInfo: #"{"provider":"primary"}"#), correlationId: correlationId),
             eventType: .returnEvent,
             correlationId: correlationId
         )
@@ -773,7 +773,7 @@ struct BroadcastTransportTests {
 
         // Genuine duplicate and late publishes have no owner after success.
         await client.emitResponse(
-            unaryResponse(ReturnEvent.with(result: "99", executionInfo: nil), correlationId: correlationId),
+            try unaryResponse(ReturnEvent.with(result: "99", executionInfo: nil), correlationId: correlationId),
             eventType: .returnEvent,
             correlationId: correlationId
         )
@@ -790,7 +790,7 @@ struct BroadcastTransportTests {
         }
         let remoteCorrelation = try await waitForPublishedCorrelation(on: client)
         await client.emitResponse(
-            unaryResponse(
+            try unaryResponse(
                 ReturnEvent.with(error: ReturnError(code: -32602, message: "Invalid params"), executionInfo: nil),
                 correlationId: remoteCorrelation
             ),
@@ -889,7 +889,7 @@ struct BroadcastTransportTests {
         #expect(decoded.data.filter?.condition?.property.objectFilterProperty == "name")
 
         await client.emitResponse(
-            unaryResponse(ReturnEvent.with(result: #""provider-b""#, executionInfo: nil), correlationId: correlationId),
+            try unaryResponse(ReturnEvent.with(result: #""provider-b""#, executionInfo: nil), correlationId: correlationId),
             eventType: .returnEvent,
             correlationId: correlationId
         )
@@ -1058,8 +1058,8 @@ struct BroadcastTransportTests {
         let stream = await manager.publishCall(try CallEvent.with(operation: "stream", parameters: nil))
         let correlationId = try await waitForPublishedCorrelation(on: client)
         var iterator = stream.makeAsyncIterator()
-        let first = unaryResponse(ReturnEvent.with(result: "1", executionInfo: nil), correlationId: correlationId)
-        let second = unaryResponse(ReturnEvent.with(result: "2", executionInfo: nil), correlationId: correlationId)
+        let first = try unaryResponse(ReturnEvent.with(result: "1", executionInfo: nil), correlationId: correlationId)
+        let second = try unaryResponse(ReturnEvent.with(result: "2", executionInfo: nil), correlationId: correlationId)
         await client.emitResponse(first, eventType: .returnEvent, correlationId: correlationId)
         await client.emitResponse(second, eventType: .returnEvent, correlationId: correlationId)
         #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == first)
@@ -1176,8 +1176,13 @@ private func responseTopic(_ correlationId: String) -> String {
     TopicBuilder.subscribeTopic(eventType: .returnEvent, namespace: DEFAULT_NAMESPACE, correlationId: correlationId)
 }
 
-private func unaryResponse(_ event: ReturnEvent, correlationId: String) -> ResponseEventSnapshot {
-    ResponseEventSnapshot(eventType: "RTN", sourceId: "provider", correlationId: correlationId, payload: event.json)
+private func unaryResponse(_ event: ReturnEvent, correlationId: String) throws -> ResponseEventSnapshot {
+    ResponseEventSnapshot(
+        eventType: "RTN",
+        sourceId: "provider",
+        correlationId: correlationId,
+        payload: String(decoding: try HostWireAdapter.encodeEvent(event), as: UTF8.self)
+    )
 }
 
 // MARK: - Test seam
@@ -1271,9 +1276,12 @@ private final class FakeCommunicationClient: CommunicationClient {
             _actions.append("publish:\(topic)")
         }
     }
-    func publish(_ topic: String, message _: [UInt8]) {
+    func publish(_ topic: String, message: [UInt8]) {
         stateLock.withLock {
             _publishedTopics.append(topic)
+            if let string = String(bytes: message, encoding: .utf8) {
+                _publishedMessages.append((topic, string))
+            }
             _actions.append("publish:\(topic)")
         }
     }

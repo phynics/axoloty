@@ -23,6 +23,13 @@ Reference versions must be pinned before captured fixtures become normative:
 
 Allowed results are `Compatible`, `Compatible with normalization`, `Intentional divergence`, `Unsupported`, and `Not tested`. Any intentional divergence requires a linked decision and fixture update.
 
+As of issue #397, both shipping host directions use AxolotyWire event codecs:
+ingress owns `BorrowedWireEvent` before async delivery, and publication uses
+`OwnedWireEvent.encode(to:)`. Host-only registration, core fallback, unknown
+types, and custom-field hydration remain in Axoloty and do not extend the
+AxolotyWire dependency boundary. This is an ownership change only; it adds no
+intentional wire divergence and preserves the Call/Return shapes above.
+
 `Modern → JS` for the seven core capabilities is backed by `Tests/WireCompatibility/Reverse/`: Axoloty produces (or, for request/reply pairs, requests) against the pinned CoatyJS 2.4.0 reference agent. For the five request/reply pairs (Discover/Resolve, Query/Retrieve, Update/Complete, Call/Return) the assertion lives in the Swift test itself, decoding CoatyJS's response and checking its fields with `#expect`. For the two one-way events (Deadvertise, Channel), `AxolotyCoreProducerTests.swift` only publishes; the decoded-semantics check instead happens in `run-axoloty-core.sh`, which greps the CoatyJS consumer process's log for its `"state":"ack"` line, itself only emitted after the consumer's own field-level match succeeds. Either way, delivery alone is never treated as sufficient. It is marked "with normalization" because dynamic identifiers and timestamps are normalized before comparison.
 
 Query/Retrieve additionally exercises `objectFilter` (#119): the `query-retrieve` scenario publishes an `Equals` filter on `name` that matches the fixture, and pinned CoatyJS 2.4.0 evaluates it via `event.data.matchesObject`. A negative filter (`query-retrieve-filter-negative`) asserts no Retrieve arrives. Operand-type coverage (`query-retrieve-filter-operands`) tests int, double, bool, and null operands — all non-matching, proving the reference implementation parses these types without error. Number-typing preservation (e.g. `42` staying `Int`, not `42.0`) is **not** covered by this scenario: JavaScript numbers are all doubles, so CoatyJS's `matchesObject` happily matches `42.0` against `42`. That gap is covered separately by #112's characterization tests.

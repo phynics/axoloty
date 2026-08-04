@@ -110,8 +110,18 @@ and existing test suites:
 
 ## Conclusion
 
-All legacy serialization components are retained with documented rationale.
-No dead code was found. The gap between the host Codable path and
-`AxolotyWire` is primarily in `CoatyObject` class-hierarchy support,
-dynamic type dispatch, and `[String: Any]` private data — all of which
-require design decisions beyond the 0.2 checkpoint.
+Issue #397 supersedes the earlier communication-path disposition:
+
+- MQTT ingress decodes an AxolotyWire event once and owns it before async
+  delivery. IO routing and SensorThings no longer call `PayloadCoder`.
+- `CommunicationEvent.json` and its publication callers were removed. Manager
+  publications and the MQTT last will use `OwnedWireEvent.encode(to:)`.
+- `PayloadCoder`, decoder context, `RawJSONObjectContext`, and IkigaJSON
+  `JSONObject` remain only for the host object-model compatibility surface:
+  runtime class hydration, unknown-type custom fields, `CoatyObject.json`, and
+  filter-path evaluation. They are not event codecs and do not leak into
+  AxolotyWire.
+- Configuration and persistence Codable uses remain unrelated and unchanged.
+
+There is no runtime dual-codec switch. Shipping communication always uses
+AxolotyWire; retained JSON machinery operates only on nested host models.

@@ -227,8 +227,8 @@ extension CoatyObject {
     ///
     /// - Note: Falls back to `"{}"` and logs the failure if the object
     ///   cannot be encoded (e.g. a ``Double`` field holding `NaN`/`infinity`).
-    ///   Kept non-throwing because it is read from dozens of publish call
-    ///   sites that do not otherwise throw; see ``PayloadCoder/encode(_:)``.
+    ///   Retained for host-only model/filter compatibility; communication
+    ///   publication uses AxolotyWire and does not call this property.
     public var json: String {
         get {
             return PayloadCoder.encodeForJSON(DynamicCoatyObject(value: self))

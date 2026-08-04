@@ -216,14 +216,14 @@ struct SerializationAuditTests {
         #expect(event.data.object.rawJSONObject?["objectType"]?.string == "coaty.Identity")
     }
 
-    // MARK: - CommunicationEvent.json stability
+    // MARK: - AxolotyWire publication stability
 
     @Test
     func communicationEventJsonProducesValidJSON() throws {
         _ = Identity.objectType
         let identity = Identity(name: "json-stability")
         let event = try AdvertiseEvent.with(object: identity)
-        let json = event.json
+        let json = String(decoding: try HostWireAdapter.encodeEvent(event), as: UTF8.self)
         #expect(!json.isEmpty)
         #expect(json.contains("\"object\""))
         #expect(json.contains("\"name\":\"json-stability\""))

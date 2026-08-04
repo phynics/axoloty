@@ -61,10 +61,7 @@ public class PayloadCoder {
 
     /// Encodes a value to JSON and returns `"{}"` if encoding fails.
     ///
-    /// Used by non-throwing convenience properties (`CommunicationEvent.json`,
-    /// `CoatyObject.json`) that are read from publish call sites that do not
-    /// otherwise throw. The failure is logged at `.error` with the full cause
-    /// chain.
+    /// Used by the host-only `CoatyObject.json` model/filter bridge.
     internal static func encodeForJSON<T: Encodable>(_ value: T) -> String {
         do {
             let data = try JSONEncoder().encode(value)

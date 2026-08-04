@@ -41,7 +41,7 @@ struct AxolotyIoAssociateTests {
             updateRate: 250
         )
 
-        let json = event.json
+        let json = String(decoding: try HostWireAdapter.encodeEvent(event), as: UTF8.self)
         let decoded: AssociateEventData = try PayloadCoder.decode(json)
 
         #expect(decoded.ioSourceId == sourceId)
@@ -68,7 +68,8 @@ struct AxolotyIoAssociateTests {
             associatingRoute: nil
         )
 
-        let decoded: AssociateEventData = try PayloadCoder.decode(event.json)
+        let json = String(decoding: try HostWireAdapter.encodeEvent(event), as: UTF8.self)
+        let decoded: AssociateEventData = try PayloadCoder.decode(json)
         #expect(decoded.associatingRoute == nil)
         #expect(decoded.updateRate == nil)
     }
