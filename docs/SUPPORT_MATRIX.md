@@ -33,7 +33,7 @@ consistent vocabulary:
 
 | Capability | Support level | Evidence |
 |---|---|---|
-| Associate / IoValue | Partial | Strong offline and negative test coverage (9 negative cases). One live direction (modern→JS). Two recorded wire divergences: (1) `handleAssociate` force-unwraps `isExternalRoute` — blocks JS→modern; (2) IoValue payload wrapping (remediated). Cross-language routes and backpressure are not yet proven. |
+| Associate / IoValue | Partial | Host runtime has offline and live-wire coverage. The embedded profile additionally exposes bounded static source/actor endpoint state, but physical endpoint acceptance remains required before it is promoted to supported. |
 | IoState | Host-only | Internal-only event; not exchanged cross-implementation. |
 | Rule-based IO routing | Supported | 28 offline test cases (rule creation, condition evaluation, precedence, retry, incremental evaluation). No cross-implementation evidence. |
 
