@@ -16,6 +16,7 @@ test("principal Make workflows are direct axoloty-tool wrappers", () => {
     "build",
     "test-wire",
     "test-wire-live",
+    "embedded-toolchain-doctor",
     "embedded-swift-build",
     "check-embedded-swift-linker",
     "hardware-check",

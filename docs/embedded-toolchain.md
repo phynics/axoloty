@@ -66,7 +66,7 @@ them: `make image`.
 
 ```sh
 make image                        # build the dev image (includes ESP32-C6 toolchain)
-make embedded-toolchain-doctor    # verify tool versions + selected device access
+make embedded-toolchain-doctor    # verify the device-independent ESP-IDF environment
 make embedded-device-info          # query the board, write .testing/embedded/device-manifest.json
 make embedded-device-smoke         # build, flash, monitor C smoke image (30s deadline)
 make embedded-swift-build          # build the Embedded Swift firmware

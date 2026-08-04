@@ -67,13 +67,24 @@ func checkPlanPrintsStableJSON() {
     #if os(Linux)
     expectedNames += [
         "support-container", "support-fuzz-runner", "support-embedded-compile",
-        "support-embedded-smoke", "embedded-build", "embedded-linker",
+        "support-embedded-smoke", "embedded-toolchain", "embedded-build", "embedded-linker",
     ]
     #endif
     #expect(plan?.nodes.map(\.name) == expectedNames)
     #expect(plan?.nodes.first(where: { $0.name == "lint" })?.command.arguments == [
         "lint", "--no-cache", "--config", ".swiftlint.yml",
     ])
+}
+
+@Test
+func embeddedDoctorRunsDeviceIndependentEnvironmentCheck() {
+    let runner = RecordingRunner()
+    let dispatcher = AxolotyCommandDispatcher(commandRunner: runner, environment: [:])
+
+    let result = dispatcher.run(arguments: ["embedded", "doctor"])
+
+    #expect(result.exitCode == 0)
+    #expect(runner.command?.executable == "Tests/Support/check-embedded-environment.sh")
 }
 
 @Test

@@ -115,6 +115,7 @@ RUN printf 'listener 1883\nallow_anonymous true\n' \
 # This keeps offline embedded checks from mutating the toolchain or downloading
 # dependencies at first use. `install.sh esp32c6` downloads only the RISC-V
 # GCC toolchain, OpenOCD, and Python deps needed for that target.
+ENV IDF_TOOLS_PATH=/opt/esp/tools
 RUN git clone --depth 1 --branch ${ESP_IDF_VERSION} \
         https://github.com/espressif/esp-idf.git /opt/esp/idf \
     && cd /opt/esp/idf \
@@ -135,10 +136,19 @@ RUN curl -fsSL -o /tmp/espflash.zip \
 # Non-root user for direct device access when the container is run as a
 # regular user. The dialout group owns /dev/ttyACM* on most Linux distros.
 RUN useradd --no-create-home --shell /usr/sbin/nologin esp \
-    && usermod -a -G dialout esp
+    && usermod -a -G dialout esp \
+    && chown -R root:root "${IDF_TOOLS_PATH}" \
+    && chmod -R a+rX "${IDF_TOOLS_PATH}"
 
 ENV IDF_PATH=/opt/esp/idf
 ENV PATH="${IDF_PATH}/tools:${PATH}"
+
+# Exercise the installed SDK as the same non-root, no-home user model used by
+# the development runner. This catches HOME-dependent ESP-IDF installations
+# while the image is being built instead of at the first firmware build.
+USER esp
+RUN HOME=/tmp sh -c '. "${IDF_PATH}/export.sh" >/dev/null && idf.py --version'
+USER root
 
 # Keep the project-specific CLI in the final layer so changing orchestration
 # source does not invalidate the expensive, immutable ESP-IDF toolchain layers.
