@@ -10,7 +10,20 @@ project_dir=${EMBEDDED_PROJECT_DIR:-/workspace/Embedded/swift}
 build_dir=${EMBEDDED_BUILD_DIR:-/workspace/.build/embedded-swift}
 export_dir=${EMBEDDED_EXPORT_DIR:-/workspace/.build-output/embedded-swift}
 
-. "${IDF_PATH:-/opt/esp/idf}/export.sh" >/dev/null 2>&1
+idf_export_log=$(mktemp)
+trap 'rm -f "$idf_export_log"' EXIT
+set +e
+. "${IDF_PATH:-/opt/esp/idf}/export.sh" >"$idf_export_log" 2>&1
+idf_export_status=$?
+set -e
+if [ "$idf_export_status" -ne 0 ]; then
+    echo "error: ESP-IDF environment activation failed" >&2
+    cat "$idf_export_log" >&2
+    echo "hint: run 'make embedded-toolchain-doctor' for environment diagnostics" >&2
+    exit 1
+fi
+rm -f "$idf_export_log"
+trap - EXIT
 cd "$project_dir"
 
 cache="$build_dir/CMakeCache.txt"

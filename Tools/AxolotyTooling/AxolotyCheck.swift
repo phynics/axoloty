@@ -196,7 +196,8 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
                 AxolotyCheckNode(name: "support-fuzz-runner", command: AxolotyCommandPlan(executable: "Tests/Fuzzing/test-run-fuzz.sh")),
                 AxolotyCheckNode(name: "support-embedded-compile", command: AxolotyCommandPlan(executable: "Tests/Support/test-check-embedded-swift.sh")),
                 AxolotyCheckNode(name: "support-embedded-smoke", command: AxolotyCommandPlan(executable: "Tests/Support/test-embedded-swift-smoke.sh")),
-                AxolotyCheckNode(name: "embedded-build", dependencies: ["build"], command: AxolotyCommandPlan(executable: "Tests/Support/build-embedded-swift.sh")),
+                AxolotyCheckNode(name: "embedded-toolchain", command: AxolotyCommandPlan(executable: "Tests/Support/check-embedded-environment.sh")),
+                AxolotyCheckNode(name: "embedded-build", dependencies: ["build", "embedded-toolchain"], command: AxolotyCommandPlan(executable: "Tests/Support/build-embedded-swift.sh")),
                 AxolotyCheckNode(name: "embedded-linker", dependencies: ["embedded-build"], command: AxolotyCommandPlan(executable: "Tests/Support/check-embedded-swift-linker.sh")),
             ]
         }

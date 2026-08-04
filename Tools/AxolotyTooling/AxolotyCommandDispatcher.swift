@@ -124,6 +124,8 @@ public struct AxolotyCommandDispatcher: Sendable {
             execute(plan: AxolotyCheckPlan.wireCapture)
         case ["embedded", "build"]:
             checkResult(requested: ["embedded-build"])
+        case ["embedded", "doctor"]:
+            checkResult(requested: ["embedded-toolchain"])
         case ["embedded", "verify"]:
             checkResult(requested: ["embedded-linker"])
         case ["release", "snapshots"]:
@@ -162,6 +164,7 @@ public struct AxolotyCommandDispatcher: Sendable {
       wire verify [BUNDLE] Verify fixtures and an optional bundle without MQTT.
       wire capture         Run live MQTT captures with pinned reference agents.
       embedded build       Cross-compile the ESP32-C6 firmware on Linux.
+      embedded doctor      Verify the container's ESP-IDF build environment.
       embedded verify      Build and verify the ESP32-C6 linker contract.
       hardware check       Run or skip the sporadic hardware smoke check.
       hardware require     Require an attached device and run its smoke check.

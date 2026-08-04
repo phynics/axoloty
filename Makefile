@@ -89,7 +89,7 @@ help:
 		'make test-wire-live  Run live CoatyJS compatibility scenarios' \
 		'make test-wire-all  Run offline and live compatibility suites' \
 		'make wire-tool   Build the npx-runnable wire-compatibility CLI' \
-		'make embedded-toolchain-doctor  Verify embedded tool versions and device access' \
+		'make embedded-toolchain-doctor  Verify the device-independent ESP-IDF environment' \
 		'make embedded-device-info  Query the board and record a device manifest' \
 		'make embedded-device-smoke  Build, flash, and capture the smoke marker' \
 		'make embedded-mqtt-test  Run the Swift MQTT overlay acceptance gate' \
@@ -319,10 +319,7 @@ wire-tool:
 # See .devcontainer/Dockerfile and docs/embedded-toolchain.md.
 
 embedded-toolchain-doctor:
-	CONTAINER_DEVICES=/dev/ttyACM0 \
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
-	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-	.devcontainer/run.sh /workspace/Tests/Support/check-embedded-toolchain.sh
+	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='embedded doctor'
 
 embedded-device-info:
 	CONTAINER_DEVICES=/dev/ttyACM0 \
