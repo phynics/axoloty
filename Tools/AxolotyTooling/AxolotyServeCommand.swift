@@ -4,6 +4,8 @@ import Foundation
 
 /// The serve subcommand to execute.
 public enum AxolotyServeCommand: Equatable, Sendable {
+    /// Print contextual help for a serve subcommand.
+    case help(String)
     /// Start a local Mosquitto broker.
     case mqtt(MQTTServiceConfiguration)
     /// Start an Axoloty-aware MCP server.

@@ -88,6 +88,9 @@ public struct AxolotyServeParser: Sendable {
             return .failure(.missingSubcommand)
         }
         let rest = Array(arguments.dropFirst())
+        if rest == ["--help"], ["mqtt", "mcp", "dev"].contains(subcommand) {
+            return .success(.help(subcommand))
+        }
         switch subcommand {
         case "mqtt":
             return parseMQTT(arguments: rest, environment: environment)

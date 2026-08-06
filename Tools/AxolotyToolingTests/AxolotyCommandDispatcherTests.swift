@@ -42,6 +42,18 @@ func helpCommandPrintsUsage() {
 }
 
 @Test
+func invalidCommandUsesConfiguredExecutableNameInErrorAndUsage() {
+    let dispatcher = AxolotyCommandDispatcher(executableName: "ax", environment: [:])
+
+    let result = dispatcher.run(arguments: ["unknown"])
+
+    #expect(result.exitCode == 64)
+    #expect(result.standardError.contains("unsupported ax command"))
+    #expect(result.standardError.contains("Usage: ax <command>"))
+    #expect(!result.standardError.contains("axoloty-tool"))
+}
+
+@Test
 func versionCommandPrintsVersion() {
     let result = AxolotyCommandDispatcher().run(arguments: ["--version"])
 

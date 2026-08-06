@@ -6,6 +6,18 @@ import Testing
 
 // MARK: - Serve subcommand tests
 
+@Test(arguments: ["mqtt", "mcp", "dev"])
+func serveSubcommandHelpIsParsedWithoutStartingService(subcommand: String) {
+    let result = AxolotyServeParser().parse(arguments: [subcommand, "--help"], environment: [:])
+
+    guard case .success(.help(let helpSubcommand)) = result else {
+        Issue.record("expected help request, got \(result)")
+        return
+    }
+
+    #expect(helpSubcommand == subcommand)
+}
+
 @Test
 func serveMqttDefaultsToLoopback1883() {
     let result = AxolotyServeParser().parse(arguments: ["mqtt"], environment: [:])
@@ -388,6 +400,18 @@ func serveMqttCLIOverridesEnvPort() {
 }
 
 // MARK: - Dispatcher integration tests
+
+@Test(arguments: ["mqtt", "mcp", "dev"])
+func dispatcherServeSubcommandHelpPrintsContextualUsage(subcommand: String) {
+    let dispatcher = AxolotyCommandDispatcher(executableName: "ax", environment: [:])
+
+    let result = dispatcher.run(arguments: ["serve", subcommand, "--help"])
+
+    #expect(result.exitCode == 0)
+    #expect(result.standardOutput.contains("Usage: ax serve \(subcommand)"))
+    #expect(result.standardOutput.contains("Options:"))
+    #expect(result.standardError.isEmpty)
+}
 
 @Test
 func dispatcherServesMqttReturns69WhenMosquittoMissing() {
