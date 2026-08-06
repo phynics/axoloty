@@ -42,6 +42,7 @@ test("target self-test discovery recognizes shell commands and Node test globs",
   fs.writeFileSync(makefile, "test-support:\n\t/workspace/Tests/Support/test-one.sh\n\tnode --test Tests/Support/*.test.mjs\n");
   const invoked = discoverTargetSelfTests(makefile, [
     "Tests/Support/one.test.mjs",
+    "Tests/Support/nested/one.test.mjs",
     "Tests/Support/test-one.sh",
     "Tests/Support/test-two.sh",
   ]);
@@ -49,6 +50,27 @@ test("target self-test discovery recognizes shell commands and Node test globs",
     "Tests/Support/one.test.mjs",
     "Tests/Support/test-one.sh",
   ])]]));
+});
+
+test("target self-test discovery ignores path mentions outside executable positions", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-tool-invocations-"));
+  const makefile = path.join(directory, "Makefile");
+  fs.writeFileSync(makefile, "test-support:\n\tprintf '%s\\n' Tests/Support/test-one.sh\n\tsh Tests/Support/test-two.sh\n");
+  const invoked = discoverTargetSelfTests(makefile, [
+    "Tests/Support/test-one.sh",
+    "Tests/Support/test-two.sh",
+  ]);
+  assert.deepEqual(invoked, new Map([["test-support", new Set(["Tests/Support/test-two.sh"])]]));
+});
+
+test("target self-test discovery follows recursive Make wrappers without looping", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-tool-invocations-"));
+  const makefile = path.join(directory, "Makefile");
+  fs.writeFileSync(makefile, "test-support:\n\t$(MAKE) --no-print-directory child-target\nchild-target:\n\tTests/Support/test-one.sh\ncycle-a:\n\t$(MAKE) cycle-b\ncycle-b:\n\t$(MAKE) cycle-a\n");
+  const invoked = discoverTargetSelfTests(makefile, ["Tests/Support/test-one.sh"]);
+  assert.deepEqual(invoked.get("test-support"), new Set(["Tests/Support/test-one.sh"]));
+  assert.deepEqual(invoked.get("cycle-a"), new Set());
+  assert.deepEqual(invoked.get("cycle-b"), new Set());
 });
 
 test("validator rejects duplicate ownership and unknown targets", () => {

@@ -23,32 +23,92 @@ function shellTokenMatchesPath(token, selfTestPath) {
   const repositoryPath = unquoted.replace(/^\/workspace\//, "");
   if (repositoryPath === selfTestPath) return true;
   if (!repositoryPath.includes("*")) return false;
-  const pattern = repositoryPath.split("*").map(segment => segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*");
+  const pattern = repositoryPath.split("*").map(segment => segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[^/]*");
   return new RegExp(`^${pattern}$`).test(selfTestPath);
 }
 
+function commandTokens(command) {
+  return command.trim().replace(/^[@+-]+/, "").match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [];
+}
+
+function executableIndex(tokens) {
+  let index = 0;
+  while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[index] ?? "")) index += 1;
+  return index;
+}
+
 function commandInvokesSelfTest(command, selfTestPath) {
-  const tokens = command.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [];
-  if (tokens.some(token => !token.includes("*") && shellTokenMatchesPath(token, selfTestPath))) return true;
-  const nodeTest = tokens.findIndex((token, index) => token === "node" && tokens[index + 1] === "--test" && (index === 0 || tokens[index - 1] === "&&"));
-  return nodeTest >= 0 && tokens.slice(nodeTest + 2).some(token => token.includes("*") && shellTokenMatchesPath(token, selfTestPath));
+  const tokens = commandTokens(command);
+  const executable = executableIndex(tokens);
+  if (shellTokenMatchesPath(tokens[executable] ?? "", selfTestPath) && !tokens[executable].includes("*")) return true;
+
+  const interpreter = tokens[executable];
+  if (["sh", "bash", "dash", "zsh", ".devcontainer/run.sh"].includes(interpreter)) {
+    return tokens.slice(executable + 1).some(token => !token.startsWith("-") && !token.includes("*") && shellTokenMatchesPath(token, selfTestPath));
+  }
+  if (interpreter !== "node") return false;
+  const testOption = tokens.indexOf("--test", executable + 1);
+  return testOption >= 0 && tokens.slice(testOption + 1).some(token => shellTokenMatchesPath(token, selfTestPath));
+}
+
+function recursiveMakeTarget(command) {
+  const tokens = commandTokens(command);
+  let index = executableIndex(tokens);
+  if (tokens[index] !== "$(MAKE)") return undefined;
+  index += 1;
+  while (index < tokens.length) {
+    if (tokens[index].startsWith("-")) {
+      if (["-C", "-f", "--directory", "--file"].includes(tokens[index])) index += 1;
+      index += 1;
+    } else if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[index])) {
+      index += 1;
+    } else {
+      return tokens[index];
+    }
+  }
+  return undefined;
 }
 
 export function discoverTargetSelfTests(makefilePath, selfTests) {
   if (!fs.existsSync(makefilePath)) return new Map();
-  const invoked = new Map();
+  const recipes = new Map();
   let target;
   for (const line of fs.readFileSync(makefilePath, "utf8").split(/\r?\n/)) {
     const match = /^([A-Za-z0-9_][A-Za-z0-9_.-]*):(?!=)/.exec(line);
     if (match && !match[1].startsWith(".")) {
       target = match[1];
-      invoked.set(target, new Set());
+      recipes.set(target, []);
     } else if (target && line.startsWith("\t")) {
-      for (const selfTest of selfTests) if (commandInvokesSelfTest(line, selfTest)) invoked.get(target).add(selfTest);
+      recipes.get(target).push(line);
     } else if (line && !line.startsWith("#")) {
       target = undefined;
     }
   }
+
+  const direct = new Map();
+  const children = new Map();
+  for (const [name, commands] of recipes) {
+    direct.set(name, new Set());
+    children.set(name, new Set());
+    for (const command of commands) {
+      for (const selfTest of selfTests) if (commandInvokesSelfTest(command, selfTest)) direct.get(name).add(selfTest);
+      const child = recursiveMakeTarget(command);
+      if (child) children.get(name).add(child);
+    }
+  }
+
+  const resolved = new Map();
+  const visit = (name, ancestors = new Set()) => {
+    if (resolved.has(name)) return resolved.get(name);
+    if (ancestors.has(name)) return new Set();
+    const found = new Set(direct.get(name));
+    const nextAncestors = new Set(ancestors).add(name);
+    for (const child of children.get(name) ?? []) for (const selfTest of visit(child, nextAncestors)) found.add(selfTest);
+    resolved.set(name, found);
+    return found;
+  };
+  const invoked = new Map();
+  for (const name of recipes.keys()) invoked.set(name, visit(name));
   return invoked;
 }
 
