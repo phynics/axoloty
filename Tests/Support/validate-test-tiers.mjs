@@ -97,18 +97,19 @@ export function discoverTargetSelfTests(makefilePath, selfTests) {
     }
   }
 
-  const resolved = new Map();
-  const visit = (name, ancestors = new Set()) => {
-    if (resolved.has(name)) return resolved.get(name);
-    if (ancestors.has(name)) return new Set();
-    const found = new Set(direct.get(name));
-    const nextAncestors = new Set(ancestors).add(name);
-    for (const child of children.get(name) ?? []) for (const selfTest of visit(child, nextAncestors)) found.add(selfTest);
-    resolved.set(name, found);
-    return found;
-  };
   const invoked = new Map();
-  for (const name of recipes.keys()) invoked.set(name, visit(name));
+  for (const name of recipes.keys()) {
+    const found = new Set();
+    const visited = new Set();
+    const visit = targetName => {
+      if (visited.has(targetName)) return;
+      visited.add(targetName);
+      for (const selfTest of direct.get(targetName) ?? []) found.add(selfTest);
+      for (const child of children.get(targetName) ?? []) visit(child);
+    };
+    visit(name);
+    invoked.set(name, found);
+  }
   return invoked;
 }
 
