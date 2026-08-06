@@ -54,6 +54,7 @@ func runAgent() async throws {
         components: components,
         configuration: configuration
     )
+    defer { container.shutdown() }
     guard let manager = container.communicationManager else {
         throw AxolotyError.invalidConfiguration(
             option: "communicationManager",
@@ -61,14 +62,14 @@ func runAgent() async throws {
         )
     }
 
-    try manager.start()
     let stream = try await manager.observeAdvertiseStream(
         withObjectType: Identity.objectType
     )
+    var iterator = stream.makeAsyncIterator()
+    try await container.startAndWaitUntilReady()
     manager.publishAdvertise(try AdvertiseEvent.with(object: Identity(name: "my-agent")))
-    container.shutdown()
 
-    _ = stream
+    _ = await iterator.next()
 }
 ```
 
