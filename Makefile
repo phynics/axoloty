@@ -212,8 +212,8 @@ checkpoint-hardware:
 			AXOLOTY_GIT_COMMIT="$$AXOLOTY_GIT_COMMIT" AXOLOTY_GIT_CLEAN="$$AXOLOTY_GIT_CLEAN" \
 			AXOLOTY_DEVICE="$${AXOLOTY_DEVICE:-/dev/ttyACM0}"
 
-test-tooling: resolve
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter 'AxolotyToolingTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyInspectorCLITests|AxolotyMCPTests'
+test-tooling:
+	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='test tooling'
 
 test-communication: image
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \

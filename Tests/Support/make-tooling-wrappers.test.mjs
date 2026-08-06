@@ -14,6 +14,7 @@ test("principal Make workflows are direct axoloty-tool wrappers", () => {
   for (const target of [
     "check",
     "build",
+    "test-tooling",
     "test-wire",
     "test-wire-live",
     "embedded-toolchain-doctor",

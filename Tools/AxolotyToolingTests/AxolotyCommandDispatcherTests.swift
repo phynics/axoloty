@@ -37,6 +37,7 @@ func helpCommandPrintsUsage() {
 
     #expect(result.exitCode == 0)
     #expect(result.standardOutput.contains("Usage: axoloty-tool <command>"))
+    #expect(result.standardOutput.contains("test tooling"))
     #expect(result.standardError.isEmpty)
 }
 
@@ -221,6 +222,26 @@ func testOfflineUsesTheCheckPlan() throws {
 
     #expect(result.exitCode == 0)
     #expect(manifest.results.map(\.name) == AxolotyCheckPlan.initialOffline.nodes.map(\.name))
+}
+
+@Test
+func testToolingUsesOnlyItsCheckPlanDependencyClosure() throws {
+    let runner = RecordingSequenceRunner()
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: runner,
+        fileSystem: StubFileSystem(paths: []),
+        environment: [:]
+    )
+
+    let result = dispatcher.run(arguments: ["test", "tooling"])
+    let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
+
+    #expect(result.exitCode == 0)
+    #expect(manifest.results.map(\.name) == ["resolve", "build", "test-tooling"])
+    #expect(runner.commands.last?.arguments == [
+        "test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--filter",
+        "AxolotyToolingTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyInspectorCLITests|AxolotyMCPTests",
+    ])
 }
 
 @Test

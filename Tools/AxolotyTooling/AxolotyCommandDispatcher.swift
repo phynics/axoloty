@@ -116,6 +116,8 @@ public struct AxolotyCommandDispatcher: Sendable {
             checkResult(requested: ["build"])
         case ["test", "offline"]:
             checkResult()
+        case ["test", "tooling"]:
+            checkResult(requested: ["test-tooling"])
         case ["test", "integration"]:
             integrationResult()
         case ["wire", "verify"]:
@@ -160,6 +162,7 @@ public struct AxolotyCommandDispatcher: Sendable {
       check                Run the initial offline check plan and print JSON.
       build                Build the host package and its prerequisites.
       test offline         Run the same offline plan as check.
+      test tooling         Run offline developer-tool tests and prerequisites.
       test integration     Run transport tests against local Mosquitto.
       wire verify [BUNDLE] Verify fixtures and an optional bundle without MQTT.
       wire capture         Run live MQTT captures with pinned reference agents.
