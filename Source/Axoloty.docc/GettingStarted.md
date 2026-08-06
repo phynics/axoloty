@@ -48,7 +48,6 @@ func runAgent() async throws {
             shouldAutoStart: false
         )
     }
-
     let components = Components(controllers: [:], objectTypes: [])
     let container = try Container.resolve(
         components: components,

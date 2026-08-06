@@ -66,6 +66,14 @@ Add Axoloty to your `Package.swift`:
 ```swift
 dependencies: [
     .package(url: "https://github.com/phynics/axoloty", from: "0.2.0"),
+],
+targets: [
+    .executableTarget(
+        name: "MyApp",
+        dependencies: [
+            .product(name: "Axoloty", package: "axoloty"),
+        ]
+    ),
 ]
 ```
 
@@ -74,9 +82,15 @@ For wire-only usage (no host runtime, no Foundation, no MQTT):
 ```swift
 dependencies: [
     .package(url: "https://github.com/phynics/axoloty", from: "0.2.0"),
+],
+targets: [
+    .executableTarget(
+        name: "WireApp",
+        dependencies: [
+            .product(name: "AxolotyWire", package: "axoloty"),
+        ]
+    ),
 ]
-// Target dependency:
-.product(name: "AxolotyWire", package: "Axoloty"),
 ```
 
 ### Minimal host example

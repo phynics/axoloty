@@ -3,7 +3,7 @@
 import Axoloty
 
 @MainActor
-func compileHostJourney() async throws {
+func runAgent() async throws {
     let configuration = try Configuration.build { builder in
         builder.common = CommonOptions(agentIdentity: ["name": "my-agent"])
         builder.communication = CommunicationOptions(
