@@ -74,6 +74,10 @@ func checkPlanPrintsStableJSON() {
     #expect(plan?.nodes.first(where: { $0.name == "lint" })?.command.arguments == [
         "lint", "--no-cache", "--config", ".swiftlint.yml",
     ])
+    #expect(plan?.nodes.first(where: { $0.name == "test-tooling" })?.command.arguments == [
+        "test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--filter",
+        "AxolotyToolingTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyInspectorCLITests|AxolotyMCPTests",
+    ])
 }
 
 @Test

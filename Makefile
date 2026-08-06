@@ -213,7 +213,7 @@ checkpoint-hardware:
 			AXOLOTY_DEVICE="$${AXOLOTY_DEVICE:-/dev/ttyACM0}"
 
 test-tooling: resolve
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter AxolotyToolingTests
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter 'AxolotyToolingTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyInspectorCLITests|AxolotyMCPTests'
 
 test-communication: image
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \
