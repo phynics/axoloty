@@ -233,12 +233,11 @@ public struct AxolotyCommandDispatcher: Sendable {
       --help                 Show this help.
     """
 
-    private static func serveUsage(subcommand: String, executableName: String) -> String {
-        let usage = switch subcommand {
-        case "mqtt": mqttUsage
-        case "mcp": mcpUsage
-        case "dev": developmentUsage
-        default: Self.usage
+    private static func serveUsage(topic: AxolotyServeHelpTopic, executableName: String) -> String {
+        let usage = switch topic {
+        case .mqtt: mqttUsage
+        case .mcp: mcpUsage
+        case .dev: developmentUsage
         }
         return usage.replacingOccurrences(of: "axoloty-tool", with: executableName)
     }
@@ -248,9 +247,9 @@ public struct AxolotyCommandDispatcher: Sendable {
         switch parser.parse(arguments: arguments, environment: environment) {
         case .success(let command):
             switch command {
-            case .help(let subcommand):
+            case .help(let topic):
                 return AxolotyCommandResult(
-                    standardOutput: Self.serveUsage(subcommand: subcommand, executableName: executableName)
+                    standardOutput: Self.serveUsage(topic: topic, executableName: executableName)
                 )
             case .mqtt(let config):
                 let runner = AxolotyMQTTServiceRunner(

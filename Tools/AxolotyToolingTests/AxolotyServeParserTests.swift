@@ -9,13 +9,18 @@ import Testing
 @Test(arguments: ["mqtt", "mcp", "dev"])
 func serveSubcommandHelpIsParsedWithoutStartingService(subcommand: String) {
     let result = AxolotyServeParser().parse(arguments: [subcommand, "--help"], environment: [:])
+    let expectedTopic: AxolotyServeHelpTopic = switch subcommand {
+    case "mqtt": .mqtt
+    case "mcp": .mcp
+    default: .dev
+    }
 
-    guard case .success(.help(let helpSubcommand)) = result else {
+    guard case .success(.help(let helpTopic)) = result else {
         Issue.record("expected help request, got \(result)")
         return
     }
 
-    #expect(helpSubcommand == subcommand)
+    #expect(helpTopic == expectedTopic)
 }
 
 @Test
