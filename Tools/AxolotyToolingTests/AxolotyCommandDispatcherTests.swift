@@ -37,7 +37,20 @@ func helpCommandPrintsUsage() {
 
     #expect(result.exitCode == 0)
     #expect(result.standardOutput.contains("Usage: axoloty-tool <command>"))
+    #expect(result.standardOutput.contains("test tooling"))
     #expect(result.standardError.isEmpty)
+}
+
+@Test
+func invalidCommandUsesConfiguredExecutableNameInErrorAndUsage() {
+    let dispatcher = AxolotyCommandDispatcher(executableName: "ax", environment: [:])
+
+    let result = dispatcher.run(arguments: ["unknown"])
+
+    #expect(result.exitCode == 64)
+    #expect(result.standardError.contains("unsupported ax command"))
+    #expect(result.standardError.contains("Usage: ax <command>"))
+    #expect(!result.standardError.contains("axoloty-tool"))
 }
 
 @Test
@@ -73,6 +86,10 @@ func checkPlanPrintsStableJSON() {
     #expect(plan?.nodes.map(\.name) == expectedNames)
     #expect(plan?.nodes.first(where: { $0.name == "lint" })?.command.arguments == [
         "lint", "--no-cache", "--config", ".swiftlint.yml",
+    ])
+    #expect(plan?.nodes.first(where: { $0.name == "test-tooling" })?.command.arguments == [
+        "test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--filter",
+        "AxolotyToolingTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyInspectorCLITests|AxolotyMCPTests",
     ])
 }
 
@@ -217,6 +234,26 @@ func testOfflineUsesTheCheckPlan() throws {
 
     #expect(result.exitCode == 0)
     #expect(manifest.results.map(\.name) == AxolotyCheckPlan.initialOffline.nodes.map(\.name))
+}
+
+@Test
+func testToolingUsesOnlyItsCheckPlanDependencyClosure() throws {
+    let runner = RecordingSequenceRunner()
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: runner,
+        fileSystem: StubFileSystem(paths: []),
+        environment: [:]
+    )
+
+    let result = dispatcher.run(arguments: ["test", "tooling"])
+    let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
+
+    #expect(result.exitCode == 0)
+    #expect(manifest.results.map(\.name) == ["resolve", "build", "test-tooling"])
+    #expect(runner.commands.last?.arguments == [
+        "test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--filter",
+        "AxolotyToolingTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyInspectorCLITests|AxolotyMCPTests",
+    ])
 }
 
 @Test

@@ -212,8 +212,8 @@ checkpoint-hardware:
 			AXOLOTY_GIT_COMMIT="$$AXOLOTY_GIT_COMMIT" AXOLOTY_GIT_CLEAN="$$AXOLOTY_GIT_CLEAN" \
 			AXOLOTY_DEVICE="$${AXOLOTY_DEVICE:-/dev/ttyACM0}"
 
-test-tooling: resolve
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter AxolotyToolingTests
+test-tooling:
+	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='test tooling'
 
 test-communication: image
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \
@@ -290,12 +290,22 @@ fuzz-long:
 test-wire:
 	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='wire verify'
 
-# Harness self-tests intentionally remain host-side Shell/JavaScript checks.
-test-support:
+# Harness self-tests are host-side Shell/JavaScript checks, apart from the
+# Embedded Swift compiler check, which uses the pinned toolchain.
+test-support: resolve
 	Tests/Support/test-check-axoloty-wire-dependencies.sh
 	Tests/Support/test-check-axoloty-wire-independent-resolution.sh
 	Tests/Support/test-check-axoloty-wire-test-isolation.sh
 	Tests/Support/test-check-benchmark-corpus.sh
+	Tests/Support/test-check-benchmark-size.sh
+	Tests/Support/test-check-benchmark-wire.sh
+	Tests/Support/test-check-benchmark-wire-bounds.sh
+	Tests/Support/test-check-benchmark-wire-device.sh
+	Tests/Support/test-check-budget-manifest.sh
+	Tests/Support/test-build-embedded-swift.sh
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
+	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+	.devcontainer/run.sh /workspace/Tests/Support/test-check-embedded-swift.sh
 	Tests/Support/test-embedded-swift-smoke.sh
 	Tests/Support/test-embedded-swift-test.sh
 	Tests/Support/test-embedded-network.sh

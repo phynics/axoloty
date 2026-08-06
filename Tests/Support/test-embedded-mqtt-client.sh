@@ -24,8 +24,8 @@ grep -Fq 'network:reconnect' Tests/Support/embedded-network-validator.mjs
 grep -Fq 'let cleanedUp = axoloty_network_cleanup() != 0' "$main"
 grep -Fq 'network_wait_ticks(start, overall_deadline_ms, 30000)' Embedded/swift/main/network_bootstrap.c
 grep -Fq 'esp_mqtt_client_destroy(mqtt_client)' Embedded/swift/main/network_bootstrap.c
-grep -Fq 'agent_fragment_active' Embedded/swift/main/network_bootstrap.c
-grep -Fq 'network_reset_agent_fragment()' Embedded/swift/main/network_bootstrap.c
+grep -Fq 'The static endpoint profile has no reassembly buffer.' Embedded/swift/main/network_bootstrap.c
+grep -Fq 'event->current_data_offset == 0 && event->data_len == event->total_data_len' Embedded/swift/main/network_bootstrap.c
 node --input-type=module <<'JS'
 import fs from "node:fs";
 const source = fs.readFileSync("Embedded/swift/main/Main.swift", "utf8");

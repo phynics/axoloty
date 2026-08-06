@@ -18,6 +18,118 @@ export function parseMakeTargets(makefilePath) {
   return targets;
 }
 
+function shellTokenMatchesPath(token, selfTestPath) {
+  const unquoted = token.replace(/^["']|["']$/g, "");
+  const repositoryPath = unquoted.replace(/^\/workspace\//, "");
+  if (repositoryPath === selfTestPath) return true;
+  if (!repositoryPath.includes("*")) return false;
+  const pattern = repositoryPath.split("*").map(segment => segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[^/]*");
+  return new RegExp(`^${pattern}$`).test(selfTestPath);
+}
+
+function commandTokens(command) {
+  return command.trim().replace(/^[@+-]+/, "").match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [];
+}
+
+function executableIndex(tokens) {
+  let index = 0;
+  while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[index] ?? "")) index += 1;
+  return index;
+}
+
+function shellScriptOperand(tokens, interpreterIndex) {
+  let index = interpreterIndex + 1;
+  while (index < tokens.length) {
+    const token = tokens[index];
+    if (token === "--") return tokens[index + 1];
+    if (!token.startsWith("-") && token !== "+o") return token;
+    if (token === "-c" || token === "--command" || /^-[^-]*c/.test(token)) return undefined;
+    if (["-o", "+o", "-O", "--init-file", "--rcfile"].includes(token)) index += 1;
+    index += 1;
+  }
+  return undefined;
+}
+
+function commandInvokesSelfTest(command, selfTestPath) {
+  const tokens = commandTokens(command);
+  const invokes = commandTokensToInspect => {
+    const executable = executableIndex(commandTokensToInspect);
+    const program = commandTokensToInspect[executable] ?? "";
+    if (shellTokenMatchesPath(program, selfTestPath) && !program.includes("*")) return true;
+    if (program === ".devcontainer/run.sh") return invokes(commandTokensToInspect.slice(executable + 1));
+    if (["sh", "bash", "dash", "zsh"].includes(program)) {
+      const script = shellScriptOperand(commandTokensToInspect, executable) ?? "";
+      return !script.includes("*") && shellTokenMatchesPath(script, selfTestPath);
+    }
+    if (program !== "node") return false;
+    const testOption = commandTokensToInspect.indexOf("--test", executable + 1);
+    return testOption >= 0 && commandTokensToInspect.slice(testOption + 1).some(token => shellTokenMatchesPath(token, selfTestPath));
+  };
+  return invokes(tokens);
+}
+
+function recursiveMakeTarget(command) {
+  const tokens = commandTokens(command);
+  let index = executableIndex(tokens);
+  if (tokens[index] !== "$(MAKE)") return undefined;
+  index += 1;
+  while (index < tokens.length) {
+    if (tokens[index].startsWith("-")) {
+      if (["-C", "-f", "--directory", "--file"].includes(tokens[index])) index += 1;
+      index += 1;
+    } else if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[index])) {
+      index += 1;
+    } else {
+      return tokens[index];
+    }
+  }
+  return undefined;
+}
+
+export function discoverTargetSelfTests(makefilePath, selfTests) {
+  if (!fs.existsSync(makefilePath)) return new Map();
+  const recipes = new Map();
+  let target;
+  for (const line of fs.readFileSync(makefilePath, "utf8").split(/\r?\n/)) {
+    const match = /^([A-Za-z0-9_][A-Za-z0-9_.-]*):(?!=)/.exec(line);
+    if (match && !match[1].startsWith(".")) {
+      target = match[1];
+      recipes.set(target, []);
+    } else if (target && line.startsWith("\t")) {
+      recipes.get(target).push(line);
+    } else if (line && !line.startsWith("#")) {
+      target = undefined;
+    }
+  }
+
+  const direct = new Map();
+  const children = new Map();
+  for (const [name, commands] of recipes) {
+    direct.set(name, new Set());
+    children.set(name, new Set());
+    for (const command of commands) {
+      for (const selfTest of selfTests) if (commandInvokesSelfTest(command, selfTest)) direct.get(name).add(selfTest);
+      const child = recursiveMakeTarget(command);
+      if (child) children.get(name).add(child);
+    }
+  }
+
+  const invoked = new Map();
+  for (const name of recipes.keys()) {
+    const found = new Set();
+    const visited = new Set();
+    const visit = targetName => {
+      if (visited.has(targetName)) return;
+      visited.add(targetName);
+      for (const selfTest of direct.get(targetName) ?? []) found.add(selfTest);
+      for (const child of children.get(targetName) ?? []) visit(child);
+    };
+    visit(name);
+    invoked.set(name, found);
+  }
+  return invoked;
+}
+
 export function discoverSelfTests(testsDirectory) {
   if (!fs.existsSync(testsDirectory)) return [];
   const base = path.dirname(testsDirectory);
@@ -35,7 +147,7 @@ export function discoverSelfTests(testsDirectory) {
   return [...new Set(found)].sort();
 }
 
-export function validate(document, { makeTargets, discoveredSelfTests, exists = () => true }) {
+export function validate(document, { makeTargets, discoveredSelfTests, invokedSelfTests = new Map(), exists = () => true }) {
   const errors = [];
   if (document.schemaVersion !== 1) errors.push("schemaVersion must be 1");
   if (!Array.isArray(document.tiers)) return [...errors, "tiers must be an array"];
@@ -86,6 +198,9 @@ export function validate(document, { makeTargets, discoveredSelfTests, exists = 
     else if (!makeTargets.has(entry.makeTarget)) errors.push(`selfTest ${entry.path}: makeTarget ${JSON.stringify(entry.makeTarget)} is not a Makefile target`);
     if (typeof entry.tier !== "string" || !ids.includes(entry.tier)) errors.push(`selfTest ${entry.path}: tier ${JSON.stringify(entry.tier)} is unknown`);
     if (entry.path && !exists(entry.path)) errors.push(`selfTest ${entry.path}: file does not exist`);
+    if (entry.path && invokedSelfTests.has(entry.makeTarget) && !invokedSelfTests.get(entry.makeTarget).has(entry.path)) {
+      errors.push(`selfTest ${entry.path}: makeTarget ${JSON.stringify(entry.makeTarget)} does not invoke it`);
+    }
     if (owned.has(entry.path)) errors.push(`selfTest ${entry.path}: duplicate ownership (also owned by ${JSON.stringify(owned.get(entry.path))})`);
     else owned.set(entry.path, entry.makeTarget);
   }
@@ -98,9 +213,13 @@ export function main(argumentsArray = process.argv.slice(2)) {
   const config = path.resolve(argumentsArray[0] ?? path.join(root, "Tests/Support/test-tiers.json"));
   try {
     const document = JSON.parse(fs.readFileSync(config, "utf8"));
+    const configuredSelfTests = Array.isArray(document?.selfTests)
+      ? document.selfTests.flatMap(entry => typeof entry?.path === "string" ? [entry.path] : [])
+      : [];
     const errors = validate(document, {
       makeTargets: parseMakeTargets(path.join(root, "Makefile")),
       discoveredSelfTests: discoverSelfTests(path.join(root, "Tests")),
+      invokedSelfTests: discoverTargetSelfTests(path.join(root, "Makefile"), configuredSelfTests),
       exists: relative => fs.existsSync(path.join(root, relative)),
     });
     if (errors.length) { for (const error of errors) console.error(`test-tier configuration error: ${error}`); return 1; }

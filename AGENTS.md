@@ -36,6 +36,10 @@ Search existing issues before filing (`gh issue list`, `gh issue view`). Backlog
 
 Create/refine GitHub Issue: Work Plan template for structured tasks, Bug report/Feature request for lightweight tickets.
 
+- Keep designs, specifications, implementation plans, task checklists, and planning updates in the GitHub Issue body or comments. Do not generate or commit local planning/specification documents or ticket files.
+- Update the Issue when scope, design decisions, sequencing, or acceptance criteria change so GitHub remains the complete planning record.
+- Enduring product, API, contributor, and operational documentation still belongs in the repository when the implemented change requires it.
+
 ### Agentic loop
 
 1. **Fetch `origin/main` before branching.** This file can change between sessions. `git fetch origin main`, diff against it first.

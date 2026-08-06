@@ -66,6 +66,14 @@ Add Axoloty to your `Package.swift`:
 ```swift
 dependencies: [
     .package(url: "https://github.com/phynics/axoloty", from: "0.2.0"),
+],
+targets: [
+    .executableTarget(
+        name: "MyApp",
+        dependencies: [
+            .product(name: "Axoloty", package: "axoloty"),
+        ]
+    ),
 ]
 ```
 
@@ -74,9 +82,15 @@ For wire-only usage (no host runtime, no Foundation, no MQTT):
 ```swift
 dependencies: [
     .package(url: "https://github.com/phynics/axoloty", from: "0.2.0"),
+],
+targets: [
+    .executableTarget(
+        name: "WireApp",
+        dependencies: [
+            .product(name: "AxolotyWire", package: "axoloty"),
+        ]
+    ),
 ]
-// Target dependency:
-.product(name: "AxolotyWire", package: "Axoloty"),
 ```
 
 ### Minimal host example
@@ -84,25 +98,42 @@ dependencies: [
 ```swift
 import Axoloty
 
-let config = Configuration.build(
-    communication: CommunicationOptions(
-        brokerHost: "localhost",
-        brokerPort: 1883
-    ),
-    common: CommonOptions()
-)
-let container = try Container.resolve(config)
-let manager = try container.resolveCommunicationManager()
-try await manager.start()
+@MainActor
+func runAgent() async throws {
+    let configuration = try Configuration.build { builder in
+        builder.common = CommonOptions(agentIdentity: ["name": "my-agent"])
+        builder.communication = CommunicationOptions(
+            namespace: "my-app",
+            mqttClientOptions: MQTTClientOptions(host: "localhost", port: 1883),
+            shouldAutoStart: false
+        )
+    }
+    let components = Components(controllers: [:], objectTypes: [])
+    let container = try Container.resolve(
+        components: components,
+        configuration: configuration
+    )
+    defer { container.shutdown() }
+    guard let manager = container.communicationManager else {
+        throw AxolotyError.invalidConfiguration(
+            option: "communicationManager",
+            reason: "was not initialized"
+        )
+    }
 
-let identity = Identity(name: "my-agent")
-let stream = try await manager.observeAdvertiseStream(for: Identity.objectType)
-try await manager.publishAdvertise(try .with(object: identity))
+    let stream = try await manager.observeAdvertiseStream(
+        withObjectType: Identity.objectType
+    )
+    var iterator = stream.makeAsyncIterator()
+    try await container.startAndWaitUntilReady()
+    manager.publishAdvertise(try AdvertiseEvent.with(object: Identity(name: "my-agent")))
 
-for await snapshot in stream {
-    print("Discovered: \(snapshot.data.object.name)")
+    _ = await iterator.next()
 }
 ```
+
+Call `runAgent()` from your application lifecycle when the MQTT broker is
+available. The `shouldAutoStart: false` setting keeps startup explicit.
 
 ### Minimal AxolotyWire example
 

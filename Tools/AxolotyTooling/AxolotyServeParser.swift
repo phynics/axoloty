@@ -90,10 +90,13 @@ public struct AxolotyServeParser: Sendable {
         let rest = Array(arguments.dropFirst())
         switch subcommand {
         case "mqtt":
+            if rest == ["--help"] { return .success(.help(.mqtt)) }
             return parseMQTT(arguments: rest, environment: environment)
         case "mcp":
+            if rest == ["--help"] { return .success(.help(.mcp)) }
             return parseMCP(arguments: rest, environment: environment)
         case "dev":
+            if rest == ["--help"] { return .success(.help(.dev)) }
             return parseDevelopment(arguments: rest, environment: environment)
         default:
             return .failure(.unknownSubcommand(subcommand))

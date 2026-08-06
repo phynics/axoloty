@@ -466,7 +466,22 @@ private final class ExitCodeBox: @unchecked Sendable {
     }
 }
 
+/// Returns whether the live development-service evidence was explicitly requested.
+private func developmentServiceEndToEndIsEnabled(environment: [String: String]) -> Bool {
+    environment["AXOLOTY_RUN_DEV_SERVICE_E2E"] == "1"
+}
+
 @Test
+func developmentServiceEndToEndRequiresExplicitOptIn() {
+    #expect(!developmentServiceEndToEndIsEnabled(environment: [:]))
+    #expect(!developmentServiceEndToEndIsEnabled(environment: ["AXOLOTY_RUN_DEV_SERVICE_E2E": "true"]))
+    #expect(developmentServiceEndToEndIsEnabled(environment: ["AXOLOTY_RUN_DEV_SERVICE_E2E": "1"]))
+}
+
+@Test(.enabled(
+    if: developmentServiceEndToEndIsEnabled(environment: ProcessInfo.processInfo.environment),
+    "Set AXOLOTY_RUN_DEV_SERVICE_E2E=1 to run local Mosquitto and MCP evidence."
+))
 func devServiceEndToEndWithDynamicPorts() throws {
     guard let mcpPath = mcpExecutablePath() else { return }
     guard FileManager.default.isExecutableFile(atPath: "/usr/sbin/mosquitto") else { return }

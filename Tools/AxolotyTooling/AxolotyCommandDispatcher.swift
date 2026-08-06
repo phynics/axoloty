@@ -116,6 +116,8 @@ public struct AxolotyCommandDispatcher: Sendable {
             checkResult(requested: ["build"])
         case ["test", "offline"]:
             checkResult()
+        case ["test", "tooling"]:
+            checkResult(requested: ["test-tooling"])
         case ["test", "integration"]:
             integrationResult()
         case ["wire", "verify"]:
@@ -140,7 +142,7 @@ public struct AxolotyCommandDispatcher: Sendable {
             hardwareResult(required: true, device: nil)
         default:
             AxolotyCommandResult(
-                standardError: "error: unsupported axoloty-tool command\n\n\(Self.usage)\n",
+                standardError: "error: unsupported \(executableName) command\n\n\(Self.usage(executableName: executableName))\n",
                 exitCode: 64
             )
         }
@@ -160,6 +162,7 @@ public struct AxolotyCommandDispatcher: Sendable {
       check                Run the initial offline check plan and print JSON.
       build                Build the host package and its prerequisites.
       test offline         Run the same offline plan as check.
+      test tooling         Run offline developer-tool tests and prerequisites.
       test integration     Run transport tests against local Mosquitto.
       wire verify [BUNDLE] Verify fixtures and an optional bundle without MQTT.
       wire capture         Run live MQTT captures with pinned reference agents.
@@ -184,11 +187,70 @@ public struct AxolotyCommandDispatcher: Sendable {
         usage.replacingOccurrences(of: "axoloty-tool", with: executableName)
     }
 
+    private static let mqttUsage = """
+    Usage: axoloty-tool serve mqtt [options]
+
+    Start a local Mosquitto broker in the foreground.
+
+    Options:
+      --listen-host HOST  Bind the broker to HOST (default: 127.0.0.1).
+      --port PORT         Listen on PORT (default: 1883).
+      --output MODE       Use human or json output (default: human).
+      --log-level LEVEL   Use error, warning, info, or debug (default: info).
+      --help              Show this help.
+    """
+
+    private static let mcpUsage = """
+    Usage: axoloty-tool serve mcp --transport TRANSPORT [options]
+
+    Start an Axoloty MCP server using stdio or loopback HTTP.
+
+    Options:
+      --transport MODE        Use stdio or http (required).
+      --listen-host HOST      HTTP bind address (default: 127.0.0.1).
+      --listen-port PORT      HTTP listen port (default: 8765).
+      --path PATH             HTTP endpoint path (default: /mcp).
+      --broker-host HOST      MQTT broker host (default: localhost).
+      --broker-port PORT      MQTT broker port (default: 1883).
+      --namespace NAMESPACE   Coaty namespace (default: -).
+      --connect-timeout TIME  Broker readiness timeout (default: 10s).
+      --output MODE           HTTP output: human or json (default: human).
+      --help                  Show this help.
+
+    The HTTP-specific options are not valid with --transport stdio.
+    """
+
+    private static let developmentUsage = """
+    Usage: axoloty-tool serve dev [options]
+
+    Start MQTT and MCP as a supervised local development stack.
+
+    Options:
+      --namespace NAMESPACE  Coaty namespace (default: -).
+      --mqtt-port PORT       MQTT listen port (default: 1883).
+      --mcp-port PORT        MCP HTTP listen port (default: 8765).
+      --output MODE          Use human or json output (default: human).
+      --help                 Show this help.
+    """
+
+    private static func serveUsage(topic: AxolotyServeHelpTopic, executableName: String) -> String {
+        let usage = switch topic {
+        case .mqtt: mqttUsage
+        case .mcp: mcpUsage
+        case .dev: developmentUsage
+        }
+        return usage.replacingOccurrences(of: "axoloty-tool", with: executableName)
+    }
+
     private func serveResult(arguments: [String]) -> AxolotyCommandResult {
         let parser = AxolotyServeParser()
         switch parser.parse(arguments: arguments, environment: environment) {
         case .success(let command):
             switch command {
+            case .help(let topic):
+                return AxolotyCommandResult(
+                    standardOutput: Self.serveUsage(topic: topic, executableName: executableName)
+                )
             case .mqtt(let config):
                 let runner = AxolotyMQTTServiceRunner(
                     processRunner: processRunnerFactory(),

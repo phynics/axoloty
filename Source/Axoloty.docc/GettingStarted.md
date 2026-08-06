@@ -9,7 +9,7 @@ Add Axoloty to the `dependencies` array in your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/coaty-swift", from: "2.4.0"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.2.0"),
 ]
 ```
 
@@ -19,7 +19,7 @@ Then link it into your target:
 .target(
     name: "MyApp",
     dependencies: [
-        .product(name: "Axoloty", package: "coaty-swift"),
+        .product(name: "Axoloty", package: "axoloty"),
     ]),
 ```
 
@@ -30,25 +30,46 @@ A Coaty agent is bootstrapped by a ``Container``. You configure it with a
 ``Components`` registration of your application's controllers and object
 types.
 
-This minimal example connects to a broker on `localhost:1883`, starts
-communication automatically, and resolves a ready-to-use container:
+This minimal example configures a broker on `localhost:1883`, resolves a
+container, explicitly starts communication, and then shuts it down. The
+function is not invoked by the example, so it can be type-checked without a
+broker:
 
 ```swift
 import Axoloty
 
-let configuration = try Configuration.build { builder in
-    builder.common = CommonOptions(
-        agentIdentity: ["name": "my-agent"]
+@MainActor
+func runAgent() async throws {
+    let configuration = try Configuration.build { builder in
+        builder.common = CommonOptions(agentIdentity: ["name": "my-agent"])
+        builder.communication = CommunicationOptions(
+            namespace: "my-app",
+            mqttClientOptions: MQTTClientOptions(host: "localhost", port: 1883),
+            shouldAutoStart: false
+        )
+    }
+    let components = Components(controllers: [:], objectTypes: [])
+    let container = try Container.resolve(
+        components: components,
+        configuration: configuration
     )
-    builder.communication = CommunicationOptions(
-        namespace: "my-app",
-        mqttClientOptions: MQTTClientOptions(host: "localhost", port: 1883),
-        shouldAutoStart: true
-    )
-}
+    defer { container.shutdown() }
+    guard let manager = container.communicationManager else {
+        throw AxolotyError.invalidConfiguration(
+            option: "communicationManager",
+            reason: "was not initialized"
+        )
+    }
 
-let components = Components(controllers: [:], objectTypes: [])
-let container = try Container.resolve(components: components, configuration: configuration)
+    let stream = try await manager.observeAdvertiseStream(
+        withObjectType: Identity.objectType
+    )
+    var iterator = stream.makeAsyncIterator()
+    try await container.startAndWaitUntilReady()
+    manager.publishAdvertise(try AdvertiseEvent.with(object: Identity(name: "my-agent")))
+
+    _ = await iterator.next()
+}
 ```
 
 ## Register a controller
@@ -97,5 +118,5 @@ container.shutdown()
 - Explore the ``CommunicationEvent`` families (discover, query, channel,
   call/return, etc.) in the `Communication` section.
 - See ``MQTTClientOptions`` for TLS, last-will, and broker fallback settings.
-- Read the [project README](https://github.com/phynics/coaty-swift) for build
+- Read the [project README](https://github.com/phynics/axoloty) for build
   and testing instructions.
