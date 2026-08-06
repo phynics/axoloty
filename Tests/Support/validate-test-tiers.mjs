@@ -18,6 +18,40 @@ export function parseMakeTargets(makefilePath) {
   return targets;
 }
 
+function shellTokenMatchesPath(token, selfTestPath) {
+  const unquoted = token.replace(/^["']|["']$/g, "");
+  const repositoryPath = unquoted.replace(/^\/workspace\//, "");
+  if (repositoryPath === selfTestPath) return true;
+  if (!repositoryPath.includes("*")) return false;
+  const pattern = repositoryPath.split("*").map(segment => segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*");
+  return new RegExp(`^${pattern}$`).test(selfTestPath);
+}
+
+function commandInvokesSelfTest(command, selfTestPath) {
+  const tokens = command.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [];
+  if (tokens.some(token => !token.includes("*") && shellTokenMatchesPath(token, selfTestPath))) return true;
+  const nodeTest = tokens.findIndex((token, index) => token === "node" && tokens[index + 1] === "--test" && (index === 0 || tokens[index - 1] === "&&"));
+  return nodeTest >= 0 && tokens.slice(nodeTest + 2).some(token => token.includes("*") && shellTokenMatchesPath(token, selfTestPath));
+}
+
+export function discoverTargetSelfTests(makefilePath, selfTests) {
+  if (!fs.existsSync(makefilePath)) return new Map();
+  const invoked = new Map();
+  let target;
+  for (const line of fs.readFileSync(makefilePath, "utf8").split(/\r?\n/)) {
+    const match = /^([A-Za-z0-9_][A-Za-z0-9_.-]*):(?!=)/.exec(line);
+    if (match && !match[1].startsWith(".")) {
+      target = match[1];
+      invoked.set(target, new Set());
+    } else if (target && line.startsWith("\t")) {
+      for (const selfTest of selfTests) if (commandInvokesSelfTest(line, selfTest)) invoked.get(target).add(selfTest);
+    } else if (line && !line.startsWith("#")) {
+      target = undefined;
+    }
+  }
+  return invoked;
+}
+
 export function discoverSelfTests(testsDirectory) {
   if (!fs.existsSync(testsDirectory)) return [];
   const base = path.dirname(testsDirectory);
@@ -35,7 +69,7 @@ export function discoverSelfTests(testsDirectory) {
   return [...new Set(found)].sort();
 }
 
-export function validate(document, { makeTargets, discoveredSelfTests, exists = () => true }) {
+export function validate(document, { makeTargets, discoveredSelfTests, invokedSelfTests = new Map(), exists = () => true }) {
   const errors = [];
   if (document.schemaVersion !== 1) errors.push("schemaVersion must be 1");
   if (!Array.isArray(document.tiers)) return [...errors, "tiers must be an array"];
@@ -86,6 +120,9 @@ export function validate(document, { makeTargets, discoveredSelfTests, exists = 
     else if (!makeTargets.has(entry.makeTarget)) errors.push(`selfTest ${entry.path}: makeTarget ${JSON.stringify(entry.makeTarget)} is not a Makefile target`);
     if (typeof entry.tier !== "string" || !ids.includes(entry.tier)) errors.push(`selfTest ${entry.path}: tier ${JSON.stringify(entry.tier)} is unknown`);
     if (entry.path && !exists(entry.path)) errors.push(`selfTest ${entry.path}: file does not exist`);
+    if (entry.path && invokedSelfTests.has(entry.makeTarget) && !invokedSelfTests.get(entry.makeTarget).has(entry.path)) {
+      errors.push(`selfTest ${entry.path}: makeTarget ${JSON.stringify(entry.makeTarget)} does not invoke it`);
+    }
     if (owned.has(entry.path)) errors.push(`selfTest ${entry.path}: duplicate ownership (also owned by ${JSON.stringify(owned.get(entry.path))})`);
     else owned.set(entry.path, entry.makeTarget);
   }
@@ -101,6 +138,7 @@ export function main(argumentsArray = process.argv.slice(2)) {
     const errors = validate(document, {
       makeTargets: parseMakeTargets(path.join(root, "Makefile")),
       discoveredSelfTests: discoverSelfTests(path.join(root, "Tests")),
+      invokedSelfTests: discoverTargetSelfTests(path.join(root, "Makefile"), document.selfTests.map(entry => entry.path)),
       exists: relative => fs.existsSync(path.join(root, relative)),
     });
     if (errors.length) { for (const error of errors) console.error(`test-tier configuration error: ${error}`); return 1; }

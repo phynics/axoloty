@@ -26,3 +26,12 @@ test("principal Make workflows are direct axoloty-tool wrappers", () => {
     assert.match(recipe(makefile, target), /\$\(MAKE\).*\baxoloty-tool\b/, `${target} must forward to axoloty-tool`);
   }
 });
+
+test("support runs the Embedded Swift self-test in the pinned container", () => {
+  const makefile = fs.readFileSync("Makefile", "utf8");
+  assert.match(makefile, /^test-support: resolve$/m);
+  assert.match(
+    recipe(makefile, "test-support"),
+    /\.devcontainer\/run\.sh \/workspace\/Tests\/Support\/test-check-embedded-swift\.sh/,
+  );
+});
