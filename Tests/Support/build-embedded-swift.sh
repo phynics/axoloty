@@ -27,6 +27,10 @@ trap - EXIT
 cd "$project_dir"
 
 cache="$build_dir/CMakeCache.txt"
+active_python_root="${IDF_TOOLS_PATH:-${HOME:-/root}/.espressif}/python_env/"
+if [ -f "$cache" ] && grep -q 'PYTHON.*python_env' "$cache" && ! grep -Fq "$active_python_root" "$cache"; then
+    idf.py -B "$build_dir" fullclean
+fi
 if [ ! -f "$cache" ] || ! grep -q '^IDF_TARGET:STRING=esp32c6$' "$cache"; then
     idf.py -B "$build_dir" set-target esp32c6
 fi
