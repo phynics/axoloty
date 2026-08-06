@@ -37,18 +37,35 @@ function executableIndex(tokens) {
   return index;
 }
 
+function shellScriptOperand(tokens, interpreterIndex) {
+  let index = interpreterIndex + 1;
+  while (index < tokens.length) {
+    const token = tokens[index];
+    if (token === "--") return tokens[index + 1];
+    if (!token.startsWith("-") && token !== "+o") return token;
+    if (token === "-c" || token === "--command" || /^-[^-]*c/.test(token)) return undefined;
+    if (["-o", "+o", "-O", "--init-file", "--rcfile"].includes(token)) index += 1;
+    index += 1;
+  }
+  return undefined;
+}
+
 function commandInvokesSelfTest(command, selfTestPath) {
   const tokens = commandTokens(command);
-  const executable = executableIndex(tokens);
-  if (shellTokenMatchesPath(tokens[executable] ?? "", selfTestPath) && !tokens[executable].includes("*")) return true;
-
-  const interpreter = tokens[executable];
-  if (["sh", "bash", "dash", "zsh", ".devcontainer/run.sh"].includes(interpreter)) {
-    return tokens.slice(executable + 1).some(token => !token.startsWith("-") && !token.includes("*") && shellTokenMatchesPath(token, selfTestPath));
-  }
-  if (interpreter !== "node") return false;
-  const testOption = tokens.indexOf("--test", executable + 1);
-  return testOption >= 0 && tokens.slice(testOption + 1).some(token => shellTokenMatchesPath(token, selfTestPath));
+  const invokes = commandTokensToInspect => {
+    const executable = executableIndex(commandTokensToInspect);
+    const program = commandTokensToInspect[executable] ?? "";
+    if (shellTokenMatchesPath(program, selfTestPath) && !program.includes("*")) return true;
+    if (program === ".devcontainer/run.sh") return invokes(commandTokensToInspect.slice(executable + 1));
+    if (["sh", "bash", "dash", "zsh"].includes(program)) {
+      const script = shellScriptOperand(commandTokensToInspect, executable) ?? "";
+      return !script.includes("*") && shellTokenMatchesPath(script, selfTestPath);
+    }
+    if (program !== "node") return false;
+    const testOption = commandTokensToInspect.indexOf("--test", executable + 1);
+    return testOption >= 0 && commandTokensToInspect.slice(testOption + 1).some(token => shellTokenMatchesPath(token, selfTestPath));
+  };
+  return invokes(tokens);
 }
 
 function recursiveMakeTarget(command) {
@@ -196,10 +213,13 @@ export function main(argumentsArray = process.argv.slice(2)) {
   const config = path.resolve(argumentsArray[0] ?? path.join(root, "Tests/Support/test-tiers.json"));
   try {
     const document = JSON.parse(fs.readFileSync(config, "utf8"));
+    const configuredSelfTests = Array.isArray(document?.selfTests)
+      ? document.selfTests.flatMap(entry => typeof entry?.path === "string" ? [entry.path] : [])
+      : [];
     const errors = validate(document, {
       makeTargets: parseMakeTargets(path.join(root, "Makefile")),
       discoveredSelfTests: discoverSelfTests(path.join(root, "Tests")),
-      invokedSelfTests: discoverTargetSelfTests(path.join(root, "Makefile"), document.selfTests.map(entry => entry.path)),
+      invokedSelfTests: discoverTargetSelfTests(path.join(root, "Makefile"), configuredSelfTests),
       exists: relative => fs.existsSync(path.join(root, relative)),
     });
     if (errors.length) { for (const error of errors) console.error(`test-tier configuration error: ${error}`); return 1; }

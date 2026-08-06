@@ -56,6 +56,16 @@ retain focused Make targets while their existing evidence contracts remain in
 place. Wire parsing correctness belongs to the offline tier; MQTT tests only
 transport behavior.
 
+The tooling test suite preserves an end-to-end development-service test as
+opt-in evidence. Ordinary `test tooling` and `make test-tooling` runs skip it
+before looking up or starting Mosquitto and MCP. On Linux, run it explicitly
+with:
+
+```sh
+AXOLOTY_RUN_DEV_SERVICE_E2E=1 make test-tooling \
+  AXOLOTY_TOOL_CONTAINER_ENV_VARS=AXOLOTY_RUN_DEV_SERVICE_E2E
+```
+
 ## Structured output
 
 `axoloty-tool` writes its result JSON to standard output and child/bootstrap diagnostics

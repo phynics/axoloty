@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -63,6 +64,28 @@ test("target self-test discovery ignores path mentions outside executable positi
   assert.deepEqual(invoked, new Map([["test-support", new Set(["Tests/Support/test-two.sh"])]]));
 });
 
+test("target self-test discovery only counts the shell script operand", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-tool-invocations-"));
+  const makefile = path.join(directory, "Makefile");
+  fs.writeFileSync(makefile, "test-support:\n\tsh wrapper.sh Tests/Support/test-one.sh\n\tbash -eu Tests/Support/test-two.sh fixture\n");
+  const invoked = discoverTargetSelfTests(makefile, [
+    "Tests/Support/test-one.sh",
+    "Tests/Support/test-two.sh",
+  ]);
+  assert.deepEqual(invoked, new Map([["test-support", new Set(["Tests/Support/test-two.sh"])]]));
+});
+
+test("target self-test discovery recursively unwraps the devcontainer runner", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-tool-invocations-"));
+  const makefile = path.join(directory, "Makefile");
+  fs.writeFileSync(makefile, "test-support:\n\t.devcontainer/run.sh sh Tests/Support/test-one.sh\n\t.devcontainer/run.sh sh wrapper.sh Tests/Support/test-two.sh\n");
+  const invoked = discoverTargetSelfTests(makefile, [
+    "Tests/Support/test-one.sh",
+    "Tests/Support/test-two.sh",
+  ]);
+  assert.deepEqual(invoked, new Map([["test-support", new Set(["Tests/Support/test-one.sh"])]]));
+});
+
 test("target self-test discovery follows recursive Make wrappers without looping", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-tool-invocations-"));
   const makefile = path.join(directory, "Makefile");
@@ -93,4 +116,27 @@ test("validator rejects an owned self-test its target does not invoke", () => {
     exists: () => true,
   });
   assert.ok(errors.some(error => error.includes(`${omitted}: makeTarget "test-support" does not invoke it`)));
+});
+
+test("validator CLI reports stable selfTests schema errors", t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-tool-tiers-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const base = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const cases = [
+    ["missing", document => { delete document.selfTests; }, "selfTests must be an array"],
+    ["null", document => { document.selfTests = null; }, "selfTests must be an array"],
+    ["non-array", document => { document.selfTests = {}; }, "selfTests must be an array"],
+    ["malformed-entry", document => { document.selfTests = [null]; }, "selfTests entries must be objects"],
+  ];
+
+  for (const [name, mutate, expected] of cases) {
+    const document = structuredClone(base);
+    mutate(document);
+    const config = path.join(directory, `${name}.json`);
+    fs.writeFileSync(config, JSON.stringify(document));
+    const result = spawnSync(process.execPath, [path.join(root, "Tests/Support/validate-test-tiers.mjs"), config], { encoding: "utf8" });
+    assert.equal(result.status, 1, name);
+    assert.match(result.stderr, new RegExp(`test-tier configuration error: ${expected}`), name);
+    assert.doesNotMatch(result.stderr, /TypeError|Cannot read properties|\.map is not a function/, name);
+  }
 });
