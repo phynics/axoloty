@@ -84,25 +84,41 @@ dependencies: [
 ```swift
 import Axoloty
 
-let config = Configuration.build(
-    communication: CommunicationOptions(
-        brokerHost: "localhost",
-        brokerPort: 1883
-    ),
-    common: CommonOptions()
-)
-let container = try Container.resolve(config)
-let manager = try container.resolveCommunicationManager()
-try await manager.start()
+@MainActor
+func runAgent() async throws {
+    let configuration = try Configuration.build { builder in
+        builder.common = CommonOptions(agentIdentity: ["name": "my-agent"])
+        builder.communication = CommunicationOptions(
+            namespace: "my-app",
+            mqttClientOptions: MQTTClientOptions(host: "localhost", port: 1883),
+            shouldAutoStart: false
+        )
+    }
+    let components = Components(controllers: [:], objectTypes: [])
+    let container = try Container.resolve(
+        components: components,
+        configuration: configuration
+    )
+    guard let manager = container.communicationManager else {
+        throw AxolotyError.invalidConfiguration(
+            option: "communicationManager",
+            reason: "was not initialized"
+        )
+    }
 
-let identity = Identity(name: "my-agent")
-let stream = try await manager.observeAdvertiseStream(for: Identity.objectType)
-try await manager.publishAdvertise(try .with(object: identity))
+    try manager.start()
+    let stream = try await manager.observeAdvertiseStream(
+        withObjectType: Identity.objectType
+    )
+    manager.publishAdvertise(try AdvertiseEvent.with(object: Identity(name: "my-agent")))
+    container.shutdown()
 
-for await snapshot in stream {
-    print("Discovered: \(snapshot.data.object.name)")
+    _ = stream
 }
 ```
+
+Call `runAgent()` from your application lifecycle when the MQTT broker is
+available. The `shouldAutoStart: false` setting keeps startup explicit.
 
 ### Minimal AxolotyWire example
 

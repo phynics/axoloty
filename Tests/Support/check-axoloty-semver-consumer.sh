@@ -74,10 +74,7 @@ cat >"$consumer/Sources/WireConsumer/main.swift" <<'EOF'
 import AxolotyWire
 print("wire consumer")
 EOF
-cat >"$consumer/Sources/AxolotyConsumer/main.swift" <<'EOF'
-import Axoloty
-print("axoloty consumer")
-EOF
+cp "$root/Tests/Support/fixtures/semver-consumer/AxolotyConsumer/main.swift" "$consumer/Sources/AxolotyConsumer/main.swift"
 
 cd "$consumer"
 if [ "${AXOLOTY_CONSUMER_LOCAL:-0}" = "1" ]; then
