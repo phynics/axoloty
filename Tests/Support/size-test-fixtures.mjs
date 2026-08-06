@@ -3,9 +3,11 @@ import fs from "node:fs";
 
 const [packagePath, outputPath, sourcePath, tamperedPath] = process.argv.slice(2);
 const packageText = fs.readFileSync(packagePath, "utf8");
+const consumerDependencies = 'name: "AxolotyWireConsumer",\n            dependencies: [\n                "AxolotyWire",\n            ]';
+if (!packageText.includes(consumerDependencies)) throw new Error("AxolotyWireConsumer dependency fixture is stale");
 const injected = packageText.replace(
-  'name: "AxolotyWireConsumer",\n            dependencies: [\n                .product(name: "AxolotyWire", package: "AxolotyWire"),\n            ]',
-  'name: "AxolotyWireConsumer",\n            dependencies: [\n                .product(name: "AxolotyWire", package: "AxolotyWire"),\n                .product(name: "MQTTNIO", package: "mqtt-nio"),\n            ]',
+  consumerDependencies,
+  'name: "AxolotyWireConsumer",\n            dependencies: [\n                "AxolotyWire",\n                .product(name: "MQTTNIO", package: "mqtt-nio"),\n            ]',
 );
 fs.writeFileSync(outputPath, injected);
 
