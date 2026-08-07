@@ -29,6 +29,7 @@ public class CommunicationManager {
     private var isDisposed = false
     internal var lifecycleTasks: [Task<Void, Never>] = []
     internal var callHandlerRegistrations: [UUID: CallHandlerRegistration] = [:]
+    internal var discoverResponderRegistrations: [UUID: DiscoverResponderRegistration] = [:]
 
     /// Gets the namespace for communication as specified in the configuration
     /// options. Returns the default namespace used, if no namespace has been
@@ -424,6 +425,10 @@ public class CommunicationManager {
         let registrations = Array(callHandlerRegistrations.values)
         registrations.forEach { $0.cancel() }
         callHandlerRegistrations.removeAll()
+
+        let discoverRegistrations = Array(discoverResponderRegistrations.values)
+        discoverRegistrations.forEach { $0.cancel() }
+        discoverResponderRegistrations.removeAll()
 
         // Gracefully send deadvertise messages to others.
         // NOTE: This does not change or adjust the last will.

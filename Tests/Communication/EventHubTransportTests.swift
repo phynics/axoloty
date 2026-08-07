@@ -1073,7 +1073,7 @@ struct BroadcastTransportTests {
 // `nextValue` is shared from Tests/Testing/AsyncWaiting.swift.
 
 @MainActor
-private func makeManager(client: CommunicationClient? = nil) -> CommunicationManager {
+func makeManager(client: CommunicationClient? = nil) -> CommunicationManager {
     let mqttOptions = MQTTClientOptions(
         host: "127.0.0.1",
         port: 1883,
@@ -1097,7 +1097,7 @@ private func makeManager(client: CommunicationClient? = nil) -> CommunicationMan
 }
 
 @MainActor
-private func waitForCommands(
+func waitForCommands(
     on client: FakeCommunicationClient,
     expecting expected: [SubscriptionCommand]
 ) async throws {
@@ -1111,7 +1111,7 @@ private func waitForCommands(
 }
 
 @MainActor
-private func bringOnline(_ manager: CommunicationManager, client: FakeCommunicationClient) async throws {
+func bringOnline(_ manager: CommunicationManager, client: FakeCommunicationClient) async throws {
     await client.simulateState(.online)
     for _ in 0 ..< 40 {
         if manager.communicationState == .online { return }
@@ -1121,7 +1121,7 @@ private func bringOnline(_ manager: CommunicationManager, client: FakeCommunicat
 }
 
 @MainActor
-private func waitForPublishedCorrelation(
+func waitForPublishedCorrelation(
     on client: FakeCommunicationClient,
     publicationCount: Int = 1
 ) async throws -> String {
@@ -1143,7 +1143,7 @@ private func waitForPublishedCorrelation(
 }
 
 @MainActor
-private func waitForCommandCount(on client: FakeCommunicationClient, count: Int) async throws {
+func waitForCommandCount(on client: FakeCommunicationClient, count: Int) async throws {
     for _ in 0 ..< 40 {
         if client.commands.count >= count { return }
         try await Task.sleep(for: .milliseconds(10))
@@ -1151,14 +1151,14 @@ private func waitForCommandCount(on client: FakeCommunicationClient, count: Int)
     throw AxolotyError.runtime(code: .timedOut, reason: "Test subscription command was not observed")
 }
 
-private func returnPublications(on client: FakeCommunicationClient) -> [(topic: String, message: String)] {
+func returnPublications(on client: FakeCommunicationClient) -> [(topic: String, message: String)] {
     client.publishedMessages.filter {
         $0.topic.split(separator: "/").dropFirst(3).first == "RTN"
     }
 }
 
 @MainActor
-private func waitForReturnPublication(
+func waitForReturnPublication(
     on client: FakeCommunicationClient,
     count: Int = 1
 ) async throws -> (topic: String, message: String) {
@@ -1172,11 +1172,11 @@ private func waitForReturnPublication(
     throw AxolotyError.runtime(code: .timedOut, reason: "Test Return publication was not observed")
 }
 
-private func responseTopic(_ correlationId: String) -> String {
+func responseTopic(_ correlationId: String) -> String {
     TopicBuilder.subscribeTopic(eventType: .returnEvent, namespace: DEFAULT_NAMESPACE, correlationId: correlationId)
 }
 
-private func unaryResponse(_ event: ReturnEvent, correlationId: String) throws -> ResponseEventSnapshot {
+func unaryResponse(_ event: ReturnEvent, correlationId: String) throws -> ResponseEventSnapshot {
     ResponseEventSnapshot(
         eventType: "RTN",
         sourceId: "provider",
@@ -1187,7 +1187,7 @@ private func unaryResponse(_ event: ReturnEvent, correlationId: String) throws -
 
 // MARK: - Test seam
 
-private final class FakeStartable: CommunicationClientDelegate {
+final class FakeStartable: CommunicationClientDelegate {
     func didReceiveStart() {}
 }
 
@@ -1202,7 +1202,7 @@ private final class LockedCounter: @unchecked Sendable {
     }
 }
 
-private final class FakeCommunicationClient: CommunicationClient {
+final class FakeCommunicationClient: CommunicationClient {
     var streams: CommunicationStreams!
     func setStreams(_ streams: CommunicationStreams) { self.streams = streams }
     var delegate: CommunicationClientDelegate
@@ -1325,7 +1325,7 @@ private func makeTestStreams() -> CommunicationStreams {
     )
 }
 
-private actor SubscriptionAckGate {
+actor SubscriptionAckGate {
     private var started = false
     private var released = false
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
@@ -1371,7 +1371,7 @@ private actor CompletionFlag {
 }
 
 /// Parses the event type from a published topic string via ``TopicView``.
-private func topicEventType(_ topic: String) -> WireEventType? {
+func topicEventType(_ topic: String) -> WireEventType? {
     let bytes = Array(topic.utf8)
     return bytes.withUnsafeBufferPointer { buf in
         TopicView(topicBytes: buf.baseAddress!, length: buf.count).eventType
@@ -1379,7 +1379,7 @@ private func topicEventType(_ topic: String) -> WireEventType? {
 }
 
 /// Parses the correlation-id level from a published topic string via ``TopicView``.
-private func topicCorrelationId(_ topic: String) -> String? {
+func topicCorrelationId(_ topic: String) -> String? {
     let bytes = Array(topic.utf8)
     return bytes.withUnsafeBufferPointer { buf in
         TopicView(topicBytes: buf.baseAddress!, length: buf.count).correlationIdLevel?.asString()
