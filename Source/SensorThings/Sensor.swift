@@ -113,6 +113,7 @@ open class Sensor: CoatyObject {
         case unitOfMeasurement
         case observationType
         case observedArea
+        case phenomenonTime
         case phenomenonType
         case resultTime
         case observedProperty
@@ -127,7 +128,11 @@ open class Sensor: CoatyObject {
         self.unitOfMeasurement = try container.decode(UnitOfMeasurement.self, forKey: .unitOfMeasurement)
         self.observationType = try container.decode(ObservationType.self, forKey: .observationType)
         self.observedArea = try container.decodeIfPresent(Polygon.self, forKey: .observedArea)
-        self.phenomenonTime = try container.decodeIfPresent(CoatyTimeInterval.self, forKey: .phenomenonType)
+        if container.contains(.phenomenonTime) {
+            self.phenomenonTime = try container.decodeIfPresent(CoatyTimeInterval.self, forKey: .phenomenonTime)
+        } else {
+            self.phenomenonTime = try container.decodeIfPresent(CoatyTimeInterval.self, forKey: .phenomenonType)
+        }
         self.resultTime = try container.decodeIfPresent(CoatyTimeInterval.self, forKey: .resultTime)
         self.observedProperty = try container.decode(ObservedProperty.self, forKey: .observedProperty)
         try super.init(from: decoder)
@@ -142,7 +147,7 @@ open class Sensor: CoatyObject {
         try container.encode(unitOfMeasurement, forKey: .unitOfMeasurement)
         try container.encode(observationType, forKey: .observationType)
         try container.encodeIfPresent(observedArea, forKey: .observedArea)
-        try container.encodeIfPresent(phenomenonTime, forKey: .phenomenonType)
+        try container.encodeIfPresent(phenomenonTime, forKey: .phenomenonTime)
         try container.encodeIfPresent(resultTime, forKey: .resultTime)
         try container.encode(observedProperty, forKey: .observedProperty)
     }

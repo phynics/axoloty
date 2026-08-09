@@ -88,7 +88,7 @@ struct SensorThingsWireFixtureTests {
     @Test
     func sensorFullyPopulatedDecodes() throws {
         let json = """
-            {"coreType":"CoatyObject","objectType":"coaty.sensorThings.Sensor","objectId":"55555555-5555-4555-8555-555555555555","name":"temp-sensor","description":"DHT22 temperature sensor","encodingType":"application/pdf","metadata":"http://example.com/datasheet.pdf","unitOfMeasurement":{"name":"Degree Celsius","symbol":"degC","definition":"http://qudt.org/vocab/unit#DegreeCelsius"},"observationType":"http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement","observedArea":{"type":"Polygon","coordinates":[[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],[0.0,0.0]]]},"phenomenonType":{"_start":1000,"_end":2000},"resultTime":{"_start":3000,"_duration":500},"observedProperty":{"name":"Temperature","definition":"http://example.com/properties/Temperature","description":"Air temperature"}}
+            {"coreType":"CoatyObject","objectType":"coaty.sensorThings.Sensor","objectId":"55555555-5555-4555-8555-555555555555","name":"temp-sensor","description":"DHT22 temperature sensor","encodingType":"application/pdf","metadata":"http://example.com/datasheet.pdf","unitOfMeasurement":{"name":"Degree Celsius","symbol":"degC","definition":"http://qudt.org/vocab/unit#DegreeCelsius"},"observationType":"http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement","observedArea":{"type":"Polygon","coordinates":[[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0],[0.0,0.0]]]},"phenomenonTime":{"_start":1000,"_end":2000},"resultTime":{"_start":3000,"_duration":500},"observedProperty":{"name":"Temperature","definition":"http://example.com/properties/Temperature","description":"Air temperature"}}
             """
         let sensor = try JSONDecoder().decode(Sensor.self, from: Data(json.utf8))
 
@@ -103,7 +103,7 @@ struct SensorThingsWireFixtureTests {
         #expect(sensor.unitOfMeasurement.definition == "http://qudt.org/vocab/unit#DegreeCelsius")
         #expect(sensor.observationType == .measurement)
         #expect(sensor.observedArea?.type == .Polygon)
-        #expect(sensor.phenomenonTime != nil)
+        #expect(sensor.phenomenonTime?.start == 1000)
         #expect(sensor.resultTime != nil)
         #expect(sensor.observedProperty.name == "Temperature")
         #expect(sensor.observedProperty.definition == "http://example.com/properties/Temperature")
@@ -122,6 +122,44 @@ struct SensorThingsWireFixtureTests {
         #expect(sensor.phenomenonTime == nil)
         #expect(sensor.resultTime == nil)
         #expect(sensor.metadata == "null")
+    }
+
+    /// Sensor wire payloads use `phenomenonTime`, while accepting the legacy
+    /// `phenomenonType` spelling. If both are present, the canonical spelling
+    /// wins deterministically and encoding never emits the legacy spelling.
+    @Test
+    func sensorPhenomenonTimeUsesCanonicalKeyAndLegacyFallback() throws {
+        let canonicalJSON = """
+            {"coreType":"CoatyObject","objectType":"coaty.sensorThings.Sensor","objectId":"66666666-6666-4666-8666-666666666666","name":"canonical-sensor","description":"Sensor","encodingType":"","metadata":null,"unitOfMeasurement":{"name":"","symbol":"","definition":""},"observationType":"http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Observation","phenomenonTime":{"_start":1000,"_duration":500},"observedProperty":{"name":"X","definition":"","description":""}}
+            """
+        let legacyJSON = canonicalJSON.replacingOccurrences(
+            of: "\"phenomenonTime\":{\"_start\":1000,\"_duration\":500}",
+            with: "\"phenomenonType\":{\"_start\":2000,\"_duration\":500}"
+        )
+        let bothJSON = canonicalJSON.replacingOccurrences(
+            of: "\"observedProperty\":",
+            with: "\"phenomenonType\":{\"_start\":2000,\"_duration\":500},\"observedProperty\":"
+        )
+        let canonicalNullJSON = bothJSON.replacingOccurrences(
+            of: "\"phenomenonTime\":{\"_start\":1000,\"_duration\":500}",
+            with: "\"phenomenonTime\":null"
+        )
+
+        let canonical = try JSONDecoder().decode(Sensor.self, from: Data(canonicalJSON.utf8))
+        let legacy = try JSONDecoder().decode(Sensor.self, from: Data(legacyJSON.utf8))
+        let both = try JSONDecoder().decode(Sensor.self, from: Data(bothJSON.utf8))
+        let canonicalNull = try JSONDecoder().decode(Sensor.self, from: Data(canonicalNullJSON.utf8))
+        #expect(canonical.phenomenonTime?.start == 1000)
+        #expect(legacy.phenomenonTime?.start == 2000)
+        #expect(both.phenomenonTime?.start == 1000)
+        #expect(canonicalNull.phenomenonTime == nil)
+
+        let encoded = try JSONEncoder().encode(canonical)
+        let object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        let interval = try #require(object["phenomenonTime"] as? [String: Any])
+        #expect(interval["_start"] as? Int == 1000)
+        #expect(interval["_duration"] as? Int == 500)
+        #expect(object["phenomenonType"] == nil)
     }
 
     // MARK: - Observation
