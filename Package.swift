@@ -188,12 +188,12 @@ let package = Package(
         ),
         .testTarget(
             name: "AxolotyMCPTests",
-            dependencies: ["AxolotyMCP", "AxolotyMCPServer"],
+            dependencies: ["AxolotyMCP", "AxolotyMCPServer", "AxolotyTooling"],
             path: "Tools/AxolotyMCPTests"
         ),
         .executableTarget(
             name: "AxolotyMCPServer",
-            dependencies: ["AxolotyMCP", "Axoloty", "AxolotyInspectorCore", "AxolotyInspectorRuntime"],
+            dependencies: ["AxolotyMCP", "AxolotyTooling", "Axoloty", "AxolotyInspectorCore", "AxolotyInspectorRuntime"],
             path: "Tools/axoloty-mcp"
         ),
         // Build-only release consumers for binary-size and dependency-closure

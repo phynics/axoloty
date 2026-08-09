@@ -108,6 +108,7 @@ public struct AxolotyServeParser: Sendable {
     private struct ParsedFlags {
         var values: [String: String] = [:]
         var seen: Set<String> = []
+        var missingValues: Set<String> = []
     }
 
     private func parseFlags(_ args: [String]) -> Result<ParsedFlags, AxolotyServeError> {
@@ -130,6 +131,7 @@ public struct AxolotyServeParser: Sendable {
                     i += 1
                 } else {
                     value = ""
+                    flags.missingValues.insert(name)
                 }
             }
             guard !name.isEmpty else {
@@ -254,7 +256,7 @@ public struct AxolotyServeParser: Sendable {
             }
         }
         for (key, value) in flags.values {
-            if value.isEmpty {
+            if flags.missingValues.contains(key) || (value.isEmpty && key != "path") {
                 return .failure(.missingValue(key))
             }
         }
@@ -290,8 +292,11 @@ public struct AxolotyServeParser: Sendable {
         }
 
         if transport == .http {
-            guard path.hasPrefix("/") else {
-                return .failure(.invalidPath(path))
+            switch MCPPathPolicy.validate(path) {
+            case .success:
+                break
+            case .failure(let error):
+                return .failure(error)
             }
         }
 

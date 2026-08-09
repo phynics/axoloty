@@ -2,6 +2,7 @@
 
 import AxolotyMCP
 import AxolotyInspectorCore
+import AxolotyTooling
 import Foundation
 
 let args = Array(CommandLine.arguments.dropFirst())
@@ -79,6 +80,9 @@ while i < args.count {
         }
         mcpPath = args[i + 1]
         i += 2
+    case let argument where argument.hasPrefix("--path="):
+        mcpPath = String(argument.dropFirst("--path=".count))
+        i += 1
     default:
         FileHandle.standardError.write(Data("error: unknown argument: \(args[i])\n".utf8))
         Foundation.exit(64)
@@ -92,6 +96,16 @@ guard let brokerPort = UInt16(brokerPortRaw), brokerPort > 0 else {
 guard let listenPort = UInt16(listenPortRaw), listenPort > 0 else {
     FileHandle.standardError.write(Data("error: invalid listen port: \(listenPortRaw) (must be 1–65535)\n".utf8))
     Foundation.exit(64)
+}
+
+if transport == "http" {
+    switch MCPPathPolicy.validate(mcpPath) {
+    case .success:
+        break
+    case .failure(let error):
+        FileHandle.standardError.write(Data("error: \(error.userFriendlyMessage)\n".utf8))
+        Foundation.exit(64)
+    }
 }
 
 let exitCode = await runMCPServer(
