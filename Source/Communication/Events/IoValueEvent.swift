@@ -91,14 +91,27 @@ public class IoValueEvent: CommunicationEvent<IoValueEventData> {
     }
 }
 
+/// Codable event data for an IO value.
+///
+/// A JSON array is inherently ambiguous because Coaty represents raw bytes as
+/// an array of byte values while JSON-mode IO values may also be arrays. The
+/// decoder preserves the established raw-byte interpretation only when every
+/// element can be decoded exactly as `UInt8` (including an empty array). All
+/// other JSON values are retained as raw JSON text in ``jsonPayload``.
 public class IoValueEventData: CommunicationEventData {
     
     // MARK: - Public attributes.
     
-    /// The payload represented as raw [UInt8]
+    /// The payload represented as raw bytes.
+    ///
+    /// During decoding this is populated only for JSON arrays whose every
+    /// element is an integer in the `UInt8` range.
     public var rawPayload: [UInt8]?
     
-    /// The payload represented as raw JSON text.
+    /// The structured payload represented as raw JSON text.
+    ///
+    /// Scalars, objects, and arrays that are not valid byte arrays are retained
+    /// here so re-encoding preserves the CoatyJS payload shape.
     public var jsonPayload: String?
     
     // MARK: - Initializers.
@@ -126,14 +139,34 @@ public class IoValueEventData: CommunicationEventData {
         case payload
     }
     
+    /// Decodes a raw-byte or structured JSON IO value payload.
+    ///
+    /// Byte arrays take precedence over structured arrays to preserve the
+    /// existing Codable wire representation. Arrays containing any non-byte
+    /// element are decoded as structured JSON instead.
+    ///
+    /// - Parameter decoder: The decoder containing the `payload` field.
+    /// - Throws: A `DecodingError` when `payload` is missing or is not valid
+    ///   JSON. Public decoding through ``PayloadCoder/decode(_:)`` translates
+    ///   this into ``AxolotyError/decodingFailure(type:reason:payload:)``.
     public required init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        
-        self.rawPayload = try container.decode([UInt8].self, forKey: .payload)
-        self.jsonPayload = try RawJSONValue.decodeRawStringIfPresent(from: container, forKey: .payload)
+
+        if let bytes = try? container.decode([UInt8].self, forKey: .payload) {
+            self.rawPayload = bytes
+            self.jsonPayload = nil
+        } else {
+            self.rawPayload = nil
+            self.jsonPayload = try RawJSONValue.decodeRawString(from: container, forKey: .payload)
+        }
         try super.init(from: decoder)
     }
-    
+
+    /// Encodes either ``rawPayload`` or ``jsonPayload`` under `payload`.
+    ///
+    /// - Parameter encoder: The encoder receiving the event data.
+    /// - Throws: An encoding error if ``jsonPayload`` is not valid JSON or the
+    ///   encoder cannot represent the selected payload.
     public override func encode(to encoder: Encoder) throws {
         try super.encode(to: encoder)
         var container = encoder.container(keyedBy: CodingKeys.self)

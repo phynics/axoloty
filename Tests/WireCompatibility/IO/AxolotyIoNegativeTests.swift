@@ -137,4 +137,105 @@ struct AxolotyIoNegativeTests {
         #expect(decoded != nil)
         #expect(decoded?.rawPayload == [0, 1, 2])
     }
+
+    /// Direct Codable decoding preserves a scalar IoValue as raw JSON text.
+    @Test
+    func ioValueDirectCodableDecodesScalarPayload() throws {
+        let decoded = try decodeIoValue(#"{"payload":42}"#)
+
+        #expect(decoded.rawPayload == nil)
+        #expect(decoded.jsonPayload == "42")
+    }
+
+    /// Direct Codable decoding preserves an object IoValue as raw JSON text.
+    @Test
+    func ioValueDirectCodableDecodesObjectPayload() throws {
+        let decoded = try decodeIoValue(#"{"payload":{"value":"ready"}}"#)
+
+        #expect(decoded.rawPayload == nil)
+        #expect(decoded.jsonPayload == #"{"value":"ready"}"#)
+    }
+
+    /// Direct Codable decoding preserves a structured array as raw JSON text.
+    @Test
+    func ioValueDirectCodableDecodesStructuredArrayPayload() throws {
+        let decoded = try decodeIoValue(#"{"payload":["ready",true,3]}"#)
+
+        #expect(decoded.rawPayload == nil)
+        #expect(decoded.jsonPayload == #"["ready",true,3]"#)
+    }
+
+    /// Arrays whose every element is an integer in the UInt8 range retain the
+    /// established raw-byte interpretation, including an empty byte array.
+    @Test(arguments: [
+        (#"{"payload":[]}"#, [UInt8]()),
+        (#"{"payload":[0,1,2,255]}"#, [UInt8]([0, 1, 2, 255])),
+    ])
+    func ioValueDirectCodableReservesByteArraysForRawPayloads(
+        json: String,
+        expected: [UInt8]
+    ) throws {
+        let decoded = try decodeIoValue(json)
+
+        #expect(decoded.rawPayload == expected)
+        #expect(decoded.jsonPayload == nil)
+    }
+
+    /// Numeric arrays that cannot be represented exactly as bytes are JSON
+    /// arrays, making the otherwise ambiguous array shape deterministic.
+    @Test(arguments: [
+        (#"{"payload":[-1,2]}"#, #"[-1,2]"#),
+        (#"{"payload":[1,256]}"#, #"[1,256]"#),
+        (#"{"payload":[1,2.5]}"#, #"[1,2.5]"#),
+    ])
+    func ioValueDirectCodableTreatsNonByteNumericArraysAsJSON(
+        json: String,
+        expected: String
+    ) throws {
+        let decoded = try decodeIoValue(json)
+
+        #expect(decoded.rawPayload == nil)
+        #expect(decoded.jsonPayload == expected)
+    }
+
+    /// Structured IoValues survive direct Codable decode and encode without
+    /// regaining the historical string wrapper around the payload value.
+    @Test(arguments: [
+        #"{"payload":42}"#,
+        #"{"payload":{"value":"ready"}}"#,
+        #"{"payload":["ready",true,3]}"#,
+        #"{"payload":null}"#,
+    ])
+    func ioValueDirectCodableStructuredPayloadRoundTrips(json: String) throws {
+        let decoded = try decodeIoValue(json)
+        let encoded = try JSONEncoder().encode(decoded)
+
+        let expectedObject = try #require(JSONSerialization.jsonObject(with: Data(json.utf8)) as? NSDictionary)
+        let actualObject = try #require(JSONSerialization.jsonObject(with: encoded) as? NSDictionary)
+        #expect(actualObject == expectedObject)
+    }
+
+    /// The public payload boundary translates direct Codable failures into an
+    /// Axoloty `Throwable` instead of leaking the underlying decoder error.
+    @Test
+    func ioValuePayloadCoderWrapsMissingPayloadError() {
+        do {
+            let _: IoValueEventData = try PayloadCoder.decode("{}")
+            Issue.record("Expected missing IoValue payload to fail decoding")
+        } catch let error as AxolotyError {
+            guard case let .decodingFailure(type, _, payload) = error else {
+                Issue.record("Expected decodingFailure, got \(error)")
+                return
+            }
+            #expect(type == "IoValueEventData")
+            #expect(payload == "{}")
+            #expect(error.userFriendlyMessage.hasPrefix("IoValueEventData: "))
+        } catch {
+            Issue.record("Expected AxolotyError, got \(error)")
+        }
+    }
+
+    private func decodeIoValue(_ json: String) throws -> IoValueEventData {
+        try JSONDecoder().decode(IoValueEventData.self, from: Data(json.utf8))
+    }
 }

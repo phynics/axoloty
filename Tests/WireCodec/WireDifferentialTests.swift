@@ -108,15 +108,16 @@ struct WireDifferentialTests {
         // JSON IoValue: payload is a raw JSON value (scalar number)
         let json = #"{"payload":42}"#
 
-        let codable: IoValueEventData? = try? PayloadCoder.decode(json)
+        let codable: IoValueEventData = try PayloadCoder.decode(json)
         let decoded = try decodeWire(json) as DecodedWire<IoValueWireData>; let wire = decoded.value
 
         // WireReader returns the raw bytes "42"
         #expect(wire.payload.length == 2)
         #expect(wire.payload.byte(at: 0) == 0x34) // '4'
         #expect(wire.payload.byte(at: 1) == 0x32) // '2'
-        // Codable path may or may not decode this as rawPayload depending on type
-        // The wire path preserves the raw bytes
+        // Both paths preserve the same scalar payload shape.
+        #expect(codable.rawPayload == nil)
+        #expect(codable.jsonPayload == "42")
     }
 
     @Test
