@@ -10,17 +10,50 @@ public protocol AxolotyIntegrationRunning: Sendable {
 
 /// Foundation implementation of the local-broker integration lifecycle.
 public struct FoundationIntegrationRunner: AxolotyIntegrationRunning {
+    static let brokerProbeCommand = AxolotyCommandPlan(
+        executable: "node",
+        arguments: ["-e", """
+        const net=require('node:net');
+        const socket=net.createConnection({host:'127.0.0.1',port:1883},()=>{socket.end();process.exit(0)});
+        socket.setTimeout(400,()=>{socket.destroy();process.exit(1)});
+        socket.on('error',()=>process.exit(1));
+        """]
+    )
+    static let testCommand = AxolotyCommandPlan(
+        executable: "swift",
+        arguments: [
+            "test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution",
+            "--filter",
+            "CommunicationSubscriptionCoordinatorTests|BroadcastTransportTests|MQTTNIOClientTests|UnaryCallBrokerIntegrationTests|DecentralizedLoggingTest|ObjectLifecycleControllerTests|InspectorBrokerIntegrationTests",
+        ],
+        environment: ["AXOLOTY_INSPECTOR_LIVE": "1"]
+    )
+    static let commandPlans = [brokerProbeCommand, testCommand]
+
     private let commandRunner: any AxolotyCheckCommandRunning
+    private let contextValidator: AxolotyExecutionContextValidator
 
     /// Creates an integration runner.
     ///
     /// - Parameter commandRunner: Runner used for readiness and Swift tests.
     public init(commandRunner: any AxolotyCheckCommandRunning = FoundationCommandRunner()) {
         self.commandRunner = commandRunner
+        contextValidator = AxolotyExecutionContextValidator()
+    }
+
+    init(
+        commandRunner: any AxolotyCheckCommandRunning,
+        contextValidator: AxolotyExecutionContextValidator
+    ) {
+        self.commandRunner = commandRunner
+        self.contextValidator = contextValidator
     }
 
     /// Starts Mosquitto, waits for bounded readiness, runs tests, and stops it.
     public func run() -> AxolotyCheckCommandResult {
+        if let failure = contextValidator.failureResult(validating: Self.commandPlans) {
+            return failure
+        }
         guard !probeBroker() else {
             return AxolotyCheckCommandResult(
                 exitCode: 1,
@@ -81,15 +114,7 @@ public struct FoundationIntegrationRunner: AxolotyIntegrationRunning {
                     + (diagnostics.isEmpty ? "" : "\n\(diagnostics)")
             )
         }
-        return commandRunner.run(AxolotyCommandPlan(
-            executable: "swift",
-            arguments: [
-                "test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution",
-                "--filter",
-                "CommunicationSubscriptionCoordinatorTests|BroadcastTransportTests|MQTTNIOClientTests|UnaryCallBrokerIntegrationTests|DecentralizedLoggingTest|ObjectLifecycleControllerTests|InspectorBrokerIntegrationTests",
-            ],
-            environment: ["AXOLOTY_INSPECTOR_LIVE": "1"]
-        ))
+        return commandRunner.run(Self.testCommand)
     }
 
     private func waitForBroker(process: Process) -> Bool {
@@ -102,12 +127,6 @@ public struct FoundationIntegrationRunner: AxolotyIntegrationRunning {
     }
 
     private func probeBroker() -> Bool {
-        let probe = """
-        const net=require('node:net');
-        const socket=net.createConnection({host:'127.0.0.1',port:1883},()=>{socket.end();process.exit(0)});
-        socket.setTimeout(400,()=>{socket.destroy();process.exit(1)});
-        socket.on('error',()=>process.exit(1));
-        """
-        return commandRunner.run(AxolotyCommandPlan(executable: "node", arguments: ["-e", probe])).exitCode == 0
+        commandRunner.run(Self.brokerProbeCommand).exitCode == 0
     }
 }

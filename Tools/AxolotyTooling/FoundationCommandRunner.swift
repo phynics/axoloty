@@ -4,14 +4,33 @@ import Foundation
 
 /// A Foundation-backed runner for the repository's local tooling commands.
 public struct FoundationCommandRunner: AxolotyCheckCommandRunning {
+    private let contextValidator: AxolotyExecutionContextValidator
+    private let environment: [String: String]
+
     /// Creates a Foundation-backed command runner.
-    public init() {}
+    public init() {
+        let environment = ProcessInfo.processInfo.environment
+        contextValidator = AxolotyExecutionContextValidator(environment: environment)
+        self.environment = environment
+    }
+
+    init(contextValidator: AxolotyExecutionContextValidator) {
+        self.contextValidator = contextValidator
+        environment = ProcessInfo.processInfo.environment
+            .merging(contextValidator.environment) { _, injected in injected }
+    }
 
     /// Runs a command through the current process environment.
     ///
     /// - Parameter command: The command to execute.
     /// - Returns: Its exit status and captured output.
     public func run(_ command: AxolotyCommandPlan) -> AxolotyCheckCommandResult {
+        if let diagnostic = contextValidator.validate(command) {
+            return AxolotyCheckCommandResult(
+                exitCode: 64,
+                standardError: contextValidator.diagnosticMessage(diagnostic)
+            )
+        }
         do {
             return try execute(command)
         } catch {
@@ -36,9 +55,7 @@ public struct FoundationCommandRunner: AxolotyCheckCommandRunning {
         let process = Process()
         process.executableURL = URL(filePath: "/usr/bin/env")
         process.arguments = [command.executable] + command.arguments
-        if !command.environment.isEmpty {
-            process.environment = ProcessInfo.processInfo.environment.merging(command.environment) { _, value in value }
-        }
+        process.environment = environment.merging(command.environment) { _, value in value }
         process.standardOutput = try FileHandle(forWritingTo: standardOutputURL)
         process.standardError = try FileHandle(forWritingTo: standardErrorURL)
 

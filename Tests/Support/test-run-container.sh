@@ -73,6 +73,7 @@ wait "$holder" 2>/dev/null || true
 fake_bin="$TEMP_DIR/bin"
 capture="$TEMP_DIR/runtime-args.txt"
 capture_env="$TEMP_DIR/runtime-env.txt"
+capture_child_env="$TEMP_DIR/runtime-child-env.txt"
 mkdir -p "$fake_bin"
 cat > "$fake_bin/fake-sudo" <<'SH'
 #!/bin/sh
@@ -100,6 +101,31 @@ fi
 if [ "\$1" = "load" ]; then
     cat >/dev/null
     exit 0
+fi
+if [ "\${FAKE_RUNTIME_EXECUTE_COMMAND:-0}" = "1" ] && [ "\$1" = "run" ]; then
+    shift
+    while [ "\$#" -gt 0 ]; do
+        case "\$1" in
+            -e|--env)
+                export "\$2"
+                shift 2
+                ;;
+            --env-file|-v|-w|--security-opt|--user|--device|-p|--network)
+                shift 2
+                ;;
+            --rm|--privileged|-i|--userns=*)
+                shift
+                ;;
+            axoloty-dev)
+                shift
+                exec "\$@"
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+    exit 2
 fi
 case "\$*" in
     *chown*)
@@ -172,7 +198,9 @@ AXOLOTY_HOST_RUNTIME_BRIDGE=1 CONTAINER_HOST="unix://$host_socket" \
     CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
     "$ROOT_DIR/.devcontainer/run.sh" true
 grep -q -- "-w $ROOT_DIR" "$capture"
+grep -q -- "AXOLOTY_DEVCONTAINER=1" "$capture"
 grep -q -- "CONTAINER_RUNTIME=$ROOT_DIR/.devcontainer/container-runtime-remote.sh" "$capture"
+grep -q -- "AXOLOTY_HOST_RUNTIME_BRIDGE=1" "$capture"
 grep -q -- "DOCKER_HOST=unix://$host_socket" "$capture"
 grep -q -- "BUILD_DIR=$build_dir" "$capture"
 grep -q -- "SPM_CACHE_DIR=$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux" "$capture"
@@ -183,6 +211,39 @@ grep -q -- "$build_dir:$build_dir" "$capture"
 grep -q -- "$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux:$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux" "$capture"
 grep -q -- '--security-opt label=disable' "$capture"
 [ -S "$host_socket" ]
+
+# Execute a local observer through the fake container boundary. This verifies
+# child visibility of the complete bridge contract without contacting Podman.
+bridge_observer="$TEMP_DIR/observe-bridge-environment.sh"
+cat > "$bridge_observer" <<'SH'
+#!/bin/sh
+set -eu
+socket_path=${DOCKER_HOST#unix://}
+[ "$AXOLOTY_DEVCONTAINER" = "1" ]
+[ "$AXOLOTY_HOST_RUNTIME_BRIDGE" = "1" ]
+[ -x "$CONTAINER_RUNTIME" ]
+[ -S "$socket_path" ]
+printf '%s\n' \
+    "$AXOLOTY_DEVCONTAINER" \
+    "$AXOLOTY_HOST_RUNTIME_BRIDGE" \
+    "$CONTAINER_RUNTIME" \
+    "$DOCKER_HOST" > "$1"
+SH
+chmod +x "$bridge_observer"
+FAKE_RUNTIME_EXECUTE_COMMAND=1 \
+AXOLOTY_HOST_RUNTIME_BRIDGE=1 CONTAINER_HOST="unix://$host_socket" \
+    CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" "$bridge_observer" "$capture_child_env"
+{
+    IFS= read -r observed_devcontainer
+    IFS= read -r observed_bridge
+    IFS= read -r observed_runtime
+    IFS= read -r observed_docker_host
+} < "$capture_child_env"
+[[ "$observed_devcontainer" = "1" ]]
+[[ "$observed_bridge" = "1" ]]
+[[ "$observed_runtime" = "$ROOT_DIR/.devcontainer/container-runtime-remote.sh" ]]
+[[ "$observed_docker_host" = "unix://$host_socket" ]]
 kill "$socket_server" 2>/dev/null || true
 wait "$socket_server" 2>/dev/null || true
 socket_server=""

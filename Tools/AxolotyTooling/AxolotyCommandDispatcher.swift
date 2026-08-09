@@ -44,6 +44,7 @@ private struct FoundationFileSystem: AxolotyFileSystem {
 public struct AxolotyCommandDispatcher: Sendable {
     private let executableName: String
     private let commandRunner: any AxolotyCheckCommandRunning
+    private let contextValidator: AxolotyExecutionContextValidator
     private let integrationRunner: any AxolotyIntegrationRunning
     private let deviceLeaseManager: any AxolotyDeviceLeasing
     private let fileSystem: any AxolotyFileSystem
@@ -57,11 +58,12 @@ public struct AxolotyCommandDispatcher: Sendable {
     ///
     /// - Parameters:
     ///   - executableName: The name used in version output and help text (default: `axoloty-tool`).
-    ///   - commandRunner: The process runner for executing check commands.
+    ///   - commandRunner: The process runner for executing check commands. The default runner uses
+    ///     the supplied `environment` snapshot for execution-context validation.
     ///   - integrationRunner: The integration test runner for broker-backed tests.
     ///   - deviceLeaseManager: The device lease manager for hardware checks.
     ///   - fileSystem: The filesystem boundary for existence checks.
-    ///   - environment: The environment variable map.
+    ///   - environment: The environment variable map used by command parsing and context validation.
     ///   - processRunnerFactory: A factory for process runners used by managed service commands.
     ///   - portProbe: The TCP probe for service readiness checks.
     ///   - tempDirProvider: The temporary directory provider for service configs.
@@ -77,9 +79,17 @@ public struct AxolotyCommandDispatcher: Sendable {
         tempDirProvider: (any AxolotyTempDirectoryProvider)? = nil,
         installSignalHandler: Bool = true
     ) {
+        let contextValidator = AxolotyExecutionContextValidator(environment: environment)
+        let commandRunner: any AxolotyCheckCommandRunning = commandRunner is FoundationCommandRunner
+            ? FoundationCommandRunner(contextValidator: contextValidator)
+            : commandRunner
         self.executableName = executableName
         self.commandRunner = commandRunner
-        self.integrationRunner = integrationRunner ?? FoundationIntegrationRunner(commandRunner: commandRunner)
+        self.contextValidator = contextValidator
+        self.integrationRunner = integrationRunner ?? FoundationIntegrationRunner(
+            commandRunner: commandRunner,
+            contextValidator: contextValidator
+        )
         self.deviceLeaseManager = deviceLeaseManager
         self.fileSystem = fileSystem ?? FoundationFileSystem()
         self.environment = environment
@@ -314,7 +324,7 @@ public struct AxolotyCommandDispatcher: Sendable {
                 )
             }
             let plan = try AxolotyCheckPlanner().plan(availablePlan.nodes, requested: requested)
-            let results = AxolotyCheckExecutor(commandRunner: commandRunner).execute(plan)
+            let results = executor.execute(plan)
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
             return try Self.jsonResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
         } catch {
@@ -341,7 +351,7 @@ public struct AxolotyCommandDispatcher: Sendable {
                     environment: forwardedEnvironment
                 ).nodes
             )
-            let results = AxolotyCheckExecutor(commandRunner: commandRunner).execute(plan)
+            let results = executor.execute(plan)
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
             return try Self.jsonResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
         } catch {
@@ -366,7 +376,7 @@ public struct AxolotyCommandDispatcher: Sendable {
                 AxolotyCheckPlan.initialOffline.nodes + [bundleNode],
                 requested: [bundleNode.name]
             )
-            let results = AxolotyCheckExecutor(commandRunner: commandRunner).execute(plan)
+            let results = executor.execute(plan)
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
             return try Self.jsonResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
         } catch {
@@ -375,6 +385,11 @@ public struct AxolotyCommandDispatcher: Sendable {
     }
 
     private func integrationResult() -> AxolotyCommandResult {
+        if let failure = contextValidator.failureResult(
+            validating: FoundationIntegrationRunner.commandPlans
+        ) {
+            return Self.commandResult(failure)
+        }
         let command = integrationRunner.run()
         let result = AxolotyCheckResult(
             name: "integration-tests",
@@ -389,6 +404,7 @@ public struct AxolotyCommandDispatcher: Sendable {
 
     private func checkpointResult(hardware: Bool) -> AxolotyCommandResult {
         let plan: AxolotyCheckPlan
+        let device: String?
         let consumerEnvironment = [
             "AXOLOTY_CONSUMER_REPOSITORY_URL", "AXOLOTY_CONSUMER_VERSION",
             "AXOLOTY_CONSUMER_LOCAL", "AXOLOTY_CONSUMER_LOCAL_VERSION",
@@ -396,36 +412,53 @@ public struct AxolotyCommandDispatcher: Sendable {
             values[name] = environment[name]
         }
         if hardware {
-            let device = environment["AXOLOTY_DEVICE"] ?? "/dev/ttyACM0"
-            guard fileSystem.exists(atPath: device) else {
-                return AxolotyCommandResult(
-                    standardError: "error: checkpoint-hardware requires a device at \(device)\n",
-                    exitCode: 1
-                )
-            }
+            let selectedDevice = environment["AXOLOTY_DEVICE"] ?? "/dev/ttyACM0"
+            device = selectedDevice
             plan = AxolotyCheckPlan.checkpointHardware(
-                device: device,
+                device: selectedDevice,
                 consumerEnvironment: consumerEnvironment
             )
         } else {
+            device = nil
             plan = AxolotyCheckPlan.checkpoint(consumerEnvironment: consumerEnvironment)
         }
+
+        let gitCommitCommand = AxolotyCommandPlan(
+            executable: "git", arguments: ["rev-parse", "--short", "HEAD"]
+        )
+        let gitStatusCommand = AxolotyCommandPlan(
+            executable: "git", arguments: ["status", "--porcelain"]
+        )
+        let gitBranchCommand = AxolotyCommandPlan(
+            executable: "git", arguments: ["rev-parse", "--abbrev-ref", "HEAD"]
+        )
+        let swiftVersionCommand = AxolotyCommandPlan(executable: "swift", arguments: ["--version"])
+        let metadataCommands = (environment["AXOLOTY_GIT_COMMIT"] == nil ? [gitCommitCommand] : [])
+            + [gitStatusCommand, gitBranchCommand, swiftVersionCommand]
+        if let failure = contextValidator.failureResult(
+            validating: plan.nodes.map(\.command) + metadataCommands
+        ) {
+            return Self.commandResult(failure)
+        }
+        if let device, !fileSystem.exists(atPath: device) {
+            return AxolotyCommandResult(
+                standardError: "error: checkpoint-hardware requires a device at \(device)\n",
+                exitCode: 1
+            )
+        }
+
         do {
             let planned = try AxolotyCheckPlanner().plan(plan.nodes)
-            let results = AxolotyCheckExecutor(commandRunner: commandRunner).execute(planned)
+            let results = executor.execute(planned)
             let gitCommit = environment["AXOLOTY_GIT_COMMIT"]
-                ?? commandRunner.run(AxolotyCommandPlan(
-                    executable: "git", arguments: ["rev-parse", "--short", "HEAD"]
-                )).standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
-            let gitStatus = commandRunner.run(AxolotyCommandPlan(
-                executable: "git", arguments: ["status", "--porcelain"]
-            )).standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
-            let gitBranch = commandRunner.run(AxolotyCommandPlan(
-                executable: "git", arguments: ["rev-parse", "--abbrev-ref", "HEAD"]
-            )).standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
-            let swiftVersion = commandRunner.run(AxolotyCommandPlan(
-                executable: "swift", arguments: ["--version"]
-            )).standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+                ?? commandRunner.run(gitCommitCommand).standardOutput
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            let gitStatus = commandRunner.run(gitStatusCommand).standardOutput
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let gitBranch = commandRunner.run(gitBranchCommand).standardOutput
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let swiftVersion = commandRunner.run(swiftVersionCommand).standardOutput
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             let timestamp = ISO8601DateFormatter().string(from: Date())
             let manifest = AxolotyCheckpointManifest(
                 releaseVersion: "0.2.0",
@@ -450,7 +483,7 @@ public struct AxolotyCommandDispatcher: Sendable {
     private func execute(plan availablePlan: AxolotyCheckPlan) -> AxolotyCommandResult {
         do {
             let plan = try AxolotyCheckPlanner().plan(availablePlan.nodes)
-            let results = AxolotyCheckExecutor(commandRunner: commandRunner).execute(plan)
+            let results = executor.execute(plan)
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
             return try Self.jsonResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
         } catch {
@@ -460,6 +493,13 @@ public struct AxolotyCommandDispatcher: Sendable {
 
     private func hardwareResult(required: Bool, device: String?) -> AxolotyCommandResult {
         let selectedDevice = device ?? environment["AXOLOTY_DEVICE"] ?? "/dev/ttyACM0"
+        let command = AxolotyCommandPlan(
+            executable: "Tests/Support/embedded-swift-smoke.sh",
+            environment: ["EMBEDDED_DEVICE": selectedDevice]
+        )
+        if let failure = contextValidator.failureResult(validating: [command]) {
+            return Self.commandResult(failure)
+        }
         guard fileSystem.exists(atPath: selectedDevice) else {
             let outcome = AxolotyHardwareOutcome(
                 status: required ? .failed : .skipped,
@@ -476,10 +516,6 @@ public struct AxolotyCommandDispatcher: Sendable {
             )
             return (try? Self.jsonResult(outcome, exitCode: required ? 1 : 0)) ?? AxolotyCommandResult(exitCode: 70)
         }
-        let command = AxolotyCommandPlan(
-            executable: "Tests/Support/embedded-swift-smoke.sh",
-            environment: ["EMBEDDED_DEVICE": selectedDevice]
-        )
         let result = commandRunner.run(command)
         withExtendedLifetime(lease) {}
         let outcome = AxolotyHardwareOutcome(
@@ -504,6 +540,21 @@ public struct AxolotyCommandDispatcher: Sendable {
         return AxolotyCommandResult(
             standardOutput: String(decoding: data, as: UTF8.self),
             exitCode: exitCode
+        )
+    }
+
+    private var executor: AxolotyCheckExecutor {
+        AxolotyCheckExecutor(
+            commandRunner: commandRunner,
+            contextValidator: contextValidator
+        )
+    }
+
+    private static func commandResult(_ result: AxolotyCheckCommandResult) -> AxolotyCommandResult {
+        AxolotyCommandResult(
+            standardOutput: result.standardOutput,
+            standardError: result.standardError,
+            exitCode: result.exitCode
         )
     }
 }

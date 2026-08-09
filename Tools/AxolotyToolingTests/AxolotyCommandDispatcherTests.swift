@@ -1,9 +1,10 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-import AxolotyTooling
+@testable import AxolotyTooling
 import Foundation
 import Testing
 
+private let projectEnvironment = ["AXOLOTY_DEVCONTAINER": "1"]
 struct StubFileSystem: AxolotyFileSystem {
     let paths: Set<String>
     func exists(atPath path: String) -> Bool { paths.contains(path) }
@@ -31,6 +32,40 @@ private final class RecordingRunner: AxolotyCheckCommandRunning, @unchecked Send
     }
 }
 
+private final class RecordingFileSystem: AxolotyFileSystem, @unchecked Sendable {
+    private(set) var checkedPaths: [String] = []
+
+    func exists(atPath path: String) -> Bool {
+        checkedPaths.append(path)
+        return true
+    }
+}
+
+private final class RecordingDeviceLeaseManager: AxolotyDeviceLeasing, @unchecked Sendable {
+    private(set) var acquiredDevices: [String] = []
+
+    func acquire(device: String) -> (any AxolotyDeviceLease)? {
+        acquiredDevices.append(device)
+        return StubDeviceLease()
+    }
+}
+
+private final class RecordingIntegrationRunner: AxolotyIntegrationRunning, @unchecked Sendable {
+    private(set) var runCount = 0
+
+    func run() -> AxolotyCheckCommandResult {
+        runCount += 1
+        return AxolotyCheckCommandResult(exitCode: 0)
+    }
+}
+
+private func decodeDiagnostic(_ result: AxolotyCommandResult) throws -> AxolotyExecutionContextDiagnostic {
+    try JSONDecoder().decode(
+        AxolotyExecutionContextDiagnostic.self,
+        from: Data(result.standardError.utf8)
+    )
+}
+
 @Test
 func helpCommandPrintsUsage() {
     let result = AxolotyCommandDispatcher().run(arguments: ["help"])
@@ -43,7 +78,7 @@ func helpCommandPrintsUsage() {
 
 @Test
 func invalidCommandUsesConfiguredExecutableNameInErrorAndUsage() {
-    let dispatcher = AxolotyCommandDispatcher(executableName: "ax", environment: [:])
+    let dispatcher = AxolotyCommandDispatcher(executableName: "ax", environment: projectEnvironment)
 
     let result = dispatcher.run(arguments: ["unknown"])
 
@@ -96,7 +131,7 @@ func checkPlanPrintsStableJSON() {
 @Test
 func embeddedDoctorRunsDeviceIndependentEnvironmentCheck() {
     let runner = RecordingRunner()
-    let dispatcher = AxolotyCommandDispatcher(commandRunner: runner, environment: [:])
+    let dispatcher = AxolotyCommandDispatcher(commandRunner: runner, environment: projectEnvironment)
 
     let result = dispatcher.run(arguments: ["embedded", "doctor"])
 
@@ -117,7 +152,7 @@ func optionalHardwareCheckSkipsAbsentDevice() throws {
     let dispatcher = AxolotyCommandDispatcher(
         commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
         fileSystem: StubFileSystem(paths: []),
-        environment: [:]
+        environment: projectEnvironment
     )
     let result = dispatcher.run(arguments: ["hardware", "check"])
     let outcome = try JSONDecoder().decode(AxolotyHardwareOutcome.self, from: Data(result.standardOutput.utf8))
@@ -127,7 +162,7 @@ func optionalHardwareCheckSkipsAbsentDevice() throws {
 
 @Test
 func requiredHardwareCheckFailsAbsentDevice() throws {
-    let dispatcher = AxolotyCommandDispatcher(fileSystem: StubFileSystem(paths: []), environment: [:])
+    let dispatcher = AxolotyCommandDispatcher(fileSystem: StubFileSystem(paths: []), environment: projectEnvironment)
     let result = dispatcher.run(arguments: ["hardware", "require"])
     let outcome = try JSONDecoder().decode(AxolotyHardwareOutcome.self, from: Data(result.standardOutput.utf8))
     #expect(result.exitCode != 0)
@@ -140,7 +175,7 @@ func presentHardwareRunsSmokeCommand() throws {
     let dispatcher = AxolotyCommandDispatcher(
         commandRunner: runner,
         fileSystem: StubFileSystem(paths: ["/dev/test"]),
-        environment: [:]
+        environment: projectEnvironment
     )
     let result = dispatcher.run(arguments: ["hardware", "check", "--device", "/dev/test"])
     let outcome = try JSONDecoder().decode(AxolotyHardwareOutcome.self, from: Data(result.standardOutput.utf8))
@@ -156,7 +191,7 @@ func optionalHardwareSkipsWhenDeviceLeaseIsContended() throws {
         commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
         deviceLeaseManager: StubDeviceLeaseManager(available: false),
         fileSystem: StubFileSystem(paths: ["/dev/test"]),
-        environment: [:]
+        environment: projectEnvironment
     )
 
     let result = dispatcher.run(arguments: ["hardware", "check", "--device", "/dev/test"])
@@ -168,11 +203,74 @@ func optionalHardwareSkipsWhenDeviceLeaseIsContended() throws {
 }
 
 @Test
+func hardwareContextMismatchPrecedesFilesystemAndDeviceLeaseEffects() throws {
+    let fileSystem = RecordingFileSystem()
+    let leases = RecordingDeviceLeaseManager()
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
+        deviceLeaseManager: leases,
+        fileSystem: fileSystem,
+        environment: [:]
+    )
+
+    let result = dispatcher.run(arguments: ["hardware", "require", "--device", "/dev/test"])
+
+    #expect(result.exitCode == 64)
+    #expect(fileSystem.checkedPaths.isEmpty)
+    #expect(leases.acquiredDevices.isEmpty)
+    #expect(try decodeDiagnostic(result) == AxolotyExecutionContextDiagnostic(
+        executable: "Tests/Support/embedded-swift-smoke.sh",
+        declaredContext: .project,
+        detectedContext: .host
+    ))
+}
+
+@Test
+func checkpointHardwareContextMismatchPrecedesFilesystemEffects() throws {
+    let fileSystem = RecordingFileSystem()
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
+        fileSystem: fileSystem,
+        environment: [:]
+    )
+
+    let result = dispatcher.run(arguments: ["release", "checkpoint-hardware"])
+
+    #expect(result.exitCode == 64)
+    #expect(fileSystem.checkedPaths.isEmpty)
+    #expect(try decodeDiagnostic(result) == AxolotyExecutionContextDiagnostic(
+        executable: "swift",
+        declaredContext: .project,
+        detectedContext: .host
+    ))
+}
+
+@Test
+func checkpointContextMismatchPrecedesPlanAndMetadataCommands() throws {
+    let runner = RecordingSequenceRunner()
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: runner,
+        fileSystem: StubFileSystem(paths: []),
+        environment: [:]
+    )
+
+    let result = dispatcher.run(arguments: ["release", "checkpoint"])
+
+    #expect(result.exitCode == 64)
+    #expect(runner.commands.isEmpty)
+    #expect(try decodeDiagnostic(result) == AxolotyExecutionContextDiagnostic(
+        executable: "swift",
+        declaredContext: .project,
+        detectedContext: .host
+    ))
+}
+
+@Test
 func wireVerifyRunsOnlyItsDependencyClosure() throws {
     let dispatcher = AxolotyCommandDispatcher(
         commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
         fileSystem: StubFileSystem(paths: []),
-        environment: [:]
+        environment: projectEnvironment
     )
 
     let result = dispatcher.run(arguments: ["wire", "verify"])
@@ -189,7 +287,7 @@ func wireVerifyBundleRunsSemanticAndHashVerification() throws {
     let dispatcher = AxolotyCommandDispatcher(
         commandRunner: runner,
         fileSystem: StubFileSystem(paths: []),
-        environment: [:]
+        environment: projectEnvironment
     )
 
     let result = dispatcher.run(arguments: ["wire", "verify", ".testing/downloaded"])
@@ -203,22 +301,49 @@ func wireVerifyBundleRunsSemanticAndHashVerification() throws {
 }
 
 @Test
-func wireCaptureKeepsContainerBuildsAndHostLifecycleExplicit() throws {
+func wireCaptureRunsEveryNodeThroughSupportedBridge() throws {
+    let bridge = try BridgeCapabilityFixture()
     let runner = RecordingSequenceRunner()
     let dispatcher = AxolotyCommandDispatcher(
         commandRunner: runner,
         fileSystem: StubFileSystem(paths: []),
-        environment: [:]
+        environment: bridge.environment
     )
 
     let result = dispatcher.run(arguments: ["wire", "capture"])
-    let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
 
     #expect(result.exitCode == 0)
-    #expect(manifest.results.count == 10)
-    #expect(runner.commands.first?.executionContext == .project)
-    #expect(runner.commands.first { $0.executable.hasSuffix("run-coatyjs-advertise.sh") }?.executionContext == .host)
+    let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
+    #expect(manifest.results.allSatisfy { $0.status == .passed })
+    #expect(runner.commands.count == 10)
+    #expect(runner.commands.prefix(2).allSatisfy { $0.executionContext == .project })
+    #expect(runner.commands.dropFirst(2).dropLast().allSatisfy { $0.executionContext == .host })
     #expect(runner.commands.last?.executionContext == .project)
+}
+
+@Test
+func wireCaptureRejectsHostNodesWithoutBridgeBeforeStartingCommands() throws {
+    let runner = RecordingSequenceRunner()
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: runner,
+        fileSystem: StubFileSystem(paths: []),
+        environment: projectEnvironment
+    )
+
+    let result = dispatcher.run(arguments: ["wire", "capture"])
+
+    #expect(result.exitCode == 1)
+    #expect(runner.commands.isEmpty)
+    let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
+    let diagnosticData = try #require(
+        manifest.results.first { $0.status == .failed }?.command?.standardError.data(using: .utf8)
+    )
+    #expect(try JSONDecoder().decode(AxolotyExecutionContextDiagnostic.self, from: diagnosticData) ==
+        AxolotyExecutionContextDiagnostic(
+            executable: "Tests/WireCompatibility/Live/run-coatyjs-advertise.sh",
+            declaredContext: .host,
+            detectedContext: .project
+        ))
 }
 
 @Test
@@ -226,7 +351,7 @@ func testOfflineUsesTheCheckPlan() throws {
     let dispatcher = AxolotyCommandDispatcher(
         commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
         fileSystem: StubFileSystem(paths: []),
-        environment: [:]
+        environment: projectEnvironment
     )
 
     let result = dispatcher.run(arguments: ["test", "offline"])
@@ -242,7 +367,7 @@ func testToolingUsesOnlyItsCheckPlanDependencyClosure() throws {
     let dispatcher = AxolotyCommandDispatcher(
         commandRunner: runner,
         fileSystem: StubFileSystem(paths: []),
-        environment: [:]
+        environment: projectEnvironment
     )
 
     let result = dispatcher.run(arguments: ["test", "tooling"])
@@ -262,7 +387,7 @@ func integrationTestStartsBrokerBeforeTransportTests() throws {
     let dispatcher = AxolotyCommandDispatcher(
         integrationRunner: runner,
         fileSystem: StubFileSystem(paths: []),
-        environment: [:]
+        environment: projectEnvironment
     )
 
     let result = dispatcher.run(arguments: ["test", "integration"])
@@ -271,6 +396,26 @@ func integrationTestStartsBrokerBeforeTransportTests() throws {
     #expect(result.exitCode == 0)
     #expect(manifest.results.map(\.name) == ["integration-tests"])
     #expect(manifest.results.first?.command?.standardOutput == "passed")
+}
+
+@Test
+func integrationContextMismatchPrecedesIntegrationRunnerEffects() throws {
+    let integrationRunner = RecordingIntegrationRunner()
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
+        integrationRunner: integrationRunner,
+        environment: [:]
+    )
+
+    let result = dispatcher.run(arguments: ["test", "integration"])
+
+    #expect(result.exitCode == 64)
+    #expect(integrationRunner.runCount == 0)
+    #expect(try decodeDiagnostic(result) == AxolotyExecutionContextDiagnostic(
+        executable: "node",
+        declaredContext: .project,
+        detectedContext: .host
+    ))
 }
 
 private struct StubIntegrationRunner: AxolotyIntegrationRunning {
@@ -285,6 +430,7 @@ func releaseSnapshotsGenerateThenVerifyConfiguredBundle() throws {
         commandRunner: runner,
         fileSystem: StubFileSystem(paths: []),
         environment: [
+            "AXOLOTY_DEVCONTAINER": "1",
             "AXOLOTY_SNAPSHOT_SOURCE": "fixtures",
             "AXOLOTY_SNAPSHOT_OUTPUT": "artifacts",
             "AXOLOTY_IMAGE_IDENTITY": "sha256:test",

@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "nodes": [
+    {
+      "name": "legacy-project-command",
+      "dependencies": [],
+      "command": {
+        "executable": "swift",
+        "arguments": ["--version"],
+        "environment": {}
+      },
+      "status": "planned"
+    }
+  ]
+}
