@@ -127,10 +127,7 @@ public final class EmbeddedMessageRouter: MessageRouter {
         _ eventType: WireEventType,
         _ handler: @Sendable @escaping (BorrowedMessage) -> Void
     ) -> StaticDispatchTable.Token? {
-        guard var table = tables[eventType] else { return nil }
-        let token = table.subscribe(handler)
-        tables[eventType] = table
-        return token
+        tables[eventType]?.subscribe(handler)
     }
 
     /// Removes the subscriber for the given event type identified by `token`.
@@ -139,9 +136,7 @@ public final class EmbeddedMessageRouter: MessageRouter {
     ///   - eventType: The event type the token was issued for.
     ///   - token: The token returned by ``subscribe(_:_:)``.
     public func unsubscribe(_ eventType: WireEventType, _ token: StaticDispatchTable.Token) {
-        guard var table = tables[eventType] else { return }
-        table.unsubscribe(token)
-        tables[eventType] = table
+        tables[eventType]?.unsubscribe(token)
     }
 
     /// Subscribes a handler for raw (non-Coaty) topics.
