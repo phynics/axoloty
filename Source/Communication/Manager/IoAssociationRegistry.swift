@@ -129,6 +129,9 @@ internal final class IoAssociationRegistry {
         for route in ioActorItems.keys {
             onUnsubscribe?(route)
         }
+        observedIoStateItems.removeAll()
+        ioSourceItems.removeAll()
+        ioActorItems.removeAll()
     }
 
     private func updateIoSourceItems(
