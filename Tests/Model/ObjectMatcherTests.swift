@@ -70,7 +70,32 @@ struct ObjectMatcherTests {
     }
 
     @Test
+    func containsMatchesRequiredObjectPropertiesWithinCandidate() throws {
+        let obj = Log(logLevel: .info,
+                      logMessage: "Hello",
+                      logDate: "2026-01-01",
+                      logLabels: [
+                          "nested": [
+                              "name": "device",
+                              "extra": true
+                          ]
+                      ])
 
+        let containedObjectFilter = ObjectFilter(condition: ObjectFilterCondition(
+            property: ObjectFilterProperty("logLabels.nested"),
+            expression: .contains(.object(["name": "device"]))))
+        let largerObjectFilter = ObjectFilter(condition: ObjectFilterCondition(
+            property: ObjectFilterProperty("logLabels.nested"),
+            expression: .contains(.object([
+                "name": "device",
+                "missing": true
+            ]))))
+
+        #expect(ObjectMatcher.matchesFilter(obj: obj, filter: containedObjectFilter))
+        #expect(!ObjectMatcher.matchesFilter(obj: obj, filter: largerObjectFilter))
+    }
+
+    @Test
     func testMatchesFilterAndConditions() throws {
         let dotTest2: [String: Any] = [
             "hello": "hello"

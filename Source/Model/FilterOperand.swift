@@ -241,9 +241,9 @@ extension FilterOperand {
             }
             return false
         case (.object(let xDict), .object(let yDict)):
-            return xDict.keys.allSatisfy { xk in
-                guard let yv = yDict[xk] else { return false }
-                return FilterOperand._deepContains(xDict[xk]!, yv, isTopLevel: false)
+            return yDict.allSatisfy { yk, yv in
+                guard let xv = xDict[yk] else { return false }
+                return FilterOperand._deepContains(xv, yv, isTopLevel: false)
             }
         default:
             return x == y
