@@ -55,8 +55,12 @@ final class CoreTypeKeysContext: @unchecked Sendable {
 /// - Note: the created Coaty object instance is accessible by the `object` property.
 public class AnyCoatyObjectDecodable: Decodable {
     
-    /// The decoded object. Can be an instance of any subclass of CoatyObject.
-    var object: CoatyObject
+    /// The decoded ``CoatyObject`` reference, which can be an instance of any subclass.
+    ///
+    /// The wrapper retains and always returns the same decoded instance. Callers cannot
+    /// replace the reference through this property, but may mutate the returned object's
+    /// public state.
+    public private(set) var object: CoatyObject
     
     /// Supports decoding of any Coaty object, either as a core type or as a custom, i.e application-specific object type.
     ///
