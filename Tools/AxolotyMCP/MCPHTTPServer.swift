@@ -38,6 +38,7 @@ public actor MCPHTTPServer {
     private let host: String
     private let port: UInt16
     private let endpoint: String
+    private let maxRequestBodyBytes: Int
     private let serverFactory: ServerFactory
     private let validationPipeline: (any HTTPRequestValidationPipeline)?
     private var eventLoopGroup: MultiThreadedEventLoopGroup?
@@ -60,6 +61,10 @@ public actor MCPHTTPServer {
     ///     `::1`; any other value is rejected when ``start()`` runs.
     ///   - port: TCP port to bind.
     ///   - endpoint: MCP endpoint path (defaults to `/mcp`).
+    ///   - maxRequestBodyBytes: Maximum request body size accepted by the
+    ///     transport, in bytes. Defaults to 1 MiB. Bodies larger than this
+    ///     limit are rejected with HTTP 413 before they reach the MCP
+    ///     transport.
     ///   - validationPipeline: Custom validation pipeline forwarded to each
     ///     transport. If `nil`, a default pipeline scoped to
     ///     ``MCP/OriginValidator``.`localhost(port:)` is used.
@@ -69,12 +74,14 @@ public actor MCPHTTPServer {
         host: String,
         port: UInt16,
         endpoint: String = "/mcp",
+        maxRequestBodyBytes: Int = 1_048_576,
         validationPipeline: (any HTTPRequestValidationPipeline)? = nil,
         serverFactory: @escaping ServerFactory
     ) {
         self.host = host
         self.port = port
         self.endpoint = endpoint
+        self.maxRequestBodyBytes = max(0, maxRequestBodyBytes)
         self.serverFactory = serverFactory
         self.validationPipeline = validationPipeline
     }
@@ -99,7 +106,12 @@ public actor MCPHTTPServer {
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .childChannelInitializer { channel in
                 channel.pipeline.configureHTTPServerPipeline().flatMap {
-                    channel.pipeline.addHandler(HTTPHandler(app: self))
+                    channel.pipeline.addHandler(
+                        HTTPHandler(
+                            app: self,
+                            maxRequestBodyBytes: self.maxRequestBodyBytes
+                        )
+                    )
                 }
             }
             .childChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
@@ -311,9 +323,11 @@ private final class HTTPHandler: ChannelInboundHandler, @unchecked Sendable {
     }
 
     private var requestState: RequestState?
+    private let maxRequestBodyBytes: Int
 
-    init(app: MCPHTTPServer) {
+    init(app: MCPHTTPServer, maxRequestBodyBytes: Int) {
         self.app = app
+        self.maxRequestBodyBytes = maxRequestBodyBytes
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
@@ -321,12 +335,29 @@ private final class HTTPHandler: ChannelInboundHandler, @unchecked Sendable {
 
         switch part {
         case .head(let head):
-            requestState = RequestState(
+            let state = RequestState(
                 head: head,
                 bodyBuffer: context.channel.allocator.buffer(capacity: 0)
             )
+            if contentLengthExceedsLimit(in: head) {
+                requestState = nil
+                rejectOversizedRequest(version: head.version, context: context)
+            } else {
+                requestState = state
+            }
         case .body(var buffer):
-            requestState?.bodyBuffer.writeBuffer(&buffer)
+            guard var state = requestState else { return }
+
+            if state.bodyBuffer.readableBytes > maxRequestBodyBytes
+                || buffer.readableBytes
+                    > maxRequestBodyBytes - state.bodyBuffer.readableBytes
+            {
+                requestState = nil
+                rejectOversizedRequest(version: state.head.version, context: context)
+            } else {
+                state.bodyBuffer.writeBuffer(&buffer)
+                requestState = state
+            }
         case .end:
             guard let state = requestState else { return }
             requestState = nil
@@ -339,6 +370,35 @@ private final class HTTPHandler: ChannelInboundHandler, @unchecked Sendable {
     }
 
     // MARK: - Request Processing
+
+    private func contentLengthExceedsLimit(in head: HTTPRequestHead) -> Bool {
+        let limit = UInt64(maxRequestBodyBytes)
+
+        for (name, value) in head.headers {
+            guard name.caseInsensitiveCompare("Content-Length") == .orderedSame,
+                let contentLength = UInt64(value.trimmingCharacters(in: .whitespacesAndNewlines))
+            else {
+                continue
+            }
+
+            if contentLength > limit {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private func rejectOversizedRequest(version: HTTPVersion, context: ChannelHandlerContext) {
+        nonisolated(unsafe) let ctx = context
+        Task { @MainActor in
+            await self.writeResponse(
+                .error(statusCode: 413, .invalidRequest("Payload Too Large")),
+                version: version,
+                context: ctx
+            )
+        }
+    }
 
     private func handleRequest(state: RequestState, context: ChannelHandlerContext) async {
         let head = state.head
