@@ -115,8 +115,6 @@ public final class InspectorDiscoverApplication {
 
         let responseStream = await session.discover(discoverEvent)
 
-        let timeout = cmd.timeout.value ?? .seconds(10)
-
         var discoveredObjects: [String: InspectorObject] = [:]
         var timedOut = false
 
@@ -130,9 +128,15 @@ public final class InspectorDiscoverApplication {
             continuation.yield(.responsesExhausted)
         }
 
-        let timerTask = Task {
-            try? await Task.sleep(for: timeout)
-            continuation.yield(.timeoutExpired)
+        let timerTask: Task<Void, Never>?
+        if let timeout = cmd.timeout.value {
+            timerTask = Task {
+                try? await Task.sleep(for: timeout)
+                guard !Task.isCancelled else { return }
+                continuation.yield(.timeoutExpired)
+            }
+        } else {
+            timerTask = nil
         }
 
         let signalTask = Task {
@@ -179,10 +183,10 @@ public final class InspectorDiscoverApplication {
 
         continuation.finish()
         responseTask.cancel()
-        timerTask.cancel()
+        timerTask?.cancel()
         signalTask.cancel()
         _ = await responseTask.value
-        _ = await timerTask.value
+        _ = await timerTask?.value
         _ = await signalTask.value
 
         let objects = Array(discoveredObjects.values).sorted { $0.objectId < $1.objectId }
