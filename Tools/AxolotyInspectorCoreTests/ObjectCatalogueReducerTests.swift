@@ -177,6 +177,20 @@ struct ObjectCatalogueReducerTests {
     }
 
     @Test
+    func filteredAdvertiseRemovesExistingObjectWhenItStopsMatching() {
+        let reducer = ObjectCatalogueReducer(filter: ObjectCatalogueFilter(coreType: "Sensor"))
+        let sensor = InspectorObject(objectId: "1", coreType: "Sensor", objectType: "com.example.Sensor")
+        let identity = InspectorObject(objectId: "1", coreType: "Identity", objectType: "coaty.object.Identity")
+
+        let (cat1, insertedMutation) = reducer.reduceAdvertise(sensor, into: ObjectCatalogue())
+        let (cat2, mutation) = reducer.reduceAdvertise(identity, into: cat1)
+
+        #expect(insertedMutation == .inserted(sensor))
+        #expect(mutation == .removed(sensor))
+        #expect(cat2.objectsById.isEmpty)
+    }
+
+    @Test
     func deadvertiseRemovesPreviouslyFilteredEntries() {
         let reducer = ObjectCatalogueReducer(filter: ObjectCatalogueFilter(coreType: "Sensor"))
         let sensor = InspectorObject(objectId: "s1", coreType: "Sensor", objectType: "com.example.Sensor")

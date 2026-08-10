@@ -10,7 +10,7 @@ import Foundation
 /// Each call returns the updated catalogue and the mutation that describes
 /// the change.
 public struct ObjectCatalogueReducer: Sendable {
-    /// The filter applied to advertised objects before insertion.
+    /// The filter used to determine advertised object catalogue membership.
     public let filter: ObjectCatalogueFilter
 
     /// Creates a reducer with the given filter.
@@ -20,23 +20,31 @@ public struct ObjectCatalogueReducer: Sendable {
 
     /// Processes an Advertise event.
     ///
-    /// If the object does not match the filter, the catalogue is unchanged
-    /// and `nil` is returned for the mutation (no output should be produced).
-    /// If the object matches and is already in the catalogue with identical
-    /// contents, `.unchanged` is returned. If the contents differ, `.updated`
-    /// is returned. If the object is new, `.inserted` is returned.
+    /// If a new object does not match the filter, the catalogue is unchanged
+    /// and `nil` is returned for the mutation. If an existing object no longer
+    /// matches the filter, it is removed and `.removed` is returned. If the
+    /// object matches and is already in the catalogue with identical contents,
+    /// `.unchanged` is returned. If the contents differ, `.updated` is
+    /// returned. If the object is new, `.inserted` is returned.
     ///
     /// - Parameters:
     ///   - object: The advertised object.
     ///   - catalogue: The current catalogue state.
-    /// - Returns: The updated catalogue and the mutation (or `nil` if
-    ///   filtered out).
+    /// - Returns: The updated catalogue and the mutation. A new filtered-out
+    ///   object produces `nil`; a previously catalogued object that becomes
+    ///   filtered out produces `.removed`.
     public func reduceAdvertise(
         _ object: InspectorObject,
         into catalogue: ObjectCatalogue
     ) -> (ObjectCatalogue, ObjectCatalogueMutation?) {
-        guard filter.matches(object) else {
-            return (catalogue, nil)
+        if !filter.matches(object) {
+            guard let existing = catalogue.objectsById[object.objectId] else {
+                return (catalogue, nil)
+            }
+
+            var removed = catalogue
+            removed.objectsById.removeValue(forKey: object.objectId)
+            return (removed, .removed(existing))
         }
 
         if let existing = catalogue.objectsById[object.objectId] {

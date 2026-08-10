@@ -71,7 +71,7 @@ public enum ObjectCatalogueMutation: Equatable, Sendable {
     case updated(previous: InspectorObject, current: InspectorObject)
     /// The event did not change the catalogue (duplicate advertisement).
     case unchanged(InspectorObject)
-    /// An object was removed from the catalogue by a Deadvertise event.
+    /// An existing object was removed from the catalogue.
     case removed(InspectorObject)
     /// A Deadvertise referenced an object ID not in the catalogue.
     case removalOfUnknownObject(objectId: String)
