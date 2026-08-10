@@ -25,6 +25,18 @@ public struct AxolotyMCPServiceRunner: Sendable {
     }
 
     public func run(_ configuration: MCPServiceConfiguration) -> Int32 {
+        let processSupervisor = ManagedProcessSupervisor()
+        let signalHandler = installSignalHandler
+            ? ServiceSignalHandler(onInterrupt: { processSupervisor.requestTermination() })
+            : nil
+        signalHandler?.install()
+        defer { signalHandler?.uninstall() }
+        defer { processSupervisor.terminateAndWait() }
+
+        if signalHandler?.isInterrupted == true {
+            return 130
+        }
+
         guard fileSystem.exists(atPath: mcpExecutable) else {
             FileHandle.standardError.write(Data(
                 "error: axoloty-mcp executable not found at \(mcpExecutable)\n".utf8
@@ -41,7 +53,11 @@ public struct AxolotyMCPServiceRunner: Sendable {
 
         do {
             try processRunner.start(spec)
+            processSupervisor.register(processRunner)
         } catch {
+            if signalHandler?.isInterrupted == true {
+                return 130
+            }
             FileHandle.standardError.write(Data(
                 "error: unable to start axoloty-mcp: \(error)\n".utf8
             ))
@@ -55,6 +71,9 @@ public struct AxolotyMCPServiceRunner: Sendable {
                 port: configuration.listenPort,
                 timeoutSeconds: readinessTimeout
             )
+            if signalHandler?.isInterrupted == true {
+                return 130
+            }
             if !ready {
                 processRunner.forceKill()
                 FileHandle.standardError.write(Data(
@@ -67,22 +86,8 @@ public struct AxolotyMCPServiceRunner: Sendable {
             writeReadiness(mcpURL: mcpURL, output: configuration.output)
         }
 
-        let signalHandler = installSignalHandler ? ServiceSignalHandler() : nil
-        signalHandler?.install()
-        defer { signalHandler?.uninstall() }
-
         while true {
             if signalHandler?.isInterrupted == true {
-                processRunner.terminate()
-                let deadline = Date().addingTimeInterval(5.0)
-                while Date() < deadline {
-                    if !processRunner.isRunning { break }
-                    usleep(50_000)
-                }
-                if processRunner.isRunning {
-                    processRunner.forceKill()
-                    _ = processRunner.waitForExit()
-                }
                 return 130
             }
 

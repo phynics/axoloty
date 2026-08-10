@@ -18,6 +18,8 @@ private final class DevFakeProcessRunner: AxolotyManagedProcessRunning, @uncheck
     var terminateCalled = false
     var forceKillCalled = false
     var running = false
+    var terminateStopsProcess = true
+    var waitForExitCalled = false
     /// Number of ``isRunning`` polls before the fake process "exits".
     var pollsUntilExit: Int?
 
@@ -30,13 +32,16 @@ private final class DevFakeProcessRunner: AxolotyManagedProcessRunning, @uncheck
     }
 
     func waitForExit() -> ManagedProcessExit {
+        waitForExitCalled = true
         running = false
         return ManagedProcessExit(exitCode: exitCode, wasTerminated: wasTerminated)
     }
 
     func terminate() {
         terminateCalled = true
-        running = false
+        if terminateStopsProcess {
+            running = false
+        }
     }
 
     func forceKill() {
@@ -64,6 +69,26 @@ private struct DevPortProbe: AxolotyServiceProbing {
     func isPortAvailable(host: String, port: UInt16) -> Bool { portAvailable }
     func waitForTCP(host: String, port: UInt16, timeoutSeconds: Double) -> Bool {
         readyPorts.contains(port)
+    }
+}
+
+private final class DevStartupSignalPortProbe: AxolotyServiceProbing, @unchecked Sendable {
+    private let lock = NSLock()
+    private var didSendSignal = false
+
+    func isPortAvailable(host: String, port: UInt16) -> Bool { true }
+
+    func waitForTCP(host: String, port: UInt16, timeoutSeconds: Double) -> Bool {
+        lock.lock()
+        let shouldSendSignal = !didSendSignal
+        didSendSignal = true
+        lock.unlock()
+
+        if shouldSendSignal {
+            _ = kill(getpid(), SIGTERM)
+            usleep(250_000)
+        }
+        return true
     }
 }
 
@@ -251,6 +276,44 @@ func devServiceReturnsMCPExitStatusWhenMCPExits() {
     let exitCode = runner.run(devConfiguration())
     #expect(exitCode == 3)
     #expect(mqttRunner.terminateCalled)
+}
+
+@Test
+func managedProcessSupervisorEscalatesAfterGracePeriod() {
+    let processRunner = DevFakeProcessRunner()
+    processRunner.running = true
+    processRunner.terminateStopsProcess = false
+
+    let supervisor = ManagedProcessSupervisor(shutdownTimeout: 0)
+    supervisor.register(processRunner)
+    supervisor.terminateAndWait()
+
+    #expect(processRunner.terminateCalled)
+    #expect(processRunner.forceKillCalled)
+    #expect(processRunner.waitForExitCalled)
+}
+
+@Suite(.serialized)
+struct DevelopmentServiceSignalLifecycleTests {
+    @Test
+    func devServiceCleansUpChildWhenInterruptedDuringStartup() {
+        let mqttRunner = DevFakeProcessRunner()
+        let mcpRunner = DevFakeProcessRunner()
+
+        let runner = AxolotyDevelopmentServiceRunner(
+            processRunnerFactory: devFakeFactory([mqttRunner, mcpRunner]),
+            portProbe: DevStartupSignalPortProbe(),
+            fileSystem: StubFileSystem(paths: ["/usr/sbin/mosquitto", "/opt/axoloty/bin/axoloty-mcp"]),
+            tempDirProvider: DevTempDirProvider()
+        )
+
+        let exitCode = runner.run(devConfiguration())
+
+        #expect(exitCode == 130)
+        #expect(mqttRunner.terminateCalled)
+        #expect(mqttRunner.waitForExitCalled)
+        #expect(mcpRunner.startSpec == nil)
+    }
 }
 
 // MARK: - Dispatcher integration

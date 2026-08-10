@@ -35,6 +35,16 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
         let output = configuration.output
         let mqttConfig = configuration.mqtt
         let mcpConfig = configuration.mcp
+        let processSupervisor = ManagedProcessSupervisor()
+        let signalHandler = installSignalHandler
+            ? ServiceSignalHandler(onInterrupt: { processSupervisor.requestTermination() })
+            : nil
+        signalHandler?.install()
+        defer { signalHandler?.uninstall() }
+
+        if signalHandler?.isInterrupted == true {
+            return 130
+        }
 
         guard fileSystem.exists(atPath: mosquittoExecutable) else {
             writeError("error: mosquitto executable not found at \(mosquittoExecutable)\n", output: output)
@@ -58,6 +68,7 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
             return 70
         }
         defer { tempDirProvider.removeDirectory(tempDir) }
+        defer { processSupervisor.terminateAndWait() }
 
         let configPath = "\(tempDir)/mosquitto.conf"
         let configContent = MosquittoConfigGenerator().generate(
@@ -73,13 +84,21 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
             return 70
         }
 
+        if signalHandler?.isInterrupted == true {
+            return 130
+        }
+
         let mqttRunner = processRunnerFactory()
         do {
             try mqttRunner.start(ManagedProcessSpecification(
                 executable: mosquittoExecutable,
                 arguments: ["-c", configPath]
             ))
+            processSupervisor.register(mqttRunner)
         } catch {
+            if signalHandler?.isInterrupted == true {
+                return 130
+            }
             writeError("error: unable to start mosquitto: \(error)\n", output: output)
             return 70
         }
@@ -89,10 +108,17 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
             port: mqttConfig.port,
             timeoutSeconds: 5.0
         )
+        if signalHandler?.isInterrupted == true {
+            return 130
+        }
         if !mqttReady {
             mqttRunner.forceKill()
             writeError("error: mosquitto did not become ready within 5 seconds\n", output: output)
             return 70
+        }
+
+        if signalHandler?.isInterrupted == true {
+            return 130
         }
 
         let mcpRunner = processRunnerFactory()
@@ -101,7 +127,11 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
                 executable: mcpExecutable,
                 arguments: AxolotyMCPServiceRunner.buildArguments(from: mcpConfig)
             ))
+            processSupervisor.register(mcpRunner)
         } catch {
+            if signalHandler?.isInterrupted == true {
+                return 130
+            }
             mqttRunner.forceKill()
             writeError("error: unable to start axoloty-mcp: \(error)\n", output: output)
             return 70
@@ -113,6 +143,9 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
             port: mcpConfig.listenPort,
             timeoutSeconds: mcpReadinessTimeout
         )
+        if signalHandler?.isInterrupted == true {
+            return 130
+        }
         if !mcpReady {
             mcpRunner.forceKill()
             mqttRunner.forceKill()
@@ -125,19 +158,14 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
 
         writeReadiness(mqtt: mqttConfig, mcp: mcpConfig, output: output)
 
-        let signalHandler = installSignalHandler ? ServiceSignalHandler() : nil
-        signalHandler?.install()
-        defer { signalHandler?.uninstall() }
-
         while true {
             if signalHandler?.isInterrupted == true {
-                terminateGracefully([mqttRunner, mcpRunner])
                 return 130
             }
 
             if !mqttRunner.isRunning {
                 let exit = mqttRunner.waitForExit()
-                terminateGracefully([mcpRunner])
+                processSupervisor.requestTermination()
                 if exit.exitCode != 0 {
                     writeError("error: mosquitto exited with code \(exit.exitCode)\n", output: output)
                 }
@@ -146,7 +174,7 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
 
             if !mcpRunner.isRunning {
                 let exit = mcpRunner.waitForExit()
-                terminateGracefully([mqttRunner])
+                processSupervisor.requestTermination()
                 if exit.exitCode != 0 {
                     writeError("error: axoloty-mcp exited with code \(exit.exitCode)\n", output: output)
                 }
@@ -154,19 +182,6 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
             }
 
             usleep(100_000)
-        }
-    }
-
-    private func terminateGracefully(_ runners: [any AxolotyManagedProcessRunning]) {
-        let deadline = Date().addingTimeInterval(5.0)
-        for runner in runners { runner.terminate() }
-        while Date() < deadline {
-            if runners.allSatisfy({ !$0.isRunning }) { break }
-            usleep(50_000)
-        }
-        for runner in runners where runner.isRunning {
-            runner.forceKill()
-            _ = runner.waitForExit()
         }
     }
 
