@@ -101,18 +101,32 @@ public class ObjectFilter: Codable {
     public required init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         
-        // The wire `conditions` field is either a single condition or a
-        // conditions set (`and`/`or`); probe both shapes and keep whichever
-        // decodes. A failure here means "not this shape", not a swallowed
-        // error -- the other probe (or both failing, leaving both nil) is
-        // the expected outcome for the non-matching shape.
-        do {
-            condition = try container.decodeIfPresent(ObjectFilterCondition.self, forKey: .conditions)
-        } catch { /* Not this shape; try the other. */ }
-
-        do {
-            conditions = try container.decodeIfPresent(ObjectFilterConditions.self, forKey: .conditions)
-         } catch { /* Not this shape; the other probe above already ran. */ }
+        if container.contains(.conditions) {
+            if try container.decodeNil(forKey: .conditions) {
+                throw DecodingError.dataCorrupted(.init(
+                    codingPath: decoder.codingPath + [CodingKeys.conditions],
+                    debugDescription: "ObjectFilter.conditions cannot be null"
+                ))
+            } else {
+                do {
+                    condition = try container.decode(ObjectFilterCondition.self, forKey: .conditions)
+                    conditions = nil
+                } catch {
+                    do {
+                        conditions = try container.decode(ObjectFilterConditions.self, forKey: .conditions)
+                        condition = nil
+                    } catch {
+                        throw DecodingError.dataCorrupted(.init(
+                            codingPath: decoder.codingPath + [CodingKeys.conditions],
+                            debugDescription: "ObjectFilter.conditions is neither a valid condition nor condition set"
+                        ))
+                    }
+                }
+            }
+        } else {
+            condition = nil
+            conditions = nil
+        }
         
         take = try container.decodeIfPresent(Int.self, forKey: .take)
         skip = try container.decodeIfPresent(Int.self, forKey: .skip)
@@ -249,9 +263,28 @@ public class ObjectFilterProperty: Codable {
     public required init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         if let objectFilterProperty = try? container.decode(String.self) {
+            let pathComponents = objectFilterProperty.split(separator: ".", omittingEmptySubsequences: false)
+            guard !objectFilterProperty.isEmpty, pathComponents.allSatisfy({ !$0.isEmpty }) else {
+                throw DecodingError.dataCorruptedError(
+                    in: container,
+                    debugDescription: "ObjectFilterProperty cannot contain empty path components"
+                )
+            }
             self.objectFilterProperty = objectFilterProperty
         } else if let objectFilterProperties = try? container.decode([String].self) {
+            guard !objectFilterProperties.isEmpty,
+                  objectFilterProperties.allSatisfy({ !$0.isEmpty }) else {
+                throw DecodingError.dataCorruptedError(
+                    in: container,
+                    debugDescription: "ObjectFilterProperty cannot contain empty path components"
+                )
+            }
             self.objectFilterProperties = objectFilterProperties
+        } else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "ObjectFilterProperty must be a string or string array"
+            )
         }
     }
 }
@@ -356,18 +389,23 @@ public class ObjectFilterConditions: Codable {
     
     public required init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        
-        // `and`/`or` are mutually exclusive by contract (see the type's doc
-        // comment); a decode failure on one is treated the same as it being
-        // absent rather than propagated, so a peer that sends the other one
-        // still decodes successfully instead of failing the whole filter.
-        do {
-            and = try container.decodeIfPresent([ObjectFilterCondition].self, forKey: .and)
-         } catch { /* Treated as absent; `or` may still be present. */ }
 
-        do {
-            or = try container.decodeIfPresent([ObjectFilterCondition].self, forKey: .or)
-         } catch { /* Treated as absent; `and` may still be present. */ }
+        let hasAnd = container.contains(.and)
+        let hasOr = container.contains(.or)
+        guard hasAnd != hasOr else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: decoder.codingPath,
+                debugDescription: "ObjectFilterConditions must contain exactly one of 'and' or 'or'"
+            ))
+        }
+
+        if hasAnd {
+            and = try container.decode([ObjectFilterCondition].self, forKey: .and)
+            or = nil
+        } else {
+            and = nil
+            or = try container.decode([ObjectFilterCondition].self, forKey: .or)
+        }
     }
     
     // MARK: - Builder methods.
@@ -447,6 +485,13 @@ public class ObjectFilterCondition: Codable {
 
         self.property = try container.decode(ObjectFilterProperty.self)
         self.expression = try container.decode(ObjectFilterExpression.self)
+
+        guard container.isAtEnd else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "ObjectFilterCondition must contain exactly a property and expression"
+            )
+        }
      }
     
     // MARK: - Builder methods.
@@ -615,6 +660,13 @@ public enum ObjectFilterExpression: Codable, Equatable {
             self = .valuesIn(try container.decode([FilterOperand].self))
         case .NotIn:
             self = .valuesNotIn(try container.decode([FilterOperand].self))
+        }
+
+        guard container.isAtEnd else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "ObjectFilterExpression contains an unexpected operand"
+            )
         }
     }
 
