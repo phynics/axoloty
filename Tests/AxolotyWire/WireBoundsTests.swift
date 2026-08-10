@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import AxolotyWire
+import Foundation
 import Testing
 
 /// Malformed-input, truncation, nesting, size-limit, and capacity bounds tests
@@ -75,6 +76,152 @@ private func attemptDecode(family: String, bytes: [UInt8]) -> Bool {
         case "RTN": return (try? ReturnWireData(from: reader)) != nil
         default: return false
         }
+    }
+}
+
+private func validationError(_ reader: WireReader) -> WireDecodeError? {
+    do {
+        try reader.validate()
+        return nil
+    } catch {
+        return error as? WireDecodeError
+    }
+}
+
+private func decodeReaderError(_ bytes: [UInt8]) -> WireDecodeError? {
+    bytes.withUnsafeBufferPointer { buffer in
+        validationError(WireReader(bytes: buffer.baseAddress!, length: buffer.count))
+    }
+}
+
+// MARK: - Single-pass implementation guard
+
+@Suite("WireReader implementation bounds")
+struct WireReaderImplementationTests {
+    @Test("Strictness is folded into the tokenizer pass")
+    func strictnessDoesNotUseASeparateScanner() throws {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Packages/AxolotyWire/Sources/AxolotyWire/WireReader.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        for forbiddenPath in [
+            "preflight(",
+            "scanString(",
+            "scanNumber(",
+            "literal(",
+            "hex4(",
+            "capacity: buffer.count + 8",
+            "capacity: buffer.count"
+        ] {
+            #expect(!source.contains(forbiddenPath), "Found unbounded tokenizer workspace: \(forbiddenPath)")
+        }
+        #expect(source.contains("capacity: WireBufferConfig.maxPayloadSize + 8"))
+        #expect(source.components(separatedBy: "JSONTokenizer(bytes:").count - 1 == 1)
+        #expect(source.components(separatedBy: ".scanValue()").count - 1 == 1)
+    }
+
+    @Test("One tokenizer pass preserves lexical error categories")
+    func strictLexicalErrorsAreReportedByTheReader() {
+        let vectors: [(input: String, expected: WireDecodeError.Reason)] = [
+            (#"{"payload":01}"#, .invalidNumber),
+            (#"{"payload":"\uD800"}"#, .invalidEscape),
+            (#"{"payload":"\x"}"#, .invalidEscape),
+            (#"{"payload":truth}"#, .invalidLiteral),
+            (#"{"payload":[{]}}"#, .invalidNesting),
+            (#"{"payload":1,"payload":2}"#, .duplicateField),
+        ]
+
+        for vector in vectors {
+            let actual = decodeReaderError(Array(vector.input.utf8))
+            let matches: Bool
+            switch (actual?.reason, vector.expected) {
+            case (.invalidNumber, .invalidNumber),
+                 (.invalidEscape, .invalidEscape),
+                 (.invalidLiteral, .invalidLiteral),
+                 (.invalidNesting, .invalidNesting),
+                 (.duplicateField, .duplicateField):
+                matches = true
+            default:
+                matches = false
+            }
+            #expect(matches, "Unexpected error for \(vector.input): \(String(describing: actual))")
+        }
+    }
+
+    @Test("A bounded nested value is indexed after the single tokenizer pass")
+    func boundedNestedValueRemainsReadable() {
+        let nested = String(repeating: "[", count: 7) + "0" + String(repeating: "]", count: 7)
+        let bytes = Array(("{\"payload\":" + nested + "}").utf8)
+        bytes.withUnsafeBufferPointer { buffer in
+            let reader = WireReader(bytes: buffer.baseAddress!, length: buffer.count)
+            let failure: WireDecodeError? = {
+                do {
+                    try reader.validate()
+                    return nil
+                } catch let error as WireDecodeError {
+                    return error
+                } catch {
+                    Issue.record("Unexpected non-WireDecodeError: \(error)")
+                    return nil
+                }
+            }()
+            #expect(failure == nil, "Unexpected bounded-value failure: \(String(describing: failure?.reason))")
+            #expect(reader.readRaw("payload") != nil)
+        }
+    }
+
+    @Test("A truncated nested object cannot expose a field beyond the borrowed input")
+    func truncatedNestedObjectDoesNotExposeOutOfBoundsSlice() {
+        let bytes = Array(#"{"payload":{"x":1"#.utf8)
+        bytes.withUnsafeBufferPointer { buffer in
+            let reader = WireReader(bytes: buffer.baseAddress!, length: buffer.count)
+            let failure = validationError(reader)
+
+            #expect(reader.readRaw("payload") == nil)
+            guard let failure else {
+                Issue.record("Expected truncated nested object to fail")
+                return
+            }
+            guard case .unexpectedEndOfInput = failure.reason else {
+                Issue.record("Expected unexpectedEndOfInput, got \(failure.reason)")
+                return
+            }
+            #expect(failure.byteOffset == bytes.count)
+        }
+    }
+
+    @Test("Unterminated strings preserve the end-of-input error", arguments: [
+        #"{"payload":"abc"#,
+        #"{"payload"#,
+    ])
+    func unterminatedStringReportsEndOfInput(_ input: String) {
+        let bytes = Array(input.utf8)
+        guard let failure = decodeReaderError(bytes) else {
+            Issue.record("Expected unterminated string to fail")
+            return
+        }
+        guard case .unexpectedEndOfInput = failure.reason else {
+            Issue.record("Expected unexpectedEndOfInput, got \(failure.reason)")
+            return
+        }
+        #expect(failure.byteOffset == bytes.count)
+    }
+
+    @Test("The direct reader rejects inputs above the bounded payload limit")
+    func oversizedInputIsRejectedBeforeTokenization() {
+        let bytes = [UInt8](repeating: 0x20, count: WireBufferConfig.maxPayloadSize + 1)
+        guard let failure = decodeReaderError(bytes) else {
+            Issue.record("Expected oversized input to fail")
+            return
+        }
+        guard case .payloadExceedsLimit = failure.reason else {
+            Issue.record("Expected payloadExceedsLimit, got \(failure.reason)")
+            return
+        }
+        #expect(failure.byteOffset == bytes.count)
     }
 }
 
@@ -204,15 +351,7 @@ struct CorruptionBoundsTests {
 @Suite("Malformed input bounds")
 struct MalformedInputTests {
     private func decodeError(_ bytes: [UInt8]) -> WireDecodeError? {
-        bytes.withUnsafeBufferPointer { buffer -> WireDecodeError? in
-            let reader = WireReader(bytes: buffer.baseAddress!, length: buffer.count)
-            do {
-                try reader.validate()
-                return nil
-            } catch {
-                return error as? WireDecodeError
-            }
-        }
+        decodeReaderError(bytes)
     }
 
     @Test("Empty input")
