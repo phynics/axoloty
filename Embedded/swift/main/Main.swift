@@ -12,8 +12,8 @@ import AxolotyWire
 
 @_cdecl("app_main")
 func app_main() -> Int32 {
-    let schemaVersion: UInt32 = 1
-    let runId: StaticString = "embedded-swift-smoke-v1"
+    let schemaVersion: UInt32 = 2
+    let runId: StaticString = "embedded-swift-smoke-v2"
     var sequence: UInt32 = 0
     var rollingChecksum: UInt32 = 0
     var passed: UInt32 = 0
@@ -56,6 +56,7 @@ func app_main() -> Int32 {
 
     @inline(__always)
     func nextChecksum(_ caseId: StaticString, _ operation: StaticString,
+                      _ stage: StaticString,
                       _ status: StaticString, _ prior: UInt32,
                       _ currentSequence: UInt32, _ currentPassed: UInt32 = 0,
                       _ currentFailed: UInt32 = 0) -> UInt32 {
@@ -65,6 +66,7 @@ func app_main() -> Int32 {
         result = mix(result, currentSequence)
         result = mix(result, caseId)
         result = mix(result, operation)
+        result = mix(result, stage)
         result = mix(result, status)
         result = mix(result, currentPassed)
         result = mix(result, currentFailed)
@@ -73,8 +75,9 @@ func app_main() -> Int32 {
 
     @inline(__always)
     func printPrefix(_ caseId: StaticString, _ operation: StaticString,
+                     _ stage: StaticString,
                      _ status: StaticString, _ checksum: UInt32) {
-        axoloty_print("{\"schemaVersion\":1,\"runId\":\"")
+        axoloty_print("{\"schemaVersion\":2,\"runId\":\"")
         printStatic(runId)
         axoloty_print("\",\"sequence\":")
         axoloty_print_uint("", sequence)
@@ -82,14 +85,16 @@ func app_main() -> Int32 {
         printStatic(caseId)
         axoloty_print("\",\"operation\":\"")
         printStatic(operation)
+        axoloty_print("\",\"stage\":\"")
+        printStatic(stage)
         axoloty_print("\",\"status\":\"")
         printStatic(status)
         axoloty_print("\",\"checksum\":")
         axoloty_print_uint("", checksum)
     }
 
-    rollingChecksum = nextChecksum("boot", "boot", "started", 0, sequence)
-    printPrefix("boot", "boot", "started", rollingChecksum)
+    rollingChecksum = nextChecksum("boot", "boot", "boot", "started", 0, sequence)
+    printPrefix("boot", "boot", "boot", "started", rollingChecksum)
     axoloty_print("}\n")
     sequence &+= 1
     vTaskDelay(1)
@@ -98,8 +103,13 @@ func app_main() -> Int32 {
     func record(_ name: StaticString, _ ok: Bool) {
         if networkRole != 0 && !emittingExchangeEvidence { return }
         let status: StaticString = ok ? "passed" : "failed"
-        let checksum = nextChecksum(name, "smokeCheck", status, rollingChecksum, sequence)
-        printPrefix(name, "smokeCheck", status, checksum)
+        let checksum = nextChecksum(name, "smokeCheck", "execute", status, rollingChecksum, sequence)
+        printPrefix(name, "smokeCheck", "execute", status, checksum)
+        if !ok {
+            axoloty_print(",\"diagnostic\":\"failed check: ")
+            printStatic(name)
+            axoloty_print("\"")
+        }
         axoloty_print("}\n")
         vTaskDelay(1)
         rollingChecksum = checksum
@@ -618,25 +628,32 @@ func app_main() -> Int32 {
     // === Summary and completion ===
 
     let summaryStatus: StaticString = failed == 0 ? "completed" : "failed"
-    rollingChecksum = nextChecksum("summary", "summary", summaryStatus,
+    rollingChecksum = nextChecksum("summary", "summary", "summary", summaryStatus,
                                    rollingChecksum, sequence, passed, failed)
-    printPrefix("summary", "summary", summaryStatus, rollingChecksum)
+    printPrefix("summary", "summary", "summary", summaryStatus, rollingChecksum)
     axoloty_print(",\"counts\":{\"passed\":")
     axoloty_print_uint("", passed)
     axoloty_print(",\"failed\":")
     axoloty_print_uint("", failed)
-    axoloty_print("}}\n")
+    axoloty_print("}")
+    if failed != 0 {
+        axoloty_print(",\"diagnostic\":\"one or more execution checks failed\"")
+    }
+    axoloty_print("}\n")
     sequence &+= 1
 
-    let completionChecksum = nextChecksum("completion", "complete", summaryStatus,
+    let completionChecksum = nextChecksum("completion", "complete", "completion", summaryStatus,
                                           rollingChecksum, sequence, passed, failed)
-    printPrefix("completion", "complete", summaryStatus, completionChecksum)
+    printPrefix("completion", "complete", "completion", summaryStatus, completionChecksum)
     axoloty_print(",\"counts\":{\"passed\":")
     axoloty_print_uint("", passed)
     axoloty_print(",\"failed\":")
     axoloty_print_uint("", failed)
     axoloty_print("},\"finalChecksum\":")
     axoloty_print_uint("", completionChecksum)
+    if failed != 0 {
+        axoloty_print(",\"diagnostic\":\"completion reflects failed execution checks\"")
+    }
     axoloty_print(",\"metrics\":{\"freeInternalHeap\":")
     axoloty_print_uint("", axoloty_free_internal_heap())
     axoloty_print(",\"minimumFreeInternalHeap\":")

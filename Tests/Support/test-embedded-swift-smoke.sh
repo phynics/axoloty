@@ -17,14 +17,28 @@ mkdir -p "$project_dir" "$build_dir" "$out_dir" \
 : > "$device"
 : > "$build_dir/flash_args"
 
+mkdir -p "$TEMP_DIR/bin"
+cat > "$TEMP_DIR/bin/idf.py" <<'PY'
+#!/usr/bin/env python3
+import os
+import sys
+
+if os.environ.get("FAKE_IDF_FAILURE") == "1":
+    raise SystemExit(1)
+PY
+chmod +x "$TEMP_DIR/bin/idf.py"
+
 cat > "$idf_dir/export.sh" <<'SH'
 :
 SH
 cat > "$idf_dir/components/esptool_py/esptool/esptool.py" <<'PY'
+#!/usr/bin/env python3
 import os
 import sys
 
 with open(os.environ["FAKE_ESPTOOL_ARGS"], "w", encoding="utf-8") as output:
+    if os.environ.get("FAKE_ESPTOOL_FAILURE") == "1":
+        raise SystemExit(1)
     output.write("\n".join(sys.argv[1:]) + "\n")
 PY
 chmod +x "$idf_dir/components/esptool_py/esptool/esptool.py"
@@ -52,33 +66,95 @@ for (let sequence = 0; sequence < names.length + 3; sequence++) {
 JS
 }
 
+rewrite_records() {
+    mode="$1" VALIDATOR="$ROOT_DIR/Tests/Support/embedded-swift-smoke-validator.mjs" node --input-type=module - "$2" <<'JS'
+import fs from "node:fs";
+const { checksum, makeRecord } = await import(process.env.VALIDATOR);
+
+const mode = process.env.mode;
+const records = [];
+for (const line of fs.readFileSync(process.argv[2], "utf8").split(/\r?\n/)) {
+  if (!line) continue;
+  const record = JSON.parse(line);
+  if (mode === "no-summary" && record.caseId === "summary") continue;
+  if (mode === "bad-counts" && ["summary", "completion"].includes(record.caseId)) record.counts.passed = 23;
+  if (mode === "failed" && record.caseId === "topicParse:ADV") {
+    record.status = "failed";
+    record.diagnostic = "failed check: topicParse:ADV";
+  }
+  records.push(record);
+  if (mode === "reboot" && record.caseId === "topicParse:ADV") {
+    records.push(makeRecord(0, "boot", "boot", "started", 0));
+  }
+}
+
+let previous = 0;
+records.forEach((record, sequence) => {
+  record.sequence = sequence;
+  record.checksum = checksum(record, previous);
+  if (record.caseId === "completion") record.finalChecksum = record.checksum;
+  console.log(JSON.stringify(record));
+  previous = record.checksum;
+});
+JS
+}
+
 run_smoke() {
+    rm -f "$out_dir/swift-smoke-result.json" "$out_dir/swift-smoke-log.txt"
     case "$1" in
         success) success_records > "$device" ;;
         missing) success_records | grep -v 'config:maxFamilyEntries16' > "$device" ;;
-        duplicate) success_records | sed '/"caseId":"topicParse:ADV"/a {"schemaVersion":1,"runId":"embedded-swift-smoke-v1","sequence":1,"caseId":"topicParse:ADV","operation":"smokeCheck","status":"passed","checksum":0}' > "$device" ;;
-        failed) success_records | sed 's/"caseId":"topicParse:ADV","operation":"smokeCheck","status":"passed"/"caseId":"topicParse:ADV","operation":"smokeCheck","status":"failed"/' > "$device" ;;
+        duplicate) success_records | sed '/"caseId":"topicParse:ADV"/a {"schemaVersion":2,"runId":"embedded-swift-smoke-v2","sequence":1,"caseId":"topicParse:ADV","operation":"smokeCheck","stage":"execute","status":"passed","checksum":0}' > "$device" ;;
+        failed|no-summary|reboot|bad-counts) success_records > "$TEMP_DIR/records"; rewrite_records "$1" "$TEMP_DIR/records" > "$device" ;;
         nonmonotonic) success_records | sed '0,/"sequence":2/s//"sequence":1/' > "$device" ;;
         checksum) success_records | sed '0,/"checksum":[0-9]*/s//"checksum":0/' > "$device" ;;
         unknown) success_records | sed '0,/"caseId":"topicParse:ADV"/s//"caseId":"unknown"/' > "$device" ;;
         no-completion) success_records | sed '/"caseId":"completion"/d' > "$device" ;;
-        bad-counts) success_records | sed 's/"passed":24/"passed":23/' > "$device" ;;
         malformed) printf '{not-json}\n' > "$device" ;;
-        reboot) success_records | sed '/"caseId":"topicParse:ADV"/a {"schemaVersion":1,"runId":"embedded-swift-smoke-v1","sequence":2,"caseId":"boot","operation":"boot","status":"started","checksum":0}' > "$device" ;;
         *) printf 'Guru Meditation Error\n' > "$device" ;;
     esac
+    test_device="$device" test_skip_build=1 test_idf_failure=0 test_esptool_failure=0 test_validator_factory=createEmbeddedSwiftSmokeValidator
+    case "$1" in
+        setup-failure) test_device="$TEMP_DIR/missing-device" ;;
+        build-failure) test_skip_build=0 test_idf_failure=1 ;;
+        flash-failure) test_esptool_failure=1 ;;
+        capture-failure) test_validator_factory=missingValidator ;;
+    esac
     IDF_PATH="$idf_dir" \
-    EMBEDDED_DEVICE="$device" EMBEDDED_PROJECT_DIR="$project_dir" \
+    PATH="$TEMP_DIR/bin:$PATH" \
+    EMBEDDED_DEVICE="$test_device" EMBEDDED_PROJECT_DIR="$project_dir" \
     EMBEDDED_BUILD_DIR="$build_dir" EMBEDDED_OUTPUT_DIR="$out_dir" \
     EMBEDDED_DEADLINE=1 \
-    EMBEDDED_SKIP_BUILD=1 FAKE_ESPTOOL_ARGS="$TEMP_DIR/esptool-args.txt" \
-    FAKE_SERIAL_MODE="$1" \
+    EMBEDDED_SKIP_BUILD="$test_skip_build" EMBEDDED_VALIDATOR_FACTORY="$test_validator_factory" \
+    FAKE_IDF_FAILURE="$test_idf_failure" FAKE_ESPTOOL_FAILURE="$test_esptool_failure" \
+    FAKE_ESPTOOL_ARGS="$TEMP_DIR/esptool-args.txt" FAKE_SERIAL_MODE="$1" \
         "$ROOT_DIR/Tests/Support/embedded-swift-smoke.sh"
+}
+
+assert_failure_result() {
+    mode="$1"
+    expected_stage="$2"
+    expected_diagnostic="$3"
+    if run_smoke "$mode"; then
+        echo "expected $mode serial output to fail" >&2
+        exit 1
+    fi
+    node --input-type=module - "$out_dir/swift-smoke-result.json" "$expected_stage" "$expected_diagnostic" <<'JS'
+import fs from "node:fs";
+import assert from "node:assert/strict";
+const [resultPath, expectedStage, expectedDiagnostic] = process.argv.slice(2);
+const result = JSON.parse(fs.readFileSync(resultPath));
+assert.equal(result.validation.passed, false);
+assert.equal(result.validation.stage, expectedStage);
+assert.match(result.validation.diagnostic, new RegExp(expectedDiagnostic));
+assert.match(result.validation.reason, new RegExp(expectedDiagnostic));
+assert.ok(result.validation.diagnostic.length <= 256);
+JS
 }
 
 run_smoke success
 node --input-type=module - "$out_dir/swift-smoke-result.json" <<'JS'
-import fs from "node:fs"; import assert from "node:assert/strict"; const r=JSON.parse(fs.readFileSync(process.argv[2])); assert.equal(r.validation.passed,true); assert.equal(r.linesCaptured,27);
+import fs from "node:fs"; import assert from "node:assert/strict"; const r=JSON.parse(fs.readFileSync(process.argv[2])); assert.equal(r.schemaVersion,2); assert.equal(r.runId,"embedded-swift-smoke-v2"); assert.equal(r.validation.passed,true); assert.equal(r.linesCaptured,27);
 JS
 grep -qx -- '--chip' "$TEMP_DIR/esptool-args.txt"
 grep -qx -- '@flash_args' "$TEMP_DIR/esptool-args.txt"
@@ -91,11 +167,49 @@ assert.equal(validator.observe("E (5271) task_wdt: Task watchdog got triggered."
 assert.match(validator.result().reason, /fatal device output/);
 JS
 
-for mode in fatal missing duplicate failed malformed reboot nonmonotonic checksum unknown no-completion bad-counts; do
+VALIDATOR="$ROOT_DIR/Tests/Support/embedded-swift-smoke-validator.mjs" node --input-type=module <<'JS'
+import assert from "node:assert/strict";
+const { checksum, makeRecord, evidenceStages, failureResult } = await import(process.env.VALIDATOR);
+assert.deepEqual(evidenceStages, ["setup", "build", "flash", "capture", "boot", "execute", "summary", "completion"]);
+const record = makeRecord(0, "boot", "boot", "started", 0);
+assert.notEqual(checksum({ ...record, stage: "capture" }, 0), record.checksum);
+assert.equal(failureResult("execute", "x".repeat(1000)).diagnostic.length, 256);
+JS
+
+for mode in fatal missing duplicate nonmonotonic unknown; do
     if run_smoke "$mode"; then
         echo "expected $mode serial output to fail" >&2
         exit 1
     fi
+done
+
+assert_failure_result failed execute "failed check: topicParse:ADV"
+assert_failure_result malformed capture "malformed JSON record"
+assert_failure_result checksum capture "checksum mismatch"
+assert_failure_result reboot boot "unexpected reboot"
+assert_failure_result bad-counts summary "invalid summary counts"
+assert_failure_result no-summary summary "missing summary record"
+assert_failure_result no-completion completion "missing completion record"
+
+for mode in setup-failure build-failure flash-failure capture-failure; do
+    if run_smoke "$mode"; then
+        echo "expected $mode command to fail" >&2
+        exit 1
+    fi
+    node --input-type=module - "$out_dir/swift-smoke-result.json" "$mode" <<'JS'
+import fs from "node:fs";
+import assert from "node:assert/strict";
+const [resultPath, mode] = process.argv.slice(2);
+const expectedStage = mode.replace("-failure", "");
+const result = JSON.parse(fs.readFileSync(resultPath));
+assert.equal(result.schemaVersion, 2);
+assert.equal(result.runId, "embedded-swift-smoke-v2");
+assert.equal(result.validation.passed, false);
+assert.equal(result.validation.stage, expectedStage);
+assert.equal(typeof result.validation.diagnostic, "string");
+assert.ok(result.validation.diagnostic.length > 0);
+assert.ok(result.validation.diagnostic.length <= 256);
+JS
 done
 
 rm "$build_dir/flash_args"
