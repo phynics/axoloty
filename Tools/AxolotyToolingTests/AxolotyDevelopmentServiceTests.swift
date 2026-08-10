@@ -160,6 +160,43 @@ func devServiceStartsBothAndExitsWhenMCPExitsCleanly() {
 }
 
 @Test
+func devServiceWritesJSONReadinessToStandardOutputOnly() throws {
+    let mqttRunner = DevFakeProcessRunner()
+    let mcpRunner = DevFakeProcessRunner()
+    mcpRunner.pollsUntilExit = 2
+    let capture = ToolingServiceOutputCapture()
+
+    let runner = AxolotyDevelopmentServiceRunner(
+        processRunnerFactory: devFakeFactory([mqttRunner, mcpRunner]),
+        portProbe: DevPortProbe(readyPorts: [1883, 8765]),
+        fileSystem: StubFileSystem(paths: ["/usr/sbin/mosquitto", "/opt/axoloty/bin/axoloty-mcp"]),
+        tempDirProvider: DevTempDirProvider(),
+        installSignalHandler: false,
+        standardOutput: capture.standardOutput,
+        standardError: capture.standardError
+    )
+
+    let configuration = DevelopmentServiceConfiguration(
+        mqtt: MQTTServiceConfiguration(),
+        mcp: MCPServiceConfiguration(transport: .http),
+        namespace: "test",
+        output: .json
+    )
+    let exitCode = runner.run(configuration)
+    let streams = capture.read()
+
+    #expect(exitCode == 0)
+    #expect(streams.standardError.isEmpty)
+    let manifest = try decodeServiceJSONObject(streams.standardOutput)
+    #expect(manifest["status"] as? String == "ready")
+    let services = try #require(manifest["services"] as? [String: Any])
+    let mqtt = try #require(services["mqtt"] as? [String: Any])
+    let mcp = try #require(services["mcp"] as? [String: Any])
+    #expect(mqtt["url"] as? String == "mqtt://127.0.0.1:1883")
+    #expect(mcp["url"] as? String == "http://127.0.0.1:8765/mcp")
+}
+
+@Test
 func devServiceFailsWhenMosquittoMissing() {
     let mqttRunner = DevFakeProcessRunner()
     let mcpRunner = DevFakeProcessRunner()
@@ -176,6 +213,40 @@ func devServiceFailsWhenMosquittoMissing() {
     #expect(exitCode == 69)
     #expect(mqttRunner.startSpec == nil)
     #expect(mcpRunner.startSpec == nil)
+}
+
+@Test
+func devServiceWritesJSONFailureDiagnosticsToStandardErrorOnly() throws {
+    let mqttRunner = DevFakeProcessRunner()
+    let mcpRunner = DevFakeProcessRunner()
+    let capture = ToolingServiceOutputCapture()
+
+    let runner = AxolotyDevelopmentServiceRunner(
+        processRunnerFactory: devFakeFactory([mqttRunner, mcpRunner]),
+        portProbe: DevPortProbe(readyPorts: [1883, 8765]),
+        fileSystem: StubFileSystem(paths: []),
+        tempDirProvider: DevTempDirProvider(),
+        installSignalHandler: false,
+        standardOutput: capture.standardOutput,
+        standardError: capture.standardError
+    )
+
+    let configuration = DevelopmentServiceConfiguration(
+        mqtt: MQTTServiceConfiguration(),
+        mcp: MCPServiceConfiguration(transport: .http),
+        namespace: "test",
+        output: .json
+    )
+    let exitCode = runner.run(configuration)
+    let streams = capture.read()
+
+    #expect(exitCode == 69)
+    #expect(streams.standardOutput.isEmpty)
+    let diagnostic = try decodeServiceJSONObject(streams.standardError)
+    #expect(diagnostic["level"] as? String == "error")
+    #expect(diagnostic["message"] as? String == "mosquitto executable not found at /usr/sbin/mosquitto")
+    let metadata = try #require(diagnostic["metadata"] as? [String: Any])
+    #expect(metadata["executable"] as? String == "/usr/sbin/mosquitto")
 }
 
 @Test

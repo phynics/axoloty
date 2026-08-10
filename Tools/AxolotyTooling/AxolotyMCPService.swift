@@ -9,22 +9,45 @@ public struct AxolotyMCPServiceRunner: Sendable {
     private let fileSystem: any AxolotyFileSystem
     private let mcpExecutable: String
     private let installSignalHandler: Bool
+    private let standardOutput: FileHandle
+    private let standardError: FileHandle
 
+    /// Creates an MCP service runner.
+    ///
+    /// JSON readiness is written to `standardOutput`; human readiness and diagnostics are
+    /// written to `standardError`.
+    ///
+    /// - Parameters:
+    ///   - processRunner: Process runner used to launch and supervise `axoloty-mcp`.
+    ///   - portProbe: Service probe used to check the HTTP port and readiness.
+    ///   - fileSystem: File-system abstraction used to locate the MCP executable.
+    ///   - mcpExecutable: Path to the `axoloty-mcp` executable.
+    ///   - installSignalHandler: Whether to install the Ctrl-C signal handler.
+    ///   - standardOutput: Destination for the JSON readiness manifest; defaults to process stdout.
+    ///   - standardError: Destination for human readiness and structured diagnostics; defaults to process stderr.
     public init(
         processRunner: any AxolotyManagedProcessRunning,
         portProbe: any AxolotyServiceProbing,
         fileSystem: any AxolotyFileSystem,
         mcpExecutable: String = "/opt/axoloty/bin/axoloty-mcp",
-        installSignalHandler: Bool = true
+        installSignalHandler: Bool = true,
+        standardOutput: FileHandle = .standardOutput,
+        standardError: FileHandle = .standardError
     ) {
         self.processRunner = processRunner
         self.portProbe = portProbe
         self.fileSystem = fileSystem
         self.mcpExecutable = mcpExecutable
         self.installSignalHandler = installSignalHandler
+        self.standardOutput = standardOutput
+        self.standardError = standardError
     }
 
     public func run(_ configuration: MCPServiceConfiguration) -> Int32 {
+        let diagnostics = ServiceDiagnosticLogger(
+            output: configuration.output,
+            standardError: standardError
+        )
         let processSupervisor = ManagedProcessSupervisor()
         let signalHandler = installSignalHandler
             ? ServiceSignalHandler(onInterrupt: { processSupervisor.requestTermination() })
@@ -38,9 +61,10 @@ public struct AxolotyMCPServiceRunner: Sendable {
         }
 
         guard fileSystem.exists(atPath: mcpExecutable) else {
-            FileHandle.standardError.write(Data(
-                "error: axoloty-mcp executable not found at \(mcpExecutable)\n".utf8
-            ))
+            diagnostics.error(
+                "axoloty-mcp executable not found at \(mcpExecutable)",
+                metadata: ["executable": mcpExecutable]
+            )
             return 69
         }
 
@@ -58,9 +82,10 @@ public struct AxolotyMCPServiceRunner: Sendable {
             if signalHandler?.isInterrupted == true {
                 return 130
             }
-            FileHandle.standardError.write(Data(
-                "error: unable to start axoloty-mcp: \(error)\n".utf8
-            ))
+            diagnostics.error(
+                "unable to start axoloty-mcp: \(error)",
+                metadata: ["error": String(describing: error), "executable": mcpExecutable]
+            )
             return 70
         }
 
@@ -76,9 +101,10 @@ public struct AxolotyMCPServiceRunner: Sendable {
             }
             if !ready {
                 processRunner.forceKill()
-                FileHandle.standardError.write(Data(
-                    "error: axoloty-mcp did not become ready within \(readinessTimeout) seconds\n".utf8
-                ))
+                diagnostics.error(
+                    "axoloty-mcp did not become ready within \(readinessTimeout) seconds",
+                    metadata: ["timeoutSeconds": String(readinessTimeout)]
+                )
                 return 70
             }
 
@@ -94,9 +120,10 @@ public struct AxolotyMCPServiceRunner: Sendable {
             if !processRunner.isRunning {
                 let exit = processRunner.waitForExit()
                 if exit.exitCode != 0 {
-                    FileHandle.standardError.write(Data(
-                        "error: axoloty-mcp exited with code \(exit.exitCode)\n".utf8
-                    ))
+                    diagnostics.error(
+                        "axoloty-mcp exited with code \(exit.exitCode)",
+                        metadata: ["exitCode": String(exit.exitCode)]
+                    )
                     return 1
                 }
                 return 0
@@ -132,14 +159,14 @@ public struct AxolotyMCPServiceRunner: Sendable {
     private func writeReadiness(mcpURL: String, output: ServeOutputMode) {
         switch output {
         case .human:
-            FileHandle.standardError.write(Data(
+            standardError.write(Data(
                 "MCP READY   \(mcpURL)\nPress Ctrl-C to stop.\n".utf8
             ))
         case .json:
             let manifest = MCPReadinessManifest(url: mcpURL)
             if let data = try? JSONEncoder().encode(manifest),
                let json = String(data: data, encoding: .utf8) {
-                FileHandle.standardError.write(Data((json + "\n").utf8))
+                standardOutput.write(Data((json + "\n").utf8))
             }
         }
     }
