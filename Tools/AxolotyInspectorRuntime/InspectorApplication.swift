@@ -13,6 +13,12 @@ private enum ApplicationEvent: Sendable {
     case streamEnded
 }
 
+/// The outcomes that can win the initial connection race.
+private enum InitialConnectEvent: Sendable {
+    case connected
+    case interrupted
+}
+
 /// Orchestrates the passive catalogue: connects a session, consumes
 /// Advertise and Deadvertise streams, maintains an object catalogue,
 /// and emits formatted output records.
@@ -95,8 +101,9 @@ public final class InspectorApplication {
         let advertiseStream = await session.advertiseEvents()
         let deadvertiseStream = await session.deadvertiseEvents()
 
+        let initialConnectEvent: InitialConnectEvent
         do {
-            try await session.connect()
+            initialConnectEvent = try await connectWhileMonitoringSignals()
         } catch let error as InspectorError {
             writeDiagnostic("error: \(error.userFriendlyMessage)")
             session.stop()
@@ -106,6 +113,10 @@ public final class InspectorApplication {
             writeDiagnostic("error: \(msg)")
             session.stop()
             return .connectionUnavailable(reason: msg)
+        }
+
+        if case .interrupted = initialConnectEvent {
+            return .interrupted
         }
 
         emit(factory.sessionStarted(
@@ -196,6 +207,52 @@ public final class InspectorApplication {
 
         session.stop()
         return result
+    }
+
+    private func connectWhileMonitoringSignals() async throws -> InitialConnectEvent {
+        let connectOperation: @MainActor @Sendable () async throws -> Void = { [session] in
+            try await session.connect()
+        }
+
+        let signalOperation: (@MainActor @Sendable () async throws -> InitialConnectEvent)?
+        if let handler = signalHandler {
+            signalOperation = { @MainActor [handler] in
+                while true {
+                    try Task.checkCancellation()
+                    if handler.wasInterrupted {
+                        return .interrupted
+                    }
+                    try await Task.sleep(for: .milliseconds(100))
+                }
+            }
+        } else {
+            signalOperation = nil
+        }
+
+        return try await withThrowingTaskGroup(of: InitialConnectEvent.self) { group in
+            group.addTask {
+                try await connectOperation()
+                return .connected
+            }
+
+            if let signalOperation {
+                group.addTask {
+                    try await signalOperation()
+                }
+            }
+
+            guard let event = try await group.next() else {
+                throw InspectorError.connectionUnavailable(
+                    reason: "connection attempt ended without an outcome"
+                )
+            }
+
+            if case .interrupted = event {
+                session.stop()
+            }
+            group.cancelAll()
+            return event
+        }
     }
 
     private static func convert(
