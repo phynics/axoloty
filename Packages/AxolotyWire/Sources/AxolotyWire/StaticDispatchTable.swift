@@ -12,23 +12,73 @@
 /// call returns nil instead of growing a heap array. The embedded target
 /// tunes `maxSubscribers` via `WireBufferConfig`.
 public struct StaticDispatchTable: Sendable {
-    private var slots: [Slot]
-    private var capacity: Int
+    private typealias Handler = @Sendable (BorrowedMessage) -> Void
 
-    private struct Slot: Sendable {
-        var active: Bool
-        var handler: (@Sendable (BorrowedMessage) -> Void)?
+    fileprivate final class Identity: Equatable, Sendable {
+        static func == (lhs: Identity, rhs: Identity) -> Bool {
+            lhs === rhs
+        }
     }
 
-    /// A subscriber token used to unsubscribe.
-    public struct Token: Equatable {
+    /// Mutable storage is never shared across a mutation: ``ensureUniqueStorage()``
+    /// detaches it first. The unchecked conformance expresses that COW invariant.
+    private final class Storage: @unchecked Sendable {
+        let branchIdentity: Identity
+        var slots: [Slot]
+
+        init(capacity: Int, initialGeneration: UInt16) {
+            self.branchIdentity = Identity()
+            self.slots = (0..<capacity).map { _ in
+                Slot(issuerIdentity: nil, generation: initialGeneration, handler: nil)
+            }
+        }
+
+        init(copying other: Storage) {
+            self.branchIdentity = Identity()
+            self.slots = other.slots
+        }
+    }
+
+    private var storage: Storage
+
+    private struct Slot: Sendable {
+        var issuerIdentity: Identity?
+        var generation: UInt16
+        var handler: Handler?
+    }
+
+    /// An opaque, sendable handle for removing one subscription.
+    ///
+    /// A token identifies one subscription by its immutable issuer, slot, and
+    /// generation. Copying a populated table copies that subscription, so its
+    /// token can remove the inherited subscription independently from either
+    /// value. When either value mutates, it detaches with a fresh branch identity;
+    /// subscriptions created after the values diverge cannot remove one another.
+    /// A token becomes inert in a value after successful unsubscribe or when
+    /// its slot's generation is exhausted.
+    ///
+    /// Tokens retain only an immutable identity marker; they do not retain the
+    /// table's handlers or mutable storage.
+    public struct Token: Equatable, Sendable {
+        fileprivate let issuerIdentity: Identity
         let index: Int
+        let generation: UInt16
+
+        internal func replacingIndexForTesting(_ index: Int) -> Token {
+            Token(issuerIdentity: issuerIdentity, index: index, generation: generation)
+        }
     }
 
     /// Creates a dispatch table with the given maximum subscriber count.
     public init(capacity: Int = WireBufferConfig.maxSubscribers) {
-        self.capacity = capacity
-        self.slots = (0..<capacity).map { _ in Slot(active: false, handler: nil) }
+        self.storage = Storage(capacity: capacity, initialGeneration: 0)
+    }
+
+    internal init(capacity: Int, initialGenerationForTesting: UInt16) {
+        self.storage = Storage(
+            capacity: capacity,
+            initialGeneration: initialGenerationForTesting
+        )
     }
 
     /// Subscribes a handler. Returns a token for later unsubscribe, or nil
@@ -36,25 +86,39 @@ public struct StaticDispatchTable: Sendable {
     public mutating func subscribe(
         _ handler: @Sendable @escaping (BorrowedMessage) -> Void
     ) -> Token? {
-        for i in 0..<capacity {
-            if !slots[i].active {
-                slots[i] = Slot(active: true, handler: handler)
-                return Token(index: i)
-            }
+        ensureUniqueStorage()
+        for i in storage.slots.indices {
+            guard storage.slots[i].handler == nil,
+                  storage.slots[i].generation < UInt16.max else { continue }
+
+            storage.slots[i].generation += 1
+            storage.slots[i].issuerIdentity = storage.branchIdentity
+            storage.slots[i].handler = handler
+            return Token(
+                issuerIdentity: storage.branchIdentity,
+                index: i,
+                generation: storage.slots[i].generation
+            )
         }
         return nil
     }
 
     /// Removes the subscriber identified by `token`.
     public mutating func unsubscribe(_ token: Token) {
-        guard token.index < capacity else { return }
-        slots[token.index] = Slot(active: false, handler: nil)
+        ensureUniqueStorage()
+        guard token.index >= storage.slots.startIndex,
+              token.index < storage.slots.endIndex,
+              storage.slots[token.index].handler != nil,
+              storage.slots[token.index].issuerIdentity == token.issuerIdentity,
+              storage.slots[token.index].generation == token.generation else { return }
+        storage.slots[token.index].handler = nil
+        storage.slots[token.index].issuerIdentity = nil
     }
 
     /// Dispatches `message` to all active subscribers synchronously.
     public func dispatch(_ message: BorrowedMessage) {
-        for i in 0..<capacity {
-            if slots[i].active, let handler = slots[i].handler {
+        for slot in storage.slots {
+            if let handler = slot.handler {
                 handler(message)
             }
         }
@@ -62,6 +126,15 @@ public struct StaticDispatchTable: Sendable {
 
     /// The number of active subscribers.
     public var subscriberCount: Int {
-        slots.reduce(0) { $0 + ($1.active ? 1 : 0) }
+        storage.slots.reduce(0) { $0 + ($1.handler == nil ? 0 : 1) }
+    }
+
+    internal static var slotStrideForTesting: Int {
+        MemoryLayout<Slot>.stride
+    }
+
+    private mutating func ensureUniqueStorage() {
+        guard !isKnownUniquelyReferenced(&storage) else { return }
+        storage = Storage(copying: storage)
     }
 }

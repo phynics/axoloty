@@ -20,10 +20,21 @@ public struct StaticFamilyTable<Key: Hashable & Sendable> {
         var table: StaticDispatchTable
     }
 
-    /// A subscriber token carrying both the entry index and the inner token.
-    public struct Token: Equatable {
+    /// An opaque, sendable handle for removing one keyed subscription.
+    ///
+    /// A token identifies one keyed subscription. Copying a populated family
+    /// table copies that subscription, so its token can remove the inherited
+    /// subscription independently from either value. Subscriptions created
+    /// after copied values diverge have distinct issuers and cannot remove one
+    /// another. A token is inert in a value after successful unsubscribe or
+    /// entry reuse.
+    public struct Token: Equatable, Sendable {
         let entryIndex: Int
         let inner: StaticDispatchTable.Token
+
+        internal func replacingEntryIndexForTesting(_ entryIndex: Int) -> Token {
+            Token(entryIndex: entryIndex, inner: inner)
+        }
     }
 
     /// Creates a family table with the given maximum entries and subscribers
@@ -45,13 +56,9 @@ public struct StaticFamilyTable<Key: Hashable & Sendable> {
     ) -> Token? {
         // Find existing entry for this key
         for i in 0..<capacity {
-            if var entry = entries[i], entry.key == key {
-                if let inner = entry.table.subscribe(handler) {
-                    entries[i] = entry
-                    return Token(entryIndex: i, inner: inner)
-                }
-                return nil
-            }
+            guard entries[i]?.key == key else { continue }
+            guard let inner = entries[i]?.table.subscribe(handler) else { return nil }
+            return Token(entryIndex: i, inner: inner)
         }
         // Find free slot for a new entry
         for i in 0..<capacity {
@@ -67,7 +74,7 @@ public struct StaticFamilyTable<Key: Hashable & Sendable> {
 
     /// Removes the subscriber identified by `token`.
     public mutating func unsubscribe(_ token: Token) {
-        guard token.entryIndex < capacity else { return }
+        guard token.entryIndex >= 0, token.entryIndex < capacity else { return }
         entries[token.entryIndex]?.table.unsubscribe(token.inner)
         // If the entry has no more subscribers, free the slot
         if entries[token.entryIndex]?.table.subscriberCount == 0 {
