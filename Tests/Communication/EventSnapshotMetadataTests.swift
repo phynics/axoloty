@@ -15,6 +15,51 @@ struct EventSnapshotMetadataTests {
     private let objectId = "550e8400-e29b-41d4-a716-446655440000"
 
     @Test
+    func hostSnapshotDecodesSensorThingsAdvertisePayloadAboveEmbeddedLimit() throws {
+        let sensor = Sensor(
+            description: "A thermometer measures the temperature",
+            encodingType: SensorEncodingTypes.UNDEFINED,
+            metadata: "null",
+            unitOfMeasurement: UnitOfMeasurement(
+                name: "Celsius",
+                symbol: "degC",
+                definition: "http://www.qudt.org/qudt/owl/1.0.0/unit/Instances.html#DegreeCelsius"
+            ),
+            observationType: ObservationTypes.MEASUREMENT,
+            phenomenonTime: CoatyTimeInterval(start: 1_700_000_000_000, end: 1_700_000_001_000),
+            resultTime: CoatyTimeInterval(start: 1_700_000_000_000, end: 1_700_000_001_000),
+            observedProperty: ObservedProperty(
+                name: "Temperature",
+                definition: "http://dbpedia.org/page/Dew_point",
+                description: "DewPoint Temperature"
+            ),
+            name: "Thermometer",
+            objectId: try #require(CoatyUUID(uuidString: "83dfc46a-0709-4f70-9ea5-beebf8fa89af")),
+            parentObjectId: try #require(CoatyUUID(uuidString: "4c480c29-f65f-496f-8005-03e7503eec2b"))
+        )
+        let event = try AdvertiseEvent.with(object: sensor)
+        let payload = try HostWireAdapter.encodeEvent(event)
+        #expect(payload.count > WireBufferConfig.maxPayloadSize)
+
+        let owned = try HostWireAdapter.decodeEvent(from: payload, eventType: .advertise)
+        let topic = Array("coaty/3/test/ADV:sensors/550e8400-e29b-41d4-a716-446655440001".utf8)
+        let parsed = try topic.withUnsafeBufferPointer { buffer in
+            ParsedMQTTMessage(
+                topicView: TopicView(
+                    topicBytes: try #require(buffer.baseAddress),
+                    length: buffer.count
+                ),
+                event: owned,
+                payload: payload
+            )
+        }
+        let snapshot = try #require(AdvertiseEventSnapshot(parsedMQTTMessage: parsed))
+        #expect(snapshot.object.objectType == sensor.objectType)
+        #expect(snapshot.object.objectId == sensor.objectId.string)
+        #expect(snapshot.object.name == sensor.name)
+    }
+
+    @Test
     func advertiseSnapshotPreservesMetadataAndObject() throws {
         let snapshot = AdvertiseEventSnapshot(
             sourceId: sourceId,
