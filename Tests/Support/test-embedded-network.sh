@@ -6,6 +6,7 @@ trap 'rm -rf "$tmp"' EXIT
 AXOLOTY_WIFI_SSID='ssid ü;${x}' AXOLOTY_WIFI_PASSWORD='p@ss;"$x' \
   AXOLOTY_MQTT_HOST='broker.local' AXOLOTY_MQTT_PORT=1884 \
   AXOLOTY_DEVICE_ROLE=A AXOLOTY_AGENT_SCENARIO=last-will \
+  AXOLOTY_RUNTIME_IDENTITY='site-a-device-01' \
   node Tests/Support/generate-embedded-network-config.mjs "$tmp/config.h"
 test "$(grep -c 'AXOLOTY_NETWORK_CONFIGURED 1' "$tmp/config.h")" -eq 1
 ! grep -F 'ssid ü' "$tmp/config.h"
@@ -13,6 +14,9 @@ test "$(grep -c 'AXOLOTY_NETWORK_CONFIGURED 1' "$tmp/config.h")" -eq 1
 ! grep -F 'axoloty_mqtt_password' "$tmp/config.h"
 grep -Fq 'axoloty_device_role = 1U' "$tmp/config.h"
 grep -Fq 'axoloty_agent_scenario = 1U' "$tmp/config.h"
+grep -Fq 'axoloty_runtime_identity[] = { 115, 105, 116, 101, 45, 97, 45, 100, 101, 118, 105, 99, 101, 45, 48, 49, 0 }' "$tmp/config.h"
+grep -Fq 'esp_read_mac' Embedded/swift/main/network_bootstrap.c
+grep -Fq 'axoloty_runtime_identity[0] != 0' Embedded/swift/main/network_bootstrap.c
 node --input-type=module <<'JS'
 import { createEmbeddedNetworkValidator, expectedNetworkTests } from "./Tests/Support/embedded-network-validator.mjs";
 import { createEmbeddedAgentValidator, expectedAgentTests, expectedLastWillTests, expectedBrokerRestartTests } from "./Tests/Support/embedded-agent-validator.mjs";

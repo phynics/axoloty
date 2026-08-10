@@ -4,6 +4,7 @@
 // inspect or copy bounded data while they execute; no callback pointer escapes.
 
 #include "esp_event.h"
+#include "esp_mac.h"
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_timer.h"
@@ -21,6 +22,7 @@
 #include "axoloty_network_config.h"
 #else
 #define AXOLOTY_NETWORK_CONFIGURED 0
+static const char axoloty_runtime_identity[] = "";
 #endif
 
 #define WIFI_BIT (1U << 0)
@@ -61,6 +63,7 @@ static char network_payload[NETWORK_MAX_PAYLOAD];
 static char network_will_topic[NETWORK_MAX_TOPIC];
 static char network_will_payload[NETWORK_MAX_PAYLOAD];
 static char network_uri[128];
+static char network_client_id[64];
 static size_t network_payload_length;
 static int network_will_payload_length;
 static int network_will_configured;
@@ -84,6 +87,21 @@ static uint8_t agent_will_topic[NETWORK_MAX_TOPIC];
 static uint8_t agent_will_payload[NETWORK_MAX_PAYLOAD];
 static uint8_t agent_actor_route[NETWORK_MAX_TOPIC];
 static int32_t agent_actor_route_length;
+
+static int network_prepare_client_id(void) {
+    if (axoloty_runtime_identity[0] != 0) {
+        int length = snprintf(network_client_id, sizeof(network_client_id),
+            "%s", axoloty_runtime_identity);
+        return length > 0 && length < (int)sizeof(network_client_id);
+    }
+
+    uint8_t mac[6];
+    if (esp_read_mac(mac, ESP_MAC_WIFI_STA) != ESP_OK) return 0;
+    int length = snprintf(network_client_id, sizeof(network_client_id),
+        "axoloty-%02x%02x%02x%02x%02x%02x",
+        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    return length > 0 && length < (int)sizeof(network_client_id);
+}
 static void network_ip_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
     (void)arg; (void)base; (void)data;
     if (id == IP_EVENT_STA_GOT_IP) {
@@ -557,9 +575,10 @@ unsigned int axoloty_agent_test(unsigned int overall_deadline_ms) {
         has_will = 0;
     }
 
+    if (!network_prepare_client_id()) goto agent_done;
     esp_mqtt_client_config_t config = { 0 };
     config.broker.address.uri = uri;
-    config.credentials.client_id = axoloty_device_role == 1U ? "axoloty-esp32-a" : "axoloty-esp32-b";
+    config.credentials.client_id = network_client_id;
     if (has_will) {
         config.session.last_will.topic = (const char *)agent_will_topic;
         config.session.last_will.msg = (const char *)agent_will_payload;
