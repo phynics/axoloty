@@ -4,6 +4,7 @@
 import Axoloty
 import AxolotyInspectorCore
 import AxolotyInspectorRuntime
+import AxolotyTooling
 import Foundation
 import MCP
 import Testing
@@ -177,6 +178,79 @@ func executableRejectsInvalidListenPort() throws {
     #expect(result.standardError.contains("invalid listen port"))
 }
 
+@Test("MCP executable rejects invalid endpoint path with managed-service error")
+func executableRejectsInvalidEndpointPathWithManagedServiceError() throws {
+    let result = try runMCPExecutable(
+        arguments: ["--transport", "http", "--path", "mcp"]
+    )
+
+    #expect(result.exitCode == 64)
+    #expect(result.standardError == "error: invalid endpoint path: mcp (must start with /)\n")
+}
+
+@Test("Direct and managed MCP path validation have identical outcomes")
+func mcpPathValidationParityMatrix() throws {
+    let cases: [(path: String, expectedError: AxolotyServeError?)] = [
+        ("", .invalidPath("")),
+        ("mcp", .invalidPath("mcp")),
+        ("/api/mcp", nil),
+    ]
+
+    for testCase in cases {
+        let directResult = try runMCPExecutableForPathValidation(
+            arguments: ["--transport", "http", "--path=\(testCase.path)", "--connect-timeout", "30s"]
+        )
+        let managedResult = AxolotyServeParser().parse(
+            arguments: ["mcp", "--transport", "http", "--path=\(testCase.path)"],
+            environment: [:]
+        )
+
+        if let expectedError = testCase.expectedError {
+            let expectedMessage = expectedError.userFriendlyMessage
+            #expect(directResult == .rejected(
+                exitCode: 64,
+                standardError: "error: \(expectedMessage)\n"
+            ))
+            guard case .failure(let managedError) = managedResult else {
+                Issue.record("managed validation accepted invalid path '\(testCase.path)'")
+                continue
+            }
+            #expect(managedError == expectedError)
+            #expect(managedError.userFriendlyMessage == expectedMessage)
+        } else {
+            #expect(directResult == .accepted)
+            guard case .success(.mcp(let configuration)) = managedResult else {
+                Issue.record("managed validation rejected valid path '\(testCase.path)'")
+                continue
+            }
+            #expect(configuration.path == testCase.path)
+        }
+    }
+}
+
+@Test("MCP executable routes --path= through shared validation")
+func executableRejectsEmptyEqualsPathWithManagedServiceError() throws {
+    let result = try runMCPExecutable(arguments: ["--transport", "http", "--path="])
+
+    #expect(result.exitCode == 64)
+    #expect(result.standardError == "error: invalid endpoint path:  (must start with /)\n")
+}
+
+@Test("Managed MCP parser distinguishes missing from explicitly empty path")
+func managedParserDistinguishesMissingAndEmptyPath() {
+    let missing = AxolotyServeParser().parse(
+        arguments: ["mcp", "--transport", "http", "--path"],
+        environment: [:]
+    )
+    let empty = AxolotyServeParser().parse(
+        arguments: ["mcp", "--transport", "http", "--path", ""],
+        environment: [:]
+    )
+
+    #expect(missing == .failure(.missingValue("path")))
+    #expect(empty == .failure(.invalidPath("")))
+}
+
 @Test("MCP executable rejects invalid connect timeout")
 func executableRejectsInvalidConnectTimeout() throws {
     let result = try runMCPExecutable(
@@ -216,10 +290,53 @@ func executableCLIOverridesInvalidEnvironmentPort() throws {
     #expect(!result.standardError.contains("invalid broker port"))
 }
 
+private enum MCPExecutablePathValidationResult: Equatable {
+    case accepted
+    case rejected(exitCode: Int32, standardError: String)
+}
+
+private func runMCPExecutableForPathValidation(
+    arguments: [String]
+) throws -> MCPExecutablePathValidationResult {
+    let invocation = try makeMCPExecutableProcess(arguments: arguments)
+    try invocation.process.run()
+
+    let deadline = Date().addingTimeInterval(0.5)
+    while invocation.process.isRunning, Date() < deadline {
+        Thread.sleep(forTimeInterval: 0.01)
+    }
+
+    if invocation.process.isRunning {
+        invocation.process.terminate()
+        invocation.process.waitUntilExit()
+        return .accepted
+    }
+
+    let errorData = invocation.standardError.fileHandleForReading.readDataToEndOfFile()
+    return .rejected(
+        exitCode: invocation.process.terminationStatus,
+        standardError: String(decoding: errorData, as: UTF8.self)
+    )
+}
+
 private func runMCPExecutable(
     arguments: [String],
     environment overrides: [String: String] = [:]
 ) throws -> (exitCode: Int32, standardError: String) {
+    let invocation = try makeMCPExecutableProcess(arguments: arguments, environment: overrides)
+    try invocation.process.run()
+    invocation.process.waitUntilExit()
+    let errorData = invocation.standardError.fileHandleForReading.readDataToEndOfFile()
+    return (
+        invocation.process.terminationStatus,
+        String(decoding: errorData, as: UTF8.self)
+    )
+}
+
+private func makeMCPExecutableProcess(
+    arguments: [String],
+    environment overrides: [String: String] = [:]
+) throws -> (process: Process, standardError: Pipe) {
     let productsDirectory = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
     let executable = productsDirectory.appendingPathComponent("axoloty-mcp")
     try #require(FileManager.default.isExecutableFile(atPath: executable.path))
@@ -238,10 +355,7 @@ private func runMCPExecutable(
     }
     process.environment = environment
 
-    try process.run()
-    process.waitUntilExit()
-    let errorData = standardError.fileHandleForReading.readDataToEndOfFile()
-    return (process.terminationStatus, String(decoding: errorData, as: UTF8.self))
+    return (process, standardError)
 }
 
 private func makeHTTPServer(port: UInt16) -> MCPHTTPServer {
