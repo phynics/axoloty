@@ -9,6 +9,10 @@ import Foundation
 import MCP
 import Testing
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 @MainActor
 private final class StatusSession: InspectorSession {
     var state: CommunicationState = .online
@@ -160,6 +164,84 @@ func httpShutdownStopsActiveSessions() async throws {
         try await startTask.value
     }
     #expect(await server.activeSessionCount() == 0)
+}
+
+@Test("HTTP body cap accepts a body exactly at its configured boundary")
+func httpBodyCapAcceptsConfiguredBoundary() async throws {
+    let initializeRequest = try makeInitializeRequest()
+    let body = try #require(initializeRequest.body)
+    let server = makeHTTPServer(port: 0, maxRequestBodyBytes: body.count)
+    let startTask = Task { try await server.start() }
+    await server.waitUntilListening()
+    let port = try #require(await server.listeningPort())
+
+    do {
+        let (_, response) = try await sendHTTPBody(to: port, body: body)
+        #expect(response.statusCode == 200)
+        #expect(await server.activeSessionCount() == 1)
+    } catch {
+        await server.stop()
+        _ = try? await startTask.value
+        throw error
+    }
+
+    try await withDeadline("HTTP boundary request shutdown") {
+        await server.stop()
+        try await startTask.value
+    }
+}
+
+@Test("HTTP server rejects oversized Content-Length before buffering")
+func httpBodyCapRejectsOversizedContentLength() async throws {
+    let server = makeHTTPServer(port: 0, maxRequestBodyBytes: 8)
+    let startTask = Task { try await server.start() }
+    await server.waitUntilListening()
+    let port = try #require(await server.listeningPort())
+
+    do {
+        let (_, response) = try await sendHTTPBody(
+            to: port,
+            body: Data(repeating: 0x78, count: 9)
+        )
+        #expect(response.statusCode == 413)
+        #expect(await server.activeSessionCount() == 0)
+    } catch {
+        await server.stop()
+        _ = try? await startTask.value
+        throw error
+    }
+
+    try await withDeadline("HTTP oversized Content-Length request shutdown") {
+        await server.stop()
+        try await startTask.value
+    }
+}
+
+@Test("HTTP server rejects oversized streamed body incrementally")
+func httpBodyCapRejectsOversizedStreamedBody() async throws {
+    let server = makeHTTPServer(port: 0, maxRequestBodyBytes: 8)
+    let startTask = Task { try await server.start() }
+    await server.waitUntilListening()
+    let port = try #require(await server.listeningPort())
+
+    do {
+        let (_, response) = try await sendHTTPBody(
+            to: port,
+            body: Data(repeating: 0x78, count: 9),
+            streamed: true
+        )
+        #expect(response.statusCode == 413)
+        #expect(await server.activeSessionCount() == 0)
+    } catch {
+        await server.stop()
+        _ = try? await startTask.value
+        throw error
+    }
+
+    try await withDeadline("HTTP streamed request shutdown") {
+        await server.stop()
+        try await startTask.value
+    }
 }
 
 @Test("MCP executable rejects invalid broker port")
@@ -358,10 +440,14 @@ private func makeMCPExecutableProcess(
     return (process, standardError)
 }
 
-private func makeHTTPServer(port: UInt16) -> MCPHTTPServer {
+private func makeHTTPServer(
+    port: UInt16,
+    maxRequestBodyBytes: Int = 1_048_576
+) -> MCPHTTPServer {
     MCPHTTPServer(
         host: "127.0.0.1",
         port: port,
+        maxRequestBodyBytes: maxRequestBodyBytes,
         validationPipeline: StandardValidationPipeline(validators: []),
         serverFactory: { _, transport in
             let server = Server(
@@ -373,6 +459,27 @@ private func makeHTTPServer(port: UInt16) -> MCPHTTPServer {
             return server
         }
     )
+}
+
+private func sendHTTPBody(
+    to port: Int,
+    body: Data,
+    streamed: Bool = false
+) async throws -> (Data, HTTPURLResponse) {
+    var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/mcp")!)
+    request.httpMethod = "POST"
+    request.timeoutInterval = 5
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+    if streamed {
+        request.httpBodyStream = InputStream(data: body)
+    } else {
+        request.httpBody = body
+        request.setValue(String(body.count), forHTTPHeaderField: "Content-Length")
+    }
+
+    let (data, response) = try await URLSession.shared.data(for: request)
+    return (data, try #require(response as? HTTPURLResponse))
 }
 
 private func makeInitializeRequest() throws -> HTTPRequest {
