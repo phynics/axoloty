@@ -12,11 +12,6 @@ private enum DiscoverLoopEvent: Sendable {
     case interrupted
 }
 
-/// Decoded payload of a Resolve response.
-private struct ResolveResponsePayload: Decodable {
-    let object: CoatyObjectSnapshot
-}
-
 /// Orchestrates active discovery: connects, publishes one Discover event,
 /// collects Resolve responses, deduplicates by object ID, and emits a
 /// finite discovery-result record.
@@ -157,16 +152,9 @@ public final class InspectorDiscoverApplication {
         while !done, let event = await eventIterator.next() {
             switch event {
             case .response(let response):
-                if let payload = response.decodePayload(ResolveResponsePayload.self) {
-                    let object = payload.object
-                    if discoveredObjects[object.objectId] == nil {
-                        discoveredObjects[object.objectId] = InspectorObject(
-                            objectId: object.objectId,
-                            coreType: object.coreType.rawValue,
-                            objectType: object.objectType,
-                            name: object.name.isEmpty ? nil : object.name,
-                            sourceId: response.sourceId
-                        )
+                if let objects = InspectorResolveObjectDecoder.objects(from: response) {
+                    for object in objects where discoveredObjects[object.objectId] == nil {
+                        discoveredObjects[object.objectId] = object
                     }
                 }
             case .responsesExhausted:
