@@ -5,24 +5,24 @@
 
 import Foundation
 
-/// A closed representation of an arbitrary JSON value, used internally to
-/// capture and re-emit JSON structure without routing through `Any`.
+/// A closed representation of an arbitrary JSON value that preserves JSON
+/// structure without routing through `Any`.
 ///
-/// `RawJSONValue` never appears in a public signature (see #110). It exists only
-/// because `Foundation.JSONDecoder` provides no raw-text access, so isolating
-/// an already-decoded field's JSON substructure requires decoding into *some*
+/// Use the cases of this type when a public API needs to carry JSON whose shape
+/// is not known at compile time. `RawJSONValue` is also used internally because
+/// `Foundation.JSONDecoder` provides no raw-text access, so isolating an
+/// already-decoded field's JSON substructure requires decoding into *some*
 /// value model before re-encoding it.
 ///
-/// - Important: Scoped to payload capture. ``FilterOperand`` is the sibling
-///   type for filter operands; the two are kept separate deliberately so
-///   neither drifts into a general-purpose value box.
+/// - Important: Unlike ``FilterOperand``, which is scoped to filter operands,
+///   this type is suitable for arbitrary JSON payload values.
 /// - Important: ``int(_:)`` and ``double(_:)`` are distinct cases so that
 ///   `42` does not re-encode as `42.0`, which would break wire compatibility
 ///   against the CoatyJS reference and the fixture corpus.
 /// - Important: Built only from stdlib types. Adding a Foundation type (such
 ///   as `Data`, `Date`, `URL`, or `Decimal`) to this enum's stored shape
 ///   breaks the Embedded Swift path tracked by #208.
-enum RawJSONValue: Equatable {
+public enum RawJSONValue: Equatable {
     /// A JSON `null` literal.
     case null
     /// A JSON boolean literal.
@@ -43,7 +43,12 @@ enum RawJSONValue: Equatable {
 
 extension RawJSONValue: Codable {
 
-    init(from decoder: Decoder) throws {
+    /// Creates a raw JSON value by decoding one JSON value from `decoder`.
+    ///
+    /// - Parameter decoder: The decoder supplying the JSON value.
+    /// - Throws: A `DecodingError` if the input is not a JSON value supported
+    ///   by ``RawJSONValue``.
+    public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
 
         // Ladder order is load-bearing and mirrors the behavior pinned for
@@ -71,7 +76,11 @@ extension RawJSONValue: Codable {
         }
     }
 
-    func encode(to encoder: Encoder) throws {
+    /// Encodes this value as its corresponding JSON literal or container.
+    ///
+    /// - Parameter encoder: The encoder receiving the JSON value.
+    /// - Throws: An encoding error if the encoder cannot represent the value.
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
 
         switch self {
