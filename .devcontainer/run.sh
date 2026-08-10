@@ -54,7 +54,14 @@ trap cleanup EXIT INT TERM
 if [ "$build_lock" = "1" ]; then
     if [ "${BUILD_LOCK_FORCE_DIRECTORY:-0}" != "1" ] && command -v flock >/dev/null 2>&1; then
         exec 9>"$lock_file"
-        flock 9
+        if [ "$lock_timeout" -ge 0 ]; then
+            if ! flock -w "$lock_timeout" 9; then
+                echo "Timed out waiting for build lock: $lock_file" >&2
+                exit 75
+            fi
+        else
+            flock 9
+        fi
         lock_kind="flock"
     else
         lock_started=$(date +%s)

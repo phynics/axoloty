@@ -7,7 +7,7 @@ set -euo pipefail
 # default of 1); an inherited BUILD_LOCK from the caller's environment (e.g.
 # `make ci ... BUILD_LOCK=0`, which the Makefile exports) would silently
 # override that and break the lock-behavior assertions.
-unset BUILD_LOCK
+unset BUILD_LOCK BUILD_LOCK_FORCE_DIRECTORY
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 TEMP_DIR=$(mktemp -d)
@@ -49,6 +49,29 @@ elapsed=$(( $(date +%s) - start ))
 [[ "$elapsed" -ge 1 ]]
 wait "$holder"
 [[ ! -e "$lock_owner" ]]
+
+# The flock path must honor immediate and finite BUILD_LOCK_TIMEOUT values.
+flock_timeout_output="$TEMP_DIR/flock-timeout.stderr"
+( exec 8>"$lock_file"; flock 8; sleep 3 ) &
+holder=$!
+sleep 0.1
+set +e
+BUILD_LOCK_TIMEOUT=0 AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" \
+    "$ROOT_DIR/.devcontainer/run.sh" true 2>"$flock_timeout_output"
+status=$?
+set -e
+[[ "$status" -eq 75 ]]
+grep -Fxq "Timed out waiting for build lock: $lock_file" "$flock_timeout_output"
+
+set +e
+BUILD_LOCK_TIMEOUT=1 AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" \
+    "$ROOT_DIR/.devcontainer/run.sh" true 2>"$flock_timeout_output"
+status=$?
+set -e
+[[ "$status" -eq 75 ]]
+grep -Fxq "Timed out waiting for build lock: $lock_file" "$flock_timeout_output"
+kill "$holder" 2>/dev/null || true
+wait "$holder" 2>/dev/null || true
 
 # The mkdir fallback cannot wait forever when flock is unavailable.
 fallback_lock_dir="${build_dir}.lock.d"
