@@ -227,6 +227,43 @@ struct IoAssociationRegistryTests {
         #expect(dispatches.values.contains("false"))
     }
 
+    @Test
+    func unobserveAllClearsStateForRestart() async {
+        let source = makeSource("10000000-0000-4000-8000-000000000001")
+        let actor = makeActor("20000000-0000-4000-8000-000000000002")
+        let (registry, subscribe, unsubscribe) = makeRegistry(sources: [source], actors: [actor])
+        let dispatches = LockedStringCollector()
+        registry.onIoStateDispatch = { _, event in
+            dispatches.append("\(event.eventData.hasAssociations())")
+        }
+
+        _ = registry.observeIoState(ioPointId: source.objectId)
+        registry.handleAssociate(
+            ioSourceId: source.objectId, ioActorId: actor.objectId,
+            ioRoute: "route-1", updateRate: 500, isExternalRoute: false
+        )
+        #expect(subscribe.values == ["route-1"])
+        #expect(dispatches.values == ["true"])
+
+        registry.unobserveAll()
+        #expect(unsubscribe.values == ["route-1"])
+        #expect(dispatches.values == ["true", "false"])
+        #expect(registry.associatingRoute(for: source.objectId) == nil)
+
+        // A restart must establish a new route subscription and avoid sending
+        // state to the observer that was torn down above.
+        registry.handleAssociate(
+            ioSourceId: source.objectId, ioActorId: actor.objectId,
+            ioRoute: "route-1", updateRate: 750, isExternalRoute: false
+        )
+        #expect(subscribe.values == ["route-1", "route-1"])
+        #expect(dispatches.values == ["true", "false"])
+
+        let restartedState = registry.observeIoState(ioPointId: source.objectId)
+        #expect(restartedState.eventData.hasAssociations())
+        #expect(restartedState.eventData.updateRate() == 750)
+    }
+
     // MARK: - Lookup
 
     @Test
