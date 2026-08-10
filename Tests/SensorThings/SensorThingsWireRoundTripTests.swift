@@ -14,6 +14,22 @@ import Testing
 struct SensorThingsWireRoundTripTests {
 
     @Test
+    func unitOfMeasurementAcceptsNullableSensorThingsFields() throws {
+        let payload = Data(#"{"name":null,"symbol":null,"definition":null}"#.utf8)
+        let decoded = try JSONDecoder().decode(UnitOfMeasurement.self, from: payload)
+
+        #expect(decoded.name == nil)
+        #expect(decoded.symbol == nil)
+        #expect(decoded.definition == nil)
+
+        let encoded = try JSONEncoder().encode(decoded)
+        let json = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        #expect(json["name"] is NSNull)
+        #expect(json["symbol"] is NSNull)
+        #expect(json["definition"] is NSNull)
+    }
+
+    @Test
     func observationResultEncodesAsRawJSONNumber() throws {
         let observation = Observation(
             phenomenonTime: 1000,
