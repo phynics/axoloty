@@ -27,6 +27,7 @@ final class FakeInspectorSession: InspectorSession {
     var queuedAdvertises: [AdvertiseEventSnapshot] = []
     var queuedDeadvertises: [DeadvertiseEventSnapshot] = []
     var queuedResponses: [ResponseEventSnapshot] = []
+    var finishDiscoverStream = true
 
     func connect() async throws {
         if connectShouldFail {
@@ -75,7 +76,9 @@ final class FakeInspectorSession: InspectorSession {
         for response in queuedResponses {
             cont.yield(response)
         }
-        cont.finish()
+        if finishDiscoverStream {
+            cont.finish()
+        }
         return stream
     }
 
@@ -429,7 +432,7 @@ struct InspectorApplicationTests {
 struct InspectorDiscoverApplicationTests {
 
     private func makeDiscoverConfig(
-        timeout: Duration = .milliseconds(200),
+        timeout: InspectorDuration = InspectorDuration(value: .milliseconds(200)),
         coreType: String? = "Identity",
         objectType: String? = nil,
         objectId: String? = nil
@@ -439,7 +442,7 @@ struct InspectorDiscoverApplicationTests {
                 coreType: coreType,
                 objectType: objectType,
                 objectId: objectId,
-                timeout: InspectorDuration(value: timeout)
+                timeout: timeout
             )),
             connection: InspectorConnectionConfiguration(
                 host: "localhost", port: 1883, namespace: "test"
@@ -523,7 +526,7 @@ struct InspectorDiscoverApplicationTests {
 
         var output: [String] = []
         let app = InspectorDiscoverApplication(
-            configuration: makeDiscoverConfig(timeout: .milliseconds(100)),
+            configuration: makeDiscoverConfig(timeout: InspectorDuration(value: .milliseconds(100))),
             session: session,
             writeOutput: { output.append($0) },
             writeDiagnostic: { _ in },
@@ -536,6 +539,74 @@ struct InspectorDiscoverApplicationTests {
         let resultLines = output.filter { $0.contains("\"kind\":\"discovery-result\"") }
         #expect(resultLines.count == 1)
         #expect(resultLines[0].contains("\"timedOut\":true"))
+    }
+
+    @Test
+    func discoverFiniteTimeoutEndsOpenResponseStream() async {
+        let session = FakeInspectorSession()
+        session.finishDiscoverStream = false
+
+        var output: [String] = []
+        let app = InspectorDiscoverApplication(
+            configuration: makeDiscoverConfig(
+                timeout: InspectorDuration(value: .milliseconds(20))
+            ),
+            session: session,
+            writeOutput: { output.append($0) },
+            writeDiagnostic: { _ in },
+            timestamp: { "2026-07-31T00:00:00Z" },
+            isTerminal: false
+        )
+
+        #expect(await app.run() == nil)
+        let resultLines = output.filter { $0.contains("\"kind\":\"discovery-result\"") }
+        #expect(resultLines.count == 1)
+        #expect(resultLines[0].contains("\"timedOut\":true"))
+    }
+
+    @Test
+    func discoverZeroTimeoutEndsOpenResponseStreamImmediately() async {
+        let session = FakeInspectorSession()
+        session.finishDiscoverStream = false
+
+        var output: [String] = []
+        let app = InspectorDiscoverApplication(
+            configuration: makeDiscoverConfig(timeout: InspectorDuration(value: .zero)),
+            session: session,
+            writeOutput: { output.append($0) },
+            writeDiagnostic: { _ in },
+            timestamp: { "2026-07-31T00:00:00Z" },
+            isTerminal: false
+        )
+
+        #expect(await app.run() == nil)
+        let resultLines = output.filter { $0.contains("\"kind\":\"discovery-result\"") }
+        #expect(resultLines.count == 1)
+        #expect(resultLines[0].contains("\"timedOut\":true"))
+    }
+
+    @Test
+    func discoverUnlimitedWaitsForInterruptionWithoutDeadline() async {
+        let session = FakeInspectorSession()
+        session.finishDiscoverStream = false
+        let signalHandler = FakeSignalHandler()
+        let app = InspectorDiscoverApplication(
+            configuration: makeDiscoverConfig(timeout: .unlimited),
+            session: session,
+            writeOutput: { _ in },
+            writeDiagnostic: { _ in },
+            timestamp: { "2026-07-31T00:00:00Z" },
+            isTerminal: false,
+            signalHandler: signalHandler
+        )
+
+        let runTask = Task { await app.run() }
+        try? await Task.sleep(for: .seconds(10) + .milliseconds(250))
+        #expect(!session.stopped)
+
+        signalHandler.wasInterrupted = true
+        #expect(await runTask.value == .interrupted)
+        #expect(session.stopped)
     }
 
     @Test
