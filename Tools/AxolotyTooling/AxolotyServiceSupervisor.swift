@@ -54,6 +54,70 @@ public protocol AxolotyManagedProcessRunning: Sendable {
     var isRunning: Bool { get }
 }
 
+/// Coordinates shutdown of the child processes owned by one service runner.
+final class ManagedProcessSupervisor: @unchecked Sendable {
+    private let shutdownTimeout: TimeInterval
+    private let lock = NSLock()
+    private let shutdownLock = NSLock()
+    private var runners: [any AxolotyManagedProcessRunning] = []
+    private var stopping = false
+
+    init(shutdownTimeout: TimeInterval = 5.0) {
+        self.shutdownTimeout = shutdownTimeout
+    }
+
+    func register(_ runner: any AxolotyManagedProcessRunning) {
+        lock.lock()
+        runners.append(runner)
+        let shouldTerminate = stopping
+        lock.unlock()
+
+        if shouldTerminate {
+            runner.terminate()
+        }
+    }
+
+    func requestTermination() {
+        let activeRunners = markStoppingAndSnapshot()
+        for runner in activeRunners where runner.isRunning {
+            runner.terminate()
+        }
+    }
+
+    func terminateAndWait() {
+        shutdownLock.lock()
+        defer { shutdownLock.unlock() }
+
+        let activeRunners = markStoppingAndSnapshot()
+        for runner in activeRunners where runner.isRunning {
+            runner.terminate()
+        }
+
+        let deadline = Date().addingTimeInterval(shutdownTimeout)
+        while Date() < deadline {
+            if activeRunners.allSatisfy({ !$0.isRunning }) {
+                break
+            }
+            usleep(50_000)
+        }
+
+        for runner in activeRunners where runner.isRunning {
+            runner.forceKill()
+        }
+
+        for runner in activeRunners {
+            _ = runner.waitForExit()
+        }
+    }
+
+    private func markStoppingAndSnapshot() -> [any AxolotyManagedProcessRunning] {
+        lock.lock()
+        defer { lock.unlock() }
+        stopping = true
+        return runners
+    }
+}
+
 /// Probes service readiness via TCP.
 public protocol AxolotyServiceProbing: Sendable {
     /// Checks if a TCP port is available (not already bound).
@@ -202,13 +266,20 @@ public struct FoundationServiceProbe: AxolotyServiceProbing {
 
 // MARK: - Signal handling
 
-/// A signal handler that sets a flag when SIGINT or SIGTERM is received.
+/// A signal handler that records and reports SIGINT or SIGTERM interruptions.
 public final class ServiceSignalHandler: @unchecked Sendable {
     private var interrupted = false
     private let lock = NSLock()
     private var sources: [DispatchSourceSignal] = []
+    private let onInterrupt: (@Sendable () -> Void)?
 
-    public init() {}
+    /// Creates a signal handler.
+    ///
+    /// - Parameter onInterrupt: An optional callback invoked once after the first
+    ///   SIGINT or SIGTERM is received.
+    public init(onInterrupt: (@Sendable () -> Void)? = nil) {
+        self.onInterrupt = onInterrupt
+    }
 
     public var isInterrupted: Bool {
         lock.lock()
@@ -240,8 +311,13 @@ public final class ServiceSignalHandler: @unchecked Sendable {
 
     private func setInterrupted() {
         lock.lock()
+        let shouldNotify = !interrupted
         interrupted = true
         lock.unlock()
+
+        if shouldNotify {
+            onInterrupt?()
+        }
     }
 }
 

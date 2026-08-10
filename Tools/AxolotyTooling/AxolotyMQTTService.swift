@@ -85,6 +85,16 @@ public struct AxolotyMQTTServiceRunner: Sendable {
     /// Runs the MQTT broker service and blocks until interrupted or the process exits.
     public func run(_ configuration: MQTTServiceConfiguration) -> Int32 {
         let output = configuration.output
+        let processSupervisor = ManagedProcessSupervisor()
+        let signalHandler = installSignalHandler
+            ? ServiceSignalHandler(onInterrupt: { processSupervisor.requestTermination() })
+            : nil
+        signalHandler?.install()
+        defer { signalHandler?.uninstall() }
+
+        if signalHandler?.isInterrupted == true {
+            return 130
+        }
 
         guard fileSystem.exists(atPath: mosquittoExecutable) else {
             writeError("error: mosquitto executable not found at \(mosquittoExecutable)\n", output: output)
@@ -105,6 +115,7 @@ public struct AxolotyMQTTServiceRunner: Sendable {
         }
 
         defer { tempDirProvider.removeDirectory(tempDir) }
+        defer { processSupervisor.terminateAndWait() }
 
         let configPath = "\(tempDir)/mosquitto.conf"
         let configContent = configGenerator.generate(
@@ -120,6 +131,10 @@ public struct AxolotyMQTTServiceRunner: Sendable {
             return 70
         }
 
+        if signalHandler?.isInterrupted == true {
+            return 130
+        }
+
         let spec = ManagedProcessSpecification(
             executable: mosquittoExecutable,
             arguments: ["-c", configPath]
@@ -127,7 +142,11 @@ public struct AxolotyMQTTServiceRunner: Sendable {
 
         do {
             try processRunner.start(spec)
+            processSupervisor.register(processRunner)
         } catch {
+            if signalHandler?.isInterrupted == true {
+                return 130
+            }
             writeError("error: unable to start mosquitto: \(error)\n", output: output)
             return 70
         }
@@ -138,6 +157,9 @@ public struct AxolotyMQTTServiceRunner: Sendable {
             timeoutSeconds: 5.0
         )
 
+        if signalHandler?.isInterrupted == true {
+            return 130
+        }
         if !ready {
             processRunner.forceKill()
             writeError("error: mosquitto did not become ready within 5 seconds\n", output: output)
@@ -147,22 +169,8 @@ public struct AxolotyMQTTServiceRunner: Sendable {
         let mqttURL = "mqtt://\(urlAuthorityHost(configuration.listenHost)):\(configuration.port)"
         writeReadiness(mqttURL: mqttURL, output: output)
 
-        let signalHandler = installSignalHandler ? ServiceSignalHandler() : nil
-        signalHandler?.install()
-        defer { signalHandler?.uninstall() }
-
         while true {
             if signalHandler?.isInterrupted == true {
-                processRunner.terminate()
-                let deadline = Date().addingTimeInterval(5.0)
-                while Date() < deadline {
-                    if !processRunner.isRunning { break }
-                    usleep(50_000)
-                }
-                if processRunner.isRunning {
-                    processRunner.forceKill()
-                    _ = processRunner.waitForExit()
-                }
                 return 130
             }
 
