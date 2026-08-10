@@ -154,6 +154,257 @@ struct InspectorArgumentParserTests {
     }
 
     @Test
+    func commonOptionsHaveSameContractAcrossCommands() {
+        let commonOptions = [
+            "--host", "broker.local",
+            "--port", "8883",
+            "--namespace", "test-ns",
+            "--connect-timeout", "5s",
+            "--output", "json",
+            "--log-level", "debug",
+        ]
+
+        for command in [
+            ["catalog"],
+            ["discover", "--core-type", "Identity"],
+        ] {
+            let outcome = InspectorArgumentParser().parse(command + commonOptions)
+            guard case let .run(config) = outcome else {
+                Issue.record("Expected \(command[0]) to accept the common inspector options")
+                continue
+            }
+
+            #expect(config.connection.host == "broker.local")
+            #expect(config.connection.port == 8883)
+            #expect(config.connection.namespace == "test-ns")
+            #expect(config.connection.connectTimeout == .seconds(5))
+            #expect(config.output == .json)
+            #expect(config.logLevel == "debug")
+        }
+    }
+
+    @Test
+    func everySharedOptionParsesIdenticallyForCatalogAndDiscover() {
+        let sharedOptions = [
+            "--host", "broker.local",
+            "--port", "8883",
+            "--namespace", "test-ns",
+            "--tls",
+            "--username", "operator",
+            "--password-stdin",
+            "--connect-timeout", "5s",
+            "--log-level", "debug",
+            "--output", "ndjson",
+        ]
+
+        let catalog = InspectorArgumentParser().parse(["catalog"] + sharedOptions)
+        let discover = InspectorArgumentParser().parse(["discover", "--core-type", "Identity"] + sharedOptions)
+
+        guard case let .run(catalogConfig) = catalog,
+              case let .run(discoverConfig) = discover else {
+            Issue.record("Expected both commands to accept every shared option")
+            return
+        }
+
+        #expect(catalogConfig.connection == discoverConfig.connection)
+        #expect(catalogConfig.output == discoverConfig.output)
+        #expect(catalogConfig.logLevel == discoverConfig.logLevel)
+        #expect(catalogConfig.passwordFromStdin == discoverConfig.passwordFromStdin)
+    }
+
+    @Test
+    func helpRendersCompleteSectionsInContractOrder() {
+        let expected = """
+        Usage: axoloty-inspect <command> [options]
+
+        Inspect live Coaty objects on an MQTT broker.
+
+        Commands:
+          catalog              Observe Advertise/Deadvertise and build an object catalogue.
+          discover             Send a Discover request and collect Resolve responses.
+
+        Common options:
+          --host HOST          Broker host (default: localhost, env: AXOLOTY_MQTT_HOST)
+          --port PORT          Broker port (default: 1883, env: AXOLOTY_MQTT_PORT)
+          --namespace NS       Coaty namespace (default: -, env: AXOLOTY_NAMESPACE)
+          --tls                Enable TLS for the broker connection.
+          --username USER      Broker username (env: AXOLOTY_MQTT_USERNAME).
+          --password-stdin     Read broker password from one line of stdin.
+          --connect-timeout D  Connection readiness timeout (default: 10s).
+          --log-level LEVEL    Diagnostic log level: trace|debug|info|notice|warning|error.
+          --output MODE        Output mode: auto|human|ndjson|json (default: auto).
+
+        Catalogue options:
+          --core-type TYPE     Filter by Coaty core type.
+          --object-type TYPE   Filter by full object type.
+          --object-id UUID     Filter by object UUID.
+          --source-id UUID     Filter by source (advertiser) UUID.
+          --duration D         Observation duration (e.g. 10s, 2m, 1h; default: unlimited).
+          --full               Include complete raw object JSON payload.
+          --include-private-data  Include private data (requires --full).
+
+        Discover options:
+          --core-type TYPE     Select by Coaty core type.
+          --object-type TYPE   Select by full object type.
+          --object-id UUID     Select by object UUID.
+          --timeout D          Response collection timeout (e.g. 5s; default: unlimited).
+
+        Other:
+          -h, --help           Show this help.
+          -v, --version        Show the inspector version.
+
+        Durations: <N>s (seconds), <N>m (minutes), <N>h (hours), unlimited.
+        """
+
+        #expect(InspectorArgumentParser.helpText == expected)
+    }
+
+    @Test
+    func commonOptionFailuresMatchAcrossCommands() {
+        let commands = [
+            ["catalog"],
+            ["discover", "--core-type", "Identity"],
+        ]
+        let cases: [([String], InspectorError)] = [
+            (["--host"], .invalidArguments(reason: "--host requires a value")),
+            (["--port", "0"], .invalidConfiguration(
+                field: "port",
+                reason: "must be a positive integer ≤ 65535"
+            )),
+            (["--connect-timeout", "0s"], .invalidConfiguration(
+                field: "connect-timeout",
+                reason: "invalid duration: 0s"
+            )),
+            (["--output", "xml"], .invalidConfiguration(
+                field: "output",
+                reason: "must be one of: auto, human, ndjson, json"
+            )),
+        ]
+
+        for command in commands {
+            for (options, expectedError) in cases {
+                let outcome = InspectorArgumentParser().parse(command + options)
+                #expect(outcome == .error(expectedError))
+            }
+        }
+    }
+
+    @Test
+    func repeatedCommonOptionsUseLastValueAcrossCommands() {
+        for command in [
+            ["catalog"],
+            ["discover", "--core-type", "Identity"],
+        ] {
+            let outcome = InspectorArgumentParser().parse(command + [
+                "--host", "first.example",
+                "--host", "last.example",
+                "--output", "human",
+                "--output", "json",
+            ])
+            guard case let .run(config) = outcome else {
+                Issue.record("Expected repeated common options to parse for \(command[0])")
+                continue
+            }
+            #expect(config.connection.host == "last.example")
+            #expect(config.output == .json)
+        }
+    }
+
+    @Test
+    func cliCommonOptionsOverrideEnvironmentAcrossCommands() {
+        let environment = InspectorEnvironmentValues(
+            host: "environment.example",
+            port: 1883,
+            username: "environment-user",
+            password: "environment-password",
+            namespace: "environment-namespace"
+        )
+
+        for command in [
+            ["catalog"],
+            ["discover", "--core-type", "Identity"],
+        ] {
+            let outcome = InspectorArgumentParser().parse(command + [
+                "--host", "cli.example",
+                "--port", "8883",
+                "--namespace", "cli-namespace",
+                "--username", "cli-user",
+                "--password-stdin",
+            ], environment: environment)
+            guard case let .run(config) = outcome else {
+                Issue.record("Expected CLI precedence for \(command[0])")
+                continue
+            }
+            #expect(config.connection.host == "cli.example")
+            #expect(config.connection.port == 8883)
+            #expect(config.connection.namespace == "cli-namespace")
+            #expect(config.connection.username == "cli-user")
+            #expect(config.connection.password == nil)
+            #expect(config.passwordFromStdin)
+        }
+    }
+
+    @Test
+    func sharedOptionsCanAppearBeforeBetweenAndAfterCatalogOptions() {
+        let outcome = InspectorArgumentParser().parse([
+            "catalog",
+            "--host", "before.example",
+            "--core-type", "Identity",
+            "--output", "json",
+            "--source-id", "source-1",
+            "--log-level", "debug",
+        ])
+        guard case let .run(config) = outcome,
+              case let .catalog(command) = config.command else {
+            Issue.record("Expected interleaved catalog options to parse")
+            return
+        }
+        #expect(config.connection.host == "before.example")
+        #expect(config.output == .json)
+        #expect(config.logLevel == "debug")
+        #expect(command.coreType == "Identity")
+        #expect(command.sourceId == "source-1")
+    }
+
+    @Test
+    func sharedOptionsCanAppearBeforeBetweenAndAfterDiscoverOptions() {
+        let outcome = InspectorArgumentParser().parse([
+            "discover",
+            "--host", "before.example",
+            "--core-type", "Identity",
+            "--output", "ndjson",
+            "--object-id", "object-1",
+            "--log-level", "trace",
+        ])
+        guard case let .run(config) = outcome,
+              case let .discover(command) = config.command else {
+            Issue.record("Expected interleaved discover options to parse")
+            return
+        }
+        #expect(config.connection.host == "before.example")
+        #expect(config.output == .ndjson)
+        #expect(config.logLevel == "trace")
+        #expect(command.coreType == "Identity")
+        #expect(command.objectId == "object-1")
+    }
+
+    @Test
+    func catalogOptionBindsCommonLookingValueBeforeParsingNextToken() {
+        let outcome = InspectorArgumentParser().parse([
+            "catalog", "--object-type", "--host", "broker.local",
+        ])
+        #expect(outcome == .error(.invalidArguments(reason: "unknown option: broker.local")))
+    }
+
+    @Test
+    func discoverOptionBindsCommonLookingValueBeforeParsingNextToken() {
+        let outcome = InspectorArgumentParser().parse([
+            "discover", "--object-id", "--output", "json",
+        ])
+        #expect(outcome == .error(.invalidArguments(reason: "unknown option: json")))
+    }
+
+    @Test
     func discoverRejectsUnknownOption() {
         let outcome = InspectorArgumentParser().parse(["discover", "--core-type", "Identity", "--duration", "5s"])
         if case let .error(error) = outcome {
