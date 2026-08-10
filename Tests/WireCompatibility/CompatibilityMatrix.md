@@ -129,11 +129,14 @@ IoValues exceeding 2^53 lose precision through CoatyJS's float64
 (`Int64.max` round-trips as `9223372036854776000`); Axoloty preserves Int64
 exactly.
 
-`SensorThings` is `Not tested` this session. There is no
+`SensorThings` is `Not tested` cross-implementation this session. There is no
 `@coaty/sensor-things` npm package and `@coaty/core@2.4.0` exports no
 SensorThings types; per the audit its wire contract is ordinary Coaty object
 JSON with an `objectType` of `coaty.sensorThings.*` over standard
 Advertise/Channel topics, so its transport compatibility reduces to the
 already-proven Advertise/Channel rows. The field-schema fixtures
 (`Tests/SensorThings/` exists same-process) and cross-implementation captures
-remain to be run; see `Audit/IOAndSensorThingsDecisions.md`.
+remain to be run; see `Audit/IOAndSensorThingsDecisions.md`. Sensor payloads
+encode the canonical `phenomenonTime` field, while decoding accepts the legacy
+`phenomenonType` spelling as a fallback; when both are present, the canonical
+value wins, including an explicit canonical `null`.
