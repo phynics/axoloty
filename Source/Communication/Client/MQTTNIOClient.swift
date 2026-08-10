@@ -618,6 +618,14 @@ internal class MQTTNIOClient: CommunicationClient {
     func handlePublish(_ result: Result<MQTTPublishInfo, Swift.Error>) {
         switch result {
         case .success(let info):
+            guard info.payload.readableBytes <= HostWirePayloadLimits.maxPayloadSize else {
+                log.notice("Dropping incoming MQTT payload above host limit", metadata: [
+                    "topic": .string(info.topicName),
+                    "payloadLength": .stringConvertible(info.payload.readableBytes),
+                    "limit": .stringConvertible(HostWirePayloadLimits.maxPayloadSize),
+                ])
+                return
+            }
             let bytes = [UInt8](info.payload.readableBytesView)
             let rawMessage = RawMQTTMessage(topic: info.topicName, payload: bytes)
             guard let streams = streamsOrWarn() else {
@@ -640,6 +648,9 @@ internal class MQTTNIOClient: CommunicationClient {
                     return
                 }
 
+                // IoValue intentionally keeps its raw payload and bypasses
+                // typed event decoding; the host fallback below is for
+                // structured event families only.
                 if topicView.eventType == .ioValue {
                     self.delegate.didReceiveIoValue(
                         topic: info.topicName,
@@ -669,20 +680,24 @@ internal class MQTTNIOClient: CommunicationClient {
 
                 let ownedEvent: OwnedWireEvent
                 do {
-                    ownedEvent = try bytes.withUnsafeBufferPointer { payloadBuffer in
-                        guard let payloadBase = payloadBuffer.baseAddress else {
-                            throw WireDecodeError(.unexpectedEndOfInput)
+                    if bytes.count > WireBufferConfig.maxPayloadSize {
+                        ownedEvent = try HostWireAdapter.decodeEvent(from: bytes, eventType: wireType)
+                    } else {
+                        ownedEvent = try bytes.withUnsafeBufferPointer { payloadBuffer in
+                            guard let payloadBase = payloadBuffer.baseAddress else {
+                                throw WireDecodeError(.unexpectedEndOfInput)
+                            }
+                            let message = BorrowedMessage(
+                                topicBytes: base,
+                                topicLength: topicBuf.count,
+                                payloadBytes: payloadBase,
+                                payloadLength: payloadBuffer.count
+                            )
+                            return try BorrowedWireEvent(message: message).owned()
                         }
-                        let message = BorrowedMessage(
-                            topicBytes: base,
-                            topicLength: topicBuf.count,
-                            payloadBytes: payloadBase,
-                            payloadLength: payloadBuffer.count
-                        )
-                        return try BorrowedWireEvent(message: message).owned()
                     }
                 } catch {
-                    let wrapped = AxolotyError.decodingFailure(
+                    let wrapped = (error as? AxolotyError) ?? AxolotyError.decodingFailure(
                         type: wireType.rawValue,
                         reason: ErrorKit.userFriendlyMessage(for: error),
                         payload: String(bytes: bytes, encoding: .utf8)
