@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+import Foundation
+
 /// The lifecycle state of a check node.
 public enum AxolotyCheckStatus: String, Codable, Equatable, Sendable {
     /// The node has been selected but not run.
@@ -14,7 +16,18 @@ public enum AxolotyCheckStatus: String, Codable, Equatable, Sendable {
 
 /// A command that a check executor may run later.
 public struct AxolotyCommandPlan: Codable, Equatable, Sendable {
+    private enum CodingKeys: String, CodingKey {
+        case executable
+        case arguments
+        case environment
+        case executionContext
+    }
+
     /// The execution context for a command.
+    ///
+    /// Context validation prevents accidental execution through the wrong
+    /// tooling boundary. It is not a security boundary against adversarial
+    /// environment or filesystem spoofing.
     public enum ExecutionContext: String, Codable, Equatable, Sendable {
         /// Run in the pinned project container (default).
         case project
@@ -43,6 +56,121 @@ public struct AxolotyCommandPlan: Codable, Equatable, Sendable {
         self.arguments = arguments
         self.environment = environment
         self.executionContext = executionContext
+    }
+
+    /// Decodes a command plan, treating a missing execution context from
+    /// schema-v1 payloads as ``ExecutionContext/project``.
+    ///
+    /// - Parameter decoder: The decoder supplying the command plan.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        executable = try container.decode(String.self, forKey: .executable)
+        arguments = try container.decode([String].self, forKey: .arguments)
+        environment = try container.decode([String: String].self, forKey: .environment)
+        executionContext = try container.decodeIfPresent(
+            ExecutionContext.self,
+            forKey: .executionContext
+        ) ?? .project
+    }
+
+    /// Encodes a command plan with its execution context explicitly present.
+    ///
+    /// - Parameter encoder: The encoder receiving the command plan.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(executable, forKey: .executable)
+        try container.encode(arguments, forKey: .arguments)
+        try container.encode(environment, forKey: .environment)
+        try container.encode(executionContext, forKey: .executionContext)
+    }
+}
+
+struct AxolotyExecutionContextDiagnostic: Codable, Equatable, Sendable {
+    let code: String
+    let executable: String
+    let declaredContext: AxolotyCommandPlan.ExecutionContext
+    let detectedContext: AxolotyCommandPlan.ExecutionContext
+    let message: String
+    let remediation: String
+
+    init(
+        executable: String,
+        declaredContext: AxolotyCommandPlan.ExecutionContext,
+        detectedContext: AxolotyCommandPlan.ExecutionContext
+    ) {
+        self.code = "execution_context_mismatch"
+        self.executable = executable
+        self.declaredContext = declaredContext
+        self.detectedContext = detectedContext
+        self.message = "Command requires the \(declaredContext.rawValue) execution context, "
+            + "but the current tooling process is in the \(detectedContext.rawValue) context."
+        self.remediation = declaredContext == .project
+            ? "Run this command through the pinned project container."
+            : "Run this command directly on the host or configure the project container's "
+                + "executable host-runtime wrapper and Unix socket. This prevents accidental "
+                + "wrong-context execution; it does not defend against adversarial environment "
+                + "or filesystem spoofing."
+    }
+}
+
+struct AxolotyExecutionContextValidator: Sendable {
+    let environment: [String: String]
+    private let platform: AxolotyCheckPlan.Platform
+
+    init(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        platform: AxolotyCheckPlan.Platform = AxolotyCheckPlan.currentPlatform
+    ) {
+        self.environment = environment
+        self.platform = platform
+    }
+
+    var detectedContext: AxolotyCommandPlan.ExecutionContext {
+        if environment["AXOLOTY_DEVCONTAINER"] == "1" || platform == .macOS {
+            return .project
+        }
+        return .host
+    }
+
+    private var hasHostRuntimeBridge: Bool {
+        guard environment["AXOLOTY_DEVCONTAINER"] == "1",
+              environment["AXOLOTY_HOST_RUNTIME_BRIDGE"] == "1",
+              let runtime = environment["CONTAINER_RUNTIME"],
+              FileManager.default.isExecutableFile(atPath: runtime),
+              let dockerHost = environment["DOCKER_HOST"],
+              dockerHost.hasPrefix("unix://")
+        else { return false }
+
+        let socketPath = String(dockerHost.dropFirst("unix://".count))
+        guard socketPath.hasPrefix("/") else { return false }
+        let resolvedSocketPath = URL(filePath: socketPath).resolvingSymlinksInPath().path
+        let attributes = try? FileManager.default.attributesOfItem(atPath: resolvedSocketPath)
+        return (attributes?[.type] as? FileAttributeType) == .typeSocket
+    }
+
+    func validate(_ command: AxolotyCommandPlan) -> AxolotyExecutionContextDiagnostic? {
+        let usesBridgedHostContext = command.executionContext == .host && hasHostRuntimeBridge
+        guard command.executionContext != detectedContext && !usesBridgedHostContext else { return nil }
+        return AxolotyExecutionContextDiagnostic(
+            executable: command.executable,
+            declaredContext: command.executionContext,
+            detectedContext: detectedContext
+        )
+    }
+
+    func failureResult(validating commands: [AxolotyCommandPlan]) -> AxolotyCheckCommandResult? {
+        guard let diagnostic = commands.lazy.compactMap(validate).first else { return nil }
+        return AxolotyCheckCommandResult(
+            exitCode: 64,
+            standardError: diagnosticMessage(diagnostic)
+        )
+    }
+
+    func diagnosticMessage(_ diagnostic: AxolotyExecutionContextDiagnostic) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = (try? encoder.encode(diagnostic)) ?? Data()
+        return String(decoding: data, as: UTF8.self)
     }
 }
 
@@ -530,12 +658,24 @@ public protocol AxolotyCheckCommandRunning: Sendable {
 /// Executes a planned check graph while preserving prerequisite failures.
 public struct AxolotyCheckExecutor: Sendable {
     private let commandRunner: any AxolotyCheckCommandRunning
+    private let contextValidator: AxolotyExecutionContextValidator
 
     /// Creates an executor with the command runner used for every node.
     ///
     /// - Parameter commandRunner: The boundary that starts child commands.
-    public init(commandRunner: any AxolotyCheckCommandRunning) {
+    public init(
+        commandRunner: any AxolotyCheckCommandRunning
+    ) {
         self.commandRunner = commandRunner
+        contextValidator = AxolotyExecutionContextValidator()
+    }
+
+    init(
+        commandRunner: any AxolotyCheckCommandRunning,
+        contextValidator: AxolotyExecutionContextValidator
+    ) {
+        self.commandRunner = commandRunner
+        self.contextValidator = contextValidator
     }
 
     /// Runs a plan in dependency order.
@@ -547,6 +687,29 @@ public struct AxolotyCheckExecutor: Sendable {
     /// - Parameter plan: The plan to execute.
     /// - Returns: Results in the plan's deterministic order.
     public func execute(_ plan: AxolotyCheckPlan) -> [AxolotyCheckResult] {
+        let validator = contextValidator
+        let diagnostics = plan.nodes.reduce(
+            into: [String: AxolotyExecutionContextDiagnostic]()
+        ) { diagnostics, node in
+            if let diagnostic = validator.validate(node.command) {
+                diagnostics[node.name] = diagnostic
+            }
+        }
+        if !diagnostics.isEmpty {
+            return plan.nodes.map { node in
+                if let diagnostic = diagnostics[node.name] {
+                    return AxolotyCheckResult(
+                        name: node.name,
+                        status: .failed,
+                        command: AxolotyCheckCommandResult(
+                            exitCode: 64,
+                            standardError: validator.diagnosticMessage(diagnostic)
+                        )
+                    )
+                }
+                return AxolotyCheckResult(name: node.name, status: .skipped)
+            }
+        }
         var statuses: [String: AxolotyCheckStatus] = [:]
         var results: [AxolotyCheckResult] = []
 

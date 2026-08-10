@@ -116,6 +116,14 @@ if [ "${AXOLOTY_HOST_RUNTIME_BRIDGE:-0}" = "1" ]; then
         bridge_socket="$host_service_socket"
     fi
     bridge_runtime="$root_dir/.devcontainer/container-runtime-remote.sh"
+    if [ ! -x "$bridge_runtime" ]; then
+        echo "Host-runtime bridge wrapper is not executable: $bridge_runtime" >&2
+        exit 1
+    fi
+    if [ ! -S "$bridge_socket" ]; then
+        echo "Host-runtime bridge socket is unavailable: $bridge_socket" >&2
+        exit 1
+    fi
     bridge_tmpdir="$root_dir/.testing/tmp"
     bridge_run_id=${WIRE_RUN_ID:-"$$-$(date +%s)"}
     mkdir -p "$bridge_tmpdir"
@@ -306,6 +314,8 @@ if [ "${AXOLOTY_HOST_RUNTIME_BRIDGE:-0}" = "1" ]; then
     # this opt-in container avoids relabeling a live rootless Podman socket.
     $sudo_prefix "$runtime" run --rm $security_opts $device_opts $privileged_opt $userns_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
         --security-opt label=disable \
+        -e AXOLOTY_DEVCONTAINER=1 \
+        -e AXOLOTY_HOST_RUNTIME_BRIDGE=1 \
         -e "CONTAINER_RUNTIME=$bridge_runtime" \
         -e "DOCKER_HOST=unix://$bridge_socket" \
         -e "WORKDIR=$root_dir" \
@@ -322,6 +332,7 @@ if [ "${AXOLOTY_HOST_RUNTIME_BRIDGE:-0}" = "1" ]; then
         "$image" "$@"
 else
     $sudo_prefix "$runtime" run --rm $security_opts $device_opts $privileged_opt $userns_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
+        -e AXOLOTY_DEVCONTAINER=1 \
         -v "$root_dir:$bridge_workdir$mount_suffix" \
         -v "$build_dir:$bridge_workdir/.build$mount_suffix" \
         -v "$spm_cache_dir:$bridge_workdir/.swiftpm-cache$mount_suffix" \
