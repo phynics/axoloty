@@ -6,6 +6,13 @@ import AxolotyInspectorRuntime
 import Foundation
 import MCP
 
+private func makeMCPPropertySchema(type: String, description: String) -> Value {
+    .object([
+        "type": .string(type),
+        "description": .string(description),
+    ])
+}
+
 /// The Axoloty MCP server.
 ///
 /// Connects to an MQTT broker through Axoloty, maintains a passive object
@@ -22,17 +29,53 @@ public final class AxolotyMCPServer {
         name: "axoloty_discover_objects",
         description: "Actively discover objects by publishing one Discover event and collecting Resolve responses.",
         inputSchema: .object([
+            "type": .string("object"),
             "properties": .object([
-                "coreType": .string("Filter by core type"),
-                "objectType": .string("Filter by object type"),
-                "objectId": .string("Filter by object UUID"),
-                "timeoutMilliseconds": .object([
-                    "type": .string("integer"),
-                    "description": .string("Timeout in milliseconds (default: 5000, max: 30000)")
-                ])
+                "coreType": makeMCPPropertySchema(type: "string", description: "Filter by core type"),
+                "objectType": makeMCPPropertySchema(type: "string", description: "Filter by object type"),
+                "objectId": makeMCPPropertySchema(type: "string", description: "Filter by object UUID"),
+                "timeoutMilliseconds": makeMCPPropertySchema(
+                    type: "integer",
+                    description: "Timeout in milliseconds (default: 5000, max: 30000)"
+                ),
             ])
         ])
     )
+
+    nonisolated static let objectInputSchemaTools: [Tool] = [
+        Tool(
+            name: "axoloty_list_objects",
+            description: "List objects from the passive catalogue. The catalogue is incomplete — it only contains objects advertised since the observer connected.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "coreType": makeMCPPropertySchema(type: "string", description: "Filter by core type (e.g. Identity, Task)"),
+                    "objectType": makeMCPPropertySchema(type: "string", description: "Filter by full object type"),
+                    "objectId": makeMCPPropertySchema(type: "string", description: "Filter by object UUID"),
+                    "sourceId": makeMCPPropertySchema(type: "string", description: "Filter by source (advertiser) UUID"),
+                ])
+            ])
+        ),
+        Tool(
+            name: "axoloty_get_object",
+            description: "Get a specific object by ID from the passive catalogue.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "objectId": makeMCPPropertySchema(type: "string", description: "The object UUID to look up")
+                ]),
+                "required": .array([.string("objectId")])
+            ])
+        ),
+        discoverObjectsTool,
+        Tool(
+            name: "axoloty_server_status",
+            description: "Get the current server status including MQTT connection state and catalogue metrics.",
+            inputSchema: .object([
+                "type": .string("object"),
+            ])
+        ),
+    ]
 
     /// Creates the MCP server.
     ///
@@ -170,36 +213,7 @@ public final class AxolotyMCPServer {
 
         // List tools
         await server.withMethodHandler(ListTools.self) { _ in
-            return .init(tools: [
-                Tool(
-                    name: "axoloty_list_objects",
-                    description: "List objects from the passive catalogue. The catalogue is incomplete — it only contains objects advertised since the observer connected.",
-                    inputSchema: .object([
-                        "properties": .object([
-                            "coreType": .string("Filter by core type (e.g. Identity, Task)"),
-                            "objectType": .string("Filter by full object type"),
-                            "objectId": .string("Filter by object UUID"),
-                            "sourceId": .string("Filter by source (advertiser) UUID"),
-                        ])
-                    ])
-                ),
-                Tool(
-                    name: "axoloty_get_object",
-                    description: "Get a specific object by ID from the passive catalogue.",
-                    inputSchema: .object([
-                        "properties": .object([
-                            "objectId": .string("The object UUID to look up")
-                        ]),
-                        "required": .array([.string("objectId")])
-                    ])
-                ),
-                Self.discoverObjectsTool,
-                Tool(
-                    name: "axoloty_server_status",
-                    description: "Get the current server status including MQTT connection state and catalogue metrics.",
-                    inputSchema: .object([:])
-                ),
-            ])
+            return .init(tools: Self.objectInputSchemaTools)
         }
 
         // Call tool

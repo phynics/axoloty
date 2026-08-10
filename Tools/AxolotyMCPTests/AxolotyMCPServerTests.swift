@@ -43,6 +43,62 @@ func discoverToolTimeoutContract() throws {
     #expect(request.timeoutMilliseconds == 1234)
 }
 
+@Test("Every MCP input schema is a valid object-root catalogue entry")
+func objectInputSchemaCatalogueContract() throws {
+    let expectedNames = [
+        "axoloty_list_objects",
+        "axoloty_get_object",
+        "axoloty_discover_objects",
+        "axoloty_server_status",
+    ]
+    let expectedPropertyTypes: [String: [String: String]] = [
+        "axoloty_list_objects": [
+            "coreType": "string",
+            "objectType": "string",
+            "objectId": "string",
+            "sourceId": "string",
+        ],
+        "axoloty_get_object": ["objectId": "string"],
+        "axoloty_discover_objects": [
+            "coreType": "string",
+            "objectType": "string",
+            "objectId": "string",
+            "timeoutMilliseconds": "integer",
+        ],
+        "axoloty_server_status": [:],
+    ]
+
+    let tools = AxolotyMCPServer.objectInputSchemaTools
+    #expect(tools.map(\.name) == expectedNames)
+
+    for tool in tools {
+        let schema = try #require(tool.inputSchema.objectValue)
+        #expect(schema["type"]?.stringValue == "object")
+        let propertyTypes = try #require(expectedPropertyTypes[tool.name])
+
+        if propertyTypes.isEmpty {
+            #expect(tool.name == "axoloty_server_status")
+            #expect(!schema.keys.contains("properties"))
+        } else {
+            let properties = try #require(schema["properties"]?.objectValue)
+            #expect(Set(properties.keys) == Set(propertyTypes.keys))
+
+            for (propertyName, expectedType) in propertyTypes {
+                let propertySchema = try #require(properties[propertyName]?.objectValue)
+                #expect(propertySchema["type"]?.stringValue == expectedType)
+                #expect(propertySchema["description"]?.stringValue != nil)
+            }
+        }
+
+        if tool.name == "axoloty_get_object" {
+            let required = try #require(schema["required"]?.arrayValue)
+            #expect(required.compactMap { $0.stringValue } == ["objectId"])
+        } else {
+            #expect(!schema.keys.contains("required"))
+        }
+    }
+}
+
 @Test("Discover timeout retains its documented clamp")
 func discoverToolTimeoutClamp() {
     let belowMinimum = AxolotyMCPServer.makeDiscoveryRequest(from: ["timeoutMilliseconds": .int(999)])
