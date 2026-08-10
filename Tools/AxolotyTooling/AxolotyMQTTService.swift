@@ -55,6 +55,50 @@ public struct ServiceReadinessManifest: Codable, Sendable, Equatable {
     }
 }
 
+enum ServiceDiagnosticLevel: String, Codable, Sendable {
+    case warning
+    case error
+}
+
+struct ServiceDiagnosticRecord: Codable, Sendable, Equatable {
+    let level: ServiceDiagnosticLevel
+    let message: String
+    let metadata: [String: String]
+}
+
+// The tooling target is intentionally independent of Axoloty's LogManager. Keep
+// the same level/message/metadata shape while allowing tests to inject stderr.
+struct ServiceDiagnosticLogger: Sendable {
+    private let output: ServeOutputMode
+    private let standardError: FileHandle
+
+    init(output: ServeOutputMode, standardError: FileHandle) {
+        self.output = output
+        self.standardError = standardError
+    }
+
+    func warning(_ message: String, metadata: [String: String] = [:]) {
+        write(ServiceDiagnosticRecord(level: .warning, message: message, metadata: metadata))
+    }
+
+    func error(_ message: String, metadata: [String: String] = [:]) {
+        write(ServiceDiagnosticRecord(level: .error, message: message, metadata: metadata))
+    }
+
+    private func write(_ record: ServiceDiagnosticRecord) {
+        switch output {
+        case .human:
+            standardError.write(Data("\(record.level.rawValue): \(record.message)\n".utf8))
+        case .json:
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            guard let data = try? encoder.encode(record) else { return }
+            standardError.write(data)
+            standardError.write(Data("\n".utf8))
+        }
+    }
+}
+
 /// Runs the local Mosquitto broker service in the foreground.
 public struct AxolotyMQTTServiceRunner: Sendable {
     private let processRunner: any AxolotyManagedProcessRunning
@@ -64,14 +108,32 @@ public struct AxolotyMQTTServiceRunner: Sendable {
     private let configGenerator: MosquittoConfigGenerator
     private let mosquittoExecutable: String
     private let installSignalHandler: Bool
+    private let standardOutput: FileHandle
+    private let standardError: FileHandle
 
+    /// Creates an MQTT service runner.
+    ///
+    /// JSON readiness is written to `standardOutput`; human readiness and diagnostics are
+    /// written to `standardError`.
+    ///
+    /// - Parameters:
+    ///   - processRunner: Process runner used to launch and supervise Mosquitto.
+    ///   - portProbe: Service probe used to check broker port availability and readiness.
+    ///   - fileSystem: File-system abstraction used to locate the Mosquitto executable.
+    ///   - tempDirProvider: Provider used to create and remove the temporary configuration directory.
+    ///   - mosquittoExecutable: Path to the Mosquitto executable.
+    ///   - installSignalHandler: Whether to install the Ctrl-C signal handler.
+    ///   - standardOutput: Destination for the JSON readiness manifest; defaults to process stdout.
+    ///   - standardError: Destination for human readiness and structured diagnostics; defaults to process stderr.
     public init(
         processRunner: any AxolotyManagedProcessRunning,
         portProbe: any AxolotyServiceProbing,
         fileSystem: any AxolotyFileSystem,
         tempDirProvider: any AxolotyTempDirectoryProvider = FoundationTempDirectoryProvider(),
         mosquittoExecutable: String = "/usr/sbin/mosquitto",
-        installSignalHandler: Bool = true
+        installSignalHandler: Bool = true,
+        standardOutput: FileHandle = .standardOutput,
+        standardError: FileHandle = .standardError
     ) {
         self.processRunner = processRunner
         self.portProbe = portProbe
@@ -80,11 +142,14 @@ public struct AxolotyMQTTServiceRunner: Sendable {
         self.configGenerator = MosquittoConfigGenerator()
         self.mosquittoExecutable = mosquittoExecutable
         self.installSignalHandler = installSignalHandler
+        self.standardOutput = standardOutput
+        self.standardError = standardError
     }
 
     /// Runs the MQTT broker service and blocks until interrupted or the process exits.
     public func run(_ configuration: MQTTServiceConfiguration) -> Int32 {
         let output = configuration.output
+        let diagnostics = ServiceDiagnosticLogger(output: output, standardError: standardError)
         let processSupervisor = ManagedProcessSupervisor()
         let signalHandler = installSignalHandler
             ? ServiceSignalHandler(onInterrupt: { processSupervisor.requestTermination() })
@@ -97,12 +162,18 @@ public struct AxolotyMQTTServiceRunner: Sendable {
         }
 
         guard fileSystem.exists(atPath: mosquittoExecutable) else {
-            writeError("error: mosquitto executable not found at \(mosquittoExecutable)\n", output: output)
+            diagnostics.error(
+                "mosquitto executable not found at \(mosquittoExecutable)",
+                metadata: ["executable": mosquittoExecutable]
+            )
             return 69
         }
 
         if !portProbe.isPortAvailable(host: configuration.listenHost, port: configuration.port) {
-            writeError("error: port \(configuration.port) is already in use\n", output: output)
+            diagnostics.error(
+                "port \(configuration.port) is already in use",
+                metadata: ["port": String(configuration.port)]
+            )
             return 69
         }
 
@@ -110,7 +181,10 @@ public struct AxolotyMQTTServiceRunner: Sendable {
         do {
             tempDir = try tempDirProvider.createTempDirectory()
         } catch {
-            writeError("error: unable to create temporary directory: \(error)\n", output: output)
+            diagnostics.error(
+                "unable to create temporary directory: \(error)",
+                metadata: ["error": String(describing: error)]
+            )
             return 70
         }
 
@@ -127,7 +201,10 @@ public struct AxolotyMQTTServiceRunner: Sendable {
             try configContent.write(toFile: configPath, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configPath)
         } catch {
-            writeError("error: unable to write mosquitto config: \(error)\n", output: output)
+            diagnostics.error(
+                "unable to write mosquitto config: \(error)",
+                metadata: ["error": String(describing: error), "path": configPath]
+            )
             return 70
         }
 
@@ -147,7 +224,10 @@ public struct AxolotyMQTTServiceRunner: Sendable {
             if signalHandler?.isInterrupted == true {
                 return 130
             }
-            writeError("error: unable to start mosquitto: \(error)\n", output: output)
+            diagnostics.error(
+                "unable to start mosquitto: \(error)",
+                metadata: ["error": String(describing: error), "executable": mosquittoExecutable]
+            )
             return 70
         }
 
@@ -162,7 +242,7 @@ public struct AxolotyMQTTServiceRunner: Sendable {
         }
         if !ready {
             processRunner.forceKill()
-            writeError("error: mosquitto did not become ready within 5 seconds\n", output: output)
+            diagnostics.error("mosquitto did not become ready within 5 seconds")
             return 70
         }
 
@@ -177,7 +257,10 @@ public struct AxolotyMQTTServiceRunner: Sendable {
             if !processRunner.isRunning {
                 let exit = processRunner.waitForExit()
                 if exit.exitCode != 0 {
-                    writeError("error: mosquitto exited with code \(exit.exitCode)\n", output: output)
+                    diagnostics.error(
+                        "mosquitto exited with code \(exit.exitCode)",
+                        metadata: ["exitCode": String(exit.exitCode)]
+                    )
                     return 1
                 }
                 return 0
@@ -190,19 +273,16 @@ public struct AxolotyMQTTServiceRunner: Sendable {
     private func writeReadiness(mqttURL: String, output: ServeOutputMode) {
         switch output {
         case .human:
-            FileHandle.standardError.write(Data(
+            standardError.write(Data(
                 "MQTT READY  \(mqttURL)\nPress Ctrl-C to stop.\n".utf8
             ))
         case .json:
             let manifest = ServiceReadinessManifest(mqttURL: mqttURL)
             if let data = try? JSONEncoder().encode(manifest),
                let json = String(data: data, encoding: .utf8) {
-                FileHandle.standardError.write(Data((json + "\n").utf8))
+                standardOutput.write(Data((json + "\n").utf8))
             }
         }
     }
 
-    private func writeError(_ message: String, output: ServeOutputMode) {
-        FileHandle.standardError.write(Data(message.utf8))
-    }
 }

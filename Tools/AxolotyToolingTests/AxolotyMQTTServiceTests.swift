@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-import AxolotyTooling
+@testable import AxolotyTooling
 import Foundation
 import Testing
 
@@ -15,6 +15,7 @@ private final class FakeProcessRunner: AxolotyManagedProcessRunning, @unchecked 
     var running = false
     /// Number of ``isRunning`` polls before the fake process "exits".
     var pollsUntilExit: Int?
+    var onStart: (() -> Void)?
 
     private var pollCount = 0
 
@@ -22,6 +23,7 @@ private final class FakeProcessRunner: AxolotyManagedProcessRunning, @unchecked 
         startSpec = specification
         running = true
         pollCount = 0
+        onStart?()
     }
 
     func waitForExit() -> ManagedProcessExit {
@@ -131,6 +133,18 @@ func mosquittoConfigErrorOnlyIncludesErrorLogType() {
 }
 
 @Test
+func mosquittoConfigWarningKeepsBrokerDiagnosticsOnStandardError() {
+    let config = MosquittoConfigGenerator().generate(
+        listenHost: "127.0.0.1",
+        port: 1883,
+        logLevel: .warning
+    )
+    #expect(config.contains("log_dest stderr"))
+    #expect(config.contains("log_type warning"))
+    #expect(config.contains("log_type error"))
+}
+
+@Test
 func mosquittoConfigSupportsZeroPointZeroForContainer() {
     let config = MosquittoConfigGenerator().generate(
         listenHost: "0.0.0.0",
@@ -193,6 +207,109 @@ func mqttServiceStartsAndExitsCleanly() {
     #expect(processRunner.startSpec?.arguments.first == "-c")
     #expect(tempProvider.createdPaths.count == 1)
     #expect(tempProvider.removedPaths.count == 1)
+}
+
+@Test
+func mqttServiceWritesJSONReadinessToStandardOutputOnly() throws {
+    let processRunner = FakeProcessRunner()
+    processRunner.running = true
+    processRunner.pollsUntilExit = 2
+    let capture = ToolingServiceOutputCapture()
+
+    let runner = AxolotyMQTTServiceRunner(
+        processRunner: processRunner,
+        portProbe: FakePortProbe(),
+        fileSystem: MQTTStubFileSystem(paths: ["/usr/sbin/mosquitto"]),
+        tempDirProvider: FakeTempDirProvider(),
+        mosquittoExecutable: "/usr/sbin/mosquitto",
+        installSignalHandler: false,
+        standardOutput: capture.standardOutput,
+        standardError: capture.standardError
+    )
+
+    let exitCode = runner.run(MQTTServiceConfiguration(output: .json))
+    let streams = capture.read()
+
+    #expect(exitCode == 0)
+    #expect(streams.standardError.isEmpty)
+    let manifest = try decodeServiceJSONObject(streams.standardOutput)
+    #expect(manifest["status"] as? String == "ready")
+    let services = try #require(manifest["services"] as? [String: Any])
+    let mqtt = try #require(services["mqtt"] as? [String: Any])
+    #expect(mqtt["url"] as? String == "mqtt://127.0.0.1:1883")
+}
+
+@Test
+func mqttServiceWritesJSONFailureDiagnosticsToStandardErrorOnly() throws {
+    let capture = ToolingServiceOutputCapture()
+    let runner = AxolotyMQTTServiceRunner(
+        processRunner: FakeProcessRunner(),
+        portProbe: FakePortProbe(),
+        fileSystem: MQTTStubFileSystem(paths: []),
+        tempDirProvider: FakeTempDirProvider(),
+        mosquittoExecutable: "/nonexistent/mosquitto",
+        installSignalHandler: false,
+        standardOutput: capture.standardOutput,
+        standardError: capture.standardError
+    )
+
+    let exitCode = runner.run(MQTTServiceConfiguration(output: .json))
+    let streams = capture.read()
+
+    #expect(exitCode == 69)
+    #expect(streams.standardOutput.isEmpty)
+    let diagnostic = try decodeServiceJSONObject(streams.standardError)
+    #expect(diagnostic["level"] as? String == "error")
+    #expect(diagnostic["message"] as? String == "mosquitto executable not found at /nonexistent/mosquitto")
+    let metadata = try #require(diagnostic["metadata"] as? [String: Any])
+    #expect(metadata["executable"] as? String == "/nonexistent/mosquitto")
+}
+
+@Test
+func mqttServiceKeepsJSONReadinessParseableWhenBrokerEmitsWarning() throws {
+    let processRunner = FakeProcessRunner()
+    processRunner.running = true
+    processRunner.pollsUntilExit = 2
+    let capture = ToolingServiceOutputCapture()
+    processRunner.onStart = {
+        capture.standardError.write(Data("warning: broker diagnostic\n".utf8))
+    }
+
+    let runner = AxolotyMQTTServiceRunner(
+        processRunner: processRunner,
+        portProbe: FakePortProbe(),
+        fileSystem: MQTTStubFileSystem(paths: ["/usr/sbin/mosquitto"]),
+        tempDirProvider: FakeTempDirProvider(),
+        mosquittoExecutable: "/usr/sbin/mosquitto",
+        installSignalHandler: false,
+        standardOutput: capture.standardOutput,
+        standardError: capture.standardError
+    )
+
+    let exitCode = runner.run(MQTTServiceConfiguration(logLevel: .warning, output: .json))
+    let streams = capture.read()
+
+    #expect(exitCode == 0)
+    _ = try decodeServiceJSONObject(streams.standardOutput)
+    #expect(streams.standardError == "warning: broker diagnostic\n")
+}
+
+@Test
+func serviceDiagnosticLoggerParsesWarningRecordOnStandardError() throws {
+    let capture = ToolingServiceOutputCapture()
+    ServiceDiagnosticLogger(output: .json, standardError: capture.standardError).warning(
+        "broker warning",
+        metadata: ["source": "mosquitto"]
+    )
+
+    let streams = capture.read()
+
+    #expect(streams.standardOutput.isEmpty)
+    let diagnostic = try decodeServiceJSONObject(streams.standardError)
+    #expect(diagnostic["level"] as? String == "warning")
+    #expect(diagnostic["message"] as? String == "broker warning")
+    let metadata = try #require(diagnostic["metadata"] as? [String: Any])
+    #expect(metadata["source"] as? String == "mosquitto")
 }
 
 @Test
@@ -342,6 +459,66 @@ func mcpServiceHTTPStartsAndExitsCleanly() {
     #expect(args.contains("--listen-host"))
     #expect(args.contains("--listen-port"))
     #expect(args.contains("8765"))
+}
+
+@Test
+func mcpServiceWritesJSONReadinessToStandardOutputOnly() throws {
+    let processRunner = FakeProcessRunner()
+    processRunner.running = true
+    processRunner.pollsUntilExit = 2
+    let capture = ToolingServiceOutputCapture()
+
+    let runner = AxolotyMCPServiceRunner(
+        processRunner: processRunner,
+        portProbe: FakePortProbe(),
+        fileSystem: MQTTStubFileSystem(paths: ["/opt/axoloty/bin/axoloty-mcp"]),
+        mcpExecutable: "/opt/axoloty/bin/axoloty-mcp",
+        installSignalHandler: false,
+        standardOutput: capture.standardOutput,
+        standardError: capture.standardError
+    )
+
+    let exitCode = runner.run(MCPServiceConfiguration(
+        transport: .http,
+        listenHost: "127.0.0.1",
+        listenPort: 8765,
+        path: "/mcp",
+        output: .json
+    ))
+    let streams = capture.read()
+
+    #expect(exitCode == 0)
+    #expect(streams.standardError.isEmpty)
+    let manifest = try decodeServiceJSONObject(streams.standardOutput)
+    #expect(manifest["status"] as? String == "ready")
+    let services = try #require(manifest["services"] as? [String: Any])
+    let mcp = try #require(services["mcp"] as? [String: Any])
+    #expect(mcp["url"] as? String == "http://127.0.0.1:8765/mcp")
+}
+
+@Test
+func mcpServiceWritesJSONFailureDiagnosticsToStandardErrorOnly() throws {
+    let capture = ToolingServiceOutputCapture()
+    let runner = AxolotyMCPServiceRunner(
+        processRunner: FakeProcessRunner(),
+        portProbe: FakePortProbe(),
+        fileSystem: MQTTStubFileSystem(paths: []),
+        mcpExecutable: "/nonexistent/axoloty-mcp",
+        installSignalHandler: false,
+        standardOutput: capture.standardOutput,
+        standardError: capture.standardError
+    )
+
+    let exitCode = runner.run(MCPServiceConfiguration(transport: .http, output: .json))
+    let streams = capture.read()
+
+    #expect(exitCode == 69)
+    #expect(streams.standardOutput.isEmpty)
+    let diagnostic = try decodeServiceJSONObject(streams.standardError)
+    #expect(diagnostic["level"] as? String == "error")
+    #expect(diagnostic["message"] as? String == "axoloty-mcp executable not found at /nonexistent/axoloty-mcp")
+    let metadata = try #require(diagnostic["metadata"] as? [String: Any])
+    #expect(metadata["executable"] as? String == "/nonexistent/axoloty-mcp")
 }
 
 @Test
