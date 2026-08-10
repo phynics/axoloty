@@ -6,9 +6,54 @@
 import Testing
 import Axoloty
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 @Suite
 struct ObjectMatcherTests {
+
+    @Test
+
+    func testMatchingFilterDoesNotWriteToStdout() throws {
+        let object = CoatyObject(coreType: .Log,
+                                 objectType: Log.objectType,
+                                 objectId: .init(),
+                                 name: "Hello")
+        let filter = ObjectFilter(
+            condition: ObjectFilterCondition(
+                property: ObjectFilterProperty("name"),
+                expression: .equals("Hello")))
+
+        let capture = try StandardOutputCapture.capture {
+            ObjectMatcher.matchesFilter(obj: object, filter: filter)
+        }
+
+        #expect(capture.result)
+        #expect(capture.output.isEmpty)
+    }
+
+    @Test
+
+    func testNonmatchingFilterDoesNotWriteToStdout() throws {
+        let object = CoatyObject(coreType: .Log,
+                                 objectType: Log.objectType,
+                                 objectId: .init(),
+                                 name: "Hello")
+        let filter = ObjectFilter(
+            condition: ObjectFilterCondition(
+                property: ObjectFilterProperty("missing"),
+                expression: .equals(FilterOperand("value"))))
+
+        let capture = try StandardOutputCapture.capture {
+            ObjectMatcher.matchesFilter(obj: object, filter: filter)
+        }
+
+        #expect(!capture.result)
+        #expect(capture.output.isEmpty)
+    }
 
     @Test
 
@@ -1444,4 +1489,131 @@ struct ObjectMatcherTests {
                 property: ObjectFilterProperty("name"),
                 expression: .like("H%")))
     }
+}
+
+private struct CapturedStandardOutput<Result> {
+    let result: Result
+    let output: String
+}
+
+private enum StandardOutputCapture {
+    private static let lock = NSLock()
+
+    static func capture<Result>(
+        _ operation: () throws -> Result
+    ) throws -> CapturedStandardOutput<Result> {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let capture = try DescriptorCapture()
+        defer { capture.restore() }
+
+        try capture.redirect()
+        let result = try operation()
+        return CapturedStandardOutput(result: result, output: try capture.finish())
+    }
+}
+
+private final class DescriptorCapture {
+    private var savedDescriptor: Int32?
+    private var readDescriptor: Int32?
+    private var writeDescriptor: Int32?
+    private var stdoutIsRedirected = false
+
+    init() throws {
+        let savedDescriptor = dup(STDOUT_FILENO)
+        guard savedDescriptor >= 0 else {
+            throw CaptureError.unableToDuplicateStdout
+        }
+
+        var pipeDescriptors = [Int32](repeating: -1, count: 2)
+        guard pipe(&pipeDescriptors) == 0 else {
+            close(savedDescriptor)
+            throw CaptureError.unableToCreatePipe
+        }
+
+        self.savedDescriptor = savedDescriptor
+        readDescriptor = pipeDescriptors[0]
+        writeDescriptor = pipeDescriptors[1]
+    }
+
+    func redirect() throws {
+        guard let writeDescriptor,
+              dup2(writeDescriptor, STDOUT_FILENO) >= 0 else {
+            throw CaptureError.unableToRedirectStdout
+        }
+        stdoutIsRedirected = true
+    }
+
+    func finish() throws -> String {
+        fflush(nil)
+        guard let savedDescriptor,
+              dup2(savedDescriptor, STDOUT_FILENO) >= 0 else {
+            throw CaptureError.unableToRestoreStdout
+        }
+        stdoutIsRedirected = false
+        closeSavedDescriptor()
+        closeWriteDescriptor()
+
+        guard let readDescriptor else {
+            throw CaptureError.unableToReadCapturedStdout
+        }
+
+        var bytes = [UInt8]()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while true {
+            let count = read(readDescriptor, &buffer, buffer.count)
+            if count > 0 {
+                bytes.append(contentsOf: buffer.prefix(Int(count)))
+            } else if count == 0 {
+                break
+            } else if errno != EINTR {
+                closeReadDescriptor()
+                throw CaptureError.unableToReadCapturedStdout
+            }
+        }
+        closeReadDescriptor()
+        return String(decoding: bytes, as: UTF8.self)
+    }
+
+    func restore() {
+        fflush(nil)
+        if stdoutIsRedirected, let savedDescriptor {
+            _ = dup2(savedDescriptor, STDOUT_FILENO)
+            stdoutIsRedirected = false
+        }
+        closeSavedDescriptor()
+        closeReadDescriptor()
+        closeWriteDescriptor()
+    }
+
+    private func closeSavedDescriptor() {
+        guard let savedDescriptor else { return }
+        close(savedDescriptor)
+        self.savedDescriptor = nil
+    }
+
+    private func closeReadDescriptor() {
+        guard let readDescriptor else { return }
+        close(readDescriptor)
+        self.readDescriptor = nil
+    }
+
+    private func closeWriteDescriptor() {
+        guard let writeDescriptor else { return }
+        close(writeDescriptor)
+        self.writeDescriptor = nil
+    }
+
+    deinit {
+        restore()
+    }
+}
+
+private enum CaptureError: Error {
+    case unableToDuplicateStdout
+    case unableToCreatePipe
+    case unableToRedirectStdout
+    case unableToRestoreStdout
+    case unableToReadCapturedStdout
 }
