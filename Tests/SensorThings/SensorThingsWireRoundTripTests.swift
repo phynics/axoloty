@@ -114,4 +114,62 @@ struct SensorThingsWireRoundTripTests {
         #expect(RawJSONValue.serialize(any: ["key": "value"]) == "{\"key\":\"value\"}")
         #expect(RawJSONValue.serialize(any: [1, 2, 3]) == "[1,2,3]")
     }
+
+    @Test
+    func thingPropertiesDecodeAndReencodeMixedJSONKinds() throws {
+        let wire = Data(#"""
+        {
+          "objectId": "4c480c29-f65f-496f-8005-03e7503eec2b",
+          "coreType": "CoatyObject",
+          "objectType": "coaty.sensorThings.Thing",
+          "name": "Thing1",
+          "description": "A mixed-kind thing",
+          "properties": {
+            "text": "hello",
+            "integer": 42,
+            "fraction": 23.5,
+            "enabled": true,
+            "values": [1, false, null, {"nested": "value"}],
+            "object": {"nested": 7},
+            "empty": null
+          }
+        }
+        """#.utf8)
+
+        let decoded = try JSONDecoder().decode(Thing.self, from: wire)
+        #expect(decoded.jsonProperties == [
+            "text": .string("hello"),
+            "integer": .int(42),
+            "fraction": .double(23.5),
+            "enabled": .bool(true),
+            "values": .array([.int(1), .bool(false), .null, .object(["nested": .string("value")])]),
+            "object": .object(["nested": .int(7)]),
+            "empty": .null,
+        ])
+
+        let reencoded = try JSONEncoder().encode(decoded)
+        let normalizedWire = try JSONSerialization.data(
+            withJSONObject: JSONSerialization.jsonObject(with: wire),
+            options: [.sortedKeys]
+        )
+        let normalizedReencoded = try JSONSerialization.data(
+            withJSONObject: JSONSerialization.jsonObject(with: reencoded),
+            options: [.sortedKeys]
+        )
+        #expect(normalizedReencoded == normalizedWire)
+    }
+
+    @Test
+    func thingStringPropertiesBridgeToJSONProperties() {
+        let thing = Thing(
+            description: "A string-only thing",
+            properties: ["label": "office"],
+            name: "Thing1"
+        )
+        #expect(thing.properties == ["label": "office"])
+        #expect(thing.jsonProperties == ["label": .string("office")])
+
+        thing.properties = ["label": "laboratory"]
+        #expect(thing.jsonProperties == ["label": .string("laboratory")])
+    }
 }
