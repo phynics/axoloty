@@ -101,6 +101,9 @@ internal class MQTTNIOClient: CommunicationClient {
 
     private var mqttClientOptions: MQTTClientOptions!, configuration: MQTTClient.Configuration!
     private var qos: MQTTQoS = .atMostOnce
+    // Allows isolation tests to observe publication arguments without a broker.
+    internal typealias PublishHandler = @Sendable (MQTTQoS, Bool) -> Void
+    private let publishHandler: PublishHandler?
     private var discovery: ServiceDiscovery?
 
     /// Serializes delivery of decoded MQTT messages into ``Broadcast`` in
@@ -186,8 +189,13 @@ internal class MQTTNIOClient: CommunicationClient {
 
     // MARK: - Initializer.
 
-    init(mqttClientOptions: MQTTClientOptions, delegate: CommunicationClientDelegate) {
+    init(
+        mqttClientOptions: MQTTClientOptions,
+        delegate: CommunicationClientDelegate,
+        publishHandler: PublishHandler? = nil
+    ) {
         self.callbackAdapter = MQTTNIOCallbackAdapter(delegate: delegate)
+        self.publishHandler = publishHandler
 
         let (stream, continuation) = AsyncStream<@Sendable () async -> Void>.makeStream()
         self.deliveryContinuation = continuation
@@ -528,25 +536,41 @@ internal class MQTTNIOClient: CommunicationClient {
     func publish(_ topic: String, message: String) {
         log.trace("Publishing", metadata: ["topic": .string(topic), "qos": "\(qos)"])
         let client = lock.withLock { lifecycle.client }
-        let log = self.log
-        client?.publish(to: topic, payload: byteBuffer(from: message), qos: qos, retain: false)
-            .whenFailure { error in
-                log.warning("Error publishing", metadata: [
-                    "topic": .string(topic),
-                    "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
-                ])
-            }
+        publish(
+            to: topic,
+            payload: byteBuffer(from: message),
+            qos: qos,
+            retain: false,
+            client: client
+        )
     }
 
     func publish(_ topic: String, message: [UInt8]) {
-        // NOTE: preserves a pre-existing quirk of the former CocoaMQTTClient:
-        // this overload always publishes at QoS 0, unretained, regardless of
-        // `mqttClientOptions.qos`. Not changed here; flagged, not silently
-        // "fixed".
-        log.trace("Publishing", metadata: ["topic": .string(topic), "qos": "atMostOnce"])
+        log.trace("Publishing", metadata: ["topic": .string(topic), "qos": "\(qos)"])
         let client = lock.withLock { lifecycle.client }
+        publish(
+            to: topic,
+            payload: byteBuffer(from: message),
+            qos: qos,
+            retain: false,
+            client: client
+        )
+    }
+
+    private func publish(
+        to topic: String,
+        payload: ByteBuffer,
+        qos: MQTTQoS,
+        retain: Bool,
+        client: MQTTClient?
+    ) {
+        if let publishHandler {
+            publishHandler(qos, retain)
+            return
+        }
+
         let log = self.log
-        client?.publish(to: topic, payload: byteBuffer(from: message), qos: .atMostOnce, retain: false)
+        client?.publish(to: topic, payload: payload, qos: qos, retain: retain)
             .whenFailure { error in
                 log.warning("Error publishing", metadata: [
                     "topic": .string(topic),

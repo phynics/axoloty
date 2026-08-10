@@ -236,6 +236,21 @@ struct MQTTNIOClientTests {
         } catch {
         }
     }
+
+    @Test
+    func binaryPublishUsesConfiguredQoSAndRetainFlagLikeStringPublish() {
+        let recorder = PublishRecorder()
+        let client = makeHostIngressClient(qos: 2, publishHandler: recorder.record).0
+
+        client.publish("test/topic", message: "message")
+        client.publish("test/topic", message: [1, 2, 3])
+
+        let calls = recorder.calls
+        #expect(calls.count == 2)
+        #expect(calls[0].qos == .exactlyOnce)
+        #expect(calls[1].qos == .exactlyOnce)
+        #expect(calls.allSatisfy { !$0.retain })
+    }
 }
 
 private struct OversizedHostFallbackFixture {
@@ -285,6 +300,28 @@ private func canonicalJSON(_ bytes: [UInt8]) throws -> Data {
 private let hostIngressTopic = "coaty/3/test/ADV:sensors/11111111-1111-4111-8111-111111111111"
 private let hostIoValueTopic = "coaty/3/test/IOV/22222222-2222-4222-8222-222222222222"
 
+private struct PublishCall {
+    let qos: MQTTQoS
+    let retain: Bool
+}
+
+private final class PublishRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recordedCalls = [PublishCall]()
+
+    var calls: [PublishCall] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedCalls
+    }
+
+    func record(_ qos: MQTTQoS, _ retain: Bool) {
+        lock.lock()
+        recordedCalls.append(PublishCall(qos: qos, retain: retain))
+        lock.unlock()
+    }
+}
+
 private func publishInfo(payload: [UInt8], topic: String = hostIngressTopic) -> MQTTPublishInfo {
     var buffer = ByteBufferAllocator().buffer(capacity: payload.count)
     buffer.writeBytes(payload)
@@ -297,12 +334,16 @@ private func publishInfo(payload: [UInt8], topic: String = hostIngressTopic) -> 
     )
 }
 
-private func makeHostIngressClient() -> (MQTTNIOClient, CommunicationStreams) {
+private func makeHostIngressClient(
+    qos: Int = 0,
+    publishHandler: MQTTNIOClient.PublishHandler? = nil
+) -> (MQTTNIOClient, CommunicationStreams) {
     let options = MQTTClientOptions(
         host: "127.0.0.1",
         port: 1883,
         shouldTryMDNSDiscovery: false,
-        autoReconnect: false
+        autoReconnect: false,
+        qos: qos
     )
     options.clientId = "host-ingress-test"
     let streams = CommunicationStreams(
@@ -323,7 +364,11 @@ private func makeHostIngressClient() -> (MQTTNIOClient, CommunicationStreams) {
         channelFamily: BroadcastFamily(mode: .event),
         responseFamily: BroadcastFamily(mode: .event)
     )
-    let client = MQTTNIOClient(mqttClientOptions: options, delegate: HostIngressDelegate())
+    let client = MQTTNIOClient(
+        mqttClientOptions: options,
+        delegate: HostIngressDelegate(),
+        publishHandler: publishHandler
+    )
     client.setStreams(streams)
     return (client, streams)
 }
