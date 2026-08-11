@@ -182,6 +182,8 @@ open class SensorSourceController: Controller {
 
     @MainActor
     private func handleQueryEvent(_ request: QueryEventSnapshot, correlationId: String) {
+        guard Self.querySelectsSensor(request) else { return }
+
         let filter = request.objectFilter.flatMap {
             try? JSONDecoder().decode(ObjectFilter.self, from: Data($0.utf8))
         }
@@ -194,6 +196,15 @@ open class SensorSourceController: Controller {
                 correlationId: correlationId
             )
         }
+    }
+
+    internal static func querySelectsSensor(_ request: QueryEventSnapshot) -> Bool {
+        guard request.objectTypes == nil || request.coreTypes == nil else { return false }
+
+        if let objectTypes = request.objectTypes {
+            return objectTypes.contains(SensorThingsTypes.OBJECT_TYPE_SENSOR)
+        }
+        return request.coreTypes?.contains(.CoatyObject) == true
     }
 
     private func _publishObservation(sensorId: CoatyUUID, channeled: Bool, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) throws {
