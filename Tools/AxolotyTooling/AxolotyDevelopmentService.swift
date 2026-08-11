@@ -13,6 +13,7 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
     private let installSignalHandler: Bool
     private let standardOutput: FileHandle
     private let standardError: FileHandle
+    private let signalHandlerFactory: any ServiceSignalHandlerFactory
 
     /// Creates a development service runner.
     ///
@@ -40,6 +41,32 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
         standardOutput: FileHandle = .standardOutput,
         standardError: FileHandle = .standardError
     ) {
+        self.init(
+            processRunnerFactory: processRunnerFactory,
+            portProbe: portProbe,
+            fileSystem: fileSystem,
+            tempDirProvider: tempDirProvider,
+            mosquittoExecutable: mosquittoExecutable,
+            mcpExecutable: mcpExecutable,
+            installSignalHandler: installSignalHandler,
+            standardOutput: standardOutput,
+            standardError: standardError,
+            signalHandlerFactory: DefaultServiceSignalHandlerFactory()
+        )
+    }
+
+    init(
+        processRunnerFactory: @escaping @Sendable () -> any AxolotyManagedProcessRunning,
+        portProbe: any AxolotyServiceProbing,
+        fileSystem: any AxolotyFileSystem,
+        tempDirProvider: any AxolotyTempDirectoryProvider = FoundationTempDirectoryProvider(),
+        mosquittoExecutable: String = "/usr/sbin/mosquitto",
+        mcpExecutable: String = "/opt/axoloty/bin/axoloty-mcp",
+        installSignalHandler: Bool = true,
+        standardOutput: FileHandle = .standardOutput,
+        standardError: FileHandle = .standardError,
+        signalHandlerFactory: any ServiceSignalHandlerFactory
+    ) {
         self.processRunnerFactory = processRunnerFactory
         self.portProbe = portProbe
         self.fileSystem = fileSystem
@@ -49,6 +76,7 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
         self.installSignalHandler = installSignalHandler
         self.standardOutput = standardOutput
         self.standardError = standardError
+        self.signalHandlerFactory = signalHandlerFactory
     }
 
     /// Runs the development stack and blocks until interrupted or a child exits.
@@ -59,7 +87,7 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
         let mcpConfig = configuration.mcp
         let processSupervisor = ManagedProcessSupervisor()
         let signalHandler = installSignalHandler
-            ? ServiceSignalHandler(onInterrupt: { processSupervisor.requestTermination() })
+            ? signalHandlerFactory.makeHandler(onInterrupt: { processSupervisor.requestTermination() })
             : nil
         signalHandler?.install()
         defer { signalHandler?.uninstall() }
