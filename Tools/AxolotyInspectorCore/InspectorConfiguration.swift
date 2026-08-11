@@ -2,6 +2,27 @@
 
 import Foundation
 
+/// A diagnostic log level accepted by the inspector command line.
+public enum InspectorLogLevel: String, CaseIterable, Equatable, Sendable {
+    /// Emit every diagnostic message.
+    case trace
+    /// Emit debug and more severe diagnostic messages.
+    case debug
+    /// Emit informational and more severe diagnostic messages.
+    case info
+    /// Emit notices and more severe diagnostic messages.
+    case notice
+    /// Emit warnings and more severe diagnostic messages.
+    case warning
+    /// Emit errors only.
+    case error
+
+    /// The supported values in command-line help and configuration errors.
+    public static var supportedValuesDescription: String {
+        allCases.map(\.rawValue).joined(separator: ", ")
+    }
+}
+
 /// The output rendering mode for inspector records.
 public enum InspectorOutputMode: String, Equatable, Sendable {
     /// Select `human` for a terminal, `ndjson` for a pipe.

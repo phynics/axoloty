@@ -279,6 +279,10 @@ struct InspectorArgumentParserTests {
                 field: "output",
                 reason: "must be one of: auto, human, ndjson, json"
             )),
+            (["--log-level", "critical"], .invalidConfiguration(
+                field: "log-level",
+                reason: "must be one of: trace, debug, info, notice, warning, error"
+            )),
         ]
 
         for command in commands {
@@ -571,6 +575,18 @@ struct InspectorArgumentParserTests {
         #expect(config.logLevel == "debug")
     }
 
+    @Test
+    func everySupportedLogLevelParses() {
+        for level in InspectorLogLevel.allCases {
+            let outcome = InspectorArgumentParser().parse(["catalog", "--log-level", level.rawValue])
+            guard case let .run(config) = outcome else {
+                Issue.record("Expected --log-level \(level.rawValue) to parse")
+                continue
+            }
+            #expect(config.logLevel == level.rawValue)
+        }
+    }
+
     // MARK: - Missing values
 
     @Test
@@ -608,6 +624,16 @@ struct InspectorArgumentParserTests {
         let outcome = InspectorArgumentParser().parse(["catalog", "--output"])
         if case let .error(error) = outcome {
             #expect(error == .invalidArguments(reason: "--output requires a value"))
+        } else {
+            Issue.record("Expected error outcome")
+        }
+    }
+
+    @Test
+    func missingLogLevelValue() {
+        let outcome = InspectorArgumentParser().parse(["catalog", "--log-level"])
+        if case let .error(error) = outcome {
+            #expect(error == .invalidArguments(reason: "--log-level requires a value"))
         } else {
             Issue.record("Expected error outcome")
         }
@@ -662,6 +688,31 @@ struct InspectorArgumentParserTests {
             #expect(error == .invalidConfiguration(field: "output", reason: "must be one of: auto, human, ndjson, json"))
         } else {
             Issue.record("Expected error outcome")
+        }
+    }
+
+    @Test
+    func invalidLogLevelUsesStructuredConfigurationError() {
+        let invalidValues = ["critical", "verbose"]
+        let expectedError = InspectorError.invalidConfiguration(
+            field: "log-level",
+            reason: "must be one of: trace, debug, info, notice, warning, error"
+        )
+
+        for value in invalidValues {
+            let outcome = InspectorArgumentParser().parse(["catalog", "--log-level", value])
+            #expect(outcome == .error(expectedError))
+        }
+    }
+
+    @Test
+    func logLevelIsCaseSensitiveAndDoesNotTrimWhitespace() {
+        for value in ["TRACE", "Info", " warning "] {
+            let outcome = InspectorArgumentParser().parse(["catalog", "--log-level", value])
+            #expect(outcome == .error(.invalidConfiguration(
+                field: "log-level",
+                reason: "must be one of: trace, debug, info, notice, warning, error"
+            )))
         }
     }
 
