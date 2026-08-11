@@ -31,7 +31,8 @@ func runInspector(
     _ config: InspectorConfiguration,
     sessionFactory: @MainActor (InspectorConnectionConfiguration) throws -> InspectorSession = { configuration in
         try AxolotyInspectorSession(configuration: configuration)
-    }
+    },
+    signalHandler: InspectorSignalHandling = InspectorSignalHandler()
 ) async -> Int32 {
     guard let logLevel = InspectorLogLevel(rawValue: config.logLevel) else {
         let error = InspectorError.invalidConfiguration(
@@ -70,7 +71,6 @@ func runInspector(
     let dateFormatter = ISO8601DateFormatter()
     dateFormatter.formatOptions = [.withInternetDateTime]
 
-    let signalHandler = InspectorSignalHandler()
     signalHandler.install()
 
     let updatedConfig = InspectorConfiguration(

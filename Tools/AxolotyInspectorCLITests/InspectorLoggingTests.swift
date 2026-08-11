@@ -52,11 +52,15 @@ struct InspectorLoggingTests {
             logLevel: "debug"
         )
 
-        let exitCode = await runInspector(configuration, sessionFactory: { _ in
-            // Model the reset performed by Container.resolve during session construction.
-            LogManager.defaultLevel = .error
-            return session
-        })
+        let exitCode = await runInspector(
+            configuration,
+            sessionFactory: { _ in
+                // Model the reset performed by Container.resolve during session construction.
+                LogManager.defaultLevel = .error
+                return session
+            },
+            signalHandler: FakeSignalHandler()
+        )
 
         #expect(exitCode == 0)
         #expect(session.sawDebugLevelAtConnect)
