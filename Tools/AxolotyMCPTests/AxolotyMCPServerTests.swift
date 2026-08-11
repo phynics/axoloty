@@ -6,6 +6,7 @@ import AxolotyInspectorCore
 import AxolotyInspectorRuntime
 import AxolotyTooling
 import Foundation
+import Logging
 import MCP
 import Testing
 
@@ -29,6 +30,23 @@ private final class StatusSession: InspectorSession {
         AsyncStream { $0.finish() }
     }
     func stop() {}
+}
+
+private struct ForcedEncodingError: LocalizedError {
+    let operation: String
+
+    var errorDescription: String? { "forced \(operation) encoding failure" }
+}
+
+@MainActor
+private final class EncodingLogCapture {
+    var message: String?
+    var metadata: Logging.Logger.Metadata?
+
+    func record(message: String, metadata: Logging.Logger.Metadata) {
+        self.message = message
+        self.metadata = metadata
+    }
 }
 
 @Test("Discover tool advertises and consumes an integer timeout")
@@ -121,6 +139,78 @@ func statusReflectsCommunicationState() async throws {
 }
 
 @MainActor
+@Test("In-memory MCP transport reports encoding failure and logs its cause")
+func directTransportReportsEncodingFailureAndLogsCause() async throws {
+    let session = StatusSession()
+    let logCapture = EncodingLogCapture()
+    let responseEncoder = AxolotyMCPServer.ResponseEncoder(
+        status: { _ in throw ForcedEncodingError(operation: "status") }
+    )
+    let mcpServer = AxolotyMCPServer(
+        session: session,
+        namespace: "test",
+        responseEncoder: responseEncoder,
+        encodingFailureLogger: { message, metadata in
+            logCapture.record(message: message, metadata: metadata)
+        }
+    )
+    let server = Server(
+        name: "axoloty-mcp-direct-test",
+        version: "1.0.0",
+        capabilities: .init(tools: .init())
+    )
+    await mcpServer.registerHandlers(on: server)
+    let (clientTransport, serverTransport) = await InMemoryTransport.createConnectedPair()
+
+    do {
+        try await server.start(transport: serverTransport)
+        try await clientTransport.connect()
+
+        let initializeRequest = Initialize.request(
+            id: 1,
+            .init(
+                protocolVersion: Version.latest,
+                capabilities: .init(),
+                clientInfo: .init(name: "direct-test", version: "1.0")
+            )
+        )
+        try await clientTransport.send(try JSONEncoder().encode(initializeRequest))
+        _ = try await receiveMCPMessage(from: clientTransport)
+
+        let callRequest = CallTool.request(
+            id: 2,
+            CallTool.Parameters(name: "axoloty_server_status", arguments: [:])
+        )
+        try await clientTransport.send(try JSONEncoder().encode(callRequest))
+        let responseData = try await receiveMCPMessage(from: clientTransport)
+        let envelope = try #require(
+            JSONSerialization.jsonObject(with: responseData) as? [String: Any]
+        )
+        let result = try #require(envelope["result"] as? [String: Any])
+        #expect(result["isError"] as? Bool == true)
+        let content = try #require(result["content"] as? [[String: Any]])
+        #expect(content.first?["text"] as? String == "Unable to encode MCP response; please retry the request.")
+        #expect(logCapture.message == "Failed to encode MCP response")
+        #expect(logCapture.metadata?["operation"] == .string("axoloty_server_status"))
+        if case let .string(errorChain)? = logCapture.metadata?["error"] {
+            #expect(errorChain.contains("ForcedEncodingError"))
+            #expect(errorChain.contains("forced status encoding failure"))
+        } else {
+            Issue.record("expected wrapped encoding error metadata")
+        }
+    } catch {
+        await server.stop()
+        await clientTransport.disconnect()
+        await serverTransport.disconnect()
+        throw error
+    }
+
+    await server.stop()
+    await clientTransport.disconnect()
+    await serverTransport.disconnect()
+}
+
+@MainActor
 @Test("Discover handler rejects invalid object ID before discovery")
 func discoverHandlerRejectsInvalidObjectId() async {
     var discoveryCount = 0
@@ -179,6 +269,87 @@ func httpServerRepeatedStartStop() async throws {
             await server.stop()
             try await startTask.value
         }
+    }
+}
+
+@MainActor
+@Test("HTTP transport reports response encoding failures as MCP errors")
+func httpTransportReportsEncodingFailure() async throws {
+    let session = StatusSession()
+    let responseEncoder = AxolotyMCPServer.ResponseEncoder(
+        status: { _ in throw ForcedEncodingError(operation: "status") }
+    )
+    let mcpServer = AxolotyMCPServer(
+        session: session,
+        namespace: "test",
+        responseEncoder: responseEncoder
+    )
+    let httpServer = MCPHTTPServer(
+        host: "127.0.0.1",
+        port: 0,
+        validationPipeline: StandardValidationPipeline(validators: []),
+        serverFactory: { _, transport in
+            let server = Server(
+                name: "axoloty-mcp-encoding-test",
+                version: "1.0.0",
+                capabilities: .init()
+            )
+            await mcpServer.registerHandlers(on: server)
+            try await server.start(transport: transport)
+            return server
+        }
+    )
+    let startTask = Task { try await httpServer.start() }
+    await httpServer.waitUntilListening()
+    let port = try #require(await httpServer.listeningPort())
+
+    do {
+        let initializeRequest = try makeInitializeRequest()
+        let initializeBody = try #require(initializeRequest.body)
+        let (_, initializeResponse) = try await sendHTTPBody(to: port, body: initializeBody)
+        #expect(initializeResponse.statusCode == 200)
+        let sessionID = try #require(initializeResponse.value(forHTTPHeaderField: "MCP-Session-Id"))
+
+        let callBody = try JSONSerialization.data(withJSONObject: [
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": [
+                "name": "axoloty_server_status",
+                "arguments": [:] as [String: Any],
+            ] as [String: Any],
+        ] as [String: Any])
+        let (body, response) = try await sendHTTPBody(
+            to: port,
+            body: callBody,
+            sessionID: sessionID
+        )
+        #expect(response.statusCode == 200)
+        let wireResponse = String(bytes: body, encoding: .utf8) ?? ""
+        let jsonLine: String = wireResponse
+            .split(separator: "\n")
+            .first(where: {
+                guard $0.hasPrefix("data:") else { return false }
+                return !$0.dropFirst("data:".count).allSatisfy { $0.isWhitespace }
+            })
+            .map { String($0.dropFirst("data:".count)).trimmingCharacters(in: .whitespaces) }
+            ?? wireResponse
+        let envelope = try #require(
+            JSONSerialization.jsonObject(with: Data(jsonLine.utf8)) as? [String: Any]
+        )
+        let result = try #require(envelope["result"] as? [String: Any])
+        #expect(result["isError"] as? Bool == true)
+        let content = try #require(result["content"] as? [[String: Any]])
+        #expect(content.first?["text"] as? String == "Unable to encode MCP response; please retry the request.")
+    } catch {
+        await httpServer.stop()
+        _ = try? await startTask.value
+        throw error
+    }
+
+    try await withDeadline("HTTP encoding failure shutdown") {
+        await httpServer.stop()
+        try await startTask.value
     }
 }
 
@@ -520,12 +691,17 @@ private func makeHTTPServer(
 private func sendHTTPBody(
     to port: Int,
     body: Data,
-    streamed: Bool = false
+    streamed: Bool = false,
+    sessionID: String? = nil
 ) async throws -> (Data, HTTPURLResponse) {
     var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/mcp")!)
     request.httpMethod = "POST"
     request.timeoutInterval = 5
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue("application/json, text/event-stream", forHTTPHeaderField: "Accept")
+    if let sessionID {
+        request.setValue(sessionID, forHTTPHeaderField: "MCP-Session-Id")
+    }
 
     if streamed {
         request.httpBodyStream = InputStream(data: body)
@@ -557,6 +733,23 @@ private func makeInitializeRequest() throws -> HTTPRequest {
         ],
         body: body
     )
+}
+
+private func receiveMCPMessage(from transport: InMemoryTransport) async throws -> Data {
+    try await withThrowingTaskGroup(of: Data.self) { group in
+        group.addTask {
+            for try await message in await transport.receive() {
+                return message
+            }
+            throw TestDeadlineExceeded()
+        }
+        group.addTask {
+            try await Task.sleep(for: .seconds(5))
+            throw TestDeadlineExceeded()
+        }
+        defer { group.cancelAll() }
+        return try await group.next()!
+    }
 }
 
 private struct TestDeadlineExceeded: Error {}
