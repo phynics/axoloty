@@ -13,6 +13,8 @@ import Foundation
 // without Darwin simply do not compile or link this type.
 #if canImport(Darwin)
 
+import Darwin
+
 /// This class provides Bonjour-based broker discovery and calls
 /// its delegate when it has found new services.
 class BonjourResolver: NSObject, ServiceDiscovery {
@@ -84,42 +86,111 @@ extension BonjourResolver: NetServiceDelegate {
 
         log.debug("Did resolve net service address", metadata: ["broker": .string(sender.name)])
 
-        // Find the IPV4 address.
-        guard let addresses = sender.addresses, let serviceIPs = resolveIPv4Addresses(addresses: addresses) else {
-            log.error("Could not find IPV4 addresses", metadata: ["broker": .string(sender.name)])
-            return
+        let advertisedAddresses = sender.addresses
+        let candidates = advertisedAddresses.map { resolveAddressCandidates(addresses: $0) }
+        BonjourResolutionHandler.handle(
+            broker: sender.name,
+            candidates: candidates,
+            advertisedAddressCount: advertisedAddresses?.count ?? 0,
+            port: sender.port,
+            callbacks: BonjourResolutionCallbacks(
+                onWarning: { [log] warning in
+                    log.warning(warning.message, metadata: warning.metadata.mapValues { .string($0) })
+                },
+                onRetry: { [weak self] in
+                    self?.startDiscovery()
+                },
+                onReceive: { [weak self] addresses, port in
+                    self?.delegate?.didReceiveService(addresses: addresses, port: port)
+                }
+            )
+        )
+    }
+
+    // MARK: - Address parsing methods.
+
+    /// Converts the platform-specific Bonjour address data into portable
+    /// address candidates. Invalid or unsupported entries are ignored.
+    private func resolveAddressCandidates(addresses: [Data]) -> [BonjourAddressCandidate] {
+        addresses.compactMap { address in
+            resolveAddressCandidate(address: address)
+        }
+    }
+
+    func resolveAddressCandidate(address: Data) -> BonjourAddressCandidate? {
+        let copyLength = min(address.count, MemoryLayout<sockaddr_storage>.size)
+        guard copyLength >= MemoryLayout<sa_family_t>.size else {
+            return nil
         }
 
-        delegate?.didReceiveService(addresses: serviceIPs, port: sender.port)
-    }
- 
-    // MARK: - Message parsing methods.
- 
-    /// Returns all IPv4 addresses for a service.
-    /// - Note: Has been taken and adapted from https://sosedoff.com/2018/03/23/zeroconf-swift.html.
-    func resolveIPv4Addresses(addresses: [Data]) -> [String]? {
-        var results = [String]()
- 
-        for addr in addresses {
-            let data = addr as NSData
-            var storage = sockaddr_storage()
-            data.getBytes(&storage, length: MemoryLayout<sockaddr_storage>.size)
- 
-            if Int32(storage.ss_family) == AF_INET {
-                let addr4 = withUnsafePointer(to: &storage) {
-                    $0.withMemoryRebound(to: sockaddr_in.self, capacity: 1) {
-                        $0.pointee
+        var storage = sockaddr_storage()
+        (address as NSData).getBytes(&storage, length: copyLength)
+
+        switch Int32(storage.ss_family) {
+        case AF_INET:
+            guard address.count >= MemoryLayout<sockaddr_in>.size else {
+                return nil
+            }
+            return withUnsafePointer(to: &storage) { storagePointer in
+                storagePointer.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { addressPointer in
+                    var address = addressPointer.pointee.sin_addr
+                    guard let string = withUnsafePointer(to: &address, { addressPointer in
+                        stringAddress(
+                            family: AF_INET,
+                            address: UnsafeRawPointer(addressPointer),
+                            bufferLength: Int(INET_ADDRSTRLEN)
+                        )
+                    }) else {
+                        return nil
                     }
-                }
- 
-                if let ip = String(cString: inet_ntoa(addr4.sin_addr), encoding: .ascii) {
-                    results.append(ip)
-                } else {
-                    return nil
+                    return .ipv4(string)
                 }
             }
+        case AF_INET6:
+            guard address.count >= MemoryLayout<sockaddr_in6>.size else {
+                return nil
+            }
+            return withUnsafePointer(to: &storage) { storagePointer in
+                storagePointer.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { addressPointer in
+                    var address = addressPointer.pointee.sin6_addr
+                    guard let string = withUnsafePointer(to: &address, { addressPointer in
+                        stringAddress(
+                            family: AF_INET6,
+                            address: UnsafeRawPointer(addressPointer),
+                            bufferLength: Int(INET6_ADDRSTRLEN)
+                        )
+                    }) else {
+                        return nil
+                    }
+                    return .ipv6(string, scopeID: addressPointer.pointee.sin6_scope_id)
+                }
+            }
+        default:
+            return nil
         }
-        return results
+    }
+
+    private func stringAddress(family: Int32, address: UnsafeRawPointer, bufferLength: Int) -> String? {
+        guard bufferLength > 0 else {
+            return nil
+        }
+
+        var buffer = [CChar](repeating: 0, count: bufferLength)
+        let converted = buffer.withUnsafeMutableBufferPointer { bufferPointer -> Bool in
+            guard let destination = bufferPointer.baseAddress else {
+                return false
+            }
+            return inet_ntop(family, address, destination, socklen_t(bufferPointer.count)) != nil
+        }
+        guard converted else {
+            return nil
+        }
+
+        let bytes = buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
+        guard !bytes.isEmpty else {
+            return nil
+        }
+        return String(bytes: bytes, encoding: .ascii)
     }
 
 }
