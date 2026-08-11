@@ -163,7 +163,8 @@ func mqttServiceFailsWhenMosquittoMissing() {
         portProbe: FakePortProbe(),
         fileSystem: MQTTStubFileSystem(paths: []),
         tempDirProvider: FakeTempDirProvider(),
-        mosquittoExecutable: "/nonexistent/mosquitto"
+        mosquittoExecutable: "/nonexistent/mosquitto",
+        installSignalHandler: false
     )
     let exitCode = runner.run(MQTTServiceConfiguration())
     #expect(exitCode == 69)
@@ -360,7 +361,8 @@ func mcpServiceFailsWhenExecutableMissing() {
         processRunner: FakeProcessRunner(),
         portProbe: FakePortProbe(),
         fileSystem: MQTTStubFileSystem(paths: []),
-        mcpExecutable: "/nonexistent/axoloty-mcp"
+        mcpExecutable: "/nonexistent/axoloty-mcp",
+        installSignalHandler: false
     )
     let exitCode = runner.run(MCPServiceConfiguration(transport: .stdio))
     #expect(exitCode == 69)
@@ -428,7 +430,8 @@ func mcpServiceHTTPFailsWhenNotReady() {
         processRunner: processRunner,
         portProbe: FakePortProbe(tcpReady: false),
         fileSystem: MQTTStubFileSystem(paths: ["/opt/axoloty/bin/axoloty-mcp"]),
-        mcpExecutable: "/opt/axoloty/bin/axoloty-mcp"
+        mcpExecutable: "/opt/axoloty/bin/axoloty-mcp",
+        installSignalHandler: false
     )
 
     let exitCode = runner.run(MCPServiceConfiguration(transport: .http, brokerHost: "localhost", brokerPort: 1883, namespace: "test"))

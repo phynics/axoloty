@@ -266,8 +266,18 @@ public struct FoundationServiceProbe: AxolotyServiceProbing {
 
 // MARK: - Signal handling
 
+protocol ServiceSignalHandling: Sendable {
+    var isInterrupted: Bool { get }
+    func install()
+    func uninstall()
+}
+
+protocol ServiceSignalHandlerFactory: Sendable {
+    func makeHandler(onInterrupt: @escaping @Sendable () -> Void) -> any ServiceSignalHandling
+}
+
 /// A signal handler that records and reports SIGINT or SIGTERM interruptions.
-public final class ServiceSignalHandler: @unchecked Sendable {
+public final class ServiceSignalHandler: ServiceSignalHandling, @unchecked Sendable {
     private var interrupted = false
     private let lock = NSLock()
     private var sources: [DispatchSourceSignal] = []
@@ -318,6 +328,12 @@ public final class ServiceSignalHandler: @unchecked Sendable {
         if shouldNotify {
             onInterrupt?()
         }
+    }
+}
+
+struct DefaultServiceSignalHandlerFactory: ServiceSignalHandlerFactory {
+    func makeHandler(onInterrupt: @escaping @Sendable () -> Void) -> any ServiceSignalHandling {
+        ServiceSignalHandler(onInterrupt: onInterrupt)
     }
 }
 

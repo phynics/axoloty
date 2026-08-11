@@ -72,9 +72,88 @@ private struct DevPortProbe: AxolotyServiceProbing {
     }
 }
 
+private final class DevInjectedSignalHandler: ServiceSignalHandling, @unchecked Sendable {
+    private let lock = NSLock()
+    private var interrupted = false
+    private(set) var installCalled = false
+    private(set) var uninstallCalled = false
+    private let onInterrupt: @Sendable () -> Void
+
+    init(onInterrupt: @escaping @Sendable () -> Void) {
+        self.onInterrupt = onInterrupt
+    }
+
+    var isInterrupted: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return interrupted
+    }
+
+    func install() {
+        lock.lock()
+        installCalled = true
+        lock.unlock()
+    }
+
+    func uninstall() {
+        lock.lock()
+        uninstallCalled = true
+        lock.unlock()
+    }
+
+    func lifecycleSnapshot() -> (installCalled: Bool, uninstallCalled: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (installCalled, uninstallCalled)
+    }
+
+    func interrupt() {
+        lock.lock()
+        let shouldNotify = !interrupted
+        interrupted = true
+        lock.unlock()
+
+        if shouldNotify {
+            onInterrupt()
+        }
+    }
+}
+
+private final class DevInjectedSignalSource: ServiceSignalHandlerFactory, @unchecked Sendable {
+    private let lock = NSLock()
+    private var handler: DevInjectedSignalHandler?
+
+    func makeHandler(onInterrupt: @escaping @Sendable () -> Void) -> any ServiceSignalHandling {
+        let handler = DevInjectedSignalHandler(onInterrupt: onInterrupt)
+        lock.lock()
+        self.handler = handler
+        lock.unlock()
+        return handler
+    }
+
+    func interrupt() {
+        lock.lock()
+        let handler = self.handler
+        lock.unlock()
+        handler?.interrupt()
+    }
+
+    func lifecycle() -> (installCalled: Bool, uninstallCalled: Bool) {
+        lock.lock()
+        let handler = self.handler
+        lock.unlock()
+        return handler?.lifecycleSnapshot() ?? (false, false)
+    }
+}
+
 private final class DevStartupSignalPortProbe: AxolotyServiceProbing, @unchecked Sendable {
+    private let signalSource: DevInjectedSignalSource
     private let lock = NSLock()
     private var didSendSignal = false
+
+    init(signalSource: DevInjectedSignalSource) {
+        self.signalSource = signalSource
+    }
 
     func isPortAvailable(host: String, port: UInt16) -> Bool { true }
 
@@ -85,8 +164,7 @@ private final class DevStartupSignalPortProbe: AxolotyServiceProbing, @unchecked
         lock.unlock()
 
         if shouldSendSignal {
-            _ = kill(getpid(), SIGTERM)
-            usleep(250_000)
+            signalSource.interrupt()
         }
         return true
     }
@@ -364,18 +442,20 @@ func managedProcessSupervisorEscalatesAfterGracePeriod() {
     #expect(processRunner.waitForExitCalled)
 }
 
-@Suite(.serialized)
 struct DevelopmentServiceSignalLifecycleTests {
     @Test
     func devServiceCleansUpChildWhenInterruptedDuringStartup() {
         let mqttRunner = DevFakeProcessRunner()
         let mcpRunner = DevFakeProcessRunner()
+        let signalSource = DevInjectedSignalSource()
 
         let runner = AxolotyDevelopmentServiceRunner(
             processRunnerFactory: devFakeFactory([mqttRunner, mcpRunner]),
-            portProbe: DevStartupSignalPortProbe(),
+            portProbe: DevStartupSignalPortProbe(signalSource: signalSource),
             fileSystem: StubFileSystem(paths: ["/usr/sbin/mosquitto", "/opt/axoloty/bin/axoloty-mcp"]),
-            tempDirProvider: DevTempDirProvider()
+            tempDirProvider: DevTempDirProvider(),
+            installSignalHandler: true,
+            signalHandlerFactory: signalSource
         )
 
         let exitCode = runner.run(devConfiguration())
@@ -384,6 +464,9 @@ struct DevelopmentServiceSignalLifecycleTests {
         #expect(mqttRunner.terminateCalled)
         #expect(mqttRunner.waitForExitCalled)
         #expect(mcpRunner.startSpec == nil)
+        let lifecycle = signalSource.lifecycle()
+        #expect(lifecycle.installCalled)
+        #expect(lifecycle.uninstallCalled)
     }
 }
 

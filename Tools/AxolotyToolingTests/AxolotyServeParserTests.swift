@@ -422,7 +422,8 @@ func dispatcherServeSubcommandHelpPrintsContextualUsage(subcommand: String) {
 func dispatcherServesMqttReturns69WhenMosquittoMissing() {
     let dispatcher = AxolotyCommandDispatcher(
         fileSystem: StubFileSystem(paths: []),
-        environment: [:]
+        environment: [:],
+        installSignalHandler: false
     )
     let result = dispatcher.run(arguments: ["serve", "mqtt"])
     #expect(result.exitCode == 69)
@@ -432,7 +433,8 @@ func dispatcherServesMqttReturns69WhenMosquittoMissing() {
 func dispatcherServesMcpStdioReturns69WhenMCPMissing() {
     let dispatcher = AxolotyCommandDispatcher(
         fileSystem: StubFileSystem(paths: []),
-        environment: [:]
+        environment: [:],
+        installSignalHandler: false
     )
     let result = dispatcher.run(arguments: ["serve", "mcp", "--transport", "stdio"])
     #expect(result.exitCode == 69)
@@ -450,7 +452,8 @@ func dispatcherServesMcpMissingTransportReturnsError() {
 func dispatcherServesDevReturns69WhenExecutablesMissing() {
     let dispatcher = AxolotyCommandDispatcher(
         fileSystem: StubFileSystem(paths: []),
-        environment: [:]
+        environment: [:],
+        installSignalHandler: false
     )
     let result = dispatcher.run(arguments: ["serve", "dev"])
     #expect(result.exitCode == 69)
