@@ -343,6 +343,47 @@ struct RuleBasedIoRouterLogicTests {
     }
 
     @Test
+    func testCustomDefaultUpdateRateControlsEffectiveCadence() throws {
+        let router = try makeCustomRateRouter()
+        router.defineRules(rules: [
+            IoAssociationRule(name: "all", valueType: nil, condition: { _, _, _, _, _, _ in true })
+        ])
+        let source = IoSource(valueType: "T", updateRate: 100)
+        let actor = IoActor(valueType: "T", updateRate: 200)
+        installNode(router, IoNode(
+            coreType: .IoNode, objectType: IoNode.objectType,
+            objectId: CoatyUUID(), name: "n",
+            ioSources: [source], ioActors: [actor]))
+
+        router.customRate = 750
+        router.evaluateRules()
+
+        #expect(router.computeDefaultUpdateRateCallCount == 1)
+        #expect(router.currentAssociations.count == 1)
+        #expect(router.currentAssociations[0].2 == 750)
+    }
+
+    @Test
+    func testInvalidCustomUpdateRateFallsBackToZero() throws {
+        let router = try makeCustomRateRouter()
+        router.defineRules(rules: [
+            IoAssociationRule(name: "all", valueType: nil, condition: { _, _, _, _, _, _ in true })
+        ])
+        let source = IoSource(valueType: "T", updateRate: 100)
+        let actor = IoActor(valueType: "T", updateRate: 200)
+        installNode(router, IoNode(
+            coreType: .IoNode, objectType: IoNode.objectType,
+            objectId: CoatyUUID(), name: "n",
+            ioSources: [source], ioActors: [actor]))
+
+        router.customRate = -1
+        router.evaluateRules()
+
+        #expect(router.currentAssociations.count == 1)
+        #expect(router.currentAssociations[0].2 == 0)
+    }
+
+    @Test
     func testMultipleActorsPerSourceCumulateRate() throws {
         let router = try makeRouter()
         router.defineRules(rules: [
@@ -589,6 +630,19 @@ final class CrossBucketRouter: RuleBasedIoRouter {
     }
 }
 
+final class CustomRateRouter: RuleBasedIoRouter {
+    var customRate = 750
+    private(set) var computeDefaultUpdateRateCallCount = 0
+
+    override func computeDefaultUpdateRate(source: IoSource,
+                                            actor: IoActor,
+                                            sourceNode: IoNode,
+                                            actorNode: IoNode) -> Int {
+        computeDefaultUpdateRateCallCount += 1
+        return customRate
+    }
+}
+
 @MainActor
 private func createMinimalContainer() throws -> Container {
     let options = CommunicationOptions(
@@ -614,6 +668,22 @@ private func makeRouter() throws -> RuleBasedIoRouter {
         container: container,
         options: ControllerOptions(extra: ["ioContext": ioContext]),
         controllerType: "test"
+    )
+    router.onInit()
+    return router
+}
+
+@MainActor
+private func makeCustomRateRouter() throws -> CustomRateRouter {
+    let ioContext = IoContext(
+        coreType: .IoContext, objectType: "test",
+        objectId: CoatyUUID(), name: "test"
+    )
+    let container = try createMinimalContainer()
+    let router = CustomRateRouter(
+        container: container,
+        options: ControllerOptions(extra: ["ioContext": ioContext]),
+        controllerType: "custom-rate"
     )
     router.onInit()
     return router
