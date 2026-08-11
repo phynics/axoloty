@@ -34,8 +34,8 @@ struct EventSnapshotMetadataTests {
                 description: "DewPoint Temperature"
             ),
             name: "Thermometer",
-            objectId: try #require(CoatyUUID(uuidString: "83dfc46a-0709-4f70-9ea5-beebf8fa89af")),
-            parentObjectId: try #require(CoatyUUID(uuidString: "4c480c29-f65f-496f-8005-03e7503eec2b"))
+            objectId: try #require(CoatyUUID(uuidString: "83dfc46a-0709-4f70-9ea5-beebf8fa89af") as CoatyUUID?),
+            parentObjectId: try #require(CoatyUUID(uuidString: "4c480c29-f65f-496f-8005-03e7503eec2b") as CoatyUUID?)
         )
         let event = try AdvertiseEvent.with(object: sensor)
         let payload = try HostWireAdapter.encodeEvent(event)

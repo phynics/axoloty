@@ -179,10 +179,7 @@ func runBenchmark() {
         if caseIndex > 0 { print(",") }
         print(#"{"caseId":"\#(corpusCase.id)","family":"\#(corpusCase.family)","sizeClass":"\#(corpusCase.sizeClass)","operations":{"#)
 
-        var firstOp = true
-
         // 1. topicParse
-        firstOp = false
         var topicBatch = 0
         let topicResult = corpusCase.topicBytes.withUnsafeBufferPointer { tb -> (Int, [Int]) in
             let topicPtr = tb.baseAddress!
@@ -200,7 +197,7 @@ func runBenchmark() {
             let payloadPtr = pb.baseAddress!
             return measureOperation("dtoDecode", batchSize: &decodeBatch) {
                 let reader = WireReader(bytes: payloadPtr, length: pb.count)
-                _ = decodeDTO(family: corpusCase.family, reader: reader)
+                decodeDTO(family: corpusCase.family, reader: reader)
             }
         }
         print(#""dtoDecode":{"batchSize":\#(decodeResult.0),"samplesNs":\#(decodeResult.1)}"#)

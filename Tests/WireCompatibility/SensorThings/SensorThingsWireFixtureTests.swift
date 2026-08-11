@@ -35,8 +35,8 @@ struct SensorThingsWireFixtureTests {
         #expect(thing.objectId == CoatyUUID(uuidString: "11111111-1111-4111-8111-111111111111"))
         #expect(thing.name == "office-thing")
         #expect(thing.description == "Office environment sensor")
-        #expect(thing.properties?["floor"] == "3")
-        #expect(thing.properties?["room"] == "301")
+        #expect(thing.jsonProperties?["floor"] == .string("3"))
+        #expect(thing.jsonProperties?["room"] == .string("301"))
     }
 
     /// A minimal Thing (no optional properties) decodes with nil properties.
@@ -48,7 +48,7 @@ struct SensorThingsWireFixtureTests {
         let thing = try JSONDecoder().decode(Thing.self, from: Data(json.utf8))
 
         #expect(thing.description == "No props")
-        #expect(thing.properties == nil)
+        #expect(thing.jsonProperties == nil)
     }
 
     // MARK: - FeatureOfInterest
@@ -277,7 +277,7 @@ struct SensorThingsWireFixtureTests {
 
         #expect(thing.name == "世界-thing")
         #expect(thing.description == "温度传感器 ✓")
-        #expect(thing.properties?["部屋"] == "リビング")
+        #expect(thing.jsonProperties?["部屋"] == .string("リビング"))
     }
 
     /// An Observation with a Unicode string result decodes correctly.

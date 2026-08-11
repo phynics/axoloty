@@ -18,7 +18,7 @@ struct WireCodecTests {
     func topicViewParsesAdvertiseTopic() throws {
         let topic = "coaty/3/wire-compat-v1/ADV:sensors/33333333-3333-4333-8333-333333333333"
         let bytes = Array(topic.utf8)
-        let view = try bytes.withUnsafeBufferPointer { buf in
+        let view = bytes.withUnsafeBufferPointer { buf in
             TopicView(topicBytes: buf.baseAddress!, length: buf.count)
         }
 
@@ -35,7 +35,7 @@ struct WireCodecTests {
     func topicViewParsesQueryWithCorrelationId() throws {
         let topic = "coaty/3/wire-compat-v1/QRY/55555555-5555-4555-8555-555555555555/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
         let bytes = Array(topic.utf8)
-        let view = try bytes.withUnsafeBufferPointer { buf in
+        let view = bytes.withUnsafeBufferPointer { buf in
             TopicView(topicBytes: buf.baseAddress!, length: buf.count)
         }
 
@@ -49,7 +49,7 @@ struct WireCodecTests {
     func topicViewIdentifiesRawTopic() throws {
         let topic = "external/wire-compat-v1/io-external-1"
         let bytes = Array(topic.utf8)
-        let view = try bytes.withUnsafeBufferPointer { buf in
+        let view = bytes.withUnsafeBufferPointer { buf in
             TopicView(topicBytes: buf.baseAddress!, length: buf.count)
         }
 
@@ -61,7 +61,7 @@ struct WireCodecTests {
     func topicViewParsesAssociateWithFilter() throws {
         let topic = "coaty/3/wire-compat-v1/ASC:io-context-1/55555555-5555-4555-8555-555555555555"
         let bytes = Array(topic.utf8)
-        let view = try bytes.withUnsafeBufferPointer { buf in
+        let view = bytes.withUnsafeBufferPointer { buf in
             TopicView(topicBytes: buf.baseAddress!, length: buf.count)
         }
 
@@ -99,7 +99,7 @@ struct WireCodecTests {
     func uuid16FromByteSlice() throws {
         let uuidString = "44444444-4444-4444-8444-444444444444"
         let bytes = Array(uuidString.utf8)
-        let slice = try bytes.withUnsafeBufferPointer { buf in
+        let slice = bytes.withUnsafeBufferPointer { buf in
             ByteSlice(bytes: buf.baseAddress!, length: buf.count)
         }
         let uuid = UUID16(parsing: slice)
@@ -112,7 +112,7 @@ struct WireCodecTests {
     func wireReaderReadsStringField() throws {
         let json = #"{"ioSourceId":"33333333-3333-4333-8333-333333333333","ioActorId":"44444444-4444-4444-8444-444444444444"}"#
         let bytes = Array(json.utf8)
-        let reader = try bytes.withUnsafeBufferPointer { buf in
+        let reader = bytes.withUnsafeBufferPointer { buf in
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 
@@ -127,7 +127,7 @@ struct WireCodecTests {
     func wireReaderReadsIntField() throws {
         let json = #"{"updateRate":250}"#
         let bytes = Array(json.utf8)
-        let reader = try bytes.withUnsafeBufferPointer { buf in
+        let reader = bytes.withUnsafeBufferPointer { buf in
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 
@@ -138,7 +138,7 @@ struct WireCodecTests {
     func wireReaderReadsNegativeInt() throws {
         let json = #"{"n":-42}"#
         let bytes = Array(json.utf8)
-        let reader = try bytes.withUnsafeBufferPointer { buf in
+        let reader = bytes.withUnsafeBufferPointer { buf in
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 
@@ -151,13 +151,13 @@ struct WireCodecTests {
         let maxJson = "{\"n\":\(Int.max)}"
 
         let minBytes = Array(minJson.utf8)
-        let minReader = try minBytes.withUnsafeBufferPointer { buf in
+        let minReader = minBytes.withUnsafeBufferPointer { buf in
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
         #expect(minReader.readInt("n") == Int.min)
 
         let maxBytes = Array(maxJson.utf8)
-        let maxReader = try maxBytes.withUnsafeBufferPointer { buf in
+        let maxReader = maxBytes.withUnsafeBufferPointer { buf in
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
         #expect(maxReader.readInt("n") == Int.max)
@@ -169,7 +169,7 @@ struct WireCodecTests {
         // not trap on signed-integer overflow.
         let json = #"{"n":99999999999999999999}"#
         let bytes = Array(json.utf8)
-        let reader = try bytes.withUnsafeBufferPointer { buf in
+        let reader = bytes.withUnsafeBufferPointer { buf in
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 
@@ -181,7 +181,7 @@ struct WireCodecTests {
         // Regression for #222: a lone '-' is not a valid integer.
         let json = #"{"n":-}"#
         let bytes = Array(json.utf8)
-        let reader = try bytes.withUnsafeBufferPointer { buf in
+        let reader = bytes.withUnsafeBufferPointer { buf in
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 
@@ -192,7 +192,7 @@ struct WireCodecTests {
     func wireReaderReadsBoolField() throws {
         let json = #"{"isExternalRoute":true}"#
         let bytes = Array(json.utf8)
-        let reader = try bytes.withUnsafeBufferPointer { buf in
+        let reader = bytes.withUnsafeBufferPointer { buf in
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 
@@ -203,7 +203,7 @@ struct WireCodecTests {
     func wireReaderReadsUUIDField() throws {
         let json = #"{"ioSourceId":"33333333-3333-4333-8333-333333333333"}"#
         let bytes = Array(json.utf8)
-        let reader = try bytes.withUnsafeBufferPointer { buf in
+        let reader = bytes.withUnsafeBufferPointer { buf in
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 
@@ -215,7 +215,7 @@ struct WireCodecTests {
     func wireReaderReadsRawObjectField() throws {
         let json = #"{"result":{"temp":23.5,"unit":"C"}}"#
         let bytes = Array(json.utf8)
-        let reader = try bytes.withUnsafeBufferPointer { buf in
+        let reader = bytes.withUnsafeBufferPointer { buf in
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 
@@ -230,7 +230,7 @@ struct WireCodecTests {
     func wireReaderReadsSiblingsAfterNestedObjectAndArray() throws {
         let json = #"{"object":{"value":1},"privateData":{"foo":"bar"},"objects":[{"id":1}],"filter":["one"]}"#
         let bytes = Array(json.utf8)
-        let reader = try bytes.withUnsafeBufferPointer { buf in
+        let reader = bytes.withUnsafeBufferPointer { buf in
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 
@@ -242,7 +242,7 @@ struct WireCodecTests {
     func wireReaderReturnsNilForMissingField() throws {
         let json = #"{"foo":"bar"}"#
         let bytes = Array(json.utf8)
-        let reader = try bytes.withUnsafeBufferPointer { buf in
+        let reader = bytes.withUnsafeBufferPointer { buf in
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 
@@ -253,7 +253,7 @@ struct WireCodecTests {
     func wireReaderReadsNullField() throws {
         let json = #"{"metadata":null}"#
         let bytes = Array(json.utf8)
-        let reader = try bytes.withUnsafeBufferPointer { buf in
+        let reader = bytes.withUnsafeBufferPointer { buf in
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 
@@ -265,7 +265,7 @@ struct WireCodecTests {
     func wireReaderReadsFalseBool() throws {
         let json = #"{"flag":false}"#
         let bytes = Array(json.utf8)
-        let reader = try bytes.withUnsafeBufferPointer { buf in
+        let reader = bytes.withUnsafeBufferPointer { buf in
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 
@@ -277,7 +277,7 @@ struct WireCodecTests {
         // Regression for #221: truncated "tru" must not read past the buffer.
         let json = #"{"a":tru"#
         let bytes = Array(json.utf8)
-        let reader = try bytes.withUnsafeBufferPointer { buf in
+        let reader = bytes.withUnsafeBufferPointer { buf in
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 
@@ -289,7 +289,7 @@ struct WireCodecTests {
         // Regression for #221: truncated "fals" must not read past the buffer.
         let json = #"{"a":fals"#
         let bytes = Array(json.utf8)
-        let reader = try bytes.withUnsafeBufferPointer { buf in
+        let reader = bytes.withUnsafeBufferPointer { buf in
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 
@@ -301,7 +301,7 @@ struct WireCodecTests {
         // Regression for #221: truncated "nul" must not read past the buffer.
         let json = #"{"a":nul"#
         let bytes = Array(json.utf8)
-        let reader = try bytes.withUnsafeBufferPointer { buf in
+        let reader = bytes.withUnsafeBufferPointer { buf in
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 
@@ -313,7 +313,7 @@ struct WireCodecTests {
     func wireReaderHandlesEscapedStringKeys() throws {
         let json = #"{"weird\"key":"value"}"#
         let bytes = Array(json.utf8)
-        let reader = try bytes.withUnsafeBufferPointer { buf in
+        let reader = bytes.withUnsafeBufferPointer { buf in
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 
@@ -327,7 +327,7 @@ struct WireCodecTests {
         // Simulates the exact wire shape a CoatyJS Associate event has
         let json = #"{"ioSourceId":"33333333-3333-4333-8333-333333333333","ioActorId":"44444444-4444-4444-8444-444444444444","associatingRoute":"coaty/3/wire-compat-v1/IOV/33333333-3333-4333-8333-333333333333","updateRate":250}"#
         let bytes = Array(json.utf8)
-        let reader = try bytes.withUnsafeBufferPointer { buf in
+        let reader = bytes.withUnsafeBufferPointer { buf in
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 

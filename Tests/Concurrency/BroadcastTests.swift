@@ -20,6 +20,7 @@ struct BroadcastTests {
         let broadcast = Broadcast<Int>(mode: .event, onLast: { counter.incLast() })
 
         var stream: AsyncStream<Int>? = await broadcast.subscribe()
+        _ = stream
         stream = nil
 
         try? await Task.sleep(for: .milliseconds(200))
@@ -335,6 +336,7 @@ struct BroadcastTests {
         #expect(counter.firstCount == 1)
 
         // Drop the stream → onLast fires (nil), started resets.
+        _ = stream1
         stream1 = nil
         try? await Task.sleep(for: .milliseconds(200))
 
@@ -374,7 +376,6 @@ struct BroadcastTests {
         }
 
         // The test passes if it completes without deadlock or data-race trap.
-        #expect(true)
     }
 }
 
@@ -452,6 +453,7 @@ struct BroadcastFamilyTests {
         )
 
         var stream: AsyncStream<String>? = await family.subscribe(for: "key1")
+        _ = stream
         try? await Task.sleep(for: .milliseconds(50))
         #expect(counter.firstCount == 1, "onFirst should fire for key1")
 
@@ -527,6 +529,7 @@ struct BroadcastFamilyEvictionTests {
 
         // Subscribe and drop the stream.
         var stream: AsyncStream<String>? = await family.subscribe(for: "key1")
+        _ = stream
         stream = nil
 
         // Wait for onLast to fire and evict.

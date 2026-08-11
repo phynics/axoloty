@@ -106,7 +106,17 @@ struct PayloadCoderTests {
     @Test
 
     func encodeWrapsUnencodableValueInAxolotyErrorRatherThanCrashing() throws {
-        struct HoldsNaN: Codable { let value = Double.nan }
+        struct HoldsNaN: Codable {
+            let value = Double.nan
+
+            private enum CodingKeys: String, CodingKey { case value }
+
+            init() {}
+
+            init(from decoder: any Decoder) throws {
+                _ = try decoder.container(keyedBy: CodingKeys.self)
+            }
+        }
 
         do {
             _ = try PayloadCoder.encode(HoldsNaN())

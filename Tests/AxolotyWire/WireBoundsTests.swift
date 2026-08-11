@@ -84,7 +84,7 @@ private func validationError(_ reader: WireReader) -> WireDecodeError? {
         try reader.validate()
         return nil
     } catch {
-        return error as? WireDecodeError
+        return error
     }
 }
 
