@@ -25,6 +25,8 @@ private final class IoValueCapture: @unchecked Sendable {
 struct StaticIoEndpointsTests {
     private let sourceID = UUID16(parsing: "11111111-1111-4111-8111-111111111111")!
     private let actorID = UUID16(parsing: "22222222-2222-4222-8222-222222222222")!
+    private let sourceWireID = "11111111-1111-4111-8111-111111111111"
+    private let actorWireID = "22222222-2222-4222-8222-222222222222"
     private let route = "coaty/3/test/IOV/11111111-1111-4111-8111-111111111111"
 
     @Test
@@ -100,8 +102,132 @@ struct StaticIoEndpointsTests {
         #expect(dispatchAssociate(&sourceOnly, source: sourceID, actor: actorID, route: "coaty/3/test/IOV/other", rate: nil) == .rejected)
     }
 
+    @Test
+    func malformedAndUnknownAssociatesDoNotMutateExistingState() throws {
+        var endpoints = StaticIoEndpoints(
+            sources: [StaticIoEndpointDescriptor(id: sourceID, valueType: "test.Value", mode: .raw)],
+            actors: [StaticIoEndpointDescriptor(id: actorID, valueType: "test.Value", mode: .raw)],
+            actorHandlers: [nil]
+        )
+        #expect(dispatchAssociate(&endpoints, source: sourceID, actor: actorID, route: route, rate: 100) == .associated)
+        let sourceBefore = try #require(endpoints.sourceState(id: sourceID))
+        let actorBefore = try #require(endpoints.actorState(id: actorID))
+
+        #expect(dispatch(&endpoints, topic: "coaty/3/test/ASC/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", payload: "{\"ioSourceId\":\"\(sourceWireID)\"") == .rejected)
+        #expect(endpoints.sourceState(id: sourceID) == sourceBefore)
+        #expect(endpoints.actorState(id: actorID) == actorBefore)
+
+        #expect(dispatchAssociateJSON(&endpoints, source: "33333333-3333-4333-8333-333333333333", actor: "44444444-4444-4444-8444-444444444444", route: route, rate: 200) == .unknownEndpoint)
+        #expect(endpoints.sourceState(id: sourceID) == sourceBefore)
+        #expect(endpoints.actorState(id: actorID) == actorBefore)
+    }
+
+    @Test
+    func incompatibleAssociateDoesNotMutateEitherExistingSide() throws {
+        var endpoints = StaticIoEndpoints(
+            sources: [StaticIoEndpointDescriptor(id: sourceID, valueType: "test.Source", mode: .raw)],
+            actors: [StaticIoEndpointDescriptor(id: actorID, valueType: "test.Actor", mode: .raw)],
+            actorHandlers: [nil]
+        )
+        #expect(dispatchAssociateJSON(&endpoints, source: sourceWireID, actor: "33333333-3333-4333-8333-333333333333", route: "source/route", rate: 100) == .associated)
+        #expect(dispatchAssociateJSON(&endpoints, source: "44444444-4444-4444-8444-444444444444", actor: actorWireID, route: "actor/route", rate: 200) == .associated)
+        let sourceBefore = try #require(endpoints.sourceState(id: sourceID))
+        let actorBefore = try #require(endpoints.actorState(id: actorID))
+
+        #expect(dispatchAssociateJSON(&endpoints, source: sourceWireID, actor: actorWireID, route: "source/route", rate: 300) == .rejected)
+        #expect(endpoints.sourceState(id: sourceID) == sourceBefore)
+        #expect(endpoints.actorState(id: actorID) == actorBefore)
+    }
+
+    @Test
+    func invalidRouteAndRateAssociatesDoNotMutateExistingState() throws {
+        var endpoints = StaticIoEndpoints(
+            sources: [StaticIoEndpointDescriptor(id: sourceID, valueType: "test.Value", mode: .raw)],
+            actors: [], actorHandlers: []
+        )
+        #expect(dispatchAssociateJSON(&endpoints, source: sourceWireID, actor: actorWireID, route: route, rate: 100) == .associated)
+        let before = try #require(endpoints.sourceState(id: sourceID))
+
+        let oversizedRoute = String(repeating: "x", count: WireBufferConfig.maxTopicLength + 1)
+        #expect(dispatchAssociateJSON(&endpoints, source: sourceWireID, actor: actorWireID, route: oversizedRoute, rate: 200) == .rejected)
+        #expect(endpoints.sourceState(id: sourceID) == before)
+        #expect(dispatchAssociateJSON(&endpoints, source: sourceWireID, actor: actorWireID, route: "", rate: 200) == .rejected)
+        #expect(endpoints.sourceState(id: sourceID) == before)
+        #expect(dispatchAssociateJSON(&endpoints, source: sourceWireID, actor: actorWireID, route: route, rate: -1) == .rejected)
+        #expect(endpoints.sourceState(id: sourceID) == before)
+        #expect(dispatchAssociateJSON(&endpoints, source: sourceWireID, actor: actorWireID, route: nil, rate: -1) == .rejected)
+        #expect(endpoints.sourceState(id: sourceID) == before)
+    }
+
+    @Test
+    func sourceCapacityRejectionDoesNotMutateExistingState() throws {
+        var endpoints = StaticIoEndpoints(
+            sources: [StaticIoEndpointDescriptor(id: sourceID, valueType: "test.Value", mode: .raw)],
+            actors: [], actorHandlers: []
+        )
+        let actorIDs = [
+            "33333333-3333-4333-8333-333333333333",
+            "44444444-4444-4444-8444-444444444444",
+            "55555555-5555-4555-8555-555555555555",
+            "66666666-6666-4666-8666-666666666666",
+        ]
+        for (offset, actorID) in actorIDs.enumerated() {
+            #expect(dispatchAssociateJSON(&endpoints, source: sourceWireID, actor: actorID, route: route, rate: 100 + offset) == .associated)
+        }
+        let before = try #require(endpoints.sourceState(id: sourceID))
+
+        #expect(dispatchAssociateJSON(&endpoints, source: sourceWireID, actor: "77777777-7777-4777-8777-777777777777", route: route, rate: 999) == .rejected)
+        #expect(endpoints.sourceState(id: sourceID) == before)
+
+        for actorID in actorIDs {
+            #expect(dispatchAssociateJSON(&endpoints, source: sourceWireID, actor: actorID, route: nil, rate: nil) == .disassociated)
+        }
+        #expect(endpoints.sourceState(id: sourceID)?.isAssociated == false)
+    }
+
+    @Test
+    func sourceRouteConflictDoesNotCommitActorUpdate() throws {
+        var endpoints = StaticIoEndpoints(
+            sources: [StaticIoEndpointDescriptor(id: sourceID, valueType: "test.Value", mode: .raw)],
+            actors: [StaticIoEndpointDescriptor(id: actorID, valueType: "test.Value", mode: .raw)],
+            actorHandlers: [nil]
+        )
+        #expect(dispatchAssociateJSON(&endpoints, source: sourceWireID, actor: "88888888-8888-4888-8888-888888888888", route: "source/route", rate: 300) == .associated)
+        #expect(dispatchAssociateJSON(&endpoints, source: "99999999-9999-4999-8999-999999999999", actor: actorWireID, route: route, rate: 400) == .associated)
+        let sourceBefore = try #require(endpoints.sourceState(id: sourceID))
+        let actorBefore = try #require(endpoints.actorState(id: actorID))
+
+        #expect(dispatchAssociateJSON(&endpoints, source: sourceWireID, actor: actorWireID, route: route, rate: 200) == .rejected)
+        #expect(endpoints.sourceState(id: sourceID) == sourceBefore)
+        #expect(endpoints.actorState(id: actorID) == actorBefore)
+    }
+
+    @Test
+    func actorRouteConflictDoesNotCommitSourceUpdate() throws {
+        var endpoints = StaticIoEndpoints(
+            sources: [StaticIoEndpointDescriptor(id: sourceID, valueType: "test.Value", mode: .raw)],
+            actors: [StaticIoEndpointDescriptor(id: actorID, valueType: "test.Value", mode: .raw)],
+            actorHandlers: [nil]
+        )
+        #expect(dispatchAssociateJSON(&endpoints, source: "88888888-8888-4888-8888-888888888888", actor: actorWireID, route: "actor/route", rate: 300) == .associated)
+        #expect(dispatchAssociateJSON(&endpoints, source: sourceWireID, actor: "99999999-9999-4999-8999-999999999999", route: route, rate: 100) == .associated)
+        let sourceBefore = try #require(endpoints.sourceState(id: sourceID))
+        let actorBefore = try #require(endpoints.actorState(id: actorID))
+
+        #expect(dispatchAssociateJSON(&endpoints, source: sourceWireID, actor: actorWireID, route: route, rate: 200) == .rejected)
+        #expect(endpoints.sourceState(id: sourceID) == sourceBefore)
+        #expect(endpoints.actorState(id: actorID) == actorBefore)
+
+        #expect(dispatchAssociateJSON(&endpoints, source: sourceWireID, actor: "99999999-9999-4999-8999-999999999999", route: nil, rate: nil) == .disassociated)
+        #expect(endpoints.sourceState(id: sourceID)?.isAssociated == false)
+    }
+
     private func dispatchAssociate(_ endpoints: inout StaticIoEndpoints, source: UUID16, actor: UUID16, route: String?, rate: Int?) -> StaticIoDispatchResult {
-        var fields = "{\"ioSourceId\":\"11111111-1111-4111-8111-111111111111\",\"ioActorId\":\"22222222-2222-4222-8222-222222222222\""
+        dispatchAssociateJSON(&endpoints, source: sourceWireID, actor: actorWireID, route: route, rate: rate)
+    }
+
+    private func dispatchAssociateJSON(_ endpoints: inout StaticIoEndpoints, source: String, actor: String, route: String?, rate: Int?) -> StaticIoDispatchResult {
+        var fields = "{\"ioSourceId\":\"\(source)\",\"ioActorId\":\"\(actor)\""
         if let route { fields += ",\"associatingRoute\":\"\(route)\"" }
         if let rate { fields += ",\"updateRate\":\(rate)" }
         fields += "}"
