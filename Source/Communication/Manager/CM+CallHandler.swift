@@ -19,14 +19,24 @@ public enum CallHandlerResult: Sendable {
 /// prevents any later Return publication.
 @MainActor
 public final class CallHandlerRegistration {
+    internal static let defaultDeduplicationWindow: Duration = .seconds(5)
+
     private var observationTask: Task<Void, Never>?
     private var handlerTasks: [String: Task<Void, Never>] = [:]
     private var activeCorrelations: Set<String> = []
-    private var completedCorrelations: Set<String> = []
+    private var completedCorrelations: [String: ContinuousClock.Instant] = [:]
     private var cancellationAction: (() -> Void)?
+    private let deduplicationWindow: Duration
+    private let now: @MainActor () -> ContinuousClock.Instant
 
-    internal init(cancellationAction: @escaping () -> Void) {
+    internal init(
+        cancellationAction: @escaping () -> Void,
+        deduplicationWindow: Duration = CallHandlerRegistration.defaultDeduplicationWindow,
+        now: @escaping @MainActor () -> ContinuousClock.Instant = { ContinuousClock().now }
+    ) {
         self.cancellationAction = cancellationAction
+        self.deduplicationWindow = deduplicationWindow
+        self.now = now
     }
 
     /// Whether this registration has been cancelled.
@@ -41,6 +51,7 @@ public final class CallHandlerRegistration {
         handlerTasks.values.forEach { $0.cancel() }
         handlerTasks.removeAll()
         activeCorrelations.removeAll()
+        completedCorrelations.removeAll()
         cancellationAction?()
         cancellationAction = nil
     }
@@ -54,16 +65,22 @@ public final class CallHandlerRegistration {
     }
 
     internal func reserve(correlationId: String) -> Bool {
-        guard !isCancelled,
-              !completedCorrelations.contains(correlationId),
+        guard !isCancelled else { return false }
+        evictExpiredCompletions(at: now())
+        guard completedCorrelations[correlationId] == nil,
               activeCorrelations.insert(correlationId).inserted else { return false }
         return true
+    }
+
+    internal func release(correlationId: String) {
+        handlerTasks[correlationId] = nil
+        activeCorrelations.remove(correlationId)
     }
 
     internal func setHandlerTask(_ task: Task<Void, Never>, correlationId: String) {
         guard !isCancelled,
               activeCorrelations.contains(correlationId),
-              !completedCorrelations.contains(correlationId) else {
+              completedCorrelations[correlationId] == nil else {
             task.cancel()
             return
         }
@@ -73,10 +90,24 @@ public final class CallHandlerRegistration {
     internal func complete(correlationId: String) -> Bool {
         handlerTasks[correlationId] = nil
         activeCorrelations.remove(correlationId)
-        guard !isCancelled, completedCorrelations.insert(correlationId).inserted else {
+        guard !isCancelled else { return false }
+
+        let completedAt = now()
+        evictExpiredCompletions(at: completedAt)
+        guard completedCorrelations[correlationId] == nil else {
             return false
         }
+        completedCorrelations[correlationId] = completedAt
         return true
+    }
+
+    private func evictExpiredCompletions(at now: ContinuousClock.Instant) {
+        let expiredCorrelationIds = completedCorrelations.compactMap { correlationId, completedAt in
+            completedAt.duration(to: now) >= deduplicationWindow ? correlationId : nil
+        }
+        guard !expiredCorrelationIds.isEmpty else { return }
+
+        expiredCorrelationIds.forEach { completedCorrelations[$0] = nil }
     }
 }
 
@@ -86,7 +117,8 @@ extension CommunicationManager {
     ///
     /// Incoming Calls are filtered by `operation`. When a Call includes a
     /// context filter, `context` must be non-nil and match it before `handler`
-    /// is invoked. Each correlation identifier is handled at most once.
+    /// is invoked. Completed correlation identifiers are suppressed for the
+    /// registration's bounded deduplication window.
     ///
     /// - Parameters:
     ///   - operation: The remote operation name to handle.
@@ -103,11 +135,31 @@ extension CommunicationManager {
         context: CoatyObject? = nil,
         handler: @escaping @Sendable (CallEventSnapshot) async throws -> CallHandlerResult
     ) async throws -> CallHandlerRegistration {
+        try await registerCallHandler(
+            operation: operation,
+            context: context,
+            deduplicationWindow: CallHandlerRegistration.defaultDeduplicationWindow,
+            now: { ContinuousClock().now },
+            handler: handler
+        )
+    }
+
+    internal func registerCallHandler(
+        operation: String,
+        context: CoatyObject? = nil,
+        deduplicationWindow: Duration,
+        now: @escaping @MainActor () -> ContinuousClock.Instant,
+        handler: @escaping @Sendable (CallEventSnapshot) async throws -> CallHandlerResult
+    ) async throws -> CallHandlerRegistration {
         let stream = try await observeCallStream(operation: operation)
         let id = UUID()
-        let registration = CallHandlerRegistration { [weak self] in
-            self?.callHandlerRegistrations[id] = nil
-        }
+        let registration = CallHandlerRegistration(
+            cancellationAction: { [weak self] in
+                self?.callHandlerRegistrations[id] = nil
+            },
+            deduplicationWindow: deduplicationWindow,
+            now: now
+        )
         callHandlerRegistrations[id] = registration
 
         let task = Task { @MainActor [weak self, weak registration] in
@@ -133,6 +185,8 @@ extension CommunicationManager {
             ])
             return
         }
+
+        guard registration.reserve(correlationId: correlationId) else { return }
 
         if let parameters = request.parameters {
             do {
@@ -166,10 +220,11 @@ extension CommunicationManager {
                 )
                 return
             }
-            guard ObjectMatcher.matchesFilter(obj: context, filter: filter) else { return }
+            guard ObjectMatcher.matchesFilter(obj: context, filter: filter) else {
+                registration.release(correlationId: correlationId)
+                return
+            }
         }
-
-        guard registration.reserve(correlationId: correlationId) else { return }
 
         let task = Task { @MainActor [weak self, weak registration] in
             guard let self, let registration else { return }
