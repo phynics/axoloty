@@ -139,4 +139,166 @@ struct ContainerBootstrapTests {
         #expect(runtime.commonOptions?.agentIdentity?["name"] as? String == "test-agent")
         #expect(communicationManager.identity.name == "test-agent")
     }
+
+    // MARK: - Controller lifecycle ordering
+
+    /// Controllers registered before preparation are prepared once before the
+    /// communication manager activates them.
+    @Test
+    func controllersRegisteredBeforePreparationArePreparedBeforeActivation() async throws {
+        let container = try makeLifecycleContainer(
+            controllers: ["initial": LifecycleOrderController.self]
+        )
+        defer { container.shutdown() }
+
+        let initial = try #require(
+            container.getController(name: "initial") as? LifecycleOrderController
+        )
+        try container.registerController(
+            name: "before-preparation",
+            controllerType: LifecycleOrderController.self
+        )
+        let beforePreparation = try #require(
+            container.getController(name: "before-preparation") as? LifecycleOrderController
+        )
+
+        _ = await container.prepareControllersForCommunication()
+        #expect(initial.events == ["init", "prepare"])
+        #expect(beforePreparation.events == ["init", "prepare"])
+
+        let communicationManager = try #require(container.communicationManager)
+        try communicationManager.start()
+        try await waitForActivation(of: initial)
+        try await waitForActivation(of: beforePreparation)
+
+        #expect(initial.events == ["init", "prepare", "starting"])
+        #expect(beforePreparation.events == ["init", "prepare", "starting"])
+    }
+
+    /// A controller registered after the preparation pass still receives
+    /// preparation before it is activated on the next manager start.
+    @Test
+    func controllersRegisteredAfterPreparationArePreparedBeforeActivation() async throws {
+        let container = try makeLifecycleContainer(
+            controllers: ["initial": LifecycleOrderController.self]
+        )
+        defer { container.shutdown() }
+
+        let initial = try #require(
+            container.getController(name: "initial") as? LifecycleOrderController
+        )
+        _ = await container.prepareControllersForCommunication()
+
+        try container.registerController(
+            name: "after-preparation",
+            controllerType: LifecycleOrderController.self
+        )
+        let afterPreparation = try #require(
+            container.getController(name: "after-preparation") as? LifecycleOrderController
+        )
+
+        let communicationManager = try #require(container.communicationManager)
+        try communicationManager.start()
+        try await waitForActivation(of: initial)
+        try await waitForActivation(of: afterPreparation)
+
+        #expect(initial.events == ["init", "prepare", "starting"])
+        #expect(afterPreparation.events == ["init", "prepare", "starting"])
+    }
+
+    /// A controller registered while the manager is running is activated by
+    /// the replayed operating state, without duplicate lifecycle hooks or
+    /// preparation on a later stop/start cycle.
+    @Test
+    func controllersRegisteredWhileRunningHaveOnePreparationAndActivation() async throws {
+        let container = try makeLifecycleContainer(controllers: [:])
+        defer { container.shutdown() }
+
+        let communicationManager = try #require(container.communicationManager)
+        try communicationManager.start()
+
+        try container.registerController(
+            name: "while-running",
+            controllerType: LifecycleOrderController.self
+        )
+        let controller = try #require(
+            container.getController(name: "while-running") as? LifecycleOrderController
+        )
+
+        try await waitForActivation(of: controller)
+        communicationManager.stop()
+        try await waitForStopping(of: controller)
+        try communicationManager.start()
+        try await waitForActivation(of: controller, count: 2)
+
+        #expect(controller.events == ["init", "prepare", "starting", "stopping", "starting"])
+    }
+}
+
+@MainActor
+private final class LifecycleOrderController: Controller, @unchecked Sendable {
+    private(set) var events = [String]()
+
+    override func onInit() {
+        events.append("init")
+        super.onInit()
+    }
+
+    override func prepareForCommunication() async {
+        events.append("prepare")
+        await Task.yield()
+    }
+
+    override func onCommunicationManagerStarting() {
+        events.append("starting")
+        super.onCommunicationManagerStarting()
+    }
+
+    override func onCommunicationManagerStopping() {
+        events.append("stopping")
+        super.onCommunicationManagerStopping()
+    }
+}
+
+@MainActor
+private func makeLifecycleContainer(
+    controllers: [String: Controller.Type]
+) throws -> Container {
+    let communication = CommunicationOptions(
+        mqttClientOptions: MQTTClientOptions(
+            host: "127.0.0.1",
+            port: 1,
+            shouldTryMDNSDiscovery: false,
+            autoReconnect: false
+        ),
+        shouldAutoStart: false
+    )
+    return try Container.resolve(
+        components: Components(controllers: controllers, objectTypes: []),
+        configuration: Configuration(communication: communication)
+    )
+}
+
+@MainActor
+private func waitForActivation(
+    of controller: LifecycleOrderController,
+    count: Int = 1
+) async throws {
+    try await waitForEvent("starting", in: controller, count: count)
+}
+
+@MainActor
+private func waitForStopping(of controller: LifecycleOrderController) async throws {
+    try await waitForEvent("stopping", in: controller)
+}
+
+@MainActor
+private func waitForEvent(
+    _ event: String,
+    in controller: LifecycleOrderController,
+    count: Int = 1
+) async throws {
+    try await waitUntil("controller \(event)", timeout: .seconds(2)) {
+        controller.events.filter { $0 == event }.count >= count
+    }
 }

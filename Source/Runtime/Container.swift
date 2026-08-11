@@ -29,6 +29,7 @@ public class Container {
     private var controllers = [String: Controller]()
     private var isShutdown = false
     private var operatingStateTask: Task<Void, Never>?
+    private let controllerLifecycle = ContainerControllerLifecycle()
 
     /// Creates and bootstraps a Coaty container by registering and resolving
     /// the given components and configuration options.
@@ -100,21 +101,11 @@ public class Container {
         self.controllers[name] = controller
             
         controller.onInit()
-            
-            // Trigger onCommunicationManagerStarting() when a dynamically
-            // registered controller joins an already-started manager.
-        Task { @MainActor [weak self, weak controller] in
-                guard let self,
-                      let controller,
-                      let communicationManager = self.communicationManager else {
-                    return
-                }
-                let stream = await communicationManager.observeOperatingStateStream()
-                var iterator = stream.makeAsyncIterator()
-                if await iterator.next() == .started {
-                    self.dispatchOperatingState(state: .started, ctrl: controller)
-                }
-        }
+
+        self.controllerLifecycle.register(
+            controller,
+            operatingState: self.communicationManager?.operatingState ?? .stopped
+        )
     }
     
     /// Gets the registered controller of the given name.
@@ -132,19 +123,23 @@ public class Container {
     ///
     /// - Throws: A communication or subscription error reported during startup.
     public func startAndWaitUntilReady() async throws {
-        let controllers = Array(self.controllers.values)
-        for controller in controllers {
-            await controller.prepareForCommunication()
-        }
+        let controllers = await self.controllerLifecycle.prepareControllers()
 
         guard let communicationManager else {
             throw AxolotyError.invalidConfiguration(option: "communicationManager", reason: "was not initialized")
         }
 
         try await communicationManager.startAndWaitUntilReady()
+        if communicationManager.operatingState == .started {
+            await self.controllerLifecycle.handleOperatingState(.started)
+        }
         for controller in controllers {
             await controller.onCommunicationManagerReady()
         }
+    }
+
+    internal func prepareControllersForCommunication() async -> [Controller] {
+        await self.controllerLifecycle.prepareControllers()
     }
     
     /// Creates a new array with the results of calling the provided callback
@@ -211,6 +206,13 @@ public class Container {
         self.controllers.forEach { (_, controller) in
             controller.onInit()
         }
+
+        self.controllers.values.forEach { controller in
+            self.controllerLifecycle.register(
+                controller,
+                operatingState: self.communicationManager?.operatingState ?? .stopped
+            )
+        }
         
         // Observe operating state and dispatch to registered controllers.
         self.operatingStateTask = Task { @MainActor [weak self] in
@@ -220,17 +222,8 @@ public class Container {
             }
             let stream = await communicationManager.observeOperatingStateStream()
             var iterator = stream.makeAsyncIterator()
-            var isInitialOperatingState = true
             while let state = await iterator.next() {
-                if isInitialOperatingState {
-                    isInitialOperatingState = false
-                    if state == .stopped {
-                        continue
-                    }
-                }
-                for controller in self.controllers.values {
-                    self.dispatchOperatingState(state: state, ctrl: controller)
-                }
+                await self.controllerLifecycle.handleOperatingState(state)
             }
         }
 
@@ -245,19 +238,11 @@ public class Container {
 
         self.operatingStateTask?.cancel()
         self.operatingStateTask = nil
+        self.controllerLifecycle.shutdown()
         self.controllers = [String: Controller]()
         self.communicationManager = nil
         self.runtime = nil
         self.identity = nil
-    }
-    
-    private func dispatchOperatingState(state: OperatingState, ctrl: Controller) {
-        switch state {
-        case OperatingState.started: 
-            ctrl.onCommunicationManagerStarting()
-        case OperatingState.stopped: 
-            ctrl.onCommunicationManagerStopping()
-        }
     }
 
     private func createIdentity(options: [String: Any]?) throws -> Identity {
