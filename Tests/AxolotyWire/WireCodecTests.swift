@@ -385,9 +385,9 @@ struct WireCodecTests {
     @Test
     func ownedWireEventCopiesPayload() throws {
         var source = Array(#"{"payload":{"value":1}}"#.utf8)
-        let owned = source.withUnsafeBufferPointer { buffer -> OwnedWireEvent in
+        let owned = try source.withUnsafeBufferPointer { buffer -> OwnedWireEvent in
             let reader = WireReader(bytes: buffer.baseAddress!, length: buffer.count)
-            return BorrowedWireEvent.ioValue(try! IoValueWireData(from: reader)).owned()
+            return try BorrowedWireEvent.ioValue(try IoValueWireData(from: reader)).owned()
         }
         source[2] = 0x58
         if case .ioValue(let value) = owned {

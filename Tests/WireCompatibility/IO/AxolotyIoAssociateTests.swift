@@ -112,15 +112,15 @@ struct AxolotyIoAssociateTests {
         let payload = #"{"ioSourceId":"33333333-3333-4333-8333-333333333333","ioActorId":"44444444-4444-4444-8444-444444444444","associatingRoute":"coaty\/3\/wire-compat-v1\/IOV\/33333333-3333-4333-8333-333333333333"}"#
         let topic = Array("coaty/3/wire-compat-v1/ASC:wire-compat-io-context-1/55555555-5555-4555-8555-555555555555".utf8)
         let payloadBytes = Array(payload.utf8)
-        let message = topic.withUnsafeBufferPointer { buffer in
-            payloadBytes.withUnsafeBufferPointer { payloadBuffer in
+        let message = try topic.withUnsafeBufferPointer { buffer in
+            try payloadBytes.withUnsafeBufferPointer { payloadBuffer in
                 let borrowed = BorrowedMessage(
                     topicBytes: buffer.baseAddress!, topicLength: buffer.count,
                     payloadBytes: payloadBuffer.baseAddress!, payloadLength: payloadBuffer.count
                 )
                 return ParsedMQTTMessage(
                     topicView: borrowed.topic,
-                    event: try! BorrowedWireEvent(message: borrowed).owned(),
+                    event: try BorrowedWireEvent(message: borrowed).owned(),
                     payload: payloadBytes
                 )
             }

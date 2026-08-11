@@ -26,6 +26,26 @@ following rules are mandatory:
 4. **Copy before returning.** If a borrowed value must outlive its
    callback, copy the relevant bytes into an owned allocation first.
 
+## Owned raw JSON construction
+
+Owned wire payload types store independent `[UInt8]` copies. Every public raw-
+byte initializer validates complete JSON syntax and the semantic shape required
+by each event field before publishing the owned value, and throws
+`WireDecodeError` on failure.
+
+`BorrowedWireEvent.owned()` copies fields and performs the same validation
+before returning. Malformed borrowed data therefore cannot cross the ownership
+boundary. The package remains Foundation-free; callers receive the structured
+wire error and Axoloty API boundaries wrap it as `AxolotyError`.
+
+The host adapter validates Codable-produced raw fields with Foundation's JSON
+parser, then calls the same public validating constructors. Host-sized values
+are revalidated by the Foundation-free wire layer within the bounded host
+payload limit. There is no cross-module unchecked construction route. Internal
+unchecked initializers are used only by those validating constructors.
+Validation failures are wrapped as `AxolotyError.caught`, preserving the
+underlying `WireDecodeError` for cause-chain diagnostics.
+
 ## Suspension points
 
 The following public API operations may suspend (`async` or `async throws`):

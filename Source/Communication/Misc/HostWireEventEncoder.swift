@@ -9,7 +9,15 @@ enum HostWirePayloadLimits {
     static let maxPayloadSize = 16 * 1_024 * 1_024
 }
 
+private enum HostOwnedJSONShape {
+    case any
+    case object
+    case array
+    case objectOrArray
+}
+
 extension HostWireAdapter {
+    // swiftlint:disable cyclomatic_complexity function_body_length
     /// Decodes a host-runtime event whose payload is larger than the embedded
     /// wire reader's fixed ingress limit.
     ///
@@ -56,14 +64,25 @@ extension HostWireAdapter {
     }
 
     private static func ownedEvent(_ event: Any) throws -> OwnedWireEvent {
-        let wire: OwnedWireEvent
-        switch event {
-        case let value as AdvertiseEvent: wire = .advertise(.init(object: try encode(value.data.object), privateData: try encodeJSONObject(value.data.privateData)))
-        case let value as DeadvertiseEvent: wire = .deadvertise(.init(objectIds: try encode(value.data.objectIds)))
-        case let value as ChannelEvent: wire = .channel(.init(object: try value.data.object.map(encode), objects: try value.data.objects.map(encode), privateData: try encodeJSONObject(value.data.privateData)))
+        do {
+            let wire: OwnedWireEvent
+            switch event {
+        case let value as AdvertiseEvent:
+            let object = try hostRaw(try encode(value.data.object), field: "object", shape: .object)
+            let privateData = try hostOptionalRaw(try encodeJSONObject(value.data.privateData), field: "privateData", shape: .object)
+            wire = .advertise(try OwnedAdvertiseWireData(object: object, privateData: privateData))
+        case let value as DeadvertiseEvent:
+            let objectIds = try hostRaw(try encode(value.data.objectIds), field: "objectIds", shape: .array)
+            wire = .deadvertise(try OwnedDeadvertiseWireData(objectIds: objectIds))
+        case let value as ChannelEvent:
+            let object = try hostOptionalRaw(try value.data.object.map(encode), field: "object", shape: .object)
+            let objects = try hostOptionalRaw(try value.data.objects.map(encode), field: "objects", shape: .array)
+            let privateData = try hostOptionalRaw(try encodeJSONObject(value.data.privateData), field: "privateData", shape: .object)
+            wire = .channel(try OwnedChannelWireData(object: object, objects: objects, privateData: privateData))
         case let value as AssociateEvent:
             guard let source = UUID16(parsing: value.data.ioSourceId.string), let actor = UUID16(parsing: value.data.ioActorId.string) else { throw AxolotyError.invalidArgument(argument: "event", reason: "Associate contains an invalid UUID") }
-            wire = .associate(.init(ioSourceId: source, ioActorId: actor, associatingRoute: value.data.associatingRoute.map { Array($0.utf8) }, isExternalRoute: value.data.isExternalRoute, updateRate: value.data.updateRate))
+            let route = try value.data.associatingRoute.map(encodedStringContent)
+            wire = .associate(try OwnedAssociateWireData(ioSourceId: source, ioActorId: actor, associatingRoute: route, isExternalRoute: value.data.isExternalRoute, updateRate: value.data.updateRate))
         case let value as IoValueEvent:
             let payload: [UInt8]
             if let rawPayload = value.data.rawPayload {
@@ -73,24 +92,127 @@ extension HostWireAdapter {
             } else {
                 payload = Array("null".utf8)
             }
-            wire = .ioValue(.init(payload: payload))
-        case let value as DiscoverEvent: wire = .discover(.init(externalId: value.data.externalId.map { Array($0.utf8) }, objectId: value.data.objectId.map { Array($0.string.utf8) }, objectTypes: try value.data.objectTypes.map(encode), coreTypes: try value.data.coreTypes.map(encode)))
+            wire = .ioValue(try OwnedIoValueWireData(payload: hostRaw(payload, field: "payload", shape: .any)))
+        case let value as DiscoverEvent:
+            let externalId = try value.data.externalId.map(encodedStringContent)
+            let objectId = try value.data.objectId.map { try encodedStringContent($0.string) }
+            let objectTypes = try hostOptionalRaw(try value.data.objectTypes.map(encode), field: "objectTypes", shape: .array)
+            let coreTypes = try hostOptionalRaw(try value.data.coreTypes.map(encode), field: "coreTypes", shape: .array)
+            wire = .discover(try OwnedDiscoverWireData(externalId: externalId, objectId: objectId, objectTypes: objectTypes, coreTypes: coreTypes))
         case let value as ResolveEvent:
             guard let object = value.data.object else { throw AxolotyError.invalidArgument(argument: "event", reason: "Resolve requires an object") }
-            wire = .resolve(.init(object: try encode(object), relatedObjects: try value.data.relatedObjects.map(encode), privateData: try encodeJSONObject(value.data.privateData)))
+            let rawObject = try hostRaw(try encode(object), field: "object", shape: .object)
+            let relatedObjects = try hostOptionalRaw(try value.data.relatedObjects.map(encode), field: "relatedObjects", shape: .array)
+            let privateData = try hostOptionalRaw(try encodeJSONObject(value.data.privateData), field: "privateData", shape: .object)
+            wire = .resolve(try OwnedResolveWireData(object: rawObject, relatedObjects: relatedObjects, privateData: privateData))
         case let value as QueryEvent:
             let joins: [UInt8]?
             if let many = value.data.objectJoinConditions { joins = try encode(many) }
             else { joins = try value.data.objectJoinCondition.map(encode) }
-            wire = .query(.init(objectTypes: try value.data.objectTypes.map(encode), coreTypes: try value.data.coreTypes.map(encode), objectFilter: try encode(value.data.objectFilter ?? ObjectFilter()), objectJoinConditions: joins))
-        case let value as RetrieveEvent: wire = .retrieve(.init(objects: try encode(value.data.objects), privateData: try encodeJSONObject(value.data.privateData)))
-        case let value as UpdateEvent: wire = .update(.init(object: try encode(value.data.object)))
-        case let value as CompleteEvent: wire = .complete(.init(object: try value.data.object.map(encode), privateData: try encodeJSONObject(value.data.privateData)))
-        case let value as CallEvent: wire = .call(.init(parameters: value.data.parameters.map { Array($0.utf8) }, filter: try value.data.filter.map(encode)))
-        case let value as ReturnEvent: wire = .returnEvent(.init(result: value.data.result.map { Array($0.utf8) }, executionInfo: value.data.executionInfo.map { Array($0.utf8) }, error: try value.data.error.map(encode)))
-        default: throw AxolotyError.invalidArgument(argument: "event", reason: "Unsupported communication event type")
+            let objectTypes = try hostOptionalRaw(try value.data.objectTypes.map(encode), field: "objectTypes", shape: .array)
+            let coreTypes = try hostOptionalRaw(try value.data.coreTypes.map(encode), field: "coreTypes", shape: .array)
+            let objectFilter = try hostRaw(try encode(value.data.objectFilter ?? ObjectFilter()), field: "objectFilter", shape: .object)
+            let objectJoinConditions = try hostOptionalRaw(joins, field: "objectJoinConditions", shape: .objectOrArray)
+            wire = .query(try OwnedQueryWireData(objectTypes: objectTypes, coreTypes: coreTypes, objectFilter: objectFilter, objectJoinConditions: objectJoinConditions))
+        case let value as RetrieveEvent:
+            let objects = try hostRaw(try encode(value.data.objects), field: "objects", shape: .array)
+            let privateData = try hostOptionalRaw(try encodeJSONObject(value.data.privateData), field: "privateData", shape: .object)
+            wire = .retrieve(try OwnedRetrieveWireData(objects: objects, privateData: privateData))
+        case let value as UpdateEvent:
+            wire = .update(try OwnedUpdateWireData(object: hostRaw(try encode(value.data.object), field: "object", shape: .object)))
+        case let value as CompleteEvent:
+            let object = try hostOptionalRaw(try value.data.object.map(encode), field: "object", shape: .object)
+            let privateData = try hostOptionalRaw(try encodeJSONObject(value.data.privateData), field: "privateData", shape: .object)
+            wire = .complete(try OwnedCompleteWireData(object: object, privateData: privateData))
+        case let value as CallEvent:
+            let parameters = try hostOptionalRaw(value.data.parameters.map { Array($0.utf8) }, field: "parameters", shape: .objectOrArray)
+            let filter = try hostOptionalRaw(try value.data.filter.map(encode), field: "filter", shape: .object)
+            wire = .call(try OwnedCallWireData(parameters: parameters, filter: filter))
+        case let value as ReturnEvent:
+            let result = try hostOptionalRaw(value.data.result.map { Array($0.utf8) }, field: "result", shape: .any)
+            let executionInfo = try hostOptionalRaw(value.data.executionInfo.map { Array($0.utf8) }, field: "executionInfo", shape: .any)
+            let error = try hostOptionalRaw(try value.data.error.map(encode), field: "error", shape: .object)
+            wire = .returnEvent(try OwnedReturnWireData(result: result, executionInfo: executionInfo, error: error))
+            default:
+                throw AxolotyError.invalidArgument(argument: "event", reason: "Unsupported communication event type")
+            }
+            return wire
+        } catch {
+            guard let axolotyError = error as? AxolotyError else {
+                throw AxolotyError.caught(error)
+            }
+            throw axolotyError
         }
-        return wire
+    }
+    // swiftlint:enable cyclomatic_complexity function_body_length
+
+    private static func hostRaw(
+        _ bytes: [UInt8],
+        field: StaticString,
+        shape: HostOwnedJSONShape
+    ) throws(WireDecodeError) -> [UInt8] {
+        do {
+            if bytes.count <= WireBufferConfig.maxPayloadSize {
+                let wireValid = bytes.withUnsafeBufferPointer { buffer -> Bool in
+                    guard let base = buffer.baseAddress else { return false }
+                    return WireReader.isValidJSONValue(ByteSlice(bytes: base, length: buffer.count))
+                }
+                guard wireValid else {
+                    throw WireDecodeError(.unexpectedToken(expected: "valid JSON value", actual: nil), field: field)
+                }
+            }
+            let value = try JSONSerialization.jsonObject(with: Data(bytes), options: [.fragmentsAllowed])
+            guard hostShapeMatches(value, shape) else {
+                throw WireDecodeError(.typeMismatch(expected: expectedShape(shape)), field: field)
+            }
+            return bytes
+        } catch {
+            guard let failure = error as? WireDecodeError else {
+                throw WireDecodeError(.unexpectedToken(expected: "valid JSON value", actual: nil), field: field)
+            }
+            throw WireDecodeError(failure.reason, byteOffset: failure.byteOffset, field: field)
+        }
+    }
+
+    private static func hostOptionalRaw(
+        _ bytes: [UInt8]?,
+        field: StaticString,
+        shape: HostOwnedJSONShape
+    ) throws(WireDecodeError) -> [UInt8]? {
+        guard let bytes else { return nil }
+        return try hostRaw(bytes, field: field, shape: shape)
+    }
+
+    private static func hostShapeMatches(_ value: Any, _ shape: HostOwnedJSONShape) -> Bool {
+        switch shape {
+        case .any: return true
+        case .object: return value is [String: Any] || value is NSDictionary
+        case .array: return value is [Any] || value is NSArray
+        case .objectOrArray: return value is [String: Any] || value is NSDictionary || value is [Any] || value is NSArray
+        }
+    }
+
+    private static func expectedShape(_ shape: HostOwnedJSONShape) -> StaticString {
+        switch shape {
+        case .any: "valid JSON value"
+        case .object: "object"
+        case .array: "array"
+        case .objectOrArray: "object or array"
+        }
+    }
+
+    private static func encodedStringContent(_ value: String) throws -> [UInt8] {
+        do {
+            let encoded = Array(try JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed]))
+            guard encoded.count >= 2 else {
+                throw AxolotyError.decodingFailure(type: "OwnedWireData", reason: "encoded string content is empty")
+            }
+            return Array(encoded.dropFirst().dropLast())
+        } catch let error as AxolotyError {
+            throw error
+        } catch {
+            throw AxolotyError.caught(error)
+        }
     }
 
     private static func encode<T: Encodable>(_ value: T) throws -> [UInt8] {
