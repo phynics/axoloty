@@ -160,6 +160,7 @@ struct SensorThingsWireRoundTripTests {
     }
 
     @Test
+    @available(*, deprecated, message: "This test intentionally validates the legacy Thing.properties bridge.")
     func thingStringPropertiesBridgeToJSONProperties() {
         let thing = Thing(
             description: "A string-only thing",

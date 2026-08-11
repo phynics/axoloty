@@ -171,7 +171,7 @@ struct LogManagerTests {
     /// unsynchronized access.
     @Test
     func concurrentLevelReadsAndWritesDoNotRace() async throws {
-        try await withIsolatedSubsystemLevel("test.concurrency") {
+        await withIsolatedSubsystemLevel("test.concurrency") {
             let levels: [Logging.Logger.Level] = [.trace, .debug, .info, .notice, .warning, .error, .critical]
             await withTaskGroup(of: Void.self) { group in
                 for i in 0 ..< 500 {

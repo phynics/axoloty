@@ -394,7 +394,7 @@ extension MessageRouterTests {
         )
         #expect(received.value == 1)
 
-        router.unsubscribeChannel(try #require(token))
+        router.unsubscribeChannel(token)
         dispatchBorrowed(
             topic: "coaty/3/test/CHN:42/11111111-1111-4111-8111-111111111111",
             to: router

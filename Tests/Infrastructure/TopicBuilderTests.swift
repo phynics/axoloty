@@ -25,7 +25,7 @@ struct TopicBuilderTests {
         #expect(topicString == "coaty/3/factory/ADV:com.example.Sensor/\(sourceId.string)")
 
         let bytes = Array(topicString.utf8)
-        let view = try bytes.withUnsafeBufferPointer { buf in
+        let view = bytes.withUnsafeBufferPointer { buf in
             TopicView(topicBytes: buf.baseAddress!, length: buf.count)
         }
 
@@ -47,7 +47,7 @@ struct TopicBuilderTests {
         #expect(publication == "coaty/3/factory/DSC/\(sourceId.string)/request-42")
 
         let bytes = Array(publication.utf8)
-        let view = try bytes.withUnsafeBufferPointer { buf in
+        let view = bytes.withUnsafeBufferPointer { buf in
             TopicView(topicBytes: buf.baseAddress!, length: buf.count)
         }
         #expect(try #require(view.correlationIdLevel).asString() == "request-42")
