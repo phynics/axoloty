@@ -84,7 +84,7 @@ struct EventSnapshotMetadataTests {
 
     @Test
     func advertiseSnapshotDecodesFromParsedMQTTMessage() throws {
-        let parsed = parseMessage(topic: "coaty/1/-/ADV:Identity/\(sourceId)", payload: advertisePayload())
+        let parsed = try parseMessage(topic: "coaty/1/-/ADV:Identity/\(sourceId)", payload: advertisePayload())
         let snapshot = try #require(AdvertiseEventSnapshot(parsedMQTTMessage: parsed))
 
         #expect(snapshot.sourceId == sourceId)
@@ -99,7 +99,7 @@ struct EventSnapshotMetadataTests {
 
     @Test
     func advertiseSnapshotDecodesPrivateDataFromParsedMQTTMessage() throws {
-        let parsed = parseMessage(topic: "coaty/1/-/ADV:Identity/\(sourceId)", payload: advertisePayload(withPrivateData: true))
+        let parsed = try parseMessage(topic: "coaty/1/-/ADV:Identity/\(sourceId)", payload: advertisePayload(withPrivateData: true))
         let snapshot = try #require(AdvertiseEventSnapshot(parsedMQTTMessage: parsed))
 
         let privateData = try #require(snapshot.privateData)
@@ -146,7 +146,7 @@ struct EventSnapshotMetadataTests {
 
     @Test
     func channelSnapshotDecodesFromParsedMQTTMessage() throws {
-        let parsed = parseMessage(topic: "coaty/1/-/CHN:channel-a/\(sourceId)", payload: channelPayload(withPrivateData: true))
+        let parsed = try parseMessage(topic: "coaty/1/-/CHN:channel-a/\(sourceId)", payload: channelPayload(withPrivateData: true))
         let snapshot = try #require(ChannelEventSnapshot(parsedMQTTMessage: parsed))
 
         #expect(snapshot.sourceId == sourceId)
@@ -177,7 +177,7 @@ struct EventSnapshotMetadataTests {
 
     @Test
     func updateSnapshotDecodesFromParsedMQTTMessage() throws {
-        let parsed = parseMessage(topic: "coaty/1/-/UPD:CoatyObject/\(sourceId)/\(objectId)", payload: advertisePayload())
+        let parsed = try parseMessage(topic: "coaty/1/-/UPD:CoatyObject/\(sourceId)/\(objectId)", payload: advertisePayload())
         let snapshot = try #require(UpdateEventSnapshot(parsedMQTTMessage: parsed))
 
         #expect(snapshot.sourceId == sourceId)
@@ -238,7 +238,7 @@ struct EventSnapshotMetadataTests {
         let payload = """
         {"parameters":\(samplePrivateDataJSON()),"filter":\(samplePrivateDataJSON())}
         """
-        let parsed = parseMessage(topic: "coaty/1/-/CLL:doThing/\(sourceId)/\(objectId)", payload: payload)
+        let parsed = try parseMessage(topic: "coaty/1/-/CLL:doThing/\(sourceId)/\(objectId)", payload: payload)
         let snapshot = try #require(CallEventSnapshot(parsedMQTTMessage: parsed))
 
         #expect(snapshot.sourceId == sourceId)
@@ -396,7 +396,7 @@ struct EventSnapshotMetadataTests {
     @Test
     func associateSnapshotDecodesCoatyJsShapeFromParsedMessage() throws {
         let source = "550e8400-e29b-41d4-a716-446655440001"
-        let parsed = parseMessage(
+        let parsed = try parseMessage(
             topic: "coaty/1/-/ASC:io-context/\(source)",
             payload: #"{"ioSourceId":"33333333-3333-4333-8333-333333333333","ioActorId":"44444444-4444-4444-8444-444444444444","associatingRoute":"coaty/1/-/IOV/33333333-3333-4333-8333-333333333333","updateRate":250}"#
         )
@@ -422,19 +422,19 @@ private func sampleObject() -> CoatyObjectSnapshot {
 
 /// Parses a topic string into a `TopicView` and wraps it with the payload
 /// into a `ParsedMQTTMessage`, mirroring the production receive path.
-private func parseMessage(topic: String, payload: String) -> ParsedMQTTMessage {
+private func parseMessage(topic: String, payload: String) throws -> ParsedMQTTMessage {
     let bytes = Array(topic.utf8)
     let payloadBytes = Array(payload.utf8)
-    return bytes.withUnsafeBufferPointer { buf in
+    return try bytes.withUnsafeBufferPointer { buf in
         let view = TopicView(topicBytes: buf.baseAddress!, length: buf.count)
-        return payloadBytes.withUnsafeBufferPointer { payloadBuffer in
+        return try payloadBytes.withUnsafeBufferPointer { payloadBuffer in
             let message = BorrowedMessage(
                 topicBytes: buf.baseAddress!, topicLength: buf.count,
                 payloadBytes: payloadBuffer.baseAddress!, payloadLength: payloadBuffer.count
             )
             return ParsedMQTTMessage(
                 topicView: view,
-                event: try! BorrowedWireEvent(message: message).owned(),
+                event: try BorrowedWireEvent(message: message).owned(),
                 payload: payloadBytes
             )
         }

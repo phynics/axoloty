@@ -281,7 +281,7 @@ struct ExhaustiveWireEventRoundTripTests {
             let reader = WireReader(bytes: base, length: buffer.count)
             let borrowed = try BorrowedWireEvent(eventType: type, from: reader)
             let first = try encodeEvent(borrowed)
-            return (first, borrowed.owned())
+            return (first, try borrowed.owned())
         }
         source = Array(repeating: 0xA5, count: source.count)
 

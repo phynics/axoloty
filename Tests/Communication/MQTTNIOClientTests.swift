@@ -185,7 +185,7 @@ struct MQTTNIOClientTests {
             )
             return ParsedMQTTMessage(
                 topicView: view,
-                event: .advertise(.init(object: Array(#"{"objectId":"22222222-2222-4222-8222-222222222222","coreType":"CoatyObject","objectType":"coaty.CoatyObject","name":"test"}"#.utf8), privateData: nil)),
+                event: .advertise(try OwnedAdvertiseWireData(object: Array(#"{"objectId":"22222222-2222-4222-8222-222222222222","coreType":"CoatyObject","objectType":"coaty.CoatyObject","name":"test"}"#.utf8), privateData: nil)),
                 payload: Array("{}".utf8)
             )
         }
@@ -221,7 +221,7 @@ struct MQTTNIOClientTests {
                     topicBytes: try #require(buffer.baseAddress),
                     length: buffer.count
                 ),
-                event: .deadvertise(.init(objectIds: Array(#"["22222222-2222-4222-8222-222222222222"]"#.utf8))),
+                event: .deadvertise(try OwnedDeadvertiseWireData(objectIds: Array(#"["22222222-2222-4222-8222-222222222222"]"#.utf8))),
                 payload: payloadBytes
             )
         }
