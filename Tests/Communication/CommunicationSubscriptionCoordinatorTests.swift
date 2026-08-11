@@ -233,6 +233,69 @@ struct CommunicationSubscriptionCoordinatorTests {
     }
 
     @Test
+    func acquireDuringResetIsRetainedUntilNextOnlineTransition() async {
+        let gate = SubscriptionGate()
+        let log = CommandLog()
+        let coordinator = CommunicationSubscriptionCoordinator(commandSink: { command in
+            await log.append(command)
+            if case .unsubscribe = command {
+                await gate.markStarted()
+                await gate.waitUntilOpen()
+            }
+        })
+
+        await coordinator.setOnline(true)
+        await coordinator.acquire(topic: "t1")
+        await log.clear()
+
+        let resetTask = Task {
+            await coordinator.reset()
+        }
+        await gate.waitUntilStarted()
+
+        // Reset has committed its offline state, but transport cleanup is still
+        // blocked. The acquisition must be retained as an offline desired topic
+        // and must not emit a subscribe command during reset.
+        await coordinator.acquire(topic: "t2")
+        await gate.open()
+        await resetTask.value
+
+        #expect(await log.commands == [.unsubscribe("t1")])
+        await coordinator.setOnline(true)
+        #expect(await log.commands == [.unsubscribe("t1"), .subscribe("t2")])
+    }
+
+    @Test
+    func sameTopicActivationWaitsForResetCleanup() async {
+        let gate = SubscriptionGate()
+        let broker = SubscriptionRaceBroker(gate: gate)
+        let coordinator = CommunicationSubscriptionCoordinator(commandSink: { command in
+            await broker.deliver(command)
+        })
+
+        await coordinator.setOnline(true)
+        await coordinator.acquire(topic: "t1")
+        await broker.clear()
+
+        let resetTask = Task {
+            await coordinator.reset()
+        }
+        await gate.waitUntilStarted()
+
+        await coordinator.acquire(topic: "t1")
+        // This must record the new online state without starting a subscribe
+        // against the old subscription while reset is still unsubscribing it.
+        await coordinator.setOnline(true)
+
+        await gate.open()
+        await resetTask.value
+
+        #expect(await broker.commands == [.unsubscribe("t1"), .subscribe("t1")])
+        #expect(await broker.subscribeStartedBeforeUnsubscribeCompleted == false)
+        #expect(await broker.isSubscribed)
+    }
+
+    @Test
     func duplicateOnlineTransitionDoesNotReemit() async {
         let log = CommandLog()
         let coordinator = CommunicationSubscriptionCoordinator(commandSink: { await log.append($0) })
@@ -279,6 +342,42 @@ private actor CommandLog {
 
     func clear() {
         commands.removeAll()
+    }
+}
+
+private actor SubscriptionRaceBroker {
+    private let gate: SubscriptionGate
+    private(set) var commands: [SubscriptionCommand] = []
+    private(set) var isSubscribed = false
+    private(set) var subscribeStartedBeforeUnsubscribeCompleted = false
+    private var unsubscribeCompleted = true
+
+    init(gate: SubscriptionGate) {
+        self.gate = gate
+    }
+
+    func deliver(_ command: SubscriptionCommand) async {
+        switch command {
+        case .subscribe:
+            if !unsubscribeCompleted {
+                subscribeStartedBeforeUnsubscribeCompleted = true
+            }
+            isSubscribed = true
+        case .unsubscribe:
+            unsubscribeCompleted = false
+            await gate.markStarted()
+            await gate.waitUntilOpen()
+            isSubscribed = false
+            unsubscribeCompleted = true
+        }
+        commands.append(command)
+    }
+
+    func clear() {
+        commands.removeAll()
+        isSubscribed = true
+        subscribeStartedBeforeUnsubscribeCompleted = false
+        unsubscribeCompleted = true
     }
 }
 

@@ -34,6 +34,11 @@ public actor CommunicationSubscriptionCoordinator {
     /// Whether the coordinator is currently online.
     private var isOnline: Bool = false
 
+    /// Whether reset is still draining subscriptions from the previous state.
+    /// New desired state may be recorded while the drain is in flight, but it
+    /// must not be activated until the cleanup commands have completed.
+    private var isResetting: Bool = false
+
     /// A sink that receives subscribe and unsubscribe commands produced by the
     /// coordinator.
     private let commandSink: @Sendable (SubscriptionCommand) async throws -> Void
@@ -71,7 +76,7 @@ public actor CommunicationSubscriptionCoordinator {
     public func acquire(topic: String) async {
         desiredCounts[topic, default: 0] += 1
 
-        guard isOnline, !activeTopics.contains(topic) else {
+        guard isOnline, !isResetting, !activeTopics.contains(topic) else {
             return
         }
 
@@ -127,6 +132,10 @@ public actor CommunicationSubscriptionCoordinator {
         isOnline = online
 
         if online {
+            guard !isResetting else {
+                return
+            }
+
             let topicsToActivate = desiredCounts.keys.filter { !activeTopics.contains($0) }.sorted()
             for topic in topicsToActivate {
                 do {
@@ -147,24 +156,32 @@ public actor CommunicationSubscriptionCoordinator {
     /// After reset, the coordinator is in the same state as after initialization,
     /// regardless of the current online state.
     public func reset() async {
-        if isOnline {
-            for topic in activeTopics.sorted() {
-                do {
-                    try await commandSink(.unsubscribe(topic))
-                } catch {
-                    lastCommandError = .caught(error)
-                }
-            }
-        }
+        isResetting = true
 
+        // Commit the reset transition before awaiting transport cleanup. An
+        // acquisition that re-enters the actor while an unsubscribe is in flight
+        // must observe the reset offline state and become a new desired topic,
+        // rather than being cleared by the transition when cleanup finishes.
+        let topicsToDeactivate = isOnline ? activeTopics.sorted() : []
         desiredCounts.removeAll()
         activeTopics.removeAll()
         isOnline = false
+
+        for topic in topicsToDeactivate {
+            do {
+                try await commandSink(.unsubscribe(topic))
+            } catch {
+                lastCommandError = .caught(error)
+            }
+        }
+
+        isResetting = false
+        await activateDesiredTopics()
     }
 
     /// Retries activation for desired topics that are not currently active.
     internal func activateDesiredTopics() async {
-        guard isOnline else {
+        guard isOnline, !isResetting else {
             return
         }
 
