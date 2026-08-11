@@ -5,6 +5,167 @@ import _JSONCore
 /// The lexical kind retained for an indexed JSON value.
 @usableFromInline enum WireTokenKind: UInt8 { case object, array, string, number, trueValue, falseValue, nullValue }
 
+private struct WireKeyCursor {
+    private let bytes: UnsafeRawPointer
+    private let end: Int
+    private let decodesEscapes: Bool
+    private var offset: Int
+    private(set) var isValid = true
+
+    init(bytes: UnsafeRawPointer, range: Range<Int>, decodesEscapes: Bool) {
+        self.bytes = bytes
+        self.offset = range.lowerBound
+        self.end = range.upperBound
+        self.decodesEscapes = decodesEscapes
+    }
+
+    init(key: StaticString) {
+        self.init(
+            bytes: UnsafeRawPointer(key.utf8Start),
+            range: 0..<key.utf8CodeUnitCount,
+            decodesEscapes: false
+        )
+    }
+
+    mutating func nextScalar() -> UInt32? {
+        guard isValid, offset < end else { return nil }
+        let firstByte = loadByte(at: offset)
+        if decodesEscapes && firstByte == 0x5C { return escapedScalar() }
+        if firstByte < 0x80 {
+            offset += 1
+            return UInt32(firstByte)
+        }
+        return utf8Scalar(firstByte: firstByte)
+    }
+
+    private mutating func utf8Scalar(firstByte: UInt8) -> UInt32? {
+        guard let width = utf8Width(firstByte), width <= end - offset else { return invalidate() }
+        let second = loadByte(at: offset + 1)
+        guard second >= 0x80 && second <= 0xBF else { return invalidate() }
+        guard !((firstByte == 0xE0 && second < 0xA0) || (firstByte == 0xED && second > 0x9F) ||
+                 (firstByte == 0xF0 && second < 0x90) || (firstByte == 0xF4 && second > 0x8F)) else {
+            return invalidate()
+        }
+        if width > 2 {
+            for continuation in 2..<width {
+                let byte = loadByte(at: offset + continuation)
+                guard byte >= 0x80 && byte <= 0xBF else { return invalidate() }
+            }
+        }
+        let scalar = utf8ScalarValue(firstByte: firstByte, second: second, width: width)
+        offset += width
+        return scalar
+    }
+
+    private func utf8Width(_ byte: UInt8) -> Int? {
+        switch byte {
+        case 0xC2...0xDF: return 2
+        case 0xE0...0xEF: return 3
+        case 0xF0...0xF4: return 4
+        default: return nil
+        }
+    }
+
+    private func utf8ScalarValue(firstByte: UInt8, second: UInt8, width: Int) -> UInt32 {
+        switch width {
+        case 2: return (UInt32(firstByte & 0x1F) << 6) | UInt32(second & 0x3F)
+        case 3:
+            return (UInt32(firstByte & 0x0F) << 12) | (UInt32(second & 0x3F) << 6) |
+                UInt32(loadByte(at: offset + 2) & 0x3F)
+        case 4:
+            return (UInt32(firstByte & 0x07) << 18) | (UInt32(second & 0x3F) << 12) |
+                (UInt32(loadByte(at: offset + 2) & 0x3F) << 6) | UInt32(loadByte(at: offset + 3) & 0x3F)
+        default: return 0
+        }
+    }
+
+    private mutating func escapedScalar() -> UInt32? {
+        guard end - offset >= 2 else { return invalidate() }
+        let marker = loadByte(at: offset + 1)
+        if marker == 0x75 { return unicodeEscapedScalar() }
+        guard let scalar = simpleEscapeScalar(marker) else { return invalidate() }
+        offset += 2
+        return scalar
+    }
+
+    private func simpleEscapeScalar(_ marker: UInt8) -> UInt32? {
+        switch marker {
+        case 0x22: return 0x22
+        case 0x5C: return 0x5C
+        case 0x2F: return 0x2F
+        case 0x62: return 0x08
+        case 0x66: return 0x0C
+        case 0x6E: return 0x0A
+        case 0x72: return 0x0D
+        case 0x74: return 0x09
+        default: return nil
+        }
+    }
+
+    private mutating func unicodeEscapedScalar() -> UInt32? {
+        guard end - offset >= 6, let high = unicodeEscape(at: offset + 2) else { return invalidate() }
+        offset += 6
+        if high >= 0xD800 && high <= 0xDBFF { return surrogatePairScalar(high) }
+        guard high < 0xD800 || high > 0xDFFF else { return invalidate() }
+        return high
+    }
+
+    private mutating func surrogatePairScalar(_ high: UInt32) -> UInt32? {
+        guard end - offset >= 6, loadByte(at: offset) == 0x5C, loadByte(at: offset + 1) == 0x75,
+              let low = unicodeEscape(at: offset + 2), low >= 0xDC00, low <= 0xDFFF
+        else { return invalidate() }
+        offset += 6
+        return 0x10000 + ((high - 0xD800) << 10) + (low - 0xDC00)
+    }
+
+    private func unicodeEscape(at offset: Int) -> UInt32? {
+        guard offset >= 0, offset <= end, end - offset >= 4 else { return nil }
+        var value: UInt32 = 0
+        for digitOffset in 0..<4 {
+            let digitByte = loadByte(at: offset + digitOffset)
+            let digit: UInt32
+            if digitByte >= 48 && digitByte <= 57 { digit = UInt32(digitByte - 48) }
+            else if digitByte >= 65 && digitByte <= 70 { digit = UInt32(digitByte - 55) }
+            else if digitByte >= 97 && digitByte <= 102 { digit = UInt32(digitByte - 87) }
+            else { return nil }
+            value = value * 16 + digit
+        }
+        return value
+    }
+
+    @inline(__always) private func loadByte(at offset: Int) -> UInt8 {
+        bytes.load(fromByteOffset: offset, as: UInt8.self)
+    }
+
+    private mutating func invalidate() -> UInt32? {
+        isValid = false
+        offset = end
+        return nil
+    }
+}
+
+private func wireSemanticKeysEqual(_ lhs: inout WireKeyCursor, _ rhs: inout WireKeyCursor) -> Bool {
+    while true {
+        let left = lhs.nextScalar()
+        let right = rhs.nextScalar()
+        if left == nil || right == nil { return left == nil && right == nil && lhs.isValid && rhs.isValid }
+        if left != right { return false }
+    }
+}
+
+private func wireSemanticKeysEqual(bytes: UnsafeRawPointer, range: Range<Int>, key: StaticString) -> Bool {
+    var field = WireKeyCursor(bytes: bytes, range: range, decodesEscapes: true)
+    var requested = WireKeyCursor(key: key)
+    return wireSemanticKeysEqual(&field, &requested)
+}
+
+private func wireSemanticKeysEqual(bytes: UnsafeBufferPointer<UInt8>, lhs: Range<Int>, rhs: Range<Int>) -> Bool {
+    guard let baseAddress = bytes.baseAddress else { return false }
+    var first = WireKeyCursor(bytes: UnsafeRawPointer(baseAddress), range: lhs, decodesEscapes: true)
+    var second = WireKeyCursor(bytes: UnsafeRawPointer(baseAddress), range: rhs, decodesEscapes: true)
+    return wireSemanticKeysEqual(&first, &second)
+}
+
 /// A Foundation-free reader which tokenizes once into bounded borrowed slots.
 public struct WireReader {
     @usableFromInline let bytes: UnsafeRawPointer
@@ -154,23 +315,16 @@ public struct WireReader {
         var rootObject = false; var completeValue = false; var failure: WireDecodeError?; var count = 0
         var slots = (FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none)
         func slot(_ n: Int) -> FieldSlot? { switch n { case 0: slots.0; case 1: slots.1; case 2: slots.2; case 3: slots.3; case 4: slots.4; case 5: slots.5; case 6: slots.6; case 7: slots.7; case 8: slots.8; case 9: slots.9; case 10: slots.10; case 11: slots.11; case 12: slots.12; case 13: slots.13; case 14: slots.14; case 15: slots.15; case 16: slots.16; case 17: slots.17; case 18: slots.18; case 19: slots.19; case 20: slots.20; case 21: slots.21; case 22: slots.22; case 23: slots.23; default: nil } }
-        func find(bytes: UnsafeRawPointer, key: StaticString) -> FieldSlot? { for n in 0..<count { if let value = slot(n), value.key.count == key.utf8CodeUnitCount { var equal = true; for i in 0..<value.key.count where bytes.load(fromByteOffset: value.key.lowerBound + i, as: UInt8.self) != key.utf8Start[i] { equal = false; break }; if equal { return value } } }; return nil }
+        func find(bytes: UnsafeRawPointer, key: StaticString) -> FieldSlot? { for n in 0..<count { if let value = slot(n), wireSemanticKeysEqual(bytes: bytes, range: value.key, key: key) { return value } }; return nil }
         mutating func append(_ value: FieldSlot, bytes: UnsafeBufferPointer<UInt8>) {
             guard isBounded(value.key, bytes: bytes), isBounded(value.value, bytes: bytes), isBounded(value.content, bytes: bytes) else {
                 if failure == nil { failure = WireDecodeError(.unexpectedEndOfInput, byteOffset: bytes.count) }
                 return
             }
             for n in 0..<count {
-                if let prior = slot(n), prior.key.count == value.key.count {
-                    var equal = true
-                    for i in 0..<value.key.count where bytes[prior.key.lowerBound + i] != bytes[value.key.lowerBound + i] {
-                        equal = false
-                        break
-                    }
-                    if equal {
-                        if failure == nil { failure = WireDecodeError(.duplicateField, byteOffset: value.key.lowerBound) }
-                        return
-                    }
+                if let prior = slot(n), wireSemanticKeysEqual(bytes: bytes, lhs: prior.key, rhs: value.key) {
+                    if failure == nil { failure = WireDecodeError(.duplicateField, byteOffset: value.key.lowerBound) }
+                    return
                 }
             }
             guard count < WireBufferConfig.maxIndexedFields else {
