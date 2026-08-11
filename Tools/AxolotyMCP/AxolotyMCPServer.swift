@@ -3,7 +3,9 @@
 import Axoloty
 import AxolotyInspectorCore
 import AxolotyInspectorRuntime
+import ErrorKit
 import Foundation
+import Logging
 import MCP
 
 private func makeMCPPropertySchema(type: String, description: String) -> Value {
@@ -23,7 +25,34 @@ public final class AxolotyMCPServer {
     private let server: Server
     private let catalogueService: InspectorCatalogueService
     private let session: InspectorSession
+    private let responseEncoder: ResponseEncoder
+    private let encodingFailureLogger: EncodingFailureLogger
     private var httpServer: MCPHTTPServer?
+
+    typealias SnapshotEncoder = (InspectorCatalogueSnapshot) throws -> String
+    typealias ObjectEncoder = (InspectorObject) throws -> String
+    typealias DiscoveryEncoder = (InspectorDiscoveryResult) throws -> String
+    typealias StatusEncoder = (ServerStatus) throws -> String
+    typealias EncodingFailureLogger = @MainActor @Sendable (String, Logging.Logger.Metadata) -> Void
+
+    struct ResponseEncoder {
+        let snapshot: SnapshotEncoder
+        let object: ObjectEncoder
+        let discovery: DiscoveryEncoder
+        let status: StatusEncoder
+
+        init(
+            snapshot: @escaping SnapshotEncoder = AxolotyMCPServer.encodeSnapshot,
+            object: @escaping ObjectEncoder = AxolotyMCPServer.encodeObject,
+            discovery: @escaping DiscoveryEncoder = AxolotyMCPServer.encodeDiscoveryResult,
+            status: @escaping StatusEncoder = AxolotyMCPServer.encodeStatus
+        ) {
+            self.snapshot = snapshot
+            self.object = object
+            self.discovery = discovery
+            self.status = status
+        }
+    }
 
     nonisolated static let discoverObjectsTool = Tool(
         name: "axoloty_discover_objects",
@@ -101,6 +130,8 @@ public final class AxolotyMCPServer {
         let session = try AxolotyInspectorSession(configuration: connectionConfig)
         self.session = session
         self.catalogueService = InspectorCatalogueService(session: session, namespace: namespace)
+        self.responseEncoder = ResponseEncoder()
+        self.encodingFailureLogger = Self.logEncodingFailure
         self.server = Server(
             name: "axoloty-mcp",
             version: "0.2.0",
@@ -125,9 +156,16 @@ public final class AxolotyMCPServer {
         )
     }
 
-    init(session: InspectorSession, namespace: String) {
+    init(
+        session: InspectorSession,
+        namespace: String,
+        responseEncoder: ResponseEncoder = ResponseEncoder(),
+        encodingFailureLogger: @escaping EncodingFailureLogger = AxolotyMCPServer.logEncodingFailure
+    ) {
         self.session = session
         self.catalogueService = InspectorCatalogueService(session: session, namespace: namespace)
+        self.responseEncoder = responseEncoder
+        self.encodingFailureLogger = encodingFailureLogger
         self.server = Server(
             name: "axoloty-mcp",
             version: "0.2.0",
@@ -208,7 +246,7 @@ public final class AxolotyMCPServer {
 
     // MARK: - Handler registration
 
-    private func registerHandlers(on server: Server) async {
+    func registerHandlers(on server: Server) async {
         let service = catalogueService
 
         // List tools
@@ -262,8 +300,16 @@ public final class AxolotyMCPServer {
     private func handleListObjects(_ args: [String: Value]?, service: InspectorCatalogueService) async -> CallTool.Result {
         let filter = Self.parseFilter(args)
         let snapshot = await service.store.snapshot(filter: filter)
-        let json = (try? Self.encodeSnapshot(snapshot)) ?? "{}"
-        return .init(content: [.text(json)], isError: false)
+        do {
+            let json = try responseEncoder.snapshot(snapshot)
+            return .init(content: [.text(json)], isError: false)
+        } catch {
+            return Self.encodingFailureResult(
+                operation: "axoloty_list_objects",
+                error: error,
+                logger: encodingFailureLogger
+            )
+        }
     }
 
     private func handleGetObject(_ args: [String: Value]?, service: InspectorCatalogueService) async -> CallTool.Result {
@@ -271,20 +317,35 @@ public final class AxolotyMCPServer {
             return .init(content: [.text("Missing required parameter: objectId")], isError: true)
         }
         if let object = await service.store.object(id: objectId) {
-            let json = (try? Self.encodeObject(object)) ?? "{}"
-            return .init(content: [.text(json)], isError: false)
+            do {
+                let json = try responseEncoder.object(object)
+                return .init(content: [.text(json)], isError: false)
+            } catch {
+                return Self.encodingFailureResult(
+                    operation: "axoloty_get_object",
+                    error: error,
+                    logger: encodingFailureLogger
+                )
+            }
         }
         return .init(content: [.text("Object not found: \(objectId)")], isError: false)
     }
 
     private func handleDiscoverObjects(_ args: [String: Value]?) async -> CallTool.Result {
-        await Self.handleDiscoverObjects(args) { [session] event in
-            await session.discover(event)
-        }
+        await Self.handleDiscoverObjects(
+            args,
+            responseEncoder: responseEncoder,
+            encodingFailureLogger: encodingFailureLogger,
+            discover: { [session] event in
+                await session.discover(event)
+            }
+        )
     }
 
     static func handleDiscoverObjects(
         _ args: [String: Value]?,
+        responseEncoder: ResponseEncoder = ResponseEncoder(),
+        encodingFailureLogger: EncodingFailureLogger = AxolotyMCPServer.logEncodingFailure,
         discover: (DiscoverEvent) async -> AsyncStream<ResponseEventSnapshot>
     ) async -> CallTool.Result {
         let request = Self.makeDiscoveryRequest(from: args)
@@ -354,8 +415,16 @@ public final class AxolotyMCPServer {
 
         let objects = Array(discoveredObjects.values).sorted { $0.objectId < $1.objectId }
         let result = InspectorDiscoveryResult(timedOut: timedOut, objects: objects)
-        let json = (try? Self.encodeDiscoveryResult(result)) ?? "{}"
-        return .init(content: [.text(json)], isError: false)
+        do {
+            let json = try responseEncoder.discovery(result)
+            return .init(content: [.text(json)], isError: false)
+        } catch {
+            return Self.encodingFailureResult(
+                operation: "axoloty_discover_objects",
+                error: error,
+                logger: encodingFailureLogger
+            )
+        }
     }
 
     nonisolated static func makeDiscoveryRequest(from args: [String: Value]?) -> InspectorDiscoveryRequest {
@@ -370,8 +439,16 @@ public final class AxolotyMCPServer {
 
     private func handleServerStatus() async -> CallTool.Result {
         let status = await collectStatus()
-        let json = (try? Self.encodeStatus(status)) ?? "{}"
-        return .init(content: [.text(json)], isError: false)
+        do {
+            let json = try responseEncoder.status(status)
+            return .init(content: [.text(json)], isError: false)
+        } catch {
+            return Self.encodingFailureResult(
+                operation: "axoloty_server_status",
+                error: error,
+                logger: encodingFailureLogger
+            )
+        }
     }
 
     // MARK: - Helpers
@@ -406,6 +483,28 @@ public final class AxolotyMCPServer {
             objectId: args?["objectId"]?.stringValue,
             sourceId: args?["sourceId"]?.stringValue
         )
+    }
+
+    private static let encodingFailureMessage = "Unable to encode MCP response; please retry the request."
+
+    private static func encodingFailureResult(
+        operation: String,
+        error: Error,
+        logger: EncodingFailureLogger
+    ) -> CallTool.Result {
+        let wrapped = AxolotyError.caught(error)
+        logger("Failed to encode MCP response", [
+            "operation": .string(operation),
+            "error": .string(ErrorKit.errorChainDescription(for: wrapped)),
+        ])
+        return .init(content: [.text(encodingFailureMessage)], isError: true)
+    }
+
+    private static func logEncodingFailure(
+        _: String,
+        _ metadata: Logging.Logger.Metadata
+    ) {
+        LogManager.logger(.runtime).error("Failed to encode MCP response", metadata: metadata)
     }
 
     nonisolated private static func encodeSnapshot(_ snapshot: InspectorCatalogueSnapshot) throws -> String {
