@@ -158,26 +158,20 @@ public class RuleBasedIoRouter: IoRouter {
     /// satisfies both rates.
     ///
     /// Override this method in a subclass to implement a custom rate function.
+    /// A negative rate returned by an override is invalid and is normalized to
+    /// zero before the association is published.
     ///
     /// - Parameters:
     ///     - source: the IoSource object
     ///     - actor the IoActor object
     ///     - sourceNode the IO source's node
-    ///     - sourceNode the IO actor's node
+    ///     - actorNode the IO actor's node
     func computeDefaultUpdateRate(source: IoSource,
                                    actor: IoActor,
                                    sourceNode: IoNode,
                                    actorNode: IoNode) -> Int {
-        switch (source.updateRate, actor.updateRate) {
-        case (.none, .none):
-            return 0
-        case (.some(let r), .none):
-            return r
-        case (.none, .some(let r)):
-            return r
-        case (.some(let a), .some(let b)):
-            return max(a, b)
-        }
+        return self.normalizedUpdateRate(
+            self.computeCumulatedUpdateRate(rate1: source.updateRate, rate2: actor.updateRate))
     }
 
     override func onIoNodeManaged(node: IoNode) {
@@ -368,7 +362,11 @@ public class RuleBasedIoRouter: IoRouter {
             }
 
             if isMatch {
-                return self.computeCumulatedUpdateRate(rate1: source.updateRate, rate2: actor.updateRate) ?? 0
+                // This is the documented per-association effective-rate
+                // decision point. Dynamic dispatch lets router subclasses
+                // supply a custom cadence without changing publication.
+                return self.normalizedUpdateRate(self.computeDefaultUpdateRate(
+                    source: source, actor: actor, sourceNode: sourceNode, actorNode: actorNode))
             }
         }
         return nil
@@ -380,7 +378,8 @@ public class RuleBasedIoRouter: IoRouter {
         for (sourceId, actors) in desired {
             var cumulatedRate = 0
             for (_, value) in actors {
-                cumulatedRate = self.computeCumulatedUpdateRate(rate1: value.2, rate2: cumulatedRate) ?? 0
+                cumulatedRate = self.normalizedUpdateRate(
+                    self.computeCumulatedUpdateRate(rate1: value.2, rate2: cumulatedRate))
             }
             var updated = actors
             for (key, value) in updated {
@@ -503,6 +502,16 @@ public class RuleBasedIoRouter: IoRouter {
         case (.some(let a), .some(let b)):
             return max(a, b)
         }
+    }
+
+    /// Normalizes an optional update rate at the routing boundary.
+    ///
+    /// `nil` means that no cadence was requested and retains the existing zero
+    /// fallback. Negative rates are invalid and are handled the same way so
+    /// that no invalid cadence is passed to association publication.
+    private func normalizedUpdateRate(_ rate: Int?) -> Int {
+        guard let rate, rate >= 0 else { return 0 }
+        return rate
     }
 
     /// Whether `areValueTypesCompatible` retains its default semantics, so
