@@ -184,15 +184,20 @@ public struct StaticIoEndpoints {
         let actor = actorIndex(event.ioActorId)
         guard source != nil || actor != nil else { return .unknownEndpoint }
         if let source, let actor, !compatible(sources[source], actors[actor]) { return .rejected }
+        guard event.updateRate.map({ $0 >= 0 }) ?? true else { return .rejected }
         guard let route = event.associatingRoute else {
             if let source { removeSourceAssociation(source, actorId: event.ioActorId) }
             if let actor { removeActorAssociation(actor) }
             return .disassociated
         }
-        guard route.length <= WireBufferConfig.maxTopicLength,
-              event.updateRate.map({ $0 >= 0 }) ?? true else { return .rejected }
-        if let source, !addSourceAssociation(source, actorId: event.ioActorId, route: route, updateRate: event.updateRate) { return .rejected }
-        if let actor, !addActorAssociation(actor, route: route, updateRate: event.updateRate) { return .rejected }
+        guard route.length > 0, route.length <= WireBufferConfig.maxTopicLength else { return .rejected }
+
+        // Validate both sides before changing either fixed-size state slot. The
+        // source update can be valid while the actor update conflicts with an
+        // existing route; applying the source first would leave a partial
+        // association after returning `.rejected`.
+        guard canCommitAssociation(source: source, actor: actor, actorId: event.ioActorId, route: route) else { return .rejected }
+        applyAssociation(source: source, actor: actor, actorId: event.ioActorId, route: route, updateRate: event.updateRate)
         return .associated
     }
 
@@ -235,8 +240,25 @@ public struct StaticIoEndpoints {
     private func valueIsCompatible(_ payload: ByteSlice, mode: StaticIoValueMode) -> Bool {
         switch mode { case .raw: true; case .json: WireReader.isValidJSONValue(payload) }
     }
+    private func canAddSourceAssociation(_ index: Int, actorId: UUID16, route: ByteSlice) -> Bool {
+        let state = sourceStates[index]
+        guard state.associationCount == 0 || state.route.equals(route) else { return false }
+        return state.associatedActors.contains(actorId) || state.associatedActors.contains(where: { $0 == nil })
+    }
+    private func canAddActorAssociation(_ index: Int, route: ByteSlice) -> Bool {
+        !actorStates[index].isAssociated || actorStates[index].route.equals(route)
+    }
+    private func canCommitAssociation(source: Int?, actor: Int?, actorId: UUID16, route: ByteSlice) -> Bool {
+        if let source, !canAddSourceAssociation(source, actorId: actorId, route: route) { return false }
+        if let actor, !canAddActorAssociation(actor, route: route) { return false }
+        return true
+    }
+    private mutating func applyAssociation(source: Int?, actor: Int?, actorId: UUID16, route: ByteSlice, updateRate: Int?) {
+        if let source { _ = addSourceAssociation(source, actorId: actorId, route: route, updateRate: updateRate) }
+        if let actor { _ = addActorAssociation(actor, route: route, updateRate: updateRate) }
+    }
     private mutating func addSourceAssociation(_ index: Int, actorId: UUID16, route: ByteSlice, updateRate: Int?) -> Bool {
-        if sourceStates[index].associationCount > 0 && !sourceStates[index].route.equals(route) { return false }
+        guard canAddSourceAssociation(index, actorId: actorId, route: route) else { return false }
         if sourceStates[index].associationCount == 0 && !sourceStates[index].route.copy(from: route) { return false }
         if !sourceStates[index].associatedActors.contains(actorId) {
             guard let slot = sourceStates[index].associatedActors.firstIndex(where: { $0 == nil }) else { return false }
@@ -256,7 +278,7 @@ public struct StaticIoEndpoints {
         }
     }
     private mutating func addActorAssociation(_ index: Int, route: ByteSlice, updateRate: Int?) -> Bool {
-        guard !actorStates[index].isAssociated || actorStates[index].route.equals(route) else { return false }
+        guard canAddActorAssociation(index, route: route) else { return false }
         guard actorStates[index].isAssociated || actorStates[index].route.copy(from: route) else { return false }
         actorStates[index].isAssociated = true
         actorStates[index].negotiatedUpdateRate = updateRate ?? actors[index].configuredUpdateRate
