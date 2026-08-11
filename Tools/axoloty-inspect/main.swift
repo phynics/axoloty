@@ -27,7 +27,20 @@ case let .run(config):
 }
 
 @MainActor
-func runInspector(_ config: InspectorConfiguration) async -> Int32 {
+func runInspector(
+    _ config: InspectorConfiguration,
+    sessionFactory: @MainActor (InspectorConnectionConfiguration) throws -> InspectorSession = { configuration in
+        try AxolotyInspectorSession(configuration: configuration)
+    }
+) async -> Int32 {
+    guard let logLevel = InspectorLogLevel(rawValue: config.logLevel) else {
+        let error = InspectorError.invalidConfiguration(
+            field: "log-level",
+            reason: "must be one of: \(InspectorLogLevel.supportedValuesDescription)"
+        )
+        FileHandle.standardError.write(Data("error: \(error.userFriendlyMessage)\n".utf8))
+        return error.exitCode
+    }
     var connectionConfig = config.connection
     if config.passwordFromStdin {
         guard let password = InspectorPasswordReader.readLineFromStdin() else {
@@ -47,11 +60,12 @@ func runInspector(_ config: InspectorConfiguration) async -> Int32 {
 
     let session: InspectorSession
     do {
-        session = try AxolotyInspectorSession(configuration: connectionConfig)
+        session = try sessionFactory(connectionConfig)
     } catch {
         FileHandle.standardError.write(Data("error: \(error)\n".utf8))
         return 70
     }
+    applyInspectorLogLevel(logLevel)
 
     let dateFormatter = ISO8601DateFormatter()
     dateFormatter.formatOptions = [.withInternetDateTime]
@@ -106,4 +120,22 @@ func runInspector(_ config: InspectorConfiguration) async -> Int32 {
     }
 
     return 0
+}
+
+/// Applies the validated inspector level before inspector lifecycle work begins.
+func applyInspectorLogLevel(_ level: InspectorLogLevel) {
+    switch level {
+    case .trace:
+        LogManager.setLevel(.trace, for: nil)
+    case .debug:
+        LogManager.setLevel(.debug, for: nil)
+    case .info:
+        LogManager.setLevel(.info, for: nil)
+    case .notice:
+        LogManager.setLevel(.notice, for: nil)
+    case .warning:
+        LogManager.setLevel(.warning, for: nil)
+    case .error:
+        LogManager.setLevel(.error, for: nil)
+    }
 }

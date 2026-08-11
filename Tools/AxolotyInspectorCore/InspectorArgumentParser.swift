@@ -138,7 +138,7 @@ private extension InspectorArgumentParser {
             )),
             connection: common.connection,
             output: common.output,
-            logLevel: common.logLevel,
+            logLevel: common.logLevel.rawValue,
             passwordFromStdin: common.passwordFromStdin
         ))
     }
@@ -190,7 +190,7 @@ private extension InspectorArgumentParser {
             command: .discover(DiscoverCommand(coreType: coreType, objectType: objectType, objectId: objectId, timeout: timeout)),
             connection: common.connection,
             output: common.output,
-            logLevel: common.logLevel,
+            logLevel: common.logLevel.rawValue,
             passwordFromStdin: common.passwordFromStdin
         ))
     }
@@ -205,7 +205,7 @@ private struct InspectorCommonOptions: Equatable, Sendable {
     var password: String?
     var connectTimeout = Duration.seconds(10)
     var output = InspectorOutputMode.auto
-    var logLevel = "info"
+    var logLevel = InspectorLogLevel.info
     var passwordFromStdin = false
 
     init(environment: InspectorEnvironmentValues) {
@@ -245,7 +245,7 @@ private enum InspectorCommonOptionParser {
       --username USER      Broker username (env: AXOLOTY_MQTT_USERNAME).
       --password-stdin     Read broker password from one line of stdin.
       --connect-timeout D  Connection readiness timeout (default: 10s).
-      --log-level LEVEL    Diagnostic log level: trace|debug|info|notice|warning|error.
+      --log-level LEVEL    Diagnostic log level: \(InspectorLogLevel.supportedValuesDescription.replacingOccurrences(of: ", ", with: "|")).
       --output MODE        Output mode: auto|human|ndjson|json (default: auto).
     """
 
@@ -308,7 +308,13 @@ private enum InspectorCommonOptionParser {
             guard let (value, next) = consumeValue(args, at: index) else {
                 return .failure(.invalidArguments(reason: "--log-level requires a value"))
             }
-            options.logLevel = value
+            guard let logLevel = InspectorLogLevel(rawValue: value) else {
+                return .failure(.invalidConfiguration(
+                    field: "log-level",
+                    reason: "must be one of: \(InspectorLogLevel.supportedValuesDescription)"
+                ))
+            }
+            options.logLevel = logLevel
             return .consumed(nextIndex: next)
         case "--output":
             guard let (value, next) = consumeValue(args, at: index) else {
