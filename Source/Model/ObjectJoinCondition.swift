@@ -21,14 +21,14 @@ public class ObjectJoinCondition: Codable {
     ///
     /// If a result object does not contain the `localProperty` the value is ignored for
     /// matching purposes.
-    var localProperty: String
+    public private(set) var localProperty: String
     
     /// Specifies whether the value of the local property is an array
     /// whose individual elements should be matched for equality against the value of the
     /// corresponding property of the related object.
     ///
     /// If not specified, the value of this property defaults to `false`.
-    var isLocalPropertyArray: Bool?
+    public private(set) var isLocalPropertyArray: Bool?
     
     /// Specifies the name of the extra property to be added to the result objects.
     /// The extra property contains the matching objects which have been joined
@@ -40,14 +40,14 @@ public class ObjectJoinCondition: Codable {
     ///
     /// If the specified property name already exists in the result object, the existing
     /// property is overwritten.
-    var asProperty: String
+    public private(set) var asProperty: String
     
      /// Specifies whether the join between the `localProperty` and the corresponding
      /// property of the related object is a one to one relation. If true, the extra property `asProperty`
      /// contains a single related object; otherwise it contains an array of related objects.
      ///
      /// If not specified, the value of this property defaults to `false`.
-    var isOneToOneRelation: Bool?
+    public private(set) var isOneToOneRelation: Bool?
     
     public init(localProperty: String, asProperty: String, isLocalPropertyArray: Bool? = nil, isOneToOneRelation: Bool? = nil) {
         self.localProperty = localProperty
