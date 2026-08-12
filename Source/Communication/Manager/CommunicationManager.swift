@@ -458,8 +458,7 @@ public class CommunicationManager {
         // "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ".
         // The Server MAY allow ClientId’s that contain more than 23 encoded bytes.
         // The Server MAY allow ClientId’s that contain characters not included in the list given above. 
-        let id = self.identity.objectId.string
-        mqttClientOptions.clientId = "Coaty" + String(id.replacingOccurrences(of: "-", with: "").prefix(18))
+        mqttClientOptions.clientId = MQTTClientIdentity.make(for: identity)
     }
 
     private func initializeNamespace() throws {
