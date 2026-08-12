@@ -152,4 +152,4 @@ dependencies, pure catalogue/filter/reducer/record logic) and
 `AxolotyTooling`'s dependency closure is unaffected.
 
 See [inspector.md](inspector.md) for the full reference: connection options,
-catalogue filters, output modes, NDJSON schema, exit codes, and credentials.
+catalogue filters, output modes, JSON-array/NDJSON schema, exit codes, and credentials.

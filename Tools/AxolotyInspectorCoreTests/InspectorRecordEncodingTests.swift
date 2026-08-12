@@ -7,6 +7,47 @@ import Testing
 @Suite
 struct InspectorRecordEncodingTests {
 
+    // MARK: - JSON encoding
+
+    @Test
+    func jsonEncodingSupportsEmptyArray() throws {
+        let output = try JSONFormatter().format([])
+
+        #expect(output == "[]")
+        let json = try #require(JSONSerialization.jsonObject(with: Data(output.utf8)) as? [[String: Any]])
+        #expect(json.isEmpty)
+    }
+
+    @Test
+    func jsonEncodingProducesOneSortedKeyArrayForOneRecord() throws {
+        let record = InspectorRecord(
+            kind: .advertise,
+            timestamp: "2026-07-31T17:30:00Z",
+            namespace: "example",
+            objectId: "object-uuid"
+        )
+        let output = try JSONFormatter().format([record])
+
+        #expect(!output.contains("\n"))
+        #expect(output.first == "[")
+        #expect(output.last == "]")
+        #expect(output == "[{\"kind\":\"advertise\",\"namespace\":\"example\",\"objectId\":\"object-uuid\",\"schema\":\"axoloty.inspect/v1\",\"timestamp\":\"2026-07-31T17:30:00Z\"}]")
+    }
+
+    @Test
+    func jsonEncodingProducesOneArrayForMultipleRecords() throws {
+        let records = [
+            InspectorRecord(kind: .sessionStarted, timestamp: "t1"),
+            InspectorRecord(kind: .sessionEnded, timestamp: "t2"),
+        ]
+        let output = try JSONFormatter().format(records)
+        let json = try #require(JSONSerialization.jsonObject(with: Data(output.utf8)) as? [[String: Any]])
+
+        #expect(json.count == 2)
+        #expect(json[0]["kind"] as? String == "session-started")
+        #expect(json[1]["kind"] as? String == "session-ended")
+    }
+
     // MARK: - NDJSON encoding
 
     @Test

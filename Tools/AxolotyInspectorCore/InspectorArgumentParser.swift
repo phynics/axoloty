@@ -134,6 +134,12 @@ private extension InspectorArgumentParser {
             return .error(.invalidArguments(reason: "--include-private-data requires --full"))
         }
 
+        guard common.output != .json || duration.value != nil else {
+            return .error(.invalidArguments(
+                reason: "--output json requires a finite --duration for catalog"
+            ))
+        }
+
         return .run(InspectorConfiguration(
             command: .catalog(CatalogCommand(
                 duration: duration, coreType: coreType, objectType: objectType,
