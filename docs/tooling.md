@@ -79,6 +79,12 @@ path, and a reason. `hardware check` returns success for an absent device;
 `hardware require` returns failure. Set `AXOLOTY_DEVICE` or pass `--device` to
 select a path other than `/dev/ttyACM0`.
 
+Hardware leases are stored below the host-mounted `AXOLOTY_DEVICE_LEASE_ROOT`
+when that variable is configured. Make defaults it to the shared repository
+build cache at `.../device-leases`, so concurrent containers contend on the
+same canonical device path. Without the variable, the tooling manager retains
+its temporary-directory default.
+
 ## Container image and caches
 
 The development image contains Swift, SwiftLint, Mosquitto, ESP-IDF, initialized

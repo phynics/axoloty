@@ -141,9 +141,14 @@ let package = Package(
             path: "Tools/AxolotyTooling",
             resources: [.copy("Resources/test-tiers.json")]
         ),
+        .executableTarget(
+            name: "AxolotyDeviceLeaseProbe",
+            dependencies: ["AxolotyTooling"],
+            path: "Tools/AxolotyDeviceLeaseProbe"
+        ),
         .testTarget(
             name: "AxolotyToolingTests",
-            dependencies: ["AxolotyTooling"],
+            dependencies: ["AxolotyTooling", "AxolotyDeviceLeaseProbe"],
             path: "Tools/AxolotyToolingTests",
             resources: [.copy("Fixtures")]
         ),

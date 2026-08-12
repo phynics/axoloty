@@ -462,6 +462,19 @@ mount_suffix=
 case "$runtime" in
     *podman*) mount_suffix=:Z ;;
 esac
+device_lease_mount=""
+device_lease_env=""
+device_lease_root=""
+if [ -n "${AXOLOTY_DEVICE_LEASE_ROOT:-}" ]; then
+    mkdir -p "$AXOLOTY_DEVICE_LEASE_ROOT"
+    device_lease_root=$(cd "$AXOLOTY_DEVICE_LEASE_ROOT" && pwd)
+    device_lease_mount_suffix=""
+    case "$runtime" in
+        *podman*) device_lease_mount_suffix=:z ;;
+    esac
+    device_lease_mount="$device_lease_root:$device_lease_root$device_lease_mount_suffix"
+    device_lease_env="AXOLOTY_DEVICE_LEASE_ROOT=$device_lease_root"
+fi
 # Extra `podman run`/`docker run` flags for targets that need a relaxed
 # sandbox. Used by `make test-tsan`: ThreadSanitizer must disable ASLR via
 # the `personality` syscall, which the default seccomp profile denies. Empty
@@ -628,10 +641,20 @@ fi
 
 set +e
 container_launching=1
+launch_container_runtime() {
+    if [ -n "$device_lease_mount" ]; then
+        exec $session_prefix $session_wait $sudo_prefix "$runtime" run \
+            -v "$device_lease_mount" \
+            -e "$device_lease_env" \
+            "$@"
+    else
+        exec $session_prefix $session_wait $sudo_prefix "$runtime" run "$@"
+    fi
+}
 if [ "${AXOLOTY_HOST_RUNTIME_BRIDGE:-0}" = "1" ]; then
     # Keep bridge paths as discrete arguments. Disabling SELinux separation for
     # this opt-in container avoids relabeling a live rootless Podman socket.
-    $session_prefix $session_wait $sudo_prefix "$runtime" run --rm $security_opts $device_opts $privileged_opt $userns_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
+    launch_container_runtime --rm $security_opts $device_opts $privileged_opt $userns_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
         --security-opt label=disable \
         -e AXOLOTY_DEVCONTAINER=1 \
         -e AXOLOTY_HOST_RUNTIME_BRIDGE=1 \
@@ -657,7 +680,7 @@ if [ "${AXOLOTY_HOST_RUNTIME_BRIDGE:-0}" = "1" ]; then
         "$image" "$@" &
     container_pid=$!
 else
-    $session_prefix $session_wait $sudo_prefix "$runtime" run --rm $security_opts $device_opts $privileged_opt $userns_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
+    launch_container_runtime --rm $security_opts $device_opts $privileged_opt $userns_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
         -e AXOLOTY_DEVCONTAINER=1 \
         -e "AXOLOTY_RUN_ID=$container_run_id" \
         -v "$root_dir:$bridge_workdir$mount_suffix" \
