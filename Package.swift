@@ -131,7 +131,13 @@ let package = Package(
             path: "Tools/axoloty-tool"
         ),
         .target(
+            name: "AxolotyProcessLauncher",
+            path: "Tools/AxolotyProcessLauncher",
+            publicHeadersPath: "include"
+        ),
+        .target(
             name: "AxolotyTooling",
+            dependencies: ["AxolotyProcessLauncher"],
             path: "Tools/AxolotyTooling"
         ),
         .testTarget(

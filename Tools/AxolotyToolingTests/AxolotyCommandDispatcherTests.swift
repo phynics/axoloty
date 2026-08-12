@@ -126,6 +126,26 @@ func checkPlanPrintsStableJSON() {
         "test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--filter",
         "AxolotyToolingTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyInspectorCLITests|AxolotyMCPTests",
     ])
+    #expect(plan?.nodes.allSatisfy { timeout in
+        guard let seconds = timeout.command.timeoutSeconds else { return false }
+        return seconds.isFinite && seconds > 0
+    } == true)
+}
+
+@Test
+func humanCheckOutputUsesAReadableSummaryWithoutMachineManifest() {
+    let environment = projectEnvironment.merging(["AXOLOTY_OUTPUT": "human"]) { _, value in value }
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
+        environment: environment
+    )
+
+    let result = dispatcher.run(arguments: ["test", "tooling"])
+
+    #expect(result.exitCode == 0)
+    #expect(result.standardOutput.contains("PASSED resolve"))
+    #expect(result.standardOutput.contains("PASSED test-tooling"))
+    #expect(!result.standardOutput.contains("schemaVersion"))
 }
 
 @Test

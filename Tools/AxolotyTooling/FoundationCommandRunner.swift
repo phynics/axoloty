@@ -3,21 +3,55 @@
 import Foundation
 
 /// A Foundation-backed runner for the repository's local tooling commands.
-public struct FoundationCommandRunner: AxolotyCheckCommandRunning {
+public struct FoundationCommandRunner: AxolotyLifecycleCommandRunning {
     private let contextValidator: AxolotyExecutionContextValidator
     private let environment: [String: String]
+    private let configuration: AxolotyCommandRunnerConfiguration
+    private let cancellation: AxolotyCommandCancellation
+    private let artifactStore: AxolotyCommandArtifactStore
 
     /// Creates a Foundation-backed command runner.
     public init() {
         let environment = ProcessInfo.processInfo.environment
-        contextValidator = AxolotyExecutionContextValidator(environment: environment)
-        self.environment = environment
+        self.init(
+            contextValidator: AxolotyExecutionContextValidator(environment: environment),
+            environment: environment,
+            configuration: .from(environment: environment),
+            cancellation: AxolotyCommandCancellation()
+        )
     }
 
     init(contextValidator: AxolotyExecutionContextValidator) {
-        self.contextValidator = contextValidator
-        environment = ProcessInfo.processInfo.environment
+        let environment = ProcessInfo.processInfo.environment
             .merging(contextValidator.environment) { _, injected in injected }
+        self.init(
+            contextValidator: contextValidator,
+            environment: environment,
+            configuration: .from(environment: environment),
+            cancellation: AxolotyCommandCancellation()
+        )
+    }
+
+    init(
+        contextValidator: AxolotyExecutionContextValidator,
+        environment: [String: String],
+        configuration: AxolotyCommandRunnerConfiguration? = nil,
+        cancellation: AxolotyCommandCancellation = AxolotyCommandCancellation()
+    ) {
+        self.contextValidator = contextValidator
+        self.environment = environment
+        self.configuration = configuration ?? .from(environment: environment)
+        self.cancellation = cancellation
+        artifactStore = AxolotyCommandArtifactStore(
+            root: (configuration ?? .from(environment: environment)).artifactRoot,
+            runID: (configuration ?? .from(environment: environment)).runID,
+            environment: environment
+        )
+    }
+
+    /// Requests cancellation of the currently running command.
+    public func cancel() {
+        cancellation.cancel()
     }
 
     /// Runs a command through the current process environment.
@@ -25,47 +59,54 @@ public struct FoundationCommandRunner: AxolotyCheckCommandRunning {
     /// - Parameter command: The command to execute.
     /// - Returns: Its exit status and captured output.
     public func run(_ command: AxolotyCommandPlan) -> AxolotyCheckCommandResult {
+        run(command, context: AxolotyCommandRunContext())
+    }
+
+    /// Runs a command with node-aware lifecycle diagnostics.
+    ///
+    /// - Parameters:
+    ///   - command: The command to execute.
+    ///   - context: The node and stage owning the command.
+    /// - Returns: Its exit status, captured output, and lifecycle diagnostics.
+    public func run(
+        _ command: AxolotyCommandPlan,
+        context: AxolotyCommandRunContext
+    ) -> AxolotyCheckCommandResult {
         if let diagnostic = contextValidator.validate(command) {
             return AxolotyCheckCommandResult(
                 exitCode: 64,
                 standardError: contextValidator.diagnosticMessage(diagnostic)
             )
         }
+        if let validationError = configuration.validationDiagnostic {
+            return AxolotyCheckCommandResult(
+                exitCode: 64,
+                standardError: (try? JSONEncoder().encode(validationError)).map { String(decoding: $0, as: UTF8.self) } ?? "invalid lifecycle configuration"
+            )
+        }
+        if let timeout = command.timeoutSeconds,
+           let reason = AxolotyCommandRunnerConfiguration.timeoutValidationReason(timeout) {
+            let diagnostic = AxolotyCommandLifecycleDiagnostic(
+                option: "commandTimeout",
+                reason: reason
+            )
+            return AxolotyCheckCommandResult(
+                exitCode: 64,
+                standardError: (try? JSONEncoder().encode(diagnostic)).map { String(decoding: $0, as: UTF8.self) } ?? "invalid lifecycle configuration"
+            )
+        }
         do {
-            return try execute(command)
+            return try FoundationCommandExecution(
+                environment: environment,
+                configuration: configuration,
+                cancellation: cancellation,
+                artifactStore: artifactStore
+            ).run(command, context: context)
         } catch {
             return AxolotyCheckCommandResult(
                 exitCode: 70,
                 standardError: "unable to start command \(command.executable): \(error.localizedDescription)"
             )
         }
-    }
-
-    private func execute(_ command: AxolotyCommandPlan) throws -> AxolotyCheckCommandResult {
-        let artifactDirectory = FileManager.default.temporaryDirectory
-            .appending(path: "axoloty-tool-command-\(UUID().uuidString)", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: artifactDirectory) }
-
-        let standardOutputURL = artifactDirectory.appending(path: "stdout.txt")
-        let standardErrorURL = artifactDirectory.appending(path: "stderr.txt")
-        _ = FileManager.default.createFile(atPath: standardOutputURL.path, contents: nil)
-        _ = FileManager.default.createFile(atPath: standardErrorURL.path, contents: nil)
-
-        let process = Process()
-        process.executableURL = URL(filePath: "/usr/bin/env")
-        process.arguments = [command.executable] + command.arguments
-        process.environment = environment.merging(command.environment) { _, value in value }
-        process.standardOutput = try FileHandle(forWritingTo: standardOutputURL)
-        process.standardError = try FileHandle(forWritingTo: standardErrorURL)
-
-        try process.run()
-        process.waitUntilExit()
-
-        return AxolotyCheckCommandResult(
-            exitCode: process.terminationStatus,
-            standardOutput: String(decoding: try Data(contentsOf: standardOutputURL), as: UTF8.self),
-            standardError: String(decoding: try Data(contentsOf: standardErrorURL), as: UTF8.self)
-        )
     }
 }

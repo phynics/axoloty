@@ -41,6 +41,7 @@ private struct FoundationFileSystem: AxolotyFileSystem {
 }
 
 /// Parses the stable command surface of the ``axoloty-tool`` executable.
+// swiftlint:disable type_body_length
 public struct AxolotyCommandDispatcher: Sendable {
     private let executableName: String
     private let commandRunner: any AxolotyCheckCommandRunning
@@ -53,6 +54,8 @@ public struct AxolotyCommandDispatcher: Sendable {
     private let portProbe: any AxolotyServiceProbing
     private let tempDirProvider: any AxolotyTempDirectoryProvider
     private let installSignalHandler: Bool
+    private let cancellation: AxolotyCommandCancellation
+    private let outputMode: AxolotyCommandOutputMode
 
     /// Creates a command dispatcher.
     ///
@@ -77,11 +80,18 @@ public struct AxolotyCommandDispatcher: Sendable {
         processRunnerFactory: (@Sendable () -> any AxolotyManagedProcessRunning)? = nil,
         portProbe: (any AxolotyServiceProbing)? = nil,
         tempDirProvider: (any AxolotyTempDirectoryProvider)? = nil,
-        installSignalHandler: Bool = true
+        installSignalHandler: Bool = true,
+        cancellation: AxolotyCommandCancellation? = nil
     ) {
         let contextValidator = AxolotyExecutionContextValidator(environment: environment)
+        let runnerConfiguration = AxolotyCommandRunnerConfiguration.from(environment: environment)
+        let invocationCancellation = cancellation ?? AxolotyCommandCancellation()
         let commandRunner: any AxolotyCheckCommandRunning = commandRunner is FoundationCommandRunner
-            ? FoundationCommandRunner(contextValidator: contextValidator)
+            ? FoundationCommandRunner(
+                contextValidator: contextValidator,
+                environment: environment,
+                cancellation: invocationCancellation
+            )
             : commandRunner
         self.executableName = executableName
         self.commandRunner = commandRunner
@@ -96,7 +106,9 @@ public struct AxolotyCommandDispatcher: Sendable {
         self.processRunnerFactory = processRunnerFactory ?? { FoundationProcessRunner() }
         self.portProbe = portProbe ?? FoundationServiceProbe()
         self.tempDirProvider = tempDirProvider ?? FoundationTempDirectoryProvider()
-        self.installSignalHandler = installSignalHandler
+        self.installSignalHandler = installSignalHandler && runnerConfiguration.installSignalHandler
+        self.cancellation = invocationCancellation
+        outputMode = runnerConfiguration.outputMode
     }
 
     /// Resolves command-line arguments to their externally visible result.
@@ -104,6 +116,10 @@ public struct AxolotyCommandDispatcher: Sendable {
     /// - Parameter arguments: Arguments after the executable name.
     /// - Returns: Text streams and exit status for the requested command.
     public func run(arguments: [String]) -> AxolotyCommandResult {
+        let signalLease = installSignalHandler
+            ? AxolotySignalMultiplexer.shared.acquire { [cancellation] in cancellation.cancel() }
+            : nil
+        defer { signalLease?.cancel() }
         if arguments.first == "serve" {
             return serveResult(arguments: Array(arguments.dropFirst()))
         }
@@ -268,7 +284,8 @@ public struct AxolotyCommandDispatcher: Sendable {
                     fileSystem: fileSystem,
                     tempDirProvider: tempDirProvider,
                     mosquittoExecutable: environment["AXOLOTY_MOSQUITTO_EXECUTABLE"] ?? "/usr/sbin/mosquitto",
-                    installSignalHandler: installSignalHandler
+                    installSignalHandler: false,
+                    cancellation: cancellation
                 )
                 let exitCode = runner.run(config)
                 return AxolotyCommandResult(exitCode: exitCode)
@@ -278,7 +295,8 @@ public struct AxolotyCommandDispatcher: Sendable {
                     portProbe: portProbe,
                     fileSystem: fileSystem,
                     mcpExecutable: environment["AXOLOTY_MCP_EXECUTABLE"] ?? "/opt/axoloty/bin/axoloty-mcp",
-                    installSignalHandler: installSignalHandler
+                    installSignalHandler: false,
+                    cancellation: cancellation
                 )
                 let exitCode = runner.run(config)
                 return AxolotyCommandResult(exitCode: exitCode)
@@ -290,7 +308,8 @@ public struct AxolotyCommandDispatcher: Sendable {
                     tempDirProvider: tempDirProvider,
                     mosquittoExecutable: environment["AXOLOTY_MOSQUITTO_EXECUTABLE"] ?? "/usr/sbin/mosquitto",
                     mcpExecutable: environment["AXOLOTY_MCP_EXECUTABLE"] ?? "/opt/axoloty/bin/axoloty-mcp",
-                    installSignalHandler: installSignalHandler
+                    installSignalHandler: false,
+                    cancellation: cancellation
                 )
                 let exitCode = runner.run(config)
                 return AxolotyCommandResult(exitCode: exitCode)
@@ -326,7 +345,7 @@ public struct AxolotyCommandDispatcher: Sendable {
             let plan = try AxolotyCheckPlanner().plan(availablePlan.nodes, requested: requested)
             let results = executor.execute(plan)
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
-            return try Self.jsonResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
+            return manifestResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
         } catch {
             return AxolotyCommandResult(standardError: "error: unable to plan checks\n", exitCode: 70)
         }
@@ -353,7 +372,7 @@ public struct AxolotyCommandDispatcher: Sendable {
             )
             let results = executor.execute(plan)
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
-            return try Self.jsonResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
+            return manifestResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
         } catch {
             return AxolotyCommandResult(
                 standardError: "error: unable to generate release snapshots\n",
@@ -369,7 +388,8 @@ public struct AxolotyCommandDispatcher: Sendable {
                 dependencies: ["test-wire"],
                 command: AxolotyCommandPlan(
                     executable: "node",
-                    arguments: ["Tests/Support/release-snapshots.mjs", "verify", path]
+                    arguments: ["Tests/Support/release-snapshots.mjs", "verify", path],
+                    timeoutSeconds: 10 * 60
                 )
             )
             let plan = try AxolotyCheckPlanner().plan(
@@ -378,7 +398,7 @@ public struct AxolotyCommandDispatcher: Sendable {
             )
             let results = executor.execute(plan)
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
-            return try Self.jsonResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
+            return manifestResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
         } catch {
             return AxolotyCommandResult(standardError: "error: unable to verify wire bundle\n", exitCode: 70)
         }
@@ -396,10 +416,10 @@ public struct AxolotyCommandDispatcher: Sendable {
             status: command.exitCode == 0 ? .passed : .failed,
             command: command
         )
-        return (try? Self.jsonResult(
+        return manifestResult(
             AxolotyCheckManifest(results: [result]),
             exitCode: command.exitCode == 0 ? 0 : 1
-        )) ?? AxolotyCommandResult(exitCode: 70)
+        )
     }
 
     private func checkpointResult(hardware: Bool) -> AxolotyCommandResult {
@@ -424,15 +444,17 @@ public struct AxolotyCommandDispatcher: Sendable {
         }
 
         let gitCommitCommand = AxolotyCommandPlan(
-            executable: "git", arguments: ["rev-parse", "--short", "HEAD"]
+            executable: "git", arguments: ["rev-parse", "--short", "HEAD"], timeoutSeconds: 60
         )
         let gitStatusCommand = AxolotyCommandPlan(
-            executable: "git", arguments: ["status", "--porcelain"]
+            executable: "git", arguments: ["status", "--porcelain"], timeoutSeconds: 60
         )
         let gitBranchCommand = AxolotyCommandPlan(
-            executable: "git", arguments: ["rev-parse", "--abbrev-ref", "HEAD"]
+            executable: "git", arguments: ["rev-parse", "--abbrev-ref", "HEAD"], timeoutSeconds: 60
         )
-        let swiftVersionCommand = AxolotyCommandPlan(executable: "swift", arguments: ["--version"])
+        let swiftVersionCommand = AxolotyCommandPlan(
+            executable: "swift", arguments: ["--version"], timeoutSeconds: 60
+        )
         let metadataCommands = (environment["AXOLOTY_GIT_COMMIT"] == nil ? [gitCommitCommand] : [])
             + [gitStatusCommand, gitBranchCommand, swiftVersionCommand]
         if let failure = contextValidator.failureResult(
@@ -471,7 +493,7 @@ public struct AxolotyCommandDispatcher: Sendable {
                 timestamp: timestamp
             )
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
-            return try Self.jsonResult(manifest, exitCode: exitCode)
+            return checkpointManifestResult(manifest, exitCode: exitCode)
         } catch {
             return AxolotyCommandResult(
                 standardError: "error: unable to plan checkpoint\n",
@@ -485,7 +507,7 @@ public struct AxolotyCommandDispatcher: Sendable {
             let plan = try AxolotyCheckPlanner().plan(availablePlan.nodes)
             let results = executor.execute(plan)
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
-            return try Self.jsonResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
+            return manifestResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
         } catch {
             return AxolotyCommandResult(standardError: "error: unable to plan checks\n", exitCode: 70)
         }
@@ -495,7 +517,8 @@ public struct AxolotyCommandDispatcher: Sendable {
         let selectedDevice = device ?? environment["AXOLOTY_DEVICE"] ?? "/dev/ttyACM0"
         let command = AxolotyCommandPlan(
             executable: "Tests/Support/embedded-swift-smoke.sh",
-            environment: ["EMBEDDED_DEVICE": selectedDevice]
+            environment: ["EMBEDDED_DEVICE": selectedDevice],
+            timeoutSeconds: 10 * 60
         )
         if let failure = contextValidator.failureResult(validating: [command]) {
             return Self.commandResult(failure)
@@ -543,10 +566,43 @@ public struct AxolotyCommandDispatcher: Sendable {
         )
     }
 
+    private func manifestResult(
+        _ manifest: AxolotyCheckManifest,
+        exitCode: Int32
+    ) -> AxolotyCommandResult {
+        guard outputMode == .human else {
+            return (try? Self.jsonResult(manifest, exitCode: exitCode))
+                ?? AxolotyCommandResult(exitCode: 70)
+        }
+        return AxolotyCommandResult(
+            standardOutput: humanSummary(manifest.results),
+            exitCode: exitCode
+        )
+    }
+
+    private func checkpointManifestResult(
+        _ manifest: AxolotyCheckpointManifest,
+        exitCode: Int32
+    ) -> AxolotyCommandResult {
+        guard outputMode == .human else {
+            return (try? Self.jsonResult(manifest, exitCode: exitCode))
+                ?? AxolotyCommandResult(exitCode: 70)
+        }
+        return AxolotyCommandResult(
+            standardOutput: humanSummary(manifest.results),
+            exitCode: exitCode
+        )
+    }
+
+    private func humanSummary(_ results: [AxolotyCheckResult]) -> String {
+        results.map { "\($0.status.rawValue.uppercased()) \($0.name)" }.joined(separator: "\n") + "\n"
+    }
+
     private var executor: AxolotyCheckExecutor {
         AxolotyCheckExecutor(
             commandRunner: commandRunner,
-            contextValidator: contextValidator
+            contextValidator: contextValidator,
+            cancellation: cancellation
         )
     }
 
@@ -558,6 +614,7 @@ public struct AxolotyCommandDispatcher: Sendable {
         )
     }
 }
+// swiftlint:enable type_body_length
 
 /// The standard streams and status produced by an ``AxolotyCommandDispatcher``.
 public struct AxolotyCommandResult: Equatable, Sendable {

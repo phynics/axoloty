@@ -11,7 +11,8 @@ let package = Package(
         .executable(name: "ax", targets: ["AxolotyCLI"]),
     ],
     targets: [
-        .target(name: "AxolotyTooling", path: "AxolotyTooling"),
+        .target(name: "AxolotyProcessLauncher", path: "AxolotyProcessLauncher", publicHeadersPath: "include"),
+        .target(name: "AxolotyTooling", dependencies: ["AxolotyProcessLauncher"], path: "AxolotyTooling"),
         .executableTarget(
             name: "AxolotyCLI",
             dependencies: ["AxolotyTooling"],
