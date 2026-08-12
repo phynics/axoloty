@@ -9,6 +9,7 @@ public struct AxolotyMCPServiceRunner: Sendable {
     private let fileSystem: any AxolotyFileSystem
     private let mcpExecutable: String
     private let installSignalHandler: Bool
+    private let cancellation: AxolotyCommandCancellation?
     private let standardOutput: FileHandle
     private let standardError: FileHandle
 
@@ -31,6 +32,7 @@ public struct AxolotyMCPServiceRunner: Sendable {
         fileSystem: any AxolotyFileSystem,
         mcpExecutable: String = "/opt/axoloty/bin/axoloty-mcp",
         installSignalHandler: Bool = true,
+        cancellation: AxolotyCommandCancellation? = nil,
         standardOutput: FileHandle = .standardOutput,
         standardError: FileHandle = .standardError
     ) {
@@ -39,6 +41,7 @@ public struct AxolotyMCPServiceRunner: Sendable {
         self.fileSystem = fileSystem
         self.mcpExecutable = mcpExecutable
         self.installSignalHandler = installSignalHandler
+        self.cancellation = cancellation
         self.standardOutput = standardOutput
         self.standardError = standardError
     }
@@ -49,6 +52,8 @@ public struct AxolotyMCPServiceRunner: Sendable {
             standardError: standardError
         )
         let processSupervisor = ManagedProcessSupervisor()
+        let cancellationObservation = cancellation?.observe { processSupervisor.requestTermination() }
+        defer { cancellationObservation?.cancel() }
         let signalHandler = installSignalHandler
             ? ServiceSignalHandler(onInterrupt: { processSupervisor.requestTermination() })
             : nil
@@ -56,7 +61,7 @@ public struct AxolotyMCPServiceRunner: Sendable {
         defer { signalHandler?.uninstall() }
         defer { processSupervisor.terminateAndWait() }
 
-        if signalHandler?.isInterrupted == true {
+        if isInterrupted(signalHandler) {
             return 130
         }
 
@@ -79,7 +84,7 @@ public struct AxolotyMCPServiceRunner: Sendable {
             try processRunner.start(spec)
             processSupervisor.register(processRunner)
         } catch {
-            if signalHandler?.isInterrupted == true {
+            if isInterrupted(signalHandler) {
                 return 130
             }
             diagnostics.error(
@@ -96,7 +101,7 @@ public struct AxolotyMCPServiceRunner: Sendable {
                 port: configuration.listenPort,
                 timeoutSeconds: readinessTimeout
             )
-            if signalHandler?.isInterrupted == true {
+            if isInterrupted(signalHandler) {
                 return 130
             }
             if !ready {
@@ -113,7 +118,7 @@ public struct AxolotyMCPServiceRunner: Sendable {
         }
 
         while true {
-            if signalHandler?.isInterrupted == true {
+            if isInterrupted(signalHandler) {
                 return 130
             }
 
@@ -154,6 +159,10 @@ public struct AxolotyMCPServiceRunner: Sendable {
     static func readinessTimeoutSeconds(for config: MCPServiceConfiguration) -> Double {
         let brokerTimeout = AxolotyServeParser.connectTimeoutSeconds(config.connectTimeout) ?? 10
         return brokerTimeout + 5
+    }
+
+    private func isInterrupted(_ signalHandler: ServiceSignalHandling?) -> Bool {
+        signalHandler?.isInterrupted == true || cancellation?.isCancelled == true
     }
 
     private func writeReadiness(mcpURL: String, output: ServeOutputMode) {

@@ -36,6 +36,7 @@
     {"path": "Tests/Support/make-tooling-wrappers.test.mjs", "makeTarget": "test-support", "tier": "unit"},
     {"path": "Tests/Support/patch-swift-got.test.mjs", "makeTarget": "test-support", "tier": "unit"},
     {"path": "Tests/Support/release-snapshots.test.mjs", "makeTarget": "test-support", "tier": "unit"},
+    {"path": "Tests/Support/run-lifecycle.test.mjs", "makeTarget": "test-support", "tier": "unit"},
     {"path": "Tests/Support/serial-tools.test.mjs", "makeTarget": "test-support", "tier": "unit"},
     {"path": "Tests/Support/work-plan-issue-form.test.mjs", "makeTarget": "test-support", "tier": "unit"}
   ],

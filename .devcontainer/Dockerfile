@@ -25,6 +25,7 @@ FROM swift:${SWIFT_VERSION}-jammy AS axoloty-tool-builder
 WORKDIR /axoloty-tool
 COPY Tools/Package.swift ./Package.swift
 COPY Tools/AxolotyTooling ./AxolotyTooling
+COPY Tools/AxolotyProcessLauncher ./AxolotyProcessLauncher
 COPY Tools/axoloty-tool ./axoloty-tool
 RUN swift build -c release --product axoloty-tool \
         -Xswiftc -static-executable -Xlinker --no-gc-sections \

@@ -11,6 +11,7 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
     private let mosquittoExecutable: String
     private let mcpExecutable: String
     private let installSignalHandler: Bool
+    private let cancellation: AxolotyCommandCancellation?
     private let standardOutput: FileHandle
     private let standardError: FileHandle
     private let signalHandlerFactory: any ServiceSignalHandlerFactory
@@ -38,6 +39,7 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
         mosquittoExecutable: String = "/usr/sbin/mosquitto",
         mcpExecutable: String = "/opt/axoloty/bin/axoloty-mcp",
         installSignalHandler: Bool = true,
+        cancellation: AxolotyCommandCancellation? = nil,
         standardOutput: FileHandle = .standardOutput,
         standardError: FileHandle = .standardError
     ) {
@@ -49,6 +51,7 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
             mosquittoExecutable: mosquittoExecutable,
             mcpExecutable: mcpExecutable,
             installSignalHandler: installSignalHandler,
+            cancellation: cancellation,
             standardOutput: standardOutput,
             standardError: standardError,
             signalHandlerFactory: DefaultServiceSignalHandlerFactory()
@@ -63,6 +66,7 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
         mosquittoExecutable: String = "/usr/sbin/mosquitto",
         mcpExecutable: String = "/opt/axoloty/bin/axoloty-mcp",
         installSignalHandler: Bool = true,
+        cancellation: AxolotyCommandCancellation? = nil,
         standardOutput: FileHandle = .standardOutput,
         standardError: FileHandle = .standardError,
         signalHandlerFactory: any ServiceSignalHandlerFactory
@@ -74,6 +78,7 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
         self.mosquittoExecutable = mosquittoExecutable
         self.mcpExecutable = mcpExecutable
         self.installSignalHandler = installSignalHandler
+        self.cancellation = cancellation
         self.standardOutput = standardOutput
         self.standardError = standardError
         self.signalHandlerFactory = signalHandlerFactory
@@ -86,13 +91,15 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
         let mqttConfig = configuration.mqtt
         let mcpConfig = configuration.mcp
         let processSupervisor = ManagedProcessSupervisor()
+        let cancellationObservation = cancellation?.observe { processSupervisor.requestTermination() }
+        defer { cancellationObservation?.cancel() }
         let signalHandler = installSignalHandler
             ? signalHandlerFactory.makeHandler(onInterrupt: { processSupervisor.requestTermination() })
             : nil
         signalHandler?.install()
         defer { signalHandler?.uninstall() }
 
-        if signalHandler?.isInterrupted == true {
+        if isInterrupted(signalHandler) {
             return 130
         }
 
@@ -134,7 +141,7 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
             return 70
         }
 
-        if signalHandler?.isInterrupted == true {
+        if isInterrupted(signalHandler) {
             return 130
         }
 
@@ -146,7 +153,7 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
             ))
             processSupervisor.register(mqttRunner)
         } catch {
-            if signalHandler?.isInterrupted == true {
+            if isInterrupted(signalHandler) {
                 return 130
             }
             diagnostics.error("unable to start mosquitto: \(error)", metadata: ["error": String(describing: error), "executable": mosquittoExecutable])
@@ -158,7 +165,7 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
             port: mqttConfig.port,
             timeoutSeconds: 5.0
         )
-        if signalHandler?.isInterrupted == true {
+        if isInterrupted(signalHandler) {
             return 130
         }
         if !mqttReady {
@@ -167,7 +174,7 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
             return 70
         }
 
-        if signalHandler?.isInterrupted == true {
+        if isInterrupted(signalHandler) {
             return 130
         }
 
@@ -179,7 +186,7 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
             ))
             processSupervisor.register(mcpRunner)
         } catch {
-            if signalHandler?.isInterrupted == true {
+            if isInterrupted(signalHandler) {
                 return 130
             }
             mqttRunner.forceKill()
@@ -193,7 +200,7 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
             port: mcpConfig.listenPort,
             timeoutSeconds: mcpReadinessTimeout
         )
-        if signalHandler?.isInterrupted == true {
+        if isInterrupted(signalHandler) {
             return 130
         }
         if !mcpReady {
@@ -206,7 +213,7 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
         writeReadiness(mqtt: mqttConfig, mcp: mcpConfig, output: output)
 
         while true {
-            if signalHandler?.isInterrupted == true {
+            if isInterrupted(signalHandler) {
                 return 130
             }
 
@@ -230,6 +237,10 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
 
             usleep(100_000)
         }
+    }
+
+    private func isInterrupted(_ signalHandler: ServiceSignalHandling?) -> Bool {
+        signalHandler?.isInterrupted == true || cancellation?.isCancelled == true
     }
 
     private func writeReadiness(mqtt: MQTTServiceConfiguration, mcp: MCPServiceConfiguration, output: ServeOutputMode) {

@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
+import AxolotyProcessLauncher
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Darwin)
@@ -282,6 +283,7 @@ public final class ServiceSignalHandler: ServiceSignalHandling, @unchecked Senda
     private let lock = NSLock()
     private var sources: [DispatchSourceSignal] = []
     private let onInterrupt: (@Sendable () -> Void)?
+    private var savedDispositions: (int: UnsafeMutableRawPointer?, term: UnsafeMutableRawPointer?)?
 
     /// Creates a signal handler.
     ///
@@ -298,8 +300,17 @@ public final class ServiceSignalHandler: ServiceSignalHandling, @unchecked Senda
     }
 
     public func install() {
-        signal(SIGINT, SIG_IGN)
-        signal(SIGTERM, SIG_IGN)
+        lock.lock()
+        guard sources.isEmpty else {
+            lock.unlock()
+            return
+        }
+        savedDispositions = (
+            axoloty_capture_signal_disposition(SIGINT),
+            axoloty_capture_signal_disposition(SIGTERM)
+        )
+        _ = axoloty_ignore_signal(SIGINT)
+        _ = axoloty_ignore_signal(SIGTERM)
 
         let sigint = DispatchSource.makeSignalSource(signal: SIGINT, queue: DispatchQueue.global())
         sigint.setEventHandler { self.setInterrupted() }
@@ -310,13 +321,23 @@ public final class ServiceSignalHandler: ServiceSignalHandling, @unchecked Senda
         sigterm.setEventHandler { self.setInterrupted() }
         sigterm.resume()
         sources.append(sigterm)
+        lock.unlock()
     }
 
     public func uninstall() {
-        sources.forEach { $0.cancel() }
+        lock.lock()
+        let currentSources = sources
         sources.removeAll()
-        signal(SIGINT, SIG_DFL)
-        signal(SIGTERM, SIG_DFL)
+        let savedDispositions = self.savedDispositions
+        self.savedDispositions = nil
+        lock.unlock()
+        currentSources.forEach { $0.cancel() }
+        if let savedDispositions {
+            _ = axoloty_restore_signal_disposition(SIGINT, savedDispositions.int)
+            _ = axoloty_restore_signal_disposition(SIGTERM, savedDispositions.term)
+            axoloty_release_signal_disposition(savedDispositions.int)
+            axoloty_release_signal_disposition(savedDispositions.term)
+        }
     }
 
     private func setInterrupted() {

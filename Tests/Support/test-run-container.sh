@@ -16,9 +16,13 @@ socket_server=""
 cleanup() {
     if [ -n "$socket_server" ]; then
         kill "$socket_server" 2>/dev/null || true
-        wait "$socket_server" 2>/dev/null || true
+        wait_bounded "$socket_server" cleanup-socket-server 5 || true
     fi
-    rm -rf "$TEMP_DIR"
+    if [ "${KEEP_TEMP:-0}" != "1" ]; then
+        rm -rf "$TEMP_DIR"
+    else
+        printf 'kept temp: %s\n' "$TEMP_DIR" >&2
+    fi
 }
 
 trap cleanup EXIT
@@ -34,6 +38,55 @@ build_dir="$TEMP_DIR/build"
 lock_file="${build_dir}.lock"
 lock_owner="${build_dir}.lock.owner"
 
+wait_for_path() {
+    path="$1"
+    deadline=$(( $(date +%s) + "$2" ))
+    while [ ! -e "$path" ] && [ "$(date +%s)" -lt "$deadline" ]; do
+        sleep 0.1
+    done
+    [ -e "$path" ]
+}
+
+wait_bounded() {
+    pid="$1"
+    label="$2"
+    timeout_seconds="$3"
+    deadline=$(( $(date +%s) + timeout_seconds ))
+    while kill -0 "$pid" 2>/dev/null; do
+        process_state=$(ps -o stat= -p "$pid" 2>/dev/null | tr -d ' ' || true)
+        case "$process_state" in
+            Z*) break ;;
+        esac
+        if [ "$(date +%s)" -ge "$deadline" ]; then
+            echo "wait timeout: $label pid=$pid after ${timeout_seconds}s" >&2
+            kill -TERM "$pid" 2>/dev/null || true
+            sleep 0.1
+            kill -KILL "$pid" 2>/dev/null || true
+            process_state=$(ps -o stat= -p "$pid" 2>/dev/null | tr -d ' ' || true)
+            case "$process_state" in
+                Z*) break ;;
+                *)
+                    echo "wait failure: $label pid=$pid remained alive after SIGKILL" >&2
+                    return 1
+                    ;;
+            esac
+        fi
+        sleep 0.1
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+        process_state=$(ps -o stat= -p "$pid" 2>/dev/null | tr -d ' ' || true)
+        case "$process_state" in
+            Z*) wait "$pid" 2>/dev/null || true ;;
+            *)
+                echo "wait failure: $label pid=$pid could not be reaped safely" >&2
+                return 1
+                ;;
+        esac
+    else
+        wait "$pid" 2>/dev/null || true
+    fi
+}
+
 # The lock must be released after a direct devcontainer command exits.
 AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" "$ROOT_DIR/.devcontainer/run.sh" true
 [[ ! -e "$lock_owner" ]]
@@ -42,13 +95,81 @@ AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" "$ROOT_DIR/.devcontainer/run.sh" t
 ( exec 8>"$lock_file"; flock 8; sleep 1 ) &
 holder=$!
 sleep 0.1
-start=$(date +%s)
+    start=$(date +%s)
 AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" "$ROOT_DIR/.devcontainer/run.sh" true
-elapsed=$(( $(date +%s) - start ))
+    elapsed=$(( $(date +%s) - start ))
 
 [[ "$elapsed" -ge 1 ]]
-wait "$holder"
+wait_bounded "$holder" build-lock-holder 5
 [[ ! -e "$lock_owner" ]]
+
+# Signal forwarding must reach an executable descendant, not only the shell
+# that run.sh directly started.
+tree_child="$TEMP_DIR/tree-child.sh"
+tree_parent="$TEMP_DIR/tree-parent.sh"
+tree_child_pid="$TEMP_DIR/tree-child.pid"
+tree_exited="$TEMP_DIR/tree-child.exited"
+cat > "$tree_child" <<'SH'
+#!/bin/sh
+pid_file=$1
+exited_marker=$2
+printf '%s' "$$" > "$pid_file"
+trap 'printf exited > "$exited_marker"; exit 0' TERM INT
+while :; do sleep 1; done
+SH
+cat > "$tree_parent" <<'SH'
+#!/bin/sh
+child_script=$1
+child_pid_file=$2
+exited_marker=$3
+wait_bounded() {
+    pid=$1
+    deadline=$(( $(date +%s) + 5 ))
+    while kill -0 "$pid" 2>/dev/null && [ "$(date +%s)" -lt "$deadline" ]; do
+        sleep 0.1
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+        echo "tree-parent wait timeout: pid=$pid" >&2
+        kill -KILL "$pid" 2>/dev/null || true
+    fi
+    if kill -0 "$pid" 2>/dev/null; then
+        state=$(ps -o stat= -p "$pid" 2>/dev/null | tr -d ' ' || true)
+        case "$state" in
+            Z*) wait "$pid" 2>/dev/null || true ;;
+            *) echo "tree-parent could not reap pid=$pid safely" >&2; return 1 ;;
+        esac
+    else
+        wait "$pid" 2>/dev/null || true
+    fi
+}
+"$child_script" "$child_pid_file" "$exited_marker" &
+child=$!
+trap 'kill -TERM "$child" 2>/dev/null || true; wait_bounded "$child"; exit 143' TERM INT
+wait_bounded "$child"
+SH
+chmod +x "$tree_child" "$tree_parent"
+
+    AXOLOTY_DEVCONTAINER=1 BUILD_LOCK=0 CONTAINER_TERM_GRACE_SECONDS=1 \
+    "$ROOT_DIR/.devcontainer/run.sh" "$tree_parent" "$tree_child" "$tree_child_pid" "$tree_exited" \
+    >"$TEMP_DIR/direct-signal.log" 2>&1 &
+direct_runner=$!
+wait_for_path "$tree_child_pid" 5
+kill -TERM "$direct_runner" 2>/dev/null || true
+set +e
+    wait_bounded "$direct_runner" direct-runner 5 || true
+set -e
+if [ ! -e "$tree_exited" ]; then
+    cat "$TEMP_DIR/direct-signal.log" >&2
+fi
+[ -e "$tree_exited" ]
+child_pid=$(cat "$tree_child_pid")
+if kill -0 "$child_pid" 2>/dev/null; then
+    echo "direct run.sh left an executable descendant" >&2
+    exit 1
+fi
+
+# Repeat the same assertion through the fake container runtime boundary.
+rm -f "$tree_child_pid" "$tree_exited"
 
 # The flock path must honor immediate and finite BUILD_LOCK_TIMEOUT values.
 flock_timeout_output="$TEMP_DIR/flock-timeout.stderr"
@@ -71,7 +192,7 @@ set -e
 [[ "$status" -eq 75 ]]
 grep -Fxq "Timed out waiting for build lock: $lock_file" "$flock_timeout_output"
 kill "$holder" 2>/dev/null || true
-wait "$holder" 2>/dev/null || true
+wait_bounded "$holder" flock-timeout-holder 5 || true
 
 # The mkdir fallback cannot wait forever when flock is unavailable.
 fallback_lock_dir="${build_dir}.lock.d"
@@ -83,13 +204,20 @@ if BUILD_LOCK_FORCE_DIRECTORY=1 BUILD_LOCK_TIMEOUT=0 AXOLOTY_DEVCONTAINER=1 BUIL
 fi
 rmdir "$fallback_lock_dir"
 
+# A directory lock with no live owner can be reclaimed once its configured
+# stale age is reached.
+mkdir "$fallback_lock_dir"
+BUILD_LOCK_FORCE_DIRECTORY=1 BUILD_LOCK_STALE_SECONDS=0 AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+[[ ! -e "$fallback_lock_dir" ]]
+
 # Isolated CI runners do not share a build directory, so they must not wait
 # behind an unrelated lock directory.
 ( exec 8>"$lock_file"; flock 8; sleep 2 ) &
 holder=$!
 AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" BUILD_LOCK=0 "$ROOT_DIR/.devcontainer/run.sh" true
 kill "$holder" 2>/dev/null || true
-wait "$holder" 2>/dev/null || true
+wait_bounded "$holder" isolated-lock-holder 5 || true
 
 # Device runs auto-select a usable non-interactive sudo wrapper. Use fakes so
 # the behavior is deterministic and does not require a real device or sudo.
@@ -97,6 +225,13 @@ fake_bin="$TEMP_DIR/bin"
 capture="$TEMP_DIR/runtime-args.txt"
 capture_env="$TEMP_DIR/runtime-env.txt"
 capture_child_env="$TEMP_DIR/runtime-child-env.txt"
+capture_sequence="$TEMP_DIR/runtime-sequence.txt"
+capture_state="$TEMP_DIR/runtime-state.txt"
+capture_inspect_count="$TEMP_DIR/runtime-inspect-count.txt"
+: > "$capture_sequence"
+: > "$capture_state"
+: > "$capture_inspect_count"
+
 mkdir -p "$fake_bin"
 cat > "$fake_bin/fake-sudo" <<'SH'
 #!/bin/sh
@@ -106,6 +241,45 @@ SH
 cat > "$fake_bin/fake-podman" <<SH
 #!/bin/sh
 printf '%s\n' "\$*" >> "$capture"
+record_sequence() { printf '%s\n' "\$1" >> "$capture_sequence"; }
+if [ "\${FAKE_FOREIGN_INSPECT:-0}" = "1" ] && [ "\$1" = "inspect" ]; then
+    record_sequence inspect-foreign
+    printf '%s\n' "foreign-owner|foreign-run|foreign-worktree|foreign-process"
+    exit 0
+fi
+if [ "\${FAKE_FOREIGN_INSPECT:-0}" = "1" ] && { [ "\$1" = "stop" ] || [ "\$1" = "kill" ] || [ "\$1" = "rm" ]; }; then
+    printf '%s\n' "unexpected cleanup of foreign container" >&2
+    exit 99
+fi
+if [ "\$1" = "inspect" ]; then
+    if [ "\${3:-}" = "{{.State.Status}}" ]; then
+        record_sequence inspect-status
+        [ -f "$capture_state" ] && . "$capture_state"
+        printf '%s\n' "\${FAKE_CONTAINER_STATUS:-exited}"
+        exit 0
+    fi
+    record_sequence inspect
+    [ -f "$capture_state" ] && . "$capture_state"
+    printf '%s\n' "\${FAKE_CONTAINER_LABELS:-}"
+    exit 0
+fi
+if [ "\$1" = "stop" ]; then
+    record_sequence stop
+    if [ "\${FAKE_STOP_IGNORES:-0}" != "1" ]; then
+        printf '%s\n' 'FAKE_CONTAINER_STATUS=exited' >> "$capture_state"
+    fi
+    exit 0
+fi
+if [ "\$1" = "kill" ]; then
+    record_sequence kill
+    printf '%s\n' 'FAKE_CONTAINER_STATUS=exited' >> "$capture_state"
+    exit 0
+fi
+if [ "\$1" = "rm" ]; then
+    record_sequence rm
+    rm -f "$capture_state"
+    exit 0
+fi
 if [ "\$1" = "system" ] && [ "\$2" = "service" ]; then
     exec python3 -c 'import socket,sys,time; p=sys.argv[1][7:]; s=socket.socket(socket.AF_UNIX); s.bind(p); s.listen(1); time.sleep(300)' "\$4"
 fi
@@ -127,10 +301,28 @@ if [ "\$1" = "load" ]; then
 fi
 if [ "\${FAKE_RUNTIME_EXECUTE_COMMAND:-0}" = "1" ] && [ "\$1" = "run" ]; then
     shift
+    fake_name=""
+    fake_managed=""
+    fake_run=""
+    fake_worktree=""
+    fake_owner=""
     while [ "\$#" -gt 0 ]; do
         case "\$1" in
             -e|--env)
                 export "\$2"
+                shift 2
+                ;;
+            --name)
+                fake_name="\$2"
+                shift 2
+                ;;
+            --label)
+                case "\$2" in
+                    io.axoloty.managed-by=*) fake_managed="\${2#*=}" ;;
+                    io.axoloty.run-id=*) fake_run="\${2#*=}" ;;
+                    io.axoloty.worktree=*) fake_worktree="\${2#*=}" ;;
+                    io.axoloty.owner=*) fake_owner="\${2#*=}" ;;
+                esac
                 shift 2
                 ;;
             --env-file|-v|-w|--security-opt|--user|--device|-p|--network)
@@ -141,11 +333,75 @@ if [ "\${FAKE_RUNTIME_EXECUTE_COMMAND:-0}" = "1" ] && [ "\$1" = "run" ]; then
                 ;;
             axoloty-dev)
                 shift
-                exec "\$@"
+                if [ "\${FAKE_RUNTIME_BLOCK_LAUNCH:-0}" = "1" ]; then
+                    trap 'exit 143' TERM INT
+                    while :; do sleep 1; done
+                fi
+                if [ "\${FAKE_DELAYED_OWNED_CONTAINER:-0}" = "1" ]; then
+                    (
+                        sleep 0.3
+                        printf 'FAKE_CONTAINER_LABELS=%q\n' "\$fake_managed|\$fake_run|\$fake_worktree|\$fake_owner" > "$capture_state"
+                        printf 'FAKE_CONTAINER_STATUS=running\n' >> "$capture_state"
+                    ) &
+                    sleep 1
+                fi
+                if [ "\${FAKE_DELAYED_FOREIGN_CONTAINER:-0}" = "1" ]; then
+                    (
+                        sleep 0.3
+                        printf '%s\n' 'FAKE_CONTAINER_LABELS=foreign-owner|foreign-run|foreign-worktree|foreign-process' > "$capture_state"
+                        printf 'FAKE_CONTAINER_STATUS=running\n' >> "$capture_state"
+                    ) &
+                    exit 125
+                fi
+                printf 'FAKE_CONTAINER_LABELS=%q\n' "\$fake_managed|\$fake_run|\$fake_worktree|\$fake_owner" > "$capture_state"
+                printf 'FAKE_CONTAINER_STATUS=running\n' >> "$capture_state"
+                "\$@"
+                exit "\$?"
                 ;;
             *)
                 shift
                 ;;
+        esac
+    done
+    exit 2
+fi
+if [ "\$1" = "run" ]; then
+    fake_managed=""
+    fake_run=""
+    fake_worktree=""
+    fake_owner=""
+    while [ "\$#" -gt 0 ]; do
+        case "\$1" in
+            --label)
+                case "\$2" in
+                    io.axoloty.managed-by=*) fake_managed="\${2#*=}" ;;
+                    io.axoloty.run-id=*) fake_run="\${2#*=}" ;;
+                    io.axoloty.worktree=*) fake_worktree="\${2#*=}" ;;
+                    io.axoloty.owner=*) fake_owner="\${2#*=}" ;;
+                esac
+                shift 2
+                ;;
+            --name|-e|--env|--env-file|-v|-w|--security-opt|--user|--device|-p|--network)
+                shift 2
+                ;;
+            axoloty-dev)
+                if [ "\${FAKE_RUNTIME_BLOCK_LAUNCH:-0}" = "1" ]; then
+                    trap 'exit 143' TERM INT
+                    while :; do sleep 1; done
+                fi
+                if [ "\${FAKE_DELAYED_FOREIGN_CONTAINER:-0}" = "1" ]; then
+                    (
+                        sleep 0.3
+                        printf '%s\n' 'FAKE_CONTAINER_LABELS=foreign-owner|foreign-run|foreign-worktree|foreign-process' > "$capture_state"
+                        printf 'FAKE_CONTAINER_STATUS=running\n' >> "$capture_state"
+                    ) &
+                    exit 125
+                fi
+                printf 'FAKE_CONTAINER_LABELS=%q\n' "\$fake_managed|\$fake_run|\$fake_worktree|\$fake_owner" > "$capture_state"
+                printf 'FAKE_CONTAINER_STATUS=running\n' >> "$capture_state"
+                exit "\${FAKE_RUNTIME_EXIT_CODE:-0}"
+                ;;
+            *) shift ;;
         esac
     done
     exit 2
@@ -167,17 +423,110 @@ while [ "\$#" -gt 0 ]; do
 done
 SH
 chmod +x "$fake_bin/fake-sudo" "$fake_bin/fake-podman"
+
+FAKE_RUNTIME_EXECUTE_COMMAND=1 CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    CONTAINER_TERM_GRACE_SECONDS=1 \
+    "$ROOT_DIR/.devcontainer/run.sh" "$tree_parent" "$tree_child" "$tree_child_pid" "$tree_exited" \
+    >"$TEMP_DIR/container-signal.log" 2>&1 &
+container_runner=$!
+wait_for_path "$tree_child_pid" 5
+kill -TERM "$container_runner" 2>/dev/null || true
+set +e
+wait_bounded "$container_runner" container-runner 5
+set -e
+[ -e "$tree_exited" ]
+child_pid=$(cat "$tree_child_pid")
+if kill -0 "$child_pid" 2>/dev/null; then
+    echo "container run.sh left an executable descendant" >&2
+    exit 1
+fi
+
+# An owned container that ignores TERM must be escalated and reaped. The fake
+# runtime returns the labels produced by run.sh and records cleanup ordering.
+: > "$capture_sequence"
+: > "$capture_state"
+FAKE_RUNTIME_EXECUTE_COMMAND=1 FAKE_STOP_IGNORES=1 CONTAINER_RUNTIME="$fake_bin/fake-podman" \
+    BUILD_DIR="$build_dir" BUILD_LOCK=0 CONTAINER_TERM_GRACE_SECONDS=1 CONTAINER_KILL_GRACE_SECONDS=1 \
+    "$ROOT_DIR/.devcontainer/run.sh" "$tree_parent" "$tree_child" "$tree_child_pid" "$tree_exited" \
+    >"$TEMP_DIR/owned-container.log" 2>&1 &
+owned_runner=$!
+wait_for_path "$tree_child_pid" 5
+kill -TERM "$owned_runner" 2>/dev/null || true
+set +e
+wait_bounded "$owned_runner" owned-container-runner 5
+set -e
+expected_sequence=$'inspect\nstop\ninspect-status\nkill\nrm'
+grep -q -- '^stop --time 1 ' "$capture" || { cat "$capture" >&2; exit 1; }
+grep -q -- '^inspect --format {{.State.Status}} ' "$capture" || { cat "$capture" >&2; exit 1; }
+if [ "${FAKE_STOP_IGNORES:-0}" = "1" ]; then
+    grep -q -- '^kill ' "$capture" || { cat "$capture" >&2; exit 1; }
+fi
+grep -q -- '^rm -f ' "$capture" || { cat "$capture" >&2; exit 1; }
+
+# Delayed runtime creation is eventually observed and the owned container is
+# removed only after all labels match.
+: > "$capture_sequence"
+: > "$capture_state"
+: > "$capture"
+FAKE_RUNTIME_EXECUTE_COMMAND=1 FAKE_DELAYED_OWNED_CONTAINER=1 \
+    CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    CONTAINER_OWNERSHIP_TIMEOUT_SECONDS=5 CONTAINER_TERM_GRACE_SECONDS=1 CONTAINER_KILL_GRACE_SECONDS=1 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+expected_sequence=$'inspect\ninspect\ninspect\nstop\ninspect-status\ninspect\nrm'
+grep -q -- '^stop --time 1 ' "$capture" || { cat "$capture" >&2; exit 1; }
+grep -q -- '^rm -f ' "$capture" || { cat "$capture" >&2; exit 1; }
+
+# A delayed same-name foreign container is never removed because ownership
+# labels never match, even after the collision appears during cleanup polling.
+: > "$capture_sequence"
+: > "$capture_state"
+: > "$capture"
+set +e
+FAKE_DELAYED_FOREIGN_CONTAINER=1 CONTAINER_NAME=delayed-collision AXOLOTY_RUN_ID=owned-run \
+    CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    CONTAINER_OWNERSHIP_TIMEOUT_SECONDS=1 CONTAINER_TERM_GRACE_SECONDS=1 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+delayed_foreign_status=$?
+set -e
+[[ "$delayed_foreign_status" -eq 125 ]]
+if grep -Eq '^(stop|kill|rm)$' "$capture_sequence" || grep -Eq '^stop |^kill |^rm ' "$capture"; then
+    echo "delayed foreign container collision triggered cleanup" >&2
+    exit 1
+fi
+
+# If the runtime is interrupted before ownership labels can be observed, the
+# wrapper must not remove a same-name container it cannot prove it owns.
+: > "$capture_sequence"
+: > "$capture_state"
+: > "$capture"
+FAKE_RUNTIME_BLOCK_LAUNCH=1 CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    CONTAINER_OWNERSHIP_TIMEOUT_SECONDS=1 CONTAINER_TERM_GRACE_SECONDS=1 \
+    "$ROOT_DIR/.devcontainer/run.sh" true >"$TEMP_DIR/launch-interrupt.log" 2>&1 &
+launch_runner=$!
+sleep 0.2
+kill -TERM "$launch_runner" 2>/dev/null || true
+set +e
+wait_bounded "$launch_runner" launch-interrupt-runner 5
+set -e
+if grep -Eq '^(stop|kill|rm)$' "$capture_sequence" || grep -Eq '^stop |^kill |^rm ' "$capture"; then
+    echo "launch interruption attempted cleanup without observed ownership" >&2
+    exit 1
+fi
+
 device="$TEMP_DIR/device"
 : > "$device"
+: > "$capture_env"
 SUDO_CANDIDATES="$fake_bin/fake-sudo" \
 CONTAINER_DEVICES="$device" CONTAINER_RUNTIME="$fake_bin/fake-podman" \
 CONTAINER_ENV_VARS="EMBEDDED_SKIP_BUILD EMBEDDED_BUILD_DIR" \
 EMBEDDED_SKIP_BUILD=1 EMBEDDED_BUILD_DIR=/workspace/.build/embedded-swift \
-CONTAINER_RECLAIM_BUILD_DIR=1 BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    CONTAINER_RECLAIM_BUILD_DIR=1 BUILD_DIR="$build_dir" BUILD_LOCK=0 \
     "$ROOT_DIR/.devcontainer/run.sh" true
+device_capture=$(awk '/--device .*--privileged/{capture=1} capture{print}' "$capture")
+printf '%s\n' "$device_capture" > "$capture"
 grep -q -- '--privileged' "$capture"
 grep -q -- "--device $device" "$capture"
-if grep -q -- '--user ' "$capture"; then
+if printf '%s\n' "$device_capture" | grep -q -- '^run .*--user '; then
     echo "device run unexpectedly set an ordinary user" >&2
     exit 1
 fi
@@ -199,6 +548,29 @@ CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
     "$ROOT_DIR/.devcontainer/run.sh" true
 if grep -Eq -- 'CONTAINER_HOST|DOCKER_HOST' "$capture"; then
     echo "ordinary container run unexpectedly enabled host Podman" >&2
+    exit 1
+fi
+
+# Every external run has a deterministic owned name and run label; the fake
+# runtime inspects the construction without contacting Podman.
+: > "$capture"
+AXOLOTY_RUN_ID=issue-551 \
+    CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+grep -q -- '--name ' "$capture"
+grep -q -- '--label io.axoloty.managed-by=axoloty-run.sh' "$capture"
+grep -q -- '--label io.axoloty.run-id=issue-551' "$capture"
+grep -q -- "--label io.axoloty.worktree=$(basename "$ROOT_DIR")" "$capture"
+grep -q -- '--label io.axoloty.owner=' "$capture"
+
+# A colliding runtime name cannot make run.sh remove an unowned container.
+if FAKE_FOREIGN_INSPECT=1 CONTAINER_NAME=colliding-container AXOLOTY_RUN_ID=owned-run \
+    CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true; then
+    :
+fi
+if grep -Eq '^(stop|kill|rm)$' "$capture_sequence"; then
+    echo "foreign container collision triggered cleanup" >&2
     exit 1
 fi
 
@@ -268,7 +640,7 @@ AXOLOTY_HOST_RUNTIME_BRIDGE=1 CONTAINER_HOST="unix://$host_socket" \
 [[ "$observed_runtime" = "$ROOT_DIR/.devcontainer/container-runtime-remote.sh" ]]
 [[ "$observed_docker_host" = "unix://$host_socket" ]]
 kill "$socket_server" 2>/dev/null || true
-wait "$socket_server" 2>/dev/null || true
+wait_bounded "$socket_server" bridge-socket-server 5 || true
 socket_server=""
 
 # CI already uses worktree-local cache paths. Each destination must appear

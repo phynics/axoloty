@@ -17,7 +17,8 @@ public struct FoundationIntegrationRunner: AxolotyIntegrationRunning {
         const socket=net.createConnection({host:'127.0.0.1',port:1883},()=>{socket.end();process.exit(0)});
         socket.setTimeout(400,()=>{socket.destroy();process.exit(1)});
         socket.on('error',()=>process.exit(1));
-        """]
+        """],
+        timeoutSeconds: 5
     )
     static let testCommand = AxolotyCommandPlan(
         executable: "swift",
@@ -26,7 +27,8 @@ public struct FoundationIntegrationRunner: AxolotyIntegrationRunning {
             "--filter",
             "CommunicationSubscriptionCoordinatorTests|BroadcastTransportTests|MQTTNIOClientTests|UnaryCallBrokerIntegrationTests|DecentralizedLoggingTest|ObjectLifecycleControllerTests|InspectorBrokerIntegrationTests",
         ],
-        environment: ["AXOLOTY_INSPECTOR_LIVE": "1"]
+        environment: ["AXOLOTY_INSPECTOR_LIVE": "1"],
+        timeoutSeconds: 60 * 60
     )
     static let commandPlans = [brokerProbeCommand, testCommand]
 

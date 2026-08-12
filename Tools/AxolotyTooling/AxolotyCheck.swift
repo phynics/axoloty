@@ -21,6 +21,7 @@ public struct AxolotyCommandPlan: Codable, Equatable, Sendable {
         case arguments
         case environment
         case executionContext
+        case timeoutSeconds
     }
 
     /// The execution context for a command.
@@ -44,18 +45,22 @@ public struct AxolotyCommandPlan: Codable, Equatable, Sendable {
     public let environment: [String: String]
     /// The command execution boundary.
     public let executionContext: ExecutionContext
+    /// An optional per-command timeout in seconds.
+    public let timeoutSeconds: TimeInterval?
 
     /// Creates a command plan.
     public init(
         executable: String,
         arguments: [String] = [],
         environment: [String: String] = [:],
-        executionContext: ExecutionContext = .project
+        executionContext: ExecutionContext = .project,
+        timeoutSeconds: TimeInterval? = nil
     ) {
         self.executable = executable
         self.arguments = arguments
         self.environment = environment
         self.executionContext = executionContext
+        self.timeoutSeconds = timeoutSeconds
     }
 
     /// Decodes a command plan, treating a missing execution context from
@@ -71,6 +76,7 @@ public struct AxolotyCommandPlan: Codable, Equatable, Sendable {
             ExecutionContext.self,
             forKey: .executionContext
         ) ?? .project
+        timeoutSeconds = try container.decodeIfPresent(TimeInterval.self, forKey: .timeoutSeconds)
     }
 
     /// Encodes a command plan with its execution context explicitly present.
@@ -82,6 +88,7 @@ public struct AxolotyCommandPlan: Codable, Equatable, Sendable {
         try container.encode(arguments, forKey: .arguments)
         try container.encode(environment, forKey: .environment)
         try container.encode(executionContext, forKey: .executionContext)
+        try container.encodeIfPresent(timeoutSeconds, forKey: .timeoutSeconds)
     }
 }
 
@@ -176,18 +183,51 @@ struct AxolotyExecutionContextValidator: Sendable {
 
 /// The captured result of a command execution.
 public struct AxolotyCheckCommandResult: Codable, Equatable, Sendable {
+    private enum CodingKeys: String, CodingKey {
+        case exitCode
+        case standardOutput
+        case standardError
+        case lifecycle
+    }
+
     /// The process exit status.
     public let exitCode: Int32
     /// Standard output captured from the process.
     public let standardOutput: String
     /// Standard error captured from the process.
     public let standardError: String
+    /// Lifecycle diagnostics when the command timed out or was cancelled.
+    public let lifecycle: AxolotyCommandLifecycle?
 
     /// Creates a command result.
-    public init(exitCode: Int32, standardOutput: String = "", standardError: String = "") {
+    public init(
+        exitCode: Int32,
+        standardOutput: String = "",
+        standardError: String = "",
+        lifecycle: AxolotyCommandLifecycle? = nil
+    ) {
         self.exitCode = exitCode
         self.standardOutput = standardOutput
         self.standardError = standardError
+        self.lifecycle = lifecycle
+    }
+
+    /// Decodes a command result while accepting pre-lifecycle result payloads.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        exitCode = try container.decode(Int32.self, forKey: .exitCode)
+        standardOutput = try container.decode(String.self, forKey: .standardOutput)
+        standardError = try container.decode(String.self, forKey: .standardError)
+        lifecycle = try container.decodeIfPresent(AxolotyCommandLifecycle.self, forKey: .lifecycle)
+    }
+
+    /// Encodes the existing result fields and lifecycle diagnostics when present.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(exitCode, forKey: .exitCode)
+        try container.encode(standardOutput, forKey: .standardOutput)
+        try container.encode(standardError, forKey: .standardError)
+        try container.encodeIfPresent(lifecycle, forKey: .lifecycle)
     }
 }
 
@@ -269,19 +309,22 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
 
     /// Creates initial offline checks for a selected host platform.
     public static func initialOffline(for platform: Platform) -> AxolotyCheckPlan {
+        let short: TimeInterval = 10 * 60
+        let build: TimeInterval = 30 * 60
+        let test: TimeInterval = 60 * 60
         var nodes: [AxolotyCheckNode] = [
-        AxolotyCheckNode(name: "resolve", command: AxolotyCommandPlan(executable: "swift", arguments: ["package", "resolve", "--cache-path", ".swiftpm-cache"])),
-        AxolotyCheckNode(name: "build", dependencies: ["resolve"], command: AxolotyCommandPlan(executable: "swift", arguments: ["build", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution"])),
-        AxolotyCheckNode(name: "lint", command: AxolotyCommandPlan(executable: "swiftlint", arguments: ["lint", "--no-cache", "--config", ".swiftlint.yml"])),
-        AxolotyCheckNode(name: "test-tooling", dependencies: ["build"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--filter", "AxolotyToolingTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyInspectorCLITests|AxolotyMCPTests"])),
-        AxolotyCheckNode(name: "test-unit", dependencies: ["test-tooling"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--skip-build", "--filter", "ObjectMatcherTests|CoatyUUIDTests"])),
-        AxolotyCheckNode(name: "test-module", dependencies: ["test-tooling"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--skip-build", "--filter", "CommunicationTopicTests|PayloadCoderTests|ObjectTypeRegistryTests|ConfigurationBuilderTests"])),
-        AxolotyCheckNode(name: "test-fuzz", dependencies: ["test-tooling"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--skip-build", "--filter", "DeterministicFuzzTests"], environment: ["AXOLOTY_FUZZ_ITERATIONS": "250", "AXOLOTY_FUZZ_SEED": "0x41584f4c4f5459"])),
-        AxolotyCheckNode(name: "test-wire", dependencies: ["test-tooling"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--skip-build", "--filter", "WireFixtureTests|LegacyCaptureFixtureTests|CoatyJs.*CaptureTests|LifecycleCompatibilityScenarioTests|AxolotyIoAssociateTests|AxolotyIoNegativeTests|AxolotyIoValuePayloadTests"])),
-        AxolotyCheckNode(name: "no-anycodable", command: AxolotyCommandPlan(executable: "Tests/Support/check-no-anycodable.sh")),
-        AxolotyCheckNode(name: "no-foundation-wire", command: AxolotyCommandPlan(executable: "Tests/Support/check-no-foundation-types.sh")),
-        AxolotyCheckNode(name: "wire-dependencies", command: AxolotyCommandPlan(executable: "sh", arguments: ["Tests/Support/check-axoloty-wire-dependencies.sh", "Packages/AxolotyWire"])),
-        AxolotyCheckNode(name: "wire-independent-resolution", command: AxolotyCommandPlan(executable: "Tests/Support/check-axoloty-wire-independent-resolution.sh")),
+            AxolotyCheckNode(name: "resolve", command: AxolotyCommandPlan(executable: "swift", arguments: ["package", "resolve", "--cache-path", ".swiftpm-cache"], timeoutSeconds: short)),
+            AxolotyCheckNode(name: "build", dependencies: ["resolve"], command: AxolotyCommandPlan(executable: "swift", arguments: ["build", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution"], timeoutSeconds: build)),
+        AxolotyCheckNode(name: "lint", command: AxolotyCommandPlan(executable: "swiftlint", arguments: ["lint", "--no-cache", "--config", ".swiftlint.yml"], timeoutSeconds: short)),
+            AxolotyCheckNode(name: "test-tooling", dependencies: ["build"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--filter", "AxolotyToolingTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyInspectorCLITests|AxolotyMCPTests"], timeoutSeconds: test)),
+        AxolotyCheckNode(name: "test-unit", dependencies: ["test-tooling"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--skip-build", "--filter", "ObjectMatcherTests|CoatyUUIDTests"], timeoutSeconds: test)),
+        AxolotyCheckNode(name: "test-module", dependencies: ["test-tooling"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--skip-build", "--filter", "CommunicationTopicTests|PayloadCoderTests|ObjectTypeRegistryTests|ConfigurationBuilderTests"], timeoutSeconds: test)),
+        AxolotyCheckNode(name: "test-fuzz", dependencies: ["test-tooling"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--skip-build", "--filter", "DeterministicFuzzTests"], environment: ["AXOLOTY_FUZZ_ITERATIONS": "250", "AXOLOTY_FUZZ_SEED": "0x41584f4c4f5459"], timeoutSeconds: test)),
+        AxolotyCheckNode(name: "test-wire", dependencies: ["test-tooling"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--skip-build", "--filter", "WireFixtureTests|LegacyCaptureFixtureTests|CoatyJs.*CaptureTests|LifecycleCompatibilityScenarioTests|AxolotyIoAssociateTests|AxolotyIoNegativeTests|AxolotyIoValuePayloadTests"], timeoutSeconds: test)),
+        AxolotyCheckNode(name: "no-anycodable", command: AxolotyCommandPlan(executable: "Tests/Support/check-no-anycodable.sh", timeoutSeconds: short)),
+        AxolotyCheckNode(name: "no-foundation-wire", command: AxolotyCommandPlan(executable: "Tests/Support/check-no-foundation-types.sh", timeoutSeconds: short)),
+        AxolotyCheckNode(name: "wire-dependencies", command: AxolotyCommandPlan(executable: "sh", arguments: ["Tests/Support/check-axoloty-wire-dependencies.sh", "Packages/AxolotyWire"], timeoutSeconds: short)),
+        AxolotyCheckNode(name: "wire-independent-resolution", command: AxolotyCommandPlan(executable: "Tests/Support/check-axoloty-wire-independent-resolution.sh", timeoutSeconds: short)),
         ]
         let supportSelfTests = [
             ("support-wire-dependencies", "Tests/Support/test-check-axoloty-wire-dependencies.sh"),
@@ -294,7 +337,7 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
             ("support-budget-manifest", "Tests/Support/test-check-budget-manifest.sh"),
         ]
         nodes += supportSelfTests.map { name, executable in
-            AxolotyCheckNode(name: name, command: AxolotyCommandPlan(executable: executable))
+            AxolotyCheckNode(name: name, command: AxolotyCommandPlan(executable: executable, timeoutSeconds: short))
         }
         nodes.append(AxolotyCheckNode(
             name: "support-node-tests",
@@ -303,30 +346,32 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
                 "Tests/Support/coverage-tools.test.mjs",
                 "Tests/Support/fuzz-summary.test.mjs",
                 "Tests/Support/make-tooling-wrappers.test.mjs",
-                "Tests/Support/patch-swift-got.test.mjs",
-                "Tests/Support/release-snapshots.test.mjs",
-                "Tests/Support/serial-tools.test.mjs",
-                "Tests/Support/validate-test-tiers.test.mjs",
-                "Tests/Support/work-plan-issue-form.test.mjs",
-            ])
-        ))
+                 "Tests/Support/patch-swift-got.test.mjs",
+                 "Tests/Support/release-snapshots.test.mjs",
+                 "Tests/Support/run-lifecycle.test.mjs",
+                 "Tests/Support/serial-tools.test.mjs",
+                 "Tests/Support/validate-test-tiers.test.mjs",
+                 "Tests/Support/work-plan-issue-form.test.mjs",
+             ], timeoutSeconds: short)
+         ))
         nodes.append(AxolotyCheckNode(
             name: "support-tier-contract",
             dependencies: ["support-node-tests"],
             command: AxolotyCommandPlan(
                 executable: "node",
-                arguments: ["Tests/Support/validate-test-tiers.mjs", "Tests/Support/test-tiers.json"]
+                arguments: ["Tests/Support/validate-test-tiers.mjs", "Tests/Support/test-tiers.json"],
+                timeoutSeconds: short
             )
         ))
         if platform == .linux {
             nodes += [
-                AxolotyCheckNode(name: "support-container", command: AxolotyCommandPlan(executable: "Tests/Support/test-run-container.sh")),
-                AxolotyCheckNode(name: "support-fuzz-runner", command: AxolotyCommandPlan(executable: "Tests/Fuzzing/test-run-fuzz.sh")),
-                AxolotyCheckNode(name: "support-embedded-compile", command: AxolotyCommandPlan(executable: "Tests/Support/test-check-embedded-swift.sh")),
-                AxolotyCheckNode(name: "support-embedded-smoke", command: AxolotyCommandPlan(executable: "Tests/Support/test-embedded-swift-smoke.sh")),
-                AxolotyCheckNode(name: "embedded-toolchain", command: AxolotyCommandPlan(executable: "Tests/Support/check-embedded-environment.sh")),
-                AxolotyCheckNode(name: "embedded-build", dependencies: ["build", "embedded-toolchain"], command: AxolotyCommandPlan(executable: "Tests/Support/build-embedded-swift.sh")),
-                AxolotyCheckNode(name: "embedded-linker", dependencies: ["embedded-build"], command: AxolotyCommandPlan(executable: "Tests/Support/check-embedded-swift-linker.sh")),
+                AxolotyCheckNode(name: "support-container", command: AxolotyCommandPlan(executable: "Tests/Support/test-run-container.sh", timeoutSeconds: short)),
+                AxolotyCheckNode(name: "support-fuzz-runner", command: AxolotyCommandPlan(executable: "Tests/Fuzzing/test-run-fuzz.sh", timeoutSeconds: test)),
+                AxolotyCheckNode(name: "support-embedded-compile", command: AxolotyCommandPlan(executable: "Tests/Support/test-check-embedded-swift.sh", timeoutSeconds: build)),
+                AxolotyCheckNode(name: "support-embedded-smoke", command: AxolotyCommandPlan(executable: "Tests/Support/test-embedded-swift-smoke.sh", timeoutSeconds: short)),
+                AxolotyCheckNode(name: "embedded-toolchain", command: AxolotyCommandPlan(executable: "Tests/Support/check-embedded-environment.sh", timeoutSeconds: short)),
+                AxolotyCheckNode(name: "embedded-build", dependencies: ["build", "embedded-toolchain"], command: AxolotyCommandPlan(executable: "Tests/Support/build-embedded-swift.sh", timeoutSeconds: build)),
+                AxolotyCheckNode(name: "embedded-linker", dependencies: ["embedded-build"], command: AxolotyCommandPlan(executable: "Tests/Support/check-embedded-swift-linker.sh", timeoutSeconds: build)),
             ]
         }
         return AxolotyCheckPlan(nodes: nodes)
@@ -338,13 +383,15 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
         destination: String = ".testing/release-snapshots",
         environment: [String: String] = [:]
     ) -> AxolotyCheckPlan {
-        AxolotyCheckPlan(nodes: [
+        let commandTimeout: TimeInterval = 10 * 60
+        return AxolotyCheckPlan(nodes: [
             AxolotyCheckNode(
                 name: "release-snapshots-generate",
                 command: AxolotyCommandPlan(
                     executable: "node",
                     arguments: ["Tests/Support/release-snapshots.mjs", "generate", source, destination],
-                    environment: environment
+                    environment: environment,
+                    timeoutSeconds: commandTimeout
                 )
             ),
             AxolotyCheckNode(
@@ -352,7 +399,8 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
                 dependencies: ["release-snapshots-generate"],
                 command: AxolotyCommandPlan(
                     executable: "node",
-                    arguments: ["Tests/Support/release-snapshots.mjs", "verify", destination]
+                    arguments: ["Tests/Support/release-snapshots.mjs", "verify", destination],
+                    timeoutSeconds: commandTimeout
                 )
             ),
             AxolotyCheckNode(
@@ -360,7 +408,8 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
                 dependencies: ["release-snapshots-verify"],
                 command: AxolotyCommandPlan(
                     executable: "Tests/Support/check-axoloty-semver-consumer.sh",
-                    environment: environment
+                    environment: environment,
+                    timeoutSeconds: commandTimeout
                 )
             ),
         ])
@@ -369,12 +418,15 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
     /// Creates the explicit host/container plan for live wire capture.
     public static var wireCapture: AxolotyCheckPlan {
         let host: AxolotyCommandPlan.ExecutionContext = .host
+        let setupTimeout: TimeInterval = 10 * 60
+        let captureTimeout: TimeInterval = 30 * 60
         return AxolotyCheckPlan(nodes: [
             AxolotyCheckNode(
                 name: "wire-tool-install",
                 command: AxolotyCommandPlan(
                     executable: "npm",
-                    arguments: ["ci", "--prefix", "Tests/WireCompatibility/tool"]
+                    arguments: ["ci", "--prefix", "Tests/WireCompatibility/tool"],
+                    timeoutSeconds: setupTimeout
                 )
             ),
             AxolotyCheckNode(
@@ -382,7 +434,8 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
                 dependencies: ["wire-tool-install"],
                 command: AxolotyCommandPlan(
                     executable: "npm",
-                    arguments: ["test", "--prefix", "Tests/WireCompatibility/tool"]
+                    arguments: ["test", "--prefix", "Tests/WireCompatibility/tool"],
+                    timeoutSeconds: setupTimeout
                 )
             ),
             AxolotyCheckNode(
@@ -390,7 +443,8 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
                 dependencies: ["wire-tool-test"],
                 command: AxolotyCommandPlan(
                     executable: "Tests/WireCompatibility/Live/run-coatyjs-advertise.sh",
-                    executionContext: host
+                    executionContext: host,
+                    timeoutSeconds: captureTimeout
                 )
             ),
             AxolotyCheckNode(
@@ -398,7 +452,8 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
                 dependencies: ["wire-capture-advertise"],
                 command: AxolotyCommandPlan(
                     executable: "Tests/WireCompatibility/Live/run-coatyjs-core.sh",
-                    executionContext: host
+                    executionContext: host,
+                    timeoutSeconds: captureTimeout
                 )
             ),
             AxolotyCheckNode(
@@ -406,7 +461,8 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
                 dependencies: ["wire-capture-core"],
                 command: AxolotyCommandPlan(
                     executable: "Tests/WireCompatibility/Lifecycle/Live/run-lifecycle-matrix.sh",
-                    executionContext: host
+                    executionContext: host,
+                    timeoutSeconds: captureTimeout
                 )
             ),
             AxolotyCheckNode(
@@ -414,7 +470,8 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
                 dependencies: ["wire-capture-lifecycle"],
                 command: AxolotyCommandPlan(
                     executable: "Tests/WireCompatibility/Reverse/run-axoloty-advertise.sh",
-                    executionContext: host
+                    executionContext: host,
+                    timeoutSeconds: captureTimeout
                 )
             ),
             AxolotyCheckNode(
@@ -422,7 +479,8 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
                 dependencies: ["wire-capture-reverse-advertise"],
                 command: AxolotyCommandPlan(
                     executable: "Tests/WireCompatibility/Reverse/run-axoloty-core.sh",
-                    executionContext: host
+                    executionContext: host,
+                    timeoutSeconds: captureTimeout
                 )
             ),
             AxolotyCheckNode(
@@ -430,7 +488,8 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
                 dependencies: ["wire-capture-reverse-core"],
                 command: AxolotyCommandPlan(
                     executable: "Tests/WireCompatibility/Reverse/run-coatyjs-to-axoloty-advertise.sh",
-                    executionContext: host
+                    executionContext: host,
+                    timeoutSeconds: captureTimeout
                 )
             ),
             AxolotyCheckNode(
@@ -438,7 +497,8 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
                 dependencies: ["wire-capture-js-to-axoloty"],
                 command: AxolotyCommandPlan(
                     executable: "Tests/WireCompatibility/IO/Live/run-io-associate.sh",
-                    executionContext: host
+                    executionContext: host,
+                    timeoutSeconds: captureTimeout
                 )
             ),
             AxolotyCheckNode(
@@ -449,7 +509,8 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
                     arguments: [
                         "Tests/WireCompatibility/tool/dist/index.js", "manifest",
                         ".testing/wire", ".testing/wire/manifest.json",
-                    ]
+                    ],
+                    timeoutSeconds: setupTimeout
                 )
             ),
         ])
@@ -466,12 +527,15 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
     /// Creates the checkpoint plan with external-consumer settings forwarded
     /// to the semantic-version consumer gate.
     public static func checkpoint(consumerEnvironment: [String: String]) -> AxolotyCheckPlan {
+        let benchmarkTimeout: TimeInterval = 30 * 60
+        let commandTimeout: TimeInterval = 10 * 60
         var nodes = initialOffline.nodes
         nodes.append(AxolotyCheckNode(
             name: "checkpoint-benchmark-size",
             dependencies: nodes.contains(where: { $0.name == "build" }) ? ["build"] : [],
             command: AxolotyCommandPlan(
-                executable: "Tests/Support/check-benchmark-size.sh"
+                executable: "Tests/Support/check-benchmark-size.sh",
+                timeoutSeconds: benchmarkTimeout
             )
         ))
         nodes.append(AxolotyCheckNode(
@@ -480,7 +544,8 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
             command: AxolotyCommandPlan(
                 executable: "node",
                 arguments: ["Tests/Support/release-snapshots.mjs", "generate",
-                            "Tests/WireCompatibility/Fixtures", ".testing/release-snapshots"]
+                            "Tests/WireCompatibility/Fixtures", ".testing/release-snapshots"],
+                timeoutSeconds: commandTimeout
             )
         ))
         nodes.append(AxolotyCheckNode(
@@ -488,7 +553,8 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
             dependencies: ["checkpoint-release-snapshots-generate"],
             command: AxolotyCommandPlan(
                 executable: "node",
-                arguments: ["Tests/Support/release-snapshots.mjs", "verify", ".testing/release-snapshots"]
+                arguments: ["Tests/Support/release-snapshots.mjs", "verify", ".testing/release-snapshots"],
+                timeoutSeconds: commandTimeout
             )
         ))
         nodes.append(AxolotyCheckNode(
@@ -496,7 +562,8 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
             dependencies: ["checkpoint-release-snapshots-verify"],
             command: AxolotyCommandPlan(
                 executable: "Tests/Support/check-axoloty-semver-consumer.sh",
-                environment: consumerEnvironment
+                environment: consumerEnvironment,
+                timeoutSeconds: commandTimeout
             )
         ))
         return AxolotyCheckPlan(nodes: nodes)
@@ -510,13 +577,15 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
         device: String = "/dev/ttyACM0",
         consumerEnvironment: [String: String] = [:]
     ) -> AxolotyCheckPlan {
+        let smokeTimeout: TimeInterval = 10 * 60
         var nodes = checkpoint(consumerEnvironment: consumerEnvironment).nodes
         nodes.append(AxolotyCheckNode(
             name: "checkpoint-hardware-smoke",
             dependencies: ["checkpoint-release-snapshots-verify"],
             command: AxolotyCommandPlan(
                 executable: "Tests/Support/embedded-swift-smoke.sh",
-                environment: ["EMBEDDED_DEVICE": device]
+                environment: ["EMBEDDED_DEVICE": device],
+                timeoutSeconds: smokeTimeout
             )
         ))
         return AxolotyCheckPlan(nodes: nodes)
@@ -655,27 +724,43 @@ public protocol AxolotyCheckCommandRunning: Sendable {
     func run(_ command: AxolotyCommandPlan) -> AxolotyCheckCommandResult
 }
 
+/// A command runner that also owns node-aware lifecycle diagnostics.
+public protocol AxolotyLifecycleCommandRunning: AxolotyCheckCommandRunning {
+    /// Executes a command with its owning node and lifecycle stage.
+    ///
+    /// - Parameters:
+    ///   - command: The command to execute.
+    ///   - context: The node and stage owning the command.
+    /// - Returns: Its captured process result.
+    func run(_ command: AxolotyCommandPlan, context: AxolotyCommandRunContext) -> AxolotyCheckCommandResult
+}
+
 /// Executes a planned check graph while preserving prerequisite failures.
 public struct AxolotyCheckExecutor: Sendable {
     private let commandRunner: any AxolotyCheckCommandRunning
     private let contextValidator: AxolotyExecutionContextValidator
+    private let cancellation: AxolotyCommandCancellation?
 
     /// Creates an executor with the command runner used for every node.
     ///
     /// - Parameter commandRunner: The boundary that starts child commands.
     public init(
-        commandRunner: any AxolotyCheckCommandRunning
+        commandRunner: any AxolotyCheckCommandRunning,
+        cancellation: AxolotyCommandCancellation? = nil
     ) {
         self.commandRunner = commandRunner
         contextValidator = AxolotyExecutionContextValidator()
+        self.cancellation = cancellation
     }
 
     init(
         commandRunner: any AxolotyCheckCommandRunning,
-        contextValidator: AxolotyExecutionContextValidator
+        contextValidator: AxolotyExecutionContextValidator,
+        cancellation: AxolotyCommandCancellation? = nil
     ) {
         self.commandRunner = commandRunner
         self.contextValidator = contextValidator
+        self.cancellation = cancellation
     }
 
     /// Runs a plan in dependency order.
@@ -714,13 +799,26 @@ public struct AxolotyCheckExecutor: Sendable {
         var results: [AxolotyCheckResult] = []
 
         for node in plan.nodes {
+            if cancellation?.isCancelled == true {
+                statuses[node.name] = .skipped
+                results.append(AxolotyCheckResult(name: node.name, status: .skipped))
+                continue
+            }
             guard node.dependencies.allSatisfy({ statuses[$0] == .passed }) else {
                 statuses[node.name] = .skipped
                 results.append(AxolotyCheckResult(name: node.name, status: .skipped))
                 continue
             }
 
-            let commandResult = commandRunner.run(node.command)
+            let commandResult: AxolotyCheckCommandResult
+            if let lifecycleRunner = commandRunner as? any AxolotyLifecycleCommandRunning {
+                commandResult = lifecycleRunner.run(
+                    node.command,
+                    context: AxolotyCommandRunContext(node: node.name, stage: "check")
+                )
+            } else {
+                commandResult = commandRunner.run(node.command)
+            }
             let status: AxolotyCheckStatus = commandResult.exitCode == 0 ? .passed : .failed
             statuses[node.name] = status
             results.append(AxolotyCheckResult(name: node.name, status: status, command: commandResult))
