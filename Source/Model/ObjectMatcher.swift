@@ -166,7 +166,6 @@ public enum ObjectMatcher {
     /// - Returns: true if object satisfies the condition; false otherwise
     internal static func _matchesCondition(obj: CoatyObject, condition: ObjectFilterCondition) -> Bool {
         let v = ObjectMatcher.getFilterPropertyValue(propNames: condition.property, obj: obj)
-        if v == nil { print("FILTER MISS", condition.property.objectFilterProperty ?? "array") }
         switch condition.expression {
         case .notExists:
             return v == nil
