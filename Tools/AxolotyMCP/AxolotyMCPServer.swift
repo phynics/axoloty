@@ -337,16 +337,53 @@ public final class AxolotyMCPServer {
             responseEncoder: responseEncoder,
             encodingFailureLogger: encodingFailureLogger,
             discover: { [session] event in
-                await session.discover(event)
+                await Self.discoveryResponseStream(session: session, event: event)
             }
         )
+    }
+
+    static func discoveryResponseStream(
+        session: InspectorSession,
+        event: DiscoverEvent
+    ) async -> AsyncThrowingStream<ResponseEventSnapshot, Error> {
+        let responseStream = await session.discover(event)
+        return AsyncThrowingStream { continuation in
+            let responseTask = Task {
+                for await response in responseStream {
+                    guard !Task.isCancelled else { return }
+                    continuation.yield(response)
+                }
+                guard !Task.isCancelled else { return }
+                continuation.finish()
+            }
+            let stateTask = Task {
+                while !Task.isCancelled {
+                    if await session.communicationState() == .offline {
+                        continuation.finish(throwing: AxolotyError.runtime(
+                            code: .streamEnded,
+                            reason: "Broker communication transitioned offline during discovery"
+                        ))
+                        return
+                    }
+                    do {
+                        try await Task.sleep(for: .milliseconds(50))
+                    } catch {
+                        return
+                    }
+                }
+            }
+            continuation.onTermination = { _ in
+                responseTask.cancel()
+                stateTask.cancel()
+            }
+        }
     }
 
     static func handleDiscoverObjects(
         _ args: [String: Value]?,
         responseEncoder: ResponseEncoder = ResponseEncoder(),
         encodingFailureLogger: EncodingFailureLogger = AxolotyMCPServer.logEncodingFailure,
-        discover: (DiscoverEvent) async -> AsyncStream<ResponseEventSnapshot>
+        discover: (DiscoverEvent) async -> AsyncThrowingStream<ResponseEventSnapshot, Error>
     ) async -> CallTool.Result {
         let request = Self.makeDiscoveryRequest(from: args)
 
@@ -364,40 +401,57 @@ public final class AxolotyMCPServer {
         let timeout = Duration.milliseconds(request.timeoutMilliseconds)
 
         var discoveredObjects: [String: InspectorObject] = [:]
-        var timedOut = false
 
         let (eventStream, continuation) = AsyncStream.makeStream(of: DiscoverLoopEvent.self)
 
         let responseTask = Task {
             var it = responseStream.makeAsyncIterator()
-            while let response = await it.next() {
-                continuation.yield(.response(response))
+            do {
+                while !Task.isCancelled, let response = try await it.next() {
+                    continuation.yield(.response(response))
+                }
+                guard !Task.isCancelled else { return }
+                continuation.yield(.responsesExhausted)
+            } catch is CancellationError {
+                // Cancellation is a cleanup path, not a response-stream error.
+            } catch {
+                guard !Task.isCancelled else { return }
+                let wrapped = AxolotyError.caught(error)
+                continuation.yield(.responseStreamFailed(
+                    reason: ErrorKit.errorChainDescription(for: wrapped)
+                ))
             }
-            continuation.yield(.responsesExhausted)
         }
 
         let timerTask = Task {
-            try? await Task.sleep(for: timeout)
+            do {
+                try await Task.sleep(for: timeout)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
             continuation.yield(.timeoutExpired)
         }
 
-        var done = false
-        var eventIterator = eventStream.makeAsyncIterator()
-        while !done, let event = await eventIterator.next() {
-            switch event {
-            case .response(let response):
-                if let objects = InspectorResolveObjectDecoder.objects(from: response) {
-                    for object in objects where discoveredObjects[object.objectId] == nil {
-                        discoveredObjects[object.objectId] = object
+        let terminalEvent: DiscoverLoopEvent? = await withTaskCancellationHandler {
+            var eventIterator = eventStream.makeAsyncIterator()
+            while let event = await eventIterator.next() {
+                switch event {
+                case .response(let response):
+                    if let objects = InspectorResolveObjectDecoder.objects(from: response) {
+                        for object in objects where discoveredObjects[object.objectId] == nil {
+                            discoveredObjects[object.objectId] = object
+                        }
                     }
+                case .responsesExhausted, .timeoutExpired, .responseStreamFailed:
+                    return event
                 }
-            case .responsesExhausted:
-                timedOut = true
-                done = true
-            case .timeoutExpired:
-                timedOut = true
-                done = true
             }
+            return nil
+        } onCancel: {
+            continuation.finish()
+            responseTask.cancel()
+            timerTask.cancel()
         }
 
         continuation.finish()
@@ -406,7 +460,36 @@ public final class AxolotyMCPServer {
         _ = await responseTask.value
         _ = await timerTask.value
 
+        if Task.isCancelled {
+            return .init(content: [.text("Discovery cancelled")], isError: true)
+        }
+
+        guard let terminalEvent else {
+            return .init(
+                content: [.text("MCP response stream exhausted: abrupt transport close (coordination stream closed)")],
+                isError: true
+            )
+        }
+
+        switch terminalEvent {
+        case .responsesExhausted:
+            return .init(content: [.text("MCP response stream exhausted: clean EOF before deadline")], isError: true)
+        case let .responseStreamFailed(reason):
+            return .init(
+                content: [.text("MCP response stream exhausted: abrupt transport close (\(reason))")],
+                isError: true
+            )
+        case .response, .timeoutExpired:
+            break
+        }
+
         let objects = Array(discoveredObjects.values).sorted { $0.objectId < $1.objectId }
+        let timedOut: Bool
+        if case .timeoutExpired = terminalEvent {
+            timedOut = true
+        } else {
+            timedOut = false
+        }
         let result = InspectorDiscoveryResult(timedOut: timedOut, objects: objects)
         do {
             let json = try responseEncoder.discovery(result)
@@ -543,4 +626,5 @@ private enum DiscoverLoopEvent: Sendable {
     case response(ResponseEventSnapshot)
     case responsesExhausted
     case timeoutExpired
+    case responseStreamFailed(reason: String)
 }

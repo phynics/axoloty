@@ -27,7 +27,7 @@ private final class StatusSession: InspectorSession {
         AsyncStream { $0.finish() }
     }
     func discover(_ event: DiscoverEvent) async -> AsyncStream<ResponseEventSnapshot> {
-        AsyncStream { $0.finish() }
+        AsyncStream { _ in }
     }
     func stop() {}
 }
@@ -64,19 +64,23 @@ private func makeResolveResponse(
 private func discoverResultJSON(
     for responses: [ResponseEventSnapshot]
 ) async throws -> [String: Any] {
-    let result = await AxolotyMCPServer.handleDiscoverObjects(["coreType": .string("Identity")]) { _ in
-        AsyncStream { continuation in
+    let result = await AxolotyMCPServer.handleDiscoverObjects([
+        "coreType": .string("Identity"),
+        "timeoutMilliseconds": .int(1000),
+    ]) { _ in
+        AsyncThrowingStream { continuation in
             for response in responses {
                 continuation.yield(response)
             }
-            continuation.finish()
         }
     }
     guard case let .text(text, _, _)? = result.content.first else {
         Issue.record("expected JSON text content")
         return [:]
     }
-    return try #require(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+    let json = try #require(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+    #expect(json["timedOut"] as? Bool == true)
+    return json
 }
 
 @MainActor
@@ -88,6 +92,50 @@ private final class EncodingLogCapture {
         self.message = message
         self.metadata = metadata
     }
+}
+
+@MainActor
+private final class ResponseStreamFixture {
+    let stream: AsyncThrowingStream<ResponseEventSnapshot, Error>
+    private let continuation: AsyncThrowingStream<ResponseEventSnapshot, Error>.Continuation
+
+    init(response: ResponseEventSnapshot) {
+        let (stream, continuation) = AsyncThrowingStream<ResponseEventSnapshot, Error>.makeStream()
+        self.stream = stream
+        self.continuation = continuation
+        continuation.yield(response)
+    }
+
+    func finish() {
+        continuation.finish()
+    }
+}
+
+private actor StreamTerminationProbe {
+    private(set) var created = false
+    private(set) var terminated = false
+
+    func markCreated() {
+        created = true
+    }
+
+    func markTerminated() {
+        terminated = true
+    }
+}
+
+private func makeResolveResponse(objectId: String, name: String) -> ResponseEventSnapshot {
+    let payload = "{\"object\":{\"objectId\":\"\(objectId)\",\"coreType\":\"Identity\",\"objectType\":\"coaty.object.Identity\",\"name\":\"\(name)\"}}"
+    return ResponseEventSnapshot(
+        eventType: "resolve",
+        sourceId: "source-1",
+        correlationId: "correlation-1",
+        payload: payload
+    )
+}
+
+private struct ForcedTransportClose: LocalizedError {
+    var errorDescription: String? { "forced transport close" }
 }
 
 @Test("Discover tool advertises and consumes an integer timeout")
@@ -257,7 +305,7 @@ func discoverHandlerRejectsInvalidObjectId() async {
     var discoveryCount = 0
     let result = await AxolotyMCPServer.handleDiscoverObjects(["objectId": .string("not-a-uuid")]) { _ in
         discoveryCount += 1
-        return AsyncStream { $0.finish() }
+        return AsyncThrowingStream { $0.finish() }
     }
 
     #expect(result.isError == true)
@@ -275,7 +323,7 @@ func discoverHandlerRejectsUnknownCoreType() async {
     var discoveryCount = 0
     let result = await AxolotyMCPServer.handleDiscoverObjects(["coreType": .string("UnknownCoreType")]) { _ in
         discoveryCount += 1
-        return AsyncStream { $0.finish() }
+        return AsyncThrowingStream { $0.finish() }
     }
 
     #expect(result.isError == true)
@@ -290,30 +338,15 @@ func discoverHandlerRejectsUnknownCoreType() async {
 @MainActor
 @Test("Discover handler preserves primary and related objects without duplicates")
 func discoverHandlerPreservesAllResolveObjects() async throws {
-    let result = await AxolotyMCPServer.handleDiscoverObjects([
-        "coreType": .string("Identity"),
-        "timeoutMilliseconds": .int(100)
-    ]) { _ in
-        AsyncStream { continuation in
-            continuation.yield(ResponseEventSnapshot(
-                eventType: "resolve",
-                sourceId: "source-1",
-                correlationId: "correlation-1",
-                payload: "{\"object\":{\"objectId\":\"primary-object\",\"coreType\":\"Identity\",\"objectType\":\"coaty.object.Identity\",\"name\":\"Primary\"},\"relatedObjects\":[{\"objectId\":\"related-object\",\"coreType\":\"Identity\",\"objectType\":\"coaty.object.Identity\",\"name\":\"Related\"},{\"objectId\":\"primary-object\",\"coreType\":\"Identity\",\"objectType\":\"coaty.object.Identity\",\"name\":\"Duplicate primary\"}]}"
-            ))
-            continuation.finish()
-        }
-    }
-
-    guard case let .text(text, _, _)? = result.content.first else {
-        Issue.record("expected JSON discovery result")
-        return
-    }
-    let json = try #require(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+    let json = try await discoverResultJSON(for: [
+        makeResolveResponse(
+            objectId: "primary-object",
+            relatedObjectIds: ["related-object", "primary-object"]
+        ),
+    ])
     let objects = try #require(json["objects"] as? [[String: Any]])
     let objectIds = objects.compactMap { $0["objectId"] as? String }
 
-    #expect(result.isError == false)
     #expect(objectIds == ["primary-object", "related-object"].sorted())
     #expect(objects.count == 2)
 }
@@ -353,6 +386,146 @@ func discoverHandlerDeduplicatesResolveObjectsById() async throws {
 
     #expect(objects.count == 3)
     #expect(Set(objects.compactMap { $0["objectId"] as? String }) == ["primary-1", "related-1", "related-2"])
+}
+
+@MainActor
+@Test("Discover clean EOF reports a stream-exhausted MCP error")
+func discoverCleanEOFIsNotReportedAsTimeout() async {
+    let result = await AxolotyMCPServer.handleDiscoverObjects(["coreType": .string("Identity")]) { _ in
+        AsyncThrowingStream { continuation in
+            continuation.finish()
+        }
+    }
+
+    #expect(result.isError == true)
+    guard case let .text(message, _, _)? = result.content.first else {
+        Issue.record("expected text error content")
+        return
+    }
+    #expect(message.contains("stream exhausted"))
+    #expect(message.contains("clean EOF"))
+    #expect(!message.contains("timed out"))
+}
+
+@MainActor
+@Test("Discover deadline returns success with partial objects")
+func discoverDeadlineReturnsPartialObjects() async throws {
+    let streamFixture = ResponseStreamFixture(
+        response: makeResolveResponse(objectId: "object-1", name: "Partial object")
+    )
+    let result = await AxolotyMCPServer.handleDiscoverObjects([
+        "coreType": .string("Identity"),
+        "timeoutMilliseconds": .int(1000),
+    ]) { _ in streamFixture.stream }
+    streamFixture.finish()
+
+    #expect(result.isError == false)
+    let text = try #require(result.content.first.flatMap { content -> String? in
+        guard case let .text(value, _, _) = content else { return nil }
+        return value
+    })
+    let json = try #require(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+    #expect(json["timedOut"] as? Bool == true)
+    let objects = try #require(json["objects"] as? [[String: Any]])
+    #expect(objects.count == 1)
+    #expect(objects.first?["objectId"] as? String == "object-1")
+}
+
+@MainActor
+@Test("Discover abrupt transport close reports a distinct stream-exhausted MCP error")
+func discoverAbruptCloseIsNotReportedAsTimeout() async throws {
+    let result = await AxolotyMCPServer.handleDiscoverObjects(["coreType": .string("Identity")]) { _ in
+        AsyncThrowingStream { continuation in
+            continuation.finish(throwing: ForcedTransportClose())
+        }
+    }
+
+    #expect(result.isError == true)
+    let message = try #require(result.content.first.flatMap { content -> String? in
+        guard case let .text(value, _, _) = content else { return nil }
+        return value
+    })
+    #expect(message.contains("stream exhausted"))
+    #expect(message.contains("abrupt transport close"))
+    #expect(message.contains("forced transport close"))
+    #expect(!message.contains("timed out"))
+}
+
+@MainActor
+@Test("Production discovery adapter reports broker disconnect as abrupt stream exhaustion")
+func productionDiscoveryAdapterReportsBrokerDisconnect() async throws {
+    let session = StatusSession()
+    let event = try InspectorDiscoveryRequest(coreType: "Identity").makeDiscoverEvent()
+    let stream = await AxolotyMCPServer.discoveryResponseStream(session: session, event: event)
+    let responseTask = Task {
+        var iterator = stream.makeAsyncIterator()
+        return try await iterator.next()
+    }
+
+    session.state = .offline
+
+    do {
+        _ = try await responseTask.value
+        Issue.record("expected the production adapter to throw when broker communication went offline")
+    } catch let AxolotyError.runtime(code, reason) {
+        #expect(code == .streamEnded)
+        #expect(reason == "Broker communication transitioned offline during discovery")
+    } catch {
+        Issue.record("unexpected production adapter error: \(error)")
+    }
+}
+
+@MainActor
+@Test("Discover genuine timeout returns the unchanged success schema")
+func discoverGenuineTimeoutIsSuccessful() async throws {
+    let result = await AxolotyMCPServer.handleDiscoverObjects([
+        "coreType": .string("Identity"),
+        "timeoutMilliseconds": .int(1000),
+    ]) { _ in
+        AsyncThrowingStream { _ in }
+    }
+
+    #expect(result.isError == false)
+    let text = try #require(result.content.first.flatMap { content -> String? in
+        guard case let .text(value, _, _) = content else { return nil }
+        return value
+    })
+    let json = try #require(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+    #expect(Set(json.keys) == Set(["objects", "timedOut"]))
+    #expect(json["timedOut"] as? Bool == true)
+    #expect((json["objects"] as? [[String: Any]])?.isEmpty == true)
+}
+
+@MainActor
+@Test("Discover cancellation terminates the response stream")
+func discoverCancellationCleansUpResponseAndTimerTasks() async {
+    let probe = StreamTerminationProbe()
+    let operation = Task {
+        await AxolotyMCPServer.handleDiscoverObjects(["coreType": .string("Identity")]) { _ in
+            await probe.markCreated()
+            return AsyncThrowingStream { continuation in
+                continuation.onTermination = { _ in
+                    Task {
+                        await probe.markTerminated()
+                    }
+                }
+            }
+        }
+    }
+
+    while !(await probe.created) {
+        await Task.yield()
+    }
+    operation.cancel()
+    _ = await operation.value
+
+    for _ in 0..<100 {
+        if await probe.terminated {
+            break
+        }
+        await Task.yield()
+    }
+    #expect(await probe.terminated)
 }
 
 @Test("MCP server forwards broker readiness timeout to inspector runtime")
