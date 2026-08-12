@@ -435,7 +435,8 @@ struct InspectorDiscoverApplicationTests {
         timeout: InspectorDuration = InspectorDuration(value: .milliseconds(200)),
         coreType: String? = "Identity",
         objectType: String? = nil,
-        objectId: String? = nil
+        objectId: String? = nil,
+        output: InspectorOutputMode = .ndjson
     ) -> InspectorConfiguration {
         InspectorConfiguration(
             command: .discover(DiscoverCommand(
@@ -447,18 +448,28 @@ struct InspectorDiscoverApplicationTests {
             connection: InspectorConnectionConfiguration(
                 host: "localhost", port: 1883, namespace: "test"
             ),
-            output: .ndjson
+            output: output
         )
     }
 
     private func makeResolveResponse(
-        objectId: String = "obj-1",
+        objectId: String? = "obj-1",
         coreType: CoreType = .Identity,
         objectType: String = "coaty.object.Identity",
-        name: String = "Agent"
+        name: String = "Agent",
+        relatedObjectIds: [String] = []
     ) -> ResponseEventSnapshot {
-        let objectJSON = "{\"objectId\":\"\(objectId)\",\"coreType\":\"\(coreType.rawValue)\",\"objectType\":\"\(objectType)\",\"name\":\"\(name)\"}"
-        let payload = "{\"object\":\(objectJSON)}"
+        var fields: [String] = []
+        if let objectId {
+            fields.append("\"object\":{\"objectId\":\"\(objectId)\",\"coreType\":\"\(coreType.rawValue)\",\"objectType\":\"\(objectType)\",\"name\":\"\(name)\"}")
+        }
+        let relatedJSON = relatedObjectIds.map { relatedId in
+            "{\"objectId\":\"\(relatedId)\",\"coreType\":\"\(coreType.rawValue)\",\"objectType\":\"\(objectType)\",\"name\":\"Related\"}"
+        }.joined(separator: ",")
+        if !relatedObjectIds.isEmpty {
+            fields.append("\"relatedObjects\":[\(relatedJSON)]")
+        }
+        let payload = "{\(fields.joined(separator: ","))}"
         return ResponseEventSnapshot(
             eventType: "resolve",
             sourceId: "src-1",
@@ -468,7 +479,7 @@ struct InspectorDiscoverApplicationTests {
     }
 
     @Test
-    func discoverCollectsResolveResponses() async {
+    func discoverCollectsResolveResponses() async throws {
         let session = FakeInspectorSession()
         session.queuedResponses = [
             makeResolveResponse(objectId: "obj-1", name: "Agent A"),
@@ -491,7 +502,144 @@ struct InspectorDiscoverApplicationTests {
 
         let resultLines = output.filter { $0.contains("\"kind\":\"discovery-result\"") }
         #expect(resultLines.count == 1)
-        #expect(resultLines[0].contains("\"objects\""))
+        let json = try #require(JSONSerialization.jsonObject(with: Data(resultLines[0].utf8)) as? [String: Any])
+        let objects = try #require(json["objects"] as? [[String: Any]])
+        #expect(Set(objects.compactMap { $0["objectId"] as? String }) == ["obj-1", "obj-2"])
+    }
+
+    @Test
+    func discoverPreservesRelatedObjects() async throws {
+        let session = FakeInspectorSession()
+        session.queuedResponses = [
+            makeResolveResponse(objectId: "obj-1", relatedObjectIds: ["related-1"])
+        ]
+
+        var output: [String] = []
+        let app = InspectorDiscoverApplication(
+            configuration: makeDiscoverConfig(),
+            session: session,
+            writeOutput: { output.append($0) },
+            writeDiagnostic: { _ in },
+            timestamp: { "2026-07-31T00:00:00Z" },
+            isTerminal: false
+        )
+        _ = await app.run()
+
+        let resultLine = try #require(output.first { $0.contains("\"kind\":\"discovery-result\"") })
+        let json = try #require(JSONSerialization.jsonObject(with: Data(resultLine.utf8)) as? [String: Any])
+        let objects = try #require(json["objects"] as? [[String: Any]])
+        let objectIds = Set(objects.compactMap { $0["objectId"] as? String })
+        #expect(objectIds == ["obj-1", "related-1"])
+        #expect(objects.count == 2)
+    }
+
+    @Test
+    func discoverPreservesRelatedOnlyResponses() async throws {
+        let session = FakeInspectorSession()
+        session.queuedResponses = [
+            makeResolveResponse(objectId: nil, relatedObjectIds: ["related-1", "related-2"])
+        ]
+
+        var output: [String] = []
+        let app = InspectorDiscoverApplication(
+            configuration: makeDiscoverConfig(),
+            session: session,
+            writeOutput: { output.append($0) },
+            writeDiagnostic: { _ in },
+            timestamp: { "2026-07-31T00:00:00Z" },
+            isTerminal: false
+        )
+        _ = await app.run()
+
+        let resultLine = try #require(output.first { $0.contains("\"kind\":\"discovery-result\"") })
+        let json = try #require(JSONSerialization.jsonObject(with: Data(resultLine.utf8)) as? [String: Any])
+        let objects = try #require(json["objects"] as? [[String: Any]])
+        let objectIds = Set(objects.compactMap { $0["objectId"] as? String })
+        #expect(objectIds == ["related-1", "related-2"])
+        #expect(objects.count == 2)
+    }
+
+    @Test
+    func discoverDeduplicatesPrimaryAndRelatedObjectsById() async throws {
+        let session = FakeInspectorSession()
+        session.queuedResponses = [
+            makeResolveResponse(objectId: "obj-1", relatedObjectIds: ["obj-1", "related-1"]),
+            makeResolveResponse(objectId: "related-1", relatedObjectIds: ["related-2", "obj-1"]),
+        ]
+
+        var output: [String] = []
+        let app = InspectorDiscoverApplication(
+            configuration: makeDiscoverConfig(),
+            session: session,
+            writeOutput: { output.append($0) },
+            writeDiagnostic: { _ in },
+            timestamp: { "2026-07-31T00:00:00Z" },
+            isTerminal: false
+        )
+        _ = await app.run()
+
+        let resultLine = try #require(output.first { $0.contains("\"kind\":\"discovery-result\"") })
+        let json = try #require(JSONSerialization.jsonObject(with: Data(resultLine.utf8)) as? [String: Any])
+        let objects = try #require(json["objects"] as? [[String: Any]])
+        #expect(objects.count == 3)
+        #expect(Set(objects.compactMap { $0["objectId"] as? String }) == ["obj-1", "related-1", "related-2"])
+    }
+
+    @Test
+    func humanDiscoveryCountIncludesPrimaryAndRelatedObjects() async {
+        let session = FakeInspectorSession()
+        session.queuedResponses = [
+            makeResolveResponse(objectId: "obj-1", relatedObjectIds: ["related-1", "related-2"])
+        ]
+
+        var output: [String] = []
+        let app = InspectorDiscoverApplication(
+            configuration: InspectorConfiguration(
+                command: .discover(DiscoverCommand(
+                    coreType: "Identity",
+                    timeout: InspectorDuration(value: .milliseconds(200))
+                )),
+                connection: InspectorConnectionConfiguration(
+                    host: "localhost", port: 1883, namespace: "test"
+                ),
+                output: .human
+            ),
+            session: session,
+            writeOutput: { output.append($0) },
+            writeDiagnostic: { _ in },
+            timestamp: { "2026-07-31T00:00:00Z" },
+            isTerminal: true
+        )
+        _ = await app.run()
+
+        #expect(output.contains("DISCOVERY  3 objects"))
+    }
+
+    @Test
+    func structuredDiscoveryOutputsIncludePrimaryAndRelatedObjects() async throws {
+        for outputMode in [InspectorOutputMode.ndjson, .json] {
+            let session = FakeInspectorSession()
+            session.queuedResponses = [
+                makeResolveResponse(objectId: "primary-1", relatedObjectIds: ["related-1", "related-2"])
+            ]
+
+            var output: [String] = []
+            let app = InspectorDiscoverApplication(
+                configuration: makeDiscoverConfig(output: outputMode),
+                session: session,
+                writeOutput: { output.append($0) },
+                writeDiagnostic: { _ in },
+                timestamp: { "2026-07-31T00:00:00Z" },
+                isTerminal: false
+            )
+            _ = await app.run()
+
+            let resultLine = try #require(output.first { $0.contains("\"kind\":\"discovery-result\"") })
+            let json = try #require(JSONSerialization.jsonObject(with: Data(resultLine.utf8)) as? [String: Any])
+            let objects = try #require(json["objects"] as? [[String: Any]])
+            #expect(Set(objects.compactMap { $0["objectId"] as? String }) == ["primary-1", "related-1", "related-2"])
+            #expect(objects.count == 3)
+        }
     }
 
     @Test

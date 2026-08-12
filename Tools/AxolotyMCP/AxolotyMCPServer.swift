@@ -386,16 +386,9 @@ public final class AxolotyMCPServer {
         while !done, let event = await eventIterator.next() {
             switch event {
             case .response(let response):
-                if let payload = response.decodePayload(ResolvePayload.self) {
-                    let object = payload.object
-                    if discoveredObjects[object.objectId] == nil {
-                        discoveredObjects[object.objectId] = InspectorObject(
-                            objectId: object.objectId,
-                            coreType: object.coreType.rawValue,
-                            objectType: object.objectType,
-                            name: object.name.isEmpty ? nil : object.name,
-                            sourceId: response.sourceId
-                        )
+                if let objects = InspectorResolveObjectDecoder.objects(from: response) {
+                    for object in objects where discoveredObjects[object.objectId] == nil {
+                        discoveredObjects[object.objectId] = object
                     }
                 }
             case .responsesExhausted:
@@ -470,10 +463,6 @@ public final class AxolotyMCPServer {
         let namespace: String
         let catalogueObservedSince: String
         let catalogueObjectCount: Int
-    }
-
-    private struct ResolvePayload: Decodable {
-        let object: CoatyObjectSnapshot
     }
 
     private static func parseFilter(_ args: [String: Value]?) -> ObjectCatalogueFilter {

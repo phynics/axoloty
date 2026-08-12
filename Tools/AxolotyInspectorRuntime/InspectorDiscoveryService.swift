@@ -4,6 +4,41 @@ import Axoloty
 import AxolotyInspectorCore
 import Foundation
 
+private struct ResolveResponsePayload: Decodable {
+    let object: CoatyObjectSnapshot?
+    let relatedObjects: [CoatyObjectSnapshot]?
+}
+
+/// Decodes all objects carried by a Resolve response.
+public enum InspectorResolveObjectDecoder {
+    /// Creates inspector objects from the primary and related objects in a
+    /// Resolve response.
+    ///
+    /// Resolve responses may contain only a primary object, only related
+    /// objects, or both. A malformed or otherwise undecodable response
+    /// returns `nil`; a valid response with no objects returns an empty array.
+    ///
+    /// - Parameter response: The correlated Resolve response snapshot.
+    /// - Returns: Every decoded object in wire order, or `nil` when the
+    ///   response payload cannot be decoded.
+    public static func objects(from response: ResponseEventSnapshot) -> [InspectorObject]? {
+        guard let payload = response.decodePayload(ResolveResponsePayload.self) else {
+            return nil
+        }
+
+        let snapshots = [payload.object].compactMap { $0 } + (payload.relatedObjects ?? [])
+        return snapshots.map { object in
+            InspectorObject(
+                objectId: object.objectId,
+                coreType: object.coreType.rawValue,
+                objectType: object.objectType,
+                name: object.name.isEmpty ? nil : object.name,
+                sourceId: response.sourceId
+            )
+        }
+    }
+}
+
 /// A request for active object discovery.
 public struct InspectorDiscoveryRequest: Sendable, Equatable {
     /// Filter by core type name, if specified.

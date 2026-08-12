@@ -38,6 +38,47 @@ private struct ForcedEncodingError: LocalizedError {
     var errorDescription: String? { "forced \(operation) encoding failure" }
 }
 
+private func makeResolveResponse(
+    objectId: String? = "obj-1",
+    relatedObjectIds: [String] = []
+) -> ResponseEventSnapshot {
+    var fields: [String] = []
+    if let objectId {
+        fields.append("\"object\":{\"objectId\":\"\(objectId)\",\"coreType\":\"Identity\",\"objectType\":\"coaty.object.Identity\",\"name\":\"Agent\"}")
+    }
+    if !relatedObjectIds.isEmpty {
+        let relatedJSON = relatedObjectIds.map { relatedId in
+            "{\"objectId\":\"\(relatedId)\",\"coreType\":\"Identity\",\"objectType\":\"coaty.object.Identity\",\"name\":\"Related\"}"
+        }.joined(separator: ",")
+        fields.append("\"relatedObjects\":[\(relatedJSON)]")
+    }
+    return ResponseEventSnapshot(
+        eventType: "resolve",
+        sourceId: "src-1",
+        correlationId: "corr-1",
+        payload: "{\(fields.joined(separator: ","))}"
+    )
+}
+
+@MainActor
+private func discoverResultJSON(
+    for responses: [ResponseEventSnapshot]
+) async throws -> [String: Any] {
+    let result = await AxolotyMCPServer.handleDiscoverObjects(["coreType": .string("Identity")]) { _ in
+        AsyncStream { continuation in
+            for response in responses {
+                continuation.yield(response)
+            }
+            continuation.finish()
+        }
+    }
+    guard case let .text(text, _, _)? = result.content.first else {
+        Issue.record("expected JSON text content")
+        return [:]
+    }
+    return try #require(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+}
+
 @MainActor
 private final class EncodingLogCapture {
     var message: String?
@@ -244,6 +285,74 @@ func discoverHandlerRejectsUnknownCoreType() async {
         return
     }
     #expect(message.contains("known core type"))
+}
+
+@MainActor
+@Test("Discover handler preserves primary and related objects without duplicates")
+func discoverHandlerPreservesAllResolveObjects() async throws {
+    let result = await AxolotyMCPServer.handleDiscoverObjects([
+        "coreType": .string("Identity"),
+        "timeoutMilliseconds": .int(100)
+    ]) { _ in
+        AsyncStream { continuation in
+            continuation.yield(ResponseEventSnapshot(
+                eventType: "resolve",
+                sourceId: "source-1",
+                correlationId: "correlation-1",
+                payload: "{\"object\":{\"objectId\":\"primary-object\",\"coreType\":\"Identity\",\"objectType\":\"coaty.object.Identity\",\"name\":\"Primary\"},\"relatedObjects\":[{\"objectId\":\"related-object\",\"coreType\":\"Identity\",\"objectType\":\"coaty.object.Identity\",\"name\":\"Related\"},{\"objectId\":\"primary-object\",\"coreType\":\"Identity\",\"objectType\":\"coaty.object.Identity\",\"name\":\"Duplicate primary\"}]}"
+            ))
+            continuation.finish()
+        }
+    }
+
+    guard case let .text(text, _, _)? = result.content.first else {
+        Issue.record("expected JSON discovery result")
+        return
+    }
+    let json = try #require(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+    let objects = try #require(json["objects"] as? [[String: Any]])
+    let objectIds = objects.compactMap { $0["objectId"] as? String }
+
+    #expect(result.isError == false)
+    #expect(objectIds == ["primary-object", "related-object"].sorted())
+    #expect(objects.count == 2)
+}
+
+@MainActor
+@Test("Discover structured JSON handles related-only Resolve responses")
+func discoverHandlerHandlesRelatedOnlyResolve() async throws {
+    let json = try await discoverResultJSON(for: [
+        makeResolveResponse(objectId: nil, relatedObjectIds: ["related-1", "related-2"]),
+    ])
+    let objects = try #require(json["objects"] as? [[String: Any]])
+
+    #expect(objects.count == 2)
+    #expect(Set(objects.compactMap { $0["objectId"] as? String }) == ["related-1", "related-2"])
+}
+
+@MainActor
+@Test("Discover structured JSON handles mixed Resolve responses")
+func discoverHandlerHandlesMixedResolve() async throws {
+    let json = try await discoverResultJSON(for: [
+        makeResolveResponse(objectId: "primary-1", relatedObjectIds: ["related-1"]),
+    ])
+    let objects = try #require(json["objects"] as? [[String: Any]])
+
+    #expect(objects.count == 2)
+    #expect(Set(objects.compactMap { $0["objectId"] as? String }) == ["primary-1", "related-1"])
+}
+
+@MainActor
+@Test("Discover structured JSON deduplicates objects across Resolve responses")
+func discoverHandlerDeduplicatesResolveObjectsById() async throws {
+    let json = try await discoverResultJSON(for: [
+        makeResolveResponse(objectId: "primary-1", relatedObjectIds: ["primary-1", "related-1"]),
+        makeResolveResponse(objectId: "related-1", relatedObjectIds: ["related-2", "primary-1"]),
+    ])
+    let objects = try #require(json["objects"] as? [[String: Any]])
+
+    #expect(objects.count == 3)
+    #expect(Set(objects.compactMap { $0["objectId"] as? String }) == ["primary-1", "related-1", "related-2"])
 }
 
 @Test("MCP server forwards broker readiness timeout to inspector runtime")
