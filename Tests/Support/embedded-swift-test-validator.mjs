@@ -3,6 +3,7 @@
 import {
   expectedSmokeTests,
   createEmbeddedSwiftSmokeValidator,
+  failureResult,
 } from "./embedded-swift-smoke-validator.mjs";
 import fs from "node:fs";
 
@@ -53,7 +54,10 @@ export function createEmbeddedSwiftTestValidator() {
       const result = validator.result();
       if (!result.passed) return result;
       if (result.metrics?.hotPathAllocations !== 0) {
-        return { passed: false, reason: "hot-path allocation budget is not zero", metrics: result.metrics };
+        return {
+          ...failureResult("completion", "hot-path allocation budget is not zero"),
+          metrics: result.metrics,
+        };
       }
       return result;
     },
