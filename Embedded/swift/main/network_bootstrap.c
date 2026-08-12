@@ -11,6 +11,7 @@
 #include "esp_wifi.h"
 #include "mqtt_client.h"
 #include "nvs_flash.h"
+#include "runtime_identity.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
@@ -88,19 +89,15 @@ static uint8_t agent_will_payload[NETWORK_MAX_PAYLOAD];
 static uint8_t agent_actor_route[NETWORK_MAX_TOPIC];
 static int32_t agent_actor_route_length;
 
-static int network_prepare_client_id(void) {
-    if (axoloty_runtime_identity[0] != 0) {
-        int length = snprintf(network_client_id, sizeof(network_client_id),
-            "%s", axoloty_runtime_identity);
-        return length > 0 && length < (int)sizeof(network_client_id);
-    }
+static int network_read_station_mac(uint8_t mac[6], void *context) {
+    (void)context;
+    return esp_read_mac(mac, ESP_MAC_WIFI_STA) == ESP_OK;
+}
 
-    uint8_t mac[6];
-    if (esp_read_mac(mac, ESP_MAC_WIFI_STA) != ESP_OK) return 0;
-    int length = snprintf(network_client_id, sizeof(network_client_id),
-        "axoloty-%02x%02x%02x%02x%02x%02x",
-        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    return length > 0 && length < (int)sizeof(network_client_id);
+static int network_prepare_client_id(void) {
+    return axoloty_runtime_identity_prepare(
+        axoloty_runtime_identity, network_read_station_mac, NULL,
+        network_client_id, sizeof(network_client_id));
 }
 static void network_ip_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
     (void)arg; (void)base; (void)data;
@@ -343,8 +340,10 @@ int axoloty_mqtt_connect_wait(unsigned int deadline_ms) {
 #else
     network_mqtt_bits = 0;
     network_connect_count = 0;
+    if (!network_prepare_client_id()) return 0;
     esp_mqtt_client_config_t config = { 0 };
     config.broker.address.uri = network_uri;
+    config.credentials.client_id = network_client_id;
     if (network_will_configured) {
         config.session.last_will.topic = network_will_topic;
         config.session.last_will.msg = network_will_payload;
