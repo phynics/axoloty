@@ -128,7 +128,8 @@ struct InspectorApplicationTests {
         coreType: CoreType = .Identity,
         objectType: String = "coaty.object.Identity",
         name: String = "Agent",
-        sourceId: String? = "src-1"
+        sourceId: String? = "src-1",
+        privateData: String? = nil
     ) -> AdvertiseEventSnapshot {
         AdvertiseEventSnapshot(
             sourceId: sourceId,
@@ -138,7 +139,8 @@ struct InspectorApplicationTests {
                 coreType: coreType,
                 objectType: objectType,
                 name: name
-            )
+            ),
+            privateData: privateData
         )
     }
 
@@ -349,6 +351,58 @@ struct InspectorApplicationTests {
             (try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])?["schema"] != nil
         }
         #expect(hasSchema)
+    }
+
+    @Test
+    func privateDataRequiresFullOutputAtApplicationBoundary() async {
+        let session = FakeInspectorSession()
+        session.queuedAdvertises = [makeSnapshot(privateData: "{\"secret\":true}")]
+
+        var output: [String] = []
+        let app = InspectorApplication(
+            configuration: makeConfig(includePrivateData: true),
+            session: session,
+            writeOutput: { output.append($0) },
+            writeDiagnostic: { _ in },
+            timestamp: { "2026-07-31T00:00:00Z" },
+            isTerminal: false
+        )
+        _ = await app.run()
+
+        #expect(output.allSatisfy { !$0.contains("secret") })
+    }
+
+    @Test
+    func privateDataIsPresentOnlyWithBothFlagsInEveryOutputMode() async {
+        for outputMode in [InspectorOutputMode.human, .ndjson, .json] {
+            for (full, includePrivateData, expected) in [
+                (false, false, false),
+                (false, true, false),
+                (true, false, false),
+                (true, true, true),
+            ] {
+                let session = FakeInspectorSession()
+                session.queuedAdvertises = [makeSnapshot(privateData: "{\"secret\":true}")]
+
+                var output: [String] = []
+                let app = InspectorApplication(
+                    configuration: makeConfig(
+                        duration: .milliseconds(100),
+                        output: outputMode,
+                        full: full,
+                        includePrivateData: includePrivateData
+                    ),
+                    session: session,
+                    writeOutput: { output.append($0) },
+                    writeDiagnostic: { _ in },
+                    timestamp: { "2026-07-31T00:00:00Z" },
+                    isTerminal: outputMode == .human
+                )
+                _ = await app.run()
+
+                #expect(output.contains { $0.contains("secret") } == expected)
+            }
+        }
     }
 
     @Test

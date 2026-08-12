@@ -32,7 +32,8 @@ public struct InspectorRecord: Codable, Equatable, Sendable {
     public let name: String?
     /// The raw JSON payload, included only with `--full`.
     public let payload: String?
-    /// Private data, included only with `--include-private-data`.
+    /// Private data, included only when both `--full` and
+    /// `--include-private-data` are enabled.
     public let privateData: String?
     /// Object IDs removed by a Deadvertise event.
     public let removedObjectIds: [String]?

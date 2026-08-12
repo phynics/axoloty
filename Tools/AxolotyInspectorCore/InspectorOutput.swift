@@ -54,7 +54,8 @@ public struct HumanFormatter: Sendable {
         let coreType = record.coreType ?? "Unknown"
         let name = record.name ?? ""
         let objectId = truncateId(record.objectId)
-        return "\(pad(verb, width: 10)) \(pad(coreType, width: 12)) \(pad(name, width: 16)) \(objectId)"
+        let privateData = record.privateData.map { " privateData=\($0)" } ?? ""
+        return "\(pad(verb, width: 10)) \(pad(coreType, width: 12)) \(pad(name, width: 16)) \(objectId)\(privateData)"
     }
 
     private func formatDeadvertise(_ record: InspectorRecord) -> String {
@@ -94,7 +95,7 @@ public struct InspectorRecordFactory: Sendable {
     public let namespace: String
     /// Whether to include the raw JSON payload in records.
     public let includePayload: Bool
-    /// Whether to include private data in records.
+    /// Whether to include private data in records when the full payload is included.
     public let includePrivateData: Bool
 
     /// Creates a factory.
@@ -109,7 +110,7 @@ public struct InspectorRecordFactory: Sendable {
     }
 
     private func privateData(from object: InspectorObject) -> String? {
-        includePrivateData ? object.privateData : nil
+        includePayload && includePrivateData ? object.privateData : nil
     }
 
     /// Creates a record for a catalogue mutation, or `nil` if the mutation

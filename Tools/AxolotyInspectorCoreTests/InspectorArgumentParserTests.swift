@@ -533,6 +533,14 @@ struct InspectorArgumentParserTests {
     }
 
     @Test
+    func catalogRejectsPrivateDataWithoutFull() {
+        let outcome = InspectorArgumentParser().parse(["catalog", "--include-private-data"])
+        #expect(outcome == .error(.invalidArguments(
+            reason: "--include-private-data requires --full"
+        )))
+    }
+
+    @Test
     func catalogWithAllFilters() {
         let outcome = InspectorArgumentParser().parse([
             "catalog",

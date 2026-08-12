@@ -263,6 +263,18 @@ struct ObjectCatalogueReducerTests {
     }
 
     @Test
+    func privateDataRequiresFullPayloadAtRecordBoundary() {
+        let object = InspectorObject(
+            objectId: "1", coreType: "Sensor", objectType: "t",
+            name: "S", payload: "{\"temp\":42}", privateData: "{\"secret\":true}"
+        )
+        let factory = InspectorRecordFactory(namespace: "ns", includePrivateData: true)
+        let record = factory.record(for: .inserted(object), timestamp: "2026-07-31T00:00:00Z")!
+
+        #expect(record.privateData == nil)
+    }
+
+    @Test
     func unchangedMutationProducesNoRecord() {
         let object = InspectorObject(objectId: "1", coreType: "X", objectType: "Y")
         let record = InspectorRecordFactory(namespace: "ns")

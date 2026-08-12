@@ -101,8 +101,9 @@ Record kinds: `session-started`, `advertise`, `object-updated`,
 `deadvertise`, `session-ended`, `error`, `discovery-result`.
 
 Payload and private data are omitted by default. Use `--full` to include
-the raw JSON payload and `--include-private-data` to include private data.
-`--full` does not imply `--include-private-data`.
+the raw JSON payload. Private data is included only when both `--full` and
+`--include-private-data` are supplied; `--full` does not imply
+`--include-private-data`.
 
 ### Human format
 
