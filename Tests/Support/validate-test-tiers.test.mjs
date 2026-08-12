@@ -118,6 +118,29 @@ test("validator rejects an owned self-test its target does not invoke", () => {
   assert.ok(errors.some(error => error.includes(`${omitted}: makeTarget "test-support" does not invoke it`)));
 });
 
+test("validator rejects required-gate metadata weakened with the gate list", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  document.requiredGates = document.requiredGates.filter(node => node !== "support-tier-contract");
+  document.nodes.find(node => node.id === "support-tier-contract").required = true;
+  const errors = validate(document, {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  });
+  assert.ok(errors.some(error => error.includes('required node "support-tier-contract" is absent from requiredGates')));
+});
+
+test("validator rejects duplicated verify roots", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  document.plans.verify.nodes = ["build"];
+  const errors = validate(document, {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  });
+  assert.ok(errors.some(error => error.includes("verify roots must be derived")));
+});
+
 test("validator CLI reports stable selfTests schema errors", t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-tool-tiers-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));

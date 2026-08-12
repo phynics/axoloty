@@ -105,7 +105,7 @@ func checkPlanPrintsStableJSON() {
     #expect(result.standardError.isEmpty)
     let plan = try? JSONDecoder().decode(AxolotyCheckPlan.self, from: Data(result.standardOutput.utf8))
     var expectedNames = [
-        "resolve", "build", "lint", "test-tooling", "test-unit", "test-module",
+        "resolve", "build", "lint", "test-tooling", "test-inspector-cli", "test-unit", "test-module",
         "test-fuzz", "test-wire", "no-anycodable", "no-foundation-wire",
         "wire-dependencies", "wire-independent-resolution", "support-wire-dependencies",
         "support-wire-resolution", "support-wire-isolation", "support-benchmark-corpus",
@@ -124,12 +124,90 @@ func checkPlanPrintsStableJSON() {
     ])
     #expect(plan?.nodes.first(where: { $0.name == "test-tooling" })?.command.arguments == [
         "test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--filter",
-        "AxolotyToolingTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyInspectorCLITests|AxolotyMCPTests",
+        "AxolotyCommandDispatcherTests|AxolotyDevelopmentServiceTests|AxolotyMQTTServiceTests|AxolotyServeParserTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyMCPTests",
     ])
     #expect(plan?.nodes.allSatisfy { timeout in
         guard let seconds = timeout.command.timeoutSeconds else { return false }
         return seconds.isFinite && seconds > 0
     } == true)
+}
+
+@Test
+func canonicalManifestDefinesVerifyRootsAndBoundedTestOne() throws {
+    let manifest = try AxolotyCanonicalTestManifest.loadDefault()
+    #expect(manifest.schemaVersion == 2)
+    #expect(manifest.requiredGates.allSatisfy { gate in manifest.nodes.contains { $0.id == gate } })
+    #expect(manifest.ciRequiredGates.allSatisfy { gate in manifest.nodes.contains { $0.id == gate } })
+    #expect(manifest.testOneCommand(filter: "suite;touch /tmp/injected").arguments.last == "suite;touch /tmp/injected")
+    #expect(manifest.testOne.timeoutSeconds > 0)
+}
+
+@Test
+func canonicalManifestErrorsHaveStableLocalizedDiagnostics() {
+    let error = AxolotyCanonicalTestManifestError.decodingFailure(
+        path: "/tmp/test-tiers.json",
+        reason: "invalid JSON"
+    )
+
+    #expect(error.errorDescription == error.userFriendlyMessage)
+    #expect(error.localizedDescription == error.userFriendlyMessage)
+    #expect(error.userFriendlyMessage.contains("/tmp/test-tiers.json"))
+}
+
+@Test
+func canonicalManifestUsesOverrideBeforeBundledOrRepositoryManifest() throws {
+    let data = try JSONEncoder().encode(AxolotyCanonicalTestManifest.loadDefault())
+    var document = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    document["manifestID"] = "axoloty-test-override"
+    let directory = FileManager.default.temporaryDirectory
+        .appending(path: "axoloty-manifest-\(UUID().uuidString)", directoryHint: .isDirectory)
+    let override = directory.appending(path: "manifest.json")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try JSONSerialization.data(withJSONObject: document, options: [.sortedKeys]).write(to: override)
+
+    let manifest = try AxolotyCanonicalTestManifest.loadDefault(environment: [
+        "AXOLOTY_TEST_MANIFEST": override.path,
+    ])
+
+    #expect(manifest.manifestID == "axoloty-test-override")
+}
+
+@Test
+func verifyPlanIncludesStaticSupportWithoutRecursiveCoverageGate() throws {
+    let manifest = try AxolotyCanonicalTestManifest.loadDefault()
+    let ordinary = try manifest.plan(named: "verify")
+    let ci = try manifest.plan(named: "verify", ci: true)
+    #expect(ordinary.nodes.contains { $0.name == "support-tier-contract" })
+    #expect(ordinary.nodes.contains { $0.name == "no-anycodable" })
+    #expect(ordinary.nodes.contains { $0.name == "logging-global" })
+    #expect(!ordinary.nodes.contains { $0.name == "coverage-check" })
+    #expect(!ci.nodes.contains { $0.name == "coverage-check" })
+}
+
+@Test
+func canonicalExecutorSerializesIndependentNodes() {
+    let runner = RecordingSequenceRunner()
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: runner,
+        fileSystem: StubFileSystem(paths: []),
+        environment: projectEnvironment
+    )
+
+    let result = dispatcher.run(arguments: ["test", "offline"])
+
+    #expect(result.exitCode == 0)
+    #expect(runner.maxConcurrent == 1)
+}
+
+@Test
+func explainIsMachineReadableAndHumanReadable() throws {
+    let environment = projectEnvironment.merging(["AXOLOTY_OUTPUT": "human"]) { _, value in value }
+    let dispatcher = AxolotyCommandDispatcher(environment: environment)
+    let result = dispatcher.run(arguments: ["explain", "unit"])
+    #expect(result.exitCode == 0)
+    #expect(result.standardOutput.contains("PLAN unit"))
+    #expect(result.standardOutput.contains("policy network=none"))
 }
 
 @Test
@@ -298,7 +376,7 @@ func wireVerifyRunsOnlyItsDependencyClosure() throws {
 
     #expect(result.exitCode == 0)
     #expect(manifest.schemaVersion == 1)
-    #expect(manifest.results.map(\.name) == ["resolve", "build", "test-tooling", "test-wire"])
+    #expect(manifest.results.map(\.name) == ["resolve", "build", "test-wire"])
 }
 
 @Test
@@ -314,7 +392,7 @@ func wireVerifyBundleRunsSemanticAndHashVerification() throws {
     let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
 
     #expect(result.exitCode == 0)
-    #expect(manifest.results.map(\.name) == ["resolve", "build", "test-tooling", "test-wire", "wire-bundle-verify"])
+    #expect(manifest.results.map(\.name) == ["resolve", "build", "test-wire", "wire-bundle-verify"])
     #expect(runner.commands.last?.arguments == [
         "Tests/Support/release-snapshots.mjs", "verify", ".testing/downloaded",
     ])
@@ -397,7 +475,7 @@ func testToolingUsesOnlyItsCheckPlanDependencyClosure() throws {
     #expect(manifest.results.map(\.name) == ["resolve", "build", "test-tooling"])
     #expect(runner.commands.last?.arguments == [
         "test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--filter",
-        "AxolotyToolingTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyInspectorCLITests|AxolotyMCPTests",
+        "AxolotyCommandDispatcherTests|AxolotyDevelopmentServiceTests|AxolotyMQTTServiceTests|AxolotyServeParserTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyMCPTests",
     ])
 }
 
@@ -479,8 +557,14 @@ func releaseSnapshotsGenerateThenVerifyConfiguredBundle() throws {
 
 private final class RecordingSequenceRunner: AxolotyCheckCommandRunning, @unchecked Sendable {
     var commands: [AxolotyCommandPlan] = []
+    private(set) var maxConcurrent = 0
+    private var currentConcurrent = 0
+
     func run(_ command: AxolotyCommandPlan) -> AxolotyCheckCommandResult {
+        currentConcurrent += 1
+        maxConcurrent = max(maxConcurrent, currentConcurrent)
         commands.append(command)
+        currentConcurrent -= 1
         return AxolotyCheckCommandResult(exitCode: 0)
     }
 }

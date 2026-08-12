@@ -7,6 +7,9 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const expectedTiers = new Set(["smoke", "unit", "module", "property", "integration", "wire-offline", "wire-live", "nightly", "manual-macos"]);
 const networkModes = new Set(["none", "isolated", "isolated-broker", "isolated-containers"]);
+const brokerModes = new Set(["none", "local", "isolated"]);
+const hardwareModes = new Set(["forbidden", "optional", "required"]);
+const isolationModes = new Set(["parallel", "separate-process", "exclusive"]);
 
 export function parseMakeTargets(makefilePath) {
   if (!fs.existsSync(makefilePath)) return new Set();
@@ -149,7 +152,67 @@ export function discoverSelfTests(testsDirectory) {
 
 export function validate(document, { makeTargets, discoveredSelfTests, invokedSelfTests = new Map(), exists = () => true }) {
   const errors = [];
-  if (document.schemaVersion !== 1) errors.push("schemaVersion must be 1");
+  if (document.schemaVersion !== 2) errors.push("schemaVersion must be 2");
+  if (typeof document.manifestID !== "string" || !document.manifestID) errors.push("manifestID must be a nonempty string");
+  if (!Array.isArray(document.nodes)) errors.push("nodes must be an array");
+  if (!document.plans || typeof document.plans !== "object" || Array.isArray(document.plans)) errors.push("plans must be an object");
+  if (!Array.isArray(document.requiredGates) || !Array.isArray(document.ciRequiredGates)) errors.push("requiredGates and ciRequiredGates must be arrays");
+
+  const nodeIds = new Set();
+  for (const node of document.nodes ?? []) {
+    if (!node || typeof node !== "object" || Array.isArray(node)) { errors.push("every node must be an object"); continue; }
+    if (typeof node.id !== "string" || !node.id) errors.push("node id must be a nonempty string");
+    if (nodeIds.has(node.id)) errors.push(`duplicate node id ${JSON.stringify(node.id)}`);
+    nodeIds.add(node.id);
+    for (const dependency of node.dependencies ?? []) if (!nodeIds.has(dependency) && !(document.nodes ?? []).some(candidate => candidate?.id === dependency)) errors.push(`${node.id}: unknown dependency ${JSON.stringify(dependency)}`);
+    for (const field of ["timeoutSeconds", "expectedDurationSeconds"]) if (!Number.isInteger(node[field]) || node[field] <= 0) errors.push(`${node.id}: ${field} must be a positive integer`);
+    if (node.timeoutSeconds > 3600) errors.push(`${node.id}: timeoutSeconds exceeds the one-hour policy`);
+    if (!networkModes.has(node.network)) errors.push(`${node.id}: unknown network mode ${JSON.stringify(node.network)}`);
+    if (!brokerModes.has(node.broker)) errors.push(`${node.id}: unknown broker mode ${JSON.stringify(node.broker)}`);
+    if (!hardwareModes.has(node.hardware)) errors.push(`${node.id}: unknown hardware mode ${JSON.stringify(node.hardware)}`);
+    if (!isolationModes.has(node.isolation)) errors.push(`${node.id}: unknown isolation mode ${JSON.stringify(node.isolation)}`);
+    if (node.hardware !== "forbidden" && !node.resources?.includes("embedded-device")) errors.push(`${node.id}: hardware nodes must own embedded-device`);
+    if (["signal-disposition", "logging-global", "environment", "fixed-port-1883"].some(resource => (node.resources ?? []).includes(resource)) && node.isolation === "parallel") errors.push(`${node.id}: process-global or fixed-port resources cannot use parallel isolation`);
+  }
+  const gateNames = new Set([...(document.requiredGates ?? []), ...(document.ciRequiredGates ?? [])]);
+  for (const gate of gateNames) if (!nodeIds.has(gate)) errors.push(`required gate ${JSON.stringify(gate)} is not a declared node`);
+  for (const node of document.nodes ?? []) {
+    if (node?.required && node.local && node.ci && !gateNames.has(node.id)) {
+      errors.push(`required node ${JSON.stringify(node.id)} is absent from requiredGates`);
+    }
+  }
+  for (const [name, plan] of Object.entries(document.plans ?? {})) {
+    if (!Array.isArray(plan?.nodes)) { errors.push(`plan ${name}: nodes must be an array`); continue; }
+    for (const node of [...plan.nodes, ...(plan.ciNodes ?? [])]) if (!nodeIds.has(node)) errors.push(`plan ${name}: unknown node ${JSON.stringify(node)}`);
+  }
+  const makeAliases = {
+    check: "offline",
+    "test-tooling": "test-tooling",
+    "test-wire": "wire-offline",
+    "test-unit": "unit",
+    "test-module": "module",
+    "test-fuzz": "property",
+    test: "integration",
+  };
+  for (const [target, planName] of Object.entries(makeAliases)) {
+    const tier = document.tiers.find(candidate => candidate.makeTarget === target);
+    if (!tier && target !== "check" && target !== "test-tooling") errors.push(`Make target ${target} has no canonical tier`);
+    if (target === "test-wire" && document.plans?.[planName]?.nodes?.includes("test-tooling")) errors.push("test-wire must not include tooling tests");
+  }
+  if (!document.plans?.verify || !Array.isArray(document.plans.verify.nodes)) errors.push("verify plan must exist");
+  if ((document.plans?.verify?.nodes ?? []).length || (document.plans?.verify?.ciNodes ?? []).length) {
+    errors.push("verify roots must be derived from requiredGates and ciRequiredGates, not duplicated in plans.verify");
+  }
+  for (const gate of document.requiredGates ?? []) {
+    const node = document.nodes.find(candidate => candidate.id === gate);
+    if (!node?.required || !node.local || !node.ci) errors.push(`required gate ${JSON.stringify(gate)} must be required and available locally and in CI`);
+  }
+  for (const gate of document.ciRequiredGates ?? []) {
+    const node = document.nodes.find(candidate => candidate.id === gate);
+    if (!node?.required || !node.ci) errors.push(`CI required gate ${JSON.stringify(gate)} must be required and CI-available`);
+  }
+  if (!document.testOne?.command?.filterFlag || !Number.isInteger(document.testOne?.timeoutSeconds) || document.testOne.timeoutSeconds <= 0) errors.push("testOne must declare a filterFlag and positive timeoutSeconds");
+
   if (!Array.isArray(document.tiers)) return [...errors, "tiers must be an array"];
 
   const ids = document.tiers.filter(tier => tier && typeof tier === "object" && !Array.isArray(tier)).map(tier => tier.id);
@@ -159,7 +222,7 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
   const extra = ids.filter(id => !expectedTiers.has(id)).sort();
   if (missing.length || extra.length) errors.push(`tier set mismatch; missing=${JSON.stringify(missing)}, extra=${JSON.stringify(extra)}`);
 
-  const requiredFields = ["id", "timeoutSeconds", "cadence", "network", "required"];
+  const requiredFields = ["id", "timeoutSeconds", "expectedDurationSeconds", "cadence", "network", "broker", "hardware", "required", "local", "ci", "nodes"];
   for (const tier of document.tiers) {
     if (!tier || typeof tier !== "object" || Array.isArray(tier)) continue;
     const absent = requiredFields.filter(field => !(field in tier));
@@ -169,14 +232,22 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
     }
     if (!Number.isInteger(tier.timeoutSeconds) || tier.timeoutSeconds <= 0) errors.push(`${tier.id}: timeoutSeconds must be a positive integer`);
     else if (tier.timeoutSeconds > 3600) errors.push(`${tier.id}: timeoutSeconds exceeds the one-hour policy`);
+    if (!Number.isInteger(tier.expectedDurationSeconds) || tier.expectedDurationSeconds <= 0) errors.push(`${tier.id}: expectedDurationSeconds must be a positive integer`);
     if (!networkModes.has(tier.network)) errors.push(`${tier.id}: unknown network mode ${JSON.stringify(tier.network)}`);
+    if (!brokerModes.has(tier.broker)) errors.push(`${tier.id}: unknown broker mode ${JSON.stringify(tier.broker)}`);
+    if (!hardwareModes.has(tier.hardware)) errors.push(`${tier.id}: unknown hardware mode ${JSON.stringify(tier.hardware)}`);
+    if (!isolationModes.has(tier.isolation)) errors.push(`${tier.id}: unknown isolation mode ${JSON.stringify(tier.isolation)}`);
     if (typeof tier.required !== "boolean") errors.push(`${tier.id}: required must be boolean`);
+    if (typeof tier.local !== "boolean" || typeof tier.ci !== "boolean") errors.push(`${tier.id}: local and ci must be boolean`);
+    if (!Array.isArray(tier.nodes) || tier.nodes.some(node => !nodeIds.has(node))) errors.push(`${tier.id}: nodes must reference declared nodes`);
     if (typeof tier.cadence !== "string" || !tier.cadence) errors.push(`${tier.id}: cadence must be a nonempty string`);
-    if (tier.makeTarget !== undefined && (typeof tier.makeTarget !== "string" || !tier.makeTarget)) errors.push(`${tier.id}: makeTarget must be a nonempty string`);
+    if (tier.makeTarget !== undefined && tier.makeTarget !== null && (typeof tier.makeTarget !== "string" || !tier.makeTarget)) errors.push(`${tier.id}: makeTarget must be a nonempty string`);
     else if (tier.makeTarget && !makeTargets.has(tier.makeTarget)) errors.push(`${tier.id}: makeTarget ${JSON.stringify(tier.makeTarget)} is not a Makefile target`);
     if (tier.workflow !== undefined && (typeof tier.workflow !== "string" || !tier.workflow)) errors.push(`${tier.id}: workflow must be a nonempty string`);
     else if (tier.workflow && !exists(tier.workflow)) errors.push(`${tier.id}: workflow ${JSON.stringify(tier.workflow)} does not exist`);
   }
+
+  if (document.tiers.some(tier => tier.required && !tier.local && !tier.ci)) errors.push("required tiers must be available locally or in CI");
 
   const flake = document.flakePolicy ?? {};
   if (flake.automaticRetries !== 0) errors.push("automaticRetries must remain zero");
@@ -213,6 +284,14 @@ export function main(argumentsArray = process.argv.slice(2)) {
   const config = path.resolve(argumentsArray[0] ?? path.join(root, "Tests/Support/test-tiers.json"));
   try {
     const document = JSON.parse(fs.readFileSync(config, "utf8"));
+    const canonicalConfig = path.join(root, "Tests/Support/test-tiers.json");
+    if (config === canonicalConfig) {
+      const bundledConfig = path.join(root, "Tools/AxolotyTooling/Resources/test-tiers.json");
+      if (!fs.existsSync(bundledConfig) || fs.readFileSync(config, "utf8") !== fs.readFileSync(bundledConfig, "utf8")) {
+        console.error("test-tier configuration error: bundled manifest must exactly match Tests/Support/test-tiers.json");
+        return 1;
+      }
+    }
     const configuredSelfTests = Array.isArray(document?.selfTests)
       ? document.selfTests.flatMap(entry => typeof entry?.path === "string" ? [entry.path] : [])
       : [];

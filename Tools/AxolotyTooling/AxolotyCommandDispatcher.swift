@@ -129,15 +129,40 @@ public struct AxolotyCommandDispatcher: Sendable {
         if arguments.count == 3, arguments[0] == "wire", arguments[1] == "verify" {
             return wireBundleResult(path: arguments[2])
         }
+        if arguments.count == 3, arguments[0] == "test-one", arguments[1] == "--filter" {
+            return testOneResult(filter: arguments[2])
+        }
+        if arguments.count == 2, arguments[0] == "test-tier" {
+            return testTierResult(tier: arguments[1], ci: false)
+        }
+        if arguments.count == 3, arguments[0] == "test-tier", arguments[1] == "--ci" {
+            return testTierResult(tier: arguments[2], ci: true)
+        }
+        if arguments.count == 2, arguments[0] == "explain" {
+            return explainResult(tier: arguments[1], ci: false)
+        }
+        if arguments.count == 3, arguments[0] == "explain", arguments[1] == "--ci" {
+            return explainResult(tier: arguments[2], ci: true)
+        }
         return switch arguments {
         case [], ["help"], ["--help"], ["-h"]:
             AxolotyCommandResult(standardOutput: Self.usage(executableName: executableName))
         case ["version"], ["--version"]:
             AxolotyCommandResult(standardOutput: "\(executableName) \(Self.version)")
         case ["check", "--plan"]:
-            Self.planResult()
+            planResult(environment: environment)
         case ["check"]:
             checkResult()
+        case ["verify"]:
+            verifyResult(ci: false)
+        case ["verify", "--ci"]:
+            verifyResult(ci: true)
+        case ["test-one"]:
+            testOneResult(filter: environment["FILTER"] ?? "")
+        case ["test-tier"]:
+            testTierResult(tier: environment["TIER"] ?? "", ci: false)
+        case ["explain"]:
+            explainResult(tier: environment["TIER"] ?? "", ci: false)
         case ["build"]:
             checkResult(requested: ["build"])
         case ["test", "offline"]:
@@ -176,6 +201,13 @@ public struct AxolotyCommandDispatcher: Sendable {
 
     private static let version = "0.2.0"
 
+    private static func manifestDiagnostic(_ error: Error) -> String {
+        if let manifestError = error as? AxolotyCanonicalTestManifestError {
+            return manifestError.userFriendlyMessage
+        }
+        return error.localizedDescription
+    }
+
     private static let usage = """
     Usage: axoloty-tool <command>
 
@@ -186,6 +218,10 @@ public struct AxolotyCommandDispatcher: Sendable {
       version, --version   Show the CLI version.
       check --plan         Print the initial offline check plan as JSON.
       check                Run the initial offline check plan and print JSON.
+      verify [--ci]        Run the canonical ordinary or CI verification plan.
+      test-one --filter F  Run one bounded Swift suite/test filter.
+      test-tier TIER       Run one canonical test tier.
+      explain TIER          Print its command graph and execution policies.
       build                Build the host package and its prerequisites.
       test offline         Run the same offline plan as check.
       test tooling         Run offline developer-tool tests and prerequisites.
@@ -322,18 +358,28 @@ public struct AxolotyCommandDispatcher: Sendable {
         }
     }
 
-    private static func planResult() -> AxolotyCommandResult {
+    private func planResult(environment: [String: String]) -> AxolotyCommandResult {
         do {
-            let plan = try AxolotyCheckPlanner().plan(AxolotyCheckPlan.initialOffline.nodes)
-            return try jsonResult(plan)
+            let manifest = try AxolotyCanonicalTestManifest.loadDefault(environment: environment)
+            let plan = try manifest.plan(named: "offline")
+            return try Self.jsonResult(plan)
+        } catch let error as AxolotyCanonicalTestManifestError {
+            return AxolotyCommandResult(
+                standardError: "error: \(error.userFriendlyMessage)\n",
+                exitCode: 70
+            )
         } catch {
-            return AxolotyCommandResult(standardError: "error: unable to plan checks\n", exitCode: 70)
+            return AxolotyCommandResult(
+                standardError: "error: \(Self.manifestDiagnostic(error))\n",
+                exitCode: 70
+            )
         }
     }
 
     private func checkResult(requested: [String]? = nil) -> AxolotyCommandResult {
         do {
-            let availablePlan = AxolotyCheckPlan.initialOffline
+            let manifest = try AxolotyCanonicalTestManifest.loadDefault(environment: environment)
+            let availablePlan = try manifest.plan(named: "offline")
             guard requested?.allSatisfy({ requestedName in
                 availablePlan.nodes.contains { $0.name == requestedName }
             }) != false else {
@@ -346,8 +392,103 @@ public struct AxolotyCommandDispatcher: Sendable {
             let results = executor.execute(plan)
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
             return manifestResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
+        } catch let error as AxolotyCanonicalTestManifestError {
+            return AxolotyCommandResult(
+                standardError: "error: \(error.userFriendlyMessage)\n",
+                exitCode: 70
+            )
         } catch {
-            return AxolotyCommandResult(standardError: "error: unable to plan checks\n", exitCode: 70)
+            return AxolotyCommandResult(
+                standardError: "error: \(Self.manifestDiagnostic(error))\n",
+                exitCode: 70
+            )
+        }
+    }
+
+    private func verifyResult(ci: Bool) -> AxolotyCommandResult {
+        do {
+            let manifest = try AxolotyCanonicalTestManifest.loadDefault(environment: environment)
+            let plan = try manifest.plan(named: "verify", ci: ci)
+            return execute(plan: plan)
+        } catch {
+            return AxolotyCommandResult(
+                standardError: "error: \(Self.manifestDiagnostic(error))\n",
+                exitCode: 70
+            )
+        }
+    }
+
+    private func testOneResult(filter: String) -> AxolotyCommandResult {
+        guard !filter.isEmpty else {
+            return AxolotyCommandResult(
+                standardError: "error: test-one requires a non-empty FILTER or --filter value\n",
+                exitCode: 64
+            )
+        }
+        do {
+            let manifest = try AxolotyCanonicalTestManifest.loadDefault(environment: environment)
+            let command = manifest.testOneCommand(filter: filter)
+            if let failure = contextValidator.failureResult(validating: [command]) {
+                return Self.commandResult(failure)
+            }
+            let result = run(command, context: AxolotyCommandRunContext(node: "test-one", stage: "check"))
+            let check = AxolotyCheckResult(
+                name: "test-one",
+                status: result.exitCode == 0 ? .passed : .failed,
+                command: result
+            )
+            return manifestResult(AxolotyCheckManifest(results: [check]), exitCode: result.exitCode == 0 ? 0 : 1)
+        } catch {
+            return AxolotyCommandResult(
+                standardError: "error: \(Self.manifestDiagnostic(error))\n",
+                exitCode: 70
+            )
+        }
+    }
+
+    private func testTierResult(tier: String, ci: Bool) -> AxolotyCommandResult {
+        guard !tier.isEmpty else {
+            return AxolotyCommandResult(
+                standardError: "error: test-tier requires a non-empty TIER or tier argument\n",
+                exitCode: 64
+            )
+        }
+        do {
+            let manifest = try AxolotyCanonicalTestManifest.loadDefault(environment: environment)
+            let plan = try manifest.plan(tier: tier, ci: ci)
+            return execute(plan: plan)
+        } catch {
+            return AxolotyCommandResult(
+                standardError: "error: \(Self.manifestDiagnostic(error))\n",
+                exitCode: 69
+            )
+        }
+    }
+
+    private func explainResult(tier: String, ci: Bool) -> AxolotyCommandResult {
+        guard !tier.isEmpty else {
+            return AxolotyCommandResult(
+                standardError: "error: explain requires a non-empty TIER or tier argument\n",
+                exitCode: 64
+            )
+        }
+        do {
+            let manifest = try AxolotyCanonicalTestManifest.loadDefault(environment: environment)
+            let explanation = try manifest.explanation(tier: tier, ci: ci)
+            if outputMode == .json {
+                return try Self.jsonResult(explanation)
+            }
+            return AxolotyCommandResult(standardOutput: humanExplanation(explanation))
+        } catch let error as AxolotyCanonicalTestManifestError {
+            return AxolotyCommandResult(
+                standardError: "error: \(error.userFriendlyMessage)\n",
+                exitCode: 69
+            )
+        } catch {
+            return AxolotyCommandResult(
+                standardError: "error: \(Self.manifestDiagnostic(error))\n",
+                exitCode: 69
+            )
         }
     }
 
@@ -383,24 +524,34 @@ public struct AxolotyCommandDispatcher: Sendable {
 
     private func wireBundleResult(path: String) -> AxolotyCommandResult {
         do {
-            let bundleNode = AxolotyCheckNode(
-                name: "wire-bundle-verify",
-                dependencies: ["test-wire"],
-                command: AxolotyCommandPlan(
-                    executable: "node",
-                    arguments: ["Tests/Support/release-snapshots.mjs", "verify", path],
-                    timeoutSeconds: 10 * 60
-                )
-            )
-            let plan = try AxolotyCheckPlanner().plan(
-                AxolotyCheckPlan.initialOffline.nodes + [bundleNode],
-                requested: [bundleNode.name]
+            let manifest = try AxolotyCanonicalTestManifest.loadDefault(environment: environment)
+            let canonicalPlan = try manifest.plan(named: "wire-bundle")
+            let plan = AxolotyCheckPlan(
+                schemaVersion: canonicalPlan.schemaVersion,
+                nodes: canonicalPlan.nodes.map { node in
+                    AxolotyCheckNode(
+                        name: node.name,
+                        dependencies: node.dependencies,
+                        command: AxolotyCommandPlan(
+                            executable: node.command.executable,
+                            arguments: node.command.arguments.map { argument in
+                                argument == "${BUNDLE}" ? path : argument
+                            },
+                            environment: node.command.environment,
+                            executionContext: node.command.executionContext,
+                            timeoutSeconds: node.command.timeoutSeconds
+                        )
+                    )
+                }
             )
             let results = executor.execute(plan)
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
             return manifestResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
         } catch {
-            return AxolotyCommandResult(standardError: "error: unable to verify wire bundle\n", exitCode: 70)
+            return AxolotyCommandResult(
+                standardError: "error: \(Self.manifestDiagnostic(error))\n",
+                exitCode: 70
+            )
         }
     }
 
@@ -513,6 +664,23 @@ public struct AxolotyCommandDispatcher: Sendable {
         }
     }
 
+    private func humanExplanation(_ explanation: AxolotyCanonicalTestExplanation) -> String {
+        var lines = [
+            "PLAN \(explanation.name) schema=\(explanation.schemaVersion) ci=\(explanation.ci)",
+        ]
+        lines += explanation.nodes.map { node in
+            let dependencies = node.dependencies.isEmpty ? "-" : node.dependencies.joined(separator: ",")
+            let lane = node.lane ?? "-"
+            let resources = node.resources.isEmpty ? "-" : node.resources.joined(separator: ",")
+            let artifacts = node.artifacts.isEmpty ? "-" : node.artifacts.joined(separator: ",")
+            let arguments = ([node.executable] + node.arguments).map { argument in
+                argument.contains(" ") ? "\"\(argument)\"" : argument
+            }.joined(separator: " ")
+            return "\(node.id): \(arguments)\n  depends=\(dependencies) duration=\(node.expectedDurationSeconds)s deadline=\(node.timeoutSeconds)s\n  policy network=\(node.network.rawValue) broker=\(node.broker.rawValue) hardware=\(node.hardware.rawValue) isolation=\(node.isolation.rawValue) lane=\(lane) resources=\(resources) artifacts=\(artifacts)"
+        }
+        return lines.joined(separator: "\n") + "\n"
+    }
+
     private func hardwareResult(required: Bool, device: String?) -> AxolotyCommandResult {
         let selectedDevice = device ?? environment["AXOLOTY_DEVICE"] ?? "/dev/ttyACM0"
         let command = AxolotyCommandPlan(
@@ -600,7 +768,10 @@ public struct AxolotyCommandDispatcher: Sendable {
 
     private var executor: AxolotyCheckExecutor {
         AxolotyCheckExecutor(
-            commandRunner: commandRunner,
+            commandRunner: CanonicalTierCommandRunner(
+                commandRunner: commandRunner,
+                integrationRunner: integrationRunner
+            ),
             contextValidator: contextValidator,
             cancellation: cancellation
         )
@@ -613,8 +784,40 @@ public struct AxolotyCommandDispatcher: Sendable {
             exitCode: result.exitCode
         )
     }
+
+    private func run(
+        _ command: AxolotyCommandPlan,
+        context: AxolotyCommandRunContext
+    ) -> AxolotyCheckCommandResult {
+        if let lifecycleRunner = commandRunner as? any AxolotyLifecycleCommandRunning {
+            return lifecycleRunner.run(command, context: context)
+        }
+        return commandRunner.run(command)
+    }
 }
 // swiftlint:enable type_body_length
+
+private struct CanonicalTierCommandRunner: AxolotyLifecycleCommandRunning {
+    let commandRunner: any AxolotyCheckCommandRunning
+    let integrationRunner: any AxolotyIntegrationRunning
+
+    func run(_ command: AxolotyCommandPlan) -> AxolotyCheckCommandResult {
+        commandRunner.run(command)
+    }
+
+    func run(
+        _ command: AxolotyCommandPlan,
+        context: AxolotyCommandRunContext
+    ) -> AxolotyCheckCommandResult {
+        if context.node == "integration-tests" {
+            return integrationRunner.run()
+        }
+        if let lifecycleRunner = commandRunner as? any AxolotyLifecycleCommandRunning {
+            return lifecycleRunner.run(command, context: context)
+        }
+        return commandRunner.run(command)
+    }
+}
 
 /// The standard streams and status produced by an ``AxolotyCommandDispatcher``.
 public struct AxolotyCommandResult: Equatable, Sendable {

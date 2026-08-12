@@ -47,7 +47,13 @@ export AXOLOTY_CONSUMER_REPOSITORY_URL AXOLOTY_CONSUMER_VERSION AXOLOTY_CONSUMER
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm axoloty-tool check hardware-check hardware-require release-snapshots checkpoint checkpoint-hardware test-tooling build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test-axoloty-semver-consumer test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-toolchain-doctor embedded-device-info embedded-device-smoke embedded-reproducible-build benchmark-size benchmark-wire benchmark-wire-bounds benchmark-wire-device check-budget-manifest check-embedded-swift check-embedded-swift-linker embedded-swift-build embedded-swift-flash embedded-swift-test embedded-mqtt-test embedded-network-test embedded-agent-test embedded-coatyjs-test embedded-host-test embedded-last-will-test embedded-broker-restart-test embedded-interop-test
+.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm axoloty-tool check verify verify-ci test-one test-tier explain hardware-check hardware-require release-snapshots checkpoint checkpoint-hardware test-tooling build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test-axoloty-semver-consumer test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-toolchain-doctor embedded-device-info embedded-device-smoke embedded-reproducible-build benchmark-size benchmark-wire benchmark-wire-bounds benchmark-wire-device check-budget-manifest check-embedded-swift check-embedded-swift-linker embedded-swift-build embedded-swift-flash embedded-swift-test embedded-mqtt-test embedded-network-test embedded-agent-test embedded-coatyjs-test embedded-host-test embedded-last-will-test embedded-broker-restart-test embedded-interop-test
+
+# Quote user-provided values before placing them in a shell assignment. The
+# resulting value is still passed to run.sh as one argv element.
+SINGLE_QUOTE := '
+DOUBLE_QUOTE := "
+shell_quote = $(SINGLE_QUOTE)$(subst $(SINGLE_QUOTE),$(SINGLE_QUOTE)$(DOUBLE_QUOTE)$(SINGLE_QUOTE)$(DOUBLE_QUOTE)$(SINGLE_QUOTE),$(1))$(SINGLE_QUOTE)
 
 help:
 	@printf '%s\n' \
@@ -57,6 +63,10 @@ help:
 		'make worktree-warm  Bootstrap and compile the current worktree' \
 		'make axoloty-tool AXOLOTY_TOOL_ARGS="--help"  Run the Swift tooling CLI in-container' \
 		'make check         Run the initial broker-free axoloty-tool check plan' \
+		'make verify        Run the canonical ordinary pre-PR verification plan' \
+		'make test-one FILTER=...  Run one bounded suite or test filter' \
+		'make test-tier TIER=...  Run one canonical test tier' \
+		'make explain TIER=...  Explain commands, policies, locks, and artifacts' \
 		'make hardware-check  Run or skip the sporadic ESP32-C6 smoke check' \
 		'make hardware-require  Require an attached ESP32-C6 smoke check' \
 		'make release-snapshots  Generate and verify a provenance-rich wire bundle' \
@@ -170,6 +180,31 @@ serve-dev: image
 check:
 	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS=check
 
+verify:
+	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS=verify
+
+verify-ci:
+	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='verify --ci'
+
+test-one: image
+	@filter=$(call shell_quote,$(FILTER)); \
+		test -n "$$filter" || { echo 'FILTER is required' >&2; exit 2; }; \
+		CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+		.devcontainer/run.sh /opt/axoloty/bin/axoloty-tool test-one --filter "$$filter"
+
+test-tier: image
+	@tier=$(call shell_quote,$(TIER)); \
+		test -n "$$tier" || { echo 'TIER is required' >&2; exit 2; }; \
+		CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+		.devcontainer/run.sh /opt/axoloty/bin/axoloty-tool test-tier "$$tier"
+
+explain: image
+	@tier=$(call shell_quote,$(TIER)); \
+		test -n "$$tier" || { echo 'TIER is required' >&2; exit 2; }; \
+		CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+		CONTAINER_ENV_VARS=AXOLOTY_OUTPUT AXOLOTY_OUTPUT=human \
+		.devcontainer/run.sh /opt/axoloty/bin/axoloty-tool explain "$$tier"
+
 hardware-check:
 	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='hardware check' \
 		AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES='$(AXOLOTY_DEVICE)' AXOLOTY_TOOL_CONTAINER_ENV_VARS='AXOLOTY_DEVICE' \
@@ -254,8 +289,8 @@ test-axoloty-semver-consumer: image
 		CONTAINER_ENV_VARS='AXOLOTY_CONSUMER_REPOSITORY_URL AXOLOTY_CONSUMER_VERSION AXOLOTY_CONSUMER_LOCAL AXOLOTY_CONSUMER_LOCAL_VERSION' \
 		.devcontainer/run.sh sh Tests/Support/check-axoloty-semver-consumer.sh
 
-test: resolve
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh sh -c 'pgrep mosquitto >/dev/null 2>&1 || mosquitto -d; AXOLOTY_INSPECTOR_LIVE=1 swift test $(SWIFT_LOCKED_ARGS)'
+test:
+	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='test-tier integration'
 
 tsan-resolve: image
 	@mkdir -p "$(SPM_CACHE_DIR)"
@@ -267,18 +302,14 @@ test-tsan: tsan-resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(TSAN_BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \
 		bash -o pipefail -c 'set -e; pgrep mosquitto >/dev/null 2>&1 || mosquitto -d; swift test $(SWIFT_LOCKED_ARGS) --no-parallel --sanitize=thread --filter "CommunicationSubscriptionCoordinatorTests|BroadcastTransportTests|ObjectLifecycleControllerTests|DecentralizedLoggingTest"'
 
-test-unit: resolve
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter 'ObjectMatcherTests|CoatyUUIDTests'
+test-unit:
+	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='test-tier unit'
 
-test-module: resolve
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter CommunicationTopicTests
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter PayloadCoderTests
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter ObjectTypeRegistryTests
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter ConfigurationBuilderTests
+test-module:
+	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='test-tier module'
 
-test-fuzz: resolve
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \
-		sh -c 'AXOLOTY_FUZZ_ITERATIONS="$(or $(AXOLOTY_FUZZ_ITERATIONS),250)" AXOLOTY_FUZZ_SEED="$(or $(AXOLOTY_FUZZ_SEED),0x41584f4c4f5459)" swift test $(SWIFT_LOCKED_ARGS) --filter DeterministicFuzzTests'
+test-fuzz:
+	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='test-tier property'
 
 fuzz-long:
 	AXOLOTY_FUZZ_ITERATIONS="$(or $(AXOLOTY_FUZZ_ITERATIONS),100000)" \
@@ -484,8 +515,8 @@ ci-fast: build test-fast
 ci-preflight:
 	@if [ "$${CI:-}" = "true" ] && [ "$(BUILD_LOCK)" != "0" ]; then echo 'CI must set BUILD_LOCK=0 because its workspace-local build directory is not shared' >&2; exit 2; fi
 
-ci: ci-preflight test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution
-	$(MAKE) test-support coverage-check
+ci: ci-preflight
+	$(MAKE) verify-ci
 	sh Tests/Support/check-decoder-context-diagnostic.sh .testing/coverage/build.log
 
 broker: image

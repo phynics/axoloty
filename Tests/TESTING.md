@@ -6,9 +6,13 @@ cannot be established in-process. CoatyJS 2.4.x is the wire-compatibility
 oracle. Legacy CoatySwift is useful historical evidence, but is not a required
 interop target.
 
-The machine-readable companion to this document is
-[`Support/test-tiers.json`](Support/test-tiers.json). Each directly executable
-tier records its canonical Make target, and every maintained `Tests/**/*.test.mjs` /
+The versioned, typed execution manifest is the sole source of truth for
+commands, filters, deadlines, expected duration, cadence, required local/CI
+gates, network/broker/hardware policy, resource ownership, isolation lanes,
+dependencies, and artifacts:
+[`Support/test-tiers.json`](Support/test-tiers.json). Swift
+`AxolotyTooling` loads this file for every plan; the Node validator and its
+self-tests validate the same document. Each maintained `Tests/**/*.test.mjs` /
 `Tests/**/test-*.sh` harness self-test is mapped to exactly one owning Make
 target. Validate the contract with:
 
@@ -22,24 +26,34 @@ is unmapped or owned by more than one target. It does not invoke Swift; run it
 through `make test-support` for the standard Makefile path. Build and test
 execution must always use the root Makefile and Podman.
 
-## Initial `axoloty-tool` workflow
+## Canonical `axoloty-tool` workflow
 
 The Swift `axoloty-tool` executable is the in-progress replacement for build and test
 orchestration. During the migration, invoke it through the lightweight Makefile
 wrapper so Linux execution continues to use the pinned development container:
 
 ```sh
-make axoloty-tool AXOLOTY_TOOL_ARGS='check --plan'
-make check
+make verify
+make test-one FILTER='AxolotyCheckTests'
+make test-tier TIER=unit
+make explain TIER=unit
 ```
 
-`make check` runs the broker-free slice: dependency resolution, package
-build, lint, `axoloty-tool` tooling tests, offline wire fixtures, and ESP32-C6 Embedded
-Swift build/linker checks. It emits one JSON result manifest on standard output;
-container/bootstrap diagnostics are written to standard error. It does **not**
-yet replace the full Makefile test matrix, broker-backed integration, live wire
-capture, or physical hardware gates. Continue to use the focused Make targets
-below for those capabilities until their `axoloty-tool` commands are implemented.
+`make verify` runs the ordinary pre-PR plan from the manifest. `make verify-ci`
+runs the same mandatory plan plus CI-only coverage and support gates. Use
+`AXOLOTY_OUTPUT=json` for parseable manifests or `AXOLOTY_OUTPUT=human` for
+streaming progress and summaries. `FILTER` is passed as one argv element, never
+through a shell command string. `make explain` never executes a command and
+prints the graph, durations, deadlines, policies, locks/lanes, and artifacts.
+`make check`, `make test-tooling`, and `make test-wire` remain compatible aliases;
+`test-wire` selects only the offline wire closure and does not run tooling tests.
+
+Process-global signal, logging, environment, and fixed-port tests are declared
+as separate Swift invocations/lanes. The canonical graph executor invokes
+nodes serially, which enforces lane/resource non-overlap; ordinary Swift tests
+may still use their own internal parallel execution. Ordinary verification
+declares hardware forbidden and never probes or reserves a device; hardware
+remains opt-in through checkpoint-hardware or hardware-require.
 
 On macOS, `axoloty-tool check` selects the same host and offline-wire checks but omits the
 Linux-only ESP-IDF nodes. This is an explicit platform capability difference,
@@ -64,8 +78,8 @@ separate from protocol-scenario execution.
 | Nightly | `make fuzz-long` | yes | Multi-seed fuzz campaign |
 | Harness self-tests | `make test-support` | no | Fuzz runner, capture/verifier tools, tier validation |
 
-`make test-fast` runs unit, module, property, offline-wire, and support
-self-tests in one image build; `make ci` adds the full integration suite.
+`make test-fast` remains a compatibility aggregate. New execution policy lives
+in the manifest, not in Make recipes or shell front controllers.
 
 Nightly fuzz campaigns run from `.github/workflows/fuzz.yml` with the pinned
 development image. Scheduled runs use 100,000 iterations over seeds 1, 2, 3,

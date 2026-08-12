@@ -19,7 +19,7 @@ function swiftCodeBlockAfter(document, marker) {
 
 test("principal Make workflows are direct axoloty-tool wrappers", () => {
   const makefile = fs.readFileSync("Makefile", "utf8");
-  for (const target of [
+  const recursiveTargets = [
     "check",
     "build",
     "test-tooling",
@@ -31,8 +31,12 @@ test("principal Make workflows are direct axoloty-tool wrappers", () => {
     "hardware-check",
     "hardware-require",
     "release-snapshots",
-  ]) {
+  ];
+  for (const target of recursiveTargets) {
     assert.match(recipe(makefile, target), /\$\(MAKE\).*\baxoloty-tool\b/, `${target} must forward to axoloty-tool`);
+  }
+  for (const target of ["verify", "verify-ci", "test-one", "test-tier", "explain"]) {
+    assert.match(recipe(makefile, target), /(?:\.devcontainer\/run\.sh.*axoloty-tool|\$\(MAKE\).*\baxoloty-tool\b)/, `${target} must run axoloty-tool in the pinned container`);
   }
 });
 

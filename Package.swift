@@ -138,7 +138,8 @@ let package = Package(
         .target(
             name: "AxolotyTooling",
             dependencies: ["AxolotyProcessLauncher"],
-            path: "Tools/AxolotyTooling"
+            path: "Tools/AxolotyTooling",
+            resources: [.copy("Resources/test-tiers.json")]
         ),
         .testTarget(
             name: "AxolotyToolingTests",

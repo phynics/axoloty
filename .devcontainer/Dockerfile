@@ -25,12 +25,14 @@ FROM swift:${SWIFT_VERSION}-jammy AS axoloty-tool-builder
 WORKDIR /axoloty-tool
 COPY Tools/Package.swift ./Package.swift
 COPY Tools/AxolotyTooling ./AxolotyTooling
+COPY Tests/Support/test-tiers.json ./AxolotyTooling/Resources/test-tiers.json
 COPY Tools/AxolotyProcessLauncher ./AxolotyProcessLauncher
 COPY Tools/axoloty-tool ./axoloty-tool
 RUN swift build -c release --product axoloty-tool \
         -Xswiftc -static-executable -Xlinker --no-gc-sections \
     && mkdir -p /axoloty-tool-output \
     && cp "$(swift build -c release --show-bin-path)/axoloty-tool" /axoloty-tool-output/axoloty-tool \
+    && cp -R "$(swift build -c release --show-bin-path)/AxolotyTools_AxolotyTooling.resources" /axoloty-tool-output/ \
     && /axoloty-tool-output/axoloty-tool --version
 
 FROM swift:${SWIFT_VERSION}-jammy AS axoloty-service-builder
@@ -47,6 +49,7 @@ RUN swift build -c release --product ax \
     && swift build -c release --product axoloty-mcp \
     && mkdir -p /axoloty-service-output \
     && cp "$(swift build -c release --show-bin-path)/ax" /axoloty-service-output/ax \
+    && cp -R "$(swift build -c release --show-bin-path)/Axoloty_AxolotyTooling.resources" /axoloty-service-output/ \
     && cp "$(swift build -c release --show-bin-path)/axoloty-mcp" /axoloty-service-output/axoloty-mcp
 
 FROM swift:${SWIFT_VERSION}-jammy
@@ -157,7 +160,9 @@ USER root
 # Keep the project-specific CLI in the final layer so changing orchestration
 # source does not invalidate the expensive, immutable ESP-IDF toolchain layers.
 COPY --from=axoloty-tool-builder /axoloty-tool-output/axoloty-tool /opt/axoloty/bin/axoloty-tool
+COPY --from=axoloty-tool-builder /axoloty-tool-output/AxolotyTools_AxolotyTooling.resources /opt/axoloty/bin/AxolotyTools_AxolotyTooling.resources
 COPY --from=axoloty-service-builder /axoloty-service-output/ax /opt/axoloty/bin/ax
+COPY --from=axoloty-service-builder /axoloty-service-output/Axoloty_AxolotyTooling.resources /opt/axoloty/bin/Axoloty_AxolotyTooling.resources
 COPY --from=axoloty-service-builder /axoloty-service-output/axoloty-mcp /opt/axoloty/bin/axoloty-mcp
 ARG DOCKER_CLI_VERSION=27.5.1
 RUN curl -fsSL -o /tmp/docker.tgz \

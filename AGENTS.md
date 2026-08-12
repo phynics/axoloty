@@ -4,9 +4,21 @@ Canonical agent/contributor workflow. Current release: [Axoloty 0.2.0](https://g
 
 ## Build and test
 
+Normal workflow uses four commands:
+
+1. `make verify` — ordinary pre-PR verification.
+2. `make test-one FILTER='SuiteOrTest'` — one bounded test process.
+3. `make test-tier TIER=unit` — one canonical tier.
+4. `make explain TIER=unit` — inspect the graph and policies without execution.
+
+Use `make verify-ci` only when reproducing the required CI plan. Use
+`make checkpoint`/`make checkpoint-hardware` for release validation; hardware
+is never probed by ordinary verification. See `Tests/TESTING.md` for the
+manifest and compatibility aliases.
+
 - `axoloty-tool` = typed orchestration control plane. Linux: invoke it through root Make targets so product and ESP-IDF work stays in the pinned container. The Makefile is a thin compatibility/bootstrap surface; do not reproduce its `docker`/`podman` invocation manually. The runner supplies the arbitrary host UID, writable temporary home, mounted SwiftPM cache, and worktree-specific build directory. Binary prebuilt in the image at `/opt/axoloty/bin/axoloty-tool`, runs via `.devcontainer/run.sh`, and is not extracted to the host. macOS: native Swift via isolated tooling package: `swift run --package-path Tools axoloty-tool check`. No native Swift product builds on Linux.
 - Makefile = executable documentation + compatibility/bootstrap surface. New orchestration policy belongs in `AxolotyTooling`, not Make recipes or shell front controllers.
-- **Building and testing from a worktree on Linux:** the host Swift toolchain is too old (Package.swift requires 6.3); all builds go through the pinned container via `.devcontainer/run.sh`. The Makefile sets the required env vars (`CONTAINER_RUNTIME`, `IMAGE`, `BUILD_DIR`, `SPM_CACHE_DIR`) and calls `run.sh` — prefer Make targets (`make build`, `make test`, `make test-tooling`) over calling `run.sh` directly. For targeted builds/tests not covered by a Make target, call `run.sh` with the same env vars the Makefile would set:
+- **Maintainer-only troubleshooting:** the host Swift toolchain is too old (Package.swift requires 6.3); all builds go through the pinned container via `.devcontainer/run.sh`. Normal contributors should use the four commands above. For targeted diagnostics not covered by a Make target, maintainers may call `run.sh` with the same env vars the Makefile would set:
   ```sh
   CONTAINER_RUNTIME=podman IMAGE=axoloty-dev \
   BUILD_DIR=/tmp/coaty-swift-build/axoloty/swift-6.3-linux/worktrees/<worktree-name>/debug \

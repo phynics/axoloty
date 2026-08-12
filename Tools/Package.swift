@@ -12,7 +12,12 @@ let package = Package(
     ],
     targets: [
         .target(name: "AxolotyProcessLauncher", path: "AxolotyProcessLauncher", publicHeadersPath: "include"),
-        .target(name: "AxolotyTooling", dependencies: ["AxolotyProcessLauncher"], path: "AxolotyTooling"),
+        .target(
+            name: "AxolotyTooling",
+            dependencies: ["AxolotyProcessLauncher"],
+            path: "AxolotyTooling",
+            resources: [.copy("Resources/test-tiers.json")]
+        ),
         .executableTarget(
             name: "AxolotyCLI",
             dependencies: ["AxolotyTooling"],

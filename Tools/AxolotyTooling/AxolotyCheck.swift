@@ -307,74 +307,13 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
     /// The initial offline checks for the current host platform.
     public static let initialOffline = initialOffline(for: currentPlatform)
 
-    /// Creates initial offline checks for a selected host platform.
+    /// Creates initial offline checks from the checked-in canonical manifest.
     public static func initialOffline(for platform: Platform) -> AxolotyCheckPlan {
-        let short: TimeInterval = 10 * 60
-        let build: TimeInterval = 30 * 60
-        let test: TimeInterval = 60 * 60
-        var nodes: [AxolotyCheckNode] = [
-            AxolotyCheckNode(name: "resolve", command: AxolotyCommandPlan(executable: "swift", arguments: ["package", "resolve", "--cache-path", ".swiftpm-cache"], timeoutSeconds: short)),
-            AxolotyCheckNode(name: "build", dependencies: ["resolve"], command: AxolotyCommandPlan(executable: "swift", arguments: ["build", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution"], timeoutSeconds: build)),
-        AxolotyCheckNode(name: "lint", command: AxolotyCommandPlan(executable: "swiftlint", arguments: ["lint", "--no-cache", "--config", ".swiftlint.yml"], timeoutSeconds: short)),
-            AxolotyCheckNode(name: "test-tooling", dependencies: ["build"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--filter", "AxolotyToolingTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyInspectorCLITests|AxolotyMCPTests"], timeoutSeconds: test)),
-        AxolotyCheckNode(name: "test-unit", dependencies: ["test-tooling"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--skip-build", "--filter", "ObjectMatcherTests|CoatyUUIDTests"], timeoutSeconds: test)),
-        AxolotyCheckNode(name: "test-module", dependencies: ["test-tooling"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--skip-build", "--filter", "CommunicationTopicTests|PayloadCoderTests|ObjectTypeRegistryTests|ConfigurationBuilderTests"], timeoutSeconds: test)),
-        AxolotyCheckNode(name: "test-fuzz", dependencies: ["test-tooling"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--skip-build", "--filter", "DeterministicFuzzTests"], environment: ["AXOLOTY_FUZZ_ITERATIONS": "250", "AXOLOTY_FUZZ_SEED": "0x41584f4c4f5459"], timeoutSeconds: test)),
-        AxolotyCheckNode(name: "test-wire", dependencies: ["test-tooling"], command: AxolotyCommandPlan(executable: "swift", arguments: ["test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--skip-build", "--filter", "WireFixtureTests|LegacyCaptureFixtureTests|CoatyJs.*CaptureTests|LifecycleCompatibilityScenarioTests|AxolotyIoAssociateTests|AxolotyIoNegativeTests|AxolotyIoValuePayloadTests"], timeoutSeconds: test)),
-        AxolotyCheckNode(name: "no-anycodable", command: AxolotyCommandPlan(executable: "Tests/Support/check-no-anycodable.sh", timeoutSeconds: short)),
-        AxolotyCheckNode(name: "no-foundation-wire", command: AxolotyCommandPlan(executable: "Tests/Support/check-no-foundation-types.sh", timeoutSeconds: short)),
-        AxolotyCheckNode(name: "wire-dependencies", command: AxolotyCommandPlan(executable: "sh", arguments: ["Tests/Support/check-axoloty-wire-dependencies.sh", "Packages/AxolotyWire"], timeoutSeconds: short)),
-        AxolotyCheckNode(name: "wire-independent-resolution", command: AxolotyCommandPlan(executable: "Tests/Support/check-axoloty-wire-independent-resolution.sh", timeoutSeconds: short)),
-        ]
-        let supportSelfTests = [
-            ("support-wire-dependencies", "Tests/Support/test-check-axoloty-wire-dependencies.sh"),
-            ("support-wire-resolution", "Tests/Support/test-check-axoloty-wire-independent-resolution.sh"),
-            ("support-wire-isolation", "Tests/Support/test-check-axoloty-wire-test-isolation.sh"),
-            ("support-benchmark-corpus", "Tests/Support/test-check-benchmark-corpus.sh"),
-            ("support-benchmark-size", "Tests/Support/test-check-benchmark-size.sh"),
-            ("support-benchmark-wire", "Tests/Support/test-check-benchmark-wire.sh"),
-            ("support-benchmark-bounds", "Tests/Support/test-check-benchmark-wire-bounds.sh"),
-            ("support-budget-manifest", "Tests/Support/test-check-budget-manifest.sh"),
-        ]
-        nodes += supportSelfTests.map { name, executable in
-            AxolotyCheckNode(name: name, command: AxolotyCommandPlan(executable: executable, timeoutSeconds: short))
+        do {
+            return try AxolotyCanonicalTestManifest.loadDefault().plan(named: "offline", platform: platform)
+        } catch {
+            preconditionFailure("Unable to load canonical offline test plan: \(error)")
         }
-        nodes.append(AxolotyCheckNode(
-            name: "support-node-tests",
-            command: AxolotyCommandPlan(executable: "node", arguments: [
-                "--test",
-                "Tests/Support/coverage-tools.test.mjs",
-                "Tests/Support/fuzz-summary.test.mjs",
-                "Tests/Support/make-tooling-wrappers.test.mjs",
-                 "Tests/Support/patch-swift-got.test.mjs",
-                 "Tests/Support/release-snapshots.test.mjs",
-                 "Tests/Support/run-lifecycle.test.mjs",
-                 "Tests/Support/serial-tools.test.mjs",
-                 "Tests/Support/validate-test-tiers.test.mjs",
-                 "Tests/Support/work-plan-issue-form.test.mjs",
-             ], timeoutSeconds: short)
-         ))
-        nodes.append(AxolotyCheckNode(
-            name: "support-tier-contract",
-            dependencies: ["support-node-tests"],
-            command: AxolotyCommandPlan(
-                executable: "node",
-                arguments: ["Tests/Support/validate-test-tiers.mjs", "Tests/Support/test-tiers.json"],
-                timeoutSeconds: short
-            )
-        ))
-        if platform == .linux {
-            nodes += [
-                AxolotyCheckNode(name: "support-container", command: AxolotyCommandPlan(executable: "Tests/Support/test-run-container.sh", timeoutSeconds: short)),
-                AxolotyCheckNode(name: "support-fuzz-runner", command: AxolotyCommandPlan(executable: "Tests/Fuzzing/test-run-fuzz.sh", timeoutSeconds: test)),
-                AxolotyCheckNode(name: "support-embedded-compile", command: AxolotyCommandPlan(executable: "Tests/Support/test-check-embedded-swift.sh", timeoutSeconds: build)),
-                AxolotyCheckNode(name: "support-embedded-smoke", command: AxolotyCommandPlan(executable: "Tests/Support/test-embedded-swift-smoke.sh", timeoutSeconds: short)),
-                AxolotyCheckNode(name: "embedded-toolchain", command: AxolotyCommandPlan(executable: "Tests/Support/check-embedded-environment.sh", timeoutSeconds: short)),
-                AxolotyCheckNode(name: "embedded-build", dependencies: ["build", "embedded-toolchain"], command: AxolotyCommandPlan(executable: "Tests/Support/build-embedded-swift.sh", timeoutSeconds: build)),
-                AxolotyCheckNode(name: "embedded-linker", dependencies: ["embedded-build"], command: AxolotyCommandPlan(executable: "Tests/Support/check-embedded-swift-linker.sh", timeoutSeconds: build)),
-            ]
-        }
-        return AxolotyCheckPlan(nodes: nodes)
     }
 
     /// Creates the release snapshot generation and offline verification plan.
@@ -383,137 +322,71 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
         destination: String = ".testing/release-snapshots",
         environment: [String: String] = [:]
     ) -> AxolotyCheckPlan {
-        let commandTimeout: TimeInterval = 10 * 60
-        return AxolotyCheckPlan(nodes: [
+        let manifest: AxolotyCanonicalTestManifest
+        let plan: AxolotyCheckPlan
+        do {
+            manifest = try AxolotyCanonicalTestManifest.loadDefault()
+            plan = try manifest.plan(named: "release-snapshots")
+        } catch {
+            preconditionFailure("Unable to load canonical release snapshot plan: \(error)")
+        }
+        let sourceNodes = plan.nodes.map { node in
             AxolotyCheckNode(
-                name: "release-snapshots-generate",
+                name: node.name,
+                dependencies: node.dependencies,
                 command: AxolotyCommandPlan(
-                    executable: "node",
-                    arguments: ["Tests/Support/release-snapshots.mjs", "generate", source, destination],
-                    environment: environment,
-                    timeoutSeconds: commandTimeout
+                    executable: node.command.executable,
+                    arguments: node.command.arguments.map { argument in
+                        argument == "${SOURCE}" ? source
+                            : argument == "${DESTINATION}" ? destination
+                            : argument
+                    },
+                    environment: node.command.environment.merging(environment) { _, value in value },
+                    executionContext: node.command.executionContext,
+                    timeoutSeconds: node.command.timeoutSeconds
                 )
-            ),
-            AxolotyCheckNode(
-                name: "release-snapshots-verify",
-                dependencies: ["release-snapshots-generate"],
-                command: AxolotyCommandPlan(
-                    executable: "node",
-                    arguments: ["Tests/Support/release-snapshots.mjs", "verify", destination],
-                    timeoutSeconds: commandTimeout
+            )
+        }
+        let nodes = sourceNodes.map { node in
+            if node.name == "release-snapshots-generate" {
+                return AxolotyCheckNode(
+                    name: node.name,
+                    dependencies: node.dependencies,
+                    command: AxolotyCommandPlan(
+                        executable: node.command.executable,
+                        arguments: ["Tests/Support/release-snapshots.mjs", "generate", source, destination],
+                        environment: node.command.environment,
+                        executionContext: node.command.executionContext,
+                        timeoutSeconds: node.command.timeoutSeconds
+                    )
                 )
-            ),
-            AxolotyCheckNode(
-                name: "release-semver-consumer",
-                dependencies: ["release-snapshots-verify"],
-                command: AxolotyCommandPlan(
-                    executable: "Tests/Support/check-axoloty-semver-consumer.sh",
-                    environment: environment,
-                    timeoutSeconds: commandTimeout
+            }
+            if node.name == "release-snapshots-verify" {
+                return AxolotyCheckNode(
+                    name: node.name,
+                    dependencies: node.dependencies,
+                    command: AxolotyCommandPlan(
+                        executable: node.command.executable,
+                        arguments: ["Tests/Support/release-snapshots.mjs", "verify", destination],
+                        environment: node.command.environment,
+                        executionContext: node.command.executionContext,
+                        timeoutSeconds: node.command.timeoutSeconds
+                    )
                 )
-            ),
-        ])
+            }
+            return node
+        }
+        return AxolotyCheckPlan(schemaVersion: manifest.schemaVersion, nodes: nodes)
     }
 
     /// Creates the explicit host/container plan for live wire capture.
     public static var wireCapture: AxolotyCheckPlan {
-        let host: AxolotyCommandPlan.ExecutionContext = .host
-        let setupTimeout: TimeInterval = 10 * 60
-        let captureTimeout: TimeInterval = 30 * 60
-        return AxolotyCheckPlan(nodes: [
-            AxolotyCheckNode(
-                name: "wire-tool-install",
-                command: AxolotyCommandPlan(
-                    executable: "npm",
-                    arguments: ["ci", "--prefix", "Tests/WireCompatibility/tool"],
-                    timeoutSeconds: setupTimeout
-                )
-            ),
-            AxolotyCheckNode(
-                name: "wire-tool-test",
-                dependencies: ["wire-tool-install"],
-                command: AxolotyCommandPlan(
-                    executable: "npm",
-                    arguments: ["test", "--prefix", "Tests/WireCompatibility/tool"],
-                    timeoutSeconds: setupTimeout
-                )
-            ),
-            AxolotyCheckNode(
-                name: "wire-capture-advertise",
-                dependencies: ["wire-tool-test"],
-                command: AxolotyCommandPlan(
-                    executable: "Tests/WireCompatibility/Live/run-coatyjs-advertise.sh",
-                    executionContext: host,
-                    timeoutSeconds: captureTimeout
-                )
-            ),
-            AxolotyCheckNode(
-                name: "wire-capture-core",
-                dependencies: ["wire-capture-advertise"],
-                command: AxolotyCommandPlan(
-                    executable: "Tests/WireCompatibility/Live/run-coatyjs-core.sh",
-                    executionContext: host,
-                    timeoutSeconds: captureTimeout
-                )
-            ),
-            AxolotyCheckNode(
-                name: "wire-capture-lifecycle",
-                dependencies: ["wire-capture-core"],
-                command: AxolotyCommandPlan(
-                    executable: "Tests/WireCompatibility/Lifecycle/Live/run-lifecycle-matrix.sh",
-                    executionContext: host,
-                    timeoutSeconds: captureTimeout
-                )
-            ),
-            AxolotyCheckNode(
-                name: "wire-capture-reverse-advertise",
-                dependencies: ["wire-capture-lifecycle"],
-                command: AxolotyCommandPlan(
-                    executable: "Tests/WireCompatibility/Reverse/run-axoloty-advertise.sh",
-                    executionContext: host,
-                    timeoutSeconds: captureTimeout
-                )
-            ),
-            AxolotyCheckNode(
-                name: "wire-capture-reverse-core",
-                dependencies: ["wire-capture-reverse-advertise"],
-                command: AxolotyCommandPlan(
-                    executable: "Tests/WireCompatibility/Reverse/run-axoloty-core.sh",
-                    executionContext: host,
-                    timeoutSeconds: captureTimeout
-                )
-            ),
-            AxolotyCheckNode(
-                name: "wire-capture-js-to-axoloty",
-                dependencies: ["wire-capture-reverse-core"],
-                command: AxolotyCommandPlan(
-                    executable: "Tests/WireCompatibility/Reverse/run-coatyjs-to-axoloty-advertise.sh",
-                    executionContext: host,
-                    timeoutSeconds: captureTimeout
-                )
-            ),
-            AxolotyCheckNode(
-                name: "wire-capture-io",
-                dependencies: ["wire-capture-js-to-axoloty"],
-                command: AxolotyCommandPlan(
-                    executable: "Tests/WireCompatibility/IO/Live/run-io-associate.sh",
-                    executionContext: host,
-                    timeoutSeconds: captureTimeout
-                )
-            ),
-            AxolotyCheckNode(
-                name: "wire-capture-manifest",
-                dependencies: ["wire-capture-io"],
-                command: AxolotyCommandPlan(
-                    executable: "node",
-                    arguments: [
-                        "Tests/WireCompatibility/tool/dist/index.js", "manifest",
-                        ".testing/wire", ".testing/wire/manifest.json",
-                    ],
-                    timeoutSeconds: setupTimeout
-                )
-            ),
-        ])
+        do {
+            let manifest = try AxolotyCanonicalTestManifest.loadDefault()
+            return try manifest.plan(named: "wire-live")
+        } catch {
+            preconditionFailure("Unable to load canonical live wire plan: \(error)")
+        }
     }
 
     /// Creates the 0.2 checkpoint validation plan.
@@ -527,46 +400,28 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
     /// Creates the checkpoint plan with external-consumer settings forwarded
     /// to the semantic-version consumer gate.
     public static func checkpoint(consumerEnvironment: [String: String]) -> AxolotyCheckPlan {
-        let benchmarkTimeout: TimeInterval = 30 * 60
-        let commandTimeout: TimeInterval = 10 * 60
-        var nodes = initialOffline.nodes
-        nodes.append(AxolotyCheckNode(
-            name: "checkpoint-benchmark-size",
-            dependencies: nodes.contains(where: { $0.name == "build" }) ? ["build"] : [],
-            command: AxolotyCommandPlan(
-                executable: "Tests/Support/check-benchmark-size.sh",
-                timeoutSeconds: benchmarkTimeout
+        let manifest: AxolotyCanonicalTestManifest
+        let plan: AxolotyCheckPlan
+        do {
+            manifest = try AxolotyCanonicalTestManifest.loadDefault()
+            plan = try manifest.plan(named: "checkpoint")
+        } catch {
+            preconditionFailure("Unable to load canonical checkpoint plan: \(error)")
+        }
+        let nodes = plan.nodes.map { node in
+            AxolotyCheckNode(
+                name: node.name,
+                dependencies: node.dependencies,
+                command: AxolotyCommandPlan(
+                    executable: node.command.executable,
+                    arguments: node.command.arguments,
+                    environment: node.command.environment.merging(consumerEnvironment) { _, value in value },
+                    executionContext: node.command.executionContext,
+                    timeoutSeconds: node.command.timeoutSeconds
+                )
             )
-        ))
-        nodes.append(AxolotyCheckNode(
-            name: "checkpoint-release-snapshots-generate",
-            dependencies: ["checkpoint-benchmark-size"],
-            command: AxolotyCommandPlan(
-                executable: "node",
-                arguments: ["Tests/Support/release-snapshots.mjs", "generate",
-                            "Tests/WireCompatibility/Fixtures", ".testing/release-snapshots"],
-                timeoutSeconds: commandTimeout
-            )
-        ))
-        nodes.append(AxolotyCheckNode(
-            name: "checkpoint-release-snapshots-verify",
-            dependencies: ["checkpoint-release-snapshots-generate"],
-            command: AxolotyCommandPlan(
-                executable: "node",
-                arguments: ["Tests/Support/release-snapshots.mjs", "verify", ".testing/release-snapshots"],
-                timeoutSeconds: commandTimeout
-            )
-        ))
-        nodes.append(AxolotyCheckNode(
-            name: "checkpoint-semver-consumer",
-            dependencies: ["checkpoint-release-snapshots-verify"],
-            command: AxolotyCommandPlan(
-                executable: "Tests/Support/check-axoloty-semver-consumer.sh",
-                environment: consumerEnvironment,
-                timeoutSeconds: commandTimeout
-            )
-        ))
-        return AxolotyCheckPlan(nodes: nodes)
+        }
+        return AxolotyCheckPlan(schemaVersion: manifest.schemaVersion, nodes: nodes)
     }
 
     /// Creates the 0.2 checkpoint hardware validation plan.
@@ -577,18 +432,30 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
         device: String = "/dev/ttyACM0",
         consumerEnvironment: [String: String] = [:]
     ) -> AxolotyCheckPlan {
-        let smokeTimeout: TimeInterval = 10 * 60
-        var nodes = checkpoint(consumerEnvironment: consumerEnvironment).nodes
-        nodes.append(AxolotyCheckNode(
-            name: "checkpoint-hardware-smoke",
-            dependencies: ["checkpoint-release-snapshots-verify"],
-            command: AxolotyCommandPlan(
-                executable: "Tests/Support/embedded-swift-smoke.sh",
-                environment: ["EMBEDDED_DEVICE": device],
-                timeoutSeconds: smokeTimeout
+        let manifest: AxolotyCanonicalTestManifest
+        let plan: AxolotyCheckPlan
+        do {
+            manifest = try AxolotyCanonicalTestManifest.loadDefault()
+            plan = try manifest.plan(named: "checkpoint-hardware")
+        } catch {
+            preconditionFailure("Unable to load canonical hardware checkpoint plan: \(error)")
+        }
+        let nodes = plan.nodes.map { node in
+            AxolotyCheckNode(
+                name: node.name,
+                dependencies: node.dependencies,
+                command: AxolotyCommandPlan(
+                    executable: node.command.executable,
+                    arguments: node.command.arguments,
+                    environment: node.command.environment
+                        .merging(consumerEnvironment) { _, value in value }
+                        .merging(["EMBEDDED_DEVICE": device]) { _, value in value },
+                    executionContext: node.command.executionContext,
+                    timeoutSeconds: node.command.timeoutSeconds
+                )
             )
-        ))
-        return AxolotyCheckPlan(nodes: nodes)
+        }
+        return AxolotyCheckPlan(schemaVersion: manifest.schemaVersion, nodes: nodes)
     }
 
 }
@@ -763,11 +630,15 @@ public struct AxolotyCheckExecutor: Sendable {
         self.cancellation = cancellation
     }
 
-    /// Runs a plan in dependency order.
+    /// Runs a plan in dependency order, serializing every graph node.
     ///
     /// A node whose prerequisite failed or was skipped is skipped without
     /// invoking the runner. Execution continues after independent failures so
     /// the manifest describes every planned check.
+    /// Independent nodes are intentionally not run concurrently. This serial
+    /// graph boundary is the enforcement for canonical lanes, named resource
+    /// ownership, and separate-process or exclusive isolation declarations;
+    /// commands may still use their own internal test parallelism.
     ///
     /// - Parameter plan: The plan to execute.
     /// - Returns: Results in the plan's deterministic order.

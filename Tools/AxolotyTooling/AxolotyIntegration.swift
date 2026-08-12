@@ -20,17 +20,16 @@ public struct FoundationIntegrationRunner: AxolotyIntegrationRunning {
         """],
         timeoutSeconds: 5
     )
-    static let testCommand = AxolotyCommandPlan(
-        executable: "swift",
-        arguments: [
-            "test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution",
-            "--filter",
-            "CommunicationSubscriptionCoordinatorTests|BroadcastTransportTests|MQTTNIOClientTests|UnaryCallBrokerIntegrationTests|DecentralizedLoggingTest|ObjectLifecycleControllerTests|InspectorBrokerIntegrationTests",
-        ],
-        environment: ["AXOLOTY_INSPECTOR_LIVE": "1"],
-        timeoutSeconds: 60 * 60
-    )
-    static let commandPlans = [brokerProbeCommand, testCommand]
+    static var testCommand: AxolotyCommandPlan? {
+        try? AxolotyCanonicalTestManifest.loadDefault()
+            .node(named: "integration-tests")
+            .checkNode()
+            .command
+    }
+
+    static var commandPlans: [AxolotyCommandPlan] {
+        [brokerProbeCommand, testCommand].compactMap { $0 }
+    }
 
     private let commandRunner: any AxolotyCheckCommandRunning
     private let contextValidator: AxolotyExecutionContextValidator
@@ -53,6 +52,12 @@ public struct FoundationIntegrationRunner: AxolotyIntegrationRunning {
 
     /// Starts Mosquitto, waits for bounded readiness, runs tests, and stops it.
     public func run() -> AxolotyCheckCommandResult {
+        guard let testCommand = Self.testCommand else {
+            return AxolotyCheckCommandResult(
+                exitCode: 70,
+                standardError: "canonical integration test node is unavailable"
+            )
+        }
         if let failure = contextValidator.failureResult(validating: Self.commandPlans) {
             return failure
         }
@@ -116,7 +121,7 @@ public struct FoundationIntegrationRunner: AxolotyIntegrationRunning {
                     + (diagnostics.isEmpty ? "" : "\n\(diagnostics)")
             )
         }
-        return commandRunner.run(Self.testCommand)
+        return commandRunner.run(testCommand)
     }
 
     private func waitForBroker(process: Process) -> Bool {
