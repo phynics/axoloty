@@ -42,7 +42,7 @@ if(AXOLOTY_SWIFT_UNICODE_LINKER_PROBE)
 endif()
 
 idf_component_register(
-    SRCS "log_helper.c" "network_bootstrap.c"
+    SRCS "log_helper.c" "network_bootstrap.c" "runtime_identity.c"
     PRIV_INCLUDE_DIRS "." "${CMAKE_CURRENT_BINARY_DIR}"
     PRIV_REQUIRES
         idf_swift

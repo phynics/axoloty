@@ -4,12 +4,14 @@
 // inspect or copy bounded data while they execute; no callback pointer escapes.
 
 #include "esp_event.h"
+#include "esp_mac.h"
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "mqtt_client.h"
 #include "nvs_flash.h"
+#include "runtime_identity.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
@@ -21,6 +23,7 @@
 #include "axoloty_network_config.h"
 #else
 #define AXOLOTY_NETWORK_CONFIGURED 0
+static const char axoloty_runtime_identity[] = "";
 #endif
 
 #define WIFI_BIT (1U << 0)
@@ -61,6 +64,7 @@ static char network_payload[NETWORK_MAX_PAYLOAD];
 static char network_will_topic[NETWORK_MAX_TOPIC];
 static char network_will_payload[NETWORK_MAX_PAYLOAD];
 static char network_uri[128];
+static char network_client_id[64];
 static size_t network_payload_length;
 static int network_will_payload_length;
 static int network_will_configured;
@@ -84,6 +88,17 @@ static uint8_t agent_will_topic[NETWORK_MAX_TOPIC];
 static uint8_t agent_will_payload[NETWORK_MAX_PAYLOAD];
 static uint8_t agent_actor_route[NETWORK_MAX_TOPIC];
 static int32_t agent_actor_route_length;
+
+static int network_read_station_mac(uint8_t mac[6], void *context) {
+    (void)context;
+    return esp_read_mac(mac, ESP_MAC_WIFI_STA) == ESP_OK;
+}
+
+static int network_prepare_client_id(void) {
+    return axoloty_runtime_identity_prepare(
+        axoloty_runtime_identity, network_read_station_mac, NULL,
+        network_client_id, sizeof(network_client_id));
+}
 static void network_ip_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
     (void)arg; (void)base; (void)data;
     if (id == IP_EVENT_STA_GOT_IP) {
@@ -325,8 +340,10 @@ int axoloty_mqtt_connect_wait(unsigned int deadline_ms) {
 #else
     network_mqtt_bits = 0;
     network_connect_count = 0;
+    if (!network_prepare_client_id()) return 0;
     esp_mqtt_client_config_t config = { 0 };
     config.broker.address.uri = network_uri;
+    config.credentials.client_id = network_client_id;
     if (network_will_configured) {
         config.session.last_will.topic = network_will_topic;
         config.session.last_will.msg = network_will_payload;
@@ -557,9 +574,10 @@ unsigned int axoloty_agent_test(unsigned int overall_deadline_ms) {
         has_will = 0;
     }
 
+    if (!network_prepare_client_id()) goto agent_done;
     esp_mqtt_client_config_t config = { 0 };
     config.broker.address.uri = uri;
-    config.credentials.client_id = axoloty_device_role == 1U ? "axoloty-esp32-a" : "axoloty-esp32-b";
+    config.credentials.client_id = network_client_id;
     if (has_will) {
         config.session.last_will.topic = (const char *)agent_will_topic;
         config.session.last_will.msg = (const char *)agent_will_payload;

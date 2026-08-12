@@ -131,6 +131,13 @@ lines, and removes the header after each build or failure. Credentials are not
 included in the JSONL evidence. The broker receives no Wi-Fi credential as an
 MQTT username or password.
 
+`AXOLOTY_RUNTIME_IDENTITY` is an optional embedded MQTT client identity
+override. It may be empty or contain 1–63 ASCII letters, digits, `.`, `_`, or
+`-` characters. When unset or empty, the firmware reads the station MAC on each
+startup and uses `axoloty-` followed by its 12 lowercase hexadecimal digits;
+this remains stable across restarts and differs between devices with different
+station MAC addresses. An invalid override fails configuration generation.
+
 `make embedded-agent-test` builds distinct static A/B identities, flashes the
 selected `EMBEDDED_DEVICE_A` and `EMBEDDED_DEVICE_B` (defaults
 `/dev/ttyACM0` and `/dev/ttyACM1`), starts both images together, and requires

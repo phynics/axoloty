@@ -103,6 +103,7 @@
     {"path":"Tests/Support/test-check-embedded-swift.sh","makeTarget":"test-support","tier":"unit"},
     {"path":"Tests/Support/test-embedded-swift-smoke.sh","makeTarget":"test-support","tier":"unit"},
     {"path":"Tests/Support/test-embedded-swift-test.sh","makeTarget":"test-support","tier":"unit"},
+    {"path":"Tests/Support/test-embedded-runtime-identity.sh","makeTarget":"test-support","tier":"unit"},
     {"path":"Tests/Support/test-embedded-network.sh","makeTarget":"test-support","tier":"unit"},
     {"path":"Tests/Support/test-embedded-mqtt-client.sh","makeTarget":"test-support","tier":"unit"},
     {"path":"Tests/Support/test-embedded-coatyjs.sh","makeTarget":"test-support","tier":"unit"},
