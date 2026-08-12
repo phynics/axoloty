@@ -5,7 +5,7 @@
     "optimization": "release",
     "cpu": "model name : AMD Ryzen 3 PRO 3200G with Radeon Vega Graphics",
     "kernel": "Linux version 7.1.3-zen2 (nixbld@localhost) (gcc (GCC) 15.2.0, GNU ld (GNU Binutils) 2.46) #1-NixOS ZEN SMP PREEMPT_DYNAMIC Tue Jan  1 00:00:00 UTC 1980",
-    "corpusHash": "0000000000006549-2895e65bc7b36ca9",
+    "corpusHash": "93eea5f6ced99549956392d934fb21310328cd4c14491f7fe44c451c8098d6ee",
     "commit": "357facd",
     "clean": false
   },

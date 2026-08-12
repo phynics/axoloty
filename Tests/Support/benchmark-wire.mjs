@@ -48,7 +48,7 @@ export function aggregate(directory) {
 export function compare(current, baseline) {
   const currentHash = current.environment?.corpusHash ?? "";
   const baselineHash = baseline.environment?.corpusHash ?? "";
-  if (currentHash && baselineHash && currentHash !== baselineHash) {
+  if (!currentHash || !baselineHash || currentHash !== baselineHash) {
     return `MISMATCH: corpus hash differs (new=${currentHash}, base=${baselineHash})`;
   }
   const currentCases = Object.fromEntries((current.cases ?? []).map(entry => [entry.caseId, entry]));

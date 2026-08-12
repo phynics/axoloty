@@ -12,6 +12,6 @@ const { aggregate, compare } = await import(process.env.WIRE_TOOLS);
 const dir=process.argv[2], baseline=process.argv[3], result=aggregate(dir); fs.writeFileSync(`${dir}/wire-baseline.json`,JSON.stringify(result,null,2)+"\n");
 if(result.noisy?.length) { console.error(`BENCHMARK WIRE FAIL: noisy results (MAD > 5%):\n${result.noisy.join("\n")}`); process.exit(1); }
 let base; try { base=JSON.parse(fs.readFileSync(baseline)); } catch { base=null; }
-if(!base||!("cases" in base)){fs.writeFileSync(baseline,JSON.stringify(result,null,2)+"\n");console.log(`BASELINE CREATED at ${baseline}`);} else {const message=compare(result,base);if(message!=="MATCH"){console.error(message);process.exit(1);}console.log("Baseline matches within tolerance.");}
+if(!base||!("cases" in base)){console.error(`BENCHMARK WIRE FAIL: missing or invalid baseline; refusing to rewrite ${baseline}`);process.exit(1);} else {const message=compare(result,base);if(message!=="MATCH"){console.error(message);process.exit(1);}console.log("Baseline matches within tolerance.");}
 JS
 echo "BENCHMARK WIRE OK"

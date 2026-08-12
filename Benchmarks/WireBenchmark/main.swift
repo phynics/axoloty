@@ -38,14 +38,20 @@ struct CorpusManifest: Decodable {
     }
 }
 
-func loadCorpus() -> [CorpusCase] {
-    let manifestURL = URL(fileURLWithPath: "Benchmarks/Corpus/manifest.json")
-    let data = try! Data(contentsOf: manifestURL)
-    let manifest = try! JSONDecoder().decode(CorpusManifest.self, from: data)
-    let corpusDir = URL(fileURLWithPath: "Benchmarks/Corpus")
-    return manifest.cases.map { entry in
-        let payloadURL = corpusDir.appendingPathComponent(entry.payloadFile)
+struct LoadedCorpus {
+    let cases: [CorpusCase]
+    let fingerprint: String
+}
+
+func loadCorpus(from corpusDirectory: URL = URL(fileURLWithPath: "Benchmarks/Corpus")) -> LoadedCorpus {
+    let manifestURL = corpusDirectory.appendingPathComponent("manifest.json")
+    let manifestData = try! Data(contentsOf: manifestURL)
+    let manifest = try! JSONDecoder().decode(CorpusManifest.self, from: manifestData)
+    var payloadDataInManifestOrder: [Data] = []
+    let cases = manifest.cases.map { entry in
+        let payloadURL = corpusDirectory.appendingPathComponent(entry.payloadFile)
         let payloadData = try! Data(contentsOf: payloadURL)
+        payloadDataInManifestOrder.append(payloadData)
         let topicBytes = Array(entry.topic.utf8)
         let payloadBytes = Array(payloadData)
         return CorpusCase(
@@ -54,6 +60,13 @@ func loadCorpus() -> [CorpusCase] {
             topicBytes: topicBytes, payloadBytes: payloadBytes
         )
     }
+    return LoadedCorpus(
+        cases: cases,
+        fingerprint: corpusFingerprint(
+            manifest: manifestData,
+            payloads: payloadDataInManifestOrder
+        )
+    )
 }
 
 // MARK: - Timing infrastructure
@@ -148,15 +161,20 @@ func validateAllocations() {
 
 // MARK: - Main benchmark
 
+func corpusDirectory() -> URL {
+    URL(fileURLWithPath: ProcessInfo.processInfo.environment["WIRE_BENCHMARK_CORPUS_DIR"] ?? "Benchmarks/Corpus")
+}
+
 func runBenchmark() {
-    let corpus = loadCorpus()
+    let loadedCorpus = loadCorpus(from: corpusDirectory())
+    let corpus = loadedCorpus.cases
 
     // Environment fingerprint.
     let swiftVersion = "Swift 6.3"
     let targetTriple = "x86_64-unknown-linux-gnu"
     let cpu = readProcLine("/proc/cpuinfo", key: "model name") ?? "unknown"
     let kernel = readProcLine("/proc/version", key: nil) ?? "unknown"
-    let corpusHash = sha256File("Benchmarks/Corpus/manifest.json") ?? "unknown"
+    let corpusHash = loadedCorpus.fingerprint
     let commit = gitShortHash() ?? "unknown"
     let clean = gitIsClean()
 
@@ -339,12 +357,156 @@ func readProcLine(_ path: String, key: String?) -> String? {
     return content.components(separatedBy: "\n").first
 }
 
-func sha256File(_ path: String) -> String? {
-    let data = try? Data(contentsOf: URL(fileURLWithPath: path))
-    guard let data else { return nil }
-    // Simple: use the file size + first/last bytes as a quick hash.
-    // The orchestration script verifies the actual SHA-256.
-    return String(format: "%016x", data.count) + String(data.hashValue, radix: 16)
+func corpusFingerprint(manifest: Data, payloads: [Data]) -> String {
+    var hasher = SHA256()
+    hasher.updateFramed(manifest)
+    for payload in payloads {
+        hasher.updateFramed(payload)
+    }
+    return hasher.hexDigest
+}
+
+private struct SHA256 {
+    private static let roundConstants: [UInt32] = [
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
+        0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+        0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
+        0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+        0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3,
+        0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5,
+        0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+        0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+    ]
+
+    private var state: [UInt32] = [
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+        0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+    ]
+    private var buffer: [UInt8] = []
+    private var messageLength = UInt64(0)
+
+    mutating func updateFramed(_ data: Data) {
+        var length = UInt64(data.count)
+        var lengthBytes = [UInt8](repeating: 0, count: 8)
+        for index in 0..<8 {
+            lengthBytes[7 - index] = UInt8(truncatingIfNeeded: length)
+            length >>= 8
+        }
+        update(lengthBytes)
+        update(data)
+    }
+
+    var hexDigest: String {
+        var copy = self
+        let digest = copy.finalize()
+        let hex = Array("0123456789abcdef".utf8)
+        return digest.reduce(into: "") { result, byte in
+            result.append(Character(UnicodeScalar(hex[Int(byte >> 4)])))
+            result.append(Character(UnicodeScalar(hex[Int(byte & 0x0f)])))
+        }
+    }
+
+    private mutating func update(_ data: Data) {
+        update(Array(data))
+    }
+
+    private mutating func update(_ bytes: [UInt8]) {
+        messageLength &+= UInt64(bytes.count)
+        buffer.append(contentsOf: bytes)
+        processAvailableBlocks()
+    }
+
+    private mutating func processAvailableBlocks() {
+        while buffer.count >= 64 {
+            process(Array(buffer.prefix(64)))
+            buffer.removeFirst(64)
+        }
+    }
+
+    private mutating func process(_ block: [UInt8]) {
+        var words = [UInt32](repeating: 0, count: 64)
+        for index in 0..<16 {
+            let offset = index * 4
+            words[index] = UInt32(block[offset]) << 24
+                | UInt32(block[offset + 1]) << 16
+                | UInt32(block[offset + 2]) << 8
+                | UInt32(block[offset + 3])
+        }
+        for index in 16..<64 {
+            let first = rotateRight(words[index - 15], by: 7)
+                ^ rotateRight(words[index - 15], by: 18)
+                ^ (words[index - 15] >> 3)
+            let second = rotateRight(words[index - 2], by: 17)
+                ^ rotateRight(words[index - 2], by: 19)
+                ^ (words[index - 2] >> 10)
+            words[index] = words[index - 16] &+ first &+ words[index - 7] &+ second
+        }
+
+        var a = state[0]
+        var b = state[1]
+        var c = state[2]
+        var d = state[3]
+        var e = state[4]
+        var f = state[5]
+        var g = state[6]
+        var h = state[7]
+        for index in 0..<64 {
+            let sum1 = rotateRight(e, by: 6) ^ rotateRight(e, by: 11) ^ rotateRight(e, by: 25)
+            let choose = (e & f) ^ (~e & g)
+            let temp1 = h &+ sum1 &+ choose &+ Self.roundConstants[index] &+ words[index]
+            let sum0 = rotateRight(a, by: 2) ^ rotateRight(a, by: 13) ^ rotateRight(a, by: 22)
+            let majority = (a & b) ^ (a & c) ^ (b & c)
+            let temp2 = sum0 &+ majority
+            h = g
+            g = f
+            f = e
+            e = d &+ temp1
+            d = c
+            c = b
+            b = a
+            a = temp1 &+ temp2
+        }
+        state[0] &+= a
+        state[1] &+= b
+        state[2] &+= c
+        state[3] &+= d
+        state[4] &+= e
+        state[5] &+= f
+        state[6] &+= g
+        state[7] &+= h
+    }
+
+    private mutating func finalize() -> [UInt8] {
+        let bitLength = messageLength &* 8
+        buffer.append(0x80)
+        while buffer.count % 64 != 56 { buffer.append(0) }
+        for index in stride(from: 7, through: 0, by: -1) {
+            buffer.append(UInt8(truncatingIfNeeded: bitLength >> UInt64(index * 8)))
+        }
+        processAvailableBlocks()
+
+        var result: [UInt8] = []
+        result.reserveCapacity(32)
+        for value in state {
+            result.append(UInt8(truncatingIfNeeded: value >> 24))
+            result.append(UInt8(truncatingIfNeeded: value >> 16))
+            result.append(UInt8(truncatingIfNeeded: value >> 8))
+            result.append(UInt8(truncatingIfNeeded: value))
+        }
+        return result
+    }
+
+    private func rotateRight(_ value: UInt32, by amount: UInt32) -> UInt32 {
+        (value >> amount) | (value << (32 - amount))
+    }
 }
 
 func gitShortHash() -> String? {
@@ -377,7 +539,9 @@ func gitIsClean() -> Bool {
 
 // MARK: - Entry point
 
-if CommandLine.arguments.contains("--validate-allocations") {
+if CommandLine.arguments.contains("--corpus-fingerprint") {
+    print(loadCorpus(from: corpusDirectory()).fingerprint)
+} else if CommandLine.arguments.contains("--validate-allocations") {
     validateAllocations()
 } else {
     runBenchmark()
