@@ -130,6 +130,10 @@ private extension InspectorArgumentParser {
             }
         }
 
+        guard !includePrivateData || full else {
+            return .error(.invalidArguments(reason: "--include-private-data requires --full"))
+        }
+
         return .run(InspectorConfiguration(
             command: .catalog(CatalogCommand(
                 duration: duration, coreType: coreType, objectType: objectType,

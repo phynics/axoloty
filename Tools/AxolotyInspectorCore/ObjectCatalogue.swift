@@ -6,9 +6,9 @@ import Foundation
 /// through Advertise events.
 ///
 /// Created at the runtime boundary by converting ``AdvertiseEventSnapshot``
-/// values. The ``payload`` and ``privateData`` fields are populated only
-/// when the operator explicitly requests them via `--full` and
-/// `--include-private-data` respectively.
+/// values. The ``payload`` field is populated only when the operator
+/// explicitly requests it via `--full`; ``privateData`` is populated only
+/// when both `--full` and `--include-private-data` are requested.
 public struct InspectorObject: Codable, Equatable, Sendable {
     /// The Coaty object UUID as a string.
     public let objectId: String
@@ -22,7 +22,8 @@ public struct InspectorObject: Codable, Equatable, Sendable {
     public let sourceId: String?
     /// The complete raw JSON object payload, included only with `--full`.
     public let payload: String?
-    /// Private data, included only with `--include-private-data`.
+    /// Private data, included only when both `--full` and
+    /// `--include-private-data` are enabled.
     public let privateData: String?
 
     /// Creates an inspector object.

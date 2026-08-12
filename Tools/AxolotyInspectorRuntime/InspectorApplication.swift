@@ -72,7 +72,7 @@ public final class InspectorApplication {
         let factory = InspectorRecordFactory(
             namespace: configuration.connection.namespace,
             includePayload: cmd.full,
-            includePrivateData: cmd.includePrivateData
+            includePrivateData: cmd.full && cmd.includePrivateData
         )
         let ndjsonFormatter = NDJSONFormatter()
         let humanFormatter = HumanFormatter()
@@ -266,7 +266,7 @@ public final class InspectorApplication {
             name: snapshot.object.name.isEmpty ? nil : snapshot.object.name,
             sourceId: snapshot.sourceId,
             payload: cmd.full ? snapshot.object.payload : nil,
-            privateData: cmd.includePrivateData ? snapshot.privateData : nil
+            privateData: cmd.full && cmd.includePrivateData ? snapshot.privateData : nil
         )
     }
 }
