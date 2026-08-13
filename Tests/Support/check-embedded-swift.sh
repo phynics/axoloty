@@ -18,6 +18,8 @@ set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 wire_dir="$root/Packages/AxolotyWire/Sources/AxolotyWire"
 probe="$root/Tests/Support/embedded-swift-link-probe.swift"
+parser_probe="$root/Tests/Support/embedded-swift-parser-probe.swift"
+host_shims="$root/Tests/Support/embedded-swift-host-shims.c"
 
 if [ ! -d "$wire_dir" ]; then
     echo "FAIL: AxolotyWire source directory not found at $wire_dir" >&2
@@ -43,16 +45,18 @@ workdir=$(mktemp -d)
 trap 'rm -rf "$workdir"' EXIT
 
 jsoncore_dir="$root/.build/checkouts/swift-json/Sources/_JSONCore"
+jsoncore_bridge="$root/Embedded/swift/components/json_core/EmbeddedJSONTokenizerResult.swift"
 if [ ! -d "$jsoncore_dir" ]; then
     echo "FAIL: pinned swift-json checkout not available at $jsoncore_dir" >&2
     exit 1
 fi
 jsoncore_files="$jsoncore_dir"/*.swift
-jsoncore_files="$jsoncore_files $jsoncore_dir/Parser/*.swift $jsoncore_dir/SIMD/*.swift"
+jsoncore_files="$jsoncore_files $jsoncore_dir/Parser/*.swift $jsoncore_dir/SIMD/*.swift $jsoncore_bridge"
 
 echo "Compiling _JSONCore as Embedded Swift module..."
 if ! swiftc \
     -target riscv32-none-none-eabi \
+    -swift-version 6 \
     -enable-experimental-feature Embedded \
     -enable-experimental-feature Lifetimes \
     -enable-experimental-feature StrictConcurrency \
@@ -71,6 +75,7 @@ echo "Compiling AxolotyWire as Embedded Swift module..."
 # Step 1: Compile AxolotyWire into a .swiftmodule + object file.
 if ! swiftc \
     -target riscv32-none-none-eabi \
+    -swift-version 6 \
     -enable-experimental-feature Embedded \
     -parse-as-library \
     -Osize \
@@ -78,7 +83,6 @@ if ! swiftc \
     -module-name AxolotyWire \
     -I "$workdir" \
     -emit-module \
-    -emit-module-interface \
     -c $swift_files \
     -o "$workdir/AxolotyWire.o" \
     -emit-module-path "$workdir/AxolotyWire.swiftmodule" 2>&1; then
@@ -93,6 +97,7 @@ echo "  Module object: ${module_size} bytes"
 echo "Compiling link probe..."
 if ! swiftc \
     -target riscv32-none-none-eabi \
+    -swift-version 6 \
     -enable-experimental-feature Embedded \
     -parse-as-library \
     -Osize \
@@ -145,3 +150,42 @@ fi
 
 linked_size=$(wc -c < "$workdir/linked.o")
 echo "EMBEDDED SWIFT OK — compiled and linked: ${module_size} + ${probe_size} = ${linked_size} bytes"
+
+# Compile and execute the parser on the native architecture in Embedded mode.
+# This covers the nonthrowing adapter and verifies representative error
+# categories; the RISC-V check above still owns target compile/link coverage.
+echo "Running Embedded Swift parser behavior probe..."
+host_target=$(swiftc -print-target-info | python3 -c 'import json, sys; print(json.load(sys.stdin)["target"]["triple"])')
+swift_resource_dir=$(swiftc -print-target-info | python3 -c 'import json, sys; print(json.load(sys.stdin)["paths"]["runtimeResourcePath"])')
+unicode_archive="$swift_resource_dir/embedded/$host_target/libswiftUnicodeDataTables.a"
+if [ ! -f "$unicode_archive" ]; then
+    echo "FAIL: Embedded Unicode archive not found for host target $host_target at $unicode_archive" >&2
+    exit 1
+fi
+swiftc \
+    -target "$host_target" \
+    -swift-version 6 \
+    -enable-experimental-feature Embedded \
+    -enable-experimental-feature Lifetimes \
+    -enable-experimental-feature StrictConcurrency \
+    -package-name IkigaJSON \
+    -parse-as-library -Osize -wmo \
+    -module-name _JSONCore \
+    -emit-module -c $jsoncore_files \
+    -o "$workdir/JSONCore-host.o" \
+    -emit-module-path "$workdir/_JSONCore.swiftmodule"
+clang -c "$host_shims" -o "$workdir/embedded-host-shims.o"
+swiftc \
+    -target "$host_target" \
+    -swift-version 6 \
+    -enable-experimental-feature Embedded \
+    -Osize -wmo \
+    -I "$workdir" \
+    $swift_files "$parser_probe" \
+    "$workdir/JSONCore-host.o" \
+    "$workdir/embedded-host-shims.o" \
+    "$unicode_archive" \
+    -Xlinker -lm \
+    -o "$workdir/embedded-parser-probe"
+"$workdir/embedded-parser-probe"
+echo "  Parser behavior: valid, missing-data, literal, number, and nesting mappings passed"

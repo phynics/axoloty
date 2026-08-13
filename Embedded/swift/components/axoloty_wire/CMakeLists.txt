@@ -38,6 +38,8 @@ set_property(TARGET ${COMPONENT_LIB} PROPERTY INTERFACE_COMPILE_OPTIONS "")
 # Override the Swift module name to AxolotyWire (defaults to the CMake
 # target name __idf_axoloty_wire otherwise).
 target_compile_options(${COMPONENT_LIB} PRIVATE
+    "$<$<COMPILE_LANGUAGE:Swift>:-swift-version>"
+    "$<$<COMPILE_LANGUAGE:Swift>:6>"
     "$<$<COMPILE_LANGUAGE:Swift>:-module-name>"
     "$<$<COMPILE_LANGUAGE:Swift>:AxolotyWire>"
 )

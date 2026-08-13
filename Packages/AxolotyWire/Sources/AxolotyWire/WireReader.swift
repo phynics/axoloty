@@ -195,16 +195,35 @@ public struct WireReader {
             let paddedBuffer = UnsafeBufferPointer(start: padded.baseAddress!, count: buffer.count + 8)
             var destination = FieldDestination(bytes: buffer)
             var tokenizer = JSONTokenizer(bytes: paddedBuffer, destination: destination)
-            do {
-                try tokenizer.scanValue()
-            } catch {
+            #if hasFeature(Embedded)
+            if let parserError = tokenizer.scanValueResult() {
+                let missingData: Bool
+                if case .missingData = parserError { missingData = true } else { missingData = false }
                 tokenizer.destination.failure = Self.parserFailure(
                     buffer,
                     offset: tokenizer.currentOffset,
                     destination: tokenizer.destination,
-                    parserError: error
+                    parserErrorIsMissingData: missingData
                 )
             }
+            #else
+            do {
+                try tokenizer.scanValue()
+            } catch {
+                let missingData: Bool
+                if let parserError = error as? JSONParserError, case .missingData = parserError {
+                    missingData = true
+                } else {
+                    missingData = false
+                }
+                tokenizer.destination.failure = Self.parserFailure(
+                    buffer,
+                    offset: tokenizer.currentOffset,
+                    destination: tokenizer.destination,
+                    parserErrorIsMissingData: missingData
+                )
+            }
+            #endif
             destination = tokenizer.destination
             if destination.failure == nil && tokenizer.currentOffset > buffer.count {
                 destination.failure = WireDecodeError(.unexpectedEndOfInput, byteOffset: buffer.count)
@@ -562,10 +581,10 @@ public struct WireReader {
         _ bytes: UnsafeBufferPointer<UInt8>,
         offset: Int,
         destination: FieldDestination,
-        parserError: Error
+        parserErrorIsMissingData: Bool
     ) -> WireDecodeError {
         if let failure = destination.failure { return failure }
-        if let parserError = parserError as? JSONParserError, case .missingData = parserError {
+        if parserErrorIsMissingData {
             return .init(.unexpectedEndOfInput, byteOffset: bytes.count)
         }
         guard offset < bytes.count else { return .init(.unexpectedEndOfInput, byteOffset: bytes.count) }
