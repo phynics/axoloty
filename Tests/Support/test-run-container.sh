@@ -33,6 +33,7 @@ if [ -n "$common_git_dir" ]; then
 else
     expected_repository_name=$(basename "$ROOT_DIR")
 fi
+expected_worktree_name=$(basename "$ROOT_DIR" | tr -c 'A-Za-z0-9_.-' '-' | cut -c1-24)
 
 build_dir="$TEMP_DIR/build"
 lock_file="${build_dir}.lock"
@@ -229,6 +230,8 @@ capture_child_env="$TEMP_DIR/runtime-child-env.txt"
 capture_sequence="$TEMP_DIR/runtime-sequence.txt"
 capture_state="$TEMP_DIR/runtime-state.txt"
 capture_inspect_count="$TEMP_DIR/runtime-inspect-count.txt"
+capture_descendant="$TEMP_DIR/runtime-descendant.pid"
+capture_api_pid="$TEMP_DIR/runtime-api.pid"
 : > "$capture_sequence"
 : > "$capture_state"
 : > "$capture_inspect_count"
@@ -252,7 +255,7 @@ fi
 record_sequence() { printf '%s\n' "\$1" >> "$capture_sequence"; }
 if [ "\${FAKE_FOREIGN_INSPECT:-0}" = "1" ] && [ "\$1" = "inspect" ]; then
     record_sequence inspect-foreign
-    printf '%s\n' "foreign-owner|foreign-run|foreign-worktree|foreign-process"
+    printf '%s\n' "foreign-container-id|foreign-owner|foreign-run|foreign-worktree|foreign-process"
     exit 0
 fi
 if [ "\${FAKE_FOREIGN_INSPECT:-0}" = "1" ] && { [ "\$1" = "stop" ] || [ "\$1" = "kill" ] || [ "\$1" = "rm" ]; }; then
@@ -260,6 +263,11 @@ if [ "\${FAKE_FOREIGN_INSPECT:-0}" = "1" ] && { [ "\$1" = "stop" ] || [ "\$1" = 
     exit 99
 fi
 if [ "\$1" = "inspect" ]; then
+    if [ "\${FAKE_INSPECT_BLOCK:-0}" = "1" ]; then
+        printf '%s\n' "\$\$" > "$capture_api_pid"
+        trap 'exit 143' TERM INT
+        while :; do sleep 1; done
+    fi
     if [ "\${3:-}" = "{{.State.Status}}" ]; then
         record_sequence inspect-status
         [ -f "$capture_state" ] && . "$capture_state"
@@ -268,8 +276,16 @@ if [ "\$1" = "inspect" ]; then
     fi
     record_sequence inspect
     [ -f "$capture_state" ] && . "$capture_state"
-    printf '%s\n' "\${FAKE_CONTAINER_LABELS:-}"
+    printf '%s\n' "fake-container-id|\${FAKE_CONTAINER_LABELS:-}"
     exit 0
+fi
+if [ "\$1" = "container" ] && [ "\$2" = "exists" ]; then
+    record_sequence exists
+    if [ "\${FAKE_EXISTS_FAILURE:-0}" = "1" ]; then
+        exit 42
+    fi
+    [ -f "$capture_state" ]
+    exit "\$?"
 fi
 if [ "\$1" = "stop" ]; then
     record_sequence stop
@@ -285,6 +301,13 @@ if [ "\$1" = "kill" ]; then
 fi
 if [ "\$1" = "rm" ]; then
     record_sequence rm
+    if [ "\${FAKE_CLEANUP_BLOCK:-0}" = "1" ]; then
+        trap 'exit 143' TERM INT
+        while :; do sleep 1; done
+    fi
+    if [ "\${FAKE_RM_FAILURE:-0}" = "1" ]; then
+        exit 42
+    fi
     rm -f "$capture_state"
     exit 0
 fi
@@ -314,6 +337,7 @@ if [ "\${FAKE_RUNTIME_EXECUTE_COMMAND:-0}" = "1" ] && [ "\$1" = "run" ]; then
     fake_run=""
     fake_worktree=""
     fake_owner=""
+    fake_cidfile=""
     while [ "\$#" -gt 0 ]; do
         case "\$1" in
             -e|--env)
@@ -322,6 +346,10 @@ if [ "\${FAKE_RUNTIME_EXECUTE_COMMAND:-0}" = "1" ] && [ "\$1" = "run" ]; then
                 ;;
             --name)
                 fake_name="\$2"
+                shift 2
+                ;;
+            --cidfile)
+                fake_cidfile="\$2"
                 shift 2
                 ;;
             --label)
@@ -333,7 +361,14 @@ if [ "\${FAKE_RUNTIME_EXECUTE_COMMAND:-0}" = "1" ] && [ "\$1" = "run" ]; then
                 esac
                 shift 2
                 ;;
-            --env-file|-v|-w|--security-opt|--user|--device|-p|--network)
+            --env-file)
+                cp "\$2" "$capture_env"
+                while IFS= read -r fake_assignment; do
+                    export "\$fake_assignment"
+                done < "\$2"
+                shift 2
+                ;;
+            -v|-w|--security-opt|--user|--device|-p|--network)
                 shift 2
                 ;;
             --rm|--privileged|-i|--userns=*)
@@ -341,6 +376,9 @@ if [ "\${FAKE_RUNTIME_EXECUTE_COMMAND:-0}" = "1" ] && [ "\$1" = "run" ]; then
                 ;;
             axoloty-dev)
                 shift
+                if [ -n "\$fake_cidfile" ] && [ "\${FAKE_SKIP_CIDFILE:-0}" != "1" ]; then
+                    printf '%s\n' fake-container-id > "\$fake_cidfile"
+                fi
                 if [ "\${FAKE_RUNTIME_BLOCK_LAUNCH:-0}" = "1" ]; then
                     trap 'exit 143' TERM INT
                     while :; do sleep 1; done
@@ -363,6 +401,10 @@ if [ "\${FAKE_RUNTIME_EXECUTE_COMMAND:-0}" = "1" ] && [ "\$1" = "run" ]; then
                 fi
                 printf 'FAKE_CONTAINER_LABELS=%q\n' "\$fake_managed|\$fake_run|\$fake_worktree|\$fake_owner" > "$capture_state"
                 printf 'FAKE_CONTAINER_STATUS=running\n' >> "$capture_state"
+                if [ "\${FAKE_RUNTIME_LEAK_DESCENDANT:-0}" = "1" ]; then
+                    (trap 'exit 0' TERM INT; while :; do sleep 1; done) >/dev/null 2>&1 &
+                    printf '%s\n' "\$!" > "$capture_descendant"
+                fi
                 "\$@"
                 exit "\$?"
                 ;;
@@ -374,10 +416,13 @@ if [ "\${FAKE_RUNTIME_EXECUTE_COMMAND:-0}" = "1" ] && [ "\$1" = "run" ]; then
     exit 2
 fi
 if [ "\$1" = "run" ]; then
+    fake_name=""
     fake_managed=""
     fake_run=""
     fake_worktree=""
     fake_owner=""
+    fake_remove=0
+    fake_cidfile=""
     while [ "\$#" -gt 0 ]; do
         case "\$1" in
             --label)
@@ -389,10 +434,25 @@ if [ "\$1" = "run" ]; then
                 esac
                 shift 2
                 ;;
-            --name|-e|--env|--env-file|-v|-w|--security-opt|--user|--device|-p|--network)
+            --env-file)
+                cp "\$2" "$capture_env"
+                shift 2
+                ;;
+            --name)
+                fake_name="\$2"
+                shift 2
+                ;;
+            --cidfile)
+                fake_cidfile="\$2"
+                shift 2
+                ;;
+            -e|--env|-v|-w|--security-opt|--user|--device|-p|--network)
                 shift 2
                 ;;
             axoloty-dev)
+                if [ -n "\$fake_cidfile" ] && [ "\${FAKE_SKIP_CIDFILE:-0}" != "1" ]; then
+                    printf '%s\n' fake-container-id > "\$fake_cidfile"
+                fi
                 if [ "\${FAKE_RUNTIME_BLOCK_LAUNCH:-0}" = "1" ]; then
                     trap 'exit 143' TERM INT
                     while :; do sleep 1; done
@@ -405,9 +465,18 @@ if [ "\$1" = "run" ]; then
                     ) &
                     exit 125
                 fi
-                printf 'FAKE_CONTAINER_LABELS=%q\n' "\$fake_managed|\$fake_run|\$fake_worktree|\$fake_owner" > "$capture_state"
-                printf 'FAKE_CONTAINER_STATUS=running\n' >> "$capture_state"
+                if [ -n "\$fake_name" ]; then
+                    printf 'FAKE_CONTAINER_LABELS=%q\n' "\$fake_managed|\$fake_run|\$fake_worktree|\$fake_owner" > "$capture_state"
+                    printf 'FAKE_CONTAINER_STATUS=running\n' >> "$capture_state"
+                    if [ "\${FAKE_FAST_EXIT:-0}" = "1" ] && [ "\$fake_remove" = "1" ]; then
+                        rm -f "$capture_state"
+                    fi
+                fi
                 exit "\${FAKE_RUNTIME_EXIT_CODE:-0}"
+                ;;
+            --rm)
+                fake_remove=1
+                shift
                 ;;
             *) shift ;;
         esac
@@ -503,6 +572,114 @@ expected_sequence=$'inspect\ninspect\ninspect\nstop\ninspect-status\ninspect\nrm
 grep -q -- '^stop --time 1 ' "$capture" || { cat "$capture" >&2; exit 1; }
 grep -q -- '^rm -f ' "$capture" || { cat "$capture" >&2; exit 1; }
 
+# A fast successful command must remain inspectable until run.sh verifies its
+# ownership and removes it. Runtimes erase an --rm container before the wrapper
+# can inspect labels, which previously turned `true` into exit 125.
+: > "$capture_sequence"
+: > "$capture_state"
+: > "$capture"
+set +e
+FAKE_FAST_EXIT=1 CONTAINER_RUNTIME="$fake_bin/fake-podman" \
+    BUILD_DIR="$build_dir" BUILD_LOCK=0 CONTAINER_OWNERSHIP_TIMEOUT_SECONDS=1 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+fast_exit_status=$?
+set -e
+if [[ "$fast_exit_status" -ne 0 ]]; then
+    echo "fast successful container exited with $fast_exit_status" >&2
+    exit 1
+fi
+grep -q -- '^rm -f ' "$capture" || { cat "$capture" >&2; exit 1; }
+grep -q -- '^rm -f fake-container-id$' "$capture" || { cat "$capture" >&2; exit 1; }
+if grep -q -- '^run .*--rm' "$capture"; then
+    echo "managed fast container still enabled runtime auto-removal" >&2
+    exit 1
+fi
+
+# Some Podman versions do not publish the CID file before a short-lived
+# command exits. Ownership discovery falls back to the unique name, captures
+# the immutable ID and labels atomically, then removes only that ID.
+: > "$capture_sequence"
+: > "$capture_state"
+: > "$capture"
+FAKE_SKIP_CIDFILE=1 CONTAINER_RUNTIME="$fake_bin/fake-podman" \
+    BUILD_DIR="$build_dir" BUILD_LOCK=0 CONTAINER_OWNERSHIP_TIMEOUT_SECONDS=1 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+grep -q -- '^inspect --format {{.Id}}|' "$capture"
+grep -q -- '^rm -f fake-container-id$' "$capture"
+
+# A runtime client may exit after leaving a helper in its process group. The
+# wrapper must drain that descendant before reporting completion.
+: > "$capture_state"
+: > "$capture"
+rm -f "$capture_descendant"
+FAKE_RUNTIME_EXECUTE_COMMAND=1 FAKE_RUNTIME_LEAK_DESCENDANT=1 \
+    CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    CONTAINER_TERM_GRACE_SECONDS=1 CONTAINER_KILL_GRACE_SECONDS=1 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+wait_for_path "$capture_descendant" 2
+descendant_pid=$(cat "$capture_descendant")
+if kill -0 "$descendant_pid" 2>/dev/null; then
+    descendant_state=$(ps -o stat= -p "$descendant_pid" 2>/dev/null | tr -d ' ' || true)
+    case "$descendant_state" in
+        ''|Z*) ;;
+        *) echo "runtime descendant remained alive after completion" >&2; exit 1 ;;
+    esac
+fi
+
+# Runtime API failures are bounded and turn a successful command into a
+# cleanup failure instead of leaking silently.
+: > "$capture_state"
+: > "$capture"
+cleanup_started=$(date +%s)
+set +e
+FAKE_CLEANUP_BLOCK=1 CONTAINER_RUNTIME="$fake_bin/fake-podman" \
+    BUILD_DIR="$build_dir" BUILD_LOCK=0 CONTAINER_API_TIMEOUT_SECONDS=1 \
+    CONTAINER_TERM_GRACE_SECONDS=1 CONTAINER_KILL_GRACE_SECONDS=1 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+blocked_cleanup_status=$?
+set -e
+cleanup_elapsed=$(( $(date +%s) - cleanup_started ))
+[[ "$blocked_cleanup_status" -eq 125 ]]
+[[ "$cleanup_elapsed" -le 8 ]]
+grep -q -- '^rm -f fake-container-id$' "$capture"
+: > "$capture_state"
+
+# A failed removal followed by an inconclusive existence query is itself a
+# cleanup failure; it must never preserve a successful command status.
+: > "$capture_state"
+: > "$capture"
+set +e
+FAKE_RM_FAILURE=1 FAKE_EXISTS_FAILURE=1 CONTAINER_RUNTIME="$fake_bin/fake-podman" \
+    BUILD_DIR="$build_dir" BUILD_LOCK=0 CONTAINER_API_TIMEOUT_SECONDS=1 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+inconclusive_cleanup_status=$?
+set -e
+[[ "$inconclusive_cleanup_status" -eq 125 ]]
+
+# Signals received while an inspect helper is active must terminate and reap
+# that helper before run.sh exits.
+: > "$capture_state"
+: > "$capture"
+rm -f "$capture_api_pid"
+FAKE_INSPECT_BLOCK=1 CONTAINER_RUNTIME="$fake_bin/fake-podman" \
+    BUILD_DIR="$build_dir" BUILD_LOCK=0 CONTAINER_API_TIMEOUT_SECONDS=1 \
+    CONTAINER_OWNERSHIP_TIMEOUT_SECONDS=1 CONTAINER_TERM_GRACE_SECONDS=1 \
+    "$ROOT_DIR/.devcontainer/run.sh" true >"$TEMP_DIR/api-interrupt.log" 2>&1 &
+api_runner=$!
+wait_for_path "$capture_api_pid" 5
+api_pid=$(cat "$capture_api_pid")
+kill -TERM "$api_runner" 2>/dev/null || true
+set +e
+wait_bounded "$api_runner" api-interrupt-runner 6
+set -e
+if kill -0 "$api_pid" 2>/dev/null; then
+    api_state=$(ps -o stat= -p "$api_pid" 2>/dev/null | tr -d ' ' || true)
+    case "$api_state" in
+        ''|Z*) ;;
+        *) echo "runtime API helper remained alive after interruption" >&2; exit 1 ;;
+    esac
+fi
+
 # A delayed same-name foreign container is never removed because ownership
 # labels never match, even after the collision appears during cleanup polling.
 : > "$capture_sequence"
@@ -550,21 +727,20 @@ EMBEDDED_SKIP_BUILD=1 EMBEDDED_BUILD_DIR=/workspace/.build/embedded-swift \
     CONTAINER_RECLAIM_BUILD_DIR=1 BUILD_DIR="$build_dir" BUILD_LOCK=0 \
     "$ROOT_DIR/.devcontainer/run.sh" true
 device_capture=$(awk '/--device .*--privileged/{capture=1} capture{print}' "$capture")
-printf '%s\n' "$device_capture" > "$capture"
-grep -q -- '--privileged' "$capture"
-grep -q -- "--device $device" "$capture"
+grep -q -- '--privileged' <<< "$device_capture"
+grep -q -- "--device $device" <<< "$device_capture"
 if printf '%s\n' "$device_capture" | grep -q -- '^run .*--user '; then
     echo "device run unexpectedly set an ordinary user" >&2
     exit 1
 fi
-grep -q -- '--env-file ' "$capture"
+grep -q -- '--env-file ' <<< "$device_capture"
 grep -qx -- 'EMBEDDED_SKIP_BUILD=1' "$capture_env"
 grep -qx -- 'EMBEDDED_BUILD_DIR=/workspace/.build/embedded-swift' "$capture_env"
 grep -q -- 'chown -R ' "$capture"
 grep -q -- 'save axoloty-dev' "$capture"
 grep -q -- 'load' "$capture"
 save_line=$(grep -n -- 'save axoloty-dev' "$capture" | cut -d: -f1)
-run_line=$(grep -n -m1 -- 'run --rm' "$capture" | cut -d: -f1)
+run_line=$(grep -n -m1 -- '^run .*--device ' "$capture" | cut -d: -f1)
 [[ "$save_line" -lt "$run_line" ]]
 
 # Host Podman is opt-in: ordinary project commands do not receive a host
@@ -587,12 +763,14 @@ AXOLOTY_RUN_ID=issue-551 \
 grep -q -- '--name ' "$capture"
 grep -q -- '--label io.axoloty.managed-by=axoloty-run.sh' "$capture"
 grep -q -- '--label io.axoloty.run-id=issue-551' "$capture"
-grep -q -- "--label io.axoloty.worktree=$(basename "$ROOT_DIR")" "$capture"
+grep -q -- "--label io.axoloty.worktree=$expected_worktree_name" "$capture"
 grep -q -- '--label io.axoloty.owner=' "$capture"
 
 # A colliding runtime name cannot make run.sh remove an unowned container.
+: > "$capture_sequence"
 if FAKE_FOREIGN_INSPECT=1 CONTAINER_NAME=colliding-container AXOLOTY_RUN_ID=owned-run \
     CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    CONTAINER_OWNERSHIP_TIMEOUT_SECONDS=1 \
     "$ROOT_DIR/.devcontainer/run.sh" true; then
     :
 fi
