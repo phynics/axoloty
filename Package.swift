@@ -151,7 +151,7 @@ let package = Package(
             name: "AxolotyToolingTests",
             dependencies: ["AxolotyTooling", "AxolotyDeviceLeaseProbe"],
             path: "Tools/AxolotyToolingTests",
-            resources: [.copy("Fixtures")]
+            resources: [.copy("Fixtures/legacy-check-plan-v1.json")]
         ),
         // MQTT object inspector. The core target has no product-runtime
         // dependencies; the runtime target adds Axoloty-backed session and

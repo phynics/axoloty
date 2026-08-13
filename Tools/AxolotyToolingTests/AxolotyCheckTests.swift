@@ -187,8 +187,7 @@ func modelsEncodeAndDecode() throws {
 func legacySchemaV1PlanDefaultsMissingExecutionContextAndReencodesItExplicitly() throws {
     let fixture = try #require(Bundle.module.url(
         forResource: "legacy-check-plan-v1",
-        withExtension: "json",
-        subdirectory: "Fixtures"
+        withExtension: "json"
     ))
     let plan = try JSONDecoder().decode(
         AxolotyCheckPlan.self,
