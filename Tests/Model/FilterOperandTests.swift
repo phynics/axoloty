@@ -164,6 +164,6 @@ struct FilterOperandTests {
         // - .exists takes no operands.
         // - .like takes a String pattern, not a FilterOperand.
         // A wrong-arity construction fails at compile time, not runtime.
-        #expect(true)
+        #expect(Bool(true))
     }
 }
