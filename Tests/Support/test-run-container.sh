@@ -296,6 +296,12 @@ if [ "\$1" = "container" ] && [ "\$2" = "exists" ]; then
 fi
 if [ "\$1" = "stop" ]; then
     record_sequence stop
+    if [ "\${FAKE_STOP_FAIL_IF_EXITED:-0}" = "1" ]; then
+        [ -f "$capture_state" ] && . "$capture_state"
+        if [ "\${FAKE_CONTAINER_STATUS:-exited}" != "running" ]; then
+            exit 42
+        fi
+    fi
     if [ "\${FAKE_STOP_IGNORES:-0}" != "1" ]; then
         printf '%s\n' 'FAKE_CONTAINER_STATUS=exited' >> "$capture_state"
     fi
@@ -399,6 +405,11 @@ if [ "\$1" = "create" ]; then
                 fi
                 printf 'FAKE_CONTAINER_LABELS=%q\n' "\$fake_managed|\$fake_run|\$fake_worktree|\$fake_owner" > "$capture_state"
                 printf 'FAKE_CONTAINER_STATUS=created\n' >> "$capture_state"
+                if [ "\${FAKE_CREATE_BLOCK_AFTER_COMMIT:-0}" = "1" ]; then
+                    printf '%s\n' "\$\$" > "$capture_api_pid"
+                    trap 'exit 143' TERM INT
+                    while :; do sleep 1; done
+                fi
                 if [ "\${FAKE_CREATE_COMMIT_THEN_FAIL:-0}" = "1" ]; then
                     exit "\${FAKE_CREATE_EXIT_CODE:-124}"
                 fi
@@ -692,6 +703,51 @@ missing_cid_sequence=$(sed -n '1,3p' "$capture_sequence")
 [[ "$missing_cid_sequence" = $'create\ninspect\ninspect' ]]
 grep -Fxq start "$capture_sequence"
 
+# Missing-CID recovery tolerates a transient inspect failure and still starts
+# only the container with this invocation's exact ownership labels.
+: > "$capture_sequence"
+: > "$capture_state"
+: > "$capture_inspect_count"
+FAKE_SKIP_CIDFILE=1 FAKE_INSPECT_FAILURE_ONCE=1 \
+CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+grep -Fxq start "$capture_sequence"
+
+# A signal can arrive after create commits but before its client returns. The
+# wrapper reconciles the unique name and labels before EXIT cleanup.
+: > "$capture_sequence"
+: > "$capture_state"
+rm -f "$capture_api_pid"
+FAKE_CREATE_BLOCK_AFTER_COMMIT=1 CONTAINER_RUNTIME="$fake_bin/fake-podman" \
+    BUILD_DIR="$build_dir" BUILD_LOCK=0 CONTAINER_TERM_GRACE_SECONDS=1 \
+    "$ROOT_DIR/.devcontainer/run.sh" true >"$TEMP_DIR/create-interrupt.log" 2>&1 &
+create_runner=$!
+wait_for_path "$capture_api_pid" 5
+create_api_pid=$(cat "$capture_api_pid")
+kill -TERM "$create_runner" 2>/dev/null || true
+set +e
+wait_bounded "$create_runner" create-interrupt-runner 6
+set -e
+grep -Fxq rm "$capture_sequence"
+if kill -0 "$create_api_pid" 2>/dev/null; then
+    create_api_state=$(ps -o stat= -p "$create_api_pid" 2>/dev/null | tr -d ' ' || true)
+    case "$create_api_state" in
+        ''|Z*) ;;
+        *) echo "create helper remained alive after interruption" >&2; exit 1 ;;
+    esac
+fi
+
+# Cleanup must not call stop for a command that already exited successfully.
+: > "$capture_sequence"
+: > "$capture_state"
+FAKE_STOP_FAIL_IF_EXITED=1 CONTAINER_RUNTIME="$fake_bin/fake-podman" \
+    BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+if grep -Fxq stop "$capture_sequence"; then
+    echo "cleanup stopped an already-exited container" >&2
+    exit 1
+fi
+
 # A create failure after the runtime commits the object is reconciled by name
 # and exact labels, then cleaned up without ever starting it.
 : > "$capture_sequence"
@@ -704,7 +760,6 @@ CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
 reconciled_create_status=$?
 set -e
 [[ "$reconciled_create_status" -eq 125 ]]
-grep -q -- '^stop --time ' "$capture"
 grep -q -- '^rm -f fake-container-id$' "$capture"
 if grep -q -- '^start ' "$capture"; then
     echo "reconciled create failure unexpectedly started a container" >&2
@@ -716,6 +771,7 @@ fi
 : > "$capture_sequence"
 : > "$capture_state"
 : > "$capture"
+: > "$capture_inspect_count"
 set +e
 FAKE_INSPECT_FAILURE_ONCE=1 CONTAINER_RUNTIME="$fake_bin/fake-podman" \
     BUILD_DIR="$build_dir" BUILD_LOCK=0 "$ROOT_DIR/.devcontainer/run.sh" true

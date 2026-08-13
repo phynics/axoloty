@@ -213,6 +213,28 @@ reconcile_created_container() {
     return 0
 }
 
+recover_created_container() {
+    if [ -s "$container_cidfile" ]; then
+        recovered_id=$(tr -d '\r\n' < "$container_cidfile")
+        case "$recovered_id" in
+            ''|*[!A-Za-z0-9_.:-]*) ;;
+            *)
+                container_id="$recovered_id"
+                container_created=1
+                return 0
+                ;;
+        esac
+    fi
+    for _ in 1 2 3; do
+        if reconcile_created_container; then
+            container_created=1
+            return 0
+        fi
+        sleep 0.1
+    done
+    return 1
+}
+
 container_presence() {
     runtime_basename=$(basename "$runtime")
     case "$runtime_basename" in
@@ -252,7 +274,13 @@ container_presence() {
 }
 
 cleanup_container() {
-    if [ "$container_launching" -ne 1 ] || [ "$container_created" -ne 1 ] || [ -z "$container_id" ]; then
+    if [ "$container_launching" -ne 1 ]; then
+        return
+    fi
+    if [ "$container_created" -ne 1 ]; then
+        recover_created_container || return 0
+    fi
+    if [ -z "$container_id" ]; then
         return
     fi
     if [ -n "$container_pid" ]; then
@@ -271,21 +299,29 @@ cleanup_container() {
         fi
         return
     fi
-    if ! run_command_bounded /dev/null "container stop" "$runtime_api_timeout" \
-        $sudo_prefix "$runtime" stop --time "$container_term_grace" "$container_id"; then
-        cleanup_failure=1
-        echo "cleanup warning: failed to stop owned container $container_id within the bounded deadline" >&2
-    fi
     container_state=""
     if run_command_bounded "$runtime_output_file" "container state inspection" "$runtime_api_timeout" \
         $sudo_prefix "$runtime" inspect --format '{{.State.Status}}' "$container_id"; then
         container_state=$(cat "$runtime_output_file")
     fi
     if [ "$container_state" = "running" ]; then
-        if ! run_command_bounded /dev/null "container kill" "$runtime_api_timeout" \
-            $sudo_prefix "$runtime" kill "$container_id"; then
+        stop_status=0
+        run_command_bounded /dev/null "container stop" "$runtime_api_timeout" \
+            $sudo_prefix "$runtime" stop --time "$container_term_grace" "$container_id" || stop_status=$?
+        container_state=""
+        if run_command_bounded "$runtime_output_file" "container state inspection" "$runtime_api_timeout" \
+            $sudo_prefix "$runtime" inspect --format '{{.State.Status}}' "$container_id"; then
+            container_state=$(cat "$runtime_output_file")
+        elif [ "$stop_status" -ne 0 ]; then
             cleanup_failure=1
-            echo "cleanup warning: failed to kill owned container $container_id within the bounded deadline" >&2
+            echo "cleanup warning: failed to stop owned container $container_id within the bounded deadline" >&2
+        fi
+        if [ "$container_state" = "running" ]; then
+            if ! run_command_bounded /dev/null "container kill" "$runtime_api_timeout" \
+                $sudo_prefix "$runtime" kill "$container_id"; then
+                cleanup_failure=1
+                echo "cleanup warning: failed to kill owned container $container_id within the bounded deadline" >&2
+            fi
         fi
     fi
     if container_has_expected_labels; then
@@ -378,6 +414,9 @@ forward_signal() {
     if [ -n "$active_runtime_api_pid" ]; then
         terminate_process_tree_bounded "$active_runtime_api_pid" "runtime API operation" || true
         active_runtime_api_pid=""
+        if [ "$container_launching" -eq 1 ] && [ "$container_created" -ne 1 ]; then
+            recover_created_container || true
+        fi
     fi
     target_pid="${container_pid:-$direct_pid}"
     if [ -n "$target_pid" ]; then
@@ -390,14 +429,12 @@ forward_signal() {
             terminate_process_tree_bounded "$target_pid" "forwarded command" || true
             direct_pid=""
         fi
-        case "$signal" in
-            INT) exit 130 ;;
-            TERM) exit 143 ;;
-            *) exit 128 ;;
-        esac
-    else
-        exit 128
     fi
+    case "$signal" in
+        INT) exit 130 ;;
+        TERM) exit 143 ;;
+        *) exit 128 ;;
+    esac
 }
 
 # BUILD_DIR/SPM_CACHE_DIR may be given relative to the caller's cwd (CI
@@ -936,16 +973,7 @@ create_container "$@" || create_status=$?
 # Prefer the runtime's immutable CID file. If a runtime omits it, or a bounded
 # create returns after committing the object, recover only the uniquely named
 # container carrying this invocation's complete ownership label set.
-if [ -s "$container_cidfile" ]; then
-    container_id=$(tr -d '\r\n' < "$container_cidfile")
-    case "$container_id" in
-        ''|*[!A-Za-z0-9_.:-]*) container_id="" ;;
-        *) container_created=1 ;;
-    esac
-fi
-if [ "$container_created" -ne 1 ] && reconcile_created_container; then
-    container_created=1
-fi
+recover_created_container || true
 
 if [ "$create_status" -ne 0 ]; then
     status=$create_status
