@@ -30,7 +30,7 @@ let manager = FoundationDeviceLeaseManager()
 guard let lease = manager.acquire(device: device) else { Foundation.exit(75) }
 
 if let readyPath {
-    FileManager.default.createFile(atPath: readyPath, contents: Data())
+    _ = FileManager.default.createFile(atPath: readyPath, contents: Data())
 }
 
 if hold {

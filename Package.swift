@@ -95,6 +95,7 @@ let package = Package(
                 "WireCompatibility/IO/Live",
                 "WireCompatibility/Legacy/macOS-runner",
                 "WireCompatibility/Legacy/README.md",
+                "WireCompatibility/Legacy/run-modern-to-legacy.sh",
                 "WireCompatibility/Legacy/run_capture_on_macos.sh",
                 "WireCompatibility/Lifecycle/README.md",
                 "WireCompatibility/Lifecycle/Live",
