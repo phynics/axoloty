@@ -64,6 +64,46 @@ mutated_swift=$(CONTAINER_RUNTIME="$container_runtime" \
     exit 1
 }
 
+# A malformed payload must fail the benchmark instead of producing a timing
+# sample for a silently rejected decode.
+failed_corpus=$(mktemp -d "$build_dir/corpus-operation-failure.XXXXXX")
+trap 'rm -rf "$mutated_corpus" "$failed_corpus"' EXIT
+cp -R "$root/Benchmarks/Corpus/." "$failed_corpus/"
+printf 'not-json' >"$failed_corpus/payloads/advertise-small.json"
+node --input-type=module - "$failed_corpus/manifest.json" <<'JS'
+import fs from "node:fs";
+const manifestPath = process.argv[2];
+const manifest = JSON.parse(fs.readFileSync(manifestPath));
+manifest.cases = manifest.cases.filter(item => item.id === "advertise-small");
+fs.writeFileSync(manifestPath, JSON.stringify(manifest) + "\n");
+JS
+failed_container_corpus="/workspace/.build/$(basename "$failed_corpus")"
+if failure_output=$(CONTAINER_RUNTIME="$container_runtime" \
+    IMAGE="${IMAGE:-axoloty-dev}" BUILD_DIR="$build_dir" \
+    CONTAINER_ENV_VARS=WIRE_BENCHMARK_CORPUS_DIR \
+    WIRE_BENCHMARK_CORPUS_DIR="$failed_container_corpus" \
+    "$root/.devcontainer/run.sh" /workspace/.build/release/WireBenchmark 2>&1); then
+    echo "expected WireBenchmark to fail when dtoDecode rejects a corpus case" >&2
+    exit 1
+fi
+printf '%s\n' "$failure_output" | grep -F "case 'advertise-small'" >/dev/null || {
+    echo "benchmark failure did not identify the corpus case" >&2
+    exit 1
+}
+printf '%s\n' "$failure_output" | grep -F "operation 'dtoDecode'" >/dev/null || {
+    echo "benchmark failure did not identify the operation" >&2
+    exit 1
+}
+
+# The combined timed operation must attribute DTO decode failures to the
+# combined operation, not to the standalone dtoDecode benchmark.
+combined_operation_source=$(sed -n '/let combinedResult/,/print.*combinedParseDecode/p' \
+    "$root/Benchmarks/WireBenchmark/main.swift")
+printf '%s\n' "$combined_operation_source" | grep -F 'operationName: "combinedParseDecode"' >/dev/null || {
+    echo "combined benchmark does not attribute decode failures to combinedParseDecode" >&2
+    exit 1
+}
+
 node --input-type=module - <<'JS'
 import assert from "node:assert/strict";
 import { percentile, mad, compare } from "./Tests/Support/benchmark-wire.mjs";
@@ -107,4 +147,4 @@ assert.match(compare(
 ), /MISMATCH: corpus hash differs/);
 JS
 sh -n "$script_dir/check-benchmark-wire.sh"
-echo "SELF-TEST OK (14 checks passed, 0 failed)"
+echo "SELF-TEST OK (18 checks passed, 0 failed)"

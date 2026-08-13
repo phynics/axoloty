@@ -43,6 +43,17 @@ struct LoadedCorpus {
     let fingerprint: String
 }
 
+enum BenchmarkFailure: Error, CustomStringConvertible {
+    case operation(caseID: String, name: String, reason: String)
+
+    var description: String {
+        switch self {
+        case let .operation(caseID, name, reason):
+            return "wire benchmark failed: case '\(caseID)', operation '\(name)': \(reason)"
+        }
+    }
+}
+
 func loadCorpus(from corpusDirectory: URL = URL(fileURLWithPath: "Benchmarks/Corpus")) -> LoadedCorpus {
     let manifestURL = corpusDirectory.appendingPathComponent("manifest.json")
     let manifestData = try! Data(contentsOf: manifestURL)
@@ -72,62 +83,117 @@ func loadCorpus(from corpusDirectory: URL = URL(fileURLWithPath: "Benchmarks/Cor
 // MARK: - Timing infrastructure
 
 func measureOperation(
+    caseID: String,
     _ name: String,
     batchSize: inout Int,
-    operation: () -> Void
-) -> (batchSize: Int, samplesNs: [Int]) {
-    // Warm-up: 1,000 iterations.
-    for _ in 0..<1_000 { operation() }
+    operation: () throws -> Void
+) throws -> (batchSize: Int, samplesNs: [Int]) {
+    do {
+        // Warm-up: 1,000 iterations.
+        for _ in 0..<1_000 { try operation() }
 
-    // Calibrate: find batch size N so that N iterations take ≥ 250ms.
-    if batchSize == 0 {
-        var n = 1
-        while true {
-            let clock = ContinuousClock()
-            let elapsed = clock.measure {
-                for _ in 0..<n { operation() }
+        // Calibrate: find batch size N so that N iterations take ≥ 250ms.
+        if batchSize == 0 {
+            var n = 1
+            while true {
+                let clock = ContinuousClock()
+                let elapsed = try clock.measure {
+                    for _ in 0..<n { try operation() }
+                }
+                if elapsed >= .milliseconds(250) { break }
+                n *= 2
+                if n > 10_000_000 { break } // safety cap
             }
-            if elapsed >= .milliseconds(250) { break }
-            n *= 2
-            if n > 10_000_000 { break } // safety cap
+            batchSize = n
         }
-        batchSize = n
-    }
 
-    // Sample: 30 batches of batchSize iterations.
-    let n = batchSize
-    var samples: [Int] = []
-    samples.reserveCapacity(30)
-    for _ in 0..<30 {
-        let clock = ContinuousClock()
-        let elapsed = clock.measure {
-            for _ in 0..<n { operation() }
+        // Sample: 30 batches of batchSize iterations.
+        let n = batchSize
+        var samples: [Int] = []
+        samples.reserveCapacity(30)
+        for _ in 0..<30 {
+            let clock = ContinuousClock()
+            let elapsed = try clock.measure {
+                for _ in 0..<n { try operation() }
+            }
+            let totalNs = Int(elapsed.components.seconds) * 1_000_000_000
+                + Int(elapsed.components.attoseconds / 1_000_000_000)
+            samples.append(totalNs / n)
         }
-        let totalNs = Int(elapsed.components.seconds) * 1_000_000_000
-            + Int(elapsed.components.attoseconds / 1_000_000_000)
-        samples.append(totalNs / n)
+        return (n, samples)
+    } catch let failure as BenchmarkFailure {
+        throw failure
+    } catch {
+        throw BenchmarkFailure.operation(
+            caseID: caseID,
+            name: name,
+            reason: String(describing: error)
+        )
     }
-    return (n, samples)
 }
 
 // MARK: - DTO decode dispatch
 
-func decodeDTO(family: String, reader: WireReader) {
+enum BenchmarkDTO {
+    case advertise(AdvertiseWireData)
+    case deadvertise(DeadvertiseWireData)
+    case channel(ChannelWireData)
+    case associate(AssociateWireData)
+    case ioValue(IoValueWireData)
+    case discover(DiscoverWireData)
+    case resolve(ResolveWireData)
+    case query(QueryWireData)
+    case retrieve(RetrieveWireData)
+    case update(UpdateWireData)
+    case complete(CompleteWireData)
+    case call(CallWireData)
+    case returnEvent(ReturnWireData)
+
+    func encode(to writer: inout WireWriter) throws {
+        switch self {
+        case .advertise(let value): try value.encode(to: &writer)
+        case .deadvertise(let value): try value.encode(to: &writer)
+        case .channel(let value): try value.encode(to: &writer)
+        case .associate(let value): try value.encode(to: &writer)
+        case .ioValue(let value): try value.encode(to: &writer)
+        case .discover(let value): try value.encode(to: &writer)
+        case .resolve(let value): try value.encode(to: &writer)
+        case .query(let value): try value.encode(to: &writer)
+        case .retrieve(let value): try value.encode(to: &writer)
+        case .update(let value): try value.encode(to: &writer)
+        case .complete(let value): try value.encode(to: &writer)
+        case .call(let value): try value.encode(to: &writer)
+        case .returnEvent(let value): try value.encode(to: &writer)
+        }
+    }
+}
+
+func decodeDTO(
+    caseID: String,
+    family: String,
+    reader: WireReader,
+    operationName: String
+) throws -> BenchmarkDTO {
     switch family {
-    case "ADV": _ = try? AdvertiseWireData(from: reader)
-    case "DAD": _ = try? DeadvertiseWireData(from: reader)
-    case "CHN": _ = try? ChannelWireData(from: reader)
-    case "ASC": _ = try? AssociateWireData(from: reader)
-    case "IOV": _ = try? IoValueWireData(from: reader)
-    case "DSC": _ = try? DiscoverWireData(from: reader)
-    case "RSV": _ = try? ResolveWireData(from: reader)
-    case "QRY": _ = try? QueryWireData(from: reader)
-    case "RTV": _ = try? RetrieveWireData(from: reader)
-    case "UPD": _ = try? UpdateWireData(from: reader)
-    case "CPL": _ = try? CompleteWireData(from: reader)
-    case "CLL": _ = try? CallWireData(from: reader)
-    case "RTN": _ = try? ReturnWireData(from: reader)
-    default: break
+    case "ADV": return .advertise(try AdvertiseWireData(from: reader))
+    case "DAD": return .deadvertise(try DeadvertiseWireData(from: reader))
+    case "CHN": return .channel(try ChannelWireData(from: reader))
+    case "ASC": return .associate(try AssociateWireData(from: reader))
+    case "IOV": return .ioValue(try IoValueWireData(from: reader))
+    case "DSC": return .discover(try DiscoverWireData(from: reader))
+    case "RSV": return .resolve(try ResolveWireData(from: reader))
+    case "QRY": return .query(try QueryWireData(from: reader))
+    case "RTV": return .retrieve(try RetrieveWireData(from: reader))
+    case "UPD": return .update(try UpdateWireData(from: reader))
+    case "CPL": return .complete(try CompleteWireData(from: reader))
+    case "CLL": return .call(try CallWireData(from: reader))
+    case "RTN": return .returnEvent(try ReturnWireData(from: reader))
+    default:
+        throw BenchmarkFailure.operation(
+            caseID: caseID,
+            name: operationName,
+            reason: "unsupported family '\(family)'"
+        )
     }
 }
 
@@ -165,7 +231,7 @@ func corpusDirectory() -> URL {
     URL(fileURLWithPath: ProcessInfo.processInfo.environment["WIRE_BENCHMARK_CORPUS_DIR"] ?? "Benchmarks/Corpus")
 }
 
-func runBenchmark() {
+func runBenchmark() throws {
     let loadedCorpus = loadCorpus(from: corpusDirectory())
     let corpus = loadedCorpus.cases
 
@@ -199,11 +265,17 @@ func runBenchmark() {
 
         // 1. topicParse
         var topicBatch = 0
-        let topicResult = corpusCase.topicBytes.withUnsafeBufferPointer { tb -> (Int, [Int]) in
+        let topicResult = try corpusCase.topicBytes.withUnsafeBufferPointer { tb -> (Int, [Int]) in
             let topicPtr = tb.baseAddress!
-            return measureOperation("topicParse", batchSize: &topicBatch) {
+            return try measureOperation(caseID: corpusCase.id, "topicParse", batchSize: &topicBatch) {
                 let tv = TopicView(topicBytes: topicPtr, length: tb.count)
-                _ = tv.eventType
+                guard tv.eventType != nil else {
+                    throw BenchmarkFailure.operation(
+                        caseID: corpusCase.id,
+                        name: "topicParse",
+                        reason: "topic has no recognized event type"
+                    )
+                }
             }
         }
         print(#""topicParse":{"batchSize":\#(topicResult.0),"samplesNs":\#(topicResult.1)}"#)
@@ -211,11 +283,16 @@ func runBenchmark() {
         // 2. dtoDecode
         print(",")
         var decodeBatch = 0
-        let decodeResult = corpusCase.payloadBytes.withUnsafeBufferPointer { pb -> (Int, [Int]) in
+        let decodeResult = try corpusCase.payloadBytes.withUnsafeBufferPointer { pb -> (Int, [Int]) in
             let payloadPtr = pb.baseAddress!
-            return measureOperation("dtoDecode", batchSize: &decodeBatch) {
+            return try measureOperation(caseID: corpusCase.id, "dtoDecode", batchSize: &decodeBatch) {
                 let reader = WireReader(bytes: payloadPtr, length: pb.count)
-                decodeDTO(family: corpusCase.family, reader: reader)
+                _ = try decodeDTO(
+                    caseID: corpusCase.id,
+                    family: corpusCase.family,
+                    reader: reader,
+                    operationName: "dtoDecode"
+                )
             }
         }
         print(#""dtoDecode":{"batchSize":\#(decodeResult.0),"samplesNs":\#(decodeResult.1)}"#)
@@ -223,69 +300,30 @@ func runBenchmark() {
         // 3. dtoEncode
         print(",")
         var encodeBatch = 0
-        let encodeResult = corpusCase.payloadBytes.withUnsafeBufferPointer { pb -> (Int, [Int]) in
+        let encodeResult = try corpusCase.payloadBytes.withUnsafeBufferPointer { pb -> (Int, [Int]) in
             let payloadPtr = pb.baseAddress!
-            // Pre-decode for the encode benchmark.
-            return measureOperation("dtoEncode", batchSize: &encodeBatch) {
+            let dto: BenchmarkDTO
+            do {
                 let reader = WireReader(bytes: payloadPtr, length: pb.count)
+                dto = try decodeDTO(
+                    caseID: corpusCase.id,
+                    family: corpusCase.family,
+                    reader: reader,
+                    operationName: "dtoEncode"
+                )
+            } catch let failure as BenchmarkFailure {
+                throw failure
+            } catch {
+                throw BenchmarkFailure.operation(
+                    caseID: corpusCase.id,
+                    name: "dtoEncode",
+                    reason: String(describing: error)
+                )
+            }
+
+            return try measureOperation(caseID: corpusCase.id, "dtoEncode", batchSize: &encodeBatch) {
                 var writer = WireWriter(buffer: encodeBuffer, capacity: 512)
-                // Decode then encode.
-                switch corpusCase.family {
-                case "ADV":
-                    if let dto = try? AdvertiseWireData(from: reader) {
-                        _ = try? dto.encode(to: &writer)
-                    }
-                case "DAD":
-                    if let dto = try? DeadvertiseWireData(from: reader) {
-                        _ = try? dto.encode(to: &writer)
-                    }
-                case "CHN":
-                    if let dto = try? ChannelWireData(from: reader) {
-                        _ = try? dto.encode(to: &writer)
-                    }
-                case "ASC":
-                    if let dto = try? AssociateWireData(from: reader) {
-                        _ = try? dto.encode(to: &writer)
-                    }
-                case "IOV":
-                    if let dto = try? IoValueWireData(from: reader) {
-                        _ = try? dto.encode(to: &writer)
-                    }
-                case "DSC":
-                    if let dto = try? DiscoverWireData(from: reader) {
-                        _ = try? dto.encode(to: &writer)
-                    }
-                case "RSV":
-                    if let dto = try? ResolveWireData(from: reader) {
-                        _ = try? dto.encode(to: &writer)
-                    }
-                case "QRY":
-                    if let dto = try? QueryWireData(from: reader) {
-                        _ = try? dto.encode(to: &writer)
-                    }
-                case "RTV":
-                    if let dto = try? RetrieveWireData(from: reader) {
-                        _ = try? dto.encode(to: &writer)
-                    }
-                case "UPD":
-                    if let dto = try? UpdateWireData(from: reader) {
-                        _ = try? dto.encode(to: &writer)
-                    }
-                case "CPL":
-                    if let dto = try? CompleteWireData(from: reader) {
-                        _ = try? dto.encode(to: &writer)
-                    }
-                case "CLL":
-                    if let dto = try? CallWireData(from: reader) {
-                        _ = try? dto.encode(to: &writer)
-                    }
-                case "RTN":
-                    if let dto = try? ReturnWireData(from: reader) {
-                        _ = try? dto.encode(to: &writer)
-                    }
-                default:
-                    break
-                }
+                try dto.encode(to: &writer)
             }
         }
         print(#""dtoEncode":{"batchSize":\#(encodeResult.0),"samplesNs":\#(encodeResult.1)}"#)
@@ -293,10 +331,10 @@ func runBenchmark() {
         // 4. borrowedValidation
         print(",")
         var validationBatch = 0
-        let validationResult = measureOperation("borrowedValidation", batchSize: &validationBatch) {
-            corpusCase.topicBytes.withUnsafeBufferPointer { tb in
-                corpusCase.payloadBytes.withUnsafeBufferPointer { pb in
-                    _ = try? BorrowedMessage.validated(
+        let validationResult = try measureOperation(caseID: corpusCase.id, "borrowedValidation", batchSize: &validationBatch) {
+            try corpusCase.topicBytes.withUnsafeBufferPointer { tb in
+                try corpusCase.payloadBytes.withUnsafeBufferPointer { pb in
+                    _ = try BorrowedMessage.validated(
                         topicBytes: tb.baseAddress!,
                         topicLength: tb.count,
                         payloadBytes: pb.baseAddress!,
@@ -310,18 +348,22 @@ func runBenchmark() {
         // 5. combinedParseDecode
         print(",")
         var combinedBatch = 0
-        let combinedResult = measureOperation("combinedParseDecode", batchSize: &combinedBatch) {
-            corpusCase.topicBytes.withUnsafeBufferPointer { tb in
-                corpusCase.payloadBytes.withUnsafeBufferPointer { pb in
-                    if let msg = try? BorrowedMessage.validated(
+        let combinedResult = try measureOperation(caseID: corpusCase.id, "combinedParseDecode", batchSize: &combinedBatch) {
+            try corpusCase.topicBytes.withUnsafeBufferPointer { tb in
+                try corpusCase.payloadBytes.withUnsafeBufferPointer { pb in
+                    let msg = try BorrowedMessage.validated(
                         topicBytes: tb.baseAddress!,
                         topicLength: tb.count,
                         payloadBytes: pb.baseAddress!,
                         payloadLength: pb.count
-                    ) {
-                        let reader = msg.reader()
-                        decodeDTO(family: corpusCase.family, reader: reader)
-                    }
+                    )
+                    let reader = msg.reader()
+                    _ = try decodeDTO(
+                        caseID: corpusCase.id,
+                        family: corpusCase.family,
+                        reader: reader,
+                        operationName: "combinedParseDecode"
+                    )
                 }
             }
         }
@@ -544,5 +586,13 @@ if CommandLine.arguments.contains("--corpus-fingerprint") {
 } else if CommandLine.arguments.contains("--validate-allocations") {
     validateAllocations()
 } else {
-    runBenchmark()
+    do {
+        try runBenchmark()
+    } catch {
+        let message = "\(error)\n"
+        if let data = message.data(using: .utf8) {
+            FileHandle.standardError.write(data)
+        }
+        exit(1)
+    }
 }
