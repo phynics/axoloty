@@ -114,12 +114,12 @@ open class SensorSourceController: Controller {
         }
     }
 
-    internal func publishChanneledObservationAndWait(sensorId: CoatyUUID, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil, readTimeout: Duration = .seconds(5)) async throws {
-        try await _publishObservation(sensorId: sensorId, channeled: true, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId, readTimeout: readTimeout)
+    internal func publishChanneledObservationAndWait(sensorId: CoatyUUID, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) async throws {
+        try await _publishObservation(sensorId: sensorId, channeled: true, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
     }
 
-    internal func publishAdvertisedObservationAndWait(sensorId: CoatyUUID, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil, readTimeout: Duration = .seconds(5)) async throws {
-        try await _publishObservation(sensorId: sensorId, channeled: false, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId, readTimeout: readTimeout)
+    internal func publishAdvertisedObservationAndWait(sensorId: CoatyUUID, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) async throws {
+        try await _publishObservation(sensorId: sensorId, channeled: false, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
     }
 
     internal func createObservation(container: SensorContainer, value: Any, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) -> Observation {
@@ -223,11 +223,11 @@ open class SensorSourceController: Controller {
         return request.coreTypes?.contains(.CoatyObject) == true
     }
 
-    private func _publishObservation(sensorId: CoatyUUID, channeled: Bool, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil, readTimeout: Duration = .seconds(5)) async throws {
+    private func _publishObservation(sensorId: CoatyUUID, channeled: Bool, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) async throws {
         guard let container = sensors[sensorId.string] else {
             throw AxolotyError.runtime(code: .notRegistered, reason: "sensorId \(sensorId.string) is not registered")
         }
-        let value = try await readSensorValue(from: container.io, sensorId: sensorId, timeout: readTimeout)
+        let value = await readSensorValue(from: container.io)
         let observation = createObservation(container: container, value: value, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
         onObservationWillPublish(container: container, observation: observation)
         do {
@@ -244,17 +244,12 @@ open class SensorSourceController: Controller {
         onObservationDidPublish(container: container, observation: observation)
     }
 
-    private func readSensorValue(from io: SensorIo, sensorId: CoatyUUID, timeout: Duration) async throws -> RawJSONValue {
-        let bridge = SensorReadContinuation()
-        return try await withTaskCancellationHandler(operation: {
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<RawJSONValue, Error>) in
-                guard bridge.install(continuation) else { return }
-                bridge.startDeadline(timeout, sensorId: sensorId)
-                SensorReadRequest(io: io, bridge: bridge).start()
+    private func readSensorValue(from io: SensorIo) async -> RawJSONValue {
+        await withCheckedContinuation { continuation in
+            io.read { value in
+                continuation.resume(returning: RawJSONValue(any: value) ?? .null)
             }
-        }, onCancel: {
-            bridge.cancel(sensorId: sensorId)
-        })
+        }
     }
 
     private func logPublicationFailure(_ error: Error, sensorId: CoatyUUID, channeled: Bool) {
