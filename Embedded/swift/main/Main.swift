@@ -10,6 +10,10 @@
 
 import AxolotyWire
 
+private struct UnsafeSendablePointer<Pointee>: @unchecked Sendable {
+    let value: UnsafeMutablePointer<Pointee>
+}
+
 @_cdecl("app_main")
 func app_main() -> Int32 {
     let schemaVersion: UInt32 = 2
@@ -131,7 +135,7 @@ func app_main() -> Int32 {
 
     @inline(__always)
     func writeIntVector(_ id: StaticString, _ value: Int, _ expected: StaticString) {
-        try? withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 32) { storage in
+        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 32) { storage in
             var writer = WireWriter(buffer: storage.baseAddress!, capacity: storage.count)
             var ok = (try? writer.writeInt(value)) != nil
             if ok && writer.position == expected.utf8CodeUnitCount {
@@ -143,7 +147,7 @@ func app_main() -> Int32 {
 
     @inline(__always)
     func topicVector(_ id: StaticString, _ capacity: Int, _ suffix: StaticString, _ shouldFit: Bool) {
-        try? withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 129) { storage in
+        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 129) { storage in
             var builder = TopicBuilder(buffer: storage.baseAddress!, capacity: capacity)
             var ok = (try? builder.writePrefix()) != nil
             if ok { ok = (try? builder.writeNamespace("ns")) != nil }
@@ -158,8 +162,8 @@ func app_main() -> Int32 {
 
     @inline(__always)
     func boundedVector(_ id: StaticString, _ topicLength: Int, _ payloadLength: Int, _ shouldFit: Bool) {
-        try? withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 513) { payload in
-            try? withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 130) { topic in
+        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 513) { payload in
+            withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 130) { topic in
                 let ok = (try? BorrowedMessage.validated(
                     topicBytes: topic.baseAddress!, topicLength: topicLength,
                     payloadBytes: payload.baseAddress!, payloadLength: payloadLength
@@ -318,11 +322,11 @@ func app_main() -> Int32 {
         let router = EmbeddedMessageRouter()
         withUnsafeTemporaryAllocation(of: Bool.self, capacity: 1) { dispatched in
             dispatched[0] = false
-            let dispatchedPointer = dispatched.baseAddress!
-            let token = router.subscribe(.discover) { _ in dispatchedPointer.pointee = true }
+            let dispatchedPointer = UnsafeSendablePointer(value: dispatched.baseAddress!)
+            let token = router.subscribe(.discover) { _ in dispatchedPointer.value.pointee = true }
             record("router:subscribe", token != nil)
             router.dispatch(discoverMessage)
-            record("router:dispatch", dispatchedPointer.pointee)
+            record("router:dispatch", dispatchedPointer.value.pointee)
         }
     }
 
@@ -693,5 +697,4 @@ func app_main() -> Int32 {
 
     vTaskDelay(1000)
     esp_restart()
-    return 0
 }
