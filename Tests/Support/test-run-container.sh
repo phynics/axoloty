@@ -162,6 +162,13 @@ set +e
 set -e
 if [ ! -e "$tree_exited" ]; then
     cat "$TEMP_DIR/direct-signal.log" >&2
+    if [ -s "$tree_child_pid" ]; then
+        child_pid=$(cat "$tree_child_pid")
+        child_state=$(ps -o stat= -p "$child_pid" 2>/dev/null | tr -d ' ' || true)
+        echo "direct signal marker missing: child pid=$child_pid state=${child_state:-absent}" >&2
+    else
+        echo "direct signal marker missing: child pid was not recorded" >&2
+    fi
 fi
 [ -e "$tree_exited" ]
 child_pid=$(cat "$tree_child_pid")
@@ -172,6 +179,12 @@ fi
 
 # Repeat the same assertion through the fake container runtime boundary.
 rm -f "$tree_child_pid" "$tree_exited"
+
+# The canonical CI plan invokes this harness from inside the development
+# container, where run.sh exports this marker for its child command. Clear the
+# inherited marker before exercising the host-side fake-runtime paths below;
+# each direct-mode scenario above opts in explicitly.
+unset AXOLOTY_DEVCONTAINER
 
 # The flock path must honor immediate and finite BUILD_LOCK_TIMEOUT values.
 flock_timeout_output="$TEMP_DIR/flock-timeout.stderr"
@@ -397,7 +410,7 @@ if [ "\$1" = "create" ]; then
                 done
                 if [ "\${FAKE_CREATE_COLLISION:-0}" = "1" ]; then
                     if [ "\${FAKE_COLLISION_MATCHING_LABELS:-0}" = "1" ]; then
-                        printf 'FAKE_CONTAINER_LABELS=%q\n' "\$fake_managed|\$fake_run|\$fake_worktree|\$fake_owner|foreign-instance" > "$capture_state"
+                        printf "FAKE_CONTAINER_LABELS='%s'\n" "\$fake_managed|\$fake_run|\$fake_worktree|\$fake_owner|foreign-instance" > "$capture_state"
                         printf 'FAKE_CONTAINER_STATUS=running\n' >> "$capture_state"
                     fi
                     printf '%s\n' 'container name is already in use' >&2
@@ -409,7 +422,7 @@ if [ "\$1" = "create" ]; then
                 if [ -n "\$fake_cidfile" ] && [ "\${FAKE_SKIP_CIDFILE:-0}" != "1" ]; then
                     printf '%s\n' fake-container-id > "\$fake_cidfile"
                 fi
-                printf 'FAKE_CONTAINER_LABELS=%q\n' "\$fake_managed|\$fake_run|\$fake_worktree|\$fake_owner|\$fake_instance" > "$capture_state"
+                printf "FAKE_CONTAINER_LABELS='%s'\n" "\$fake_managed|\$fake_run|\$fake_worktree|\$fake_owner|\$fake_instance" > "$capture_state"
                 printf 'FAKE_CONTAINER_STATUS=created\n' >> "$capture_state"
                 if [ "\${FAKE_CREATE_BLOCK_AFTER_COMMIT:-0}" = "1" ]; then
                     printf '%s\n' "\$\$" > "$capture_api_pid"
@@ -530,7 +543,7 @@ if [ "\${FAKE_RUNTIME_EXECUTE_COMMAND:-0}" = "1" ] && [ "\$1" = "run" ]; then
                 if [ "\${FAKE_DELAYED_OWNED_CONTAINER:-0}" = "1" ]; then
                     (
                         sleep "\${FAKE_OWNERSHIP_DELAY_SECONDS:-0.3}"
-                        printf 'FAKE_CONTAINER_LABELS=%q\n' "\$fake_managed|\$fake_run|\$fake_worktree|\$fake_owner" > "$capture_state"
+                        printf "FAKE_CONTAINER_LABELS='%s'\n" "\$fake_managed|\$fake_run|\$fake_worktree|\$fake_owner" > "$capture_state"
                         printf 'FAKE_CONTAINER_STATUS=running\n' >> "$capture_state"
                     ) &
                     sleep "\${FAKE_RUNTIME_LIFETIME_SECONDS:-1}"
@@ -543,7 +556,7 @@ if [ "\${FAKE_RUNTIME_EXECUTE_COMMAND:-0}" = "1" ] && [ "\$1" = "run" ]; then
                     ) &
                     exit 125
                 fi
-                printf 'FAKE_CONTAINER_LABELS=%q\n' "\$fake_managed|\$fake_run|\$fake_worktree|\$fake_owner" > "$capture_state"
+                printf "FAKE_CONTAINER_LABELS='%s'\n" "\$fake_managed|\$fake_run|\$fake_worktree|\$fake_owner" > "$capture_state"
                 printf 'FAKE_CONTAINER_STATUS=running\n' >> "$capture_state"
                 if [ "\${FAKE_RUNTIME_LEAK_DESCENDANT:-0}" = "1" ]; then
                     (trap 'exit 0' TERM INT; while :; do sleep 1; done) >/dev/null 2>&1 &
@@ -610,7 +623,7 @@ if [ "\$1" = "run" ]; then
                     exit 125
                 fi
                 if [ -n "\$fake_name" ]; then
-                    printf 'FAKE_CONTAINER_LABELS=%q\n' "\$fake_managed|\$fake_run|\$fake_worktree|\$fake_owner" > "$capture_state"
+                    printf "FAKE_CONTAINER_LABELS='%s'\n" "\$fake_managed|\$fake_run|\$fake_worktree|\$fake_owner" > "$capture_state"
                     printf 'FAKE_CONTAINER_STATUS=running\n' >> "$capture_state"
                     if [ "\${FAKE_FAST_EXIT:-0}" = "1" ] && [ "\$fake_remove" = "1" ]; then
                         rm -f "$capture_state"
@@ -651,9 +664,14 @@ chmod +x "$fake_bin/fake-sudo" "$fake_bin/fake-podman"
 : > "$capture"
 : > "$capture_sequence"
 : > "$capture_argv"
-FAKE_RUNTIME_ARGV_CAPTURE=1 CONTAINER_RUNTIME="$fake_bin/fake-podman" \
+if ! FAKE_RUNTIME_ARGV_CAPTURE=1 CONTAINER_RUNTIME="$fake_bin/fake-podman" \
     BUILD_DIR="$build_dir" BUILD_LOCK=0 \
-    "$ROOT_DIR/.devcontainer/run.sh" true
+    "$ROOT_DIR/.devcontainer/run.sh" true; then
+    echo "first fake-runtime scenario failed" >&2
+    cat "$capture" >&2
+    cat "$capture_state" >&2
+    exit 1
+fi
 first_managed_sequence=$(sed -n '1,3p' "$capture_sequence")
 [[ "$first_managed_sequence" = $'create\ninspect\nstart' ]]
 create_args=$(awk '/^---$/ { if (in_run) exit; first_seen = 0; in_run = 0; next } !first_seen { first_seen = 1; if ($0 == "create") in_run = 1; next } in_run { print }' "$capture_argv")

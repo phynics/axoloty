@@ -56,7 +56,30 @@ process_tree_alive() {
             esac
         done
     fi
+    if [ -n "$session_prefix" ]; then
+        session_states=$(ps -o stat= --sid "$pid" 2>/dev/null || true)
+        for session_state in $session_states; do
+            case "$session_state" in
+                Z*) ;;
+                *) return 0 ;;
+            esac
+        done
+    fi
     return 1
+}
+
+signal_process_tree() {
+    pid="$1"
+    signal="$2"
+
+    kill -"$signal" -- -"$pid" 2>/dev/null || kill -"$signal" "$pid" 2>/dev/null || true
+    if [ -n "$session_prefix" ]; then
+        session_pids=$(ps -o pid= --sid "$pid" 2>/dev/null || true)
+        for session_pid in $session_pids; do
+            [ "$session_pid" = "$$" ] && continue
+            kill -"$signal" "$session_pid" 2>/dev/null || true
+        done
+    fi
 }
 
 process_is_alive() {
@@ -120,13 +143,13 @@ terminate_process_tree_bounded() {
         return 0
     fi
 
-    kill -TERM -- -"$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+    signal_process_tree "$pid" TERM
     if wait_for_process_tree "$pid" "$container_term_grace"; then
         reap_process_if_stopped "$pid" || true
         return 0
     fi
 
-    kill -KILL -- -"$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+    signal_process_tree "$pid" KILL
     if wait_for_process_tree "$pid" "$container_kill_grace"; then
         reap_process_if_stopped "$pid" || true
         return 0
