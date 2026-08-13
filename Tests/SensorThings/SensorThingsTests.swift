@@ -183,17 +183,92 @@ struct SensorThingsTests {
     }
 
     @Test
-    func coatyTimeIntervalFormatting() {
+    func coatyTimeIntervalFormatting() throws {
         // Fixed UTC inputs so the test is deterministic and not wall-clock dependent.
         let interval = CoatyTimeInterval(start: 0, duration: 4_200_012)
 
-        let withMillis = interval.toLocalIntervalIsoString(includeMillis: true)
+        let withMillis = try interval.toLocalIntervalIsoString(includeMillis: true)
         #expect(withMillis.hasPrefix("1970-01-01T00:00:00.000Z/PT4200S"))
 
-        let withoutMillis = interval.toLocalIntervalIsoString(includeMillis: false)
+        let withoutMillis = try interval.toLocalIntervalIsoString(includeMillis: false)
         #expect(withoutMillis.hasPrefix("1970-01-01T00:00:00Z/PT4200S"))
 
         let zeroDuration = CoatyTimeInterval(start: 0, duration: 0)
-        #expect(zeroDuration.toLocalIntervalIsoString(includeMillis: false).hasSuffix("/PT0S"))
+        #expect(try zeroDuration.toLocalIntervalIsoString(includeMillis: false).hasSuffix("/PT0S"))
+    }
+
+    @Test
+    func negativeDurationComponentReturnsStructuredError() throws {
+        let interval = CoatyTimeInterval(duration: -1)
+
+        do {
+            _ = try interval.toLocalIntervalIsoString()
+            Issue.record("A negative duration must not produce an interval string")
+        } catch let error as AxolotyError {
+            #expect(error.userFriendlyMessage == "duration: duration cannot be negative")
+            if case .invalidArgument = error {
+                // Expected structured error category.
+            } else {
+                Issue.record("Expected invalidArgument for a negative duration")
+            }
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+
+        do {
+            _ = try JSONEncoder().encode(interval)
+            Issue.record("A negative duration must not encode")
+        } catch let error as AxolotyError {
+            #expect(error.userFriendlyMessage == "duration: duration cannot be negative")
+            if case .invalidArgument = error {
+                // Expected structured error category.
+            } else {
+                Issue.record("Expected invalidArgument for a negative duration")
+            }
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test
+    func negativeDurationInEveryFormatReturnsStructuredError() throws {
+        let intervals = [
+            CoatyTimeInterval(start: 0, duration: -1),
+            CoatyTimeInterval(duration: -1, end: 0),
+            CoatyTimeInterval(duration: -1),
+        ]
+
+        for interval in intervals {
+            do {
+                _ = try interval.toLocalIntervalIsoString()
+                Issue.record("A negative duration must not produce an interval string")
+            } catch let error as AxolotyError {
+                #expect(error.userFriendlyMessage == "duration: duration cannot be negative")
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    @Test
+    func negativeTimestampsRemainValidPreEpochComponents() throws {
+        let interval = CoatyTimeInterval(start: -1_000, end: 0)
+
+        _ = try interval.toLocalIntervalIsoString()
+    }
+
+    @Test
+    func durationBoundariesRemainSafe() throws {
+        #expect(try CoatyTimeInterval.toDurationIsoString(duration: 0) == "PT0S")
+        #expect(try CoatyTimeInterval.toDurationIsoString(duration: Int.max) == "PT9223372036854775S")
+
+        do {
+            _ = try CoatyTimeInterval.toDurationIsoString(duration: Int.min)
+            Issue.record("Int.min must be rejected as a negative duration")
+        } catch let error as AxolotyError {
+            #expect(error.userFriendlyMessage == "duration: duration cannot be negative")
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
     }
 }
