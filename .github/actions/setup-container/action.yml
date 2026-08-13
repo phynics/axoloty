@@ -22,6 +22,10 @@ inputs:
     description: Wait this long for a concurrent content-keyed image publisher before using the local build fallback.
     required: false
     default: "0"
+  candidate-tag-prefix:
+    description: Tag prefix used by a concurrent image publisher for stale-lock candidates.
+    required: false
+    default: swift-6.3
 
 runs:
   using: composite
@@ -34,6 +38,7 @@ runs:
         ALLOW_BUILD_FALLBACK: ${{ inputs.allow-build-fallback }}
         REQUIRE_CURRENT_BUILD_INPUTS: ${{ inputs.require-current-build-inputs }}
         WAIT_FOR_PUBLISHED_SECONDS: ${{ inputs.wait-for-published-seconds }}
+        CANDIDATE_TAG_PREFIX: ${{ inputs.candidate-tag-prefix }}
       run: |
         set -euo pipefail
 
@@ -51,7 +56,7 @@ runs:
                 echo "::error::$LOCK_FILE is stale (locks $locked_hash, build inputs are $actual_hash) and the build fallback is disabled." >&2
                 exit 1
               fi
-              candidate_tag="$image:swift-6.3-$actual_hash"
+              candidate_tag="$image:$CANDIDATE_TAG_PREFIX-$actual_hash"
               case "$WAIT_FOR_PUBLISHED_SECONDS" in
                 ''|*[!0-9]*)
                   echo "::error::wait-for-published-seconds must be a non-negative integer, got: $WAIT_FOR_PUBLISHED_SECONDS" >&2
