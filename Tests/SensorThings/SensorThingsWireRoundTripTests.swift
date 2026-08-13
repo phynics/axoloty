@@ -35,6 +35,29 @@ struct SensorThingsWireRoundTripTests {
     }
 
     @Test
+    func unitOfMeasurementNormalizesMissingFieldsToExplicitNulls() throws {
+        let payload = Data(#"{}"#.utf8)
+        let decoded = try JSONDecoder().decode(UnitOfMeasurement.self, from: payload)
+
+        #expect(decoded.name == nil)
+        #expect(decoded.symbol == nil)
+        #expect(decoded.definition == nil)
+
+        // The encoder intentionally emits every protocol field, so missing
+        // nullable input becomes explicit null output.
+        let encoded = try JSONEncoder().encode(decoded)
+        let json = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        #expect(json["name"] is NSNull)
+        #expect(json["symbol"] is NSNull)
+        #expect(json["definition"] is NSNull)
+
+        let roundTripped = try JSONDecoder().decode(UnitOfMeasurement.self, from: encoded)
+        #expect(roundTripped.name == nil)
+        #expect(roundTripped.symbol == nil)
+        #expect(roundTripped.definition == nil)
+    }
+
+    @Test
     func unitOfMeasurementRoundTripsMixedNullableFields() throws {
         let payload = Data(#"{"name":null,"symbol":"degC","definition":null}"#.utf8)
         let decoded = try JSONDecoder().decode(UnitOfMeasurement.self, from: payload)

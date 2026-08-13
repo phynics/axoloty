@@ -33,6 +33,14 @@ public struct UnitOfMeasurement: Codable {
     /// or `nil` when the SensorThings datastream has no unit of measurement.
     public var definition: String?
 
+    /// Creates a unit of measurement from nullable SensorThings fields.
+    ///
+    /// The optional properties represent the protocol's nullable unit fields.
+    ///
+    /// - Parameters:
+    ///   - name: The full name of the unit, or `nil` when it is not available.
+    ///   - symbol: The textual unit symbol, or `nil` when it is not available.
+    ///   - definition: The URI defining the unit, or `nil` when it is not available.
     public init(name: String?,
                 symbol: String?,
                 definition: String?) {
@@ -41,6 +49,30 @@ public struct UnitOfMeasurement: Codable {
         self.definition = definition
     }
 
+    /// Creates a populated unit of measurement.
+    ///
+    /// This overload preserves source compatibility for callers that provide
+    /// the historically non-optional unit fields.
+    ///
+    /// - Parameters:
+    ///   - name: The full name of the unit.
+    ///   - symbol: The textual unit symbol.
+    ///   - definition: The URI defining the unit.
+    public init(name: String,
+                symbol: String,
+                definition: String) {
+        self.init(name: Optional(name),
+                  symbol: Optional(symbol),
+                  definition: Optional(definition))
+    }
+
+    /// Creates a unit of measurement by decoding SensorThings fields.
+    ///
+    /// Missing and explicit `null` fields both decode as `nil`. Encoding the
+    /// resulting value emits all three fields as explicit `null` values.
+    ///
+    /// - Parameter decoder: The decoder containing a SensorThings unit object.
+    /// - Throws: A decoding error when a present field is not a string or `null`.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.name = try container.decodeIfPresent(String.self, forKey: .name)
@@ -48,6 +80,13 @@ public struct UnitOfMeasurement: Codable {
         self.definition = try container.decodeIfPresent(String.self, forKey: .definition)
     }
 
+    /// Encodes the unit of measurement using the SensorThings field names.
+    ///
+    /// All three fields are emitted. A `nil` property is encoded as explicit
+    /// JSON `null`, including when the corresponding input field was missing.
+    ///
+    /// - Parameter encoder: The encoder receiving the SensorThings unit object.
+    /// - Throws: An encoding error if a field cannot be written to the encoder.
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(name, forKey: .name)
