@@ -165,7 +165,7 @@ struct InspectorArgumentParserTests {
         ]
 
         for command in [
-            ["catalog"],
+            ["catalog", "--duration", "1s"],
             ["discover", "--core-type", "Identity"],
         ] {
             let outcome = InspectorArgumentParser().parse(command + commonOptions)
@@ -296,7 +296,7 @@ struct InspectorArgumentParserTests {
     @Test
     func repeatedCommonOptionsUseLastValueAcrossCommands() {
         for command in [
-            ["catalog"],
+            ["catalog", "--duration", "1s"],
             ["discover", "--core-type", "Identity"],
         ] {
             let outcome = InspectorArgumentParser().parse(command + [
@@ -355,6 +355,7 @@ struct InspectorArgumentParserTests {
             "--host", "before.example",
             "--core-type", "Identity",
             "--output", "json",
+            "--duration", "1s",
             "--source-id", "source-1",
             "--log-level", "debug",
         ])
@@ -508,13 +509,45 @@ struct InspectorArgumentParserTests {
     @Test
     func catalogWithOutputMode() {
         for mode in ["auto", "human", "ndjson", "json"] {
-            let outcome = InspectorArgumentParser().parse(["catalog", "--output", mode])
+            var arguments = ["catalog", "--output", mode]
+            if mode == "json" { arguments += ["--duration", "1s"] }
+            let outcome = InspectorArgumentParser().parse(arguments)
             guard case let .run(config) = outcome else {
                 Issue.record("Expected run outcome for --output \(mode)")
                 return
             }
             #expect(config.output.rawValue == mode)
         }
+    }
+
+    @Test
+    func catalogJSONRequiresFiniteDuration() {
+        for duration in ["unlimited", nil] {
+            var arguments = ["catalog", "--output", "json"]
+            if let duration {
+                arguments += ["--duration", duration]
+            }
+            #expect(InspectorArgumentParser().parse(arguments) == .error(.invalidArguments(
+                reason: "--output json requires a finite --duration for catalog"
+            )))
+        }
+    }
+
+    @Test
+    func catalogJSONAcceptsFiniteDuration() {
+        let outcome = InspectorArgumentParser().parse([
+            "catalog", "--output", "json", "--duration", "1s",
+        ])
+        guard case let .run(config) = outcome else {
+            Issue.record("Expected finite JSON catalog to parse")
+            return
+        }
+        #expect(config.output == .json)
+        guard case let .catalog(command) = config.command else {
+            Issue.record("Expected catalog command")
+            return
+        }
+        #expect(command.duration.value == .seconds(1))
     }
 
     @Test

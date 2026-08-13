@@ -14,6 +14,7 @@ catalogue. Publishes no Coaty events.
 axoloty-inspect catalog --duration 10s
 axoloty-inspect catalog --core-type Identity --namespace test-ns
 axoloty-inspect catalog --output ndjson | jq -c .
+axoloty-inspect catalog --output json --duration 10s | jq .
 ```
 
 Valid core types: `CoatyObject`, `User`, `Annotation`, `Task`, `IoSource`,
@@ -74,14 +75,21 @@ fields.
 | `auto` | Human format for TTY, NDJSON for pipes (default) |
 | `human` | One-line-per-event terminal output |
 | `ndjson` | Newline-delimited JSON, one self-contained object per line |
-| `json` | Single JSON array (not yet implemented for streaming) |
+| `json` | One sorted-key JSON array emitted when the finite command completes |
 
 **stdout** carries data records only. **stderr** carries diagnostics,
 progress, and errors. Connection messages are never written to stdout.
 
-### NDJSON schema
+NDJSON streams records as they occur. JSON buffers records until completion and
+emits exactly one array, so `catalog --output json` requires a finite
+`--duration`; unlimited catalogue JSON is rejected during argument validation.
+Discovery may use JSON without a timeout when its response stream naturally
+ends.
 
-Every line is a complete JSON object with schema `axoloty.inspect/v1`:
+### Record schema
+
+Every NDJSON line, and every element of a JSON array, is a complete JSON object
+with schema `axoloty.inspect/v1`:
 
 ```json
 {

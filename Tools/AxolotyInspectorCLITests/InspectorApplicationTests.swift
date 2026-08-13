@@ -185,6 +185,29 @@ struct InspectorApplicationTests {
     }
 
     @Test
+    func jsonCatalogBuffersRecordsAndEmitsOneArrayAtCompletion() async throws {
+        let session = FakeInspectorSession()
+        session.queuedAdvertises = [makeSnapshot(name: "Agent A")]
+
+        var output: [String] = []
+        let app = InspectorApplication(
+            configuration: makeConfig(output: .json),
+            session: session,
+            writeOutput: { output.append($0) },
+            writeDiagnostic: { _ in },
+            timestamp: { "2026-07-31T00:00:00Z" },
+            isTerminal: false
+        )
+        let result = await app.run()
+
+        #expect(result == nil)
+        #expect(output.count == 1)
+        let records = try #require(JSONSerialization.jsonObject(with: Data(output[0].utf8)) as? [[String: Any]])
+        #expect(records.count == 3)
+        #expect(records.contains { $0["kind"] as? String == "advertise" })
+    }
+
+    @Test
     func deadvertiseRemovesFromCatalogue() async throws {
         let session = FakeInspectorSession()
         session.queuedAdvertises = [makeSnapshot(objectId: "obj-1", name: "Agent")]
@@ -689,8 +712,15 @@ struct InspectorDiscoverApplicationTests {
             _ = await app.run()
 
             let resultLine = try #require(output.first { $0.contains("\"kind\":\"discovery-result\"") })
-            let json = try #require(JSONSerialization.jsonObject(with: Data(resultLine.utf8)) as? [String: Any])
-            let objects = try #require(json["objects"] as? [[String: Any]])
+            let objects: [[String: Any]]
+            if outputMode == .json {
+                let records = try #require(JSONSerialization.jsonObject(with: Data(resultLine.utf8)) as? [[String: Any]])
+                let resultRecord = try #require(records.first { $0["kind"] as? String == "discovery-result" })
+                objects = try #require(resultRecord["objects"] as? [[String: Any]])
+            } else {
+                let json = try #require(JSONSerialization.jsonObject(with: Data(resultLine.utf8)) as? [String: Any])
+                objects = try #require(json["objects"] as? [[String: Any]])
+            }
             #expect(Set(objects.compactMap { $0["objectId"] as? String }) == ["primary-1", "related-1", "related-2"])
             #expect(objects.count == 3)
         }

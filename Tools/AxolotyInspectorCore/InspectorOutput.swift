@@ -19,6 +19,23 @@ public struct NDJSONFormatter: Sendable {
     }
 }
 
+/// Formats a finite collection of ``InspectorRecord`` values as one JSON
+/// array with recursively sorted object keys.
+public struct JSONFormatter: Sendable {
+    /// Creates a formatter.
+    public init() {}
+
+    /// Encodes all records as one JSON document.
+    ///
+    /// - Throws: An encoding error if a record cannot be encoded.
+    public func format(_ records: [InspectorRecord]) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(records)
+        return String(decoding: data, as: UTF8.self)
+    }
+}
+
 /// Formats ``InspectorRecord`` values as concise human-readable lines
 /// suitable for terminal output.
 public struct HumanFormatter: Sendable {

@@ -83,18 +83,26 @@ public final class InspectorApplication {
         default: resolvedOutput = configuration.output
         }
 
+        guard resolvedOutput != .json || cmd.duration.value != nil else {
+            return .invalidArguments(
+                reason: "--output json requires a finite --duration for catalog"
+            )
+        }
+
+        var bufferedRecords: [InspectorRecord] = []
+
         func emit(_ record: InspectorRecord) {
-            let line: String
             switch resolvedOutput {
             case .human:
-                line = humanFormatter.format(record)
-            case .ndjson, .json:
-                line = (try? ndjsonFormatter.format(record)) ?? ""
+                writeOutput(humanFormatter.format(record))
+            case .ndjson:
+                if let line = try? ndjsonFormatter.format(record) {
+                    writeOutput(line)
+                }
+            case .json:
+                bufferedRecords.append(record)
             case .auto:
-                line = ""
-            }
-            if !line.isEmpty {
-                writeOutput(line)
+                break
             }
         }
 
@@ -204,6 +212,10 @@ public final class InspectorApplication {
         _ = await timerTask.value
         _ = await signalTask.value
         emit(factory.sessionEnded(timestamp: timestamp()))
+
+        if resolvedOutput == .json, let output = try? JSONFormatter().format(bufferedRecords) {
+            writeOutput(output)
+        }
 
         session.stop()
         return result

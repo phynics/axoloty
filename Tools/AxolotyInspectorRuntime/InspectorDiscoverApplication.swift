@@ -63,15 +63,20 @@ public final class InspectorDiscoverApplication {
         default: resolvedOutput = configuration.output
         }
 
+        var bufferedRecords: [InspectorRecord] = []
+
         func emit(_ record: InspectorRecord) {
-            let line: String
             switch resolvedOutput {
-            case .human: line = humanFormatter.format(record)
-            case .ndjson, .json: line = (try? ndjsonFormatter.format(record)) ?? ""
-            case .auto: line = ""
-            }
-            if !line.isEmpty {
-                writeOutput(line)
+            case .human:
+                writeOutput(humanFormatter.format(record))
+            case .ndjson:
+                if let line = try? ndjsonFormatter.format(record) {
+                    writeOutput(line)
+                }
+            case .json:
+                bufferedRecords.append(record)
+            case .auto:
+                break
             }
         }
 
@@ -189,6 +194,10 @@ public final class InspectorDiscoverApplication {
         emit(resultRecord)
 
         emit(factory.sessionEnded(timestamp: timestamp()))
+
+        if resolvedOutput == .json, let output = try? JSONFormatter().format(bufferedRecords) {
+            writeOutput(output)
+        }
 
         session.stop()
 
