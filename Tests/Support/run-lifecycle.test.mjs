@@ -11,8 +11,13 @@ test("run.sh builds an owned, run-scoped container command", () => {
   assert.match(runScript, /--name "\$container_name"/);
   assert.match(runScript, /--label io\.axoloty\.managed-by=axoloty-run\.sh/);
   assert.match(runScript, /--label "io\.axoloty\.run-id=\$container_run_id"/);
+  assert.match(runScript, /"\$runtime" create/);
+  assert.match(runScript, /--cidfile "\$container_cidfile"/);
+  assert.match(runScript, /container_has_expected_labels/);
+  assert.match(runScript, /"\$runtime" start --attach/);
   assert.match(runScript, /container_started=1/);
-  assert.match(runScript, /confirm_container_ownership/);
+  assert.doesNotMatch(runScript, /confirm_container_ownership/);
+  assert.doesNotMatch(runScript, /wait_for_ownership/);
   assert.match(runScript, /io\.axoloty\.worktree/);
   assert.match(runScript, /io\.axoloty\.owner/);
   assert.match(runScript, /wait_for_process_completion "\$container_pid"/);
@@ -29,6 +34,7 @@ test("run.sh forwards signals and cleans only a matching owned container", () =>
   assert.match(runScript, /stop --time "\$container_term_grace"/);
   assert.match(runScript, /kill "\$container_id"/);
   assert.match(runScript, /rm -f "\$container_id"/);
+  assert.doesNotMatch(runScript, /runtime run \\\n+.*--rm/);
 });
 
 test("run.sh retains existing optional runtime boundaries", () => {
