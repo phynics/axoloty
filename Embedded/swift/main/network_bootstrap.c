@@ -12,6 +12,7 @@
 #include "mqtt_client.h"
 #include "nvs_flash.h"
 #include "runtime_identity.h"
+#include "embedded_shared_flags.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
@@ -57,7 +58,7 @@ unsigned int axoloty_network_cleanup(void);
 
 static EventGroupHandle_t network_events;
 static esp_mqtt_client_handle_t mqtt_client;
-static volatile unsigned network_mqtt_bits;
+static AxolotyEmbeddedSharedFlags network_flags;
 static char network_topic[NETWORK_MAX_TOPIC];
 static char network_subscription_topic[NETWORK_MAX_TOPIC];
 static char network_payload[NETWORK_MAX_PAYLOAD];
@@ -76,10 +77,6 @@ static int network_wifi_handler_registered;
 static int network_ip_handler_registered;
 static unsigned int network_agent_role;
 static unsigned int network_agent_scenario;
-static volatile unsigned int agent_connect_count;
-static volatile unsigned int network_connect_count;
-static volatile unsigned int wifi_retry_count;
-static volatile int network_forced_wifi_disconnect;
 static uint32_t network_overall_start;
 static unsigned int network_overall_deadline_ms;
 static uint8_t agent_output_topic[NETWORK_MAX_TOPIC];
@@ -88,6 +85,38 @@ static uint8_t agent_will_topic[NETWORK_MAX_TOPIC];
 static uint8_t agent_will_payload[NETWORK_MAX_PAYLOAD];
 static uint8_t agent_actor_route[NETWORK_MAX_TOPIC];
 static int32_t agent_actor_route_length;
+
+static unsigned network_mqtt_bits_load(void) {
+    return axoloty_atomic_uint_load(&network_flags.mqtt_bits);
+}
+
+static void network_mqtt_bits_store(unsigned bits) {
+    axoloty_atomic_uint_store(&network_flags.mqtt_bits, bits);
+}
+
+static void network_mqtt_bits_set(unsigned bits) {
+    axoloty_atomic_uint_fetch_or(&network_flags.mqtt_bits, bits);
+}
+
+static void network_mqtt_bits_clear(unsigned bits) {
+    axoloty_atomic_uint_fetch_and(&network_flags.mqtt_bits, ~bits);
+}
+
+static unsigned network_connect_count_load(void) {
+    return axoloty_atomic_uint_load(&network_flags.network_connect_count);
+}
+
+static unsigned agent_connect_count_load(void) {
+    return axoloty_atomic_uint_load(&network_flags.agent_connect_count);
+}
+
+static unsigned wifi_retry_count_load(void) {
+    return axoloty_atomic_uint_load(&network_flags.wifi_retry_count);
+}
+
+static int network_forced_wifi_disconnect_load(void) {
+    return axoloty_atomic_int_load(&network_flags.forced_wifi_disconnect);
+}
 
 static int network_read_station_mac(uint8_t mac[6], void *context) {
     (void)context;
@@ -102,7 +131,7 @@ static int network_prepare_client_id(void) {
 static void network_ip_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
     (void)arg; (void)base; (void)data;
     if (id == IP_EVENT_STA_GOT_IP) {
-        wifi_retry_count = 0;
+        axoloty_atomic_uint_store(&network_flags.wifi_retry_count, 0);
         xEventGroupSetBits(network_events, IP_BIT);
     }
 }
@@ -111,10 +140,10 @@ static void network_wifi_event(void *arg, esp_event_base_t base, int32_t id, voi
     (void)arg; (void)base; (void)data;
     if (id == WIFI_EVENT_STA_START) esp_wifi_connect();
     else if (id == WIFI_EVENT_STA_DISCONNECTED) {
-        if (network_forced_wifi_disconnect) {
+        if (network_forced_wifi_disconnect_load()) {
             xEventGroupSetBits(network_events, WIFI_FAIL_BIT);
-        } else if (wifi_retry_count < 5U) {
-            wifi_retry_count += 1U;
+        } else if (wifi_retry_count_load() < 5U) {
+            axoloty_atomic_uint_fetch_add(&network_flags.wifi_retry_count, 1U);
             esp_wifi_connect();
         } else {
             xEventGroupSetBits(network_events, WIFI_FAIL_BIT);
@@ -127,9 +156,10 @@ static void network_mqtt_event(void *handler_args, esp_event_base_t base, int32_
     esp_mqtt_event_handle_t event = (esp_mqtt_event_handle_t)event_data;
     if (event_id == MQTT_EVENT_CONNECTED) {
         if (network_agent_role) {
-            agent_connect_count += 1U;
-            network_mqtt_bits |= AGENT_CONNECTED_BIT;
-            if (agent_connect_count > 1U) {
+            unsigned connect_count = axoloty_atomic_uint_fetch_add(
+                &network_flags.agent_connect_count, 1U) + 1U;
+            network_mqtt_bits_set(AGENT_CONNECTED_BIT);
+            if (connect_count > 1U) {
                 esp_mqtt_client_subscribe(mqtt_client, "coaty/3/axoloty-embedded/#", 0);
                 if (agent_actor_route_length > 0) {
                     esp_mqtt_client_subscribe(
@@ -137,19 +167,20 @@ static void network_mqtt_event(void *handler_args, esp_event_base_t base, int32_
                 }
             }
         } else {
-            network_connect_count += 1U;
-            network_mqtt_bits |= 4U;
-            if (network_connect_count > 1U && network_subscription_topic[0] != 0) {
+            unsigned connect_count = axoloty_atomic_uint_fetch_add(
+                &network_flags.network_connect_count, 1U) + 1U;
+            network_mqtt_bits_set(4U);
+            if (connect_count > 1U && network_subscription_topic[0] != 0) {
                 esp_mqtt_client_subscribe(mqtt_client, network_subscription_topic, 0);
             }
         }
     }
     else if (event_id == MQTT_EVENT_DISCONNECTED && network_agent_role) {
-        network_mqtt_bits &= ~(AGENT_CONNECTED_BIT | AGENT_SUBSCRIBED_BIT);
+        network_mqtt_bits_clear(AGENT_CONNECTED_BIT | AGENT_SUBSCRIBED_BIT);
     }
-    else if (event_id == MQTT_EVENT_DISCONNECTED) network_mqtt_bits &= ~(4U | 8U);
-    else if (event_id == MQTT_EVENT_SUBSCRIBED) network_mqtt_bits |= network_agent_role ? AGENT_SUBSCRIBED_BIT : 8U;
-    else if (event_id == MQTT_EVENT_PUBLISHED) network_mqtt_bits |= 16U;
+    else if (event_id == MQTT_EVENT_DISCONNECTED) network_mqtt_bits_clear(4U | 8U);
+    else if (event_id == MQTT_EVENT_SUBSCRIBED) network_mqtt_bits_set(network_agent_role ? AGENT_SUBSCRIBED_BIT : 8U);
+    else if (event_id == MQTT_EVENT_PUBLISHED) network_mqtt_bits_set(16U);
     else if (event_id == MQTT_EVENT_DATA && network_agent_role) {
         int valid = event && event->topic_len >= 0 && event->topic_len < NETWORK_MAX_TOPIC &&
             event->data_len >= 0 && event->data_len < NETWORK_MAX_PAYLOAD &&
@@ -174,8 +205,8 @@ static void network_mqtt_event(void *handler_args, esp_event_base_t base, int32_
                 agent_output_payload, sizeof(agent_output_payload),
                 &output_topic_length, &output_payload_length);
             if (action == 1) {
-                if (network_agent_role == 1U) network_mqtt_bits |= AGENT_DISCOVER_BIT;
-                else network_mqtt_bits |= AGENT_ADVERTISE_BIT;
+                if (network_agent_role == 1U) network_mqtt_bits_set(AGENT_DISCOVER_BIT);
+                else network_mqtt_bits_set(AGENT_ADVERTISE_BIT);
                 if (network_agent_scenario == 1U && network_agent_role == 2U) {
                     esp_mqtt_client_publish(
                         mqtt_client, "axoloty/test/agent-observed/B", "advertise", 9, 0, 0);
@@ -188,15 +219,15 @@ static void network_mqtt_event(void *handler_args, esp_event_base_t base, int32_
                     esp_mqtt_client_publish(
                         mqtt_client, (const char *)agent_output_topic,
                         (const char *)agent_output_payload, output_payload_length, 0, 0) >= 0) {
-                    if (network_agent_role == 1U) network_mqtt_bits |= AGENT_RESOLVE_BIT;
-                    else network_mqtt_bits |= AGENT_DISCOVER_BIT;
+                    if (network_agent_role == 1U) network_mqtt_bits_set(AGENT_RESOLVE_BIT);
+                    else network_mqtt_bits_set(AGENT_DISCOVER_BIT);
                 }
             } else if (action == 2 && network_agent_role == 2U) {
-                network_mqtt_bits |= AGENT_RESOLVE_BIT;
+                network_mqtt_bits_set(AGENT_RESOLVE_BIT);
             } else if (action == 3 && network_agent_role == 2U) {
                 if (network_agent_scenario != 1U ||
-                    (network_mqtt_bits & AGENT_ADVERTISE_BIT)) {
-                    network_mqtt_bits |= AGENT_DEADVERTISE_BIT;
+                    (network_mqtt_bits_load() & AGENT_ADVERTISE_BIT)) {
+                    network_mqtt_bits_set(AGENT_DEADVERTISE_BIT);
                 }
             } else if (action == 4) {
                 int32_t route_length = axoloty_static_agent_copy_actor_route(
@@ -221,7 +252,7 @@ static void network_mqtt_event(void *handler_args, esp_event_base_t base, int32_
              event->data_len == (int)network_payload_length &&
              memcmp(event->topic, network_topic, event->topic_len) == 0 &&
              memcmp(event->data, network_payload, event->data_len) == 0) {
-        network_mqtt_bits |= 32U;
+        network_mqtt_bits_set(32U);
     }
 }
 
@@ -249,8 +280,8 @@ unsigned int axoloty_network_prepare(unsigned int overall_deadline_ms) {
     network_wifi_started = 0;
     network_wifi_handler_registered = 0;
     network_ip_handler_registered = 0;
-    wifi_retry_count = 0;
-    network_forced_wifi_disconnect = 0;
+    axoloty_atomic_uint_store(&network_flags.wifi_retry_count, 0);
+    axoloty_atomic_int_store(&network_flags.forced_wifi_disconnect, 0);
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         if (nvs_flash_erase() != ESP_OK) return 0;
@@ -338,8 +369,8 @@ int axoloty_mqtt_connect_wait(unsigned int deadline_ms) {
     (void)deadline_ms;
     return 0;
 #else
-    network_mqtt_bits = 0;
-    network_connect_count = 0;
+    network_mqtt_bits_store(0);
+    axoloty_atomic_uint_store(&network_flags.network_connect_count, 0);
     if (!network_prepare_client_id()) return 0;
     esp_mqtt_client_config_t config = { 0 };
     config.broker.address.uri = network_uri;
@@ -362,8 +393,8 @@ int axoloty_mqtt_connect_wait(unsigned int deadline_ms) {
     uint32_t start = (uint32_t)(esp_timer_get_time() / 1000ULL);
     while (network_deadline(start, deadline_ms) &&
            network_deadline(network_overall_start, network_overall_deadline_ms) &&
-           !(network_mqtt_bits & 4U)) vTaskDelay(pdMS_TO_TICKS(20));
-    if (network_mqtt_bits & 4U) return 1;
+           !(network_mqtt_bits_load() & 4U)) vTaskDelay(pdMS_TO_TICKS(20));
+    if (network_mqtt_bits_load() & 4U) return 1;
     esp_mqtt_client_stop(mqtt_client);
     esp_mqtt_client_destroy(mqtt_client);
     mqtt_client = NULL;
@@ -384,8 +415,8 @@ int axoloty_mqtt_subscribe_wait(const unsigned char *topic, int topic_length,
     uint32_t start = (uint32_t)(esp_timer_get_time() / 1000ULL);
     while (network_deadline(start, deadline_ms) &&
            network_deadline(network_overall_start, network_overall_deadline_ms) &&
-           !(network_mqtt_bits & 8U)) vTaskDelay(pdMS_TO_TICKS(20));
-    return (network_mqtt_bits & 8U) != 0;
+           !(network_mqtt_bits_load() & 8U)) vTaskDelay(pdMS_TO_TICKS(20));
+    return (network_mqtt_bits_load() & 8U) != 0;
 #endif
 }
 
@@ -414,8 +445,8 @@ int axoloty_mqtt_wait_loopback(unsigned int deadline_ms) {
     uint32_t start = (uint32_t)(esp_timer_get_time() / 1000ULL);
     while (network_deadline(start, deadline_ms) &&
            network_deadline(network_overall_start, network_overall_deadline_ms) &&
-           !(network_mqtt_bits & 32U)) vTaskDelay(pdMS_TO_TICKS(20));
-    return (network_mqtt_bits & 32U) != 0;
+           !(network_mqtt_bits_load() & 32U)) vTaskDelay(pdMS_TO_TICKS(20));
+    return (network_mqtt_bits_load() & 32U) != 0;
 #endif
 }
 
@@ -427,23 +458,24 @@ int axoloty_mqtt_reconnect_wait(unsigned int deadline_ms) {
     if (!mqtt_client || network_subscription_topic[0] == 0) return 0;
     uint32_t start = (uint32_t)(esp_timer_get_time() / 1000ULL);
     xEventGroupClearBits(network_events, WIFI_FAIL_BIT | IP_BIT);
-    network_mqtt_bits &= ~(4U | 8U);
-    network_forced_wifi_disconnect = 1;
+    network_mqtt_bits_clear(4U | 8U);
+    axoloty_atomic_int_store(&network_flags.forced_wifi_disconnect, 1);
     if (esp_wifi_disconnect() != ESP_OK) {
-        network_forced_wifi_disconnect = 0;
+        axoloty_atomic_int_store(&network_flags.forced_wifi_disconnect, 0);
         return 0;
     }
     EventBits_t disconnected = xEventGroupWaitBits(
         network_events, WIFI_FAIL_BIT, pdTRUE, pdFALSE,
         network_wait_ticks(start, deadline_ms, 5000));
-    network_forced_wifi_disconnect = 0;
+    axoloty_atomic_int_store(&network_flags.forced_wifi_disconnect, 0);
     if (!(disconnected & WIFI_FAIL_BIT) || esp_wifi_connect() != ESP_OK) return 0;
     while (network_deadline(start, deadline_ms) &&
            network_deadline(network_overall_start, network_overall_deadline_ms) &&
-           (!(network_mqtt_bits & 4U) || !(network_mqtt_bits & 8U))) {
+           (!(network_mqtt_bits_load() & 4U) || !(network_mqtt_bits_load() & 8U))) {
         vTaskDelay(pdMS_TO_TICKS(20));
     }
-    return (network_mqtt_bits & (4U | 8U)) == (4U | 8U) && network_connect_count > 1U;
+    return (network_mqtt_bits_load() & (4U | 8U)) == (4U | 8U) &&
+        network_connect_count_load() > 1U;
 #endif
 }
 
@@ -480,7 +512,7 @@ unsigned int axoloty_network_cleanup(void) {
     network_ip_handler_registered = 0;
     network_subscription_topic[0] = 0;
     network_will_configured = 0;
-    network_connect_count = 0;
+    axoloty_atomic_uint_store(&network_flags.network_connect_count, 0);
     return disconnect == ESP_OK && stop == ESP_OK && deinit == ESP_OK;
 #endif
 }
@@ -524,8 +556,8 @@ unsigned int axoloty_agent_test(unsigned int overall_deadline_ms) {
     int wifi_handler_registered = 0;
     int ip_handler_registered = 0;
     int mqtt_started = 0;
-    wifi_retry_count = 0;
-    network_forced_wifi_disconnect = 0;
+    axoloty_atomic_uint_store(&network_flags.wifi_retry_count, 0);
+    axoloty_atomic_int_store(&network_flags.forced_wifi_disconnect, 0);
     unsigned int result = 0;
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -587,50 +619,56 @@ unsigned int axoloty_agent_test(unsigned int overall_deadline_ms) {
     }
     network_agent_role = axoloty_device_role;
     network_agent_scenario = axoloty_agent_scenario;
-    agent_connect_count = 0;
+    axoloty_atomic_uint_store(&network_flags.agent_connect_count, 0);
     agent_actor_route_length = 0;
-    network_mqtt_bits = 0;
+    network_mqtt_bits_store(0);
     mqtt_client = esp_mqtt_client_init(&config);
     if (!mqtt_client || esp_mqtt_client_register_event(mqtt_client, ESP_EVENT_ANY_ID, network_mqtt_event, NULL) != ESP_OK ||
         esp_mqtt_client_start(mqtt_client) != ESP_OK) goto agent_done;
     mqtt_started = 1;
-    while (network_deadline(overall_start, overall_deadline_ms) && !(network_mqtt_bits & AGENT_CONNECTED_BIT)) {
+    while (network_deadline(overall_start, overall_deadline_ms) &&
+           !(network_mqtt_bits_load() & AGENT_CONNECTED_BIT)) {
         vTaskDelay(pdMS_TO_TICKS(20));
     }
-    if (!(network_mqtt_bits & AGENT_CONNECTED_BIT)) goto agent_done;
+    if (!(network_mqtt_bits_load() & AGENT_CONNECTED_BIT)) goto agent_done;
     result |= 4U;
     if (esp_mqtt_client_subscribe(mqtt_client, "coaty/3/axoloty-embedded/#", 0) < 0) goto agent_done;
-    while (network_deadline(overall_start, overall_deadline_ms) && !(network_mqtt_bits & AGENT_SUBSCRIBED_BIT)) {
+    while (network_deadline(overall_start, overall_deadline_ms) &&
+           !(network_mqtt_bits_load() & AGENT_SUBSCRIBED_BIT)) {
         vTaskDelay(pdMS_TO_TICKS(20));
     }
-    if (!(network_mqtt_bits & AGENT_SUBSCRIBED_BIT)) goto agent_done;
+    if (!(network_mqtt_bits_load() & AGENT_SUBSCRIBED_BIT)) goto agent_done;
     result |= 8U;
 
     xEventGroupClearBits(network_events, WIFI_FAIL_BIT | IP_BIT);
-    network_mqtt_bits &= ~(AGENT_CONNECTED_BIT | AGENT_SUBSCRIBED_BIT);
-    network_forced_wifi_disconnect = 1;
+    network_mqtt_bits_clear(AGENT_CONNECTED_BIT | AGENT_SUBSCRIBED_BIT);
+    axoloty_atomic_int_store(&network_flags.forced_wifi_disconnect, 1);
     if (esp_wifi_disconnect() != ESP_OK) goto agent_done;
     EventBits_t disconnected = xEventGroupWaitBits(
         network_events, WIFI_FAIL_BIT, pdTRUE, pdFALSE, pdMS_TO_TICKS(5000));
     if (!(disconnected & WIFI_FAIL_BIT)) goto agent_done;
     vTaskDelay(pdMS_TO_TICKS(500));
-    network_forced_wifi_disconnect = 0;
+    axoloty_atomic_int_store(&network_flags.forced_wifi_disconnect, 0);
     if (esp_wifi_connect() != ESP_OK) goto agent_done;
     while (network_deadline(overall_start, overall_deadline_ms) &&
-           (!(network_mqtt_bits & AGENT_CONNECTED_BIT) || !(network_mqtt_bits & AGENT_SUBSCRIBED_BIT))) {
+           (!(network_mqtt_bits_load() & AGENT_CONNECTED_BIT) ||
+            !(network_mqtt_bits_load() & AGENT_SUBSCRIBED_BIT))) {
         vTaskDelay(pdMS_TO_TICKS(20));
     }
-    if (!(network_mqtt_bits & AGENT_CONNECTED_BIT) || !(network_mqtt_bits & AGENT_SUBSCRIBED_BIT)) goto agent_done;
+    if (!(network_mqtt_bits_load() & AGENT_CONNECTED_BIT) ||
+        !(network_mqtt_bits_load() & AGENT_SUBSCRIBED_BIT)) goto agent_done;
     result |= 512U;
 
     if (network_agent_scenario == 2U) {
         if (esp_mqtt_client_publish(
                 mqtt_client, "axoloty/test/agent-ready/B", "ready", 5, 0, 0) < 0) goto agent_done;
         while (network_deadline(overall_start, overall_deadline_ms) &&
-               (agent_connect_count < 3U || !(network_mqtt_bits & AGENT_SUBSCRIBED_BIT))) {
+               (agent_connect_count_load() < 3U ||
+                !(network_mqtt_bits_load() & AGENT_SUBSCRIBED_BIT))) {
             vTaskDelay(pdMS_TO_TICKS(20));
         }
-        if (agent_connect_count < 3U || !(network_mqtt_bits & AGENT_SUBSCRIBED_BIT)) goto agent_done;
+        if (agent_connect_count_load() < 3U ||
+            !(network_mqtt_bits_load() & AGENT_SUBSCRIBED_BIT)) goto agent_done;
         result |= 1024U;
     }
 
@@ -653,26 +691,27 @@ unsigned int axoloty_agent_test(unsigned int overall_deadline_ms) {
                 if (esp_mqtt_client_publish(
                         mqtt_client, (const char *)agent_output_topic,
                         (const char *)agent_output_payload, payload_length, 0, 0) >= 0) {
-                    network_mqtt_bits |= AGENT_ADVERTISE_BIT;
+                    network_mqtt_bits_set(AGENT_ADVERTISE_BIT);
                 }
                 vTaskDelay(pdMS_TO_TICKS(1000));
             }
             goto agent_done;
         }
         while (network_deadline(overall_start, overall_deadline_ms) &&
-               !(network_mqtt_bits & AGENT_DISCOVER_BIT)) {
+               !(network_mqtt_bits_load() & AGENT_DISCOVER_BIT)) {
             if (esp_mqtt_client_publish(
                     mqtt_client, (const char *)agent_output_topic,
                     (const char *)agent_output_payload, payload_length, 0, 0) >= 0) {
-                network_mqtt_bits |= AGENT_ADVERTISE_BIT;
+                network_mqtt_bits_set(AGENT_ADVERTISE_BIT);
             }
-            for (int wait = 0; wait < 100 && !(network_mqtt_bits & AGENT_DISCOVER_BIT); ++wait) {
+            for (int wait = 0; wait < 100 &&
+                 !(network_mqtt_bits_load() & AGENT_DISCOVER_BIT); ++wait) {
                 vTaskDelay(pdMS_TO_TICKS(20));
             }
         }
-        if (network_mqtt_bits & AGENT_ADVERTISE_BIT) result |= 16U;
-        if (network_mqtt_bits & AGENT_DISCOVER_BIT) result |= 32U;
-        if (network_mqtt_bits & AGENT_RESOLVE_BIT) {
+        if (network_mqtt_bits_load() & AGENT_ADVERTISE_BIT) result |= 16U;
+        if (network_mqtt_bits_load() & AGENT_DISCOVER_BIT) result |= 32U;
+        if (network_mqtt_bits_load() & AGENT_RESOLVE_BIT) {
             result |= 64U;
             vTaskDelay(pdMS_TO_TICKS(500));
             topic_length = 0; payload_length = 0;
@@ -684,7 +723,7 @@ unsigned int axoloty_agent_test(unsigned int overall_deadline_ms) {
                 if (esp_mqtt_client_publish(
                         mqtt_client, (const char *)agent_output_topic,
                         (const char *)agent_output_payload, payload_length, 0, 0) >= 0) {
-                    network_mqtt_bits |= AGENT_DEADVERTISE_BIT;
+                    network_mqtt_bits_set(AGENT_DEADVERTISE_BIT);
                     result |= 128U;
                     vTaskDelay(pdMS_TO_TICKS(500));
                 }
@@ -692,14 +731,14 @@ unsigned int axoloty_agent_test(unsigned int overall_deadline_ms) {
         }
     } else {
         while (network_deadline(overall_start, overall_deadline_ms) &&
-               !(network_mqtt_bits & AGENT_DEADVERTISE_BIT)) {
+               !(network_mqtt_bits_load() & AGENT_DEADVERTISE_BIT)) {
             axoloty_static_agent_expire(2);
             vTaskDelay(pdMS_TO_TICKS(20));
         }
-        if (network_mqtt_bits & AGENT_ADVERTISE_BIT) result |= 16U;
-        if (network_mqtt_bits & AGENT_DISCOVER_BIT) result |= 32U;
-        if (network_mqtt_bits & AGENT_RESOLVE_BIT) result |= 64U;
-        if (network_mqtt_bits & AGENT_DEADVERTISE_BIT) result |= 128U;
+        if (network_mqtt_bits_load() & AGENT_ADVERTISE_BIT) result |= 16U;
+        if (network_mqtt_bits_load() & AGENT_DISCOVER_BIT) result |= 32U;
+        if (network_mqtt_bits_load() & AGENT_RESOLVE_BIT) result |= 64U;
+        if (network_mqtt_bits_load() & AGENT_DEADVERTISE_BIT) result |= 128U;
     }
 
 agent_done:
@@ -708,8 +747,8 @@ agent_done:
     mqtt_client = NULL;
     network_agent_role = 0;
     network_agent_scenario = 0;
-    network_forced_wifi_disconnect = 0;
-    agent_connect_count = 0;
+    axoloty_atomic_int_store(&network_flags.forced_wifi_disconnect, 0);
+    axoloty_atomic_uint_store(&network_flags.agent_connect_count, 0);
     esp_err_t wifi_disconnect_result = !wifi_started || esp_wifi_disconnect() == ESP_OK ? ESP_OK : ESP_FAIL;
     esp_err_t wifi_stop_result = !wifi_started || esp_wifi_stop() == ESP_OK ? ESP_OK : ESP_FAIL;
     if (wifi_handler_registered) esp_event_handler_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, network_wifi_event);
