@@ -24,7 +24,9 @@ case "$*" in
                     printf '%s\n' 'axoloty mqtt-nio swift-nio ErrorKit'
                 fi
                 ;;
-            *) printf '%s\n' 'AxolotyWire swift-json swift-nio' ;;
+            *)
+                printf '%s\n' axolotywire swift-json swift-nio swift-atomics swift-collections swift-system
+                ;;
         esac
         ;;
     "build --configuration debug --target RootWireConsumer")

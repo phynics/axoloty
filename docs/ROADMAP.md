@@ -17,7 +17,8 @@ records architectural progress made so far. It is tracked in
 Axoloty 0.2 is **not** a v1 release and is **not** API-stable. It provides:
 
 - Safe host runtime boundaries.
-- Dependency-free `AxolotyWire` module.
+- Foundation-free `AxolotyWire` module with one direct parser dependency and a
+  separately validated standalone package boundary.
 - Embedded Swift support on ESP32-C6 (Advertise/Deadvertise, Discover/Resolve).
 - Current host and device performance evidence.
 - Typed Swift repository tooling.
@@ -39,7 +40,7 @@ The v1 north star remains:
 |---|---|---|---|
 | 0 | [#273](https://github.com/phynics/axoloty/issues/273) | Finish and clear the inherited backlog. | ✅ Closed |
 | 1 | [#274](https://github.com/phynics/axoloty/issues/274) | Establish the host safety boundary. | ✅ Closed |
-| 2 | [#275](https://github.com/phynics/axoloty/issues/275) | Extract `AxolotyWire`, a dependency-free Foundation-free wire module. | ✅ Closed |
+| 2 | [#275](https://github.com/phynics/axoloty/issues/275) | Extract `AxolotyWire`, a Foundation-free wire module with an allowlisted standalone package closure. | ✅ Closed |
 | 3 | [#276](https://github.com/phynics/axoloty/issues/276) | Establish resource and performance budgets. | ✅ Closed |
 | 4 | [#277](https://github.com/phynics/axoloty/issues/277) | Prove the ESP32-C6 vertical slice: Advertise/Deadvertise and Discover/Resolve. | ✅ Closed |
 | 0.2 | [#278](https://github.com/phynics/axoloty/issues/278) | Stabilize, document, and release the 0.2 checkpoint. | 🔄 In progress |
@@ -60,7 +61,10 @@ The v1 north star remains:
 
 ## Cross-cutting success metrics
 
-- `AxolotyWire` has zero external runtime dependencies.
+- `AxolotyWire` has no host runtime dependencies; its standalone package has
+  one direct `swift-json` / `IkigaJSONCore` parser dependency and an
+  allowlisted transitive resolution closure validated by the distribution
+  gate.
 - `AxolotyWire` imports no Foundation, NIO, MQTT, ErrorKit, or logging modules
   and uses no actors.
 - Borrowed values never cross asynchronous seams.
