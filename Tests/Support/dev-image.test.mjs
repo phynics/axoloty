@@ -159,7 +159,9 @@ test("the ax launcher builds the mounted workspace product in the mounted cache"
 });
 
 test("published content-keyed images avoid repeated fallback builds and refresh the lock", () => {
-  assert.match(setupAction, /candidate_tag=.*swift-6\.3-\$actual_hash/);
+  const publishPr = imageWorkflow.slice(imageWorkflow.indexOf("  publish-pr:"), imageWorkflow.indexOf("  publish-main:"));
+  const publishMain = imageWorkflow.slice(imageWorkflow.indexOf("  publish-main:"));
+  assert.match(setupAction, /candidate_tag=.*\$CANDIDATE_TAG_PREFIX-\$actual_hash/);
   assert.match(setupAction, /candidate_hash=.*image inspect/);
   assert.match(setupAction, /automated lock-refresh PR is pending/);
   assert.match(imageWorkflow, /publish-pr:[\s\S]*packages: write/);
@@ -174,6 +176,24 @@ test("published content-keyed images avoid repeated fallback builds and refresh 
   assert.match(imageWorkflow, /Build and publish content-keyed image/);
   assert.match(imageWorkflow, /imagetools inspect "\$image_tag"/);
   assert.match(imageWorkflow, /Content-keyed development image already exists/);
+  assert.match(imageWorkflow, /image_tag="\$IMAGE_BASE:swift-6\.3-pr-\$\{\{ github\.event\.pull_request\.number \}\}-\$build_inputs_hash"/);
+  assert.match(
+    publishPr,
+    /canonical_tag="\$IMAGE_BASE:swift-6\.3-\$build_inputs_hash"[^]*imagetools inspect "\$canonical_tag"[^]*Promoting canonical development image to PR tag[^]*imagetools create --tag "\$image_tag" "\$canonical_tag"[^]*exit 0[^]*docker buildx build/,
+  );
+  assert.match(setupAction, /candidate_tag="\$image:\$CANDIDATE_TAG_PREFIX-\$actual_hash"/);
+  assert.match(
+    fs.readFileSync(".github/workflows/ci.yml", "utf8"),
+    /candidate-tag-prefix: \$\{\{ github\.event_name == 'pull_request' && format\('swift-6\.3-pr-\{0\}', github\.event\.pull_request\.number\) \|\| 'swift-6\.3' \}\}/,
+  );
+  assert.match(
+    publishMain,
+    /if docker buildx imagetools inspect "\$image_tag"[^]*then[^]*Reusing content-keyed development image[^]*imagetools create --tag "\$IMAGE_BASE:swift-6\.3" "\$image_tag"[^]*elif ! grep -Fqi 'manifest unknown'[^]*&& ! grep -Fqi "\$image_tag: not found"[^]*exit 1[^]*else[^]*docker buildx build[^]*fi[^]*digest=/,
+  );
+  assert.match(imageWorkflow, /group: development-image-\$\{\{ github\.event_name == 'pull_request'[^\n]+\|\| 'main' \}\}/);
+  assert.equal(imageWorkflow.match(/elif ! grep -Fqi 'manifest unknown'/g)?.length, 3);
+  assert.equal(imageWorkflow.match(/&& ! grep -Fqi "\$image_tag: not found"/g)?.length, 2);
+  assert.equal(imageWorkflow.match(/&& ! grep -Fqi "\$canonical_tag: not found"/g)?.length, 1);
   assert.match(
     imageWorkflow,
     /locked_tag=.*\.tag[\s\S]*locked_digest=.*\.digest[\s\S]*locked_hash=.*\.buildInputsSha256[\s\S]*if \[\[ "\$locked_tag" == "\$image_tag" && "\$locked_digest" == "\$digest" && "\$locked_hash" == "\$build_inputs_hash" \]\]; then\s+echo "Development image lock is already current\."\s+exit 0\s+fi[\s\S]*jq \\\s+--arg tag/,
