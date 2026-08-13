@@ -134,54 +134,64 @@ func measureOperation(
 
 // MARK: - DTO decode dispatch
 
-func decodeDTO(caseID: String, family: String, reader: WireReader) throws {
-    switch family {
-    case "ADV": _ = try AdvertiseWireData(from: reader)
-    case "DAD": _ = try DeadvertiseWireData(from: reader)
-    case "CHN": _ = try ChannelWireData(from: reader)
-    case "ASC": _ = try AssociateWireData(from: reader)
-    case "IOV": _ = try IoValueWireData(from: reader)
-    case "DSC": _ = try DiscoverWireData(from: reader)
-    case "RSV": _ = try ResolveWireData(from: reader)
-    case "QRY": _ = try QueryWireData(from: reader)
-    case "RTV": _ = try RetrieveWireData(from: reader)
-    case "UPD": _ = try UpdateWireData(from: reader)
-    case "CPL": _ = try CompleteWireData(from: reader)
-    case "CLL": _ = try CallWireData(from: reader)
-    case "RTN": _ = try ReturnWireData(from: reader)
-    default:
-        throw BenchmarkFailure.operation(
-            caseID: caseID,
-            name: "dtoDecode",
-            reason: "unsupported family '\(family)'"
-        )
+enum BenchmarkDTO {
+    case advertise(AdvertiseWireData)
+    case deadvertise(DeadvertiseWireData)
+    case channel(ChannelWireData)
+    case associate(AssociateWireData)
+    case ioValue(IoValueWireData)
+    case discover(DiscoverWireData)
+    case resolve(ResolveWireData)
+    case query(QueryWireData)
+    case retrieve(RetrieveWireData)
+    case update(UpdateWireData)
+    case complete(CompleteWireData)
+    case call(CallWireData)
+    case returnEvent(ReturnWireData)
+
+    func encode(to writer: inout WireWriter) throws {
+        switch self {
+        case .advertise(let value): try value.encode(to: &writer)
+        case .deadvertise(let value): try value.encode(to: &writer)
+        case .channel(let value): try value.encode(to: &writer)
+        case .associate(let value): try value.encode(to: &writer)
+        case .ioValue(let value): try value.encode(to: &writer)
+        case .discover(let value): try value.encode(to: &writer)
+        case .resolve(let value): try value.encode(to: &writer)
+        case .query(let value): try value.encode(to: &writer)
+        case .retrieve(let value): try value.encode(to: &writer)
+        case .update(let value): try value.encode(to: &writer)
+        case .complete(let value): try value.encode(to: &writer)
+        case .call(let value): try value.encode(to: &writer)
+        case .returnEvent(let value): try value.encode(to: &writer)
+        }
     }
 }
 
-func encodeDTO(
+func decodeDTO(
     caseID: String,
     family: String,
     reader: WireReader,
-    writer: inout WireWriter
-) throws {
+    operationName: String
+) throws -> BenchmarkDTO {
     switch family {
-    case "ADV": try AdvertiseWireData(from: reader).encode(to: &writer)
-    case "DAD": try DeadvertiseWireData(from: reader).encode(to: &writer)
-    case "CHN": try ChannelWireData(from: reader).encode(to: &writer)
-    case "ASC": try AssociateWireData(from: reader).encode(to: &writer)
-    case "IOV": try IoValueWireData(from: reader).encode(to: &writer)
-    case "DSC": try DiscoverWireData(from: reader).encode(to: &writer)
-    case "RSV": try ResolveWireData(from: reader).encode(to: &writer)
-    case "QRY": try QueryWireData(from: reader).encode(to: &writer)
-    case "RTV": try RetrieveWireData(from: reader).encode(to: &writer)
-    case "UPD": try UpdateWireData(from: reader).encode(to: &writer)
-    case "CPL": try CompleteWireData(from: reader).encode(to: &writer)
-    case "CLL": try CallWireData(from: reader).encode(to: &writer)
-    case "RTN": try ReturnWireData(from: reader).encode(to: &writer)
+    case "ADV": return .advertise(try AdvertiseWireData(from: reader))
+    case "DAD": return .deadvertise(try DeadvertiseWireData(from: reader))
+    case "CHN": return .channel(try ChannelWireData(from: reader))
+    case "ASC": return .associate(try AssociateWireData(from: reader))
+    case "IOV": return .ioValue(try IoValueWireData(from: reader))
+    case "DSC": return .discover(try DiscoverWireData(from: reader))
+    case "RSV": return .resolve(try ResolveWireData(from: reader))
+    case "QRY": return .query(try QueryWireData(from: reader))
+    case "RTV": return .retrieve(try RetrieveWireData(from: reader))
+    case "UPD": return .update(try UpdateWireData(from: reader))
+    case "CPL": return .complete(try CompleteWireData(from: reader))
+    case "CLL": return .call(try CallWireData(from: reader))
+    case "RTN": return .returnEvent(try ReturnWireData(from: reader))
     default:
         throw BenchmarkFailure.operation(
             caseID: caseID,
-            name: "dtoEncode",
+            name: operationName,
             reason: "unsupported family '\(family)'"
         )
     }
@@ -277,7 +287,12 @@ func runBenchmark() throws {
             let payloadPtr = pb.baseAddress!
             return try measureOperation(caseID: corpusCase.id, "dtoDecode", batchSize: &decodeBatch) {
                 let reader = WireReader(bytes: payloadPtr, length: pb.count)
-                try decodeDTO(caseID: corpusCase.id, family: corpusCase.family, reader: reader)
+                _ = try decodeDTO(
+                    caseID: corpusCase.id,
+                    family: corpusCase.family,
+                    reader: reader,
+                    operationName: "dtoDecode"
+                )
             }
         }
         print(#""dtoDecode":{"batchSize":\#(decodeResult.0),"samplesNs":\#(decodeResult.1)}"#)
@@ -287,11 +302,28 @@ func runBenchmark() throws {
         var encodeBatch = 0
         let encodeResult = try corpusCase.payloadBytes.withUnsafeBufferPointer { pb -> (Int, [Int]) in
             let payloadPtr = pb.baseAddress!
-            // Pre-decode for the encode benchmark.
-            return try measureOperation(caseID: corpusCase.id, "dtoEncode", batchSize: &encodeBatch) {
+            let dto: BenchmarkDTO
+            do {
                 let reader = WireReader(bytes: payloadPtr, length: pb.count)
+                dto = try decodeDTO(
+                    caseID: corpusCase.id,
+                    family: corpusCase.family,
+                    reader: reader,
+                    operationName: "dtoEncode"
+                )
+            } catch let failure as BenchmarkFailure {
+                throw failure
+            } catch {
+                throw BenchmarkFailure.operation(
+                    caseID: corpusCase.id,
+                    name: "dtoEncode",
+                    reason: String(describing: error)
+                )
+            }
+
+            return try measureOperation(caseID: corpusCase.id, "dtoEncode", batchSize: &encodeBatch) {
                 var writer = WireWriter(buffer: encodeBuffer, capacity: 512)
-                try encodeDTO(caseID: corpusCase.id, family: corpusCase.family, reader: reader, writer: &writer)
+                try dto.encode(to: &writer)
             }
         }
         print(#""dtoEncode":{"batchSize":\#(encodeResult.0),"samplesNs":\#(encodeResult.1)}"#)
@@ -326,7 +358,12 @@ func runBenchmark() throws {
                         payloadLength: pb.count
                     )
                     let reader = msg.reader()
-                    try decodeDTO(caseID: corpusCase.id, family: corpusCase.family, reader: reader)
+                    _ = try decodeDTO(
+                        caseID: corpusCase.id,
+                        family: corpusCase.family,
+                        reader: reader,
+                        operationName: "dtoDecode"
+                    )
                 }
             }
         }
