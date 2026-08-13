@@ -211,31 +211,28 @@ open class SensorSourceController: Controller {
         guard let container = sensors[sensorId.string] else {
             throw AxolotyError.runtime(code: .notRegistered, reason: "sensorId \(sensorId.string) is not registered")
         }
+        var publicationError: AxolotyError?
         container.io.read { [weak self] value in
             guard let self else { return }
             let observation = self.createObservation(container: container, value: value, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
             self.onObservationWillPublish(container: container, observation: observation)
-            if channeled {
-                do {
+            do {
+                if channeled {
                     try self.communicationManager.publishChannel(ChannelEvent.with(object: observation, channelId: self.getChannelId(container: container)))
-                } catch {
-                    LogManager.logger(.sensorThings).error("Failed to publish channeled observation", metadata: [
-                        "ioSourceId": .string(sensorId.string),
-                        "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
-                    ])
-                }
-            } else {
-                do {
+                } else {
                     try self.communicationManager.publishAdvertise(AdvertiseEvent.with(object: observation))
-                } catch {
-                    LogManager.logger(.sensorThings).error("Failed to publish advertised observation", metadata: [
-                        "ioSourceId": .string(sensorId.string),
-                        "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
-                    ])
                 }
+                self.onObservationDidPublish(container: container, observation: observation)
+            } catch {
+                let wrappedError = AxolotyError.caught(error)
+                publicationError = wrappedError
+                LogManager.logger(.sensorThings).error("Failed to publish observation", metadata: [
+                    "ioSourceId": .string(sensorId.string),
+                    "error": .string(ErrorKit.errorChainDescription(for: wrappedError)),
+                ])
             }
-            self.onObservationDidPublish(container: container, observation: observation)
         }
+        if let publicationError { throw publicationError }
     }
 }
 
