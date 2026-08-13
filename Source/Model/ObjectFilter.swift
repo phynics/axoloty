@@ -564,10 +564,9 @@ public enum ObjectFilterExpression: Codable, Equatable {
     /// Checks if the filter property doesn't exist.
     case notExists
 
-    /// Checks if the candidate property value contains the requested value.
-    /// Strings use substring containment; arrays contain every requested
-    /// element; and objects contain every requested key-value pair,
-    /// recursively. Other primitive values require equality.
+    /// Checks containment: strings use substring matching; arrays contain every requested
+    /// element; and objects contain every requested key-value pair, recursively. Other
+    /// primitive values require equality.
     case contains(FilterOperand)
 
     /// Checks if the candidate property value does not contain the requested
@@ -789,10 +788,9 @@ public enum FilterOperations {
         .notEquals(value)
     }
 
-    /// Checks if the candidate property value contains the requested value.
-    /// Strings use substring containment; arrays contain every requested
-    /// element; and objects contain every requested key-value pair,
-    /// recursively. Other primitive values require equality.
+    /// Checks containment: strings use substring matching; arrays contain every requested
+    /// element; and objects contain every requested key-value pair, recursively. Other
+    /// primitive values require equality.
     public static func contains(_ value: FilterOperand) -> ObjectFilterExpression {
         .contains(value)
     }
