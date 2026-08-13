@@ -13,7 +13,7 @@ struct ObservationLinuxTests {
         // Verify the Observation framework is available in the Linux Swift 6.3
         // container. This is a prerequisite gate before later tickets use
         // Observation-based local state.
-        #expect(true, "Observation module imported successfully")
+        #expect(Bool(true), "Observation module imported successfully")
     }
 
     @Test
