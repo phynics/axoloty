@@ -38,7 +38,7 @@ export AXOLOTY_DEVICE_LEASE_ROOT
 AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES ?=
 AXOLOTY_TOOL_CONTAINER_ENV_VARS ?=
 AXOLOTY_CONSUMER_REPOSITORY_URL ?= https://github.com/phynics/axoloty.git
-AXOLOTY_CONSUMER_VERSION ?= 0.2.0
+AXOLOTY_CONSUMER_VERSION ?= 0.4.0
 AXOLOTY_CONSUMER_LOCAL ?= 1
 AXOLOTY_CONSUMER_LOCAL_VERSION ?= 9.9.9
 SERVE_MQTT_ARGS ?=
@@ -77,7 +77,7 @@ help:
 		'make hardware-check  Run or skip the sporadic ESP32-C6 smoke check' \
 		'make hardware-require  Require an attached ESP32-C6 smoke check' \
 		'make release-snapshots  Generate and verify a provenance-rich wire bundle' \
-		'make checkpoint     Run the 0.2 checkpoint validation (no hardware)' \
+		'make checkpoint     Run the release checkpoint validation (no hardware)' \
 		'make checkpoint-hardware  Run checkpoint with ESP32-C6 smoke test' \
 		'make test-tooling  Run the Swift tooling CLI tests' \
 		'make build         Build Axoloty in the Linux container' \

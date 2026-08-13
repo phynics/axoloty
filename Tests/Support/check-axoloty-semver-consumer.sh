@@ -10,7 +10,7 @@ unset GIT_DIR GIT_WORK_TREE
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 url=${AXOLOTY_CONSUMER_REPOSITORY_URL:-https://github.com/phynics/axoloty.git}
-version=${AXOLOTY_CONSUMER_VERSION:-0.2.0}
+version=${AXOLOTY_CONSUMER_VERSION:-0.4.0}
 local_version=${AXOLOTY_CONSUMER_LOCAL_VERSION:-9.9.9}
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT

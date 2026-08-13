@@ -1,6 +1,6 @@
-# Axoloty 0.2 support matrix
+# Axoloty 0.4 support matrix
 
-This matrix records the support level for each capability in the 0.2
+This matrix records the support level for each capability in the 0.4
 checkpoint, backed by behavioral test evidence. Support levels use a
 consistent vocabulary:
 

@@ -9,7 +9,7 @@ version](https://img.shields.io/badge/swift-6.3-%23F05138?logo=swift)](https://d
 [![License:
 MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-> **Development checkpoint.** Axoloty 0.2 is a development checkpoint, not
+> **Development checkpoint.** Axoloty 0.4 is a development checkpoint, not
 > a stable release. Public APIs may continue to change before 1.0.
 
 ## About Axoloty
@@ -66,7 +66,7 @@ Add Axoloty to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.2.0"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.4.0"),
 ],
 targets: [
     .executableTarget(
@@ -82,7 +82,7 @@ For a wire target in a consumer that already resolves the root package:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.2.0"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.4.0"),
 ],
 targets: [
     .executableTarget(
@@ -219,8 +219,9 @@ swift run --package-path Tools axoloty-inspect discover --core-type Identity
 
 See [docs/inspector.md](./docs/inspector.md) for the full reference.
 
-For migrating from legacy CoatySwift, see
-[0.2-MIGRATION.md](./docs/0.2-MIGRATION.md).
+For this checkpoint's changes and source-breaking migration, see
+[0.4-RELEASE-NOTES.md](./docs/0.4-RELEASE-NOTES.md). For migrating from legacy
+CoatySwift, see [0.2-MIGRATION.md](./docs/0.2-MIGRATION.md).
 
 ## Contributing
 

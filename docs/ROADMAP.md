@@ -8,21 +8,23 @@ priority — is tracked on the
 and GitHub Issues are the complete planning record. For the agentic workflow
 driving planning and execution, see [AGENTS.md](../AGENTS.md).
 
-## Current release: 0.2 checkpoint
+## Current release: 0.4 checkpoint
 
-The immediate release is **Axoloty 0.2.0** — a development checkpoint that
-records architectural progress made so far. It is tracked in
-[#278 — 0.2 checkpoint](https://github.com/phynics/axoloty/issues/278).
+The current release is **Axoloty 0.4.0** — a development checkpoint tracked in
+[#596 — Axoloty 0.4.0](https://github.com/phynics/axoloty/issues/596).
 
-Axoloty 0.2 is **not** a v1 release and is **not** API-stable. It provides:
+Axoloty 0.4 is **not** a v1 release and is **not** API-stable. It builds on the
+host and embedded boundaries established in 0.2 and adds:
 
-- Safe host runtime boundaries.
-- Foundation-free `AxolotyWire` module with one direct parser dependency and a
-  separately validated standalone package boundary.
-- Embedded Swift support on ESP32-C6 (Advertise/Deadvertise, Discover/Resolve).
-- Current host and device performance evidence.
-- Typed Swift repository tooling.
-- Accurate documentation of what works and what remains experimental.
+- Validated owned raw-JSON boundaries across `AxolotyWire`.
+- Public Discover responder, decoded-object, join-state, and IO update-rate
+  APIs.
+- A productionized MQTT object inspector with distinct JSON and NDJSON output
+  contracts and explicit private-data controls.
+- Stable embedded identities, shared device leases, and stage-rich release
+  evidence.
+- A canonical test driver, warning-free builds, and reusable development
+  container images.
 
 ## Future direction: v1.0
 
@@ -43,7 +45,8 @@ The v1 north star remains:
 | 2 | [#275](https://github.com/phynics/axoloty/issues/275) | Extract `AxolotyWire`, a Foundation-free wire module with an allowlisted standalone package closure. | ✅ Closed |
 | 3 | [#276](https://github.com/phynics/axoloty/issues/276) | Establish resource and performance budgets. | ✅ Closed |
 | 4 | [#277](https://github.com/phynics/axoloty/issues/277) | Prove the ESP32-C6 vertical slice: Advertise/Deadvertise and Discover/Resolve. | ✅ Closed |
-| 0.2 | [#278](https://github.com/phynics/axoloty/issues/278) | Stabilize, document, and release the 0.2 checkpoint. | 🔄 In progress |
+| 0.2 | [#278](https://github.com/phynics/axoloty/issues/278) | Stabilize, document, and release the 0.2 checkpoint. | ✅ Closed |
+| 0.4 | [#596](https://github.com/phynics/axoloty/issues/596) | Harden wire boundaries, inspector behavior, embedded evidence, and repository tooling. | ✅ Released |
 | Inspector | [#344](https://github.com/phynics/axoloty/issues/344) | MQTT object inspector CLI (`axoloty-inspect`) for passive catalogue and active discovery. | ✅ Closed |
 
 ## Design choices

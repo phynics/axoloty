@@ -134,7 +134,7 @@ public final class AxolotyMCPServer {
         self.encodingFailureLogger = Self.logEncodingFailure
         self.server = Server(
             name: "axoloty-mcp",
-            version: "0.2.0",
+            version: InspectorArgumentParser.version,
             capabilities: .init(
                 resources: .init(subscribe: false, listChanged: false),
                 tools: .init(listChanged: false)
@@ -168,7 +168,7 @@ public final class AxolotyMCPServer {
         self.encodingFailureLogger = encodingFailureLogger
         self.server = Server(
             name: "axoloty-mcp",
-            version: "0.2.0",
+            version: InspectorArgumentParser.version,
             capabilities: .init(
                 resources: .init(subscribe: false, listChanged: false),
                 tools: .init(listChanged: false)
@@ -214,7 +214,7 @@ public final class AxolotyMCPServer {
             serverFactory: { _, transport in
                 let server = Server(
                     name: "axoloty-mcp",
-                    version: "0.2.0",
+                    version: InspectorArgumentParser.version,
                     capabilities: .init(
                         resources: .init(subscribe: false, listChanged: false),
                         tools: .init(listChanged: false)

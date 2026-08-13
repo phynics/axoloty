@@ -389,7 +389,7 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
         }
     }
 
-    /// Creates the 0.2 checkpoint validation plan.
+    /// Creates the release checkpoint validation plan.
     ///
     /// Runs all ordinary offline checks plus binary-size benchmarks and
     /// release snapshot verification. Does not flash or probe hardware.
@@ -424,7 +424,7 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
         return AxolotyCheckPlan(schemaVersion: manifest.schemaVersion, nodes: nodes)
     }
 
-    /// Creates the 0.2 checkpoint hardware validation plan.
+    /// Creates the release checkpoint hardware validation plan.
     ///
     /// Runs the checkpoint plan, then requires an attached ESP32-C6 device
     /// and runs its smoke test. Fails if no device is present.
@@ -481,7 +481,7 @@ public struct AxolotyCheckManifest: Codable, Equatable, Sendable {
     }
 }
 
-/// A versioned machine-readable manifest for a 0.2 checkpoint run.
+/// A versioned machine-readable manifest for a release checkpoint run.
 public struct AxolotyCheckpointManifest: Codable, Equatable, Sendable {
     /// The manifest schema version.
     public let schemaVersion: Int
