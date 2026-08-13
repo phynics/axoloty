@@ -107,7 +107,7 @@ func checkPlanPrintsStableJSON() {
     var expectedNames = [
         "resolve", "build", "lint", "test-tooling", "test-inspector-cli", "test-unit", "test-module",
         "test-fuzz", "test-wire", "no-anycodable", "no-foundation-wire",
-        "wire-dependencies", "wire-independent-resolution", "support-wire-dependencies",
+        "wire-dependencies", "wire-independent-resolution", "wire-distribution", "support-wire-dependencies",
         "support-wire-resolution", "support-wire-isolation", "support-benchmark-corpus",
         "support-benchmark-size", "support-benchmark-wire", "support-benchmark-bounds",
         "support-budget-manifest", "support-node-tests", "support-tier-contract",
