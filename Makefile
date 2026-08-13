@@ -12,23 +12,25 @@ CACHE_NAMESPACE ?= swift-6.3-linux
 REPOSITORY_NAME ?= $(shell git rev-parse --git-common-dir 2>/dev/null | sed 's|/.git$$||' | xargs basename 2>/dev/null || basename "$(CURDIR)")
 BUILD_CACHE_ROOT ?= /tmp/coaty-swift-build/$(REPOSITORY_NAME)/$(CACHE_NAMESPACE)
 WORKTREE_NAME ?= $(notdir $(CURDIR))
-BUILD_DIR ?= $(BUILD_CACHE_ROOT)/worktrees/$(WORKTREE_NAME)/debug
-COVERAGE_BUILD_DIR ?= $(BUILD_DIR)-coverage
-TSAN_BUILD_DIR ?= $(BUILD_DIR)-tsan
 BUILD_LOCK ?= 1
 export BUILD_LOCK
 ifeq ($(AXOLOTY_DEVCONTAINER),1)
+BUILD_DIR ?= /workspace/.build
 SPM_CACHE_DIR ?= /workspace/.swiftpm-cache
+AXOLOTY_DEVICE_LEASE_ROOT ?= /workspace/.build/device-leases
 else
+BUILD_DIR ?= $(BUILD_CACHE_ROOT)/worktrees/$(WORKTREE_NAME)/debug
 SPM_CACHE_DIR ?= $(HOME)/.cache/coaty-swift/swiftpm/$(CACHE_NAMESPACE)
+AXOLOTY_DEVICE_LEASE_ROOT ?= $(BUILD_CACHE_ROOT)/device-leases
 endif
+COVERAGE_BUILD_DIR ?= $(BUILD_DIR)-coverage
+TSAN_BUILD_DIR ?= $(BUILD_DIR)-tsan
 CONTAINER_MOUNTS := -v "$(CURDIR):$(WORKDIR)$(CONTAINER_MOUNT_SUFFIX)" -v "$(BUILD_DIR):$(WORKDIR)/.build$(CONTAINER_MOUNT_SUFFIX)" -v "$(SPM_CACHE_DIR):$(WORKDIR)/.swiftpm-cache$(CONTAINER_MOUNT_SUFFIX)"
 SWIFT_CACHE_ARGS := --cache-path /workspace/.swiftpm-cache
 SWIFT_LOCKED_ARGS := $(SWIFT_CACHE_ARGS) --disable-automatic-resolution
 COMMA := ,
 AXOLOTY_TOOL_ARGS ?= --help
 AXOLOTY_DEVICE ?= /dev/ttyACM0
-AXOLOTY_DEVICE_LEASE_ROOT ?= $(BUILD_CACHE_ROOT)/device-leases
 export AXOLOTY_DEVICE_LEASE_ROOT
 AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES ?=
 AXOLOTY_TOOL_CONTAINER_ENV_VARS ?=
@@ -134,10 +136,12 @@ help:
 		'COVERAGE_BUILD_DIR isolates instrumented artifacts from normal builds'
 
 image:
-	@if [ "$(AXOLOTY_DEVCONTAINER)" = "1" ]; then exit 0; fi
-	@test -n "$(CONTAINER_RUNTIME)" || (echo 'No podman or docker runtime found' >&2; exit 1)
-	@mkdir -p "$(BUILD_DIR)" "$(SPM_CACHE_DIR)"
-	@inputs_sha256=$$(.devcontainer/image-inputs.sh | sha256sum | awk '{print $$1}'); \
+	@if [ "$(AXOLOTY_DEVCONTAINER)" = "1" ]; then \
+		exit 0; \
+	fi; \
+	test -n "$(CONTAINER_RUNTIME)" || { echo 'No podman or docker runtime found' >&2; exit 1; }; \
+	mkdir -p "$(BUILD_DIR)" "$(SPM_CACHE_DIR)"; \
+	inputs_sha256=$$(.devcontainer/image-inputs.sh | sha256sum | awk '{print $$1}'); \
 		image_sha256=$$($(CONTAINER_RUNTIME) image inspect --format '{{ index .Config.Labels "io.axoloty.image-inputs-sha256" }}' "$(IMAGE)" 2>/dev/null || true); \
 		if [ "$$inputs_sha256" = "$$image_sha256" ]; then \
 			echo "Using current development image $(IMAGE) ($$inputs_sha256)"; \

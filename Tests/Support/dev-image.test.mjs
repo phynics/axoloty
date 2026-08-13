@@ -1,7 +1,10 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 const dockerfile = fs.readFileSync(".devcontainer/Dockerfile", "utf8");
@@ -34,6 +37,94 @@ test("image freshness is keyed by immutable inputs and can skip a current image"
   assert.match(makefile, /io\.axoloty\.image-inputs-sha256/);
   assert.match(makefile, /if \[ "\$\$inputs_sha256" = "\$\$image_sha256" \]/);
   assert.match(makefile, /echo "Using current development image/);
+});
+
+test("image is a no-op when Make runs inside the development container", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-dev-image-"));
+  const buildDir = path.join(tempRoot, "build");
+  const cacheDir = path.join(tempRoot, "swiftpm-cache");
+  const markerPath = path.join(tempRoot, "runtime-invoked");
+  const fakeRuntime = path.join(tempRoot, "fail-fast-runtime");
+  fs.writeFileSync(fakeRuntime, "#!/bin/sh\nprintf invoked > \"$FAKE_RUNTIME_MARKER\"\nexit 99\n");
+  fs.chmodSync(fakeRuntime, 0o755);
+
+  try {
+    const result = spawnSync("make", ["--no-print-directory", "image"], {
+      cwd: ".",
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        AXOLOTY_DEVCONTAINER: "1",
+        BUILD_DIR: buildDir,
+        CONTAINER_RUNTIME: fakeRuntime,
+        FAKE_RUNTIME_MARKER: markerPath,
+        SPM_CACHE_DIR: cacheDir,
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(fs.existsSync(markerPath), false);
+    assert.equal(fs.existsSync(buildDir), false);
+    assert.equal(fs.existsSync(cacheDir), false);
+  } finally {
+    fs.rmSync(tempRoot, { force: true, recursive: true });
+  }
+});
+
+test("nested container Make uses mounted build and SwiftPM cache paths", () => {
+  const environment = { ...process.env };
+  delete environment.AXOLOTY_DEVICE_LEASE_ROOT;
+  delete environment.BUILD_DIR;
+  delete environment.SPM_CACHE_DIR;
+
+  const result = spawnSync("make", ["--no-print-directory", "--just-print", "axoloty-tool", "AXOLOTY_TOOL_ARGS=--help"], {
+    cwd: ".",
+    encoding: "utf8",
+    env: {
+      ...environment,
+      AXOLOTY_DEVCONTAINER: "1",
+      BUILD_LOCK: "0",
+      CONTAINER_RUNTIME: "",
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /BUILD_DIR="\/workspace\/.build"/);
+  assert.match(result.stdout, /SPM_CACHE_DIR="\/workspace\/.swiftpm-cache"/);
+  assert.match(result.stdout, /AXOLOTY_DEVICE_LEASE_ROOT="\/workspace\/.build\/device-leases"/);
+  assert.doesNotMatch(result.stdout, /\/tmp\/coaty-swift-build/);
+});
+
+test("nested container Make preserves explicit mounted path overrides", () => {
+  const environment = { ...process.env };
+  delete environment.BUILD_DIR;
+  delete environment.SPM_CACHE_DIR;
+  delete environment.AXOLOTY_DEVICE_LEASE_ROOT;
+
+  const result = spawnSync("make", [
+    "--no-print-directory",
+    "--just-print",
+    "axoloty-tool",
+    "AXOLOTY_TOOL_ARGS=--help",
+    "BUILD_DIR=/custom/build",
+    "SPM_CACHE_DIR=/custom/swiftpm-cache",
+    "AXOLOTY_DEVICE_LEASE_ROOT=/custom/device-leases",
+  ], {
+    cwd: ".",
+    encoding: "utf8",
+    env: {
+      ...environment,
+      AXOLOTY_DEVCONTAINER: "1",
+      BUILD_LOCK: "0",
+      CONTAINER_RUNTIME: "",
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /BUILD_DIR="\/custom\/build"/);
+  assert.match(result.stdout, /SPM_CACHE_DIR="\/custom\/swiftpm-cache"/);
+  assert.match(result.stdout, /AXOLOTY_DEVICE_LEASE_ROOT="\/custom\/device-leases"/);
+  assert.doesNotMatch(result.stdout, /\/workspace\/(?:\.build|\.swiftpm-cache)/);
 });
 
 test("the ax launcher builds the mounted workspace product in the mounted cache", () => {
