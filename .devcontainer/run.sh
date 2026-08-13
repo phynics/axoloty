@@ -645,9 +645,20 @@ fi
 mkdir -p "$spm_cache_dir"
 spm_cache_dir=$(cd "$spm_cache_dir" && pwd)
 mount_suffix=
-case "$runtime" in
-    *podman*) mount_suffix=:Z ;;
-esac
+selinux_labeling_active=0
+if [ "${CONTAINER_MOUNT_SUFFIX+x}" = x ]; then
+    # Callers on unusual hosts can explicitly request :Z/:z, or set an empty
+    # value to disable relabeling even when the host's SELinux state is hidden.
+    mount_suffix=${CONTAINER_MOUNT_SUFFIX}
+    case "$mount_suffix" in
+        '') ;;
+        :Z|:z) selinux_labeling_active=1 ;;
+        *) echo "CONTAINER_MOUNT_SUFFIX must be empty, :Z, or :z" >&2; exit 2 ;;
+    esac
+elif [ -r /sys/fs/selinux/enforce ] && [ "$(cat /sys/fs/selinux/enforce)" = 1 ]; then
+    mount_suffix=:Z
+    selinux_labeling_active=1
+fi
 device_lease_mount=""
 device_lease_env=""
 device_lease_root=""
@@ -655,9 +666,9 @@ if [ -n "${AXOLOTY_DEVICE_LEASE_ROOT:-}" ]; then
     mkdir -p "$AXOLOTY_DEVICE_LEASE_ROOT"
     device_lease_root=$(cd "$AXOLOTY_DEVICE_LEASE_ROOT" && pwd)
     device_lease_mount_suffix=""
-    case "$runtime" in
-        *podman*) device_lease_mount_suffix=:z ;;
-    esac
+    if [ "$selinux_labeling_active" -eq 1 ]; then
+        device_lease_mount_suffix=:z
+    fi
     device_lease_mount="$device_lease_root:$device_lease_root$device_lease_mount_suffix"
     device_lease_env="AXOLOTY_DEVICE_LEASE_ROOT=$device_lease_root"
 fi

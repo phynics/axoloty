@@ -502,24 +502,44 @@ done
 SH
 chmod +x "$fake_bin/fake-sudo" "$fake_bin/fake-podman"
 
-# Lease mount and environment values remain single runtime argv elements even
-# when the shared lease root contains spaces.
+# Mount labeling is opt-in for hosts without active SELinux labeling. The
+# checkout, build, SwiftPM, and lease mounts must remain single runtime argv
+# elements even when the shared lease root contains spaces.
 lease_root="$TEMP_DIR/device leases"
 mkdir -p "$lease_root"
 : > "$capture_argv"
-AXOLOTY_DEVICE_LEASE_ROOT="$lease_root" \
+CONTAINER_MOUNT_SUFFIX= AXOLOTY_DEVICE_LEASE_ROOT="$lease_root" \
 FAKE_RUNTIME_ARGV_CAPTURE=1 CONTAINER_RUNTIME="$fake_bin/fake-podman" \
     BUILD_DIR="$build_dir" BUILD_LOCK=0 \
     "$ROOT_DIR/.devcontainer/run.sh" true
 first_run_args=$(awk '/^---$/ { if (in_run) exit; first_seen = 0; in_run = 0; next } !first_seen { first_seen = 1; if ($0 == "run") in_run = 1; next } in_run { print }' "$capture_argv")
-[[ $(awk -v mount="$lease_root:$lease_root:z" '$0 == "-v" { getline; if ($0 == mount) count++ } END { print count + 0 }' <<< "$first_run_args") -eq 1 ]]
-[[ $(printf '%s\n' "$first_run_args" | grep -Fxc -- "$lease_root:$lease_root:z") -eq 1 ]]
+[[ $(printf '%s\n' "$first_run_args" | grep -Fxc -- "$ROOT_DIR:/workspace") -eq 1 ]]
+[[ $(printf '%s\n' "$first_run_args" | grep -Fxc -- "$build_dir:/workspace/.build") -eq 1 ]]
+[[ $(printf '%s\n' "$first_run_args" | grep -Fxc -- "$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux:/workspace/.swiftpm-cache") -eq 1 ]]
+[[ $(printf '%s\n' "$first_run_args" | grep -Fxc -- "$lease_root:$lease_root") -eq 1 ]]
+if printf '%s\n' "$first_run_args" | grep -Eq -- '(:Z|:z)$'; then
+    echo "SELinux mount labels were requested while explicitly disabled" >&2
+    exit 1
+fi
 [[ $(awk -v env="AXOLOTY_DEVICE_LEASE_ROOT=$lease_root" '$0 == "-e" { getline; if ($0 == env) count++ } END { print count + 0 }' <<< "$first_run_args") -eq 1 ]]
 [[ $(printf '%s\n' "$first_run_args" | grep -Fxc -- "AXOLOTY_DEVICE_LEASE_ROOT=$lease_root") -eq 1 ]]
 if printf '%s\n' "$first_run_args" | grep -Fqx -- "$lease_root"; then
     echo "lease root was split into a separate runtime argument" >&2
     exit 1
 fi
+
+# An explicit suffix remains available for hosts whose SELinux state is not
+# visible inside the runner. Shared lease storage uses the compatible :z form.
+: > "$capture_argv"
+CONTAINER_MOUNT_SUFFIX=:Z AXOLOTY_DEVICE_LEASE_ROOT="$lease_root" \
+FAKE_RUNTIME_ARGV_CAPTURE=1 CONTAINER_RUNTIME="$fake_bin/fake-podman" \
+    BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+forced_run_args=$(awk '/^---$/ { if (in_run) exit; first_seen = 0; in_run = 0; next } !first_seen { first_seen = 1; if ($0 == "run") in_run = 1; next } in_run { print }' "$capture_argv")
+[[ $(printf '%s\n' "$forced_run_args" | grep -Fxc -- "$ROOT_DIR:/workspace:Z") -eq 1 ]]
+[[ $(printf '%s\n' "$forced_run_args" | grep -Fxc -- "$build_dir:/workspace/.build:Z") -eq 1 ]]
+[[ $(printf '%s\n' "$forced_run_args" | grep -Fxc -- "$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux:/workspace/.swiftpm-cache:Z") -eq 1 ]]
+[[ $(printf '%s\n' "$forced_run_args" | grep -Fxc -- "$lease_root:$lease_root:z") -eq 1 ]]
 
 FAKE_RUNTIME_EXECUTE_COMMAND=1 CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
     CONTAINER_TERM_GRACE_SECONDS=1 \

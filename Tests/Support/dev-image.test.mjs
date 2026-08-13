@@ -127,6 +127,29 @@ test("nested container Make preserves explicit mounted path overrides", () => {
   assert.doesNotMatch(result.stdout, /\/workspace\/(?:\.build|\.swiftpm-cache)/);
 });
 
+test("Make exports the command-line mount suffix override to run.sh", () => {
+  const environment = { ...process.env };
+  delete environment.CONTAINER_MOUNT_SUFFIX;
+
+  const result = spawnSync("make", [
+    "--no-print-directory",
+    "--file",
+    "Makefile",
+    "--eval",
+    "show-mount-suffix:\n\t@printf \"%s\" \"$$CONTAINER_MOUNT_SUFFIX\"",
+    "show-mount-suffix",
+    "CONTAINER_MOUNT_SUFFIX=:Z",
+  ], {
+    cwd: ".",
+    encoding: "utf8",
+    env: environment,
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, ":Z");
+  assert.match(makefile, /^export CONTAINER_MOUNT_SUFFIX$/m);
+});
+
 test("the ax launcher builds the mounted workspace product in the mounted cache", () => {
   const launcher = fs.readFileSync(".devcontainer/ax", "utf8");
   assert.match(launcher, /swift run/);

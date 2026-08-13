@@ -23,12 +23,12 @@ test("run.sh forwards signals and cleans only a matching owned container", () =>
   assert.match(runScript, /trap cleanup EXIT/);
   assert.match(runScript, /trap 'forward_signal INT' INT/);
   assert.match(runScript, /trap 'forward_signal TERM' TERM/);
-  assert.match(runScript, /--format '\{\{ index \.Config\.Labels/);
+  assert.match(runScript, /--format '\{\{\.Id\}\}\|\{\{ index \.Config\.Labels/);
   assert.match(runScript, /owned_labels=/);
   assert.match(runScript, /io\.axoloty\.run-id/);
   assert.match(runScript, /stop --time "\$container_term_grace"/);
-  assert.match(runScript, /kill "\$container_name"/);
-  assert.match(runScript, /rm -f "\$container_name"/);
+  assert.match(runScript, /kill "\$container_id"/);
+  assert.match(runScript, /rm -f "\$container_id"/);
 });
 
 test("run.sh retains existing optional runtime boundaries", () => {
@@ -42,4 +42,11 @@ test("run.sh retains existing optional runtime boundaries", () => {
   ]) {
     assert.ok(runScript.includes(marker), `missing runtime boundary: ${marker}`);
   }
+});
+
+test("run.sh gates Podman relabeling and applies the lease policy", () => {
+  assert.match(runScript, /CONTAINER_MOUNT_SUFFIX\+x/);
+  assert.match(runScript, /\/sys\/fs\/selinux\/enforce/);
+  assert.match(runScript, /selinux_labeling_active=1/);
+  assert.match(runScript, /device_lease_mount_suffix=:z/);
 });

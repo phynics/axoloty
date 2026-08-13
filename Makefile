@@ -4,7 +4,10 @@ IMAGE ?= axoloty-dev
 BROKER_NAME ?= coatyswift-mosquitto
 CONTAINER_RUNTIME ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 WORKDIR := /workspace
-CONTAINER_MOUNT_SUFFIX := $(if $(findstring podman,$(notdir $(CONTAINER_RUNTIME))),:Z,)
+# SELinux relabeling is opt-in for unusual hosts; run.sh detects active
+# labeling for ordinary Podman invocations and honors this override.
+CONTAINER_MOUNT_SUFFIX ?=
+export CONTAINER_MOUNT_SUFFIX
 CACHE_NAMESPACE ?= swift-6.3-linux
 # The sed delimiter must not be '#': GNU Make starts a comment at '#' even
 # inside $(shell ...), which hides the closing paren and breaks parsing on
