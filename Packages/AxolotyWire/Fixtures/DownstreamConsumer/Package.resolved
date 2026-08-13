@@ -1,5 +1,5 @@
 {
-  "originHash" : "7fbef40fba14e8da0405a7d4b44cf0c32720a32f7d707c1f07c0c854e177d4df",
+  "originHash" : "ed3354e6002020099a631a3eeee1b2660a4646ddc5cf8650f8632d6331e17813",
   "pins" : [
     {
       "identity" : "swift-atomics",
@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/phynics/swift-json.git",
       "state" : {
-        "branch" : "ec81216",
-        "revision" : "ec81216be5bbe2f02f45831d05256de2af452be8"
+        "revision" : "ec81216be5bbe2f02f45831d05256de2af452be8",
+        "version" : "2.5.3"
       }
     },
     {

@@ -2,12 +2,18 @@
 
 ## Result
 
-Both `Axoloty` and `AxolotyWire` are published products of the root package.
-`Tests/Support/check-axoloty-semver-consumer.sh` creates a clean consumer with
-a `from:` semantic-version requirement, then builds both product imports in
-debug and release. By default, the gate creates a temporary bare `file://`
-remote and synthetic semver tag so pre-release checkpoints test the stable
-version topology. Set `AXOLOTY_CONSUMER_LOCAL=0` together with
+Axoloty supports two distinct wire-consumer topologies. The root package
+publishes an `AxolotyWire` product for consumers that already use the root
+package. The standalone `Packages/AxolotyWire` package is the supported
+acquisition boundary when independent package resolution is required.
+
+`Tests/Support/check-axoloty-wire-distribution.sh` validates both modes by
+checking resolution separately from target build/link/runtime behavior.
+`Tests/Support/check-axoloty-semver-consumer.sh` additionally validates the
+published root-package product topology with a `from:` semantic-version
+requirement. By default, that gate creates a temporary bare `file://` remote
+and synthetic semver tag so pre-release checkpoints test the stable version
+topology. Set `AXOLOTY_CONSUMER_LOCAL=0` together with
 `AXOLOTY_CONSUMER_REPOSITORY_URL` and `AXOLOTY_CONSUMER_VERSION` to validate a
 published release.
 
@@ -17,7 +23,7 @@ the checked-in root `Package.resolved` can be regenerated remotely.
 
 ## Axoloty consumer
 
-**Package dependency (standalone development fixture only):**
+**Package dependency:**
 ```swift
 .package(path: "/path/to/axoloty")
 // Target:
@@ -36,13 +42,13 @@ let error = AxolotyError.runtime(code: .notStarted, reason: "anchor")
 - Release build: ✅ passed
 - Runtime: ✅ `AXOLOTY_EXTERNAL_CONSUMER_OK: Identity external consumer anchor`
 
-## AxolotyWire consumer
+## Root-package AxolotyWire consumer
 
 **Package dependency:**
 ```swift
-.package(path: "/path/to/axoloty/Packages/AxolotyWire")
+.package(path: "/path/to/axoloty")
 // Target:
-.product(name: "AxolotyWire", package: "AxolotyWire")
+.product(name: "AxolotyWire", package: "workspace")
 ```
 
 **Minimal usage:**
@@ -57,19 +63,47 @@ let object = reader.readRaw("object")
 - Release build: ✅ passed
 - Runtime: ✅ `AXOLOTY_WIRE_EXTERNAL_CONSUMER_OK: found`
 
+**Topology:** SwiftPM resolves the root package's complete dependency graph
+before selecting the wire product. Building this target does not compile or
+link host runtime targets, but resolution still includes the root host graph.
+
+## Standalone AxolotyWire consumer
+
+**Package dependency:**
+```swift
+.package(path: "/path/to/axoloty/Packages/AxolotyWire")
+// Target:
+.product(name: "AxolotyWire", package: "AxolotyWire")
+```
+
+**Minimal usage:**
+```swift
+import AxolotyWire
+print(UUID16.zero)
+```
+
+**Build results:**
+- Debug build: ✅ passed
+- Linked executable: ✅ passed
+- Runtime: ✅ `AXOLOTY_WIRE_STANDALONE_CONSUMER_OK`
+
 **Dependency closure:**
 ```
-axolotywire
+AxolotyWire -> swift-json/IkigaJSONCore
 ```
-No host-only dependencies (MQTTNIO, SwiftNIO, NIOSSL, Foundation, swift-log,
-ErrorKit, IkigaJSON) are present. `AxolotyWire` is fully isolated.
+The standalone package may resolve `swift-nio` as a transitive dependency of
+`swift-json`, but it must not build or link NIO targets. Host-only packages
+(MQTTNIO, NIOSSL, NIOTransportServices, swift-log, ErrorKit, and the host
+`IkigaJSON` product) are absent. The target is Foundation-free and isolated
+from the host runtime, rather than dependency-free at package resolution.
 
 ## Product and module names
 
 | Product | Package | Module | Correct |
 |---|---|---|---|
 | `Axoloty` | `workspace` (path) / `Axoloty` (URL) | `Axoloty` | ✅ |
-| `AxolotyWire` | `AxolotyWire` | `AxolotyWire` | ✅ |
+| `AxolotyWire` (root product) | `axoloty` | `AxolotyWire` | ✅ |
+| `AxolotyWire` (standalone) | `AxolotyWire` | `AxolotyWire` | ✅ |
 
 ## Platform validation
 

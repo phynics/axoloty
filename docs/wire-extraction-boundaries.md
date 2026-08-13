@@ -1,6 +1,6 @@
 # AxolotyWire extraction boundaries
 
-Phase 2 (#275) extracts the production-used, dependency-free wire core into
+Phase 2 (#275) extracts the production-used, Foundation-free wire core into
 the `AxolotyWire` library product. This document records the Phase 1 boundary;
 
 ## Ownership boundary
@@ -33,25 +33,31 @@ models, `CoatyUUID`, ErrorKit-facing errors, runtime/container code,
 controllers, logging, and SensorThings. `Source/Common/WireImportShim.swift`
 re-exports `AxolotyWire` so existing `import Axoloty` clients keep compiling.
 
-## Independent resolution (#293)
+## Distribution boundaries (#459)
 
-`AxolotyWire` is a separate SwiftPM package, not a target of the root
-`Axoloty` package. SwiftPM resolves the full package dependency graph
-before target/product selection, so a wire-only target in the root manifest
-would still force consumers to resolve MQTTNIO, NIO, NIOSSL,
-NIOTransportServices, Logging, ErrorKit, and IkigaJSON. The sub-package
-declares no package dependencies, so a downstream consumer that depends only
-on `AxolotyWire` resolves and fetches nothing from the host runtime graph.
+The root `Axoloty` package exposes an `AxolotyWire` product whose target points
+at the shared `Packages/AxolotyWire/Sources/AxolotyWire` sources. Selecting that
+product narrows target compilation and linking, but it does not narrow SwiftPM
+package resolution: SwiftPM resolves the root manifest's host graph before
+target/product selection. A root-package wire consumer therefore resolves
+MQTTNIO, SwiftNIO, NIOSSL, NIOTransportServices, Logging, ErrorKit, and the
+other root dependencies even when it builds only `AxolotyWire`.
 
-The root `Axoloty` package consumes the sub-package via a local path
-dependency (`.package(path: "Packages/AxolotyWire")`) and links
-`.product(name: "AxolotyWire", package: "AxolotyWire")`. There is no parallel
-codec implementation; both products refer to the same sources.
+`Packages/AxolotyWire/Package.swift` is the standalone package boundary. It
+declares only the exact `phynics/swift-json` package and its `IkigaJSONCore`
+product. That dependency can expose SwiftNIO as resolution-only transitive
+metadata, but the standalone wire consumer must not build or link NIO targets
+or any host runtime package. Both root and standalone products refer to the
+same source files; there is no parallel codec implementation.
 
-`Tests/Support/check-axoloty-wire-independent-resolution.sh` resolves the
-`Packages/AxolotyWire/Fixtures/DownstreamConsumer` fixture — which depends
-only on the local `AxolotyWire` package — and fails if any host runtime
-dependency appears in the resolved graph.
+`Tests/Support/check-axoloty-wire-distribution.sh` validates both supported
+consumer topologies. Its root consumer asserts the full root resolution graph,
+builds only the wire target, and executes the linked binary. Its standalone
+consumer uses the canonical `Packages/AxolotyWire/Fixtures/DownstreamConsumer`
+fixture, asserts independent resolution and no host target compilation, and
+executes the linked binary. The lower-level
+`check-axoloty-wire-independent-resolution.sh` gate remains the standalone
+resolution/build check.
 
 The codec, borrowed-message, static-dispatch, and embedded-router regression
 suites live in the root package's `AxolotyWireTests` target, which depends only
@@ -61,14 +67,13 @@ types and behavior.
 
 ### Distribution and migration
 
-A downstream consumer that needs only the wire codec should depend on the
-`AxolotyWire` package directly. While the package lives in this repository
-as a sub-directory, a consumer can depend on it through a local path
-dependency or a package registry that publishes the sub-package. Depending on
-the root `Axoloty` package and selecting the `Axoloty` product will continue
-to resolve the host runtime graph, which is expected for host consumers.
-`import Axoloty` remains source-compatible because the shim re-exports
-`AxolotyWire`.
+A downstream consumer that needs independent wire-only package resolution
+should depend directly on the standalone `AxolotyWire` package, using
+`Packages/AxolotyWire` as the canonical package boundary. A consumer that
+already depends on the root package may instead select its `AxolotyWire`
+product for source and target-level wire isolation, while accepting the root
+package's full resolution graph. `import Axoloty` remains source-compatible
+because the shim re-exports `AxolotyWire`.
 
 ## Dependency rule for AxolotyWire
 
@@ -79,8 +84,9 @@ swift-nio dependency may therefore appear during resolution, but NIO targets
 must not be built or linked by the standalone wire fixture. The independent
 resolution check treats this as an intentional resolution-only dependency.
 
-The extracted target has no external runtime dependencies and must import none
-of Foundation, NIO, MQTT, ErrorKit, logging, transport, host model, or actor
-modules. Phase 2 must add automated import/dependency checks for this rule and
-preserve the existing normalized Coaty wire compatibility suite across the
-source move.
+The extracted target has no host runtime dependencies and must import none of
+Foundation, NIO, MQTT, ErrorKit, logging, transport, host model, or actor
+modules. Its parser dependency is intentional and is not described as
+dependency-free. The distribution checks preserve this distinction while the
+normalized Coaty wire compatibility suite continues to cover the shared
+source.

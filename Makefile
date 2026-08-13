@@ -54,7 +54,7 @@ export AXOLOTY_CONSUMER_REPOSITORY_URL AXOLOTY_CONSUMER_VERSION AXOLOTY_CONSUMER
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm axoloty-tool check verify verify-ci test-one test-tier explain hardware-check hardware-require release-snapshots checkpoint checkpoint-hardware test-tooling build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test-axoloty-semver-consumer test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-toolchain-doctor embedded-device-info embedded-device-smoke embedded-reproducible-build benchmark-size benchmark-wire benchmark-wire-bounds benchmark-wire-device check-budget-manifest check-embedded-swift check-embedded-swift-linker embedded-swift-build embedded-swift-flash embedded-swift-test embedded-mqtt-test embedded-network-test embedded-agent-test embedded-coatyjs-test embedded-host-test embedded-last-will-test embedded-broker-restart-test embedded-interop-test
+.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm axoloty-tool check verify verify-ci test-one test-tier explain hardware-check hardware-require release-snapshots checkpoint checkpoint-hardware test-tooling build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test-axoloty-wire-distribution test-axoloty-semver-consumer test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-toolchain-doctor embedded-device-info embedded-reproducible-build benchmark-size benchmark-wire benchmark-wire-bounds benchmark-wire-device check-budget-manifest check-embedded-swift check-embedded-swift-linker embedded-swift-build embedded-swift-flash embedded-swift-test embedded-mqtt-test embedded-network-test embedded-agent-test embedded-coatyjs-test embedded-host-test embedded-last-will-test embedded-broker-restart-test embedded-interop-test
 
 # Quote user-provided values before placing them in a shell assignment. The
 # resulting value is still passed to run.sh as one argv element.
@@ -90,6 +90,7 @@ help:
 		'make test-decoder-context-sendable  Fail if the former decoder-context Sendable diagnostic returns' \
 		'make test-no-anycodable  Fail if AnyCodable is used in production source' \
 		'make test-no-foundation-types  Fail if forbidden Foundation types are used in production source' \
+		'make test-axoloty-wire-distribution  Validate root and standalone AxolotyWire consumers' \
 		'make test-axoloty-semver-consumer  Build clean semver consumers for both products' \
 		'make test          Run the full test suite (starts Mosquitto)' \
 		'make test-tsan     Run broker-backed transport/lifecycle tests under Thread Sanitizer' \
@@ -303,6 +304,9 @@ test-axoloty-wire-dependencies:
 test-axoloty-wire-independent-resolution:
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh sh Tests/Support/check-axoloty-wire-independent-resolution.sh
 
+test-axoloty-wire-distribution:
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh sh Tests/Support/check-axoloty-wire-distribution.sh
+
 test-axoloty-semver-consumer: image
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
 		CONTAINER_ENV_VARS='AXOLOTY_CONSUMER_REPOSITORY_URL AXOLOTY_CONSUMER_VERSION AXOLOTY_CONSUMER_LOCAL AXOLOTY_CONSUMER_LOCAL_VERSION' \
@@ -345,6 +349,7 @@ test-wire:
 test-support: resolve
 	Tests/Support/test-check-axoloty-wire-dependencies.sh
 	Tests/Support/test-check-axoloty-wire-independent-resolution.sh
+	Tests/Support/test-check-axoloty-wire-distribution.sh
 	Tests/Support/test-check-axoloty-wire-test-isolation.sh
 	Tests/Support/test-check-benchmark-corpus.sh
 	Tests/Support/test-check-benchmark-size.sh
@@ -504,7 +509,7 @@ embedded-swift-reproducible-build:
 test-observation-linux: resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter "ObservationLinuxTests|BroadcastTests"
 
-test-fast: test-unit test-module test-fuzz test-wire test-support test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution
+test-fast: test-unit test-module test-fuzz test-wire test-support test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test-axoloty-wire-distribution
 
 coverage-resolve: image
 	@mkdir -p "$(SPM_CACHE_DIR)"

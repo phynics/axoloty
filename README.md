@@ -38,7 +38,8 @@ collaborative, and ad-hoc fashion. Its key properties include:
 * structured error handling through [ErrorKit](https://github.com/FlineDev/ErrorKit),
   with `AxolotyError` as the package's `Throwable` base error type,
 * a structured logging facade backed by [swift-log](https://github.com/apple/swift-log),
-* a dependency-free, Foundation-free `AxolotyWire` module for embedded targets,
+* a Foundation-free `AxolotyWire` module with a separately resolvable
+  standalone package boundary for embedded targets,
 * and an ESP32-C6 embedded proof in Embedded Swift.
 
 Axoloty is a modernized fork of
@@ -77,7 +78,7 @@ targets: [
 ]
 ```
 
-For wire-only usage (no host runtime, no Foundation, no MQTT):
+For a wire target in a consumer that already resolves the root package:
 
 ```swift
 dependencies: [
@@ -92,6 +93,12 @@ targets: [
     ),
 ]
 ```
+
+Selecting `AxolotyWire` narrows compilation and linking to the wire target, but
+the root package still resolves its complete host dependency graph. For
+independent wire-only package resolution, use the standalone package at
+`Packages/AxolotyWire` as documented in
+[`docs/external-consumer-validation.md`](docs/external-consumer-validation.md).
 
 ### Minimal host example
 
