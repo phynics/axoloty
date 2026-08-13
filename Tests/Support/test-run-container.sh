@@ -33,7 +33,8 @@ if [ -n "$common_git_dir" ]; then
 else
     expected_repository_name=$(basename "$ROOT_DIR")
 fi
-expected_worktree_name=$(basename "$ROOT_DIR" | tr -c 'A-Za-z0-9_.-' '-' | cut -c1-24)
+expected_worktree_name=$(basename "$ROOT_DIR")
+expected_worktree_name=$(printf '%s' "$expected_worktree_name" | tr -c 'A-Za-z0-9_.-' '-' | cut -c1-24)
 
 build_dir="$TEMP_DIR/build"
 lock_file="${build_dir}.lock"
