@@ -90,16 +90,22 @@ struct SensorSourcePublicationTests {
 
     @Test
     func lateSensorCallbackAfterDeadlineIsIgnored() async throws {
-        let controller = try makeController(io: DelayedSensorIo(parameters: nil))
+        let io = GatedSensorIo(parameters: nil)
+        let controller = try makeController(io: io)
         defer { controller.container.shutdown() }
         let transport = PublicationTransport()
         try await install(transport, on: controller)
 
-        do {
+        let publication = Task<Void, Error> {
             try await controller.publishChanneledObservationAndWait(
                 sensorId: controller.sensor.objectId,
                 readTimeout: Duration.milliseconds(25)
             )
+        }
+        try await waitUntil("blocking sensor read started") { io.readStarted }
+
+        do {
+            try await publication.value
             Issue.record("Expected delayed sensor read to time out")
         } catch let error as AxolotyError {
             guard case let .runtime(code, _) = error else {
@@ -109,6 +115,8 @@ struct SensorSourcePublicationTests {
             #expect(code == .timedOut)
         }
 
+        io.releaseRead()
+        try await waitUntil("late sensor callback delivered") { io.callbackDelivered }
         #expect(controller.lifecycle.isEmpty)
         #expect(transport.publicationCount == 0)
     }
@@ -288,17 +296,28 @@ private final class MultiReadSensorIo: SensorIo {
     }
 }
 
-private final class DelayedSensorIo: SensorIo {
-    private(set) var readStarted = false
+private final class GatedSensorIo: SensorIo {
+    private let releaseGate = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var _readStarted = false
+    private var _callbackDelivered = false
+
+    var readStarted: Bool { lock.withLock { _readStarted } }
+    var callbackDelivered: Bool { lock.withLock { _callbackDelivered } }
 
     required init(parameters: Any?) {
         super.init(parameters: parameters)
     }
 
     override func read(callback: ((Any) -> Void)) {
-        readStarted = true
-        Thread.sleep(forTimeInterval: 0.05)
+        lock.withLock { _readStarted = true }
+        releaseGate.wait()
+        lock.withLock { _callbackDelivered = true }
         callback(42)
+    }
+
+    func releaseRead() {
+        releaseGate.signal()
     }
 }
 
