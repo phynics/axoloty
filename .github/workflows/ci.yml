@@ -75,7 +75,7 @@ jobs:
           AXOLOTY_OUTPUT: human
         run: |
           mkdir -p .testing
-          make verify-ci CONTAINER_RUNTIME=podman BUILD_DIR=.build COVERAGE_BUILD_DIR=.build BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache AXOLOTY_TOOL_CONTAINER_ENV_VARS=AXOLOTY_OUTPUT
+          make verify-ci CONTAINER_RUNTIME=podman BUILD_DIR=".build/${GITHUB_SHA}" COVERAGE_BUILD_DIR=".build/${GITHUB_SHA}-coverage" BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache AXOLOTY_TOOL_CONTAINER_ENV_VARS=AXOLOTY_OUTPUT
 
       - name: Save SwiftPM dependency cache
         if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'

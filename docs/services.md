@@ -19,9 +19,11 @@ exiting child returns 0.
 
 ## Installation and wrappers
 
-On Linux, `make image` installs `/opt/axoloty/bin/ax` and
-`/opt/axoloty/bin/axoloty-mcp`. `/opt/axoloty/bin/axoloty-tool` remains a
-compatibility symlink to `ax`. Use the thin in-container wrappers:
+On Linux, `make image` installs non-interactive mounted-worktree launchers at
+`/opt/axoloty/bin/ax` and `/opt/axoloty/bin/axoloty-mcp`.
+`/opt/axoloty/bin/axoloty-tool` is the matching typed-control-plane launcher.
+All three run their product with `swift run` against the mounted worktree and
+cache. Use the thin in-container wrappers:
 
 ```sh
 make serve-mqtt

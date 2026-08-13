@@ -15,7 +15,7 @@ inputs:
     required: false
     default: "true"
   require-current-build-inputs:
-    description: Require the pinned image to contain binaries built from the current checkout.
+    description: Require the pinned image to contain the current immutable image/toolchain inputs.
     required: false
     default: "true"
 
@@ -39,14 +39,26 @@ runs:
           true)
             locked_hash=$(jq -er '.buildInputsSha256' "$LOCK_FILE")
             actual_hash=$(./.devcontainer/image-inputs.sh | sha256sum | awk '{print $1}')
-            # A mismatch means this revision changed an embedded binary or
-            # another image input and no reviewed image exists for it yet.
+            # A mismatch means this revision changed an immutable image or
+            # toolchain input and no reviewed image exists for it yet.
             if [[ "$locked_hash" != "$actual_hash" ]]; then
               if [[ "$ALLOW_BUILD_FALLBACK" != "true" ]]; then
                 echo "::error::$LOCK_FILE is stale (locks $locked_hash, build inputs are $actual_hash) and the build fallback is disabled." >&2
                 exit 1
               fi
-              echo "::warning::$LOCK_FILE is stale (locks $locked_hash, build inputs are $actual_hash); building the image locally. Refresh the lock once the image publishes." >&2
+              candidate_tag="$image:swift-6.3-$actual_hash"
+              if "$RUNTIME" pull "$candidate_tag"; then
+                candidate_hash=$("$RUNTIME" image inspect \
+                  --format '{{ index .Config.Labels "io.axoloty.image-inputs-sha256" }}' \
+                  "$candidate_tag")
+                if [[ "$candidate_hash" == "$actual_hash" ]]; then
+                  echo "::warning::$LOCK_FILE is stale; using the published content-keyed image while its automated lock-refresh PR is pending." >&2
+                  "$RUNTIME" tag "$candidate_tag" axoloty-dev
+                  exit 0
+                fi
+                echo "::warning::Published candidate $candidate_tag has image-input label $candidate_hash; rebuilding locally." >&2
+              fi
+              echo "::warning::$LOCK_FILE is stale (locks $locked_hash, build inputs are $actual_hash); building the image locally until the content-keyed image publishes." >&2
               make image CONTAINER_RUNTIME="$RUNTIME"
               exit 0
             fi

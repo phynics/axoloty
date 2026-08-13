@@ -137,7 +137,16 @@ image:
 	@if [ "$(AXOLOTY_DEVCONTAINER)" = "1" ]; then exit 0; fi
 	@test -n "$(CONTAINER_RUNTIME)" || (echo 'No podman or docker runtime found' >&2; exit 1)
 	@mkdir -p "$(BUILD_DIR)" "$(SPM_CACHE_DIR)"
-	$(CONTAINER_RUNTIME) build -t $(IMAGE) -f .devcontainer/Dockerfile .
+	@inputs_sha256=$$(.devcontainer/image-inputs.sh | sha256sum | awk '{print $$1}'); \
+		image_sha256=$$($(CONTAINER_RUNTIME) image inspect --format '{{ index .Config.Labels "io.axoloty.image-inputs-sha256" }}' "$(IMAGE)" 2>/dev/null || true); \
+		if [ "$$inputs_sha256" = "$$image_sha256" ]; then \
+			echo "Using current development image $(IMAGE) ($$inputs_sha256)"; \
+		else \
+			echo "Building development image $(IMAGE) ($$inputs_sha256)"; \
+			$(CONTAINER_RUNTIME) build -t $(IMAGE) \
+				--build-arg AXOLOTY_IMAGE_INPUTS_SHA256="$$inputs_sha256" \
+				-f .devcontainer/Dockerfile .; \
+		fi
 
 resolve: image
 	@mkdir -p "$(SPM_CACHE_DIR)"
@@ -149,9 +158,9 @@ worktree-bootstrap: resolve
 
 worktree-warm: worktree-bootstrap build
 
-# Run axoloty-tool inside the container. The tool binary is prebuilt in the
-# image at /opt/axoloty/bin/axoloty-tool. All commands execute in the
-# container; no host extraction is needed.
+# Run axoloty-tool inside the container. The stable image path is a launcher
+# for the mounted worktree product, built in BUILD_DIR with the mounted SwiftPM
+# cache; no project binary is extracted or baked into the image.
 axoloty-tool: image
 	@AXOLOTY_HOST_RUNTIME_BRIDGE="$(AXOLOTY_HOST_RUNTIME_BRIDGE)" \
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \

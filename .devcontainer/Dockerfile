@@ -5,10 +5,11 @@
 # Hub - 6.4 has not been released yet). Verified: `podman pull swift:6.3-jammy`
 # and `podman build` with this file succeed against docker.io/library/swift.
 #
-# This image intentionally does NOT COPY any source code in - the Axoloty
+# This image intentionally does NOT COPY any project source in - the Axoloty
 # repository is bind-mounted at runtime (see the root Makefile and
 # .devcontainer/devcontainer.json), so editing source does not require
-# rebuilding the image.
+# rebuilding the image. Mounted-worktree launchers build products into the
+# mounted SwiftPM and worktree-specific build caches.
 #
 # The image includes both the host development tools (Swift, SwiftLint,
 # mosquitto, heaptrack) and the ESP32-C6 embedded toolchain (ESP-IDF,
@@ -19,38 +20,6 @@ ARG ESPFLASH_VERSION=3.3.0
 ARG SWIFTLINT_VERSION=0.65.0
 ARG NODE_VERSION=22.17.1
 ARG CMAKE_VERSION=3.29.6
-
-FROM swift:${SWIFT_VERSION}-jammy AS axoloty-tool-builder
-
-WORKDIR /axoloty-tool
-COPY Tools/Package.swift ./Package.swift
-COPY Tools/AxolotyTooling ./AxolotyTooling
-COPY Tests/Support/test-tiers.json ./AxolotyTooling/Resources/test-tiers.json
-COPY Tools/AxolotyProcessLauncher ./AxolotyProcessLauncher
-COPY Tools/axoloty-tool ./axoloty-tool
-RUN swift build -c release --product axoloty-tool \
-        -Xswiftc -static-executable -Xlinker --no-gc-sections \
-    && mkdir -p /axoloty-tool-output \
-    && cp "$(swift build -c release --show-bin-path)/axoloty-tool" /axoloty-tool-output/axoloty-tool \
-    && cp -R "$(swift build -c release --show-bin-path)/AxolotyTools_AxolotyTooling.resources" /axoloty-tool-output/ \
-    && /axoloty-tool-output/axoloty-tool --version
-
-FROM swift:${SWIFT_VERSION}-jammy AS axoloty-service-builder
-
-WORKDIR /axoloty
-COPY Package.swift Package.resolved ./
-COPY Packages ./Packages
-COPY Source ./Source
-COPY Tests ./Tests
-COPY Benchmarks ./Benchmarks
-COPY Tools ./Tools
-RUN swift build -c release --product ax \
-        -Xswiftc -static-executable -Xlinker --no-gc-sections \
-    && swift build -c release --product axoloty-mcp \
-    && mkdir -p /axoloty-service-output \
-    && cp "$(swift build -c release --show-bin-path)/ax" /axoloty-service-output/ax \
-    && cp -R "$(swift build -c release --show-bin-path)/Axoloty_AxolotyTooling.resources" /axoloty-service-output/ \
-    && cp "$(swift build -c release --show-bin-path)/axoloty-mcp" /axoloty-service-output/axoloty-mcp
 
 FROM swift:${SWIFT_VERSION}-jammy
 
@@ -127,7 +96,9 @@ RUN git clone --depth 1 --filter=blob:none --branch ${ESP_IDF_VERSION} \
         https://github.com/espressif/esp-idf.git /opt/esp/idf \
     && cd /opt/esp/idf \
     && git submodule update --init --recursive --depth 1 --jobs 8 --recommend-shallow \
-    && ./install.sh esp32c6
+    && ./install.sh esp32c6 \
+    && git config --system --add safe.directory /opt/esp/idf \
+    && git config --system --add safe.directory /opt/esp/idf/components/openthread/openthread
 
 # espflash (Rust) for board-info / flashing without the full IDF monitor.
 # Downloaded as a prebuilt static binary from GitHub releases so the image
@@ -142,7 +113,7 @@ RUN curl -fsSL -o /tmp/espflash.zip \
 
 # Non-root user for direct device access when the container is run as a
 # regular user. The dialout group owns /dev/ttyACM* on most Linux distros.
-RUN useradd --no-create-home --shell /usr/sbin/nologin esp \
+RUN useradd --home-dir /tmp --no-create-home --shell /usr/sbin/nologin esp \
     && usermod -a -G dialout esp \
     && chown -R root:root "${IDF_TOOLS_PATH}" \
     && chmod -R a+rX "${IDF_TOOLS_PATH}"
@@ -157,13 +128,15 @@ USER esp
 RUN HOME=/tmp sh -c '. "${IDF_PATH}/export.sh" >/dev/null && idf.py --version'
 USER root
 
-# Keep the project-specific CLI in the final layer so changing orchestration
-# source does not invalidate the expensive, immutable ESP-IDF toolchain layers.
-COPY --from=axoloty-tool-builder /axoloty-tool-output/axoloty-tool /opt/axoloty/bin/axoloty-tool
-COPY --from=axoloty-tool-builder /axoloty-tool-output/AxolotyTools_AxolotyTooling.resources /opt/axoloty/bin/AxolotyTools_AxolotyTooling.resources
-COPY --from=axoloty-service-builder /axoloty-service-output/ax /opt/axoloty/bin/ax
-COPY --from=axoloty-service-builder /axoloty-service-output/Axoloty_AxolotyTooling.resources /opt/axoloty/bin/Axoloty_AxolotyTooling.resources
-COPY --from=axoloty-service-builder /axoloty-service-output/axoloty-mcp /opt/axoloty/bin/axoloty-mcp
+# These are mounted-worktree launchers, not compiled project products. Stable
+# paths preserve the Make/control-plane contract without putting root-package
+# source or binaries in the image.
+COPY .devcontainer/ax /opt/axoloty/bin/ax
+COPY .devcontainer/axoloty-tool /opt/axoloty/bin/axoloty-tool
+COPY .devcontainer/axoloty-mcp /opt/axoloty/bin/axoloty-mcp
+RUN chmod 0755 /opt/axoloty/bin/ax /opt/axoloty/bin/axoloty-tool /opt/axoloty/bin/axoloty-mcp
+ARG AXOLOTY_IMAGE_INPUTS_SHA256=unknown
+LABEL io.axoloty.image-inputs-sha256="${AXOLOTY_IMAGE_INPUTS_SHA256}"
 ARG DOCKER_CLI_VERSION=27.5.1
 RUN curl -fsSL -o /tmp/docker.tgz \
         https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz \
@@ -171,6 +144,4 @@ RUN curl -fsSL -o /tmp/docker.tgz \
     && install -m 0755 /tmp/docker/docker /usr/local/bin/docker \
     && rm -rf /tmp/docker /tmp/docker.tgz \
     && docker --version
-RUN ln -sfn ax /opt/axoloty/bin/axoloty-tool
-
 WORKDIR /workspace

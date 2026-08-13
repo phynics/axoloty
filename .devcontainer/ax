@@ -1,0 +1,14 @@
+#!/bin/sh
+# Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
+
+set -eu
+
+scratch_path=${BUILD_DIR:-/workspace/.build}
+cache_path=${SPM_CACHE_DIR:-/workspace/.swiftpm-cache}
+export AXOLOTY_MCP_EXECUTABLE=${AXOLOTY_MCP_EXECUTABLE:-/opt/axoloty/bin/axoloty-mcp}
+
+exec swift run \
+    --scratch-path "$scratch_path" \
+    --cache-path "$cache_path" \
+    --disable-automatic-resolution \
+    ax "$@"
