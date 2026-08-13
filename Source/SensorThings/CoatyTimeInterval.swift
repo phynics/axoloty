@@ -154,30 +154,51 @@ public class CoatyTimeInterval: Codable {
     }
     
     // MARK: - Public functions.
-    /// Returns a string in ISO 8601 format for a time interval including timezone offset information.
+    /// Returns a validated string in ISO 8601 format for a time interval,
+    /// including timezone offset information.
+    ///
     /// - Parameter includeMillis: Whether to include milliseconds in the
     ///   string (defaults to false).
     /// - Throws: ``AxolotyError/invalidArgument(argument:reason:)`` when the
     ///   interval contains a negative duration or an unsupported component
     ///   combination.
-    public func toLocalIntervalIsoString(includeMillis: Bool? = false) throws -> String {
+    public func validatedLocalIntervalIsoString(includeMillis: Bool? = false) throws -> String {
         try validateComponents()
         if let duration = self._duration {
             let durationString = try CoatyTimeInterval.toDurationIsoString(duration: duration)
             if let start = self._start {
                 return CoatyTimeInterval.toLocalIsoString(date: Date(timeIntervalSince1970: Double(start) / 1000.0), includeMilis: includeMillis) + "/" + durationString
             } else if let end = self._end {
-                let date = Date(timeIntervalSince1970: Double(end))
+                let date = Date(timeIntervalSince1970: Double(end) / 1000.0)
                 return durationString + "/" + CoatyTimeInterval.toLocalIsoString(date: date, includeMilis: includeMillis)
             } else {
                 throw AxolotyError.invalidArgument(argument: "interval", reason: "duration requires start or end")
             }
         } else {
-            let firstComponent = CoatyTimeInterval.toLocalIsoString(date: Date(timeIntervalSince1970: Double(self._start!)),
+            let firstComponent = CoatyTimeInterval.toLocalIsoString(date: Date(timeIntervalSince1970: Double(self._start!) / 1000.0),
                                                                     includeMilis: includeMillis)
-            let secondComponent = CoatyTimeInterval.toLocalIsoString(date: Date(timeIntervalSince1970: Double(self._end!)),
+            let secondComponent = CoatyTimeInterval.toLocalIsoString(date: Date(timeIntervalSince1970: Double(self._end!) / 1000.0),
                                                                      includeMilis: includeMillis)
             return firstComponent + "/" + secondComponent
+        }
+    }
+
+    /// Returns a string in ISO 8601 format for a time interval, preserving the
+    /// original nonthrowing API.
+    ///
+    /// Use ``validatedLocalIntervalIsoString(includeMillis:)`` when invalid
+    /// input must be reported to the caller. This compatibility method returns
+    /// an empty string for an invalid legacy-constructed interval. Decoding and
+    /// encoding validate before reaching this fallback, so malformed wire data
+    /// is still rejected with a structured error.
+    ///
+    /// - Parameter includeMillis: Whether to include milliseconds in the
+    ///   string (defaults to false).
+    public func toLocalIntervalIsoString(includeMillis: Bool? = false) -> String {
+        do {
+            return try validatedLocalIntervalIsoString(includeMillis: includeMillis)
+        } catch {
+            return ""
         }
     }
 

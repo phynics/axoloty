@@ -187,14 +187,14 @@ struct SensorThingsTests {
         // Fixed UTC inputs so the test is deterministic and not wall-clock dependent.
         let interval = CoatyTimeInterval(start: 0, duration: 4_200_012)
 
-        let withMillis = try interval.toLocalIntervalIsoString(includeMillis: true)
+        let withMillis = interval.toLocalIntervalIsoString(includeMillis: true)
         #expect(withMillis.hasPrefix("1970-01-01T00:00:00.000Z/PT4200S"))
 
-        let withoutMillis = try interval.toLocalIntervalIsoString(includeMillis: false)
+        let withoutMillis = interval.toLocalIntervalIsoString(includeMillis: false)
         #expect(withoutMillis.hasPrefix("1970-01-01T00:00:00Z/PT4200S"))
 
         let zeroDuration = CoatyTimeInterval(start: 0, duration: 0)
-        #expect(try zeroDuration.toLocalIntervalIsoString(includeMillis: false).hasSuffix("/PT0S"))
+        #expect(zeroDuration.toLocalIntervalIsoString(includeMillis: false).hasSuffix("/PT0S"))
     }
 
     @Test
@@ -202,7 +202,7 @@ struct SensorThingsTests {
         let interval = CoatyTimeInterval(duration: -1)
 
         do {
-            _ = try interval.toLocalIntervalIsoString()
+            _ = try interval.validatedLocalIntervalIsoString()
             Issue.record("A negative duration must not produce an interval string")
         } catch let error as AxolotyError {
             #expect(error.userFriendlyMessage == "duration: duration cannot be negative")
@@ -240,7 +240,7 @@ struct SensorThingsTests {
 
         for interval in intervals {
             do {
-                _ = try interval.toLocalIntervalIsoString()
+                _ = try interval.validatedLocalIntervalIsoString()
                 Issue.record("A negative duration must not produce an interval string")
             } catch let error as AxolotyError {
                 #expect(error.userFriendlyMessage == "duration: duration cannot be negative")
@@ -254,7 +254,26 @@ struct SensorThingsTests {
     func negativeTimestampsRemainValidPreEpochComponents() throws {
         let interval = CoatyTimeInterval(start: -1_000, end: 0)
 
-        _ = try interval.toLocalIntervalIsoString()
+        #expect(interval.toLocalIntervalIsoString() == "1969-12-31T23:59:59Z/1970-01-01T00:00:00Z")
+    }
+
+    @Test
+    func timestampComponentsUseMillisecondsExactlyOnce() {
+        let startAndDuration = CoatyTimeInterval(start: -1_000, duration: 1_000)
+        #expect(startAndDuration.toLocalIntervalIsoString() == "1969-12-31T23:59:59Z/PT1S")
+
+        let durationAndEnd = CoatyTimeInterval(duration: 1_000, end: -1_000)
+        #expect(durationAndEnd.toLocalIntervalIsoString() == "PT1S/1969-12-31T23:59:59Z")
+    }
+
+    @Test
+    func legacyFormatterUsesDocumentedFallbackForInvalidConstruction() throws {
+        let interval = CoatyTimeInterval(duration: -1)
+
+        #expect(interval.toLocalIntervalIsoString() == "")
+        #expect(throws: AxolotyError.self) {
+            _ = try interval.validatedLocalIntervalIsoString()
+        }
     }
 
     @Test
