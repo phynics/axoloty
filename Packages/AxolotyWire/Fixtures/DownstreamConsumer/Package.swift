@@ -13,7 +13,7 @@ let package = Package(
         .package(path: "../.."),
     ],
     targets: [
-        .target(
+        .executableTarget(
             name: "DownstreamConsumer",
             dependencies: [
                 .product(name: "AxolotyWire", package: "AxolotyWire"),
