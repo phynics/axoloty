@@ -20,14 +20,67 @@ struct DecodingInvariantTests {
         }
     }
 
-    @Test
-    func objectFilterExpressionRejectsUnknownOperator() throws {
-        let payload = "[9999]"
+    @Test(arguments: [
+        "[9999]",
+        "[]",
+        "[0]",
+        "[4,1]",
+        "[6]",
+        "[7,1,2]",
+        "[0,1,2]",
+    ])
+    func objectFilterExpressionRejectsMalformedShape(_ payload: String) throws {
         let data = try #require(payload.data(using: .utf8))
 
         #expect(throws: DecodingError.self) {
             _ = try JSONDecoder().decode(ObjectFilterExpression.self, from: data)
         }
+    }
+
+    @Test(arguments: [
+        #"{"conditions":["name",[7]]}"#,
+        #"{"conditions":["name"]}"#,
+        #"{"conditions":"malformed"}"#,
+        #"{"conditions":null}"#,
+        #"{"conditions":{"and":"malformed"}}"#,
+        #"{"conditions":{}}"#,
+        #"{"conditions":{"and":[],"or":[]}}"#,
+        #"{"conditions":["name",[7],"unexpected"]}"#,
+        #"{"conditions":["name",[0,1,2]]}"#,
+        #"{"conditions":["",[9]]}"#,
+        #"{"conditions":[[""],[9]]}"#,
+        #"{"conditions":[".",[9]]}"#,
+        #"{"conditions":[".name",[9]]}"#,
+        #"{"conditions":["name.",[9]]}"#,
+        #"{"conditions":["name..value",[9]]}"#,
+        #"{"conditions":[["name",""] ,[9]]}"#,
+        #"{"conditions":[["", "name"],[9]]}"#,
+        #"{"conditions":[["name","","value"],[9]]}"#,
+    ])
+    func objectFilterRejectsMalformedConditionsInsteadOfMatchingAll(_ payload: String) throws {
+        let data = try #require(payload.data(using: .utf8))
+
+        #expect(throws: DecodingError.self) {
+            _ = try JSONDecoder().decode(ObjectFilter.self, from: data)
+        }
+    }
+
+    @Test
+    func objectFilterAcceptsEmptyFilterObject() throws {
+        let data = try #require("{}".data(using: .utf8))
+
+        let filter = try JSONDecoder().decode(ObjectFilter.self, from: data)
+
+        #expect(filter.condition == nil)
+        #expect(filter.conditions == nil)
+    }
+
+    @Test
+    func objectFilterAcceptsDotsInsideArrayPropertyComponent() throws {
+        let payload = #"{"conditions":[["property.with.dots"],[9]]}"#
+        let data = try #require(payload.data(using: .utf8))
+
+        _ = try JSONDecoder().decode(ObjectFilter.self, from: data)
     }
 
     @Test
