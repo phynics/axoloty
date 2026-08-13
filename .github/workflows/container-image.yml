@@ -143,6 +143,14 @@ jobs:
           digest=$(docker buildx imagetools inspect "$IMAGE_BASE:$image_tag" --format '{{json .Manifest.Digest}}' | tr -d '"')
           branch="automation/dev-image-lock"
 
+          locked_tag=$(jq -er '.tag' .devcontainer/image-lock.json)
+          locked_digest=$(jq -er '.digest' .devcontainer/image-lock.json)
+          locked_hash=$(jq -er '.buildInputsSha256' .devcontainer/image-lock.json)
+          if [[ "$locked_tag" == "$image_tag" && "$locked_digest" == "$digest" && "$locked_hash" == "$build_inputs_hash" ]]; then
+            echo "Development image lock is already current."
+            exit 0
+          fi
+
           jq \
             --arg tag "$image_tag" \
             --arg digest "$digest" \
