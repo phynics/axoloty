@@ -49,6 +49,14 @@ test("support runs the Embedded Swift self-test in the pinned container", () => 
   );
 });
 
+test("support benchmark self-test uses the worktree build and SwiftPM caches", () => {
+  const makefile = fs.readFileSync("Makefile", "utf8");
+  assert.match(
+    recipe(makefile, "test-support"),
+    /BUILD_DIR="\$\(BUILD_DIR\)" SPM_CACHE_DIR="\$\(SPM_CACHE_DIR\)" \\\n\s*Tests\/Support\/test-check-benchmark-wire\.sh/,
+  );
+});
+
 test("README package integration links both products by repository identity", () => {
   const readme = fs.readFileSync("README.md", "utf8");
   const packageIntegration = readme.slice(

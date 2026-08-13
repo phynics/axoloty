@@ -353,7 +353,8 @@ test-support: resolve
 	Tests/Support/test-check-axoloty-wire-test-isolation.sh
 	Tests/Support/test-check-benchmark-corpus.sh
 	Tests/Support/test-check-benchmark-size.sh
-	Tests/Support/test-check-benchmark-wire.sh
+	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+		Tests/Support/test-check-benchmark-wire.sh
 	Tests/Support/test-check-benchmark-wire-bounds.sh
 	Tests/Support/test-check-benchmark-wire-device.sh
 	Tests/Support/test-check-budget-manifest.sh
