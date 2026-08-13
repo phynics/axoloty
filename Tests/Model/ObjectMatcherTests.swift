@@ -70,7 +70,95 @@ struct ObjectMatcherTests {
     }
 
     @Test
+    func containsMatchesRequiredObjectPropertiesWithinCandidate() throws {
+        let obj = Log(logLevel: .info,
+                      logMessage: "Hello",
+                      logDate: "2026-01-01",
+                      logLabels: [
+                          "nested": [
+                              "name": "device",
+                              "extra": true
+                          ]
+                      ])
 
+        let containedObjectFilter = ObjectFilter(condition: ObjectFilterCondition(
+            property: ObjectFilterProperty("logLabels.nested"),
+            expression: .contains(.object(["name": "device"]))))
+        let largerObjectFilter = ObjectFilter(condition: ObjectFilterCondition(
+            property: ObjectFilterProperty("logLabels.nested"),
+            expression: .contains(.object([
+                "name": "device",
+                "missing": true
+            ]))))
+
+        #expect(ObjectMatcher.matchesFilter(obj: obj, filter: containedObjectFilter))
+        #expect(!ObjectMatcher.matchesFilter(obj: obj, filter: largerObjectFilter))
+    }
+
+    @Test
+    func containsMatchesRequestedSubstringWithinCandidateString() throws {
+        let obj = Log(logLevel: .info,
+                      logMessage: "Hello world",
+                      logDate: "2026-01-01",
+                      logLabels: ["message": "Hello world"])
+        let filter = ObjectFilter(condition: ObjectFilterCondition(
+            property: ObjectFilterProperty("logLabels.message"),
+            expression: .contains("world")))
+
+        #expect(ObjectMatcher.matchesFilter(obj: obj, filter: filter))
+    }
+
+    @Test
+    func containsCoversEmptyCollectionsNestedObjectsAndMissingKeys() throws {
+        let obj = Log(logLevel: .info,
+                      logMessage: "Hello world",
+                      logDate: "2026-01-01",
+                      logLabels: [
+                          "message": "Hello world",
+                          "tags": ["swift", "coaty"],
+                          "emptyTags": [],
+                          "nested": [
+                              "name": "sensor",
+                              "metadata": ["kind": "temperature"]
+                          ]
+                      ])
+
+        func matches(
+            _ property: String,
+            _ expression: ObjectFilterExpression,
+            on candidate: CoatyObject? = nil
+        ) -> Bool {
+            ObjectMatcher.matchesFilter(
+                obj: candidate ?? obj,
+                filter: ObjectFilter(condition: ObjectFilterCondition(
+                    property: ObjectFilterProperty(property),
+                    expression: expression)))
+        }
+
+        #expect(matches("logLabels.message", .contains("world")))
+        #expect(!matches("logLabels.message", .contains("planet")))
+        let abc = Log(logLevel: .info, logMessage: "abc", logDate: "2026-01-01")
+        let emptyString = Log(logLevel: .info, logMessage: "", logDate: "2026-01-01")
+        #expect(matches("logMessage", .contains(""), on: abc))
+        #expect(!matches("logMessage", .contains("x"), on: emptyString))
+        #expect(matches("logLabels.tags", .contains(["swift"])))
+        #expect(matches("logLabels.tags", .contains(["swift", "coaty"])))
+        #expect(!matches("logLabels.tags", .contains(["swift", "missing"])))
+        #expect(matches("logLabels.emptyTags", .contains([])))
+        #expect(matches("logLabels.nested", .contains(.object([String: FilterOperand]()))))
+        #expect(matches("logLabels.nested", .contains(.object(["name": "sensor"]))))
+        #expect(matches("logLabels.nested", .contains(.object([
+            "metadata": .object(["kind": "temperature"])
+        ]))))
+        #expect(!matches("logLabels.nested", .contains(.object(["missing": true]))))
+        #expect(!matches("logLabels.missing", .contains("anything")))
+        #expect(!matches("logMessage", .notContains(""), on: abc))
+        #expect(matches("logMessage", .notContains("x"), on: emptyString))
+        #expect(!matches("logLabels.nested", .notContains(.object([:]))))
+        #expect(matches("logLabels.tags", .notContains(["missing"])))
+    }
+
+    @Test
     func testMatchesFilterAndConditions() throws {
         let dotTest2: [String: Any] = [
             "hello": "hello"

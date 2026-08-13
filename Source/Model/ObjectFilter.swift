@@ -564,10 +564,13 @@ public enum ObjectFilterExpression: Codable, Equatable {
     /// Checks if the filter property doesn't exist.
     case notExists
 
-    /// Checks if the filter property value contains the given values.
+    /// Checks containment: strings use substring matching; arrays contain every requested
+    /// element; and objects contain every requested key-value pair, recursively. Other
+    /// primitive values require equality.
     case contains(FilterOperand)
 
-    /// Checks if the filter property value does not contain the given values.
+    /// Checks if the candidate property value does not contain the requested
+    /// value according to ``contains(_:)`` semantics.
     case notContains(FilterOperand)
 
     /// Checks if the filter property value is included in the given array.
@@ -785,12 +788,15 @@ public enum FilterOperations {
         .notEquals(value)
     }
 
-    /// Checks if the filter property value contains the given values.
+    /// Checks containment: strings use substring matching; arrays contain every requested
+    /// element; and objects contain every requested key-value pair, recursively. Other
+    /// primitive values require equality.
     public static func contains(_ value: FilterOperand) -> ObjectFilterExpression {
         .contains(value)
     }
 
-    /// Checks if the filter property value does not contain the given values.
+    /// Checks if the candidate property value does not contain the requested
+    /// value according to ``contains(_:)`` semantics.
     public static func notContains(_ value: FilterOperand) -> ObjectFilterExpression {
         .notContains(value)
     }
@@ -884,12 +890,13 @@ public enum ObjectFilterOperator: Int {
     /// Checks if the filter property doesn't exist.
     case NotExists
 
-    /// Checks if the filter property value (usually an object or array)
-    /// contains the given values. Primitive value types (number, string,
-    /// boolean, null) contain only the identical value. Object properties match
-    /// if all the key-value pairs of the specified object are contained in
-    /// them. Array properties match if all the specified array elements are
-    /// contained in them.
+    /// Checks whether the candidate property value contains the requested
+    /// value. Strings use substring containment, so `Contains("abc", "bc")`,
+    /// `Contains("abc", "")`, and `Contains("", "x")` evaluate to `true`,
+    /// `true`, and `false`, respectively. Other primitive values contain only
+    /// the identical value. Object properties contain the requested object if
+    /// all its key-value pairs are present recursively, and array properties
+    /// contain the requested array if all its elements are present.
     ///
     /// The general principle is that the contained object must match the
     /// containing object as to structure and data contents recursively on all
@@ -899,8 +906,10 @@ public enum ObjectFilterOperator: Int {
     /// match, and duplicate array elements are effectively considered only
     /// once.
     ///
-    /// As a special exception to the general principle that the structures must
-    /// match, an array on *toplevel* may contain a primitive value:
+    /// An empty requested object or array is contained by any candidate object
+    /// or array of the corresponding kind. As a special exception to the
+    /// general principle that the structures must match, an array at the top
+    /// level may contain a primitive value:
     ///
     /// ```
     /// Contains([1, 2, 3], [3]) => true
@@ -908,12 +917,14 @@ public enum ObjectFilterOperator: Int {
     /// ```
     case Contains
 
-    /// Checks if the filter property value (usually an object or array) does
-    /// not contain the given values. Primitive value types (number, string,
-    /// boolean, null) contain only the identical value. Object properties match
-    /// if all the key-value pairs of the specified object are not contained in
-    /// them. Array properties match if all the specified array elements are not
-    /// contained in them.
+    /// Checks whether the candidate property value does not contain the
+    /// requested value according to ``Contains`` semantics. Strings use
+    /// substring containment, so `NotContains("abc", "")` and
+    /// `NotContains("", "x")` evaluate to `false` and `true`, respectively.
+    /// Other primitive values require inequality. Objects and arrays negate
+    /// the recursive key-value and element containment checks described by
+    /// ``Contains``; therefore, an empty requested object is never
+    /// `NotContains` from a candidate object.
     ///
     /// The general principle is that the contained object must match the
     /// containing object as to structure and data contents recursively on all
@@ -924,7 +935,7 @@ public enum ObjectFilterOperator: Int {
     /// once.
     ///
     /// As a special exception to the general principle that the structures must
-    /// match, an array on///toplevel* may contain a primitive value:
+    /// match, an array at the top level may contain a primitive value:
     ///
     /// ```
     /// NotContains([1, 2, 3], [4]) => true

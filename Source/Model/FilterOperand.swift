@@ -203,10 +203,11 @@ extension FilterOperand {
 
     /// Checks if a value (usually an object or array) contains another value.
     ///
-    /// Primitive value types contain only the identical value. Object
-    /// properties match if all the key-value pairs of the contained object
-    /// are present in the containing object. Array properties match if all
-    /// specified array elements are contained in them.
+    /// Strings contain requested substrings. Other primitive value types
+    /// contain only the identical value. Object properties match if all the
+    /// key-value pairs of the requested object are present in the candidate
+    /// object. Array properties match if all requested array elements are
+    /// contained in the candidate array.
     ///
     /// As a special exception, an array at the top level may contain a
     /// primitive value: `contains([1, 2, 3], 3)` returns `true`.
@@ -241,10 +242,12 @@ extension FilterOperand {
             }
             return false
         case (.object(let xDict), .object(let yDict)):
-            return xDict.keys.allSatisfy { xk in
-                guard let yv = yDict[xk] else { return false }
-                return FilterOperand._deepContains(xDict[xk]!, yv, isTopLevel: false)
+            return yDict.allSatisfy { yk, yv in
+                guard let xv = xDict[yk] else { return false }
+                return FilterOperand._deepContains(xv, yv, isTopLevel: false)
             }
+        case (.string(let xValue), .string(let yValue)):
+            return yValue.isEmpty || xValue.contains(yValue)
         default:
             return x == y
         }
