@@ -123,8 +123,12 @@ open class SensorSourceController: Controller {
     }
 
     internal func createObservation(container: SensorContainer, value: Any, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) -> Observation {
+        makeObservation(container: container, serializedResult: RawJSONValue.serialize(any: value), resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
+    }
+
+    private func makeObservation(container: SensorContainer, serializedResult: String, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) -> Observation {
         let now = Date().timeIntervalSince1970 * 1000
-        return Observation(phenomenonTime: now, result: RawJSONValue.serialize(any: value), resultTime: now, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterest: featureOfInterestId, name: "Observation of \(container.sensor.name)", objectId: .init(), externalId: nil, parentObjectId: container.sensor.objectId)
+        return Observation(phenomenonTime: now, result: serializedResult, resultTime: now, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterest: featureOfInterestId, name: "Observation of \(container.sensor.name)", objectId: .init(), externalId: nil, parentObjectId: container.sensor.objectId)
     }
 
     internal func getChannelId(container: SensorContainer) -> String { container.sensor.objectId.string }
@@ -222,8 +226,8 @@ open class SensorSourceController: Controller {
         guard let container = sensors[sensorId.string] else {
             throw AxolotyError.runtime(code: .notRegistered, reason: "sensorId \(sensorId.string) is not registered")
         }
-        let value = await readSensorValue(from: container.io)
-        let observation = createObservation(container: container, value: value, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
+        let serializedValue = await readSensorValue(from: container.io)
+        let observation = makeObservation(container: container, serializedResult: serializedValue, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
         onObservationWillPublish(container: container, observation: observation)
         do {
             if channeled {
@@ -239,15 +243,13 @@ open class SensorSourceController: Controller {
         onObservationDidPublish(container: container, observation: observation)
     }
 
-    private func readSensorValue(from io: SensorIo) async -> Any {
-        let result = SensorReadValueBox()
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+    private func readSensorValue(from io: SensorIo) async -> String {
+        await withCheckedContinuation { (continuation: CheckedContinuation<String, Never>) in
+            let bridge = SensorReadBridge(continuation)
             io.read { value in
-                result.value = value
-                continuation.resume()
+                bridge.resume(RawJSONValue.serialize(any: value))
             }
         }
-        return result.value ?? NSNull()
     }
 
     private func logPublicationFailure(_ error: Error, sensorId: CoatyUUID, channeled: Bool) {
@@ -261,9 +263,24 @@ open class SensorSourceController: Controller {
     }
 }
 
-@MainActor
-private final class SensorReadValueBox {
-    var value: Any?
+private final class SensorReadBridge: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<String, Never>?
+    private var didResume = false
+
+    init(_ continuation: CheckedContinuation<String, Never>) {
+        self.continuation = continuation
+    }
+
+    func resume(_ value: String) {
+        let continuation = lock.withLock { () -> CheckedContinuation<String, Never>? in
+            guard !didResume else { return nil }
+            didResume = true
+            defer { self.continuation = nil }
+            return self.continuation
+        }
+        continuation?.resume(returning: value)
+    }
 }
 
 /// Defines whether and how observations are published.

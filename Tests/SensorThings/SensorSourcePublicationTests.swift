@@ -48,6 +48,20 @@ struct SensorSourcePublicationTests {
         #expect(controller.lifecycle == [.will])
     }
 
+    @Test
+    func multipleSensorReadCallbacksUseFirstValueOnly() async throws {
+        let controller = try makeController(io: MultiReadSensorIo(parameters: nil))
+        defer { controller.container.shutdown() }
+        let transport = PublicationTransport()
+        try await install(transport, on: controller)
+
+        try await controller.publishChanneledObservationAndWait(sensorId: controller.sensor.objectId)
+
+        #expect(controller.lifecycle == [.will, .did])
+        #expect(transport.publicationCount == 1)
+        #expect(controller.lastObservationResult == "1")
+    }
+
     private func makeController(io: SensorIo) throws -> RecordingSensorSourceController {
         let options = ControllerOptions(extra: [
             "skipSensorAdvertise": true,
@@ -183,6 +197,13 @@ private struct NoopCommunicationDelegate: CommunicationClientDelegate {
 }
 
 private struct TestTransportError: Error, Sendable {}
+
+private final class MultiReadSensorIo: SensorIo {
+    override func read(callback: ((Any) -> Void)) {
+        callback(1)
+        callback(2)
+    }
+}
 
 private actor PublicationGate {
     private(set) var started = false
