@@ -396,6 +396,7 @@ private final class RecordingCommunicationClient: CommunicationClient {
     func disconnect() {}
     func publish(_ topic: String, message: String) {}
     func publish(_ topic: String, message: [UInt8]) {}
+    @MainActor func publishAndWait(_ topic: String, message: [UInt8]) async throws {}
 
     @MainActor func subscribe(_ topic: String) async throws {
         commands.append(.subscribe(topic))

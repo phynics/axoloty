@@ -6,6 +6,28 @@ import ErrorKit
 
 @MainActor
 extension CommunicationManager {
+    /// Publishes a payload and waits for the underlying transport completion.
+    ///
+    /// This boundary is intentionally separate from the legacy fire-and-forget
+    /// publication path. Callers that make a success-dependent decision can use
+    /// it without changing the behavior of existing publishers.
+    internal func publishAndWait(topic: String, message: [UInt8]) async throws {
+        guard communicationState == .online else {
+            throw AxolotyError.runtime(
+                code: .notStarted,
+                reason: "Cannot await publication while the communication manager is offline."
+            )
+        }
+
+        do {
+            try await client.publishAndWait(topic, message: message)
+        } catch let error as AxolotyError {
+            throw error
+        } catch {
+            throw AxolotyError.caught(error)
+        }
+    }
+
     private func publishEvent(topic: String, event: Any) {
         do {
             publish(topic: topic, message: try HostWireAdapter.encodeEvent(event))
@@ -15,6 +37,50 @@ extension CommunicationManager {
                 "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
             ])
         }
+    }
+
+    private func publishEventAndWait(topic: String, event: Any) async throws {
+        do {
+            try await publishAndWait(topic: topic, message: HostWireAdapter.encodeEvent(event))
+        } catch let error as AxolotyError {
+            throw error
+        } catch {
+            throw AxolotyError.caught(error)
+        }
+    }
+
+    internal func publishAdvertiseAndWait(_ event: AdvertiseEvent) async throws {
+        event.sourceId = identity.objectId
+        let components = TopicStringComponents(
+            namespace: namespace, eventType: .advertise,
+            eventTypeFilter: event.data.object.coreType.rawValue
+        )
+        try await publishEventAndWait(
+            topic: TopicBuilder.publishTopic(components: components, sourceId: identity.objectId),
+            event: event
+        )
+        if event.data.object.coreType.objectType != event.data.object.objectType {
+            let object = TopicBuilder.publishTopic(
+                components: .init(
+                    namespace: namespace, eventType: .advertise,
+                    eventTypeFilter: EVENT_TYPE_FILTER_SEPARATOR + event.data.object.objectType
+                ),
+                sourceId: identity.objectId
+            )
+            try await publishEventAndWait(topic: object, event: event)
+        }
+        if [.Identity, .IoNode].contains(event.data.object.coreType), !deadvertiseIds.contains(event.data.object.objectId) {
+            deadvertiseIds.append(event.data.object.objectId)
+        }
+    }
+
+    internal func publishChannelAndWait(_ event: ChannelEvent) async throws {
+        event.sourceId = identity.objectId
+        let topic = TopicBuilder.publishTopic(
+            components: .init(namespace: namespace, eventType: .channel, eventTypeFilter: event.channelId),
+            sourceId: identity.objectId
+        )
+        try await publishEventAndWait(topic: topic, event: event)
     }
     public func publishRaw(topic: String, withString value: String) throws {
         guard TopicBuilder.isValidPublicationTopic(topic) else {

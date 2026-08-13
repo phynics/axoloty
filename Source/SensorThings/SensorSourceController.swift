@@ -60,7 +60,12 @@ open class SensorSourceController: Controller {
                         return
                     }
                     guard !Task.isCancelled else { return }
-                    try? self?._publishObservation(sensorId: sensor.objectId, channeled: observationPublicationType == .channel)
+                    do {
+                        try await self?._publishObservation(sensorId: sensor.objectId, channeled: observationPublicationType == .channel)
+                    } catch {
+                        guard let self else { return }
+                        self.logPublicationFailure(error, sensorId: sensor.objectId, channeled: observationPublicationType == .channel)
+                    }
                 }
             }
         }
@@ -89,31 +94,41 @@ open class SensorSourceController: Controller {
 
     /// Publishes a channeled observation.
     func publishChanneledObservation(sensorId: CoatyUUID, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) {
-        do {
-            try _publishObservation(sensorId: sensorId, channeled: true, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
-        } catch {
-            LogManager.logger(.sensorThings).error("Failed to publish channeled observation", metadata: [
-                "ioSourceId": .string(sensorId.string),
-                "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
-            ])
+        Task { @MainActor [weak self] in
+            do {
+                try await self?._publishObservation(sensorId: sensorId, channeled: true, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
+            } catch {
+                self?.logPublicationFailure(error, sensorId: sensorId, channeled: true)
+            }
         }
     }
 
     /// Publishes an advertised observation.
     func publishAdvertisedObservation(sensorId: CoatyUUID, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) {
-        do {
-            try _publishObservation(sensorId: sensorId, channeled: false, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
-        } catch {
-            LogManager.logger(.sensorThings).error("Failed to publish advertised observation", metadata: [
-                "ioSourceId": .string(sensorId.string),
-                "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
-            ])
+        Task { @MainActor [weak self] in
+            do {
+                try await self?._publishObservation(sensorId: sensorId, channeled: false, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
+            } catch {
+                self?.logPublicationFailure(error, sensorId: sensorId, channeled: false)
+            }
         }
     }
 
+    internal func publishChanneledObservationAndWait(sensorId: CoatyUUID, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) async throws {
+        try await _publishObservation(sensorId: sensorId, channeled: true, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
+    }
+
+    internal func publishAdvertisedObservationAndWait(sensorId: CoatyUUID, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) async throws {
+        try await _publishObservation(sensorId: sensorId, channeled: false, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
+    }
+
     internal func createObservation(container: SensorContainer, value: Any, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) -> Observation {
+        makeObservation(container: container, serializedResult: RawJSONValue.serialize(any: value), resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
+    }
+
+    private func makeObservation(container: SensorContainer, serializedResult: String, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) -> Observation {
         let now = Date().timeIntervalSince1970 * 1000
-        return Observation(phenomenonTime: now, result: RawJSONValue.serialize(any: value), resultTime: now, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterest: featureOfInterestId, name: "Observation of \(container.sensor.name)", objectId: .init(), externalId: nil, parentObjectId: container.sensor.objectId)
+        return Observation(phenomenonTime: now, result: serializedResult, resultTime: now, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterest: featureOfInterestId, name: "Observation of \(container.sensor.name)", objectId: .init(), externalId: nil, parentObjectId: container.sensor.objectId)
     }
 
     internal func getChannelId(container: SensorContainer) -> String { container.sensor.objectId.string }
@@ -207,35 +222,64 @@ open class SensorSourceController: Controller {
         return request.coreTypes?.contains(.CoatyObject) == true
     }
 
-    private func _publishObservation(sensorId: CoatyUUID, channeled: Bool, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) throws {
+    private func _publishObservation(sensorId: CoatyUUID, channeled: Bool, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) async throws {
         guard let container = sensors[sensorId.string] else {
             throw AxolotyError.runtime(code: .notRegistered, reason: "sensorId \(sensorId.string) is not registered")
         }
-        container.io.read { [weak self] value in
-            guard let self else { return }
-            let observation = self.createObservation(container: container, value: value, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
-            self.onObservationWillPublish(container: container, observation: observation)
+        let serializedValue = await readSensorValue(from: container.io)
+        let observation = makeObservation(container: container, serializedResult: serializedValue, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
+        onObservationWillPublish(container: container, observation: observation)
+        do {
             if channeled {
-                do {
-                    try self.communicationManager.publishChannel(ChannelEvent.with(object: observation, channelId: self.getChannelId(container: container)))
-                } catch {
-                    LogManager.logger(.sensorThings).error("Failed to publish channeled observation", metadata: [
-                        "ioSourceId": .string(sensorId.string),
-                        "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
-                    ])
-                }
+                try await communicationManager.publishChannelAndWait(ChannelEvent.with(object: observation, channelId: getChannelId(container: container)))
             } else {
-                do {
-                    try self.communicationManager.publishAdvertise(AdvertiseEvent.with(object: observation))
-                } catch {
-                    LogManager.logger(.sensorThings).error("Failed to publish advertised observation", metadata: [
-                        "ioSourceId": .string(sensorId.string),
-                        "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
-                    ])
-                }
+                try await communicationManager.publishAdvertiseAndWait(AdvertiseEvent.with(object: observation))
             }
-            self.onObservationDidPublish(container: container, observation: observation)
+        } catch let error as AxolotyError {
+            throw error
+        } catch {
+            throw AxolotyError.caught(error)
         }
+        onObservationDidPublish(container: container, observation: observation)
+    }
+
+    private func readSensorValue(from io: SensorIo) async -> String {
+        await withCheckedContinuation { (continuation: CheckedContinuation<String, Never>) in
+            let bridge = SensorReadBridge(continuation)
+            io.read { value in
+                bridge.resume(RawJSONValue.serialize(any: value))
+            }
+        }
+    }
+
+    private func logPublicationFailure(_ error: Error, sensorId: CoatyUUID, channeled: Bool) {
+        let kind = channeled ? "channeled" : "advertised"
+        let wrappedError = error as? AxolotyError ?? AxolotyError.caught(error)
+        LogManager.logger(.sensorThings).error("Failed to publish observation", metadata: [
+            "kind": .string(kind),
+            "ioSourceId": .string(sensorId.string),
+            "error": .string(ErrorKit.errorChainDescription(for: wrappedError)),
+        ])
+    }
+}
+
+private final class SensorReadBridge: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<String, Never>?
+    private var didResume = false
+
+    init(_ continuation: CheckedContinuation<String, Never>) {
+        self.continuation = continuation
+    }
+
+    func resume(_ value: String) {
+        let continuation = lock.withLock { () -> CheckedContinuation<String, Never>? in
+            guard !didResume else { return nil }
+            didResume = true
+            defer { self.continuation = nil }
+            return self.continuation
+        }
+        continuation?.resume(returning: value)
     }
 }
 

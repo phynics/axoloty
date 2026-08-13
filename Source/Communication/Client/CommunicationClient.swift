@@ -51,6 +51,9 @@ protocol CommunicationClient {
 
     func publish(_ topic: String, message: String)
     func publish(_ topic: String, message: [UInt8])
+
+    /// Publishes a payload and completes when the transport accepts or rejects it.
+    @MainActor func publishAndWait(_ topic: String, message: [UInt8]) async throws
     /// Sends a subscription command from the manager's serialization domain.
     @MainActor func subscribe(_ topic: String) async throws
 
