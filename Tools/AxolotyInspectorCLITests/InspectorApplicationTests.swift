@@ -689,7 +689,7 @@ struct InspectorDiscoverApplicationTests {
         )
         _ = await app.run()
 
-        #expect(output.contains("DISCOVERY  3 objects"))
+        #expect(output.contains("DISCOVERY  3 objects (timed out)"))
     }
 
     @Test
