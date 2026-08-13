@@ -7,6 +7,13 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
+# The ESP-IDF dependency metadata alone does not order Swift compilation
+# behind json_core's POST_BUILD module alias. Keep the explicit target edge
+# covered because its absence fails nondeterministically under parallel Ninja.
+wire_cmake="$root/Embedded/swift/components/axoloty_wire/CMakeLists.txt"
+grep -Fq 'idf_component_get_property(JSON_CORE_COMPONENT_LIB json_core COMPONENT_LIB)' "$wire_cmake"
+grep -Fq 'add_dependencies(${COMPONENT_LIB} ${JSON_CORE_COMPONENT_LIB})' "$wire_cmake"
+
 project_dir="$tmp/project"
 build_dir="$tmp/build"
 export_dir="$tmp/export"

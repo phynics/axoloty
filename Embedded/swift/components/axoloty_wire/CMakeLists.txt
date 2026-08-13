@@ -30,6 +30,13 @@ idf_component_register_swift(
     SRCS ${AXOLOTY_WIRE_SOURCES}
 )
 
+# PRIV_REQUIRES supplies include and link metadata, but Ninja may still start
+# this Swift compile before json_core's POST_BUILD command has published the
+# importable `_JSONCore.swiftmodule` alias. Make that compile-time ordering
+# explicit so clean parallel builds cannot race the module copy.
+idf_component_get_property(JSON_CORE_COMPONENT_LIB json_core COMPONENT_LIB)
+add_dependencies(${COMPONENT_LIB} ${JSON_CORE_COMPONENT_LIB})
+
 # idf_swift adds the component bridge header as a public compile option.
 # AxolotyWire needs no C bridge, and exporting its empty header overrides the
 # application bridge in dependent Swift compiles.
