@@ -247,7 +247,7 @@ extension FilterOperand {
                 return FilterOperand._deepContains(xv, yv, isTopLevel: false)
             }
         case (.string(let xValue), .string(let yValue)):
-            return xValue.contains(yValue)
+            return yValue.isEmpty || xValue.contains(yValue)
         default:
             return x == y
         }

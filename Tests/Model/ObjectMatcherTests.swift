@@ -123,9 +123,13 @@ struct ObjectMatcherTests {
                           ]
                       ])
 
-        func matches(_ property: String, _ expression: ObjectFilterExpression) -> Bool {
+        func matches(
+            _ property: String,
+            _ expression: ObjectFilterExpression,
+            on candidate: CoatyObject? = nil
+        ) -> Bool {
             ObjectMatcher.matchesFilter(
-                obj: obj,
+                obj: candidate ?? obj,
                 filter: ObjectFilter(condition: ObjectFilterCondition(
                     property: ObjectFilterProperty(property),
                     expression: expression)))
@@ -133,16 +137,24 @@ struct ObjectMatcherTests {
 
         #expect(matches("logLabels.message", .contains("world")))
         #expect(!matches("logLabels.message", .contains("planet")))
+        let abc = Log(logLevel: .info, logMessage: "abc", logDate: "2026-01-01")
+        let emptyString = Log(logLevel: .info, logMessage: "", logDate: "2026-01-01")
+        #expect(matches("logMessage", .contains(""), on: abc))
+        #expect(!matches("logMessage", .contains("x"), on: emptyString))
         #expect(matches("logLabels.tags", .contains(["swift"])))
         #expect(matches("logLabels.tags", .contains(["swift", "coaty"])))
         #expect(!matches("logLabels.tags", .contains(["swift", "missing"])))
         #expect(matches("logLabels.emptyTags", .contains([])))
+        #expect(matches("logLabels.nested", .contains(.object([String: FilterOperand]()))))
         #expect(matches("logLabels.nested", .contains(.object(["name": "sensor"]))))
         #expect(matches("logLabels.nested", .contains(.object([
             "metadata": .object(["kind": "temperature"])
         ]))))
         #expect(!matches("logLabels.nested", .contains(.object(["missing": true]))))
         #expect(!matches("logLabels.missing", .contains("anything")))
+        #expect(!matches("logMessage", .notContains(""), on: abc))
+        #expect(matches("logMessage", .notContains("x"), on: emptyString))
+        #expect(!matches("logLabels.nested", .notContains(.object([:]))))
         #expect(matches("logLabels.tags", .notContains(["missing"])))
     }
 
