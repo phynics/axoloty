@@ -95,6 +95,15 @@ printf '%s\n' "$failure_output" | grep -F "operation 'dtoDecode'" >/dev/null || 
     exit 1
 }
 
+# The combined timed operation must attribute DTO decode failures to the
+# combined operation, not to the standalone dtoDecode benchmark.
+combined_operation_source=$(sed -n '/let combinedResult/,/print.*combinedParseDecode/p' \
+    "$root/Benchmarks/WireBenchmark/main.swift")
+printf '%s\n' "$combined_operation_source" | grep -F 'operationName: "combinedParseDecode"' >/dev/null || {
+    echo "combined benchmark does not attribute decode failures to combinedParseDecode" >&2
+    exit 1
+}
+
 node --input-type=module - <<'JS'
 import assert from "node:assert/strict";
 import { percentile, mad, compare } from "./Tests/Support/benchmark-wire.mjs";
@@ -138,4 +147,4 @@ assert.match(compare(
 ), /MISMATCH: corpus hash differs/);
 JS
 sh -n "$script_dir/check-benchmark-wire.sh"
-echo "SELF-TEST OK (17 checks passed, 0 failed)"
+echo "SELF-TEST OK (18 checks passed, 0 failed)"

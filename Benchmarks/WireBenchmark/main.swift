@@ -362,7 +362,7 @@ func runBenchmark() throws {
                         caseID: corpusCase.id,
                         family: corpusCase.family,
                         reader: reader,
-                        operationName: "dtoDecode"
+                        operationName: "combinedParseDecode"
                     )
                 }
             }
