@@ -1317,6 +1317,9 @@ final class FakeCommunicationClient: CommunicationClient {
             _actions.append("publish:\(topic)")
         }
     }
+    @MainActor func publishAndWait(_ topic: String, message: [UInt8]) async throws {
+        publish(topic, message: message)
+    }
     @MainActor func subscribe(_ topic: String) async throws {
         stateLock.withLock {
             _commands.append(.subscribe(topic))

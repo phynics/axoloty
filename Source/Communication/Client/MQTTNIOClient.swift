@@ -579,6 +579,10 @@ internal class MQTTNIOClient: CommunicationClient {
             }
     }
 
+    fileprivate func publicationSnapshot() -> (client: MQTTClient?, qos: MQTTQoS, handler: PublishHandler?) {
+        (lock.withLock { lifecycle.client }, qos, publishHandler)
+    }
+
     @MainActor func subscribe(_ topic: String) async throws {
         let client = lock.withLock { lifecycle.client }
         guard let client else {
@@ -831,6 +835,32 @@ extension MQTTNIOClient: ServiceDiscoveryDelegate {
         replaceClient(host: first.host, port: first.port)
 
         delegate.didReceiveStart()
+    }
+}
+
+extension MQTTNIOClient {
+
+    @MainActor
+    func publishAndWait(_ topic: String, message: [UInt8]) async throws {
+        let snapshot = publicationSnapshot()
+        if let handler = snapshot.handler {
+            handler(snapshot.qos, false)
+            return
+        }
+        guard let client = snapshot.client else {
+            throw AxolotyError.runtime(code: .notStarted, reason: "Cannot publish before the MQTT client is initialized.")
+        }
+
+        do {
+            try await client.publish(
+                to: topic,
+                payload: byteBuffer(from: message),
+                qos: snapshot.qos,
+                retain: false
+            ).get()
+        } catch {
+            throw AxolotyError.caught(error)
+        }
     }
 }
 

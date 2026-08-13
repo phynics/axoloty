@@ -8,26 +8,59 @@ import Testing
 @Suite
 struct SensorSourcePublicationTests {
     @Test
-    func successfulPublicationInvokesCallbacksInOrder() throws {
-        let controller = try makeController(channelId: "sensor-channel")
+    func successfulPublicationInvokesDidPublishAfterTransportCompletion() async throws {
+        let gate = PublicationGate()
+        let controller = try makeController(io: MockSensorIo(parameters: nil))
         defer { controller.container.shutdown() }
+        let transport = PublicationTransport { _ in await gate.wait() }
+        try await install(transport, on: controller)
 
-        controller.publishChanneledObservation(sensorId: controller.sensor.objectId)
+        let publication = Task {
+            try await controller.publishChanneledObservationAndWait(sensorId: controller.sensor.objectId)
+        }
+        try await waitUntil("transport publication started") { await gate.started }
+        #expect(controller.lifecycle == [.will])
 
+        await gate.release()
+        try await publication.value
         #expect(controller.lifecycle == [.will, .did])
     }
 
     @Test
-    func failedPublicationDoesNotInvokeDidPublish() throws {
-        let controller = try makeController(channelId: "")
+    func failedTransportPublicationSuppressesDidPublishAndWrapsError() async throws {
+        let controller = try makeController(io: MockSensorIo(parameters: nil))
         defer { controller.container.shutdown() }
+        let transport = PublicationTransport { _ in throw TestTransportError() }
+        try await install(transport, on: controller)
 
-        controller.publishChanneledObservation(sensorId: controller.sensor.objectId)
+        do {
+            try await controller.publishChanneledObservationAndWait(sensorId: controller.sensor.objectId)
+            Issue.record("Expected publication to fail")
+        } catch let error as AxolotyError {
+            guard case let .caught(cause) = error else {
+                Issue.record("Expected a caught publication error, got \(error)")
+                return
+            }
+            #expect(cause is TestTransportError)
+        }
 
         #expect(controller.lifecycle == [.will])
     }
 
-    private func makeController(channelId: String) throws -> RecordingSensorSourceController {
+    @Test
+    func multipleSensorReadCallbacksResumePublicationOnlyOnce() async throws {
+        let controller = try makeController(io: MultiReadSensorIo(parameters: nil))
+        defer { controller.container.shutdown() }
+        let transport = PublicationTransport()
+        try await install(transport, on: controller)
+
+        try await controller.publishChanneledObservationAndWait(sensorId: controller.sensor.objectId)
+
+        #expect(controller.lifecycle == [.will, .did])
+        #expect(transport.publicationCount == 1)
+    }
+
+    private func makeController(io: SensorIo) throws -> RecordingSensorSourceController {
         let options = ControllerOptions(extra: [
             "skipSensorAdvertise": true,
             "skipSensorDeadvertise": true,
@@ -58,12 +91,24 @@ struct SensorSourcePublicationTests {
         )
         try controller.registerSensor(
             sensor: controller.sensor,
-            io: MockSensorIo(parameters: nil),
+            io: io,
             observationPublicationType: .none,
             samplingInterval: nil
         )
-        controller.channelId = channelId
         return controller
+    }
+
+    private func install(
+        _ transport: PublicationTransport,
+        on controller: RecordingSensorSourceController
+    ) async throws {
+        transport.delegate = controller.communicationManager
+        transport.setStreams(controller.communicationManager.streams)
+        controller.communicationManager.client = transport
+        transport.delegate.didUpdateCommunicationState(.online)
+        try await waitUntil("communication manager online") {
+            controller.communicationManager.communicationState == .online
+        }
     }
 }
 
@@ -75,7 +120,6 @@ private final class RecordingSensorSourceController: SensorSourceController {
     }
 
     let sensor: Sensor
-    var channelId = "sensor-channel"
     var lifecycle: [Lifecycle] = []
 
     required init(container: Container, options: ControllerOptions?, controllerType: String) {
@@ -103,10 +147,6 @@ private final class RecordingSensorSourceController: SensorSourceController {
         super.init(container: container, options: options, controllerType: controllerType)
     }
 
-    override func getChannelId(container: SensorContainer) -> String {
-        channelId
-    }
-
     override func onObservationWillPublish(container: SensorContainer, observation: Observation) {
         lifecycle.append(.will)
     }
@@ -114,4 +154,78 @@ private final class RecordingSensorSourceController: SensorSourceController {
     override func onObservationDidPublish(container: SensorContainer, observation: Observation) {
         lifecycle.append(.did)
     }
+}
+
+private final class PublicationTransport: CommunicationClient, @unchecked Sendable {
+    var delegate: CommunicationClientDelegate
+    private var streams: CommunicationStreams?
+    private let completion: @Sendable ([UInt8]) async throws -> Void
+    private(set) var publicationCount = 0
+
+    init(
+        delegate: CommunicationClientDelegate = NoopCommunicationDelegate(),
+        completion: @escaping @Sendable ([UInt8]) async throws -> Void = { _ in }
+    ) {
+        self.delegate = delegate
+        self.completion = completion
+    }
+
+    func setStreams(_ streams: CommunicationStreams) {
+        self.streams = streams
+    }
+
+    func connect(lastWillTopic _: String, lastWillMessage _: String) {}
+    func disconnect() {}
+    func publish(_ topic: String, message: String) {}
+    func publish(_ topic: String, message: [UInt8]) {}
+
+    @MainActor func publishAndWait(_ topic: String, message: [UInt8]) async throws {
+        publicationCount += 1
+        try await completion(message)
+    }
+
+    @MainActor func subscribe(_ topic: String) async throws {}
+    @MainActor func unsubscribe(_ topic: String) async throws {}
+}
+
+private struct NoopCommunicationDelegate: CommunicationClientDelegate {
+    func didReceiveStart() {}
+}
+
+private struct TestTransportError: Error, Sendable {}
+
+private final class MultiReadSensorIo: SensorIo {
+    override func read(callback: ((Any) -> Void)) {
+        callback(1)
+        callback(2)
+    }
+}
+
+private actor PublicationGate {
+    private(set) var started = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        started = true
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func release() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+@MainActor
+private func waitUntil(
+    _ description: String,
+    condition: @escaping @MainActor () async -> Bool
+) async throws {
+    for _ in 0 ..< 100 {
+        if await condition() { return }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    throw AxolotyError.runtime(code: .timedOut, reason: description)
 }
