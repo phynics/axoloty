@@ -15,6 +15,7 @@ test("run.sh builds an owned, run-scoped container command", () => {
   assert.match(runScript, /--cidfile "\$container_cidfile"/);
   assert.match(runScript, /container_has_expected_labels/);
   assert.match(runScript, /"\$runtime" start --attach/);
+  assert.match(runScript, /CONTAINER_CREATE_TIMEOUT_SECONDS:-120/);
   assert.match(runScript, /container_started=1/);
   assert.doesNotMatch(runScript, /confirm_container_ownership/);
   assert.doesNotMatch(runScript, /wait_for_ownership/);

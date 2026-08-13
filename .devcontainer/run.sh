@@ -37,7 +37,7 @@ cleanup_failure=0
 container_term_grace="${CONTAINER_TERM_GRACE_SECONDS:-5}"
 container_kill_grace="${CONTAINER_KILL_GRACE_SECONDS:-2}"
 runtime_api_timeout="${CONTAINER_API_TIMEOUT_SECONDS:-5}"
-container_create_timeout="${CONTAINER_CREATE_TIMEOUT_SECONDS:-30}"
+container_create_timeout="${CONTAINER_CREATE_TIMEOUT_SECONDS:-120}"
 sudo_prefix=""
 session_prefix=""
 session_wait=""
@@ -982,6 +982,11 @@ create_container "$@" || create_status=$?
 recover_created_container || true
 
 if [ "$create_status" -ne 0 ]; then
+    if [ "$create_status" -eq 124 ]; then
+        echo "container create exceeded its ${container_create_timeout}-second deadline" >&2
+    elif [ -s "$runtime_output_file" ]; then
+        cat "$runtime_output_file" >&2
+    fi
     status=$create_status
 elif [ "$container_created" -ne 1 ]; then
     echo "container create did not yield a verifiable immutable container ID" >&2
