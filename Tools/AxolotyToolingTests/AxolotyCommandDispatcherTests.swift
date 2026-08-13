@@ -123,7 +123,8 @@ func checkPlanPrintsStableJSON() {
         "lint", "--no-cache", "--config", ".swiftlint.yml",
     ])
     #expect(plan?.nodes.first(where: { $0.name == "test-tooling" })?.command.arguments == [
-        "test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--filter",
+        "test", "-Xswiftc", "-warnings-as-errors", "--cache-path", ".swiftpm-cache",
+        "--disable-automatic-resolution", "--filter",
         "AxolotyCommandDispatcherTests|AxolotyDeviceLeaseTests|AxolotyDevelopmentServiceTests|AxolotyMQTTServiceTests|AxolotyServeParserTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyMCPTests",
     ])
     #expect(plan?.nodes.allSatisfy { timeout in
@@ -140,6 +141,24 @@ func canonicalManifestDefinesVerifyRootsAndBoundedTestOne() throws {
     #expect(manifest.ciRequiredGates.allSatisfy { gate in manifest.nodes.contains { $0.id == gate } })
     #expect(manifest.testOneCommand(filter: "suite;touch /tmp/injected").arguments.last == "suite;touch /tmp/injected")
     #expect(manifest.testOne.timeoutSeconds > 0)
+}
+
+@Test
+func canonicalSwiftBuildsTreatWarningsAsErrors() throws {
+    let manifest = try AxolotyCanonicalTestManifest.loadDefault()
+    let compilingCommands = manifest.nodes
+        .map(\.command)
+        .filter { command in
+            command.executable == "swift"
+                && ["build", "test"].contains(command.arguments.first)
+                && !command.arguments.contains("--skip-build")
+        } + [manifest.testOne.command]
+
+    #expect(!compilingCommands.isEmpty)
+    for command in compilingCommands {
+        #expect(command.arguments.contains("-Xswiftc"))
+        #expect(command.arguments.contains("-warnings-as-errors"))
+    }
 }
 
 @Test
@@ -474,7 +493,8 @@ func testToolingUsesOnlyItsCheckPlanDependencyClosure() throws {
     #expect(result.exitCode == 0)
     #expect(manifest.results.map(\.name) == ["resolve", "build", "test-tooling"])
     #expect(runner.commands.last?.arguments == [
-        "test", "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution", "--filter",
+        "test", "-Xswiftc", "-warnings-as-errors", "--cache-path", ".swiftpm-cache",
+        "--disable-automatic-resolution", "--filter",
         "AxolotyCommandDispatcherTests|AxolotyDeviceLeaseTests|AxolotyDevelopmentServiceTests|AxolotyMQTTServiceTests|AxolotyServeParserTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyMCPTests",
     ])
 }
