@@ -54,21 +54,17 @@ private func validateOwnedJSONSyntax(
     }
     guard !isValid else { return }
 
-    try bytes.withUnsafeBufferPointer { buffer throws(WireDecodeError) in
-        guard let base = buffer.baseAddress else {
-            throw WireDecodeError(.unexpectedEndOfInput, field: field)
-        }
+    let validationFailure = bytes.withUnsafeBufferPointer { buffer -> WireDecodeError? in
+        guard let base = buffer.baseAddress else { return WireDecodeError(.unexpectedEndOfInput, field: field) }
         let reader = WireReader(bytes: base, length: buffer.count)
-        do {
-            try reader.validate()
-        } catch {
-            guard let failure = error as? WireDecodeError else {
-                throw invalidOwnedJSON(field: field)
-            }
-            throw WireDecodeError(failure.reason, byteOffset: failure.byteOffset, field: field)
+        if let failure = reader.index.failure {
+            return WireDecodeError(failure.reason, byteOffset: failure.byteOffset, field: field)
         }
-        throw invalidOwnedJSON(field: field)
+        guard reader.index.rootObject else { return WireDecodeError(.typeMismatch(expected: "object"), field: field) }
+        return nil
     }
+    if let validationFailure { throw validationFailure }
+    throw invalidOwnedJSON(field: field)
 }
 
 private func validateLargeOwnedJSONSyntax(
@@ -82,11 +78,17 @@ private func validateLargeOwnedJSONSyntax(
             bytes: buffer,
             destination: JSONValidationDestination()
         )
+        #if hasFeature(Embedded)
+        if tokenizer.scanValueResult() != nil {
+            return (false, tokenizer.currentOffset)
+        }
+        #else
         do {
             try tokenizer.scanValue()
         } catch {
             return (false, tokenizer.currentOffset)
         }
+        #endif
 
         var offset = tokenizer.currentOffset
         while offset < bytes.count && isJSONWhitespace(bytes[offset]) {

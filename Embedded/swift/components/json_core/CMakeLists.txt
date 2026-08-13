@@ -17,6 +17,9 @@ file(GLOB JSON_CORE_SOURCES
     "${JSON_CORE_ROOT}/Parser/*.swift"
     "${JSON_CORE_ROOT}/SIMD/*.swift"
 )
+list(APPEND JSON_CORE_SOURCES
+    "${CMAKE_CURRENT_LIST_DIR}/EmbeddedJSONTokenizerResult.swift"
+)
 
 if(NOT JSON_CORE_SOURCES)
     message(FATAL_ERROR "Pinned swift-json _JSONCore sources not found at ${JSON_CORE_ROOT}")
@@ -37,6 +40,8 @@ idf_component_register_swift(
 
 set_property(TARGET ${COMPONENT_LIB} PROPERTY INTERFACE_COMPILE_OPTIONS "")
 target_compile_options(${COMPONENT_LIB} PRIVATE
+    "$<$<COMPILE_LANGUAGE:Swift>:-swift-version>"
+    "$<$<COMPILE_LANGUAGE:Swift>:6>"
     "$<$<COMPILE_LANGUAGE:Swift>:-module-name>"
     "$<$<COMPILE_LANGUAGE:Swift>:_JSONCore>"
     "$<$<COMPILE_LANGUAGE:Swift>:-package-name>"
