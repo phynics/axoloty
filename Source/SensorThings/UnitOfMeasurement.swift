@@ -20,7 +20,7 @@ public struct UnitOfMeasurement: Codable {
         case definition
     }
     
-    /// Full name of the UnitofMeasurement such as Degree Celsius, or `nil` when
+    /// Full name of the UnitOfMeasurement such as Degree Celsius, or `nil` when
     /// the SensorThings datastream has no unit of measurement.
     public var name: String?
 
