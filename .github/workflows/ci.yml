@@ -43,7 +43,7 @@ jobs:
           # A same-repository PR image workflow publishes the immutable image
           # in parallel. Wait for it instead of rebuilding on every fresh CI
           # runner; retain the local fallback if publication fails.
-          wait-for-published-seconds: "300"
+          wait-for-published-seconds: "600"
 
       - name: Restore SwiftPM dependency cache
         uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3

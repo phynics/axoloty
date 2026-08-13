@@ -174,5 +174,6 @@ test("published content-keyed images avoid repeated fallback builds and refresh 
   assert.match(imageWorkflow, /Build and publish content-keyed image/);
   assert.match(setupAction, /WAIT_FOR_PUBLISHED_SECONDS/);
   assert.match(setupAction, /Waiting for the content-keyed development image publisher/);
+  assert.match(fs.readFileSync(".github/workflows/ci.yml", "utf8"), /wait-for-published-seconds: "600"/);
   assert.match(imageWorkflow, /gh pr create/);
 });
