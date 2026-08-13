@@ -119,4 +119,30 @@ struct DecodingInvariantTests {
             _ = try JSONDecoder().decode(CoatyTimeInterval.self, from: data)
         }
     }
+
+    @Test
+    func coatyTimeIntervalRejectsNegativeDuration() throws {
+        let data = try #require(#"{"_duration":-1}"#.data(using: .utf8))
+
+        do {
+            _ = try JSONDecoder().decode(CoatyTimeInterval.self, from: data)
+            Issue.record("A negative duration must be rejected during decoding")
+        } catch let error as AxolotyError {
+            #expect(error.userFriendlyMessage == "CoatyTimeInterval: duration cannot be negative")
+            if case .decodingFailure = error {
+                // Expected structured error category.
+            } else {
+                Issue.record("Expected decodingFailure for a negative wire duration")
+            }
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test
+    func coatyTimeIntervalAcceptsNegativeTimestamps() throws {
+        let data = try #require(#"{"_start":-1000,"_end":0}"#.data(using: .utf8))
+
+        _ = try JSONDecoder().decode(CoatyTimeInterval.self, from: data)
+    }
 }
