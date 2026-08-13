@@ -123,13 +123,8 @@ open class SensorSourceController: Controller {
     }
 
     internal func createObservation(container: SensorContainer, value: Any, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) -> Observation {
-        createObservation(container: container, value: RawJSONValue(any: value) ?? .null, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
-    }
-
-    private func createObservation(container: SensorContainer, value: RawJSONValue, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) -> Observation {
         let now = Date().timeIntervalSince1970 * 1000
-        let result = (try? JSONEncoder().encode(value)).flatMap { String(data: $0, encoding: .utf8) } ?? "null"
-        return Observation(phenomenonTime: now, result: result, resultTime: now, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterest: featureOfInterestId, name: "Observation of \(container.sensor.name)", objectId: .init(), externalId: nil, parentObjectId: container.sensor.objectId)
+        return Observation(phenomenonTime: now, result: RawJSONValue.serialize(any: value), resultTime: now, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterest: featureOfInterestId, name: "Observation of \(container.sensor.name)", objectId: .init(), externalId: nil, parentObjectId: container.sensor.objectId)
     }
 
     internal func getChannelId(container: SensorContainer) -> String { container.sensor.objectId.string }
@@ -244,12 +239,15 @@ open class SensorSourceController: Controller {
         onObservationDidPublish(container: container, observation: observation)
     }
 
-    private func readSensorValue(from io: SensorIo) async -> RawJSONValue {
-        await withCheckedContinuation { continuation in
+    private func readSensorValue(from io: SensorIo) async -> Any {
+        let result = SensorReadValueBox()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             io.read { value in
-                continuation.resume(returning: RawJSONValue(any: value) ?? .null)
+                result.value = value
+                continuation.resume()
             }
         }
+        return result.value ?? NSNull()
     }
 
     private func logPublicationFailure(_ error: Error, sensorId: CoatyUUID, channeled: Bool) {
@@ -261,6 +259,11 @@ open class SensorSourceController: Controller {
             "error": .string(ErrorKit.errorChainDescription(for: wrappedError)),
         ])
     }
+}
+
+@MainActor
+private final class SensorReadValueBox {
+    var value: Any?
 }
 
 /// Defines whether and how observations are published.

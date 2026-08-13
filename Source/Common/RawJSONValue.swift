@@ -22,7 +22,7 @@ import Foundation
 /// - Important: Built only from stdlib types. Adding a Foundation type (such
 ///   as `Data`, `Date`, `URL`, or `Decimal`) to this enum's stored shape
 ///   breaks the Embedded Swift path tracked by #208.
-public enum RawJSONValue: Equatable, Sendable {
+public enum RawJSONValue: Equatable {
     /// A JSON `null` literal.
     case null
     /// A JSON boolean literal.

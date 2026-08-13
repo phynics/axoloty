@@ -146,7 +146,7 @@ private final class RecordingSensorSourceController: SensorSourceController {
     }
 }
 
-private final class PublicationTransport: CommunicationClient, @unchecked Sendable {
+private final class PublicationTransport: CommunicationClient {
     var delegate: CommunicationClientDelegate
     private var streams: CommunicationStreams?
     private let completion: @Sendable ([UInt8]) async throws -> Void
