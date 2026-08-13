@@ -599,16 +599,37 @@ public struct IoStateWireData: WireDecodable, WireEncodable, Equatable {
 
     /// Decodes an IoState event from `reader`.
     ///
-    /// `hasAssociations` is required; `updateRate` is optional.
+    /// `hasAssociations` is required; `updateRate` is optional and, when
+    /// present, must be a non-negative integer. Explicit `null` is treated as
+    /// absent for wire compatibility with Codable payloads.
     ///
     /// - Parameter reader: A ``WireReader`` over the JSON payload.
     /// - Throws: ``WireDecodeError`` if `hasAssociations` is missing.
     public init(from reader: WireReader) throws(WireDecodeError) {
-        guard let ha = reader.readBool("hasAssociations") else {
+        try reader.validate()
+        guard reader.readField("hasAssociations") != nil else {
             throw WireDecodeError(.missingField, field: "hasAssociations")
         }
-        self.hasAssociations = ha
-        self.updateRate = reader.readInt("updateRate")
+        guard let hasAssociations = reader.readBool("hasAssociations") else {
+            throw WireDecodeError(.typeMismatch(expected: "boolean"), field: "hasAssociations")
+        }
+
+        let updateRate: Int?
+        if let rawUpdateRate = reader.readField("updateRate") {
+            if rawUpdateRate.equals("null") {
+                updateRate = nil
+            } else {
+                guard let decodedRate = reader.readInt("updateRate"), decodedRate >= 0 else {
+                    throw WireDecodeError(.invalidValue, field: "updateRate")
+                }
+                updateRate = decodedRate
+            }
+        } else {
+            updateRate = nil
+        }
+
+        self.hasAssociations = hasAssociations
+        self.updateRate = updateRate
     }
 
     /// Encodes this event into `writer` as a JSON object. `hasAssociations`

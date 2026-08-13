@@ -41,6 +41,8 @@ public struct WireDecodeError: Error, Sendable {
         case duplicateField
         /// A JSON number did not follow the required grammar.
         case invalidNumber
+        /// A decoded field value violated its domain constraints.
+        case invalidValue
         /// A JSON string contained an invalid escape or surrogate sequence.
         case invalidEscape
         /// JSON containers were mismatched or exceeded the nesting limit.

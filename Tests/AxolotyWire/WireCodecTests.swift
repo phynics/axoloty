@@ -3,6 +3,14 @@
 import AxolotyWire
 import Testing
 
+private func decodeIoStateData(_ json: String) throws -> IoStateWireData {
+    let bytes = Array(json.utf8)
+    return try bytes.withUnsafeBufferPointer { buffer in
+        let reader = WireReader(bytes: buffer.baseAddress!, length: buffer.count)
+        return try IoStateWireData(from: reader)
+    }
+}
+
 /// Tests for the Foundation-free wire codec primitives.
 ///
 /// These tests verify the zero-allocation topic parsing, UUID handling,
@@ -132,6 +140,59 @@ struct WireCodecTests {
         }
 
         #expect(reader.readInt("updateRate") == 250)
+    }
+
+    @Test
+    func ioStateWireDataRejectsNegativeUpdateRate() throws {
+        do {
+            _ = try decodeIoStateData(#"{"hasAssociations":true,"updateRate":-1}"#)
+            Issue.record("Negative updateRate was accepted")
+        } catch let error as WireDecodeError {
+            guard case .invalidValue = error.reason else {
+                Issue.record("Negative updateRate returned the wrong error: \(error.reason)")
+                return
+            }
+            #expect(error.field != nil)
+        }
+    }
+
+    @Test
+    func ioStateWireDataAcceptsOptionalAndBoundaryUpdateRates() throws {
+        let payloads: [(json: String, expected: Int?)] = [
+            (#"{"hasAssociations":false}"#, nil),
+            (#"{"hasAssociations":true,"updateRate":null}"#, nil),
+            (#"{"hasAssociations":true,"updateRate":0}"#, 0),
+            (#"{"hasAssociations":true,"updateRate":250}"#, 250),
+            ("{\"hasAssociations\":true,\"updateRate\":\(Int.max)}", Int.max),
+        ]
+
+        for payload in payloads {
+            let data = try decodeIoStateData(payload.json)
+            #expect(data.updateRate == payload.expected)
+        }
+    }
+
+    @Test
+    func ioStateWireDataRejectsMalformedAndWronglyTypedFields() {
+        let invalidPayloads = [
+            #"{}"#,
+            #"{"hasAssociations":1}"#,
+            #"{"hasAssociations":true,"updateRate":"250"}"#,
+            #"{"hasAssociations":true,"updateRate":true}"#,
+            "{\"hasAssociations\":true,\"updateRate\":\(String(Int.max))0}",
+            #"{"hasAssociations":true"#,
+        ]
+
+        for payload in invalidPayloads {
+            do {
+                _ = try decodeIoStateData(payload)
+                Issue.record("Invalid IoState payload was accepted: \(payload)")
+            } catch let error as WireDecodeError {
+                #expect(error.field != nil || payload == #"{"hasAssociations":true"#)
+            } catch {
+                Issue.record("Unexpected error type: \(error)")
+            }
+        }
     }
 
     @Test
