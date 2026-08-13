@@ -172,6 +172,8 @@ test("published content-keyed images avoid repeated fallback builds and refresh 
   assert.match(imageWorkflow, /pull_request:/);
   assert.match(imageWorkflow, /head\.repo\.full_name == github\.repository/);
   assert.match(imageWorkflow, /Build and publish content-keyed image/);
+  assert.match(imageWorkflow, /imagetools inspect "\$image_tag"/);
+  assert.match(imageWorkflow, /Content-keyed development image already exists/);
   assert.match(setupAction, /WAIT_FOR_PUBLISHED_SECONDS/);
   assert.match(setupAction, /Waiting for the content-keyed development image publisher/);
   assert.match(fs.readFileSync(".github/workflows/ci.yml", "utf8"), /wait-for-published-seconds: "600"/);
