@@ -89,6 +89,40 @@ wait_bounded() {
     fi
 }
 
+# Resolve locking must recover stale legacy directories and serialize peers.
+resolve_cache="$TEMP_DIR/resolve-cache"
+resolve_bin="$TEMP_DIR/resolve-bin"
+resolve_calls="$TEMP_DIR/resolve-calls"
+resolve_overlap="$TEMP_DIR/resolve-overlap"
+mkdir -p "$resolve_cache/.resolve.lock" "$resolve_bin"
+touch -d '2 hours ago' "$resolve_cache/.resolve.lock"
+cat > "$resolve_bin/swift" <<'SH'
+#!/bin/sh
+set -eu
+cache_dir=$4
+if ! mkdir "$cache_dir/.resolve-active" 2>/dev/null; then
+    : > "$AXOLOTY_RESOLVE_OVERLAP"
+    exit 1
+fi
+trap 'rmdir "$cache_dir/.resolve-active"' EXIT INT TERM
+printf 'resolve\n' >> "$AXOLOTY_RESOLVE_CALLS"
+sleep 0.2
+SH
+chmod +x "$resolve_bin/swift"
+AXOLOTY_RESOLVE_CACHE_DIR="$resolve_cache" AXOLOTY_RESOLVE_CALLS="$resolve_calls" \
+AXOLOTY_RESOLVE_OVERLAP="$resolve_overlap" PATH="$resolve_bin:$PATH" \
+    "$ROOT_DIR/.devcontainer/resolve.sh" &
+resolve_first=$!
+AXOLOTY_RESOLVE_CACHE_DIR="$resolve_cache" AXOLOTY_RESOLVE_CALLS="$resolve_calls" \
+AXOLOTY_RESOLVE_OVERLAP="$resolve_overlap" PATH="$resolve_bin:$PATH" \
+    "$ROOT_DIR/.devcontainer/resolve.sh" &
+resolve_second=$!
+wait_bounded "$resolve_first" resolve-first 5
+wait_bounded "$resolve_second" resolve-second 5
+[[ "$(wc -l < "$resolve_calls")" -eq 2 ]]
+[[ ! -e "$resolve_overlap" ]]
+[[ ! -d "$resolve_cache/.resolve.lock" ]]
+
 # The lock must be released after a direct devcontainer command exits.
 AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" "$ROOT_DIR/.devcontainer/run.sh" true
 [[ ! -e "$lock_owner" ]]
