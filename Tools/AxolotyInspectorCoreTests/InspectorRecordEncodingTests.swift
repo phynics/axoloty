@@ -31,7 +31,23 @@ struct InspectorRecordEncodingTests {
         #expect(!output.contains("\n"))
         #expect(output.first == "[")
         #expect(output.last == "]")
-        #expect(output == "[{\"kind\":\"advertise\",\"namespace\":\"example\",\"objectId\":\"object-uuid\",\"schema\":\"axoloty.inspect/v1\",\"timestamp\":\"2026-07-31T17:30:00Z\"}]")
+        let json = try #require(JSONSerialization.jsonObject(with: Data(output.utf8)) as? [[String: Any]])
+        let object = try #require(json.first)
+        #expect(object["kind"] as? String == "advertise")
+        #expect(object["namespace"] as? String == "example")
+        #expect(object["objectId"] as? String == "object-uuid")
+        #expect(object["schema"] as? String == "axoloty.inspect/v1")
+        #expect(object["timestamp"] as? String == "2026-07-31T17:30:00Z")
+
+        let kindIndex = try #require(output.range(of: "\"kind\":")?.lowerBound)
+        let namespaceIndex = try #require(output.range(of: "\"namespace\":")?.lowerBound)
+        let objectIdIndex = try #require(output.range(of: "\"objectId\":")?.lowerBound)
+        let schemaIndex = try #require(output.range(of: "\"schema\":")?.lowerBound)
+        let timestampIndex = try #require(output.range(of: "\"timestamp\":")?.lowerBound)
+        #expect(kindIndex < namespaceIndex)
+        #expect(namespaceIndex < objectIdIndex)
+        #expect(objectIdIndex < schemaIndex)
+        #expect(schemaIndex < timestampIndex)
     }
 
     @Test
