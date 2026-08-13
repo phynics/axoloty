@@ -385,11 +385,11 @@ if [ "\${FAKE_RUNTIME_EXECUTE_COMMAND:-0}" = "1" ] && [ "\$1" = "run" ]; then
                 fi
                 if [ "\${FAKE_DELAYED_OWNED_CONTAINER:-0}" = "1" ]; then
                     (
-                        sleep 0.3
+                        sleep "\${FAKE_OWNERSHIP_DELAY_SECONDS:-0.3}"
                         printf 'FAKE_CONTAINER_LABELS=%q\n' "\$fake_managed|\$fake_run|\$fake_worktree|\$fake_owner" > "$capture_state"
                         printf 'FAKE_CONTAINER_STATUS=running\n' >> "$capture_state"
                     ) &
-                    sleep 1
+                    sleep "\${FAKE_RUNTIME_LIFETIME_SECONDS:-1}"
                 fi
                 if [ "\${FAKE_DELAYED_FOREIGN_CONTAINER:-0}" = "1" ]; then
                     (
@@ -572,6 +572,18 @@ expected_sequence=$'inspect\ninspect\ninspect\nstop\ninspect-status\ninspect\nrm
 grep -q -- '^stop --time 1 ' "$capture" || { cat "$capture" >&2; exit 1; }
 grep -q -- '^rm -f ' "$capture" || { cat "$capture" >&2; exit 1; }
 
+# A cold launch that takes longer than the former ten-second default must still
+# become owned and be removed by immutable ID without a caller override.
+: > "$capture_sequence"
+: > "$capture_state"
+: > "$capture"
+FAKE_RUNTIME_EXECUTE_COMMAND=1 FAKE_DELAYED_OWNED_CONTAINER=1 \
+    FAKE_OWNERSHIP_DELAY_SECONDS=11 FAKE_RUNTIME_LIFETIME_SECONDS=12 \
+    CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    CONTAINER_TERM_GRACE_SECONDS=1 CONTAINER_KILL_GRACE_SECONDS=1 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+grep -q -- '^rm -f fake-container-id$' "$capture" || { cat "$capture" >&2; exit 1; }
+
 # A fast successful command must remain inspectable until run.sh verifies its
 # ownership and removes it. Runtimes erase an --rm container before the wrapper
 # can inspect labels, which previously turned `true` into exit 125.
@@ -686,13 +698,16 @@ fi
 : > "$capture_state"
 : > "$capture"
 set +e
+delayed_foreign_started=$(date +%s)
 FAKE_DELAYED_FOREIGN_CONTAINER=1 CONTAINER_NAME=delayed-collision AXOLOTY_RUN_ID=owned-run \
     CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
-    CONTAINER_OWNERSHIP_TIMEOUT_SECONDS=1 CONTAINER_TERM_GRACE_SECONDS=1 \
+    CONTAINER_OWNERSHIP_TIMEOUT_SECONDS=2 CONTAINER_TERM_GRACE_SECONDS=1 \
     "$ROOT_DIR/.devcontainer/run.sh" true
 delayed_foreign_status=$?
 set -e
+delayed_foreign_elapsed=$(( $(date +%s) - delayed_foreign_started ))
 [[ "$delayed_foreign_status" -eq 125 ]]
+[[ "$delayed_foreign_elapsed" -le 3 ]]
 if grep -Eq '^(stop|kill|rm)$' "$capture_sequence" || grep -Eq '^stop |^kill |^rm ' "$capture"; then
     echo "delayed foreign container collision triggered cleanup" >&2
     exit 1

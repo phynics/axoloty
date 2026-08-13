@@ -32,9 +32,10 @@ active_runtime_api_pid=""
 container_launching=0
 container_started=0
 cleanup_failure=0
+container_ownership_deadline=""
 container_term_grace="${CONTAINER_TERM_GRACE_SECONDS:-5}"
 container_kill_grace="${CONTAINER_KILL_GRACE_SECONDS:-2}"
-ownership_timeout="${CONTAINER_OWNERSHIP_TIMEOUT_SECONDS:-10}"
+ownership_timeout="${CONTAINER_OWNERSHIP_TIMEOUT_SECONDS:-30}"
 runtime_api_timeout="${CONTAINER_API_TIMEOUT_SECONDS:-5}"
 sudo_prefix=""
 session_prefix=""
@@ -172,7 +173,9 @@ run_command_bounded() {
 }
 
 wait_for_ownership() {
-    ownership_deadline=$(( $(date +%s) + ownership_timeout ))
+    if [ -z "$container_ownership_deadline" ]; then
+        container_ownership_deadline=$(( $(date +%s) + ownership_timeout ))
+    fi
     while :; do
         if [ -z "$container_id" ] && [ -s "$container_cidfile" ]; then
             container_id=$(tr -d '\r\n' < "$container_cidfile")
@@ -184,7 +187,7 @@ wait_for_ownership() {
             container_started=1
             return 0
         fi
-        if [ "$(date +%s)" -ge "$ownership_deadline" ]; then
+        if [ "$(date +%s)" -ge "$container_ownership_deadline" ]; then
             return 1
         fi
         sleep 0.1
