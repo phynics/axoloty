@@ -12,12 +12,17 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 url=${AXOLOTY_CONSUMER_REPOSITORY_URL:-https://github.com/phynics/axoloty.git}
 version=${AXOLOTY_CONSUMER_VERSION:-0.4.0}
 local_version=${AXOLOTY_CONSUMER_LOCAL_VERSION:-9.9.9}
+jobs=${AXOLOTY_CONSUMER_JOBS:-2}
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
 case "$version" in
     [0-9]*.[0-9]*.[0-9]*) : ;;
     *) echo "error: AXOLOTY_CONSUMER_VERSION must be semver: $version" >&2; exit 2 ;;
+esac
+case "$jobs" in
+    [1-9]|[1-9][0-9]*) : ;;
+    *) echo "error: AXOLOTY_CONSUMER_JOBS must be a positive integer: $jobs" >&2; exit 2 ;;
 esac
 
 if [ "${AXOLOTY_CONSUMER_LOCAL:-0}" = "1" ]; then
@@ -83,7 +88,7 @@ fi
 swift package resolve
 for configuration in debug release; do
     wire_log="$work/wire-$configuration.log"
-    if ! swift build --configuration "$configuration" --target WireConsumer >"$wire_log" 2>&1; then
+    if ! swift build --jobs "$jobs" --configuration "$configuration" --target WireConsumer >"$wire_log" 2>&1; then
         cat "$wire_log" >&2
         exit 1
     fi
@@ -93,7 +98,7 @@ for configuration in debug release; do
         exit 1
     fi
     axoloty_log="$work/axoloty-$configuration.log"
-    if ! swift build --configuration "$configuration" --target AxolotyConsumer >"$axoloty_log" 2>&1; then
+    if ! swift build --jobs "$jobs" --configuration "$configuration" --target AxolotyConsumer >"$axoloty_log" 2>&1; then
         cat "$axoloty_log" >&2
         exit 1
     fi

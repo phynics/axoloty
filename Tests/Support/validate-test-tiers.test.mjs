@@ -30,6 +30,13 @@ test("cold semver consumer gates allow a full dual-configuration build", () => {
   }
 });
 
+test("cold semver consumer bounds SwiftPM build parallelism", () => {
+  const script = fs.readFileSync(path.join(root, "Tests/Support/check-axoloty-semver-consumer.sh"), "utf8");
+  assert.match(script, /jobs=\$\{AXOLOTY_CONSUMER_JOBS:-2\}/);
+  assert.match(script, /swift build --jobs "\$jobs" --configuration "\$configuration" --target WireConsumer/);
+  assert.match(script, /swift build --jobs "\$jobs" --configuration "\$configuration" --target AxolotyConsumer/);
+});
+
 test("make parser ignores assignments and special targets", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-tool-tiers-"));
   const makefile = path.join(directory, "Makefile");
