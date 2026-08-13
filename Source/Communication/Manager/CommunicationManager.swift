@@ -180,8 +180,8 @@ public class CommunicationManager {
         coordinator: CommunicationSubscriptionCoordinator
     ) -> CommunicationStreams {
         CommunicationStreams(
-            communicationState: Broadcast(mode: .state),
-            operatingState: Broadcast(mode: .state),
+            communicationState: Broadcast(mode: .state, initialValue: .offline),
+            operatingState: Broadcast(mode: .state, initialValue: .stopped),
             rawMQTTMessages: Broadcast(mode: .event),
             parsedMQTTMessages: Broadcast(mode: .event),
             ioValues: Broadcast(mode: .event),

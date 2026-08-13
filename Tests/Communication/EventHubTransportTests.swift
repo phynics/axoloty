@@ -643,6 +643,22 @@ struct BroadcastTransportTests {
     }
 
     @Test
+    func communicationStateStreamSeedsInitialStateBeforeTransitions() async throws {
+        let manager = makeManager()
+        let fakeClient = FakeCommunicationClient(delegate: manager)
+        manager.client = fakeClient
+        fakeClient.setStreams(manager.streams)
+
+        let stream = await manager.observeCommunicationStateStream()
+        var iterator = stream.makeAsyncIterator()
+
+        #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == .offline)
+
+        await fakeClient.simulateState(.online)
+        #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == .online)
+    }
+
+    @Test
     func operatingStateReplayThroughBroadcast() async throws {
         let manager = makeManager()
         let fakeClient = FakeCommunicationClient(delegate: manager)
@@ -653,6 +669,22 @@ struct BroadcastTransportTests {
 
         let stream = await manager.observeOperatingStateStream()
         var iterator = stream.makeAsyncIterator()
+        #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == .started)
+    }
+
+    @Test
+    func operatingStateStreamSeedsInitialStateBeforeTransitions() async throws {
+        let manager = makeManager()
+        let fakeClient = FakeCommunicationClient(delegate: manager)
+        manager.client = fakeClient
+        fakeClient.setStreams(manager.streams)
+
+        let stream = await manager.observeOperatingStateStream()
+        var iterator = stream.makeAsyncIterator()
+
+        #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == .stopped)
+
+        await fakeClient.emitOperatingState(.started)
         #expect(try await nextValue(&iterator, timeout: .milliseconds(500)) == .started)
     }
 

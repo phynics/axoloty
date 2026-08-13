@@ -51,10 +51,12 @@ internal actor Broadcast<Element: Sendable> {
 
     init(
         mode: BroadcastMode,
+        initialValue: Element? = nil,
         onFirst: (@Sendable () async -> Void)? = nil,
         onLast: (@Sendable () async -> Void)? = nil
     ) {
         self.mode = mode
+        self.lastValue = initialValue
         self.onFirst = onFirst
         self.onLast = onLast
     }
