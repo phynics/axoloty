@@ -358,6 +358,7 @@ test-support: resolve
 	Tests/Support/test-check-benchmark-wire-device.sh
 	Tests/Support/test-check-budget-manifest.sh
 	Tests/Support/test-build-embedded-swift.sh
+	Tests/Support/test-check-embedded-swift-linker.sh
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
 	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
 	.devcontainer/run.sh /workspace/Tests/Support/test-check-embedded-swift.sh

@@ -8,14 +8,50 @@ set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 project="$root/Embedded/swift"
-build_dir=/workspace/.build/embedded-swift-linker-probe
+build_dir=${AXOLOTY_EMBEDDED_LINKER_BUILD_DIR:-/workspace/.build/embedded-swift-linker-probe}
+jobs=${AXOLOTY_EMBEDDED_LINKER_JOBS:-2}
 
-. "${IDF_PATH:-/opt/esp/idf}/export.sh" >/dev/null 2>&1
+case "$jobs" in
+    ''|*[!0-9]*)
+        echo "AXOLOTY_EMBEDDED_LINKER_JOBS must be a positive integer no greater than 64" >&2
+        exit 1
+        ;;
+esac
+if [ "$jobs" -lt 1 ] || [ "$jobs" -gt 64 ]; then
+    echo "AXOLOTY_EMBEDDED_LINKER_JOBS must be a positive integer no greater than 64" >&2
+    exit 1
+fi
+
+idf_log=$(mktemp)
+report_failure() {
+    status=$?
+    if [ "$status" -ne 0 ]; then
+        echo "EMBEDDED SWIFT LINKER FAIL: ESP-IDF command failed" >&2
+        if [ -s "$idf_log" ]; then
+            echo "--- captured ESP-IDF output ---" >&2
+            cat "$idf_log" >&2
+        fi
+        if [ -d "$build_dir/log" ]; then
+            for log in "$build_dir"/log/*; do
+                if [ -f "$log" ]; then
+                    echo "--- $log ---" >&2
+                    cat "$log" >&2
+                fi
+            done
+        fi
+    fi
+    rm -f "$idf_log"
+    exit "$status"
+}
+trap report_failure EXIT
+
+. "${IDF_PATH:-/opt/esp/idf}/export.sh" >"$idf_log" 2>&1
 cd "$project"
 
 rm -rf "$build_dir"
-idf.py -B "$build_dir" -DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON set-target esp32c6 >/dev/null
-idf.py -B "$build_dir" -DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON build >/dev/null
+idf.py -B "$build_dir" -DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON set-target esp32c6 >"$idf_log" 2>&1
+IDF_PY_BUILD_JOBS="$jobs" idf.py -B "$build_dir" \
+    -DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON build >"$idf_log" 2>&1
 
 elf="$build_dir/axoloty-swift.elf"
 map="$build_dir/axoloty-swift.map"
