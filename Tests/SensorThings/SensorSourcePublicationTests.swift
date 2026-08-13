@@ -24,6 +24,7 @@ struct SensorSourcePublicationTests {
         await gate.release()
         try await publication.value
         #expect(controller.lifecycle == [.will, .did])
+        #expect(controller.lastObservationResult == "0")
     }
 
     @Test
@@ -58,6 +59,90 @@ struct SensorSourcePublicationTests {
 
         #expect(controller.lifecycle == [.will, .did])
         #expect(transport.publicationCount == 1)
+        #expect(controller.lastObservationResult == "1")
+    }
+
+    @Test
+    func sensorReadDeadlineFailsClosedWithoutCallback() async throws {
+        let io = NoCallbackSensorIo(parameters: nil)
+        let controller = try makeController(io: io)
+        defer { controller.container.shutdown() }
+        let transport = PublicationTransport()
+        try await install(transport, on: controller)
+
+        do {
+            try await controller.publishChanneledObservationAndWait(
+                sensorId: controller.sensor.objectId,
+                readTimeout: Duration.milliseconds(25)
+            )
+            Issue.record("Expected sensor read to time out")
+        } catch let error as AxolotyError {
+            guard case let .runtime(code, _) = error else {
+                Issue.record("Expected structured timeout error, got \(error)")
+                return
+            }
+            #expect(code == .timedOut)
+        }
+
+        #expect(controller.lifecycle.isEmpty)
+        #expect(transport.publicationCount == 0)
+    }
+
+    @Test
+    func lateSensorCallbackAfterDeadlineIsIgnored() async throws {
+        let controller = try makeController(io: DelayedSensorIo(parameters: nil))
+        defer { controller.container.shutdown() }
+        let transport = PublicationTransport()
+        try await install(transport, on: controller)
+
+        do {
+            try await controller.publishChanneledObservationAndWait(
+                sensorId: controller.sensor.objectId,
+                readTimeout: Duration.milliseconds(25)
+            )
+            Issue.record("Expected delayed sensor read to time out")
+        } catch let error as AxolotyError {
+            guard case let .runtime(code, _) = error else {
+                Issue.record("Expected structured timeout error, got \(error)")
+                return
+            }
+            #expect(code == .timedOut)
+        }
+
+        #expect(controller.lifecycle.isEmpty)
+        #expect(transport.publicationCount == 0)
+    }
+
+    @Test
+    func cancelledSensorReadResumesOnceWithoutCallback() async throws {
+        let io = NoCallbackSensorIo(parameters: nil)
+        let controller = try makeController(io: io)
+        defer { controller.container.shutdown() }
+        let transport = PublicationTransport()
+        try await install(transport, on: controller)
+
+        let publication = Task<Void, Error> {
+            try await controller.publishChanneledObservationAndWait(
+                sensorId: controller.sensor.objectId,
+                readTimeout: Duration.seconds(5)
+            )
+        }
+        try await waitUntil("sensor read started") { io.readStarted }
+        publication.cancel()
+
+        do {
+            try await publication.value
+            Issue.record("Expected cancelled sensor read to fail")
+        } catch let error as AxolotyError {
+            guard case let .runtime(code, _) = error else {
+                Issue.record("Expected structured cancellation error, got \(error)")
+                return
+            }
+            #expect(code == .cancelled)
+        }
+
+        #expect(controller.lifecycle.isEmpty)
+        #expect(transport.publicationCount == 0)
     }
 
     private func makeController(io: SensorIo) throws -> RecordingSensorSourceController {
@@ -121,6 +206,7 @@ private final class RecordingSensorSourceController: SensorSourceController {
 
     let sensor: Sensor
     var lifecycle: [Lifecycle] = []
+    var lastObservationResult: String?
 
     required init(container: Container, options: ControllerOptions?, controllerType: String) {
         self.sensor = Sensor(
@@ -149,6 +235,7 @@ private final class RecordingSensorSourceController: SensorSourceController {
 
     override func onObservationWillPublish(container: SensorContainer, observation: Observation) {
         lifecycle.append(.will)
+        lastObservationResult = observation.result
     }
 
     override func onObservationDidPublish(container: SensorContainer, observation: Observation) {
@@ -198,6 +285,32 @@ private final class MultiReadSensorIo: SensorIo {
     override func read(callback: ((Any) -> Void)) {
         callback(1)
         callback(2)
+    }
+}
+
+private final class DelayedSensorIo: SensorIo {
+    private(set) var readStarted = false
+
+    required init(parameters: Any?) {
+        super.init(parameters: parameters)
+    }
+
+    override func read(callback: ((Any) -> Void)) {
+        readStarted = true
+        Thread.sleep(forTimeInterval: 0.05)
+        callback(42)
+    }
+}
+
+private final class NoCallbackSensorIo: SensorIo {
+    private(set) var readStarted = false
+
+    required init(parameters: Any?) {
+        super.init(parameters: parameters)
+    }
+
+    override func read(callback: ((Any) -> Void)) {
+        readStarted = true
     }
 }
 

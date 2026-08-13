@@ -114,17 +114,22 @@ open class SensorSourceController: Controller {
         }
     }
 
-    internal func publishChanneledObservationAndWait(sensorId: CoatyUUID, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) async throws {
-        try await _publishObservation(sensorId: sensorId, channeled: true, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
+    internal func publishChanneledObservationAndWait(sensorId: CoatyUUID, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil, readTimeout: Duration = .seconds(5)) async throws {
+        try await _publishObservation(sensorId: sensorId, channeled: true, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId, readTimeout: readTimeout)
     }
 
-    internal func publishAdvertisedObservationAndWait(sensorId: CoatyUUID, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) async throws {
-        try await _publishObservation(sensorId: sensorId, channeled: false, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
+    internal func publishAdvertisedObservationAndWait(sensorId: CoatyUUID, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil, readTimeout: Duration = .seconds(5)) async throws {
+        try await _publishObservation(sensorId: sensorId, channeled: false, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId, readTimeout: readTimeout)
     }
 
     internal func createObservation(container: SensorContainer, value: Any, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) -> Observation {
+        createObservation(container: container, value: RawJSONValue(any: value) ?? .null, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
+    }
+
+    private func createObservation(container: SensorContainer, value: RawJSONValue, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) -> Observation {
         let now = Date().timeIntervalSince1970 * 1000
-        return Observation(phenomenonTime: now, result: RawJSONValue.serialize(any: value), resultTime: now, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterest: featureOfInterestId, name: "Observation of \(container.sensor.name)", objectId: .init(), externalId: nil, parentObjectId: container.sensor.objectId)
+        let result = (try? JSONEncoder().encode(value)).flatMap { String(data: $0, encoding: .utf8) } ?? "null"
+        return Observation(phenomenonTime: now, result: result, resultTime: now, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterest: featureOfInterestId, name: "Observation of \(container.sensor.name)", objectId: .init(), externalId: nil, parentObjectId: container.sensor.objectId)
     }
 
     internal func getChannelId(container: SensorContainer) -> String { container.sensor.objectId.string }
@@ -218,11 +223,11 @@ open class SensorSourceController: Controller {
         return request.coreTypes?.contains(.CoatyObject) == true
     }
 
-    private func _publishObservation(sensorId: CoatyUUID, channeled: Bool, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil) async throws {
+    private func _publishObservation(sensorId: CoatyUUID, channeled: Bool, resultQuality: [String]? = nil, validTime: CoatyTimeInterval? = nil, parameters: [String: String]? = nil, featureOfInterestId: CoatyUUID? = nil, readTimeout: Duration = .seconds(5)) async throws {
         guard let container = sensors[sensorId.string] else {
             throw AxolotyError.runtime(code: .notRegistered, reason: "sensorId \(sensorId.string) is not registered")
         }
-        let value = await readSensorValue(from: container.io)
+        let value = try await readSensorValue(from: container.io, sensorId: sensorId, timeout: readTimeout)
         let observation = createObservation(container: container, value: value, resultQuality: resultQuality, validTime: validTime, parameters: parameters, featureOfInterestId: featureOfInterestId)
         onObservationWillPublish(container: container, observation: observation)
         do {
@@ -239,49 +244,119 @@ open class SensorSourceController: Controller {
         onObservationDidPublish(container: container, observation: observation)
     }
 
-    private func readSensorValue(from io: SensorIo) async -> Any {
-        await withCheckedContinuation { (continuation: CheckedContinuation<SensorReadValue, Never>) in
-            let bridge = SensorReadContinuation(continuation)
-            io.read { value in bridge.resume(value) }
-        }.value
+    private func readSensorValue(from io: SensorIo, sensorId: CoatyUUID, timeout: Duration) async throws -> RawJSONValue {
+        let bridge = SensorReadContinuation()
+        return try await withTaskCancellationHandler(operation: {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<RawJSONValue, Error>) in
+                guard bridge.install(continuation) else { return }
+                bridge.startDeadline(timeout, sensorId: sensorId)
+                io.read { value in bridge.resume(value) }
+            }
+        }, onCancel: {
+            bridge.cancel(sensorId: sensorId)
+        })
     }
 
     private func logPublicationFailure(_ error: Error, sensorId: CoatyUUID, channeled: Bool) {
         let kind = channeled ? "channeled" : "advertised"
         let wrappedError = error as? AxolotyError ?? AxolotyError.caught(error)
-        LogManager.logger(.sensorThings).error("Failed to publish \(kind) observation", metadata: [
+        LogManager.logger(.sensorThings).error("Failed to publish observation", metadata: [
+            "kind": .string(kind),
             "ioSourceId": .string(sensorId.string),
             "error": .string(ErrorKit.errorChainDescription(for: wrappedError)),
         ])
     }
 }
 
+/// Serializes sensor callback, deadline, and task-cancellation completion.
+///
+/// The callback's untyped value is converted to ``RawJSONValue`` before it is
+/// stored, so no arbitrary `Any` crosses the asynchronous boundary.
 private final class SensorReadContinuation: @unchecked Sendable {
     private let lock = NSLock()
-    private var hasResumed = false
-    private let continuation: CheckedContinuation<SensorReadValue, Never>
+    private var didComplete = false
+    private var pendingCompletion: SensorReadCompletion?
+    private var continuation: CheckedContinuation<RawJSONValue, Error>?
+    private var deadlineTask: Task<Void, Never>?
 
-    init(_ continuation: CheckedContinuation<SensorReadValue, Never>) {
-        self.continuation = continuation
+    @discardableResult
+    func install(_ continuation: CheckedContinuation<RawJSONValue, Error>) -> Bool {
+        let result = lock.withLock { () -> (shouldInstall: Bool, pending: SensorReadCompletion?) in
+            if didComplete {
+                let pending = pendingCompletion
+                pendingCompletion = nil
+                return (false, pending)
+            }
+            self.continuation = continuation
+            return (true, nil)
+        }
+        if let pending = result.pending {
+            resume(continuation, with: pending)
+        }
+        return result.shouldInstall
     }
 
     func resume(_ value: Any) {
-        let shouldResume = lock.withLock { () -> Bool in
-            guard !hasResumed else { return false }
-            hasResumed = true
+        finish(.success(RawJSONValue(any: value) ?? .null))
+    }
+
+    func startDeadline(_ timeout: Duration, sensorId: CoatyUUID) {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        let task = Task { [weak self] in
+            do {
+                try await clock.sleep(until: deadline)
+            } catch {
+                return
+            }
+            self?.finish(.failure(.runtime(code: .timedOut, reason: "Timed out waiting for sensor \(sensorId.string) read to complete")))
+        }
+        let keepTask = lock.withLock { () -> Bool in
+            guard !didComplete else { return false }
+            deadlineTask = task
             return true
         }
-        guard shouldResume else { return }
-        continuation.resume(returning: SensorReadValue(value))
+        if !keepTask { task.cancel() }
+    }
+
+    func cancel(sensorId: CoatyUUID) {
+        finish(.failure(.runtime(code: .cancelled, reason: "Sensor read was cancelled for \(sensorId.string)")))
+    }
+
+    private func finish(_ completion: SensorReadCompletion) {
+        let (continuation, deadlineTask) = lock.withLock { () -> (CheckedContinuation<RawJSONValue, Error>?, Task<Void, Never>?) in
+            guard !didComplete else { return (nil, nil) }
+            didComplete = true
+            let continuation = self.continuation
+            self.continuation = nil
+            if continuation == nil {
+                pendingCompletion = completion
+            }
+            let deadlineTask = self.deadlineTask
+            self.deadlineTask = nil
+            return (continuation, deadlineTask)
+        }
+        deadlineTask?.cancel()
+        guard let continuation else { return }
+        resume(continuation, with: completion)
+    }
+
+    private func resume(
+        _ continuation: CheckedContinuation<RawJSONValue, Error>,
+        with completion: SensorReadCompletion
+    ) {
+        switch completion {
+        case let .success(value):
+            continuation.resume(returning: value)
+        case let .failure(error):
+            continuation.resume(throwing: error)
+        }
     }
 }
 
-private final class SensorReadValue: @unchecked Sendable {
-    let value: Any
-
-    init(_ value: Any) {
-        self.value = value
-    }
+private enum SensorReadCompletion {
+    case success(RawJSONValue)
+    case failure(AxolotyError)
 }
 
 /// Defines whether and how observations are published.
