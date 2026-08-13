@@ -13,6 +13,7 @@ build_lock=${BUILD_LOCK:-1}
 lock_timeout=${BUILD_LOCK_TIMEOUT:-300}
 lock_stale_after=${BUILD_LOCK_STALE_SECONDS:-3600}
 env_file=""
+runtime_output_file=""
 lock_kind=""
 lock_owner=""
 host_service_pid=""
@@ -20,16 +21,22 @@ host_service_socket=""
 host_service_dir=""
 bridge_socket=""
 container_name=""
+container_state_dir=""
+container_cidfile=""
+container_id=""
 container_run_id=""
 container_owner_id=""
 container_pid=""
 direct_pid=""
+active_runtime_api_pid=""
 container_launching=0
 container_started=0
 cleanup_failure=0
+container_ownership_deadline=""
 container_term_grace="${CONTAINER_TERM_GRACE_SECONDS:-5}"
 container_kill_grace="${CONTAINER_KILL_GRACE_SECONDS:-2}"
-ownership_timeout="${CONTAINER_OWNERSHIP_TIMEOUT_SECONDS:-2}"
+ownership_timeout="${CONTAINER_OWNERSHIP_TIMEOUT_SECONDS:-30}"
+runtime_api_timeout="${CONTAINER_API_TIMEOUT_SECONDS:-5}"
 sudo_prefix=""
 session_prefix=""
 session_wait=""
@@ -91,17 +98,17 @@ reap_process_if_stopped() {
 
 wait_for_process_completion() {
     pid="$1"
-    label="$2"
-    while process_is_alive "$pid"; do
-        sleep 0.1
-    done
-    # The caller owns the final status wait for ordinary completion. This
-    # helper only bounds observation and reports a detached process.
-    if ! reap_process_if_stopped "$pid"; then
-        cleanup_failure=1
-        echo "cleanup failure: $label pid=$pid could not be reaped; detaching" >&2
-        return 125
+    if wait "$pid"; then
+        status=0
+    else
+        status=$?
     fi
+    if process_tree_alive "$pid"; then
+        if ! terminate_process_tree_bounded "$pid" "completed process descendants"; then
+            return 125
+        fi
+    fi
+    return "$status"
 }
 
 terminate_process_tree_bounded() {
@@ -129,14 +136,58 @@ terminate_process_tree_bounded() {
     return 1
 }
 
+run_command_bounded() {
+    command_output="$1"
+    command_label="$2"
+    command_timeout="$3"
+    shift 3
+    if [ -n "$session_prefix" ]; then
+        $session_prefix $session_wait "$@" >"$command_output" 2>&1 &
+    else
+        "$@" >"$command_output" 2>&1 &
+    fi
+    command_pid=$!
+    active_runtime_api_pid="$command_pid"
+    command_deadline=$(( $(date +%s) + command_timeout ))
+    while process_is_alive "$command_pid"; do
+        if [ "$(date +%s)" -ge "$command_deadline" ]; then
+            terminate_process_tree_bounded "$command_pid" "$command_label" || true
+            active_runtime_api_pid=""
+            return 124
+        fi
+        sleep 0.1
+    done
+    if wait "$command_pid"; then
+        command_status=0
+    else
+        command_status=$?
+    fi
+    if process_tree_alive "$command_pid"; then
+        if ! terminate_process_tree_bounded "$command_pid" "$command_label descendants"; then
+            active_runtime_api_pid=""
+            return 125
+        fi
+    fi
+    active_runtime_api_pid=""
+    return "$command_status"
+}
+
 wait_for_ownership() {
-    ownership_deadline=$(( $(date +%s) + ownership_timeout ))
+    if [ -z "$container_ownership_deadline" ]; then
+        container_ownership_deadline=$(( $(date +%s) + ownership_timeout ))
+    fi
     while :; do
+        if [ -z "$container_id" ] && [ -s "$container_cidfile" ]; then
+            container_id=$(tr -d '\r\n' < "$container_cidfile")
+            case "$container_id" in
+                ''|*[!A-Za-z0-9_.-]*) container_id="" ;;
+            esac
+        fi
         if container_has_expected_labels; then
             container_started=1
             return 0
         fi
-        if [ "$(date +%s)" -ge "$ownership_deadline" ]; then
+        if [ "$(date +%s)" -ge "$container_ownership_deadline" ]; then
             return 1
         fi
         sleep 0.1
@@ -144,10 +195,62 @@ wait_for_ownership() {
 }
 
 container_has_expected_labels() {
-    owned_labels=$($sudo_prefix "$runtime" inspect \
-        --format '{{ index .Config.Labels "io.axoloty.managed-by" }}|{{ index .Config.Labels "io.axoloty.run-id" }}|{{ index .Config.Labels "io.axoloty.worktree" }}|{{ index .Config.Labels "io.axoloty.owner" }}' \
-        "$container_name" 2>/dev/null || true)
+    ownership_target="$container_id"
+    if [ -z "$ownership_target" ]; then
+        ownership_target="$container_name"
+    fi
+    if ! run_command_bounded "$runtime_output_file" "container ownership inspection" "$runtime_api_timeout" \
+        $sudo_prefix "$runtime" inspect \
+        --format '{{.Id}}|{{ index .Config.Labels "io.axoloty.managed-by" }}|{{ index .Config.Labels "io.axoloty.run-id" }}|{{ index .Config.Labels "io.axoloty.worktree" }}|{{ index .Config.Labels "io.axoloty.owner" }}' \
+        "$ownership_target"; then
+        return 2
+    fi
+    ownership_record=$(cat "$runtime_output_file")
+    discovered_id=${ownership_record%%|*}
+    owned_labels=${ownership_record#*|}
+    case "$discovered_id" in
+        ''|*[!A-Za-z0-9_.:-]*) return 2 ;;
+    esac
+    container_id="$discovered_id"
     [ "$owned_labels" = "axoloty-run.sh|$container_run_id|$worktree_name|$container_owner_id" ]
+}
+
+container_presence() {
+    runtime_basename=$(basename "$runtime")
+    case "$runtime_basename" in
+        *podman*)
+            if run_command_bounded /dev/null "container existence inspection" "$runtime_api_timeout" \
+                $sudo_prefix "$runtime" container exists "$container_id"; then
+                return 0
+            else
+                presence_status=$?
+            fi
+            [ "$presence_status" -eq 1 ] && return 1
+            return 2
+            ;;
+        *docker*)
+            if run_command_bounded "$runtime_output_file" "container existence inspection" "$runtime_api_timeout" \
+                $sudo_prefix "$runtime" inspect "$container_id"; then
+                return 0
+            else
+                presence_status=$?
+            fi
+            case "$presence_status" in
+                124|125) return 2 ;;
+            esac
+            if grep -Eiq 'no such (container|object)' "$runtime_output_file"; then
+                return 1
+            fi
+            return 2
+            ;;
+        *)
+            if run_command_bounded /dev/null "container existence inspection" "$runtime_api_timeout" \
+                $sudo_prefix "$runtime" inspect "$container_id"; then
+                return 0
+            fi
+            return 2
+            ;;
+    esac
 }
 
 confirm_container_ownership() {
@@ -167,21 +270,78 @@ cleanup_container() {
         echo "cleanup warning: ownership labels were not observed for $container_name; leaving it untouched" >&2
         return
     fi
-    if ! container_has_expected_labels; then
-        echo "cleanup warning: ownership labels changed for $container_name; leaving it untouched" >&2
+    if container_has_expected_labels; then
+        :
+    else
+        ownership_status=$?
+        if [ "$ownership_status" -eq 2 ]; then
+            cleanup_failure=1
+            echo "cleanup warning: ownership inspection failed for $container_id; leaving it untouched" >&2
+        else
+            echo "cleanup warning: ownership labels changed for $container_name; leaving it untouched" >&2
+        fi
         return
     fi
-    $sudo_prefix "$runtime" stop --time "$container_term_grace" "$container_name" >/dev/null 2>&1 || true
-    container_state=$($sudo_prefix "$runtime" inspect --format '{{.State.Status}}' "$container_name" 2>/dev/null || true)
+    if ! run_command_bounded /dev/null "container stop" "$runtime_api_timeout" \
+        $sudo_prefix "$runtime" stop --time "$container_term_grace" "$container_id"; then
+        cleanup_failure=1
+        echo "cleanup warning: failed to stop owned container $container_id within the bounded deadline" >&2
+    fi
+    container_state=""
+    if run_command_bounded "$runtime_output_file" "container state inspection" "$runtime_api_timeout" \
+        $sudo_prefix "$runtime" inspect --format '{{.State.Status}}' "$container_id"; then
+        container_state=$(cat "$runtime_output_file")
+    fi
     if [ "$container_state" = "running" ]; then
-        $sudo_prefix "$runtime" kill "$container_name" >/dev/null 2>&1 || true
-        sleep "$container_kill_grace"
+        if ! run_command_bounded /dev/null "container kill" "$runtime_api_timeout" \
+            $sudo_prefix "$runtime" kill "$container_id"; then
+            cleanup_failure=1
+            echo "cleanup warning: failed to kill owned container $container_id within the bounded deadline" >&2
+        fi
     fi
-    if ! container_has_expected_labels; then
-        echo "cleanup warning: ownership labels changed before removal of $container_name; leaving it untouched" >&2
+    if container_has_expected_labels; then
+        :
+    else
+        ownership_status=$?
+        if [ "$ownership_status" -eq 2 ]; then
+            cleanup_failure=1
+            echo "cleanup warning: ownership inspection failed before removal of $container_id; leaving it untouched" >&2
+        else
+            if container_presence; then
+                cleanup_failure=1
+                echo "cleanup warning: ownership labels changed before removal of $container_id; leaving it untouched" >&2
+            else
+                presence_status=$?
+                if [ "$presence_status" -eq 2 ]; then
+                    cleanup_failure=1
+                    echo "cleanup warning: container presence was inconclusive for $container_id; leaving it untouched" >&2
+                fi
+            fi
+        fi
         return
     fi
-    $sudo_prefix "$runtime" rm -f "$container_name" >/dev/null 2>&1 || true
+    removed=0
+    for _ in 1 2; do
+        if run_command_bounded /dev/null "container removal" "$runtime_api_timeout" \
+            $sudo_prefix "$runtime" rm -f "$container_id"; then
+            removed=1
+            break
+        fi
+    done
+    if [ "$removed" -ne 1 ]; then
+        if container_presence; then
+            cleanup_failure=1
+            echo "cleanup failure: owned container $container_id could not be removed" >&2
+            return
+        else
+            presence_status=$?
+        fi
+        if [ "$presence_status" -eq 2 ]; then
+            cleanup_failure=1
+            echo "cleanup failure: could not determine whether owned container $container_id was removed" >&2
+            return
+        fi
+    fi
     container_started=0
     container_launching=0
 }
@@ -191,6 +351,15 @@ cleanup() {
     cleanup_container
     if [ -n "$env_file" ]; then
         rm -f "$env_file"
+    fi
+    if [ -n "$runtime_output_file" ]; then
+        rm -f "$runtime_output_file"
+    fi
+    if [ -n "$container_cidfile" ]; then
+        rm -f "$container_cidfile"
+    fi
+    if [ -n "$container_state_dir" ]; then
+        rmdir "$container_state_dir" 2>/dev/null || true
     fi
     if [ -n "$lock_owner" ]; then
         rm -f "$lock_owner"
@@ -217,6 +386,10 @@ cleanup() {
 
 forward_signal() {
     signal="$1"
+    if [ -n "$active_runtime_api_pid" ]; then
+        terminate_process_tree_bounded "$active_runtime_api_pid" "runtime API operation" || true
+        active_runtime_api_pid=""
+    fi
     target_pid="${container_pid:-$direct_pid}"
     if [ -n "$target_pid" ]; then
         if [ "$target_pid" = "$container_pid" ]; then
@@ -274,12 +447,22 @@ case "$ownership_timeout" in
         exit 2
         ;;
 esac
+case "$runtime_api_timeout" in
+    ''|*[!0-9]*)
+        echo "CONTAINER_API_TIMEOUT_SECONDS must be a non-negative integer" >&2
+        exit 2
+        ;;
+esac
 if [ "$container_term_grace" -gt 300 ] || [ "$container_kill_grace" -gt 300 ]; then
     echo "container termination grace periods must be <= 300 seconds" >&2
     exit 2
 fi
 if [ "$ownership_timeout" -gt 120 ]; then
     echo "CONTAINER_OWNERSHIP_TIMEOUT_SECONDS must be <= 120 seconds" >&2
+    exit 2
+fi
+if [ "$runtime_api_timeout" -gt 120 ]; then
+    echo "CONTAINER_API_TIMEOUT_SECONDS must be <= 120 seconds" >&2
     exit 2
 fi
 
@@ -365,7 +548,7 @@ if [ "${AXOLOTY_DEVCONTAINER:-0}" = "1" ]; then
         "$@" &
     fi
     direct_pid=$!
-    wait_for_process_completion "$direct_pid" "direct command" || status=$?
+    wait_for_process_completion "$direct_pid" || status=$?
     status=${status:-0}
     direct_pid=""
     set -e
@@ -410,6 +593,9 @@ if [ -z "$container_name" ]; then
     exit 2
 fi
 export AXOLOTY_RUN_ID="$container_run_id"
+runtime_output_file=$(mktemp "${TMPDIR:-/tmp}/axoloty-runtime-output.XXXXXX")
+container_state_dir=$(mktemp -d "${TMPDIR:-/tmp}/axoloty-container-state.XXXXXX")
+container_cidfile="$container_state_dir/container.id"
 
 bridge_workdir="$workdir"
 if [ "${AXOLOTY_HOST_RUNTIME_BRIDGE:-0}" = "1" ]; then
@@ -654,7 +840,7 @@ launch_container_runtime() {
 if [ "${AXOLOTY_HOST_RUNTIME_BRIDGE:-0}" = "1" ]; then
     # Keep bridge paths as discrete arguments. Disabling SELinux separation for
     # this opt-in container avoids relabeling a live rootless Podman socket.
-    launch_container_runtime --rm $security_opts $device_opts $privileged_opt $userns_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
+    launch_container_runtime $security_opts $device_opts $privileged_opt $userns_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
         --security-opt label=disable \
         -e AXOLOTY_DEVCONTAINER=1 \
         -e AXOLOTY_HOST_RUNTIME_BRIDGE=1 \
@@ -673,6 +859,7 @@ if [ "${AXOLOTY_HOST_RUNTIME_BRIDGE:-0}" = "1" ]; then
         -v "$root_dir:$bridge_workdir$mount_suffix" \
         -w "$bridge_workdir" \
         --name "$container_name" \
+        --cidfile "$container_cidfile" \
         --label io.axoloty.managed-by=axoloty-run.sh \
         --label "io.axoloty.run-id=$container_run_id" \
         --label "io.axoloty.worktree=$worktree_name" \
@@ -680,7 +867,7 @@ if [ "${AXOLOTY_HOST_RUNTIME_BRIDGE:-0}" = "1" ]; then
         "$image" "$@" &
     container_pid=$!
 else
-    launch_container_runtime --rm $security_opts $device_opts $privileged_opt $userns_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
+    launch_container_runtime $security_opts $device_opts $privileged_opt $userns_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
         -e AXOLOTY_DEVCONTAINER=1 \
         -e "AXOLOTY_RUN_ID=$container_run_id" \
         -v "$root_dir:$bridge_workdir$mount_suffix" \
@@ -688,6 +875,7 @@ else
         -v "$spm_cache_dir:$bridge_workdir/.swiftpm-cache$mount_suffix" \
         -w "$bridge_workdir" \
         --name "$container_name" \
+        --cidfile "$container_cidfile" \
         --label io.axoloty.managed-by=axoloty-run.sh \
         --label "io.axoloty.run-id=$container_run_id" \
         --label "io.axoloty.worktree=$worktree_name" \
@@ -697,7 +885,7 @@ else
 fi
 if confirm_container_ownership; then
     status=0
-    wait_for_process_completion "$container_pid" "runtime client" || status=$?
+    wait_for_process_completion "$container_pid" || status=$?
     status=${status:-0}
 else
     echo "container ownership labels were not observed before launch deadline" >&2
