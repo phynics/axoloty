@@ -14,6 +14,92 @@ import Testing
 struct SensorThingsWireRoundTripTests {
 
     @Test
+    func unitOfMeasurementRoundTripsExplicitNullFields() throws {
+        let payload = Data(#"{"name":null,"symbol":null,"definition":null}"#.utf8)
+        let decoded = try JSONDecoder().decode(UnitOfMeasurement.self, from: payload)
+
+        #expect(decoded.name == nil)
+        #expect(decoded.symbol == nil)
+        #expect(decoded.definition == nil)
+
+        let encoded = try JSONEncoder().encode(decoded)
+        let json = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        #expect(json["name"] is NSNull)
+        #expect(json["symbol"] is NSNull)
+        #expect(json["definition"] is NSNull)
+
+        let roundTripped = try JSONDecoder().decode(UnitOfMeasurement.self, from: encoded)
+        #expect(roundTripped.name == nil)
+        #expect(roundTripped.symbol == nil)
+        #expect(roundTripped.definition == nil)
+    }
+
+    @Test
+    func unitOfMeasurementNormalizesMissingFieldsToExplicitNulls() throws {
+        let payload = Data(#"{}"#.utf8)
+        let decoded = try JSONDecoder().decode(UnitOfMeasurement.self, from: payload)
+
+        #expect(decoded.name == nil)
+        #expect(decoded.symbol == nil)
+        #expect(decoded.definition == nil)
+
+        // The encoder intentionally emits every protocol field, so missing
+        // nullable input becomes explicit null output.
+        let encoded = try JSONEncoder().encode(decoded)
+        let json = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        #expect(json["name"] is NSNull)
+        #expect(json["symbol"] is NSNull)
+        #expect(json["definition"] is NSNull)
+
+        let roundTripped = try JSONDecoder().decode(UnitOfMeasurement.self, from: encoded)
+        #expect(roundTripped.name == nil)
+        #expect(roundTripped.symbol == nil)
+        #expect(roundTripped.definition == nil)
+    }
+
+    @Test
+    func unitOfMeasurementRoundTripsMixedNullableFields() throws {
+        let payload = Data(#"{"name":null,"symbol":"degC","definition":null}"#.utf8)
+        let decoded = try JSONDecoder().decode(UnitOfMeasurement.self, from: payload)
+
+        #expect(decoded.name == nil)
+        #expect(decoded.symbol == "degC")
+        #expect(decoded.definition == nil)
+
+        let encoded = try JSONEncoder().encode(decoded)
+        let json = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        #expect(json["name"] is NSNull)
+        #expect(json["symbol"] as? String == "degC")
+        #expect(json["definition"] is NSNull)
+
+        let roundTripped = try JSONDecoder().decode(UnitOfMeasurement.self, from: encoded)
+        #expect(roundTripped.name == nil)
+        #expect(roundTripped.symbol == "degC")
+        #expect(roundTripped.definition == nil)
+    }
+
+    @Test
+    func unitOfMeasurementRoundTripsPopulatedFields() throws {
+        let payload = Data(#"{"name":"Degree Celsius","symbol":"degC","definition":"http://qudt.org/vocab/unit#DegreeCelsius"}"#.utf8)
+        let decoded = try JSONDecoder().decode(UnitOfMeasurement.self, from: payload)
+
+        #expect(decoded.name == "Degree Celsius")
+        #expect(decoded.symbol == "degC")
+        #expect(decoded.definition == "http://qudt.org/vocab/unit#DegreeCelsius")
+
+        let encoded = try JSONEncoder().encode(decoded)
+        let json = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        #expect(json["name"] as? String == "Degree Celsius")
+        #expect(json["symbol"] as? String == "degC")
+        #expect(json["definition"] as? String == "http://qudt.org/vocab/unit#DegreeCelsius")
+
+        let roundTripped = try JSONDecoder().decode(UnitOfMeasurement.self, from: encoded)
+        #expect(roundTripped.name == "Degree Celsius")
+        #expect(roundTripped.symbol == "degC")
+        #expect(roundTripped.definition == "http://qudt.org/vocab/unit#DegreeCelsius")
+    }
+
+    @Test
     func observationResultEncodesAsRawJSONNumber() throws {
         let observation = Observation(
             phenomenonTime: 1000,
