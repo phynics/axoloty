@@ -17,10 +17,11 @@ make hardware-check
 make release-snapshots
 ```
 
-The container image carries a prebuilt `axoloty-tool` at
-`/opt/axoloty/bin/axoloty-tool`. Make targets invoke it inside the
-container via `.devcontainer/run.sh`; the binary is not extracted to the
-host. All build, test, and lint commands execute directly in-container.
+The container image carries a stable `axoloty-tool` launcher at
+`/opt/axoloty/bin/axoloty-tool`. Make targets invoke it inside the container
+via `.devcontainer/run.sh`; it runs the mounted-worktree product using the
+worktree-specific build directory and mounted SwiftPM cache. No project
+binary is extracted to or baked into the image.
 
 macOS uses its pinned native Swift toolchain:
 
@@ -28,8 +29,8 @@ macOS uses its pinned native Swift toolchain:
 swift run --package-path Tools axoloty-tool check
 ```
 
-The root package also publishes `ax` and `axoloty-mcp`. Linux images install
-both under `/opt/axoloty/bin`; `axoloty-tool` is retained as a symlink to `ax`.
+The root package also publishes `ax` and `axoloty-mcp`. Linux images provide
+mounted-worktree launchers for all three products under `/opt/axoloty/bin`.
 Use `make serve-mqtt`, `make serve-mcp`, or `make serve-dev` for thin container
 entry points. Service policy remains in `AxolotyTooling`, not Make or shell.
 

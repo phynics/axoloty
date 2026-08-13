@@ -6,28 +6,83 @@ on:
     paths:
       - .devcontainer/Dockerfile
       - .devcontainer/image-inputs.sh
+      - .devcontainer/ax
+      - .devcontainer/axoloty-tool
+      - .devcontainer/axoloty-mcp
       - .dockerignore
-      - Package.swift
-      - Package.resolved
-      - Packages/**
-      - Source/**
-      - Tests/**
-      - Benchmarks/**
-      - Tools/**
+      - .github/workflows/container-image.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - .devcontainer/Dockerfile
+      - .devcontainer/image-inputs.sh
+      - .devcontainer/ax
+      - .devcontainer/axoloty-tool
+      - .devcontainer/axoloty-mcp
+      - .dockerignore
       - .github/workflows/container-image.yml
   workflow_dispatch:
 
 permissions:
   contents: read
-  packages: write
 
 concurrency:
-  group: development-image
-  cancel-in-progress: false
+  group: development-image-${{ github.event.pull_request.number || 'main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  publish:
+  publish-pr:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    name: Publish PR development image
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Login to GHCR
+        shell: bash
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$REGISTRY_TOKEN" | docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Build and publish content-keyed image
+        shell: bash
+        env:
+          IMAGE_BASE: ghcr.io/${{ github.repository_owner }}/axoloty-dev
+        run: |
+          set -euo pipefail
+          build_inputs_hash=$(./.devcontainer/image-inputs.sh | sha256sum | awk '{print $1}')
+          image_tag="$IMAGE_BASE:swift-6.3-$build_inputs_hash"
+          if docker buildx imagetools inspect "$image_tag" >/dev/null 2>&1; then
+            echo "Content-keyed development image already exists: $image_tag"
+            exit 0
+          fi
+          docker buildx build \
+            --file .devcontainer/Dockerfile \
+            --build-arg "AXOLOTY_IMAGE_INPUTS_SHA256=$build_inputs_hash" \
+            --tag "$image_tag" \
+            --cache-from "type=registry,ref=$IMAGE_BASE:buildcache" \
+            --cache-to "type=registry,ref=$IMAGE_BASE:buildcache,mode=max" \
+            --provenance=true \
+            --sbom=true \
+            --push .
+
+  publish-main:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     name: Publish pinned development image
+    permissions:
+      contents: write
+      packages: write
+      pull-requests: write
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -57,6 +112,7 @@ jobs:
           image_tag="$IMAGE_BASE:swift-6.3-$build_inputs_hash"
           docker buildx build \
             --file .devcontainer/Dockerfile \
+            --build-arg "AXOLOTY_IMAGE_INPUTS_SHA256=$build_inputs_hash" \
             --tag "$image_tag" \
             --tag "$IMAGE_BASE:swift-6.3" \
             --cache-from "type=registry,ref=$IMAGE_BASE:buildcache" \
@@ -72,3 +128,50 @@ jobs:
             echo "- Digest: \`$digest\`"
             echo "- Build inputs SHA-256: \`$build_inputs_hash\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open image lock refresh pull request
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_BASE: ghcr.io/${{ github.repository_owner }}/axoloty-dev
+          REPOSITORY: ${{ github.repository }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          build_inputs_hash=$(./.devcontainer/image-inputs.sh | sha256sum | awk '{print $1}')
+          image_tag="swift-6.3-$build_inputs_hash"
+          digest=$(docker buildx imagetools inspect "$IMAGE_BASE:$image_tag" --format '{{json .Manifest.Digest}}' | tr -d '"')
+          branch="automation/dev-image-lock"
+
+          jq \
+            --arg tag "$image_tag" \
+            --arg digest "$digest" \
+            --arg hash "$build_inputs_hash" \
+            --arg run "$RUN_URL" \
+            '.tag = $tag | .digest = $digest | .buildInputsSha256 = $hash | .publishedRun = $run' \
+            .devcontainer/image-lock.json > "$RUNNER_TEMP/image-lock.json"
+
+          if gh api "repos/$REPOSITORY/git/ref/heads/$branch" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/$REPOSITORY/git/refs/heads/$branch" \
+              -f sha="$GITHUB_SHA" -F force=true >/dev/null
+          else
+            gh api --method POST "repos/$REPOSITORY/git/refs" \
+              -f ref="refs/heads/$branch" -f sha="$GITHUB_SHA" >/dev/null
+          fi
+
+          lock_sha=$(gh api "repos/$REPOSITORY/contents/.devcontainer/image-lock.json?ref=$branch" --jq .sha)
+          lock_content=$(base64 -w 0 < "$RUNNER_TEMP/image-lock.json")
+          gh api --method PUT "repos/$REPOSITORY/contents/.devcontainer/image-lock.json" \
+            -f message="build(dev-image): refresh image lock" \
+            -f content="$lock_content" \
+            -f sha="$lock_sha" \
+            -f branch="$branch" >/dev/null
+
+          if ! gh pr list --repo "$REPOSITORY" --head "$branch" --state open --json number --jq 'length > 0' | grep -qx true; then
+            gh pr create --repo "$REPOSITORY" --base main --head "$branch" \
+              --title "build(dev-image): refresh image lock" \
+              --body "Automated lock refresh for the development image published by [run $GITHUB_RUN_ID]($RUN_URL)."
+          else
+            gh pr edit --repo "$REPOSITORY" "$branch" \
+              --body "Automated lock refresh for the development image published by [run $GITHUB_RUN_ID]($RUN_URL)."
+          fi

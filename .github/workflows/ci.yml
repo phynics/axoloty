@@ -40,6 +40,10 @@ jobs:
           # Canonical verification is implemented by the tooling binary, so CI
           # must never execute orchestration embedded from a stale revision.
           require-current-build-inputs: "true"
+          # A same-repository PR image workflow publishes the immutable image
+          # in parallel. Wait for it instead of rebuilding on every fresh CI
+          # runner; retain the local fallback if publication fails.
+          wait-for-published-seconds: "600"
 
       - name: Restore SwiftPM dependency cache
         uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
@@ -75,7 +79,7 @@ jobs:
           AXOLOTY_OUTPUT: human
         run: |
           mkdir -p .testing
-          make verify-ci CONTAINER_RUNTIME=podman BUILD_DIR=.build COVERAGE_BUILD_DIR=.build BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache AXOLOTY_TOOL_CONTAINER_ENV_VARS=AXOLOTY_OUTPUT
+          make verify-ci CONTAINER_RUNTIME=podman BUILD_DIR=".build/${GITHUB_SHA}" COVERAGE_BUILD_DIR=".build/${GITHUB_SHA}-coverage" BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache AXOLOTY_TOOL_CONTAINER_ENV_VARS=AXOLOTY_OUTPUT
 
       - name: Save SwiftPM dependency cache
         if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
