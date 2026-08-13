@@ -258,7 +258,7 @@ fi
 record_sequence() { printf '%s\n' "\$1" >> "$capture_sequence"; }
 if [ "\${FAKE_FOREIGN_INSPECT:-0}" = "1" ] && [ "\$1" = "inspect" ]; then
     record_sequence inspect-foreign
-    printf '%s\n' "foreign-container-id|foreign-owner|foreign-run|foreign-worktree|foreign-process"
+    printf '%s\n' "foreign-container-id|foreign-owner|foreign-run|foreign-worktree|foreign-process|foreign-instance"
     exit 0
 fi
 if [ "\${FAKE_FOREIGN_INSPECT:-0}" = "1" ] && { [ "\$1" = "stop" ] || [ "\$1" = "kill" ] || [ "\$1" = "rm" ]; }; then
@@ -352,6 +352,7 @@ if [ "\$1" = "create" ]; then
     fake_run=""
     fake_worktree=""
     fake_owner=""
+    fake_instance=""
     fake_cidfile=""
     while [ "\$#" -gt 0 ]; do
         case "\$1" in
@@ -369,6 +370,7 @@ if [ "\$1" = "create" ]; then
                     io.axoloty.run-id=*) fake_run="\${2#*=}" ;;
                     io.axoloty.worktree=*) fake_worktree="\${2#*=}" ;;
                     io.axoloty.owner=*) fake_owner="\${2#*=}" ;;
+                    io.axoloty.instance=*) fake_instance="\${2#*=}" ;;
                 esac
                 shift 2
                 ;;
@@ -394,6 +396,10 @@ if [ "\$1" = "create" ]; then
                     printf '%s\n' "\$fake_arg" >> "$capture_command"
                 done
                 if [ "\${FAKE_CREATE_COLLISION:-0}" = "1" ]; then
+                    if [ "\${FAKE_COLLISION_MATCHING_LABELS:-0}" = "1" ]; then
+                        printf 'FAKE_CONTAINER_LABELS=%q\n' "\$fake_managed|\$fake_run|\$fake_worktree|\$fake_owner|foreign-instance" > "$capture_state"
+                        printf 'FAKE_CONTAINER_STATUS=running\n' >> "$capture_state"
+                    fi
                     printf '%s\n' 'container name is already in use' >&2
                     exit 125
                 fi
@@ -403,7 +409,7 @@ if [ "\$1" = "create" ]; then
                 if [ -n "\$fake_cidfile" ] && [ "\${FAKE_SKIP_CIDFILE:-0}" != "1" ]; then
                     printf '%s\n' fake-container-id > "\$fake_cidfile"
                 fi
-                printf 'FAKE_CONTAINER_LABELS=%q\n' "\$fake_managed|\$fake_run|\$fake_worktree|\$fake_owner" > "$capture_state"
+                printf 'FAKE_CONTAINER_LABELS=%q\n' "\$fake_managed|\$fake_run|\$fake_worktree|\$fake_owner|\$fake_instance" > "$capture_state"
                 printf 'FAKE_CONTAINER_STATUS=created\n' >> "$capture_state"
                 if [ "\${FAKE_CREATE_BLOCK_AFTER_COMMIT:-0}" = "1" ]; then
                     printf '%s\n' "\$\$" > "$capture_api_pid"
@@ -681,6 +687,23 @@ set -e
 grep -Fxq create "$capture_sequence"
 if grep -Eq '^(start|stop|kill|rm)$' "$capture_sequence"; then
     echo "name collision touched a container it did not create" >&2
+    exit 1
+fi
+
+# Even a colliding container with every reusable ownership field copied cannot
+# match this invocation's private instance label.
+: > "$capture_sequence"
+: > "$capture_state"
+set +e
+FAKE_CREATE_COLLISION=1 FAKE_COLLISION_MATCHING_LABELS=1 \
+CONTAINER_NAME=occupied-container AXOLOTY_RUN_ID=reused-run AXOLOTY_OWNER_ID=reused-owner \
+CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+matching_collision_status=$?
+set -e
+[[ "$matching_collision_status" -eq 125 ]]
+if grep -Eq '^(start|stop|kill|rm)$' "$capture_sequence"; then
+    echo "matching-label name collision touched a foreign instance" >&2
     exit 1
 fi
 
@@ -1024,6 +1047,7 @@ grep -q -- '--label io.axoloty.managed-by=axoloty-run.sh' "$capture"
 grep -q -- '--label io.axoloty.run-id=issue-551' "$capture"
 grep -q -- "--label io.axoloty.worktree=$expected_worktree_name" "$capture"
 grep -q -- '--label io.axoloty.owner=' "$capture"
+grep -q -- '--label io.axoloty.instance=' "$capture"
 
 # A synchronous create collision is reconciled by name but cannot make run.sh
 # remove an unowned container or proceed to start it.

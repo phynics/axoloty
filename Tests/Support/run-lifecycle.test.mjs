@@ -20,6 +20,7 @@ test("run.sh builds an owned, run-scoped container command", () => {
   assert.doesNotMatch(runScript, /wait_for_ownership/);
   assert.match(runScript, /io\.axoloty\.worktree/);
   assert.match(runScript, /io\.axoloty\.owner/);
+  assert.match(runScript, /io\.axoloty\.instance/);
   assert.match(runScript, /wait_for_process_completion "\$container_pid"/);
   assert.match(runScript, /terminate_process_tree_bounded/);
 });

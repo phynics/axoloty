@@ -26,6 +26,7 @@ container_cidfile=""
 container_id=""
 container_run_id=""
 container_owner_id=""
+container_instance_id=""
 container_pid=""
 direct_pid=""
 active_runtime_api_pid=""
@@ -179,7 +180,7 @@ container_has_expected_labels() {
     fi
     if ! run_command_bounded "$runtime_output_file" "container ownership inspection" "$runtime_api_timeout" \
         $sudo_prefix "$runtime" inspect \
-        --format '{{.Id}}|{{ index .Config.Labels "io.axoloty.managed-by" }}|{{ index .Config.Labels "io.axoloty.run-id" }}|{{ index .Config.Labels "io.axoloty.worktree" }}|{{ index .Config.Labels "io.axoloty.owner" }}' \
+        --format '{{.Id}}|{{ index .Config.Labels "io.axoloty.managed-by" }}|{{ index .Config.Labels "io.axoloty.run-id" }}|{{ index .Config.Labels "io.axoloty.worktree" }}|{{ index .Config.Labels "io.axoloty.owner" }}|{{ index .Config.Labels "io.axoloty.instance" }}' \
         "$ownership_target"; then
         return 2
     fi
@@ -190,13 +191,13 @@ container_has_expected_labels() {
         ''|*[!A-Za-z0-9_.:-]*) return 2 ;;
     esac
     [ "$discovered_id" = "$container_id" ] || return 2
-    [ "$owned_labels" = "axoloty-run.sh|$container_run_id|$worktree_name|$container_owner_id" ]
+    [ "$owned_labels" = "axoloty-run.sh|$container_run_id|$worktree_name|$container_owner_id|$container_instance_id" ]
 }
 
 reconcile_created_container() {
     if ! run_command_bounded "$runtime_output_file" "created-container reconciliation" "$runtime_api_timeout" \
         $sudo_prefix "$runtime" inspect \
-        --format '{{.Id}}|{{ index .Config.Labels "io.axoloty.managed-by" }}|{{ index .Config.Labels "io.axoloty.run-id" }}|{{ index .Config.Labels "io.axoloty.worktree" }}|{{ index .Config.Labels "io.axoloty.owner" }}' \
+        --format '{{.Id}}|{{ index .Config.Labels "io.axoloty.managed-by" }}|{{ index .Config.Labels "io.axoloty.run-id" }}|{{ index .Config.Labels "io.axoloty.worktree" }}|{{ index .Config.Labels "io.axoloty.owner" }}|{{ index .Config.Labels "io.axoloty.instance" }}' \
         "$container_name"; then
         return 1
     fi
@@ -206,7 +207,7 @@ reconcile_created_container() {
     case "$discovered_id" in
         ''|*[!A-Za-z0-9_.:-]*) return 1 ;;
     esac
-    if [ "$owned_labels" != "axoloty-run.sh|$container_run_id|$worktree_name|$container_owner_id" ]; then
+    if [ "$owned_labels" != "axoloty-run.sh|$container_run_id|$worktree_name|$container_owner_id|$container_instance_id" ]; then
         return 1
     fi
     container_id="$discovered_id"
@@ -622,6 +623,7 @@ export AXOLOTY_RUN_ID="$container_run_id"
 runtime_output_file=$(mktemp "${TMPDIR:-/tmp}/axoloty-runtime-output.XXXXXX")
 container_state_dir=$(mktemp -d "${TMPDIR:-/tmp}/axoloty-container-state.XXXXXX")
 container_cidfile="$container_state_dir/container.id"
+container_instance_id=$(basename "$container_state_dir")
 
 bridge_workdir="$workdir"
 if [ "${AXOLOTY_HOST_RUNTIME_BRIDGE:-0}" = "1" ]; then
@@ -898,6 +900,7 @@ create_container() {
                 --label "io.axoloty.run-id=$container_run_id" \
                 --label "io.axoloty.worktree=$worktree_name" \
                 --label "io.axoloty.owner=$container_owner_id" \
+                --label "io.axoloty.instance=$container_instance_id" \
                 "$image" "$@"
         else
             run_command_bounded "$runtime_output_file" "container create" "$container_create_timeout" \
@@ -926,6 +929,7 @@ create_container() {
                 --label "io.axoloty.run-id=$container_run_id" \
                 --label "io.axoloty.worktree=$worktree_name" \
                 --label "io.axoloty.owner=$container_owner_id" \
+                --label "io.axoloty.instance=$container_instance_id" \
                 "$image" "$@"
         fi
     elif [ -n "$device_lease_mount" ]; then
@@ -946,6 +950,7 @@ create_container() {
             --label "io.axoloty.run-id=$container_run_id" \
             --label "io.axoloty.worktree=$worktree_name" \
             --label "io.axoloty.owner=$container_owner_id" \
+            --label "io.axoloty.instance=$container_instance_id" \
             "$image" "$@"
     else
         run_command_bounded "$runtime_output_file" "container create" "$container_create_timeout" \
@@ -963,6 +968,7 @@ create_container() {
             --label "io.axoloty.run-id=$container_run_id" \
             --label "io.axoloty.worktree=$worktree_name" \
             --label "io.axoloty.owner=$container_owner_id" \
+            --label "io.axoloty.instance=$container_instance_id" \
             "$image" "$@"
     fi
 }
