@@ -18,6 +18,10 @@ inputs:
     description: Require the pinned image to contain the current immutable image/toolchain inputs.
     required: false
     default: "true"
+  wait-for-published-seconds:
+    description: Wait this long for a concurrent content-keyed image publisher before using the local build fallback.
+    required: false
+    default: "0"
 
 runs:
   using: composite
@@ -29,6 +33,7 @@ runs:
         LOCK_FILE: ${{ inputs.lock-file }}
         ALLOW_BUILD_FALLBACK: ${{ inputs.allow-build-fallback }}
         REQUIRE_CURRENT_BUILD_INPUTS: ${{ inputs.require-current-build-inputs }}
+        WAIT_FOR_PUBLISHED_SECONDS: ${{ inputs.wait-for-published-seconds }}
       run: |
         set -euo pipefail
 
@@ -47,6 +52,20 @@ runs:
                 exit 1
               fi
               candidate_tag="$image:swift-6.3-$actual_hash"
+              case "$WAIT_FOR_PUBLISHED_SECONDS" in
+                ''|*[!0-9]*)
+                  echo "::error::wait-for-published-seconds must be a non-negative integer, got: $WAIT_FOR_PUBLISHED_SECONDS" >&2
+                  exit 2
+                  ;;
+              esac
+              wait_deadline=$((SECONDS + WAIT_FOR_PUBLISHED_SECONDS))
+              while (( SECONDS < wait_deadline )); do
+                if "$RUNTIME" pull "$candidate_tag"; then
+                  break
+                fi
+                echo "Waiting for the content-keyed development image publisher..." >&2
+                sleep 15
+              done
               if "$RUNTIME" pull "$candidate_tag"; then
                 candidate_hash=$("$RUNTIME" image inspect \
                   --format '{{ index .Config.Labels "io.axoloty.image-inputs-sha256" }}' \
