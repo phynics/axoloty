@@ -174,6 +174,10 @@ test("published content-keyed images avoid repeated fallback builds and refresh 
   assert.match(imageWorkflow, /Build and publish content-keyed image/);
   assert.match(imageWorkflow, /imagetools inspect "\$image_tag"/);
   assert.match(imageWorkflow, /Content-keyed development image already exists/);
+  assert.match(
+    imageWorkflow,
+    /locked_tag=.*\.tag[\s\S]*locked_digest=.*\.digest[\s\S]*locked_hash=.*\.buildInputsSha256[\s\S]*if \[\[ "\$locked_tag" == "\$image_tag" && "\$locked_digest" == "\$digest" && "\$locked_hash" == "\$build_inputs_hash" \]\]; then\s+echo "Development image lock is already current\."\s+exit 0\s+fi[\s\S]*jq \\\s+--arg tag/,
+  );
   assert.match(setupAction, /WAIT_FOR_PUBLISHED_SECONDS/);
   assert.match(setupAction, /Waiting for the content-keyed development image publisher/);
   assert.match(fs.readFileSync(".github/workflows/ci.yml", "utf8"), /wait-for-published-seconds: "600"/);
