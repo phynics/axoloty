@@ -197,11 +197,4 @@ jobs:
             -f sha="$lock_sha" \
             -f branch="$branch" >/dev/null
 
-          if ! gh pr list --repo "$REPOSITORY" --head "$branch" --state open --json number --jq 'length > 0' | grep -qx true; then
-            gh pr create --repo "$REPOSITORY" --base main --head "$branch" \
-              --title "build(dev-image): refresh image lock" \
-              --body "Automated lock refresh for the development image published by [run $GITHUB_RUN_ID]($RUN_URL)."
-          else
-            gh pr edit --repo "$REPOSITORY" "$branch" \
-              --body "Automated lock refresh for the development image published by [run $GITHUB_RUN_ID]($RUN_URL)."
-          fi
+          .github/scripts/open-image-lock-pr.sh

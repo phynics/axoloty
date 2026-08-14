@@ -13,6 +13,7 @@ const makefile = fs.readFileSync("Makefile", "utf8");
 const setupAction = fs.readFileSync(".github/actions/setup-container/action.yml", "utf8");
 const ciWorkflow = fs.readFileSync(".github/workflows/ci.yml", "utf8");
 const imageWorkflow = fs.readFileSync(".github/workflows/container-image.yml", "utf8");
+const openImageLockPR = fs.readFileSync(".github/scripts/open-image-lock-pr.sh", "utf8");
 
 function workflowStep(name) {
   const marker = `      - name: ${name}`;
@@ -323,5 +324,72 @@ test("published content-keyed images avoid repeated fallback builds and refresh 
   assert.match(setupAction, /WAIT_FOR_PUBLISHED_SECONDS/);
   assert.match(setupAction, /Waiting for the content-keyed development image publisher/);
   assert.match(ciWorkflow, /wait-for-published-seconds: "600"/);
-  assert.match(imageWorkflow, /gh pr create/);
+  assert.match(imageWorkflow, /\.github\/scripts\/open-image-lock-pr\.sh/);
+  assert.match(openImageLockPR, /gh pr create/);
+  assert.match(openImageLockPR, /GitHub Actions is not permitted to create or approve pull requests \(createPullRequest\)/);
+  assert.match(openImageLockPR, /compare\/main\.\.\.automation\/dev-image-lock\?expand=1/);
+  assert.match(openImageLockPR, /GITHUB_STEP_SUMMARY/);
+});
+
+test("image lock PR fallback accepts only the exact repository policy denial", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-image-lock-pr-"));
+  const fakeBin = path.join(tempRoot, "bin");
+  const fakeGh = path.join(fakeBin, "gh");
+  fs.mkdirSync(fakeBin);
+  fs.writeFileSync(fakeGh, `#!/bin/sh
+set -eu
+case "$1 $2" in
+  "pr list")
+    if [ "\${FAKE_GH_LIST_FAILURE:-0}" = 1 ]; then
+      printf 'GraphQL: list unavailable\\n' >&2
+      exit 2
+    fi
+    printf 'false\\n'
+    ;;
+  "pr create") printf '%s\\n' "$FAKE_GH_CREATE_ERROR" >&2; exit 1 ;;
+  *) printf 'unexpected gh invocation: %s\\n' "$*" >&2; exit 99 ;;
+esac
+`);
+  fs.chmodSync(fakeGh, 0o755);
+
+  const exactDenial = "pull request create failed: GraphQL: GitHub Actions is not permitted to create or approve pull requests (createPullRequest)";
+  const run = (error, listFailure = false) => {
+    const summary = path.join(tempRoot, `summary-${Math.random()}`);
+    const result = spawnSync(".github/scripts/open-image-lock-pr.sh", [], {
+      cwd: ".",
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        FAKE_GH_CREATE_ERROR: error,
+        FAKE_GH_LIST_FAILURE: listFailure ? "1" : "0",
+        GITHUB_STEP_SUMMARY: summary,
+        PATH: `${fakeBin}:${process.env.PATH}`,
+        REPOSITORY: "phynics/axoloty",
+        RUNNER_TEMP: tempRoot,
+        RUN_URL: "https://github.com/phynics/axoloty/actions/runs/1",
+      },
+    });
+    return { result, summary };
+  };
+
+  try {
+    const allowed = run(exactDenial);
+    assert.equal(allowed.result.status, 0, allowed.result.stderr);
+    assert.match(allowed.result.stdout, /Image lock PR requires a maintainer/);
+    assert.match(fs.readFileSync(allowed.summary, "utf8"), /compare\/main\.\.\.automation\/dev-image-lock\?expand=1/);
+
+    const altered = run(`${exactDenial}\nsecondary failure`);
+    assert.equal(altered.result.status, 1);
+    assert.match(altered.result.stderr, /secondary failure/);
+
+    const unexpected = run("GraphQL: transport unavailable");
+    assert.equal(unexpected.result.status, 1);
+    assert.match(unexpected.result.stderr, /transport unavailable/);
+
+    const listFailure = run(exactDenial, true);
+    assert.equal(listFailure.result.status, 1);
+    assert.match(listFailure.result.stderr, /failed to inspect existing image lock pull requests/);
+  } finally {
+    fs.rmSync(tempRoot, { force: true, recursive: true });
+  }
 });
