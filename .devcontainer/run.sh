@@ -610,7 +610,7 @@ if [ -z "$runtime" ]; then
     exit 1
 fi
 
-common_git_dir=$(git -C "$root_dir" rev-parse --git-common-dir 2>/dev/null || true)
+common_git_dir=$(git -C "$root_dir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
 if [ -n "$common_git_dir" ]; then
     repository_name=$(basename "${common_git_dir%/.git}")
 else
@@ -709,6 +709,10 @@ if [ "${CONTAINER_MOUNT_SUFFIX+x}" = x ]; then
 elif [ -r /sys/fs/selinux/enforce ] && [ "$(cat /sys/fs/selinux/enforce)" = 1 ]; then
     mount_suffix=:Z
     selinux_labeling_active=1
+fi
+common_git_mount=""
+if [ -n "$common_git_dir" ]; then
+    common_git_mount="$common_git_dir:$common_git_dir$mount_suffix"
 fi
 device_lease_mount=""
 device_lease_env=""
@@ -913,6 +917,7 @@ create_container() {
                 -v "$bridge_socket:$bridge_socket" \
                 -v "$build_dir:$build_dir" \
                 -v "$spm_cache_dir:$spm_cache_dir" \
+                -v "$common_git_mount" \
                 -v "$device_lease_mount" \
                 -e "$device_lease_env" \
                 -v "$root_dir:$bridge_workdir$mount_suffix" \
@@ -944,6 +949,7 @@ create_container() {
                 -v "$bridge_socket:$bridge_socket" \
                 -v "$build_dir:$build_dir" \
                 -v "$spm_cache_dir:$spm_cache_dir" \
+                -v "$common_git_mount" \
                 -v "$root_dir:$bridge_workdir$mount_suffix" \
                 -w "$bridge_workdir" \
                 --name "$container_name" \
@@ -964,6 +970,7 @@ create_container() {
             -v "$device_lease_mount" \
             -e "$device_lease_env" \
             -v "$root_dir:$bridge_workdir$mount_suffix" \
+            -v "$common_git_mount" \
             -v "$build_dir:$bridge_workdir/.build$mount_suffix" \
             -v "$spm_cache_dir:$bridge_workdir/.swiftpm-cache$mount_suffix" \
             -w "$bridge_workdir" \
@@ -982,6 +989,7 @@ create_container() {
             -e AXOLOTY_DEVCONTAINER=1 \
             -e "AXOLOTY_RUN_ID=$container_run_id" \
             -v "$root_dir:$bridge_workdir$mount_suffix" \
+            -v "$common_git_mount" \
             -v "$build_dir:$bridge_workdir/.build$mount_suffix" \
             -v "$spm_cache_dir:$bridge_workdir/.swiftpm-cache$mount_suffix" \
             -w "$bridge_workdir" \

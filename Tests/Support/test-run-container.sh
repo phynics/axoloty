@@ -27,7 +27,7 @@ cleanup() {
 
 trap cleanup EXIT
 
-common_git_dir=$(git -C "$ROOT_DIR" rev-parse --git-common-dir 2>/dev/null || true)
+common_git_dir=$(git -C "$ROOT_DIR" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
 if [ -n "$common_git_dir" ]; then
     expected_repository_name=$(basename "${common_git_dir%/.git}")
 else
@@ -889,6 +889,7 @@ FAKE_RUNTIME_ARGV_CAPTURE=1 CONTAINER_RUNTIME="$fake_bin/fake-podman" \
     "$ROOT_DIR/.devcontainer/run.sh" true
 first_run_args=$(awk '/^---$/ { if (in_run) exit; first_seen = 0; in_run = 0; next } !first_seen { first_seen = 1; if ($0 == "create") in_run = 1; next } in_run { print }' "$capture_argv")
 [[ $(printf '%s\n' "$first_run_args" | grep -Fxc -- "$ROOT_DIR:/workspace") -eq 1 ]]
+[[ $(printf '%s\n' "$first_run_args" | grep -Fxc -- "$common_git_dir:$common_git_dir") -eq 1 ]]
 [[ $(printf '%s\n' "$first_run_args" | grep -Fxc -- "$build_dir:/workspace/.build") -eq 1 ]]
 [[ $(printf '%s\n' "$first_run_args" | grep -Fxc -- "$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux:/workspace/.swiftpm-cache") -eq 1 ]]
 [[ $(printf '%s\n' "$first_run_args" | grep -Fxc -- "$lease_root:$lease_root") -eq 1 ]]
@@ -912,6 +913,7 @@ FAKE_RUNTIME_ARGV_CAPTURE=1 CONTAINER_RUNTIME="$fake_bin/fake-podman" \
     "$ROOT_DIR/.devcontainer/run.sh" true
 forced_run_args=$(awk '/^---$/ { if (in_run) exit; first_seen = 0; in_run = 0; next } !first_seen { first_seen = 1; if ($0 == "create") in_run = 1; next } in_run { print }' "$capture_argv")
 [[ $(printf '%s\n' "$forced_run_args" | grep -Fxc -- "$ROOT_DIR:/workspace:Z") -eq 1 ]]
+[[ $(printf '%s\n' "$forced_run_args" | grep -Fxc -- "$common_git_dir:$common_git_dir:Z") -eq 1 ]]
 [[ $(printf '%s\n' "$forced_run_args" | grep -Fxc -- "$build_dir:/workspace/.build:Z") -eq 1 ]]
 [[ $(printf '%s\n' "$forced_run_args" | grep -Fxc -- "$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux:/workspace/.swiftpm-cache:Z") -eq 1 ]]
 [[ $(printf '%s\n' "$forced_run_args" | grep -Fxc -- "$lease_root:$lease_root:z") -eq 1 ]]
