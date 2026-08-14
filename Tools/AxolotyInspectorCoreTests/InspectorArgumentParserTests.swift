@@ -24,6 +24,7 @@ struct InspectorArgumentParserTests {
     func versionFlagReturnsVersion() {
         let outcome = InspectorArgumentParser().parse(["--version"])
         #expect(outcome == .version)
+        #expect(InspectorArgumentParser.version == "0.4.0")
     }
 
     @Test

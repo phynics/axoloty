@@ -199,7 +199,7 @@ public struct AxolotyCommandDispatcher: Sendable {
         }
     }
 
-    private static let version = "0.2.0"
+    private static let version = "0.4.0"
 
     private static func manifestDiagnostic(_ error: Error) -> String {
         if let manifestError = error as? AxolotyCanonicalTestManifestError {
@@ -234,7 +234,7 @@ public struct AxolotyCommandDispatcher: Sendable {
       hardware check       Run or skip the sporadic hardware smoke check.
       hardware require     Require an attached device and run its smoke check.
       release snapshots    Generate and verify a provenance-rich wire bundle.
-      release checkpoint   Run the 0.2 checkpoint validation (no hardware).
+      release checkpoint   Run the release checkpoint validation (no hardware).
       release checkpoint-hardware  Run checkpoint with ESP32-C6 smoke test.
          --device PATH      Override AXOLOTY_DEVICE (default: /dev/ttyACM0).
       serve mqtt           Start a local Mosquitto broker in the foreground.
@@ -582,16 +582,26 @@ public struct AxolotyCommandDispatcher: Sendable {
         ].reduce(into: [String: String]()) { values, name in
             values[name] = environment[name]
         }
+        let snapshotSource = environment["AXOLOTY_SNAPSHOT_SOURCE"]
+            ?? "Tests/WireCompatibility/Fixtures"
+        let snapshotDestination = environment["AXOLOTY_SNAPSHOT_OUTPUT"]
+            ?? ".testing/release-snapshots"
         if hardware {
             let selectedDevice = environment["AXOLOTY_DEVICE"] ?? "/dev/ttyACM0"
             device = selectedDevice
             plan = AxolotyCheckPlan.checkpointHardware(
                 device: selectedDevice,
+                source: snapshotSource,
+                destination: snapshotDestination,
                 consumerEnvironment: consumerEnvironment
             )
         } else {
             device = nil
-            plan = AxolotyCheckPlan.checkpoint(consumerEnvironment: consumerEnvironment)
+            plan = AxolotyCheckPlan.checkpoint(
+                source: snapshotSource,
+                destination: snapshotDestination,
+                consumerEnvironment: consumerEnvironment
+            )
         }
 
         let gitCommitCommand = AxolotyCommandPlan(
@@ -634,7 +644,7 @@ public struct AxolotyCommandDispatcher: Sendable {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let timestamp = ISO8601DateFormatter().string(from: Date())
             let manifest = AxolotyCheckpointManifest(
-                releaseVersion: "0.2.0",
+                releaseVersion: Self.version,
                 gitCommit: gitCommit,
                 gitClean: gitStatus.isEmpty,
                 gitBranch: gitBranch,

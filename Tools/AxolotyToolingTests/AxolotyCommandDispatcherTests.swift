@@ -93,7 +93,7 @@ func versionCommandPrintsVersion() {
     let result = AxolotyCommandDispatcher().run(arguments: ["--version"])
 
     #expect(result.exitCode == 0)
-    #expect(result.standardOutput == "axoloty-tool 0.2.0")
+    #expect(result.standardOutput == "axoloty-tool 0.4.0")
     #expect(result.standardError.isEmpty)
 }
 
@@ -419,6 +419,8 @@ func wireVerifyBundleRunsSemanticAndHashVerification() throws {
 
 @Test
 func wireCaptureRunsEveryNodeThroughSupportedBridge() throws {
+    let clock = ContinuousClock()
+    let startedAt = clock.now
     let bridge = try BridgeCapabilityFixture()
     let runner = RecordingSequenceRunner()
     let dispatcher = AxolotyCommandDispatcher(
@@ -436,6 +438,7 @@ func wireCaptureRunsEveryNodeThroughSupportedBridge() throws {
     #expect(runner.commands.prefix(2).allSatisfy { $0.executionContext == .project })
     #expect(runner.commands.dropFirst(2).dropLast().allSatisfy { $0.executionContext == .host })
     #expect(runner.commands.last?.executionContext == .project)
+    #expect(clock.now - startedAt < .seconds(5))
 }
 
 @Test

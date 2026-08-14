@@ -1,6 +1,6 @@
 # Agent Instructions for Axoloty
 
-Canonical agent/contributor workflow. Current release: [Axoloty 0.2.0](https://github.com/phynics/axoloty/releases/tag/v0.2.0), development checkpoint. [ROADMAP.md](./docs/ROADMAP.md) = strategic summary. GitHub Issues = complete planning record.
+Canonical agent/contributor workflow. Current release: [Axoloty 0.4.0](https://github.com/phynics/axoloty/releases/tag/v0.4.0), development checkpoint. [ROADMAP.md](./docs/ROADMAP.md) = strategic summary. GitHub Issues = complete planning record.
 
 ## Build and test
 
