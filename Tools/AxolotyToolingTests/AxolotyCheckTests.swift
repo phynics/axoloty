@@ -715,6 +715,12 @@ final class BridgeCapabilityFixture {
     let socket: URL
     private let socketServer: Process
 
+    private func stopSocketServer() {
+        guard socketServer.isRunning else { return }
+        _ = kill(socketServer.processIdentifier, SIGKILL)
+        socketServer.waitUntilExit()
+    }
+
     var environment: [String: String] {
         [
             "AXOLOTY_DEVCONTAINER": "1",
@@ -750,17 +756,13 @@ final class BridgeCapabilityFixture {
             if (attributes?[.type] as? FileAttributeType) == .typeSocket { return }
             Thread.sleep(forTimeInterval: 0.01)
         }
-        socketServer.terminate()
-        socketServer.waitUntilExit()
+        stopSocketServer()
         try? FileManager.default.removeItem(at: directory)
         throw CocoaError(.fileNoSuchFile)
     }
 
     deinit {
-        if socketServer.isRunning {
-            socketServer.terminate()
-            socketServer.waitUntilExit()
-        }
+        stopSocketServer()
         try? FileManager.default.removeItem(at: directory)
     }
 }
