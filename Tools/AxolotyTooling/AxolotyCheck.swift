@@ -397,9 +397,17 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
         checkpoint(consumerEnvironment: [:])
     }
 
-    /// Creates the checkpoint plan with external-consumer settings forwarded
-    /// to the semantic-version consumer gate.
-    public static func checkpoint(consumerEnvironment: [String: String]) -> AxolotyCheckPlan {
+    /// Creates the checkpoint plan with release snapshot and external-consumer settings.
+    ///
+    /// - Parameters:
+    ///   - source: The wire fixture source directory.
+    ///   - destination: The generated release snapshot directory.
+    ///   - consumerEnvironment: Settings forwarded to the semantic-version consumer gate.
+    public static func checkpoint(
+        source: String = "Tests/WireCompatibility/Fixtures",
+        destination: String = ".testing/release-snapshots",
+        consumerEnvironment: [String: String]
+    ) -> AxolotyCheckPlan {
         let manifest: AxolotyCanonicalTestManifest
         let plan: AxolotyCheckPlan
         do {
@@ -414,7 +422,11 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
                 dependencies: node.dependencies,
                 command: AxolotyCommandPlan(
                     executable: node.command.executable,
-                    arguments: node.command.arguments,
+                    arguments: node.command.arguments.map { argument in
+                        argument == "${SOURCE}" ? source
+                            : argument == "${DESTINATION}" ? destination
+                            : argument
+                    },
                     environment: node.command.environment.merging(consumerEnvironment) { _, value in value },
                     executionContext: node.command.executionContext,
                     timeoutSeconds: node.command.timeoutSeconds
@@ -428,8 +440,16 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
     ///
     /// Runs the checkpoint plan, then requires an attached ESP32-C6 device
     /// and runs its smoke test. Fails if no device is present.
+    ///
+    /// - Parameters:
+    ///   - device: The embedded device path.
+    ///   - source: The wire fixture source directory.
+    ///   - destination: The generated release snapshot directory.
+    ///   - consumerEnvironment: Settings forwarded to the semantic-version consumer gate.
     public static func checkpointHardware(
         device: String = "/dev/ttyACM0",
+        source: String = "Tests/WireCompatibility/Fixtures",
+        destination: String = ".testing/release-snapshots",
         consumerEnvironment: [String: String] = [:]
     ) -> AxolotyCheckPlan {
         let manifest: AxolotyCanonicalTestManifest
@@ -446,7 +466,11 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
                 dependencies: node.dependencies,
                 command: AxolotyCommandPlan(
                     executable: node.command.executable,
-                    arguments: node.command.arguments,
+                    arguments: node.command.arguments.map { argument in
+                        argument == "${SOURCE}" ? source
+                            : argument == "${DESTINATION}" ? destination
+                            : argument
+                    },
                     environment: node.command.environment
                         .merging(consumerEnvironment) { _, value in value }
                         .merging(["EMBEDDED_DEVICE": device]) { _, value in value },

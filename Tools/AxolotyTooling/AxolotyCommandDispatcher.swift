@@ -582,16 +582,26 @@ public struct AxolotyCommandDispatcher: Sendable {
         ].reduce(into: [String: String]()) { values, name in
             values[name] = environment[name]
         }
+        let snapshotSource = environment["AXOLOTY_SNAPSHOT_SOURCE"]
+            ?? "Tests/WireCompatibility/Fixtures"
+        let snapshotDestination = environment["AXOLOTY_SNAPSHOT_OUTPUT"]
+            ?? ".testing/release-snapshots"
         if hardware {
             let selectedDevice = environment["AXOLOTY_DEVICE"] ?? "/dev/ttyACM0"
             device = selectedDevice
             plan = AxolotyCheckPlan.checkpointHardware(
                 device: selectedDevice,
+                source: snapshotSource,
+                destination: snapshotDestination,
                 consumerEnvironment: consumerEnvironment
             )
         } else {
             device = nil
-            plan = AxolotyCheckPlan.checkpoint(consumerEnvironment: consumerEnvironment)
+            plan = AxolotyCheckPlan.checkpoint(
+                source: snapshotSource,
+                destination: snapshotDestination,
+                consumerEnvironment: consumerEnvironment
+            )
         }
 
         let gitCommitCommand = AxolotyCommandPlan(

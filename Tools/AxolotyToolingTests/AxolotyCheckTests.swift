@@ -89,6 +89,36 @@ private func signalIsIgnored(
     return current == ignored
 }
 
+@Test
+func checkpointPlansResolveReleaseSnapshotPlaceholders() throws {
+    let source = "Tests/Fixtures/custom"
+    let destination = ".testing/custom-release"
+    let plans = [
+        AxolotyCheckPlan.checkpoint(
+            source: source,
+            destination: destination,
+            consumerEnvironment: [:]
+        ),
+        AxolotyCheckPlan.checkpointHardware(
+            source: source,
+            destination: destination
+        ),
+    ]
+
+    for plan in plans {
+        let generate = try #require(plan.nodes.first { $0.name.hasSuffix("release-snapshots-generate") })
+        let verify = try #require(plan.nodes.first { $0.name.hasSuffix("release-snapshots-verify") })
+        #expect(generate.command.arguments == [
+            "Tests/Support/release-snapshots.mjs", "generate", source, destination,
+        ])
+        #expect(verify.command.arguments == [
+            "Tests/Support/release-snapshots.mjs", "verify", destination,
+        ])
+        #expect(!generate.command.arguments.contains("${SOURCE}"))
+        #expect(!generate.command.arguments.contains("${DESTINATION}"))
+    }
+}
+
 private func processIsAlive(_ pid: Int32) -> Bool {
     kill(pid, 0) == 0
 }
