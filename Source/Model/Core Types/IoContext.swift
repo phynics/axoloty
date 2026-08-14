@@ -24,18 +24,9 @@ open class IoContext: CoatyObject {
     
     // MARK: - Attributes.
     
-    /// - Note: This comment refers to the property `name` of superclass CoatyObject,
-    /// since Swift does not support overridden comments
-    ///
-    /// A name that uniquely identifies this IO context *within a Coaty
-    /// application scope*.
-    ///
-    /// Use an expressive name that is shared by all agents defining IO nodes for
-    /// this context.
-    ///
-    /// - Remark: The context name must be a non-empty string that does not
-    /// contain the following characters: `NULL (U+0000)`, `# (U+0023)`, `+
-    /// (U+002B)`, `/ (U+002F)`.
+    // The inherited `name` identifies this IO context within a Coaty
+    // application scope. It must be non-empty and exclude `NULL (U+0000)`,
+    // `# (U+0023)`, `+ (U+002B)`, and `/ (U+002F)`.
     
     // MARK: - Initializers.
     public override init(coreType: CoreType,

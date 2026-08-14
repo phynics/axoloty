@@ -373,7 +373,7 @@ private func makeHostIngressClient(
     return (client, streams)
 }
 
-private struct HostIngressDelegate: CommunicationClientDelegate {
+private final class HostIngressDelegate: CommunicationClientDelegate {
     func didReceiveStart() {}
 }
 

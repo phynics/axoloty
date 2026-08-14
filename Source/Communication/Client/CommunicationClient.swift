@@ -12,7 +12,7 @@ import Foundation
 /// The callbacks are delivered on the client's transport callback context and
 /// are converted into manager-owned streams at the boundary. Implementations
 /// must keep callback work short and non-blocking.
-protocol CommunicationClientDelegate: Startable {
+protocol CommunicationClientDelegate: AnyObject, Startable {
     func didUpdateCommunicationState(_ state: CommunicationState)
     func didReceiveRawMQTTMessage(topic: String, payload: [UInt8])
     func didReceiveIoValue(topic: String, payload: [UInt8])

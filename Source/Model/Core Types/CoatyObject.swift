@@ -230,8 +230,6 @@ extension CoatyObject {
     ///   Retained for host-only model/filter compatibility; communication
     ///   publication uses AxolotyWire and does not call this property.
     public var json: String {
-        get {
-            return PayloadCoder.encodeForJSON(DynamicCoatyObject(value: self))
-        }
+        PayloadCoder.encodeForJSON(DynamicCoatyObject(value: self))
     }
 }

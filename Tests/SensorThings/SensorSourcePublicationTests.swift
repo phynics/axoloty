@@ -192,7 +192,7 @@ private final class PublicationTransport: CommunicationClient {
     @MainActor func unsubscribe(_ topic: String) async throws {}
 }
 
-private struct NoopCommunicationDelegate: CommunicationClientDelegate {
+private final class NoopCommunicationDelegate: CommunicationClientDelegate {
     func didReceiveStart() {}
 }
 

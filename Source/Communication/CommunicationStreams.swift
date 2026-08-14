@@ -26,11 +26,6 @@ internal struct AdvertiseKey: Hashable, Sendable {
 internal struct ResponseKey: Hashable, Sendable {
     let eventType: WireEventType
     let correlationId: String
-
-    init(eventType: WireEventType, correlationId: String) {
-        self.eventType = eventType
-        self.correlationId = correlationId
-    }
 }
 
 /// Holds all `Broadcast` and `BroadcastFamily` instances used by the
