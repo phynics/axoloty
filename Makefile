@@ -20,10 +20,12 @@ export BUILD_LOCK
 ifeq ($(AXOLOTY_DEVCONTAINER),1)
 BUILD_DIR ?= /workspace/.build
 SPM_CACHE_DIR ?= /workspace/.swiftpm-cache
+AXOLOTY_ESP_IDF_CCACHE_DIR ?= /workspace/.ccache
 AXOLOTY_DEVICE_LEASE_ROOT ?= /workspace/.build/device-leases
 else
 BUILD_DIR ?= $(BUILD_CACHE_ROOT)/worktrees/$(WORKTREE_NAME)/debug
 SPM_CACHE_DIR ?= $(HOME)/.cache/coaty-swift/swiftpm/$(CACHE_NAMESPACE)
+AXOLOTY_ESP_IDF_CCACHE_DIR ?= $(HOME)/.cache/axoloty/esp-idf-ccache
 AXOLOTY_DEVICE_LEASE_ROOT ?= $(BUILD_CACHE_ROOT)/device-leases
 endif
 COVERAGE_BUILD_DIR ?= $(BUILD_DIR)-coverage
@@ -34,7 +36,9 @@ SWIFT_LOCKED_ARGS := $(SWIFT_CACHE_ARGS) --disable-automatic-resolution
 COMMA := ,
 AXOLOTY_TOOL_ARGS ?= --help
 AXOLOTY_DEVICE ?= /dev/ttyACM0
+AXOLOTY_EMBEDDED_LINKER_CLEAN ?= 0
 export AXOLOTY_DEVICE_LEASE_ROOT
+export AXOLOTY_ESP_IDF_CCACHE_DIR
 AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES ?=
 AXOLOTY_TOOL_CONTAINER_ENV_VARS ?=
 AXOLOTY_CONSUMER_REPOSITORY_URL ?= https://github.com/phynics/axoloty.git
@@ -173,10 +177,12 @@ axoloty-tool: image
 	@AXOLOTY_HOST_RUNTIME_BRIDGE="$(AXOLOTY_HOST_RUNTIME_BRIDGE)" \
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
 	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+	AXOLOTY_ESP_IDF_CCACHE_DIR="$(AXOLOTY_ESP_IDF_CCACHE_DIR)" \
+	AXOLOTY_EMBEDDED_LINKER_CLEAN="$(AXOLOTY_EMBEDDED_LINKER_CLEAN)" \
 	AXOLOTY_DEVICE="$(AXOLOTY_DEVICE)" \
 	AXOLOTY_DEVICE_LEASE_ROOT="$(AXOLOTY_DEVICE_LEASE_ROOT)" \
 	CONTAINER_OPTIONAL_DEVICES="$(AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES)" \
-	CONTAINER_ENV_VARS="$(AXOLOTY_TOOL_CONTAINER_ENV_VARS) AXOLOTY_DEVICE_LEASE_ROOT" \
+	CONTAINER_ENV_VARS="$(AXOLOTY_TOOL_CONTAINER_ENV_VARS) AXOLOTY_DEVICE_LEASE_ROOT AXOLOTY_EMBEDDED_LINKER_CLEAN" \
 	.devcontainer/run.sh /opt/axoloty/bin/axoloty-tool $(AXOLOTY_TOOL_ARGS)
 
 serve-mqtt: image
@@ -360,6 +366,9 @@ test-support: resolve
 	Tests/Support/test-check-budget-manifest.sh
 	Tests/Support/test-build-embedded-swift.sh
 	Tests/Support/test-check-embedded-swift-linker.sh
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
+	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+		.devcontainer/run.sh /workspace/Tests/Support/test-esp-idf-ccache.sh
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
 	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
 	.devcontainer/run.sh /workspace/Tests/Support/test-check-embedded-swift.sh

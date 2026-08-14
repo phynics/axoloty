@@ -9,6 +9,7 @@ set -eu
 project_dir=${EMBEDDED_PROJECT_DIR:-/workspace/Embedded/swift}
 build_dir=${EMBEDDED_BUILD_DIR:-/workspace/.build/embedded-swift}
 export_dir=${EMBEDDED_EXPORT_DIR:-/workspace/.build-output/embedded-swift}
+root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 
 idf_export_log=$(mktemp)
 trap 'rm -f "$idf_export_log"' EXIT
@@ -26,14 +27,9 @@ rm -f "$idf_export_log"
 trap - EXIT
 cd "$project_dir"
 
-cache="$build_dir/CMakeCache.txt"
-active_python_root="${IDF_TOOLS_PATH:-${HOME:-/root}/.espressif}/python_env/"
-if [ -f "$cache" ] && grep -q 'PYTHON.*python_env' "$cache" && ! grep -Fq "$active_python_root" "$cache"; then
-    idf.py -B "$build_dir" fullclean
-fi
-if [ ! -f "$cache" ] || ! grep -q '^IDF_TARGET:STRING=esp32c6$' "$cache"; then
-    idf.py -B "$build_dir" set-target esp32c6
-fi
+. "$root/Tests/Support/embedded-build-cache.sh"
+axoloty_enable_esp_idf_ccache "$project_dir" esp32c6 firmware
+axoloty_prepare_esp_idf_build "$build_dir" esp32c6 0 firmware
 idf.py -B "$build_dir" build
 
 # The shared build cache is volatile. Keep the flashable firmware in a

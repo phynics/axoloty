@@ -99,6 +99,11 @@ per-worktree `BUILD_DIR` and are guarded by a process-aware `flock` unless isola
 evidence that must survive a run belongs under `.testing/`, never only in
 volatile `/tmp`.
 
+ESP-IDF C/C++ compilation uses the separately mounted
+`AXOLOTY_ESP_IDF_CCACHE_DIR`. Cache entries are namespaced by the pinned IDF
+revision, compiler identity, target, and build purpose, so worktrees reuse
+immutable outputs without sharing their mutable build directories.
+
 Required CI checks restore separate SwiftPM download and coverage-build caches.
 Only successful `main` runs save them, so pull requests can reuse compiled
 dependencies without writing trusted caches. Development image publishing uses

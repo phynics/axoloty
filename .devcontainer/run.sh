@@ -9,6 +9,7 @@ image=${IMAGE:-axoloty-dev}
 workdir=${WORKDIR:-/workspace}
 build_dir=${BUILD_DIR:-"$root_dir/.build"}
 spm_cache_dir=${SPM_CACHE_DIR:-"${HOME}/.cache/coaty-swift/swiftpm/swift-6.3-linux"}
+ccache_dir=${AXOLOTY_ESP_IDF_CCACHE_DIR:-"${HOME}/.cache/axoloty/esp-idf-ccache"}
 build_lock=${BUILD_LOCK:-1}
 lock_timeout=${BUILD_LOCK_TIMEOUT:-300}
 lock_stale_after=${BUILD_LOCK_STALE_SECONDS:-3600}
@@ -695,6 +696,8 @@ fi
 
 mkdir -p "$spm_cache_dir"
 spm_cache_dir=$(cd "$spm_cache_dir" && pwd)
+mkdir -p "$ccache_dir"
+ccache_dir=$(cd "$ccache_dir" && pwd)
 mount_suffix=
 selinux_labeling_active=0
 if [ "${CONTAINER_MOUNT_SUFFIX+x}" = x ]; then
@@ -714,6 +717,16 @@ common_git_mount=""
 if [ -n "$common_git_dir" ]; then
     common_git_mount="$common_git_dir:$common_git_dir$mount_suffix"
 fi
+if [ "${AXOLOTY_HOST_RUNTIME_BRIDGE:-0}" = 1 ]; then
+    ccache_container_dir=$ccache_dir
+else
+    ccache_container_dir="$bridge_workdir/.ccache"
+fi
+ccache_mount_suffix=""
+if [ "$selinux_labeling_active" -eq 1 ]; then
+    ccache_mount_suffix=:z
+fi
+ccache_mount="$ccache_dir:$ccache_container_dir$ccache_mount_suffix"
 device_lease_mount=""
 device_lease_env=""
 device_lease_root=""
@@ -910,6 +923,7 @@ create_container() {
                 -e "WORKDIR=$root_dir" \
                 -e "BUILD_DIR=$build_dir" \
                 -e "SPM_CACHE_DIR=$spm_cache_dir" \
+                -e "AXOLOTY_ESP_IDF_CCACHE_DIR=$ccache_container_dir" \
                 -e "REPOSITORY_NAME=$repository_name" \
                 -e "TMPDIR=$bridge_tmpdir" \
                 -e "WIRE_RUN_ID=$bridge_run_id" \
@@ -917,6 +931,7 @@ create_container() {
                 -v "$bridge_socket:$bridge_socket" \
                 -v "$build_dir:$build_dir" \
                 -v "$spm_cache_dir:$spm_cache_dir" \
+                -v "$ccache_mount" \
                 -v "$common_git_mount" \
                 -v "$device_lease_mount" \
                 -e "$device_lease_env" \
@@ -942,6 +957,7 @@ create_container() {
                 -e "WORKDIR=$root_dir" \
                 -e "BUILD_DIR=$build_dir" \
                 -e "SPM_CACHE_DIR=$spm_cache_dir" \
+                -e "AXOLOTY_ESP_IDF_CCACHE_DIR=$ccache_container_dir" \
                 -e "REPOSITORY_NAME=$repository_name" \
                 -e "TMPDIR=$bridge_tmpdir" \
                 -e "WIRE_RUN_ID=$bridge_run_id" \
@@ -949,6 +965,7 @@ create_container() {
                 -v "$bridge_socket:$bridge_socket" \
                 -v "$build_dir:$build_dir" \
                 -v "$spm_cache_dir:$spm_cache_dir" \
+                -v "$ccache_mount" \
                 -v "$common_git_mount" \
                 -v "$root_dir:$bridge_workdir$mount_suffix" \
                 -w "$bridge_workdir" \
@@ -967,12 +984,14 @@ create_container() {
             $security_opts $device_opts $privileged_opt $userns_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
             -e AXOLOTY_DEVCONTAINER=1 \
             -e "AXOLOTY_RUN_ID=$container_run_id" \
+            -e "AXOLOTY_ESP_IDF_CCACHE_DIR=$ccache_container_dir" \
             -v "$device_lease_mount" \
             -e "$device_lease_env" \
             -v "$root_dir:$bridge_workdir$mount_suffix" \
             -v "$common_git_mount" \
             -v "$build_dir:$bridge_workdir/.build$mount_suffix" \
             -v "$spm_cache_dir:$bridge_workdir/.swiftpm-cache$mount_suffix" \
+            -v "$ccache_mount" \
             -w "$bridge_workdir" \
             --name "$container_name" \
             --cidfile "$container_cidfile" \
@@ -988,10 +1007,12 @@ create_container() {
             $security_opts $device_opts $privileged_opt $userns_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
             -e AXOLOTY_DEVCONTAINER=1 \
             -e "AXOLOTY_RUN_ID=$container_run_id" \
+            -e "AXOLOTY_ESP_IDF_CCACHE_DIR=$ccache_container_dir" \
             -v "$root_dir:$bridge_workdir$mount_suffix" \
             -v "$common_git_mount" \
             -v "$build_dir:$bridge_workdir/.build$mount_suffix" \
             -v "$spm_cache_dir:$bridge_workdir/.swiftpm-cache$mount_suffix" \
+            -v "$ccache_mount" \
             -w "$bridge_workdir" \
             --name "$container_name" \
             --cidfile "$container_cidfile" \

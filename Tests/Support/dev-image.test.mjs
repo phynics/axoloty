@@ -27,6 +27,11 @@ test("the image gives its non-root ESP user a writable stable home", () => {
   assert.match(dockerfile, /safe\.directory \/opt\/esp\/idf\/components\/openthread\/openthread/);
 });
 
+test("the image includes ESP-IDF's supported compiler cache", () => {
+  assert.match(dockerfile, /ARG CCACHE_VERSION=4\.5\.1-1/);
+  assert.match(dockerfile, /"ccache=\$\{CCACHE_VERSION\}"/);
+});
+
 test("image freshness is keyed by immutable inputs and can skip a current image", () => {
   assert.match(inputs, /paths=\(/);
   for (const mutablePath of ["Package.swift", "Package.resolved", "Packages", "Source", "Tests", "Benchmarks", "Tools"]) {
@@ -74,6 +79,7 @@ test("image is a no-op when Make runs inside the development container", () => {
 test("nested container Make uses mounted build and SwiftPM cache paths", () => {
   const environment = { ...process.env };
   delete environment.AXOLOTY_DEVICE_LEASE_ROOT;
+  delete environment.AXOLOTY_ESP_IDF_CCACHE_DIR;
   delete environment.BUILD_DIR;
   delete environment.SPM_CACHE_DIR;
 
@@ -91,6 +97,7 @@ test("nested container Make uses mounted build and SwiftPM cache paths", () => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /BUILD_DIR="\/workspace\/.build"/);
   assert.match(result.stdout, /SPM_CACHE_DIR="\/workspace\/.swiftpm-cache"/);
+  assert.match(result.stdout, /AXOLOTY_ESP_IDF_CCACHE_DIR="\/workspace\/.ccache"/);
   assert.match(result.stdout, /AXOLOTY_DEVICE_LEASE_ROOT="\/workspace\/.build\/device-leases"/);
   assert.doesNotMatch(result.stdout, /\/tmp\/coaty-swift-build/);
 });
@@ -100,6 +107,7 @@ test("nested container Make preserves explicit mounted path overrides", () => {
   delete environment.BUILD_DIR;
   delete environment.SPM_CACHE_DIR;
   delete environment.AXOLOTY_DEVICE_LEASE_ROOT;
+  delete environment.AXOLOTY_ESP_IDF_CCACHE_DIR;
 
   const result = spawnSync("make", [
     "--no-print-directory",
@@ -108,6 +116,7 @@ test("nested container Make preserves explicit mounted path overrides", () => {
     "AXOLOTY_TOOL_ARGS=--help",
     "BUILD_DIR=/custom/build",
     "SPM_CACHE_DIR=/custom/swiftpm-cache",
+    "AXOLOTY_ESP_IDF_CCACHE_DIR=/custom/ccache",
     "AXOLOTY_DEVICE_LEASE_ROOT=/custom/device-leases",
   ], {
     cwd: ".",
@@ -123,6 +132,7 @@ test("nested container Make preserves explicit mounted path overrides", () => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /BUILD_DIR="\/custom\/build"/);
   assert.match(result.stdout, /SPM_CACHE_DIR="\/custom\/swiftpm-cache"/);
+  assert.match(result.stdout, /AXOLOTY_ESP_IDF_CCACHE_DIR="\/custom\/ccache"/);
   assert.match(result.stdout, /AXOLOTY_DEVICE_LEASE_ROOT="\/custom\/device-leases"/);
   assert.doesNotMatch(result.stdout, /\/workspace\/(?:\.build|\.swiftpm-cache)/);
 });
