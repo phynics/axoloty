@@ -50,14 +50,12 @@ public struct TopicView {
     private mutating func parseLevels() {
         var start = 0
         var count = 0
-        for i in 0..<byteCount {
-            if bytes.load(fromByteOffset: i, as: UInt8.self) == 0x2F { // '/'
-                if count < 7 {
-                    setLevel(count, offset: start, length: i - start)
-                }
-                count += 1
-                start = i + 1
+        for i in 0..<byteCount where bytes.load(fromByteOffset: i, as: UInt8.self) == 0x2F {
+            if count < 7 {
+                setLevel(count, offset: start, length: i - start)
             }
+            count += 1
+            start = i + 1
         }
         // Last segment after final '/'
         if start < byteCount && count < 7 {
@@ -227,20 +225,8 @@ public enum WireEventType: Sendable {
     ///
     /// Returns nil if the slice does not match any known wire code.
     public init?(wireCode slice: ByteSlice) {
-        if slice.equals("ADV") { self = .advertise }
-        else if slice.equals("DAD") { self = .deadvertise }
-        else if slice.equals("CHN") { self = .channel }
-        else if slice.equals("ASC") { self = .associate }
-        else if slice.equals("IOV") { self = .ioValue }
-        else if slice.equals("DSC") { self = .discover }
-        else if slice.equals("RSV") { self = .resolve }
-        else if slice.equals("QRY") { self = .query }
-        else if slice.equals("RTV") { self = .retrieve }
-        else if slice.equals("UPD") { self = .update }
-        else if slice.equals("CPL") { self = .complete }
-        else if slice.equals("CLL") { self = .call }
-        else if slice.equals("RTN") { self = .returnEvent }
-        else { return nil }
+        guard let eventType = Self.parseWireCode(slice) else { return nil }
+        self = eventType
     }
 
     /// Returns `true` for fire-and-forget event types that carry no
@@ -252,6 +238,87 @@ public enum WireEventType: Sendable {
         default:
             return false
         }
+    }
+
+    private static func parseWireCode(_ slice: ByteSlice) -> WireEventType? {
+        guard slice.length == 3, let first = slice.byte(at: 0) else { return nil }
+        switch first {
+        case 0x41: return parseA(slice)
+        case 0x43: return parseC(slice)
+        case 0x44: return parseD(slice)
+        case 0x49: return slice.equals("IOV") ? .ioValue : nil
+        case 0x51: return slice.equals("QRY") ? .query : nil
+        case 0x52: return parseR(slice)
+        case 0x55: return slice.equals("UPD") ? .update : nil
+        default: return nil
+        }
+    }
+
+    private static func parseA(_ slice: ByteSlice) -> WireEventType? {
+        if slice.equals("ADV") { return .advertise }
+        if slice.equals("ASC") { return .associate }
+        return nil
+    }
+
+    private static func parseC(_ slice: ByteSlice) -> WireEventType? {
+        if slice.equals("CHN") { return .channel }
+        if slice.equals("CPL") { return .complete }
+        if slice.equals("CLL") { return .call }
+        return nil
+    }
+
+    private static func parseD(_ slice: ByteSlice) -> WireEventType? {
+        if slice.equals("DAD") { return .deadvertise }
+        if slice.equals("DSC") { return .discover }
+        return nil
+    }
+
+    private static func parseR(_ slice: ByteSlice) -> WireEventType? {
+        if slice.equals("RSV") { return .resolve }
+        if slice.equals("RTV") { return .retrieve }
+        if slice.equals("RTN") { return .returnEvent }
+        return nil
+    }
+
+    private static func parseRawValue(_ rawValue: String) -> WireEventType? {
+        guard rawValue.utf8.count == 3, let first = rawValue.utf8.first else { return nil }
+        switch first {
+        case 0x41: return parseRawA(rawValue)
+        case 0x43: return parseRawC(rawValue)
+        case 0x44: return parseRawD(rawValue)
+        case 0x49: return rawValue == "IOV" ? .ioValue : nil
+        case 0x51: return rawValue == "QRY" ? .query : nil
+        case 0x52: return parseRawR(rawValue)
+        case 0x55: return rawValue == "UPD" ? .update : nil
+        default:
+            return nil
+        }
+    }
+
+    private static func parseRawA(_ value: String) -> WireEventType? {
+        if value == "ADV" { return .advertise }
+        if value == "ASC" { return .associate }
+        return nil
+    }
+
+    private static func parseRawC(_ value: String) -> WireEventType? {
+        if value == "CHN" { return .channel }
+        if value == "CPL" { return .complete }
+        if value == "CLL" { return .call }
+        return nil
+    }
+
+    private static func parseRawD(_ value: String) -> WireEventType? {
+        if value == "DAD" { return .deadvertise }
+        if value == "DSC" { return .discover }
+        return nil
+    }
+
+    private static func parseRawR(_ value: String) -> WireEventType? {
+        if value == "RSV" { return .resolve }
+        if value == "RTV" { return .retrieve }
+        if value == "RTN" { return .returnEvent }
+        return nil
     }
 }
 
@@ -282,22 +349,8 @@ extension WireEventType: RawRepresentable {
     }
 
     public init?(rawValue: String) {
-        switch rawValue {
-        case "ADV": self = .advertise
-        case "DAD": self = .deadvertise
-        case "CHN": self = .channel
-        case "ASC": self = .associate
-        case "IOV": self = .ioValue
-        case "DSC": self = .discover
-        case "RSV": self = .resolve
-        case "QRY": self = .query
-        case "RTV": self = .retrieve
-        case "UPD": self = .update
-        case "CPL": self = .complete
-        case "CLL": self = .call
-        case "RTN": self = .returnEvent
-        default: return nil
-        }
+        guard let eventType = Self.parseRawValue(rawValue) else { return nil }
+        self = eventType
     }
 }
 #endif
@@ -305,12 +358,10 @@ extension WireEventType: RawRepresentable {
 extension ByteSlice {
     /// Finds a byte value and returns the sub-slice after it, or nil.
     func findByte(_ target: UInt8) -> ByteSlice? {
-        for i in 0..<length {
-            if pointer.load(fromByteOffset: i, as: UInt8.self) == target {
-                let remaining = length - i - 1
-                guard remaining > 0 else { return ByteSlice(pointer: pointer.advanced(by: i + 1), length: 0) }
-                return ByteSlice(pointer: pointer.advanced(by: i + 1), length: remaining)
-            }
+        for i in 0..<length where pointer.load(fromByteOffset: i, as: UInt8.self) == target {
+            let remaining = length - i - 1
+            guard remaining > 0 else { return ByteSlice(pointer: pointer.advanced(by: i + 1), length: 0) }
+            return ByteSlice(pointer: pointer.advanced(by: i + 1), length: remaining)
         }
         return nil
     }

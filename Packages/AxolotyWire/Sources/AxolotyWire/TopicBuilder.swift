@@ -79,23 +79,7 @@ public struct TopicBuilder {
     public mutating func writeEventType(
         _ type: WireEventType, filter: ByteSlice? = nil
     ) throws(WireEncodeError) {
-        let code: StaticString
-        switch type {
-        case .advertise: code = "ADV"
-        case .deadvertise: code = "DAD"
-        case .channel: code = "CHN"
-        case .associate: code = "ASC"
-        case .ioValue: code = "IOV"
-        case .discover: code = "DSC"
-        case .resolve: code = "RSV"
-        case .query: code = "QRY"
-        case .retrieve: code = "RTV"
-        case .update: code = "UPD"
-        case .complete: code = "CPL"
-        case .call: code = "CLL"
-        case .returnEvent: code = "RTN"
-        }
-        try writeBytes(code)
+        try writeBytes(type.wireCode)
         if let filter {
             try writeByte(0x3A) // ':'
             for i in 0..<filter.length {
