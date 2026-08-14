@@ -196,7 +196,8 @@ test("tool launchers use the isolated Tools package and scratch directory", () =
 });
 
 test("CI reuses stable, bounded Swift build cache namespaces", () => {
-  assert.match(ciWorkflow, /SWIFT_BUILD_CACHE_PREFIX="swift-build-v3-compiler-6\.3-linux-/);
+  assert.match(ciWorkflow, /SWIFT_BUILD_CACHE_PREFIX="swift-build-v3-compiler-6\.3-linux-\$\{image_identity\}-/);
+  assert.match(ciWorkflow, /image_identity=\$[^ ]+.*\.buildInputsSha256.*\.devcontainer\/image-lock\.json/);
   assert.match(ciWorkflow, /SWIFT_BUILD_CACHE_KEY=\$\{SWIFT_BUILD_CACHE_PREFIX\}\$\{GITHUB_SHA\}/);
   const compilerCachePaths = [
     ".build/ci/build.db",
