@@ -137,15 +137,37 @@ AXOLOTY_TOOLING_CAPTURE="$direct_tooling_capture" AXOLOTY_DEVCONTAINER=1 \
 [[ "$(cat "$direct_tooling_capture")" = "$build_dir/tooling" ]]
 
 # A second operation waits for the owner instead of touching the shared cache.
-( exec 8>"$lock_file"; flock 8; sleep 1 ) &
+# Synchronize on explicit markers: integer wall-clock sampling made this test
+# fail whenever a sub-second wait crossed neither side of a one-second tick.
+holder_ready="$TEMP_DIR/build-lock-holder.ready"
+holder_release="$TEMP_DIR/build-lock-holder.release"
+waiter_completed="$TEMP_DIR/build-lock-waiter.completed"
+waiter_status="$TEMP_DIR/build-lock-waiter.status"
+( exec 8>"$lock_file"; flock 8; : > "$holder_ready"; while [ ! -e "$holder_release" ]; do sleep 0.05; done ) &
 holder=$!
-sleep 0.1
-    start=$(date +%s)
-AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" "$ROOT_DIR/.devcontainer/run.sh" true
-    elapsed=$(( $(date +%s) - start ))
-
-[[ "$elapsed" -ge 1 ]]
+wait_for_path "$holder_ready" 5
+(
+    set +e
+    AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" "$ROOT_DIR/.devcontainer/run.sh" true
+    waiter_exit=$?
+    printf '%s\n' "$waiter_exit" > "$waiter_status"
+    if [ "$waiter_exit" -eq 0 ]; then
+        : > "$waiter_completed"
+    fi
+    exit "$waiter_exit"
+) &
+waiter=$!
+sleep 0.2
+if [ -e "$waiter_completed" ] || ! kill -0 "$waiter" 2>/dev/null; then
+    echo "build-lock waiter completed before the owner released the lock" >&2
+    exit 1
+fi
+: > "$holder_release"
 wait_bounded "$holder" build-lock-holder 5
+wait_bounded "$waiter" build-lock-waiter 5
+[[ -e "$waiter_status" ]]
+[[ "$(cat "$waiter_status")" -eq 0 ]]
+[[ -e "$waiter_completed" ]]
 [[ ! -e "$lock_owner" ]]
 
 # Signal forwarding must reach an executable descendant, not only the shell
