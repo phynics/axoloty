@@ -61,44 +61,7 @@ public struct UUID16: Equatable, Hashable, Sendable {
     /// Returns nil if the input is not a valid UUID string.
     public init?(parsing ascii: ByteSlice) {
         guard ascii.length == 36 else { return nil }
-        var raw: (
-            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
-        ) = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-        var idx = 0
-        var i = 0
-        while i < 36 {
-            if i == 8 || i == 13 || i == 18 || i == 23 {
-                guard let b = ascii.byte(at: i), b == 0x2D else { return nil }
-                i += 1
-            } else {
-                guard let high = ascii.byte(at: i).flatMap(UUID16.hexDigit) else { return nil }
-                guard let low = ascii.byte(at: i + 1).flatMap(UUID16.hexDigit) else { return nil }
-                let byte = (high << 4) | low
-                switch idx {
-                case 0: raw.0 = byte
-                case 1: raw.1 = byte
-                case 2: raw.2 = byte
-                case 3: raw.3 = byte
-                case 4: raw.4 = byte
-                case 5: raw.5 = byte
-                case 6: raw.6 = byte
-                case 7: raw.7 = byte
-                case 8: raw.8 = byte
-                case 9: raw.9 = byte
-                case 10: raw.10 = byte
-                case 11: raw.11 = byte
-                case 12: raw.12 = byte
-                case 13: raw.13 = byte
-                case 14: raw.14 = byte
-                case 15: raw.15 = byte
-                default: return nil
-                }
-                idx += 1
-                i += 2
-            }
-        }
-        guard idx == 16 else { return nil }
+        guard let raw = Self.parseASCII({ ascii.byte(at: $0) }) else { return nil }
         self.init(bytes: raw)
     }
 
@@ -111,47 +74,48 @@ public struct UUID16: Equatable, Hashable, Sendable {
     public init?(parsing string: String) {
         let utf8 = Array(string.utf8)
         guard utf8.count == 36 else { return nil }
-        var raw: (
-            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
-        ) = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-        var idx = 0
-        var i = 0
-        while i < 36 {
-            if i == 8 || i == 13 || i == 18 || i == 23 {
-                guard utf8[i] == 0x2D else { return nil }
-                i += 1
-            } else {
-                guard let high = UUID16.hexDigit(utf8[i]) else { return nil }
-                guard let low = UUID16.hexDigit(utf8[i + 1]) else { return nil }
-                let byte = (high << 4) | low
-                switch idx {
-                case 0: raw.0 = byte
-                case 1: raw.1 = byte
-                case 2: raw.2 = byte
-                case 3: raw.3 = byte
-                case 4: raw.4 = byte
-                case 5: raw.5 = byte
-                case 6: raw.6 = byte
-                case 7: raw.7 = byte
-                case 8: raw.8 = byte
-                case 9: raw.9 = byte
-                case 10: raw.10 = byte
-                case 11: raw.11 = byte
-                case 12: raw.12 = byte
-                case 13: raw.13 = byte
-                case 14: raw.14 = byte
-                case 15: raw.15 = byte
-                default: return nil
-                }
-                idx += 1
-                i += 2
-            }
-        }
-        guard idx == 16 else { return nil }
+        guard let raw = Self.parseASCII({ index in
+            index < utf8.count ? utf8[index] : nil
+        }) else { return nil }
         self.init(bytes: raw)
     }
     #endif
+
+    private typealias Storage = (
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+    )
+
+    private static func parseASCII(_ byteAt: (Int) -> UInt8?) -> Storage? {
+        var raw: Storage = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+        var index = 0
+        var byteOffset = 0
+        while byteOffset < 36 {
+            if isUUIDSeparator(byteOffset) {
+                guard byteAt(byteOffset) == 0x2D else { return nil }
+                byteOffset += 1
+                continue
+            }
+            guard let high = byteAt(byteOffset).flatMap(hexDigit),
+                  let low = byteAt(byteOffset + 1).flatMap(hexDigit),
+                  store((high << 4) | low, at: index, in: &raw) else { return nil }
+            index += 1
+            byteOffset += 2
+        }
+        return index == 16 ? raw : nil
+    }
+
+    private static func isUUIDSeparator(_ offset: Int) -> Bool {
+        offset == 8 || offset == 13 || offset == 18 || offset == 23
+    }
+
+    private static func store(_ byte: UInt8, at index: Int, in storage: inout Storage) -> Bool {
+        guard index < 16 else { return false }
+        withUnsafeMutableBytes(of: &storage) { bytes in
+            bytes[index] = byte
+        }
+        return true
+    }
 
     @inline(__always)
     private static func hexDigit(_ byte: UInt8) -> UInt8? {

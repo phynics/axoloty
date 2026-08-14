@@ -85,7 +85,7 @@ public struct ByteSlice: Equatable, Hashable {
             start: pointer.assumingMemoryBound(to: UInt8.self),
             count: length
         )
-        return String(decoding: buf, as: UTF8.self)
+        return String(decoding: buf, as: Unicode.UTF8.self)
     }
     #endif
 
