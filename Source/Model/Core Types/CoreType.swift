@@ -40,66 +40,44 @@ public enum CoreType: String, Codable, Sendable {
         case Snapshot = "coaty.Snapshot"
     }
     
+    private static let classTypes: [CoreType: CoatyObject.Type] = [
+        .CoatyObject: Axoloty.CoatyObject.self,
+        .User: Axoloty.User.self,
+        .Annotation: Axoloty.Annotation.self,
+        .Task: Axoloty.CoatyTask.self,
+        .IoSource: Axoloty.IoSource.self,
+        .IoActor: Axoloty.IoActor.self,
+        .IoNode: Axoloty.IoNode.self,
+        .IoContext: Axoloty.IoContext.self,
+        .Identity: Axoloty.Identity.self,
+        .Log: Axoloty.Log.self,
+        .Location: Axoloty.Location.self,
+        .Snapshot: Axoloty.Snapshot.self,
+    ]
+
     static func getClassType(forCoreType: CoreType) -> CoatyObject.Type {
-        switch forCoreType {
-        case .CoatyObject: 
-            return Axoloty.CoatyObject.self
-        case .User: 
-            return Axoloty.User.self
-        case .Annotation: 
-            return Axoloty.Annotation.self
-        case .Task: 
-            return Axoloty.CoatyTask.self
-        case .IoSource: 
-            return Axoloty.IoSource.self
-        case .IoActor: 
-            return Axoloty.IoActor.self
-        case .IoNode: 
-            return Axoloty.IoNode.self
-        case .IoContext: 
-            return Axoloty.IoContext.self
-        case .Identity: 
-            return Axoloty.Identity.self
-        case .Log: 
-            return Axoloty.Log.self
-        case .Location: 
-            return Axoloty.Location.self
-        case .Snapshot: 
-            return Axoloty.Snapshot.self
-        }
+        classTypes[forCoreType]!
     }
 
     /// Gets the core type for the given object type, if the object type corresponds
     /// to a Coaty core type.
+    private static let coreTypesByObjectType: [String: CoreType] = [
+        ObjectType.CoatyObject.rawValue: .CoatyObject,
+        ObjectType.User.rawValue: .User,
+        ObjectType.Annotation.rawValue: .Annotation,
+        ObjectType.Task.rawValue: .Task,
+        ObjectType.IoSource.rawValue: .IoSource,
+        ObjectType.IoActor.rawValue: .IoActor,
+        ObjectType.IoNode.rawValue: .IoNode,
+        ObjectType.IoContext.rawValue: .IoContext,
+        ObjectType.Identity.rawValue: .Identity,
+        ObjectType.Log.rawValue: .Log,
+        ObjectType.Location.rawValue: .Location,
+        ObjectType.Snapshot.rawValue: .Snapshot,
+    ]
+
     static func getCoreType(forObjectType: String) -> CoreType? {
-        switch forObjectType {
-        case ObjectType.CoatyObject.rawValue: 
-            return self.CoatyObject
-        case ObjectType.User.rawValue: 
-            return self.User
-        case ObjectType.Annotation.rawValue: 
-            return self.Annotation
-        case ObjectType.Task.rawValue: 
-            return self.Task
-        case ObjectType.IoSource.rawValue: 
-            return self.IoSource
-        case ObjectType.IoActor.rawValue: 
-            return self.IoActor
-        case ObjectType.IoNode.rawValue: 
-            return self.IoNode
-        case ObjectType.IoContext.rawValue: 
-            return self.IoContext
-        case ObjectType.Identity.rawValue: 
-            return self.Identity
-        case ObjectType.Log.rawValue: 
-            return self.Log
-        case ObjectType.Location.rawValue: 
-            return self.Location
-        case ObjectType.Snapshot.rawValue: 
-            return self.Snapshot
-        default: 
-            return nil
-        }
+        coreTypesByObjectType[forObjectType]
     }
     
     /// Registers all Coaty core object types.
