@@ -64,9 +64,15 @@ jobs:
             swiftpm-6.3-linux-
 
       # Keep this separate from the download cache. Cache only compiler
-      # intermediates and planner metadata: final binaries, indexes, fuzz
-      # output, tooling, and ESP-IDF trees made the old archive 2.69 GB and
-      # could exhaust a runner before Podman started the test container.
+      # intermediates and planner metadata. The planner records (build.db and
+      # the per-module *.build trees) are restored across commits via
+      # restore-keys, so they must be paired with the matching index store:
+      # otherwise SwiftPM treats generated files such as
+      # resource_bundle_accessor.swift as up-to-date from the restored .o and
+      # skips regenerating their index units, then the debug AST wrap step
+      # fatals on the missing unit. Final binaries, fuzz output, tooling, and
+      # ESP-IDF trees made the old archive 2.69 GB and could exhaust a runner
+      # before Podman started the test container.
       - name: Restore Swift compiler cache
         id: swift_build_cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -81,6 +87,7 @@ jobs:
             .build/ci/repositories
             .build/ci/x86_64-unknown-linux-gnu/debug/*.build
             .build/ci/x86_64-unknown-linux-gnu/debug/description.json
+            .build/ci/x86_64-unknown-linux-gnu/debug/index
             .build/ci/x86_64-unknown-linux-gnu/debug/Modules
             .build/ci/x86_64-unknown-linux-gnu/debug/ModuleCache
           key: ${{ env.SWIFT_BUILD_CACHE_KEY }}
@@ -140,6 +147,7 @@ jobs:
             .build/ci/repositories
             .build/ci/x86_64-unknown-linux-gnu/debug/*.build
             .build/ci/x86_64-unknown-linux-gnu/debug/description.json
+            .build/ci/x86_64-unknown-linux-gnu/debug/index
             .build/ci/x86_64-unknown-linux-gnu/debug/Modules
             .build/ci/x86_64-unknown-linux-gnu/debug/ModuleCache
           key: ${{ env.SWIFT_BUILD_CACHE_KEY }}
