@@ -129,35 +129,6 @@ public enum ObjectMatcher {
     
     /// - Note: Internal For internal use in framework only.
     ///
-    /// Gets the value of a given property for the given object. Property names may be
-    /// specified to retrieve the value of a nested property of a subordinate object.
-    ///
-    /// - Parameters:
-    ///     - propNames property names as an array of property names (already in a correct format)
-    ///     - obj: a Coaty object
-    /// - Returns: the value of the nested properties of the given object
-
-    
-    /// - Note: Internal For internal use in framework only.
-    ///
-    /// Recursively list all properties of an AnyObject.
-    ///
-    /// - Parameters:
-    ///     - structure: any object from which properties can be extracted (either a CoatyObject or Dictionary)
-    /// - Returns: a tuple list that contains all attributes and their values representes as Any.
-
-    
-    /// - Note: Internal For internal use in framework only.
-    ///
-    /// Recursively list all properties of a Swift object.
-    ///
-    /// - Parameters:
-    ///     - mirror: a mirror of an object from which properties are to be extracted.
-    /// - Returns: a tuple list that contains all attributes and their values representes as Any.
-
-    
-    /// - Note: Internal For internal use in framework only.
-    ///
     /// Check if a coaty object satisfies the condition.
     ///
     /// - Parameters:
@@ -171,50 +142,94 @@ public enum ObjectMatcher {
             return v == nil
         case .exists:
             return v != nil
-        case .lessThan(let v1):
-            guard let v else { return false }
-            return v < v1
-        case .lessThanOrEqual(let v1):
-            guard let v else { return false }
-            return v <= v1
-        case .greaterThan(let v1):
-            guard let v else { return false }
-            return v > v1
-        case .greaterThanOrEqual(let v1):
-            guard let v else { return false }
-            return v >= v1
-        case .equals(let v1):
-            guard let v else { return false }
-            return v == v1
-        case .notEquals(let v1):
-            guard let v else { return false }
-            return v != v1
-        case .between(let v1, let v2):
-            guard let v else { return false }
-            let lower = v1 > v2 ? v2 : v1
-            let upper = v1 > v2 ? v1 : v2
-            return v >= lower && v <= upper
-        case .notBetween(let v1, let v2):
-            guard let v else { return false }
-            let lower = v1 > v2 ? v2 : v1
-            let upper = v1 > v2 ? v1 : v2
-            return !(v >= lower && v <= upper)
-        case .like(_, let matcher):
-            guard let v, case .string(let stringValue) = v else { return false }
-            guard let regex = matcher else { return false }
-            return regex._matches(stringValue)
-        case .contains(let v1):
-            guard let v else { return false }
-            return FilterOperand.deepContains(v, v1)
-        case .notContains(let v1):
-            guard let v else { return false }
-            return !FilterOperand.deepContains(v, v1)
+        case .lessThan, .lessThanOrEqual, .greaterThan, .greaterThanOrEqual,
+             .equals, .notEquals, .between, .notBetween, .like:
+            return matchesComparison(v, expression: condition.expression)
+        case .contains, .notContains:
+            return matchesContainment(v, expression: condition.expression)
+        case .valuesIn, .valuesNotIn:
+            return matchesMembership(v, expression: condition.expression)
+        }
+    }
+
+    private static func matchesComparison(
+        _ value: FilterOperand?, expression: ObjectFilterExpression
+    ) -> Bool {
+        guard let value else { return false }
+        switch expression {
+        case .lessThan(let operand):
+            return value < operand
+        case .lessThanOrEqual(let operand):
+            return value <= operand
+        case .greaterThan(let operand):
+            return value > operand
+        case .greaterThanOrEqual(let operand):
+            return value >= operand
+        case .equals(let operand):
+            return value == operand
+        case .notEquals(let operand):
+            return value != operand
+        case .between, .notBetween:
+            return matchesRange(value, expression: expression)
+        case .like:
+            return matchesLike(value, expression: expression)
+        default:
+            return false
+        }
+    }
+
+    private static func matchesRange(
+        _ value: FilterOperand, expression: ObjectFilterExpression
+    ) -> Bool {
+        let (first, second, isNegated): (FilterOperand, FilterOperand, Bool)
+        switch expression {
+        case .between(let lower, let upper):
+            (first, second, isNegated) = (lower, upper, false)
+        case .notBetween(let lower, let upper):
+            (first, second, isNegated) = (lower, upper, true)
+        default:
+            return false
+        }
+        let lower = first > second ? second : first
+        let upper = first > second ? first : second
+        let matches = value >= lower && value <= upper
+        return isNegated ? !matches : matches
+    }
+
+    private static func matchesLike(
+        _ value: FilterOperand, expression: ObjectFilterExpression
+    ) -> Bool {
+        guard case .string(let stringValue) = value,
+              case .like(_, let matcher) = expression,
+              let matcher else { return false }
+        return matcher._matches(stringValue)
+    }
+
+    private static func matchesContainment(
+        _ value: FilterOperand?, expression: ObjectFilterExpression
+    ) -> Bool {
+        guard let value else { return false }
+        switch expression {
+        case .contains(let operand):
+            return FilterOperand.deepContains(value, operand)
+        case .notContains(let operand):
+            return !FilterOperand.deepContains(value, operand)
+        default:
+            return false
+        }
+    }
+
+    private static func matchesMembership(
+        _ value: FilterOperand?, expression: ObjectFilterExpression
+    ) -> Bool {
+        guard let value else { return false }
+        switch expression {
         case .valuesIn(let values):
-            guard let v else { return false }
-            return FilterOperand.deepIncludes(.array(values), v)
+            return FilterOperand.deepIncludes(.array(values), value)
         case .valuesNotIn(let values):
-            guard let v else { return false }
-            return !FilterOperand.deepIncludes(.array(values), v)
+            return !FilterOperand.deepIncludes(.array(values), value)
+        default:
+            return false
         }
     }
     
