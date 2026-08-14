@@ -31,7 +31,9 @@ jobs:
       - name: Compute cache key
         run: |
           echo "SWIFT_CACHE_KEY=swiftpm-6.3-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile') }}" >> "$GITHUB_ENV"
-          echo "SWIFT_BUILD_CACHE_KEY=swift-build-coverage-6.3-linux-${{ hashFiles('Package.resolved', '**/Package.swift', '.devcontainer/Dockerfile') }}" >> "$GITHUB_ENV"
+          SWIFT_BUILD_CACHE_PREFIX="swift-build-v3-compiler-6.3-linux-${{ hashFiles('Package.resolved', '**/Package.swift', '.devcontainer/Dockerfile') }}-"
+          echo "SWIFT_BUILD_CACHE_PREFIX=${SWIFT_BUILD_CACHE_PREFIX}" >> "$GITHUB_ENV"
+          echo "SWIFT_BUILD_CACHE_KEY=${SWIFT_BUILD_CACHE_PREFIX}${GITHUB_SHA}" >> "$GITHUB_ENV"
 
       - name: Setup container image
         uses: ./.github/actions/setup-container
@@ -55,16 +57,29 @@ jobs:
           restore-keys: |
             swiftpm-6.3-linux-
 
-      # Keep this separate from the download cache: SwiftPM can incrementally
-      # rebuild changed project sources while reusing compiled dependencies.
-      - name: Restore Swift coverage build cache
+      # Keep this separate from the download cache. Cache only compiler
+      # intermediates and planner metadata: final binaries, indexes, fuzz
+      # output, tooling, and ESP-IDF trees made the old archive 2.69 GB and
+      # could exhaust a runner before Podman started the test container.
+      - name: Restore Swift compiler cache
         id: swift_build_cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: .build
+          path: |
+            .build/ci/build.db
+            .build/ci/checkouts
+            .build/ci/debug.yaml
+            .build/ci/plugin-tools.yaml
+            .build/ci/workspace-state.json
+            .build/ci/plugins
+            .build/ci/repositories
+            .build/ci/x86_64-unknown-linux-gnu/debug/*.build
+            .build/ci/x86_64-unknown-linux-gnu/debug/description.json
+            .build/ci/x86_64-unknown-linux-gnu/debug/Modules
+            .build/ci/x86_64-unknown-linux-gnu/debug/ModuleCache
           key: ${{ env.SWIFT_BUILD_CACHE_KEY }}
           restore-keys: |
-            swift-build-coverage-6.3-linux-
+            ${{ env.SWIFT_BUILD_CACHE_PREFIX }}
 
       - name: Prepare changed-line diff
         if: github.event_name == 'pull_request'
@@ -82,7 +97,21 @@ jobs:
           AXOLOTY_OUTPUT: human
         run: |
           mkdir -p .testing
-          make verify-ci CONTAINER_RUNTIME=podman BUILD_DIR=".build/${GITHUB_SHA}" COVERAGE_BUILD_DIR=".build/${GITHUB_SHA}-coverage" BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache AXOLOTY_TOOL_CONTAINER_ENV_VARS=AXOLOTY_OUTPUT
+          make verify-ci CONTAINER_RUNTIME=podman BUILD_DIR=".build/ci" COVERAGE_BUILD_DIR=".build/ci-coverage" BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache AXOLOTY_TOOL_CONTAINER_ENV_VARS=AXOLOTY_OUTPUT
+
+      - name: Report Swift build cache reuse
+        if: always()
+        env:
+          CACHE_EXACT_HIT: ${{ steps.swift_build_cache.outputs.cache-hit || 'false' }}
+          CACHE_MATCHED_KEY: ${{ steps.swift_build_cache.outputs.cache-matched-key || 'none' }}
+        run: |
+          {
+            echo "### Swift build cache"
+            echo "- Exact hit: \`${CACHE_EXACT_HIT}\`"
+            echo "- Restored key: \`${CACHE_MATCHED_KEY}\`"
+            echo "- Active paths: \`.build/ci\`, \`.build/ci-coverage\`"
+            du -sh .build/ci .build/ci-coverage 2>/dev/null || true
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Save SwiftPM dependency cache
         if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.swiftpm_cache.outputs.cache-hit != 'true'
@@ -91,11 +120,22 @@ jobs:
           path: .swiftpm-cache
           key: ${{ env.SWIFT_CACHE_KEY }}
 
-      - name: Save Swift coverage build cache
+      - name: Save Swift compiler cache
         if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.swift_build_cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: .build
+          path: |
+            .build/ci/build.db
+            .build/ci/checkouts
+            .build/ci/debug.yaml
+            .build/ci/plugin-tools.yaml
+            .build/ci/workspace-state.json
+            .build/ci/plugins
+            .build/ci/repositories
+            .build/ci/x86_64-unknown-linux-gnu/debug/*.build
+            .build/ci/x86_64-unknown-linux-gnu/debug/description.json
+            .build/ci/x86_64-unknown-linux-gnu/debug/Modules
+            .build/ci/x86_64-unknown-linux-gnu/debug/ModuleCache
           key: ${{ env.SWIFT_BUILD_CACHE_KEY }}
 
       - name: Upload coverage summary
@@ -117,3 +157,29 @@ jobs:
           path: .testing/coverage/
           if-no-files-found: ignore
           retention-days: 7
+
+  prune-build-caches:
+    name: Prune superseded Swift build caches
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: required-checks
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Keep two adjacent-commit caches and remove legacy layouts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          cache_ids="$RUNNER_TEMP/swift-build-cache-ids"
+          gh cache list --ref refs/heads/main --key "swift-build-v3-compiler-6.3-linux-" \
+            --sort created_at --order desc --limit 100 --json id --jq '.[2:][].id' > "$cache_ids"
+          gh cache list --ref refs/heads/main --key "swift-build-v2-coverage-6.3-linux-" \
+            --limit 100 --json id --jq '.[].id' >> "$cache_ids"
+          gh cache list --ref refs/heads/main --key "swift-build-coverage-6.3-linux-" \
+            --limit 100 --json id --jq '.[].id' >> "$cache_ids"
+          while IFS= read -r cache_id; do
+            [ -n "$cache_id" ] || continue
+            gh cache delete "$cache_id"
+          done < "$cache_ids"

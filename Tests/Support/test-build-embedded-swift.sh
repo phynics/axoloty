@@ -63,6 +63,9 @@ chmod +x "$bin_dir/idf.py"
 
 cat > "$bin_dir/ccache" <<'SH'
 #!/bin/sh
+if [ "${1:-}" = "--print-stats" ]; then
+    printf 'cache_hit 17\ncache_miss 3\n'
+fi
 exit 0
 SH
 chmod +x "$bin_dir/ccache"
@@ -88,6 +91,13 @@ PATH="$bin_dir:$PATH" FAKE_IDF_LOG="$log" IDF_PATH="$idf_dir" \
     EMBEDDED_PROJECT_DIR="$project_dir" EMBEDDED_BUILD_DIR="$build_dir" EMBEDDED_EXPORT_DIR="$export_dir" \
     "$root/Tests/Support/build-embedded-swift.sh"
 test "$(grep -Fc -- "-B $build_dir set-target esp32c6" "$log")" -eq 1
+
+timing_output=$(PATH="$bin_dir:$PATH" FAKE_IDF_LOG="$log" IDF_PATH="$idf_dir" \
+    FAKE_IDF_ENV_LOG="$tmp/idf-env.log" AXOLOTY_ESP_IDF_CCACHE_DIR="$tmp/ccache" \
+    AXOLOTY_TIMING_EVIDENCE=1 EMBEDDED_PROJECT_DIR="$project_dir" EMBEDDED_BUILD_DIR="$build_dir" \
+    EMBEDDED_EXPORT_DIR="$export_dir" "$root/Tests/Support/build-embedded-swift.sh")
+printf '%s\n' "$timing_output" | grep -Fqx 'ccache_before cache_hit 17'
+printf '%s\n' "$timing_output" | grep -Fqx 'ccache_after cache_miss 3'
 
 sed -i 's/CCACHE_ENABLE:UNINITIALIZED=1/CCACHE_ENABLE:UNINITIALIZED=OFF/' "$build_dir/CMakeCache.txt"
 PATH="$bin_dir:$PATH" FAKE_IDF_LOG="$log" IDF_PATH="$idf_dir" \

@@ -11,7 +11,28 @@ const dockerfile = fs.readFileSync(".devcontainer/Dockerfile", "utf8");
 const inputs = fs.readFileSync(".devcontainer/image-inputs.sh", "utf8");
 const makefile = fs.readFileSync("Makefile", "utf8");
 const setupAction = fs.readFileSync(".github/actions/setup-container/action.yml", "utf8");
+const ciWorkflow = fs.readFileSync(".github/workflows/ci.yml", "utf8");
 const imageWorkflow = fs.readFileSync(".github/workflows/container-image.yml", "utf8");
+
+function workflowStep(name) {
+  const marker = `      - name: ${name}`;
+  const start = ciWorkflow.indexOf(marker);
+  assert.notEqual(start, -1, `missing workflow step: ${name}`);
+  const nextStep = ciWorkflow.indexOf("\n      - name:", start + marker.length);
+  return ciWorkflow.slice(start, nextStep === -1 ? undefined : nextStep);
+}
+
+function workflowPathList(name) {
+  const match = workflowStep(name).match(/          path: \|\n((?: {12}.+\n?)+)/);
+  assert.ok(match, `missing cache path list: ${name}`);
+  return match[1].trim().split("\n").map((line) => line.trim());
+}
+
+function workflowRunScript(name) {
+  const match = workflowStep(name).match(/        run: \|\n((?: {10}.+\n?)+)/);
+  assert.ok(match, `missing run script: ${name}`);
+  return match[1].trimEnd().split("\n").map((line) => line.slice(10)).join("\n");
+}
 
 test("the development image does not bake root package products or source", () => {
   assert.doesNotMatch(dockerfile, /axoloty-service-builder/);
@@ -29,6 +50,7 @@ test("the image gives its non-root ESP user a writable stable home", () => {
 
 test("the image includes ESP-IDF's supported compiler cache", () => {
   assert.match(dockerfile, /ARG CCACHE_VERSION=4\.5\.1-1/);
+  assert.match(dockerfile, /ENV ESP_IDF_VERSION=\$\{ESP_IDF_VERSION\}/);
   assert.match(dockerfile, /"ccache=\$\{CCACHE_VERSION\}"/);
 });
 
@@ -172,6 +194,92 @@ test("tool launchers use the isolated Tools package and scratch directory", () =
   }
 });
 
+test("CI reuses stable, bounded Swift build cache namespaces", () => {
+  assert.match(ciWorkflow, /SWIFT_BUILD_CACHE_PREFIX="swift-build-v3-compiler-6\.3-linux-/);
+  assert.match(ciWorkflow, /SWIFT_BUILD_CACHE_KEY=\$\{SWIFT_BUILD_CACHE_PREFIX\}\$\{GITHUB_SHA\}/);
+  const compilerCachePaths = [
+    ".build/ci/build.db",
+    ".build/ci/checkouts",
+    ".build/ci/debug.yaml",
+    ".build/ci/plugin-tools.yaml",
+    ".build/ci/workspace-state.json",
+    ".build/ci/plugins",
+    ".build/ci/repositories",
+    ".build/ci/x86_64-unknown-linux-gnu/debug/*.build",
+    ".build/ci/x86_64-unknown-linux-gnu/debug/description.json",
+    ".build/ci/x86_64-unknown-linux-gnu/debug/Modules",
+    ".build/ci/x86_64-unknown-linux-gnu/debug/ModuleCache",
+  ];
+  assert.deepEqual(workflowPathList("Restore Swift compiler cache"), compilerCachePaths);
+  assert.deepEqual(workflowPathList("Save Swift compiler cache"), compilerCachePaths);
+  assert.doesNotMatch(ciWorkflow, /^ {12}\.build\/ci(?:-coverage)?$/m);
+  assert.doesNotMatch(ciWorkflow, /^ {12}\.build\/ci-coverage\//m);
+  assert.match(ciWorkflow, /key: \$\{\{ env\.SWIFT_BUILD_CACHE_KEY \}\}[\s\S]*restore-keys: \|\s+\$\{\{ env\.SWIFT_BUILD_CACHE_PREFIX \}\}/);
+  assert.match(ciWorkflow, /BUILD_DIR="\.build\/ci" COVERAGE_BUILD_DIR="\.build\/ci-coverage"/);
+  assert.doesNotMatch(ciWorkflow, /BUILD_DIR="\.build\/\$\{GITHUB_SHA\}"/);
+  assert.match(ciWorkflow, /actions: write/);
+  assert.match(ciWorkflow, /gh cache list --ref refs\/heads\/main --key "swift-build-v3-compiler-6\.3-linux-"/);
+  assert.match(ciWorkflow, /--sort created_at --order desc --limit 100 --json id --jq '\.\[2:\]\[\]\.id'/);
+  assert.match(ciWorkflow, /gh cache list --ref refs\/heads\/main --key "swift-build-v2-coverage-6\.3-linux-"/);
+  assert.match(ciWorkflow, /gh cache list --ref refs\/heads\/main --key "swift-build-coverage-6\.3-linux-"/);
+  assert.match(ciWorkflow, /gh cache delete "\$cache_id"/);
+});
+
+test("CI pruning keeps two current caches and deletes superseded layouts", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-cache-prune-"));
+  const fakeBin = path.join(tempRoot, "bin");
+  const fakeGh = path.join(fakeBin, "gh");
+  const deleted = path.join(tempRoot, "deleted");
+  fs.mkdirSync(fakeBin);
+  fs.writeFileSync(fakeGh, `#!/bin/sh
+set -eu
+if [ "$1 $2" = "cache delete" ]; then
+  printf '%s\\n' "$3" >> "$FAKE_DELETE_CAPTURE"
+  exit 0
+fi
+key=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--key" ]; then
+    shift
+    key=$1
+  fi
+  shift
+done
+case "$key" in
+  swift-build-v3-compiler-6.3-linux-) printf 'v3-oldest\\nv3-old\\n' ;;
+  swift-build-v2-coverage-6.3-linux-) printf 'v2-old\\n' ;;
+  swift-build-coverage-6.3-linux-) printf 'legacy-old\\n' ;;
+  *) exit 2 ;;
+esac
+`);
+  fs.chmodSync(fakeGh, 0o755);
+
+  try {
+    const result = spawnSync("bash", ["-c", workflowRunScript("Keep two adjacent-commit caches and remove legacy layouts")], {
+      cwd: ".",
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        FAKE_DELETE_CAPTURE: deleted,
+        GH_REPO: "phynics/axoloty",
+        GH_TOKEN: "test-token",
+        PATH: `${fakeBin}:${process.env.PATH}`,
+        RUNNER_TEMP: tempRoot,
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(fs.readFileSync(deleted, "utf8").trim().split("\n"), [
+      "v3-oldest",
+      "v3-old",
+      "v2-old",
+      "legacy-old",
+    ]);
+  } finally {
+    fs.rmSync(tempRoot, { force: true, recursive: true });
+  }
+});
+
 test("published content-keyed images avoid repeated fallback builds and refresh the lock", () => {
   const publishPr = imageWorkflow.slice(imageWorkflow.indexOf("  publish-pr:"), imageWorkflow.indexOf("  publish-main:"));
   const publishMain = imageWorkflow.slice(imageWorkflow.indexOf("  publish-main:"));
@@ -197,7 +305,7 @@ test("published content-keyed images avoid repeated fallback builds and refresh 
   );
   assert.match(setupAction, /candidate_tag="\$image:\$CANDIDATE_TAG_PREFIX-\$actual_hash"/);
   assert.match(
-    fs.readFileSync(".github/workflows/ci.yml", "utf8"),
+    ciWorkflow,
     /candidate-tag-prefix: \$\{\{ github\.event_name == 'pull_request' && format\('swift-6\.3-pr-\{0\}', github\.event\.pull_request\.number\) \|\| 'swift-6\.3' \}\}/,
   );
   assert.match(
@@ -214,6 +322,6 @@ test("published content-keyed images avoid repeated fallback builds and refresh 
   );
   assert.match(setupAction, /WAIT_FOR_PUBLISHED_SECONDS/);
   assert.match(setupAction, /Waiting for the content-keyed development image publisher/);
-  assert.match(fs.readFileSync(".github/workflows/ci.yml", "utf8"), /wait-for-published-seconds: "600"/);
+  assert.match(ciWorkflow, /wait-for-published-seconds: "600"/);
   assert.match(imageWorkflow, /gh pr create/);
 });

@@ -57,6 +57,7 @@ if action == "build" and os.environ.get("FAKE_IDF_BUILD_FAILURE") == "1":
     raise SystemExit(42)
 
 if action == "build":
+    print("[1/9] Linking axoloty-swift", file=sys.stderr)
     (build_dir / "axoloty-swift.elf").touch()
     (build_dir / "axoloty-swift.map").write_text("libswiftUnicodeDataTables.a\n", encoding="utf-8")
     sections = build_dir / "esp-idf/esp_system/ld/sections.ld"
@@ -71,6 +72,9 @@ chmod +x "$fake_bin/idf.py"
 
 cat > "$fake_bin/ccache" <<'SH'
 #!/bin/sh
+if [ "${1:-}" = "--print-stats" ]; then
+    printf 'cache_hit 23\ncache_miss 5\n'
+fi
 exit 0
 SH
 chmod +x "$fake_bin/ccache"
@@ -109,6 +113,14 @@ IDF_PATH="$fake_idf" PATH="$fake_bin:$PATH" \
 test "$(grep -Fc -- "set-target esp32c6" "$records")" -eq 1
 test "$(grep -Fc -- "-DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON build" "$records")" -eq 2
 grep -Fqx 'CCACHE_ENABLE:UNINITIALIZED=1' "$build_dir/CMakeCache.txt"
+
+timing_output=$(IDF_PATH="$fake_idf" PATH="$fake_bin:$PATH" \
+    FAKE_IDF_ARGS="$records" AXOLOTY_TIMING_EVIDENCE=1 \
+    AXOLOTY_EMBEDDED_LINKER_BUILD_DIR="$build_dir" \
+    RISCV_NM="$fake_bin/riscv32-esp-elf-nm" "$checker")
+printf '%s\n' "$timing_output" | grep -Fqx '[1/9] Linking axoloty-swift'
+printf '%s\n' "$timing_output" | grep -Fqx 'ccache_before cache_hit 23'
+printf '%s\n' "$timing_output" | grep -Fqx 'ccache_after cache_miss 5'
 
 # The fingerprint also protects callers that explicitly choose a build path.
 # A stale or foreign configuration at that path must be rebuilt safely.

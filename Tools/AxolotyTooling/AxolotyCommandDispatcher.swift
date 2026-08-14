@@ -53,6 +53,7 @@ public struct AxolotyCommandDispatcher: Sendable {
     private let processRunnerFactory: @Sendable () -> any AxolotyManagedProcessRunning
     private let portProbe: any AxolotyServiceProbing
     private let tempDirProvider: any AxolotyTempDirectoryProvider
+    private let timingRunner: AxolotyTimingRunner
     private let installSignalHandler: Bool
     private let cancellation: AxolotyCommandCancellation
     private let outputMode: AxolotyCommandOutputMode
@@ -70,6 +71,9 @@ public struct AxolotyCommandDispatcher: Sendable {
     ///   - processRunnerFactory: A factory for process runners used by managed service commands.
     ///   - portProbe: The TCP probe for service readiness checks.
     ///   - tempDirProvider: The temporary directory provider for service configs.
+    ///   - timingRunner: The runner for explicit hardware-free timing evidence.
+    ///   - installSignalHandler: Whether the dispatcher installs signal handling.
+    ///   - cancellation: Optional shared cancellation state for this invocation.
     public init(
         executableName: String = "axoloty-tool",
         commandRunner: any AxolotyCheckCommandRunning = FoundationCommandRunner(),
@@ -80,6 +84,7 @@ public struct AxolotyCommandDispatcher: Sendable {
         processRunnerFactory: (@Sendable () -> any AxolotyManagedProcessRunning)? = nil,
         portProbe: (any AxolotyServiceProbing)? = nil,
         tempDirProvider: (any AxolotyTempDirectoryProvider)? = nil,
+        timingRunner: AxolotyTimingRunner? = nil,
         installSignalHandler: Bool = true,
         cancellation: AxolotyCommandCancellation? = nil
     ) {
@@ -106,6 +111,10 @@ public struct AxolotyCommandDispatcher: Sendable {
         self.processRunnerFactory = processRunnerFactory ?? { FoundationProcessRunner() }
         self.portProbe = portProbe ?? FoundationServiceProbe()
         self.tempDirProvider = tempDirProvider ?? FoundationTempDirectoryProvider()
+        self.timingRunner = timingRunner ?? AxolotyTimingRunner(
+            commandRunner: commandRunner,
+            environment: environment
+        )
         self.installSignalHandler = installSignalHandler && runnerConfiguration.installSignalHandler
         self.cancellation = invocationCancellation
         outputMode = runnerConfiguration.outputMode
@@ -122,6 +131,9 @@ public struct AxolotyCommandDispatcher: Sendable {
         defer { signalLease?.cancel() }
         if arguments.first == "serve" {
             return serveResult(arguments: Array(arguments.dropFirst()))
+        }
+        if arguments.count >= 2, arguments[0] == "measure", arguments[1] == "timing" {
+            return timingResult(arguments: Array(arguments.dropFirst(2)))
         }
         if arguments.count == 4, arguments[0] == "hardware", ["check", "require"].contains(arguments[1]), arguments[2] == "--device" {
             return hardwareResult(required: arguments[1] == "require", device: arguments[3])
@@ -237,6 +249,7 @@ public struct AxolotyCommandDispatcher: Sendable {
       release checkpoint   Run the release checkpoint validation (no hardware).
       release checkpoint-hardware  Run checkpoint with ESP32-C6 smoke test.
          --device PATH      Override AXOLOTY_DEVICE (default: /dev/ttyACM0).
+      measure timing        Measure cold/warm hardware-free builds (Linux only).
       serve mqtt           Start a local Mosquitto broker in the foreground.
       serve mcp            Start an Axoloty MCP server (stdio or HTTP).
       serve dev            Start MQTT + MCP as a supervised development stack.
@@ -247,6 +260,20 @@ public struct AxolotyCommandDispatcher: Sendable {
 
     private static func usage(executableName: String) -> String {
         usage.replacingOccurrences(of: "axoloty-tool", with: executableName)
+    }
+
+    private static func timingUsage(executableName: String) -> String {
+        """
+        Usage: \(executableName) measure timing [options]
+
+        Measure cold and warm hardware-free build paths on Linux.
+
+        Options:
+          --filter FILTER       Focused Swift test filter (default: AxolotyCommandDispatcherTests).
+          --scratch-root PATH   Root for isolated per-scenario scratch trees.
+          --keep-scratch        Retain scratch trees after measurement.
+          --help                Show this help.
+        """
     }
 
     private static let mqttUsage = """
@@ -302,6 +329,31 @@ public struct AxolotyCommandDispatcher: Sendable {
         case .dev: developmentUsage
         }
         return usage.replacingOccurrences(of: "axoloty-tool", with: executableName)
+    }
+
+    private func timingResult(arguments: [String]) -> AxolotyCommandResult {
+        if arguments == ["--help"] || arguments == ["-h"] {
+            return AxolotyCommandResult(standardOutput: Self.timingUsage(executableName: executableName))
+        }
+        let parsed = AxolotyTimingArgumentParser.parse(arguments)
+        guard let options = parsed.success else {
+            let message = parsed.failure?.message ?? "invalid timing arguments"
+            return AxolotyCommandResult(
+                standardError: "error: \(message)\n\n\(Self.timingUsage(executableName: executableName))\n",
+                exitCode: 64
+            )
+        }
+        let report = timingRunner.run(options)
+        do {
+            return try Self.jsonResult(report, exitCode: report.exitCode)
+        } catch {
+            let diagnostic = AxolotyTimingOutputParser.boundedDiagnostic(String(reflecting: error))
+                ?? "unknown encoding error"
+            return AxolotyCommandResult(
+                standardError: "error: unable to encode timing report: \(diagnostic)\n",
+                exitCode: 70
+            )
+        }
     }
 
     private func serveResult(arguments: [String]) -> AxolotyCommandResult {
