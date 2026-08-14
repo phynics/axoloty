@@ -251,6 +251,29 @@ struct MQTTNIOClientTests {
         #expect(calls[1].qos == .exactlyOnce)
         #expect(calls.allSatisfy { !$0.retain })
     }
+
+    @Test
+    func hostIngressShedsExcessRawDeliveriesWhenOverloaded() async throws {
+        // A raw (non-Coaty) topic yields exactly one delivery job per PUBLISH,
+        // so overload accounting is deterministic: with capacity 2 and the
+        // drainer stalled, the first two jobs are retained and the rest shed.
+        let (client, _) = makeHostIngressClient(ingressDeliveryCapacity: 2)
+        let (startedStream, startedContinuation) = AsyncStream<Void>.makeStream()
+        var startedIterator = startedStream.makeAsyncIterator()
+
+        client.deliveryQueue.enqueue {
+            startedContinuation.yield()
+            try? await Task.sleep(for: .milliseconds(150))
+        }
+        _ = await startedIterator.next()
+        startedContinuation.finish()
+
+        for _ in 0 ..< 20 {
+            client.handlePublish(.success(publishInfo(payload: [0x01], topic: "test/raw/ingress")))
+        }
+
+        #expect(client.deliveryQueue.droppedCount == 18)
+    }
 }
 
 private struct OversizedHostFallbackFixture {
@@ -336,7 +359,8 @@ private func publishInfo(payload: [UInt8], topic: String = hostIngressTopic) -> 
 
 private func makeHostIngressClient(
     qos: Int = 0,
-    publishHandler: MQTTNIOClient.PublishHandler? = nil
+    publishHandler: MQTTNIOClient.PublishHandler? = nil,
+    ingressDeliveryCapacity: Int = IngressDeliveryQueue.defaultCapacity
 ) -> (MQTTNIOClient, CommunicationStreams) {
     let options = MQTTClientOptions(
         host: "127.0.0.1",
@@ -367,7 +391,8 @@ private func makeHostIngressClient(
     let client = MQTTNIOClient(
         mqttClientOptions: options,
         delegate: HostIngressDelegate(),
-        publishHandler: publishHandler
+        publishHandler: publishHandler,
+        ingressDeliveryCapacity: ingressDeliveryCapacity
     )
     client.setStreams(streams)
     return (client, streams)

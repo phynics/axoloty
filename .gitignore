@@ -68,6 +68,7 @@ iOSInjectionProject/
 # Local agentic-coding workspace (worktrees and scratch), not shared via git
 .agents/
 .worktree/
+.pi/
 
 
 # DocC generated documentation build output
