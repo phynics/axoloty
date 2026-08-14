@@ -31,7 +31,13 @@ jobs:
       - name: Compute cache key
         run: |
           echo "SWIFT_CACHE_KEY=swiftpm-6.3-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile') }}" >> "$GITHUB_ENV"
-          SWIFT_BUILD_CACHE_PREFIX="swift-build-v3-compiler-6.3-linux-${{ hashFiles('Package.resolved', '**/Package.swift', '.devcontainer/Dockerfile') }}-"
+          # Compiler intermediates and planner metadata are specific to the
+          # development container toolchain. Key them by the reviewed image
+          # identity too, so an image-lock refresh never reuses a cache built
+          # with a different container (SwiftPM emits a fatal incremental
+          # build error when incremental state is incompatible).
+          image_identity=$(jq -er '.buildInputsSha256' .devcontainer/image-lock.json)
+          SWIFT_BUILD_CACHE_PREFIX="swift-build-v3-compiler-6.3-linux-${image_identity}-${{ hashFiles('Package.resolved', '**/Package.swift', '.devcontainer/Dockerfile') }}-"
           echo "SWIFT_BUILD_CACHE_PREFIX=${SWIFT_BUILD_CACHE_PREFIX}" >> "$GITHUB_ENV"
           echo "SWIFT_BUILD_CACHE_KEY=${SWIFT_BUILD_CACHE_PREFIX}${GITHUB_SHA}" >> "$GITHUB_ENV"
 
