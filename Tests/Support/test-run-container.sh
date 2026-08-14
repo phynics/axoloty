@@ -128,6 +128,14 @@ wait_bounded "$resolve_second" resolve-second 5
 AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" "$ROOT_DIR/.devcontainer/run.sh" true
 [[ ! -e "$lock_owner" ]]
 
+# Nested execution inside an existing devcontainer keeps tooling isolated under
+# the selected build directory rather than falling back to the workspace path.
+direct_tooling_capture="$TEMP_DIR/direct-tooling-build-dir"
+AXOLOTY_TOOLING_CAPTURE="$direct_tooling_capture" AXOLOTY_DEVCONTAINER=1 \
+    BUILD_DIR="$build_dir" "$ROOT_DIR/.devcontainer/run.sh" \
+    sh -c 'printf "%s\n" "$TOOLING_BUILD_DIR" > "$AXOLOTY_TOOLING_CAPTURE"'
+[[ "$(cat "$direct_tooling_capture")" = "$build_dir/tooling" ]]
+
 # A second operation waits for the owner instead of touching the shared cache.
 ( exec 8>"$lock_file"; flock 8; sleep 1 ) &
 holder=$!
@@ -895,6 +903,7 @@ first_run_args=$(awk '/^---$/ { if (in_run) exit; first_seen = 0; in_run = 0; ne
 [[ $(printf '%s\n' "$first_run_args" | grep -Fxc -- "$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux:/workspace/.swiftpm-cache") -eq 1 ]]
 [[ $(printf '%s\n' "$first_run_args" | grep -Fxc -- "$AXOLOTY_ESP_IDF_CCACHE_DIR:/workspace/.ccache") -eq 1 ]]
 [[ $(printf '%s\n' "$first_run_args" | grep -Fxc -- "AXOLOTY_ESP_IDF_CCACHE_DIR=/workspace/.ccache") -eq 1 ]]
+[[ $(printf '%s\n' "$first_run_args" | grep -Fxc -- "TOOLING_BUILD_DIR=/workspace/.build/tooling") -eq 1 ]]
 [[ $(printf '%s\n' "$first_run_args" | grep -Fxc -- "$lease_root:$lease_root") -eq 1 ]]
 if printf '%s\n' "$first_run_args" | grep -Eq -- '(:Z|:z)$'; then
     echo "SELinux mount labels were requested while explicitly disabled" >&2
@@ -1144,6 +1153,7 @@ grep -q -- "CONTAINER_RUNTIME=$ROOT_DIR/.devcontainer/container-runtime-remote.s
 grep -q -- "AXOLOTY_HOST_RUNTIME_BRIDGE=1" "$capture"
 grep -q -- "DOCKER_HOST=unix://$host_socket" "$capture"
 grep -q -- "BUILD_DIR=$build_dir" "$capture"
+grep -q -- "TOOLING_BUILD_DIR=$build_dir/tooling" "$capture"
 grep -q -- "SPM_CACHE_DIR=$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux" "$capture"
 grep -q -- "AXOLOTY_ESP_IDF_CCACHE_DIR=$AXOLOTY_ESP_IDF_CCACHE_DIR" "$capture"
 grep -q -- "REPOSITORY_NAME=$expected_repository_name" "$capture"
