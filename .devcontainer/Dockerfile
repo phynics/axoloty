@@ -20,6 +20,7 @@ ARG ESPFLASH_VERSION=3.3.0
 ARG SWIFTLINT_VERSION=0.65.0
 ARG NODE_VERSION=22.17.1
 ARG CMAKE_VERSION=3.29.6
+ARG CCACHE_VERSION=4.5.1-1
 
 FROM swift:${SWIFT_VERSION}-jammy
 
@@ -99,6 +100,13 @@ RUN git clone --depth 1 --filter=blob:none --branch ${ESP_IDF_VERSION} \
     && ./install.sh esp32c6 \
     && git config --system --add safe.directory /opt/esp/idf \
     && git config --system --add safe.directory /opt/esp/idf/components/openthread/openthread
+
+# Install the ESP-IDF-supported compiler cache after the much larger pinned
+# toolchain layer. Cache-policy changes must not invalidate and redownload the
+# SDK, submodules, compilers, and Python environment.
+ARG CCACHE_VERSION
+RUN apt-get update && apt-get install -y --no-install-recommends "ccache=${CCACHE_VERSION}" \
+    && rm -rf /var/lib/apt/lists/*
 
 # espflash (Rust) for board-info / flashing without the full IDF monitor.
 # Downloaded as a prebuilt static binary from GitHub releases so the image

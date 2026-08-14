@@ -17,6 +17,7 @@ fake_idf="$tmp/idf"
 build_dir="$tmp/build"
 records="$tmp/idf-args"
 mkdir -p "$fake_bin" "$fake_idf"
+export AXOLOTY_ESP_IDF_CCACHE_DIR="$tmp/ccache"
 
 cat > "$fake_bin/idf.py" <<'PY'
 #!/usr/bin/env python3
@@ -25,15 +26,30 @@ import pathlib
 import sys
 
 arguments = sys.argv[1:]
+if arguments == ["--version"]:
+    print("ESP-IDF fake")
+    raise SystemExit(0)
 with open(os.environ["FAKE_IDF_ARGS"], "a", encoding="utf-8") as output:
     output.write(f"IDF_PY_BUILD_JOBS={os.environ.get('IDF_PY_BUILD_JOBS', '')} ")
     output.write(" ".join(arguments) + "\n")
 
 build_index = arguments.index("-B") + 1
 build_dir = pathlib.Path(arguments[build_index])
-action = next(value for value in ("set-target", "build") if value in arguments)
+action = next(value for value in ("fullclean", "set-target", "build") if value in arguments)
 log_dir = build_dir / "log"
 log_dir.mkdir(parents=True, exist_ok=True)
+
+if action == "fullclean":
+    cache = build_dir / "CMakeCache.txt"
+    cache.unlink(missing_ok=True)
+
+if action == "set-target":
+    (build_dir / "CMakeCache.txt").write_text(
+        "IDF_TARGET:STRING=esp32c6\n"
+        "PYTHON_DEPS_CHECKED:FILEPATH=/opt/esp/tools/python_env/idf5.4_py3.10_env/bin/python\n"
+        f"CCACHE_ENABLE:UNINITIALIZED={os.environ.get('IDF_CCACHE_ENABLE', 'OFF')}\n",
+        encoding="utf-8",
+    )
 
 if action == "build" and os.environ.get("FAKE_IDF_BUILD_FAILURE") == "1":
     (log_dir / "idf_py_stdout.txt").write_text("fake ESP-IDF build log\n", encoding="utf-8")
@@ -53,14 +69,20 @@ if action == "build":
 PY
 chmod +x "$fake_bin/idf.py"
 
+cat > "$fake_bin/ccache" <<'SH'
+#!/bin/sh
+exit 0
+SH
+chmod +x "$fake_bin/ccache"
+
 cat > "$fake_bin/riscv32-esp-elf-nm" <<'SH'
 #!/bin/sh
-printf '00000000 T _swift_stdlib_getNormData\n00000000 T axoloty_unicode_linker_probe\n'
+printf '00000000 T _swift_stdlib_getNormData\n00000000 T axoloty_unicode_linker_probe\n' 2>/dev/null || true
 SH
 chmod +x "$fake_bin/riscv32-esp-elf-nm"
 
 cat > "$fake_idf/export.sh" <<'SH'
-:
+export IDF_TOOLS_PATH=/opt/esp/tools
 SH
 
 if ! IDF_PATH="$fake_idf" PATH="$fake_bin:$PATH" \
@@ -76,6 +98,38 @@ grep -F -- "-DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON set-target esp32c6" "$record
 grep -F -- "IDF_PY_BUILD_JOBS=2" "$records" >/dev/null
 grep -F -- "-DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON build" "$records" >/dev/null
 ! grep -F -- "build -j" "$records" >/dev/null
+
+# A warm run must preserve the configured build tree: only the incremental
+# build command is repeated, while set-target remains a one-time operation.
+IDF_PATH="$fake_idf" PATH="$fake_bin:$PATH" \
+    FAKE_IDF_ARGS="$records" \
+    AXOLOTY_EMBEDDED_LINKER_BUILD_DIR="$build_dir" \
+    RISCV_NM="$fake_bin/riscv32-esp-elf-nm" \
+    "$checker"
+test "$(grep -Fc -- "set-target esp32c6" "$records")" -eq 1
+test "$(grep -Fc -- "-DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON build" "$records")" -eq 2
+grep -Fqx 'CCACHE_ENABLE:UNINITIALIZED=1' "$build_dir/CMakeCache.txt"
+
+# The fingerprint also protects callers that explicitly choose a build path.
+# A stale or foreign configuration at that path must be rebuilt safely.
+printf '%s\n' stale > "$build_dir/.axoloty-esp-idf-config"
+IDF_PATH="$fake_idf" PATH="$fake_bin:$PATH" \
+    FAKE_IDF_ARGS="$records" \
+    AXOLOTY_EMBEDDED_LINKER_BUILD_DIR="$build_dir" \
+    RISCV_NM="$fake_bin/riscv32-esp-elf-nm" \
+    "$checker"
+grep -F -- "-B $build_dir fullclean" "$records" >/dev/null
+test "$(grep -Fc -- "set-target esp32c6" "$records")" -eq 2
+
+# Proof/checkpoint callers retain an explicit clean mode.
+IDF_PATH="$fake_idf" PATH="$fake_bin:$PATH" \
+    FAKE_IDF_ARGS="$records" \
+    AXOLOTY_EMBEDDED_LINKER_BUILD_DIR="$build_dir" \
+    AXOLOTY_EMBEDDED_LINKER_CLEAN=1 \
+    RISCV_NM="$fake_bin/riscv32-esp-elf-nm" \
+    "$checker"
+grep -F -- "-B $build_dir fullclean" "$records" >/dev/null
+test "$(grep -Fc -- "set-target esp32c6" "$records")" -eq 3
 
 failure_status=0
 if output=$(IDF_PATH="$fake_idf" PATH="$fake_bin:$PATH" \

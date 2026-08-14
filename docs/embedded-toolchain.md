@@ -56,6 +56,7 @@ All toolchain components are in the single `Dockerfile`:
 | OpenOCD | Espressif build, bundled with ESP-IDF | installed by `./install.sh esp32c6` |
 | espflash | `3.3.0` | prebuilt binary from `esp-rs/espflash` releases |
 | CMake | `3.29.6` (via pip) | required by `Embedded/swift/CMakeLists.txt` and `espressif/idf_swift` |
+| ccache | 4.5.1-1 | ESP-IDF-supported cross-worktree C/C++ compiler cache |
 | SwiftLint | `0.65.0` | prebuilt static binary |
 
 All versions are declared as `ARG`s at the top of `.devcontainer/Dockerfile`
@@ -85,6 +86,15 @@ ordinary checks never request device access. The incremental Swift build cache i
 external, while its firmware is mirrored to
 `.build-output/embedded-swift/axoloty-swift.bin`. Runtime evidence lands under
 `.testing/embedded/` (outside `/tmp`, so it survives the container):
+
+ESP-IDF builds share immutable compiler outputs through the host-mounted
+`AXOLOTY_ESP_IDF_CCACHE_DIR` (default `~/.cache/axoloty/esp-idf-ccache`). Each
+ESP-IDF/toolchain/target/flag combination gets a separate ccache namespace,
+while mutable CMake and Ninja trees remain isolated in each worktree. The
+Unicode linker probe also keeps a configuration-keyed incremental build tree.
+Use `AXOLOTY_EMBEDDED_LINKER_CLEAN=1 make check-embedded-swift-linker` for the
+clean proof gate. If the shared compiler cache is suspected of corruption, run
+`make shell`, then `ccache --clear`; the next build repopulates it from source.
 
 | File | Produced by |
 |---|---|

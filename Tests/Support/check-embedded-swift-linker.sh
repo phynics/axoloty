@@ -8,8 +8,8 @@ set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 project="$root/Embedded/swift"
-build_dir=${AXOLOTY_EMBEDDED_LINKER_BUILD_DIR:-/workspace/.build/embedded-swift-linker-probe}
 jobs=${AXOLOTY_EMBEDDED_LINKER_JOBS:-2}
+clean=${AXOLOTY_EMBEDDED_LINKER_CLEAN:-0}
 
 case "$jobs" in
     ''|*[!0-9]*)
@@ -31,7 +31,7 @@ report_failure() {
             echo "--- captured ESP-IDF output ---" >&2
             cat "$idf_log" >&2
         fi
-        if [ -d "$build_dir/log" ]; then
+        if [ -n "${build_dir:-}" ] && [ -d "$build_dir/log" ]; then
             for log in "$build_dir"/log/*; do
                 if [ -f "$log" ]; then
                     echo "--- $log ---" >&2
@@ -48,8 +48,13 @@ trap report_failure EXIT
 . "${IDF_PATH:-/opt/esp/idf}/export.sh" >"$idf_log" 2>&1
 cd "$project"
 
-rm -rf "$build_dir"
-idf.py -B "$build_dir" -DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON set-target esp32c6 >"$idf_log" 2>&1
+. "$root/Tests/Support/embedded-build-cache.sh"
+config_flags=unicode-linker-probe
+config_key=$(axoloty_esp_idf_cache_key esp32c6 "$config_flags")
+build_dir=${AXOLOTY_EMBEDDED_LINKER_BUILD_DIR:-/workspace/.build/embedded-swift-linker/$config_key}
+axoloty_enable_esp_idf_ccache "$project" esp32c6 "$config_flags"
+axoloty_prepare_esp_idf_build "$build_dir" esp32c6 "$clean" "$config_flags" \
+    -DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON >"$idf_log" 2>&1
 IDF_PY_BUILD_JOBS="$jobs" idf.py -B "$build_dir" \
     -DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON build >"$idf_log" 2>&1
 
