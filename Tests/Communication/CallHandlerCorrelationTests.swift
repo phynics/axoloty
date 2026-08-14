@@ -210,6 +210,101 @@ struct CallHandlerCorrelationTests {
         #expect(await invocations.count == 1)
         #expect(returnPublications(on: client).count == 1)
     }
+
+    @Test
+    func cancelledHandlerReleasesCorrelationForRetry() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        try await bringOnline(manager, client: client)
+        let invocations = CallInvocationStore()
+        let registration = try await manager.registerCallHandler(operation: "cancel-retry") { _ in
+            await invocations.increment()
+            throw CancellationError()
+        }
+        defer { registration.cancel() }
+
+        let correlationId = "cancel-retry-correlation"
+        let call = CallEventSnapshot(correlationId: correlationId, operation: "cancel-retry")
+        await client.emitCall(call, operation: "cancel-retry")
+        try await waitUntil("cancelled handler released correlation") {
+            await invocations.count == 1
+        }
+
+        // No Return is published for a cancelled handler.
+        #expect(returnPublications(on: client).isEmpty)
+
+        // The released correlation is not suppressed, so a retry is processed.
+        await client.emitCall(call, operation: "cancel-retry")
+        try await waitUntil("retried cancelled handler invoked again") {
+            await invocations.count == 2
+        }
+        #expect(returnPublications(on: client).isEmpty)
+    }
+
+    @Test
+    func uniqueCorrelationIdsDoNotRetainActiveBookkeeping() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        try await bringOnline(manager, client: client)
+        let invocations = CallInvocationStore()
+        let registration = try await manager.registerCallHandler(operation: "unique-stress") { request in
+            await invocations.increment()
+            return .success(result: "true")
+        }
+        defer { registration.cancel() }
+
+        let distinctCorrelationCount = 500
+        for index in 0 ..< distinctCorrelationCount {
+            await client.emitCall(
+                CallEventSnapshot(
+                    correlationId: "unique-stress-\(index)",
+                    operation: "unique-stress"
+                ),
+                operation: "unique-stress"
+            )
+        }
+        try await waitUntil("all distinct Calls completed") {
+            await invocations.count == distinctCorrelationCount
+        }
+        try await waitUntil("all distinct Returns published") {
+            returnPublications(on: client).count == distinctCorrelationCount
+        }
+
+        // Every completed correlation released its active bookkeeping.
+        #expect(registration.activeCorrelationCount == 0)
+        #expect(registration.pendingHandlerCount == 0)
+    }
+
+    @Test
+    func cancelledDuringAwaitReleasesActiveBookkeeping() async throws {
+        let client = FakeCommunicationClient(delegate: FakeStartable())
+        let manager = makeManager(client: client)
+        try await bringOnline(manager, client: client)
+        let invocations = CallInvocationStore()
+        let registration = try await manager.registerCallHandler(operation: "cancel-await") { request in
+            await invocations.increment()
+            try await Task.sleep(for: .seconds(30))
+            throw CancellationError()
+        }
+        defer { registration.cancel() }
+
+        let correlationId = "cancel-await-correlation"
+        await client.emitCall(
+            CallEventSnapshot(correlationId: correlationId, operation: "cancel-await"),
+            operation: "cancel-await"
+        )
+        try await waitUntil("cancelled handler started") {
+            await invocations.count == 1
+        }
+        #expect(registration.activeCorrelationCount == 1)
+
+        registration.cancel()
+        try await waitUntil("registration cancelled releases active bookkeeping") {
+            registration.activeCorrelationCount == 0 && registration.pendingHandlerCount == 0
+        }
+        #expect(registration.isCancelled)
+        #expect(returnPublications(on: client).isEmpty)
+    }
 }
 
 @MainActor
