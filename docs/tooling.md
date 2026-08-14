@@ -19,9 +19,10 @@ make release-snapshots
 
 The container image carries a stable `axoloty-tool` launcher at
 `/opt/axoloty/bin/axoloty-tool`. Make targets invoke it inside the container
-via `.devcontainer/run.sh`; it runs the mounted-worktree product using the
-worktree-specific build directory and mounted SwiftPM cache. No project
-binary is extracted to or baked into the image.
+via `.devcontainer/run.sh`; the launcher uses `swift run --package-path Tools`
+with the mounted SwiftPM cache and a dedicated `BUILD_DIR/tooling` scratch
+directory. Product and test edits therefore do not invalidate the orchestration
+tool build. No project binary is extracted to or baked into the image.
 
 macOS uses its pinned native Swift toolchain:
 

@@ -160,12 +160,16 @@ test("Make exports the command-line mount suffix override to run.sh", () => {
   assert.match(makefile, /^export CONTAINER_MOUNT_SUFFIX$/m);
 });
 
-test("the ax launcher builds the mounted workspace product in the mounted cache", () => {
-  const launcher = fs.readFileSync(".devcontainer/ax", "utf8");
-  assert.match(launcher, /swift run/);
-  assert.match(launcher, /--scratch-path/);
-  assert.match(launcher, /--cache-path/);
-  assert.match(launcher, /\bax\b/);
+test("tool launchers use the isolated Tools package and scratch directory", () => {
+  for (const executable of ["ax", "axoloty-tool"]) {
+    const launcher = fs.readFileSync(`.devcontainer/${executable}`, "utf8");
+    assert.match(launcher, /swift run/);
+    assert.match(launcher, /--package-path Tools/);
+    assert.match(launcher, /scratch_path=\$\{TOOLING_BUILD_DIR:-\/workspace\/\.build\/tooling\}/);
+    assert.match(launcher, /--scratch-path "\$scratch_path"/);
+    assert.match(launcher, /--cache-path/);
+    assert.match(launcher, new RegExp(`\\b${executable}\\b`));
+  }
 });
 
 test("published content-keyed images avoid repeated fallback builds and refresh the lock", () => {

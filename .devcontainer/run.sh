@@ -8,6 +8,7 @@ runtime=${CONTAINER_RUNTIME:-}
 image=${IMAGE:-axoloty-dev}
 workdir=${WORKDIR:-/workspace}
 build_dir=${BUILD_DIR:-"$root_dir/.build"}
+tooling_build_dir="$build_dir/tooling"
 spm_cache_dir=${SPM_CACHE_DIR:-"${HOME}/.cache/coaty-swift/swiftpm/swift-6.3-linux"}
 ccache_dir=${AXOLOTY_ESP_IDF_CCACHE_DIR:-"${HOME}/.cache/axoloty/esp-idf-ccache"}
 build_lock=${BUILD_LOCK:-1}
@@ -591,6 +592,7 @@ elif [ "$build_lock" != "0" ]; then
 fi
 
 if [ "${AXOLOTY_DEVCONTAINER:-0}" = "1" ]; then
+    export TOOLING_BUILD_DIR="$tooling_build_dir"
     set +e
     status=0
     if [ -n "$session_prefix" ]; then
@@ -719,8 +721,10 @@ if [ -n "$common_git_dir" ]; then
 fi
 if [ "${AXOLOTY_HOST_RUNTIME_BRIDGE:-0}" = 1 ]; then
     ccache_container_dir=$ccache_dir
+    tooling_build_dir="$build_dir/tooling"
 else
     ccache_container_dir="$bridge_workdir/.ccache"
+    tooling_build_dir="$bridge_workdir/.build/tooling"
 fi
 ccache_mount_suffix=""
 if [ "$selinux_labeling_active" -eq 1 ]; then
@@ -922,6 +926,7 @@ create_container() {
                 -e "DOCKER_HOST=unix://$bridge_socket" \
                 -e "WORKDIR=$root_dir" \
                 -e "BUILD_DIR=$build_dir" \
+                -e "TOOLING_BUILD_DIR=$tooling_build_dir" \
                 -e "SPM_CACHE_DIR=$spm_cache_dir" \
                 -e "AXOLOTY_ESP_IDF_CCACHE_DIR=$ccache_container_dir" \
                 -e "REPOSITORY_NAME=$repository_name" \
@@ -956,6 +961,7 @@ create_container() {
                 -e "DOCKER_HOST=unix://$bridge_socket" \
                 -e "WORKDIR=$root_dir" \
                 -e "BUILD_DIR=$build_dir" \
+                -e "TOOLING_BUILD_DIR=$tooling_build_dir" \
                 -e "SPM_CACHE_DIR=$spm_cache_dir" \
                 -e "AXOLOTY_ESP_IDF_CCACHE_DIR=$ccache_container_dir" \
                 -e "REPOSITORY_NAME=$repository_name" \
@@ -984,6 +990,7 @@ create_container() {
             $security_opts $device_opts $privileged_opt $userns_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
             -e AXOLOTY_DEVCONTAINER=1 \
             -e "AXOLOTY_RUN_ID=$container_run_id" \
+            -e "TOOLING_BUILD_DIR=$tooling_build_dir" \
             -e "AXOLOTY_ESP_IDF_CCACHE_DIR=$ccache_container_dir" \
             -v "$device_lease_mount" \
             -e "$device_lease_env" \
@@ -1007,6 +1014,7 @@ create_container() {
             $security_opts $device_opts $privileged_opt $userns_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
             -e AXOLOTY_DEVCONTAINER=1 \
             -e "AXOLOTY_RUN_ID=$container_run_id" \
+            -e "TOOLING_BUILD_DIR=$tooling_build_dir" \
             -e "AXOLOTY_ESP_IDF_CCACHE_DIR=$ccache_container_dir" \
             -v "$root_dir:$bridge_workdir$mount_suffix" \
             -v "$common_git_mount" \
