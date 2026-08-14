@@ -136,21 +136,15 @@ public class CoatyTimeInterval: Codable {
 
     // MARK: - Getters.
     var start: Int? {
-        get {
-            return self._start
-        }
+        self._start
     }
     
     var end: Int? {
-        get {
-            return self._end
-        }
+        self._end
     }
     
     var duration: Int? {
-        get {
-            return self._duration
-        }
+        self._duration
     }
     
     // MARK: - Public functions.

@@ -456,6 +456,6 @@ private actor CompletionFlag {
     }
 }
 
-private struct RecordingStartable: CommunicationClientDelegate {
+private final class RecordingStartable: CommunicationClientDelegate {
     func didReceiveStart() {}
 }
