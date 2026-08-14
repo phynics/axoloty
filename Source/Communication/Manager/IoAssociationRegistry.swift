@@ -216,7 +216,7 @@ internal final class IoAssociationRegistry {
             if var items = ioActorItems[currentIoRoute] {
                 disassociateFromRoute(
                     items: &items, ioSourceId: ioSourceId, ioActorId: ioActorId,
-                    route: currentIoRoute, newIoRoute: newIoRoute,
+                    route: (current: currentIoRoute, replacement: newIoRoute),
                     ioRoutesToUnsubscribe: &ioRoutesToUnsubscribe
                 )
                 ioActorItems[currentIoRoute] = items
@@ -226,7 +226,7 @@ internal final class IoAssociationRegistry {
                 if var items = ioActorItems[route] {
                     disassociateFromRoute(
                         items: &items, ioSourceId: ioSourceId, ioActorId: ioActorId,
-                        route: route, newIoRoute: newIoRoute,
+                        route: (current: route, replacement: newIoRoute),
                         ioRoutesToUnsubscribe: &ioRoutesToUnsubscribe
                     )
                     ioActorItems[route] = items
@@ -243,10 +243,10 @@ internal final class IoAssociationRegistry {
     private func disassociateFromRoute(
         items: inout [CoatyUUID: [CoatyUUID]],
         ioSourceId: CoatyUUID, ioActorId: CoatyUUID,
-        route: String, newIoRoute: String?,
+        route: (current: String, replacement: String?),
         ioRoutesToUnsubscribe: inout [String]
     ) {
-        if let newIoRoute, newIoRoute == route {
+        if let newIoRoute = route.replacement, newIoRoute == route.current {
             return
         }
         if var sourceIds = items[ioActorId] {
@@ -257,7 +257,7 @@ internal final class IoAssociationRegistry {
                 items[ioActorId] = sourceIds
             }
             if items.isEmpty {
-                ioRoutesToUnsubscribe.append(route)
+                ioRoutesToUnsubscribe.append(route.current)
             }
         }
     }

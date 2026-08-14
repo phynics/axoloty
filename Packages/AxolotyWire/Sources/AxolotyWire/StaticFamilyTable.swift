@@ -61,13 +61,11 @@ public struct StaticFamilyTable<Key: Hashable & Sendable> {
             return Token(entryIndex: i, inner: inner)
         }
         // Find free slot for a new entry
-        for i in 0..<capacity {
-            if entries[i] == nil {
-                var table = StaticDispatchTable(capacity: entryCapacity)
-                guard let inner = table.subscribe(handler) else { return nil }
-                entries[i] = Entry(key: key, table: table)
-                return Token(entryIndex: i, inner: inner)
-            }
+        for i in 0..<capacity where entries[i] == nil {
+            var table = StaticDispatchTable(capacity: entryCapacity)
+            guard let inner = table.subscribe(handler) else { return nil }
+            entries[i] = Entry(key: key, table: table)
+            return Token(entryIndex: i, inner: inner)
         }
         return nil
     }

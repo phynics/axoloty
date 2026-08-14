@@ -70,7 +70,7 @@ extension AssociateEventSnapshot {
             result.append(hex[Int(byte >> 4)])
             result.append(hex[Int(byte & 0x0F)])
         }
-        return String(decoding: result, as: UTF8.self)
+        return String(bytes: result, encoding: .utf8) ?? ""
     }
 
     /// Decodes the JSON escapes relevant to an associating route.

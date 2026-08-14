@@ -8,7 +8,7 @@
 import Foundation
 
 /// Receives broker candidates found by a `ServiceDiscovery` implementation.
-protocol ServiceDiscoveryDelegate {
+protocol ServiceDiscoveryDelegate: AnyObject {
     func didReceiveService(addresses: [String], port: Int)
 }
 
