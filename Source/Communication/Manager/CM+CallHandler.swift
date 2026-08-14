@@ -42,6 +42,12 @@ public final class CallHandlerRegistration {
     /// Whether this registration has been cancelled.
     public private(set) var isCancelled = false
 
+    /// Count of correlations currently being handled (observable in tests).
+    internal var activeCorrelationCount: Int { activeCorrelations.count }
+
+    /// Count of handler tasks still tracked for in-flight correlations.
+    internal var pendingHandlerCount: Int { handlerTasks.count }
+
     /// Cancels observation and all handlers currently executing.
     public func cancel() {
         guard !isCancelled else { return }
@@ -232,6 +238,7 @@ extension CommunicationManager {
             do {
                 result = try await handler(request)
             } catch is CancellationError {
+                registration.release(correlationId: correlationId)
                 return
             } catch let error as RemoteCallFailure {
                 result = .failure(code: error.code, message: error.message)
@@ -244,7 +251,10 @@ extension CommunicationManager {
                 ])
                 result = .failure(code: -32000, message: wrapped.userFriendlyMessage)
             }
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else {
+                registration.release(correlationId: correlationId)
+                return
+            }
             self.publishHandlerReturn(result, correlationId: correlationId, registration: registration)
         }
         registration.setHandlerTask(task, correlationId: correlationId)
