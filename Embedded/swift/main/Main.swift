@@ -332,7 +332,7 @@ func app_main() -> Int32 {
 
     // === Static Phase 4 device agent ===
 
-    var staticAgent = StaticDeviceAgent()
+    let staticAgent = StaticDeviceAgent()
     record("agent:identity", StaticDeviceAgent.agentId != .zero &&
            StaticDeviceAgent.agentId != StaticDeviceAgent.deviceObjectId)
 
