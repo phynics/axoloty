@@ -29,6 +29,7 @@ test("the image gives its non-root ESP user a writable stable home", () => {
 
 test("the image includes ESP-IDF's supported compiler cache", () => {
   assert.match(dockerfile, /ARG CCACHE_VERSION=4\.5\.1-1/);
+  assert.match(dockerfile, /ENV ESP_IDF_VERSION=\$\{ESP_IDF_VERSION\}/);
   assert.match(dockerfile, /"ccache=\$\{CCACHE_VERSION\}"/);
 });
 

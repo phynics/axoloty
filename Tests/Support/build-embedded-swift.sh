@@ -29,8 +29,10 @@ cd "$project_dir"
 
 . "$root/Tests/Support/embedded-build-cache.sh"
 axoloty_enable_esp_idf_ccache "$project_dir" esp32c6 firmware
+axoloty_print_esp_idf_ccache_stats before
 axoloty_prepare_esp_idf_build "$build_dir" esp32c6 0 firmware
 idf.py -B "$build_dir" build
+axoloty_print_esp_idf_ccache_stats after
 
 # The shared build cache is volatile. Keep the flashable firmware in a
 # repository-local ignored directory as durable output.

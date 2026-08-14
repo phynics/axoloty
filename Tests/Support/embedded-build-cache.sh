@@ -30,6 +30,14 @@ axoloty_enable_esp_idf_ccache() {
     export IDF_CCACHE_ENABLE=1
 }
 
+axoloty_print_esp_idf_ccache_stats() {
+    phase=$1
+    if [ "${AXOLOTY_TIMING_EVIDENCE:-0}" != 1 ] || [ "${IDF_CCACHE_ENABLE:-0}" != 1 ]; then
+        return
+    fi
+    ccache --print-stats | awk -v phase="$phase" '{ print "ccache_" phase " " $0 }'
+}
+
 axoloty_prepare_esp_idf_build() {
     build_dir=$1
     target=$2

@@ -49,6 +49,7 @@ plan starts MQTT or accesses hardware.
 | `axoloty-tool wire capture` | local | no | Live reference-agent capture (host-side orchestration) |
 | `axoloty-tool embedded build` | no | no | ESP32-C6 cross-compilation on Linux |
 | `axoloty-tool embedded verify` | no | no | Build plus linker contract verification |
+| `axoloty-tool measure timing` | no | no | Linux-only cold/warm build evidence |
 | `axoloty-tool hardware check` | no | optional | Run when attached; otherwise structured skip |
 | `axoloty-tool hardware require` | no | required | Explicit device/release gate |
 | `axoloty-tool release snapshots` | no | no | Generate and verify an immutable wire bundle |
@@ -124,6 +125,29 @@ Pass a persisted or downloaded bundle to `axoloty-tool wire verify PATH` to reru
 the Swift semantic fixture contract and the bundle's hash/metadata checks.
 Snapshot output overrides must remain below `.testing/` and cannot overlap the
 source captures.
+
+## Timing evidence
+
+On Linux, `axoloty-tool measure timing` runs eight commands serially: cold and
+warm host build, focused test build, Embedded Swift build, and ESP-IDF linker
+validation. Each scenario owns a separate scratch directory; the warm run
+reuses the cold directory. Use `--scratch-root PATH` to select the root and
+`--keep-scratch` to retain the directories for inspection:
+
+```sh
+axoloty-tool measure timing \
+  --filter AxolotyCommandDispatcherTests \
+  --scratch-root .testing/timing --keep-scratch
+```
+
+Standard output is one sorted-key JSON report. Each measurement records its
+command plan, monotonic duration, child exit status, bounded failure diagnostic,
+scratch reuse, toolchain identity, parsed build-step count, and cache counters.
+Metrics that are not present in command output are marked `unavailable`; the
+runner never estimates them. The command uses only build and linker validation
+plans and never probes devices, acquires leases, starts a broker, or performs
+network I/O. macOS returns a structured unsupported-platform result instead of
+launching a measurement.
 
 ## Adding tooling
 

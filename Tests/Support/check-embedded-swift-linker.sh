@@ -53,10 +53,15 @@ config_flags=unicode-linker-probe
 config_key=$(axoloty_esp_idf_cache_key esp32c6 "$config_flags")
 build_dir=${AXOLOTY_EMBEDDED_LINKER_BUILD_DIR:-/workspace/.build/embedded-swift-linker/$config_key}
 axoloty_enable_esp_idf_ccache "$project" esp32c6 "$config_flags"
+axoloty_print_esp_idf_ccache_stats before
 axoloty_prepare_esp_idf_build "$build_dir" esp32c6 "$clean" "$config_flags" \
     -DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON >"$idf_log" 2>&1
 IDF_PY_BUILD_JOBS="$jobs" idf.py -B "$build_dir" \
     -DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON build >"$idf_log" 2>&1
+if [ "${AXOLOTY_TIMING_EVIDENCE:-0}" = 1 ]; then
+    cat "$idf_log"
+fi
+axoloty_print_esp_idf_ccache_stats after
 
 elf="$build_dir/axoloty-swift.elf"
 map="$build_dir/axoloty-swift.map"
