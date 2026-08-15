@@ -147,6 +147,32 @@ captures, a manifest carrying provenance, reference version, scenario, and
 normalization profiles, plus Swift-side semantic verification. The fixture
 bundle is never presented as this evidence.
 
+## Release checkpoint
+
+`make checkpoint` (or `axoloty-tool release checkpoint`) is the release
+certification gate. It runs every ordinary offline check plus the broker-backed
+integration tier, binary-size benchmarks, and release snapshot verification.
+The canonical release-gate list (`releaseGates` in the test-tier manifest)
+names every mandatory release tier — `smoke`, `unit`, `module`, `property`,
+`integration`, `wire-offline`, and `wire-live`. The checkpoint manifest records
+a disposition for each gate:
+
+- **executed** — a covering node ran and passed inside the checkpoint;
+- **failed** — a covering node ran and at least one failed;
+- **attested** — no covering node ran, but external attestation evidence was
+  supplied for the gate;
+- **skipped** — no covering node ran and no attestation was supplied.
+
+The command fails if any required gate is skipped, so a release cannot be
+certified with missing mandatory-tier evidence. Tiers that are not normally run
+inside the checkpoint (for example the live `wire-live` capture and the
+hardware smoke tier) must therefore be attested externally. Supply a path to
+produced evidence for a gate as `AXOLOTY_ATTESTATION_<GATE>_PATH`, where `<GATE>`
+is the uppercased tier id with hyphens replaced by underscores (for example
+`AXOLOTY_ATTESTATION_WIRE_LIVE_PATH=.testing/wire/manifest.json`). The manifest
+lists executed, skipped, and externally attested gates so a release reviewer
+can confirm the full evidence set before certifying.
+
 ## Timing evidence
 
 On Linux, `axoloty-tool measure timing` runs eight commands serially: cold and

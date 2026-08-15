@@ -510,6 +510,47 @@ public struct AxolotyCheckManifest: Codable, Equatable, Sendable {
     }
 }
 
+/// The disposition of a required release gate in a checkpoint run.
+public enum AxolotyCheckpointGateResult: String, Codable, Equatable, Sendable {
+    /// The gate's covering nodes ran and passed inside the checkpoint.
+    case executed
+    /// The gate's covering node(s) ran and at least one failed.
+    case failed
+    /// The gate was skipped because a covering node did not run.
+    case skipped
+    /// The gate was covered by externally supplied attestation evidence.
+    case attested
+}
+
+/// A required release gate and how the checkpoint accounted for it.
+public struct AxolotyCheckpointGate: Codable, Equatable, Sendable {
+    /// The mandatory release tier identifier.
+    public let id: String
+    /// How the checkpoint accounted for the gate.
+    public let result: AxolotyCheckpointGateResult
+    /// Checkpoint node results that cover this gate.
+    public let nodes: [AxolotyCheckResult]
+    /// The attestation evidence path when the gate was externally attested.
+    public let evidence: String?
+    /// A human-readable note explaining the disposition.
+    public let note: String?
+
+    /// Creates a release gate disposition.
+    public init(
+        id: String,
+        result: AxolotyCheckpointGateResult,
+        nodes: [AxolotyCheckResult] = [],
+        evidence: String? = nil,
+        note: String? = nil
+    ) {
+        self.id = id
+        self.result = result
+        self.nodes = nodes
+        self.evidence = evidence
+        self.note = note
+    }
+}
+
 /// A versioned machine-readable manifest for a release checkpoint run.
 public struct AxolotyCheckpointManifest: Codable, Equatable, Sendable {
     /// The manifest schema version.
@@ -530,12 +571,14 @@ public struct AxolotyCheckpointManifest: Codable, Equatable, Sendable {
     public let hardwareIncluded: Bool
     /// Check results in deterministic plan order.
     public let results: [AxolotyCheckResult]
+    /// Release gates in deterministic order.
+    public let releaseGates: [AxolotyCheckpointGate]
     /// ISO 8601 timestamp of when the checkpoint was generated.
     public let timestamp: String
 
     /// Creates a checkpoint manifest.
     public init(
-        schemaVersion: Int = 1,
+        schemaVersion: Int = 2,
         releaseVersion: String,
         gitCommit: String,
         gitClean: Bool,
@@ -544,6 +587,7 @@ public struct AxolotyCheckpointManifest: Codable, Equatable, Sendable {
         platform: AxolotyCheckPlan.Platform = AxolotyCheckPlan.currentPlatform,
         hardwareIncluded: Bool,
         results: [AxolotyCheckResult],
+        releaseGates: [AxolotyCheckpointGate],
         timestamp: String
     ) {
         self.schemaVersion = schemaVersion
@@ -555,6 +599,7 @@ public struct AxolotyCheckpointManifest: Codable, Equatable, Sendable {
         self.platform = platform
         self.hardwareIncluded = hardwareIncluded
         self.results = results
+        self.releaseGates = releaseGates
         self.timestamp = timestamp
     }
 }

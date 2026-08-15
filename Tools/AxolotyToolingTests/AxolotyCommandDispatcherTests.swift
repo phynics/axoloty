@@ -384,6 +384,84 @@ func checkpointContextMismatchPrecedesPlanAndMetadataCommands() throws {
 }
 
 @Test
+func checkpointPlanIncludesRequiredIntegrationAndCompatibilityNodes() throws {
+    let plan = AxolotyCheckPlan.checkpoint(
+        source: "Tests/WireCompatibility/Fixtures",
+        destination: ".testing/fixture-bundle",
+        consumerEnvironment: [:]
+    )
+
+    #expect(plan.nodes.contains { $0.name == "integration-tests" })
+    #expect(plan.nodes.contains { $0.name == "logging-global" })
+
+    let hardwarePlan = AxolotyCheckPlan.checkpointHardware(
+        source: "Tests/WireCompatibility/Fixtures",
+        destination: ".testing/fixture-bundle"
+    )
+    #expect(hardwarePlan.nodes.contains { $0.name == "integration-tests" })
+    #expect(hardwarePlan.nodes.contains { $0.name == "logging-global" })
+}
+
+@Test
+func checkpointFailsWhenRequiredReleaseGateHasNoEvidence() throws {
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
+        integrationRunner: StubIntegrationRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
+        fileSystem: StubFileSystem(paths: []),
+        environment: projectEnvironment
+    )
+
+    let result = dispatcher.run(arguments: ["release", "checkpoint"])
+    let manifest = try JSONDecoder().decode(AxolotyCheckpointManifest.self, from: Data(result.standardOutput.utf8))
+
+    #expect(result.exitCode == 1)
+    let wireLive = try #require(manifest.releaseGates.first { $0.id == "wire-live" })
+    #expect(wireLive.result == .skipped)
+    #expect(manifest.releaseGates.contains { $0.result == .skipped })
+}
+
+@Test
+func checkpointAcceptsExternallyAttestedReleaseGate() throws {
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
+        integrationRunner: StubIntegrationRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
+        fileSystem: StubFileSystem(paths: []),
+        environment: projectEnvironment.merging([
+            "AXOLOTY_ATTESTATION_WIRE_LIVE_PATH": ".testing/wire/manifest.json",
+        ]) { _, value in value }
+    )
+
+    let result = dispatcher.run(arguments: ["release", "checkpoint"])
+    let manifest = try JSONDecoder().decode(AxolotyCheckpointManifest.self, from: Data(result.standardOutput.utf8))
+
+    #expect(result.exitCode == 0)
+    let wireLive = try #require(manifest.releaseGates.first { $0.id == "wire-live" })
+    #expect(wireLive.result == .attested)
+    #expect(wireLive.evidence == ".testing/wire/manifest.json")
+    #expect(!manifest.releaseGates.contains { $0.result == .skipped })
+}
+
+@Test
+func checkpointManifestRecordsAllRequiredReleaseGatesInOrder() throws {
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
+        integrationRunner: StubIntegrationRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
+        environment: projectEnvironment.merging([
+            "AXOLOTY_ATTESTATION_WIRE_LIVE_PATH": ".testing/wire/manifest.json",
+        ]) { _, value in value }
+    )
+
+    let result = dispatcher.run(arguments: ["release", "checkpoint"])
+    let manifest = try JSONDecoder().decode(AxolotyCheckpointManifest.self, from: Data(result.standardOutput.utf8))
+
+    #expect(manifest.schemaVersion == 2)
+    #expect(manifest.releaseGates.map(\.id) == [
+        "smoke", "unit", "module", "property", "integration", "wire-offline", "wire-live",
+    ])
+    #expect(manifest.releaseGates.first { $0.id == "integration" }?.result == .executed)
+}
+
+@Test
 func wireVerifyRunsOnlyItsDependencyClosure() throws {
     let dispatcher = AxolotyCommandDispatcher(
         commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),

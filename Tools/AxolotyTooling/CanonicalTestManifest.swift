@@ -501,6 +501,8 @@ public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
     public let requiredGates: [String]
     /// Required CI-only gates in addition to ordinary verification.
     public let ciRequiredGates: [String]
+    /// Mandatory release-tier gates the release checkpoint must account for.
+    public let releaseGates: [String]
     /// The reusable single-test command interface.
     public let testOne: AxolotyCanonicalTestInterface
     /// Self-test ownership metadata consumed by the Node validator.
@@ -519,6 +521,7 @@ public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
         plans: [String: AxolotyCanonicalTestPlanDefinition],
         requiredGates: [String],
         ciRequiredGates: [String],
+        releaseGates: [String],
         testOne: AxolotyCanonicalTestInterface,
         selfTests: [AxolotySelfTestContractEntry],
         artifactContract: AxolotyArtifactContract,
@@ -531,6 +534,7 @@ public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
         self.plans = plans
         self.requiredGates = requiredGates
         self.ciRequiredGates = ciRequiredGates
+        self.releaseGates = releaseGates
         self.testOne = testOne
         self.selfTests = selfTests
         self.artifactContract = artifactContract
