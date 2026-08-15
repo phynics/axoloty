@@ -1,12 +1,13 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-/// A fixed-capacity, allocation-free subscriber registry for synchronous
-/// message dispatch.
+/// A fixed-capacity subscriber registry for synchronous message dispatch.
 ///
 /// Replaces the `Broadcast<Element>` actor (which uses a heap-allocated
 /// dictionary of `AsyncStream` continuations) with a fixed-size array of
 /// subscriber callbacks. Dispatch is synchronous — no actor hop, no
-/// `AsyncStream`, no heap allocation in the steady state.
+/// `AsyncStream`, no heap allocation in the steady state. Construction
+/// allocates the fixed capacity once; per-dispatch/steady-state work does not
+/// allocate.
 ///
 /// When the subscriber count reaches `maxSubscribers`, the next subscribe
 /// call returns nil instead of growing a heap array. The embedded target
@@ -116,11 +117,19 @@ public struct StaticDispatchTable: Sendable {
     }
 
     /// Dispatches `message` to all active subscribers synchronously.
+    ///
+    /// Iteration uses explicit indices over the fixed slot storage rather than
+    /// a sequence iterator so the steady-state dispatch path performs no
+    /// allocation (issue #490).
     public func dispatch(_ message: BorrowedMessage) {
-        for slot in storage.slots {
-            if let handler = slot.handler {
+        let slots = storage.slots
+        var index = slots.startIndex
+        let end = slots.endIndex
+        while index < end {
+            if let handler = slots[index].handler {
                 handler(message)
             }
+            index &+= 1
         }
     }
 

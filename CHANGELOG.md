@@ -37,6 +37,17 @@ Development toward Axoloty 1.0 is in progress and tracked by the
   a structured ``AxolotyError`` chain instead of silently discarding the
   operation, so loss is observable and root-causable.
 
+### Performance
+
+- Aligned the documented wire allocation contract with the implementation
+  (issue #490): the borrowed decode + static-route steady state performs zero
+  per-message heap allocation. Clarified that the resolve/decode reader uses a
+  fixed-size inline workspace and that static dispatch/family tables allocate
+  only their fixed capacity at construction. Added a repeatable host
+  allocation-regression gate (`make benchmark-wire-allocation`) that profiles
+  a warmed decode + `EmbeddedMessageRouter` dispatch pass under `heaptrack`
+  and asserts the total allocation count does not grow with iteration count.
+
 ## [0.4.0] - 2026-08-14
 
 Axoloty 0.4.0 is a development checkpoint and is not API-stable.

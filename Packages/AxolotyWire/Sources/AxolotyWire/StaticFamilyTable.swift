@@ -6,7 +6,9 @@
 /// Replaces the `BroadcastFamily<Key, Element>` actor (which uses a
 /// heap-allocated dictionary of `AsyncStream` continuations keyed by `Key`)
 /// with a fixed-size open-addressing table. Each entry holds a small
-/// `StaticDispatchTable` for its subscribers.
+/// `StaticDispatchTable` for its subscribers. The steady-state dispatch path
+/// performs no allocation; construction and key insertion allocate the fixed
+/// capacity.
 ///
 /// Used for Advertise (keyed by event-type filter), Channel (keyed by
 /// channel ID), and response streams (keyed by correlation ID).
