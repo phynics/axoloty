@@ -79,26 +79,16 @@ extension UnkeyedDecodingContainer {
     mutating func decode(_ type: [Any].Type) throws -> [Any] {
         var array: [Any] = []
         
+        // Decode each element through a fresh ``RawJSONValue`` so the type
+        // ladder runs against a per-element ``singleValueContainer``. Probing
+        // individual Swift types directly from this *unkeyed* container would
+        // desynchronize the index (a failed `try? decode` still consumes the
+        // element), so each element must be consumed exactly once. `null` is
+        // preserved as an absent optional so the encode side emits `encodeNil()`
+        // when the array is re-encoded.
         while isAtEnd == false {
-            let value: String? = try decode(String?.self)
-            if value == nil {
-                continue
-            }
-            if let value = try? decode(Bool.self) {
-                array.append(value)
-            } else if let value = try? decode(Double.self) {
-                array.append(value)
-            } else if let value = try? decode(UUID.self) {
-                array.append(value)
-            } else if let value = try? decode(CoatyUUID.self) {
-                array.append(value)
-            } else if let value = try? decode(String.self) {
-                array.append(value)
-            } else if let nestedDictionary = try? decode([String: Any].self) {
-                array.append(nestedDictionary)
-            } else if let nestedArray = try? decode([Any].self) {
-                array.append(nestedArray)
-            }
+            let rawValue = try decode(RawJSONValue.self)
+            array.append(rawValue.asAnyJSONValue)
         }
         return array
     }
