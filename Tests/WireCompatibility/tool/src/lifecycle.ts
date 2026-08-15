@@ -1,7 +1,8 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import { createHash } from "node:crypto";
-import { readFileSync, statSync, writeFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
+import { atomicWriteFileSync } from "./atomic.js";
 
 interface Scenario {
   participants: string[];
@@ -37,11 +38,11 @@ export function writeLifecycleManifest(scenarioId: string, applicationLog: strin
   const scenario = scenarios[scenarioId];
   if (!scenario) throw new Error(`unknown lifecycle scenario: ${scenarioId}`);
   if (unsupportedReason || scenario.status === "unsupported") {
-    writeFileSync(output, JSON.stringify({ format: "axoloty-lifecycle-evidence/v1", scenario: scenarioId, status: "unsupported", limitation: unsupportedReason ?? scenario.reason, participants: scenario.participants }, null, 2) + "\n");
+    atomicWriteFileSync(output, JSON.stringify({ format: "axoloty-lifecycle-evidence/v1", scenario: scenarioId, status: "unsupported", limitation: unsupportedReason ?? scenario.reason, participants: scenario.participants }, null, 2) + "\n");
     return;
   }
   if (!applicationLog || !capture) throw new Error(`${scenarioId} requires --application-log and --capture`);
-  writeFileSync(output, JSON.stringify({
+  atomicWriteFileSync(output, JSON.stringify({
     format: "axoloty-lifecycle-evidence/v1",
     scenario: scenarioId,
     status: "executed",
