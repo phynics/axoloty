@@ -14,26 +14,20 @@ open class IoSourceController: Controller {
         sourceItems.removeAll()
     }
 
-    /// Publishes a value when the source currently has an association.
+    /// Publishes a value for the source.
     ///
-    /// A value for an unassociated source is dropped and logged at `notice`
-    /// (deliberate back-pressure). A value whose data format does not match the
-    /// source's raw/JSON configuration cannot be published; that failure is
-    /// logged at `error` with the wrapped ``AxolotyError`` chain so the loss is
-    /// diagnosable. Publication remains best-effort.
+    /// The authoritative association gate lives in
+    /// ``CommunicationManager/publishIoValue(event:)``, which returns early
+    /// unless the IO registry currently holds an associating route for the
+    /// source (populated by the router's Associate handling). A value for an
+    /// unassociated source is therefore suppressed there, matching the
+    /// intended protocol behavior that IO values are dropped until the source
+    /// is associated (P1-6). A value whose data format does not match the
+    /// source's raw/JSON configuration cannot be published; that
+    /// construction failure is logged at `error` with the wrapped
+    /// ``AxolotyError`` chain so the loss is diagnosable. Publication remains
+    /// best-effort.
     public func publish(source: IoSource, value: Any) {
-        let item = sourceItems[source.objectId] ?? (source, false, nil)
-        sourceItems[source.objectId] = item
-        guard item.associated else {
-            // Deliberate back-pressure: a value published for an unassociated
-            // source is dropped. Logged (not silent) so the loss is observable
-            // while remaining best-effort.
-            self.log.notice("Dropped IoValue for unassociated source", metadata: [
-                "ioSourceId": .string(source.objectId.string),
-                "ioRoute": .string(communicationManager.createIoRoute(ioSource: source)),
-            ])
-            return
-        }
         let event: IoValueEvent?
         var constructionError: Error?
         do {
@@ -71,6 +65,12 @@ open class IoSourceController: Controller {
     }
 
     /// Determines whether a source is currently associated.
+    ///
+    /// The authoritative association state is maintained by the communication
+    /// manager's IO registry. There is currently no public synchronous query
+    /// exposing it, so this returns the controller-local bookkeeping value
+    /// rather than the registry's route state; prefer
+    /// ``observeAssociation(source:)`` for association-aware publish gating.
     public func isAssociated(source: IoSource) -> Bool {
         sourceItems[source.objectId]?.associated ?? false
     }
