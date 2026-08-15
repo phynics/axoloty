@@ -281,6 +281,30 @@ protocol MessageRouter {
 // Embedded: backs the protocol with StaticDispatchTable
 ```
 
+#### Production embedded ingress routes through the router (#493)
+
+The production embedded device-agent ingress (`StaticDeviceAgent` in
+`Embedded/swift/main/StaticDeviceAgent.swift`) owns an
+`EmbeddedMessageRouter` and dispatches every non-correlated supported event
+family through it rather than a hand-rolled per-event switch:
+
+- Discover and Associate route on the flat per-event-type tables.
+- Advertise and Deadvertise route on the advertise family, keyed by the device
+  object-type filter (`coaty.test.Device`); filterless publishes and every
+  Deadvertise fan out through `StaticFamilyTable`'s `dispatchAll`, and a
+  matching-filter advertise routes through the byte-slice filter lookup.
+- IoValue routes on the dedicated IoValue table.
+- Resolve remains a direct, greedy correlation state-machine path: the router's
+  response family keys only by an exact correlation ID, so it cannot deliver a
+  wrong- or duplicate-correlation Resolve for rejection. The agent must observe
+  every Resolve to enforce its bounded single-outstanding-Discover invariant.
+
+`EmbeddedMessageRouter` is therefore the authoritative ingress routing seam for
+all non-correlated event families on the embedded target; the agent retains only
+its correlation state machine and the return-value preparation required by the
+C MQTT bridge. The agent is a fixed-phase single-context singleton, so its
+`@unchecked Sendable` router-handler capture introduces no cross-isolation sharing.
+
 ### 10. What this plan does NOT change
 
 - **IO routing** (RuleBasedIoRouter, IoSource, IoActor) — #115 already

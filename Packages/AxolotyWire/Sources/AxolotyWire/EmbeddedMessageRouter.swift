@@ -314,49 +314,66 @@ public final class EmbeddedMessageRouter: MessageRouter {
             return
         }
 
-        // Keyed dispatch for family events
+        dispatchKeyed(eventType, message)
+    }
+
+    private func dispatchKeyed(_ eventType: WireEventType, _ message: BorrowedMessage) {
         switch eventType {
         case .advertise:
-            // Event-type filter is the part of topic level 3 after ':'.
-            if let filter = message.topic.eventTypeFilter {
-                advertiseFamily.dispatch(byBytes: filter, message)
-            } else {
-                advertiseFamily.dispatchAll(message)
-            }
+            dispatchAdvertise(message)
 
         case .deadvertise:
-            // Deadvertise is delivered to all advertise subscribers
             advertiseFamily.dispatchAll(message)
 
         case .channel:
-            // Channel ID is the event-type filter from topic level 3
-            if let filter = message.topic.eventTypeFilter {
-                channelFamily.dispatch(byBytes: filter, message)
-            }
+            dispatchChannel(message)
 
         case .call:
-            // Correlation ID is topic level 5
-            if let corrId = message.topic.level(5) {
-                callFamily.dispatch(byBytes: corrId, message)
-            }
+            dispatchCall(message)
 
         case .update:
-            if let corrId = message.topic.level(5) {
-                updateFamily.dispatch(byBytes: corrId, message)
-            }
+            dispatchUpdate(message)
 
         case .complete, .resolve, .retrieve, .returnEvent:
-            if let corrId = message.topic.correlationIdLevel {
-                responseFamily.dispatch(
-                    matching: { $0.matches(eventType: eventType, correlationId: corrId) },
-                    message
-                )
-            }
+            dispatchResponse(eventType, message)
 
         default:
-            // Flat dispatch for all other event types
             tables[eventType]?.dispatch(message)
         }
+    }
+
+    private func dispatchAdvertise(_ message: BorrowedMessage) {
+        if let filter = message.topic.eventTypeFilter {
+            advertiseFamily.dispatch(byBytes: filter, message)
+        } else {
+            advertiseFamily.dispatchAll(message)
+        }
+    }
+
+    private func dispatchChannel(_ message: BorrowedMessage) {
+        if let filter = message.topic.eventTypeFilter {
+            channelFamily.dispatch(byBytes: filter, message)
+        }
+    }
+
+    private func dispatchCall(_ message: BorrowedMessage) {
+        if let correlationId = message.topic.level(5) {
+            callFamily.dispatch(byBytes: correlationId, message)
+        }
+    }
+
+    private func dispatchUpdate(_ message: BorrowedMessage) {
+        if let correlationId = message.topic.level(5) {
+            updateFamily.dispatch(byBytes: correlationId, message)
+        }
+    }
+
+    private func dispatchResponse(_ eventType: WireEventType, _ message: BorrowedMessage) {
+        guard let correlationId = message.topic.correlationIdLevel else { return }
+        responseFamily.dispatch(
+            matching: { $0.matches(eventType: eventType, correlationId: correlationId) },
+            message
+        )
     }
 
     private static let responseEventTypes: [WireEventType] = [

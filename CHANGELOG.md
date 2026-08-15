@@ -12,6 +12,12 @@ fork, through CoatySwift 2.4.0, remain documented in the
 Development toward Axoloty 1.0 is in progress and tracked by the
 [v1 release epic](https://github.com/phynics/axoloty/issues/272).
 
+### Added
+
+- Bounded MQTT ingress delivery queue: inbound message delivery sheds
+  newest excess jobs once the queue fills, reports overload through
+  rate-limited logging, and preserves arrival order of retained messages.
+
 ## [0.4.0] - 2026-08-14
 
 Axoloty 0.4.0 is a development checkpoint and is not API-stable.

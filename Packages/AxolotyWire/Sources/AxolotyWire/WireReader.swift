@@ -5,7 +5,7 @@ import _JSONCore
 /// The lexical kind retained for an indexed JSON value.
 @usableFromInline enum WireTokenKind: UInt8 { case object, array, string, number, trueValue, falseValue, nullValue }
 
-private struct WireKeyCursor {
+struct WireKeyCursor {
     private let bytes: UnsafeRawPointer
     private let end: Int
     private let decodesEscapes: Bool
@@ -144,7 +144,7 @@ private struct WireKeyCursor {
     }
 }
 
-private func wireSemanticKeysEqual(_ lhs: inout WireKeyCursor, _ rhs: inout WireKeyCursor) -> Bool {
+func wireSemanticKeysEqual(_ lhs: inout WireKeyCursor, _ rhs: inout WireKeyCursor) -> Bool {
     while true {
         let left = lhs.nextScalar()
         let right = rhs.nextScalar()
@@ -153,13 +153,13 @@ private func wireSemanticKeysEqual(_ lhs: inout WireKeyCursor, _ rhs: inout Wire
     }
 }
 
-private func wireSemanticKeysEqual(bytes: UnsafeRawPointer, range: Range<Int>, key: StaticString) -> Bool {
+func wireSemanticKeysEqual(bytes: UnsafeRawPointer, range: Range<Int>, key: StaticString) -> Bool {
     var field = WireKeyCursor(bytes: bytes, range: range, decodesEscapes: true)
     var requested = WireKeyCursor(key: key)
     return wireSemanticKeysEqual(&field, &requested)
 }
 
-private func wireSemanticKeysEqual(bytes: UnsafeBufferPointer<UInt8>, lhs: Range<Int>, rhs: Range<Int>) -> Bool {
+func wireSemanticKeysEqual(bytes: UnsafeBufferPointer<UInt8>, lhs: Range<Int>, rhs: Range<Int>) -> Bool {
     guard let baseAddress = bytes.baseAddress else { return false }
     var first = WireKeyCursor(bytes: UnsafeRawPointer(baseAddress), range: lhs, decodesEscapes: true)
     var second = WireKeyCursor(bytes: UnsafeRawPointer(baseAddress), range: rhs, decodesEscapes: true)
@@ -170,7 +170,7 @@ private func wireSemanticKeysEqual(bytes: UnsafeBufferPointer<UInt8>, lhs: Range
 public struct WireReader {
     @usableFromInline let bytes: UnsafeRawPointer
     public let length: Int
-    @usableFromInline let index: FieldIndex
+    @usableFromInline let index: WireFieldIndex
 
     /// Creates a reader over a borrowed JSON byte buffer.
     ///
@@ -181,7 +181,7 @@ public struct WireReader {
     public init(bytes: UnsafePointer<UInt8>, length: Int) {
         self.bytes = UnsafeRawPointer(bytes); self.length = max(0, length)
         let buffer = UnsafeBufferPointer(start: bytes, count: max(0, length))
-        var index = FieldIndex()
+        var index = WireFieldIndex()
         guard buffer.count <= WireBufferConfig.maxPayloadSize else {
             index.failure = WireDecodeError(.payloadExceedsLimit, byteOffset: buffer.count)
             self.index = index
@@ -193,7 +193,7 @@ public struct WireReader {
             }
             for offset in buffer.count..<(buffer.count + 8) { padded[offset] = 0x7D }
             let paddedBuffer = UnsafeBufferPointer(start: padded.baseAddress!, count: buffer.count + 8)
-            var destination = FieldDestination(bytes: buffer)
+            let destination = WireFieldDestination(bytes: buffer)
             var tokenizer = JSONTokenizer(bytes: paddedBuffer, destination: destination)
             #if hasFeature(Embedded)
             if let parserError = tokenizer.scanValueResult() {
@@ -224,20 +224,7 @@ public struct WireReader {
                 )
             }
             #endif
-            destination = tokenizer.destination
-            if destination.failure == nil && tokenizer.currentOffset > buffer.count {
-                destination.failure = WireDecodeError(.unexpectedEndOfInput, byteOffset: buffer.count)
-            } else {
-                var offset = tokenizer.currentOffset
-                while offset < buffer.count && Self.isWhitespace(buffer[offset]) { offset += 1 }
-                if destination.failure == nil && offset != buffer.count {
-                    destination.failure = WireDecodeError(
-                        .unexpectedToken(expected: "end of input", actual: buffer[offset]),
-                        byteOffset: offset
-                    )
-                }
-            }
-            index = destination.index
+            index = Self.finalizedIndex(tokenizer.destination, bytes: buffer, currentOffset: tokenizer.currentOffset)
         }
         self.index = index
     }
@@ -326,261 +313,31 @@ public struct WireReader {
     }
     @inline(__always) private static func isWhitespace(_ byte: UInt8) -> Bool { byte == 32 || byte == 9 || byte == 10 || byte == 13 }
 
-    @usableFromInline struct FieldSlot {
-        let key: Range<Int>; let value: Range<Int>; let content: Range<Int>; let kind: WireTokenKind
-    }
-
-    @usableFromInline struct FieldIndex {
-        var rootObject = false; var completeValue = false; var failure: WireDecodeError?; var count = 0
-        var slots = (FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none, FieldSlot?.none)
-        func slot(_ n: Int) -> FieldSlot? { switch n { case 0: slots.0; case 1: slots.1; case 2: slots.2; case 3: slots.3; case 4: slots.4; case 5: slots.5; case 6: slots.6; case 7: slots.7; case 8: slots.8; case 9: slots.9; case 10: slots.10; case 11: slots.11; case 12: slots.12; case 13: slots.13; case 14: slots.14; case 15: slots.15; case 16: slots.16; case 17: slots.17; case 18: slots.18; case 19: slots.19; case 20: slots.20; case 21: slots.21; case 22: slots.22; case 23: slots.23; default: nil } }
-        func find(bytes: UnsafeRawPointer, key: StaticString) -> FieldSlot? { for n in 0..<count { if let value = slot(n), wireSemanticKeysEqual(bytes: bytes, range: value.key, key: key) { return value } }; return nil }
-        mutating func append(_ value: FieldSlot, bytes: UnsafeBufferPointer<UInt8>) {
-            guard isBounded(value.key, bytes: bytes), isBounded(value.value, bytes: bytes), isBounded(value.content, bytes: bytes) else {
-                if failure == nil { failure = WireDecodeError(.unexpectedEndOfInput, byteOffset: bytes.count) }
-                return
-            }
-            for n in 0..<count {
-                if let prior = slot(n), wireSemanticKeysEqual(bytes: bytes, lhs: prior.key, rhs: value.key) {
-                    if failure == nil { failure = WireDecodeError(.duplicateField, byteOffset: value.key.lowerBound) }
-                    return
-                }
-            }
-            guard count < WireBufferConfig.maxIndexedFields else {
-                failure = WireDecodeError(.fieldIndexOverflow, byteOffset: value.key.lowerBound)
-                return
-            }
-            switch count {
-            case 0: slots.0 = value; case 1: slots.1 = value; case 2: slots.2 = value; case 3: slots.3 = value
-            case 4: slots.4 = value; case 5: slots.5 = value; case 6: slots.6 = value; case 7: slots.7 = value
-            case 8: slots.8 = value; case 9: slots.9 = value; case 10: slots.10 = value; case 11: slots.11 = value
-            case 12: slots.12 = value; case 13: slots.13 = value; case 14: slots.14 = value; case 15: slots.15 = value
-            case 16: slots.16 = value; case 17: slots.17 = value; case 18: slots.18 = value; case 19: slots.19 = value
-            case 20: slots.20 = value; case 21: slots.21 = value; case 22: slots.22 = value; case 23: slots.23 = value
-            default: break
-            }
-            count += 1
-        }
-        private func isBounded(_ range: Range<Int>, bytes: UnsafeBufferPointer<UInt8>) -> Bool {
-            range.lowerBound >= 0 && range.lowerBound <= range.upperBound && range.upperBound <= bytes.count
-        }
-    }
-
-    private struct Context { let start: Int; let key: Range<Int>? }
-    private struct FieldDestination: JSONTokenizerDestination {
-        typealias ArrayStartContext = Context; typealias ObjectStartContext = Context
-        let bytes: UnsafeBufferPointer<UInt8>
-        var index = FieldIndex()
-        var depth = 0
-        var pendingKey: Range<Int>?
-        var expectingKey = false
-        var containerCount = 0
-        var containers = (UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0))
-
-        mutating func objectStartFound(_ token: JSONToken.ObjectStart) -> Context {
-            if depth == 0 { index.rootObject = true; expectingKey = true }
-            if depth >= 8 { record(.init(.invalidNesting, byteOffset: token.start.byteOffset)) }
-            pushContainer(0x7B)
-            let context = Context(start: token.start.byteOffset, key: depth == 1 ? pendingKey : nil)
-            pendingKey = nil
-            depth += 1
-            return context
-        }
-
-        mutating func objectEndFound(_ token: JSONToken.ObjectEnd, context: consuming Context) {
-            depth -= 1
-            popContainer()
-            if depth == 1, let key = context.key {
-                index.append(FieldSlot(key: key, value: context.start..<token.end.byteOffset, content: context.start..<token.end.byteOffset, kind: .object), bytes: bytes)
-                expectingKey = true
-            }
-            if depth == 0 { index.completeValue = true; expectingKey = false }
-        }
-
-        mutating func arrayStartFound(_ token: JSONToken.ArrayStart) -> Context {
-            if depth >= 8 { record(.init(.invalidNesting, byteOffset: token.start.byteOffset)) }
-            pushContainer(0x5B)
-            let context = Context(start: token.start.byteOffset, key: depth == 1 ? pendingKey : nil)
-            pendingKey = nil
-            depth += 1
-            return context
-        }
-
-        mutating func arrayEndFound(_ token: JSONToken.ArrayEnd, context: consuming Context) {
-            depth -= 1
-            popContainer()
-            if depth == 1, let key = context.key {
-                index.append(FieldSlot(key: key, value: context.start..<token.end.byteOffset, content: context.start..<token.end.byteOffset, kind: .array), bytes: bytes)
-                expectingKey = true
-            }
-            if depth == 0 { index.completeValue = true }
-        }
-
-        mutating func stringFound(_ token: JSONToken.String) {
-            let raw = token.start.byteOffset..<token.end.byteOffset
-            if let failure = validateString(raw) { record(failure) }
-            let content = raw.lowerBound < raw.upperBound && bytes[raw.lowerBound] == 0x22 ? raw.lowerBound + 1..<raw.upperBound - 1 : raw
-            if depth == 1 && expectingKey { pendingKey = content; expectingKey = false }
-            else { value(raw, content, .string) }
-        }
-
-        mutating func numberFound(_ token: JSONToken.Number) {
-            let raw = token.start.byteOffset..<token.end.byteOffset
-            if let failure = validateNumber(raw) { record(failure) }
-            value(raw, raw, .number)
-        }
-
-        mutating func booleanTrueFound(_ token: JSONToken.BooleanTrue) { let raw = token.start.byteOffset - 4..<token.start.byteOffset; value(raw, raw, .trueValue) }
-        mutating func booleanFalseFound(_ token: JSONToken.BooleanFalse) { let raw = token.start.byteOffset - 5..<token.start.byteOffset; value(raw, raw, .falseValue) }
-        mutating func nullFound(_ token: JSONToken.Null) { let raw = token.start.byteOffset - 4..<token.start.byteOffset; value(raw, raw, .nullValue) }
-
-        mutating func value(_ raw: Range<Int>, _ content: Range<Int>, _ kind: WireTokenKind) {
-            if depth == 0 { index.completeValue = true; return }
-            guard depth == 1, let key = pendingKey else { return }
-            index.append(FieldSlot(key: key, value: raw, content: content, kind: kind), bytes: bytes)
-            pendingKey = nil
-            expectingKey = true
-            index.completeValue = true
-        }
-
-        mutating func record(_ error: WireDecodeError) {
-            if index.failure == nil { index.failure = error }
-        }
-
-        mutating func pushContainer(_ kind: UInt8) {
-            switch containerCount {
-            case 0: containers.0 = kind
-            case 1: containers.1 = kind
-            case 2: containers.2 = kind
-            case 3: containers.3 = kind
-            case 4: containers.4 = kind
-            case 5: containers.5 = kind
-            case 6: containers.6 = kind
-            case 7: containers.7 = kind
-            default: break
-            }
-            containerCount += 1
-        }
-
-        mutating func popContainer() {
-            if containerCount > 0 { containerCount -= 1 }
-        }
-
-        var topContainer: UInt8? {
-            switch containerCount {
-            case 1: containers.0
-            case 2: containers.1
-            case 3: containers.2
-            case 4: containers.3
-            case 5: containers.4
-            case 6: containers.5
-            case 7: containers.6
-            case 8: containers.7
-            default: nil
+    private static func finalizedIndex(
+        _ initialDestination: WireFieldDestination,
+        bytes: UnsafeBufferPointer<UInt8>,
+        currentOffset: Int
+    ) -> WireFieldIndex {
+        var destination = initialDestination
+        if destination.failure == nil && currentOffset > bytes.count {
+            destination.failure = WireDecodeError(.unexpectedEndOfInput, byteOffset: bytes.count)
+        } else {
+            var offset = currentOffset
+            while offset < bytes.count && isWhitespace(bytes[offset]) { offset += 1 }
+            if destination.failure == nil && offset != bytes.count {
+                destination.failure = WireDecodeError(
+                    .unexpectedToken(expected: "end of input", actual: bytes[offset]),
+                    byteOffset: offset
+                )
             }
         }
-
-        func validateString(_ range: Range<Int>) -> WireDecodeError? {
-            guard range.count >= 2 else { return .init(.unexpectedEndOfInput, byteOffset: range.lowerBound) }
-            let end = range.upperBound - 1
-            var offset = range.lowerBound + 1
-            while offset < end {
-                let byte = bytes[offset]
-                if byte == 0x5C {
-                    let escapeOffset = offset
-                    offset += 1
-                    guard offset < end else { return .init(.invalidEscape, byteOffset: escapeOffset) }
-                    if bytes[offset] == 0x75 {
-                        guard let high = unicodeEscape(at: offset, before: end) else { return .init(.invalidEscape, byteOffset: offset) }
-                        offset += 5
-                        if high >= 0xD800 && high <= 0xDBFF {
-                            guard offset + 5 < end, bytes[offset] == 0x5C, bytes[offset + 1] == 0x75,
-                                  let low = unicodeEscape(at: offset + 1, before: end), low >= 0xDC00, low <= 0xDFFF
-                            else { return .init(.invalidEscape, byteOffset: escapeOffset) }
-                            offset += 6
-                        } else if high >= 0xDC00 && high <= 0xDFFF {
-                            return .init(.invalidEscape, byteOffset: escapeOffset)
-                        }
-                    } else {
-                        switch bytes[offset] {
-                        case 0x22, 0x5C, 0x2F, 0x62, 0x66, 0x6E, 0x72, 0x74: offset += 1
-                        default: return .init(.invalidEscape, byteOffset: offset)
-                        }
-                    }
-                } else if byte < 0x20 {
-                    return .init(.invalidEscape, byteOffset: offset)
-                } else {
-                    let width: Int
-                    if byte < 0x80 { width = 1 }
-                    else if byte >= 0xC2 && byte <= 0xDF { width = 2 }
-                    else if byte >= 0xE0 && byte <= 0xEF { width = 3 }
-                    else if byte >= 0xF0 && byte <= 0xF4 { width = 4 }
-                    else { return .init(.invalidUTF8, byteOffset: offset) }
-                    guard offset + width <= end else { return .init(.invalidUTF8, byteOffset: offset) }
-                    if width > 1 {
-                        let second = bytes[offset + 1]
-                        guard !((byte == 0xE0 && second < 0xA0) || (byte == 0xED && second > 0x9F) || (byte == 0xF0 && second < 0x90) || (byte == 0xF4 && second > 0x8F)) else {
-                            return .init(.invalidUTF8, byteOffset: offset)
-                        }
-                        for continuation in 1..<width {
-                            guard bytes[offset + continuation] >= 0x80 && bytes[offset + continuation] <= 0xBF else {
-                                return .init(.invalidUTF8, byteOffset: offset + continuation)
-                            }
-                        }
-                    }
-                    offset += width
-                }
-            }
-            return nil
-        }
-
-        func unicodeEscape(at offset: Int, before end: Int) -> Int? {
-            guard offset + 4 < end else { return nil }
-            var value = 0
-            for digitOffset in 1...4 {
-                let byte = bytes[offset + digitOffset]
-                let digit: Int
-                if byte >= 48 && byte <= 57 { digit = Int(byte - 48) }
-                else if byte >= 65 && byte <= 70 { digit = Int(byte - 55) }
-                else if byte >= 97 && byte <= 102 { digit = Int(byte - 87) }
-                else { return nil }
-                value = value * 16 + digit
-            }
-            return value
-        }
-
-        func validateNumber(_ range: Range<Int>) -> WireDecodeError? {
-            var offset = range.lowerBound
-            if bytes[offset] == 0x2D { offset += 1 }
-            guard offset < range.upperBound else { return .init(.invalidNumber, byteOffset: range.lowerBound) }
-            if bytes[offset] == 0x30 {
-                offset += 1
-                if offset < range.upperBound, bytes[offset] >= 0x30 && bytes[offset] <= 0x39 { return .init(.invalidNumber, byteOffset: offset) }
-            } else {
-                guard bytes[offset] >= 0x31 && bytes[offset] <= 0x39 else { return .init(.invalidNumber, byteOffset: offset) }
-                while offset < range.upperBound && bytes[offset] >= 0x30 && bytes[offset] <= 0x39 { offset += 1 }
-            }
-            if offset < range.upperBound, bytes[offset] == 0x2E {
-                offset += 1
-                guard offset < range.upperBound, bytes[offset] >= 0x30 && bytes[offset] <= 0x39 else { return .init(.invalidNumber, byteOffset: offset) }
-                while offset < range.upperBound && bytes[offset] >= 0x30 && bytes[offset] <= 0x39 { offset += 1 }
-            }
-            if offset < range.upperBound, bytes[offset] == 0x65 || (offset < range.upperBound && bytes[offset] == 0x45) {
-                offset += 1
-                if offset < range.upperBound && (bytes[offset] == 0x2B || bytes[offset] == 0x2D) { offset += 1 }
-                guard offset < range.upperBound, bytes[offset] >= 0x30 && bytes[offset] <= 0x39 else { return .init(.invalidNumber, byteOffset: offset) }
-                while offset < range.upperBound && bytes[offset] >= 0x30 && bytes[offset] <= 0x39 { offset += 1 }
-            }
-            return offset == range.upperBound ? nil : .init(.invalidNumber, byteOffset: offset)
-        }
-
-        var failure: WireDecodeError? { get { index.failure } set { index.failure = newValue } }
+        return destination.index
     }
 
     private static func parserFailure(
         _ bytes: UnsafeBufferPointer<UInt8>,
         offset: Int,
-        destination: FieldDestination,
+        destination: WireFieldDestination,
         parserErrorIsMissingData: Bool
     ) -> WireDecodeError {
         if let failure = destination.failure { return failure }

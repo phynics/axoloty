@@ -107,19 +107,24 @@ internal class MQTTNIOClient: CommunicationClient {
     private var discovery: ServiceDiscovery?
 
     /// Serializes delivery of decoded MQTT messages into ``Broadcast`` in
-    /// arrival order.
+    /// arrival order and bounds the un-delivered backlog so a stalled downstream
+    /// router cannot retain inbound payload work without limit.
     ///
     /// mqtt-nio's publish listener fires synchronously per message on its
     /// event loop, but each per-message broadcast send is `async` (`Broadcast` is
     /// an actor). Spawning an unstructured `Task` per message let
     /// independently-scheduled tasks race for actor execution, so messages
     /// could reach the hub out of arrival order -- a regression from the
-    /// RxSwift-era sequential dispatch. `AsyncStream.Continuation.yield` is
-    /// synchronous and preserves call order, so feeding one and draining it
-    /// from a single long-lived `Task` restores that guarantee. See issue
-    /// #56.
-    private let deliveryContinuation: AsyncStream<@Sendable () async -> Void>.Continuation
-    private let deliveryTask: Task<Void, Never>
+    /// RxSwift-era sequential dispatch. ``IngressDeliveryQueue`` feeds one
+    /// synchronous continuation and drains it from a single long-lived `Task`
+    /// to preserve call order (issue #56), and sheds the *newest* queued jobs
+    /// once its bounded buffer is full (issue #448). See ``enqueueDelivery(_:)``
+    /// for the rate-limited overload reporting this enables.
+    let deliveryQueue: IngressDeliveryQueue
+
+    /// Rate-limited overload reporting for the bounded ``deliveryQueue``,
+    /// keeping that logging concern out of the queue primitive itself.
+    private let overloadReporter = IngressOverloadReporter()
 
     /// Shared event loop group for all `MQTTClient` instances created by this
     /// object (one per broker candidate attempt). Using a shared group avoids
@@ -192,18 +197,13 @@ internal class MQTTNIOClient: CommunicationClient {
     init(
         mqttClientOptions: MQTTClientOptions,
         delegate: CommunicationClientDelegate,
-        publishHandler: PublishHandler? = nil
+        publishHandler: PublishHandler? = nil,
+        ingressDeliveryCapacity: Int = IngressDeliveryQueue.defaultCapacity
     ) {
         self.callbackAdapter = MQTTNIOCallbackAdapter(delegate: delegate)
         self.publishHandler = publishHandler
 
-        let (stream, continuation) = AsyncStream<@Sendable () async -> Void>.makeStream()
-        self.deliveryContinuation = continuation
-        self.deliveryTask = Task<Void, Never>(priority: .userInitiated) {
-            for await job in stream {
-                await job()
-            }
-        }
+        self.deliveryQueue = IngressDeliveryQueue(capacity: ingressDeliveryCapacity)
 
         configure(mqttClientOptions)
         callbackAdapter.attach(self)
@@ -216,7 +216,7 @@ internal class MQTTNIOClient: CommunicationClient {
     }
 
     deinit {
-        deliveryContinuation.finish()
+        deliveryQueue.finish()
         discovery?.stopDiscovery()
         // deinit runs with exclusive access to the instance, so the lifecycle
         // state is read without the lock. Cancel any pending reconnect work item so it
@@ -625,9 +625,21 @@ internal class MQTTNIOClient: CommunicationClient {
         guard let streams = streamsOrWarn() else {
             return
         }
-        deliveryContinuation.yield {
+        enqueueDelivery {
             await streams.communicationState.sendState(state)
         }
+    }
+
+    /// Enqueues one delivery job into the bounded ingress queue, reporting
+    /// overload through ``overloadReporter`` when the queue sheds the job
+    /// because its buffer is already full.
+    private func enqueueDelivery(_ job: @escaping @Sendable () async -> Void) {
+        guard !deliveryQueue.enqueue(job) else { return }
+        overloadReporter.reportSheddedJob(
+            totalDropped: deliveryQueue.droppedCount,
+            capacity: deliveryQueue.capacity,
+            log: log
+        )
     }
 
     // MARK: - mqtt-nio listener callbacks.
@@ -639,7 +651,7 @@ internal class MQTTNIOClient: CommunicationClient {
     /// method first copies it into `[UInt8]`, then uses `TopicView` only inside
     /// the scoped `String.withUTF8` borrow to make routing decisions and
     /// materialize `ParsedMQTTMessage` metadata as `String`s. Every closure
-    /// yielded to ``deliveryContinuation`` captures only owned `Sendable`
+    /// enqueued in ``deliveryQueue`` captures only owned `Sendable`
     /// values (`RawMQTTMessage`, `IoValueEventSnapshot`, or
     /// `ParsedMQTTMessage`), never `TopicView`, `ByteSlice`, or
     /// `BorrowedMessage`.
@@ -659,7 +671,7 @@ internal class MQTTNIOClient: CommunicationClient {
             guard let streams = streamsOrWarn() else {
                 return
             }
-            deliveryContinuation.yield {
+            enqueueDelivery {
                 await streams.rawMQTTMessages.send(rawMessage)
             }
 
@@ -684,7 +696,7 @@ internal class MQTTNIOClient: CommunicationClient {
                         topic: info.topicName,
                         payload: bytes
                     )
-                    deliveryContinuation.yield {
+                    enqueueDelivery {
                         await streams.ioValues.send(IoValueEventSnapshot(topic: info.topicName, payload: bytes))
                     }
                     return
@@ -738,7 +750,7 @@ internal class MQTTNIOClient: CommunicationClient {
                     return
                 }
                 let parsed = ParsedMQTTMessage(topicView: topicView, event: ownedEvent, payload: bytes)
-                deliveryContinuation.yield {
+                enqueueDelivery {
                     await streams.parsedMQTTMessages.send(parsed)
                     await Self.routeParsedMessage(parsed: parsed, into: streams)
                 }

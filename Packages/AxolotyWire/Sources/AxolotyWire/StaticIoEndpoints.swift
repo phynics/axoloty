@@ -223,12 +223,34 @@ public struct StaticIoEndpoints {
         topic: UnsafeMutablePointer<UInt8>,
         topicCapacity: Int,
         outputPayload: UnsafeMutablePointer<UInt8>,
-        payloadCapacity: Int
+        payloadCapacity: Int = 0
+    ) -> (topicLength: Int, payloadLength: Int)? {
+        preparePublication(
+            sourceId: sourceId,
+            payload: payload,
+            buffers: (
+                topic: topic,
+                topicCapacity: topicCapacity,
+                outputPayload: outputPayload,
+                payloadCapacity: payloadCapacity
+            )
+        )
+    }
+
+    private func preparePublication(
+        sourceId: UUID16,
+        payload: ByteSlice,
+        buffers: (
+            topic: UnsafeMutablePointer<UInt8>,
+            topicCapacity: Int,
+            outputPayload: UnsafeMutablePointer<UInt8>,
+            payloadCapacity: Int
+        )
     ) -> (topicLength: Int, payloadLength: Int)? {
         guard let index = sourceIndex(sourceId), sourceStates[index].associationCount > 0,
-              valueIsCompatible(payload, mode: sources[index].mode), payload.length <= payloadCapacity,
-              let topicLength = sourceStates[index].route.copy(to: topic, capacity: topicCapacity) else { return nil }
-        for offset in 0..<payload.length { outputPayload[offset] = payload.byte(at: offset)! }
+              valueIsCompatible(payload, mode: sources[index].mode), payload.length <= buffers.payloadCapacity,
+              let topicLength = sourceStates[index].route.copy(to: buffers.topic, capacity: buffers.topicCapacity) else { return nil }
+        for offset in 0..<payload.length { buffers.outputPayload[offset] = payload.byte(at: offset)! }
         return (topicLength, payload.length)
     }
 

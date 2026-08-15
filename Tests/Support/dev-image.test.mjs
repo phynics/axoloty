@@ -209,7 +209,7 @@ test("CI reuses stable, bounded Swift build cache namespaces", () => {
     ".build/ci/repositories",
     ".build/ci/x86_64-unknown-linux-gnu/debug/*.build",
     ".build/ci/x86_64-unknown-linux-gnu/debug/description.json",
-    ".build/ci/x86_64-unknown-linux-gnu/debug/index",
+    ".build/ci/x86_64-unknown-linux-gnu/debug/index/store",
     ".build/ci/x86_64-unknown-linux-gnu/debug/Modules",
     ".build/ci/x86_64-unknown-linux-gnu/debug/ModuleCache",
   ];

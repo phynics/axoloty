@@ -711,7 +711,7 @@ struct BroadcastTransportTests {
 
     @Test
     func rawMQTTMessageDelegateDoesNotDuplicateDeliver() async throws {
-        // The transport's deliveryContinuation path is the sole source of raw
+        // The transport's delivery queue path is the sole source of raw
         // messages on the broadcast stream. The delegate callback must not
         // re-send — before #238 it delivered each message twice.
         let manager = makeManager()
@@ -734,7 +734,7 @@ struct BroadcastTransportTests {
 
     @Test
     func ioValueDelegateDoesNotDuplicateDeliver() async throws {
-        // The transport's deliveryContinuation path is the sole source of
+        // The transport's delivery queue path is the sole source of
         // IoValue snapshots. The delegate callback must not re-send — before
         // #238 it delivered each value twice.
         let manager = makeManager()
