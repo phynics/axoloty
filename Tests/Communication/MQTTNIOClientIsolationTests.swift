@@ -8,7 +8,7 @@ import Testing
 struct BroadcastTransportTestsMQTTNIOIsolation {
     @Test
     func connectAndDisconnectAreSafeAcrossCallbackContexts() async throws {
-        let client = makeClient()
+        let client = try makeClient()
         let box = ClientBox(client)
 
         try await race("connect and disconnect") {
@@ -20,7 +20,7 @@ struct BroadcastTransportTestsMQTTNIOIsolation {
 
     @Test
     func inboundStateDeliveryDoesNotRaceStreamSetup() async throws {
-        let client = makeClient()
+        let client = try makeClient()
         let box = ClientBox(client)
 
         try await race("inbound state delivery and stream setup") {
@@ -32,7 +32,7 @@ struct BroadcastTransportTestsMQTTNIOIsolation {
 
     @Test
     func streamSetupCanRepeatWhilePublishing() async throws {
-        let client = makeClient()
+        let client = try makeClient()
         let box = ClientBox(client)
 
         try await race("stream setup and publishing") {
@@ -48,7 +48,7 @@ struct BroadcastTransportTestsMQTTNIOIsolation {
 
     @Test
     func bytePublishCanOverlapTeardown() async throws {
-        let client = makeClient()
+        let client = try makeClient()
         let box = ClientBox(client)
 
         try await race("byte publishing and teardown") {
@@ -62,7 +62,7 @@ struct BroadcastTransportTestsMQTTNIOIsolation {
 
     @Test
     func delegateReplacementIsSynchronizedWithInboundState() async throws {
-        let client = makeClient()
+        let client = try makeClient()
         let box = ClientBox(client)
         let delegate = IsolationDelegate()
 
@@ -75,7 +75,7 @@ struct BroadcastTransportTestsMQTTNIOIsolation {
 
     @Test
     func teardownCanRaceReconnectCancellation() async throws {
-        let client = makeClient()
+        let client = try makeClient()
         let box = ClientBox(client)
 
         try await race("teardown and reconnect cancellation") {
@@ -139,7 +139,7 @@ private final class IsolationDelegate: CommunicationClientDelegate, @unchecked S
     func didReceiveStart() {}
 }
 
-private func makeClient() -> MQTTNIOClient {
+private func makeClient() throws -> MQTTNIOClient {
     let options = MQTTClientOptions(
         host: "127.0.0.1",
         port: 1883,
@@ -147,7 +147,7 @@ private func makeClient() -> MQTTNIOClient {
         autoReconnect: false
     )
     options.clientId = "isolation-test"
-    let client = MQTTNIOClient(mqttClientOptions: options, delegate: IsolationDelegate())
+    let client = try MQTTNIOClient(mqttClientOptions: options, delegate: IsolationDelegate())
     client.setStreams(makeTestStreams())
     return client
 }

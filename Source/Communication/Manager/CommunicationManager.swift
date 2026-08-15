@@ -115,7 +115,7 @@ public class CommunicationManager {
         }
         initializeMQTTClientId(mqttClientOptions)
 
-        self.client = client ?? MQTTNIOClient(mqttClientOptions: mqttClientOptions, delegate: self)
+        self.client = try client ?? MQTTNIOClient(mqttClientOptions: mqttClientOptions, delegate: self)
         self.client.delegate = self
 
         let dispatcher = CommunicationSubscriptionCommandDispatcher(client: self.client)

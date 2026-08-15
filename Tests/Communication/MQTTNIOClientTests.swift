@@ -21,9 +21,36 @@ struct MQTTNIOClientTests {
         #expect(MQTTNIOClient.validUTF8Payload(from: invalidPayload) == nil)
     }
 
+    /// On non-Apple platforms (e.g. Linux) there is no mDNS/Bonjour
+    /// ``ServiceDiscovery`` implementation. Requesting broker discovery must
+    /// fail construction with a stable, actionable ``AxolotyError`` instead
+    /// of terminating the process via `try!`.
+    #if !canImport(Darwin)
+    @Test
+    func constructionReturnsStructuredErrorWhenMDNSDiscoveryIsUnsupported() {
+        let options = MQTTClientOptions(host: "127.0.0.1", shouldTryMDNSDiscovery: true)
+        options.clientId = "mdns-construction"
+
+        do {
+            _ = try MQTTNIOClient(mqttClientOptions: options, delegate: HostIngressDelegate())
+            Issue.record("expected construction to throw on a platform without mDNS discovery")
+        } catch let error as AxolotyError {
+            guard case let .runtime(code: code, reason: reason) = error else {
+                Issue.record("expected .runtime error, got \(error)")
+                return
+            }
+            #expect(code == .brokerUnavailable)
+            #expect(reason.contains("shouldTryMDNSDiscovery"))
+            #expect(error.userFriendlyMessage == reason)
+        } catch {
+            Issue.record("expected AxolotyError, got \(error)")
+        }
+    }
+    #endif
+
     @Test
     func hostIngressDropsInvalidUTF8WithoutYieldingBorrowedData() async throws {
-        let (client, streams) = makeHostIngressClient()
+        let (client, streams) = try makeHostIngressClient()
         let rawStream = await streams.rawMQTTMessages.subscribe()
         var iterator = rawStream.makeAsyncIterator()
         let parsedStream = await streams.parsedMQTTMessages.subscribe()
@@ -43,7 +70,7 @@ struct MQTTNIOClientTests {
 
     @Test
     func hostIngressDropsOversizedPayloadWithoutTrapping() async throws {
-        let (client, streams) = makeHostIngressClient()
+        let (client, streams) = try makeHostIngressClient()
         let rawStream = await streams.rawMQTTMessages.subscribe()
         var iterator = rawStream.makeAsyncIterator()
         let typedStream = await streams.advertiseFamily.subscribe(for: AdvertiseKey(eventTypeFilter: "sensors"))
@@ -73,7 +100,7 @@ struct MQTTNIOClientTests {
         let payload = try HostWireAdapter.encodeEvent(event)
         #expect(payload.count > WireBufferConfig.maxPayloadSize)
 
-        let (client, streams) = makeHostIngressClient()
+        let (client, streams) = try makeHostIngressClient()
         let typedStream = await streams.advertiseFamily.subscribe(
             for: AdvertiseKey(eventTypeFilter: "sensors")
         )
@@ -119,7 +146,7 @@ struct MQTTNIOClientTests {
     func hostIngressPreservesOversizedRawAndJSONIoValues() async throws {
         let rawPayload = [UInt8](repeating: 0xA5, count: WireBufferConfig.maxPayloadSize + 1)
         let jsonPayload = Array("{\"value\":\"\(String(repeating: "x", count: WireBufferConfig.maxPayloadSize))\"}".utf8)
-        let (client, streams) = makeHostIngressClient()
+        let (client, streams) = try makeHostIngressClient()
         let stream = await streams.ioValues.subscribe()
         var iterator = stream.makeAsyncIterator()
 
@@ -132,7 +159,7 @@ struct MQTTNIOClientTests {
 
     @Test
     func hostIngressRejectsPayloadAboveHostLimitBeforeDelivery() async throws {
-        let (client, streams) = makeHostIngressClient()
+        let (client, streams) = try makeHostIngressClient()
         let stream = await streams.rawMQTTMessages.subscribe()
         var iterator = stream.makeAsyncIterator()
         client.handlePublish(.success(publishInfo(
@@ -148,7 +175,7 @@ struct MQTTNIOClientTests {
 
     @Test
     func hostIngressCopiesTruncatedPayloadWithinItsScope() async throws {
-        let (client, streams) = makeHostIngressClient()
+        let (client, streams) = try makeHostIngressClient()
         let rawStream = await streams.rawMQTTMessages.subscribe()
         var iterator = rawStream.makeAsyncIterator()
         let typedStream = await streams.advertiseFamily.subscribe(for: AdvertiseKey(eventTypeFilter: "sensors"))
@@ -204,7 +231,7 @@ struct MQTTNIOClientTests {
 
     @Test
     func broadOneWaySubscriptionRoutesOnlyAdvertiseToAdvertiseAll() async throws {
-        let (_, streams) = makeHostIngressClient()
+        let (_, streams) = try makeHostIngressClient()
         let advertiseStream = await streams.advertiseAll.subscribe()
         var advertiseIterator = advertiseStream.makeAsyncIterator()
         let deadvertiseStream = await streams.deadvertise.subscribe()
@@ -238,9 +265,9 @@ struct MQTTNIOClientTests {
     }
 
     @Test
-    func binaryPublishUsesConfiguredQoSAndRetainFlagLikeStringPublish() {
+    func binaryPublishUsesConfiguredQoSAndRetainFlagLikeStringPublish() throws {
         let recorder = PublishRecorder()
-        let client = makeHostIngressClient(qos: 2, publishHandler: recorder.record).0
+        let client = try makeHostIngressClient(qos: 2, publishHandler: recorder.record).0
 
         client.publish("test/topic", message: "message")
         client.publish("test/topic", message: [1, 2, 3])
@@ -257,7 +284,7 @@ struct MQTTNIOClientTests {
         // A raw (non-Coaty) topic yields exactly one delivery job per PUBLISH,
         // so overload accounting is deterministic: with capacity 2 and the
         // drainer stalled, the first two jobs are retained and the rest shed.
-        let (client, _) = makeHostIngressClient(ingressDeliveryCapacity: 2)
+        let (client, _) = try makeHostIngressClient(ingressDeliveryCapacity: 2)
         let (startedStream, startedContinuation) = AsyncStream<Void>.makeStream()
         var startedIterator = startedStream.makeAsyncIterator()
 
@@ -361,7 +388,7 @@ private func makeHostIngressClient(
     qos: Int = 0,
     publishHandler: MQTTNIOClient.PublishHandler? = nil,
     ingressDeliveryCapacity: Int = IngressDeliveryQueue.defaultCapacity
-) -> (MQTTNIOClient, CommunicationStreams) {
+) throws -> (MQTTNIOClient, CommunicationStreams) {
     let options = MQTTClientOptions(
         host: "127.0.0.1",
         port: 1883,
@@ -388,7 +415,7 @@ private func makeHostIngressClient(
         channelFamily: BroadcastFamily(mode: .event),
         responseFamily: BroadcastFamily(mode: .event)
     )
-    let client = MQTTNIOClient(
+    let client = try MQTTNIOClient(
         mqttClientOptions: options,
         delegate: HostIngressDelegate(),
         publishHandler: publishHandler,

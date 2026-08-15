@@ -194,12 +194,23 @@ internal class MQTTNIOClient: CommunicationClient {
 
     // MARK: - Initializer.
 
+    /// Creates the MQTT transport client.
+    ///
+    /// - Parameters:
+    ///   - mqttClientOptions: The MQTT broker configuration.
+    ///   - delegate: The client delegate that receives transport callbacks.
+    ///   - publishHandler: An optional hook observing publication arguments.
+    ///   - ingressDeliveryCapacity: Bounds the un-delivered inbound backlog.
+    /// - Throws: ``AxolotyError/runtime(code:reason:)`` (code
+    ///   ``AxolotyError/RuntimeErrorCode/brokerUnavailable``) if mDNS/Bonjour
+    ///   broker discovery is requested but no ``ServiceDiscovery``
+    ///   implementation is available on the current platform.
     init(
         mqttClientOptions: MQTTClientOptions,
         delegate: CommunicationClientDelegate,
         publishHandler: PublishHandler? = nil,
         ingressDeliveryCapacity: Int = IngressDeliveryQueue.defaultCapacity
-    ) {
+    ) throws {
         self.callbackAdapter = MQTTNIOCallbackAdapter(delegate: delegate)
         self.publishHandler = publishHandler
 
@@ -208,11 +219,7 @@ internal class MQTTNIOClient: CommunicationClient {
         configure(mqttClientOptions)
         callbackAdapter.attach(self)
 
-        // `try!` matches the existing fail-fast convention used elsewhere
-        // during initialization (see `CommunicationManager.init`).
-        // Fail-fast invariant, not user input.
-        // swiftlint:disable:next force_try
-        try! startDiscoveryIfNeeded(mqttClientOptions)
+        try startDiscoveryIfNeeded(mqttClientOptions)
     }
 
     deinit {

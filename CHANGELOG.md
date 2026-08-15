@@ -20,6 +20,11 @@ Development toward Axoloty 1.0 is in progress and tracked by the
 
 ### Fixed
 
+- Return a structured ``AxolotyError`` instead of terminating the process
+  when mDNS/Bonjour broker discovery is requested on a platform without a
+  ``ServiceDiscovery`` implementation (e.g. Linux). The error now propagates
+  from client/manager/container construction instead of crashing via
+  `try!`.
 - Release SensorThings responder tasks after the final sensor unregister:
   removing the last registration now cancels and releases the shared
   Discover/Query responder tasks, so a drained `SensorSourceController` no
