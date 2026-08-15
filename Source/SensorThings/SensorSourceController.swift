@@ -30,10 +30,7 @@ open class SensorSourceController: Controller {
         super.onCommunicationManagerStopping()
         samplingTasks.values.forEach { $0.cancel() }
         samplingTasks.removeAll()
-        discoverTask?.cancel()
-        discoverTask = nil
-        queryTask?.cancel()
-        queryTask = nil
+        releaseResponders()
     }
 
     var registeredSensorContainers: [SensorContainer] { Array(sensors.values) }
@@ -89,7 +86,32 @@ open class SensorSourceController: Controller {
             throw AxolotyError.runtime(code: .notRegistered, reason: "sensorId \(sensorId.string) is not registered")
         }
         samplingTasks.removeValue(forKey: sensorId.string)?.cancel()
+        // Once the final registration is removed there is no sensor left to
+        // serve throughout the rest of the controller's lifetime, so cancel
+        // and release the shared Discover/Query responder tasks. They would
+        // otherwise keep running (and retain their stream subscriptions)
+        // until the controller stops.
+        if sensors.isEmpty {
+            releaseResponders()
+        }
         if options?.skipsSensorDeadvertise != true { communicationManager.publishDeadvertise(DeadvertiseEvent.with(objectIds: [sensorId])) }
+    }
+
+    /// Whether the shared Discover/Query responder tasks are active.
+    ///
+    /// Responders are started lazily by the first sensor registration and are
+    /// released again when the last registration is removed (see
+    /// ``unregisterSensor(sensorId:)``).
+    var hasActiveResponders: Bool {
+        discoverTask != nil || queryTask != nil
+    }
+
+    /// Cancels and releases the shared Discover/Query responder tasks.
+    private func releaseResponders() {
+        discoverTask?.cancel()
+        discoverTask = nil
+        queryTask?.cancel()
+        queryTask = nil
     }
 
     /// Publishes a channeled observation.

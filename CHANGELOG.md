@@ -20,6 +20,11 @@ Development toward Axoloty 1.0 is in progress and tracked by the
 
 ### Fixed
 
+- Release SensorThings responder tasks after the final sensor unregister:
+  removing the last registration now cancels and releases the shared
+  Discover/Query responder tasks, so a drained `SensorSourceController` no
+  longer stays retained (and its stream subscriptions stay live) for the rest
+  of the controller lifetime.
 - Synchronized public lifecycle documentation with the executable API
   signatures: separated synchronous start
   (`Container.resolve`, `CommunicationManager.start()`) from asynchronous
