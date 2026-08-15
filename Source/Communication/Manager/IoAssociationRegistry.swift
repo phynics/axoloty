@@ -119,6 +119,18 @@ internal final class IoAssociationRegistry {
         return value
     }
 
+    /// Returns the object IDs of all actors currently associated on the given
+    /// route, i.e. the active association state for that route.
+    ///
+    /// - Parameter ioRoute: the MQTT route (generated or external) on which an IO
+    ///   value was received.
+    /// - Returns: the object IDs of every actor associated on `ioRoute`. Empty when
+    ///   no actor is currently associated on the route.
+    func associatedActorIds(on ioRoute: String) -> [CoatyUUID] {
+        guard let items = ioActorItems[ioRoute] else { return [] }
+        return Array(items.keys)
+    }
+
     func unobserveAll() {
         for ioPointId in observedIoStateItems.keys {
             dispatchIoState(
