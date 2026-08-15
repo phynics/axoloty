@@ -140,3 +140,43 @@ remain to be run; see `Audit/IOAndSensorThingsDecisions.md`. Sensor payloads
 encode the canonical `phenomenonTime` field, while decoding accepts the legacy
 `phenomenonType` spelling as a fallback; when both are present, the canonical
 value wins, including an explicit canonical `null`.
+
+## CI enforcement of live wire evidence
+
+Protocol-affecting changes must record live CoatyJS wire compatibility evidence
+or carry a reviewed exemption before merge, enforced by the repository's
+required `Live CoatyJS compatibility gate` check (issue #457).
+
+**Protocol-affecting paths** (authoritative list in
+`Tests/Support/classify-wire-change.mjs`, `PROTOCOL_AFFECTING`):
+
+- `Packages/AxolotyWire/**` — AxolotyWire codec and routing.
+- `Source/**` — host wire codecs, events, core types, IO routing, SensorThings.
+- `Tests/WireCompatibility/**` — wire fixtures, reference agents, scenarios,
+  and the live capture/verifier tooling (Markdown, decision records, and the
+  `Audit/` tree are excluded and stay on the fast path).
+- `Tests/AxolotyWire/**` — wire codec tests.
+- `Package.swift` and `Package.resolved` — package manifest and resolved
+  dependency graph.
+
+The `Source/Axoloty.docc/**` documentation tree, and changes to test
+orchestration (`Makefile`, `Tests/Support/test-tiers.json`, `Tools/`,
+`.github/`), do not change the bytes that flow across a wire and stay on the
+fast path.
+
+**Gate behavior.** The `Live CoatyJS compatibility gate` job always runs (it is
+a reliable required status check). When a change set contains a
+protocol-affecting path, the gate runs the containerized live CoatyJS capture
+and its verifier (`make test-wire-live`) and requires the resulting captures and
+manifest. When no protocol-affecting path changed, the gate fast-paths to a
+pass without the expensive capture.
+
+**Exemption mechanism.** Add the `live-wire-exemption` label to a
+protocol-affecting PR together with a recorded rationale and expiry in the PR
+description (typically an issue or decision reference). The label waives only
+the live capture; it is never treated as a protocol-affecting pass, so the
+`protocol=/exempt=` disposition is recorded in the workflow summary. Exemptions
+are visible, dated, and expire with their linked decision. Example exemption,
+used only when matching the reference agent is impossible or more harmful than
+breaking compatibility (see AGENTS.md "Wire compatibility"):
+`live-wire-exemption` + PR description citing the recorded decision and expiry.

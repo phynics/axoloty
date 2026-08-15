@@ -73,6 +73,8 @@ The v1 north star remains:
 - Borrowed values never cross asynchronous seams.
 - No mutable transport or router state relies on `@unchecked Sendable`.
 - Existing CoatyJS fixture, live-wire, IO, lifecycle, and SensorThings
-  compatibility gates remain green.
+  compatibility gates remain green. The live wire gate is enforced in CI for
+  protocol-affecting changes (#457) with recorded evidence and an explicit,
+  expiring reviewed exemption.
 - Advertise/Deadvertise and Discover/Resolve run on the selected ESP32-C6
   within recorded RAM, stack, flash, payload-size, and sustained-rate budgets.

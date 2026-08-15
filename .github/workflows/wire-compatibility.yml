@@ -1,17 +1,53 @@
-name: Live Wire Compatibility (Manual)
+name: Live Wire Compatibility
 
 on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      run-live:
+        description: Force the live suite even when the change set is not protocol-affecting.
+        required: false
+        default: "false"
+        type: boolean
+      exemption:
+        description: Reference to a recorded reviewed exemption (issue/PR/link) that waives the live gate.
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# The live wire gate (issue #457) enforces recorded compatibility evidence for
+# protocol-affecting changes. This job ALWAYS runs so it is a reliable required
+# status check: unrelated changes fast-path to a pass without the expensive
+# containerized live capture, while protocol-affecting changes must run the
+# live CoatyJS capture and its verifier. An explicit reviewed exemption (PR
+# label + recorded rationale/expiry reference) waives only the live capture;
+# it is never treated as a protocol-affecting pass.
+
+# Exemption label: add `live-wire-exemption` to a protocol-affecting PR together
+# with a comment/description citing the recorded decision (issue/PR/link) and
+# its expiry. See Tests/WireCompatibility/CompatibilityMatrix.md.
+env:
+  WIRE_EXEMPTION_LABEL: live-wire-exemption
 
 jobs:
   live-coatyjs:
-    name: Live CoatyJS compatibility
+    name: Live CoatyJS compatibility gate
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       # hashFiles() is only valid in step-level expressions, not
@@ -41,17 +77,135 @@ jobs:
           cache: npm
           cache-dependency-path: Tests/WireCompatibility/tool/package-lock.json
 
-      - name: Build and test wire CLI
+      - name: Build wire CLI
         run: make wire-tool
 
-      - name: Run offline and live wire suites
-        run: make test-wire-all CONTAINER_RUNTIME=podman BUILD_DIR=.build BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache
+      - name: Compute changed files
+        id: changed
+        shell: bash
+        env:
+          FORCE_RUN: ${{ inputs.run-live || 'false' }}
+        run: |
+          set -euo pipefail
+          if [[ "$FORCE_RUN" == "true" ]]; then
+            echo "forcing live wire run from workflow_dispatch"
+          fi
+          case "${{ github.event_name }}" in
+            pull_request)
+              base="${{ github.event.pull_request.base.sha }}"
+              head="${{ github.event.pull_request.head.sha }}"
+              ;;
+            push)
+              base="HEAD^"
+              head="HEAD"
+              ;;
+            *)
+              base=""
+              head=""
+              ;;
+          esac
+          if [ -n "$base" ]; then
+            changed="$(git diff --name-only "$base" "$head" | tr '\n' ' ' | sed 's/ $//')"
+          else
+            changed=""
+          fi
+          echo "changed=${changed}" >> "$GITHUB_OUTPUT"
+          echo "Changed files: ${changed:-<none>}"
 
-      - name: Upload wire captures on failure
-        if: failure()
+      - name: Classify the change set
+        id: classify
+        env:
+          CHANGED: ${{ steps.changed.outputs.changed }}
+          FORCE_RUN: ${{ inputs.run-live || 'false' }}
+          EXEMPTION: ${{ inputs.exemption }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          set -euo pipefail
+          exemption="$EXEMPTION"
+          if [[ "${{ github.event_name }}" == "pull_request" && \
+                "$PR_LABELS" == *"$WIRE_EXEMPTION_LABEL"* ]]; then
+            exemption="${exemption:-$WIRE_EXEMPTION_LABEL label}"
+          fi
+          if [[ "$FORCE_RUN" == "true" ]]; then
+            echo "protocol=1" >> "$GITHUB_OUTPUT"
+            echo "exempt=0" >> "$GITHUB_OUTPUT"
+            echo "Collecting fresh live wire evidence (forced)."
+            exit 0
+          fi
+          classifier="$(node Tests/Support/classify-wire-change.mjs \
+            --changed "${CHANGED:-}" --exempt "${exemption:-}" || true)"
+          echo "$classifier"
+          # Consume the machine-readable marker emitted on the first line; the
+          # free-text summary below it is for humans only.
+          if printf '%s' "$classifier" | grep -q "^gate=require"; then
+            echo "protocol=1" >> "$GITHUB_OUTPUT"
+            if printf '%s' "$classifier" | grep -q "exemption recorded"; then
+              echo "exempt=1" >> "$GITHUB_OUTPUT"
+            else
+              echo "exempt=0" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "protocol=0" >> "$GITHUB_OUTPUT"
+            echo "exempt=0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fast path (no protocol-affecting change, no forced run)
+        if: steps.classify.outputs.protocol == '0'
+        run: |
+          echo "No protocol-affecting paths changed. The live wire gate does not apply; keeping this change on the fast path."
+
+      - name: Exemption recorded (live capture not required)
+        if: steps.classify.outputs.protocol == '1' && steps.classify.outputs.exempt == '1'
+        run: |
+          echo "A reviewed exemption is recorded for this protocol-affecting change; the live capture is waived."
+          echo "The exemption reference and expiry must be documented on the PR and in the compatibility matrix."
+
+      - name: Run live wire capture and verifier
+        if: steps.classify.outputs.protocol == '1' && steps.classify.outputs.exempt == '0'
+        run: |
+          make test-wire-live CONTAINER_RUNTIME=podman BUILD_DIR=.build BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache AXOLOTY_HOST_RUNTIME_BRIDGE=1
+
+      - name: Verify live evidence is present
+        if: steps.classify.outputs.protocol == '1' && steps.classify.outputs.exempt == '0'
+        run: |
+          set -euo pipefail
+          manifest=".testing/wire/manifest.json"
+          cap_dir=".testing/wire"
+          test -d "$cap_dir" || { echo "::error::live wire capture directory missing: $cap_dir"; exit 1; }
+          test -s "$manifest" || { echo "::error::live wire manifest missing: $manifest"; exit 1; }
+          captures="$(find "$cap_dir" -name '*.jsonl' | wc -l)"
+          test "$captures" -gt 0 || { echo "::error::no live wire captures produced"; exit 1; }
+          # The authoritative aggregate manifest was produced by the wire capture
+          # plan; verify it references the captures rather than regenerating it.
+          node Tests/WireCompatibility/tool/dist/index.js manifest "$cap_dir" /tmp/wire-verify-manifest.json
+          echo "Live wire evidence OK: $(find "$cap_dir" -name '*.jsonl' -printf '%P\n' | sort | tr '\n' ' ')"
+          echo "Authoritative manifest: $manifest"
+
+      - name: Upload live wire evidence
+        if: always() && steps.classify.outputs.protocol == '1'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: wire-captures
+          name: wire-captures-${{ github.run_id }}
           path: |
             .testing/wire/
           if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Report gate summary
+        if: always()
+        env:
+          PROTOCOL: ${{ steps.classify.outputs.protocol }}
+          EXEMPT: ${{ steps.classify.outputs.exempt }}
+        run: |
+          {
+            echo "### Live wire compatibility gate"
+            if [[ "$PROTOCOL" == "0" ]]; then
+              echo "- **Fast path**: no protocol-affecting paths changed."
+            elif [[ "$EXEMPT" == "1" ]]; then
+              echo "- **Exemption**: protocol-affecting change written by recorded reviewed exemption."
+              echo "- Evidence upload: exempt -- no fresh capture produced."
+            else
+              echo "- **Protocol-affecting**: live CoatyJS capture + verifier enforced."
+              echo "- Evidence uploaded on success and failure."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

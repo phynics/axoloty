@@ -112,7 +112,7 @@ coverage level.
 | Property | Generated-input invariants, round trips, and parser robustness | Seeded generator | 10 min | Every PR with a bounded corpus |
 | Integration | Axoloty components collaborating through a real Mosquitto broker | Isolated broker | 10 min | Every PR |
 | Wire offline | Golden topics/payloads and capture-tool correctness | Versioned fixtures | 5 min | Every PR |
-| Wire live | Representative Axoloty/CoatyJS interoperability plus CoatyJS reference-wire protocol coverage | Containers, broker, CoatyJS image | 20 min | Protocol-facing PRs; full run before merge |
+| Wire live | Representative Axoloty/CoatyJS interoperability plus CoatyJS reference-wire protocol coverage | Containers, broker, CoatyJS image | 20 min | Protocol-facing PRs (enforced by the `Live CoatyJS compatibility gate`); full run before merge |
 | Nightly | Large generated corpora, repeat runs, reconnect/failure scenarios, sanitizers when available | Full container stack | 60 min | Nightly and release candidates |
 | Manual macOS oracle | Apple-platform API and transport confidence | Supported macOS/Xcode host | 30 min | Release candidates and Apple-specific changes |
 
@@ -227,6 +227,13 @@ Offline fixtures make PR feedback fast and preserve protocol evidence. Live
 tests are authoritative when a fixture and a pinned reference implementation
 disagree. Golden data is regenerated only in a dedicated, reviewed change that
 states the wire difference and the exact reference version.
+
+The CI `Live CoatyJS compatibility gate` (issue #457) enforces this record:
+protocol-affecting PRs must run the live suite to completion and upload the
+captures, manifest, and verifier logs as artifacts. See
+`Tests/WireCompatibility/CompatibilityMatrix.md` for the authoritative
+protocol-affecting path list and the `live-wire-exemption` label convention
+for a recorded, expiring reviewed exemption.
 
 ## Determinism and isolation
 
