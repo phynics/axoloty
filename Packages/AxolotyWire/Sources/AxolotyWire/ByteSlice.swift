@@ -33,7 +33,7 @@ public struct ByteSlice: Equatable, Hashable {
     @inlinable
     public init(bytes: UnsafePointer<UInt8>, length: Int) {
         self.pointer = UnsafeRawPointer(bytes)
-        self.length = length
+        self.length = max(0, length)
     }
 
     /// Compares this slice against a static ASCII string (e.g. `"ADV"`, `"DSC"`).

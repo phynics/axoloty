@@ -202,7 +202,7 @@ extension WireWriter {
             buffer[position + i] = 0x30 + UInt8(v % 10)
             v /= 10
         }
-        advancePosition(by: digitCount)
+        try advancePosition(by: digitCount)
     }
 
     /// Writes an unsigned integer JSON value.
@@ -223,7 +223,7 @@ extension WireWriter {
             buffer[position + i] = 0x30 + UInt8(v % 10)
             v /= 10
         }
-        advancePosition(by: digitCount)
+        try advancePosition(by: digitCount)
     }
 
     /// Writes a UUID JSON string value.
@@ -257,7 +257,7 @@ extension WireWriter {
         buffer[p + 30] = Self.hexChar(b.13 >> 4); buffer[p + 31] = Self.hexChar(b.13 & 0xF)
         buffer[p + 32] = Self.hexChar(b.14 >> 4); buffer[p + 33] = Self.hexChar(b.14 & 0xF)
         buffer[p + 34] = Self.hexChar(b.15 >> 4); buffer[p + 35] = Self.hexChar(b.15 & 0xF)
-        advancePosition(by: 36)
+        try advancePosition(by: 36)
     }
 
     @inline(__always)

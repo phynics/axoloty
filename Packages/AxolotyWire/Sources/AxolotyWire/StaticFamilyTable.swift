@@ -41,9 +41,42 @@ public struct StaticFamilyTable<Key: Hashable & Sendable> {
 
     /// Creates a family table with the given maximum entries and subscribers
     /// per entry.
+    ///
+    /// - Parameters:
+    ///   - maxEntries: The maximum number of keyed entries. Must be non-negative
+    ///     and no greater than ``WireBufferConfig/maxFamilyEntries``.
+    ///   - maxSubscribersPerEntry: The maximum number of subscribers per entry.
+    ///     Must be non-negative and no greater than
+    ///     ``WireBufferConfig/maxFamilySubscribers``.
+    /// - Throws: ``WireCapacityError`` if either capacity is negative or exceeds
+    ///   its configured maximum.
     public init(
         maxEntries: Int = WireBufferConfig.maxFamilyEntries,
         maxSubscribersPerEntry: Int = WireBufferConfig.maxFamilySubscribers
+    ) throws(WireCapacityError) {
+        if maxEntries < 0 {
+            throw WireCapacityError(.negativeCapacity, parameter: "maxEntries")
+        }
+        if maxEntries > WireBufferConfig.maxFamilyEntries {
+            throw WireCapacityError(.exceedsMaximum, parameter: "maxEntries")
+        }
+        if maxSubscribersPerEntry < 0 {
+            throw WireCapacityError(.negativeCapacity, parameter: "maxSubscribersPerEntry")
+        }
+        if maxSubscribersPerEntry > WireBufferConfig.maxFamilySubscribers {
+            throw WireCapacityError(.exceedsMaximum, parameter: "maxSubscribersPerEntry")
+        }
+        self.capacity = maxEntries
+        self.entryCapacity = maxSubscribersPerEntry
+        self.entries = Array(repeating: nil, count: maxEntries)
+    }
+
+    /// Creates a family table with caller-guaranteed-valid capacities, without
+    /// re-validating. Used by ``EmbeddedMessageRouter`` after it has validated the
+    /// router-level capacity arguments.
+    internal init(
+        prevalidatedMaxEntries maxEntries: Int,
+        prevalidatedMaxSubscribers maxSubscribersPerEntry: Int
     ) {
         self.capacity = maxEntries
         self.entryCapacity = maxSubscribersPerEntry
@@ -64,7 +97,7 @@ public struct StaticFamilyTable<Key: Hashable & Sendable> {
         }
         // Find free slot for a new entry
         for i in 0..<capacity where entries[i] == nil {
-            var table = StaticDispatchTable(capacity: entryCapacity)
+            var table = StaticDispatchTable(prevalidated: entryCapacity)
             guard let inner = table.subscribe(handler) else { return nil }
             entries[i] = Entry(key: key, table: table)
             return Token(entryIndex: i, inner: inner)

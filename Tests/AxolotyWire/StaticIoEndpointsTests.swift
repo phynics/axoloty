@@ -31,7 +31,7 @@ struct StaticIoEndpointsTests {
 
     @Test
     func sourceOnlyPublishesWhileAssociatedAndExposesRate() throws {
-        var endpoints = StaticIoEndpoints(
+        var endpoints = try! StaticIoEndpoints(
             sources: [StaticIoEndpointDescriptor(id: sourceID, valueType: "test.Value", mode: .json, configuredUpdateRate: 100)],
             actors: [], actorHandlers: []
         )
@@ -64,7 +64,7 @@ struct StaticIoEndpointsTests {
     @Test
     func actorDeliversBareJsonAndUnsubscribesOnDisassociation() throws {
         let received = IoValueCapture()
-        var endpoints = StaticIoEndpoints(
+        var endpoints = try! StaticIoEndpoints(
             sources: [],
             actors: [StaticIoEndpointDescriptor(id: actorID, valueType: "test.Value", mode: .json)],
             actorHandlers: [{ payload in received.store(payload) }]
@@ -80,7 +80,7 @@ struct StaticIoEndpointsTests {
     @Test
     func rawActorPreservesBareBytesAndRejectsUnknownRoute() throws {
         let received = IoValueCapture()
-        var endpoints = StaticIoEndpoints(sources: [], actors: [StaticIoEndpointDescriptor(id: actorID, valueType: "test.Raw", mode: .raw)], actorHandlers: [{ payload in received.store(payload) }])
+        var endpoints = try! StaticIoEndpoints(sources: [], actors: [StaticIoEndpointDescriptor(id: actorID, valueType: "test.Raw", mode: .raw)], actorHandlers: [{ payload in received.store(payload) }])
         #expect(dispatchAssociate(&endpoints, source: sourceID, actor: actorID, route: "external/raw", rate: nil) == .associated)
         let raw: [UInt8] = [0, 255, 1]
         #expect(dispatchBytes(&endpoints, topic: "external/raw", payload: raw) == .delivered)
@@ -90,13 +90,13 @@ struct StaticIoEndpointsTests {
 
     @Test
     func rejectsIncompatibleLocalEndpointsBadRatesAndRouteChanges() {
-        var endpoints = StaticIoEndpoints(
+        var endpoints = try! StaticIoEndpoints(
             sources: [StaticIoEndpointDescriptor(id: sourceID, valueType: "test.JSON", mode: .json)],
             actors: [StaticIoEndpointDescriptor(id: actorID, valueType: "test.Raw", mode: .raw)], actorHandlers: [nil]
         )
         #expect(dispatchAssociate(&endpoints, source: sourceID, actor: actorID, route: route, rate: nil) == .rejected)
 
-        var sourceOnly = StaticIoEndpoints(sources: [StaticIoEndpointDescriptor(id: sourceID, valueType: "test.Value", mode: .raw)], actors: [], actorHandlers: [])
+        var sourceOnly = try! StaticIoEndpoints(sources: [StaticIoEndpointDescriptor(id: sourceID, valueType: "test.Value", mode: .raw)], actors: [], actorHandlers: [])
         #expect(dispatchAssociate(&sourceOnly, source: sourceID, actor: actorID, route: route, rate: -1) == .rejected)
         #expect(dispatchAssociate(&sourceOnly, source: sourceID, actor: actorID, route: route, rate: nil) == .associated)
         #expect(dispatchAssociate(&sourceOnly, source: sourceID, actor: actorID, route: "coaty/3/test/IOV/other", rate: nil) == .rejected)
@@ -104,7 +104,7 @@ struct StaticIoEndpointsTests {
 
     @Test
     func malformedAndUnknownAssociatesDoNotMutateExistingState() throws {
-        var endpoints = StaticIoEndpoints(
+        var endpoints = try! StaticIoEndpoints(
             sources: [StaticIoEndpointDescriptor(id: sourceID, valueType: "test.Value", mode: .raw)],
             actors: [StaticIoEndpointDescriptor(id: actorID, valueType: "test.Value", mode: .raw)],
             actorHandlers: [nil]
@@ -124,7 +124,7 @@ struct StaticIoEndpointsTests {
 
     @Test
     func incompatibleAssociateDoesNotMutateEitherExistingSide() throws {
-        var endpoints = StaticIoEndpoints(
+        var endpoints = try! StaticIoEndpoints(
             sources: [StaticIoEndpointDescriptor(id: sourceID, valueType: "test.Source", mode: .raw)],
             actors: [StaticIoEndpointDescriptor(id: actorID, valueType: "test.Actor", mode: .raw)],
             actorHandlers: [nil]
@@ -141,7 +141,7 @@ struct StaticIoEndpointsTests {
 
     @Test
     func invalidRouteAndRateAssociatesDoNotMutateExistingState() throws {
-        var endpoints = StaticIoEndpoints(
+        var endpoints = try! StaticIoEndpoints(
             sources: [StaticIoEndpointDescriptor(id: sourceID, valueType: "test.Value", mode: .raw)],
             actors: [], actorHandlers: []
         )
@@ -161,7 +161,7 @@ struct StaticIoEndpointsTests {
 
     @Test
     func sourceCapacityRejectionDoesNotMutateExistingState() throws {
-        var endpoints = StaticIoEndpoints(
+        var endpoints = try! StaticIoEndpoints(
             sources: [StaticIoEndpointDescriptor(id: sourceID, valueType: "test.Value", mode: .raw)],
             actors: [], actorHandlers: []
         )
@@ -187,7 +187,7 @@ struct StaticIoEndpointsTests {
 
     @Test
     func sourceRouteConflictDoesNotCommitActorUpdate() throws {
-        var endpoints = StaticIoEndpoints(
+        var endpoints = try! StaticIoEndpoints(
             sources: [StaticIoEndpointDescriptor(id: sourceID, valueType: "test.Value", mode: .raw)],
             actors: [StaticIoEndpointDescriptor(id: actorID, valueType: "test.Value", mode: .raw)],
             actorHandlers: [nil]
@@ -204,7 +204,7 @@ struct StaticIoEndpointsTests {
 
     @Test
     func actorRouteConflictDoesNotCommitSourceUpdate() throws {
-        var endpoints = StaticIoEndpoints(
+        var endpoints = try! StaticIoEndpoints(
             sources: [StaticIoEndpointDescriptor(id: sourceID, valueType: "test.Value", mode: .raw)],
             actors: [StaticIoEndpointDescriptor(id: actorID, valueType: "test.Value", mode: .raw)],
             actorHandlers: [nil]

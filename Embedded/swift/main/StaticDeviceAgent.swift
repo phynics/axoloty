@@ -100,7 +100,9 @@ final class StaticDeviceAgent: @unchecked Sendable {
         self.agentId = agentId
         self.deviceObjectId = deviceObjectId
         let isA = agentId == Self.agentAId
-        self.ioEndpoints = StaticIoEndpoints(
+        // Endpoint counts are bounded startup constants; construction is
+        // expected to succeed for the fixed firmware profile.
+        self.ioEndpoints = try! StaticIoEndpoints(
             sources: [StaticIoEndpointDescriptor(
                 id: isA ? Self.sourceAId : Self.sourceBId,
                 valueType: "com.axoloty.embedded.StaticIoValue",
@@ -115,7 +117,7 @@ final class StaticDeviceAgent: @unchecked Sendable {
             // with its sensor/actuator action. It must not retain the borrow.
             actorHandlers: [{ _ in }]
         )
-        self.router = EmbeddedMessageRouter()
+        self.router = try! EmbeddedMessageRouter()
         installIngressHandlers()
     }
 

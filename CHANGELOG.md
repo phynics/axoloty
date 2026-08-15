@@ -45,6 +45,15 @@ Development toward Axoloty 1.0 is in progress and tracked by the
   IO-value publication that previously swallowed failures via `try?` now log
   a structured ``AxolotyError`` chain instead of silently discarding the
   operation, so loss is observable and root-causable.
+- Validate public wire and routing bounds without trapping (#492):
+  ``StaticDispatchTable``, ``StaticFamilyTable``, ``EmbeddedMessageRouter``,
+  and ``StaticIoEndpoints`` now throw a structured ``WireCapacityError``
+  when a caller-controlled capacity, count, or handler count is negative,
+  exceeds its configured maximum, or is mismatched, instead of falling into
+  an unchecked `precondition` trap or unsafe fixed-size state. ``WireWriter``
+  overflow checks now reject a negative requested advance instead of
+  trapping, and ``TopicView``/``ByteSlice`` construction clamps negative
+  lengths to zero so parsing cannot iterate a negative range.
 
 ### Performance
 
