@@ -30,6 +30,10 @@ Development toward Axoloty 1.0 is in progress and tracked by the
   Discover/Query responder tasks, so a drained `SensorSourceController` no
   longer stays retained (and its stream subscriptions stay live) for the rest
   of the controller lifetime.
+- Allow MQTT restart after stopping during connection setup: stopping while a
+  connect attempt is unresolved now fully retires the attempt — a late
+  completion cannot transition the stopped client online, its socket is
+  closed, and a later `start()` connects normally instead of being blocked.
 - Synchronized public lifecycle documentation with the executable API
   signatures: separated synchronous start
   (`Container.resolve`, `CommunicationManager.start()`) from asynchronous
