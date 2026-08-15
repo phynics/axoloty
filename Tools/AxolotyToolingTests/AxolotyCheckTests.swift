@@ -106,13 +106,13 @@ func checkpointPlansResolveReleaseSnapshotPlaceholders() throws {
     ]
 
     for plan in plans {
-        let generate = try #require(plan.nodes.first { $0.name.hasSuffix("release-snapshots-generate") })
-        let verify = try #require(plan.nodes.first { $0.name.hasSuffix("release-snapshots-verify") })
+        let generate = try #require(plan.nodes.first { $0.name.hasSuffix("fixture-bundle-generate") })
+        let verify = try #require(plan.nodes.first { $0.name.hasSuffix("fixture-bundle-verify") })
         #expect(generate.command.arguments == [
-            "Tests/Support/release-snapshots.mjs", "generate", source, destination,
+            "Tests/Support/fixture-bundle.mjs", "generate", source, destination,
         ])
         #expect(verify.command.arguments == [
-            "Tests/Support/release-snapshots.mjs", "verify", destination,
+            "Tests/Support/fixture-bundle.mjs", "verify", destination,
         ])
         #expect(!generate.command.arguments.contains("${SOURCE}"))
         #expect(!generate.command.arguments.contains("${DESTINATION}"))

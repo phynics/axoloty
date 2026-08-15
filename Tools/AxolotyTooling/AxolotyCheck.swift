@@ -316,19 +316,24 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
         }
     }
 
-    /// Creates the release snapshot generation and offline verification plan.
+    /// Creates the offline fixture-bundle generation and verification plan.
+    ///
+    /// The fixture bundle is assembled entirely from committed wire captures
+    /// (fixtures) and is distinct from fresh wire evidence. It proves bundle
+    /// integrity and byte-exact offline reproduction; it is not live evidence
+    /// of current release wire behavior.
     public static func releaseSnapshots(
         source: String = "Tests/WireCompatibility/Fixtures",
-        destination: String = ".testing/release-snapshots",
+        destination: String = ".testing/fixture-bundle",
         environment: [String: String] = [:]
     ) -> AxolotyCheckPlan {
         let manifest: AxolotyCanonicalTestManifest
         let plan: AxolotyCheckPlan
         do {
             manifest = try AxolotyCanonicalTestManifest.loadDefault()
-            plan = try manifest.plan(named: "release-snapshots")
+            plan = try manifest.plan(named: "fixture-bundle")
         } catch {
-            preconditionFailure("Unable to load canonical release snapshot plan: \(error)")
+            preconditionFailure("Unable to load canonical fixture-bundle plan: \(error)")
         }
         let sourceNodes = plan.nodes.map { node in
             AxolotyCheckNode(
@@ -348,26 +353,26 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
             )
         }
         let nodes = sourceNodes.map { node in
-            if node.name == "release-snapshots-generate" {
+            if node.name == "fixture-bundle-generate" {
                 return AxolotyCheckNode(
                     name: node.name,
                     dependencies: node.dependencies,
                     command: AxolotyCommandPlan(
                         executable: node.command.executable,
-                        arguments: ["Tests/Support/release-snapshots.mjs", "generate", source, destination],
+                        arguments: ["Tests/Support/fixture-bundle.mjs", "generate", source, destination],
                         environment: node.command.environment,
                         executionContext: node.command.executionContext,
                         timeoutSeconds: node.command.timeoutSeconds
                     )
                 )
             }
-            if node.name == "release-snapshots-verify" {
+            if node.name == "fixture-bundle-verify" {
                 return AxolotyCheckNode(
                     name: node.name,
                     dependencies: node.dependencies,
                     command: AxolotyCommandPlan(
                         executable: node.command.executable,
-                        arguments: ["Tests/Support/release-snapshots.mjs", "verify", destination],
+                        arguments: ["Tests/Support/fixture-bundle.mjs", "verify", destination],
                         environment: node.command.environment,
                         executionContext: node.command.executionContext,
                         timeoutSeconds: node.command.timeoutSeconds
@@ -401,11 +406,11 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
     ///
     /// - Parameters:
     ///   - source: The wire fixture source directory.
-    ///   - destination: The generated release snapshot directory.
+    ///   - destination: The generated fixture-bundle directory.
     ///   - consumerEnvironment: Settings forwarded to the semantic-version consumer gate.
     public static func checkpoint(
         source: String = "Tests/WireCompatibility/Fixtures",
-        destination: String = ".testing/release-snapshots",
+        destination: String = ".testing/fixture-bundle",
         consumerEnvironment: [String: String]
     ) -> AxolotyCheckPlan {
         let manifest: AxolotyCanonicalTestManifest
@@ -444,12 +449,12 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
     /// - Parameters:
     ///   - device: The embedded device path.
     ///   - source: The wire fixture source directory.
-    ///   - destination: The generated release snapshot directory.
+    ///   - destination: The generated fixture-bundle directory.
     ///   - consumerEnvironment: Settings forwarded to the semantic-version consumer gate.
     public static func checkpointHardware(
         device: String = "/dev/ttyACM0",
         source: String = "Tests/WireCompatibility/Fixtures",
-        destination: String = ".testing/release-snapshots",
+        destination: String = ".testing/fixture-bundle",
         consumerEnvironment: [String: String] = [:]
     ) -> AxolotyCheckPlan {
         let manifest: AxolotyCanonicalTestManifest

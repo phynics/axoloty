@@ -40,12 +40,17 @@ its manifest records producer/reference version, scenario, normalization
 profile, and content hashes. Release workflows should retain raw capture and
 manifest artifacts rather than relying on prose or screenshots.
 
-Generate a release evidence bundle with `make release-snapshots` on Linux or
-`swift run --package-path Tools axoloty-tool release snapshots` on macOS. The
-generated `.testing/release-snapshots/manifest.json` records SHA-256 content
-hashes, producer/scenario metadata, normalization profiles, and repository,
-toolchain, and image provenance. Generation immediately performs an offline
-hash and metadata verification pass.
+The offline fixture bundle is deliberately distinct from fresh wire evidence.
+Generate it with `make release-fixture-bundle` on Linux or
+`swift run --package-path Tools axoloty-tool release fixture-bundle` on macOS.
+The generated `.testing/fixture-bundle/manifest.json` records SHA-256 content
+hashes, producer/scenario metadata, normalization profiles, repository,
+toolchain, and image provenance, and declares `evidence.type: fixture-bundle`
+with `live: false`. It proves bundle integrity and byte-exact offline
+reproduction of committed fixtures only; it is not a live capture of current
+release wire behavior. Generation immediately performs an offline hash and
+metadata verification pass. Fresh evidence of current wire behavior comes only
+from the live reference-agent capture path (`wire-live`).
 
 The probe supports QoS 0 and 1 subscriptions. Coaty compatibility scenarios
 currently need no QoS 2 handshake; the probe fails explicitly if one is

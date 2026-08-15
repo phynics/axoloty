@@ -30,7 +30,7 @@ test("principal Make workflows are direct axoloty-tool wrappers", () => {
     "check-embedded-swift-linker",
     "hardware-check",
     "hardware-require",
-    "release-snapshots",
+    "release-fixture-bundle",
   ];
   for (const target of recursiveTargets) {
     assert.match(recipe(makefile, target), /\$\(MAKE\).*\baxoloty-tool\b/, `${target} must forward to axoloty-tool`);

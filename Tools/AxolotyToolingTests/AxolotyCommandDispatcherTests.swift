@@ -414,7 +414,7 @@ func wireVerifyBundleRunsSemanticAndHashVerification() throws {
     #expect(result.exitCode == 0)
     #expect(manifest.results.map(\.name) == ["resolve", "build", "test-wire", "wire-bundle-verify"])
     #expect(runner.commands.last?.arguments == [
-        "Tests/Support/release-snapshots.mjs", "verify", ".testing/downloaded",
+        "Tests/Support/fixture-bundle.mjs", "verify", ".testing/downloaded",
     ])
 }
 
@@ -553,8 +553,8 @@ func releaseSnapshotsGenerateThenVerifyConfiguredBundle() throws {
         fileSystem: StubFileSystem(paths: []),
         environment: [
             "AXOLOTY_DEVCONTAINER": "1",
-            "AXOLOTY_SNAPSHOT_SOURCE": "fixtures",
-            "AXOLOTY_SNAPSHOT_OUTPUT": "artifacts",
+            "AXOLOTY_FIXTURE_BUNDLE_SOURCE": "fixtures",
+            "AXOLOTY_FIXTURE_BUNDLE_OUTPUT": "artifacts",
             "AXOLOTY_IMAGE_IDENTITY": "sha256:test",
             "AXOLOTY_GIT_COMMIT": "abc123",
             "AXOLOTY_GIT_CLEAN": "true",
@@ -563,14 +563,14 @@ func releaseSnapshotsGenerateThenVerifyConfiguredBundle() throws {
         ]
     )
 
-    let result = dispatcher.run(arguments: ["release", "snapshots"])
+    let result = dispatcher.run(arguments: ["release", "fixture-bundle"])
     let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
 
     #expect(result.exitCode == 0)
-    #expect(manifest.results.map(\.name) == ["release-snapshots-generate", "release-snapshots-verify", "release-semver-consumer"])
+    #expect(manifest.results.map(\.name) == ["fixture-bundle-generate", "fixture-bundle-verify", "release-semver-consumer"])
     #expect(runner.commands.map(\.arguments) == [
-        ["Tests/Support/release-snapshots.mjs", "generate", "fixtures", "artifacts"],
-        ["Tests/Support/release-snapshots.mjs", "verify", "artifacts"],
+        ["Tests/Support/fixture-bundle.mjs", "generate", "fixtures", "artifacts"],
+        ["Tests/Support/fixture-bundle.mjs", "verify", "artifacts"],
         [],
     ])
     #expect(runner.commands.first?.environment["AXOLOTY_IMAGE_IDENTITY"] == "sha256:test")
