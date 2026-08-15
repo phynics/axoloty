@@ -96,8 +96,11 @@ jobs:
               head="${{ github.event.pull_request.head.sha }}"
               ;;
             push)
-              base="HEAD^"
-              head="HEAD"
+              base="${{ github.event.before }}"
+              head="${{ github.event.after }}"
+              if [ "$base" = "0000000000000000000000000000000000000000" ]; then
+                base=""
+              fi
               ;;
             *)
               base=""
