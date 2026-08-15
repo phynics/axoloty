@@ -201,7 +201,10 @@ func decodeDTO(
 
 func validateAllocations() {
     // These functions have known allocation profiles. heaptrack should
-    // measure: zeroAlloc=0, oneAlloc=1, manyAllocs(100)=100.
+    // measure: zeroAlloc=0, oneAlloc=1, manyAllocs(100)=100. The trailing
+    // `wireDecodeRoute` fixture exercises the real borrowed decode + static
+    // routing hot path; on Swift 6.3 host builds its reader workspace is
+    // stack-resident and must allocate nothing, so expected is 0.
     print(#"{"mode":"validate-allocations","fixtures":["#)
 
     func zeroAlloc() -> Int { return 42 }
@@ -221,6 +224,36 @@ func validateAllocations() {
     }
     for _ in 0..<10_000 { _ = manyAllocs(100) }
     print(#"{"name":"manyAllocs100","expectedAllocations":1000000}"#)
+
+    print(",")
+    // The wire decode + static route steady state. The reader/decoder must not
+    // allocate String/Array or a JSON value tree per iteration, and the reader
+    // workspace is a constant-size inline/temporary buffer (stack-resident on
+    // Swift 6.3 host builds). This fixture asserts per-iteration behavior; a
+    // small constant number of one-time setup allocations is expected and is
+    // not measured as a per-message cost.
+    let payload = "{\"ioSourceId\":\"33333333-3333-4333-8333-333333333333\",\"ioActorId\":\"33333333-3333-4333-8333-333333333333\",\"isExternalRoute\":true}"
+    let topic = "coaty/3/ns/ASC:filter/source-id"
+    let payloadBytes = Array(payload.utf8)
+    let topicBytes = Array(topic.utf8)
+    var sink = 0
+    payloadBytes.withUnsafeBufferPointer { pb in
+        topicBytes.withUnsafeBufferPointer { tb in
+            let router = EmbeddedMessageRouter()
+            _ = router.subscribe(.associate) { _ in }
+            for _ in 0..<1_000 {
+                let message = BorrowedMessage(
+                    topicBytes: tb.baseAddress!, topicLength: tb.count,
+                    payloadBytes: pb.baseAddress!, payloadLength: pb.count
+                )
+                if (try? AssociateWireData(from: message.reader())) != nil { sink += 1 }
+                router.dispatch(message)
+            }
+        }
+    }
+    // Support the sink to keep the loop live.
+    if sink < 0 { print(sink) }
+    print(#"{"name":"wireDecodeRoute","expectedAllocations":0}"#)
 
     print("]}")
 }

@@ -254,6 +254,17 @@ let package = Package(
             ],
             path: "Benchmarks/WireBenchmark"
         ),
+        // Dedicated host allocation-regression probe for the borrowed decode +
+        // static routing hot path (issue #490). Wrapped in an instrumentation
+        // (heaptrack) by check-benchmark-wire-allocation.sh to assert the
+        // documented exact-zero steady-state allocation contract.
+        .executableTarget(
+            name: "WireAllocation",
+            dependencies: [
+                "AxolotyWire",
+            ],
+            path: "Benchmarks/WireAllocation"
+        ),
     ],
     swiftLanguageModes: [.v6]
 )

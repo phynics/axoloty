@@ -178,6 +178,15 @@ public struct WireReader {
     /// before tokenizer workspace is initialized. Accepted inputs use a
     /// fixed-size tokenizer workspace with eight guard bytes; indexed values
     /// continue to borrow from the caller's original buffer.
+    ///
+    /// - Note: The tokenizer workspace is an inline/temporary allocation sized
+    ///   to a constant ``WireBufferConfig.maxPayloadSize`` + 8 bytes and is
+    ///   not a function of the input length. On Swift 6.3 host builds it is
+    ///   stack-resident (no heap allocation in the steady state); on Embedded
+    ///   Swift the allocation class is measured by the device `hotPathAllocations`
+    ///   gate rather than assumed. This initializer performs a bounded memcpy of
+    ///   the payload into the workspace but never allocates `String`, `Array`,
+    ///   or an intermediate JSON value tree.
     public init(bytes: UnsafePointer<UInt8>, length: Int) {
         self.bytes = UnsafeRawPointer(bytes); self.length = max(0, length)
         let buffer = UnsafeBufferPointer(start: bytes, count: max(0, length))

@@ -99,6 +99,7 @@
     {"path":"Tests/Support/test-check-benchmark-corpus.sh","makeTarget":"test-support","tier":"unit"},
     {"path":"Tests/Support/test-check-benchmark-size.sh","makeTarget":"test-support","tier":"unit"},
     {"path":"Tests/Support/test-check-benchmark-wire.sh","makeTarget":"test-support","tier":"unit"},
+    {"path":"Tests/Support/test-check-benchmark-wire-allocation.sh","makeTarget":"test-support","tier":"unit"},
     {"path":"Tests/Support/test-check-benchmark-wire-bounds.sh","makeTarget":"test-support","tier":"unit"},
     {"path":"Tests/Support/test-check-benchmark-wire-device.sh","makeTarget":"test-support","tier":"unit"},
     {"path":"Tests/Support/test-check-budget-manifest.sh","makeTarget":"test-support","tier":"unit"},

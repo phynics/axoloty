@@ -89,7 +89,11 @@ against; baseline comparisons are matching-fingerprint only.
 - **Zero-allocation hot paths retain an exact-zero budget.** The
   borrowed decode/routing steady-state window must record zero
   allocations (`hotPathAllocations.budget == 0`; `measured == 0` when
-  approved). Any non-zero count is a failure, not drift.
+  approved). Any non-zero count is a failure, not drift. This is verified on
+  ESP32-C6 by the device `axoloty_heap_trace_*` gate (`make benchmark-wire-device`)
+  and on the host by `make benchmark-wire-allocation`, which profiles a warmed
+  decode + static-route pass under `heaptrack` and asserts that total allocation
+  calls do not grow with the iteration count (zero per-message allocation).
 
 ## Host wire latency budgets
 
@@ -244,12 +248,15 @@ Phase 4 progress until the regression is resolved.
 make build
 make test
 make benchmark-wire
+make benchmark-wire-allocation
 make benchmark-size
 make benchmark-wire-bounds
 make benchmark-wire-device
 make test-wire-all
 sh Tests/Support/check-budget-manifest.sh
 sh Tests/Support/test-check-budget-manifest.sh
+sh Tests/Support/check-benchmark-wire-allocation.sh
+sh Tests/Support/test-check-benchmark-wire-allocation.sh
 ```
 
 The Phase 3 (#276) closure and Phase 4 entry require the

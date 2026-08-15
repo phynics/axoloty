@@ -32,7 +32,14 @@ public struct EmbeddedResponseKey: Hashable, Sendable {
 }
 
 /// Embedded-runtime adapter that dispatches `BorrowedMessage` through
-/// `StaticDispatchTable` and `StaticFamilyTable` with zero heap allocation.
+/// `StaticDispatchTable` and `StaticFamilyTable` with no heap allocation in
+/// the steady-state dispatch path.
+///
+/// Construction allocates a bounded, fixed-capacity set of dispatch and family
+/// tables (sized by `WireBufferConfig`); after construction the synchronous
+/// `dispatch`/`subscribe` hot path performs no allocation. The type is built
+/// so the embedded target's `hotPathAllocations` gate (exact-zero in steady
+/// state) can be satisfied without per-message heap use.
 ///
 /// Each event type has its own dispatch table. Keyed families (Advertise by
 /// filter, Channel by channel ID, IoState by source ID, Call/Update by

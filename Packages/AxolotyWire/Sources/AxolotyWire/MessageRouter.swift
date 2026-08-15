@@ -3,7 +3,10 @@
 /// The routing interface for the embedded runtime's synchronous dispatch path.
 ///
 /// The embedded target uses `StaticDispatchTable` for synchronous,
-/// allocation-free dispatch. The host runtime routes directly through
+/// allocation-free steady-state dispatch. Construction of the tables carries a
+/// bounded, fixed-capacity allocation (fixed-size subscriber arrays and keyed
+/// family entries); the guarantee is that `dispatch` performs no allocation in
+/// the steady state. The host runtime routes directly through
 /// `MQTTNIOClient.handlePublish` and does not conform to this protocol.
 ///
 /// This protocol is intentionally non-`Sendable`: conforming routers own
