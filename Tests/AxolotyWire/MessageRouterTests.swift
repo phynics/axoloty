@@ -63,6 +63,74 @@ struct MessageRouterTests {
     }
 
     @Test
+    func embeddedRouterIoStateFamilyDispatchesByEndpointId() throws {
+        let router = try! EmbeddedMessageRouter(maxSubscribers: 4)
+        let sourceStateReceived = Box(false)
+        let otherStateReceived = Box(false)
+
+        let sourceId = "33333333-3333-4333-8333-333333333333"
+        let actorId = "44444444-4444-4444-8444-444444444444"
+        router.subscribeIoState(sourceId: sourceId) { _ in sourceStateReceived.value = true }
+        router.subscribeIoState(sourceId: actorId) { _ in otherStateReceived.value = true }
+
+        // An Associate for sourceId+actorId must dispatch IoState to both
+        // keyed subscribers, and only to them. UUIDs are hardcoded because
+        // `#"..."#` raw strings require `\#(...)` for interpolation.
+        dispatchBorrowed(
+            topic: "coaty/3/test/ASC:ctx/55555555-5555-4555-8555-555555555555",
+            payload: #"{"ioSourceId":"33333333-3333-4333-8333-333333333333","ioActorId":"44444444-4444-4444-8444-444444444444"}"#,
+            to: router
+        )
+
+        #expect(sourceStateReceived.value == true)
+        #expect(otherStateReceived.value == true)
+    }
+
+    @Test
+    func embeddedRouterIoStateUnsubscribeStopsDelivery() throws {
+        let router = try! EmbeddedMessageRouter(maxSubscribers: 4)
+        let received = Box(0)
+
+        let sourceId = "33333333-3333-4333-8333-333333333333"
+        let token = try #require(router.subscribeIoState(sourceId: sourceId) { _ in
+            received.value += 1
+        })
+
+        dispatchBorrowed(
+            topic: "coaty/3/test/ASC:ctx/55555555-5555-4555-8555-555555555555",
+            payload: #"{"ioSourceId":"33333333-3333-4333-8333-333333333333","ioActorId":"44444444-4444-4444-8444-444444444444"}"#,
+            to: router
+        )
+        #expect(received.value == 1)
+
+        router.unsubscribeIoState(token)
+        dispatchBorrowed(
+            topic: "coaty/3/test/ASC:ctx/55555555-5555-4555-8555-555555555555",
+            payload: #"{"ioSourceId":"33333333-3333-4333-8333-333333333333","ioActorId":"44444444-4444-4444-8444-444444444444"}"#,
+            to: router
+        )
+        #expect(received.value == 1)
+    }
+
+    @Test
+    func embeddedRouterIoStateIgnoresMalformedAssociate() throws {
+        let router = try! EmbeddedMessageRouter(maxSubscribers: 4)
+        let received = Box(false)
+
+        router.subscribeIoState(sourceId: "33333333-3333-4333-8333-333333333333") { _ in
+            received.value = true
+        }
+
+        // A malformed Associate (missing ioSourceId) must not reach IoState.
+        dispatchBorrowed(
+            topic: "coaty/3/test/ASC:ctx/55555555-5555-4555-8555-555555555555",
+            payload: #"{"ioActorId":"44444444-4444-4444-8444-444444444444"}"#,
+            to: router
+        )
+        #expect(received.value == false)
+    }
+
+    @Test
     func embeddedRouterUnsubscribeStopsDelivery() throws {
         let router = try! EmbeddedMessageRouter(maxSubscribers: 4)
         let received = Box(0)
