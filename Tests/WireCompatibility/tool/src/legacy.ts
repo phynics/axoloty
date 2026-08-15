@@ -2,8 +2,9 @@
 
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { arch, platform } from "node:process";
+import { atomicWriteFileSync } from "./atomic.js";
 
 /** Write the provenance manifest for a macOS legacy CoatySwift capture. */
 export function writeLegacyManifest(capture: string, output: string, version: string, sourceCommit: string, scenario: string): void {
@@ -18,5 +19,5 @@ export function writeLegacyManifest(capture: string, output: string, version: st
     runner: { os: "macOS", architecture: arch, swiftVersion: command("swift", ["--version"]), xcodeVersion: command("xcodebuild", ["-version"]), generatedAt: new Date().toISOString() },
     scenario,
   };
-  writeFileSync(output, JSON.stringify(value, null, 2) + "\n", "utf8");
+  atomicWriteFileSync(output, JSON.stringify(value, null, 2) + "\n", "utf8");
 }

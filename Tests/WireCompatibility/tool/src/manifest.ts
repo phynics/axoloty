@@ -1,8 +1,9 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import { createHash } from "crypto";
-import { readdirSync, readFileSync, writeFileSync } from "fs";
+import { readdirSync, readFileSync } from "fs";
 import { basename, join, resolve } from "path";
+import { atomicWriteFileSync } from "./atomic.js";
 
 interface CaptureRecord {
   format: string;
@@ -61,8 +62,7 @@ export function buildManifest(directory: string): CaptureManifest {
 /** Write a manifest atomically so readers never observe a partial document. */
 export function writeManifest(directory: string, output: string): void {
   const manifest = JSON.stringify(buildManifest(resolve(directory)), null, 2) + "\n";
-  const destination = resolve(output);
-  writeFileSync(destination, manifest, "utf8");
+  atomicWriteFileSync(output, manifest);
 }
 
 function parseRecord(line: string, file: string, sequence: number): CaptureRecord {

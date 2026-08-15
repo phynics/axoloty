@@ -6,6 +6,7 @@ import { writeManifest } from "./manifest.js";
 import { writeLifecycleManifest } from "./lifecycle.js";
 import { controlProxy, runProxy, type ProxyOptions } from "./proxy.js";
 import { writeLegacyManifest } from "./legacy.js";
+import { waitForFile } from "./atomic.js";
 import { spawn } from "node:child_process";
 
 const USAGE = `Usage: axoloty-wire <command> [options]
@@ -106,9 +107,35 @@ function runScenarioCommand(args: string[]): void {
     process.exit(2);
   }
 
+  runScenarioOrdered({ scenario, runner, topicFilter, output, producer, producerVersion, readyFile }).catch(
+    (error: unknown) => {
+      process.stderr.write(`run failed: ${error instanceof Error ? error.message : String(error)}\n`);
+      process.exit(1);
+    },
+  );
+}
+
+async function runScenarioOrdered(opts: {
+  scenario: string;
+  runner: string;
+  topicFilter: string;
+  output: string;
+  producer: string;
+  producerVersion: string;
+  readyFile?: string;
+}): Promise<void> {
+  const { scenario, runner, topicFilter, output, producer, producerVersion, readyFile } = opts;
   const captureArgs = ["capture", topicFilter, output, "--producer", producer, "--producer-version", producerVersion, "--scenario", scenario];
   if (readyFile) captureArgs.push("--ready-file", readyFile);
   const capture = spawn(process.execPath, [process.argv[1]!, ...captureArgs], { stdio: "inherit" });
+  if (readyFile) {
+    try {
+      await waitForFile(readyFile, 30);
+    } catch (error) {
+      capture.kill("SIGTERM");
+      throw new Error(`capture did not become ready: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
   const scenarioProcess = spawn(runner, { shell: true, stdio: "inherit", env: { ...process.env, SCENARIO: scenario } });
   scenarioProcess.once("error", (error) => { process.stderr.write(`scenario failed: ${error.message}\n`); capture.kill("SIGTERM"); process.exit(1); });
   scenarioProcess.once("close", (code, signal) => {
