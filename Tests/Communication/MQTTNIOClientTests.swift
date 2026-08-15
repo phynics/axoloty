@@ -157,6 +157,85 @@ struct MQTTNIOClientTests {
         #expect(try await nextValue(&iterator, timeout: .milliseconds(100)).payload == jsonPayload)
     }
 
+    // MARK: - Exact topic layout conformance (#488)
+
+    /// Malformed Coaty topics must be dropped before routing: over-long event
+    /// codes, near-match codes, extra path segments, wrong protocol/version,
+    /// and invalid source IDs must not surface as a decoded event family.
+    @Test
+    func hostIngressDropsMalformedCoatyTopicsBeforeRouting() async throws {
+        let sourceId = "11111111-1111-4111-8111-111111111111"
+        let correlationId = "22222222-2222-4222-8222-222222222222"
+        let malformedTopics = [
+            "coaty/3/test/ADVZ/\(sourceId)",            // over-long event code
+            "coaty/3/test/ADVX:sensors/\(sourceId)",    // near-match code + filter
+            "coaty/3/test/ADV/\(sourceId)/extra",       // extra trailing segment
+            "other/3/test/DAD/\(sourceId)",             // wrong protocol
+            "coaty/4/test/DAD/\(sourceId)",             // wrong version
+            "coaty/3/test/ADV/not-a-uuid",              // invalid source id
+            "coaty/3/test/DSC/\(sourceId)",             // two-way missing correlation
+        ]
+
+        let (client, streams) = try makeHostIngressClient()
+        let rawStream = await streams.rawMQTTMessages.subscribe()
+        var rawIterator = rawStream.makeAsyncIterator()
+        // Subscribe across several routing surfaces; none should receive anything.
+        let advertiseStream = await streams.advertiseAll.subscribe()
+        var advertiseIterator = advertiseStream.makeAsyncIterator()
+        let deadvertiseStream = await streams.deadvertise.subscribe()
+        var deadvertiseIterator = deadvertiseStream.makeAsyncIterator()
+
+        for topic in malformedTopics {
+            client.handlePublish(.success(publishInfo(payload: Array("{}".utf8), topic: topic)))
+        }
+
+        // Raw stream still receives every topic (raw relay is unconditional), but
+        // no typed routing surface may receive a decoded event from malformed topics.
+        for _ in malformedTopics {
+            let raw = try await nextValue(&rawIterator, timeout: .milliseconds(100))
+            #expect(malformedTopics.contains(raw.topic))
+        }
+
+        do {
+            _ = try await nextValue(&advertiseIterator, timeout: .milliseconds(100))
+            Issue.record("a malformed topic was routed to advertise")
+        } catch {
+        }
+        do {
+            _ = try await nextValue(&deadvertiseIterator, timeout: .milliseconds(100))
+            Issue.record("a malformed topic was routed to deadvertise")
+        } catch {
+        }
+    }
+
+    /// A correctly-shaped Coaty topic still routes after strict validation.
+    @Test
+    func hostIngressStillRoutesExactValidTopicAfterValidation() async throws {
+        let object = CoatyObject(
+            coreType: .CoatyObject,
+            objectType: "com.example.Sensor",
+            objectId: try #require(CoatyUUID(uuidString: "22222222-2222-4222-8222-222222222222")),
+            name: "valid"
+        )
+        let event = try AdvertiseEvent.with(object: object)
+        let payload = try HostWireAdapter.encodeEvent(event)
+
+        let (client, streams) = try makeHostIngressClient()
+        let typedStream = await streams.advertiseFamily.subscribe(
+            for: AdvertiseKey(eventTypeFilter: "com.example.Sensor")
+        )
+        var typedIterator = typedStream.makeAsyncIterator()
+
+        client.handlePublish(.success(publishInfo(
+            payload: payload,
+            topic: "coaty/3/test/ADV:com.example.Sensor/11111111-1111-4111-8111-111111111111"
+        )))
+
+        let snapshot = try await nextValue(&typedIterator, timeout: .milliseconds(100))
+        #expect(snapshot.object.objectId == object.objectId.string)
+        #expect(snapshot.object.name == object.name)
+    }
+
     @Test
     func hostIngressRejectsPayloadAboveHostLimitBeforeDelivery() async throws {
         let (client, streams) = try makeHostIngressClient()
