@@ -117,6 +117,18 @@ digest instead of rebuilding it.
 Release validation produces two distinct, deliberately separated evidence
 types.
 
+### Live wire gate
+
+The CI `Live CoatyJS compatibility gate` ('wire capture', issue #457) enforces
+live evidence for protocol-affecting changes. The gate always runs (it is a
+reliable required check): when a change set touches protocol-affecting paths it
+runs the containerized live capture and verifier and uploads the captures,
+manifest, and verifier logs; otherwise it fast-paths to a pass. The
+`live-wire-exemption` label records a dated, expiring reviewed exemption that
+waives only the capture. The authoritative path list and exemption convention
+live in `Tests/Support/classify-wire-change.mjs` and
+`Tests/WireCompatibility/CompatibilityMatrix.md`, respectively.
+
 ### Fixture bundle (offline, deterministic)
 
 `axoloty-tool release fixture-bundle` copies the reviewed wire captures from

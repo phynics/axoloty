@@ -14,6 +14,13 @@ Development toward Axoloty 1.0 is in progress and tracked by the
 
 ### Added
 
+- CI enforces live wire compatibility for protocol-affecting changes: the
+  `Live CoatyJS compatibility gate` required check now runs the containerized
+  CoatyJS capture and its verifier whenever a change set touches protocol-
+  affecting paths, and uploads the capture and verifier evidence. Unrelated
+  changes stay on the fast path, and an explicit reviewed exemption
+  (`live-wire-exemption` label with a recorded rationale/expiry reference)
+  waives only the capture.
 - Bounded MQTT ingress delivery queue: inbound message delivery sheds
   newest excess jobs once the queue fills, reports overload through
   rate-limited logging, and preserves arrival order of retained messages.
