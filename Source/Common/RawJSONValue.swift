@@ -133,6 +133,33 @@ extension RawJSONValue {
         }
     }
 
+    /// Converts this raw JSON value back to an `Any` JSON value for
+    /// heterogeneous `[Any]` decoding.
+    ///
+    /// Mirrors ``init(any:)`` in reverse: `null` becomes an absent optional so
+    /// ``UnkeyedEncodingContainer.encode(_: [Any])`` re-emits `null` (its
+    /// `Optional.none` case calls `encodeNil()`), `Int`/`Double`/`Bool` keep
+    /// their distinct Swift types, and containers become `[Any]`/`[String:
+    /// Any]` recursively.
+    var asAnyJSONValue: Any {
+        switch self {
+        case .null:
+            return Optional<Any>.none as Any
+        case .bool(let value):
+            return value
+        case .int(let value):
+            return value
+        case .double(let value):
+            return value
+        case .string(let value):
+            return value
+        case .array(let values):
+            return values.map(\.asAnyJSONValue)
+        case .object(let dictionary):
+            return dictionary.mapValues(\.asAnyJSONValue)
+        }
+    }
+
     /// Decodes a field from a keyed decoding container as raw JSON text.
     ///
     /// This is the decode-side half of the "store raw JSON `String`" pattern:

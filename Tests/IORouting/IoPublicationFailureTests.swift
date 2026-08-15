@@ -34,24 +34,23 @@ struct IoPublicationFailureTests {
         #expect(capture.output.contains("AxolotyError"))
     }
 
-    /// An unassociated source's value is deliberately dropped
-    /// (back-pressure), but the loss is logged at `notice` so it stays
-    /// observable.
+    /// A value publish constructs a valid event for a source (association is
+    /// gated authoritatively by ``CommunicationManager``'s IO registry via
+    /// ``publishIoValue``, not by a controller-local flag). The construction
+    /// path must not drop a well-formed value before it is handed to the
+    /// communication manager.
     @Test
-    func unassociatedSourceDropIsLoggedNotSilent() throws {
+    func publishForwardsValidEventToCommunicationManager() throws {
         let controller = try makeIoSourceController()
         defer { controller.container.shutdown() }
 
-        let original = LogManager.level(for: Subsystem.ioRouting.rawValue)
-        defer { LogManager.setLevel(original, for: .ioRouting) }
-        LogManager.setLevel(.notice, for: .ioRouting)
-
-        let source = IoSource(valueType: "Temperature") // not associated
+        let source = IoSource(valueType: "Temperature", useRawIoValues: false)
+        // A valid JSON value constructs an event successfully; it is handed to
+        // `publishIoValue`, which self-gates on the registry route.
         let capture = try StandardErrorCapture.capture {
             controller.publish(source: source, value: 42.0)
         }
-        #expect(capture.output.contains("Dropped IoValue for unassociated source"))
-        #expect(capture.output.contains(source.objectId.string))
+        #expect(!capture.output.contains("Failed to construct IoValue event"))
     }
 
     /// An IO context with an invalid object type fails `AdvertiseEvent.with`

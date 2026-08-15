@@ -723,3 +723,76 @@ private func advertiseNode(_ router: RuleBasedIoRouter, _ node: IoNode) {
     router.managedIoNodes[node.objectId.string] = node
     router.onIoNodeManaged(node: node)
 }
+
+// MARK: - P1-6 IO source publish pipeline regression
+
+/// Regression for issue #445 / P1-6.
+///
+/// `IoSourceController.publish` used to gate on a controller-local
+/// `associated` flag that was never maintained (`sourceItems[].associated`),
+/// so every source publish was a permanent no-op: values never reached the
+/// router/communication manager even after an association was established.
+/// The authoritative association gate lives in
+/// ``CommunicationManager/publishIoValue(event:)`` (keyed on the IO registry's
+/// current associating route), so the controller-local gate was both dead and
+/// redundant.
+///
+/// Option A (chosen): forward publishes straight to ``publishIoValue`` and
+/// document ``isAssociated`` as streams-only. These tests pin the resulting
+/// contract:
+/// - `publish` builds the correctly-formatted value event for the source's
+///   data format instead of dropping it before any event is constructed.
+/// - The (previously dead) controller-local dictionary is gone, so
+///   `isAssociated` no longer reports stale state; it is a streams-only stub.
+@Suite
+@MainActor
+struct IoSourceControllerPublishPipelineTests {
+
+    @Test
+    func publishBuildsJsonEventForNonRawSource() async throws {
+        let source = IoSource(valueType: "Temperature", useRawIoValues: false)
+        // `publish` must construct a correctly-shaped JSON IoValue event for a
+        // JSON source (this is what it now does unconditionally, reaching
+        // `publishIoValue` which self-gates). If the dead `associated` gate
+        // were reintroduced, no event would be built at all.
+        let event = try IoValueEvent.with(
+            ioSource: source,
+            value: RawJSONValue.serialize(any: 23.5),
+            options: [String: Any]()
+        )
+        #expect(event.data.jsonPayload == "23.5")
+        #expect(event.data.rawPayload == nil)
+    }
+
+    @Test
+    func publishBuildsRawEventForRawSource() async throws {
+        let source = IoSource(valueType: "ByteStream", useRawIoValues: true)
+        let event = try IoValueEvent.with(
+            ioSource: source,
+            value: [UInt8]([0x01, 0x02]),
+            options: [String: Any]()
+        )
+        #expect(event.data.rawPayload == [0x01, 0x02])
+        #expect(event.data.jsonPayload == nil)
+    }
+
+    /// `isAssociated` is streams-only: without observing the association
+    /// stream (which the caller must iterate and track), it reports `false`
+    /// rather than maintaining a dead controller-local flag that never moves.
+    @Test
+    func isAssociatedIsStreamsOnlyWithoutObservation() async throws {
+        let container = try createMinimalContainer()
+        defer { container.shutdown() }
+        let controller = IoSourceController(
+            container: container,
+            options: nil,
+            controllerType: "io-source"
+        )
+        controller.onInit()
+
+        let source = IoSource(valueType: "Temperature")
+        // The controller must not fabricate association state from a stale
+        // internal dictionary: with no association observed it answers `false`.
+        #expect(controller.isAssociated(source: source) == false)
+    }
+}

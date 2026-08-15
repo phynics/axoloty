@@ -221,12 +221,29 @@ open class SensorSourceController: Controller {
     private func handleQueryEvent(_ request: QueryEventSnapshot, correlationId: String) {
         guard Self.querySelectsSensor(request) else { return }
 
-        let filter = request.objectFilter.flatMap {
-            try? JSONDecoder().decode(ObjectFilter.self, from: Data($0.utf8))
+        // Decode the optional query filter defensively. A malformed inbound
+        // filter must not be force-unwrapped (P1-7): treat it as an ignored
+        // query, logging the wrapped error instead of crashing or silently
+        // returning every sensor.
+        let result: [Sensor]
+        if let rawFilter = request.objectFilter {
+            do {
+                let filter = try JSONDecoder().decode(ObjectFilter.self, from: Data(rawFilter.utf8))
+                result = sensors.values.map(\.sensor).filter {
+                    ObjectMatcher.matchesFilter(obj: $0, filter: filter)
+                }
+            } catch {
+                let wrappedError = AxolotyError.caught(error)
+                LogManager.logger(.sensorThings).warning("Ignoring query with malformed objectFilter", metadata: [
+                    "correlationId": .string(correlationId),
+                    "error": .string(ErrorKit.errorChainDescription(for: wrappedError)),
+                ])
+                return
+            }
+        } else {
+            result = sensors.values.map(\.sensor)
         }
-        let result = sensors.values.map(\.sensor).filter {
-            filter == nil || ObjectMatcher.matchesFilter(obj: $0, filter: filter!)
-        }
+
         if !result.isEmpty {
             communicationManager.publishRetrieve(
                 event: RetrieveEvent.with(objects: result),
