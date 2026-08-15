@@ -264,6 +264,172 @@ struct IoAssociationRegistryTests {
         #expect(restartedState.eventData.updateRate() == 750)
     }
 
+    // MARK: - Reassociation (issue #475)
+
+    /// A dispatch collector that records both the point ID and the association
+    /// flag, so tests can assert per-actor notification and deterministic
+    /// ordering.
+    @MainActor
+    private final class LockedDispatchCollector {
+        private var storage: [String] = []
+
+        var values: [String] { storage }
+
+        func append(_ pointId: CoatyUUID, hasAssociations: Bool) {
+            storage.append("\(pointId.string):\(hasAssociations)")
+        }
+
+        func clear() {
+            storage.removeAll()
+        }
+    }
+
+    private func makeObservedDispatches(_ registry: IoAssociationRegistry) -> LockedDispatchCollector {
+        let dispatches = LockedDispatchCollector()
+        registry.onIoStateDispatch = { ioPointId, event in
+            dispatches.append(ioPointId, hasAssociations: event.eventData.hasAssociations())
+        }
+        return dispatches
+    }
+
+    @Test
+    func reassociationDispatchesFalseStateToDisplacedActor() async {
+        let source = makeSource("10000000-0000-4000-8000-000000000001")
+        let actorA = makeActor("20000000-0000-4000-8000-000000000002")
+        let actorB = makeActor("20000000-0000-4000-8000-000000000003")
+        let (registry, _, _) = makeRegistry(sources: [source], actors: [actorA, actorB])
+
+        // Observe actor A, actor B, and the source so their state transitions
+        // are all dispatched.
+        _ = registry.observeIoState(ioPointId: source.objectId)
+        _ = registry.observeIoState(ioPointId: actorA.objectId)
+        _ = registry.observeIoState(ioPointId: actorB.objectId)
+        let dispatches = makeObservedDispatches(registry)
+
+        // 1. Associate actor A with the source.
+        registry.handleAssociate(
+            ioSourceId: source.objectId, ioActorId: actorA.objectId,
+            ioRoute: "route-1", updateRate: 500, isExternalRoute: false
+        )
+        #expect(dispatches.values.contains("\(actorA.objectId.string):true"))
+
+        // 2. Reassociate the source to actor B -> actor A is displaced.
+        dispatches.clear()
+        registry.handleAssociate(
+            ioSourceId: source.objectId, ioActorId: actorB.objectId,
+            ioRoute: "route-2", updateRate: 500, isExternalRoute: false
+        )
+
+        // Displaced actor A must receive a false state transition.
+        #expect(dispatches.values.contains("\(actorA.objectId.string):false"))
+        // The replacement actor B becomes active.
+        #expect(dispatches.values.contains("\(actorB.objectId.string):true"))
+        // Source state reflects the new association.
+        #expect(dispatches.values.contains("\(source.objectId.string):true"))
+    }
+
+    @Test
+    func reassociationDispatchesFalseStateToAllDisplacedActors() async {
+        let source = makeSource("10000000-0000-4000-8000-000000000001")
+        let actorA = makeActor("20000000-0000-4000-8000-000000000002")
+        let actorB = makeActor("20000000-0000-4000-8000-000000000003")
+        let actorC = makeActor("20000000-0000-4000-8000-000000000004")
+        let (registry, _, _) = makeRegistry(sources: [source], actors: [actorA, actorB, actorC])
+
+        _ = registry.observeIoState(ioPointId: actorA.objectId)
+        _ = registry.observeIoState(ioPointId: actorB.objectId)
+        _ = registry.observeIoState(ioPointId: actorC.objectId)
+        let dispatches = makeObservedDispatches(registry)
+
+        // Two actors share the source on one route.
+        registry.handleAssociate(
+            ioSourceId: source.objectId, ioActorId: actorA.objectId,
+            ioRoute: "route-1", updateRate: 500, isExternalRoute: false
+        )
+        registry.handleAssociate(
+            ioSourceId: source.objectId, ioActorId: actorB.objectId,
+            ioRoute: "route-1", updateRate: 500, isExternalRoute: false
+        )
+        dispatches.clear()
+
+        // Reassociate the source to actor C -> actors A and B are displaced.
+        registry.handleAssociate(
+            ioSourceId: source.objectId, ioActorId: actorC.objectId,
+            ioRoute: "route-2", updateRate: 500, isExternalRoute: false
+        )
+
+        #expect(dispatches.values.contains("\(actorA.objectId.string):false"))
+        #expect(dispatches.values.contains("\(actorB.objectId.string):false"))
+        #expect(dispatches.values.contains("\(actorC.objectId.string):true"))
+    }
+
+    @Test
+    func displacedActorRetainsTrueStateWhenStillAssociatedWithAnotherSource() async {
+        let source1 = makeSource("10000000-0000-4000-8000-000000000001", route: nil)
+        let source2 = makeSource("30000000-0000-4000-8000-000000000005")
+        let actorA = makeActor("20000000-0000-4000-8000-000000000002")
+        let actorB = makeActor("20000000-0000-4000-8000-000000000003")
+        let (registry, _, _) = makeRegistry(
+            sources: [source1, source2], actors: [actorA, actorB]
+        )
+
+        _ = registry.observeIoState(ioPointId: actorA.objectId)
+        _ = registry.observeIoState(ioPointId: actorB.objectId)
+        let dispatches = makeObservedDispatches(registry)
+
+        // Actor A is fed by both source1 (route-1) and source2 (route-2).
+        registry.handleAssociate(
+            ioSourceId: source1.objectId, ioActorId: actorA.objectId,
+            ioRoute: "route-1", updateRate: 500, isExternalRoute: false
+        )
+        registry.handleAssociate(
+            ioSourceId: source2.objectId, ioActorId: actorA.objectId,
+            ioRoute: "route-2", updateRate: 500, isExternalRoute: false
+        )
+        dispatches.clear()
+
+        // source1 is reassociated to actor B; actor A is displaced from source1
+        // but remains associated with source2, so its state must stay true.
+        registry.handleAssociate(
+            ioSourceId: source1.objectId, ioActorId: actorB.objectId,
+            ioRoute: "route-3", updateRate: 500, isExternalRoute: false
+        )
+
+        #expect(dispatches.values.contains("\(actorA.objectId.string):true"))
+        #expect(dispatches.values.contains("\(actorB.objectId.string):true"))
+    }
+
+    @Test
+    func displacedActorStateIsDispatchedBeforeReplacementActorState() async {
+        let source = makeSource("10000000-0000-4000-8000-000000000001")
+        let actorA = makeActor("20000000-0000-4000-8000-000000000002")
+        let actorB = makeActor("20000000-0000-4000-8000-000000000003")
+        let (registry, _, _) = makeRegistry(sources: [source], actors: [actorA, actorB])
+
+        _ = registry.observeIoState(ioPointId: actorA.objectId)
+        _ = registry.observeIoState(ioPointId: actorB.objectId)
+        let dispatches = makeObservedDispatches(registry)
+
+        registry.handleAssociate(
+            ioSourceId: source.objectId, ioActorId: actorA.objectId,
+            ioRoute: "route-1", updateRate: 500, isExternalRoute: false
+        )
+        dispatches.clear()
+
+        registry.handleAssociate(
+            ioSourceId: source.objectId, ioActorId: actorB.objectId,
+            ioRoute: "route-2", updateRate: 500, isExternalRoute: false
+        )
+
+        // Actor A (displaced) must be notified before actor B (replacement).
+        let ordering = dispatches.values
+        let displacedAIndex = ordering.firstIndex(of: "\(actorA.objectId.string):false")
+        let replacementBIndex = ordering.firstIndex(of: "\(actorB.objectId.string):true")
+        #expect(displacedAIndex != nil)
+        #expect(replacementBIndex != nil)
+        #expect(displacedAIndex! < replacementBIndex!)
+    }
+
     // MARK: - IO value routing
 
     @Test

@@ -61,8 +61,13 @@ internal final class IoAssociationRegistry {
             return
         }
 
+        // Actors displaced by a route change (reassociation). They must be
+        // notified with their new (usually false) association state before the
+        // replacement actor's state is dispatched, so state ordering stays
+        // deterministic (#475).
+        var displacedActorIds: [CoatyUUID] = []
         if isIoSourceAssociated {
-            updateIoSourceItems(
+            displacedActorIds = updateIoSourceItems(
                 ioSourceId: ioSourceId, ioActorId: ioActorId,
                 ioRoute: ioRoute, updateRate: updateRate
             )
@@ -93,11 +98,21 @@ internal final class IoAssociationRegistry {
             )
         }
 
+        // Notify every displaced actor with its current association state
+        // before announcing the replacement's state (see #475). An actor's
+        // state reflects any remaining associations across all routes, so a
+        // displaced actor that is still fed by another source stays true.
+        for actorId in displacedActorIds where observedIoStateItems[actorId] != nil {
+            dispatchIoState(
+                ioPointId: actorId,
+                message: IoStateEvent.with(hasAssociations: actorHasAssociations(actorId))
+            )
+        }
+
         if isIoActorAssociated, observedIoStateItems[ioActorId] != nil {
-            let sourceCount = ioRoute.flatMap { ioActorItems[$0]?[ioActorId]?.count } ?? 0
             dispatchIoState(
                 ioPointId: ioActorId,
-                message: IoStateEvent.with(hasAssociations: sourceCount > 0)
+                message: IoStateEvent.with(hasAssociations: actorHasAssociations(ioActorId))
             )
         }
     }
@@ -112,7 +127,7 @@ internal final class IoAssociationRegistry {
             hasAssociations = !source.actorIds.isEmpty
             updateRate = source.updateRate
         } else {
-            hasAssociations = ioActorItems.values.contains { $0[ioPointId] != nil }
+            hasAssociations = actorHasAssociations(ioPointId)
         }
         let value = IoStateEvent.with(hasAssociations: hasAssociations, updateRate: updateRate)
         observedIoStateItems[ioPointId] = IoStateItem(ioPointId: ioPointId, currentValue: value)
@@ -146,10 +161,17 @@ internal final class IoAssociationRegistry {
         ioActorItems.removeAll()
     }
 
+    /// Updates the source-side association map for the given associate event.
+    ///
+    /// Returns the object IDs of any actors displaced by a route change so the
+    /// caller can notify them with their new association state (#475). The
+    /// replacement actor (`ioActorId`) is never included, since it is not
+    /// displaced.
+    @discardableResult
     private func updateIoSourceItems(
         ioSourceId: CoatyUUID, ioActorId: CoatyUUID,
         ioRoute: String?, updateRate: Int?
-    ) {
+    ) -> [CoatyUUID] {
         if let ioRoute {
             if ioSourceItems[ioSourceId] == nil {
                 ioSourceItems[ioSourceId] = IoSourceItem(
@@ -157,14 +179,22 @@ internal final class IoAssociationRegistry {
                     actorIds: [ioActorId],
                     updateRate: updateRate
                 )
+                return []
             } else if var items = ioSourceItems[ioSourceId] {
                 if items.associatingRoute == ioRoute {
                     if !items.actorIds.contains(ioActorId) {
                         items.actorIds.append(ioActorId)
                     }
+                    items.updateRate = updateRate
+                    ioSourceItems[ioSourceId] = items
+                    return []
                 } else {
                     let previousRoute = items.associatingRoute
                     items.associatingRoute = ioRoute
+                    // Actors on the previous route are displaced by this route
+                    // change, excluding the replacement (which may have been
+                    // among them if it is being reassociated to the new route).
+                    let displaced = items.actorIds.filter { $0 != ioActorId }
                     for actorId in items.actorIds {
                         disassociateIoActorItems(
                             ioSourceId: ioSourceId, ioActorId: actorId,
@@ -172,9 +202,10 @@ internal final class IoAssociationRegistry {
                         )
                     }
                     items.actorIds = [ioActorId]
+                    items.updateRate = updateRate
+                    ioSourceItems[ioSourceId] = items
+                    return displaced
                 }
-                items.updateRate = updateRate
-                ioSourceItems[ioSourceId] = items
             }
         } else {
             if var items = ioSourceItems[ioSourceId] {
@@ -189,6 +220,7 @@ internal final class IoAssociationRegistry {
                 }
             }
         }
+        return []
     }
 
     private func associateIoActorItems(
@@ -272,6 +304,14 @@ internal final class IoAssociationRegistry {
                 ioRoutesToUnsubscribe.append(route.current)
             }
         }
+    }
+
+    /// Whether the given actor is currently associated with at least one IO
+    /// source on any route. Preferred over a route-scoped source count because
+    /// an actor may stay associated with other sources while being removed from
+    /// one route (#475).
+    private func actorHasAssociations(_ ioActorId: CoatyUUID) -> Bool {
+        ioActorItems.values.contains { $0[ioActorId] != nil }
     }
 
     private func dispatchIoState(ioPointId: CoatyUUID, message: IoStateEvent) {
