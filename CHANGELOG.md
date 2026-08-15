@@ -45,6 +45,12 @@ Development toward Axoloty 1.0 is in progress and tracked by the
   IO-value publication that previously swallowed failures via `try?` now log
   a structured ``AxolotyError`` chain instead of silently discarding the
   operation, so loss is observable and root-causable.
+- Route externally received IO values to the actors associated on their
+  source route (#473): ``IoActorController/observeIoValue(actor:)`` now
+  delivers values through the active association registry instead of returning
+  the global IO value stream, so each actor receives only the values for
+  sources it is associated with, covering association, disassociation, and
+  restart behavior.
 
 ### Performance
 

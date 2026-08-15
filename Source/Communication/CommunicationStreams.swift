@@ -47,6 +47,9 @@ internal struct CommunicationStreams: Sendable {
     let rawMQTTMessages: Broadcast<RawMQTTMessage>
     let parsedMQTTMessages: Broadcast<ParsedMQTTMessage>
     let ioValues: Broadcast<IoValueEventSnapshot>
+    /// Per-actor IO value dispatch, keyed by the actor's object ID. Produced as
+    /// IO values are routed to actors currently associated on their source route.
+    let ioValueFamily: BroadcastFamily<String, IoValueEventSnapshot>
 
     let ioStateFamily: BroadcastFamily<String, IoStateEventSnapshot>
     let associateFamily: BroadcastFamily<String, AssociateEventSnapshot>

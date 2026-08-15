@@ -43,6 +43,19 @@ extension CommunicationManager {
         await streams.ioValues.subscribe()
     }
 
+    /// Observes the raw IO values routed to the actor currently associated on
+    /// their source route.
+    ///
+    /// The values are filtered through the current association registry, so an
+    /// actor only receives values for sources it is associated with; disassociation
+    /// and restart behavior follow the registry's active association state.
+    ///
+    /// - Parameter actor: the actor whose associated IO values should be observed.
+    /// - Returns: an async stream of the raw IO value snapshots routed to `actor`.
+    public func observeIoValuesForActor(_ actor: IoActor) async -> AsyncStream<IoValueEventSnapshot> {
+        await streams.ioValueFamily.subscribe(for: actor.objectId.string)
+    }
+
     /// Returns an async stream that replays the current operating lifecycle
     /// state and emits future start/stop transitions.
     public func observeOperatingStateStream() async -> AsyncStream<OperatingState> {

@@ -266,6 +266,7 @@ private func makeTestStreams() -> CommunicationStreams {
         rawMQTTMessages: Broadcast(mode: .event),
         parsedMQTTMessages: Broadcast(mode: .event),
         ioValues: Broadcast(mode: .event),
+        ioValueFamily: BroadcastFamily(mode: .event),
         ioStateFamily: BroadcastFamily(mode: .state),
         associateFamily: BroadcastFamily(mode: .event),
         advertiseFamily: BroadcastFamily(mode: .event),

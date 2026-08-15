@@ -185,6 +185,7 @@ public class CommunicationManager {
             rawMQTTMessages: Broadcast(mode: .event),
             parsedMQTTMessages: Broadcast(mode: .event),
             ioValues: Broadcast(mode: .event),
+            ioValueFamily: BroadcastFamily(mode: .event),
             ioStateFamily: BroadcastFamily(mode: .state),
             associateFamily: BroadcastFamily(mode: .event),
             advertiseFamily: BroadcastFamily(
@@ -635,15 +636,14 @@ public class CommunicationManager {
     }
 
     nonisolated func didReceiveRawMQTTMessage(topic: String, payload: [UInt8]) {
-        // Raw messages are emitted directly by the transport's Broadcast
-        // streams via the bounded delivery queue path, which preserves arrival
-        // order. Re-sending here delivered each message twice (#238).
-    }
-
-    nonisolated func didReceiveIoValue(topic: String, payload: [UInt8]) {
-        // IoValue messages are emitted directly by the transport's Broadcast
-        // streams via the bounded delivery queue path, which preserves arrival
-        // order. Re-sending here delivered each message twice (#238).
+        // External (non-Coaty) IO route: forward to per-actor routing so IO
+        // values published by external sources reach associated actors. The raw
+        // value itself is emitted by the transport's ingress delivery queue; only
+        // the per-actor forward happens here. Routing is authoritative over the
+        // registry, so non-IO raw topics with no associated actor are no-ops.
+        onMain { manager in
+            manager.routeIoValueToAssociatedActors(topic: topic, payload: payload)
+        }
     }
 
     // MARK: - IO Routing
@@ -747,6 +747,14 @@ public class CommunicationManager {
 
 extension CommunicationManager: CommunicationClientDelegate {
 
+    nonisolated func didReceiveIoValue(topic: String, payload: [UInt8]) {
+        // Forward to per-actor routing; the raw value itself is emitted by the
+        // transport's ingress delivery queue (#238 established no re-emission).
+        onMain { manager in
+            manager.routeIoValueToAssociatedActors(topic: topic, payload: payload)
+        }
+    }
+
     /// Auto start communication manager (caused by shouldAutoStart option or
     /// bonjour discovery).
     nonisolated func didReceiveStart() {
@@ -757,6 +765,34 @@ extension CommunicationManager: CommunicationClientDelegate {
                 manager.log.error("Failed to start CommunicationManager", metadata: [
                     "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
                 ])
+            }
+        }
+    }
+}
+
+// MARK: - IO value routing helpers
+
+fileprivate extension CommunicationManager {
+
+    /// Routes an externally received IO value on the given MQTT route to every
+    /// actor currently associated on that route, per the association registry's
+    /// active state.
+    ///
+    /// The same raw value snapshot is also emitted into the global ``ioValues``
+    /// broadcast by the transport's ingress delivery queue; this forward only
+    /// feeds the per-actor family used by
+    /// ``IoActorController/observeIoValue(actor:)``, so it does not duplicate
+    /// global delivery.
+    @MainActor
+    func routeIoValueToAssociatedActors(topic: String, payload: [UInt8]) {
+        let actorIds = ioRegistry.associatedActorIds(on: topic)
+        guard !actorIds.isEmpty else {
+            return
+        }
+        let snapshot = IoValueEventSnapshot(topic: topic, payload: payload)
+        for actorId in actorIds {
+            Task { [weak self, snapshot] in
+                await self?.streams.ioValueFamily.send(snapshot, for: actorId.string)
             }
         }
     }

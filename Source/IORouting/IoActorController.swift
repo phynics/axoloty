@@ -5,8 +5,11 @@ import Foundation
 /// Provides async convenience methods for observing IO actor values and associations.
 open class IoActorController: Controller {
     /// Observes raw IO value snapshots routed to an actor.
+    ///
+    /// Values are filtered through the current association registry, so the actor
+    /// only receives values for IO sources it is currently associated with.
     public func observeIoValue(actor: IoActor) async -> AsyncStream<IoValueEventSnapshot> {
-        await communicationManager.observeIoValueStream()
+        await communicationManager.observeIoValuesForActor(actor)
     }
 
     /// Returns the latest decoded value received for an actor, as raw JSON text.
