@@ -79,6 +79,14 @@ test("CLI exits 1 for protocol-affecting without exemption, 0 otherwise", () => 
   assert.equal(run(["--changed", "Packages/AxolotyWire/Sources/AxolotyWire/Topic.swift", "--exempt", "issue #999"]).status, 0);
 });
 
+test("CLI emits an unambiguous machine-readable gate marker first", () => {
+  const run = args => spawnSync(process.execPath, [script, ...args], { encoding: "utf8" });
+  const required = run(["--changed", "Source/Communication/Events/CallEvent.swift"]).stdout;
+  assert.match(required, /^gate=require\n/);
+  const fast = run(["--changed", "Tests/WireCompatibility/CompatibilityMatrix.md"]).stdout;
+  assert.match(fast, /^gate=fastpath\n/);
+});
+
 test("every rule has a glob and description and nonempty rule set", () => {
   assert.ok(PROTOCOL_AFFECTING.length >= 6);
   for (const rule of PROTOCOL_AFFECTING) {

@@ -94,6 +94,7 @@ export function main(argumentsArray = process.argv.slice(2)) {
   const files = (changed ?? "").split(/\s+/).filter(Boolean);
   const result = classify(files, exempt);
   if (result.protocolAffecting) {
+    console.log("gate=require");
     console.log(`protocol-affecting: ${result.files.length} changed path(s) require live wire evidence`);
     for (const file of result.files) {
       const rule = MATCHES.find(candidate => candidate.regex.test(file));
@@ -103,6 +104,7 @@ export function main(argumentsArray = process.argv.slice(2)) {
       console.log(`exemption recorded: ${exempt}`);
     }
   } else {
+    console.log("gate=fastpath");
     console.log("no protocol-affecting paths changed; live wire gate not required");
   }
   const exitCode = result.protocolAffecting && !result.exempt ? 1 : 0;

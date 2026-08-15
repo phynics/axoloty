@@ -135,7 +135,9 @@ jobs:
           classifier="$(node Tests/Support/classify-wire-change.mjs \
             --changed "${CHANGED:-}" --exempt "${exemption:-}" || true)"
           echo "$classifier"
-          if printf '%s' "$classifier" | grep -q "protocol-affecting"; then
+          # Consume the machine-readable marker emitted on the first line; the
+          # free-text summary below it is for humans only.
+          if printf '%s' "$classifier" | grep -q "^gate=require"; then
             echo "protocol=1" >> "$GITHUB_OUTPUT"
             if printf '%s' "$classifier" | grep -q "exemption recorded"; then
               echo "exempt=1" >> "$GITHUB_OUTPUT"
