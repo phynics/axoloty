@@ -211,7 +211,7 @@ public struct AxolotyCommandDispatcher: Sendable {
         }
     }
 
-    private static let version = "0.4.0"
+    private static let version = "0.5.0"
 
     private static func manifestDiagnostic(_ error: Error) -> String {
         if let manifestError = error as? AxolotyCanonicalTestManifestError {

@@ -470,14 +470,14 @@ func dispatcherServeUnknownSubcommandReturnsError() {
 func dispatcherVersionUsesExecutableName() {
     let dispatcher = AxolotyCommandDispatcher(executableName: "ax", environment: [:])
     let result = dispatcher.run(arguments: ["version"])
-    #expect(result.standardOutput == "ax 0.4.0")
+        #expect(result.standardOutput == "ax 0.5.0")
 }
 
 @Test
 func dispatcherDefaultVersionIsAxolotyTool() {
     let dispatcher = AxolotyCommandDispatcher(environment: [:])
     let result = dispatcher.run(arguments: ["version"])
-    #expect(result.standardOutput == "axoloty-tool 0.4.0")
+        #expect(result.standardOutput == "axoloty-tool 0.5.0")
 }
 
 @Test
