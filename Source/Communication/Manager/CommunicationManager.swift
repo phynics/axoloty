@@ -521,17 +521,7 @@ public class CommunicationManager {
     
     private func advertiseIoNodes() {
         // Advertise IO nodes when joining (cp. _observeDiscoverIoNodes).
-        self.ioNodes.forEach { ioNode in
-            do {
-                try self.publishAdvertise(AdvertiseEvent.with(object: ioNode))
-            } catch {
-                log.error("Failed to advertise IO node on startup", metadata: [
-                    "ioNodeId": .string(ioNode.objectId.string),
-                    "ioContextName": .string(ioNode.name),
-                    "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
-                ])
-            }
-        }
+        self.ioNodes.forEach(advertiseIoNode)
     }
 
     private func deadvertiseIdentity() {
@@ -768,6 +758,25 @@ extension CommunicationManager: CommunicationClientDelegate {
                     "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
                 ])
             }
+        }
+    }
+}
+
+// MARK: - Best-effort advertisement helpers
+
+fileprivate extension CommunicationManager {
+
+    /// Advertises a single IO node after joining, logging the wrapped failure
+    /// instead of silently discarding it (cp. issue #456).
+    func advertiseIoNode(_ ioNode: IoNode) {
+        do {
+            try self.publishAdvertise(AdvertiseEvent.with(object: ioNode))
+        } catch {
+            log.error("Failed to advertise IO node on startup", metadata: [
+                "ioNodeId": .string(ioNode.objectId.string),
+                "ioContextName": .string(ioNode.name),
+                "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+            ])
         }
     }
 }
