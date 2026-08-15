@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 
-const format = "axoloty-wire-snapshot-bundle/v1";
+const format = "axoloty-fixture-bundle/v1";
 
 function command(executable, arguments_, fallback = "unknown") {
   try {
@@ -68,7 +68,7 @@ function generatedAt(environment) {
 }
 
 function safeDestination(source, destination, environment) {
-  const root = path.resolve(environment.AXOLOTY_SNAPSHOT_ROOT ?? ".testing");
+  const root = path.resolve(environment.AXOLOTY_FIXTURE_BUNDLE_ROOT ?? ".testing");
   const resolvedSource = path.resolve(source);
   const resolvedDestination = path.resolve(destination);
   if (resolvedDestination === root || !resolvedDestination.startsWith(`${root}${path.sep}`)) {
@@ -104,6 +104,16 @@ export function generateBundle(source, destination, environment = process.env) {
   const manifest = {
     format,
     generatedAt: generatedAt(environment),
+    // Distinct evidence type: this bundle is assembled entirely from committed
+    // fixtures and proves bundle integrity plus byte-exact offline fixture
+    // reproduction. It is NOT fresh wire evidence and must not be presented as
+    // a live capture of current release wire behavior.
+    evidence: {
+      type: "fixture-bundle",
+      mode: "offline",
+      live: false,
+      semantics: "proves byte-exact reproduction of committed fixtures and bundle integrity only",
+    },
     provenance: {
       gitCommit: environment.AXOLOTY_GIT_COMMIT ?? command("git", ["rev-parse", "HEAD"]),
       gitClean: environment.AXOLOTY_GIT_CLEAN
@@ -131,7 +141,10 @@ export function verifyBundle(directory) {
   const manifestPath = path.join(directory, "manifest.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   if (manifest.format !== format || !Array.isArray(manifest.captures) || !manifest.captures.length) {
-    throw new Error("unsupported or empty snapshot manifest");
+    throw new Error("unsupported or empty fixture bundle manifest");
+  }
+  if (manifest.evidence?.type !== "fixture-bundle" || manifest.evidence?.live !== false) {
+    throw new Error("fixture bundle must declare fixture-only offline evidence");
   }
   const normalizationBytes = fs.readFileSync(path.join(directory, manifest.normalizationRules.file));
   if (sha256(normalizationBytes) !== manifest.normalizationRules.sha256) {
@@ -161,7 +174,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       ? generateBundle(first, second)
       : operation === "verify"
         ? verifyBundle(first)
-        : (() => { throw new Error("usage: release-snapshots.mjs <generate SOURCE OUTPUT|verify BUNDLE>"); })();
+        : (() => { throw new Error("usage: fixture-bundle.mjs <generate SOURCE OUTPUT|verify BUNDLE>"); })();
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } catch (error) {
     process.stderr.write(`RELEASE SNAPSHOTS FAIL: ${error.message}\n`);

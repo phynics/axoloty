@@ -14,7 +14,7 @@ Linux product and ESP-IDF work is containerized:
 make check
 make axoloty-tool AXOLOTY_TOOL_ARGS='wire verify'
 make hardware-check
-make release-snapshots
+make release-fixture-bundle
 ```
 
 The container image carries a stable `axoloty-tool` launcher at
@@ -52,7 +52,7 @@ plan starts MQTT or accesses hardware.
 | `axoloty-tool measure timing` | no | no | Linux-only cold/warm build evidence |
 | `axoloty-tool hardware check` | no | optional | Run when attached; otherwise structured skip |
 | `axoloty-tool hardware require` | no | required | Explicit device/release gate |
-| `axoloty-tool release snapshots` | no | no | Generate and verify an immutable wire bundle |
+| `axoloty-tool release fixture-bundle` | no | no | Bundle committed wire fixtures offline (not fresh wire evidence) |
 
 Broker-backed transport, live CoatyJS capture, coverage, and long fuzz campaigns
 retain focused Make targets while their existing evidence contracts remain in
@@ -112,19 +112,40 @@ dependencies without writing trusted caches. Development image publishing uses
 a GHCR-backed BuildKit cache; ordinary source checks pull the reviewed image by
 digest instead of rebuilding it.
 
-## Release snapshots
+## Fixture bundling vs fresh wire evidence
 
-`axoloty-tool release snapshots` copies the reviewed wire captures into
-`.testing/release-snapshots`, records byte hashes, scenario and reference-agent
-metadata, normalization profiles, repository/toolchain/image provenance, and
-then verifies the bundle without MQTT. `AXOLOTY_SNAPSHOT_SOURCE` and
-`AXOLOTY_SNAPSHOT_OUTPUT` override the source and destination for a release
-workflow. The bundle is generated evidence; stable fixtures enter source
-control only through normal review and the compatibility-matrix policy.
-Pass a persisted or downloaded bundle to `axoloty-tool wire verify PATH` to rerun both
-the Swift semantic fixture contract and the bundle's hash/metadata checks.
-Snapshot output overrides must remain below `.testing/` and cannot overlap the
-source captures.
+Release validation produces two distinct, deliberately separated evidence
+types.
+
+### Fixture bundle (offline, deterministic)
+
+`axoloty-tool release fixture-bundle` copies the reviewed wire captures from
+the committed fixtures into `.testing/fixture-bundle`, records byte hashes,
+scenario and reference-agent metadata, normalization profiles, and
+repository/toolchain/image provenance, then verifies the bundle without MQTT.
+The bundled manifest declares `evidence.type: fixture-bundle`,
+`evidence.mode: offline`, and `evidence.live: false`, so the artifact names
+itself accurately: it proves bundle integrity and byte-exact offline
+reproduction of committed fixtures, not a live capture of current release
+wire behavior.
+
+`AXOLOTY_FIXTURE_BUNDLE_SOURCE` and `AXOLOTY_FIXTURE_BUNDLE_OUTPUT` override
+the source and destination for a release workflow. The bundle is generated
+from fixtures; stable fixtures enter source control only through normal review
+and the compatibility-matrix policy. Pass a persisted or downloaded bundle to
+`axoloty-tool wire verify PATH` to rerun both the Swift semantic fixture
+contract and the bundle's hash/metadata checks. Fixture-bundle output
+overrides must remain below `.testing/` and cannot overlap the source
+captures.
+
+### Fresh wire evidence (live capture)
+
+Fresh evidence of current wire behavior is produced only by the live
+reference-agent capture path (`axoloty-tool wire capture`, tier `wire-live`).
+It runs pinned reference agents against a real MQTT broker and records raw
+captures, a manifest carrying provenance, reference version, scenario, and
+normalization profiles, plus Swift-side semantic verification. The fixture
+bundle is never presented as this evidence.
 
 ## Timing evidence
 

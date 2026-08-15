@@ -193,8 +193,8 @@ public struct AxolotyCommandDispatcher: Sendable {
             checkResult(requested: ["embedded-toolchain"])
         case ["embedded", "verify"]:
             checkResult(requested: ["embedded-linker"])
-        case ["release", "snapshots"]:
-            releaseSnapshotsResult()
+        case ["release", "fixture-bundle"]:
+            fixtureBundleResult()
         case ["release", "checkpoint"]:
             checkpointResult(hardware: false)
         case ["release", "checkpoint-hardware"]:
@@ -245,7 +245,7 @@ public struct AxolotyCommandDispatcher: Sendable {
       embedded verify      Build and verify the ESP32-C6 linker contract.
       hardware check       Run or skip the sporadic hardware smoke check.
       hardware require     Require an attached device and run its smoke check.
-      release snapshots    Generate and verify a provenance-rich wire bundle.
+      release fixture-bundle  Bundle committed wire fixtures offline (not fresh wire evidence).
       release checkpoint   Run the release checkpoint validation (no hardware).
       release checkpoint-hardware  Run checkpoint with ESP32-C6 smoke test.
          --device PATH      Override AXOLOTY_DEVICE (default: /dev/ttyACM0).
@@ -544,10 +544,10 @@ public struct AxolotyCommandDispatcher: Sendable {
         }
     }
 
-    private func releaseSnapshotsResult() -> AxolotyCommandResult {
+    private func fixtureBundleResult() -> AxolotyCommandResult {
         do {
-            let source = environment["AXOLOTY_SNAPSHOT_SOURCE"] ?? "Tests/WireCompatibility/Fixtures"
-            let destination = environment["AXOLOTY_SNAPSHOT_OUTPUT"] ?? ".testing/release-snapshots"
+            let source = environment["AXOLOTY_FIXTURE_BUNDLE_SOURCE"] ?? "Tests/WireCompatibility/Fixtures"
+            let destination = environment["AXOLOTY_FIXTURE_BUNDLE_OUTPUT"] ?? ".testing/fixture-bundle"
             let forwardedEnvironment = [
                 "AXOLOTY_IMAGE_IDENTITY", "AXOLOTY_GIT_COMMIT", "AXOLOTY_GIT_CLEAN",
                 "AXOLOTY_CONSUMER_REPOSITORY_URL", "AXOLOTY_CONSUMER_VERSION",
@@ -568,7 +568,7 @@ public struct AxolotyCommandDispatcher: Sendable {
             return manifestResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
         } catch {
             return AxolotyCommandResult(
-                standardError: "error: unable to generate release snapshots\n",
+                standardError: "error: unable to generate fixture bundle\n",
                 exitCode: 70
             )
         }
@@ -634,10 +634,10 @@ public struct AxolotyCommandDispatcher: Sendable {
         ].reduce(into: [String: String]()) { values, name in
             values[name] = environment[name]
         }
-        let snapshotSource = environment["AXOLOTY_SNAPSHOT_SOURCE"]
+        let snapshotSource = environment["AXOLOTY_FIXTURE_BUNDLE_SOURCE"]
             ?? "Tests/WireCompatibility/Fixtures"
-        let snapshotDestination = environment["AXOLOTY_SNAPSHOT_OUTPUT"]
-            ?? ".testing/release-snapshots"
+        let snapshotDestination = environment["AXOLOTY_FIXTURE_BUNDLE_OUTPUT"]
+            ?? ".testing/fixture-bundle"
         if hardware {
             let selectedDevice = environment["AXOLOTY_DEVICE"] ?? "/dev/ttyACM0"
             device = selectedDevice
