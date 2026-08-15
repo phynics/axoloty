@@ -91,7 +91,7 @@ struct BroadcastTransportTestsMQTTNIOIsolation {
     func stopDuringConnectionSetupLetsLaterStartReachOnline() async throws {
         let recorder = ConnectStateRecorder()
         let spool = ConnectFutureSpool()
-        let client = makeSeamClient(delegate: recorder, spool: spool)
+        let client = try makeSeamClient(delegate: recorder, spool: spool)
 
         // 1. Start: a connection attempt is issued and left unresolved, as when a
         //    broker delays connection completion.
@@ -165,7 +165,7 @@ private final class ConnectFutureSpool: @unchecked Sendable {
 private func makeSeamClient(
     delegate: CommunicationClientDelegate,
     spool: ConnectFutureSpool
-) -> MQTTNIOClient {
+) throws -> MQTTNIOClient {
     let options = MQTTClientOptions(
         host: "127.0.0.1",
         port: 1883,
@@ -173,7 +173,7 @@ private func makeSeamClient(
         autoReconnect: true
     )
     options.clientId = "connect-seam-test"
-    let client = MQTTNIOClient(
+    let client = try MQTTNIOClient(
         mqttClientOptions: options,
         delegate: delegate,
         publishHandler: nil,
