@@ -172,13 +172,13 @@ struct TopicLayoutConformanceTests {
         do {
             try validated("coaty/3/ns/ADV/\(sourceId)/extra")
             Issue.record("expected validation failure")
-        } catch let error as WireDecodeError {
+        } catch {
+            // `validated` uses typed throws, so `catch` binds the error
+            // directly as a ``WireDecodeError``.
             guard case .malformedTopic = error.reason else {
                 Issue.record("expected .malformedTopic, got \(error.reason)")
                 return
             }
-        } catch {
-            Issue.record("expected WireDecodeError, got \(error)")
         }
     }
 }
