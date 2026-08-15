@@ -4,7 +4,7 @@
 //  Axoloty
 
 import Testing
-import Axoloty
+@testable import Axoloty
 import Foundation
 
 @Suite
@@ -165,5 +165,51 @@ struct FilterOperandTests {
         // - .like takes a String pattern, not a FilterOperand.
         // A wrong-arity construction fails at compile time, not runtime.
         #expect(Bool(true))
+    }
+
+    // MARK: - P1-5 `_deepContains` object-key regression
+
+    /// Regression for issue #445 / P1-5: the object branch of
+    /// `_deepContains` traverses a requested object's keys against a
+    /// candidate object's dictionary. A key present in the candidate but not
+    /// requested is fine; a requested key that is merely *prefix-partial* (no
+    /// exact match) must `return false` via the guard rather than force-unwrap
+    /// and trap.
+    ///
+    /// On the buggy path a `xDict[xk]!` force-unwrap crashed when the
+    /// candidate object did not carry a requested key. The fix guards the
+    /// lookup. These tests assert the guard path is exercised without a trap
+    /// and that partial-key matches do not count as containing.
+    @Test
+
+    func testDeepContainsObjectMissingReturningKeyDoesNotTrap() {
+        // Candidate has no `missing` key; requested object references it.
+        let candidate = FilterOperand.object(["present": .int(1)])
+        let requested = FilterOperand.object(["missing": .int(2)])
+
+        // Must not trap, and the guard must report non-containment.
+        #expect(!FilterOperand.deepContains(candidate, requested))
+    }
+
+    @Test
+
+    func testDeepContainsObjectPartialKeyMatchDoesNotCount() {
+        // `match` is not a key in the candidate; `mat` alone must not be
+        // treated as containing `match`.
+        let candidate = FilterOperand.object(["mat": .string("ched")])
+        let requested = FilterOperand.object(["match": .string("ched")])
+
+        #expect(!FilterOperand.deepContains(candidate, requested))
+    }
+
+    @Test
+
+    func testDeepContainsObjectPresentKeyMatches() {
+        // A requested key that IS present in the candidate recurses into the
+        // value containment check.
+        let candidate = FilterOperand.object(["name": .string("alice")])
+        let requested = FilterOperand.object(["name": .string("al")])
+
+        #expect(FilterOperand.deepContains(candidate, requested))
     }
 }
