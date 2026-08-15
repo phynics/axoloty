@@ -18,6 +18,15 @@ Development toward Axoloty 1.0 is in progress and tracked by the
   newest excess jobs once the queue fills, reports overload through
   rate-limited logging, and preserves arrival order of retained messages.
 
+### Fixed
+
+- Synchronized public lifecycle documentation with the executable API
+  signatures: separated synchronous start
+  (`Container.resolve`, `CommunicationManager.start()`) from asynchronous
+  readiness waiting (`Container.startAndWaitUntilReady()`), and removed the
+  obsolete `observeAdvertiseStream(for:)` argument label in favor of
+  `withObjectType:` / `withCoreType:`.
+
 ## [0.4.0] - 2026-08-14
 
 Axoloty 0.4.0 is a development checkpoint and is not API-stable.
