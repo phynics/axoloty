@@ -656,6 +656,15 @@ internal class MQTTNIOClient: CommunicationClient {
                     return
                 }
 
+                // Reject malformed Coaty topics before routing: only the exact
+                // layout/event code routes (see ``TopicView/validate()``).
+                do {
+                    try topicView.validate()
+                } catch {
+                    Self.logMalformedTopic(topic: info.topicName, reason: error, log: log)
+                    return
+                }
+
                 // IoValue intentionally keeps its raw payload and bypasses
                 // typed event decoding; the host fallback below is for
                 // structured event families only.
@@ -823,6 +832,15 @@ private extension MQTTNIOClient {
         }
         scheduling.previous?.cancel()
         DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(delaySeconds), execute: workItem)
+    }
+
+    /// Logs a structured warning for an inbound topic that failed strict Coaty
+    /// layout validation (issue #488); the message is dropped before routing.
+    private static func logMalformedTopic(topic: String, reason: Error, log: Logging.Logger) {
+        log.warning("Ignoring malformed incoming event topic", metadata: [
+            "topic": .string(topic),
+            "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(reason))),
+        ])
     }
 }
 

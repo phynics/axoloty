@@ -37,6 +37,11 @@ struct ParsedMQTTMessage: Sendable, Equatable {
     ///   - event: the synchronously decoded, owned wire event.
     ///   - payload: the original owned payload bytes.
     init(topicView: TopicView, event: OwnedWireEvent, payload: [UInt8]) {
+        // The ingress calls ``TopicView/validate()`` before constructing a
+        // ``ParsedMQTTMessage``, so a nil event type is unreachable on the
+        // live receive path. `.advertise` here is only a defensive fallback
+        // for direct (non-ingress) construction and must never mask a
+        // malformed topic in production routing.
         self.eventType = topicView.eventType ?? .advertise
         self.eventTypeFilter = topicView.eventTypeFilter?.asString()
         self.namespace = topicView.namespaceLevel?.asString() ?? ""

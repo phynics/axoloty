@@ -121,13 +121,22 @@ public struct TopicView {
     }
 
     /// The event type parsed from level 3, or nil if unrecognized.
-    /// Handles event levels with optional filters (e.g. "ADV:sensors").
+    ///
+    /// Handles event levels with optional filters (e.g. `ADV:sensors`). The
+    /// event code must be *exactly* three bytes: the full event level with no
+    /// filter, or the three bytes preceding `:` when a filter is present.
+    /// Over-long codes that merely share a three-byte prefix with a recognized
+    /// code (e.g. `ADVZ`) are rejected rather than coarse-prefix-matched.
     public var eventType: WireEventType? {
         guard let eventLevel = level(3) else { return nil }
-        // Event code is the first 3 bytes (before optional ':' filter)
-        guard eventLevel.length >= 3 else { return nil }
-        let code = eventLevel.subSlice(from: 0, length: 3)
-        return WireEventType(wireCode: code)
+        guard let colon = eventLevel.findByteIndex(0x3A) else { // ':'
+            // No filter: the entire level must be exactly a recognized code.
+            guard eventLevel.length == 3 else { return nil }
+            return WireEventType(wireCode: eventLevel)
+        }
+        // Filter present: the code is exactly the three bytes before ':'.
+        guard colon == 3 else { return nil }
+        return WireEventType(wireCode: eventLevel.subSlice(from: 0, length: 3))
     }
 
     /// The event-type filter (the part after ':' in level 3), if present.
@@ -160,6 +169,61 @@ public struct TopicView {
     /// Access the raw topic bytes.
     public func withBytes<R>(_ body: (UnsafeRawPointer, Int) -> R) -> R {
         body(bytes, byteCount)
+    }
+
+    /// Strictly validates the Coaty topic layout and event code.
+    ///
+    /// Enforces the exact wire contract
+    /// `coaty/3/<namespace>/<eventType>[:<filter>]/<sourceId>[/<correlationId>]`:
+    ///
+    /// * level 0 is exactly `coaty`
+    /// * level 1 is exactly the protocol version `3`
+    /// * the namespace level is non-empty
+    /// * the event level is exactly a recognized three-byte code with an
+    ///   optional filter
+    /// * the source-id level is a valid hyphenated UUID
+    /// * two-way event types carry exactly one additional correlation-id
+    ///   level, while one-way event types carry none
+    /// * no extra (postfix) levels are present
+    ///
+    /// This rejects over-long or over-short event levels, near-match event
+    /// codes, extra path segments, and malformed IDs that ``eventType`` and
+    /// the slicing accessors otherwise tolerate. Any topic that fails here
+    /// must not be routed.
+    ///
+    /// - Throws: ``WireDecodeError`` with reason ``WireDecodeError/Reason/malformedTopic``
+    ///   when the layout or event code is not the exact Coaty form.
+    public func validate() throws(WireDecodeError) {
+        guard levelCount >= 4 else { throw WireDecodeError(.malformedTopic) }
+        guard let proto = level(0), proto.equals("coaty") else {
+            throw WireDecodeError(.malformedTopic)
+        }
+        guard let version = level(1), version.equals("3") else {
+            throw WireDecodeError(.malformedTopic)
+        }
+        guard let namespace = level(2), namespace.length > 0 else {
+            throw WireDecodeError(.malformedTopic)
+        }
+        guard let eventType = self.eventType else {
+            throw WireDecodeError(.malformedTopic)
+        }
+        guard let sourceId = level(4), UUID16(parsing: sourceId) != nil else {
+            throw WireDecodeError(.malformedTopic)
+        }
+
+        let hasCorrelation = levelCount >= 6
+        if eventType.isOneWay {
+            // One-way events carry exactly 5 levels and never a correlation ID.
+            guard levelCount == 5 else { throw WireDecodeError(.malformedTopic) }
+        } else {
+            // Two-way events carry exactly 6 levels with a non-empty correlation.
+            guard levelCount == 6 else { throw WireDecodeError(.malformedTopic) }
+            guard hasCorrelation,
+                  let correlation = level(5),
+                  correlation.length > 0 else {
+                throw WireDecodeError(.malformedTopic)
+            }
+        }
     }
 }
 
