@@ -26,6 +26,11 @@ Development toward Axoloty 1.0 is in progress and tracked by the
   readiness waiting (`Container.startAndWaitUntilReady()`), and removed the
   obsolete `observeAdvertiseStream(for:)` argument label in favor of
   `withObjectType:` / `withCoreType:`.
+- Made best-effort publication failures diagnosable (#456): object
+  advertisement, IO-context publication/update, IO-node advertisement, and
+  IO-value publication that previously swallowed failures via `try?` now log
+  a structured ``AxolotyError`` chain instead of silently discarding the
+  operation, so loss is observable and root-causable.
 
 ## [0.4.0] - 2026-08-14
 
