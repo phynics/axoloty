@@ -157,6 +157,7 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
   if (!Array.isArray(document.nodes)) errors.push("nodes must be an array");
   if (!document.plans || typeof document.plans !== "object" || Array.isArray(document.plans)) errors.push("plans must be an object");
   if (!Array.isArray(document.requiredGates) || !Array.isArray(document.ciRequiredGates)) errors.push("requiredGates and ciRequiredGates must be arrays");
+  if (!Array.isArray(document.releaseGates)) errors.push("releaseGates must be an array");
 
   const nodeIds = new Set();
   for (const node of document.nodes ?? []) {
@@ -210,6 +211,28 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
   for (const gate of document.ciRequiredGates ?? []) {
     const node = document.nodes.find(candidate => candidate.id === gate);
     if (!node?.required || !node.ci) errors.push(`CI required gate ${JSON.stringify(gate)} must be required and CI-available`);
+  }
+  const checkpointRoots = new Set([...(document.plans?.checkpoint?.nodes ?? []), ...(document.plans?.["checkpoint-hardware"]?.nodes ?? [])]);
+  for (const gate of document.releaseGates ?? []) {
+    const tier = (document.tiers ?? []).find(candidate => candidate?.id === gate);
+    if (!tier) errors.push(`release gate ${JSON.stringify(gate)} is not a declared tier`);
+    else if (!tier.required) errors.push(`release gate ${JSON.stringify(gate)} must reference a required tier`);
+  }
+  for (const tier of (document.tiers ?? [])) {
+    if (tier?.required && !(document.releaseGates ?? []).includes(tier.id)) {
+      errors.push(`required tier ${JSON.stringify(tier.id)} is absent from releaseGates`);
+    }
+  }
+  if (checkpointRoots.size) {
+    const requiredReleaseTiers = (document.tiers ?? []).filter(tier => tier?.required);
+    // wire-live and other peer/oracle tiers are intentionally attestable
+    // rather than run inside the checkpoint, so they are exempt from node
+    // coverage as long as they appear in releaseGates (checked above).
+    const attestableTiers = new Set(["wire-live", "nightly", "manual-macos"]);
+    for (const tier of requiredReleaseTiers) {
+      if (tier.nodes.some(node => checkpointRoots.has(node)) || attestableTiers.has(tier.id)) continue;
+      errors.push(`required release tier ${JSON.stringify(tier.id)} is not covered by the checkpoint plan and not attestable`);
+    }
   }
   if (!document.testOne?.command?.filterFlag || !Number.isInteger(document.testOne?.timeoutSeconds) || document.testOne.timeoutSeconds <= 0) errors.push("testOne must declare a filterFlag and positive timeoutSeconds");
 

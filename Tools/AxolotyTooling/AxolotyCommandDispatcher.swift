@@ -638,6 +638,15 @@ public struct AxolotyCommandDispatcher: Sendable {
             ?? "Tests/WireCompatibility/Fixtures"
         let snapshotDestination = environment["AXOLOTY_FIXTURE_BUNDLE_OUTPUT"]
             ?? ".testing/fixture-bundle"
+        let canonicalManifest: AxolotyCanonicalTestManifest
+        do {
+            canonicalManifest = try AxolotyCanonicalTestManifest.loadDefault(environment: environment)
+        } catch {
+            return AxolotyCommandResult(
+                standardError: "error: \(Self.manifestDiagnostic(error))\n",
+                exitCode: 69
+            )
+        }
         if hardware {
             let selectedDevice = environment["AXOLOTY_DEVICE"] ?? "/dev/ttyACM0"
             device = selectedDevice
@@ -695,6 +704,11 @@ public struct AxolotyCommandDispatcher: Sendable {
             let swiftVersion = commandRunner.run(swiftVersionCommand).standardOutput
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let timestamp = ISO8601DateFormatter().string(from: Date())
+            let releaseGates = Self.releaseGateDispositions(
+                manifest: canonicalManifest,
+                results: results,
+                environment: environment
+            )
             let manifest = AxolotyCheckpointManifest(
                 releaseVersion: Self.version,
                 gitCommit: gitCommit,
@@ -703,9 +717,14 @@ public struct AxolotyCommandDispatcher: Sendable {
                 swiftVersion: swiftVersion,
                 hardwareIncluded: hardware,
                 results: results,
+                releaseGates: releaseGates,
                 timestamp: timestamp
             )
-            let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
+            let releaseGateMissingEvidence = releaseGates.contains { $0.result == .skipped }
+            // A release gate that the checkpoint could not execute or attest is a missing
+            // mandatory release tier, so the checkpoint must not certify the release.
+            let exitCode: Int32 = (results.allSatisfy { $0.status == .passed }
+                && !releaseGateMissingEvidence) ? 0 : 1
             return checkpointManifestResult(manifest, exitCode: exitCode)
         } catch {
             return AxolotyCommandResult(
@@ -826,6 +845,59 @@ public struct AxolotyCommandDispatcher: Sendable {
 
     private func humanSummary(_ results: [AxolotyCheckResult]) -> String {
         results.map { "\($0.status.rawValue.uppercased()) \($0.name)" }.joined(separator: "\n") + "\n"
+    }
+
+    /// Classifies each mandatory release gate based on covering node results.
+    ///
+    /// A gate is ``AxolotyCheckpointGateResult/executed`` when every covering node
+    /// passed, ``failed`` when any covering node failed, ``attested`` when an
+    /// `AXOLOTY_ATTESTATION_<GATE>_PATH` environment value supplies external evidence,
+    /// and ``skipped`` when no covering node ran and no attestation exists. The
+    /// checkpoint fails on any skipped gate so a release cannot be certified with
+    /// missing mandatory-tier evidence.
+    private static func releaseGateDispositions(
+        manifest: AxolotyCanonicalTestManifest,
+        results: [AxolotyCheckResult],
+        environment: [String: String]
+    ) -> [AxolotyCheckpointGate] {
+        let resultByName = Dictionary(
+            uniqueKeysWithValues: results.map { ($0.name, $0) }
+        )
+        return manifest.releaseGates.map { gate in
+            let coveringNodes = manifest.tiers.first { $0.id == gate }?.nodes ?? []
+            let coveringResults = coveringNodes.compactMap { resultByName[$0] }
+            let normalizedGate = gate.uppercased().replacingOccurrences(of: "-", with: "_")
+            let attestationKey = "AXOLOTY_ATTESTATION_\(normalizedGate)_PATH"
+            if let evidence = environment[attestationKey], !evidence.isEmpty {
+                return AxolotyCheckpointGate(
+                    id: gate,
+                    result: .attested,
+                    nodes: coveringResults,
+                    evidence: evidence,
+                    note: "externally attested release gate"
+                )
+            }
+            if coveringResults.isEmpty {
+                return AxolotyCheckpointGate(
+                    id: gate,
+                    result: .skipped,
+                    nodes: [],
+                    note: "no covering node ran in the checkpoint and no attestation was supplied"
+                )
+            }
+            if coveringResults.allSatisfy({ $0.status == .passed }) {
+                return AxolotyCheckpointGate(id: gate, result: .executed, nodes: coveringResults)
+            }
+            if coveringResults.contains(where: { $0.status == .failed }) {
+                return AxolotyCheckpointGate(id: gate, result: .failed, nodes: coveringResults)
+            }
+            return AxolotyCheckpointGate(
+                id: gate,
+                result: .skipped,
+                nodes: coveringResults,
+                note: "covering node was skipped"
+            )
+        }
     }
 
     private var executor: AxolotyCheckExecutor {

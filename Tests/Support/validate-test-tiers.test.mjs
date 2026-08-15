@@ -157,6 +157,45 @@ test("validator rejects duplicated verify roots", () => {
   assert.ok(errors.some(error => error.includes("verify roots must be derived")));
 });
 
+test("validator rejects required release tier absent from releaseGates", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  document.releaseGates = document.releaseGates.filter(gate => gate !== "wire-live");
+  const errors = validate(document, {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  });
+  assert.ok(errors.some(error => error.includes('required tier "wire-live" is absent from releaseGates')));
+});
+
+test("validator rejects mandatory release tier omitted from the checkpoint plan", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  for (const plan of ["checkpoint", "checkpoint-hardware"]) {
+    document.plans[plan].nodes = document.plans[plan].nodes.filter(
+      node => node !== "integration-tests" && node !== "logging-global"
+    );
+  }
+  const errors = validate(document, {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  });
+  assert.ok(errors.some(error => error.includes('required release tier "integration" is not covered by the checkpoint plan')));
+});
+
+test("validator accepts an intentionally attestable wire-live gate", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  document.plans.checkpoint.nodes = document.plans.checkpoint.nodes.filter(
+    node => node !== "wire-capture-manifest"
+  );
+  const errors = validate(document, {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  });
+  assert.equal(errors.some(error => error.includes("wire-live")), false);
+});
+
 test("validator CLI reports stable selfTests schema errors", t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-tool-tiers-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
