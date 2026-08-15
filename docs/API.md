@@ -50,16 +50,25 @@ underlying `WireDecodeError` for cause-chain diagnostics.
 
 The following public API operations may suspend (`async` or `async throws`):
 
-### Communication manager lifecycle
-- `CommunicationManager.start()` — connects to the broker and subscribes
-  to topics. May throw `AxolotyError.runtime(.brokerUnavailable)`.
-- `CommunicationManager.startAndWaitUntilReady()` — internal; waits for
+### Container and communication-manager lifecycle
+Synchronous start and asynchronous readiness waiting are separate APIs:
+
+- `Container.resolve(components:configuration:)` — `throws` (synchronous);
+  bootstraps the container and its communication manager without connecting
+  to the broker.
+- `CommunicationManager.start()` — `throws` but **synchronous**; connects
+  the MQTT client and transitions the operating state to `.started` without
+  suspending. Throws `AxolotyError.invalidConfiguration(option:reason:)` if
+  the MQTT client options are missing on the restart path.
+- `Container.startAndWaitUntilReady()` — `async throws`; prepares registered
+  controllers, starts communication, and waits until their desired
+  subscriptions are acknowledged by the broker. Use this to await readiness.
+- `CommunicationManager.startAndWaitUntilReady()` — internal; awaits
   broker connection and subscription completion.
 
 ### Observation streams
 All `observe*Stream()` methods return `AsyncStream<T>` which suspends while
 waiting for the next event:
-- `observeAdvertiseStream(for:)` — `async`
 - `observeAdvertiseStream(withCoreType:)` — `async`
 - `observeAdvertiseStream(withObjectType:)` — `async throws`
 - `observeAdvertiseStream()` — `async` (namespace-wide, no type filter)
@@ -148,7 +157,7 @@ switches on it, so additions are additive-only:
    `Configuration` before a `CommunicationManager` is created. The
    container resolves controllers and communication components.
 
-2. **Start before use.** `CommunicationManager.start()` must complete
+2. **Start before use.** `Container.startAndWaitUntilReady()` must complete
    before any observe or publish API is called. Calling these before
    start throws `AxolotyError.runtime(code: .notStarted)`.
 
@@ -157,9 +166,12 @@ switches on it, so additions are additive-only:
    underlying MQTT client delivers messages from a non-main context;
    the manager bridges via `onMain(_:)`.
 
-4. **Shutdown is final.** After `CommunicationManager.shutdown()`, the
-   manager cannot be restarted. Create a new `Container` and
-   `CommunicationManager` for a fresh lifecycle.
+4. **Shutdown is final.** After `Container.shutdown()` (which disposes the
+   communication manager via `CommunicationManager.onDispose()`), the
+   container and its manager cannot be restarted. Create a new `Container`
+   and `CommunicationManager` for a fresh lifecycle. By contrast,
+   `CommunicationManager.stop()` is reversible: invoke `start()` to
+   reconnect and continue processing.
 
 5. **Dynamic controller registration.**
    `Container.registerController(name:controllerType:controllerOptions:)`
