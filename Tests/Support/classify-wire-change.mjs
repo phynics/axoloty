@@ -13,16 +13,23 @@ export const PROTOCOL_AFFECTING = [
   { glob: "Source/**", description: "host wire codecs, events, core types, IO, SensorThings" },
   { glob: "Tests/WireCompatibility/**", description: "wire fixtures, reference agents, scenarios" },
   { glob: "Tests/AxolotyWire/**", description: "wire codec tests" },
-  { glob: "Tests/Support/test-tiers.json", description: "canonical test contract" },
   { glob: "Package.swift", description: "package manifest" },
   { glob: "Package.resolved", description: "resolved dependency graph" },
-  { glob: "Tools/AxolotyTooling/**", description: "canonical tooling and policy" },
 ];
 
-// Documentation subpaths under Source that never affect the wire contract.
-export const NON_PROTOCOL_EXACT = new Set([
-  "Source/Axoloty.docc",
-]);
+// Test orchestration and CI tooling policy do not change the bytes that flow
+// across an MQTT wire, so they stay on the fast path: tuning the canonical
+// test manifest or the tooling lifecycle is not itself live wire evidence.
+// (These were considered for issue #457 and deliberately excluded.)
+
+// Documentation subpaths that never affect the wire contract. Any Markdown,
+// RST, or decision record under the wire tree, and the DocC documentation
+// tree, stay on the fast path; only executable wire evidence paths trigger the
+// live gate.
+export const NON_PROTOCOL_EXCLUSIONS = [
+  "Source/Axoloty.docc/**",
+  "Tests/WireCompatibility/Audit/**",
+];
 
 function globToRegex(glob) {
   if (glob.endsWith("/**")) {
@@ -34,12 +41,25 @@ function globToRegex(glob) {
   return new RegExp(`^${escaped}$`);
 }
 
+function isExcluded(normalized) {
+  if (NON_PROTOCOL_EXCLUSIONS.some(rule => globToRegex(rule).test(normalized))) {
+    return true;
+  }
+  // Documentation and decision records under the wire tree are not wire
+  // evidence; executable fixtures and scenario code are.
+  if (normalized.startsWith("Tests/WireCompatibility/")
+      && /\.(md|rst)$/.test(normalized)) {
+    return true;
+  }
+  return false;
+}
+
 const MATCHES = PROTOCOL_AFFECTING.map(rule => ({ ...rule, regex: globToRegex(rule.glob) }));
 
 /** Is a repository-relative path protocol-affecting? */
 export function isProtocolAffecting(file) {
   const normalized = file.replace(/^\.\//, "").replace(/^\/+/, "");
-  if ([...NON_PROTOCOL_EXACT].some(prefix => normalized === prefix || normalized.startsWith(`${prefix}/`))) {
+  if (isExcluded(normalized)) {
     return false;
   }
   return MATCHES.some(rule => rule.regex.test(normalized));

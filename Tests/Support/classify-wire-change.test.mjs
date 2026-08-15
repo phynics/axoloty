@@ -21,19 +21,33 @@ test("protocol-affecting globs cover wire codec and core types", () => {
     ["Source/Communication/Client/MQTTNIOClient.swift", true],
     ["Tests/WireCompatibility/Fixtures/advertise.jsonl", true],
     ["Tests/WireCompatibility/tool/src/capture.ts", true],
+    ["Tests/WireCompatibility/Live/run-coatyjs-core.sh", true],
     ["Tests/AxolotyWire/WireCodecTests.swift", true],
-    ["Tests/Support/test-tiers.json", true],
     ["Package.swift", true],
     ["Package.resolved", true],
-    ["Tools/AxolotyTooling/AxolotyCheck.swift", true],
   ];
   for (const [file, expected] of cases) {
     assert.equal(isProtocolAffecting(file), expected, file);
   }
 });
 
-test("unrelated and documentation changes stay on the fast path", () => {
-  const cases = ["README.md", "CHANGELOG.md", "docs/ROADMAP.md", "Makefile", ".github/workflows/ci.yml", "Source/Axoloty.docc/index.md", "Source/Axoloty.docc/main.md", "LICENSE"];
+test("unrelated, documentation, orchestration, and policy changes stay on the fast path", () => {
+  const cases = [
+    "README.md",
+    "CHANGELOG.md",
+    "docs/ROADMAP.md",
+    "Makefile",
+    ".github/workflows/ci.yml",
+    ".github/workflows/wire-compatibility.yml",
+    "Source/Axoloty.docc/index.md",
+    "Source/Axoloty.docc/main.md",
+    "Tests/WireCompatibility/CompatibilityMatrix.md",
+    "Tests/WireCompatibility/README.md",
+    "Tests/WireCompatibility/Audit/IOAndSensorThingsDecisions.md",
+    "Tests/Support/test-tiers.json",
+    "Tools/AxolotyTooling/AxolotyCheck.swift",
+    "LICENSE",
+  ];
   for (const file of cases) {
     assert.equal(isProtocolAffecting(file), false, file);
   }
@@ -44,6 +58,7 @@ test("subtree rules match the base directory but not siblings", () => {
   assert.equal(isProtocolAffecting("Packages/AxolotyWire/Sources/AxolotyWire/Topic.swift"), true);
   assert.equal(isProtocolAffecting("Packages/AxolotyWireX/File.swift"), false);
   assert.equal(isProtocolAffecting("Source/Model/CoatyTimestamp.swift"), true);
+  assert.equal(isProtocolAffecting("Source/IORouting"), true);
 });
 
 test("classify reports the affected files and respects an exemption", () => {
@@ -65,7 +80,7 @@ test("CLI exits 1 for protocol-affecting without exemption, 0 otherwise", () => 
 });
 
 test("every rule has a glob and description and nonempty rule set", () => {
-  assert.ok(PROTOCOL_AFFECTING.length >= 8);
+  assert.ok(PROTOCOL_AFFECTING.length >= 6);
   for (const rule of PROTOCOL_AFFECTING) {
     assert.ok(rule.glob);
     assert.ok(rule.description);

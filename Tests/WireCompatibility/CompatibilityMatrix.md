@@ -152,14 +152,17 @@ required `Live CoatyJS compatibility gate` check (issue #457).
 
 - `Packages/AxolotyWire/**` — AxolotyWire codec and routing.
 - `Source/**` — host wire codecs, events, core types, IO routing, SensorThings.
-- `Tests/WireCompatibility/**` and `Tests/AxolotyWire/**` — wire fixtures,
-  reference agents, scenarios, and codec tests.
-- `Tests/Support/test-tiers.json`, `Package.swift`, `Package.resolved`,
-  `Tools/AxolotyTooling/**` — canonical test contract and tooling that can
-  change the wire plan.
+- `Tests/WireCompatibility/**` — wire fixtures, reference agents, scenarios,
+  and the live capture/verifier tooling (Markdown, decision records, and the
+  `Audit/` tree are excluded and stay on the fast path).
+- `Tests/AxolotyWire/**` — wire codec tests.
+- `Package.swift` and `Package.resolved` — package manifest and resolved
+  dependency graph.
 
-The `Source/Axoloty.docc/**` documentation tree does not affect the wire
-contract and stays on the fast path.
+The `Source/Axoloty.docc/**` documentation tree, and changes to test
+orchestration (`Makefile`, `Tests/Support/test-tiers.json`, `Tools/`,
+`.github/`), do not change the bytes that flow across a wire and stay on the
+fast path.
 
 **Gate behavior.** The `Live CoatyJS compatibility gate` job always runs (it is
 a reliable required status check). When a change set contains a
