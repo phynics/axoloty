@@ -14,7 +14,7 @@ struct MessageRouterTests {
 
     @Test
     func embeddedRouterDispatchesByEventType() throws {
-        let router = EmbeddedMessageRouter(maxSubscribers: 4)
+        let router = try! EmbeddedMessageRouter(maxSubscribers: 4)
         let received = Box<WireEventType?>(nil)
 
         router.subscribe(.associate) { msg in
@@ -32,7 +32,7 @@ struct MessageRouterTests {
 
     @Test
     func embeddedRouterDispatchesRawToRawSubscribers() throws {
-        let router = EmbeddedMessageRouter(maxSubscribers: 4)
+        let router = try! EmbeddedMessageRouter(maxSubscribers: 4)
         let received = Box(false)
 
         router.subscribeRaw { _ in
@@ -46,7 +46,7 @@ struct MessageRouterTests {
 
     @Test
     func embeddedRouterDispatchesIoValueSeparately() throws {
-        let router = EmbeddedMessageRouter(maxSubscribers: 4)
+        let router = try! EmbeddedMessageRouter(maxSubscribers: 4)
         let ioReceived = Box(false)
         let associateReceived = Box(false)
 
@@ -64,7 +64,7 @@ struct MessageRouterTests {
 
     @Test
     func embeddedRouterUnsubscribeStopsDelivery() throws {
-        let router = EmbeddedMessageRouter(maxSubscribers: 4)
+        let router = try! EmbeddedMessageRouter(maxSubscribers: 4)
         let received = Box(0)
 
         let token = router.subscribe(.discover) { _ in received.value += 1 }
@@ -79,7 +79,7 @@ struct MessageRouterTests {
 
     @Test
     func embeddedRouterAdvertiseFamilyDispatchesByFilter() throws {
-        let router = EmbeddedMessageRouter(maxSubscribers: 4)
+        let router = try! EmbeddedMessageRouter(maxSubscribers: 4)
         let fooReceived = Box(false)
         let barReceived = Box(false)
 
@@ -96,7 +96,7 @@ struct MessageRouterTests {
 
     @Test
     func embeddedRouterChannelFamilyDispatchesByChannelId() throws {
-        let router = EmbeddedMessageRouter(maxSubscribers: 4)
+        let router = try! EmbeddedMessageRouter(maxSubscribers: 4)
         let ch42Received = Box(false)
 
         router.subscribeChannel(channelId: "42") { _ in ch42Received.value = true }
@@ -110,7 +110,7 @@ struct MessageRouterTests {
 
     @Test
     func embeddedRouterDeadvertiseNotifiesAllAdvertiseSubscribers() throws {
-        let router = EmbeddedMessageRouter(maxSubscribers: 4)
+        let router = try! EmbeddedMessageRouter(maxSubscribers: 4)
         let fooReceived = Box(false)
         let barReceived = Box(false)
 
@@ -127,7 +127,7 @@ struct MessageRouterTests {
 
     @Test
     func embeddedRouterIgnoresUnrecognizedEventType() throws {
-        let router = EmbeddedMessageRouter(maxSubscribers: 4)
+        let router = try! EmbeddedMessageRouter(maxSubscribers: 4)
         let received = Box(false)
 
         // Subscribe to flat-table event types (not family-routed)
@@ -142,7 +142,7 @@ struct MessageRouterTests {
 
     @Test
     func embeddedRouterMultipleSubscribersAllReceive() throws {
-        let router = EmbeddedMessageRouter(maxSubscribers: 4)
+        let router = try! EmbeddedMessageRouter(maxSubscribers: 4)
         let count = Box(0)
 
         _ = router.subscribe(.query) { _ in count.value += 1 }
@@ -160,7 +160,7 @@ struct MessageRouterTests {
 
     @Test
     func embeddedRouterConformsToMessageRouter() throws {
-        let embedded: MessageRouter = EmbeddedMessageRouter(maxSubscribers: 4)
+        let embedded: MessageRouter = try! EmbeddedMessageRouter(maxSubscribers: 4)
         let received = Box(false)
 
         if let emb = embedded as? EmbeddedMessageRouter {
@@ -185,7 +185,7 @@ struct MessageRouterTests {
         // 3. Router dispatches based on event type
         // 4. Handler decodes payload via WireReader
         // 5. Decoded fields are asserted
-        let router = EmbeddedMessageRouter(maxSubscribers: 4)
+        let router = try! EmbeddedMessageRouter(maxSubscribers: 4)
         let decodedSourceId = Box<UUID16?>(nil)
 
         router.subscribe(.associate) { msg in
@@ -308,7 +308,7 @@ struct MessageRouterTests {
 extension MessageRouterTests {
     @Test
     func embeddedRouterResponseFamilyDispatchesByEventTypeAndCorrelationId() throws {
-        let router = EmbeddedMessageRouter(maxSubscribers: 4)
+        let router = try! EmbeddedMessageRouter(maxSubscribers: 4)
         let correlationId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
         let received = Box<[WireEventType]>([])
         let flatCompleteReceived = Box(false)
@@ -360,7 +360,7 @@ extension MessageRouterTests {
     /// receiving after unsubscribe, with no `await` or isolation hop.
     @Test
     func embeddedRouterFlatLifecycleSubscribeDispatchUnsubscribe() throws {
-        let router = EmbeddedMessageRouter(maxSubscribers: 4)
+        let router = try! EmbeddedMessageRouter(maxSubscribers: 4)
         let received = Box(0)
 
         let token = try #require(router.subscribe(.discover) { _ in received.value += 1 })
@@ -383,7 +383,7 @@ extension MessageRouterTests {
     /// keyed family table.
     @Test
     func embeddedRouterFamilyLifecycleSubscribeDispatchUnsubscribe() throws {
-        let router = EmbeddedMessageRouter(maxSubscribers: 4)
+        let router = try! EmbeddedMessageRouter(maxSubscribers: 4)
         let received = Box(0)
 
         let token = try #require(router.subscribeChannel(channelId: "42") { _ in received.value += 1 })
@@ -406,7 +406,7 @@ extension MessageRouterTests {
     @Test
     func embeddedRouterFlatTableRejectsBeyondCapacity() throws {
         let capacity = 3
-        let router = EmbeddedMessageRouter(maxSubscribers: capacity)
+        let router = try! EmbeddedMessageRouter(maxSubscribers: capacity)
         let received = Box(0)
 
         for _ in 0..<capacity {
@@ -428,7 +428,7 @@ extension MessageRouterTests {
     func embeddedRouterFamilyTableRejectsBeyondCapacity() throws {
         let entryCapacity = 2
         let perEntryCapacity = 2
-        let router = EmbeddedMessageRouter(
+        let router = try! EmbeddedMessageRouter(
             maxSubscribers: 4,
             maxFamilyEntries: entryCapacity,
             maxFamilySubscribers: perEntryCapacity

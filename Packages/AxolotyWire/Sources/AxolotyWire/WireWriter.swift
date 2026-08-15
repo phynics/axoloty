@@ -73,7 +73,7 @@ public struct WireWriter {
     @inline(__always)
     mutating func writeBytes(_ staticString: StaticString) throws(WireEncodeError) {
         let len = staticString.utf8CodeUnitCount
-        guard position + len <= capacity else { throw .bufferOverflow }
+        guard len >= 0, len <= capacity - position else { throw .bufferOverflow }
         for i in 0..<len {
             buffer[position + i] = staticString.utf8Start[i]
         }
@@ -82,7 +82,7 @@ public struct WireWriter {
 
     @inline(__always)
     mutating func writeByteSlice(_ slice: ByteSlice) throws(WireEncodeError) {
-        guard position + slice.length <= capacity else { throw .bufferOverflow }
+        guard slice.length >= 0, slice.length <= capacity - position else { throw .bufferOverflow }
         for i in 0..<slice.length {
             buffer[position + i] = slice.byte(at: i)!
         }
@@ -90,15 +90,15 @@ public struct WireWriter {
     }
 
     @inline(__always)
-    mutating func advancePosition(by count: Int) {
-        precondition(count >= 0 && count <= capacity - position)
+    mutating func advancePosition(by count: Int) throws(WireEncodeError) {
+        guard count >= 0, count <= capacity - position else { throw .bufferOverflow }
         position += count
     }
 
 }
 
 /// Encode error for the wire writer.
-public enum WireEncodeError: Error, Sendable {
+public enum WireEncodeError: Error, Sendable, Equatable {
     /// The encoded output would exceed the writer's ``WireWriter/capacity``.
     case bufferOverflow
     /// The value cannot be represented in the wire format.

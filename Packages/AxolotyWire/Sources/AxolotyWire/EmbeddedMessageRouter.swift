@@ -37,28 +37,25 @@ public struct EmbeddedResponseKey: Hashable, Sendable {
 ///
 /// Construction allocates a bounded, fixed-capacity set of dispatch and family
 /// tables (sized by `WireBufferConfig`); after construction the synchronous
-/// `dispatch`/`subscribe` hot path performs no allocation. The type is built
-/// so the embedded target's `hotPathAllocations` gate (exact-zero in steady
-/// state) can be satisfied without per-message heap use.
+/// `dispatch`/`subscribe` hot path performs no allocation, satisfying the
+/// embedded target's `hotPathAllocations` gate (exact-zero in steady state).
 ///
 /// Each event type has its own dispatch table. Keyed families (Advertise by
 /// filter, Channel by channel ID, IoState by source ID, Call/Update by
-/// correlation ID, Response by event type and correlation ID) use `StaticFamilyTable`
-/// for selective dispatch.
+/// correlation ID, Response by event type and correlation ID) use
+/// `StaticFamilyTable` for selective dispatch.
 ///
-/// Subscribers register through the subscription methods and
-/// receive a token for later unsubscribe. The subscriber count per event
-/// type is bounded by `WireBufferConfig.maxSubscribers`.
+/// Subscribers register through the subscription methods and receive a token
+/// for later unsubscribe. The subscriber count per event type is bounded by
+/// `WireBufferConfig.maxSubscribers`.
 ///
-/// This router is intentionally non-`Sendable`. It owns mutable dispatch
-/// and family tables that are safe to mutate only from a single execution
-/// context. ``subscribe(_:_:)``, ``unsubscribe(_:_:)``, the keyed
+/// This router is intentionally non-`Sendable`: it owns mutable dispatch
+/// and family tables safe to mutate from a single execution context.
+/// ``subscribe(_:_:)``, ``unsubscribe(_:_:)``, the keyed
 /// family subscribe/unsubscribe methods, and ``dispatch(_:)`` are all
-/// synchronous and must be called from the same thread/isolation domain
-/// that owns the router. The type carries no internal synchronization
-/// (no actor, lock, or queue) by design: embedded routing is bounded and
-/// single-threaded, and host-side synchronization belongs in a host
-/// adapter, not here.
+/// synchronous and share the owning thread/isolation domain with no internal
+/// synchronization (no actor, lock, or queue); embedded routing is
+/// bounded and single-threaded, and host-side sync belongs in a host adapter.
 ///
 /// Handler closures remain `@Sendable` so they can be captured by embedded
 /// composition, but the ``BorrowedMessage`` they receive — and any values
@@ -78,17 +75,25 @@ public final class EmbeddedMessageRouter: MessageRouter {
     private var updateFamily: StaticFamilyTable<String>
     private var responseFamily: StaticFamilyTable<EmbeddedResponseKey>
 
-    /// Creates a router with the given subscriber and family capacity limits.
+    /// Creates a router with bounded subscriber and family capacities.
+    ///
+    /// Each capacity must be non-negative and no greater than its
+    /// ``WireBufferConfig`` maximum.
     ///
     /// - Parameters:
     ///   - maxSubscribers: Maximum subscribers per flat event-type table.
     ///   - maxFamilyEntries: Maximum keyed entries per family table.
     ///   - maxFamilySubscribers: Maximum subscribers per family entry.
+    /// - Throws: ``WireCapacityError`` if any capacity is negative or exceeds its
+    ///   configured maximum.
     public init(
         maxSubscribers: Int = WireBufferConfig.maxSubscribers,
         maxFamilyEntries: Int = WireBufferConfig.maxFamilyEntries,
         maxFamilySubscribers: Int = WireBufferConfig.maxFamilySubscribers
-    ) {
+    ) throws(WireCapacityError) {
+        try StaticDispatchTable.validateCapacityForRouter(
+            maxSubscribers, maxFamilyEntries, maxFamilySubscribers
+        )
         var tables: [WireEventType: StaticDispatchTable] = [:]
         let allTypes: [WireEventType] = [
             .advertise, .deadvertise, .channel, .associate,
@@ -96,28 +101,28 @@ public final class EmbeddedMessageRouter: MessageRouter {
             .update, .complete, .call, .returnEvent
         ]
         for type in allTypes {
-            tables[type] = StaticDispatchTable(capacity: maxSubscribers)
+            tables[type] = StaticDispatchTable(prevalidated: maxSubscribers)
         }
         self.tables = tables
-        self.rawTable = StaticDispatchTable(capacity: maxSubscribers)
-        self.ioValueTable = StaticDispatchTable(capacity: maxSubscribers)
-        self.ioStateFamily = StaticFamilyTable<String>(
-            maxEntries: maxFamilyEntries, maxSubscribersPerEntry: maxFamilySubscribers
-        )
-        self.advertiseFamily = StaticFamilyTable<String>(
-            maxEntries: maxFamilyEntries, maxSubscribersPerEntry: maxFamilySubscribers
-        )
-        self.channelFamily = StaticFamilyTable<String>(
-            maxEntries: maxFamilyEntries, maxSubscribersPerEntry: maxFamilySubscribers
-        )
-        self.callFamily = StaticFamilyTable<String>(
-            maxEntries: maxFamilyEntries, maxSubscribersPerEntry: maxFamilySubscribers
-        )
-        self.updateFamily = StaticFamilyTable<String>(
-            maxEntries: maxFamilyEntries, maxSubscribersPerEntry: maxFamilySubscribers
-        )
+        self.rawTable = StaticDispatchTable(prevalidated: maxSubscribers)
+        self.ioValueTable = StaticDispatchTable(prevalidated: maxSubscribers)
+        self.ioStateFamily = Self.staticFamily(maxEntries: maxFamilyEntries, perEntry: maxFamilySubscribers)
+        self.advertiseFamily = Self.staticFamily(maxEntries: maxFamilyEntries, perEntry: maxFamilySubscribers)
+        self.channelFamily = Self.staticFamily(maxEntries: maxFamilyEntries, perEntry: maxFamilySubscribers)
+        self.callFamily = Self.staticFamily(maxEntries: maxFamilyEntries, perEntry: maxFamilySubscribers)
+        self.updateFamily = Self.staticFamily(maxEntries: maxFamilyEntries, perEntry: maxFamilySubscribers)
         self.responseFamily = StaticFamilyTable<EmbeddedResponseKey>(
-            maxEntries: maxFamilyEntries, maxSubscribersPerEntry: maxFamilySubscribers
+            prevalidatedMaxEntries: maxFamilyEntries,
+            prevalidatedMaxSubscribers: maxFamilySubscribers
+        )
+    }
+
+    private static func staticFamily(
+        maxEntries: Int, perEntry: Int
+    ) -> StaticFamilyTable<String> {
+        StaticFamilyTable<String>(
+            prevalidatedMaxEntries: maxEntries,
+            prevalidatedMaxSubscribers: perEntry
         )
     }
 

@@ -707,7 +707,7 @@ struct SizeLimitTests {
 struct RouterCapacityTests {
     @Test("Flat subscribers at capacity (8) succeed, 9th is rejected")
     func flatSubscribersAtCapacity() {
-        let router = EmbeddedMessageRouter()
+        let router = try! EmbeddedMessageRouter()
         for _ in 0..<WireBufferConfig.maxSubscribers {
             let token = router.subscribe(.advertise) { _ in }
             #expect(token != nil)
@@ -719,7 +719,7 @@ struct RouterCapacityTests {
 
     @Test("Unsubscribe frees a slot for reuse")
     func unsubscribeReusesSlot() {
-        let router = EmbeddedMessageRouter()
+        let router = try! EmbeddedMessageRouter()
         var tokens: [StaticDispatchTable.Token] = []
         for _ in 0..<WireBufferConfig.maxSubscribers {
             tokens.append(router.subscribe(.advertise) { _ in }!)
@@ -733,7 +733,7 @@ struct RouterCapacityTests {
 
     @Test("Family entries at capacity (16) succeed, 17th is rejected")
     func familyEntriesAtCapacity() {
-        let router = EmbeddedMessageRouter()
+        let router = try! EmbeddedMessageRouter()
         for i in 0..<WireBufferConfig.maxFamilyEntries {
             let token = router.subscribeAdvertise(filter: "filter-\(i)") { _ in }
             #expect(token != nil)
@@ -745,7 +745,7 @@ struct RouterCapacityTests {
 
     @Test("Family subscribers at capacity (4) succeed, 5th is rejected")
     func familySubscribersAtCapacity() {
-        let router = EmbeddedMessageRouter()
+        let router = try! EmbeddedMessageRouter()
         for _ in 0..<WireBufferConfig.maxFamilySubscribers {
             let token = router.subscribeAdvertise(filter: "same-filter") { _ in }
             #expect(token != nil)
@@ -757,7 +757,7 @@ struct RouterCapacityTests {
 
     @Test("Family unsubscribe frees a slot for reuse")
     func familyUnsubscribeReusesSlot() {
-        let router = EmbeddedMessageRouter()
+        let router = try! EmbeddedMessageRouter()
         var tokens: [StaticFamilyTable<String>.Token] = []
         for _ in 0..<WireBufferConfig.maxFamilySubscribers {
             tokens.append(router.subscribeAdvertise(filter: "reuse") { _ in }!)

@@ -40,7 +40,7 @@ public struct TopicView {
     ///   - length: The number of valid bytes at `topicBytes`.
     public init(topicBytes: UnsafePointer<UInt8>, length: Int) {
         self.bytes = UnsafeRawPointer(topicBytes)
-        self.byteCount = length
+        self.byteCount = max(0, length)
         self.levelOffsets = (0, 0, 0, 0, 0, 0, 0)
         self.levelLengths = (0, 0, 0, 0, 0, 0, 0)
         self._levelCount = 0

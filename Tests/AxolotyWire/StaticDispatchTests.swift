@@ -28,7 +28,7 @@ struct StaticDispatchTests {
 
     @Test
     func dispatchTableDeliversToActiveSubscribers() throws {
-        var table = StaticDispatchTable(capacity: 4)
+        var table = try! StaticDispatchTable(capacity: 4)
         let received = Box<[String]>([])
 
         let token1 = table.subscribe { msg in
@@ -53,7 +53,7 @@ struct StaticDispatchTests {
 
     @Test
     func dispatchTableRespectsUnsubscribe() throws {
-        var table = StaticDispatchTable(capacity: 4)
+        var table = try! StaticDispatchTable(capacity: 4)
         let received = Box(0)
 
         let token = table.subscribe { _ in received.value += 1 }
@@ -70,7 +70,7 @@ struct StaticDispatchTests {
 
     @Test
     func dispatchTableRejectsOverflow() throws {
-        var table = StaticDispatchTable(capacity: 2)
+        var table = try! StaticDispatchTable(capacity: 2)
         let t1 = table.subscribe { _ in }
         let t2 = table.subscribe { _ in }
         let t3 = table.subscribe { _ in }
@@ -83,7 +83,7 @@ struct StaticDispatchTests {
 
     @Test
     func dispatchTableReusesFreedSlots() throws {
-        var table = StaticDispatchTable(capacity: 2)
+        var table = try! StaticDispatchTable(capacity: 2)
         let received = Box(0)
 
         let t1 = table.subscribe { _ in received.value += 1 }
@@ -101,7 +101,7 @@ struct StaticDispatchTests {
 
     @Test
     func dispatchTableRejectsStaleTokenAfterSlotReuse() throws {
-        var table = StaticDispatchTable(capacity: 1)
+        var table = try! StaticDispatchTable(capacity: 1)
         let currentReceived = Box(0)
 
         let staleToken = try #require(table.subscribe { _ in })
@@ -121,8 +121,8 @@ struct StaticDispatchTests {
 
     @Test
     func dispatchTableRejectsForeignToken() throws {
-        var first = StaticDispatchTable(capacity: 1)
-        var second = StaticDispatchTable(capacity: 1)
+        var first = try! StaticDispatchTable(capacity: 1)
+        var second = try! StaticDispatchTable(capacity: 1)
         let firstReceived = Box(0)
         let secondReceived = Box(0)
 
@@ -143,7 +143,7 @@ struct StaticDispatchTests {
 
     @Test
     func populatedDispatchTableCopyAcceptsInheritedTokenInEitherMutationOrder() throws {
-        var firstOriginal = StaticDispatchTable(capacity: 1)
+        var firstOriginal = try! StaticDispatchTable(capacity: 1)
         let firstToken = try #require(firstOriginal.subscribe { _ in })
         var firstCopy = firstOriginal
 
@@ -153,7 +153,7 @@ struct StaticDispatchTests {
         #expect(firstOriginal.subscriberCount == 0)
         #expect(firstCopy.subscriberCount == 0)
 
-        var secondOriginal = StaticDispatchTable(capacity: 1)
+        var secondOriginal = try! StaticDispatchTable(capacity: 1)
         let secondToken = try #require(secondOriginal.subscribe { _ in })
         var secondCopy = secondOriginal
 
@@ -166,7 +166,7 @@ struct StaticDispatchTests {
 
     @Test
     func emptyDispatchTableCopiesIssueIndependentTokens() throws {
-        var original = StaticDispatchTable(capacity: 1)
+        var original = try! StaticDispatchTable(capacity: 1)
         var copy = original
         let originalToken = try #require(original.subscribe { _ in })
         let copyToken = try #require(copy.subscribe { _ in })
@@ -185,7 +185,7 @@ struct StaticDispatchTests {
 
     @Test
     func populatedDispatchTableCopiesIssueNoncollidingNewTokens() throws {
-        var original = StaticDispatchTable(capacity: 2)
+        var original = try! StaticDispatchTable(capacity: 2)
         let inheritedToken = try #require(original.subscribe { _ in })
         var copy = original
         let originalToken = try #require(original.subscribe { _ in })
@@ -207,7 +207,7 @@ struct StaticDispatchTests {
 
     @Test
     func dispatchTableRejectsNegativeAndOversizedTokenIndices() throws {
-        var table = StaticDispatchTable(capacity: 1)
+        var table = try! StaticDispatchTable(capacity: 1)
         let token = try #require(table.subscribe { _ in })
 
         table.unsubscribe(token.replacingIndexForTesting(-1))
@@ -219,7 +219,7 @@ struct StaticDispatchTests {
 
     @Test
     func dispatchTableRetiresSlotAtGenerationExhaustion() throws {
-        var table = StaticDispatchTable(
+        var table = try StaticDispatchTable(
             capacity: 1,
             initialGenerationForTesting: UInt16.max - 1
         )
@@ -255,7 +255,7 @@ struct StaticDispatchTests {
 
     @Test
     func familyTableDispatchesByKey() throws {
-        var table = StaticFamilyTable<String>(maxEntries: 4, maxSubscribersPerEntry: 2)
+        var table = try! StaticFamilyTable<String>(maxEntries: 4, maxSubscribersPerEntry: 2)
         let fooReceived = Box(0)
         let barReceived = Box(0)
 
@@ -277,7 +277,7 @@ struct StaticDispatchTests {
 
     @Test
     func familyTableDispatchAll() throws {
-        var table = StaticFamilyTable<String>(maxEntries: 4, maxSubscribersPerEntry: 2)
+        var table = try! StaticFamilyTable<String>(maxEntries: 4, maxSubscribersPerEntry: 2)
         let total = Box(0)
 
         _ = table.subscribe(key: "a") { _ in total.value += 1 }
@@ -292,7 +292,7 @@ struct StaticDispatchTests {
 
     @Test
     func familyTableFreesEntryOnLastUnsubscribe() throws {
-        var table = StaticFamilyTable<String>(maxEntries: 4, maxSubscribersPerEntry: 2)
+        var table = try! StaticFamilyTable<String>(maxEntries: 4, maxSubscribersPerEntry: 2)
 
         let token = table.subscribe(key: "foo") { _ in }
         #expect(table.entryCount == 1)
@@ -307,8 +307,8 @@ struct StaticDispatchTests {
 
     @Test
     func familyTableRejectsForeignToken() throws {
-        var first = StaticFamilyTable<String>(maxEntries: 1, maxSubscribersPerEntry: 1)
-        var second = StaticFamilyTable<String>(maxEntries: 1, maxSubscribersPerEntry: 1)
+        var first = try! StaticFamilyTable<String>(maxEntries: 1, maxSubscribersPerEntry: 1)
+        var second = try! StaticFamilyTable<String>(maxEntries: 1, maxSubscribersPerEntry: 1)
         let secondReceived = Box(0)
 
         let firstToken = try #require(first.subscribe(key: "first") { _ in })
@@ -326,7 +326,7 @@ struct StaticDispatchTests {
 
     @Test
     func familyTableRejectsStaleTokenAfterEntryReuse() throws {
-        var table = StaticFamilyTable<String>(maxEntries: 1, maxSubscribersPerEntry: 1)
+        var table = try! StaticFamilyTable<String>(maxEntries: 1, maxSubscribersPerEntry: 1)
         let currentReceived = Box(0)
 
         let staleToken = try #require(table.subscribe(key: "stale") { _ in })
@@ -348,7 +348,7 @@ struct StaticDispatchTests {
 
     @Test
     func populatedFamilyTableCopyAcceptsInheritedTokenInEitherMutationOrder() throws {
-        var firstOriginal = StaticFamilyTable<String>(
+        var firstOriginal = try! StaticFamilyTable<String>(
             maxEntries: 1,
             maxSubscribersPerEntry: 1
         )
@@ -361,7 +361,7 @@ struct StaticDispatchTests {
         #expect(firstOriginal.entryCount == 0)
         #expect(firstCopy.entryCount == 0)
 
-        var secondOriginal = StaticFamilyTable<String>(
+        var secondOriginal = try! StaticFamilyTable<String>(
             maxEntries: 1,
             maxSubscribersPerEntry: 1
         )
@@ -377,7 +377,7 @@ struct StaticDispatchTests {
 
     @Test
     func emptyFamilyTableCopiesIssueIndependentTokens() throws {
-        var original = StaticFamilyTable<String>(maxEntries: 1, maxSubscribersPerEntry: 1)
+        var original = try! StaticFamilyTable<String>(maxEntries: 1, maxSubscribersPerEntry: 1)
         var copy = original
         let originalToken = try #require(original.subscribe(key: "key") { _ in })
         let copyToken = try #require(copy.subscribe(key: "key") { _ in })
@@ -396,7 +396,7 @@ struct StaticDispatchTests {
 
     @Test
     func populatedFamilyTableCopiesIssueNoncollidingNewTokens() throws {
-        var original = StaticFamilyTable<String>(maxEntries: 1, maxSubscribersPerEntry: 2)
+        var original = try! StaticFamilyTable<String>(maxEntries: 1, maxSubscribersPerEntry: 2)
         let inheritedToken = try #require(original.subscribe(key: "key") { _ in })
         var copy = original
         let originalToken = try #require(original.subscribe(key: "key") { _ in })
@@ -421,7 +421,7 @@ struct StaticDispatchTests {
 
     @Test
     func familyTableRejectsNegativeAndOversizedEntryIndices() throws {
-        var table = StaticFamilyTable<String>(maxEntries: 1, maxSubscribersPerEntry: 1)
+        var table = try! StaticFamilyTable<String>(maxEntries: 1, maxSubscribersPerEntry: 1)
         let token = try #require(table.subscribe(key: "key") { _ in })
 
         table.unsubscribe(token.replacingEntryIndexForTesting(-1))
@@ -433,7 +433,7 @@ struct StaticDispatchTests {
 
     @Test
     func familyTableMultipleSubscribersPerKey() throws {
-        var table = StaticFamilyTable<String>(maxEntries: 4, maxSubscribersPerEntry: 3)
+        var table = try! StaticFamilyTable<String>(maxEntries: 4, maxSubscribersPerEntry: 3)
         let received = Box(0)
 
         _ = table.subscribe(key: "ch") { _ in received.value += 1 }
@@ -478,7 +478,7 @@ struct StaticDispatchTests {
 
     @Test
     func borrowedMessageDispatchFlow() throws {
-        var table = StaticDispatchTable(capacity: 4)
+        var table = try! StaticDispatchTable(capacity: 4)
         let capturedEvent = Box<WireEventType?>(nil)
 
         _ = table.subscribe { msg in
@@ -493,6 +493,131 @@ struct StaticDispatchTests {
             table.dispatch(message)
         }
         #expect(capturedEvent.value == .associate)
+    }
+}
+
+// MARK: - Caller-controlled capacity bounds
+
+@Suite("Caller-controlled capacity bounds")
+struct CallerControlledCapacityTests {
+
+    /// Asserts that a throwing-capacity expression throws the expected reason.
+    private func expectCapacityError(
+        reason: WireCapacityError.Reason,
+        body: () throws -> Void
+    ) {
+        do {
+            try body()
+            Issue.record("Expected WireCapacityError, got success")
+        } catch let error as WireCapacityError {
+            #expect(error.reason == reason)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    // MARK: - StaticDispatchTable
+
+    @Test
+    func dispatchTableRejectsNegativeCapacity() {
+        expectCapacityError(reason: .negativeCapacity) {
+            _ = try StaticDispatchTable(capacity: -1)
+        }
+    }
+
+    @Test
+    func dispatchTableAcceptsZeroCapacity() {
+        var table = try! StaticDispatchTable(capacity: 0)
+        #expect(table.subscribe { _ in } == nil)
+    }
+
+    @Test
+    func dispatchTableRejectsOversizedCapacity() {
+        expectCapacityError(reason: .exceedsMaximum) {
+            _ = try StaticDispatchTable(capacity: WireBufferConfig.maxSubscribers + 1)
+        }
+    }
+
+    // MARK: - StaticFamilyTable
+
+    @Test
+    func familyTableRejectsNegativeEntryCapacity() {
+        expectCapacityError(reason: .negativeCapacity) {
+            _ = try StaticFamilyTable<String>(maxEntries: -1)
+        }
+    }
+
+    @Test
+    func familyTableRejectsNegativePerEntryCapacity() {
+        expectCapacityError(reason: .negativeCapacity) {
+            _ = try StaticFamilyTable<String>(maxEntries: 1, maxSubscribersPerEntry: -1)
+        }
+    }
+
+    @Test
+    func familyTableRejectsOversizedEntryCapacity() {
+        expectCapacityError(reason: .exceedsMaximum) {
+            _ = try StaticFamilyTable<String>(
+                maxEntries: WireBufferConfig.maxFamilyEntries + 1
+            )
+        }
+    }
+
+    @Test
+    func familyTableRejectsOversizedPerEntryCapacity() {
+        expectCapacityError(reason: .exceedsMaximum) {
+            _ = try StaticFamilyTable<String>(
+                maxEntries: 1,
+                maxSubscribersPerEntry: WireBufferConfig.maxFamilySubscribers + 1
+            )
+        }
+    }
+
+    // MARK: - EmbeddedMessageRouter
+
+    @Test
+    func routerRejectsNegativeSubscriberCapacity() {
+        expectCapacityError(reason: .negativeCapacity) {
+            _ = try EmbeddedMessageRouter(maxSubscribers: -1)
+        }
+    }
+
+    @Test
+    func routerRejectsOversizedFamilyEntries() {
+        expectCapacityError(reason: .exceedsMaximum) {
+            _ = try EmbeddedMessageRouter(
+                maxFamilyEntries: WireBufferConfig.maxFamilyEntries + 1
+            )
+        }
+    }
+
+    @Test
+    func routerRejectsOversizedFamilySubscribers() {
+        expectCapacityError(reason: .exceedsMaximum) {
+            _ = try EmbeddedMessageRouter(
+                maxFamilySubscribers: WireBufferConfig.maxFamilySubscribers + 1
+            )
+        }
+    }
+
+    // MARK: - StaticIoEndpoints
+
+    @Test
+    func ioEndpointsRejectsOversizedSourceCount() {
+        let descriptors = (0..<(WireBufferConfig.maxFamilyEntries + 1)).map { _ in
+            StaticIoEndpointDescriptor(id: .zero, valueType: "test.Value", mode: .raw)
+        }
+        expectCapacityError(reason: .exceedsMaximum) {
+            _ = try StaticIoEndpoints(sources: descriptors, actors: [], actorHandlers: [])
+        }
+    }
+
+    @Test
+    func ioEndpointsRejectsActorHandlerCountMismatch() {
+        let actor = StaticIoEndpointDescriptor(id: .zero, valueType: "test.Value", mode: .raw)
+        expectCapacityError(reason: .countMismatch) {
+            _ = try StaticIoEndpoints(sources: [], actors: [actor], actorHandlers: [])
+        }
     }
 }
 

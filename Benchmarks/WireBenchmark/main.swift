@@ -239,7 +239,7 @@ func validateAllocations() {
     var sink = 0
     payloadBytes.withUnsafeBufferPointer { pb in
         topicBytes.withUnsafeBufferPointer { tb in
-            let router = EmbeddedMessageRouter()
+            let router = try! EmbeddedMessageRouter()
             _ = router.subscribe(.associate) { _ in }
             for _ in 0..<1_000 {
                 let message = BorrowedMessage(

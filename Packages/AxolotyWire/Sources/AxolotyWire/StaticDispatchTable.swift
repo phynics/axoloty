@@ -71,14 +71,62 @@ public struct StaticDispatchTable: Sendable {
     }
 
     /// Creates a dispatch table with the given maximum subscriber count.
-    public init(capacity: Int = WireBufferConfig.maxSubscribers) {
+    ///
+    /// - Parameter capacity: The maximum number of active subscribers. Must be
+    ///   non-negative and no greater than ``WireBufferConfig/maxSubscribers``.
+    /// - Throws: ``WireCapacityError`` if `capacity` is negative or exceeds the
+    ///   configured maximum.
+    public init(capacity: Int = WireBufferConfig.maxSubscribers) throws(WireCapacityError) {
+        try Self.validateCapacity(
+            capacity, maximum: WireBufferConfig.maxSubscribers, parameter: "capacity"
+        )
         self.storage = Storage(capacity: capacity, initialGeneration: 0)
     }
 
-    internal init(capacity: Int, initialGenerationForTesting: UInt16) {
+    internal init(capacity: Int, initialGenerationForTesting: UInt16) throws(WireCapacityError) {
+        try Self.validateCapacity(
+            capacity, maximum: WireBufferConfig.maxSubscribers, parameter: "capacity"
+        )
         self.storage = Storage(
             capacity: capacity,
             initialGeneration: initialGenerationForTesting
+        )
+    }
+
+    /// Creates a dispatch table with a caller-guaranteed-valid capacity, without
+    /// re-validating. Used for per-family entry tables whose capacity was already
+    /// validated by ``StaticFamilyTable`` construction.
+    internal init(prevalidated capacity: Int, initialGeneration: UInt16 = 0) {
+        self.storage = Storage(capacity: capacity, initialGeneration: initialGeneration)
+    }
+
+    private static func validateCapacity(
+        _ value: Int, maximum: Int, parameter: StaticString
+    ) throws(WireCapacityError) {
+        if value < 0 { throw WireCapacityError(.negativeCapacity, parameter: parameter) }
+        if value > maximum { throw WireCapacityError(.exceedsMaximum, parameter: parameter) }
+    }
+
+    /// Validates the router-level capacity arguments before any table is built.
+    internal static func validateCapacityForRouter(
+        _ maxSubscribers: Int,
+        _ maxFamilyEntries: Int,
+        _ maxFamilySubscribers: Int
+    ) throws(WireCapacityError) {
+        try validateCapacity(
+            maxSubscribers,
+            maximum: WireBufferConfig.maxSubscribers,
+            parameter: "maxSubscribers"
+        )
+        try validateCapacity(
+            maxFamilyEntries,
+            maximum: WireBufferConfig.maxFamilyEntries,
+            parameter: "maxFamilyEntries"
+        )
+        try validateCapacity(
+            maxFamilySubscribers,
+            maximum: WireBufferConfig.maxFamilySubscribers,
+            parameter: "maxFamilySubscribers"
         )
     }
 

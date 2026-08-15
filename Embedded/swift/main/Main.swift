@@ -319,7 +319,7 @@ func app_main() -> Int32 {
             payloadBytes: payload.baseAddress!,
             payloadLength: 0
         )
-        let router = EmbeddedMessageRouter()
+        let router = try! EmbeddedMessageRouter()
         withUnsafeTemporaryAllocation(of: Bool.self, capacity: 1) { dispatched in
             dispatched[0] = false
             let dispatchedPointer = UnsafeSendablePointer(value: dispatched.baseAddress!)

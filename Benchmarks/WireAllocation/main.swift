@@ -26,7 +26,7 @@ func hotPath(
     iterations: Int
 ) -> UInt32 {
     var sink: UInt32 = 0
-    let router = EmbeddedMessageRouter()
+    let router = try! EmbeddedMessageRouter()
     _ = router.subscribe(.associate) { _ in }
     for _ in 0..<iterations {
         let message = BorrowedMessage(

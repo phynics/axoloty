@@ -137,14 +137,27 @@ public struct StaticIoEndpoints {
     ///     ``WireBufferConfig/maxFamilyEntries`` entries are accepted.
     ///   - actorHandlers: Synchronous handlers, one per actor. A missing handler
     ///     means values are rejected rather than buffered.
+    /// - Throws: ``WireCapacityError`` if the number of sources or actors exceeds
+    ///   ``WireBufferConfig/maxFamilyEntries``, or if `actorHandlers` does not
+    ///   contain exactly one entry per actor.
     public init(
         sources: [StaticIoEndpointDescriptor],
         actors: [StaticIoEndpointDescriptor],
         actorHandlers: [(@Sendable (ByteSlice) -> Void)?]
-    ) {
-        precondition(sources.count <= WireBufferConfig.maxFamilyEntries)
-        precondition(actors.count <= WireBufferConfig.maxFamilyEntries)
-        precondition(actors.count == actorHandlers.count)
+    ) throws(WireCapacityError) {
+        if sources.count > WireBufferConfig.maxFamilyEntries {
+            throw WireCapacityError(
+                .exceedsMaximum, parameter: "sources"
+            )
+        }
+        if actors.count > WireBufferConfig.maxFamilyEntries {
+            throw WireCapacityError(
+                .exceedsMaximum, parameter: "actors"
+            )
+        }
+        if actors.count != actorHandlers.count {
+            throw WireCapacityError(.countMismatch, parameter: "actorHandlers")
+        }
         self.sources = sources
         self.actors = actors
         self.sourceStates = Array(repeating: SourceState(), count: sources.count)

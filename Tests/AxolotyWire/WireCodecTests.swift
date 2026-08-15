@@ -467,6 +467,46 @@ struct WireCodecTests {
     }
 
     @Test
+    func negativeLengthsAreClampedToZeroWithoutTrapping() throws {
+        var dummy: UInt8 = 0
+        withUnsafePointer(to: &dummy) { pointer in
+            let slice = ByteSlice(bytes: pointer, length: -1)
+            #expect(slice.length == 0)
+            #expect(slice.byte(at: 0) == nil)
+            #expect(slice == ByteSlice(bytes: pointer, length: 0))
+
+            let view = TopicView(topicBytes: pointer, length: -1)
+            #expect(view.levelCount == 0)
+            #expect(view.eventType == nil)
+            #expect(view.isRawTopic)
+
+            let reader = WireReader(bytes: pointer, length: -1)
+            #expect(reader.length == 0)
+            do {
+                try reader.validate()
+                Issue.record("expected empty reader validation to fail")
+            } catch {}
+        }
+    }
+
+    @Test
+    func writerReportsOverflowRatherThanTrapping() throws {
+        // A tiny writer with a valid, growing number of fields: writing past the
+        // destination capacity must surface bufferOverflow rather than trap.
+        var buffer = [UInt8](repeating: 0, count: 8)
+        try buffer.withUnsafeMutableBufferPointer { destination in
+            var writer = WireWriter(buffer: destination.baseAddress!, capacity: destination.count)
+            do {
+                while true {
+                    try writer.writeIntField("k", 1)
+                }
+            } catch let error as WireEncodeError {
+                #expect(error == .bufferOverflow)
+            }
+        }
+    }
+
+    @Test
     func rawWriterAcceptsScalarArrayAndStringValues() throws {
         let fragments = ["1", "true", "null", "[1,2]", #""text""#]
         for fragment in fragments {
