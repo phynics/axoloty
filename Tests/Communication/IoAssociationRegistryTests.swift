@@ -264,6 +264,92 @@ struct IoAssociationRegistryTests {
         #expect(restartedState.eventData.updateRate() == 750)
     }
 
+    // MARK: - IO value routing
+
+    @Test
+    func associatedActorIdsReflectsActiveAssociationsOnRoute() async {
+        let source = makeSource("10000000-0000-4000-8000-000000000001")
+        let actor = makeActor("20000000-0000-4000-8000-000000000002")
+        let (registry, _, _) = makeRegistry(sources: [source], actors: [actor])
+
+        // No association yet -> no actor on the route.
+        #expect(registry.associatedActorIds(on: "route-1").isEmpty)
+
+        registry.handleAssociate(
+            ioSourceId: source.objectId, ioActorId: actor.objectId,
+            ioRoute: "route-1", updateRate: 500, isExternalRoute: false
+        )
+
+        #expect(registry.associatedActorIds(on: "route-1") == [actor.objectId])
+        // A different route has no associated actors.
+        #expect(registry.associatedActorIds(on: "route-other").isEmpty)
+    }
+
+    @Test
+    func associatedActorIdsReturnsAllActorsOnSharedRoute() async {
+        let source = makeSource("10000000-0000-4000-8000-000000000001")
+        let actorA = makeActor("20000000-0000-4000-8000-000000000002")
+        let actorB = makeActor("20000000-0000-4000-8000-000000000003")
+        let (registry, _, _) = makeRegistry(sources: [source], actors: [actorA, actorB])
+
+        registry.handleAssociate(
+            ioSourceId: source.objectId, ioActorId: actorA.objectId,
+            ioRoute: "route-1", updateRate: 500, isExternalRoute: false
+        )
+        registry.handleAssociate(
+            ioSourceId: source.objectId, ioActorId: actorB.objectId,
+            ioRoute: "route-1", updateRate: 500, isExternalRoute: false
+        )
+
+        let ids = registry.associatedActorIds(on: "route-1")
+        #expect(ids.contains(actorA.objectId))
+        #expect(ids.contains(actorB.objectId))
+        #expect(ids.count == 2)
+    }
+
+    @Test
+    func associatedActorIdsRemovesActorAfterDisassociation() async {
+        let source = makeSource("10000000-0000-4000-8000-000000000001")
+        let actor = makeActor("20000000-0000-4000-8000-000000000002")
+        let (registry, _, _) = makeRegistry(sources: [source], actors: [actor])
+
+        registry.handleAssociate(
+            ioSourceId: source.objectId, ioActorId: actor.objectId,
+            ioRoute: "route-1", updateRate: 500, isExternalRoute: false
+        )
+        #expect(registry.associatedActorIds(on: "route-1") == [actor.objectId])
+
+        registry.handleAssociate(
+            ioSourceId: source.objectId, ioActorId: actor.objectId,
+            ioRoute: nil, updateRate: nil, isExternalRoute: nil
+        )
+
+        #expect(registry.associatedActorIds(on: "route-1").isEmpty)
+    }
+
+    @Test
+    func associatedActorIdsClearsOnRestart() async {
+        let source = makeSource("10000000-0000-4000-8000-000000000001")
+        let actor = makeActor("20000000-0000-4000-8000-000000000002")
+        let (registry, _, _) = makeRegistry(sources: [source], actors: [actor])
+
+        registry.handleAssociate(
+            ioSourceId: source.objectId, ioActorId: actor.objectId,
+            ioRoute: "route-1", updateRate: 500, isExternalRoute: false
+        )
+        #expect(registry.associatedActorIds(on: "route-1") == [actor.objectId])
+
+        // Teardown clears all association state; a later restart must rebuild it.
+        registry.unobserveAll()
+        #expect(registry.associatedActorIds(on: "route-1").isEmpty)
+
+        registry.handleAssociate(
+            ioSourceId: source.objectId, ioActorId: actor.objectId,
+            ioRoute: "route-1", updateRate: 750, isExternalRoute: false
+        )
+        #expect(registry.associatedActorIds(on: "route-1") == [actor.objectId])
+    }
+
     // MARK: - Lookup
 
     @Test
