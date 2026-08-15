@@ -765,7 +765,7 @@ struct BroadcastTransportTests {
             autoReconnect: false
         )
         options.clientId = "test-client"
-        let client = MQTTNIOClient(mqttClientOptions: options, delegate: delegate)
+        let client = try MQTTNIOClient(mqttClientOptions: options, delegate: delegate)
         client.streams = makeTestStreams()
 
         // No settling delay needed: `.state` buffering both caches the latest
