@@ -79,7 +79,15 @@ public class IoRouter: Controller {
         self.observeUpdateIoContext()
         
         self.onStarted()
-        try? self.onIoContextChanged()
+        do {
+            try self.onIoContextChanged()
+        } catch {
+            self.log.error("Failed to publish IO context after router start", metadata: [
+                "ioContextId": .string(self.ioContext.objectId.string),
+                "ioContextName": .string(self.ioContext.name),
+                "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+            ])
+        }
     }
     
     public override func onCommunicationManagerStopping() {
@@ -346,7 +354,15 @@ public class IoRouter: Controller {
                 }
                 self.ioContext = object
                 self.ioContext.parentObjectId = self.container.identity?.objectId
-                try? self.onIoContextChanged()
+                do {
+                    try self.onIoContextChanged()
+                } catch {
+                    self.log.error("Failed to publish IO context after update", metadata: [
+                        "ioContextId": .string(self.ioContext.objectId.string),
+                        "ioContextName": .string(self.ioContext.name),
+                        "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+                    ])
+                }
             }
         }
         observationTasks.append(task)

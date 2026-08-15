@@ -522,7 +522,15 @@ public class CommunicationManager {
     private func advertiseIoNodes() {
         // Advertise IO nodes when joining (cp. _observeDiscoverIoNodes).
         self.ioNodes.forEach { ioNode in
-            try? self.publishAdvertise(AdvertiseEvent.with(object: ioNode))
+            do {
+                try self.publishAdvertise(AdvertiseEvent.with(object: ioNode))
+            } catch {
+                log.error("Failed to advertise IO node on startup", metadata: [
+                    "ioNodeId": .string(ioNode.objectId.string),
+                    "ioContextName": .string(ioNode.name),
+                    "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+                ])
+            }
         }
     }
 
