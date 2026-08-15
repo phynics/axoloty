@@ -30,7 +30,7 @@ open class Polygon: Codable, GeoJsonObject {
     
     public init(coordinates: [[Position]]) {
         self.type = .Polygon
-        self.coordinates = []
+        self.coordinates = coordinates
     }
 }
 
