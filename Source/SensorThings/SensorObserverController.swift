@@ -29,8 +29,35 @@ open class SensorObserverController: Controller {
     }
 
     /// Queries Sensor response snapshots for a Thing.
+    ///
+    /// The query carries an `Equals` ``ObjectFilter`` on `parentObjectId`
+    /// equal to `thingId`, so peers only resolve Sensors whose parent Thing is
+    /// the requested one (P1-7).
     public func querySensorsOfThingsStream(thingId: CoatyUUID) async -> AsyncStream<ResponseEventSnapshot> {
-        await communicationManager.publishQuery(QueryEvent.with(objectTypes: [SensorThingsTypes.OBJECT_TYPE_SENSOR], objectFilter: nil, objectJoinConditions: nil))
+        let objectFilter = objectIdEqualsFilter(property: "parentObjectId", id: thingId)
+        return await communicationManager.publishQuery(
+            QueryEvent.with(
+                objectTypes: [SensorThingsTypes.OBJECT_TYPE_SENSOR],
+                objectFilter: objectFilter,
+                objectJoinConditions: nil
+            )
+        )
+    }
+
+    /// Builds an `Equals` ``ObjectFilter`` on the given property (a UUID wire
+    /// key) matching a single id, so a remote query is narrowed to the
+    /// requested relation instead of returning every object of the type.
+    private func objectIdEqualsFilter(property: String, id: CoatyUUID) -> ObjectFilter? {
+        do {
+            return try ObjectFilter.buildWithCondition { builder in
+                builder.condition = try ObjectFilterCondition.build { conditionBuilder in
+                    conditionBuilder.property = ObjectFilterProperty(property)
+                    conditionBuilder.expression = FilterOperations.equals(FilterOperand(id))
+                }
+            }
+        } catch {
+            return nil
+        }
     }
 
     private func filteredStream<Element: Sendable>(_ source: AsyncStream<Element>, _ predicate: @escaping @Sendable (Element) -> Bool) -> AsyncStream<Element> {
