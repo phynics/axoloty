@@ -221,7 +221,12 @@ public final class EmbeddedMessageRouter: MessageRouter {
         channelFamily.unsubscribe(token)
     }
 
-    /// Subscribes to IoState events for a given source ID.
+    /// Subscribes to IoState events for a given endpoint (source or actor) ID.
+    ///
+    /// IoState has no dedicated wire event type: it is derived from each
+    /// Associate message routed through ``dispatch(_:)``. The handler receives
+    /// the borrowed Associate message, filtered by the source or actor ID it
+    /// carries.
     @discardableResult
     public func subscribeIoState(
         sourceId: String,
@@ -308,11 +313,12 @@ public final class EmbeddedMessageRouter: MessageRouter {
     /// 3. Advertise → advertiseFamily (by event-type filter from topic)
     /// 4. Channel → channelFamily (by channel ID from topic)
     /// 5. Deadvertise → advertiseFamily.dispatchAll (notify all advertise subscribers)
-    /// 6. Call → callFamily (by correlation ID from topic)
-    /// 7. Update → updateFamily (by correlation ID from topic)
-    /// 8. Complete, Resolve, Retrieve, and Return → response family (by event
+    /// 6. Associate → ioStateFamily (keyed by the source and actor endpoint IDs)
+    /// 7. Call → callFamily (by correlation ID from topic)
+    /// 8. Update → updateFamily (by correlation ID from topic)
+    /// 9. Complete, Resolve, Retrieve, and Return → response family (by event
     ///    type and correlation ID from topic)
-    /// 9. Other event types → flat table by event type
+    /// 10. Other event types → flat table by event type
     public func dispatch(_ message: BorrowedMessage) {
         if message.isRawTopic {
             rawTable.dispatch(message)
@@ -340,6 +346,13 @@ public final class EmbeddedMessageRouter: MessageRouter {
         case .channel:
             dispatchChannel(message)
 
+        case .associate:
+            // Associate carries the association-state signal: route the
+            // borrowed message to IoState subscribers keyed by both the
+            // source and actor endpoint IDs (mirroring the host's
+            // `IoAssociationRegistry.handleAssociate` → `dispatchIoState`).
+            dispatchAssociate(message)
+
         case .call:
             dispatchCall(message)
 
@@ -365,6 +378,29 @@ public final class EmbeddedMessageRouter: MessageRouter {
     private func dispatchChannel(_ message: BorrowedMessage) {
         if let filter = message.topic.eventTypeFilter {
             channelFamily.dispatch(byBytes: filter, message)
+        }
+    }
+
+    /// Routes an Associate message to IoState subscribers keyed by its source
+    /// and actor endpoint IDs, and to the flat Associate table.
+    ///
+    /// IoState is an internal association-state signal with no dedicated wire
+    /// event type (``WireEventType``); it is produced when an Associate changes
+    /// association state, mirroring the host's
+    /// `IoAssociationRegistry.handleAssociate` → `dispatchIoState`. Reading the
+    /// endpoint IDs straight from the payload keeps the keyed family lookup
+    /// allocation-free and preserves ``subscribeIoState(sourceId:_:)``
+    /// filtering and unsubscribe tokens. A malformed Associate is not routed.
+    private func dispatchAssociate(_ message: BorrowedMessage) {
+        // Preserve the historical flat-table delivery for `.associate`.
+        tables[.associate]?.dispatch(message)
+
+        let reader = message.reader()
+        if let sourceId = reader.readString("ioSourceId") {
+            ioStateFamily.dispatch(byBytes: sourceId, message)
+        }
+        if let actorId = reader.readString("ioActorId") {
+            ioStateFamily.dispatch(byBytes: actorId, message)
         }
     }
 
