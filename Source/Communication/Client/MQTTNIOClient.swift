@@ -97,13 +97,18 @@ internal class MQTTNIOClient: CommunicationClient {
     /// methods) never read a half-transitioned reference or flag. The lock is
     /// never held across an `await` or an NIO future: callers snapshot the
     /// needed state under the lock, release it, then operate on the snapshot.
-    private let lock = NIOLock(), lifecycle = LifecycleState()
+    private let lock = NIOLock()
 
     private var mqttClientOptions: MQTTClientOptions!, configuration: MQTTClient.Configuration!
     private var qos: MQTTQoS = .atMostOnce
     // Allows isolation tests to observe publication arguments without a broker.
     internal typealias PublishHandler = @Sendable (MQTTQoS, Bool) -> Void
     private let publishHandler: PublishHandler?
+
+    /// Injectable seam for connection attempts (mirrors ``PublishHandler``) so
+    /// tests can resolve a connect future on demand.
+    internal typealias ConnectHandler = @Sendable (MQTTClient) -> EventLoopFuture<Bool>
+    private let connectHandler: ConnectHandler?
     private var discovery: ServiceDiscovery?
 
     /// Serializes delivery of decoded MQTT messages into ``Broadcast`` in
@@ -142,55 +147,12 @@ internal class MQTTNIOClient: CommunicationClient {
     private let eventLoopGroup: EventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: 1)
     #endif
 
-    /// Mutable connection-lifecycle state guarded by ``lock``. Grouped into one
-    /// box so every read/write of the client reference, connection flags, and
-        /// reconnect work item is a single locked critical section, never split across a
-    /// suspension point.
-    private final class LifecycleState {
-        /// The currently targeted broker candidate's mqtt-nio client.
-        var client: MQTTClient?
+    /// Mutable connection-lifecycle state (``LifecycleState``, defined at file
+    /// scope) guarded by ``lock``. Grouped into one box so every read/write of the
+    /// client reference, connection flags, and reconnect work item is a single
+    /// locked critical section, never split across a suspension point.
 
-        /// Last-will (topic, message) as passed to
-        /// `connect(lastWillTopic:lastWillMessage:)`, reapplied on reconnect
-        /// (broker candidate fallback or auto-reconnect).
-        var lastWill: (topic: String, message: String)?
-
-        /// Guards against overlapping connection attempts (mqtt-nio has no
-        /// CocoaMQTT-style `connState` to query directly).
-        var isConnecting = false
-
-        /// Correlates every attempt of one connect/reconnect sequence (broker
-        /// candidate fallback and `autoReconnect` retries) under a single id.
-        /// Minted the first time `performConnect()` runs after the previous
-        /// sequence concluded (success or intentional disconnect), and cleared
-        /// on the same conditions -- so a dropped connection that triggers
-        /// several retries logs one id throughout, and the *next* drop gets a
-        /// fresh one.
-        var connectionAttemptId: String?
-
-        /// Set right before an explicit, user-requested `disconnect()` so the
-        /// close-listener (which fires on *any* connection close, intentional or
-        /// not) can distinguish it from a dropped connection and skip
-        /// auto-reconnect/broker-candidate fallback. Cleared only by the close
-        /// listener; reconnect paths refuse to proceed while this is set.
-        var isIntentionalDisconnect = false
-
-        /// Pending broker host candidates for failover.
-        var brokerCandidates = [String]()
-
-        /// Port shared by all broker candidates.
-        var brokerPort: UInt16 = 1883
-
-        /// The delayed reconnect work item, retained so `disconnect()`,
-        /// `replaceClient()`, and `deinit` can cancel it and prevent a
-        /// reconnect after an explicit disconnect.
-        var reconnectWorkItem: DispatchWorkItem?
-
-        /// Identifies the reconnect work item that is still entitled to run.
-        /// Clearing or replacing it retires the previous callback even if its
-        /// queue cancellation races with execution.
-        var reconnectToken: UUID?
-    }
+    private var lifecycle = LifecycleState()
 
     // MARK: - Initializer.
 
@@ -209,10 +171,12 @@ internal class MQTTNIOClient: CommunicationClient {
         mqttClientOptions: MQTTClientOptions,
         delegate: CommunicationClientDelegate,
         publishHandler: PublishHandler? = nil,
+        connectHandler: ConnectHandler? = nil,
         ingressDeliveryCapacity: Int = IngressDeliveryQueue.defaultCapacity
     ) throws {
         self.callbackAdapter = MQTTNIOCallbackAdapter(delegate: delegate)
         self.publishHandler = publishHandler
+        self.connectHandler = connectHandler
 
         self.deliveryQueue = IngressDeliveryQueue(capacity: ingressDeliveryCapacity)
 
@@ -387,7 +351,8 @@ internal class MQTTNIOClient: CommunicationClient {
             "broker": "\(client.host):\(client.port)",
         ])
 
-        client.connect(cleanSession: true, will: will).whenComplete { [callbackAdapter = self.callbackAdapter] result in
+        let connect = connectHandler.map { $0(client) } ?? client.connect(cleanSession: true, will: will)
+        connect.whenComplete { [callbackAdapter = self.callbackAdapter] result in
             callbackAdapter.handleConnectionResult(result, attemptId: attemptId, client: client)
         }
     }
@@ -409,18 +374,13 @@ internal class MQTTNIOClient: CommunicationClient {
                 return self.lifecycle.connectionAttemptId != attemptId
             }
             if superseded {
-                // A failed connect fires no close listener, so clear the
-                // intentional-disconnect flag here to unblock future connects.
-                // A successful connect's close is cleared by handleClose; do
-                // not clear it here or a later close of the superseded
-                // connection would be treated as a dropped connection.
+                // A failed connect fires no close listener, so there is no late
+                // socket to retire; clear the intentional-disconnect flag.
                 if case .failure = result {
-                    self.lock.withLock { self.lifecycle.isIntentionalDisconnect = false }
+                    lock.withLock { lifecycle.isIntentionalDisconnect = false }
+                } else {
+                    retireLateConnection(client, attemptId)
                 }
-                self.log.notice("Abandoning connection result; attempt superseded by disconnect", metadata: [
-                    "correlationId": .string(attemptId),
-                    "broker": "\(client.host):\(client.port)",
-                ])
                 return
             }
             switch result {
@@ -458,7 +418,8 @@ internal class MQTTNIOClient: CommunicationClient {
     fileprivate func runReconnect(token: UUID) {
         let mayReconnect = lock.withLock { () -> Bool in
             guard lifecycle.reconnectToken == token,
-                  !lifecycle.isIntentionalDisconnect else {
+                  !lifecycle.isIntentionalDisconnect,
+                  !lifecycle.isRetiredConnection else {
                 return false
             }
             lifecycle.reconnectToken = nil
@@ -476,7 +437,7 @@ internal class MQTTNIOClient: CommunicationClient {
     /// disconnect is active.
     private func connectNext() {
         let next = lock.withLock { () -> (host: String, port: Int)? in
-            guard !lifecycle.isIntentionalDisconnect else {
+            guard !lifecycle.isIntentionalDisconnect, !lifecycle.isRetiredConnection else {
                 return nil
             }
             guard !lifecycle.brokerCandidates.isEmpty else {
@@ -790,8 +751,9 @@ internal class MQTTNIOClient: CommunicationClient {
         // reconnect path racing with `disconnect()` still observes it. Read the
         // fallback decision under the same lock.
         let (shouldReconnect, hasCandidates) = lock.withLock { () -> (Bool, Bool) in
-            if lifecycle.isIntentionalDisconnect {
+            if lifecycle.isIntentionalDisconnect || lifecycle.isRetiredConnection {
                 lifecycle.isIntentionalDisconnect = false
+                lifecycle.isRetiredConnection = false
                 return (false, false)
             }
             return (true, !lifecycle.brokerCandidates.isEmpty)
@@ -809,6 +771,30 @@ internal class MQTTNIOClient: CommunicationClient {
 
 private extension MQTTNIOClient {
 
+    /// Retires a connection attempt that completed *after* an explicit
+    /// `disconnect()`, so a later start can connect normally. Lifts the
+    /// intentional-disconnect flag (a subsequent start must not stay blocked),
+    /// marks the connection retired so ``handleClose()`` treats its close as
+    /// intentional instead of a dropped connection, and closes the late socket.
+    private func retireLateConnection(_ client: MQTTClient, _ attemptId: String) {
+        lock.withLock {
+            lifecycle.isIntentionalDisconnect = false
+            lifecycle.isRetiredConnection = true
+        }
+        log.notice("Abandoning connection result; attempt superseded by disconnect", metadata: [
+            "correlationId": .string(attemptId),
+            "broker": "\(client.host):\(client.port)",
+        ])
+        let log = self.log
+        client.disconnect().whenFailure { error in
+            log.notice("Error closing late connection established after disconnect", metadata: [
+                "correlationId": .string(attemptId),
+                "broker": "\(client.host):\(client.port)",
+                "error": .string(ErrorKit.errorChainDescription(for: AxolotyError.caught(error))),
+            ])
+        }
+    }
+
     func scheduleReconnect() {
         let delaySeconds = max(mqttClientOptions.autoReconnectTimeInterval, 0)
         let token = UUID()
@@ -824,7 +810,7 @@ private extension MQTTNIOClient {
         // intentional-disconnect check and installation share one critical
         // section so disconnect cannot miss a just-created reconnect.
         let scheduling = lock.withLock { () -> (shouldSchedule: Bool, previous: DispatchWorkItem?) in
-            guard !lifecycle.isIntentionalDisconnect else {
+            guard !lifecycle.isIntentionalDisconnect, !lifecycle.isRetiredConnection else {
                 return (false, nil)
             }
             let previous = lifecycle.reconnectWorkItem
@@ -938,4 +924,58 @@ private final class MQTTNIOCallbackAdapter: @unchecked Sendable {
     func reconnect(token: UUID) {
         lock.withLock { client }?.runReconnect(token: token)
     }
+}
+
+/// Mutable connection-lifecycle state guarded by ``MQTTNIOClient``'s ``lock``.
+/// Grouped into one box so every read/write of the client reference, connection
+/// flags, and reconnect work item is a single locked critical section, never
+/// split across a suspension point.
+private final class LifecycleState {
+    /// The currently targeted broker candidate's mqtt-nio client.
+    var client: MQTTClient?
+
+    /// Last-will (topic, message) as passed to
+    /// `connect(lastWillTopic:lastWillMessage:)`, reapplied on reconnect
+    /// (broker candidate fallback or auto-reconnect).
+    var lastWill: (topic: String, message: String)?
+
+    /// Guards against overlapping connection attempts (mqtt-nio has no
+    /// CocoaMQTT-style `connState` to query directly).
+    var isConnecting = false
+
+    /// Correlates every attempt of one connect/reconnect sequence (broker
+    /// candidate fallback and `autoReconnect` retries) under a single id.
+    /// Minted the first time `performConnect()` runs after the previous
+    /// sequence concluded (success or intentional disconnect), and cleared
+    /// on the same conditions -- so a dropped connection that triggers
+    /// several retries logs one id throughout, and the *next* drop gets a
+    /// fresh one.
+    var connectionAttemptId: String?
+
+    /// Set right before an explicit, user-requested `disconnect()` so the
+    /// close-listener (which fires on *any* connection close, intentional or
+    /// not) can distinguish it from a dropped connection and skip
+    /// auto-reconnect/broker-candidate fallback. Cleared only by the close
+    /// listener; reconnect paths refuse to proceed while this is set.
+    var isIntentionalDisconnect = false
+
+    /// Set while a connection that completed after an explicit `disconnect()`
+    /// is being retired; its close is treated as intentional (no reconnect).
+    var isRetiredConnection = false
+
+    /// Pending broker host candidates for failover.
+    var brokerCandidates = [String]()
+
+    /// Port shared by all broker candidates.
+    var brokerPort: UInt16 = 1883
+
+    /// The delayed reconnect work item, retained so `disconnect()`,
+    /// `replaceClient()`, and `deinit` can cancel it and prevent a
+    /// reconnect after an explicit disconnect.
+    var reconnectWorkItem: DispatchWorkItem?
+
+    /// Identifies the reconnect work item that is still entitled to run.
+    /// Clearing or replacing it retires the previous callback even if its
+    /// queue cancellation races with execution.
+    var reconnectToken: UUID?
 }
