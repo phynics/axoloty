@@ -165,7 +165,6 @@ struct MQTTNIOClientTests {
     @Test
     func hostIngressDropsMalformedCoatyTopicsBeforeRouting() async throws {
         let sourceId = "11111111-1111-4111-8111-111111111111"
-        let correlationId = "22222222-2222-4222-8222-222222222222"
         let malformedTopics = [
             "coaty/3/test/ADVZ/\(sourceId)",            // over-long event code
             "coaty/3/test/ADVX:sensors/\(sourceId)",    // near-match code + filter
