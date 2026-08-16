@@ -28,7 +28,9 @@ export interface CaptureManifest {
 /** Build a deterministic manifest for the JSONL captures in a directory. */
 export function buildManifest(directory: string): CaptureManifest {
   const captures = readdirSync(directory)
-    .filter((file) => file.endsWith(".jsonl"))
+    // `.application.jsonl` files are scenario-runner application-state logs,
+    // not wire captures; they must not be treated as capture records.
+    .filter((file) => file.endsWith(".jsonl") && !file.endsWith(".application.jsonl"))
     .sort()
     .map((file) => {
       const path = join(directory, file);
