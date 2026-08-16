@@ -299,7 +299,7 @@ func presentHardwareRunsSmokeCommand() throws {
     let outcome = try JSONDecoder().decode(AxolotyHardwareOutcome.self, from: Data(result.standardOutput.utf8))
     #expect(result.exitCode == 0)
     #expect(outcome.status == .passed)
-    #expect(runner.command?.executable == "Tests/Support/embedded-swift-smoke.sh")
+    #expect(runner.command?.executable == "Tests/Support/embedded-swift-test.sh")
     #expect(runner.command?.environment["EMBEDDED_DEVICE"] == "/dev/test")
 }
 
@@ -337,7 +337,7 @@ func hardwareContextMismatchPrecedesFilesystemAndDeviceLeaseEffects() throws {
     #expect(fileSystem.checkedPaths.isEmpty)
     #expect(leases.acquiredDevices.isEmpty)
     #expect(try decodeDiagnostic(result) == AxolotyExecutionContextDiagnostic(
-        executable: "Tests/Support/embedded-swift-smoke.sh",
+        executable: "Tests/Support/embedded-swift-test.sh",
         declaredContext: .project,
         detectedContext: .host
     ))

@@ -765,7 +765,7 @@ public struct AxolotyCommandDispatcher: Sendable {
     private func hardwareResult(required: Bool, device: String?) -> AxolotyCommandResult {
         let selectedDevice = device ?? environment["AXOLOTY_DEVICE"] ?? "/dev/ttyACM0"
         let command = AxolotyCommandPlan(
-            executable: "Tests/Support/embedded-swift-smoke.sh",
+            executable: "Tests/Support/embedded-swift-test.sh",
             environment: ["EMBEDDED_DEVICE": selectedDevice],
             timeoutSeconds: 10 * 60
         )
