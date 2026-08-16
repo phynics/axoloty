@@ -66,7 +66,7 @@ Add Axoloty to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.5.0"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.5.1"),
 ],
 targets: [
     .executableTarget(
@@ -82,7 +82,7 @@ For a wire target in a consumer that already resolves the root package:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.5.0"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.5.1"),
 ],
 targets: [
     .executableTarget(

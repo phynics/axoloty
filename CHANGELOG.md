@@ -12,6 +12,22 @@ fork, through CoatySwift 2.4.0, remain documented in the
 Development toward Axoloty 1.0 is in progress and tracked by the
 [v1 release epic](https://github.com/phynics/axoloty/issues/272).
 
+## [0.5.1] - 2026-08-16
+
+Axoloty 0.5.1 is a patch release.
+
+### Fixed
+
+- Fix a Darwin-only compile error in the Bonjour broker resolver: the warning
+  callback passed a `String` where swift-log's `Logger.Message` requires a
+  string literal, so the file failed to compile on native macOS builds (the
+  Linux CI container never compiles the `#if canImport(Darwin)` path). The
+  dynamic warning text now travels in `metadata` with a stable literal message.
+
+## [0.5.0] - 2026-08-15
+
+Axoloty 0.5.0 is a development checkpoint and is not API-stable.
+
 ### Added
 
 - CI enforces live wire compatibility for protocol-affecting changes: the
@@ -143,7 +159,9 @@ and reproducible compatibility and resource evidence.
 Initial Axoloty prerelease as an independently maintained, modernized fork of
 CoatySwift.
 
-[Unreleased]: https://github.com/phynics/axoloty/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/phynics/axoloty/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/phynics/axoloty/compare/v0.5.0...v0.5.1
+[0.5.0]: https://github.com/phynics/axoloty/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/phynics/axoloty/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/phynics/axoloty/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/phynics/axoloty/compare/v0.1.0...v0.2.0
