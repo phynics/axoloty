@@ -14,7 +14,7 @@ struct ProtocolTraceTests {
         #expect(TraceEventFamily.allCases.count == 13)
         #expect(positiveFamilies == ProtocolTraceCorpus.eventFamilies)
         #expect(malformedFamilies == ProtocolTraceCorpus.eventFamilies)
-        #expect(corpus.count == 33)
+        #expect(corpus.count == 34)
         #expect(corpus.allSatisfy { $0.steps.first?.input.fixtureID.hasPrefix("Tests/ProtocolTrace/Fixtures/family-seeds.json#") == true })
         #expect(corpus.filter { $0.id.hasPrefix("malformed-") }.allSatisfy { $0.steps.first?.input.malformed == true })
         #expect(corpus.contains { trace in
@@ -58,6 +58,7 @@ struct ProtocolTraceTests {
             "negative-unsupported": .unsupported,
             "negative-deadline": .deadlineExpired,
             "negative-payload-limit": .payloadTooLarge,
+            "negative-external-route": .externalRouteMismatch,
         ]
 
         for (traceID, code) in expected {

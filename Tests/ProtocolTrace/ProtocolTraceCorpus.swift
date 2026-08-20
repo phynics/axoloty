@@ -21,6 +21,7 @@ enum ProtocolTraceCorpus {
             deadlineTrace(seed: try fixtureSeed(for: .discover, in: seeds)),
             payloadLimitTrace(seed: try fixtureSeed(for: .channel, in: seeds)),
             externalRouteTrace(seed: associateSeed),
+            incompatibleExternalRouteTrace(seed: associateSeed),
         ])
         return traces
     }
@@ -261,7 +262,7 @@ enum ProtocolTraceCorpus {
         let input = TraceInput(
             family: .channel,
             direction: .inbound,
-            fixtureID: fixtureID(.channel, "oversized"),
+            fixtureID: fixtureID(.channel, "valid+padding-513"),
             fixturePayload: seed.valid + String(repeating: " ", count: 513)
         )
         return singleStep(
@@ -294,6 +295,26 @@ enum ProtocolTraceCorpus {
                 rejection: nil,
                 nextState: TraceState(associationIDs: ["external-route-001"], generation: 1)
             )
+        )
+    }
+
+    private static func incompatibleExternalRouteTrace(seed: FixtureSeed) -> ProtocolTrace {
+        let state = TraceState()
+        let input = TraceInput(
+            family: .associate,
+            direction: .inbound,
+            fixtureID: fixtureID(.associate, "valid"),
+            fixturePayload: seed.valid,
+            objectID: "invalid-route-001",
+            route: "coaty/3/invalid",
+            isExternalRoute: true
+        )
+        return singleStep(
+            id: "negative-external-route",
+            description: "An external-route flag cannot bless a non-binding route",
+            state: state,
+            input: input,
+            expected: rejected(.externalRouteMismatch, "external route flag does not match the binding route", state: state)
         )
     }
 

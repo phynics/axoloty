@@ -13,5 +13,10 @@ test-only implementations over the same contract; equality between them is the
 G2 seam proof. G2's shared processor replaces them; no trace type here is a
 product API.
 
+The payload-limit case derives a 513-byte payload from the `CHN.valid` fixture;
+its `fixtureID` records that deterministic derivation rather than naming a
+nonexistent fixture file. External-route traces use the test binding shape
+`devices/<device>/<endpoint>` and include an incompatible-route rejection.
+
 `IoState` is intentionally not a family: it is a local association signal and
 is not published on MQTT.

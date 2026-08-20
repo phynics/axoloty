@@ -41,6 +41,7 @@ enum TraceRejectionCode: String, Codable, Equatable, Sendable {
     case saturated
     case deadlineExpired
     case correlationMismatch
+    case externalRouteMismatch
 }
 
 struct TraceState: Codable, Equatable, Sendable {
@@ -189,6 +190,7 @@ enum TraceReplayError: Error, Equatable, Sendable {
     case schemaVersion(Int)
     case stateMismatch(traceID: String, sequence: Int)
     case expectedMismatch(traceID: String, sequence: Int)
+    case staticCapacityExceeded(traceID: String, sequence: Int)
 }
 
 protocol TraceReplayAdapter: Sendable {
@@ -267,8 +269,11 @@ struct HostTraceReplayAdapter: TraceReplayAdapter {
             return accepted(state: next, step: step)
 
         case .associate:
-            guard let associationID = input.objectID, input.route != nil else {
+            guard let associationID = input.objectID, let route = input.route else {
                 return rejected(state: state, code: .malformed, reason: "associate requires a route identifier")
+            }
+            guard input.isExternalRoute == Self.isTypedExternalRoute(route) else {
+                return rejected(state: state, code: .externalRouteMismatch, reason: "external route flag does not match the binding route")
             }
             if state.associationIDs.contains(associationID) || input.duplicate {
                 return rejected(state: state, code: .duplicate, reason: "association is already active")
@@ -335,12 +340,17 @@ struct HostTraceReplayAdapter: TraceReplayAdapter {
             nextState: state
         )
     }
+
+    private static func isTypedExternalRoute(_ route: String) -> Bool {
+        let components = route.split(separator: "/", omittingEmptySubsequences: true)
+        return components.count == 3 && components[0] == "devices" && components[1].isEmpty == false && components[2].isEmpty == false
+    }
 }
 
-/// Static-profile replay implemented independently with bounded arrays. It is
-/// intentionally not an alias for the host adapter: equality is evidence that
-/// two storage representations agree on the contract before production
-/// promotion.
+/// Static-profile replay implemented independently with four fixed slots per
+/// finite state table. It is intentionally not an alias for the host adapter:
+/// equality is evidence that two storage representations agree on the
+/// contract before production promotion.
 struct StaticTraceReplayAdapter: TraceReplayAdapter {
     func replay(_ trace: ProtocolTrace) throws -> TraceRun {
         guard trace.schemaVersion == ProtocolTrace.schemaVersion else {
@@ -353,7 +363,7 @@ struct StaticTraceReplayAdapter: TraceReplayAdapter {
             guard step.priorState == state else {
                 throw TraceReplayError.stateMismatch(traceID: trace.id, sequence: step.sequence)
             }
-            let observation = apply(state: state, step: step)
+            let observation = try apply(traceID: trace.id, state: state, step: step)
             guard observation == step.expected else {
                 throw TraceReplayError.expectedMismatch(traceID: trace.id, sequence: step.sequence)
             }
@@ -363,7 +373,51 @@ struct StaticTraceReplayAdapter: TraceReplayAdapter {
         return TraceRun(traceID: trace.id, observations: observations)
     }
 
-    private func apply(state: TraceState, step: TraceStep) -> TraceObservation {
+    private struct FixedSlotTable {
+        private var first: String?
+        private var second: String?
+        private var third: String?
+        private var fourth: String?
+
+        init?(values: [String]) {
+            guard values.count <= 4, Set(values).count == values.count else { return nil }
+            first = values.indices.contains(0) ? values[0] : nil
+            second = values.indices.contains(1) ? values[1] : nil
+            third = values.indices.contains(2) ? values[2] : nil
+            fourth = values.indices.contains(3) ? values[3] : nil
+        }
+
+        var count: Int {
+            (first == nil ? 0 : 1) + (second == nil ? 0 : 1) + (third == nil ? 0 : 1) + (fourth == nil ? 0 : 1)
+        }
+
+        var values: [String] {
+            [first, second, third, fourth].compactMap { $0 }.sorted()
+        }
+
+        func contains(_ value: String) -> Bool {
+            first == value || second == value || third == value || fourth == value
+        }
+
+        mutating func insert(_ value: String) -> Bool {
+            guard !contains(value) else { return false }
+            if first == nil { first = value; return true }
+            if second == nil { second = value; return true }
+            if third == nil { third = value; return true }
+            if fourth == nil { fourth = value; return true }
+            return false
+        }
+
+        mutating func remove(_ value: String) -> Bool {
+            if first == value { first = nil; return true }
+            if second == value { second = nil; return true }
+            if third == value { third = nil; return true }
+            if fourth == value { fourth = nil; return true }
+            return false
+        }
+    }
+
+    private func apply(traceID: String, state: TraceState, step: TraceStep) throws -> TraceObservation {
         let input = step.input
         if input.payloadBytes > step.limits.maximumPayloadBytes {
             return rejected(state: state, code: .payloadTooLarge, reason: "payload exceeds bounded trace workspace")
@@ -378,9 +432,11 @@ struct StaticTraceReplayAdapter: TraceReplayAdapter {
             return rejected(state: state, code: .unsupported, reason: "family is outside the runtime capability set")
         }
 
-        var objects = state.activeObjectIDs
-        var pending = state.pendingCorrelationIDs
-        var associations = state.associationIDs
+        guard var objects = FixedSlotTable(values: state.activeObjectIDs),
+              var pending = FixedSlotTable(values: state.pendingCorrelationIDs),
+              var associations = FixedSlotTable(values: state.associationIDs) else {
+            throw TraceReplayError.staticCapacityExceeded(traceID: traceID, sequence: step.sequence)
+        }
         var generation = state.generation
 
         switch input.family {
@@ -394,22 +450,29 @@ struct StaticTraceReplayAdapter: TraceReplayAdapter {
             guard objects.count < step.limits.maximumObjects else {
                 return rejected(state: state, code: .saturated, reason: "object table is at capacity")
             }
-            objects.append(objectID)
+            guard objects.insert(objectID) else {
+                return rejected(state: state, code: .saturated, reason: "static object table is at capacity")
+            }
             generation += 1
         case .deadvertise:
-            guard let objectID = input.objectID, let index = objects.firstIndex(of: objectID) else {
+            guard let objectID = input.objectID, objects.contains(objectID) else {
                 return rejected(state: state, code: .malformed, reason: "deadvertise requires an active object")
             }
-            objects.remove(at: index)
+            _ = objects.remove(objectID)
             generation += 1
         case .associate:
-            guard let associationID = input.objectID, input.route != nil else {
+            guard let associationID = input.objectID, let route = input.route else {
                 return rejected(state: state, code: .malformed, reason: "associate requires a route identifier")
+            }
+            guard input.isExternalRoute == Self.isTypedExternalRoute(route) else {
+                return rejected(state: state, code: .externalRouteMismatch, reason: "external route flag does not match the binding route")
             }
             guard !associations.contains(associationID), !input.duplicate else {
                 return rejected(state: state, code: .duplicate, reason: "association is already active")
             }
-            associations.append(associationID)
+            guard associations.insert(associationID) else {
+                return rejected(state: state, code: .saturated, reason: "static association table is at capacity")
+            }
             generation += 1
         case .discover, .query, .update, .call:
             guard let correlationID = input.correlationID else {
@@ -421,13 +484,15 @@ struct StaticTraceReplayAdapter: TraceReplayAdapter {
             guard pending.count < step.limits.maximumPendingCorrelations else {
                 return rejected(state: state, code: .saturated, reason: "pending correlation table is at capacity")
             }
-            pending.append(correlationID)
+            guard pending.insert(correlationID) else {
+                return rejected(state: state, code: .saturated, reason: "static pending table is at capacity")
+            }
             generation += 1
         case .resolve, .retrieve, .complete, .return:
-            guard let correlationID = input.correlationID, let index = pending.firstIndex(of: correlationID) else {
+            guard let correlationID = input.correlationID, pending.contains(correlationID) else {
                 return rejected(state: state, code: .correlationMismatch, reason: "response correlation is not pending")
             }
-            pending.remove(at: index)
+            _ = pending.remove(correlationID)
             generation += 1
         case .channel, .ioValue:
             break
@@ -441,12 +506,17 @@ struct StaticTraceReplayAdapter: TraceReplayAdapter {
             )],
             rejection: nil,
             nextState: TraceState(
-                activeObjectIDs: objects,
-                pendingCorrelationIDs: pending,
-                associationIDs: associations,
+                activeObjectIDs: objects.values,
+                pendingCorrelationIDs: pending.values,
+                associationIDs: associations.values,
                 generation: generation
             )
         )
+    }
+
+    private static func isTypedExternalRoute(_ route: String) -> Bool {
+        let components = route.split(separator: "/", omittingEmptySubsequences: true)
+        return components.count == 3 && components[0] == "devices" && components[1].isEmpty == false && components[2].isEmpty == false
     }
 
     private func rejected(state: TraceState, code: TraceRejectionCode, reason: String) -> TraceObservation {

@@ -101,7 +101,7 @@
           "type": ["object", "null"],
           "required": ["code", "reason"],
           "properties": {
-            "code": { "enum": ["malformed", "payloadTooLarge", "unsupported", "duplicate", "saturated", "deadlineExpired", "correlationMismatch"] },
+            "code": { "enum": ["malformed", "payloadTooLarge", "unsupported", "duplicate", "saturated", "deadlineExpired", "correlationMismatch", "externalRouteMismatch"] },
             "reason": { "type": "string", "minLength": 1 }
           },
           "additionalProperties": false
