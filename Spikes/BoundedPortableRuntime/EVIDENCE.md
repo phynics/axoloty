@@ -3,12 +3,15 @@
 # Bounded portable runtime evidence
 
 This maintained G1 probe resolves issue #629 without promoting spike types into
-`AxolotyWire`, `AxolotyProtocol`, or a shipped product. The reviewed decision
-candidate is `6a940299`. The physical-device artifact was captured before the
-history-only G0 rebase at `0d45c33`; the complete
-`Spikes/BoundedPortableRuntime` subtree is byte-identical between those two
-commits. After the rebase, the host, sanitizer, and ESP32-C6 cross-build nodes
-were rerun successfully at `f9f2d6cf`.
+`AxolotyWire`, `AxolotyProtocol`, or a shipped product. The decision-bearing
+runtime candidate is `90be297f`. Its embedded `main.swift`, C bridge, SDK
+configuration, and shared storage/parser sources are byte-identical to the
+physical-device candidate `0d45c33`. After removing unrelated production
+commits, the host, sanitizer, and ESP32-C6 cross-build nodes were rerun at
+`7ec38ebc`; the rebuilt firmware and section measurements exactly match the
+device candidate. The retained device runs also pass the tightened evidence
+validator after their run indexes are derived from the two ordered capture
+files per capacity.
 
 Run the hardware-free nodes from the repository root:
 
