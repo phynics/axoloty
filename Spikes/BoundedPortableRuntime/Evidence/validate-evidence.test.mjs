@@ -10,7 +10,9 @@ import test from "node:test";
 
 const directory = path.dirname(new URL(import.meta.url).pathname);
 const validator = path.join(directory, "validate-evidence.mjs");
+const assembler = path.join(directory, "assemble-hardware-evidence.mjs");
 const schema = path.join(directory, "evidence.schema.json");
+const repositoryRoot = path.resolve(directory, "../../..");
 const budgetManifest = path.resolve(directory, "../../../Benchmarks/Baselines/budget-manifest.json");
 const budgetFingerprint = crypto.createHash("sha256").update(fs.readFileSync(budgetManifest)).digest("hex");
 
@@ -116,6 +118,39 @@ test("rejects drift and additional fields", () => withEvidence({
 test("accepts complete two-run hardware evidence", () => withEvidence(hardwareEvidence(), evidence => {
   assert.doesNotThrow(() => execFileSync(process.execPath, [validator, schema, evidence]));
 }));
+
+test("reassembles retained raw runs without device access", () => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "g1-retained-hardware-"));
+  const runsDirectory = path.join(scratch, "hardware-runs");
+  fs.mkdirSync(runsDirectory);
+  const expected = hardwareEvidence();
+  fs.writeFileSync(path.join(scratch, "embedded-evidence.json"), JSON.stringify({
+    configurations: expected.configurations.map(configuration => configuration.crossBuild),
+  }));
+  for (const configuration of expected.configurations) {
+    for (const run of configuration.runs) {
+      const raw = {...run};
+      delete raw.runNumber;
+      delete raw.relativeMAD;
+      fs.writeFileSync(
+        path.join(runsDirectory, `capacity-${configuration.capacity}-run-${run.runNumber}.json`),
+        JSON.stringify(raw),
+      );
+    }
+  }
+  try {
+    execFileSync(process.execPath, [assembler, repositoryRoot, scratch, expected.candidateSha]);
+    const rebuiltPath = path.join(scratch, "hardware-evidence.json");
+    const rebuilt = JSON.parse(fs.readFileSync(rebuiltPath));
+    assert.deepEqual(
+      rebuilt.configurations.flatMap(configuration => configuration.runs.map(run => run.runNumber)),
+      [1, 2, 1, 2, 1, 2, 1, 2],
+    );
+    assert.doesNotThrow(() => execFileSync(process.execPath, [validator, schema, rebuiltPath]));
+  } finally {
+    fs.rmSync(scratch, {recursive: true});
+  }
+});
 
 test("rejects empty hardware configurations and missing runs", () => {
   const empty = hardwareEvidence();

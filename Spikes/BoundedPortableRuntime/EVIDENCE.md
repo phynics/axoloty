@@ -31,6 +31,11 @@ Generated, schema-validated reports and raw logs are written under
 `.testing/g1-bounded-runtime/<candidate-sha>/`. Build products and generated
 Swift are not committed.
 
+To reconstruct a reviewed report from retained raw captures without flashing
+the board again, run `Evidence/assemble-hardware-evidence.mjs` with the
+repository root, candidate artifact directory, and candidate SHA, then pass the
+result to `Evidence/validate-evidence.mjs`.
+
 ## Reviewed result
 
 The host ran capacities 1, 4, 16, and 64. Heaptrack measured zero allocation-

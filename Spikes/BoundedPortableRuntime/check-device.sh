@@ -42,66 +42,7 @@ for capacity in 1 4 16 64; do
     done
 done
 
-CANDIDATE_SHA="$candidate" ROOT="$root" ARTIFACT="$artifact" node <<'NODE'
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
-const root = process.env.ROOT;
-const artifact = process.env.ARTIFACT;
-const budgetPath = path.join(root, 'Benchmarks/Baselines/budget-manifest.json');
-const budgetSource = fs.readFileSync(budgetPath);
-const budgetManifest = JSON.parse(budgetSource);
-const embedded = JSON.parse(fs.readFileSync(path.join(artifact, 'embedded-evidence.json')));
-const median = values => {
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
-};
-const relativeMAD = values => {
-  const center = median(values);
-  return center === 0 ? 0 : median(values.map(value => Math.abs(value - center))) / center;
-};
-const configurations = [1, 4, 16, 64].map(capacity => {
-  const crossBuild = embedded.configurations.find(value => value.capacity === capacity);
-  const runs = [1, 2].map(run => JSON.parse(fs.readFileSync(
-    path.join(artifact, 'hardware-runs', `capacity-${capacity}-run-${run}.json`), 'utf8'
-  )));
-  return {
-    capacity,
-    crossBuild,
-    runs: runs.map((run, index) => ({
-      ...run,
-      runNumber: index + 1,
-      relativeMAD: relativeMAD(run.rateSamplesPerSecond),
-    })),
-  };
-});
-const first = configurations[0].runs[0];
-const noiseLimit = budgetManifest.noisePolicy.relativeMAD;
-const passed = configurations.every(configuration => configuration.runs.every(run =>
-  run.initializationAllocations === 0 &&
-  run.steadyStateAllocations === 0 &&
-  run.mainStackHighWater >= 4000 &&
-  run.sustainedRatePerSecond >= 125 &&
-  run.relativeMAD <= noiseLimit &&
-  configuration.crossBuild.firmwareBytes <= 1048576
-));
-const report = {
-  schemaVersion: 1,
-  evidenceKind: 'hardware',
-  candidateSha: process.env.CANDIDATE_SHA,
-  status: passed ? 'passed' : 'failed',
-  board: {target: 'esp32c6', revision: String(first.boardRevision), flashBytes: first.flashBytes},
-  budget: {
-    manifestSha256: crypto.createHash('sha256').update(budgetSource).digest('hex'),
-    relativeMAD: noiseLimit,
-    allocationRule: budgetManifest.noisePolicy.allocationVariance,
-    stackReserveBytes: 4000,
-  },
-  configurations,
-};
-fs.writeFileSync(path.join(artifact, 'hardware-evidence.json'), JSON.stringify(report, null, 2) + '\n');
-NODE
+node "$probe/Evidence/assemble-hardware-evidence.mjs" "$root" "$artifact" "$candidate"
 
 node "$probe/Evidence/validate-evidence.mjs" \
     "$probe/Evidence/evidence.schema.json" "$artifact/hardware-evidence.json"
