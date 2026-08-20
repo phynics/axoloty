@@ -30,6 +30,20 @@ Axoloty matches the pinned CoatyJS reference where possible. A captured discrepa
 
 New Axoloty primitives must not add proprietary event codes to `coaty/3`; they belong to separately versioned Axoloty extension profiles.
 
+## G2 trace contract
+
+**Status: Later gate (G2, test-only foundation).**
+
+The fixture-backed corpus and JSON contract in
+[`Tests/ProtocolTrace/`](../../Tests/ProtocolTrace/) record deterministic prior
+state, capabilities, finite limits, inputs, normalized actions, and structured
+rejections for every Coaty Core family. The host and static replay adapters are
+independent test implementations used to prove semantic equality before any
+runtime migration. They are not production protocol processors and do not
+change the current wire authority. Issues [#638](https://github.com/phynics/axoloty/issues/638)
+through [#641](https://github.com/phynics/axoloty/issues/641) own the production
+package, processor, state, and typed external-route boundaries.
+
 ## External IO routes
 
 **Status: Later gate (G5).** Current decoding behavior is retained during migration; G5 owns the typed portable boundary and final evidence.

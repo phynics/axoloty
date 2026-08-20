@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "families": [
+    {"family": "ADV", "valid": "{\"object\":{\"objectId\":\"test\"}}", "malformed": "{\"object\":", "externalRoute": "{\"ioSourceId\":\"source-001\",\"ioActorId\":\"actor-001\",\"route\":\"devices/001/temperature\"}"},
+    {"family": "DAD", "valid": "{\"objectIds\":[\"object-001\"]}", "malformed": "{\"objectIds\":", "externalRoute": "{\"objectIds\":[\"object-001\"],"},
+    {"family": "CHN", "valid": "{\"object\":{\"id\":\"x\"}}", "malformed": "{\"object\":", "externalRoute": "{\"object\":{\"id\":\"x\"},\"privateData\":"},
+    {"family": "ASC", "valid": "{\"ioSourceId\":\"source-001\",\"ioActorId\":\"actor-001\"}", "malformed": "{\"ioSourceId\":", "externalRoute": "{\"ioSourceId\":\"source-001\",\"ioActorId\":\"actor-001\",\"route\":\"devices/001/temperature\"}"},
+    {"family": "IOV", "valid": "{\"payload\":1}", "malformed": "{\"payload\":", "externalRoute": "{\"payload\":1,"},
+    {"family": "DSC", "valid": "{}", "malformed": "{\"objectTypes\":", "externalRoute": "{\"objectTypes\":[\"com.example.Sensor\"],"},
+    {"family": "RSV", "valid": "{\"object\":{\"id\":\"x\"}}", "malformed": "{\"object\":", "externalRoute": "{\"object\":{\"id\":\"x\"},"},
+    {"family": "QRY", "valid": "{}", "malformed": "{\"objectTypes\":", "externalRoute": "{\"objectTypes\":[\"com.example.Sensor\"],"},
+    {"family": "RTV", "valid": "{\"object\":{\"id\":\"x\"}}", "malformed": "{\"objects\":", "externalRoute": "{\"objects\":[{\"id\":\"x\"}],"},
+    {"family": "UPD", "valid": "{\"object\":{\"id\":\"x\"}}", "malformed": "{\"object\":", "externalRoute": "{\"object\":{\"id\":\"x\"},"},
+    {"family": "CPL", "valid": "{}", "malformed": "{\"object\":", "externalRoute": "{\"object\":{\"id\":\"x\"},"},
+    {"family": "CLL", "valid": "{\"parameters\":{\"value\":1},\"filter\":null}", "malformed": "{\"parameters\":", "externalRoute": "{\"parameters\":{\"value\":1},"},
+    {"family": "RTN", "valid": "{}", "malformed": "{\"result\":", "externalRoute": "{\"result\":{\"answer\":1},"}
+  ]
+}

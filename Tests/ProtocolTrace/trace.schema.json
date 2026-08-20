@@ -52,18 +52,27 @@
         },
         "input": {
           "type": "object",
-          "required": ["family", "direction", "fixturePayload", "payloadBytes", "duplicate", "malformed", "deadlineExpired"],
+          "required": ["family", "direction", "fixtureID", "fixturePayload", "payloadBytes", "isExternalRoute", "duplicate", "malformed", "deadlineExpired"],
           "properties": {
             "family": { "$ref": "#/$defs/family" },
             "direction": { "enum": ["inbound", "outbound"] },
+            "fixtureID": { "type": "string", "minLength": 1 },
             "fixturePayload": { "type": "string" },
             "payloadBytes": { "type": "integer", "minimum": 0 },
             "objectID": { "type": ["string", "null"] },
             "correlationID": { "type": ["string", "null"] },
+            "route": { "type": ["string", "null"] },
+            "isExternalRoute": { "type": "boolean" },
             "duplicate": { "type": "boolean" },
             "malformed": { "type": "boolean" },
             "deadlineExpired": { "type": "boolean" }
           },
+          "allOf": [
+            {
+              "if": { "properties": { "isExternalRoute": { "const": true } } },
+              "then": { "required": ["route"], "properties": { "route": { "type": "string", "minLength": 1 } } }
+            }
+          ],
           "additionalProperties": false
         },
         "localOperation": { "enum": ["processInbound", "publishOutbound"] },

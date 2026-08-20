@@ -6,24 +6,31 @@ import Testing
 @Suite("G2 protocol trace corpus")
 struct ProtocolTraceTests {
     @Test("the corpus covers every Coaty Core family with positive and malformed traces")
-    func corpusCoverage() {
-        let positiveFamilies = Set(ProtocolTraceCorpus.all.filter { $0.id.hasPrefix("positive-") }.compactMap { $0.steps.first?.input.family })
-        let malformedFamilies = Set(ProtocolTraceCorpus.all.filter { $0.id.hasPrefix("malformed-") }.compactMap { $0.steps.first?.input.family })
+    func corpusCoverage() throws {
+        let corpus = try ProtocolTraceCorpus.load()
+        let positiveFamilies = Set(corpus.filter { $0.id.hasPrefix("positive-") }.compactMap { $0.steps.first?.input.family })
+        let malformedFamilies = Set(corpus.filter { $0.id.hasPrefix("malformed-") }.compactMap { $0.steps.first?.input.family })
 
         #expect(TraceEventFamily.allCases.count == 13)
         #expect(positiveFamilies == ProtocolTraceCorpus.eventFamilies)
         #expect(malformedFamilies == ProtocolTraceCorpus.eventFamilies)
-        #expect(ProtocolTraceCorpus.all.count == 32)
+        #expect(corpus.count == 33)
+        #expect(corpus.allSatisfy { $0.steps.first?.input.fixtureID.hasPrefix("Tests/ProtocolTrace/Fixtures/family-seeds.json#") == true })
+        #expect(corpus.filter { $0.id.hasPrefix("malformed-") }.allSatisfy { $0.steps.first?.input.malformed == true })
+        #expect(corpus.contains { trace in
+            trace.id == "positive-external-route" && trace.steps.first?.input.isExternalRoute == true
+        })
     }
 
     @Test("canonical serialization is stable and schema-shaped")
     func canonicalSerialization() throws {
-        let first = try ProtocolTraceCanonicalEncoding.data(for: ProtocolTraceCorpus.all)
-        let second = try ProtocolTraceCanonicalEncoding.data(for: ProtocolTraceCorpus.all)
+        let corpus = try ProtocolTraceCorpus.load()
+        let first = try ProtocolTraceCanonicalEncoding.data(for: corpus)
+        let second = try ProtocolTraceCanonicalEncoding.data(for: corpus)
         #expect(first == second)
 
         let document = try #require(JSONSerialization.jsonObject(with: first) as? [[String: Any]])
-        #expect(document.count == ProtocolTraceCorpus.all.count)
+        #expect(document.count == corpus.count)
         #expect(document.allSatisfy { ($0["schemaVersion"] as? Int) == ProtocolTrace.schemaVersion })
         #expect(document.allSatisfy { $0["initialState"] is [String: Any] })
         #expect(document.allSatisfy { $0["steps"] is [[String: Any]] })
@@ -31,16 +38,18 @@ struct ProtocolTraceTests {
 
     @Test("host and static replay adapters produce identical observations")
     func hostAndStaticReplayEquality() throws {
-        let host = try replayAll(profile: "host")
-        let `static` = try replayAll(profile: "static")
+        let corpus = try ProtocolTraceCorpus.load()
+        let host = try replayAll(adapter: HostTraceReplayAdapter(), corpus: corpus)
+        let `static` = try replayAll(adapter: StaticTraceReplayAdapter(), corpus: corpus)
         #expect(host == `static`)
-        #expect(host.count == ProtocolTraceCorpus.all.count)
+        #expect(host.count == corpus.count)
         #expect(host.allSatisfy { $0.observations.count == 1 })
     }
 
     @Test("bounded failures are explicit and state preserving")
     func boundedFailures() throws {
-        let runs = try replayAll(profile: "host")
+        let corpus = try ProtocolTraceCorpus.load()
+        let runs = try replayAll(adapter: HostTraceReplayAdapter(), corpus: corpus)
         let byID = Dictionary(uniqueKeysWithValues: runs.map { ($0.traceID, $0) })
         let expected: [String: TraceRejectionCode] = [
             "negative-saturation": .saturated,
@@ -56,13 +65,13 @@ struct ProtocolTraceTests {
             let observation = try #require(run.observations.first)
             #expect(observation.rejection?.code == code)
             #expect(observation.actions.isEmpty)
-            #expect(observation.nextState == ProtocolTraceCorpus.all.first { $0.id == traceID }?.initialState)
+            #expect(observation.nextState == corpus.first { $0.id == traceID }?.initialState)
         }
     }
 
     @Test("replay rejects a broken state chain")
     func brokenStateChainIsRejected() throws {
-        let original = try #require(ProtocolTraceCorpus.all.first { $0.id == "positive-ADV" })
+        let original = try #require(try ProtocolTraceCorpus.load().first { $0.id == "positive-ADV" })
         let brokenStep = TraceStep(
             sequence: original.steps[0].sequence,
             timeMilliseconds: original.steps[0].timeMilliseconds,
@@ -81,7 +90,7 @@ struct ProtocolTraceTests {
         )
 
         #expect(throws: TraceReplayError.stateMismatch(traceID: original.id, sequence: 1)) {
-            _ = try ContractTraceReplayAdapter(profile: "host").replay(broken)
+            _ = try HostTraceReplayAdapter().replay(broken)
         }
     }
 
@@ -94,8 +103,7 @@ struct ProtocolTraceTests {
         #expect((schema["required"] as? [String]) == ["schemaVersion", "id", "description", "initialState", "steps"])
     }
 
-    private func replayAll(profile: String) throws -> [TraceRun] {
-        let adapter = ContractTraceReplayAdapter(profile: profile)
-        return try ProtocolTraceCorpus.all.map { try adapter.replay($0) }
+    private func replayAll(adapter: any TraceReplayAdapter, corpus: [ProtocolTrace]) throws -> [TraceRun] {
+        try corpus.map { try adapter.replay($0) }
     }
 }

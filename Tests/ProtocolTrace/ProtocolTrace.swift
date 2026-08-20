@@ -85,10 +85,13 @@ struct TraceLimits: Codable, Equatable, Sendable {
 struct TraceInput: Codable, Equatable, Sendable {
     let family: TraceEventFamily
     let direction: TraceDirection
+    let fixtureID: String
     let fixturePayload: String
     let payloadBytes: Int
     let objectID: String?
     let correlationID: String?
+    let route: String?
+    let isExternalRoute: Bool
     let duplicate: Bool
     let malformed: Bool
     let deadlineExpired: Bool
@@ -96,22 +99,32 @@ struct TraceInput: Codable, Equatable, Sendable {
     init(
         family: TraceEventFamily,
         direction: TraceDirection,
+        fixtureID: String,
         fixturePayload: String,
         objectID: String? = nil,
         correlationID: String? = nil,
+        route: String? = nil,
+        isExternalRoute: Bool = false,
         duplicate: Bool = false,
-        malformed: Bool = false,
+        malformed: Bool? = nil,
         deadlineExpired: Bool = false
     ) {
         self.family = family
         self.direction = direction
+        self.fixtureID = fixtureID
         self.fixturePayload = fixturePayload
         self.payloadBytes = fixturePayload.utf8.count
         self.objectID = objectID
         self.correlationID = correlationID
+        self.route = route
+        self.isExternalRoute = isExternalRoute
         self.duplicate = duplicate
-        self.malformed = malformed
+        self.malformed = malformed ?? !Self.isValidJSON(fixturePayload)
         self.deadlineExpired = deadlineExpired
+    }
+
+    private static func isValidJSON(_ payload: String) -> Bool {
+        (try? JSONSerialization.jsonObject(with: Data(payload.utf8), options: [.fragmentsAllowed])) != nil
     }
 }
 
@@ -179,16 +192,13 @@ enum TraceReplayError: Error, Equatable, Sendable {
 }
 
 protocol TraceReplayAdapter: Sendable {
-    var profile: String { get }
     func replay(_ trace: ProtocolTrace) throws -> TraceRun
 }
 
 /// Canonical contract semantics used by both replay profiles until the shared
 /// production processor lands in G2. The adapter is intentionally test-only;
 /// later gates replace it without changing the trace schema or corpus.
-struct ContractTraceReplayAdapter: TraceReplayAdapter {
-    let profile: String
-
+struct HostTraceReplayAdapter: TraceReplayAdapter {
     func replay(_ trace: ProtocolTrace) throws -> TraceRun {
         guard trace.schemaVersion == ProtocolTrace.schemaVersion else {
             throw TraceReplayError.schemaVersion(trace.schemaVersion)
@@ -257,7 +267,7 @@ struct ContractTraceReplayAdapter: TraceReplayAdapter {
             return accepted(state: next, step: step)
 
         case .associate:
-            guard let associationID = input.objectID else {
+            guard let associationID = input.objectID, input.route != nil else {
                 return rejected(state: state, code: .malformed, reason: "associate requires a route identifier")
             }
             if state.associationIDs.contains(associationID) || input.duplicate {
@@ -315,6 +325,127 @@ struct ContractTraceReplayAdapter: TraceReplayAdapter {
             )],
             rejection: nil,
             nextState: state
+        )
+    }
+
+    private func rejected(state: TraceState, code: TraceRejectionCode, reason: String) -> TraceObservation {
+        TraceObservation(
+            actions: [],
+            rejection: TraceRejection(code: code, reason: reason),
+            nextState: state
+        )
+    }
+}
+
+/// Static-profile replay implemented independently with bounded arrays. It is
+/// intentionally not an alias for the host adapter: equality is evidence that
+/// two storage representations agree on the contract before production
+/// promotion.
+struct StaticTraceReplayAdapter: TraceReplayAdapter {
+    func replay(_ trace: ProtocolTrace) throws -> TraceRun {
+        guard trace.schemaVersion == ProtocolTrace.schemaVersion else {
+            throw TraceReplayError.schemaVersion(trace.schemaVersion)
+        }
+
+        var state = trace.initialState
+        var observations: [TraceObservation] = []
+        for step in trace.steps {
+            guard step.priorState == state else {
+                throw TraceReplayError.stateMismatch(traceID: trace.id, sequence: step.sequence)
+            }
+            let observation = apply(state: state, step: step)
+            guard observation == step.expected else {
+                throw TraceReplayError.expectedMismatch(traceID: trace.id, sequence: step.sequence)
+            }
+            state = observation.nextState
+            observations.append(observation)
+        }
+        return TraceRun(traceID: trace.id, observations: observations)
+    }
+
+    private func apply(state: TraceState, step: TraceStep) -> TraceObservation {
+        let input = step.input
+        if input.payloadBytes > step.limits.maximumPayloadBytes {
+            return rejected(state: state, code: .payloadTooLarge, reason: "payload exceeds bounded trace workspace")
+        }
+        if input.malformed {
+            return rejected(state: state, code: .malformed, reason: "fixture is marked malformed")
+        }
+        if input.deadlineExpired {
+            return rejected(state: state, code: .deadlineExpired, reason: "operation deadline has elapsed")
+        }
+        if !step.capabilities.supportedFamilies.contains(input.family) {
+            return rejected(state: state, code: .unsupported, reason: "family is outside the runtime capability set")
+        }
+
+        var objects = state.activeObjectIDs
+        var pending = state.pendingCorrelationIDs
+        var associations = state.associationIDs
+        var generation = state.generation
+
+        switch input.family {
+        case .advertise:
+            guard let objectID = input.objectID else {
+                return rejected(state: state, code: .malformed, reason: "advertise requires an object identifier")
+            }
+            guard !objects.contains(objectID), !input.duplicate else {
+                return rejected(state: state, code: .duplicate, reason: "object is already active")
+            }
+            guard objects.count < step.limits.maximumObjects else {
+                return rejected(state: state, code: .saturated, reason: "object table is at capacity")
+            }
+            objects.append(objectID)
+            generation += 1
+        case .deadvertise:
+            guard let objectID = input.objectID, let index = objects.firstIndex(of: objectID) else {
+                return rejected(state: state, code: .malformed, reason: "deadvertise requires an active object")
+            }
+            objects.remove(at: index)
+            generation += 1
+        case .associate:
+            guard let associationID = input.objectID, input.route != nil else {
+                return rejected(state: state, code: .malformed, reason: "associate requires a route identifier")
+            }
+            guard !associations.contains(associationID), !input.duplicate else {
+                return rejected(state: state, code: .duplicate, reason: "association is already active")
+            }
+            associations.append(associationID)
+            generation += 1
+        case .discover, .query, .update, .call:
+            guard let correlationID = input.correlationID else {
+                return rejected(state: state, code: .malformed, reason: "request requires a correlation identifier")
+            }
+            guard !pending.contains(correlationID), !input.duplicate else {
+                return rejected(state: state, code: .duplicate, reason: "correlation is already pending")
+            }
+            guard pending.count < step.limits.maximumPendingCorrelations else {
+                return rejected(state: state, code: .saturated, reason: "pending correlation table is at capacity")
+            }
+            pending.append(correlationID)
+            generation += 1
+        case .resolve, .retrieve, .complete, .return:
+            guard let correlationID = input.correlationID, let index = pending.firstIndex(of: correlationID) else {
+                return rejected(state: state, code: .correlationMismatch, reason: "response correlation is not pending")
+            }
+            pending.remove(at: index)
+            generation += 1
+        case .channel, .ioValue:
+            break
+        }
+
+        return TraceObservation(
+            actions: [TraceAction(
+                kind: step.localOperation == .publishOutbound ? "publish" : "deliver",
+                family: input.family,
+                correlationID: input.correlationID
+            )],
+            rejection: nil,
+            nextState: TraceState(
+                activeObjectIDs: objects,
+                pendingCorrelationIDs: pending,
+                associationIDs: associations,
+                generation: generation
+            )
         )
     }
 
