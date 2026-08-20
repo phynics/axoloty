@@ -38,6 +38,7 @@ DEV_IMAGE="${DEV_IMAGE:-localhost/axoloty-dev:latest}"
 JS_IMAGE="${JS_IMAGE:-localhost/coatyswift-wire-coatyjs:2.4.0}"
 SPM_CACHE_DIR="${SPM_CACHE_DIR:-$ROOT/.swiftpm-cache}"
 BUILD_DIR="${BUILD_DIR:-/tmp/coaty-swift-build/.git/swift-6.3-linux/debug}"
+SWIFTPM_MODULECACHE_OVERRIDE=/tmp/axoloty-wire-module-cache
 NAMESPACE="wire-lifecycle-$SCENARIO-$RUN_ID"
 CAPTURE="$OUT/axoloty-$SCENARIO.jsonl"
 CAPTURE_READY="$OUT/axoloty-$SCENARIO.capture-ready"
@@ -113,7 +114,9 @@ ENV_FLAG="$(
 runtime run -d -t --name "$SUBJECT" --network "$NETWORK" \
     -v "$ROOT:/workspace" -v "$SPM_CACHE_DIR:/swiftpm-cache" -v "$BUILD_DIR:/swift-build" -w /workspace \
     -e "$ENV_FLAG=1" -e WIRE_BROKER_HOST="$BROKER" -e WIRE_BROKER_PORT=1883 -e WIRE_NAMESPACE="$NAMESPACE" \
-    "$DEV_IMAGE" swift test --skip-build --scratch-path /swift-build --cache-path /swiftpm-cache --disable-automatic-resolution \
+    -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
+    "$DEV_IMAGE" swift test -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
+    --skip-build --scratch-path /swift-build --cache-path /swiftpm-cache --disable-automatic-resolution \
     --filter "$TEST_NAME" >/dev/null
 
 # Wait for the Swift test to complete.

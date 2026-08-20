@@ -191,6 +191,8 @@ test("tool launchers use the isolated Tools package and scratch directory", () =
     assert.match(launcher, /scratch_path=\$\{TOOLING_BUILD_DIR:-\/workspace\/\.build\/tooling\}/);
     assert.match(launcher, /--scratch-path "\$scratch_path"/);
     assert.match(launcher, /--cache-path/);
+    assert.match(launcher, /module_cache_path=.*axoloty-tooling-module-cache/);
+    assert.match(launcher, /-Xswiftc -module-cache-path -Xswiftc "\$module_cache_path"/);
     assert.match(launcher, new RegExp(`\\b${executable}\\b`));
   }
 });

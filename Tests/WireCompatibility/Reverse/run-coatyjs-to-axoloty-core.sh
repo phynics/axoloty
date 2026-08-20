@@ -22,6 +22,7 @@ CACHE_NAMESPACE="${CACHE_NAMESPACE:-swift-6.3-linux}"
 REPOSITORY_NAME="${REPOSITORY_NAME:-$(git -C "$ROOT_DIR" rev-parse --git-common-dir | sed 's|/.git$||' | xargs basename)}"
 BUILD_DIR="${BUILD_DIR:-/tmp/coaty-swift-build/$REPOSITORY_NAME/$CACHE_NAMESPACE/debug}"
 SPM_CACHE_DIR="${SPM_CACHE_DIR:-$HOME/.cache/coaty-swift/swiftpm/$CACHE_NAMESPACE}"
+SWIFTPM_MODULECACHE_OVERRIDE=/tmp/axoloty-wire-module-cache
 SIGNAL_DIR=$(mktemp -d)
 CONSUMER=""
 
@@ -78,7 +79,9 @@ for scenario in $SCENARIOS; do
         -e WIRE_JS_TO_MODERN_LIVE=1 -e WIRE_SCENARIO="$scenario" \
         -e WIRE_BROKER_HOST="$BROKER" -e WIRE_BROKER_PORT=1883 -e WIRE_NAMESPACE=wire-compat-v1 \
         -e WIRE_READY_FILE="/signals/$scenario.ready" \
-        "$DEV_IMAGE" swift test --cache-path /workspace/.swiftpm-cache --disable-automatic-resolution \
+        -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
+        "$DEV_IMAGE" swift test -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
+        --cache-path /workspace/.swiftpm-cache --disable-automatic-resolution \
         --filter "$test_filter" >/dev/null
 
     for _ in $(seq 1 "$CONSUMER_READY_TIMEOUT_SECONDS"); do
