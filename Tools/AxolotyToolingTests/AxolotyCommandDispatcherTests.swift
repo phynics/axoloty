@@ -513,9 +513,9 @@ func wireCaptureRunsEveryNodeThroughSupportedBridge() throws {
     #expect(result.exitCode == 0)
     let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
     #expect(manifest.results.allSatisfy { $0.status == .passed })
-    #expect(runner.commands.count == 10)
-    #expect(runner.commands.prefix(2).allSatisfy { $0.executionContext == .project })
-    #expect(runner.commands.dropFirst(2).dropLast().allSatisfy { $0.executionContext == .host })
+    #expect(runner.commands.count == 11)
+    #expect(runner.commands.prefix(3).allSatisfy { $0.executionContext == .project })
+    #expect(runner.commands.dropFirst(3).dropLast().allSatisfy { $0.executionContext == .host })
     #expect(runner.commands.last?.executionContext == .project)
     #expect(clock.now - startedAt < .seconds(5))
 }

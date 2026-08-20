@@ -1,6 +1,6 @@
-# Axoloty 0.2 API documentation
+# Axoloty 0.5.1 API documentation
 
-> Axoloty 0.2 is a development checkpoint. Public APIs may continue to
+> Axoloty 0.5.1 is a development checkpoint. Public APIs may continue to
 > change before 1.0.
 
 ## Borrowed-value lifetime rules

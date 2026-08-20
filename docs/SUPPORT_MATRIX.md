@@ -1,7 +1,8 @@
-# Axoloty 0.4 support matrix
+# Axoloty 0.5.1 support matrix
 
-This matrix records the support level for each capability in the 0.4
-checkpoint, backed by behavioral test evidence. Support levels use a
+This matrix records the support level for each capability in the 0.5.1
+checkpoint, backed by behavioral test evidence. The 0.6 architecture-alignment
+delta is tracked separately in the roadmap and gate issues. Support levels use a
 consistent vocabulary:
 
 - **Validated** — implementation with behavioral tests, failure/boundary

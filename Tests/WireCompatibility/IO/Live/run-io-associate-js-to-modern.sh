@@ -27,6 +27,7 @@ JS_IMAGE="${JS_IMAGE:-localhost/coatyswift-wire-coatyjs:2.4.0}"
 CONSUMER_LOG=$(mktemp)
 OUTPUT_DIR="${WIRE_OUTPUT_DIR:-$ROOT_DIR/.testing/wire/io/associate-js-to-modern}"
 SPM_CACHE_DIR="${SPM_CACHE_DIR:-$ROOT_DIR/.swiftpm-cache}"
+SWIFTPM_MODULECACHE_OVERRIDE=/tmp/axoloty-wire-module-cache
 
 cleanup() {
     runtime rm -f "$SOURCE" "$CONSUMER" "$PROBE" "$BROKER" >/dev/null 2>&1 || true
@@ -66,7 +67,9 @@ runtime run -d -t --name "$CONSUMER" --network "$NETWORK" \
     -v "$ROOT_DIR:/workspace" -v "$SPM_CACHE_DIR:/swiftpm-cache" -w /workspace \
     -e WIRE_IO_JS_TO_MODERN_LIVE=1 -e WIRE_BROKER_HOST="$BROKER" \
     -e WIRE_BROKER_PORT=1883 -e WIRE_NAMESPACE=wire-compat-v1 \
-    "$DEV_IMAGE" swift test --cache-path /swiftpm-cache --disable-automatic-resolution --filter AxolotyIoAssociateTests >/dev/null
+    -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
+    "$DEV_IMAGE" swift test -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
+    --cache-path /swiftpm-cache --disable-automatic-resolution --filter AxolotyIoAssociateTests >/dev/null
 
 for _ in $(seq 1 240); do
     runtime logs "$CONSUMER" >"$CONSUMER_LOG" 2>&1

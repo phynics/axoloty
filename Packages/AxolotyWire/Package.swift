@@ -13,7 +13,7 @@ import PackageDescription
 /// target directly and re-exports its public symbols through
 /// ``WireImportShim`` so existing `import Axoloty` clients keep working.
 ///
-/// See `docs/wire-extraction-boundaries.md` for the boundary contract.
+/// See the repository `ARCHITECTURE.md` for the boundary contract.
 let package = Package(
     name: "AxolotyWire",
     products: [
