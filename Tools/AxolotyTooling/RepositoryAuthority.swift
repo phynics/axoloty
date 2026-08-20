@@ -102,8 +102,8 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
     ) {
         let semanticVersion = #"([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)"#
         let claims: [(String, String, Bool)] = [
-            ("README.md", "from: \"" + semanticVersion + "\"", false),
-            ("Source/Axoloty.docc/GettingStarted.md", "from: \"" + semanticVersion + "\"", false),
+            ("README.md", "from: \"" + semanticVersion + "\"", true),
+            ("Source/Axoloty.docc/GettingStarted.md", "from: \"" + semanticVersion + "\"", true),
             ("Makefile", "AXOLOTY_CONSUMER_VERSION \\?= " + semanticVersion, false),
             ("Tests/Support/check-axoloty-semver-consumer.sh", "version=.*:-" + semanticVersion + "\\}", false),
             ("Tools/AxolotyTooling/AxolotyCommandDispatcher.swift", "private static let version = \"" + semanticVersion + "\"", false),
@@ -111,8 +111,10 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
             ("Tools/AxolotyToolingTests/AxolotyCommandDispatcherTests.swift", "axoloty-tool " + semanticVersion, true),
             ("Tools/AxolotyToolingTests/AxolotyServeParserTests.swift", "(?:ax|axoloty-tool) " + semanticVersion, true),
             ("Tools/AxolotyInspectorCoreTests/InspectorArgumentParserTests.swift", "version == \"" + semanticVersion + "\"", true),
-            ("docs/API.md", "^# Axoloty " + semanticVersion + " API documentation", false),
-            ("docs/SUPPORT_MATRIX.md", "^# Axoloty " + semanticVersion + " support matrix", false),
+            ("docs/API.md", "Axoloty " + semanticVersion, true),
+            ("docs/SUPPORT_MATRIX.md", "(?:Axoloty )?" + semanticVersion + " (?:support matrix|checkpoint)", true),
+            ("docs/ROADMAP.md", "current released version \\(`" + semanticVersion + "`\\)", false),
+            ("docs/FEATURE_MATRIX.md", "full " + semanticVersion + " support", false),
         ]
         for (path, pattern, allMatches) in claims {
             guard let content = read(path) else {
@@ -154,7 +156,7 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
                 let resolved = withoutFragment.isEmpty
                     ? root.appendingPathComponent(path)
                     : URL(fileURLWithPath: withoutFragment, relativeTo: base).standardizedFileURL
-                guard resolved.path.hasPrefix(root.path) else {
+                guard isWithinRepository(resolved) else {
                     findings.append(.init(rule: "links.scope", path: path, message: "link escapes the repository: " + target))
                     continue
                 }
@@ -273,14 +275,14 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
                 findings.append(.init(rule: "exceptions.value", path: path, message: id + ".invariant must be a non-empty string"))
             }
             if let paths = entry["paths"] as? [String] {
-                if paths.isEmpty || paths.contains(where: { !isExactExistingRepositoryPath($0) }) {
-                    findings.append(.init(rule: "exceptions.paths", path: path, message: id + " must name non-empty exact repository paths without globs or parent traversal"))
+                if paths.isEmpty || paths.contains(where: { !isExactExistingRepositoryFile($0) }) {
+                    findings.append(.init(rule: "exceptions.paths", path: path, message: id + " must name non-empty exact repository file paths without globs or parent traversal"))
                 }
             } else {
                 findings.append(.init(rule: "exceptions.paths", path: path, message: id + ".paths must be an array of exact repository paths"))
             }
             if let tests = entry["compensatingTests"] as? [String],
-               !tests.isEmpty, tests.allSatisfy({ isExactExistingRepositoryPath(String($0.split(separator: "#", maxSplits: 1)[0])) }) {
+               !tests.isEmpty, tests.allSatisfy({ isCompensatingTestReference($0) }) {
                 // Validated above; an optional fragment names a test within the file.
             } else {
                 findings.append(.init(rule: "exceptions.tests", path: path, message: id + " must name existing compensating-test paths"))
@@ -288,8 +290,8 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
             for key in ["reason", "owner", "removalCondition"] where nonEmptyString(entry[key]) == nil {
                 findings.append(.init(rule: "exceptions.value", path: path, message: id + "." + key + " must be a non-empty string"))
             }
-            guard let ownerIssue = nonEmptyString(entry["ownerIssue"]), ownerIssue.range(of: #"^#[1-9][0-9]*$"#, options: .regularExpression) != nil else {
-                findings.append(.init(rule: "exceptions.issue", path: path, message: id + ".ownerIssue must identify an existing GitHub issue as #number"))
+            guard let ownerIssue = nonEmptyString(entry["ownerIssue"]), knownOwnerIssues().contains(ownerIssue) else {
+                findings.append(.init(rule: "exceptions.issue", path: path, message: id + ".ownerIssue must identify an issue linked from current repository documentation"))
                 validateIntroducedDate(entry["introducedDate"], id: id, path: path, findings: &findings)
                 validateExpiry(entry["expiry"], id: id, path: path, findings: &findings)
                 continue
@@ -328,7 +330,8 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
                 findings.append(.init(rule: "exceptions.expired", path: path, message: id + " is expired"))
             }
         } else if kind == "release" {
-            guard isSemver(value), let current = read("VERSION").flatMap(Semver.init) else {
+            let currentVersion = read("VERSION")?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard isSemver(value), let current = currentVersion.flatMap(Semver.init) else {
                 findings.append(.init(rule: "exceptions.expiry", path: path, message: id + " has an invalid release expiry"))
                 return
             }
@@ -358,14 +361,42 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
         return value
     }
 
-    private func isExactExistingRepositoryPath(_ path: String) -> Bool {
+    private func isExactExistingRepositoryFile(_ path: String) -> Bool {
         guard !path.isEmpty, !path.hasPrefix("/"), !path.hasPrefix("~"),
               !path.contains("*"), !path.contains("?"), !path.contains("["), !path.contains("\\") else { return false }
         let components = path.split(separator: "/", omittingEmptySubsequences: false)
         guard !components.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) else { return false }
-        let resolvedRoot = root.resolvingSymlinksInPath().standardizedFileURL
         let resolved = root.appendingPathComponent(path).resolvingSymlinksInPath().standardizedFileURL
-        return resolved.path.hasPrefix(resolvedRoot.path + "/") && FileManager.default.fileExists(atPath: resolved.path)
+        var isDirectory: ObjCBool = false
+        return isWithinRepository(resolved) &&
+            FileManager.default.fileExists(atPath: resolved.path, isDirectory: &isDirectory) &&
+            !isDirectory.boolValue
+    }
+
+    private func isCompensatingTestReference(_ reference: String) -> Bool {
+        let pieces = reference.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
+        let path = String(pieces[0])
+        guard isExactExistingRepositoryFile(path) else { return false }
+        let components = path.split(separator: "/").map(String.init)
+        let isTestLocation = components.first == "Tests" || components.contains("Tests")
+        let allowedExtensions = Set(["swift", "sh", "mjs", "js"])
+        return isTestLocation && allowedExtensions.contains(URL(fileURLWithPath: path).pathExtension.lowercased())
+    }
+
+    private func knownOwnerIssues() -> Set<String> {
+        let pattern = #"https://github\.com/phynics/axoloty/issues/([1-9][0-9]*)"#
+        let planningDocuments = markdownPaths().filter {
+            $0 == "ARCHITECTURE.md" || $0 == "docs/ROADMAP.md" || $0.hasPrefix("docs/adr/")
+        }
+        return Set(planningDocuments.flatMap { path in
+            read(path).map { regexCaptures(pattern, in: $0).map { "#" + $0 } } ?? []
+        })
+    }
+
+    private func isWithinRepository(_ url: URL) -> Bool {
+        let resolvedRoot = root.resolvingSymlinksInPath().standardizedFileURL.path
+        let resolved = url.resolvingSymlinksInPath().standardizedFileURL.path
+        return resolved == resolvedRoot || resolved.hasPrefix(resolvedRoot + "/")
     }
 
     private func repositoryDate(_ value: String) -> Date? {

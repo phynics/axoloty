@@ -9,7 +9,7 @@ func repositoryAuthorityPassesForCheckout() {
     let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
     let report = AxolotyRepositoryAuthorityValidator(root: root).validate()
 
-    #expect(report.status == "passed")
+    #expect(report.status == "passed", "\(report.findings)")
     #expect(report.version == "0.5.1")
 }
 
@@ -160,6 +160,74 @@ func repositoryAuthorityRejectsVolatileRootAndUnscopedAgentGuides() throws {
     #expect(rules.contains("agents.scoped"))
 }
 
+@Test
+func repositoryAuthorityChecksEveryCurrentVersionClaim() throws {
+    let fixture = try makeAuthorityFixture()
+    defer { try? FileManager.default.removeItem(at: fixture) }
+    try (try String(contentsOf: fixture.appendingPathComponent("README.md"), encoding: .utf8) +
+        ".package(url: \"https://example.invalid/second\", from: \"0.5.0\")\n")
+        .write(to: fixture.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+    try "# Roadmap\ncurrent released version (`0.5.0`)\n".write(
+        to: fixture.appendingPathComponent("docs/ROADMAP.md"), atomically: true, encoding: .utf8
+    )
+    try "# Feature matrix\nfull 0.5.0 support\n".write(
+        to: fixture.appendingPathComponent("docs/FEATURE_MATRIX.md"), atomically: true, encoding: .utf8
+    )
+
+    let paths = Set(AxolotyRepositoryAuthorityValidator(root: fixture).validate().findings
+        .filter { $0.rule == "version.claim" }.compactMap(\.path))
+    #expect(paths.isSuperset(of: ["README.md", "docs/ROADMAP.md", "docs/FEATURE_MATRIX.md"]))
+}
+
+@Test
+func repositoryAuthorityRequiresFilesTestsAndKnownOwnerIssues() throws {
+    let exception = """
+    {"schemaVersion":1,"exceptions":[
+      {"id":"E-1","invariant":"INV-002","paths":["Tools"],"reason":"probe","ownerIssue":"#999999","owner":"team","compensatingTests":["README.md"],"introducedDate":"2026-08-20","expiry":{"kind":"release","value":"0.6.0"},"removalCondition":"remove after probe"}
+    ]}
+    """
+    let fixture = try makeAuthorityFixture(exception: exception)
+    defer { try? FileManager.default.removeItem(at: fixture) }
+
+    let rules = Set(AxolotyRepositoryAuthorityValidator(root: fixture).validate().findings.map(\.rule))
+    #expect(rules.isSuperset(of: ["exceptions.paths", "exceptions.tests", "exceptions.issue"]))
+}
+
+@Test
+func repositoryAuthorityAcceptsWellFormedException() throws {
+    let exception = """
+    {"schemaVersion":1,"exceptions":[
+      {"id":"E-1","invariant":"INV-002","paths":["Tools/X.swift"],"reason":"probe","ownerIssue":"#629","owner":"team","compensatingTests":["Tests/ProbeTests.swift#boundedProbe"],"introducedDate":"2026-08-20","expiry":{"kind":"release","value":"0.6.0"},"removalCondition":"remove after probe"}
+    ]}
+    """
+    let fixture = try makeAuthorityFixture(exception: exception)
+    defer { try? FileManager.default.removeItem(at: fixture) }
+    try Data("struct X {}\n".utf8).write(to: fixture.appendingPathComponent("Tools/X.swift"))
+    try Data("func boundedProbe() {}\n".utf8).write(to: fixture.appendingPathComponent("Tests/ProbeTests.swift"))
+
+    let report = AxolotyRepositoryAuthorityValidator(root: fixture).validate()
+    #expect(report.status == "passed", "\(report.findings)")
+}
+
+@Test
+func repositoryAuthorityRejectsSiblingPrefixLinkEscape() throws {
+    let fixture = try makeAuthorityFixture()
+    let sibling = URL(fileURLWithPath: fixture.path + "-sibling")
+    defer {
+        try? FileManager.default.removeItem(at: fixture)
+        try? FileManager.default.removeItem(at: sibling)
+    }
+    try FileManager.default.createDirectory(at: sibling, withIntermediateDirectories: true)
+    try Data("# Outside\n".utf8).write(to: sibling.appendingPathComponent("outside.md"))
+    let target = "../" + sibling.lastPathComponent + "/outside.md"
+    try (try String(contentsOf: fixture.appendingPathComponent("README.md"), encoding: .utf8) +
+        "[outside](\(target))\n")
+        .write(to: fixture.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+
+    let report = AxolotyRepositoryAuthorityValidator(root: fixture).validate()
+    #expect(report.findings.contains { $0.rule == "links.scope" })
+}
+
 private func makeAuthorityFixture(
     version: String = "0.5.1",
     makefileVersion: String? = nil,
@@ -179,11 +247,12 @@ private func makeAuthorityFixture(
         "Tools/AxolotyToolingTests/AxolotyCommandDispatcherTests.swift": "#expect(result.standardOutput == \"axoloty-tool \(version)\")\n",
         "Tools/AxolotyToolingTests/AxolotyServeParserTests.swift": "#expect(result.standardOutput == \"ax \(version)\")\n",
         "Tools/AxolotyInspectorCoreTests/InspectorArgumentParserTests.swift": "#expect(InspectorArgumentParser.version == \"\(version)\")\n",
-        "docs/API.md": "# Axoloty \(version) API documentation\n",
-        "docs/SUPPORT_MATRIX.md": "# Axoloty \(version) support matrix\n",
+        "docs/API.md": "# Axoloty \(version) API documentation\n> Axoloty \(version) is current.\n",
+        "docs/SUPPORT_MATRIX.md": "# Axoloty \(version) support matrix\nThis is the \(version) checkpoint.\n",
         "ARCHITECTURE.md": "# Architecture\n- `INV-001` shared production processor (non-waivable)\n- `INV-002` bounded state\n",
         "CONTEXT.md": "# Context\n",
-        "docs/ROADMAP.md": "# Roadmap\n",
+        "docs/ROADMAP.md": "# Roadmap\ncurrent released version (`\(version)`)\n[Issue #629](https://github.com/phynics/axoloty/issues/629)\n",
+        "docs/FEATURE_MATRIX.md": "# Feature matrix\nfull \(version) support\n",
         "docs/protocol/coaty-core-3.md": "# Profile\n",
         "AGENTS.md": "# Instructions\n## Jurisdiction\n## Documentation authority\n## Architectural invariants\n## Supported workflow\n## Prohibited shortcuts\n## Authority links\n",
         "Embedded/AGENTS.md": "# Instructions\n## Jurisdiction\nThis guide applies to `Embedded/`. The root [`AGENTS.md`](../AGENTS.md) rules apply.\n## Specialized rules\n",
