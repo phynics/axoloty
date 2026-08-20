@@ -1,17 +1,109 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Axoloty bounded portable runtime evidence",
-  "type": "object",
-  "required": ["schemaVersion", "candidateSha", "toolchain", "capacities", "experiments", "parser", "compilation", "hardware"],
-  "properties": {
-    "schemaVersion": {"const": 1},
-    "candidateSha": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"},
-    "toolchain": {"type": "string", "minLength": 1},
-    "capacities": {"type": "array", "const": [1, 4, 16, 64]},
-    "experiments": {"type": "array", "minItems": 4},
-    "parser": {"type": "object", "required": ["embeddedAccepted", "hostAccepted", "identicalActionTrace", "embeddedWorkspaceBytes", "hostWorkspaceBytes", "payloadLimit"]},
-    "compilation": {"type": "object", "required": ["debugTests", "sanitizedTests", "macroHost", "embedded", "compileSeconds", "releaseBinaryBytes", "releaseSectionBytes"]},
-    "hardware": {"const": "pending-hardware"}
-  },
-  "additionalProperties": false
+  "oneOf": [
+    {"$ref": "#/$defs/host"},
+    {"$ref": "#/$defs/sanitized"},
+    {"$ref": "#/$defs/embedded"},
+    {"$ref": "#/$defs/hardware"}
+  ],
+  "$defs": {
+    "identity": {
+      "type": "object",
+      "required": ["schemaVersion", "evidenceKind", "candidateSha"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "evidenceKind": {"type": "string"},
+        "candidateSha": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"}
+      }
+    },
+    "host": {
+      "type": "object",
+      "required": ["schemaVersion", "evidenceKind", "candidateSha", "toolchain", "capacities", "experiments", "parser", "allocations", "macroBoundary", "compilation", "hardware"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "evidenceKind": {"const": "host"},
+        "candidateSha": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"},
+        "toolchain": {"type": "string", "minLength": 1},
+        "capacities": {"const": [1, 4, 16, 64]},
+        "experiments": {"type": "array", "minItems": 4},
+        "parser": {"type": "object", "required": ["embeddedAccepted", "hostAccepted", "identicalActionTrace", "embeddedWorkspaceBytes", "hostWorkspaceBytes", "payloadLimit"]},
+        "allocations": {"type": "array", "minItems": 4, "items": {"$ref": "#/$defs/allocation"}},
+        "macroBoundary": {"type": "string", "minLength": 1},
+        "compilation": {"type": "object", "required": ["debugTests", "sanitizedTests", "macroHost", "embedded", "compileSeconds", "releaseBinaryBytes", "releaseSectionBytes"]},
+        "hardware": {"enum": ["pending-hardware", "measured"]}
+      },
+      "additionalProperties": false
+    },
+    "allocation": {
+      "type": "object",
+      "required": ["capacity", "measurement", "inlineInitialization", "inlineWarmed", "handlerInitialization", "handlerWarmed"],
+      "properties": {
+        "capacity": {"enum": [1, 4, 16, 64]},
+        "measurement": {"const": "heaptrack-call-growth"},
+        "inlineInitialization": {"type": "integer", "minimum": 0},
+        "inlineWarmed": {"type": "integer", "minimum": 0},
+        "handlerInitialization": {"type": "integer", "minimum": 0},
+        "handlerWarmed": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "sanitized": {
+      "type": "object",
+      "required": ["schemaVersion", "evidenceKind", "candidateSha", "status", "sanitizer", "hardware"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "evidenceKind": {"const": "sanitized"},
+        "candidateSha": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"},
+        "status": {"const": "passed"},
+        "sanitizer": {"const": "address"},
+        "hardware": {"const": "pending-hardware"}
+      },
+      "additionalProperties": false
+    },
+    "embedded": {
+      "type": "object",
+      "required": ["schemaVersion", "evidenceKind", "candidateSha", "status", "compileSuccess", "toolchain", "macroBoundary", "configurations", "hardware"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "evidenceKind": {"const": "embedded-cross-build"},
+        "candidateSha": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"},
+        "status": {"const": "passed"},
+        "compileSuccess": {"const": true},
+        "toolchain": {"type": "string", "minLength": 1},
+        "macroBoundary": {"enum": ["compiled", "unsupported-embedded-manual-conformance"]},
+        "configurations": {"type": "array", "minItems": 5, "items": {"$ref": "#/$defs/embeddedConfiguration"}},
+        "hardware": {"const": "pending-hardware"}
+      },
+      "additionalProperties": false
+    },
+    "embeddedConfiguration": {
+      "type": "object",
+      "required": ["capacity", "compileSeconds", "firmwareBytes", "elfBytes", "mapBytes", "sections", "growth"],
+      "properties": {
+        "capacity": {"enum": [0, 1, 4, 16, 64]},
+        "compileSeconds": {"type": "number", "minimum": 0},
+        "firmwareBytes": {"type": "integer", "minimum": 1},
+        "elfBytes": {"type": "integer", "minimum": 1},
+        "mapBytes": {"type": "integer", "minimum": 1},
+        "sections": {"type": "object", "required": ["text", "data", "bss"]},
+        "growth": {"type": "object", "required": ["firmwareBytes", "text", "data", "bss"]}
+      },
+      "additionalProperties": false
+    },
+    "hardware": {
+      "type": "object",
+      "required": ["schemaVersion", "evidenceKind", "candidateSha", "status", "board", "budget", "configurations"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "evidenceKind": {"const": "hardware"},
+        "candidateSha": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"},
+        "status": {"enum": ["passed", "failed"]},
+        "board": {"type": "object", "required": ["target", "revision", "flashBytes"]},
+        "budget": {"type": "object", "required": ["manifestSha256", "relativeMAD", "allocationRule", "stackReserveBytes"]},
+        "configurations": {"type": "array", "minItems": 4}
+      },
+      "additionalProperties": false
+    }
+  }
 }

@@ -54,6 +54,11 @@ func handlerContext() {
     #expect(receivedHandle == 17)
     #expect(unregistered)
     #expect(stale)
+
+    let inactive = handlers.register(
+        HandlerEntry(function: callback, context: HandlerContext(handle: 18, active: false))
+    )
+    #expect(inactive == nil)
 }
 
 @Test("deterministic randomized operations preserve token generations")

@@ -18,3 +18,13 @@ idf_component_register_swift(
     BRIDGING_HEADER ${CMAKE_CURRENT_LIST_DIR}/BridgingHeader.h
     SRCS ${BOUND_PORTABLE_SOURCES}
 )
+
+if(DEFINED G1_CAPACITY AND NOT G1_CAPACITY STREQUAL "0")
+    if(NOT G1_CAPACITY MATCHES "^(1|4|16|64)$")
+        message(FATAL_ERROR "G1_CAPACITY must be one of 0, 1, 4, 16, or 64")
+    endif()
+    target_compile_options(
+        ${COMPONENT_LIB}
+        PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:-DG1_CAPACITY_${G1_CAPACITY}>"
+    )
+endif()

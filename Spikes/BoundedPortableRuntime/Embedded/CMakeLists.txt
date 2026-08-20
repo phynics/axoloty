@@ -2,5 +2,6 @@
 # Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 cmake_minimum_required(VERSION 3.29)
+set(COMPONENTS main)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(bounded-portable-runtime)

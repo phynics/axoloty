@@ -30,6 +30,12 @@ run_swift swift test -Xswiftc -warnings-as-errors \
     --package-path /workspace/Spikes/BoundedPortableRuntime/MacroProbe \
     --cache-path /workspace/.swiftpm-cache --disable-automatic-resolution \
     >"$artifact/macro-host-tests.log" 2>&1
+run_swift swift run --quiet \
+    --package-path /workspace/Spikes/BoundedPortableRuntime/MacroProbe \
+    --cache-path /workspace/.swiftpm-cache --disable-automatic-resolution \
+    bounded-runtime-embedded-macro-consumer >"$artifact/macro-host-consumer.log" 2>&1
+node --test "$probe/Evidence/validate-evidence.test.mjs" \
+    >"$artifact/evidence-validator-tests.log" 2>&1
 run_swift swift run --quiet --package-path /workspace/Spikes/BoundedPortableRuntime \
     --cache-path /workspace/.swiftpm-cache --disable-automatic-resolution \
     bounded-runtime-probe >"$artifact/probe.log" 2>&1
@@ -42,6 +48,10 @@ run_swift swift build -Xswiftc -warnings-as-errors \
     >"$artifact/release-build.log" 2>&1
 end_ns=$(date +%s%N)
 awk -v start="$start_ns" -v end="$end_ns" 'BEGIN { printf "%.3f\n", (end-start)/1000000000 }' >"$time_file"
+run_swift bash /workspace/Spikes/BoundedPortableRuntime/measure-allocations.sh \
+    /workspace/Spikes/BoundedPortableRuntime \
+    /workspace/.testing/g1-bounded-runtime/"$candidate"/allocation-measurements.tsv \
+    >"$artifact/allocation-measurements.log" 2>&1
 
 probe_json=$(node -e '
 const fs=require("fs");
@@ -59,10 +69,27 @@ compile_seconds=$(cat "$time_file")
 
 PROBE_JSON="$probe_json" CANDIDATE_SHA="$candidate" COMPILE_SECONDS="$compile_seconds" \
 RELEASE_BYTES="$release_bytes" ARTIFACT="$artifact/host-evidence.json" \
+ALLOCATIONS="$artifact/allocation-measurements.tsv" \
 node <<'NODE'
 const fs = require('fs');
 const report = JSON.parse(process.env.PROBE_JSON);
+report.evidenceKind = 'host';
 report.candidateSha = process.env.CANDIDATE_SHA;
+const records = fs.readFileSync(process.env.ALLOCATIONS, 'utf8').trim().split(/\n/).map(line => {
+  const [capacity, measurementCase, growth, smallCount, largeCount] = line.split('\t');
+  return {capacity: Number(capacity), measurementCase, growth: Number(growth), smallCount: Number(smallCount), largeCount: Number(largeCount)};
+});
+report.allocations = [1, 4, 16, 64].map(capacity => {
+  const value = name => records.find(record => record.capacity === capacity && record.measurementCase === name).growth;
+  return {
+    capacity,
+    measurement: 'heaptrack-call-growth',
+    inlineInitialization: value('inline-initialization'),
+    inlineWarmed: value('inline-warmed'),
+    handlerInitialization: value('handler-initialization'),
+    handlerWarmed: value('handler-warmed'),
+  };
+});
 report.compilation = {
   debugTests: 'passed',
   sanitizedTests: 'pending',
@@ -74,5 +101,7 @@ report.compilation = {
 };
 fs.writeFileSync(process.env.ARTIFACT, JSON.stringify(report, null, 2) + '\n');
 NODE
+node "$probe/Evidence/validate-evidence.mjs" \
+    "$probe/Evidence/evidence.schema.json" "$artifact/host-evidence.json"
 
 echo "PASS g1-bounded-runtime-host candidate=$candidate artifact=$artifact/host-evidence.json"

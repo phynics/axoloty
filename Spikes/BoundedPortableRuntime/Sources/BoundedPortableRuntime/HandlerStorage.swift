@@ -9,7 +9,13 @@ public struct HandlerContext {
     /// Registration state.
     public var active: Bool
 
-    /// Creates an active context.
+    /// Creates a caller-owned context.
+    ///
+    /// - Parameters:
+    ///   - handle: Stable numeric identity passed to the callback.
+    ///   - generation: Initial caller generation. Registration replaces this
+    ///     with the slot generation used by the returned token.
+    ///   - active: Whether the context may be registered and dispatched.
     public init(handle: UInt32, generation: UInt32 = 1, active: Bool = true) {
         self.handle = handle
         self.generation = generation
@@ -23,9 +29,13 @@ public struct HandlerEntry {
     /// The C calling convention makes captured Swift contexts unrepresentable.
     public let function: @convention(c) (UInt32) -> Void
     /// The numeric context identity.
-    public let context: HandlerContext
+    public var context: HandlerContext
 
     /// Creates an entry without a runtime-owned closure capture.
+    ///
+    /// - Parameters:
+    ///   - function: Noncapturing callback invoked during dispatch.
+    ///   - context: Caller-owned numeric context.
     public init(function: @escaping @convention(c) (UInt32) -> Void, context: HandlerContext) {
         self.function = function
         self.context = context
@@ -39,14 +49,42 @@ public struct HandlerTable<let capacity: Int>: ~Copyable {
     /// Creates an empty handler table.
     public init() { entries = InlineSlotTable() }
 
-    /// Registers a noncapturing entry.
-    public mutating func register(_ entry: HandlerEntry) -> UInt64? { entries.insert(entry) }
-
-    /// Dispatches a live entry and rejects stale tokens.
-    public mutating func dispatch(_ token: UInt64) -> Bool {
-        entries.update(token) { entry in entry.function(entry.context.handle) }
+    /// Registers an active, noncapturing entry.
+    ///
+    /// - Parameter entry: Entry whose context is owned by the caller.
+    /// - Returns: A generation-protected token, or `nil` when the entry is
+    ///   inactive or the table is full.
+    public mutating func register(_ entry: HandlerEntry) -> UInt64? {
+        guard entry.context.active, let token = entries.insert(entry) else { return nil }
+        let generation = UInt32(token >> 32)
+        guard entries.update(token, { $0.context.generation = generation }) else {
+            _ = entries.remove(token)
+            return nil
+        }
+        return token
     }
 
-    /// Removes a registration.
-    public mutating func unregister(_ token: UInt64) -> Bool { entries.remove(token) }
+    /// Dispatches a live entry and rejects inactive or stale contexts.
+    ///
+    /// - Parameter token: Generation-protected token returned by ``register(_:)``.
+    /// - Returns: `true` only when the matching live callback was invoked.
+    public mutating func dispatch(_ token: UInt64) -> Bool {
+        let generation = UInt32(token >> 32)
+        var dispatched = false
+        let found = entries.update(token) { entry in
+            guard entry.context.active, entry.context.generation == generation else { return }
+            entry.function(entry.context.handle)
+            dispatched = true
+        }
+        return found && dispatched
+    }
+
+    /// Deactivates and removes a registration.
+    ///
+    /// - Parameter token: Generation-protected token returned by ``register(_:)``.
+    /// - Returns: Whether a matching live entry was removed.
+    public mutating func unregister(_ token: UInt64) -> Bool {
+        guard entries.update(token, { $0.context.active = false }) else { return false }
+        return entries.remove(token)
+    }
 }

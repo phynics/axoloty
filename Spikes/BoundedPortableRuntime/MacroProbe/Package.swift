@@ -9,6 +9,10 @@ let package = Package(
     platforms: [.macOS(.v13), .iOS(.v18)],
     products: [
         .library(name: "BoundedPortableRuntimeMacroProbe", targets: ["BoundedPortableRuntimeMacroProbe"]),
+        .executable(
+            name: "bounded-runtime-embedded-macro-consumer",
+            targets: ["BoundedPortableRuntimeEmbeddedMacroConsumer"]
+        ),
     ],
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "603.0.0"),
@@ -26,6 +30,10 @@ let package = Package(
         .target(
             name: "BoundedPortableRuntimeMacroProbe",
             dependencies: ["BoundedPortableRuntimeMacros"]
+        ),
+        .executableTarget(
+            name: "BoundedPortableRuntimeEmbeddedMacroConsumer",
+            dependencies: ["BoundedPortableRuntimeMacroProbe"]
         ),
         .testTarget(
             name: "BoundedPortableRuntimeMacroProbeTests",

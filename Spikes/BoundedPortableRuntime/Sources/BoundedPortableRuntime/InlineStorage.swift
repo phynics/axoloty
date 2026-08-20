@@ -23,6 +23,9 @@ public struct InlineSlotTable<Element, let capacity: Int>: ~Copyable {
     }
 
     /// Inserts a value, returning a generation-protected token.
+    ///
+    /// - Parameter value: Value stored directly in the first inactive slot.
+    /// - Returns: A stable token, or `nil` when every slot is active.
     public mutating func insert(_ value: Element) -> UInt64? {
         for index in 0..<capacity {
             if !slots[index].active {
@@ -37,6 +40,11 @@ public struct InlineSlotTable<Element, let capacity: Int>: ~Copyable {
     }
 
     /// Mutates a live value in place and rejects stale tokens.
+    ///
+    /// - Parameters:
+    ///   - token: Generation-protected token returned by ``insert(_:)``.
+    ///   - body: Non-escaping mutation applied to the stored value.
+    /// - Returns: Whether the token selected a live value.
     public mutating func update(_ token: UInt64, _ body: (inout Element) -> Void) -> Bool {
         let index = Self.index(from: token)
         guard index < capacity,
@@ -48,6 +56,9 @@ public struct InlineSlotTable<Element, let capacity: Int>: ~Copyable {
     }
 
     /// Removes a value and invalidates its token.
+    ///
+    /// - Parameter token: Generation-protected token returned by ``insert(_:)``.
+    /// - Returns: Whether a matching live value was removed.
     public mutating func remove(_ token: UInt64) -> Bool {
         let index = Self.index(from: token)
         guard index < capacity,
