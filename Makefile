@@ -58,7 +58,7 @@ export AXOLOTY_CONSUMER_REPOSITORY_URL AXOLOTY_CONSUMER_VERSION AXOLOTY_CONSUMER
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm axoloty-tool check verify verify-ci test-one test-tier explain hardware-check hardware-require release-fixture-bundle checkpoint checkpoint-hardware test-tooling build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test-axoloty-wire-distribution test-axoloty-semver-consumer test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-toolchain-doctor embedded-device-info embedded-reproducible-build benchmark-size benchmark-wire benchmark-wire-allocation benchmark-wire-bounds benchmark-wire-device check-budget-manifest check-embedded-swift check-embedded-swift-linker embedded-swift-build embedded-swift-flash embedded-swift-test embedded-mqtt-test embedded-network-test embedded-agent-test embedded-coatyjs-test embedded-host-test embedded-last-will-test embedded-broker-restart-test embedded-interop-test
+.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm axoloty-tool check verify verify-ci test-one test-tier explain hardware-check hardware-require g1-bounded-runtime-device release-fixture-bundle checkpoint checkpoint-hardware test-tooling build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test-axoloty-wire-distribution test-axoloty-semver-consumer test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-toolchain-doctor embedded-device-info embedded-reproducible-build benchmark-size benchmark-wire benchmark-wire-allocation benchmark-wire-bounds benchmark-wire-device check-budget-manifest check-embedded-swift check-embedded-swift-linker embedded-swift-build embedded-swift-flash embedded-swift-test embedded-mqtt-test embedded-network-test embedded-agent-test embedded-coatyjs-test embedded-host-test embedded-last-will-test embedded-broker-restart-test embedded-interop-test
 
 # Quote user-provided values before placing them in a shell assignment. The
 # resulting value is still passed to run.sh as one argv element.
@@ -80,6 +80,7 @@ help:
 		'make explain TIER=...  Explain commands, policies, locks, and artifacts' \
 		'make hardware-check  Run or skip the sporadic ESP32-C6 smoke check' \
 		'make hardware-require  Require an attached ESP32-C6 smoke check' \
+		'make g1-bounded-runtime-device  Run the G1 candidate evidence on an attached ESP32-C6' \
 		'make release-fixture-bundle  Bundle committed wire fixtures offline (not fresh wire evidence)' \
 		'make checkpoint     Run the release checkpoint validation (no hardware)' \
 		'make checkpoint-hardware  Run checkpoint with ESP32-C6 smoke test' \
@@ -241,6 +242,15 @@ hardware-require:
 	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='hardware require' \
 		AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES='$(AXOLOTY_DEVICE)' AXOLOTY_TOOL_CONTAINER_ENV_VARS='AXOLOTY_DEVICE' \
 		AXOLOTY_DEVICE='$(AXOLOTY_DEVICE)'
+
+g1-bounded-runtime-device: image
+	@CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
+	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+	CONTAINER_DEVICES="$(AXOLOTY_DEVICE)" \
+	CONTAINER_ENV_VARS='EMBEDDED_DEVICE GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0' \
+	EMBEDDED_DEVICE="$(AXOLOTY_DEVICE)" GIT_CONFIG_COUNT=1 \
+	GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=/workspace \
+	.devcontainer/run.sh Spikes/BoundedPortableRuntime/check-device.sh
 
 release-fixture-bundle:
 	@AXOLOTY_IMAGE_IDENTITY="$$( $(CONTAINER_RUNTIME) image inspect --format '{{.Id}}' "$(IMAGE)" )"; \

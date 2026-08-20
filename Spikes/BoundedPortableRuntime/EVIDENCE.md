@@ -2,11 +2,11 @@
 
 # Bounded portable runtime evidence
 
-This is the maintained G1 probe for issue #629. It is deliberately spike-local:
-none of these types are imported by `AxolotyWire`, `AxolotyProtocol`, or a
-shipped product.
+This maintained G1 probe resolves issue #629 without promoting spike types into
+`AxolotyWire`, `AxolotyProtocol`, or a shipped product. The reviewed decision
+candidate is `0d45c33`.
 
-Run the canonical nodes from the repository root:
+Run the hardware-free nodes from the repository root:
 
 ```sh
 make test-one FILTER='g1-bounded-runtime-host'
@@ -14,65 +14,56 @@ make test-one FILTER='g1-bounded-runtime-sanitized'
 make test-one FILTER='g1-bounded-runtime-embedded'
 ```
 
-The host node runs the four capacity specializations (1, 4, 16, 64), records
-size/alignment/stride, executes nested mutation and generation-token saturation
-checks, runs the parser parity trace, compiles the macro boundary, and measures
-release output. The sanitized node repeats the deterministic randomized token
-operations under Address Sanitizer. The embedded node uses the pinned
-ESP-IDF/Embedded Swift container and a separate `Embedded/` project; it does
-not flash a board.
+With an ESP32-C6 at `AXOLOTY_DEVICE` (default `/dev/ttyACM0`), run:
 
-The probe reports storage-event allocation counts. Inline and handler tables
-have zero storage events during initialization and warmed operations; handler
-entries use a C-convention function pointer, so captured Swift contexts cannot
-cross the boundary. The host parser intentionally owns one reusable contiguous
-buffer. This is an explicit probe metric, not a claim about allocator behavior
-on a physical board.
+```sh
+make g1-bounded-runtime-device
+```
 
-Run artifacts are written to `.testing/g1-bounded-runtime/<candidate-sha>/` and
-are not source-controlled. `Evidence/evidence.schema.json` is the validation
-schema for the combined host report.
+Generated, schema-validated reports and raw logs are written under
+`.testing/g1-bounded-runtime/<candidate-sha>/`. Build products and generated
+Swift are not committed.
 
-## Current checkpoint
+## Reviewed result
 
-Host Swift 6.3 compilation and tests pass. The observed inline table layouts
-are 12/48/192/768 bytes (size and stride) for capacities 1/4/16/64, with
-4-byte alignment; handler layouts are 40/160/640/2560 bytes with 8-byte
-alignment. The parser accepts a 512-byte payload in 520 inline bytes and in a
-4096-byte host workspace, with identical action traces.
+The host ran capacities 1, 4, 16, and 64. Heaptrack measured zero allocation-
+call growth for inline initialization, warmed inline mutation, handler
+registration, and warmed dispatch at every capacity. Address Sanitizer passed
+the deterministic randomized-operation and stale-token suite. Exact
+saturation, in-place nested mutation, inactive-context rejection, and stale
+generation rejection passed. Host inline layouts were 12/48/192/768 bytes;
+handler layouts were 32/128/512/2,048 bytes. A 512-byte payload produced the
+same action trace in the 520-byte inline workspace and reusable 4,096-byte host
+workspace through one generic parser algorithm.
 
-The ESP-IDF 5.4 / Swift 6.3 ESP32-C6 cross-build also passes without flashing:
-the firmware image is 137,792 bytes, the ELF is 3,384,080 bytes, and the map
-is 2,539,965 bytes. The embedded source instantiates all four capacity
-specializations; the report records their measured source-layout growth
-(12/48/192/768 inline bytes and 40/160/640/2560 handler bytes). Direct macro
-use is rejected by the Embedded Swift consumer, so the checked source uses the
-equivalent manual schema conformance. This is a toolchain boundary
-observation, not an accepted architecture decision.
+The real host macro consumer compiled with SwiftSyntax 603.0.0. A direct build
+of that consumer for `riscv32-none-none-eabi` failed inside SwiftSyntax's
+Embedded Swift boundary; the ESP32-C6 project then compiled the equivalent
+manual `PortableObjectSchema` conformance from source. No generated Swift is
+stored.
 
-## Physical baseline smoke
+The ESP32-C6 cross-build measured each specialization against a no-table
+baseline. Firmware growth for capacities 1/4/16/64 was
+2,016/2,256/2,496/2,192 bytes; IRAM and BSS growth were zero, and data growth
+was 680 bytes. Candidate firmware ranged from 106,608 to 107,088 bytes, below
+the existing 1,048,576-byte budget.
 
-On 2026-08-20, the inherited ESP32-C6 hardware baseline was run twice on
-`/dev/ttyACM0` (candidate `0e5466f0`). Both clean flashes completed all 313
-structured checks. The device reported 0 warmed hot-path allocations, 8,700
-stack-high-water units against a 65,536-byte main-task stack, 335,340 bytes of
-free internal heap (335,204-byte minimum), and a 303,104-byte largest internal
-heap block. The production smoke image was 699,376 bytes (`.bin`), with a
-4,873,048-byte ELF and 6,499,655-byte map.
+Two clean device runs per capacity passed on an ESP32-C6 revision 0 with
+4,194,304 bytes of flash. Every run reported:
 
-These are baseline production-smoke observations, not measurements of the
-spike's inline-storage candidate configurations. The candidate-specific
-initialization/steady-state heap, flash/data/BSS/IRAM budgets, compile time,
-and sustained-rate fields therefore remain `pending-hardware`; the two raw
-runs are retained under `.testing/g1-bounded-runtime/<candidate-sha>/hardware/`.
+- zero initialization and warmed steady-state allocations;
+- flat internal heap at 415,832 bytes;
+- 60,916–62,932 bytes of main-task stack reserve;
+- 1,349–1,610 sustained operations per second;
+- relative median absolute deviation from 0 to 0.0000873, below the budget
+  manifest limit of 0.05.
 
-The following fields remain `pending-hardware` until two clean ESP32-C6 runs
-per candidate configuration exist:
+The report fingerprints the reviewed budget manifest as
+`b21d12f2e3c29e5a8ef9b14505ba0a0efe930437268c60e30d4345c118ced1a0`.
 
-- stack high-water and reserve;
-- initialization and warmed steady-state heap;
-- flash, data/BSS, and IRAM budgets;
-- sustained rate and board revision.
+## Decision
 
-ADR 0004 therefore remains Proposed. No static or host production preset is
-selected, and no G2 implementation work is authorized by this spike.
+The evidence satisfies ADR 0004 decision A: literal-inline storage is accepted
+without an architecture exception. The measured presets are `tiny = 1`,
+`esp32C6Static = 16`, and `hostDefault = 64`. These are G2 inputs, not public
+G1 product APIs.
