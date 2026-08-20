@@ -10,7 +10,7 @@ This section is the source of truth for what exists today. It must be updated wh
 
 ## Accepted 0.6 delta
 
-The target package graph and runtime boundaries below are accepted direction, not claims about the 0.5.1 implementation. G2 owns the new protocol package and shared processor; G3 owns the object model; G4 owns runtime replacement; G5 owns IO and optional-product boundaries; G6 owns non-divergence and release proof.
+The target package graph and runtime boundaries below are accepted direction, not claims about the 0.5.1 implementation. G1 accepted [ADR 0004](./docs/adr/0004-literal-inline-bounded-runtime-state.md) from host and ESP32-C6 evidence, selecting measured tiny/static/host capacity presets of 1/16/64; its implementations remain spike-local. G2 owns the new protocol package, shared processor, and promotion of the bounded design into production types; G3 owns the object model; G4 owns runtime replacement; G5 owns IO and optional-product boundaries; G6 owns non-divergence and release proof.
 
 ## Product boundary
 
