@@ -50,6 +50,22 @@ use is rejected by the Embedded Swift consumer, so the checked source uses the
 equivalent manual schema conformance. This is a toolchain boundary
 observation, not an accepted architecture decision.
 
+## Physical baseline smoke
+
+On 2026-08-20, the inherited ESP32-C6 hardware baseline was run twice on
+`/dev/ttyACM0` (candidate `0e5466f0`). Both clean flashes completed all 313
+structured checks. The device reported 0 warmed hot-path allocations, 8,700
+stack-high-water units against a 65,536-byte main-task stack, 335,340 bytes of
+free internal heap (335,204-byte minimum), and a 303,104-byte largest internal
+heap block. The production smoke image was 699,376 bytes (`.bin`), with a
+4,873,048-byte ELF and 6,499,655-byte map.
+
+These are baseline production-smoke observations, not measurements of the
+spike's inline-storage candidate configurations. The candidate-specific
+initialization/steady-state heap, flash/data/BSS/IRAM budgets, compile time,
+and sustained-rate fields therefore remain `pending-hardware`; the two raw
+runs are retained under `.testing/g1-bounded-runtime/<candidate-sha>/hardware/`.
+
 The following fields remain `pending-hardware` until two clean ESP32-C6 runs
 per candidate configuration exist:
 
