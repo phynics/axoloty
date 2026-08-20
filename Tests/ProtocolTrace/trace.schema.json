@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://axoloty.dev/schemas/g2-protocol-trace-v1.json",
+  "title": "Axoloty G2 Protocol Trace",
+  "type": "object",
+  "required": ["schemaVersion", "id", "description", "initialState", "steps"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "description": { "type": "string", "minLength": 1 },
+    "initialState": { "$ref": "#/$defs/state" },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/step" }
+    }
+  },
+  "$defs": {
+    "state": {
+      "type": "object",
+      "required": ["activeObjectIDs", "pendingCorrelationIDs", "associationIDs", "generation"],
+      "properties": {
+        "activeObjectIDs": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "pendingCorrelationIDs": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "associationIDs": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "generation": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "step": {
+      "type": "object",
+      "required": ["sequence", "timeMilliseconds", "priorState", "capabilities", "limits", "input", "localOperation", "expected"],
+      "properties": {
+        "sequence": { "type": "integer", "minimum": 1 },
+        "timeMilliseconds": { "type": "integer", "minimum": 0 },
+        "priorState": { "$ref": "#/$defs/state" },
+        "capabilities": {
+          "type": "object",
+          "required": ["supportedFamilies"],
+          "properties": { "supportedFamilies": { "type": "array", "items": { "$ref": "#/$defs/family" }, "uniqueItems": true } },
+          "additionalProperties": false
+        },
+        "limits": {
+          "type": "object",
+          "required": ["maximumPayloadBytes", "maximumObjects", "maximumPendingCorrelations"],
+          "properties": {
+            "maximumPayloadBytes": { "type": "integer", "minimum": 0 },
+            "maximumObjects": { "type": "integer", "minimum": 0 },
+            "maximumPendingCorrelations": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "input": {
+          "type": "object",
+          "required": ["family", "direction", "fixturePayload", "payloadBytes", "duplicate", "malformed", "deadlineExpired"],
+          "properties": {
+            "family": { "$ref": "#/$defs/family" },
+            "direction": { "enum": ["inbound", "outbound"] },
+            "fixturePayload": { "type": "string" },
+            "payloadBytes": { "type": "integer", "minimum": 0 },
+            "objectID": { "type": ["string", "null"] },
+            "correlationID": { "type": ["string", "null"] },
+            "duplicate": { "type": "boolean" },
+            "malformed": { "type": "boolean" },
+            "deadlineExpired": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "localOperation": { "enum": ["processInbound", "publishOutbound"] },
+        "expected": { "$ref": "#/$defs/observation" }
+      },
+      "additionalProperties": false
+    },
+    "observation": {
+      "type": "object",
+      "required": ["actions", "rejection", "nextState"],
+      "properties": {
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["kind", "family", "correlationID"],
+            "properties": {
+              "kind": { "enum": ["publish", "deliver"] },
+              "family": { "$ref": "#/$defs/family" },
+              "correlationID": { "type": ["string", "null"] }
+            },
+            "additionalProperties": false
+          }
+        },
+        "rejection": {
+          "type": ["object", "null"],
+          "required": ["code", "reason"],
+          "properties": {
+            "code": { "enum": ["malformed", "payloadTooLarge", "unsupported", "duplicate", "saturated", "deadlineExpired", "correlationMismatch"] },
+            "reason": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false
+        },
+        "nextState": { "$ref": "#/$defs/state" }
+      },
+      "additionalProperties": false
+    },
+    "family": {
+      "enum": ["ADV", "DAD", "CHN", "ASC", "IOV", "DSC", "RSV", "QRY", "RTV", "UPD", "CPL", "CLL", "RTN"]
+    }
+  },
+  "additionalProperties": false
+}
