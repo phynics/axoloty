@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Axoloty bounded portable runtime evidence",
+  "type": "object",
+  "required": ["schemaVersion", "candidateSha", "toolchain", "capacities", "experiments", "parser", "compilation", "hardware"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "candidateSha": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"},
+    "toolchain": {"type": "string", "minLength": 1},
+    "capacities": {"type": "array", "const": [1, 4, 16, 64]},
+    "experiments": {"type": "array", "minItems": 4},
+    "parser": {"type": "object", "required": ["embeddedAccepted", "hostAccepted", "identicalActionTrace", "embeddedWorkspaceBytes", "hostWorkspaceBytes", "payloadLimit"]},
+    "compilation": {"type": "object", "required": ["debugTests", "sanitizedTests", "macroHost", "embedded", "compileSeconds", "releaseBinaryBytes", "releaseSectionBytes"]},
+    "hardware": {"const": "pending-hardware"}
+  },
+  "additionalProperties": false
+}

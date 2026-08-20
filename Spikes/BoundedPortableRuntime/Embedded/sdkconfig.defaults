@@ -1,0 +1,3 @@
+# G1 probe defaults: compile-only, no board or network assumptions.
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y

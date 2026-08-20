@@ -117,6 +117,7 @@ func checkPlanPrintsStableJSON() {
     expectedNames += [
         "support-container", "support-fuzz-runner", "support-embedded-compile",
         "support-embedded-smoke", "embedded-toolchain", "embedded-build", "embedded-linker",
+        "g1-bounded-runtime-host", "g1-bounded-runtime-sanitized", "g1-bounded-runtime-embedded",
     ]
     #endif
     #expect(plan?.nodes.map(\.name) == expectedNames)

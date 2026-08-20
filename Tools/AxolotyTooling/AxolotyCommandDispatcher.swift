@@ -531,7 +531,15 @@ public struct AxolotyCommandDispatcher: Sendable {
         }
         do {
             let manifest = try AxolotyCanonicalTestManifest.loadDefault(environment: environment)
-            let command = manifest.testOneCommand(filter: filter)
+            let command: AxolotyCommandPlan
+            if let node = try? manifest.node(named: filter),
+               node.filter == nil,
+               node.local,
+               node.isAvailable(on: AxolotyCheckPlan.currentPlatform) {
+                command = node.checkNode().command
+            } else {
+                command = manifest.testOneCommand(filter: filter)
+            }
             if let failure = contextValidator.failureResult(validating: [command]) {
                 return Self.commandResult(failure)
             }
