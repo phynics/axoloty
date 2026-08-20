@@ -82,6 +82,7 @@ let package = Package(
             ],
             path: "Tests",
             exclude: [
+                "AGENTS.md",
                 "AxolotyWire",
                 "TESTING.md",
                 "Fuzzing/Artifacts",

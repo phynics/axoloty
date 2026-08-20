@@ -8,10 +8,6 @@ agents* that communicate over an open publish-subscribe messaging protocol
 (MQTT). Agents discover, distribute, share, query, and persist hierarchically
 typed data using a platform-agnostic, extensible object model.
 
-@Metadata {
-    @TechnologyRoot
-}
-
 ## Overview
 
 A Coaty application is built around a ``Container`` that resolves components
@@ -25,7 +21,7 @@ The typical startup flow is:
    (including ``MQTTClientOptions`` for broker connectivity).
 2. Register application-specific controllers and object types in a
    ``Components`` instance.
-3. Resolve a ``Container`` via ``Container.resolve(components:configuration:)``.
+3. Resolve a ``Container`` via ``Container/resolve(components:configuration:)``.
 4. The container bootstraps the ``Runtime``, communication manager, and
    controllers; controllers then exchange ``CommunicationEvent``s over MQTT.
 
@@ -34,7 +30,7 @@ package-defined failures conform to `Throwable` and surface stable,
 user-facing messages via ``AxolotyError``.
 
 For a step-by-step introduction including a compiling minimal example, see
-``GettingStarted``.
+<doc:GettingStarted>.
 
 ## Topics
 
@@ -51,8 +47,6 @@ For a step-by-step introduction including a compiling minimal example, see
 
 - ``CommunicationManager``
 - ``CommunicationEvent``
-- ``TopicBuilder``
-- ``TopicView``
 
 ### Configuration
 
@@ -72,5 +66,5 @@ For a step-by-step introduction including a compiling minimal example, see
 
 ### Articles
 
-- ``GettingStarted``
-- <doc:Logging-article>
+- <doc:GettingStarted>
+- [Logging](Logging.md)
