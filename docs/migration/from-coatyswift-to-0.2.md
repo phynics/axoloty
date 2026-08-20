@@ -103,7 +103,7 @@ callback. Rules:
 3. Validate before use.
 4. Copy before returning.
 
-See [API.md](API.md) for the full borrowed-value lifetime rules.
+See [API.md](../API.md) for the full borrowed-value lifetime rules.
 
 ## Communication serialization cutover
 
@@ -143,4 +143,4 @@ the container. macOS runs the same plan natively.
   legacy `for:` argument label is obsolete.
 - `axoloty-inspect` CLI provides passive catalogue and active discovery
   against a live broker without writing a custom agent. See
-  [inspector.md](inspector.md).
+  [inspector.md](../inspector.md).

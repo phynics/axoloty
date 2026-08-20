@@ -1,80 +1,49 @@
 # Axoloty roadmap
 
-Axoloty is a modernized fork of [coatyio/coaty-swift](https://github.com/coatyio/coaty-swift)
-for building distributed, collaborative IoT applications. This document is a
-strategic summary; the live roadmap — with per-item status, phase, and
-priority — is tracked on the
-[Axoloty Roadmap](https://github.com/users/phynics/projects/5) GitHub Project,
-and GitHub Issues are the complete planning record. For the agentic workflow
-driving planning and execution, see [AGENTS.md](../AGENTS.md).
+Axoloty is a Swift runtime and protocol suite for collaborative distributed agents across host systems and constrained devices. GitHub Issues are the complete planning record; this document is the curated active strategy.
 
-## Current release: 0.4 checkpoint
+## Current checkpoint
 
-The current release is **Axoloty 0.4.0** — a development checkpoint tracked in
-[#596 — Axoloty 0.4.0](https://github.com/phynics/axoloty/issues/596).
+[`VERSION`](../VERSION) identifies the current released version (`0.5.1`). Axoloty remains pre-1.0 and its public API may change. The active development checkpoint is 0.6.
 
-Axoloty 0.4 is **not** a v1 release and is **not** API-stable. It builds on the
-host and embedded boundaries established in 0.2 and adds:
+Historical release outcomes are preserved in [`docs/releases/`](./releases/) and [`CHANGELOG.md`](../CHANGELOG.md). They do not define current strategy.
 
-- Validated owned raw-JSON boundaries across `AxolotyWire`.
-- Public Discover responder, decoded-object, join-state, and IO update-rate
-  APIs.
-- A productionized MQTT object inspector with distinct JSON and NDJSON output
-  contracts and explicit private-data controls.
-- Stable embedded identities, shared device leases, and stage-rich release
-  evidence.
-- A canonical test driver, warning-free builds, and reusable development
-  container images.
+## Active direction: 0.6 architecture alignment
 
-## Future direction: v1.0
+[Epic #627](https://github.com/phynics/axoloty/issues/627) replaces the historical v1 direction in [#272](https://github.com/phynics/axoloty/issues/272). Axoloty 0.6 intentionally aligns host and constrained-device execution around one portable protocol critical path before any stability release.
 
-The original v1.0 direction is preserved as future work in
-[#272 — Axoloty v1.0 — lean, safe, embedded-ready](https://github.com/phynics/axoloty/issues/272).
-The v1 north star remains:
+The target outcomes are:
 
-> Axoloty provides a small, bounded-resource, Coaty-compatible edge core
-> with a safe host runtime layered on top. Host conveniences impose no
-> dependency, allocation, or platform cost on embedded builds.
+- one production wire, parser, schema, and protocol processor across host and static runtime profiles;
+- explicit finite resource behavior and structured atomic saturation;
+- a value-oriented typed and dynamic object model without a process-global class registry;
+- structured `AxolotyRuntime` composition and lifecycle instead of Container/controller ownership;
+- typed IO endpoints and binding-specific external IO routes without a general raw-MQTT runtime API;
+- optional SensorThings, Coaty convenience-model, and automatic IO-routing products;
+- structural, trace-equality, compatibility, resource, and documentation release gates.
 
-## Completed phases
+The accepted boundaries and invariants are in [`ARCHITECTURE.md`](../ARCHITECTURE.md). Canonical terms are in [`CONTEXT.md`](../CONTEXT.md).
 
-| Phase | Gate | Outcome | Status |
-|---|---|---|---|
-| 0 | [#273](https://github.com/phynics/axoloty/issues/273) | Finish and clear the inherited backlog. | ✅ Closed |
-| 1 | [#274](https://github.com/phynics/axoloty/issues/274) | Establish the host safety boundary. | ✅ Closed |
-| 2 | [#275](https://github.com/phynics/axoloty/issues/275) | Extract `AxolotyWire`, a Foundation-free wire module with an allowlisted standalone package closure. | ✅ Closed |
-| 3 | [#276](https://github.com/phynics/axoloty/issues/276) | Establish resource and performance budgets. | ✅ Closed |
-| 4 | [#277](https://github.com/phynics/axoloty/issues/277) | Prove the ESP32-C6 vertical slice: Advertise/Deadvertise and Discover/Resolve. | ✅ Closed |
-| 0.2 | [#278](https://github.com/phynics/axoloty/issues/278) | Stabilize, document, and release the 0.2 checkpoint. | ✅ Closed |
-| 0.4 | [#596](https://github.com/phynics/axoloty/issues/596) | Harden wire boundaries, inspector behavior, embedded evidence, and repository tooling. | ✅ Released |
-| Inspector | [#344](https://github.com/phynics/axoloty/issues/344) | MQTT object inspector CLI (`axoloty-inspect`) for passive catalogue and active discovery. | ✅ Closed |
+## Sequential gates
 
-## Design choices
+| Gate | Outcome | Status |
+|---|---|---|
+| [G0 #628](https://github.com/phynics/axoloty/issues/628) | Establish direction and repository authority. | Active |
+| [G1 #629](https://github.com/phynics/axoloty/issues/629) | Prove bounded portable-toolchain assumptions. | Blocked by G0 |
+| [G2 #630](https://github.com/phynics/axoloty/issues/630) | Establish the portable wire/protocol foundation. | Blocked by G1 |
+| [G3 #631](https://github.com/phynics/axoloty/issues/631) | Ship the modern object model. | Blocked by G2 |
+| [G4 #632](https://github.com/phynics/axoloty/issues/632) | Replace the runtime and unify execution. | Blocked by G3 |
+| [G5 #633](https://github.com/phynics/axoloty/issues/633) | Modernize IO and optional product boundaries. | Blocked by G4 |
+| [G6 #634](https://github.com/phynics/axoloty/issues/634) | Prove non-divergence and release 0.6. | Blocked by G5 |
 
-- Share a deep wire module, not the complete host runtime.
-- Preserve the Coaty JSON contract and the existing compatibility suite.
-- Keep borrowed bytes synchronous and scoped; materialize owned bytes before
-  any async hop.
-- Keep embedded routing bounded and single-threaded; host synchronization
-  belongs in a host adapter.
-- Use static embedded composition and retain dynamic registration only in
-  the host runtime.
-- Keep the current WireReader/WireWriter unless measurements prove replacement
-  is necessary.
+Implementation tickets are created lazily as each gate opens. [AT Protocol research #522](https://github.com/phynics/axoloty/issues/522) may continue only as peripheral host-side exploration and must not reshape the portable 0.6 core.
 
-## Cross-cutting success metrics
+## Explicit non-goals for 0.6
 
-- `AxolotyWire` has no host runtime dependencies; its standalone package has
-  one direct `swift-json` / `IkigaJSONCore` parser dependency and an
-  allowlisted transitive resolution closure validated by the distribution
-  gate.
-- `AxolotyWire` imports no Foundation, NIO, MQTT, ErrorKit, or logging modules
-  and uses no actors.
-- Borrowed values never cross asynchronous seams.
-- No mutable transport or router state relies on `@unchecked Sendable`.
-- Existing CoatyJS fixture, live-wire, IO, lifecycle, and SensorThings
-  compatibility gates remain green. The live wire gate is enforced in CI for
-  protocol-affecting changes (#457) with recorded evidence and an explicit,
-  expiring reviewed exemption.
-- Advertise/Deadvertise and Discover/Resolve run on the selected ESP32-C6
-  within recorded RAM, stack, flash, payload-size, and sustained-rate budgets.
+- a production `axoloty/1` extension profile;
+- dynamic profile registration or live runtime reconfiguration;
+- a schema migration engine;
+- AT Protocol production integration;
+- WASM, BLE, or libp2p transports;
+- complete ESP32-C6 capability parity with the host profile;
+- a second compatibility runtime or 1.0 API stability.

@@ -6,6 +6,14 @@ Swift Testing. The principal root Make targets forward to `axoloty-tool`; the Ma
 also retains compatibility recipes for specialized evidence workflows that do
 not belong to the canonical offline check.
 
+## Repository authority
+
+Run `axoloty-tool repository validate` (or `--format json`) to validate the
+current `VERSION`, known release consumers, current-document links, AGENTS
+jurisdiction, architecture invariant identifiers, and the machine-readable
+architecture-exception ledger. The command is a required node of the
+canonical verification graph and exits nonzero on any drift.
+
 ## Platform entry points
 
 Linux product and ESP-IDF work is containerized:

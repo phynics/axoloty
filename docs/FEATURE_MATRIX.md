@@ -97,7 +97,7 @@ wire-evidence section and `../Tests/WireCompatibility/CompatibilityMatrix.md`.
 
 ## Current wire-compatibility evidence
 
-See [SUPPORT_MATRIX.md](SUPPORT_MATRIX.md) for the full 0.2 support
+See [SUPPORT_MATRIX.md](SUPPORT_MATRIX.md) for the full 0.5.1 support
 classification and [Tests/WireCompatibility/CompatibilityMatrix.md](../Tests/WireCompatibility/CompatibilityMatrix.md)
 for per-direction wire evidence.
 
