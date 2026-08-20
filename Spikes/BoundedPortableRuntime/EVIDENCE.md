@@ -23,9 +23,11 @@ ESP-IDF/Embedded Swift container and a separate `Embedded/` project; it does
 not flash a board.
 
 The probe reports storage-event allocation counts. Inline and handler tables
-have zero storage events during initialization and warmed operations; the host
-parser intentionally owns one reusable contiguous buffer. This is an explicit
-probe metric, not a claim about allocator behavior on a physical board.
+have zero storage events during initialization and warmed operations; handler
+entries use a C-convention function pointer, so captured Swift contexts cannot
+cross the boundary. The host parser intentionally owns one reusable contiguous
+buffer. This is an explicit probe metric, not a claim about allocator behavior
+on a physical board.
 
 Run artifacts are written to `.testing/g1-bounded-runtime/<candidate-sha>/` and
 are not source-controlled. `Evidence/evidence.schema.json` is the validation

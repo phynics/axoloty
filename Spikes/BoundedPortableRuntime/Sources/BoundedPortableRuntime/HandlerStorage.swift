@@ -20,12 +20,13 @@ public struct HandlerContext {
 /// A noncapturing function entry plus caller-owned numeric context.
 public struct HandlerEntry {
     /// The callback receives only a stable context handle.
-    public let function: @Sendable (UInt32) -> Void
+    /// The C calling convention makes captured Swift contexts unrepresentable.
+    public let function: @convention(c) (UInt32) -> Void
     /// The numeric context identity.
     public let context: HandlerContext
 
     /// Creates an entry without a runtime-owned closure capture.
-    public init(function: @escaping @Sendable (UInt32) -> Void, context: HandlerContext) {
+    public init(function: @escaping @convention(c) (UInt32) -> Void, context: HandlerContext) {
         self.function = function
         self.context = context
     }
