@@ -189,7 +189,9 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
 
     private func validateArchitecture(findings: inout [AxolotyRepositoryAuthorityFinding]) -> Set<String> {
         guard let architecture = read("ARCHITECTURE.md") else { return [] }
-        let ids = regexCaptures(#"`(INV-[0-9]+)`"#, in: architecture)
+        // Only declaration bullets establish invariant identifiers. References
+        // in explanatory prose must not be mistaken for duplicate declarations.
+        let ids = regexCaptures(#"^- `?(INV-[0-9]+)`?"#, in: architecture)
         let unique = Set(ids)
         if ids.count != unique.count {
             findings.append(.init(rule: "architecture.invariants", path: "ARCHITECTURE.md", message: "architecture invariant identifiers must be unique"))

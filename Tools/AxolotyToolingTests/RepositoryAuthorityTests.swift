@@ -63,6 +63,26 @@ func repositoryAuthorityIgnoresHistoricalVersionClaims() throws {
     #expect(report.status == "passed")
 }
 
+@Test
+func repositoryAuthorityCountsOnlyInvariantDeclarations() throws {
+    let fixture = try makeAuthorityFixture()
+    defer { try? FileManager.default.removeItem(at: fixture) }
+    let architecture = fixture.appendingPathComponent("ARCHITECTURE.md")
+    try """
+    # Architecture
+
+    ## Architectural invariants
+    - `INV-001` shared production processor (non-waivable)
+    - `INV-002` bounded state
+
+    The shared rule is identified by `INV-001` in this explanation and cannot
+    be waived.
+    """.write(to: architecture, atomically: true, encoding: .utf8)
+
+    let report = AxolotyRepositoryAuthorityValidator(root: fixture).validate()
+    #expect(!report.findings.contains { $0.rule == "architecture.invariants" })
+}
+
 private func makeAuthorityFixture(
     makefileVersion: String = "0.5.1",
     exception: String = "{\"schemaVersion\":1,\"exceptions\":[]}"
