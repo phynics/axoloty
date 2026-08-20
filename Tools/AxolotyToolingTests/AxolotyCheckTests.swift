@@ -244,7 +244,24 @@ func offlinePlanOmitsEmbeddedChecksOnMacOS() {
 @Test
 func offlinePlanIncludesEmbeddedChecksOnLinux() {
     let plan = AxolotyCheckPlan.initialOffline(for: .linux)
-    #expect(plan.nodes.map(\.name).suffix(2) == ["embedded-build", "embedded-linker"])
+    let names = plan.nodes.map(\.name)
+    let embeddedBuild = names.firstIndex(of: "embedded-build")
+    let embeddedLinker = names.firstIndex(of: "embedded-linker")
+    let boundedHost = names.firstIndex(of: "g1-bounded-runtime-host")
+    let boundedSanitized = names.firstIndex(of: "g1-bounded-runtime-sanitized")
+    let boundedEmbedded = names.firstIndex(of: "g1-bounded-runtime-embedded")
+
+    #expect(embeddedBuild != nil)
+    #expect(embeddedLinker != nil)
+    #expect(boundedHost != nil)
+    #expect(boundedSanitized != nil)
+    #expect(boundedEmbedded != nil)
+    if let embeddedBuild, let embeddedLinker, let boundedHost, let boundedSanitized, let boundedEmbedded {
+        #expect(embeddedBuild < embeddedLinker)
+        #expect(embeddedLinker < boundedHost)
+        #expect(boundedHost < boundedSanitized)
+        #expect(boundedSanitized < boundedEmbedded)
+    }
 }
 
 @Test
