@@ -15,8 +15,10 @@ product API.
 
 The payload-limit case derives a 513-byte payload from the `CHN.valid` fixture;
 its `fixtureID` records that deterministic derivation rather than naming a
-nonexistent fixture file. External-route traces use the test binding shape
-`devices/<device>/<endpoint>` and include an incompatible-route rejection.
+nonexistent fixture file. External-route traces preserve Coaty's
+`associatingRoute` field and the pinned binding fixture value
+`external/wire-compat-v1/io-external-1`; the route classification is supplied
+by the binding, with a separate rejection case for an inconsistent flag.
 
 `IoState` is intentionally not a family: it is a local association signal and
 is not published on MQTT.

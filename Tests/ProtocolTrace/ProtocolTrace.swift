@@ -28,6 +28,11 @@ enum TraceDirection: String, Codable, Equatable, Sendable {
     case outbound
 }
 
+enum TraceRouteClassification: String, Codable, Equatable, Sendable {
+    case coaty
+    case external
+}
+
 enum TraceLocalOperation: String, Codable, Equatable, Sendable {
     case processInbound
     case publishOutbound
@@ -91,7 +96,8 @@ struct TraceInput: Codable, Equatable, Sendable {
     let payloadBytes: Int
     let objectID: String?
     let correlationID: String?
-    let route: String?
+    let associatingRoute: String?
+    let routeClassification: TraceRouteClassification?
     let isExternalRoute: Bool
     let duplicate: Bool
     let malformed: Bool
@@ -104,7 +110,8 @@ struct TraceInput: Codable, Equatable, Sendable {
         fixturePayload: String,
         objectID: String? = nil,
         correlationID: String? = nil,
-        route: String? = nil,
+        associatingRoute: String? = nil,
+        routeClassification: TraceRouteClassification? = nil,
         isExternalRoute: Bool = false,
         duplicate: Bool = false,
         malformed: Bool? = nil,
@@ -117,7 +124,8 @@ struct TraceInput: Codable, Equatable, Sendable {
         self.payloadBytes = fixturePayload.utf8.count
         self.objectID = objectID
         self.correlationID = correlationID
-        self.route = route
+        self.associatingRoute = associatingRoute
+        self.routeClassification = routeClassification
         self.isExternalRoute = isExternalRoute
         self.duplicate = duplicate
         self.malformed = malformed ?? !Self.isValidJSON(fixturePayload)
@@ -269,10 +277,10 @@ struct HostTraceReplayAdapter: TraceReplayAdapter {
             return accepted(state: next, step: step)
 
         case .associate:
-            guard let associationID = input.objectID, let route = input.route else {
+            guard let associationID = input.objectID, input.associatingRoute != nil, let classification = input.routeClassification else {
                 return rejected(state: state, code: .malformed, reason: "associate requires a route identifier")
             }
-            guard input.isExternalRoute == Self.isTypedExternalRoute(route) else {
+            guard input.isExternalRoute == (classification == .external) else {
                 return rejected(state: state, code: .externalRouteMismatch, reason: "external route flag does not match the binding route")
             }
             if state.associationIDs.contains(associationID) || input.duplicate {
@@ -341,10 +349,6 @@ struct HostTraceReplayAdapter: TraceReplayAdapter {
         )
     }
 
-    private static func isTypedExternalRoute(_ route: String) -> Bool {
-        let components = route.split(separator: "/", omittingEmptySubsequences: true)
-        return components.count == 3 && components[0] == "devices" && components[1].isEmpty == false && components[2].isEmpty == false
-    }
 }
 
 /// Static-profile replay implemented independently with four fixed slots per
@@ -461,10 +465,10 @@ struct StaticTraceReplayAdapter: TraceReplayAdapter {
             _ = objects.remove(objectID)
             generation += 1
         case .associate:
-            guard let associationID = input.objectID, let route = input.route else {
+            guard let associationID = input.objectID, input.associatingRoute != nil, let classification = input.routeClassification else {
                 return rejected(state: state, code: .malformed, reason: "associate requires a route identifier")
             }
-            guard input.isExternalRoute == Self.isTypedExternalRoute(route) else {
+            guard input.isExternalRoute == (classification == .external) else {
                 return rejected(state: state, code: .externalRouteMismatch, reason: "external route flag does not match the binding route")
             }
             guard !associations.contains(associationID), !input.duplicate else {
@@ -512,11 +516,6 @@ struct StaticTraceReplayAdapter: TraceReplayAdapter {
                 generation: generation
             )
         )
-    }
-
-    private static func isTypedExternalRoute(_ route: String) -> Bool {
-        let components = route.split(separator: "/", omittingEmptySubsequences: true)
-        return components.count == 3 && components[0] == "devices" && components[1].isEmpty == false && components[2].isEmpty == false
     }
 
     private func rejected(state: TraceState, code: TraceRejectionCode, reason: String) -> TraceObservation {

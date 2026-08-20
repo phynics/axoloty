@@ -18,7 +18,10 @@ struct ProtocolTraceTests {
         #expect(corpus.allSatisfy { $0.steps.first?.input.fixtureID.hasPrefix("Tests/ProtocolTrace/Fixtures/family-seeds.json#") == true })
         #expect(corpus.filter { $0.id.hasPrefix("malformed-") }.allSatisfy { $0.steps.first?.input.malformed == true })
         #expect(corpus.contains { trace in
-            trace.id == "positive-external-route" && trace.steps.first?.input.isExternalRoute == true
+            trace.id == "positive-external-route"
+                && trace.steps.first?.input.isExternalRoute == true
+                && trace.steps.first?.input.routeClassification == .external
+                && trace.steps.first?.input.associatingRoute == "external/wire-compat-v1/io-external-1"
         })
     }
 

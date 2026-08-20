@@ -61,7 +61,8 @@
             "payloadBytes": { "type": "integer", "minimum": 0 },
             "objectID": { "type": ["string", "null"] },
             "correlationID": { "type": ["string", "null"] },
-            "route": { "type": ["string", "null"] },
+            "associatingRoute": { "type": ["string", "null"] },
+            "routeClassification": { "enum": ["coaty", "external", null] },
             "isExternalRoute": { "type": "boolean" },
             "duplicate": { "type": "boolean" },
             "malformed": { "type": "boolean" },
@@ -70,7 +71,7 @@
           "allOf": [
             {
               "if": { "properties": { "isExternalRoute": { "const": true } } },
-              "then": { "required": ["route"], "properties": { "route": { "type": "string", "minLength": 1 } } }
+              "then": { "required": ["associatingRoute", "routeClassification"], "properties": { "associatingRoute": { "type": "string", "minLength": 1 }, "routeClassification": { "enum": ["coaty", "external"] } } }
             }
           ],
           "additionalProperties": false

@@ -68,14 +68,16 @@ enum ProtocolTraceCorpus {
 
     private static func positiveTrace(for family: TraceEventFamily, seed: FixtureSeed) -> ProtocolTrace {
         let (direction, operation, objectID, correlationID, route, priorState, nextState) = positiveShape(for: family)
+        let fixtureVariant = family == .associate ? "externalRoute" : "valid"
         let input = TraceInput(
             family: family,
             direction: direction,
-            fixtureID: fixtureID(family, "valid"),
-            fixturePayload: seed.valid,
+            fixtureID: fixtureID(family, fixtureVariant),
+            fixturePayload: family == .associate ? seed.externalRoute : seed.valid,
             objectID: objectID,
             correlationID: correlationID,
-            route: route,
+            associatingRoute: route,
+            routeClassification: family == .associate ? .external : nil,
             isExternalRoute: family == .associate
         )
         let step = TraceStep(
@@ -151,7 +153,7 @@ enum ProtocolTraceCorpus {
         case .deadvertise:
             return (.inbound, .processInbound, "object-001", nil, nil, TraceState(activeObjectIDs: ["object-001"], generation: 1), TraceState(generation: 2))
         case .associate:
-            return (.inbound, .processInbound, "route-001", nil, "devices/001/temperature", TraceState(), TraceState(associationIDs: ["route-001"], generation: 1))
+            return (.inbound, .processInbound, "route-001", nil, "external/wire-compat-v1/io-external-1", TraceState(), TraceState(associationIDs: ["route-001"], generation: 1))
         case .discover, .query, .update, .call:
             return (.outbound, .publishOutbound, nil, "correlation-001", nil, TraceState(), TraceState(pendingCorrelationIDs: ["correlation-001"], generation: 1))
         case .resolve, .retrieve, .complete, .return:
@@ -282,12 +284,13 @@ enum ProtocolTraceCorpus {
             fixtureID: fixtureID(.associate, "externalRoute"),
             fixturePayload: seed.externalRoute,
             objectID: "external-route-001",
-            route: "devices/001/temperature",
+            associatingRoute: "external/wire-compat-v1/io-external-1",
+            routeClassification: .external,
             isExternalRoute: true
         )
         return singleStep(
             id: "positive-external-route",
-            description: "Typed Coaty IO association accepts an exact external route",
+            description: "Typed Coaty IO association accepts a binding-classified external route",
             state: state,
             input: input,
             expected: TraceObservation(
@@ -303,15 +306,16 @@ enum ProtocolTraceCorpus {
         let input = TraceInput(
             family: .associate,
             direction: .inbound,
-            fixtureID: fixtureID(.associate, "valid"),
-            fixturePayload: seed.valid,
+            fixtureID: fixtureID(.associate, "externalRoute"),
+            fixturePayload: seed.externalRoute,
             objectID: "invalid-route-001",
-            route: "coaty/3/invalid",
+            associatingRoute: "external/wire-compat-v1/io-external-1",
+            routeClassification: .coaty,
             isExternalRoute: true
         )
         return singleStep(
             id: "negative-external-route",
-            description: "An external-route flag cannot bless a non-binding route",
+            description: "An external-route flag cannot contradict binding classification",
             state: state,
             input: input,
             expected: rejected(.externalRouteMismatch, "external route flag does not match the binding route", state: state)
