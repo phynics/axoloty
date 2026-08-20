@@ -43,7 +43,7 @@ alignment. The parser accepts a 512-byte payload in 520 inline bytes and in a
 
 The ESP-IDF 5.4 / Swift 6.3 ESP32-C6 cross-build also passes without flashing:
 the firmware image is 137,792 bytes, the ELF is 3,384,080 bytes, and the map
-is 2,539,862 bytes. The embedded source instantiates all four capacity
+is 2,539,965 bytes. The embedded source instantiates all four capacity
 specializations; the report records their measured source-layout growth
 (12/48/192/768 inline bytes and 40/160/640/2560 handler bytes). Direct macro
 use is rejected by the Embedded Swift consumer, so the checked source uses the
