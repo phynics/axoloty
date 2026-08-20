@@ -21,7 +21,7 @@ public struct AxolotyObjectMacro: MemberMacro {
     ) throws -> [DeclSyntax] {
         ["""
         /// Schema synthesized by `@AxolotyObject`.
-        public static let schema = PortableObjectSchema(fields: [])
+        public static let schema = PortableObjectSchema(fieldCount: 0)
         """]
     }
 }

@@ -8,7 +8,7 @@ probe="$root/Spikes/BoundedPortableRuntime"
 candidate=$(git -C "$root" rev-parse HEAD)
 artifact="$root/.testing/g1-bounded-runtime/$candidate"
 mkdir -p "$artifact"
-rm -rf "$artifact/embedded-build" "$artifact/embedded-export"
+rm -rf "$artifact/embedded-build" "$artifact/embedded-macro-build" "$artifact/embedded-export"
 
 CONTAINER_RUNTIME=${CONTAINER_RUNTIME:-podman} IMAGE=${IMAGE:-axoloty-dev} \
 BUILD_DIR="$artifact/container-build" \
@@ -16,7 +16,6 @@ SPM_CACHE_DIR="${SPM_CACHE_DIR:-$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux
 "$root/.devcontainer/run.sh" bash -lc '
 set -euo pipefail
 project=/workspace/Spikes/BoundedPortableRuntime/Embedded
-macro_project=/workspace/Spikes/BoundedPortableRuntime/MacroProbe
 artifact=/workspace/.testing/g1-bounded-runtime/'"$candidate"'
 export_dir="$artifact/embedded-export"
 mkdir -p "$export_dir"
@@ -27,11 +26,19 @@ idf_log=$(mktemp)
 rm -f "$idf_log"
 . /workspace/Tests/Support/embedded-build-cache.sh
 
-if swift build --package-path "$macro_project" \
+swift build -Xswiftc -warnings-as-errors \
+    --package-path /workspace/Spikes/BoundedPortableRuntime/MacroProbe \
     --cache-path /workspace/.swiftpm-cache --disable-automatic-resolution \
-    --triple riscv32-none-none-eabi --configuration release \
-    -Xswiftc -enable-experimental-feature -Xswiftc Embedded \
-    --product bounded-runtime-embedded-macro-consumer \
+    --target BoundedPortableRuntimeMacros \
+    >"$artifact/macro-host-plugin-build.log" 2>&1
+macro_plugin=$(find /workspace/Spikes/BoundedPortableRuntime/MacroProbe/.build \
+    -type f -name BoundedPortableRuntimeMacros-tool -perm -111 -print -quit)
+[ -n "$macro_plugin" ] || { echo "macro plugin executable was not built" >&2; exit 1; }
+macro_build="$artifact/embedded-macro-build"
+axoloty_enable_esp_idf_ccache "$project" esp32c6 g1-bounded-runtime-macro
+if idf.py -B "$macro_build" -DPROJECT_VER=g1-bounded-runtime-macro \
+    -DG1_CAPACITY=0 -DG1_MACRO_ATTEMPT=ON -DG1_MACRO_PLUGIN="$macro_plugin" \
+    reconfigure build \
     >"$artifact/macro-embedded-build.log" 2>&1; then
     macro_status=compiled
 else

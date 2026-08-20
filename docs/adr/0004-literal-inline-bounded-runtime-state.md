@@ -26,8 +26,8 @@ The accepted initial presets are:
   allocation growth and small fixed layouts.
 
 These values guide G2's production types. The G1 implementations remain
-spike-local and do not themselves add a public Axoloty API. SwiftSyntax macros
-work for the host consumer but are unsupported in the current Embedded Swift
-consumer; embedded code therefore writes the equivalent source conformance
-manually rather than checking in generated Swift. This macro boundary does not
-change the literal-inline storage decision.
+spike-local and do not themselves add a public Axoloty API. The pinned
+SwiftSyntax macro works in both the host consumer and the direct ESP-IDF
+consumer attempt. The measured embedded firmware also compiles the equivalent
+manual source conformance, so no generated Swift is checked in. This macro
+result does not promote either form into production before G2.

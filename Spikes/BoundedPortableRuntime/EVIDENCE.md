@@ -40,11 +40,12 @@ handler layouts were 32/128/512/2,048 bytes. A 512-byte payload produced the
 same action trace in the 520-byte inline workspace and reusable 4,096-byte host
 workspace through one generic parser algorithm.
 
-The real host macro consumer compiled with SwiftSyntax 603.0.0. A direct build
-of that consumer for `riscv32-none-none-eabi` failed inside SwiftSyntax's
-Embedded Swift boundary; the ESP32-C6 project then compiled the equivalent
-manual `PortableObjectSchema` conformance from source. No generated Swift is
-stored.
+The real host macro consumer compiled with SwiftSyntax 603.0.0. The ESP-IDF
+project also compiled an ESP32-C6 consumer while loading that same host-built
+macro plugin, establishing that direct macro use crosses the current embedded
+toolchain boundary. The measured firmware project separately compiled the
+source-level equivalent `PortableObjectSchema(fieldCount: 0)` conformance so
+both forms remain exercised. No generated Swift is stored.
 
 The ESP32-C6 cross-build measured each specialization against a no-table
 baseline. Firmware growth for capacities 1/4/16/64 was

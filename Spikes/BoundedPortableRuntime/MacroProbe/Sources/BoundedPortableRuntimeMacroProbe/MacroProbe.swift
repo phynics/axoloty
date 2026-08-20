@@ -2,13 +2,13 @@
 
 /// The schema shape shared by the macro and manual conformance probes.
 public struct PortableObjectSchema: Equatable, Sendable {
-    /// Schema field names in stable source order.
-    public let fields: [String]
+    /// Number of schema fields in stable source order.
+    public let fieldCount: Int
 
     /// Creates a portable schema.
     ///
-    /// - Parameter fields: Field names in stable source order.
-    public init(fields: [String]) { self.fields = fields }
+    /// - Parameter fieldCount: Number of fields in the schema.
+    public init(fieldCount: Int) { self.fieldCount = fieldCount }
 }
 
 /// Synthesizes the minimal ``PortableObjectSchema`` member used by this probe.
@@ -25,7 +25,7 @@ public struct MacroObject {}
 /// Equivalent source-level conformance used by the embedded consumer.
 public struct ManualObject {
     /// Source-level schema equivalent to the macro expansion.
-    public static let schema = PortableObjectSchema(fields: [])
+    public static let schema = PortableObjectSchema(fieldCount: 0)
 
     /// Creates the manual probe object.
     public init() {}

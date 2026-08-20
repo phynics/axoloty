@@ -7,7 +7,7 @@ root=$(cd "$(dirname "$0")/../.." && pwd)
 probe="$root/Spikes/BoundedPortableRuntime"
 candidate=$(git -C "$root" rev-parse HEAD)
 artifact="$root/.testing/g1-bounded-runtime/$candidate"
-device=${EMBEDDED_DEVICE:-/dev/ttyACM0}
+device=${AXOLOTY_DEVICE:-/dev/ttyACM0}
 embedded_evidence="$artifact/embedded-evidence.json"
 hardware_runs="$artifact/hardware-runs"
 
@@ -69,7 +69,11 @@ const configurations = [1, 4, 16, 64].map(capacity => {
   return {
     capacity,
     crossBuild,
-    runs: runs.map(run => ({...run, relativeMAD: relativeMAD(run.rateSamplesPerSecond)})),
+    runs: runs.map((run, index) => ({
+      ...run,
+      runNumber: index + 1,
+      relativeMAD: relativeMAD(run.rateSamplesPerSecond),
+    })),
   };
 });
 const first = configurations[0].runs[0];

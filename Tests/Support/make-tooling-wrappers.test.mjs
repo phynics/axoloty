@@ -30,6 +30,7 @@ test("principal Make workflows are direct axoloty-tool wrappers", () => {
     "check-embedded-swift-linker",
     "hardware-check",
     "hardware-require",
+    "g1-bounded-runtime-device",
     "release-fixture-bundle",
   ];
   for (const target of recursiveTargets) {
@@ -38,6 +39,14 @@ test("principal Make workflows are direct axoloty-tool wrappers", () => {
   for (const target of ["verify", "verify-ci", "test-one", "test-tier", "explain"]) {
     assert.match(recipe(makefile, target), /(?:\.devcontainer\/run\.sh.*axoloty-tool|\$\(MAKE\).*\baxoloty-tool\b)/, `${target} must run axoloty-tool in the pinned container`);
   }
+});
+
+test("G1 device wrapper delegates policy and device access to axoloty-tool", () => {
+  const makefile = fs.readFileSync("Makefile", "utf8");
+  const target = recipe(makefile, "g1-bounded-runtime-device");
+  assert.match(target, /AXOLOTY_TOOL_ARGS='test-one --filter g1-bounded-runtime-device'/);
+  assert.match(target, /AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES='\$\(AXOLOTY_DEVICE\)'/);
+  assert.doesNotMatch(target, /\.devcontainer\/run\.sh|CONTAINER_DEVICES=/);
 });
 
 test("support runs the Embedded Swift self-test in the pinned container", () => {
