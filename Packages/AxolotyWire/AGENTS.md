@@ -1,6 +1,10 @@
 # AxolotyWire instructions
 
-These rules specialize the repository-wide rules in the root `AGENTS.md` for this subtree.
+## Jurisdiction
+
+This guide applies to `Packages/AxolotyWire/`. The root [`AGENTS.md`](../../AGENTS.md) rules apply; this guide specializes them for the portable wire package.
+
+## Specialized rules
 
 `AxolotyWire` is the portable, profile-neutral wire boundary. It may own route/topic envelopes, codecs, wire validation, common object-envelope decoding, borrowed/owned wire values, caller-owned parser workspaces, and wire errors.
 

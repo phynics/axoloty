@@ -9,7 +9,7 @@ Add Axoloty to the `dependencies` array in your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.2.0"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.5.1"),
 ]
 ```
 

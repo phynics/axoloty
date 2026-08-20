@@ -100,17 +100,19 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
         _ version: String,
         findings: inout [AxolotyRepositoryAuthorityFinding]
     ) {
+        let semanticVersion = #"([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)"#
         let claims: [(String, String, Bool)] = [
-            ("README.md", #"from: "([0-9]+\.[0-9]+\.[0-9]+)""#, false),
-            ("Makefile", #"AXOLOTY_CONSUMER_VERSION \?= ([0-9]+\.[0-9]+\.[0-9]+)"#, false),
-            ("Tests/Support/check-axoloty-semver-consumer.sh", #"version=.*:-([0-9]+\.[0-9]+\.[0-9]+)\}"#, false),
-            ("Tools/AxolotyTooling/AxolotyCommandDispatcher.swift", #"private static let version = "([0-9]+\.[0-9]+\.[0-9]+)""#, false),
-            ("Tools/AxolotyInspectorCore/InspectorArgumentParser.swift", #"public static let version = "([0-9]+\.[0-9]+\.[0-9]+)""#, false),
-            ("Tools/AxolotyToolingTests/AxolotyCommandDispatcherTests.swift", #"axoloty-tool ([0-9]+\.[0-9]+\.[0-9]+)"#, true),
-            ("Tools/AxolotyToolingTests/AxolotyServeParserTests.swift", #"(?:ax|axoloty-tool) ([0-9]+\.[0-9]+\.[0-9]+)"#, true),
-            ("Tools/AxolotyInspectorCoreTests/InspectorArgumentParserTests.swift", #"version == "([0-9]+\.[0-9]+\.[0-9]+)""#, true),
-            ("docs/API.md", #"^# Axoloty ([0-9]+\.[0-9]+\.[0-9]+) API documentation"#, false),
-            ("docs/SUPPORT_MATRIX.md", #"^# Axoloty ([0-9]+\.[0-9]+\.[0-9]+) support matrix"#, false),
+            ("README.md", "from: \"" + semanticVersion + "\"", false),
+            ("Source/Axoloty.docc/GettingStarted.md", "from: \"" + semanticVersion + "\"", false),
+            ("Makefile", "AXOLOTY_CONSUMER_VERSION \\?= " + semanticVersion, false),
+            ("Tests/Support/check-axoloty-semver-consumer.sh", "version=.*:-" + semanticVersion + "\\}", false),
+            ("Tools/AxolotyTooling/AxolotyCommandDispatcher.swift", "private static let version = \"" + semanticVersion + "\"", false),
+            ("Tools/AxolotyInspectorCore/InspectorArgumentParser.swift", "public static let version = \"" + semanticVersion + "\"", false),
+            ("Tools/AxolotyToolingTests/AxolotyCommandDispatcherTests.swift", "axoloty-tool " + semanticVersion, true),
+            ("Tools/AxolotyToolingTests/AxolotyServeParserTests.swift", "(?:ax|axoloty-tool) " + semanticVersion, true),
+            ("Tools/AxolotyInspectorCoreTests/InspectorArgumentParserTests.swift", "version == \"" + semanticVersion + "\"", true),
+            ("docs/API.md", "^# Axoloty " + semanticVersion + " API documentation", false),
+            ("docs/SUPPORT_MATRIX.md", "^# Axoloty " + semanticVersion + " support matrix", false),
         ]
         for (path, pattern, allMatches) in claims {
             guard let content = read(path) else {
@@ -142,19 +144,31 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
         for path in markdownPaths() {
             guard let content = read(path) else { continue }
             for target in markdownTargets(in: content) {
-                if target.hasPrefix("http://") || target.hasPrefix("https://") || target.hasPrefix("mailto:") || target.hasPrefix("#") {
+                if target.hasPrefix("http://") || target.hasPrefix("https://") || target.hasPrefix("mailto:") {
                     continue
                 }
-                let withoutFragment = target.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? target
-                guard !withoutFragment.isEmpty else { continue }
-                let base = URL(fileURLWithPath: path, relativeTo: root).deletingLastPathComponent()
-                let resolved = URL(fileURLWithPath: withoutFragment, relativeTo: base).standardizedFileURL
+                let pieces = target.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
+                let withoutFragment = String(pieces[0]).removingPercentEncoding ?? String(pieces[0])
+                let fragment = pieces.count == 2 ? String(pieces[1]) : nil
+                let base = root.appendingPathComponent(path).deletingLastPathComponent()
+                let resolved = withoutFragment.isEmpty
+                    ? root.appendingPathComponent(path)
+                    : URL(fileURLWithPath: withoutFragment, relativeTo: base).standardizedFileURL
                 guard resolved.path.hasPrefix(root.path) else {
                     findings.append(.init(rule: "links.scope", path: path, message: "link escapes the repository: " + target))
                     continue
                 }
                 if !FileManager.default.fileExists(atPath: resolved.path) {
                     findings.append(.init(rule: "links.resolve", path: path, message: "link target does not exist: " + target))
+                } else if let fragment, !fragment.isEmpty, resolved.pathExtension.lowercased() == "md",
+                          let destination = try? String(contentsOf: resolved, encoding: .utf8),
+                          !markdownAnchors(in: destination).contains(fragment.lowercased()) {
+                    findings.append(.init(rule: "links.anchor", path: path, message: "link heading does not exist: " + target))
+                }
+            }
+            if path.contains(".docc/") {
+                for target in doccArticleTargets(in: content) where !doccArticleNames().contains(target) {
+                    findings.append(.init(rule: "links.docc.resolve", path: path, message: "DocC article does not exist: <doc:" + target + ">"))
                 }
             }
         }
@@ -165,24 +179,38 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
             findings.append(.init(rule: "agents.root", path: "AGENTS.md", message: "root AGENTS.md is missing"))
             return
         }
-        for marker in ["## Documentation authority", "## Normal workflow", "## Architectural invariants"] {
+        for marker in [
+            "## Jurisdiction", "## Documentation authority", "## Architectural invariants",
+            "## Supported workflow", "## Prohibited shortcuts", "## Authority links",
+        ] {
             if !rootAgents.contains(marker) {
                 findings.append(.init(rule: "agents.root", path: "AGENTS.md", message: "root AGENTS.md must contain " + marker))
             }
         }
-        if let version = read("VERSION"), rootAgents.contains(version) {
-            findings.append(.init(rule: "agents.current-version", path: "AGENTS.md", message: "root AGENTS.md must not contain the current release number " + version))
+        if !regexCaptures(#"\b(v?[0-9]+\.[0-9]+(?:\.[0-9]+)?)\b"#, in: rootAgents).isEmpty {
+            findings.append(.init(rule: "agents.release-number", path: "AGENTS.md", message: "root AGENTS.md must not contain release numbers"))
         }
-        for forbidden in ["/dev/tty", ".swiftpm-cache", "image digest", "connect-timeout"] where rootAgents.localizedCaseInsensitiveContains(forbidden) {
+        let volatileDetails = [
+            "/dev/", "/workspace", "/opt/", "/tmp/", ".cache/", ".swiftpm-cache",
+            ".devcontainer", "BUILD_DIR", "SPM_CACHE", "CONTAINER_DEVICES", "image digest",
+            "connect-timeout", "timeoutSeconds", "podman run", "docker run",
+        ]
+        for forbidden in volatileDetails where rootAgents.localizedCaseInsensitiveContains(forbidden) {
             findings.append(.init(rule: "agents.volatile", path: "AGENTS.md", message: "root AGENTS.md contains volatile operational detail: " + forbidden))
         }
-        for path in ["Embedded/AGENTS.md", "Packages/AxolotyWire/AGENTS.md", "Tests/AGENTS.md", "Tools/AGENTS.md"] {
+        let scopes = ["Embedded", "Packages/AxolotyWire", "Tests", "Tools"]
+        for scope in scopes {
+            let path = scope + "/AGENTS.md"
             guard let scoped = read(path) else {
                 findings.append(.init(rule: "agents.scoped", path: path, message: "scoped AGENTS.md is missing"))
                 continue
             }
-            if !scoped.localizedCaseInsensitiveContains("instructions") || !scoped.localizedCaseInsensitiveContains("root") {
-                findings.append(.init(rule: "agents.scoped", path: path, message: "scoped AGENTS.md must state its jurisdiction and relationship to root rules"))
+            let rootLink = scope == "Packages/AxolotyWire"
+                ? "The root [`AGENTS.md`](../../AGENTS.md) rules apply"
+                : "The root [`AGENTS.md`](../AGENTS.md) rules apply"
+            if !scoped.contains("## Jurisdiction") || !scoped.contains("## Specialized rules") ||
+                !scoped.contains("This guide applies to `" + scope + "/`.") || !scoped.contains(rootLink) {
+                findings.append(.init(rule: "agents.scoped", path: path, message: "scoped AGENTS.md must declare its exact jurisdiction and specialized root rules"))
             }
         }
     }
@@ -215,36 +243,69 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
             findings.append(.init(rule: "exceptions.schema", path: path, message: "ledger must be JSON-compatible YAML"))
             return
         }
-        guard object["schemaVersion"] as? Int == 1, let entries = object["exceptions"] as? [[String: Any]] else {
+        guard object["schemaVersion"] as? Int == 1, let rawEntries = object["exceptions"] as? [Any] else {
             findings.append(.init(rule: "exceptions.schema", path: path, message: "ledger requires schemaVersion 1 and an exceptions array"))
             return
         }
         var ids = Set<String>()
-        for (index, entry) in entries.enumerated() {
+        for (index, rawEntry) in rawEntries.enumerated() {
             let prefix = "exceptions[" + String(index) + "]"
+            guard let entry = rawEntry as? [String: Any] else {
+                findings.append(.init(rule: "exceptions.schema", path: path, message: prefix + " must be an object"))
+                continue
+            }
             let required = ["id", "invariant", "paths", "reason", "ownerIssue", "owner", "compensatingTests", "introducedDate", "expiry", "removalCondition"]
             for key in required where entry[key] == nil {
                 findings.append(.init(rule: "exceptions.required", path: path, message: prefix + " is missing " + key))
             }
-            guard let id = entry["id"] as? String, !id.isEmpty else { continue }
+            guard let id = nonEmptyString(entry["id"]) else {
+                findings.append(.init(rule: "exceptions.value", path: path, message: prefix + ".id must be a non-empty string"))
+                continue
+            }
             if !ids.insert(id).inserted {
                 findings.append(.init(rule: "exceptions.unique", path: path, message: "duplicate exception id " + id))
             }
-            guard let invariant = entry["invariant"] as? String else { continue }
-            if invariant == Self.nonWaivableInvariant {
+            if let invariant = nonEmptyString(entry["invariant"]), invariant == Self.nonWaivableInvariant {
                 findings.append(.init(rule: "exceptions.non-waivable", path: path, message: id + " attempts to waive " + Self.nonWaivableInvariant + ", which is non-waivable"))
-            } else if !invariants.contains(invariant) {
+            } else if let invariant = nonEmptyString(entry["invariant"]), !invariants.contains(invariant) {
                 findings.append(.init(rule: "exceptions.invariant", path: path, message: id + " names unknown invariant " + invariant))
+            } else if nonEmptyString(entry["invariant"]) == nil {
+                findings.append(.init(rule: "exceptions.value", path: path, message: id + ".invariant must be a non-empty string"))
             }
             if let paths = entry["paths"] as? [String] {
-                if paths.isEmpty || paths.contains(where: { $0.isEmpty || $0.contains("*") || $0.contains("..") }) {
+                if paths.isEmpty || paths.contains(where: { !isExactExistingRepositoryPath($0) }) {
                     findings.append(.init(rule: "exceptions.paths", path: path, message: id + " must name non-empty exact repository paths without globs or parent traversal"))
                 }
+            } else {
+                findings.append(.init(rule: "exceptions.paths", path: path, message: id + ".paths must be an array of exact repository paths"))
             }
-            if let tests = entry["compensatingTests"] as? [String], tests.isEmpty {
-                findings.append(.init(rule: "exceptions.tests", path: path, message: id + " must name compensating tests"))
+            if let tests = entry["compensatingTests"] as? [String],
+               !tests.isEmpty, tests.allSatisfy({ isExactExistingRepositoryPath(String($0.split(separator: "#", maxSplits: 1)[0])) }) {
+                // Validated above; an optional fragment names a test within the file.
+            } else {
+                findings.append(.init(rule: "exceptions.tests", path: path, message: id + " must name existing compensating-test paths"))
             }
+            for key in ["reason", "owner", "removalCondition"] where nonEmptyString(entry[key]) == nil {
+                findings.append(.init(rule: "exceptions.value", path: path, message: id + "." + key + " must be a non-empty string"))
+            }
+            guard let ownerIssue = nonEmptyString(entry["ownerIssue"]), ownerIssue.range(of: #"^#[1-9][0-9]*$"#, options: .regularExpression) != nil else {
+                findings.append(.init(rule: "exceptions.issue", path: path, message: id + ".ownerIssue must identify an existing GitHub issue as #number"))
+                validateIntroducedDate(entry["introducedDate"], id: id, path: path, findings: &findings)
+                validateExpiry(entry["expiry"], id: id, path: path, findings: &findings)
+                continue
+            }
+            validateIntroducedDate(entry["introducedDate"], id: id, path: path, findings: &findings)
             validateExpiry(entry["expiry"], id: id, path: path, findings: &findings)
+        }
+    }
+
+    private func validateIntroducedDate(_ raw: Any?, id: String, path: String, findings: inout [AxolotyRepositoryAuthorityFinding]) {
+        guard let value = nonEmptyString(raw), let date = repositoryDate(value) else {
+            findings.append(.init(rule: "exceptions.introduced-date", path: path, message: id + " requires introducedDate in YYYY-MM-DD form"))
+            return
+        }
+        if date > now {
+            findings.append(.init(rule: "exceptions.introduced-date", path: path, message: id + " has a future introducedDate"))
         }
     }
 
@@ -259,9 +320,8 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
             return
         }
         if kind == "date" {
-            let formatter = ISO8601DateFormatter()
-            guard let date = formatter.date(from: value) else {
-                findings.append(.init(rule: "exceptions.expiry", path: path, message: id + " has an invalid ISO-8601 expiry date"))
+            guard let date = repositoryDate(value) else {
+                findings.append(.init(rule: "exceptions.expiry", path: path, message: id + " has an invalid YYYY-MM-DD expiry date"))
                 return
             }
             if date < now {
@@ -293,6 +353,31 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
         FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path)
     }
 
+    private func nonEmptyString(_ raw: Any?) -> String? {
+        guard let value = raw as? String, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return value
+    }
+
+    private func isExactExistingRepositoryPath(_ path: String) -> Bool {
+        guard !path.isEmpty, !path.hasPrefix("/"), !path.hasPrefix("~"),
+              !path.contains("*"), !path.contains("?"), !path.contains("["), !path.contains("\\") else { return false }
+        let components = path.split(separator: "/", omittingEmptySubsequences: false)
+        guard !components.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) else { return false }
+        let resolvedRoot = root.resolvingSymlinksInPath().standardizedFileURL
+        let resolved = root.appendingPathComponent(path).resolvingSymlinksInPath().standardizedFileURL
+        return resolved.path.hasPrefix(resolvedRoot.path + "/") && FileManager.default.fileExists(atPath: resolved.path)
+    }
+
+    private func repositoryDate(_ value: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.isLenient = false
+        return formatter.date(from: value)
+    }
+
     private func markdownPaths() -> [String] {
         guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isDirectoryKey]) else { return [] }
         return enumerator.compactMap { item -> String? in
@@ -300,7 +385,9 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
             let relative = url.path.replacingOccurrences(of: root.path + "/", with: "")
             let components = relative.split(separator: "/").map(String.init)
             guard url.pathExtension.lowercased() == "md",
-                  !components.contains(where: { [".git", ".build", "build", ".testing"].contains($0) }) else { return nil }
+                  !components.contains(where: { [".git", ".build", "build", ".testing"].contains($0) }),
+                  !relative.hasPrefix("docs/releases/"),
+                  !relative.hasPrefix("docs/migration/") else { return nil }
             return relative
         }.sorted()
     }
@@ -309,6 +396,28 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
         let pattern = #"\[[^\]]*\]\((?:<([^>]+)>|([^ )]+))(?: [^)]*)?\)"#
         let matches = regexMatchGroups(pattern, in: content)
         return matches.compactMap { groups in groups.dropFirst().compactMap { $0 }.first }
+    }
+
+    private func markdownAnchors(in content: String) -> Set<String> {
+        let headings = regexCaptures(#"^#{1,6}\s+(.+?)\s*#*$"#, in: content)
+        return Set(headings.map { heading in
+            heading.lowercased()
+                .replacingOccurrences(of: #"[`*_~]"#, with: "", options: .regularExpression)
+                .replacingOccurrences(of: #"[^a-z0-9 -]"#, with: "", options: .regularExpression)
+                .replacingOccurrences(of: " ", with: "-")
+                .replacingOccurrences(of: #"-+"#, with: "-", options: .regularExpression)
+        })
+    }
+
+    private func doccArticleTargets(in content: String) -> [String] {
+        regexCaptures(#"<doc:([^>]+)>"#, in: content)
+    }
+
+    private func doccArticleNames() -> Set<String> {
+        Set(markdownPaths().filter { $0.contains(".docc/") }.flatMap { path in
+            let stem = URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
+            return [stem, stem + "-article"]
+        })
     }
 
     private func regexCaptures(_ pattern: String, in content: String) -> [String] {
@@ -334,18 +443,49 @@ private struct Semver: Comparable, CustomStringConvertible {
     let major: Int
     let minor: Int
     let patch: Int
+    let prerelease: [String]
+    let original: String
 
     init?(_ value: String) {
-        let pieces = value.split(separator: ".")
-        guard pieces.count == 3,
-              let major = Int(pieces[0]), let minor = Int(pieces[1]), let patch = Int(pieces[2]),
-              major >= 0, minor >= 0, patch >= 0 else { return nil }
-        self.major = major; self.minor = minor; self.patch = patch
+        let pattern = #"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: value, range: NSRange(value.startIndex..<value.endIndex, in: value)),
+              match.range == NSRange(value.startIndex..<value.endIndex, in: value),
+              let majorRange = Range(match.range(at: 1), in: value),
+              let minorRange = Range(match.range(at: 2), in: value),
+              let patchRange = Range(match.range(at: 3), in: value),
+              let major = Int(value[majorRange]), let minor = Int(value[minorRange]), let patch = Int(value[patchRange]) else { return nil }
+        self.major = major
+        self.minor = minor
+        self.patch = patch
+        if match.range(at: 4).location == NSNotFound {
+            prerelease = []
+        } else if let prereleaseRange = Range(match.range(at: 4), in: value) {
+            prerelease = value[prereleaseRange].split(separator: ".").map(String.init)
+        } else {
+            return nil
+        }
+        original = value
     }
 
     static func < (lhs: Self, rhs: Self) -> Bool {
-        (lhs.major, lhs.minor, lhs.patch) < (rhs.major, rhs.minor, rhs.patch)
+        let lhsCore = (lhs.major, lhs.minor, lhs.patch)
+        let rhsCore = (rhs.major, rhs.minor, rhs.patch)
+        if lhsCore != rhsCore { return lhsCore < rhsCore }
+        if lhs.prerelease.isEmpty { return false }
+        if rhs.prerelease.isEmpty { return true }
+        for (left, right) in zip(lhs.prerelease, rhs.prerelease) where left != right {
+            if let leftNumber = Int(left), let rightNumber = Int(right) { return leftNumber < rightNumber }
+            if Int(left) != nil { return true }
+            if Int(right) != nil { return false }
+            return left < right
+        }
+        return lhs.prerelease.count < rhs.prerelease.count
     }
 
-    var description: String { String(major) + "." + String(minor) + "." + String(patch) }
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.major == rhs.major && lhs.minor == rhs.minor && lhs.patch == rhs.patch && lhs.prerelease == rhs.prerelease
+    }
+
+    var description: String { original }
 }

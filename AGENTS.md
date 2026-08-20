@@ -1,6 +1,10 @@
 # Agent instructions for Axoloty
 
-This file is the stable contributor constitution and repository index. [`ARCHITECTURE.md`](./ARCHITECTURE.md) records accepted boundaries, [`CONTEXT.md`](./CONTEXT.md) defines canonical language, [`docs/ROADMAP.md`](./docs/ROADMAP.md) summarizes active strategy, and GitHub Issues are the complete planning record.
+This file is the stable contributor constitution.
+
+## Jurisdiction
+
+These rules apply to the entire repository. A scoped guide may specialize them for its subtree but cannot weaken an architectural invariant or repository-wide workflow rule.
 
 Scoped instructions add local constraints:
 
@@ -22,7 +26,7 @@ Disagreement is a defect. `ARCHITECTURE.md` separates the implemented current st
 
 Temporary architecture violations require a narrow, expiring entry in [`docs/architecture-exceptions.yml`](./docs/architecture-exceptions.yml). An exception cannot redefine an invariant.
 
-## Normal workflow
+## Supported workflow
 
 Use the repository entry points rather than reproducing container or toolchain commands:
 
@@ -48,6 +52,14 @@ The Makefile is a thin compatibility/bootstrap surface; orchestration policy bel
 
 Before every commit or push, verify the working directory and current branch. Preserve unrelated user changes and stage only the intended paths. Use Conventional Commits with the checkout's configured identity and no bot co-author trailer.
 
+## Prohibited shortcuts
+
+- Keep orchestration policy in `AxolotyTooling`; keep Make and shell entry points thin.
+- Use the pinned build environment through repository entry points for Linux product and Embedded Swift work.
+- Keep ordinary verification hardware-free; use explicit hardware gates for probing and flashing.
+- Keep plans and checklists in their owning GitHub issues rather than local planning files.
+- Preserve the resolved dependency lockfile unless the authorized change explicitly updates dependencies.
+
 ## Architectural invariants
 
 - Host and static runtime profiles share the production wire and protocol critical path.
@@ -59,6 +71,15 @@ Before every commit or push, verify the working directory and current branch. Pr
 - Ordinary verification never probes, reserves, flashes, or requests privileges for hardware.
 
 See [`docs/adr/`](./docs/adr/) for rationale and [`docs/protocol/coaty-core-3.md`](./docs/protocol/coaty-core-3.md) for protocol authority.
+
+## Authority links
+
+- [`ARCHITECTURE.md`](./ARCHITECTURE.md) — implemented boundaries, accepted migration delta, and stable invariants.
+- [`CONTEXT.md`](./CONTEXT.md) — canonical project vocabulary.
+- [`docs/ROADMAP.md`](./docs/ROADMAP.md) — active strategic direction and current gate.
+- [`docs/protocol/coaty-core-3.md`](./docs/protocol/coaty-core-3.md) — normative protocol profile.
+- [`docs/adr/`](./docs/adr/) — architectural decisions and rationale.
+- GitHub Issues — complete planning record.
 
 ## Source conventions
 
