@@ -4,7 +4,11 @@
 
 This maintained G1 probe resolves issue #629 without promoting spike types into
 `AxolotyWire`, `AxolotyProtocol`, or a shipped product. The reviewed decision
-candidate is `0d45c33`.
+candidate is `6a940299`. The physical-device artifact was captured before the
+history-only G0 rebase at `0d45c33`; the complete
+`Spikes/BoundedPortableRuntime` subtree is byte-identical between those two
+commits. After the rebase, the host, sanitizer, and ESP32-C6 cross-build nodes
+were rerun successfully at `f9f2d6cf`.
 
 Run the hardware-free nodes from the repository root:
 

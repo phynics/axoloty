@@ -9,8 +9,8 @@ named capacity presets, and the host uses the same bounded algorithms. Storage
 saturates atomically and uses slot-index-plus-generation tokens; it does not
 hide growable or copy-on-write backing.
 
-[G1 evidence](../../Spikes/BoundedPortableRuntime/EVIDENCE.md) from candidate
-`0d45c33` supports decision A. All capacities (1, 4, 16, and 64) compiled on
+[G1 evidence](../../Spikes/BoundedPortableRuntime/EVIDENCE.md) from the rebased
+candidate `6a940299` supports decision A. All capacities (1, 4, 16, and 64) compiled on
 the pinned host and ESP32-C6 toolchains. Host profiler growth and both device
 allocation traces were exactly zero for initialization and warmed operations.
 The ESP32-C6 retained at least 60,916 bytes of stack reserve, its heap remained
