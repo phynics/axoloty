@@ -61,10 +61,12 @@ for capacity in 0 1 4 16 64; do
     map=$(find "$build" -maxdepth 1 -type f -name "*.map" -print -quit)
     [ -n "$firmware" ] && [ -n "$elf" ] && [ -n "$map" ]
     read -r text_bytes data_bytes bss_bytes _ < <(riscv32-esp-elf-size "$elf" | tail -1)
-    printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+    iram_bytes=$(riscv32-esp-elf-size -A "$elf" \
+        | awk "\$1 ~ /^\\.iram0\\./ { total += \$2 } END { print total + 0 }")
+    printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
         "$capacity" "$compile_seconds" "$(stat -c %s "$firmware")" \
         "$(stat -c %s "$elf")" "$(stat -c %s "$map")" \
-        "$text_bytes" "$data_bytes" "$bss_bytes" >>"$export_dir/configurations.tsv"
+        "$text_bytes" "$data_bytes" "$bss_bytes" "$iram_bytes" >>"$export_dir/configurations.tsv"
 done
 ' >"$artifact/embedded-build.log" 2>&1
 
@@ -74,8 +76,8 @@ const fs = require('fs');
 const path = require('path');
 const rows = fs.readFileSync(path.join(process.env.EXPORT_DIR, 'configurations.tsv'), 'utf8')
   .trim().split(/\n/).map(line => {
-    const [capacity, compileSeconds, firmwareBytes, elfBytes, mapBytes, text, data, bss] = line.split('\t').map(Number);
-    return {capacity, compileSeconds, firmwareBytes, elfBytes, mapBytes, sections: {text, data, bss}};
+    const [capacity, compileSeconds, firmwareBytes, elfBytes, mapBytes, text, data, bss, iram] = line.split('\t').map(Number);
+    return {capacity, compileSeconds, firmwareBytes, elfBytes, mapBytes, sections: {text, data, bss, iram}};
   });
 const baseline = rows.find(row => row.capacity === 0);
 for (const row of rows) {
@@ -84,6 +86,7 @@ for (const row of rows) {
     text: row.sections.text - baseline.sections.text,
     data: row.sections.data - baseline.sections.data,
     bss: row.sections.bss - baseline.sections.bss,
+    iram: row.sections.iram - baseline.sections.iram,
   };
 }
 const report = {

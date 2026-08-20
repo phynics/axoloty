@@ -86,8 +86,8 @@
         "firmwareBytes": {"type": "integer", "minimum": 1},
         "elfBytes": {"type": "integer", "minimum": 1},
         "mapBytes": {"type": "integer", "minimum": 1},
-        "sections": {"type": "object", "required": ["text", "data", "bss"]},
-        "growth": {"type": "object", "required": ["firmwareBytes", "text", "data", "bss"]}
+        "sections": {"type": "object", "required": ["text", "data", "bss", "iram"]},
+        "growth": {"type": "object", "required": ["firmwareBytes", "text", "data", "bss", "iram"]}
       },
       "additionalProperties": false
     },
