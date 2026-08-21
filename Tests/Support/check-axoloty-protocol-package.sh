@@ -25,8 +25,8 @@ for source in "$@"; do
         echo "error: forbidden host dependency in $source" >&2
         exit 1
     fi
-    if grep -Eq '^[[:space:]]*(distributed[[:space:]]+)?actor[[:space:]]|^[[:space:]]*(class|struct|enum|protocol)[[:space:]]+[A-Za-z0-9_]*(Actor|Controller)[[:space:]]*[{:]' "$source"; then
-        echo "error: actor/controller boundary in $source" >&2
+    if grep -Eq '^[[:space:]]*@MainActor([[:space:]]|$)|^[[:space:]]*(distributed[[:space:]]+)?actor[[:space:]]|^[[:space:]]*(class|struct|enum|protocol)[[:space:]]+[A-Za-z0-9_]*(Actor|Controller|Lifecycle|HostObject)[[:space:]]*[{:]' "$source"; then
+        echo "error: actor/controller/lifecycle/host boundary in $source" >&2
         exit 1
     fi
 done

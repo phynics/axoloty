@@ -2,7 +2,7 @@
 # Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 # Negative self-test for the #638 dependency boundary. The maintained checker
-# must reject a protocol source that imports a host-only module.
+# must reject every prohibited host/runtime boundary independently.
 
 set -eu
 
@@ -10,29 +10,26 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-cp -R "$root/Packages/AxolotyProtocol" "$tmp/package"
-printf '\nimport Foundation\n' >> "$tmp/package/Sources/AxolotyProtocol/ProtocolError.swift"
+check_source_rejected() {
+    label=$1
+    mutation=$2
+    rm -rf "$tmp/package"
+    cp -R "$root/Packages/AxolotyProtocol" "$tmp/package"
+    echo "$mutation" >> "$tmp/package/Sources/AxolotyProtocol/ProtocolError.swift"
+    if AXOLOTY_PROTOCOL_PACKAGE_DIR="$tmp/package" "$root/Tests/Support/check-axoloty-protocol-package.sh" >/dev/null 2>&1; then
+        echo "error: checker accepted $label boundary" >&2
+        exit 1
+    fi
+}
 
-if AXOLOTY_PROTOCOL_PACKAGE_DIR="$tmp/package" \
-    "$root/Tests/Support/check-axoloty-protocol-package.sh" >/dev/null 2>&1; then
-    echo "error: protocol dependency checker accepted a Foundation import" >&2
-    exit 1
-fi
-
-rm -rf "$tmp/package"
-cp -R "$root/Packages/AxolotyProtocol" "$tmp/package"
-printf '%s' 'import NIOHTTP1' >> "$tmp/package/Sources/AxolotyProtocol/ProtocolError.swift"
-printf '\n' >> "$tmp/package/Sources/AxolotyProtocol/ProtocolError.swift"
-printf '%s' 'import Logging' >> "$tmp/package/Sources/AxolotyProtocol/ProtocolError.swift"
-printf '\n' >> "$tmp/package/Sources/AxolotyProtocol/ProtocolError.swift"
-printf '%s' 'actor ForbiddenActor {}' >> "$tmp/package/Sources/AxolotyProtocol/ProtocolError.swift"
-printf '\n' >> "$tmp/package/Sources/AxolotyProtocol/ProtocolError.swift"
-printf '%s' 'struct ForbiddenController {}' >> "$tmp/package/Sources/AxolotyProtocol/ProtocolError.swift"
-printf '\n' >> "$tmp/package/Sources/AxolotyProtocol/ProtocolError.swift"
-if AXOLOTY_PROTOCOL_PACKAGE_DIR="$tmp/package" "$root/Tests/Support/check-axoloty-protocol-package.sh" >/dev/null 2>&1; then
-    echo "error: checker accepted forbidden NIO/logging/actor/controller boundaries" >&2
-    exit 1
-fi
+check_source_rejected "Foundation" "import Foundation"
+check_source_rejected "NIO" "import NIOHTTP1"
+check_source_rejected "logging" "import Logging"
+check_source_rejected "global actor" "@MainActor struct HostFacade {}"
+check_source_rejected "actor" "actor ForbiddenActor {}"
+check_source_rejected "controller" "struct ForbiddenController {}"
+check_source_rejected "lifecycle" "struct ForbiddenLifecycle {}"
+check_source_rejected "host object" "struct ForbiddenHostObject {}"
 
 rm -rf "$tmp/package"
 cp -R "$root/Packages/AxolotyProtocol" "$tmp/package"
