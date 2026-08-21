@@ -9,32 +9,36 @@ the Foundation-free `AxolotyWire` product, the portable `AxolotyProtocol`
 foundation, the inspector/MCP tools, and the existing Embedded Swift
 integration. The host runtime still owns protocol coordination and
 object/lifecycle composition. `AxolotyWire` supplies profile-neutral wire
-syntax and bounded embedded helpers; `AxolotyProtocol` supplies only the
-sealed Coaty/3 inventory, routing-key/frame types, structured protocol errors,
-and the synchronous borrowed-to-owned action boundary. No production
-processor or protocol-state store has moved yet. The inherited
+syntax, borrowed values, and caller-owned parser workspaces; `AxolotyProtocol`
+supplies the sealed Coaty/3 inventory, routing-key/frame types, structured
+protocol errors, bounded request state, fixed router/endpoint tables, protocol
+capacities, and the synchronous borrowed-to-owned action boundary. No
+production inbound/outbound processor has moved yet. The inherited
 Container/controller and class-object paths remain current implementation
 details until G2–G5 replace them.
 
 This section is the source of truth for what exists today. It must be updated whenever a gate changes the implemented package graph or removes a legacy path.
 
-### G2 status: portable foundation and test-only trace contract
+### G2 status: portable foundation, bounded state, and test-only trace contract
 
 Issue [#638](https://github.com/phynics/axoloty/issues/638) now lands the
 standalone [`Packages/AxolotyProtocol`](./Packages/AxolotyProtocol) package
 and the matching root product. Its host and ESP-IDF source-inclusion checks
 compile the same Foundation-free sources. The package deliberately stops at
 the profile/frame/error/action boundary: it owns no subscribers, finite
-protocol state, transport, or processor. Issues [#639](https://github.com/phynics/axoloty/issues/639)
-and [#640](https://github.com/phynics/axoloty/issues/640) own those later
-boundaries.
+transport, or processor. Issue [#639](https://github.com/phynics/axoloty/issues/639)
+now moves bounded subscriber/router/endpoint storage and the single-entry
+correlation ledger into `AxolotyProtocol`, and adds the shared parser-workspace
+seam. Issue [#640](https://github.com/phynics/axoloty/issues/640) owns the
+shared production processor and the remaining host-state migration.
 
 The fixture-backed trace contract and independent host/static replay adapters
 under `Tests/ProtocolTrace` remain test-only. They exercise the same profile
 inventory and routing vocabulary without promoting a second processor. Issue
 [#637](https://github.com/phynics/axoloty/issues/637) records that contract;
-issues #639–#641 own the state, processor, workspace, and typed external-route
-production work.
+G2 issue #639 owns the bounded protocol state and shared parser workspace;
+#640 owns the production processor; #641 owns typed external-route production
+work.
 
 ## Accepted 0.6 delta
 
@@ -90,11 +94,11 @@ Inspector / MCP ---------> supported Axoloty runtime APIs
 `AxolotyWire` owns wire syntax, codecs, validation, object-envelope decoding, borrowed and owned wire values, caller-owned parser workspaces, and wire errors. It owns no subscribers, protocol state, transport, lifecycle, actors, or logging.
 
 `AxolotyProtocol` owns the closed built-in profile inventory, capabilities,
-routing keys, portable frames, structured protocol errors, and the borrowed /
-owned action boundary. Until #639 and #640 land, it does not own finite
-correlation/deadline/association state or an inbound/outbound processor. It
-imports no MQTT/NIO, host object hierarchy, logging, actor, or controller
-framework.
+routing keys, portable frames, structured protocol errors, fixed router and
+endpoint tables, bounded request state, protocol capacities, and the borrowed /
+owned action boundary. It does not own an inbound/outbound processor or
+transport. It imports no MQTT/NIO, host object hierarchy, logging, actor, or
+controller framework.
 
 `AxolotyStaticRuntime` owns fixed composition, static delivery, bounded presets, and portable endpoint integration. It contains no protocol rule absent from `AxolotyProtocol`.
 

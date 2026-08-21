@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import AxolotyWire
+import AxolotyProtocol
 
 enum StaticDeviceDispatchResult: Equatable {
     case advertise
@@ -80,9 +81,7 @@ final class StaticDeviceAgent: @unchecked Sendable {
     let agentId: UUID16
     let deviceObjectId: UUID16
     private(set) var hasAdvertisedPeer = false
-    private var pendingCorrelation: UUID16?
-    private var pendingDeadlineMS: UInt32?
-    private var resolvedCorrelation: UUID16?
+    private var correlationState = ProtocolPendingRequest()
     private var ioEndpoints: StaticIoEndpoints
     private let router: EmbeddedMessageRouter
     private var routedOutcome: StaticDeviceDispatchResult = .unsupported
@@ -205,11 +204,11 @@ final class StaticDeviceAgent: @unchecked Sendable {
     ///
     /// Returns `false` when a request is already awaiting a Resolve.
     func beginDiscover(correlationId: UUID16, nowMS: UInt32) -> Bool {
-        guard pendingCorrelation == nil else { return false }
-        pendingCorrelation = correlationId
-        pendingDeadlineMS = nowMS &+ Self.discoverTimeoutMS
-        resolvedCorrelation = nil
-        return true
+        correlationState.begin(
+            correlationID: correlationId,
+            nowMS: nowMS,
+            timeoutMS: Self.discoverTimeoutMS
+        )
     }
 
     /// Expires the outstanding Discover once its deadline has passed.
@@ -217,11 +216,7 @@ final class StaticDeviceAgent: @unchecked Sendable {
     /// Time is supplied by the caller so this static router remains
     /// deterministic and does not need an asynchronous task.
     func expireDiscover(nowMS: UInt32) -> Bool {
-        guard let deadlineMS = pendingDeadlineMS,
-              Int32(bitPattern: nowMS &- deadlineMS) >= 0 else { return false }
-        pendingCorrelation = nil
-        pendingDeadlineMS = nil
-        return true
+        correlationState.expire(nowMS: nowMS)
     }
 
     func dispatch(_ message: BorrowedMessage, nowMS: UInt32) -> StaticDeviceDispatchResult {
@@ -239,12 +234,11 @@ final class StaticDeviceAgent: @unchecked Sendable {
             guard let correlationId = message.topic.correlationIdLevel.flatMap(UUID16.init(parsing:)) else {
                 return .wrongCorrelation
             }
-            if correlationId == resolvedCorrelation { return .duplicateResolve }
-            guard pendingCorrelation == correlationId else { return .wrongCorrelation }
-            pendingCorrelation = nil
-            pendingDeadlineMS = nil
-            resolvedCorrelation = correlationId
-            return .resolve
+            switch correlationState.accept(correlationID: correlationId, nowMS: nowMS) {
+            case .accepted: return .resolve
+            case .duplicate: return .duplicateResolve
+            case .wrongCorrelation, .expired: return .wrongCorrelation
+            }
         }
 
         guard message.eventType != nil else { return .malformed }

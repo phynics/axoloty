@@ -71,6 +71,7 @@ let package = Package(
             name: "Axoloty",
             dependencies: [
                 "AxolotyWire",
+                "AxolotyProtocol",
                 .product(name: "MQTTNIO", package: "mqtt-nio"),
                 .product(name: "NIO", package: "swift-nio"),
                 .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
@@ -134,6 +135,7 @@ let package = Package(
             name: "AxolotyWireTests",
             dependencies: [
                 "AxolotyWire",
+                "AxolotyProtocol",
             ],
             path: "Tests/AxolotyWire"
         ),
@@ -269,6 +271,7 @@ let package = Package(
             name: "WireBenchmark",
             dependencies: [
                 "AxolotyWire",
+                "AxolotyProtocol",
             ],
             path: "Benchmarks/WireBenchmark"
         ),
@@ -280,6 +283,7 @@ let package = Package(
             name: "WireAllocation",
             dependencies: [
                 "AxolotyWire",
+                "AxolotyProtocol",
             ],
             path: "Benchmarks/WireAllocation"
         ),

@@ -201,39 +201,50 @@ public struct WireReader {
                 padded.baseAddress!.initialize(from: buffer.baseAddress!, count: buffer.count)
             }
             for offset in buffer.count..<(buffer.count + 8) { padded[offset] = 0x7D }
-            let paddedBuffer = UnsafeBufferPointer(start: padded.baseAddress!, count: buffer.count + 8)
-            let destination = WireFieldDestination(bytes: buffer)
-            var tokenizer = JSONTokenizer(bytes: paddedBuffer, destination: destination)
-            #if hasFeature(Embedded)
-            if let parserError = tokenizer.scanValueResult() {
-                let missingData: Bool
-                if case .missingData = parserError { missingData = true } else { missingData = false }
-                tokenizer.destination.failure = Self.parserFailure(
-                    buffer,
-                    offset: tokenizer.currentOffset,
-                    destination: tokenizer.destination,
-                    parserErrorIsMissingData: missingData
-                )
+            index = Self.tokenize(
+                buffer: buffer,
+                padded: UnsafeBufferPointer(start: padded.baseAddress!, count: buffer.count + 8)
+            )
+        }
+        self.index = index
+    }
+
+    /// Creates a reader using caller-owned tokenizer scratch storage.
+    ///
+    /// Host callers can keep one ``HostWireParserWorkspace`` and Embedded
+    /// callers can provide ``EmbeddedWireParserWorkspace``. The parser and
+    /// validation algorithm is identical to the default initializer; only the
+    /// physical scratch storage changes.
+    ///
+    /// - Parameters:
+    ///   - bytes: Pointer to the borrowed JSON input.
+    ///   - length: Number of valid input bytes.
+    ///   - workspace: Reusable tokenizer storage owned by the caller.
+    public init<Workspace: WireParserWorkspace & ~Copyable>(
+        bytes: UnsafePointer<UInt8>,
+        length: Int,
+        workspace: inout Workspace
+    ) {
+        self.bytes = UnsafeRawPointer(bytes); self.length = max(0, length)
+        let buffer = UnsafeBufferPointer(start: bytes, count: max(0, length))
+        var index = WireFieldIndex()
+        guard buffer.count <= WireBufferConfig.maxPayloadSize else {
+            index.failure = WireDecodeError(.payloadExceedsLimit, byteOffset: buffer.count)
+            self.index = index
+            return
+        }
+        let requiredCapacity = WireBufferConfig.maxPayloadSize + 8
+        guard workspace.capacity >= requiredCapacity else {
+            index.failure = WireDecodeError(.workspaceExceedsLimit, byteOffset: workspace.capacity)
+            self.index = index
+            return
+        }
+        workspace.withStorage { padded in
+            if buffer.count > 0 {
+                padded.baseAddress!.initialize(from: buffer.baseAddress!, count: buffer.count)
             }
-            #else
-            do {
-                try tokenizer.scanValue()
-            } catch {
-                let missingData: Bool
-                if let parserError = error as? JSONParserError, case .missingData = parserError {
-                    missingData = true
-                } else {
-                    missingData = false
-                }
-                tokenizer.destination.failure = Self.parserFailure(
-                    buffer,
-                    offset: tokenizer.currentOffset,
-                    destination: tokenizer.destination,
-                    parserErrorIsMissingData: missingData
-                )
-            }
-            #endif
-            index = Self.finalizedIndex(tokenizer.destination, bytes: buffer, currentOffset: tokenizer.currentOffset)
+            for offset in buffer.count..<(buffer.count + 8) { padded[offset] = 0x7D }
+            index = Self.tokenize(buffer: buffer, padded: UnsafeBufferPointer(padded))
         }
         self.index = index
     }
@@ -266,6 +277,48 @@ public struct WireReader {
             let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: count)
             return reader.index.failure == nil && reader.index.completeValue
         }
+    }
+
+    private static func tokenize(
+        buffer: UnsafeBufferPointer<UInt8>,
+        padded: UnsafeBufferPointer<UInt8>
+    ) -> WireFieldIndex {
+        let destination = WireFieldDestination(bytes: buffer)
+        var tokenizer = JSONTokenizer(bytes: padded, destination: destination)
+        #if hasFeature(Embedded)
+        if let parserError = tokenizer.scanValueResult() {
+            let missingData: Bool
+            if case .missingData = parserError { missingData = true } else { missingData = false }
+            tokenizer.destination.failure = Self.parserFailure(
+                buffer,
+                offset: tokenizer.currentOffset,
+                destination: tokenizer.destination,
+                parserErrorIsMissingData: missingData
+            )
+        }
+        #else
+        do {
+            try tokenizer.scanValue()
+        } catch {
+            let missingData: Bool
+            if case .missingData = error {
+                missingData = true
+            } else {
+                missingData = false
+            }
+            tokenizer.destination.failure = Self.parserFailure(
+                buffer,
+                offset: tokenizer.currentOffset,
+                destination: tokenizer.destination,
+                parserErrorIsMissingData: missingData
+            )
+        }
+        #endif
+        return Self.finalizedIndex(
+            tokenizer.destination,
+            bytes: buffer,
+            currentOffset: tokenizer.currentOffset
+        )
     }
 
     /// Returns the complete raw JSON value for a top-level key.

@@ -140,6 +140,22 @@ public struct BorrowedMessage {
         }
     }
 
+    /// Creates a reader with caller-owned tokenizer scratch storage.
+    ///
+    /// The returned reader still borrows this message's payload; the
+    /// workspace is used only during construction and is not retained.
+    public func reader<Workspace: WireParserWorkspace & ~Copyable>(
+        workspace: inout Workspace
+    ) -> WireReader {
+        payload.withBytes { ptr, len in
+            WireReader(
+                bytes: UnsafeRawPointer(ptr).assumingMemoryBound(to: UInt8.self),
+                length: len,
+                workspace: &workspace
+            )
+        }
+    }
+
     /// Whether this message is a raw (non-Coaty) topic.
     public var isRawTopic: Bool {
         topic.isRawTopic

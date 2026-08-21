@@ -15,6 +15,7 @@
 // Run:   WireBenchmark [--validate-allocations]
 
 import AxolotyWire
+import AxolotyProtocol
 import Foundation
 
 // MARK: - Corpus loading

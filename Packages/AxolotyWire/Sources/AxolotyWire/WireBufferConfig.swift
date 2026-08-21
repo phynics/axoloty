@@ -1,11 +1,10 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-/// Compile-time configuration for the embedded wire routing path.
+/// Compile-time limits for the Foundation-free wire syntax boundary.
 ///
 /// All sizes are compile-time constants so an embedded target can tune
-/// them for its memory budget. The host runtime uses dynamic limits
-/// (Broadcast actors with dictionaries); the embedded path uses these
-/// static maximums and rejects overflow with a structured error.
+/// them for its memory budget. Protocol-state capacities are intentionally
+/// kept outside this wire-only configuration.
 public enum WireBufferConfig {
     /// Maximum topic string length (bytes).
     public static let maxTopicLength: Int = 128
@@ -20,13 +19,4 @@ public enum WireBufferConfig {
     /// event, sourceId, correlationId, postfix = 7).
     public static let maxTopicLevels: Int = 7
 
-    /// Maximum concurrent subscribers per event type.
-    public static let maxSubscribers: Int = 8
-
-    /// Maximum keyed entries in a BroadcastFamily (e.g. Advertise by filter,
-    /// Channel by channel ID).
-    public static let maxFamilyEntries: Int = 16
-
-    /// Maximum subscribers per family entry.
-    public static let maxFamilySubscribers: Int = 4
 }

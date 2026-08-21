@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+import AxolotyWire
+
 /// Identifies a correlated response subscription in ``EmbeddedMessageRouter``.
 public struct EmbeddedResponseKey: Hashable, Sendable {
     /// The response event type.
@@ -47,7 +49,7 @@ public struct EmbeddedResponseKey: Hashable, Sendable {
 ///
 /// Subscribers register through the subscription methods and receive a token
 /// for later unsubscribe. The subscriber count per event type is bounded by
-/// `WireBufferConfig.maxSubscribers`.
+/// `ProtocolBufferConfig.maxSubscribers`.
 ///
 /// This router is intentionally non-`Sendable`: it owns mutable dispatch
 /// and family tables safe to mutate from a single execution context.
@@ -78,19 +80,19 @@ public final class EmbeddedMessageRouter: MessageRouter {
     /// Creates a router with bounded subscriber and family capacities.
     ///
     /// Each capacity must be non-negative and no greater than its
-    /// ``WireBufferConfig`` maximum.
+    /// ``ProtocolBufferConfig`` maximum.
     ///
     /// - Parameters:
     ///   - maxSubscribers: Maximum subscribers per flat event-type table.
     ///   - maxFamilyEntries: Maximum keyed entries per family table.
     ///   - maxFamilySubscribers: Maximum subscribers per family entry.
-    /// - Throws: ``WireCapacityError`` if any capacity is negative or exceeds its
+    /// - Throws: ``ProtocolCapacityError`` if any capacity is negative or exceeds its
     ///   configured maximum.
     public init(
-        maxSubscribers: Int = WireBufferConfig.maxSubscribers,
-        maxFamilyEntries: Int = WireBufferConfig.maxFamilyEntries,
-        maxFamilySubscribers: Int = WireBufferConfig.maxFamilySubscribers
-    ) throws(WireCapacityError) {
+        maxSubscribers: Int = ProtocolBufferConfig.maxSubscribers,
+        maxFamilyEntries: Int = ProtocolBufferConfig.maxFamilyEntries,
+        maxFamilySubscribers: Int = ProtocolBufferConfig.maxFamilySubscribers
+    ) throws(ProtocolCapacityError) {
         try StaticDispatchTable.validateCapacityForRouter(
             maxSubscribers, maxFamilyEntries, maxFamilySubscribers
         )

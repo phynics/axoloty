@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import AxolotyWire
+import AxolotyProtocol
 import Foundation
 import Testing
 
@@ -708,7 +709,7 @@ struct RouterCapacityTests {
     @Test("Flat subscribers at capacity (8) succeed, 9th is rejected")
     func flatSubscribersAtCapacity() {
         let router = try! EmbeddedMessageRouter()
-        for _ in 0..<WireBufferConfig.maxSubscribers {
+        for _ in 0..<ProtocolBufferConfig.maxSubscribers {
             let token = router.subscribe(.advertise) { _ in }
             #expect(token != nil)
         }
@@ -721,7 +722,7 @@ struct RouterCapacityTests {
     func unsubscribeReusesSlot() {
         let router = try! EmbeddedMessageRouter()
         var tokens: [StaticDispatchTable.Token] = []
-        for _ in 0..<WireBufferConfig.maxSubscribers {
+        for _ in 0..<ProtocolBufferConfig.maxSubscribers {
             tokens.append(router.subscribe(.advertise) { _ in }!)
         }
         // Remove one.
@@ -734,7 +735,7 @@ struct RouterCapacityTests {
     @Test("Family entries at capacity (16) succeed, 17th is rejected")
     func familyEntriesAtCapacity() {
         let router = try! EmbeddedMessageRouter()
-        for i in 0..<WireBufferConfig.maxFamilyEntries {
+        for i in 0..<ProtocolBufferConfig.maxFamilyEntries {
             let token = router.subscribeAdvertise(filter: "filter-\(i)") { _ in }
             #expect(token != nil)
         }
@@ -746,7 +747,7 @@ struct RouterCapacityTests {
     @Test("Family subscribers at capacity (4) succeed, 5th is rejected")
     func familySubscribersAtCapacity() {
         let router = try! EmbeddedMessageRouter()
-        for _ in 0..<WireBufferConfig.maxFamilySubscribers {
+        for _ in 0..<ProtocolBufferConfig.maxFamilySubscribers {
             let token = router.subscribeAdvertise(filter: "same-filter") { _ in }
             #expect(token != nil)
         }
@@ -759,7 +760,7 @@ struct RouterCapacityTests {
     func familyUnsubscribeReusesSlot() {
         let router = try! EmbeddedMessageRouter()
         var tokens: [StaticFamilyTable<String>.Token] = []
-        for _ in 0..<WireBufferConfig.maxFamilySubscribers {
+        for _ in 0..<ProtocolBufferConfig.maxFamilySubscribers {
             tokens.append(router.subscribeAdvertise(filter: "reuse") { _ in }!)
         }
         router.unsubscribeAdvertise(tokens[0])

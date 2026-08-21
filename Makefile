@@ -364,6 +364,7 @@ test-wire:
 test-support: resolve
 	Tests/Support/test-check-axoloty-wire-dependencies.sh
 	Tests/Support/test-check-axoloty-protocol-package.sh
+	Tests/Support/test-check-axoloty-wire-state-boundary.sh
 	Tests/Support/test-check-axoloty-wire-independent-resolution.sh
 	Tests/Support/test-check-axoloty-wire-distribution.sh
 	Tests/Support/test-check-axoloty-wire-test-isolation.sh

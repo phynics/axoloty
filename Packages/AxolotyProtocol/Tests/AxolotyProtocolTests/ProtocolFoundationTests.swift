@@ -76,4 +76,28 @@ struct ProtocolFoundationTests {
             }
         }
     }
+
+    @Test("bounded request state rejects saturation, stale, and duplicate responses")
+    func boundedRequestState() {
+        let first = UUID16.zero
+        let second = UUID16(bytes: (
+            0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        ))
+        var state = ProtocolPendingRequest()
+        let firstBegin = state.begin(correlationID: first, nowMS: 100, timeoutMS: 50)
+        #expect(firstBegin)
+        let saturatedBegin = state.begin(correlationID: second, nowMS: 100, timeoutMS: 50)
+        #expect(!saturatedBegin)
+        let wrong = state.accept(correlationID: second, nowMS: 110)
+        #expect(wrong == .wrongCorrelation)
+        let accepted = state.accept(correlationID: first, nowMS: 149)
+        #expect(accepted == .accepted)
+        let duplicate = state.accept(correlationID: first, nowMS: 149)
+        #expect(duplicate == .duplicate)
+
+        let secondBegin = state.begin(correlationID: second, nowMS: 200, timeoutMS: 10)
+        #expect(secondBegin)
+        let expired = state.accept(correlationID: second, nowMS: 210)
+        #expect(expired == .expired)
+    }
 }

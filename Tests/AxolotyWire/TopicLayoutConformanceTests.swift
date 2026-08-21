@@ -28,7 +28,10 @@ struct TopicLayoutConformanceTests {
     }
 
     private func validated(_ topic: String) throws(WireDecodeError) {
-        try view(topic).validate()
+        let bytes = Array(topic.utf8)
+        try bytes.withUnsafeBufferPointer { (buffer: UnsafeBufferPointer<UInt8>) throws(WireDecodeError) in
+            try TopicView(topicBytes: buffer.baseAddress!, length: buffer.count).validate()
+        }
     }
 
     // MARK: - Exact event codes

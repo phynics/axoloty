@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+import AxolotyWire
+
 /// A fixed-capacity, keyed subscriber registry for synchronous dispatch to
 /// a subset of subscribers matching a key.
 ///
@@ -44,27 +46,27 @@ public struct StaticFamilyTable<Key: Hashable & Sendable> {
     ///
     /// - Parameters:
     ///   - maxEntries: The maximum number of keyed entries. Must be non-negative
-    ///     and no greater than ``WireBufferConfig/maxFamilyEntries``.
+    ///     and no greater than ``ProtocolBufferConfig/maxFamilyEntries``.
     ///   - maxSubscribersPerEntry: The maximum number of subscribers per entry.
     ///     Must be non-negative and no greater than
-    ///     ``WireBufferConfig/maxFamilySubscribers``.
-    /// - Throws: ``WireCapacityError`` if either capacity is negative or exceeds
+    ///     ``ProtocolBufferConfig/maxFamilySubscribers``.
+    /// - Throws: ``ProtocolCapacityError`` if either capacity is negative or exceeds
     ///   its configured maximum.
     public init(
-        maxEntries: Int = WireBufferConfig.maxFamilyEntries,
-        maxSubscribersPerEntry: Int = WireBufferConfig.maxFamilySubscribers
-    ) throws(WireCapacityError) {
+        maxEntries: Int = ProtocolBufferConfig.maxFamilyEntries,
+        maxSubscribersPerEntry: Int = ProtocolBufferConfig.maxFamilySubscribers
+    ) throws(ProtocolCapacityError) {
         if maxEntries < 0 {
-            throw WireCapacityError(.negativeCapacity, parameter: "maxEntries")
+            throw ProtocolCapacityError(.negativeCapacity, parameter: "maxEntries")
         }
-        if maxEntries > WireBufferConfig.maxFamilyEntries {
-            throw WireCapacityError(.exceedsMaximum, parameter: "maxEntries")
+        if maxEntries > ProtocolBufferConfig.maxFamilyEntries {
+            throw ProtocolCapacityError(.exceedsMaximum, parameter: "maxEntries")
         }
         if maxSubscribersPerEntry < 0 {
-            throw WireCapacityError(.negativeCapacity, parameter: "maxSubscribersPerEntry")
+            throw ProtocolCapacityError(.negativeCapacity, parameter: "maxSubscribersPerEntry")
         }
-        if maxSubscribersPerEntry > WireBufferConfig.maxFamilySubscribers {
-            throw WireCapacityError(.exceedsMaximum, parameter: "maxSubscribersPerEntry")
+        if maxSubscribersPerEntry > ProtocolBufferConfig.maxFamilySubscribers {
+            throw ProtocolCapacityError(.exceedsMaximum, parameter: "maxSubscribersPerEntry")
         }
         self.capacity = maxEntries
         self.entryCapacity = maxSubscribersPerEntry
