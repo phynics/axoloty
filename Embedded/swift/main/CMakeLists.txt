@@ -1,8 +1,9 @@
 # Component CMake for the Axoloty Embedded Swift app (issue #321).
 #
 # The main application component depends on the axoloty_wire component,
-# which compiles AxolotyWire as a separate Embedded Swift module.
-# Main.swift uses `import AxolotyWire` to access the wire codec.
+# which compiles AxolotyWire and AxolotyProtocol as separate Embedded Swift
+# modules. Main.swift uses `import AxolotyWire`; the protocol component is
+# compiled here to enforce the exact production source inclusion contract.
 
 get_filename_component(AXOLOTY_ROOT
     "${CMAKE_CURRENT_LIST_DIR}/../../.."
@@ -47,6 +48,7 @@ idf_component_register(
     PRIV_REQUIRES
         idf_swift
         axoloty_wire
+        axoloty_protocol
         esp_system
         esp_timer
         heap

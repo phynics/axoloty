@@ -363,6 +363,7 @@ test-wire:
 # Embedded Swift compiler check, which uses the pinned toolchain.
 test-support: resolve
 	Tests/Support/test-check-axoloty-wire-dependencies.sh
+	Tests/Support/test-check-axoloty-protocol-package.sh
 	Tests/Support/test-check-axoloty-wire-independent-resolution.sh
 	Tests/Support/test-check-axoloty-wire-distribution.sh
 	Tests/Support/test-check-axoloty-wire-test-isolation.sh

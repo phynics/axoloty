@@ -19,6 +19,10 @@ let package = Package(
             name: "AxolotyWire",
             targets: ["AxolotyWire"]
         ),
+        .library(
+            name: "AxolotyProtocol",
+            targets: ["AxolotyProtocol"]
+        ),
         .executable(
             name: "axoloty-tool",
             targets: ["AxolotyCLI"]
@@ -57,6 +61,11 @@ let package = Package(
                 .product(name: "IkigaJSONCore", package: "swift-json"),
             ],
             path: "Packages/AxolotyWire/Sources/AxolotyWire"
+        ),
+        .target(
+            name: "AxolotyProtocol",
+            dependencies: ["AxolotyWire"],
+            path: "Packages/AxolotyProtocol/Sources/AxolotyProtocol"
         ),
         .target(
             name: "Axoloty",
@@ -127,6 +136,11 @@ let package = Package(
                 "AxolotyWire",
             ],
             path: "Tests/AxolotyWire"
+        ),
+        .testTarget(
+            name: "AxolotyProtocolTests",
+            dependencies: ["AxolotyProtocol", "AxolotyWire"],
+            path: "Packages/AxolotyProtocol/Tests/AxolotyProtocolTests"
         ),
         // The tooling control plane. It intentionally has no product-runtime
         // dependencies so it can bootstrap repository workflows independently.
