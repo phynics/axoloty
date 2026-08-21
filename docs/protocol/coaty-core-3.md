@@ -28,7 +28,7 @@ Every normative section carries an implementation-status label:
 `AxolotyProtocol` exposes the same 13-family closed inventory through
 `ProtocolCapability`; `AxolotyWire` must understand every family even when a
 runtime capability set exposes only a subset. Payload semantics remain
-inherited from the pinned reference until #639/#640.
+inherited from the pinned reference until #640.
 
 ## Compatibility rule
 
@@ -40,7 +40,7 @@ New Axoloty primitives must not add proprietary event codes to `coaty/3`; they b
 
 ## G2 trace contract
 
-**Status: Complete for the package boundary; Later gate for processing.**
+**Status: Complete for the package boundary and bounded state; Later gate for processing.**
 
 The fixture-backed corpus and JSON contract in
 [`Tests/ProtocolTrace/`](../../Tests/ProtocolTrace/) record deterministic prior
@@ -49,23 +49,26 @@ rejections for every Coaty Core family. The host and static replay adapters are
 independent test implementations used to prove semantic equality before any
 runtime migration. They are not production protocol processors. The
 production `AxolotyProtocol` foundation now owns profile inventory, portable
-frames, routing keys, structured errors, and the synchronous borrowed-to-owned
-action handoff. It does not yet own processor/state behavior; issues
-[#639](https://github.com/phynics/axoloty/issues/639) through
-[#641](https://github.com/phynics/axoloty/issues/641) own those later
-boundaries.
+frames, routing keys, structured errors, protocol capacities, the caller-timed
+bounded request ledger, and the synchronous borrowed-to-owned action handoff.
+The legacy static router/endpoint compatibility layer remains in `AxolotyWire`
+until its fixed-storage replacement lands. The shared processor and host state
+migration remain owned by [#640](https://github.com/phynics/axoloty/issues/640);
+typed external-route semantics remain owned by #641.
 
 ## Portable package boundary
 
-**Status: Complete (G2 issue #638).**
+**Status: Complete for #638; Partial/prerequisite for #639.**
 
 `Packages/AxolotyProtocol` is independently host-buildable and is compiled by
 the ESP-IDF `axoloty_protocol` component from the same source glob. The target
 depends only on `AxolotyWire`; Foundation, MQTT/NIO, logging, ErrorKit,
 actors, controllers, lifecycle, and host object hierarchy are prohibited.
-The package is intentionally a foundation rather than a runtime API: no
-subscriber registry, protocol-state store, transport, or second processor is
-introduced here.
+The package is intentionally a foundation rather than a runtime API: its
+request ledger is a fixed-storage building block, not a transport or second
+processor. The legacy subscriber/endpoint compatibility layer is not part of
+this package boundary; its replacement and host processor migration are owned
+by #640.
 
 ## External IO routes
 

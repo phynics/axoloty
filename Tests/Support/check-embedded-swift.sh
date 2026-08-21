@@ -77,6 +77,8 @@ if ! swiftc \
     -target riscv32-none-none-eabi \
     -swift-version 6 \
     -enable-experimental-feature Embedded \
+    -enable-experimental-feature Lifetimes \
+    -enable-experimental-feature StrictConcurrency \
     -parse-as-library \
     -Osize \
     -wmo \
@@ -99,6 +101,8 @@ if ! swiftc \
     -target riscv32-none-none-eabi \
     -swift-version 6 \
     -enable-experimental-feature Embedded \
+    -enable-experimental-feature Lifetimes \
+    -enable-experimental-feature StrictConcurrency \
     -parse-as-library \
     -Osize \
     -wmo \
@@ -179,6 +183,8 @@ swiftc \
     -target "$host_target" \
     -swift-version 6 \
     -enable-experimental-feature Embedded \
+    -enable-experimental-feature Lifetimes \
+    -enable-experimental-feature StrictConcurrency \
     -Osize -wmo \
     -I "$workdir" \
     $swift_files "$parser_probe" \

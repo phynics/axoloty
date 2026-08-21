@@ -35,6 +35,9 @@ public struct WireDecodeError: Error, Sendable {
         case topicExceedsLimit
         /// The payload length exceeded ``WireBufferConfig.maxPayloadSize``.
         case payloadExceedsLimit
+        /// The caller-provided parser workspace is too small for the payload
+        /// limit and tokenizer guard bytes.
+        case workspaceExceedsLimit
         /// The bounded top-level field index could not accept another field.
         case fieldIndexOverflow
         /// A top-level key occurred more than once.

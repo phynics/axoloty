@@ -106,7 +106,7 @@ func checkPlanPrintsStableJSON() {
     #expect(result.standardError.isEmpty)
     let plan = try? JSONDecoder().decode(AxolotyCheckPlan.self, from: Data(result.standardOutput.utf8))
     var expectedNames = [
-        "resolve", "build", "g2-trace-corpus", "g2-protocol-package", "lint", "test-tooling", "test-inspector-cli", "test-unit", "test-module",
+        "resolve", "build", "g2-trace-corpus", "g2-protocol-package", "g2-wire-state", "lint", "test-tooling", "test-inspector-cli", "test-unit", "test-module",
         "test-fuzz", "test-wire", "no-anycodable", "no-foundation-wire",
         "wire-dependencies", "wire-independent-resolution", "wire-distribution", "support-wire-dependencies",
         "support-wire-resolution", "support-wire-isolation", "support-benchmark-corpus",

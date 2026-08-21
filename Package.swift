@@ -71,6 +71,7 @@ let package = Package(
             name: "Axoloty",
             dependencies: [
                 "AxolotyWire",
+                "AxolotyProtocol",
                 .product(name: "MQTTNIO", package: "mqtt-nio"),
                 .product(name: "NIO", package: "swift-nio"),
                 .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
