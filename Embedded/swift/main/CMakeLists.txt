@@ -71,6 +71,15 @@ idf_component_register_swift(
     SRCS ${AXOLOTY_SWIFT_SOURCES}
 )
 
+# StaticDeviceAgent consumes the noncopyable ProtocolPendingRequest from the
+# protocol component. Explicitly enable the same lifetime feature for the
+# application consumer; otherwise the standalone protocol check would not
+# prove the actual ESP-IDF consumer build.
+target_compile_options(${COMPONENT_LIB} PRIVATE
+    "$<$<COMPILE_LANGUAGE:Swift>:-enable-experimental-feature>"
+    "$<$<COMPILE_LANGUAGE:Swift>:Lifetimes>"
+)
+
 # String-backed validation paths use normalization data that is shipped as a
 # separate Embedded Swift archive. linker.lf maps its GOT/PLT input sections
 # into ESP-IDF's dram0_data output before the generic /DISCARD/ rule.

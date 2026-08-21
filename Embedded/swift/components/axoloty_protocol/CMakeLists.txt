@@ -37,6 +37,11 @@ set_property(TARGET ${COMPONENT_LIB} PROPERTY INTERFACE_COMPILE_OPTIONS "")
 target_compile_options(${COMPONENT_LIB} PRIVATE
     "$<$<COMPILE_LANGUAGE:Swift>:-swift-version>"
     "$<$<COMPILE_LANGUAGE:Swift>:6>"
+    # ProtocolPendingRequest is noncopyable and uses the Embedded Swift
+    # lifetime model. Keep the ESP-IDF component on the same compiler feature
+    # set as the standalone protocol build.
+    "$<$<COMPILE_LANGUAGE:Swift>:-enable-experimental-feature>"
+    "$<$<COMPILE_LANGUAGE:Swift>:Lifetimes>"
     "$<$<COMPILE_LANGUAGE:Swift>:-module-name>"
     "$<$<COMPILE_LANGUAGE:Swift>:AxolotyProtocol>"
 )
