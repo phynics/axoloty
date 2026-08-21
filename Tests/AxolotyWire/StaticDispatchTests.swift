@@ -1,7 +1,6 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-@testable import AxolotyProtocol
-import AxolotyWire
+@testable import AxolotyWire
 import Foundation
 import Testing
 
@@ -504,13 +503,13 @@ struct CallerControlledCapacityTests {
 
     /// Asserts that a throwing-capacity expression throws the expected reason.
     private func expectCapacityError(
-        reason: ProtocolCapacityError.Reason,
+        reason: WireCapacityError.Reason,
         body: () throws -> Void
     ) {
         do {
             try body()
-            Issue.record("Expected ProtocolCapacityError, got success")
-        } catch let error as ProtocolCapacityError {
+            Issue.record("Expected WireCapacityError, got success")
+        } catch let error as WireCapacityError {
             #expect(error.reason == reason)
         } catch {
             Issue.record("Unexpected error: \(error)")
@@ -535,7 +534,7 @@ struct CallerControlledCapacityTests {
     @Test
     func dispatchTableRejectsOversizedCapacity() {
         expectCapacityError(reason: .exceedsMaximum) {
-            _ = try StaticDispatchTable(capacity: ProtocolBufferConfig.maxSubscribers + 1)
+            _ = try StaticDispatchTable(capacity: WireBufferConfig.maxSubscribers + 1)
         }
     }
 
@@ -559,7 +558,7 @@ struct CallerControlledCapacityTests {
     func familyTableRejectsOversizedEntryCapacity() {
         expectCapacityError(reason: .exceedsMaximum) {
             _ = try StaticFamilyTable<String>(
-                maxEntries: ProtocolBufferConfig.maxFamilyEntries + 1
+                maxEntries: WireBufferConfig.maxFamilyEntries + 1
             )
         }
     }
@@ -569,7 +568,7 @@ struct CallerControlledCapacityTests {
         expectCapacityError(reason: .exceedsMaximum) {
             _ = try StaticFamilyTable<String>(
                 maxEntries: 1,
-                maxSubscribersPerEntry: ProtocolBufferConfig.maxFamilySubscribers + 1
+                maxSubscribersPerEntry: WireBufferConfig.maxFamilySubscribers + 1
             )
         }
     }
@@ -587,7 +586,7 @@ struct CallerControlledCapacityTests {
     func routerRejectsOversizedFamilyEntries() {
         expectCapacityError(reason: .exceedsMaximum) {
             _ = try EmbeddedMessageRouter(
-                maxFamilyEntries: ProtocolBufferConfig.maxFamilyEntries + 1
+                maxFamilyEntries: WireBufferConfig.maxFamilyEntries + 1
             )
         }
     }
@@ -596,7 +595,7 @@ struct CallerControlledCapacityTests {
     func routerRejectsOversizedFamilySubscribers() {
         expectCapacityError(reason: .exceedsMaximum) {
             _ = try EmbeddedMessageRouter(
-                maxFamilySubscribers: ProtocolBufferConfig.maxFamilySubscribers + 1
+                maxFamilySubscribers: WireBufferConfig.maxFamilySubscribers + 1
             )
         }
     }
@@ -605,7 +604,7 @@ struct CallerControlledCapacityTests {
 
     @Test
     func ioEndpointsRejectsOversizedSourceCount() {
-        let descriptors = (0..<(ProtocolBufferConfig.maxFamilyEntries + 1)).map { _ in
+        let descriptors = (0..<(WireBufferConfig.maxFamilyEntries + 1)).map { _ in
             StaticIoEndpointDescriptor(id: .zero, valueType: "test.Value", mode: .raw)
         }
         expectCapacityError(reason: .exceedsMaximum) {

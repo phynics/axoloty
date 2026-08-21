@@ -1,7 +1,5 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-import AxolotyWire
-
 /// The encoding contract accepted by a static embedded IO endpoint.
 public enum StaticIoValueMode: Sendable, Equatable {
     /// The endpoint exchanges arbitrary bare bytes.
@@ -107,7 +105,7 @@ public struct StaticIoEndpoints {
         // unbounded actor set on a source. A source route is shared by all of
         // its host-router associations.
         var associatedActors: [UUID16?] = Array(
-            repeating: nil, count: ProtocolBufferConfig.maxFamilySubscribers
+            repeating: nil, count: WireBufferConfig.maxFamilySubscribers
         )
         var negotiatedUpdateRate: Int?
 
@@ -134,31 +132,31 @@ public struct StaticIoEndpoints {
     ///
     /// - Parameters:
     ///   - sources: Configured local sources; at most
-    ///     ``ProtocolBufferConfig/maxFamilyEntries`` entries are accepted.
+    ///     ``WireBufferConfig/maxFamilyEntries`` entries are accepted.
     ///   - actors: Configured local actors; at most
-    ///     ``ProtocolBufferConfig/maxFamilyEntries`` entries are accepted.
+    ///     ``WireBufferConfig/maxFamilyEntries`` entries are accepted.
     ///   - actorHandlers: Synchronous handlers, one per actor. A missing handler
     ///     means values are rejected rather than buffered.
-    /// - Throws: ``ProtocolCapacityError`` if the number of sources or actors exceeds
-    ///   ``ProtocolBufferConfig/maxFamilyEntries``, or if `actorHandlers` does not
+    /// - Throws: ``WireCapacityError`` if the number of sources or actors exceeds
+    ///   ``WireBufferConfig/maxFamilyEntries``, or if `actorHandlers` does not
     ///   contain exactly one entry per actor.
     public init(
         sources: [StaticIoEndpointDescriptor],
         actors: [StaticIoEndpointDescriptor],
         actorHandlers: [(@Sendable (ByteSlice) -> Void)?]
-    ) throws(ProtocolCapacityError) {
-        if sources.count > ProtocolBufferConfig.maxFamilyEntries {
-            throw ProtocolCapacityError(
+    ) throws(WireCapacityError) {
+        if sources.count > WireBufferConfig.maxFamilyEntries {
+            throw WireCapacityError(
                 .exceedsMaximum, parameter: "sources"
             )
         }
-        if actors.count > ProtocolBufferConfig.maxFamilyEntries {
-            throw ProtocolCapacityError(
+        if actors.count > WireBufferConfig.maxFamilyEntries {
+            throw WireCapacityError(
                 .exceedsMaximum, parameter: "actors"
             )
         }
         if actors.count != actorHandlers.count {
-            throw ProtocolCapacityError(.countMismatch, parameter: "actorHandlers")
+            throw WireCapacityError(.countMismatch, parameter: "actorHandlers")
         }
         self.sources = sources
         self.actors = actors

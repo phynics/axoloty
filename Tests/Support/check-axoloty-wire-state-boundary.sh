@@ -1,9 +1,10 @@
 #!/bin/sh
 # Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-# Enforces the #639 ownership split: AxolotyWire is syntax and workspace only;
-# bounded protocol state, routers, and endpoint registries live in
-# AxolotyProtocol.
+# Enforces the #639 ownership split: AxolotyWire retains the legacy
+# wire-facing router/endpoint compatibility layer and syntax/workspace code;
+# the portable protocol package owns the new bounded correlation state. The
+# router rewrite remains explicitly deferred to #640.
 
 set -eu
 
@@ -15,15 +16,14 @@ test -f "$wire/Package.swift"
 test -f "$protocol/Sources/AxolotyProtocol/ProtocolBufferConfig.swift"
 test -f "$protocol/Sources/AxolotyProtocol/ProtocolPendingRequest.swift"
 
-if grep -Eq 'AxolotyProtocol|EmbeddedMessageRouter|StaticDispatchTable|StaticFamilyTable|StaticIoEndpoints|WireCapacityError|ProtocolCapacityError|ProtocolBufferConfig|maxSubscribers|maxFamilyEntries|maxFamilySubscribers' \
+if grep -Eq 'import[[:space:]]+AxolotyProtocol|ProtocolPendingRequest|ProtocolBufferConfig' \
     "$wire/Package.swift" "$wire"/Sources/AxolotyWire/*.swift; then
-    echo "error: AxolotyWire contains protocol-state ownership" >&2
+    echo "error: AxolotyWire imports or defines G2 protocol state" >&2
     exit 1
 fi
 
-for name in EmbeddedMessageRouter MessageRouter StaticDispatchTable StaticFamilyTable StaticIoEndpoints ProtocolCapacityError; do
-    test -f "$protocol/Sources/AxolotyProtocol/$name.swift"
-done
+test -f "$protocol/Sources/AxolotyProtocol/ProtocolBufferConfig.swift"
+test -f "$protocol/Sources/AxolotyProtocol/ProtocolPendingRequest.swift"
 
 grep -Fq 'WireParserWorkspace' "$wire/Sources/AxolotyWire/WireParserWorkspace.swift"
 grep -Fq 'InlineWireParserWorkspace<520>' "$wire/Sources/AxolotyWire/WireParserWorkspace.swift"

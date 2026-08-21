@@ -43,8 +43,8 @@ collaborative, and ad-hoc fashion. Its key properties include:
   standalone package boundary for embedded targets,
 * a Foundation-free `AxolotyProtocol` foundation package for the 0.6 portable
   profile boundary (profile inventory, frames, routing keys, errors, bounded
-  protocol tables/state, and borrowed/owned actions; runtime processing is
-  planned),
+  request state, and borrowed/owned actions; runtime processing and fixed
+  router storage are planned),
 * and an ESP32-C6 embedded proof in Embedded Swift.
 
 Axoloty is a modernized fork of

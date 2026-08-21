@@ -49,10 +49,11 @@ rejections for every Coaty Core family. The host and static replay adapters are
 independent test implementations used to prove semantic equality before any
 runtime migration. They are not production protocol processors. The
 production `AxolotyProtocol` foundation now owns profile inventory, portable
-frames, routing keys, structured errors, fixed router/endpoint tables,
-protocol capacities, the caller-timed bounded request ledger, and the
-synchronous borrowed-to-owned action handoff. The shared processor and host
-state migration remain owned by [#640](https://github.com/phynics/axoloty/issues/640);
+frames, routing keys, structured errors, protocol capacities, the caller-timed
+bounded request ledger, and the synchronous borrowed-to-owned action handoff.
+The legacy static router/endpoint compatibility layer remains in `AxolotyWire`
+until its fixed-storage replacement lands. The shared processor and host state
+migration remain owned by [#640](https://github.com/phynics/axoloty/issues/640);
 typed external-route semantics remain owned by #641.
 
 ## Portable package boundary
@@ -64,9 +65,10 @@ the ESP-IDF `axoloty_protocol` component from the same source glob. The target
 depends only on `AxolotyWire`; Foundation, MQTT/NIO, logging, ErrorKit,
 actors, controllers, lifecycle, and host object hierarchy are prohibited.
 The package is intentionally a foundation rather than a runtime API: its
-subscriber/endpoint tables and request ledger are fixed-storage building
-blocks, not a transport or second processor. The host processor migration is
-owned by #640.
+request ledger is a fixed-storage building block, not a transport or second
+processor. The legacy subscriber/endpoint compatibility layer is not part of
+this package boundary; its replacement and host processor migration are owned
+by #640.
 
 ## External IO routes
 

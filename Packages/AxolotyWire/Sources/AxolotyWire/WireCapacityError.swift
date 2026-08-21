@@ -1,14 +1,14 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-/// A structured, allocation-free error for caller-controlled protocol capacity
-/// and count bounds in the portable state path.
+/// A structured, allocation-free error for caller-controlled capacity and
+/// count bounds in the embedded wire routing path.
 ///
 /// Construction-time validation of routing capacities and fixed endpoint
 /// counts rejects out-of-range values with this error instead of trapping
 /// or falling back to an unsafe configuration. Like ``WireDecodeError`` it is
 /// allocation-free and Sendable, so it is safe to throw across the embedded
 /// firmware/host boundary.
-public struct ProtocolCapacityError: Error, Sendable {
+public struct WireCapacityError: Error, Sendable {
     /// The machine-readable failure reason.
     public let reason: Reason
     /// The name of the capacity or count parameter that was out of range.

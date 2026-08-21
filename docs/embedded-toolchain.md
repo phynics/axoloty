@@ -3,8 +3,8 @@
 Status: implements issue #297, updated by #320 and #321. The ESP32-C6
 toolchain is included in the single dev image (`axoloty-dev`). Embedded
 Swift cross-compilation is working — AxolotyWire compiles and runs on-device,
-and the portable AxolotyProtocol foundation, including its bounded router,
-endpoint, and correlation state, cross-compiles through the companion
+and the portable AxolotyProtocol foundation, including its bounded correlation
+state, cross-compiles through the companion
 `axoloty_protocol` component, via the `espressif/idf_swift`
 component.
 

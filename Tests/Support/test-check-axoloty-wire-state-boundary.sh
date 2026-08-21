@@ -32,7 +32,7 @@ expect_rejected() {
 }
 
 expect_rejected "protocol import" "import AxolotyProtocol"
-expect_rejected "subscriber capacity" "let maxSubscribers = 1"
-expect_rejected "endpoint registry" "struct StaticIoEndpoints {}"
+expect_rejected "protocol capacity" "let _ = ProtocolBufferConfig.maxSubscribers"
+expect_rejected "protocol state" "struct ProtocolPendingRequest {}"
 
 echo "AxolotyWire state-boundary negative tests passed"

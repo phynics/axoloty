@@ -9,7 +9,6 @@
 // Success is NEVER emitted before all checks complete.
 
 import AxolotyWire
-import AxolotyProtocol
 
 private struct UnsafeSendablePointer<Pointee>: @unchecked Sendable {
     let value: UnsafeMutablePointer<Pointee>
@@ -267,8 +266,8 @@ func app_main() -> Int32 {
 
     record("config:payloadMax512", WireBufferConfig.maxPayloadSize == 512)
     record("config:topicMax128", WireBufferConfig.maxTopicLength == 128)
-    record("config:maxSubscribers8", ProtocolBufferConfig.maxSubscribers == 8)
-    record("config:maxFamilyEntries16", ProtocolBufferConfig.maxFamilyEntries == 16)
+    record("config:maxSubscribers8", WireBufferConfig.maxSubscribers == 8)
+    record("config:maxFamilyEntries16", WireBufferConfig.maxFamilyEntries == 16)
 
     // === Deterministic vector corpus ===
     writeIntVector("writer:zero", 0, "0")

@@ -7,7 +7,7 @@ the existing `Associate` messages.
 
 Each descriptor contains a `UUID16`, an application value-type contract, raw
 or JSON mode, and an optional configured update rate. The registry has a fixed
-descriptor capacity (`ProtocolBufferConfig.maxFamilyEntries`); it has no dynamic
+descriptor capacity (`WireBufferConfig.maxFamilyEntries`); it has no dynamic
 registration, discovery, source-to-actor matching, rules, controller APIs, or
 unbounded subscriptions.
 
