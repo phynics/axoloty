@@ -11,48 +11,40 @@ integration. The host runtime still owns protocol coordination and
 object/lifecycle composition. `AxolotyWire` supplies profile-neutral wire
 syntax, borrowed values, and caller-owned parser workspaces; `AxolotyProtocol`
 supplies the sealed Coaty/3 inventory, routing-key/frame types, structured
-protocol errors, bounded request state, protocol capacities, and the
-synchronous borrowed-to-owned action boundary. The legacy static router and
-endpoint compatibility layer remains in `AxolotyWire` until its fixed-storage
-replacement is owned by a later G2 gate. No
-production inbound/outbound processor has moved yet. The inherited
+protocol errors, fixed-inline state, caller-owned action sinks, route
+classification, and the shared inbound/outbound processor. The inherited
 Container/controller and class-object paths remain current implementation
 details until G2–G5 replace them.
 
 This section is the source of truth for what exists today. It must be updated whenever a gate changes the implemented package graph or removes a legacy path.
 
-### G2 status: portable foundation, bounded state, and test-only trace contract
+### G2 status: shared fixed-inline processor
 
 Issue [#638](https://github.com/phynics/axoloty/issues/638) now lands the
 standalone [`Packages/AxolotyProtocol`](./Packages/AxolotyProtocol) package
 and the matching root product. Its host and ESP-IDF source-inclusion checks
-compile the same Foundation-free sources. The package deliberately stops at
-the profile/frame/error/action boundary: it owns no subscribers, finite
-transport, or processor. Issue [#639](https://github.com/phynics/axoloty/issues/639)
-now moves the single-entry correlation ledger into `AxolotyProtocol` and adds
-the shared parser-workspace seam. The existing wire-owned static router and
-endpoint compatibility layer is intentionally not promoted by this gate. Issue
-[#640](https://github.com/phynics/axoloty/issues/640) owns the fixed-storage
-replacement, shared production processor, and remaining host-state migration.
+compile the same Foundation-free sources. Issue
+[#640](https://github.com/phynics/axoloty/issues/640) now owns the
+fixed-inline router, endpoint/association state, bounded action sink, handler
+table, binding-supplied route classifier, and one shared processor. The
+state-owning sources are under `AxolotyProtocol`; `AxolotyWire` contains only
+syntax, codecs, validation, values, errors, and parser workspaces.
 
 The fixture-backed trace contract and independent host/static replay adapters
 under `Tests/ProtocolTrace` remain test-only. They exercise the same profile
 inventory and routing vocabulary without promoting a second processor. Issue
 [#637](https://github.com/phynics/axoloty/issues/637) records that contract;
-G2 issue #639 owns bounded request state and the shared parser workspace; #640
-owns the fixed-storage replacement and production processor; #641 owns typed
-external-route production work.
+[#639](https://github.com/phynics/axoloty/issues/639) is closed by the state
+move; [#641](https://github.com/phynics/axoloty/issues/641) is closed by the
+binding-supplied route classifier.
 
 ## Accepted 0.6 delta
 
 The target package graph and runtime boundaries below are accepted direction,
-with the `AxolotyProtocol` foundation now implemented as the first G2 slice.
+with the shared `AxolotyProtocol` processor now implemented as the G2 slice.
 G1 accepted [ADR 0004](./docs/adr/0004-literal-inline-bounded-runtime-state.md)
 from host and ESP32-C6 evidence, selecting measured tiny/static/host capacity
-presets of 1/16/64; its implementations remain spike-local. G2 issue #639
-owns the shared workspace and bounded request state; #640 owns fixed storage
-and the processor, followed by #641's
-typed external-route semantics. G3 owns the object model; G4 owns runtime
+presets of 1/16/64. G3 owns the object model; G4 owns runtime
 replacement; G5 owns IO and optional-product boundaries; G6 owns
 non-divergence and release proof.
 
@@ -97,15 +89,15 @@ Inspector / MCP ---------> supported Axoloty runtime APIs
 
 `AxolotyWire` owns wire syntax, codecs, validation, object-envelope decoding,
 borrowed and owned wire values, caller-owned parser workspaces, wire errors,
-and the legacy static routing/endpoint compatibility layer. The latter is not
-the portable 0.6 state authority and is scheduled for replacement by #640.
+and wire errors. It owns no subscriber, endpoint, association, correlation,
+handler, or processor state.
 
 `AxolotyProtocol` owns the closed built-in profile inventory, capabilities,
-routing keys, portable frames, structured protocol errors, bounded request
-state, protocol capacities, and the borrowed / owned action boundary. It does
-not own an inbound/outbound processor or
-transport. It imports no MQTT/NIO, host object hierarchy, logging, actor, or
-controller framework.
+routing keys, portable frames, structured protocol errors, fixed-inline
+request/association/subscriber state, protocol capacities, route classifiers,
+handler tables, action sinks, and the shared inbound/outbound processor. It
+does not own a transport. It imports no MQTT/NIO, host object hierarchy,
+logging, actor, or controller framework.
 
 `AxolotyStaticRuntime` owns fixed composition, static delivery, bounded presets, and portable endpoint integration. It contains no protocol rule absent from `AxolotyProtocol`.
 

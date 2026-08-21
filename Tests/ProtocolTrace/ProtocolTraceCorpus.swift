@@ -78,7 +78,9 @@ enum ProtocolTraceCorpus {
             correlationID: correlationID,
             associatingRoute: route,
             routeClassification: family == .associate ? .external : nil,
-            isExternalRoute: family == .associate
+            // The pinned CoatyJS external fixture omits the optional wire flag;
+            // binding classification is carried separately above.
+            isExternalRoute: nil
         )
         let step = TraceStep(
             sequence: 1,
@@ -286,7 +288,7 @@ enum ProtocolTraceCorpus {
             objectID: "external-route-001",
             associatingRoute: "external/wire-compat-v1/io-external-1",
             routeClassification: .external,
-            isExternalRoute: true
+            isExternalRoute: nil
         )
         return singleStep(
             id: "positive-external-route",

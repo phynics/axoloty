@@ -16,6 +16,7 @@
 // It emits no per-iteration JSON; the check script wraps it in heaptrack.
 
 import AxolotyWire
+import AxolotyProtocol
 
 @inline(never)
 func hotPath(

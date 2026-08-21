@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+import AxolotyWire
+
 /// A structured, allocation-free error for caller-controlled capacity and
 /// count bounds in the embedded wire routing path.
 ///
@@ -8,7 +10,7 @@
 /// or falling back to an unsafe configuration. Like ``WireDecodeError`` it is
 /// allocation-free and Sendable, so it is safe to throw across the embedded
 /// firmware/host boundary.
-public struct WireCapacityError: Error, Sendable {
+public struct ProtocolCapacityError: Error, Sendable {
     /// The machine-readable failure reason.
     public let reason: Reason
     /// The name of the capacity or count parameter that was out of range.
@@ -34,3 +36,6 @@ public struct WireCapacityError: Error, Sendable {
         self.parameter = parameter
     }
 }
+
+/// Compatibility spelling for migrated callers; the definition is owned by
+/// `AxolotyProtocol`, never by `AxolotyWire`.

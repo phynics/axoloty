@@ -135,6 +135,7 @@ let package = Package(
             name: "AxolotyWireTests",
             dependencies: [
                 "AxolotyWire",
+                "AxolotyProtocol",
             ],
             path: "Tests/AxolotyWire"
         ),
@@ -270,6 +271,7 @@ let package = Package(
             name: "WireBenchmark",
             dependencies: [
                 "AxolotyWire",
+                "AxolotyProtocol",
             ],
             path: "Benchmarks/WireBenchmark"
         ),
@@ -281,6 +283,7 @@ let package = Package(
             name: "WireAllocation",
             dependencies: [
                 "AxolotyWire",
+                "AxolotyProtocol",
             ],
             path: "Benchmarks/WireAllocation"
         ),

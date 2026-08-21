@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+import AxolotyWire
+
 /// Identifies a correlated response subscription in ``EmbeddedMessageRouter``.
 public struct EmbeddedResponseKey: Hashable, Sendable {
     /// The response event type.
@@ -87,10 +89,10 @@ public final class EmbeddedMessageRouter: MessageRouter {
     /// - Throws: ``WireCapacityError`` if any capacity is negative or exceeds its
     ///   configured maximum.
     public init(
-        maxSubscribers: Int = WireBufferConfig.maxSubscribers,
-        maxFamilyEntries: Int = WireBufferConfig.maxFamilyEntries,
-        maxFamilySubscribers: Int = WireBufferConfig.maxFamilySubscribers
-    ) throws(WireCapacityError) {
+        maxSubscribers: Int = ProtocolBufferConfig.maxSubscribers,
+        maxFamilyEntries: Int = ProtocolBufferConfig.maxFamilyEntries,
+        maxFamilySubscribers: Int = ProtocolBufferConfig.maxFamilySubscribers
+    ) throws(ProtocolCapacityError) {
         try StaticDispatchTable.validateCapacityForRouter(
             maxSubscribers, maxFamilyEntries, maxFamilySubscribers
         )

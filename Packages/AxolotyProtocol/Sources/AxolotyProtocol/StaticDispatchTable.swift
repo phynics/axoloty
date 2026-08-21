@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+import AxolotyWire
+
 /// A fixed-capacity subscriber registry for synchronous message dispatch.
 ///
 /// Replaces the `Broadcast<Element>` actor (which uses a heap-allocated
@@ -76,16 +78,16 @@ public struct StaticDispatchTable: Sendable {
     ///   non-negative and no greater than ``WireBufferConfig/maxSubscribers``.
     /// - Throws: ``WireCapacityError`` if `capacity` is negative or exceeds the
     ///   configured maximum.
-    public init(capacity: Int = WireBufferConfig.maxSubscribers) throws(WireCapacityError) {
+    public init(capacity: Int = ProtocolBufferConfig.maxSubscribers) throws(ProtocolCapacityError) {
         try Self.validateCapacity(
-            capacity, maximum: WireBufferConfig.maxSubscribers, parameter: "capacity"
+            capacity, maximum: ProtocolBufferConfig.maxSubscribers, parameter: "capacity"
         )
         self.storage = Storage(capacity: capacity, initialGeneration: 0)
     }
 
-    internal init(capacity: Int, initialGenerationForTesting: UInt16) throws(WireCapacityError) {
+    internal init(capacity: Int, initialGenerationForTesting: UInt16) throws(ProtocolCapacityError) {
         try Self.validateCapacity(
-            capacity, maximum: WireBufferConfig.maxSubscribers, parameter: "capacity"
+            capacity, maximum: ProtocolBufferConfig.maxSubscribers, parameter: "capacity"
         )
         self.storage = Storage(
             capacity: capacity,
@@ -102,9 +104,9 @@ public struct StaticDispatchTable: Sendable {
 
     private static func validateCapacity(
         _ value: Int, maximum: Int, parameter: StaticString
-    ) throws(WireCapacityError) {
-        if value < 0 { throw WireCapacityError(.negativeCapacity, parameter: parameter) }
-        if value > maximum { throw WireCapacityError(.exceedsMaximum, parameter: parameter) }
+    ) throws(ProtocolCapacityError) {
+        if value < 0 { throw ProtocolCapacityError(.negativeCapacity, parameter: parameter) }
+        if value > maximum { throw ProtocolCapacityError(.exceedsMaximum, parameter: parameter) }
     }
 
     /// Validates the router-level capacity arguments before any table is built.
@@ -112,20 +114,20 @@ public struct StaticDispatchTable: Sendable {
         _ maxSubscribers: Int,
         _ maxFamilyEntries: Int,
         _ maxFamilySubscribers: Int
-    ) throws(WireCapacityError) {
+    ) throws(ProtocolCapacityError) {
         try validateCapacity(
             maxSubscribers,
-            maximum: WireBufferConfig.maxSubscribers,
+            maximum: ProtocolBufferConfig.maxSubscribers,
             parameter: "maxSubscribers"
         )
         try validateCapacity(
             maxFamilyEntries,
-            maximum: WireBufferConfig.maxFamilyEntries,
+            maximum: ProtocolBufferConfig.maxFamilyEntries,
             parameter: "maxFamilyEntries"
         )
         try validateCapacity(
             maxFamilySubscribers,
-            maximum: WireBufferConfig.maxFamilySubscribers,
+            maximum: ProtocolBufferConfig.maxFamilySubscribers,
             parameter: "maxFamilySubscribers"
         )
     }

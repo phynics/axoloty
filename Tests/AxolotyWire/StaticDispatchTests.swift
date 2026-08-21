@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 @testable import AxolotyWire
+@testable import AxolotyProtocol
+import AxolotyProtocol
 import Foundation
 import Testing
 
@@ -503,13 +505,13 @@ struct CallerControlledCapacityTests {
 
     /// Asserts that a throwing-capacity expression throws the expected reason.
     private func expectCapacityError(
-        reason: WireCapacityError.Reason,
+        reason: ProtocolCapacityError.Reason,
         body: () throws -> Void
     ) {
         do {
             try body()
             Issue.record("Expected WireCapacityError, got success")
-        } catch let error as WireCapacityError {
+        } catch let error as ProtocolCapacityError {
             #expect(error.reason == reason)
         } catch {
             Issue.record("Unexpected error: \(error)")

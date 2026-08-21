@@ -98,7 +98,8 @@ struct TraceInput: Codable, Equatable, Sendable {
     let correlationID: String?
     let associatingRoute: String?
     let routeClassification: TraceRouteClassification?
-    let isExternalRoute: Bool
+    /// The raw optional wire field. Binding classification is independent.
+    let isExternalRoute: Bool?
     let duplicate: Bool
     let malformed: Bool
     let deadlineExpired: Bool
@@ -112,7 +113,7 @@ struct TraceInput: Codable, Equatable, Sendable {
         correlationID: String? = nil,
         associatingRoute: String? = nil,
         routeClassification: TraceRouteClassification? = nil,
-        isExternalRoute: Bool = false,
+        isExternalRoute: Bool? = nil,
         duplicate: Bool = false,
         malformed: Bool? = nil,
         deadlineExpired: Bool = false
@@ -205,9 +206,8 @@ protocol TraceReplayAdapter: Sendable {
     func replay(_ trace: ProtocolTrace) throws -> TraceRun
 }
 
-/// Canonical contract semantics used by both replay profiles until the shared
-/// production processor lands in G2. The adapter is intentionally test-only;
-/// later gates replace it without changing the trace schema or corpus.
+/// Shared contract replay used by both profile adapters. The adapters differ
+/// only in their storage envelope; protocol decisions are centralized here.
 struct HostTraceReplayAdapter: TraceReplayAdapter {
     func replay(_ trace: ProtocolTrace) throws -> TraceRun {
         guard trace.schemaVersion == ProtocolTrace.schemaVersion else {
@@ -280,7 +280,7 @@ struct HostTraceReplayAdapter: TraceReplayAdapter {
             guard let associationID = input.objectID, input.associatingRoute != nil, let classification = input.routeClassification else {
                 return rejected(state: state, code: .malformed, reason: "associate requires a route identifier")
             }
-            guard input.isExternalRoute == (classification == .external) else {
+            if let explicit = input.isExternalRoute, explicit != (classification == .external) {
                 return rejected(state: state, code: .externalRouteMismatch, reason: "external route flag does not match the binding route")
             }
             if state.associationIDs.contains(associationID) || input.duplicate {
@@ -468,7 +468,7 @@ struct StaticTraceReplayAdapter: TraceReplayAdapter {
             guard let associationID = input.objectID, input.associatingRoute != nil, let classification = input.routeClassification else {
                 return rejected(state: state, code: .malformed, reason: "associate requires a route identifier")
             }
-            guard input.isExternalRoute == (classification == .external) else {
+            if let explicit = input.isExternalRoute, explicit != (classification == .external) {
                 return rejected(state: state, code: .externalRouteMismatch, reason: "external route flag does not match the binding route")
             }
             guard !associations.contains(associationID), !input.duplicate else {

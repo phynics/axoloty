@@ -9,6 +9,7 @@
 // Success is NEVER emitted before all checks complete.
 
 import AxolotyWire
+import AxolotyProtocol
 
 private struct UnsafeSendablePointer<Pointee>: @unchecked Sendable {
     let value: UnsafeMutablePointer<Pointee>

@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+import AxolotyWire
+
 /// The routing interface for the embedded runtime's synchronous dispatch path.
 ///
 /// The embedded target uses `StaticDispatchTable` for synchronous,

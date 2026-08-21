@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+import AxolotyWire
+
 /// The encoding contract accepted by a static embedded IO endpoint.
 public enum StaticIoValueMode: Sendable, Equatable {
     /// The endpoint exchanges arbitrary bare bytes.
@@ -74,7 +76,7 @@ public enum StaticIoDispatchResult: Sendable, Equatable {
 /// scheduling policy.
 public struct StaticIoEndpoints {
     private struct Route {
-        var bytes: [UInt8] = Array(repeating: 0, count: WireBufferConfig.maxTopicLength)
+        var bytes: [UInt8] = Array(repeating: 0, count: ProtocolBufferConfig.maxTopicLength)
         var length = 0
 
         mutating func clear() { length = 0 }
@@ -105,7 +107,7 @@ public struct StaticIoEndpoints {
         // unbounded actor set on a source. A source route is shared by all of
         // its host-router associations.
         var associatedActors: [UUID16?] = Array(
-            repeating: nil, count: WireBufferConfig.maxFamilySubscribers
+            repeating: nil, count: ProtocolBufferConfig.maxFamilySubscribers
         )
         var negotiatedUpdateRate: Int?
 
@@ -120,6 +122,16 @@ public struct StaticIoEndpoints {
         var route = Route()
         var isAssociated = false
         var negotiatedUpdateRate: Int?
+        var associatedSources: [UUID16?] = Array(
+            repeating: nil, count: ProtocolBufferConfig.maxFamilySubscribers
+        )
+        var associatedRoutes: [Route] = Array(
+            repeating: Route(), count: ProtocolBufferConfig.maxFamilySubscribers
+        )
+
+        var associationCount: Int {
+            associatedSources.reduce(0) { $0 + ($1 == nil ? 0 : 1) }
+        }
     }
 
     private var sources: [StaticIoEndpointDescriptor]
@@ -144,19 +156,19 @@ public struct StaticIoEndpoints {
         sources: [StaticIoEndpointDescriptor],
         actors: [StaticIoEndpointDescriptor],
         actorHandlers: [(@Sendable (ByteSlice) -> Void)?]
-    ) throws(WireCapacityError) {
-        if sources.count > WireBufferConfig.maxFamilyEntries {
-            throw WireCapacityError(
+    ) throws(ProtocolCapacityError) {
+        if sources.count > ProtocolBufferConfig.maxFamilyEntries {
+            throw ProtocolCapacityError(
                 .exceedsMaximum, parameter: "sources"
             )
         }
-        if actors.count > WireBufferConfig.maxFamilyEntries {
-            throw WireCapacityError(
+        if actors.count > ProtocolBufferConfig.maxFamilyEntries {
+            throw ProtocolCapacityError(
                 .exceedsMaximum, parameter: "actors"
             )
         }
         if actors.count != actorHandlers.count {
-            throw WireCapacityError(.countMismatch, parameter: "actorHandlers")
+            throw ProtocolCapacityError(.countMismatch, parameter: "actorHandlers")
         }
         self.sources = sources
         self.actors = actors
@@ -200,24 +212,30 @@ public struct StaticIoEndpoints {
         guard event.updateRate.map({ $0 >= 0 }) ?? true else { return .rejected }
         guard let route = event.associatingRoute else {
             if let source { removeSourceAssociation(source, actorId: event.ioActorId) }
-            if let actor { removeActorAssociation(actor) }
+            if let actor {
+                removeActorAssociation(actor, sourceId: source.map { sources[$0].id })
+            }
             return .disassociated
         }
-        guard route.length > 0, route.length <= WireBufferConfig.maxTopicLength else { return .rejected }
+        guard route.length > 0, route.length <= ProtocolBufferConfig.maxTopicLength else { return .rejected }
 
         // Validate both sides before changing either fixed-size state slot. The
         // source update can be valid while the actor update conflicts with an
         // existing route; applying the source first would leave a partial
         // association after returning `.rejected`.
-        guard canCommitAssociation(source: source, actor: actor, actorId: event.ioActorId, route: route) else { return .rejected }
-        applyAssociation(source: source, actor: actor, actorId: event.ioActorId, route: route, updateRate: event.updateRate)
+        guard canCommitAssociation(source: source, actor: actor, sourceId: event.ioSourceId, actorId: event.ioActorId, route: route) else { return .rejected }
+        applyAssociation(source: source, actor: actor, sourceId: event.ioSourceId, actorId: event.ioActorId, route: route, updateRate: event.updateRate)
         return .associated
     }
 
     /// Synchronously consumes a bare IoValue payload for an associated actor.
     public mutating func consumeIoValue(_ message: BorrowedMessage) -> StaticIoDispatchResult {
         guard message.eventType == .ioValue || message.isRawTopic else { return .ignored }
-        for index in actors.indices where actorStates[index].isAssociated && actorStates[index].route.equals(message.topic.withBytes { bytes, length in ByteSlice(bytes: bytes.assumingMemoryBound(to: UInt8.self), length: length) }) {
+        for index in actors.indices where actorStates[index].isAssociated {
+            let topic = message.topic.withBytes { bytes, length in
+                ByteSlice(bytes: bytes.assumingMemoryBound(to: UInt8.self), length: length)
+            }
+            guard actorStates[index].associatedRoutes.contains(where: { $0.equals(topic) }) else { continue }
             guard let handler = handlers[index], valueIsCompatible(message.payload, mode: actors[index].mode) else { return .rejected }
             handler(message.payload)
             return .delivered
@@ -280,17 +298,21 @@ public struct StaticIoEndpoints {
         guard state.associationCount == 0 || state.route.equals(route) else { return false }
         return state.associatedActors.contains(actorId) || state.associatedActors.contains(where: { $0 == nil })
     }
-    private func canAddActorAssociation(_ index: Int, route: ByteSlice) -> Bool {
-        !actorStates[index].isAssociated || actorStates[index].route.equals(route)
+    private func canAddActorAssociation(_ index: Int, sourceId: UUID16, route: ByteSlice) -> Bool {
+        let state = actorStates[index]
+        if state.associatedSources.contains(sourceId) { return true }
+        return state.associatedSources.contains(where: { $0 == nil })
     }
-    private func canCommitAssociation(source: Int?, actor: Int?, actorId: UUID16, route: ByteSlice) -> Bool {
+    private func canCommitAssociation(source: Int?, actor: Int?, sourceId: UUID16, actorId: UUID16, route: ByteSlice) -> Bool {
         if let source, !canAddSourceAssociation(source, actorId: actorId, route: route) { return false }
-        if let actor, !canAddActorAssociation(actor, route: route) { return false }
+        if let actor, !canAddActorAssociation(actor, sourceId: sourceId, route: route) { return false }
         return true
     }
-    private mutating func applyAssociation(source: Int?, actor: Int?, actorId: UUID16, route: ByteSlice, updateRate: Int?) {
+    private mutating func applyAssociation(source: Int?, actor: Int?, sourceId: UUID16, actorId: UUID16, route: ByteSlice, updateRate: Int?) {
         if let source { _ = addSourceAssociation(source, actorId: actorId, route: route, updateRate: updateRate) }
-        if let actor { _ = addActorAssociation(actor, route: route, updateRate: updateRate) }
+        if let actor {
+            _ = addActorAssociation(actor, sourceId: sourceId, route: route, updateRate: updateRate)
+        }
     }
     private mutating func addSourceAssociation(_ index: Int, actorId: UUID16, route: ByteSlice, updateRate: Int?) -> Bool {
         guard canAddSourceAssociation(index, actorId: actorId, route: route) else { return false }
@@ -312,16 +334,49 @@ public struct StaticIoEndpoints {
             sourceStates[index].negotiatedUpdateRate = nil
         }
     }
-    private mutating func addActorAssociation(_ index: Int, route: ByteSlice, updateRate: Int?) -> Bool {
-        guard canAddActorAssociation(index, route: route) else { return false }
-        guard actorStates[index].isAssociated || actorStates[index].route.copy(from: route) else { return false }
+    private mutating func addActorAssociation(_ index: Int, sourceId: UUID16, route: ByteSlice, updateRate: Int?) -> Bool {
+        guard canAddActorAssociation(index, sourceId: sourceId, route: route) else { return false }
+        if let existing = actorStates[index].associatedSources.firstIndex(where: { $0 == sourceId }) {
+            guard actorStates[index].associatedRoutes[existing].equals(route) else { return false }
+            actorStates[index].negotiatedUpdateRate = updateRate ?? actors[index].configuredUpdateRate
+            return true
+        }
+        if let slot = actorStates[index].associatedSources.firstIndex(where: { $0 == nil }) {
+            actorStates[index].associatedSources[slot] = sourceId
+            guard actorStates[index].associatedRoutes[slot].copy(from: route) else {
+                actorStates[index].associatedSources[slot] = nil
+                return false
+            }
+        }
+        _ = actorStates[index].route.copy(from: route)
         actorStates[index].isAssociated = true
         actorStates[index].negotiatedUpdateRate = updateRate ?? actors[index].configuredUpdateRate
         return true
     }
-    private mutating func removeActorAssociation(_ index: Int) {
-        actorStates[index].isAssociated = false
-        actorStates[index].route.clear()
-        actorStates[index].negotiatedUpdateRate = nil
+    private mutating func removeActorAssociation(_ index: Int, sourceId: UUID16?) {
+        if let sourceId,
+           let slot = actorStates[index].associatedSources.firstIndex(where: { $0 == sourceId }) {
+            actorStates[index].associatedSources[slot] = nil
+            actorStates[index].associatedRoutes[slot].clear()
+        } else {
+            for slot in actorStates[index].associatedSources.indices {
+                actorStates[index].associatedSources[slot] = nil
+                actorStates[index].associatedRoutes[slot].clear()
+            }
+        }
+        if actorStates[index].associationCount == 0 {
+            actorStates[index].isAssociated = false
+            actorStates[index].route.clear()
+            actorStates[index].negotiatedUpdateRate = nil
+        } else {
+            // Preserve the first remaining source route for the legacy state view;
+            // dispatch still retains every route in the bounded parallel slots.
+            if let slot = actorStates[index].associatedRoutes.firstIndex(where: { $0.length > 0 }) {
+                _ = actorStates[index].route.copy(
+                    from: ByteSlice(bytes: actorStates[index].associatedRoutes[slot].bytes,
+                                    length: actorStates[index].associatedRoutes[slot].length)
+                )
+            }
+        }
     }
 }

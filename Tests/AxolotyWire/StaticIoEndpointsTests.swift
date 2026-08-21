@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import AxolotyWire
+import AxolotyProtocol
 import Foundation
 import Testing
 
@@ -203,7 +204,7 @@ struct StaticIoEndpointsTests {
     }
 
     @Test
-    func actorRouteConflictDoesNotCommitSourceUpdate() throws {
+    func actorRetainsMultipleSourceRoutesAndDetachesPartially() throws {
         var endpoints = try! StaticIoEndpoints(
             sources: [StaticIoEndpointDescriptor(id: sourceID, valueType: "test.Value", mode: .raw)],
             actors: [StaticIoEndpointDescriptor(id: actorID, valueType: "test.Value", mode: .raw)],
@@ -211,14 +212,15 @@ struct StaticIoEndpointsTests {
         )
         #expect(dispatchAssociateJSON(&endpoints, source: "88888888-8888-4888-8888-888888888888", actor: actorWireID, route: "actor/route", rate: 300) == .associated)
         #expect(dispatchAssociateJSON(&endpoints, source: sourceWireID, actor: "99999999-9999-4999-8999-999999999999", route: route, rate: 100) == .associated)
-        let sourceBefore = try #require(endpoints.sourceState(id: sourceID))
-        let actorBefore = try #require(endpoints.actorState(id: actorID))
-
-        #expect(dispatchAssociateJSON(&endpoints, source: sourceWireID, actor: actorWireID, route: route, rate: 200) == .rejected)
-        #expect(endpoints.sourceState(id: sourceID) == sourceBefore)
-        #expect(endpoints.actorState(id: actorID) == actorBefore)
+        #expect(dispatchAssociateJSON(&endpoints, source: sourceWireID, actor: actorWireID, route: route, rate: 200) == .associated)
+        #expect(endpoints.sourceState(id: sourceID)?.isAssociated == true)
+        #expect(endpoints.sourceState(id: sourceID)?.negotiatedUpdateRate == 200)
+        #expect(endpoints.actorState(id: actorID)?.isAssociated == true)
+        #expect(endpoints.actorState(id: actorID)?.routeLength == route.utf8.count)
 
         #expect(dispatchAssociateJSON(&endpoints, source: sourceWireID, actor: "99999999-9999-4999-8999-999999999999", route: nil, rate: nil) == .disassociated)
+        #expect(endpoints.sourceState(id: sourceID)?.isAssociated == true)
+        #expect(dispatchAssociateJSON(&endpoints, source: sourceWireID, actor: actorWireID, route: nil, rate: nil) == .disassociated)
         #expect(endpoints.sourceState(id: sourceID)?.isAssociated == false)
     }
 
