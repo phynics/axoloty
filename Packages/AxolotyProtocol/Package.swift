@@ -1,7 +1,7 @@
 // swift-tools-version:6.3
-import PackageDescription
-
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
+
+import PackageDescription
 
 /// Standalone portable protocol foundation for the sealed Coaty Core Profile 3.
 ///

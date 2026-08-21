@@ -19,4 +19,27 @@ if AXOLOTY_PROTOCOL_PACKAGE_DIR="$tmp/package" \
     exit 1
 fi
 
-echo "AxolotyProtocol forbidden-import negative test passed"
+rm -rf "$tmp/package"
+cp -R "$root/Packages/AxolotyProtocol" "$tmp/package"
+printf '%s' 'import NIOHTTP1' >> "$tmp/package/Sources/AxolotyProtocol/ProtocolError.swift"
+printf '\n' >> "$tmp/package/Sources/AxolotyProtocol/ProtocolError.swift"
+printf '%s' 'import Logging' >> "$tmp/package/Sources/AxolotyProtocol/ProtocolError.swift"
+printf '\n' >> "$tmp/package/Sources/AxolotyProtocol/ProtocolError.swift"
+printf '%s' 'actor ForbiddenActor {}' >> "$tmp/package/Sources/AxolotyProtocol/ProtocolError.swift"
+printf '\n' >> "$tmp/package/Sources/AxolotyProtocol/ProtocolError.swift"
+printf '%s' 'struct ForbiddenController {}' >> "$tmp/package/Sources/AxolotyProtocol/ProtocolError.swift"
+printf '\n' >> "$tmp/package/Sources/AxolotyProtocol/ProtocolError.swift"
+if AXOLOTY_PROTOCOL_PACKAGE_DIR="$tmp/package" "$root/Tests/Support/check-axoloty-protocol-package.sh" >/dev/null 2>&1; then
+    echo "error: checker accepted forbidden NIO/logging/actor/controller boundaries" >&2
+    exit 1
+fi
+
+rm -rf "$tmp/package"
+cp -R "$root/Packages/AxolotyProtocol" "$tmp/package"
+sed -i 's/\.product(name: "AxolotyWire", package: "AxolotyWire")/.product(name: "NIO", package: "swift-nio")/' "$tmp/package/Package.swift"
+if AXOLOTY_PROTOCOL_PACKAGE_DIR="$tmp/package" "$root/Tests/Support/check-axoloty-protocol-package.sh" >/dev/null 2>&1; then
+    echo "error: checker accepted forbidden manifest dependency" >&2
+    exit 1
+fi
+
+echo "AxolotyProtocol forbidden-boundary negative tests passed"

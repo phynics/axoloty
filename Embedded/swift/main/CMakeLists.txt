@@ -2,8 +2,9 @@
 #
 # The main application component depends on the axoloty_wire component,
 # which compiles AxolotyWire and AxolotyProtocol as separate Embedded Swift
-# modules. Main.swift uses `import AxolotyWire`; the protocol component is
-# compiled here to enforce the exact production source inclusion contract.
+# modules. Main.swift uses `import AxolotyWire`; ProtocolModuleConsumer.swift
+# imports AxolotyProtocol and exercises its public profile symbol so the
+# application proves module discovery and linkage, not just compilation.
 
 get_filename_component(AXOLOTY_ROOT
     "${CMAKE_CURRENT_LIST_DIR}/../../.."
@@ -17,6 +18,7 @@ option(AXOLOTY_SWIFT_UNICODE_LINKER_PROBE
 set(AXOLOTY_SWIFT_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/Main.swift
     ${CMAKE_CURRENT_LIST_DIR}/EmbeddedMQTTClient.swift
+    ${CMAKE_CURRENT_LIST_DIR}/ProtocolModuleConsumer.swift
     ${CMAKE_CURRENT_LIST_DIR}/StaticDeviceAgent.swift
 )
 set(AXOLOTY_CORPUS_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/GeneratedCorpus.swift")
