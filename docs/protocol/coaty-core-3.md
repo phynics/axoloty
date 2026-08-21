@@ -58,7 +58,7 @@ typed external-route semantics remain owned by #641.
 
 ## Portable package boundary
 
-**Status: Complete (G2 issues #638 and #639).**
+**Status: Complete for #638; Partial/prerequisite for #639.**
 
 `Packages/AxolotyProtocol` is independently host-buildable and is compiled by
 the ESP-IDF `axoloty_protocol` component from the same source glob. The target
