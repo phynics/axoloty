@@ -59,10 +59,21 @@ target_include_directories(${COMPONENT_LIB} PUBLIC
 
 # idf_component_register_swift writes the module file using the ESP-IDF target
 # name, whereas dependent Swift code resolves the module by `-module-name`.
-# Publish that module under its importable name once this component is built.
-add_custom_command(TARGET ${COMPONENT_LIB} POST_BUILD
+# Publish that module under its importable name as an explicit build output.
+# A named target lets the Protocol component depend on the alias itself rather
+# than merely on the Wire archive; the latter can start Protocol's Swift
+# compile before this copy exists in a clean parallel build.
+set(AXOLOTY_WIRE_MODULE_ALIAS
+    "${CMAKE_CURRENT_BINARY_DIR}/AxolotyWire.swiftmodule"
+)
+add_custom_command(
+    OUTPUT ${AXOLOTY_WIRE_MODULE_ALIAS}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_BINARY_DIR}/${COMPONENT_LIB}.swiftmodule
-        ${CMAKE_CURRENT_BINARY_DIR}/AxolotyWire.swiftmodule
+        ${AXOLOTY_WIRE_MODULE_ALIAS}
+    DEPENDS ${COMPONENT_LIB}
     VERBATIM
+)
+add_custom_target(axoloty_wire_module_alias
+    DEPENDS ${AXOLOTY_WIRE_MODULE_ALIAS}
 )

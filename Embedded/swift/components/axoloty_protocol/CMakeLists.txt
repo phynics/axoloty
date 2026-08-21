@@ -29,7 +29,17 @@ idf_component_register_swift(
 )
 
 idf_component_get_property(WIRE_COMPONENT_LIB axoloty_wire COMPONENT_LIB)
-add_dependencies(${COMPONENT_LIB} ${WIRE_COMPONENT_LIB})
+get_target_property(WIRE_COMPONENT_BINARY_DIR ${WIRE_COMPONENT_LIB} BINARY_DIR)
+set(WIRE_MODULE_ALIAS
+    "${WIRE_COMPONENT_BINARY_DIR}/AxolotyWire.swiftmodule"
+)
+if(TARGET axoloty_wire_module_alias)
+    add_dependencies(axoloty_wire_module_alias ${WIRE_COMPONENT_LIB})
+    add_dependencies(${COMPONENT_LIB} axoloty_wire_module_alias)
+endif()
+set_source_files_properties(${AXOLOTY_PROTOCOL_SOURCES}
+    PROPERTIES OBJECT_DEPENDS "${WIRE_MODULE_ALIAS}"
+)
 idf_component_get_property(JSON_CORE_COMPONENT_LIB json_core COMPONENT_LIB)
 add_dependencies(${COMPONENT_LIB} ${JSON_CORE_COMPONENT_LIB})
 
