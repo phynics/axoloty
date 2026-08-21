@@ -1,6 +1,11 @@
 # Coaty Core Profile 3
 
-This document is the normative Axoloty authority for the sealed `coaty/3` compatibility profile. Until the portable protocol package lands in [G2](https://github.com/phynics/axoloty/issues/630), executable behavior remains governed by production code, the compatibility matrix, committed fixtures, and the pinned CoatyJS reference agent.
+This document is the normative Axoloty authority for the sealed `coaty/3`
+compatibility profile. The portable package boundary now lands in [G2 issue
+#638](https://github.com/phynics/axoloty/issues/638). Executable wire and
+semantic behavior remains governed by production code, the compatibility
+matrix, committed fixtures, and the pinned CoatyJS reference agent until the
+later state and processor issues land.
 
 Every normative section carries an implementation-status label:
 
@@ -10,7 +15,7 @@ Every normative section carries an implementation-status label:
 
 ## Event families
 
-**Status: Inherited (G2 owns portable implementation).**
+**Status: Complete for the sealed inventory; Inherited for wire semantics.**
 
 - Advertise / Deadvertise
 - Channel
@@ -20,7 +25,10 @@ Every normative section carries an implementation-status label:
 - Update / Complete
 - Call / Return
 
-AxolotyWire must understand every family even when a runtime capability set exposes only a subset.
+`AxolotyProtocol` exposes the same 13-family closed inventory through
+`ProtocolCapability`; `AxolotyWire` must understand every family even when a
+runtime capability set exposes only a subset. Payload semantics remain
+inherited from the pinned reference until #639/#640.
 
 ## Compatibility rule
 
@@ -32,17 +40,32 @@ New Axoloty primitives must not add proprietary event codes to `coaty/3`; they b
 
 ## G2 trace contract
 
-**Status: Later gate (G2, test-only foundation).**
+**Status: Complete for the package boundary; Later gate for processing.**
 
 The fixture-backed corpus and JSON contract in
 [`Tests/ProtocolTrace/`](../../Tests/ProtocolTrace/) record deterministic prior
 state, capabilities, finite limits, inputs, normalized actions, and structured
 rejections for every Coaty Core family. The host and static replay adapters are
 independent test implementations used to prove semantic equality before any
-runtime migration. They are not production protocol processors and do not
-change the current wire authority. Issues [#638](https://github.com/phynics/axoloty/issues/638)
-through [#641](https://github.com/phynics/axoloty/issues/641) own the production
-package, processor, state, and typed external-route boundaries.
+runtime migration. They are not production protocol processors. The
+production `AxolotyProtocol` foundation now owns profile inventory, portable
+frames, routing keys, structured errors, and the synchronous borrowed-to-owned
+action handoff. It does not yet own processor/state behavior; issues
+[#639](https://github.com/phynics/axoloty/issues/639) through
+[#641](https://github.com/phynics/axoloty/issues/641) own those later
+boundaries.
+
+## Portable package boundary
+
+**Status: Complete (G2 issue #638).**
+
+`Packages/AxolotyProtocol` is independently host-buildable and is compiled by
+the ESP-IDF `axoloty_protocol` component from the same source glob. The target
+depends only on `AxolotyWire`; Foundation, MQTT/NIO, logging, ErrorKit,
+actors, controllers, lifecycle, and host object hierarchy are prohibited.
+The package is intentionally a foundation rather than a runtime API: no
+subscriber registry, protocol-state store, transport, or second processor is
+introduced here.
 
 ## External IO routes
 

@@ -2,8 +2,10 @@
 
 Status: implements issue #297, updated by #320 and #321. The ESP32-C6
 toolchain is included in the single dev image (`axoloty-dev`). Embedded
-Swift cross-compilation is working — AxolotyWire compiles and runs
-on-device via the `espressif/idf_swift` component.
+Swift cross-compilation is working — AxolotyWire compiles and runs on-device,
+and the portable AxolotyProtocol foundation cross-compiles through the
+companion `axoloty_protocol` component, via the `espressif/idf_swift`
+component.
 
 ## NixOS host prerequisites
 
@@ -112,8 +114,9 @@ Swift 6.3 compiles AxolotyWire for `riscv32-none-none-eabi` using
 component (v1.0.1) integrates the Swift compiler into the ESP-IDF build
 system via `idf_component_register_swift()`.
 
-The Swift firmware (`Embedded/swift/`) compiles AxolotyWire as a separate
-Embedded Swift module and links it into the application. Verified on physical
+The Swift firmware (`Embedded/swift/`) compiles AxolotyWire and the
+AxolotyProtocol foundation as separate Embedded Swift modules and links their
+components into the application. Verified on physical
 ESP32-C6:
 `AXOLOTY_SMOKE_OK` captured, `WireReader.readUUID` and `TopicView.eventType`
 work on-device.

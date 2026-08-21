@@ -22,6 +22,9 @@ func app_main() -> Int32 {
     var rollingChecksum: UInt32 = 0
     var passed: UInt32 = 0
     var failed: UInt32 = 0
+    guard axoloty_protocol_embedded_link_probe() == 3 else {
+        return 1
+    }
     let networkRole = axoloty_network_role()
     let networkScenario = axoloty_network_scenario()
     var emittingExchangeEvidence = false
