@@ -113,8 +113,11 @@ let package = Package(
                 "WireCompatibility/Reverse/run-coatyjs-to-axoloty-core.sh",
                 "WireCompatibility/Reverse/coatyjs-core-requester.js",
                 "WireCompatibility/Reverse/coatyjs-to-modern-requester.js",
+                "ProtocolTrace/README.md",
             ],
             resources: [
+                .copy("ProtocolTrace/trace.schema.json"),
+                .copy("ProtocolTrace/Fixtures/family-seeds.json"),
                 .process("WireCompatibility/Fixtures"),
             ]
         ),

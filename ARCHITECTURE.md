@@ -8,6 +8,15 @@ The released implementation still consists of the root `Axoloty` host product, t
 
 This section is the source of truth for what exists today. It must be updated whenever a gate changes the implemented package graph or removes a legacy path.
 
+### G2 status: test-only trace foundation
+
+G2 currently adds only the fixture-backed trace contract and independent host
+and static replay adapters under `Tests/ProtocolTrace`. This is a reviewable
+non-divergence seam, not a new production package or runtime processor; the
+current 0.5.1 package graph above remains authoritative. Issues [#638](https://github.com/phynics/axoloty/issues/638)
+through [#641](https://github.com/phynics/axoloty/issues/641) own the later
+protocol package, state, processor, and typed external-route production work.
+
 ## Accepted 0.6 delta
 
 The target package graph and runtime boundaries below are accepted direction, not claims about the 0.5.1 implementation. G1 accepted [ADR 0004](./docs/adr/0004-literal-inline-bounded-runtime-state.md) from host and ESP32-C6 evidence, selecting measured tiny/static/host capacity presets of 1/16/64; its implementations remain spike-local. G2 owns the new protocol package, shared processor, and promotion of the bounded design into production types; G3 owns the object model; G4 owns runtime replacement; G5 owns IO and optional-product boundaries; G6 owns non-divergence and release proof.
