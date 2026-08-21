@@ -78,26 +78,86 @@ struct ProtocolFoundationTests {
     }
 
     @Test("bounded request state rejects saturation, stale, and duplicate responses")
-    func boundedRequestState() {
+    func boundedRequestState() throws {
         let first = UUID16.zero
         let second = UUID16(bytes: (
             0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
         ))
-        var state = ProtocolPendingRequest()
-        let firstBegin = state.begin(correlationID: first, nowMS: 100, timeoutMS: 50)
+        var processor = ProtocolProcessor<1>()
+        let firstBegin = withStaticPayload { payload in
+            let operation = try! ProtocolLocalOperation(
+                capability: .discover,
+                sourceID: first,
+                correlationID: first,
+                payload: payload,
+                requestTimeoutMS: 50
+            )
+            var sink = InlineProtocolActionSink<1>()
+            return processor.processOutbound(operation, nowMS: 100, sink: &sink) == .accepted
+        }
         #expect(firstBegin)
-        let saturatedBegin = state.begin(correlationID: second, nowMS: 100, timeoutMS: 50)
+        let saturatedBegin = withStaticPayload { payload in
+            let operation = try! ProtocolLocalOperation(
+                capability: .discover,
+                sourceID: second,
+                correlationID: second,
+                payload: payload,
+                requestTimeoutMS: 50
+            )
+            var sink = InlineProtocolActionSink<1>()
+            return processor.processOutbound(operation, nowMS: 100, sink: &sink) == .accepted
+        }
         #expect(!saturatedBegin)
-        let wrong = state.accept(correlationID: second, nowMS: 110)
-        #expect(wrong == .wrongCorrelation)
-        let accepted = state.accept(correlationID: first, nowMS: 149)
-        #expect(accepted == .accepted)
-        let duplicate = state.accept(correlationID: first, nowMS: 149)
-        #expect(duplicate == .duplicate)
 
-        let secondBegin = state.begin(correlationID: second, nowMS: 200, timeoutMS: 10)
+        let wrong = try withResponseFrame(correlation: "00000000-0000-0000-0000-000000000001") { frame in
+            var sink = InlineProtocolActionSink<1>()
+            return processor.processInbound(frame, nowMS: 110, sink: &sink)
+        }
+        #expect(wrong == .rejected(.correlationMismatch))
+        let accepted = try withResponseFrame(correlation: "00000000-0000-0000-0000-000000000000") { frame in
+            var sink = InlineProtocolActionSink<1>()
+            return processor.processInbound(frame, nowMS: 149, sink: &sink)
+        }
+        #expect(accepted == .accepted)
+        let duplicate = try withResponseFrame(correlation: "00000000-0000-0000-0000-000000000000") { frame in
+            var sink = InlineProtocolActionSink<1>()
+            return processor.processInbound(frame, nowMS: 149, sink: &sink)
+        }
+        #expect(duplicate == .rejected(.duplicate))
+
+        let secondBegin = withStaticPayload { payload in
+            let operation = try! ProtocolLocalOperation(
+                capability: .discover,
+                sourceID: second,
+                correlationID: second,
+                payload: payload,
+                requestTimeoutMS: 10
+            )
+            var sink = InlineProtocolActionSink<1>()
+            return processor.processOutbound(operation, nowMS: 200, sink: &sink) == .accepted
+        }
         #expect(secondBegin)
-        let expired = state.accept(correlationID: second, nowMS: 210)
-        #expect(expired == .expired)
+        let expired = processor.expire(nowMS: 210)
+        #expect(expired)
+    }
+}
+
+private func withStaticPayload<R>(_ body: (ByteSlice) -> R) -> R {
+    let payload: StaticString = "{}"
+    return body(ByteSlice(bytes: payload.utf8Start, length: payload.utf8CodeUnitCount))
+}
+
+private func withResponseFrame<R>(
+    correlation: String,
+    _ body: (BorrowedProtocolFrame) throws -> R
+) throws -> R {
+    let topic = Array("coaty/3/test/RTN/00000000-0000-0000-0000-000000000000/\(correlation)".utf8)
+    let payload = Array("{}".utf8)
+    return try topic.withUnsafeBufferPointer { topicBuffer in
+        try payload.withUnsafeBufferPointer { payloadBuffer in
+            let view = TopicView(topicBytes: topicBuffer.baseAddress!, length: topicBuffer.count)
+            let bytes = ByteSlice(bytes: payloadBuffer.baseAddress!, length: payloadBuffer.count)
+            return try body(try BorrowedProtocolFrame(topic: view, payload: bytes))
+        }
     }
 }

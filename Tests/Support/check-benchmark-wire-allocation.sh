@@ -2,15 +2,15 @@
 # Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 #
 # Host allocation-regression check for the AxolotyWire borrowed decode +
-# static routing hot path (issue #490).
+# shared fixed-inline protocol processor hot path (issue #490).
 #
 # Runs the dedicated WireAllocation probe, which performs ONLY a warmed
-# steady-state decode + EmbeddedMessageRouter dispatch pass, under the
+# steady-state decode + ProtocolProcessor dispatch pass, under the
 # heaptrack malloc profiler. It asserts the documented exact-zero *per-iteration*
 # steady-state allocation contract by requiring that the total number of
 # allocation calls does not grow as the hot-path iteration count increases.
-# One-time startup/construction allocations (DSO registration, router slot
-# tables, COW first-touch) are constant and bounded; a regression that
+# One-time startup/construction allocations (DSO registration and host-side
+# setup) are constant and bounded; a regression that
 # allocates once per decode or dispatch would scale the count with iterations.
 #
 # Usage: check-benchmark-wire-allocation.sh [SMALL_ITERS=1] [LARGE_ITERS=200]

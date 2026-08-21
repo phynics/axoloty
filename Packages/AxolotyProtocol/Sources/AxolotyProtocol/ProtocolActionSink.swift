@@ -5,8 +5,14 @@ public protocol ProtocolActionSink: ~Copyable {
     /// Remaining action slots available to the processor.
     var remainingCapacity: Int { get }
     /// Reserves all slots needed for one atomic processor operation.
+    /// - Parameter actionCount: Number of actions the processor will append.
+    /// - Returns: `true` when the complete operation fits without mutation;
+    ///   otherwise the sink remains unchanged.
     mutating func preflight(actionCount: Int) -> Bool
     /// Appends a borrowed action without copying its payload.
+    /// - Parameter action: Action whose borrowed payload remains owned by the caller.
+    /// - Returns: `true` when the action was appended, or `false` when no
+    ///   preflighted slot remains.
     mutating func append(_ action: BorrowedProtocolAction) -> Bool
 }
 
@@ -49,5 +55,43 @@ public struct InlineProtocolActionSink<let capacity: Int>: ~Copyable, ProtocolAc
     }
 }
 
-/// A reusable host sink with the same bounded interface as the Embedded sink.
-public typealias ReusableProtocolActionSink = InlineProtocolActionSink<64>
+/// A reusable contiguous host sink with the same bounded interface as the
+/// Embedded sink and the host-default capacity. Its backing storage is
+/// retained across operations so warmed host probes do not repeatedly grow it.
+public struct ReusableProtocolActionSink: ProtocolActionSink {
+    private var storage: [BorrowedProtocolAction]
+    private let capacity: Int
+
+    /// Creates a reusable sink with the requested bounded capacity.
+    public init(capacity: Int = 64) {
+        self.capacity = max(0, capacity)
+        self.storage = []
+        self.storage.reserveCapacity(max(0, capacity))
+    }
+
+    /// Number of actions currently stored.
+    public var count: Int { storage.count }
+    /// Remaining action slots available to the next operation.
+    public var remainingCapacity: Int { capacity - storage.count }
+
+    /// Checks capacity without changing the sink.
+    public mutating func preflight(actionCount: Int) -> Bool {
+        actionCount >= 0 && actionCount <= remainingCapacity
+    }
+
+    /// Appends a borrowed action while retaining the preallocated buffer.
+    public mutating func append(_ action: BorrowedProtocolAction) -> Bool {
+        guard storage.count < capacity else { return false }
+        storage.append(action)
+        return true
+    }
+
+    /// Returns a borrowed action by slot index.
+    public subscript(index: Int) -> BorrowedProtocolAction? {
+        guard index >= 0, index < storage.count else { return nil }
+        return storage[index]
+    }
+
+    /// Removes all actions while retaining contiguous host capacity.
+    public mutating func removeAll() { storage.removeAll(keepingCapacity: true) }
+}

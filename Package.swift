@@ -88,6 +88,7 @@ let package = Package(
             dependencies: [
                 "Axoloty",
                 "AxolotyWire",
+                "AxolotyProtocol",
                 .product(name: "IkigaJSON", package: "swift-json"),
             ],
             path: "Tests",

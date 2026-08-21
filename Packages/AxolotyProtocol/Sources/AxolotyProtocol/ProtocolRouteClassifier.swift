@@ -15,6 +15,9 @@ public enum ProtocolRouteClassification: UInt8, Sendable, Equatable {
 /// Classifies association routes without imposing a global route grammar.
 public protocol ProtocolRouteClassifier {
     /// Classifies a borrowed route synchronously.
+    ///
+    /// The classifier is supplied by the binding. This protocol deliberately
+    /// does not define a global MQTT route grammar.
     func classify(_ route: ByteSlice) -> ProtocolRouteClassification
 }
 
@@ -24,6 +27,8 @@ public struct ExactProtocolRouteClassifier: ProtocolRouteClassifier, Sendable {
     private let externalLength: Int
 
     /// Creates a classifier from a fixed route literal.
+    ///
+    /// - Parameter externalRoute: Binding-owned route to classify as external.
     public init(externalRoute: StaticString) {
         let bytes = externalRoute.utf8Start
         let length = externalRoute.utf8CodeUnitCount
@@ -36,7 +41,8 @@ public struct ExactProtocolRouteClassifier: ProtocolRouteClassifier, Sendable {
         self.externalLength = length
     }
 
-    /// Classifies the configured external route, treating other routes as Coaty.
+    /// Classifies the configured external route, treating other non-empty
+    /// routes as Coaty and empty routes as unrelated.
     public func classify(_ route: ByteSlice) -> ProtocolRouteClassification {
         guard route.length == externalLength, route.length <= 128 else { return .coaty }
         for index in 0..<route.length {

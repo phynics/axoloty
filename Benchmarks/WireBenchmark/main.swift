@@ -240,15 +240,17 @@ func validateAllocations() {
     var sink = 0
     payloadBytes.withUnsafeBufferPointer { pb in
         topicBytes.withUnsafeBufferPointer { tb in
-            let router = try! EmbeddedMessageRouter()
-            _ = router.subscribe(.associate) { _ in }
+            var processor = ProtocolProcessor<16>()
             for _ in 0..<1_000 {
                 let message = BorrowedMessage(
                     topicBytes: tb.baseAddress!, topicLength: tb.count,
                     payloadBytes: pb.baseAddress!, payloadLength: pb.count
                 )
                 if (try? AssociateWireData(from: message.reader())) != nil { sink += 1 }
-                router.dispatch(message)
+                var actionSink = InlineProtocolActionSink<1>()
+                if let frame = try? BorrowedProtocolFrame(topic: message.topic, payload: message.payload) {
+                    _ = processor.processInbound(frame, nowMS: 1, sink: &actionSink)
+                }
             }
         }
     }

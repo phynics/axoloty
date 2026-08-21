@@ -2,8 +2,8 @@
 # Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 # Enforces the #639/#640 ownership split: AxolotyWire owns syntax and parser
-# workspaces only; AxolotyProtocol owns all router, endpoint, association,
-# subscriber, handler, and correlation state.
+# workspaces only; AxolotyProtocol owns all processor, subscription,
+# association, handler, and correlation state.
 
 set -eu
 
@@ -13,13 +13,19 @@ protocol="${AXOLOTY_PROTOCOL_PACKAGE_DIR:-$root/Packages/AxolotyProtocol}"
 
 test -f "$wire/Package.swift"
 for required in \
-    ProtocolBufferConfig.swift ProtocolPendingRequest.swift ProtocolProcessor.swift \
+    ProtocolBufferConfig.swift ProtocolProcessor.swift \
     ProtocolActionSink.swift ProtocolHandlerTable.swift ProtocolCapacityError.swift \
-    EmbeddedMessageRouter.swift StaticDispatchTable.swift StaticFamilyTable.swift StaticIoEndpoints.swift; do
+    ProtocolRouteClassifier.swift ProtocolSubscriptionRegistry.swift; do
     test -f "$protocol/Sources/AxolotyProtocol/$required"
 done
 
-if grep -Eq 'import[[:space:]]+AxolotyProtocol|ProtocolPendingRequest|ProtocolBufferConfig|EmbeddedMessageRouter|StaticDispatchTable|StaticFamilyTable|StaticIoEndpoints|MessageRouter|WireCapacityError' \
+# Keep the shared processor Interface and handler seam visible in the boundary check.
+grep -Fq 'processInbound' "$protocol/Sources/AxolotyProtocol/ProtocolProcessor.swift"
+grep -Fq 'processOutbound' "$protocol/Sources/AxolotyProtocol/ProtocolProcessor.swift"
+grep -Fq 'expire(nowMS:' "$protocol/Sources/AxolotyProtocol/ProtocolProcessor.swift"
+grep -Fq '@convention(thin)' "$protocol/Sources/AxolotyProtocol/ProtocolHandlerTable.swift"
+
+if grep -Eq 'import[[:space:]]+AxolotyProtocol|ProtocolPendingRequest|ProtocolBufferConfig|ProtocolProcessor|ProtocolActionSink|ProtocolHandlerEntry|ProtocolRouteClassifier|EmbeddedMessageRouter|StaticDispatchTable|StaticFamilyTable|StaticIoEndpoints|MessageRouter|WireCapacityError' \
     "$wire/Package.swift" "$wire"/Sources/AxolotyWire/*.swift; then
     echo "error: AxolotyWire imports or defines G2 protocol state" >&2
     exit 1

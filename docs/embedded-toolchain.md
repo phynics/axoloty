@@ -163,7 +163,7 @@ The MQTT callback accepts a message only when the first fragment is also the
 complete payload (`current_data_offset == 0` and `data_len == total_data_len`).
 The configured 129-byte topic and 513-byte payload buffers cover the approved
 128/512-byte wire limits; fragmented or oversized messages are rejected before
-constructing a `BorrowedMessage`. The synchronous Swift router returns before
+constructing a `BorrowedMessage`. The synchronous Swift protocol processor returns before
 ESP-IDF invalidates the callback buffers.
 
 `EmbeddedMQTTClient` is the firmware-local Swift overlay for bounded QoS 0

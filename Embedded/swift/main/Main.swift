@@ -11,6 +11,15 @@
 import AxolotyWire
 import AxolotyProtocol
 
+@inline(__always)
+private func recordRouterDispatch(
+    _ context: UInt32,
+    _: UnsafePointer<UInt8>?, _: Int,
+    _: UnsafePointer<UInt8>?, _: Int
+) {
+    UnsafeMutablePointer<Bool>(bitPattern: UInt(context))?.pointee = true
+}
+
 private struct UnsafeSendablePointer<Pointee>: @unchecked Sendable {
     let value: UnsafeMutablePointer<Pointee>
 }
@@ -316,27 +325,38 @@ func app_main() -> Int32 {
         record("borrowed:topicView", rawMessage.isRawTopic)
         record("borrowed:reader", rawMessage.reader().length == 0)
 
-        let discoverTopic: StaticString = "coaty/3/ns/DSC/source-id/correlation-id"
+        let discoverTopic: StaticString = "coaty/3/ns/DSC/32400000-0000-4000-8000-000000000003/32400000-0000-4000-8000-000000000004"
+        let discoverPayload: StaticString = "{\"objectTypes\":[]}"
         let discoverMessage = BorrowedMessage(
             topicBytes: discoverTopic.utf8Start,
             topicLength: discoverTopic.utf8CodeUnitCount,
-            payloadBytes: payload.baseAddress!,
-            payloadLength: 0
+            payloadBytes: discoverPayload.utf8Start,
+            payloadLength: discoverPayload.utf8CodeUnitCount
         )
-        let router = try! EmbeddedMessageRouter()
+        var processor = ProtocolProcessor<16>()
+        var sink = InlineProtocolActionSink<1>()
+        var registry = ProtocolSubscriptionRegistry<16>()
         withUnsafeTemporaryAllocation(of: Bool.self, capacity: 1) { dispatched in
             dispatched[0] = false
-            let dispatchedPointer = UnsafeSendablePointer(value: dispatched.baseAddress!)
-            let token = router.subscribe(.discover) { _ in dispatchedPointer.value.pointee = true }
-            record("router:subscribe", token != nil)
-            router.dispatch(discoverMessage)
-            record("router:dispatch", dispatchedPointer.value.pointee)
+            let registration = try? registry.register(
+                selector: .capability(.discover),
+                handler: ProtocolHandlerEntry(function: recordRouterDispatch, context: UInt32(UInt(bitPattern: dispatched.baseAddress!)))
+            )
+            let outcome: ProtocolProcessOutcome
+            if let frame = try? BorrowedProtocolFrame(topic: discoverMessage.topic, payload: discoverMessage.payload) {
+                outcome = processor.processInbound(frame, nowMS: 1, sink: &sink)
+            } else {
+                outcome = .rejected(.malformedFrame)
+            }
+            if let action = sink[0] { _ = registry.dispatch(action) }
+            record("registry:subscribe", registration != nil)
+            record("registry:dispatch", outcome == .accepted && dispatched[0])
         }
     }
 
     // === Static Phase 4 device agent ===
 
-    let staticAgent = StaticDeviceAgent()
+    var staticAgent = StaticDeviceAgent()
     record("agent:identity", StaticDeviceAgent.agentId != .zero &&
            StaticDeviceAgent.agentId != StaticDeviceAgent.deviceObjectId)
 

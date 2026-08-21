@@ -71,7 +71,7 @@ idf_component_register_swift(
     SRCS ${AXOLOTY_SWIFT_SOURCES}
 )
 
-# StaticDeviceAgent consumes the noncopyable ProtocolPendingRequest from the
+# StaticDeviceAgent consumes the noncopyable ProtocolProcessor from the
 # protocol component. Explicitly enable the same lifetime feature for the
 # application consumer; otherwise the standalone protocol check would not
 # prove the actual ESP-IDF consumer build.

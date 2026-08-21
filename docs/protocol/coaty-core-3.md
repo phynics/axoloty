@@ -1,7 +1,7 @@
 # Coaty Core Profile 3
 
 This document is the normative Axoloty authority for the sealed `coaty/3`
-compatibility profile. The portable package boundary now lands in [G2 issue
+compatibility profile. The portable package boundary landed in [G2 issue
 #638](https://github.com/phynics/axoloty/issues/638). Executable wire and
 semantic behavior remains governed by production code, the compatibility
 matrix, committed fixtures, and the pinned CoatyJS reference agent.
@@ -27,7 +27,8 @@ Every normative section carries an implementation-status label:
 `AxolotyProtocol` exposes the same 13-family closed inventory through
 `ProtocolCapability`; `AxolotyWire` must understand every family even when a
 runtime capability set exposes only a subset. Payload semantics remain
-inherited from the pinned reference until #640.
+inherited from the pinned reference; the shared processor and trace replay
+cover all 13 family transitions without promoting a runtime API.
 
 ## Compatibility rule
 
@@ -39,17 +40,20 @@ New Axoloty primitives must not add proprietary event codes to `coaty/3`; they b
 
 ## G2 trace contract
 
-**Status: Complete for the package boundary, bounded state, and shared processing.**
+**Status: Complete for the package boundary, bounded state, and shared
+processing; runtime integration remains a later gate.**
 
 The fixture-backed corpus and JSON contract in
 [`Tests/ProtocolTrace/`](../../Tests/ProtocolTrace/) record deterministic prior
 state, capabilities, finite limits, inputs, normalized actions, and structured
 rejections for every Coaty Core family. The host and static replay adapters are
-independent test implementations used to prove semantic equality. They invoke
-the same production processor and compare normalized observations.
-`AxolotyProtocol` owns fixed-inline state, caller-owned action sinks,
-noncapturing handler tables, binding-supplied route classification, and shared
-inbound/outbound processing. `AxolotyWire` owns no protocol state.
+test implementations over the same contract. Both invoke the shared
+`ProtocolProcessor` inbound/outbound Interfaces with real borrowed frames and
+typed local operations, then compare normalized observations.
+`AxolotyProtocol` owns the fixed-inline processor seam, caller-owned action
+sinks, generation-protected subscription/handler tables, binding-supplied
+route classification, and shared inbound/outbound processing.
+`AxolotyWire` owns no protocol state.
 
 ## Portable package boundary
 
@@ -70,8 +74,12 @@ External IO routes are transport-binding-specific exact non-Coaty routes associa
 
 ## Evidence
 
-**Status: Complete for current behavior; G2 and G6 extend the evidence for shared portable processing and non-divergence.**
+**Status: Complete for current G2 evidence; G6 extends the evidence for
+non-divergence and release proof.**
 
 - [`Tests/WireCompatibility/CompatibilityMatrix.md`](../../Tests/WireCompatibility/CompatibilityMatrix.md)
 - [`Tests/WireCompatibility/ReferenceAgents/`](../../Tests/WireCompatibility/ReferenceAgents/)
 - [`Tests/WireCompatibility/Fixtures/`](../../Tests/WireCompatibility/Fixtures/)
+- [`Tests/ProtocolTrace/ProtocolTraceTests.swift`](../../Tests/ProtocolTrace/ProtocolTraceTests.swift)
+- [`Packages/AxolotyProtocol/Tests/AxolotyProtocolTests/ProtocolProcessorTests.swift`](../../Packages/AxolotyProtocol/Tests/AxolotyProtocolTests/ProtocolProcessorTests.swift)
+- [`Tests/Support/check-axoloty-wire-state-boundary.sh`](../../Tests/Support/check-axoloty-wire-state-boundary.sh)

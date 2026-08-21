@@ -2,57 +2,190 @@
 
 import AxolotyWire
 
-/// A typed local operation submitted to the shared protocol processor.
-public struct ProtocolLocalOperation {
-    /// The profile family to publish.
-    public let capability: ProtocolCapability
-    /// The local source identity.
-    public let sourceID: UUID16
-    /// The optional request/response correlation.
-    public let correlationID: UUID16?
-    /// The borrowed, already-encoded family payload.
-    public let payload: ByteSlice
+/// A closed, borrowed local operation covering every Coaty Core family.
+public enum ProtocolLocalOperation {
+    /// Publishes an Advertise operation.
+    case advertise(sourceID: UUID16, payload: ByteSlice)
+    /// Publishes a Deadvertise operation.
+    case deadvertise(sourceID: UUID16, payload: ByteSlice)
+    /// Publishes a Channel operation.
+    case channel(sourceID: UUID16, payload: ByteSlice)
+    /// Publishes an Associate operation.
+    case associate(sourceID: UUID16, payload: ByteSlice)
+    /// Publishes an IoValue operation.
+    case ioValue(sourceID: UUID16, payload: ByteSlice)
+    /// Publishes a Discover request.
+    case discover(sourceID: UUID16, correlationID: UUID16, payload: ByteSlice, requestTimeoutMS: UInt32?)
+    /// Publishes a Resolve response.
+    case resolve(sourceID: UUID16, correlationID: UUID16, payload: ByteSlice)
+    /// Publishes a Query request.
+    case query(sourceID: UUID16, correlationID: UUID16, payload: ByteSlice, requestTimeoutMS: UInt32?)
+    /// Publishes a Retrieve response.
+    case retrieve(sourceID: UUID16, correlationID: UUID16, payload: ByteSlice)
+    /// Publishes an Update request.
+    case update(sourceID: UUID16, correlationID: UUID16, payload: ByteSlice, requestTimeoutMS: UInt32?)
+    /// Publishes a Complete response.
+    case complete(sourceID: UUID16, correlationID: UUID16, payload: ByteSlice)
+    /// Publishes a Call request.
+    case call(sourceID: UUID16, correlationID: UUID16, payload: ByteSlice, requestTimeoutMS: UInt32?)
+    /// Publishes a Return response.
+    case returnEvent(sourceID: UUID16, correlationID: UUID16, payload: ByteSlice)
 
-    /// Creates a local operation without copying its payload.
-    public init(
-        capability: ProtocolCapability,
-        sourceID: UUID16,
-        correlationID: UUID16? = nil,
-        payload: ByteSlice
-    ) throws(ProtocolError) {
-        self.capability = capability
-        self.sourceID = sourceID
-        self.correlationID = correlationID
-        self.payload = payload
-        _ = try ProtocolRoutingKey(
-            capability: capability,
-            sourceID: sourceID,
-            correlationID: correlationID
-        )
+    /// Creates the closed case corresponding to a capability.
+    ///
+    /// - Parameters:
+    ///   - capability: The Coaty Core family to publish.
+    ///   - sourceID: The local source identity.
+    ///   - correlationID: The request/response identity when required.
+    ///   - payload: Borrowed, already-encoded family data.
+    ///   - requestTimeoutMS: Optional timeout for request families.
+    /// - Throws: ``ProtocolError`` when correlation presence is invalid.
+    public init(capability: ProtocolCapability, sourceID: UUID16, correlationID: UUID16? = nil, payload: ByteSlice, requestTimeoutMS: UInt32? = nil) throws(ProtocolError) {
+        _ = try ProtocolRoutingKey(capability: capability, sourceID: sourceID, correlationID: correlationID)
+        switch capability {
+        case .advertise: self = .advertise(sourceID: sourceID, payload: payload)
+        case .deadvertise: self = .deadvertise(sourceID: sourceID, payload: payload)
+        case .channel: self = .channel(sourceID: sourceID, payload: payload)
+        case .associate: self = .associate(sourceID: sourceID, payload: payload)
+        case .ioValue: self = .ioValue(sourceID: sourceID, payload: payload)
+        case .discover: self = .discover(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload, requestTimeoutMS: requestTimeoutMS)
+        case .resolve: self = .resolve(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload)
+        case .query: self = .query(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload, requestTimeoutMS: requestTimeoutMS)
+        case .retrieve: self = .retrieve(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload)
+        case .update: self = .update(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload, requestTimeoutMS: requestTimeoutMS)
+        case .complete: self = .complete(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload)
+        case .call: self = .call(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload, requestTimeoutMS: requestTimeoutMS)
+        case .returnEvent: self = .returnEvent(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload)
+        }
     }
+
+    /// The operation's closed capability.
+    public var capability: ProtocolCapability {
+        switch self { case .advertise: return .advertise; case .deadvertise: return .deadvertise; case .channel: return .channel; case .associate: return .associate; case .ioValue: return .ioValue; case .discover: return .discover; case .resolve: return .resolve; case .query: return .query; case .retrieve: return .retrieve; case .update: return .update; case .complete: return .complete; case .call: return .call; case .returnEvent: return .returnEvent }
+    }
+    /// The operation's source identity.
+    public var sourceID: UUID16 {
+        switch self { case let .advertise(id,_), let .deadvertise(id,_), let .channel(id,_), let .associate(id,_), let .ioValue(id,_), let .discover(id,_,_,_), let .resolve(id,_,_), let .query(id,_,_,_), let .retrieve(id,_,_), let .update(id,_,_,_), let .complete(id,_,_), let .call(id,_,_,_), let .returnEvent(id,_,_): return id }
+    }
+    /// The operation's optional correlation identity.
+    public var correlationID: UUID16? {
+        switch self { case .advertise, .deadvertise, .channel, .associate, .ioValue: return nil; case let .discover(_,id,_,_), let .resolve(_,id,_), let .query(_,id,_,_), let .retrieve(_,id,_), let .update(_,id,_,_), let .complete(_,id,_), let .call(_,id,_,_), let .returnEvent(_,id,_): return id }
+    }
+    /// The operation's borrowed payload.
+    public var payload: ByteSlice {
+        switch self { case let .advertise(_,p), let .deadvertise(_,p), let .channel(_,p), let .associate(_,p), let .ioValue(_,p), let .discover(_,_,p,_), let .resolve(_,_,p), let .query(_,_,p,_), let .retrieve(_,_,p), let .update(_,_,p,_), let .complete(_,_,p), let .call(_,_,p,_), let .returnEvent(_,_,p): return p }
+    }
+    /// The request timeout, when this operation opens a response ledger entry.
+    public var requestTimeoutMS: UInt32? {
+        switch self { case let .discover(_,_,_,t), let .query(_,_,_,t), let .update(_,_,_,t), let .call(_,_,_,t): return t; default: return nil }
+    }
+}
+
+private func requireCorrelation(_ correlationID: UUID16?) throws(ProtocolError) -> UUID16 {
+    guard let correlationID else { throw ProtocolError(.invalidCorrelation) }
+    return correlationID
 }
 
 /// The result of one atomic processor operation.
 public enum ProtocolProcessOutcome: Sendable, Equatable {
-    /// The operation was accepted and its action was placed in the sink.
+    /// The operation was accepted and appended to the sink.
     case accepted
-    /// The route is unrelated to the binding and was intentionally ignored.
+    /// The route is unrelated to this binding.
     case ignored
-    /// The operation was rejected before state or sink mutation.
+    /// The operation was rejected without state mutation.
     case rejected(ProtocolError.Code)
 }
 
-/// A compact snapshot used by host/static replay assertions.
+/// A compact, fixed-storage state observation.
 public struct ProtocolStateSnapshot: Sendable, Equatable {
-    /// Number of active object/association records.
+    /// Number of active association records.
     public let activeRecords: Int
     /// Number of active association routes.
     public let activeAssociations: Int
-    /// Current generation counter.
+    /// Reserved object count reported by future object adapters.
+    public let activeObjects: Int
+    /// Reserved pending count reported by future multi-request adapters.
+    public let pendingCorrelations: Int
+    /// Monotonic processor generation.
     public let generation: UInt32
+
+    /// Creates a state snapshot.
+    public init(
+        activeRecords: Int,
+        activeAssociations: Int,
+        generation: UInt32,
+        activeObjects: Int = 0,
+        pendingCorrelations: Int = 0
+    ) {
+        self.activeRecords = activeRecords
+        self.activeAssociations = activeAssociations
+        self.activeObjects = activeObjects
+        self.pendingCorrelations = pendingCorrelations
+        self.generation = generation
+    }
 }
 
-/// Shared fixed-inline processor for host and Embedded protocol adapters.
+/// Caller-owned fixed-inline identity projection for diagnostics and replay.
+///
+/// The processor never allocates this projection. A caller supplies one when
+/// it needs identities; steady-state processing uses only the count snapshot.
+public struct ProtocolFixedStateSnapshot<let capacity: Int>: ~Copyable {
+    /// Active advertised object identities.
+    public private(set) var activeObjectIDs: InlineArray<capacity, UUID16?>
+    /// Outstanding request correlations.
+    public private(set) var pendingCorrelationIDs: InlineArray<capacity, UUID16?>
+    /// Source identities for active association records.
+    public private(set) var associationSourceIDs: InlineArray<capacity, UUID16?>
+    /// Actor identities for active association records.
+    public private(set) var associationActorIDs: InlineArray<capacity, UUID16?>
+    /// Number of active object identities in ``activeObjectIDs``.
+    public private(set) var activeObjectCount = 0
+    /// Number of pending identities in ``pendingCorrelationIDs``.
+    public private(set) var pendingCorrelationCount = 0
+    /// Number of association records in the paired association buffers.
+    public private(set) var associationCount = 0
+
+    /// Creates an empty caller-owned projection.
+    public init() {
+        self.activeObjectIDs = InlineArray(repeating: nil)
+        self.pendingCorrelationIDs = InlineArray(repeating: nil)
+        self.associationSourceIDs = InlineArray(repeating: nil)
+        self.associationActorIDs = InlineArray(repeating: nil)
+    }
+
+    mutating func reset() {
+        for index in 0..<capacity {
+            activeObjectIDs[index] = nil
+            pendingCorrelationIDs[index] = nil
+            associationSourceIDs[index] = nil
+            associationActorIDs[index] = nil
+        }
+        activeObjectCount = 0
+        pendingCorrelationCount = 0
+        associationCount = 0
+    }
+
+    mutating func appendObject(_ id: UUID16) {
+        guard activeObjectCount < capacity else { return }
+        activeObjectIDs[activeObjectCount] = id
+        activeObjectCount += 1
+    }
+
+    mutating func appendPending(_ id: UUID16) {
+        guard pendingCorrelationCount < capacity else { return }
+        pendingCorrelationIDs[pendingCorrelationCount] = id
+        pendingCorrelationCount += 1
+    }
+
+    mutating func appendAssociation(source: UUID16, actor: UUID16) {
+        guard associationCount < capacity else { return }
+        associationSourceIDs[associationCount] = source
+        associationActorIDs[associationCount] = actor
+        associationCount += 1
+    }
+}
+
+/// Shared fixed-inline protocol processor for host and Embedded bindings.
 public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     private struct Association {
         var sourceID = UUID16.zero
@@ -63,162 +196,486 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         var external = false
     }
 
+    private struct ObjectRecord {
+        var id = UUID16.zero
+        var active = false
+    }
+
+    private struct PendingRecord {
+        var id = UUID16.zero
+        var deadlineMS: UInt32 = 0
+        var active = false
+    }
+
+    private enum AssociationPlan {
+        case none
+        case remove(Int)
+        case upsert(Int, Association)
+
+        var isRemoval: Bool {
+            if case .remove = self { return true }
+            return false
+        }
+    }
+    private enum AssociationResult {
+        case accepted(AssociationPlan)
+        case ignored
+        case rejected(ProtocolError.Code)
+    }
+
+    private enum ObjectPlan {
+        case none
+        case insert(Int, UUID16)
+        case remove(Int)
+    }
+
     private var associations: InlineArray<capacity, Association>
-    private var pending = ProtocolPendingRequest()
-    private var lastCorrelation = UUID16.zero
-    private var hasLastCorrelation = false
+    private var objects: InlineArray<capacity, ObjectRecord>
+    private var pending: InlineArray<capacity, PendingRecord>
+    private var lastResolvedCorrelation: UUID16?
+    private var lastExpiredCorrelation: UUID16?
     private var generation: UInt32 = 0
     private let capabilities: ProtocolCapabilities
     private let maximumPayloadBytes: Int
+    private let maximumObjects: Int
+    private let maximumPendingCorrelations: Int
 
-    /// Creates a processor with caller-selected capabilities and limits.
+    /// Creates a processor with caller-selected capabilities and fixed limits.
+    ///
+    /// - Parameters:
+    ///   - capabilities: Families accepted by this binding.
+    ///   - maximumPayloadBytes: Largest accepted borrowed payload.
+    ///   - maximumObjects: Maximum simultaneous advertised objects.
+    ///   - maximumPendingCorrelations: Maximum outstanding requests.
     public init(
         capabilities: ProtocolCapabilities = .coatyCore3,
-        maximumPayloadBytes: Int = 512
+        maximumPayloadBytes: Int = 512,
+        maximumObjects: Int = capacity,
+        maximumPendingCorrelations: Int = capacity
     ) {
         self.capabilities = capabilities
         self.maximumPayloadBytes = maximumPayloadBytes
         self.associations = InlineArray(repeating: Association())
+        self.objects = InlineArray(repeating: ObjectRecord())
+        self.pending = InlineArray(repeating: PendingRecord())
+        self.lastResolvedCorrelation = nil
+        self.lastExpiredCorrelation = nil
+        self.maximumObjects = min(max(0, maximumObjects), capacity)
+        self.maximumPendingCorrelations = min(max(0, maximumPendingCorrelations), capacity)
     }
 
-    /// Current fixed-storage state.
+    /// Returns the current fixed-storage state.
     public var state: ProtocolStateSnapshot {
-        var records = 0
-        var routes = 0
+        var associationCount = 0
+        var objectCount = 0
+        var pendingCount = 0
+        for index in 0..<capacity where associations[index].active { associationCount += 1 }
+        for index in 0..<capacity where objects[index].active { objectCount += 1 }
+        for index in 0..<capacity where pending[index].active { pendingCount += 1 }
+        return ProtocolStateSnapshot(
+            activeRecords: associationCount,
+            activeAssociations: associationCount,
+            generation: generation,
+            activeObjects: objectCount,
+            pendingCorrelations: pendingCount
+        )
+    }
+
+    /// Copies identities into a caller-owned fixed-inline projection.
+    ///
+    /// - Parameter projection: Caller-owned storage to clear and fill.
+    public func copyState(into projection: inout ProtocolFixedStateSnapshot<capacity>) {
+        projection.reset()
         for index in 0..<capacity where associations[index].active {
-            records += 1
-            routes += 1
+            projection.appendAssociation(source: associations[index].sourceID, actor: associations[index].actorID)
         }
-        return ProtocolStateSnapshot(activeRecords: records, activeAssociations: routes, generation: generation)
+        for index in 0..<capacity where objects[index].active { projection.appendObject(objects[index].id) }
+        for index in 0..<capacity where pending[index].active { projection.appendPending(pending[index].id) }
     }
 
-    /// Starts a single bounded request for a response family.
-    public mutating func beginRequest(correlationID: UUID16, nowMS: UInt32, timeoutMS: UInt32) -> Bool {
-        pending.begin(correlationID: correlationID, nowMS: nowMS, timeoutMS: timeoutMS)
+    /// Copies an active actor route into caller-owned transport storage.
+    ///
+    /// The copy is synchronous and never stores the caller's buffer.
+    public func copyActorRoute(
+        actorId: UUID16,
+        to output: UnsafeMutablePointer<UInt8>,
+        capacity outputCapacity: Int
+    ) -> Int? {
+        for index in 0..<capacity where associations[index].active && associations[index].actorID == actorId {
+            let routeLength = associations[index].routeLength
+            guard routeLength > 0, routeLength <= outputCapacity else { return nil }
+            for offset in 0..<routeLength { output[offset] = associations[index].route[offset] }
+            return routeLength
+        }
+        return nil
     }
 
-    /// Expires the request ledger using caller-supplied monotonic time.
-    public mutating func expire(nowMS: UInt32) -> Bool { pending.expire(nowMS: nowMS) }
+    /// Expires the outstanding request using caller-supplied monotonic time.
+    public mutating func expire(nowMS: UInt32) -> Bool {
+        var expired = false
+        for index in 0..<capacity where pending[index].active && Self.reached(nowMS, pending[index].deadlineMS) {
+            lastExpiredCorrelation = pending[index].id
+            pending[index].active = false
+            expired = true
+        }
+        return expired
+    }
 
-    /// Processes one validated inbound frame and appends at most one action.
-    public mutating func processInbound<S: ~Copyable & ProtocolActionSink>(
-        _ frame: BorrowedProtocolFrame,
-        nowMS: UInt32,
-        sink: inout S
-    ) -> ProtocolProcessOutcome {
+    /// Processes a validated borrowed inbound frame.
+    ///
+    /// - Parameters:
+    ///   - frame: Borrowed topic and payload views valid for this call.
+    ///   - nowMS: Caller-supplied monotonic time in milliseconds.
+    ///   - sink: Caller-owned action destination.
+    /// - Returns: The atomic transition result.
+    public mutating func processInbound<S: ~Copyable & ProtocolActionSink>(_ frame: BorrowedProtocolFrame, nowMS: UInt32, sink: inout S) -> ProtocolProcessOutcome {
         processInbound(frame, nowMS: nowMS, classifier: AnyProtocolRouteClassifier(), sink: &sink)
     }
 
-    /// Processes an inbound frame using a binding-supplied route classifier.
-    public mutating func processInbound<Classifier: ProtocolRouteClassifier, S: ~Copyable & ProtocolActionSink>(
-        _ frame: BorrowedProtocolFrame,
-        nowMS: UInt32,
-        classifier: Classifier,
-        sink: inout S
-    ) -> ProtocolProcessOutcome {
+    /// Processes a validated inbound frame with a binding-owned route classifier.
+    ///
+    /// - Parameters:
+    ///   - frame: Borrowed topic and payload views valid for this call.
+    ///   - nowMS: Caller-supplied monotonic time in milliseconds.
+    ///   - classifier: Binding-owned association-route classifier.
+    ///   - sink: Caller-owned action destination.
+    /// - Returns: The atomic transition result.
+    public mutating func processInbound<Classifier: ProtocolRouteClassifier, S: ~Copyable & ProtocolActionSink>(_ frame: BorrowedProtocolFrame, nowMS: UInt32, classifier: Classifier, sink: inout S) -> ProtocolProcessOutcome {
         guard capabilities.contains(frame.routingKey.capability) else { return .rejected(.unsupportedCapability) }
         guard frame.payload.length <= maximumPayloadBytes else { return .rejected(.capacityExceeded) }
-        guard sink.preflight(actionCount: 1) else { return .rejected(.capacityExceeded) }
-
-        if frame.routingKey.capability == .resolve {
-            guard let correlation = frame.routingKey.correlationID else { return .rejected(.correlationMismatch) }
-            let result = pending.accept(correlationID: correlation, nowMS: nowMS)
-            switch result {
-            case .accepted: break
-            case .duplicate: return .rejected(.duplicate)
-            case .wrongCorrelation: return .rejected(.correlationMismatch)
-            case .expired: return .rejected(.deadlineExpired)
+        let valid = validatePayload(frame.payload, for: frame.routingKey.capability)
+        guard valid else { return .rejected(.malformedPayload) }
+        var ioActorActionCount = 0
+        if frame.routingKey.capability == .ioValue {
+            for index in 0..<capacity where associations[index].active && associations[index].sourceID == frame.routingKey.sourceID {
+                ioActorActionCount += 1
             }
-            lastCorrelation = correlation
-            hasLastCorrelation = true
-        } else if let correlation = frame.routingKey.correlationID, correlation == lastCorrelation, hasLastCorrelation {
-            return .rejected(.duplicate)
+        }
+        let actionCount = max(1, ioActorActionCount)
+
+        var responsePlan: (index: Int, correlationID: UUID16)?
+        switch frame.routingKey.capability {
+        case .resolve, .retrieve, .complete, .returnEvent:
+            guard let correlation = frame.routingKey.correlationID else { return .rejected(.correlationMismatch) }
+            var matchingIndex: Int?
+            for index in 0..<capacity where pending[index].id == correlation {
+                if pending[index].active { matchingIndex = index }
+            }
+            guard let matchingIndex else {
+                if lastResolvedCorrelation == correlation { return .rejected(.duplicate) }
+                if lastExpiredCorrelation == correlation { return .rejected(.deadlineExpired) }
+                return .rejected(.correlationMismatch)
+            }
+            guard !Self.reached(nowMS, pending[matchingIndex].deadlineMS) else { return .rejected(.deadlineExpired) }
+            responsePlan = (matchingIndex, correlation)
+        default:
+            break
         }
 
+        let plan: AssociationPlan
         if frame.routingKey.capability == .associate {
-            switch consumeAssociation(frame.payload, classifier: classifier) {
-            case .accepted: break
+            switch planAssociation(frame.payload, classifier: classifier) {
+            case .accepted(let value): plan = value
             case .ignored: return .ignored
             case .rejected(let code): return .rejected(code)
             }
+        } else {
+            plan = .none
         }
-
-        let action = BorrowedProtocolAction(
-            kind: .deliver,
-            routingKey: frame.routingKey,
-            payload: frame.payload
-        )
-        guard sink.append(action) else { return .rejected(.capacityExceeded) }
+        let objectPlan: ObjectPlan
+        switch frame.routingKey.capability {
+        case .advertise:
+            var existing = false
+            var activeCount = 0
+            var freeIndex: Int?
+            for index in 0..<capacity {
+                if objects[index].active {
+                    activeCount += 1
+                    if objects[index].id == frame.routingKey.sourceID { existing = true }
+                } else if freeIndex == nil {
+                    freeIndex = index
+                }
+            }
+            guard !existing else { return .rejected(.duplicate) }
+            guard activeCount < maximumObjects, let freeIndex else { return .rejected(.capacityExceeded) }
+            objectPlan = .insert(freeIndex, frame.routingKey.sourceID)
+        case .deadvertise:
+            var foundIndex: Int?
+            for index in 0..<capacity where objects[index].active && objects[index].id == frame.routingKey.sourceID {
+                foundIndex = index
+                break
+            }
+            guard let index = foundIndex else { return .rejected(.malformedFrame) }
+            objectPlan = .remove(index)
+        default:
+            objectPlan = .none
+        }
+        // Classification and all rejection-only validation precede sink
+        // capacity so unrelated routes and contradictory flags retain their
+        // semantic outcomes even when the caller's sink is full.
+        guard sink.preflight(actionCount: actionCount) else { return .rejected(.capacityExceeded) }
+        let actionKind: ProtocolActionKind = plan.isRemoval ? .disassociate : (frame.routingKey.capability == .associate ? .associate : .deliver)
+        if ioActorActionCount > 0 {
+            for index in 0..<capacity where associations[index].active && associations[index].sourceID == frame.routingKey.sourceID {
+                let action = BorrowedProtocolAction(
+                    kind: actionKind,
+                    routingKey: frame.routingKey,
+                    payload: frame.payload,
+                    deliveryKey: .ioActor(associations[index].actorID),
+                    topic: frame.topic
+                )
+                guard sink.append(action) else { return .rejected(.capacityExceeded) }
+            }
+        } else {
+            let action = BorrowedProtocolAction(
+                kind: actionKind,
+                routingKey: frame.routingKey,
+                payload: frame.payload,
+                deliveryKey: deliveryKey(for: frame),
+                topic: frame.topic
+            )
+            guard sink.append(action) else { return .rejected(.capacityExceeded) }
+        }
+        if let responsePlan {
+            pending[responsePlan.index].active = false
+            lastResolvedCorrelation = responsePlan.correlationID
+        }
+        apply(plan)
+        apply(objectPlan)
         generation &+= 1
         return .accepted
     }
 
-    /// Processes a typed local operation through the same action seam.
-    public mutating func processOutbound<S: ~Copyable & ProtocolActionSink>(
-        _ operation: ProtocolLocalOperation,
-        sink: inout S
-    ) -> ProtocolProcessOutcome {
+    /// Processes a typed local operation into a publish action.
+    ///
+    /// - Parameters:
+    ///   - operation: Closed local operation with borrowed payload data.
+    ///   - nowMS: Caller-supplied monotonic time in milliseconds.
+    ///   - sink: Caller-owned action destination.
+    /// - Returns: The atomic transition result.
+    public mutating func processOutbound<S: ~Copyable & ProtocolActionSink>(_ operation: ProtocolLocalOperation, nowMS: UInt32 = 0, sink: inout S) -> ProtocolProcessOutcome {
+        processOutbound(operation, nowMS: nowMS, classifier: AnyProtocolRouteClassifier(), sink: &sink)
+    }
+
+    /// Processes a local operation with a binding-owned route classifier.
+    ///
+    /// - Parameters:
+    ///   - operation: Closed local operation with borrowed payload data.
+    ///   - nowMS: Caller-supplied monotonic time in milliseconds.
+    ///   - classifier: Binding-owned association-route classifier.
+    ///   - sink: Caller-owned action destination.
+    /// - Returns: The atomic transition result.
+    public mutating func processOutbound<Classifier: ProtocolRouteClassifier, S: ~Copyable & ProtocolActionSink>(_ operation: ProtocolLocalOperation, nowMS: UInt32 = 0, classifier: Classifier, sink: inout S) -> ProtocolProcessOutcome {
         guard capabilities.contains(operation.capability) else { return .rejected(.unsupportedCapability) }
         guard operation.payload.length <= maximumPayloadBytes else { return .rejected(.capacityExceeded) }
-        guard sink.preflight(actionCount: 1) else { return .rejected(.capacityExceeded) }
-        guard let key = try? ProtocolRoutingKey(
-            capability: operation.capability,
-            sourceID: operation.sourceID,
-            correlationID: operation.correlationID
-        ) else { return .rejected(.invalidCorrelation) }
-        guard sink.append(BorrowedProtocolAction(kind: .publish, routingKey: key, payload: operation.payload)) else {
-            return .rejected(.capacityExceeded)
+        let valid = validatePayload(operation.payload, for: operation.capability)
+        guard valid else { return .rejected(.malformedPayload) }
+        guard let key = try? ProtocolRoutingKey(capability: operation.capability, sourceID: operation.sourceID, correlationID: operation.correlationID) else { return .rejected(.invalidCorrelation) }
+        var requestPlan: (index: Int, correlationID: UUID16, deadlineMS: UInt32)?
+        if let timeout = operation.requestTimeoutMS {
+            guard timeout > 0 else { return .rejected(.deadlineExpired) }
+            guard let correlation = operation.correlationID,
+                  let index = pendingSlot(for: correlation) else {
+                return .rejected(.capacityExceeded)
+            }
+            requestPlan = (index, correlation, nowMS &+ timeout)
         }
+        let objectPlan: ObjectPlan
+        switch operation.capability {
+        case .advertise:
+            var existing = false
+            var activeCount = 0
+            var freeIndex: Int?
+            for index in 0..<capacity {
+                if objects[index].active {
+                    activeCount += 1
+                    if objects[index].id == operation.sourceID { existing = true }
+                } else if freeIndex == nil {
+                    freeIndex = index
+                }
+            }
+            guard !existing else { return .rejected(.duplicate) }
+            guard activeCount < maximumObjects, let freeIndex else { return .rejected(.capacityExceeded) }
+            objectPlan = .insert(freeIndex, operation.sourceID)
+        case .deadvertise:
+            var foundIndex: Int?
+            for index in 0..<capacity where objects[index].active && objects[index].id == operation.sourceID {
+                foundIndex = index
+                break
+            }
+            guard let index = foundIndex else { return .rejected(.malformedFrame) }
+            objectPlan = .remove(index)
+        default:
+            objectPlan = .none
+        }
+        let plan: AssociationPlan
+        if operation.capability == .associate {
+            let associateReader = operation.payload.withBytes { pointer, length in
+                WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
+            }
+            if let associate = try? AssociateWireData(from: associateReader), associate.isExternalRoute != nil {
+                return .rejected(.externalRouteMismatch)
+            }
+            switch planAssociation(operation.payload, classifier: classifier) {
+            case .accepted(let value): plan = value
+            case .ignored: return .ignored
+            case .rejected(let code): return .rejected(code)
+            }
+        } else {
+            plan = .none
+        }
+        guard sink.preflight(actionCount: 1) else { return .rejected(.capacityExceeded) }
+        guard sink.append(BorrowedProtocolAction(
+            kind: .publish,
+            routingKey: key,
+            payload: operation.payload,
+            deliveryKey: deliveryKey(for: operation)
+        )) else { return .rejected(.capacityExceeded) }
+        if let requestPlan {
+            pending[requestPlan.index] = PendingRecord(
+                id: requestPlan.correlationID,
+                deadlineMS: requestPlan.deadlineMS,
+                active: true
+            )
+        }
+        apply(plan)
+        apply(objectPlan)
         generation &+= 1
         return .accepted
     }
 
-    private enum AssociationResult { case accepted, ignored, rejected(ProtocolError.Code) }
-
-    private mutating func consumeAssociation<Classifier: ProtocolRouteClassifier>(
-        _ payload: ByteSlice, classifier: Classifier
-    ) -> AssociationResult {
-        let reader = payload.withBytes { pointer, length in
-            WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
+    private func deliveryKey(for frame: BorrowedProtocolFrame) -> ProtocolDeliveryKey {
+        switch frame.routingKey.capability {
+        case .advertise:
+            if let filter = frame.topicView.eventTypeFilter { return .advertiseFilter(filter) }
+        case .channel:
+            if let channel = frame.topicView.eventTypeFilter { return .channel(channel) }
+        case .associate:
+            let reader = frame.payload.withBytes { pointer, length in
+                WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
+            }
+            if let associate = try? AssociateWireData(from: reader) {
+                return .ioActor(associate.ioActorId)
+            }
+        case .ioValue:
+            for index in 0..<capacity where associations[index].active && associations[index].sourceID == frame.routingKey.sourceID {
+                return .ioActor(associations[index].actorID)
+            }
+        case .resolve, .retrieve, .complete, .returnEvent:
+            if let correlation = frame.routingKey.correlationID {
+                return .correlated(frame.routingKey.capability, correlation)
+            }
+        default: break
         }
+        return .capability(frame.routingKey.capability)
+    }
+
+    private func deliveryKey(for operation: ProtocolLocalOperation) -> ProtocolDeliveryKey {
+        switch operation {
+        case .resolve, .retrieve, .complete, .returnEvent:
+            if let correlation = operation.correlationID {
+                return .correlated(operation.capability, correlation)
+            }
+        default:
+            break
+        }
+        return .capability(operation.capability)
+    }
+
+    private func planAssociation<Classifier: ProtocolRouteClassifier>(_ payload: ByteSlice, classifier: Classifier) -> AssociationResult {
+        let reader = payload.withBytes { pointer, length in WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length) }
         guard let event = try? AssociateWireData(from: reader) else { return .rejected(.malformedPayload) }
         guard let route = event.associatingRoute else {
-            for index in 0..<capacity where associations[index].active && associations[index].sourceID == event.ioSourceId && associations[index].actorID == event.ioActorId {
-                associations[index].active = false
-                associations[index].routeLength = 0
-                return .accepted
-            }
+            for index in 0..<capacity where associations[index].active && associations[index].sourceID == event.ioSourceId && associations[index].actorID == event.ioActorId { return .accepted(.remove(index)) }
             return .ignored
         }
         guard route.length > 0, route.length <= 128 else { return .rejected(.capacityExceeded) }
         let classification = classifier.classify(route)
-        if let explicit = event.isExternalRoute {
-            if explicit != (classification == .external) { return .rejected(.externalRouteMismatch) }
-        }
+        if let explicit = event.isExternalRoute, explicit != (classification == .external) { return .rejected(.externalRouteMismatch) }
         if classification == .unrelated { return .ignored }
         for index in 0..<capacity where associations[index].active && associations[index].sourceID == event.ioSourceId && associations[index].actorID == event.ioActorId {
-            associations[index].routeLength = min(route.length, 128)
-            for offset in 0..<associations[index].routeLength { associations[index].route[offset] = route.byte(at: offset) ?? 0 }
-            associations[index].external = classification == .external
-            return .accepted
+            var association = associations[index]
+            association.routeLength = route.length
+            for offset in 0..<route.length { association.route[offset] = route.byte(at: offset) ?? 0 }
+            association.external = classification == .external
+            return .accepted(.upsert(index, association))
         }
         for index in 0..<capacity where !associations[index].active {
-            var association = Association()
-            association.sourceID = event.ioSourceId
-            association.actorID = event.ioActorId
-            association.active = true
-            association.routeLength = min(route.length, 128)
-            association.external = classification == .external
-            for offset in 0..<association.routeLength { association.route[offset] = route.byte(at: offset) ?? 0 }
-            associations[index] = association
-            return .accepted
+            var association = Association(sourceID: event.ioSourceId, actorID: event.ioActorId, active: true, routeLength: route.length, route: InlineArray(repeating: 0), external: classification == .external)
+            for offset in 0..<route.length { association.route[offset] = route.byte(at: offset) ?? 0 }
+            return .accepted(.upsert(index, association))
         }
         return .rejected(.capacityExceeded)
+    }
+
+    private mutating func apply(_ plan: AssociationPlan) {
+        switch plan {
+        case .none: return
+        case .remove(let index): associations[index].active = false; associations[index].routeLength = 0
+        case .upsert(let index, let association): associations[index] = association
+        }
+    }
+
+    private mutating func apply(_ plan: ObjectPlan) {
+        switch plan {
+        case .none: return
+        case .insert(let index, let id):
+            objects[index] = ObjectRecord(id: id, active: true)
+        case .remove(let index):
+            objects[index] = ObjectRecord()
+        }
+    }
+
+    private func pendingSlot(for correlationID: UUID16) -> Int? {
+        for index in 0..<capacity where pending[index].active && pending[index].id == correlationID { return nil }
+        guard lastResolvedCorrelation != correlationID, lastExpiredCorrelation != correlationID else { return nil }
+        var occupied = 0
+        for index in 0..<capacity where pending[index].active { occupied += 1 }
+        guard occupied < maximumPendingCorrelations else { return nil }
+        for index in 0..<capacity where !pending[index].active { return index }
+        return nil
+    }
+
+    private func validatePayload(_ payload: ByteSlice, for capability: ProtocolCapability) -> Bool {
+        payload.withBytes { pointer, length in
+            let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
+            switch capability {
+            case .advertise:
+                return (try? AdvertiseWireData(from: reader)) != nil
+            case .deadvertise:
+                return (try? DeadvertiseWireData(from: reader)) != nil
+            case .associate:
+                return (try? AssociateWireData(from: reader)) != nil
+            case .ioValue:
+                // IoValue is the one profile family whose payload may be a
+                // bare JSON value or arbitrary binary bytes. Validate
+                // JSON-looking input, but never require UTF-8 for raw input.
+                guard let first = payload.byte(at: 0) else { return true }
+                switch first {
+                case 0x22, 0x2D, 0x30...0x39, 0x5B, 0x66, 0x6E, 0x74, 0x7B:
+                    return WireReader.isValidJSONValue(payload)
+                default:
+                    return true
+                }
+            case .channel:
+                return (try? ChannelWireData(from: reader)) != nil
+            case .discover:
+                return (try? DiscoverWireData(from: reader)) != nil
+            case .query:
+                return (try? QueryWireData(from: reader)) != nil
+            case .call:
+                return (try? CallWireData(from: reader)) != nil
+            case .resolve, .retrieve, .update, .complete, .returnEvent:
+                return (try? reader.validate()) != nil
+            }
+        }
+    }
+
+    private static func reached(_ nowMS: UInt32, _ deadlineMS: UInt32) -> Bool {
+        Int32(bitPattern: nowMS &- deadlineMS) >= 0
     }
 }
 
 private struct AnyProtocolRouteClassifier: ProtocolRouteClassifier, Sendable {
-    func classify(_ route: ByteSlice) -> ProtocolRouteClassification {
-        route.length == 0 ? .unrelated : .coaty
-    }
+    func classify(_ route: ByteSlice) -> ProtocolRouteClassification { route.length == 0 ? .unrelated : .coaty }
 }

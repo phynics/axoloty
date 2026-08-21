@@ -25,14 +25,19 @@ standalone [`Packages/AxolotyProtocol`](./Packages/AxolotyProtocol) package
 and the matching root product. Its host and ESP-IDF source-inclusion checks
 compile the same Foundation-free sources. Issue
 [#640](https://github.com/phynics/axoloty/issues/640) now owns the
-fixed-inline router, endpoint/association state, bounded action sink, handler
-table, binding-supplied route classifier, and one shared processor. The
-state-owning sources are under `AxolotyProtocol`; `AxolotyWire` contains only
-syntax, codecs, validation, values, errors, and parser workspaces.
+fixed-inline processor seam, bounded action sink, handler table, and
+binding-supplied route classifier. The state-owning sources are under
+`AxolotyProtocol`; `AxolotyWire` contains only syntax, codecs, validation,
+values, errors, and parser workspaces. Trace adapters translate fixtures into
+real borrowed frames and typed local operations before calling the shared
+`ProtocolProcessor` Interfaces. The processor
+also owns the fixed-inline subscription registry and generation-protected
+handler table; no router or endpoint compatibility state remains in
+`AxolotyWire`.
 
-The fixture-backed trace contract and independent host/static replay adapters
-under `Tests/ProtocolTrace` remain test-only. They exercise the same profile
-inventory and routing vocabulary without promoting a second processor. Issue
+The fixture-backed trace contract and host/static replay adapters under
+`Tests/ProtocolTrace` remain test-only. Both use the same production processor
+and fixed action sink seam, without promoting a second processor. Issue
 [#637](https://github.com/phynics/axoloty/issues/637) records that contract;
 [#639](https://github.com/phynics/axoloty/issues/639) is closed by the state
 move; [#641](https://github.com/phynics/axoloty/issues/641) is closed by the
@@ -56,7 +61,12 @@ The core consists of a portable wire implementation, portable protocol processin
 
 ## Runtime profiles
 
-The host and static runtime profiles execute one portable protocol path. They may choose different capabilities, capacities, transports, ownership and delivery representations, scheduling adapters, and diagnostics. They may not differ in topic validation, event decoding, routing keys, correlation, duplicate or deadline behavior, association transitions, normalized actions, or canonical outbound wire behavior for overlapping inputs.
+The host and static runtime profiles execute one portable protocol path. They
+may choose different capabilities, capacities, transports, ownership and
+delivery representations, scheduling adapters, and diagnostics, but they may
+not differ in protocol semantics for overlapping inputs. The test adapters
+provide replay evidence for this shared path; runtime actor/lifecycle
+migration remains a later gate.
 
 Inbound processing is:
 
@@ -94,8 +104,9 @@ handler, or processor state.
 
 `AxolotyProtocol` owns the closed built-in profile inventory, capabilities,
 routing keys, portable frames, structured protocol errors, fixed-inline
-request/association/subscriber state, protocol capacities, route classifiers,
-handler tables, action sinks, and the shared inbound/outbound processor. It
+request/association/subscriber state and subscription registry, protocol
+capacities, route classifiers, handler tables, action sinks, and the shared
+inbound/outbound processor. It
 does not own a transport. It imports no MQTT/NIO, host object hierarchy,
 logging, actor, or controller framework.
 

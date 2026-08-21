@@ -16,15 +16,6 @@ public enum ProtocolBufferConfig {
         public static let hostDefault: Int = 64
     }
 
-    /// Maximum association route bytes retained by protocol state.
-    public static let maxTopicLength: Int = 128
-
-    /// Maximum concurrent subscribers per event type.
-    public static let maxSubscribers: Int = 8
-
-    /// Maximum keyed entries in a bounded protocol family.
-    public static let maxFamilyEntries: Int = 16
-
-    /// Maximum subscribers per keyed family entry.
-    public static let maxFamilySubscribers: Int = 4
+    /// Maximum association-route bytes retained by processor state.
+    public static let maxRouteBytes: Int = 128
 }
