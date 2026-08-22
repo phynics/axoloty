@@ -55,7 +55,10 @@ public struct AxolotyObjectMacro: MemberMacro, ConformanceMacro {
         } else if !isValidIdentifier(objectType) {
             context.diagnose(Diagnostic(node: Syntax(node), message: SchemaDiagnostic(.invalidObjectType, "objectType must contain only letters, digits, and dots")))
         }
-        let validCoreTypes = ["CoatyObject", "CoatyIo", "CoatyThing", "CoatySource", "CoatyChannel", "CoatyAgent"]
+        let validCoreTypes = [
+            "CoatyObject", "User", "Annotation", "Task", "IoSource", "IoActor",
+            "IoNode", "IoContext", "Identity", "Log", "Location", "Snapshot",
+        ]
         if !validCoreTypes.contains(coreType) {
             context.diagnose(Diagnostic(node: Syntax(node), message: SchemaDiagnostic(.invalidCoreType, "coreType '\(coreType)' is not a supported portable core type")))
         }
@@ -142,6 +145,10 @@ public struct AxolotyObjectMacro: MemberMacro, ConformanceMacro {
         let encoderStatements = descriptors.prefix(64).map { descriptor in
             "try encoder.encode(\(descriptor.name), forKey: \(literal(descriptor.wireName)))"
         }.joined(separator: "\n        ")
+        let decoderWitness = decoderArguments.isEmpty
+            ? "self.init()"
+            : "self.init(\n                \(decoderArguments)\n            )"
+        let encoderWitness = encoderStatements.isEmpty ? "" : encoderStatements
         let generated: DeclSyntax = """
         /// The fixed descriptor synthesized by `@AxolotyObject`.
         public static let schema: PortableObjectSchema<\(raw: typeName)> = {
@@ -152,14 +159,12 @@ public struct AxolotyObjectMacro: MemberMacro, ConformanceMacro {
 
         /// Decodes the typed fields through the bounded object-field decoder.
         public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
-            self.init(
-                \(raw: decoderArguments)
-            )
+            \(raw: decoderWitness)
         }
 
         /// Encodes the typed fields through the bounded object-field encoder.
         public borrowing func encodeFields(to encoder: inout ObjectFieldEncoder) throws(ObjectEncodingError) {
-            \(raw: encoderStatements)
+            \(raw: encoderWitness)
         }
         """
         return [generated]

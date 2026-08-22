@@ -28,7 +28,7 @@ func schemaMacroExpansion() {
             public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
                 self.init(
                     temperature: try fields.decode("temperature", as: Int.self),
-                    alarms: try fields.decodeIfPresent("alarmCodes", as: Int?.self)
+                    alarms: try fields.decodeIfPresent("alarmCodes", as: Int.self)
                 )
             }
             public borrowing func encodeFields(to encoder: inout ObjectFieldEncoder) throws(ObjectEncodingError) {
@@ -114,6 +114,76 @@ func schemaMacroShapeDiagnostics() {
         """,
         diagnostics: [
             DiagnosticSpec(message: "@AxolotyObject can only annotate a struct", line: 2, column: 1),
+        ],
+        macros: [
+            "AxolotyObject": AxolotyObjectMacro.self,
+            "WireName": WireNameMacro.self,
+            "Default": DefaultMacro.self,
+        ]
+    )
+}
+
+private let sealedCoreTypeNames = [
+    "CoatyObject", "User", "Annotation", "Task", "IoSource", "IoActor",
+    "IoNode", "IoContext", "Identity", "Log", "Location", "Snapshot",
+]
+
+private func assertValidCoreType(_ coreType: String) {
+    assertMacroExpansion(
+        """
+        @AxolotyObject(objectType: "com.example.CoreProbe", coreType: "\(coreType)")
+        struct CoreProbe {}
+        """,
+        expandedSource: """
+        struct CoreProbe {
+            public static let schema: PortableObjectSchema<CoreProbe> = {
+                var fields = InlineArray<64, ObjectFieldDescriptor>(repeating: .empty)
+                return PortableObjectSchema<CoreProbe>(objectType: "com.example.CoreProbe", coreType: "\(coreType)", fieldCount: 0, fields: fields)
+            }()
+            public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
+                self.init()
+            }
+            public borrowing func encodeFields(to encoder: inout ObjectFieldEncoder) throws(ObjectEncodingError) {
+            }
+        }
+        """,
+        macros: [
+            "AxolotyObject": AxolotyObjectMacro.self,
+            "WireName": WireNameMacro.self,
+            "Default": DefaultMacro.self,
+        ]
+    )
+}
+
+@Test("schema macro accepts every sealed Coaty core type")
+func schemaMacroAcceptsSealedCoreTypes() {
+    for coreType in sealedCoreTypeNames {
+        assertValidCoreType(coreType)
+    }
+}
+
+@Test("schema macro rejects invented core types")
+func schemaMacroRejectsInventedCoreType() {
+    assertMacroExpansion(
+        """
+        @AxolotyObject(objectType: "com.example.Bad", coreType: "CoatyThing")
+        struct Bad {}
+        """,
+        expandedSource: """
+        struct Bad {
+            public static let schema: PortableObjectSchema<Bad> = {
+                var fields = InlineArray<64, ObjectFieldDescriptor>(repeating: .empty)
+                return PortableObjectSchema<Bad>(objectType: "com.example.Bad", coreType: "CoatyThing", fieldCount: 0, fields: fields)
+            }()
+            public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
+                self.init()
+            }
+            public borrowing func encodeFields(to encoder: inout ObjectFieldEncoder) throws(ObjectEncodingError) {
+            }
+        }
+        """,
+        diagnostics: [
+            DiagnosticSpec(message: "coreType 'CoatyThing' is not a supported portable core type", line: 2, column: 1),
         ],
         macros: [
             "AxolotyObject": AxolotyObjectMacro.self,
