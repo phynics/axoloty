@@ -21,6 +21,18 @@ build="$artifact/embedded-build"
 export_dir="$artifact/embedded-export"
 mkdir -p "$export_dir"
 
+# The ESP component compiles the pinned _JSONCore sources from the SwiftPM
+# checkout. A clean G3 tier starts without a root package build, so resolve the
+# checked-in closure before CMake discovers those sources.
+jsoncore_dir=/workspace/.build/checkouts/swift-json/Sources/_JSONCore
+if [ ! -d "$jsoncore_dir" ]; then
+    /workspace/.devcontainer/resolve.sh
+fi
+test -d "$jsoncore_dir" || {
+    echo "error: pinned swift-json _JSONCore checkout is unavailable at $jsoncore_dir" >&2
+    exit 1
+}
+
 # The build helper runs in a child process and its sourced ESP-IDF PATH does
 # not survive here. Activate the toolchain in this evidence subshell as well
 # so post-build section measurement uses the same pinned environment.
