@@ -235,7 +235,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         }
     }
     private enum AssociationResult {
-        case accepted(AssociationPlan)
+        case accepted(AssociationPlan, ProtocolRouteClassification)
         case ignored
         case rejected(ProtocolError.Code)
     }
@@ -433,9 +433,12 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         }
 
         let plan: AssociationPlan
+        var routeClassification: ProtocolRouteClassification = .coaty
         if frame.routingKey.capability == .associate {
             switch planAssociation(frame.payload, classifier: classifier) {
-            case .accepted(let value): plan = value
+            case .accepted(let value, let classification):
+                plan = value
+                routeClassification = classification
             case .ignored: return .ignored
             case .rejected(let code): return .rejected(code)
             }
@@ -482,7 +485,10 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                     routingKey: frame.routingKey,
                     payload: frame.payload,
                     deliveryKey: .ioActor(associations[index].actorID),
-                    topic: frame.topic
+                    topic: frame.topic,
+                    routeClassification: frame.routingKey.capability == .ioValue && associations[index].external
+                        ? .external
+                        : routeClassification
                 )
                 guard sink.append(action) else { return .rejected(.capacityExceeded) }
             }
@@ -492,7 +498,8 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 routingKey: frame.routingKey,
                 payload: frame.payload,
                 deliveryKey: deliveryKey(for: frame),
-                topic: frame.topic
+                topic: frame.topic,
+                routeClassification: routeClassification
             )
             guard sink.append(action) else { return .rejected(.capacityExceeded) }
         }
@@ -578,6 +585,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             objectPlan = .none
         }
         let plan: AssociationPlan
+        var routeClassification: ProtocolRouteClassification = .coaty
         if operation.capability == .associate {
             let associateReader = operation.payload.withBytes { pointer, length in
                 WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
@@ -586,7 +594,9 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 return .rejected(.externalRouteMismatch)
             }
             switch planAssociation(operation.payload, classifier: classifier) {
-            case .accepted(let value): plan = value
+            case .accepted(let value, let classification):
+                plan = value
+                routeClassification = classification
             case .ignored: return .ignored
             case .rejected(let code): return .rejected(code)
             }
@@ -598,7 +608,8 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             kind: .publish,
             routingKey: key,
             payload: operation.payload,
-            deliveryKey: deliveryKey(for: operation)
+            deliveryKey: deliveryKey(for: operation),
+            routeClassification: routeClassification
         )) else { return .rejected(.capacityExceeded) }
         if let requestPlan {
             pending[requestPlan.index] = PendingRecord(
@@ -655,7 +666,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         let reader = payload.withBytes { pointer, length in WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length) }
         guard let event = try? AssociateWireData(from: reader) else { return .rejected(.malformedPayload) }
         guard let route = event.associatingRoute else {
-            for index in 0..<capacity where associations[index].active && associations[index].sourceID == event.ioSourceId && associations[index].actorID == event.ioActorId { return .accepted(.remove(index)) }
+            for index in 0..<capacity where associations[index].active && associations[index].sourceID == event.ioSourceId && associations[index].actorID == event.ioActorId { return .accepted(.remove(index), .coaty) }
             return .ignored
         }
         guard route.length > 0, route.length <= 128 else { return .rejected(.capacityExceeded) }
@@ -667,12 +678,12 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             association.routeLength = route.length
             for offset in 0..<route.length { association.route[offset] = route.byte(at: offset) ?? 0 }
             association.external = classification == .external
-            return .accepted(.upsert(index, association))
+            return .accepted(.upsert(index, association), classification)
         }
         for index in 0..<capacity where !associations[index].active {
             var association = Association(sourceID: event.ioSourceId, actorID: event.ioActorId, active: true, routeLength: route.length, route: InlineArray(repeating: 0), external: classification == .external)
             for offset in 0..<route.length { association.route[offset] = route.byte(at: offset) ?? 0 }
-            return .accepted(.upsert(index, association))
+            return .accepted(.upsert(index, association), classification)
         }
         return .rejected(.capacityExceeded)
     }

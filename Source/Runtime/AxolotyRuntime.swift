@@ -3,6 +3,7 @@
 import AxolotyProtocol
 import AxolotyWire
 import Foundation
+import NIOConcurrencyHelpers
 
 /// Host runtime facade backed by one private protocol executor.
 ///
@@ -29,11 +30,29 @@ public final class AxolotyRuntime: Sendable {
     public func run() async throws {
         try await start()
         do {
-            while await lifecycleState() == .running {
-                try await Task.sleep(for: .milliseconds(25))
+            while true {
+                switch await lifecycleState() {
+                case .running, .starting, .reconnecting, .stopping:
+                    try await Task.sleep(for: .milliseconds(25))
+                case .failed:
+                    let failure = await executor.terminalFailure()
+                    await stop()
+                    if let failure {
+                        throw AxolotyError.runtime(code: failure.0, reason: failure.1)
+                    }
+                    return
+                case .stopped, .closed:
+                    if let failure = await executor.terminalFailure() {
+                        throw AxolotyError.runtime(code: failure.0, reason: failure.1)
+                    }
+                    return
+                }
             }
+        } catch is CancellationError {
+            await stop()
         } catch {
             await stop()
+            throw error
         }
     }
 
@@ -125,6 +144,11 @@ private actor ProtocolExecutor {
     private var ingress: [RuntimeInboundFrame] = []
     private var activeHandlers = 0
     private var handlerInFlight: [Int: Int] = [:]
+    private var nextHandlerID: UInt64 = 1
+    private var handlerTasks: [UInt64: Task<Void, Never>] = [:]
+    private var terminalFailureValue: (AxolotyError.RuntimeErrorCode, String)?
+    private var failureTeardownScheduled = false
+    private let ingressOverflowGate = RuntimeOverflowGate()
     private var transportEpoch: UInt64 = 0
     private var transportIngressContinuation: AsyncStream<RuntimeInboundFrame>.Continuation?
     private var transportIngressTask: Task<Void, Never>?
@@ -180,6 +204,7 @@ private actor ProtocolExecutor {
         let ingressPipe = AsyncStream<RuntimeInboundFrame>.makeStream(
             bufferingPolicy: .bufferingOldest(definition.capacities.ingress)
         )
+        ingressOverflowGate.reset()
         transportIngressContinuation = ingressPipe.continuation
         transportIngressTask = Task { [weak self, stream = ingressPipe.stream] in
             for await frame in stream {
@@ -203,16 +228,20 @@ private actor ProtocolExecutor {
             }
         }
         do {
-            try await transport.installSubscriptions(namespace: definition.namespace)
-            try await transport.start { [weak self, continuation = ingressPipe.continuation] frame in
+            try await transport.start { [weak self, continuation = ingressPipe.continuation, overflowGate = ingressOverflowGate] frame in
                 let result = continuation.yield(frame)
-                if case .dropped = result {
+                if case .dropped = result, overflowGate.claim() {
                     Task { await self?.ingressOverflow() }
                 }
             }
             guard state == .starting, transportEpoch == epoch else {
                 await transport.stop()
                 return (.notStarted, "runtime start was superseded by another lifecycle transition")
+            }
+            try await transport.installSubscriptions(namespace: definition.namespace)
+            guard state == .starting, transportEpoch == epoch else {
+                await transport.stop()
+                return (.notStarted, "runtime start was superseded while installing subscriptions")
             }
             try await transport.advertise(identity: definition.identity, namespace: definition.namespace)
             guard state == .starting, transportEpoch == epoch else {
@@ -227,7 +256,11 @@ private actor ProtocolExecutor {
             // transport was suspended. Preserve that terminal transition
             // instead of resurrecting the runtime as failed.
             if state == .starting, transportEpoch == epoch {
-                state = .failed
+                failRuntime(
+                    code: .brokerUnavailable,
+                    detail: String(describing: error),
+                    diagnostic: .transportFailed
+                )
             }
             return (.brokerUnavailable, String(describing: error))
         }
@@ -238,6 +271,7 @@ private actor ProtocolExecutor {
         state = .stopping
         transportEpoch &+= 1
         let stoppingEpoch = transportEpoch
+        await cancelAndDrainHandlers()
         do {
             try await transport.deadvertise(identity: definition.identity, namespace: definition.namespace)
             try await transport.removeSubscriptions(namespace: definition.namespace)
@@ -275,6 +309,7 @@ private actor ProtocolExecutor {
         let ingressPipe = AsyncStream<RuntimeInboundFrame>.makeStream(
             bufferingPolicy: .bufferingOldest(definition.capacities.ingress)
         )
+        ingressOverflowGate.reset()
         transportIngressContinuation = ingressPipe.continuation
         transportIngressTask = Task { [weak self, stream = ingressPipe.stream] in
             for await frame in stream {
@@ -285,33 +320,36 @@ private actor ProtocolExecutor {
         do {
             try await transport.removeSubscriptions(namespace: definition.namespace)
             await transport.stop()
-            try await transport.installSubscriptions(namespace: definition.namespace)
-            try await transport.start { [weak self, continuation = ingressPipe.continuation] frame in
+            try await transport.start { [weak self, continuation = ingressPipe.continuation, overflowGate = ingressOverflowGate] frame in
                 let result = continuation.yield(frame)
-                if case .dropped = result {
+                if case .dropped = result, overflowGate.claim() {
                     Task { await self?.ingressOverflow() }
                 }
             }
+            guard state == .reconnecting, transportEpoch == epoch else { return }
+            try await transport.installSubscriptions(namespace: definition.namespace)
             guard state == .reconnecting, transportEpoch == epoch else { return }
             try await transport.advertise(identity: definition.identity, namespace: definition.namespace)
             guard state == .reconnecting, transportEpoch == epoch else { return }
             state = .running
         } catch {
             guard state == .reconnecting, transportEpoch == epoch else { return }
-            state = .failed
-            diagnosticsSnapshotValue.transportFailures += 1
-            emit(.init(kind: .transportFailed, detail: String(describing: error)))
-            cancelTransportPumps()
+            failRuntime(
+                code: .brokerUnavailable,
+                detail: String(describing: error),
+                diagnostic: .transportFailed
+            )
         }
     }
 
     private func ingressOverflow() {
         guard state == .running else { return }
         diagnosticsSnapshotValue.ingressSaturation += 1
-        state = .failed
-        transportEpoch &+= 1
-        emit(.init(kind: .capacityExceeded, detail: "transport ingress queue is full"))
-        cancelTransportPumps()
+        failRuntime(
+            code: .capacityExceeded,
+            detail: "transport ingress queue is full",
+            diagnostic: .capacityExceeded
+        )
     }
 
     func lifecycleState() -> RuntimeLifecycleState { state }
@@ -334,6 +372,8 @@ private actor ProtocolExecutor {
     func diagnostics() -> AsyncStream<RuntimeDiagnostic> { diagnosticStream }
 
     func diagnosticsSnapshot() -> RuntimeDiagnostics { diagnosticsSnapshotValue }
+
+    func terminalFailure() -> (AxolotyError.RuntimeErrorCode, String)? { terminalFailureValue }
 
     func expire(nowMS: UInt32) -> Bool {
         guard state == .running else { return false }
@@ -389,7 +429,12 @@ private actor ProtocolExecutor {
                 return .rejected(.invalidCorrelation)
             }
             actionSink.removeAll()
-            return processor.processOutbound(local, nowMS: nowMS, sink: &actionSink)
+            return processor.processOutbound(
+                local,
+                nowMS: nowMS,
+                classifier: TransportRouteClassifier(transport: transport),
+                sink: &actionSink
+            )
         }
         let receipt = receipt(for: outcome)
         eventContinuation.yield(.transition(receipt))
@@ -430,7 +475,7 @@ private actor ProtocolExecutor {
                     return processor.processInbound(
                         borrowed,
                         nowMS: frame.nowMS,
-                        classifier: ExactProtocolRouteClassifier(externalRoute: "external/wire-compat-v1/io-external-1"),
+                        classifier: TransportRouteClassifier(transport: transport),
                         sink: &actionSink
                     )
                 } catch {
@@ -479,6 +524,7 @@ private actor ProtocolExecutor {
                     sourceID: borrowed.routingKey.sourceID,
                     correlationID: borrowed.routingKey.correlationID,
                     namespace: definition.namespace,
+                    route: borrowed.routeClassification,
                     receiptTimeMS: nowMS,
                     provenance: borrowed.kind == .publish ? .local : .transport
                 ),
@@ -488,6 +534,16 @@ private actor ProtocolExecutor {
             if case .dropped = result {
                 diagnosticsSnapshotValue.dispatchSaturation += 1
                 emit(.init(kind: .capacityExceeded, detail: "application event stream is full"))
+                switch registration.policy {
+                case .suspendProducer, .fail:
+                    failRuntime(
+                        code: .capacityExceeded,
+                        detail: "strict application event stream is full",
+                        diagnostic: .capacityExceeded
+                    )
+                case .dropOldest, .dropNewest, .coalesceLatest:
+                    break
+                }
             }
         }
     }
@@ -560,20 +616,34 @@ private actor ProtocolExecutor {
         }
         activeHandlers += 1
         handlerInFlight[registrationIndex, default: 0] += 1
+        let handlerID = nextHandlerID
+        nextHandlerID &+= 1
         let invocation = RuntimeInvocation(
             action: action,
             operation: operation,
-            registrationIndex: registrationIndex
+            registrationIndex: registrationIndex,
+            handlerID: handlerID
         )
         eventContinuation.yield(.invocation(invocation))
-        Task { [weak self] in
+        let task = Task { [weak self] in
             do {
                 let result = try await registration.handler(invocation)
+                guard !Task.isCancelled else {
+                    await self?.handlerCancelled(invocation)
+                    return
+                }
                 await self?.complete(invocation: invocation, result: result)
+            } catch is CancellationError {
+                await self?.handlerCancelled(invocation)
             } catch {
-                await self?.handlerFailed(String(describing: error), registrationIndex: registrationIndex)
+                await self?.handlerFailed(
+                    String(describing: error),
+                    registrationIndex: registrationIndex
+                )
             }
+            await self?.handlerTaskFinished(handlerID)
         }
+        handlerTasks[handlerID] = task
     }
 
     private func complete(invocation: RuntimeInvocation, result: RuntimeHandlerResult) {
@@ -627,6 +697,24 @@ private actor ProtocolExecutor {
         activeHandlers = max(0, activeHandlers - 1)
         decrementHandler(registrationIndex: registrationIndex)
         emit(.init(kind: .handlerFailed, detail: detail))
+    }
+
+    private func handlerCancelled(_ invocation: RuntimeInvocation) {
+        activeHandlers = max(0, activeHandlers - 1)
+        decrementHandler(registrationIndex: invocation.registrationIndex)
+    }
+
+    private func handlerTaskFinished(_ handlerID: UInt64) {
+        handlerTasks.removeValue(forKey: handlerID)
+    }
+
+    private func cancelAndDrainHandlers() async {
+        let tasks = Array(handlerTasks.values)
+        handlerTasks.removeAll(keepingCapacity: true)
+        for task in tasks { task.cancel() }
+        for task in tasks { _ = await task.value }
+        activeHandlers = 0
+        handlerInFlight.removeAll(keepingCapacity: true)
     }
 
     private func decrementHandler(registrationIndex: Int) {
@@ -703,9 +791,11 @@ private actor ProtocolExecutor {
             outboundQueued = max(0, outboundQueued - 1)
             diagnosticsSnapshotValue.dispatchSaturation += 1
             emit(.init(kind: .capacityExceeded, detail: "outbound dispatch queue is full"))
-            state = .failed
-            transportEpoch &+= 1
-            cancelTransportPumps()
+            failRuntime(
+                code: .capacityExceeded,
+                detail: "outbound dispatch queue is full",
+                diagnostic: .capacityExceeded
+            )
         }
     }
 
@@ -722,11 +812,28 @@ private actor ProtocolExecutor {
 
     private func transportFailed(_ detail: String) {
         diagnosticsSnapshotValue.transportFailures += 1
-        emit(.init(kind: .transportFailed, detail: detail))
-        guard state == .running else { return }
+        guard state == .running || state == .reconnecting || state == .starting else { return }
+        failRuntime(code: .brokerUnavailable, detail: detail, diagnostic: .transportFailed)
+    }
+
+    private func failRuntime(
+        code: AxolotyError.RuntimeErrorCode,
+        detail: String,
+        diagnostic: RuntimeDiagnostic.Kind
+    ) {
+        if terminalFailureValue == nil {
+            terminalFailureValue = (code, detail)
+        }
+        emit(.init(kind: diagnostic, detail: detail))
+        guard state != .stopping, state != .stopped, state != .closed else { return }
         state = .failed
         transportEpoch &+= 1
         cancelTransportPumps()
+        guard !failureTeardownScheduled else { return }
+        failureTeardownScheduled = true
+        Task { [weak self] in
+            await self?.stop()
+        }
     }
 
     private func emit(_ diagnostic: RuntimeDiagnostic) {
@@ -744,6 +851,31 @@ private actor ProtocolExecutor {
 
 private extension OwnedProtocolAction {
     var kindCapability: ProtocolCapability { routingKey.capability }
+}
+
+private struct TransportRouteClassifier: ProtocolRouteClassifier {
+    let transport: any AxolotyRuntimeTransport
+
+    func classify(_ route: ByteSlice) -> ProtocolRouteClassification {
+        transport.classifyRoute(route)
+    }
+}
+
+private final class RuntimeOverflowGate: @unchecked Sendable {
+    private let lock = NIOLock()
+    private var signaled = false
+
+    func reset() {
+        lock.withLock { signaled = false }
+    }
+
+    func claim() -> Bool {
+        lock.withLock {
+            guard !signaled else { return false }
+            signaled = true
+            return true
+        }
+    }
 }
 
 private extension ByteSlice {

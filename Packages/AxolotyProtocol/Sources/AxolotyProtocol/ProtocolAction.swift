@@ -39,6 +39,8 @@ public struct BorrowedProtocolAction {
     public let routingKey: ProtocolRoutingKey
     /// The normalized delivery selector.
     public let deliveryKey: ProtocolDeliveryKey
+    /// The binding-owned association route classification for this action.
+    public let routeClassification: ProtocolRouteClassification
     /// The original borrowed topic, when the action came from inbound wire data.
     public let topic: ByteSlice?
     /// The borrowed action payload.
@@ -50,11 +52,13 @@ public struct BorrowedProtocolAction {
         routingKey: ProtocolRoutingKey,
         payload: ByteSlice,
         deliveryKey: ProtocolDeliveryKey? = nil,
-        topic: ByteSlice? = nil
+        topic: ByteSlice? = nil,
+        routeClassification: ProtocolRouteClassification = .coaty
     ) {
         self.kind = kind
         self.routingKey = routingKey
         self.deliveryKey = deliveryKey ?? .capability(routingKey.capability)
+        self.routeClassification = routeClassification
         self.topic = topic
         self.payload = payload
     }

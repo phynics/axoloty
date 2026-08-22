@@ -114,8 +114,8 @@ struct StaticDeviceAgent: ~Copyable {
     }
 
     /// Starts a bounded Discover request through the processor's outbound
-    /// operation seam. The emitted action is discarded by this firmware-only
-    /// convenience because the transport already owns the encoded buffers.
+    /// operation seam. The caller-owned action is synchronously drained so
+    /// the processor remains the only source of protocol acceptance.
     mutating func beginDiscover(correlationId: UUID16, nowMS: UInt32) -> Bool {
         let payloadText: StaticString = "{}"
         let payload = ByteSlice(bytes: payloadText.utf8Start, length: payloadText.utf8CodeUnitCount)
@@ -127,8 +127,9 @@ struct StaticDeviceAgent: ~Copyable {
             requestTimeoutMS: Self.discoverTimeoutMS
         ) else { return false }
         let outcome = runtime.send(operation, nowMS: nowMS)
-        _ = runtime.drain { _ in }
-        return outcome == .accepted
+        var emitted = false
+        _ = runtime.drain { action in emitted = emitted || action.kind == .publish }
+        return outcome == .accepted && emitted
     }
 
     /// Expires the outstanding Discover once its deadline has passed.
@@ -220,11 +221,36 @@ struct StaticDeviceAgent: ~Copyable {
             requestTimeoutMS: eventType == .discover ? Self.discoverTimeoutMS : nil
         ) else { throw .invalidValue }
         let outcome = runtime.send(operation, classifier: routeClassifier)
-        _ = runtime.drain { _ in }
-        guard outcome == .accepted else {
+        var materialized = false
+        _ = runtime.drain { action in
+            guard !materialized, action.kind == .publish else { return }
+            var topic = TopicBuilder(buffer: topicBuffer, capacity: topicCapacity)
+            guard (try? topic.writePrefix()) != nil,
+                  (try? topic.writeNamespace(Self.namespace)) != nil else { return }
+            let objectTypeFilter: StaticString = "coaty.test.Device"
+            let filter = eventType == .advertise
+                ? ByteSlice(bytes: objectTypeFilter.utf8Start, length: objectTypeFilter.utf8CodeUnitCount)
+                : nil
+            guard (try? topic.writeEventType(eventType, filter: filter)) != nil,
+                  (try? topic.writeSourceId(action.routingKey.sourceID)) != nil else { return }
+            if let correlation = action.routingKey.correlationID,
+               (try? topic.writeCorrelationId(correlation)) == nil { return }
+            let copiedLength = action.payload.withBytes { pointer, length -> Int? in
+                guard length <= payloadCapacity else { return nil }
+                for index in 0..<length {
+                    payloadBuffer[index] = pointer.assumingMemoryBound(to: UInt8.self)[index]
+                }
+                return length
+            }
+            guard let copiedLength else { return }
+            topicLength.pointee = Int32(topic.position)
+            payloadLength.pointee = Int32(copiedLength)
+            materialized = true
+        }
+        guard outcome == .accepted, materialized else {
             throw .invalidValue
         }
-        return (topic.position, payload.position)
+        return (Int(topicLength.pointee), Int(payloadLength.pointee))
     }
 
     /// Copies the currently associated local actor route into fixed caller

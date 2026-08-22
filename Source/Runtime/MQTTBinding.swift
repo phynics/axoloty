@@ -45,6 +45,9 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     private let lock = NIOLock()
     private let client: MQTTNIOClient
     private let delegate: RuntimeMQTTDelegate
+    private let routeClassifier = ExactProtocolRouteClassifier(
+        externalRoute: "external/wire-compat-v1/io-external-1"
+    )
     private var started = false
 
     /// Creates a binding backed by the repository's MQTTNIO implementation.
@@ -65,21 +68,22 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         options.clientId = "axoloty-runtime-\(UUID().uuidString)"
         self.delegate = delegate
         self.client = try MQTTNIOClient(mqttClientOptions: options, delegate: delegate)
-        delegate.owner = self
     }
 
     /// Starts the broker connection and installs the copied frame callback.
     public func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
-        delegate.receive = receive
+        delegate.setReceive(receive)
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            lock.withLock {
-                guard !started else {
-                    continuation.resume(throwing: AxolotyError.runtime(code: .notStarted, reason: "MQTT binding is already started"))
-                    return
-                }
-                delegate.startContinuation = continuation
+            let admitted = lock.withLock {
+                guard !started else { return false }
                 started = true
+                return true
             }
+            guard admitted else {
+                continuation.resume(throwing: AxolotyError.runtime(code: .notStarted, reason: "MQTT binding is already started"))
+                return
+            }
+            delegate.setStartContinuation(continuation)
             client.connect(lastWillTopic: "", lastWillMessage: "")
         }
     }
@@ -97,7 +101,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     public func stop() async {
         lock.withLock { started = false }
         client.disconnect()
-        delegate.receive = nil
+        delegate.clearReceive()
     }
 
     /// Installs bounded wildcard subscriptions for the closed profile.
@@ -134,6 +138,11 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         client.publish(Self.topic(for: key, namespace: namespace), message: payload)
     }
 
+    /// Classifies the binding's exact external compatibility route.
+    public func classifyRoute(_ route: ByteSlice) -> ProtocolRouteClassification {
+        routeClassifier.classify(route)
+    }
+
     private static func topic(for key: ProtocolRoutingKey, namespace: String) -> String {
         var topic = "coaty/3/\(namespace)/\(key.capability.wireEventType.rawValue)/\(uuidString(key.sourceID))"
         if let correlationID = key.correlationID {
@@ -161,23 +170,41 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
 }
 
 private final class RuntimeMQTTDelegate: CommunicationClientDelegate, @unchecked Sendable {
-    weak var owner: MQTTBinding?
-    var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
-    var startContinuation: CheckedContinuation<Void, Error>?
+    private let lock = NIOLock()
+    private var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
+    private var startContinuation: CheckedContinuation<Void, Error>?
+
+    func setReceive(_ receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) {
+        lock.withLock { self.receive = receive }
+    }
+
+    func clearReceive() {
+        lock.withLock { receive = nil }
+    }
+
+    func setStartContinuation(_ continuation: CheckedContinuation<Void, Error>) {
+        lock.withLock { startContinuation = continuation }
+    }
 
     func didReceiveStart() {}
 
     func didUpdateCommunicationState(_ state: CommunicationState) {
-        guard state == .online, let continuation = startContinuation else { return }
-        startContinuation = nil
+        guard state == .online else { return }
+        let continuation: CheckedContinuation<Void, Error>? = lock.withLock {
+            defer { startContinuation = nil }
+            return startContinuation
+        }
+        guard let continuation else { return }
         continuation.resume()
     }
 
     func didReceiveRawMQTTMessage(topic: String, payload: [UInt8]) {
-        receive?(RuntimeInboundFrame(topic: topic, payload: payload))
+        let callback = lock.withLock { receive }
+        callback?(RuntimeInboundFrame(topic: topic, payload: payload))
     }
 
     func didReceiveIoValue(topic: String, payload: [UInt8]) {
-        receive?(RuntimeInboundFrame(topic: topic, payload: payload))
+        let callback = lock.withLock { receive }
+        callback?(RuntimeInboundFrame(topic: topic, payload: payload))
     }
 }

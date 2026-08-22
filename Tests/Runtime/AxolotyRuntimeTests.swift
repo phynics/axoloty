@@ -77,12 +77,12 @@ struct AxolotyRuntimeTests {
         #expect(await runtime.state() == .initialized)
         try await runtime.start()
         #expect(await runtime.state() == .running)
-        #expect(await transport.lifecycle == ["install", "start", "advertise"])
+        #expect(await transport.lifecycle == ["start", "install", "advertise"])
 
         await runtime.reconnect()
         #expect(await runtime.state() == .running)
         #expect(await transport.lifecycle == [
-            "install", "start", "advertise", "remove", "stop", "install", "start", "advertise"
+            "start", "install", "advertise", "remove", "stop", "start", "install", "advertise"
         ])
 
         await runtime.stop()

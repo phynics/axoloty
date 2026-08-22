@@ -174,6 +174,7 @@ public struct RuntimeEventStream: AsyncSequence, Sendable {
 
 struct RuntimeEventRegistration: Sendable {
     let selector: RuntimeEventSelector
+    let policy: RuntimeBufferingPolicy
     let continuation: AsyncStream<RuntimeEventValue>.Continuation
 }
 
@@ -443,12 +444,20 @@ public struct RuntimeInvocation: Sendable, Equatable {
     /// Internal registration identity used to account for bounded handler
     /// concurrency. It never participates in the public protocol contract.
     let registrationIndex: Int
+    /// Internal task identity used to cancel and drain handler work.
+    let handlerID: UInt64
 
     /// Creates an invocation from an owned action.
-    init(action: OwnedProtocolAction, operation: String? = nil, registrationIndex: Int = -1) {
+    init(
+        action: OwnedProtocolAction,
+        operation: String? = nil,
+        registrationIndex: Int = -1,
+        handlerID: UInt64 = 0
+    ) {
         self.action = action
         self.operation = operation
         self.registrationIndex = registrationIndex
+        self.handlerID = handlerID
     }
 }
 
@@ -516,6 +525,11 @@ public protocol AxolotyRuntimeTransport: AnyObject, Sendable {
     func advertise(identity: RuntimeIdentity?, namespace: String) async throws
     /// Publishes the binding-specific deadvertisement.
     func deadvertise(identity: RuntimeIdentity?, namespace: String) async throws
+    /// Classifies an association route using binding-owned knowledge.
+    ///
+    /// The borrowed route is valid only for this synchronous call. The
+    /// transport must not retain it or impose a profile-wide route grammar.
+    func classifyRoute(_ route: ByteSlice) -> ProtocolRouteClassification
 }
 
 public extension AxolotyRuntimeTransport {
@@ -523,6 +537,9 @@ public extension AxolotyRuntimeTransport {
     func removeSubscriptions(namespace: String) async throws {}
     func advertise(identity: RuntimeIdentity?, namespace: String) async throws {}
     func deadvertise(identity: RuntimeIdentity?, namespace: String) async throws {}
+    func classifyRoute(_ route: ByteSlice) -> ProtocolRouteClassification {
+        route.length == 0 ? .unrelated : .coaty
+    }
 }
 
 /// A handler retained by a sealed runtime definition.
@@ -637,7 +654,7 @@ public struct RuntimeDefinition: Sendable {
         case .coalesceLatest: buffering = .bufferingNewest(1)
         }
         let pair = AsyncStream<RuntimeEventValue>.makeStream(bufferingPolicy: buffering)
-        eventRegistrations.append(RuntimeEventRegistration(selector: selector, continuation: pair.continuation))
+        eventRegistrations.append(RuntimeEventRegistration(selector: selector, policy: policy, continuation: pair.continuation))
         return RuntimeEventStream(stream: pair.stream)
     }
 
