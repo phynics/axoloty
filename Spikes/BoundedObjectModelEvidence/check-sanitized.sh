@@ -26,7 +26,7 @@ run_swift swift test -Xswiftc -warnings-as-errors -Xswiftc -sanitize=address \
     --package-path /workspace/Spikes/BoundedObjectModelEvidence \
     --cache-path /workspace/.swiftpm-cache --disable-automatic-resolution \
     --filter BoundedObjectModelEvidenceTests >"$artifact/sanitized-tests.log" 2>&1
-printf '{"schemaVersion":1,"evidenceKind":"sanitized","candidateSha":"%s","status":"passed","sanitizer":"address","measurementPoints":[1,16,64],"hardware":"pending-hardware"}\n' \
+printf '{"schemaVersion":1,"evidenceKind":"sanitized","candidateSha":"%s","status":"passed","sanitizer":"address","measurementPoints":[1,16,64],"coverage":"foundation-schema-model-predicate","hardware":"pending-hardware"}\n' \
     "$candidate" >"$artifact/sanitized-evidence.json"
 node "$probe/Evidence/validate-evidence.mjs" \
     "$probe/Evidence/evidence.schema.json" "$artifact/sanitized-evidence.json"

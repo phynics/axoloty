@@ -24,12 +24,16 @@ node --check "$validator"
 node --check "$embedded_assembler"
 jq empty "$schema"
 grep -Fq '.package(path: "../../Packages/AxolotyObjectModel")' "$probe/Package.swift"
+grep -Fq '.package(path: "../../Packages/AxolotyCoatyModels")' "$probe/Package.swift"
 grep -Fq '.package(path: "../../Packages/AxolotyWire")' "$probe/Package.swift"
 grep -Fq 'measurementPoints = [1, 16, 64]' "$probe/Sources/BoundedObjectModelProbe/main.swift"
-grep -Fq 'measurementPolicy = "simultaneous-object-and-envelope-specializations"' "$probe/Sources/BoundedObjectModelProbe/main.swift"
+grep -Fq 'measurementPolicy = "simultaneous-object-envelope-schema-model-specializations"' "$probe/Sources/BoundedObjectModelProbe/main.swift"
 grep -Fq 'saturationMeasurement' "$probe/Sources/BoundedObjectModelProbe/main.swift"
+grep -Fq 'schemaRegistryOperation' "$probe/Sources/BoundedObjectModelProbe/main.swift"
+grep -Fq 'typedObjectOperation' "$probe/Sources/BoundedObjectModelProbe/main.swift"
+grep -Fq 'predicateOperation' "$probe/Sources/BoundedObjectModelProbe/main.swift"
 grep -Fq 'heaptrack-call-growth' "$assembler"
-grep -Fq 'foundation-module-linkage-only' "$embedded_assembler"
+grep -Fq 'foundation-schema-model-predicate-module-linkage' "$embedded_assembler"
 
 node - "$tmp/probe.json" "$tmp/allocations.tsv" "$tmp/sections.tsv" <<'NODE'
 const fs = require("node:fs");
@@ -38,18 +42,25 @@ fs.writeFileSync(probe, JSON.stringify({
   schemaVersion: 1,
   evidenceKind: "object-model-probe",
   measurementPoints: [1, 16, 64],
-  measurementPolicy: "simultaneous-object-and-envelope-specializations",
+  measurementPolicy: "simultaneous-object-envelope-schema-model-specializations",
   layouts: [1, 16, 64].flatMap(measurementPoint => [
     {measurementPoint, axis: "object", type: "BoundedDynamicObject", size: 1, alignment: 1, stride: 1, byteCapacity: measurementPoint, fieldCapacity: measurementPoint},
     {measurementPoint, axis: "envelope", type: "ObjectEnvelope", size: 1, alignment: 1, stride: 1, nameCapacity: measurementPoint, externalIDCapacity: measurementPoint},
   ]),
-  operations: [1, 16, 64].map(measurementPoint => ({measurementPoint, byteCapacity: measurementPoint, fieldCapacity: measurementPoint, nameCapacity: measurementPoint, externalIDCapacity: measurementPoint, objectInitialization: "accepted", envelopeInitialization: true, randomizedEditRead: true, saturationMeasurement: "edit-capacity-failure", saturationRejected: true, unchangedAfterSaturation: true})),
+  schemaLayouts: [1, 16, 64].map(measurementPoint => ({measurementPoint, axis: "schema-registry", type: "ObjectSchemaRegistry", size: 1, alignment: 1, stride: 1, registryCapacity: measurementPoint})),
+  predicateLayouts: [1, 16, 64].map(measurementPoint => ({measurementPoint, axis: "predicate", type: "ObjectPredicate", size: 1, alignment: 1, stride: 1, nodeCapacity: measurementPoint, pathCapacity: measurementPoint, literalCapacity: measurementPoint, arenaCapacity: measurementPoint})),
+  operations: [1, 16, 64].map(measurementPoint => ({measurementPoint, byteCapacity: measurementPoint, fieldCapacity: measurementPoint, nameCapacity: measurementPoint, externalIDCapacity: measurementPoint, objectInitialization: "accepted", envelopeInitialization: true, randomizedEditRead: true, saturationMeasurement: "edit-capacity-failure", saturationRejected: true, unchangedAfterSaturation: true, schemaRegistration: "accepted", schemaRegistryCount: measurementPoint === 1 ? 1 : 4, schemaRegistrySaturated: measurementPoint === 1, typedObjectInitialization: measurementPoint === 1 ? "rejected-capacity" : "accepted", typedObjectValueTypePreserved: measurementPoint > 1, predicateInitialization: measurementPoint === 1 ? "rejected-capacity" : "accepted", predicateDecodeEvaluateEncode: measurementPoint > 1, predicateRoundTrip: measurementPoint > 1})),
 }));
 fs.writeFileSync(allocations, [1, 16, 64].flatMap(capacity => [
   [capacity, "object-initialization", 3, 4, 7],
   [capacity, "object-warmed", 0, 4, 4],
   [capacity, "envelope-initialization", 2, 5, 7],
   [capacity, "envelope-warmed", 0, 5, 5],
+  [capacity, "schema-registry-initialization", 1, 1, 2],
+  [capacity, "typed-object-initialization", 1, 1, 2],
+  [capacity, "typed-object-warmed", 0, 1, 1],
+  [capacity, "predicate-initialization", 1, 1, 2],
+  [capacity, "predicate-warmed", 0, 1, 1],
 ]).map(row => row.join("\t")).join("\n") + "\n");
 fs.writeFileSync(sections, ".text\t123\n");
 NODE
@@ -74,14 +85,16 @@ const write = (name, mutate) => {
 };
 write("duplicate-layout", report => { report.layouts[1] = report.layouts[0]; });
 write("missing-layout", report => { report.layouts.pop(); });
+write("missing-predicate-layout", report => { delete report.predicateLayouts; });
 write("duplicate-operation", report => { report.operations[1] = report.operations[0]; });
 write("missing-operation", report => { report.operations.pop(); });
 write("duplicate-allocation", report => { report.allocations[1] = report.allocations[0]; });
 write("missing-allocation", report => { report.allocations.pop(); });
 write("missing-sections", report => { delete report.compilation.releaseSections; });
 write("wrong-capacity", report => { report.operations[0].measurementPoint = 2; });
+write("fake-predicate", report => { report.operations[1].predicateDecodeEvaluateEncode = false; });
 NODE
-for invalid in duplicate-layout missing-layout duplicate-operation missing-operation duplicate-allocation missing-allocation missing-sections wrong-capacity; do
+for invalid in duplicate-layout missing-layout missing-predicate-layout duplicate-operation missing-operation duplicate-allocation missing-allocation missing-sections wrong-capacity fake-predicate; do
     if node "$validator" "$schema" "$tmp/$invalid.json" >/dev/null 2>&1; then
         echo "error: validator accepted $invalid evidence" >&2
         exit 1
@@ -98,6 +111,7 @@ fs.writeFileSync(output, JSON.stringify({
   status: "passed",
   sanitizer: "address",
   measurementPoints: [1, 16, 64],
+  coverage: "foundation-schema-model-predicate",
   hardware: "pending-hardware",
 }));
 NODE
@@ -116,7 +130,7 @@ node "$validator" "$schema" "$tmp/embedded.json" >/dev/null
 node - "$tmp/embedded.json" <<'NODE'
 const fs = require("node:fs");
 const report = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-if (report.evidenceKind !== "embedded-cross-build" || report.coverage !== "foundation-module-linkage-only") process.exit(1);
+if (report.evidenceKind !== "embedded-cross-build" || report.coverage !== "foundation-schema-model-predicate-module-linkage") process.exit(1);
 NODE
 
 echo "G3 object-model evidence harness checks passed"

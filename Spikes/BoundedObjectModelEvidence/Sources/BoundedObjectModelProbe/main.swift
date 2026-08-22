@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import AxolotyObjectModel
+import AxolotyCoatyModels
 import AxolotyWire
 import Foundation
 
@@ -8,6 +9,8 @@ private let measurementPoints = [1, 16, 64]
 private let objectBytes: StaticString = "{\"a\":0}"
 private let envelopeBytes: StaticString = "{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.Measurement\",\"name\":\"\",\"coreType\":\"Task\",\"externalId\":\"x\"}"
 private let oversizedValue: StaticString = "999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999"
+private let ioSourceBytes: StaticString = "{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"coaty.IoSource\",\"name\":\"source\",\"coreType\":\"IoSource\",\"valueType\":\"T\"}"
+private let predicateBytes: StaticString = "{\"conditions\":[\"value\",[7,1]]}"
 
 private struct LayoutRecord: Encodable {
     let measurementPoint: Int
@@ -34,14 +37,47 @@ private struct OperationRecord: Encodable {
     let saturationMeasurement: String
     let saturationRejected: Bool
     let unchangedAfterSaturation: Bool
+    let schemaRegistration: String
+    let schemaRegistryCount: Int
+    let schemaRegistrySaturated: Bool
+    let typedObjectInitialization: String
+    let typedObjectValueTypePreserved: Bool
+    let predicateInitialization: String
+    let predicateDecodeEvaluateEncode: Bool
+    let predicateRoundTrip: Bool
+}
+
+private struct SchemaLayoutRecord: Encodable {
+    let measurementPoint: Int
+    let axis = "schema-registry"
+    let type: String
+    let size: Int
+    let alignment: Int
+    let stride: Int
+    let registryCapacity: Int
+}
+
+private struct PredicateLayoutRecord: Encodable {
+    let measurementPoint: Int
+    let axis = "predicate"
+    let type: String
+    let size: Int
+    let alignment: Int
+    let stride: Int
+    let nodeCapacity: Int
+    let pathCapacity: Int
+    let literalCapacity: Int
+    let arenaCapacity: Int
 }
 
 private struct ProbeReport: Encodable {
     let schemaVersion = 1
     let evidenceKind = "object-model-probe"
     let measurementPoints: [Int]
-    let measurementPolicy = "simultaneous-object-and-envelope-specializations"
+    let measurementPolicy = "simultaneous-object-envelope-schema-model-specializations"
     let layouts: [LayoutRecord]
+    let schemaLayouts: [SchemaLayoutRecord]
+    let predicateLayouts: [PredicateLayoutRecord]
     let operations: [OperationRecord]
 }
 
@@ -50,6 +86,11 @@ private enum AllocationCase: String {
     case objectWarmed = "object-warmed"
     case envelopeInitialization = "envelope-initialization"
     case envelopeWarmed = "envelope-warmed"
+    case schemaRegistryInitialization = "schema-registry-initialization"
+    case typedObjectInitialization = "typed-object-initialization"
+    case typedObjectWarmed = "typed-object-warmed"
+    case predicateInitialization = "predicate-initialization"
+    case predicateWarmed = "predicate-warmed"
 }
 
 nonisolated(unsafe) private var allocationSink: UInt64 = 0
@@ -123,6 +164,55 @@ private func randomizedEditRead<let capacity: Int>(_: BoundedDynamicObject<capac
     return true
 }
 
+private func schemaRegistryOperation<let capacity: Int>(_: ObjectSchemaRegistry<capacity>.Type) -> (registration: String, count: Int, saturated: Bool) {
+    var registry = ObjectSchemaRegistry<capacity>()
+    var registration = "accepted"
+    do throws(ObjectSchemaRegistryError) {
+        try registry.use(IoSource.self)
+        try registry.use(IoActor.self)
+        try registry.use(CoatyObject.self)
+        try registry.use(IoContext.self)
+    } catch {
+        registration = "rejected-\(error)"
+    }
+    var saturated = false
+    do throws(ObjectSchemaRegistryError) {
+        try registry.use(IoSource.self)
+        try registry.use(IoActor.self)
+    } catch {
+        saturated = true
+    }
+    let sealed = registry.sealed()
+    return (registration, sealed.count, saturated)
+}
+
+private func typedObjectOperation<let fieldCapacity: Int>(_: BoundedObject<IoSource, 512, fieldCapacity>.Type) -> (initialization: String, valueTypePreserved: Bool) {
+    do throws(ObjectError) {
+        let object = try BoundedObject<IoSource, 512, fieldCapacity>(decoding: slice(ioSourceBytes))
+        return ("accepted", object.value.valueType.encodedEquals("T"))
+    } catch {
+        return ("rejected-\(error.reason)", false)
+    }
+}
+
+private func predicateOperation<let capacity: Int>(_: ObjectPredicate<capacity, capacity, capacity, capacity>.Type) -> (initialization: String, roundTrip: Bool, decodeEvaluateEncode: Bool) {
+    do throws(ObjectError) {
+        let predicate = try ObjectPredicate<capacity, capacity, capacity, capacity>(decoding: slice(predicateBytes))
+        let object = try BoundedDynamicObject<capacity, capacity>(decoding: slice("{\"value\":1}"))
+        let matched = predicate.matches(object: object)
+        var output = [UInt8](repeating: 0, count: 128)
+        let encoded = try output.withUnsafeMutableBufferPointer { buffer -> (Bool, Bool) in
+            var writer = WireWriter(buffer: buffer.baseAddress!, capacity: buffer.count)
+            try predicate.encode(to: &writer)
+            let decoded = try ObjectPredicate<capacity, capacity, capacity, capacity>(decoding: ByteSlice(bytes: buffer.baseAddress!, length: writer.position))
+            return (writer.position > 0, decoded.matches(object: object))
+        }
+        return ("accepted", encoded.0 && encoded.1, matched && encoded.0)
+    } catch {
+        return ("rejected-\(error.reason)", false, false)
+    }
+}
+
 private func isNull(_ presence: Presence<JSONValueKind>) -> Bool {
     if case .null = presence { return true }
     return false
@@ -153,6 +243,9 @@ private func operationRecord<let capacity: Int>(_: BoundedDynamicObject<capacity
         initialization = "rejected-\(error.reason)"
     }
     let saturationResult = saturation(BoundedDynamicObject<capacity, capacity>.self)
+    let schema = schemaRegistryOperation(ObjectSchemaRegistry<capacity>.self)
+    let typed = typedObjectOperation(BoundedObject<IoSource, 512, capacity>.self)
+    let predicate = predicateOperation(ObjectPredicate<capacity, capacity, capacity, capacity>.self)
     return OperationRecord(
         measurementPoint: capacity,
         byteCapacity: capacity,
@@ -164,7 +257,40 @@ private func operationRecord<let capacity: Int>(_: BoundedDynamicObject<capacity
         randomizedEditRead: randomizedEditRead(BoundedDynamicObject<capacity, capacity>.self),
         saturationMeasurement: capacity == 1 ? "minimum-object-rejection" : "edit-capacity-failure",
         saturationRejected: saturationResult.rejected,
-        unchangedAfterSaturation: saturationResult.unchanged
+        unchangedAfterSaturation: saturationResult.unchanged,
+        schemaRegistration: schema.registration,
+        schemaRegistryCount: schema.count,
+        schemaRegistrySaturated: schema.saturated,
+        typedObjectInitialization: typed.initialization,
+        typedObjectValueTypePreserved: typed.valueTypePreserved,
+        predicateInitialization: predicate.initialization,
+        predicateDecodeEvaluateEncode: predicate.decodeEvaluateEncode,
+        predicateRoundTrip: predicate.roundTrip
+    )
+}
+
+private func predicateLayout<let capacity: Int>(_: ObjectPredicate<capacity, capacity, capacity, capacity>.Type) -> PredicateLayoutRecord {
+    PredicateLayoutRecord(
+        measurementPoint: capacity,
+        type: "ObjectPredicate<\(capacity),\(capacity),\(capacity),\(capacity)>",
+        size: MemoryLayout<ObjectPredicate<capacity, capacity, capacity, capacity>>.size,
+        alignment: MemoryLayout<ObjectPredicate<capacity, capacity, capacity, capacity>>.alignment,
+        stride: MemoryLayout<ObjectPredicate<capacity, capacity, capacity, capacity>>.stride,
+        nodeCapacity: capacity,
+        pathCapacity: capacity,
+        literalCapacity: capacity,
+        arenaCapacity: capacity
+    )
+}
+
+private func schemaLayout<let capacity: Int>(_: ObjectSchemaRegistry<capacity>.Type) -> SchemaLayoutRecord {
+    SchemaLayoutRecord(
+        measurementPoint: capacity,
+        type: "ObjectSchemaRegistry<\(capacity)>",
+        size: MemoryLayout<ObjectSchemaRegistry<capacity>>.size,
+        alignment: MemoryLayout<ObjectSchemaRegistry<capacity>>.alignment,
+        stride: MemoryLayout<ObjectSchemaRegistry<capacity>>.stride,
+        registryCapacity: capacity
     )
 }
 
@@ -175,6 +301,16 @@ private func report() -> ProbeReport {
             objectLayout(BoundedDynamicObject<1, 1>.self), envelopeLayout(ObjectEnvelope<1, 1>.self),
             objectLayout(BoundedDynamicObject<16, 16>.self), envelopeLayout(ObjectEnvelope<16, 16>.self),
             objectLayout(BoundedDynamicObject<64, 64>.self), envelopeLayout(ObjectEnvelope<64, 64>.self),
+        ],
+        schemaLayouts: [
+            schemaLayout(ObjectSchemaRegistry<1>.self),
+            schemaLayout(ObjectSchemaRegistry<16>.self),
+            schemaLayout(ObjectSchemaRegistry<64>.self),
+        ],
+        predicateLayouts: [
+            predicateLayout(ObjectPredicate<1, 1, 1, 1>.self),
+            predicateLayout(ObjectPredicate<16, 16, 16, 16>.self),
+            predicateLayout(ObjectPredicate<64, 64, 64, 64>.self),
         ],
         operations: [
             operationRecord(BoundedDynamicObject<1, 1>.self),
@@ -214,6 +350,40 @@ private func allocationRun<let capacity: Int>(_: BoundedDynamicObject<capacity, 
     case .envelopeWarmed:
         guard let envelope = try? ObjectEnvelope<capacity, capacity>(decoding: slice(envelopeBytes)) else { return }
         for _ in 0..<iterations { allocationSink &+= UInt64(envelope.name.length) + (envelope.isDeactivated ? 1 : 0) }
+    case .schemaRegistryInitialization:
+        var registry = ObjectSchemaRegistry<capacity>()
+        for _ in 0..<iterations {
+            registry = ObjectSchemaRegistry<capacity>()
+            try? registry.use(IoSource.self)
+            allocationSink &+= UInt64(registry.sealed().count)
+        }
+    case .typedObjectInitialization:
+        for _ in 0..<iterations {
+            if let object = try? BoundedObject<IoSource, 512, capacity>(decoding: slice(ioSourceBytes)) {
+                allocationSink &+= object.value.valueType.length > 0 ? 1 : 0
+            }
+        }
+    case .typedObjectWarmed:
+        guard let object = try? BoundedObject<IoSource, 512, capacity>(decoding: slice(ioSourceBytes)) else { return }
+        for _ in 0..<iterations { allocationSink &+= object.value.valueType.length > 0 ? 1 : 0 }
+    case .predicateInitialization:
+        for _ in 0..<iterations {
+            do throws(ObjectError) {
+                _ = try ObjectPredicate<capacity, capacity, capacity, capacity>(decoding: slice(predicateBytes))
+                allocationSink &+= 1
+            } catch {}
+        }
+    case .predicateWarmed:
+        guard let predicate = try? ObjectPredicate<capacity, capacity, capacity, capacity>(decoding: slice(predicateBytes)),
+              let object = try? BoundedDynamicObject<capacity, capacity>(decoding: slice("{\"value\":1}")) else { return }
+        for _ in 0..<iterations {
+            allocationSink &+= predicate.matches(object: object) ? 1 : 0
+            var output = [UInt8](repeating: 0, count: 128)
+            try? output.withUnsafeMutableBufferPointer { buffer in
+                var writer = WireWriter(buffer: buffer.baseAddress!, capacity: buffer.count)
+                try predicate.encode(to: &writer)
+            }
+        }
     }
 }
 

@@ -9,7 +9,7 @@ if (!probePath || !allocationsPath || !sectionsPath || !candidateSha || !compile
 }
 
 const expectedCapacities = [1, 16, 64];
-const expectedCases = ["object-initialization", "object-warmed", "envelope-initialization", "envelope-warmed"];
+const expectedCases = ["object-initialization", "object-warmed", "envelope-initialization", "envelope-warmed", "schema-registry-initialization", "typed-object-initialization", "typed-object-warmed", "predicate-initialization", "predicate-warmed"];
 
 function integer(value, label) {
   if (!/^\d+$/.test(value)) throw new Error(`${label} must be a nonnegative integer`);
@@ -60,6 +60,11 @@ const allocations = expectedCapacities.map(capacity => {
     objectWarmed: value("object-warmed").growth,
     envelopeInitialization: value("envelope-initialization").growth,
     envelopeWarmed: value("envelope-warmed").growth,
+    schemaRegistryInitialization: value("schema-registry-initialization").growth,
+    typedObjectInitialization: value("typed-object-initialization").growth,
+    typedObjectWarmed: value("typed-object-warmed").growth,
+    predicateInitialization: value("predicate-initialization").growth,
+    predicateWarmed: value("predicate-warmed").growth,
   };
 });
 const evidence = {

@@ -35,7 +35,7 @@ const report = {
   candidateSha,
   status: "passed",
   compileSuccess: metadata.compileSuccess === "true",
-  coverage: "foundation-module-linkage-only",
+  coverage: "foundation-schema-model-predicate-module-linkage",
   source: "Embedded/swift",
   toolchain: metadata.toolchain,
   compileSeconds: number("compileSeconds"),

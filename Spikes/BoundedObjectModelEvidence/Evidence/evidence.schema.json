@@ -19,7 +19,9 @@
     "layout": {
       "oneOf": [
         {"$ref": "#/$defs/objectLayout"},
-        {"$ref": "#/$defs/envelopeLayout"}
+        {"$ref": "#/$defs/envelopeLayout"},
+        {"$ref": "#/$defs/schemaLayout"},
+        {"$ref": "#/$defs/predicateLayout"}
       ]
     },
     "objectLayout": {
@@ -52,9 +54,40 @@
       },
       "additionalProperties": false
     },
+    "schemaLayout": {
+      "type": "object",
+      "required": ["measurementPoint", "axis", "type", "size", "alignment", "stride", "registryCapacity"],
+      "properties": {
+        "measurementPoint": {"enum": [1, 16, 64]},
+        "axis": {"const": "schema-registry"},
+        "type": {"type": "string", "minLength": 1},
+        "size": {"type": "integer", "minimum": 1},
+        "alignment": {"type": "integer", "minimum": 1},
+        "stride": {"type": "integer", "minimum": 1},
+        "registryCapacity": {"enum": [1, 16, 64]}
+      },
+      "additionalProperties": false
+    },
+    "predicateLayout": {
+      "type": "object",
+      "required": ["measurementPoint", "axis", "type", "size", "alignment", "stride", "nodeCapacity", "pathCapacity", "literalCapacity", "arenaCapacity"],
+      "properties": {
+        "measurementPoint": {"enum": [1, 16, 64]},
+        "axis": {"const": "predicate"},
+        "type": {"type": "string", "minLength": 1},
+        "size": {"type": "integer", "minimum": 1},
+        "alignment": {"type": "integer", "minimum": 1},
+        "stride": {"type": "integer", "minimum": 1},
+        "nodeCapacity": {"enum": [1, 16, 64]},
+        "pathCapacity": {"enum": [1, 16, 64]},
+        "literalCapacity": {"enum": [1, 16, 64]},
+        "arenaCapacity": {"enum": [1, 16, 64]}
+      },
+      "additionalProperties": false
+    },
     "operation": {
       "type": "object",
-      "required": ["measurementPoint", "byteCapacity", "fieldCapacity", "nameCapacity", "externalIDCapacity", "objectInitialization", "envelopeInitialization", "randomizedEditRead", "saturationMeasurement", "saturationRejected", "unchangedAfterSaturation"],
+      "required": ["measurementPoint", "byteCapacity", "fieldCapacity", "nameCapacity", "externalIDCapacity", "objectInitialization", "envelopeInitialization", "randomizedEditRead", "saturationMeasurement", "saturationRejected", "unchangedAfterSaturation", "schemaRegistration", "schemaRegistryCount", "schemaRegistrySaturated", "typedObjectInitialization", "typedObjectValueTypePreserved", "predicateInitialization", "predicateDecodeEvaluateEncode", "predicateRoundTrip"],
       "properties": {
         "measurementPoint": {"enum": [1, 16, 64]},
         "byteCapacity": {"enum": [1, 16, 64]},
@@ -66,13 +99,21 @@
         "randomizedEditRead": {"type": "boolean"},
         "saturationMeasurement": {"enum": ["minimum-object-rejection", "edit-capacity-failure"]},
         "saturationRejected": {"const": true},
-        "unchangedAfterSaturation": {"const": true}
+        "unchangedAfterSaturation": {"const": true},
+        "schemaRegistration": {"type": "string", "minLength": 1},
+        "schemaRegistryCount": {"type": "integer", "minimum": 1},
+        "schemaRegistrySaturated": {"type": "boolean"},
+        "typedObjectInitialization": {"type": "string", "minLength": 1},
+        "typedObjectValueTypePreserved": {"type": "boolean"},
+        "predicateInitialization": {"type": "string", "minLength": 1},
+        "predicateDecodeEvaluateEncode": {"type": "boolean"},
+        "predicateRoundTrip": {"type": "boolean"}
       },
       "additionalProperties": false
     },
     "allocation": {
       "type": "object",
-      "required": ["measurementPoint", "byteCapacity", "fieldCapacity", "nameCapacity", "externalIDCapacity", "measurement", "objectInitialization", "objectWarmed", "envelopeInitialization", "envelopeWarmed"],
+      "required": ["measurementPoint", "byteCapacity", "fieldCapacity", "nameCapacity", "externalIDCapacity", "measurement", "objectInitialization", "objectWarmed", "envelopeInitialization", "envelopeWarmed", "schemaRegistryInitialization", "typedObjectInitialization", "typedObjectWarmed", "predicateInitialization", "predicateWarmed"],
       "properties": {
         "measurementPoint": {"enum": [1, 16, 64]},
         "byteCapacity": {"enum": [1, 16, 64]},
@@ -83,21 +124,28 @@
         "objectInitialization": {"type": "integer", "minimum": 0},
         "objectWarmed": {"type": "integer", "minimum": 0},
         "envelopeInitialization": {"type": "integer", "minimum": 0},
-        "envelopeWarmed": {"type": "integer", "minimum": 0}
+        "envelopeWarmed": {"type": "integer", "minimum": 0},
+        "schemaRegistryInitialization": {"type": "integer", "minimum": 0},
+        "typedObjectInitialization": {"type": "integer", "minimum": 0},
+        "typedObjectWarmed": {"type": "integer", "minimum": 0}
+        ,"predicateInitialization": {"type": "integer", "minimum": 0}
+        ,"predicateWarmed": {"type": "integer", "minimum": 0}
       },
       "additionalProperties": false
     },
     "host": {
       "type": "object",
-      "required": ["schemaVersion", "evidenceKind", "candidateSha", "toolchain", "measurementPoints", "measurementPolicy", "layouts", "operations", "allocations", "compilation", "hardware"],
+      "required": ["schemaVersion", "evidenceKind", "candidateSha", "toolchain", "measurementPoints", "measurementPolicy", "layouts", "schemaLayouts", "predicateLayouts", "operations", "allocations", "compilation", "hardware"],
       "properties": {
         "schemaVersion": {"const": 1},
         "evidenceKind": {"const": "host"},
         "candidateSha": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"},
         "toolchain": {"type": "string", "minLength": 1},
         "measurementPoints": {"const": [1, 16, 64]},
-        "measurementPolicy": {"const": "simultaneous-object-and-envelope-specializations"},
+        "measurementPolicy": {"const": "simultaneous-object-envelope-schema-model-specializations"},
         "layouts": {"type": "array", "minItems": 6, "maxItems": 6, "items": {"$ref": "#/$defs/layout"}},
+        "schemaLayouts": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/schemaLayout"}},
+        "predicateLayouts": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/predicateLayout"}},
         "operations": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/operation"}},
         "allocations": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/allocation"}},
         "compilation": {
@@ -118,7 +166,7 @@
     },
     "sanitized": {
       "type": "object",
-      "required": ["schemaVersion", "evidenceKind", "candidateSha", "status", "sanitizer", "measurementPoints", "hardware"],
+      "required": ["schemaVersion", "evidenceKind", "candidateSha", "status", "sanitizer", "measurementPoints", "coverage", "hardware"],
       "properties": {
         "schemaVersion": {"const": 1},
         "evidenceKind": {"const": "sanitized"},
@@ -126,6 +174,7 @@
         "status": {"const": "passed"},
         "sanitizer": {"const": "address"},
         "measurementPoints": {"const": [1, 16, 64]},
+        "coverage": {"const": "foundation-schema-model-predicate"},
         "hardware": {"const": "pending-hardware"}
       },
       "additionalProperties": false
@@ -139,7 +188,7 @@
         "candidateSha": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"},
         "status": {"const": "passed"},
         "compileSuccess": {"const": true},
-        "coverage": {"const": "foundation-module-linkage-only"},
+        "coverage": {"const": "foundation-schema-model-predicate-module-linkage"},
         "source": {"const": "Embedded/swift"},
         "toolchain": {"type": "string", "minLength": 1},
         "compileSeconds": {"type": "number", "minimum": 0},

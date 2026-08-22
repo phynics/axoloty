@@ -1,11 +1,26 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import AxolotyObjectModel
+import AxolotyCoatyModels
 import AxolotyWire
 import Testing
 
 private func slice(_ value: StaticString) -> ByteSlice {
     ByteSlice(bytes: value.utf8Start, length: value.utf8CodeUnitCount)
+}
+
+@Test("schema registry and first-party typed object remain bounded")
+func schemaAndTypedObjectEvidence() throws {
+    try IoSource.schema.validate()
+    var registry = ObjectSchemaRegistry<1>()
+    try registry.use(IoSource.self)
+    #expect(throws: ObjectSchemaRegistryError.capacityExceeded) {
+        try registry.use(IoActor.self)
+    }
+    #expect(registry.sealed().count == 1)
+    let bytes = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"coaty.IoSource\",\"name\":\"source\",\"coreType\":\"IoSource\",\"valueType\":\"T\"}")
+    let typed = try BoundedObject<IoSource, 512, 16>(decoding: bytes)
+    #expect(typed.value.valueType.encodedEquals("T"))
 }
 
 private let objectBytes = slice("{\"a\":0}")

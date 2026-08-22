@@ -13,9 +13,15 @@ edit/read operations, exact saturation rejection, and unchanged bytes after
 failed edits. Capacity `1` records minimum-object rejection as a measurement
 fact; the edit-capacity/no-mutation assertion applies to `16` and `64`.
 
-This revision covers the foundation only. Schema, registry, and predicate
-layouts receive separate records after those sources integrate; this report
-does not claim they were measured.
+The probe also measures the fixed-inline `ObjectSchemaRegistry` at the same
+registry capacities and runs first-party `IoSource` typed-object decoding with
+an explicit 512-byte arena and field capacities `1`, `16`, and `64`. Capacity
+one exercises registry saturation and typed-object field rejection; capacities
+16 and 64 verify successful model decoding and value preservation. These are
+measurement points, not product presets. It measures `ObjectPredicate` with
+the same 1/16/64 inline specializations; capacity one rejects the canonical
+condition, while 16 and 64 perform decode, evaluation, canonical encode, and
+round-trip checks.
 
 Run the hardware-free nodes from the repository root:
 
@@ -35,11 +41,10 @@ Sanitizer. Generated reports, logs, and build products are written under
 The embedded node performs a clean ESP32-C6 cross-build of `Embedded/swift`
 through the pinned ESP-IDF toolchain and records the exact Swift version,
 compile duration, firmware/ELF/MAP sizes, and ELF section sizes. Its
-`coverage` is deliberately `foundation-module-linkage-only`: it proves the
-currently integrated foundation is compiled and linked into firmware, not that
-future schema, registry, or predicate specializations have been measured.
-The node is build-only, hardware-forbidden, and must be rerun after those
-sources integrate.
+`coverage` is `foundation-schema-model-predicate-module-linkage`: it proves
+the currently integrated object foundation, schema/model sources, and their
+static consumers are compiled and linked into firmware. Predicate evidence is
+not included in this harness. The node is build-only and hardware-forbidden.
 
 Schema validation is local and dependency-free:
 
@@ -47,6 +52,3 @@ Schema validation is local and dependency-free:
 node Spikes/BoundedObjectModelEvidence/Evidence/validate-evidence.mjs \
   Spikes/BoundedObjectModelEvidence/Evidence/evidence.schema.json REPORT.json
 ```
-
-Later schema/registry/predicate layouts can add measurement records without
-changing the object-model probe's allocation or sanitizer contract.

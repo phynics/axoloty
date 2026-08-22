@@ -45,7 +45,7 @@ run_swift bash /workspace/Spikes/BoundedPortableRuntime/measure-allocations.sh \
     /workspace/Spikes/BoundedObjectModelEvidence \
     /workspace/.testing/g3-object-model/"$candidate"/allocation-measurements.tsv \
     "1 16 64" \
-    "object-initialization object-warmed envelope-initialization envelope-warmed" \
+    "object-initialization object-warmed envelope-initialization envelope-warmed schema-registry-initialization typed-object-initialization typed-object-warmed predicate-initialization predicate-warmed" \
     bounded-object-model-probe 1 1000 \
     >"$artifact/allocation-measurements.log" 2>&1
 
