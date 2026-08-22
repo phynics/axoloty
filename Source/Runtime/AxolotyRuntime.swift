@@ -254,7 +254,8 @@ private actor ProtocolExecutor {
             state = .running
             return nil
         } catch {
-            cancelTransportPumps()
+            cancelIngressPump()
+            outboundContinuation?.finish()
             // A concurrent stop/close may have advanced the epoch while the
             // transport was suspended. Preserve that terminal transition
             // instead of resurrecting the runtime as failed.
@@ -284,7 +285,8 @@ private actor ProtocolExecutor {
         }
         await transport.stop()
         guard state == .stopping, transportEpoch == stoppingEpoch else { return }
-        cancelTransportPumps()
+        cancelIngressPump()
+        await stopOutboundPump()
         state = .stopped
     }
 
@@ -874,16 +876,11 @@ private actor ProtocolExecutor {
         }
     }
 
-    private func cancelTransportPumps() {
+    private func cancelIngressPump() {
         transportIngressContinuation?.finish()
-        outboundContinuation?.finish()
         transportIngressContinuation = nil
-        outboundContinuation = nil
         transportIngressTask?.cancel()
-        outboundTask?.cancel()
         transportIngressTask = nil
-        outboundTask = nil
-        outboundQueued = 0
     }
 
     private func transportFailed(_ detail: String) {
@@ -922,7 +919,8 @@ private actor ProtocolExecutor {
         guard state != .stopping, state != .stopped, state != .closed else { return }
         state = .failed
         transportEpoch &+= 1
-        cancelTransportPumps()
+        cancelIngressPump()
+        outboundContinuation?.finish()
         guard !failureTeardownScheduled else { return }
         failureTeardownScheduled = true
         Task { [weak self] in

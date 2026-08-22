@@ -166,6 +166,38 @@ struct AxolotyRuntimeTests {
         await runtime.stop()
     }
 
+    @Test("runtime stop waits for an in-flight transport send")
+    func stopDrainsOutboundPump() async throws {
+        let definition = try makeDefinition()
+        let transport = DrainingTransport()
+        let runtime = AxolotyRuntime(definition: definition, transport: transport)
+        try await runtime.start()
+        #expect(await runtime.publish(RuntimeOperation(
+            capability: .ioValue,
+            sourceID: .zero,
+            payload: [0x7B, 0x7D]
+        )) == .accepted)
+        for _ in 0..<100 {
+            if await transport.sendStarted { break }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(await transport.sendStarted)
+
+        let stopping = Task { await runtime.stop() }
+        for _ in 0..<100 {
+            if await transport.didStop { break }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(await transport.didStop)
+        #expect(await runtime.lifecycleState() == .stopping)
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(await runtime.lifecycleState() == .stopping)
+
+        await transport.releaseSend()
+        await stopping.value
+        #expect(await runtime.lifecycleState() == .stopped)
+    }
+
     private func makeDefinition() throws -> SealedRuntimeDefinition {
         let definition = try RuntimeDefinition(
             namespace: "test",
@@ -211,3 +243,27 @@ private actor TestTransport: AxolotyRuntimeTransport {
 }
 
 private struct TestTransportFailure: Error, Sendable {}
+
+private actor DrainingTransport: AxolotyRuntimeTransport {
+    private(set) var sendStarted = false
+    private(set) var didStop = false
+    private var released = false
+
+    func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
+    func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) {}
+
+    func send(_ action: OwnedProtocolAction, namespace: String) async throws {
+        sendStarted = true
+        while !released {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+    }
+
+    func stop() async { didStop = true }
+    func installSubscriptions(namespace: String) async throws {}
+    func removeSubscriptions(namespace: String) async throws {}
+    func advertise(identity: RuntimeIdentity?, namespace: String) async throws {}
+    func deadvertise(identity: RuntimeIdentity?, namespace: String) async throws {}
+
+    func releaseSend() { released = true }
+}
