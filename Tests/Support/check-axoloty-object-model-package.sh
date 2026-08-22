@@ -168,12 +168,17 @@ fi
 if ! grep -Fq 'Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels/*.swift' "$coaty_component" || \
    ! grep -Eq '^[[:space:]]*PRIV_REQUIRES[[:space:]].*axoloty_object_model([[:space:]]|$)' "$coaty_component" || \
    ! grep -Eq '^[[:space:]]*PRIV_REQUIRES[[:space:]].*axoloty_wire([[:space:]]|$)' "$coaty_component" || \
+   ! grep -Eq '^[[:space:]]*PRIV_REQUIRES[[:space:]].*json_core([[:space:]]|$)' "$coaty_component" || \
    ! grep -Fq 'axoloty_wire' "$coaty_component" || \
    ! grep -Fq 'AxolotyObjectModel.swiftmodule' "$coaty_component" || \
    ! grep -Fq 'AxolotyWire.swiftmodule' "$coaty_component" || \
+   ! grep -Fq '_JSONCore.swiftmodule' "$coaty_component" || \
    ! grep -Fq 'WIRE_COMPONENT_BINARY_DIR' "$coaty_component" || \
+   ! grep -Fq 'JSON_CORE_COMPONENT_BINARY_DIR' "$coaty_component" || \
    ! grep -Fq '    ${WIRE_COMPONENT_BINARY_DIR}' "$coaty_component" || \
+   ! grep -Fq '    ${JSON_CORE_COMPONENT_BINARY_DIR}' "$coaty_component" || \
    ! grep -Fq 'APPEND PROPERTIES OBJECT_DEPENDS "${WIRE_MODULE_ALIAS}"' "$coaty_component" || \
+   ! grep -Fq 'APPEND PROPERTIES OBJECT_DEPENDS "${JSON_CORE_MODULE_ALIAS}"' "$coaty_component" || \
    ! grep -Fq 'OUTPUT ${AXOLOTY_COATY_MODELS_MODULE_ALIAS}' "$coaty_component"; then
     echo "error: ESP-IDF CoatyModels component has an incomplete transitive source/module dependency" >&2
     exit 1

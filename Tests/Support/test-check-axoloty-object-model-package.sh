@@ -91,4 +91,17 @@ if AXOLOTY_OBJECT_MODEL_PACKAGE_DIR="$tmp/package" \
     exit 1
 fi
 
+copy_package
+copy_coaty_component
+sed -i 's/ json_core//' "$tmp/coaty-models.CMakeLists.txt"
+if AXOLOTY_OBJECT_MODEL_PACKAGE_DIR="$tmp/package" \
+   AXOLOTY_OBJECT_MODEL_SKIP_BUILD=1 \
+   AXOLOTY_COATY_MODELS_SKIP_BUILD=1 \
+   AXOLOTY_OBJECT_MODEL_COMPONENT="$root/Embedded/swift/components/axoloty_object_model/CMakeLists.txt" \
+   AXOLOTY_COATY_MODELS_COMPONENT="$tmp/coaty-models.CMakeLists.txt" \
+   "$root/Tests/Support/check-axoloty-object-model-package.sh" >/dev/null 2>&1; then
+    echo "error: checker accepted missing _JSONCore transitive component dependency" >&2
+    exit 1
+fi
+
 echo "AxolotyObjectModel forbidden-boundary negative tests passed"
