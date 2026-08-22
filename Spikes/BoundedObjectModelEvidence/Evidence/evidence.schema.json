@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Axoloty G3 bounded object-model evidence",
+  "oneOf": [
+    {"$ref": "#/$defs/host"},
+    {"$ref": "#/$defs/sanitized"}
+  ],
+  "$defs": {
+    "identity": {
+      "type": "object",
+      "required": ["schemaVersion", "evidenceKind", "candidateSha"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "evidenceKind": {"type": "string"},
+        "candidateSha": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"}
+      }
+    },
+    "layout": {
+      "type": "object",
+      "required": ["capacity", "type", "size", "alignment", "stride"],
+      "properties": {
+        "capacity": {"enum": [1, 16, 64]},
+        "type": {"type": "string", "minLength": 1},
+        "size": {"type": "integer", "minimum": 1},
+        "alignment": {"type": "integer", "minimum": 1},
+        "stride": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "operation": {
+      "type": "object",
+      "required": ["capacity", "objectInitialization", "envelopeInitialization", "randomizedEditRead", "saturationMeasurement", "saturationRejected", "unchangedAfterSaturation"],
+      "properties": {
+        "capacity": {"enum": [1, 16, 64]},
+        "objectInitialization": {"type": "string", "minLength": 1},
+        "envelopeInitialization": {"const": true},
+        "randomizedEditRead": {"type": "boolean"},
+        "saturationMeasurement": {"enum": ["minimum-object-rejection", "edit-capacity-failure"]},
+        "saturationRejected": {"const": true},
+        "unchangedAfterSaturation": {"const": true}
+      },
+      "additionalProperties": false
+    },
+    "allocation": {
+      "type": "object",
+      "required": ["capacity", "measurement", "objectInitialization", "objectWarmed", "envelopeInitialization", "envelopeWarmed"],
+      "properties": {
+        "capacity": {"enum": [1, 16, 64]},
+        "measurement": {"const": "heaptrack-call-growth"},
+        "objectInitialization": {"type": "integer", "minimum": 0},
+        "objectWarmed": {"type": "integer", "minimum": 0},
+        "envelopeInitialization": {"type": "integer", "minimum": 0},
+        "envelopeWarmed": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "host": {
+      "type": "object",
+      "required": ["schemaVersion", "evidenceKind", "candidateSha", "toolchain", "measurementCapacities", "capacityPolicy", "layouts", "operations", "allocations", "compilation", "hardware"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "evidenceKind": {"const": "host"},
+        "candidateSha": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"},
+        "toolchain": {"type": "string", "minLength": 1},
+        "measurementCapacities": {"const": [1, 16, 64]},
+        "capacityPolicy": {"const": "measurement-points-only"},
+        "layouts": {"type": "array", "minItems": 6, "items": {"$ref": "#/$defs/layout"}},
+        "operations": {"type": "array", "minItems": 3, "items": {"$ref": "#/$defs/operation"}},
+        "allocations": {"type": "array", "minItems": 3, "items": {"$ref": "#/$defs/allocation"}},
+        "compilation": {
+          "type": "object",
+          "required": ["debugTests", "sanitizedTests", "compileSeconds", "releaseBinaryBytes", "releaseSections"],
+          "properties": {
+            "debugTests": {"const": "passed"},
+            "sanitizedTests": {"const": "separate-node"},
+            "compileSeconds": {"type": "number", "minimum": 0},
+            "releaseBinaryBytes": {"type": "integer", "minimum": 1},
+            "releaseSections": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["name", "bytes"], "properties": {"name": {"type": "string"}, "bytes": {"type": "integer", "minimum": 0}}, "additionalProperties": false}}
+          },
+          "additionalProperties": false
+        },
+        "hardware": {"const": "pending-hardware"}
+      },
+      "additionalProperties": false
+    },
+    "sanitized": {
+      "type": "object",
+      "required": ["schemaVersion", "evidenceKind", "candidateSha", "status", "sanitizer", "measurementCapacities", "hardware"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "evidenceKind": {"const": "sanitized"},
+        "candidateSha": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"},
+        "status": {"const": "passed"},
+        "sanitizer": {"const": "address"},
+        "measurementCapacities": {"const": [1, 16, 64]},
+        "hardware": {"const": "pending-hardware"}
+      },
+      "additionalProperties": false
+    }
+  }
+}

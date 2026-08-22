@@ -365,6 +365,7 @@ test-support: resolve
 	Tests/Support/test-check-axoloty-wire-dependencies.sh
 	Tests/Support/test-check-axoloty-protocol-package.sh
 	Tests/Support/test-check-axoloty-object-model-package.sh
+	Tests/Support/test-check-g3-object-model-evidence.sh
 	Tests/Support/test-check-axoloty-wire-state-boundary.sh
 	Tests/Support/test-check-axoloty-object-boundary.sh
 	Tests/Support/test-check-axoloty-wire-independent-resolution.sh

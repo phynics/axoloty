@@ -78,6 +78,9 @@ source/dependency boundary. The tier is deliberately not a required gate yet.
 The embedded Swift image compiles the same sources through the
 `axoloty_object_model` ESP-IDF component and the static main consumer imports
 `AxolotyObjectModel` to prove module discovery and linkage.
+The opt-in G3 evidence nodes additionally record measured layouts, heaptrack
+allocation growth, deterministic edit/read behavior, sanitizer results, and
+release size/timing under `.testing/g3-object-model/<candidate-sha>/`.
 
 ## Command-to-tier map
 
