@@ -272,6 +272,7 @@ private actor ProtocolExecutor {
     func stop() async {
         guard state == .running || state == .starting || state == .reconnecting || state == .failed else { return }
         state = .stopping
+        offlineOperations.removeAll(keepingCapacity: true)
         transportEpoch &+= 1
         let stoppingEpoch = transportEpoch
         await cancelAndDrainHandlers()
