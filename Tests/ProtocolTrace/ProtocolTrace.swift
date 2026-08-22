@@ -185,7 +185,11 @@ private struct SharedProtocolTraceReplay<let capacity: Int>: ~Copyable {
     private static func seedObject<S: ~Copyable & ProtocolActionSink>(_ name: String, processor: inout ProtocolProcessor<capacity>, sink: inout S, time: UInt64) throws {
         let object = Self.identity(name)
         let topic = "coaty/3/trace/ADV/\(Self.uuidText(object))"
-        let payload = "{\"object\":{}}"
+        // Seed through the same validated Advertise path as the trace step.
+        // An empty object is syntactically JSON but is not an accepted
+        // AdvertiseWireData value, which would leave a following Deadvertise
+        // trace without the object it claims to remove.
+        let payload = "{\"object\":{\"objectId\":\"\(Self.uuidText(object))\",\"coreType\":\"CoatyObject\",\"objectType\":\"trace.Object\",\"name\":\"\(name)\"}}"
         try Self.withBorrowed(topic: topic, payload: payload) { frame in
             _ = processor.processInbound(frame, nowMS: UInt32(time), sink: &sink)
         }
