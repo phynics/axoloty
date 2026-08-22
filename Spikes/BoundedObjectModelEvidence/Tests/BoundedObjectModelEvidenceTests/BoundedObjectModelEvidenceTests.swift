@@ -14,13 +14,19 @@ func schemaAndTypedObjectEvidence() throws {
     try IoSource.schema.validate()
     var registry = ObjectSchemaRegistry<1>()
     try registry.use(IoSource.self)
-    #expect(throws: ObjectSchemaRegistryError.capacityExceeded) {
+    var registryRejected = false
+    do throws(ObjectSchemaRegistryError) {
         try registry.use(IoActor.self)
+    } catch {
+        registryRejected = error == .capacityExceeded
     }
-    #expect(registry.sealed().count == 1)
+    #expect(registryRejected)
+    let registryCount = registry.sealed().count
+    #expect(registryCount == 1)
     let bytes = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"coaty.IoSource\",\"name\":\"source\",\"coreType\":\"IoSource\",\"valueType\":\"T\"}")
     let typed = try BoundedObject<IoSource, 512, 16>(decoding: bytes)
-    #expect(typed.value.valueType.encodedEquals("T"))
+    let typedValueTypeMatches = typed.value.valueType.encodedEquals("T")
+    #expect(typedValueTypeMatches)
 }
 
 @Test("predicate decode evaluation encode and canonical round trip are sanitizer-covered")
@@ -28,20 +34,25 @@ func predicateEvidence() throws {
     let predicateBytes = slice("{\"conditions\":[\"value\",[7,1]]}")
     let predicate = try ObjectPredicate<16, 16, 16, 64>(decoding: predicateBytes)
     let object = try BoundedDynamicObject<128, 4>(decoding: slice("{\"value\":1}"))
-    #expect(predicate.matches(object: object))
+    let predicateMatches = predicate.matches(object: object)
+    #expect(predicateMatches)
 
     let output = UnsafeMutablePointer<UInt8>.allocate(capacity: 128)
     defer { output.deallocate() }
     var writer = WireWriter(buffer: output, capacity: 128)
     try predicate.encode(to: &writer)
     let encoded = ByteSlice(bytes: output, length: writer.position)
-    #expect(encoded.equals("{\"conditions\":[\"value\",[7,1]]}"))
+    let encodedMatches = encoded.equals("{\"conditions\":[\"value\",[7,1]]}")
+    #expect(encodedMatches)
     let decoded = try ObjectPredicate<16, 16, 16, 64>(decoding: encoded)
-    #expect(decoded.matches(object: object))
+    let decodedMatches = decoded.matches(object: object)
+    #expect(decodedMatches)
 }
 
-private let objectBytes = slice("{\"a\":0}")
-private let envelopeBytes = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.Measurement\",\"name\":\"\",\"coreType\":\"Task\",\"externalId\":\"x\"}")
+private func objectBytes() -> ByteSlice { slice("{\"a\":0}") }
+private func envelopeBytes() -> ByteSlice {
+    slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.Measurement\",\"name\":\"\",\"coreType\":\"Task\",\"externalId\":\"x\"}")
+}
 
 @Test("object-model measurement layouts are explicit")
 func measurementLayouts() {
@@ -54,10 +65,21 @@ func measurementLayouts() {
 
 @Test("capacity one reports minimum-object rejection")
 func capacityOneIsMeasuredWithoutClaimingAcceptance() {
-    #expect(throws: ObjectError.self) {
-        _ = try BoundedDynamicObject<1, 1>(decoding: objectBytes)
+    var objectRejected = false
+    do throws(ObjectError) {
+        _ = try BoundedDynamicObject<1, 1>(decoding: objectBytes())
+    } catch {
+        objectRejected = error.reason == .capacityExceeded
     }
-    #expect(try ObjectEnvelope<1, 1>(decoding: envelopeBytes).name.length == 0)
+    #expect(objectRejected)
+
+    var envelopeRejected = false
+    do throws(ObjectError) {
+        _ = try ObjectEnvelope<1, 1>(decoding: envelopeBytes())
+    } catch {
+        envelopeRejected = error.reason == .invalidEnvelope
+    }
+    #expect(envelopeRejected)
 }
 
 @Test("saturation rejects and preserves object bytes")
@@ -72,12 +94,18 @@ func saturationIsAtomic() throws {
 }
 
 private func saturation<let capacity: Int>(_: BoundedDynamicObject<capacity, capacity>.Type) throws {
-    var object = try BoundedDynamicObject<capacity, capacity>(decoding: objectBytes)
-    #expect(object.encodedEquals("{\"a\":0}"))
-    #expect(throws: ObjectError.self) {
+    var object = try BoundedDynamicObject<capacity, capacity>(decoding: objectBytes())
+    let initialBytesMatch = object.encodedEquals("{\"a\":0}")
+    #expect(initialBytesMatch)
+    var editRejected = false
+    do throws(ObjectError) {
         try object.edit { try $0.setRaw("overflow", value: slice("999999999999999999999999999999999999999999999999999999999999999999999999999999")) }
+    } catch {
+        editRejected = error.reason == .capacityExceeded
     }
-    #expect(object.encodedEquals("{\"a\":0}"))
+    #expect(editRejected)
+    let unchanged = object.encodedEquals("{\"a\":0}")
+    #expect(unchanged)
 }
 
 @Test("deterministic randomized edits and reads remain bounded")
@@ -87,7 +115,7 @@ func randomizedEditRead() throws {
 }
 
 private func randomized<let capacity: Int>(_: BoundedDynamicObject<capacity, capacity>.Type) throws {
-    var object = try BoundedDynamicObject<capacity, capacity>(decoding: objectBytes)
+    var object = try BoundedDynamicObject<capacity, capacity>(decoding: objectBytes())
     var seed: UInt64 = 0x41584f4c4f5459
     for _ in 0..<2_000 {
         seed = seed &* 6_364_136_223_846_793_005 &+ 1
