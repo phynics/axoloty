@@ -179,7 +179,7 @@ private func schemaRegistryOperation<let capacity: Int>(_: ObjectSchemaRegistry<
         registration = "rejected-\(error)"
     }
     var saturated = false
-    let beforeSaturation = registry.sealed().count
+    let expectedCountAfterRegistration = capacity == 1 ? 1 : 4
     do throws(ObjectSchemaRegistryError) {
         if capacity == 1 {
             // IoActor was not admitted after IoSource filled the one-slot
@@ -196,7 +196,7 @@ private func schemaRegistryOperation<let capacity: Int>(_: ObjectSchemaRegistry<
         // A non-capacity outcome is not saturation evidence.
     }
     let sealed = registry.sealed()
-    return (registration, sealed.count, saturated, saturated && sealed.count == beforeSaturation)
+    return (registration, sealed.count, saturated, saturated && sealed.count == expectedCountAfterRegistration)
 }
 
 private func typedObjectOperation<let fieldCapacity: Int>(_: BoundedObject<IoSource, 512, fieldCapacity>.Type) -> (initialization: String, valueTypePreserved: Bool) {
