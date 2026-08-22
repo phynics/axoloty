@@ -71,6 +71,7 @@ private struct OtherManualSchema: ObjectSchema {
 private struct TrailingManualSchema: ObjectSchema {
     static let schema: PortableObjectSchema<Self> = {
         var fields = InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
+        fields[0] = ObjectFieldDescriptor(key: ObjectFieldKey("first")!, index: 0, flags: .required)
         fields[1] = ObjectFieldDescriptor(key: ObjectFieldKey("late")!, index: 1, flags: .required)
         return PortableObjectSchema(objectType: ObjectType("com.example.Trailing")!, coreType: .coatyObject, fieldCount: 1, fields: fields)
     }()
