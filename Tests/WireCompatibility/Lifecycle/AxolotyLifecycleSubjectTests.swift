@@ -15,6 +15,8 @@ import Testing
 @MainActor
 struct AxolotyLifecycleSubjectTests {
     private static let identityID = UUID16(parsing: "44444444-4444-4444-8444-444444444444")!
+    private static let queuedFirstSourceID = UUID16(parsing: "66666666-6666-4666-8666-666666666661")!
+    private static let queuedSecondSourceID = UUID16(parsing: "66666666-6666-4666-8666-666666666662")!
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["WIRE_LIFECYCLE_DUPLICATE_REPLY_LIVE"] == "1"))
     func duplicateReply() async throws {
@@ -119,11 +121,11 @@ struct AxolotyLifecycleSubjectTests {
             report(state: "offline", scenario: scenario)
             if publishAfterReconnect {
                 let first = await runtime.publish(RuntimeOperation.advertise(
-                    sourceID: Self.identityID,
+                    sourceID: Self.queuedFirstSourceID,
                     payload: queuedPayload(name: "first")
                 ))
                 let second = await runtime.publish(RuntimeOperation.advertise(
-                    sourceID: Self.identityID,
+                    sourceID: Self.queuedSecondSourceID,
                     payload: queuedPayload(name: "second")
                 ))
                 guard first == .accepted, second == .accepted else {
@@ -195,7 +197,10 @@ struct AxolotyLifecycleSubjectTests {
     }
 
     private func queuedPayload(name: String) -> [UInt8] {
-        Array("{\"object\":{\"objectId\":\"66666666-6666-4666-8666-666666666666\",\"coreType\":\"CoatyObject\",\"objectType\":\"com.coaty.test.WireQueuedFixture\",\"name\":\"\(name)\"}}".utf8)
+        let objectID = name == "first"
+            ? "66666666-6666-4666-8666-666666666661"
+            : "66666666-6666-4666-8666-666666666662"
+        return Array("{\"object\":{\"objectId\":\"\(objectID)\",\"coreType\":\"CoatyObject\",\"objectType\":\"com.coaty.test.WireQueuedFixture\",\"name\":\"\(name)\"}}".utf8)
     }
 
     private static func monotonicNowMS() -> UInt32 {

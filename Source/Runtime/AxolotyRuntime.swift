@@ -310,6 +310,7 @@ private actor ProtocolExecutor {
         diagnosticsSnapshotValue.reconnects += 1
         transportIngressContinuation?.finish()
         transportIngressTask?.cancel()
+        await stopOutboundPump()
         let ingressPipe = AsyncStream<RuntimeInboundFrame>.makeStream(
             bufferingPolicy: .bufferingOldest(definition.capacities.ingress)
         )
@@ -427,6 +428,16 @@ private actor ProtocolExecutor {
         }
     }
 
+    private func stopOutboundPump() async {
+        let task = outboundTask
+        outboundContinuation?.finish()
+        outboundTask?.cancel()
+        outboundContinuation = nil
+        outboundTask = nil
+        outboundQueued = 0
+        await task?.value
+    }
+
     func receive(_ frame: RuntimeInboundFrame) -> RuntimeReceipt {
         guard state == .running else {
             return .rejected(.notRunning(state))
@@ -494,8 +505,17 @@ private actor ProtocolExecutor {
     private func flushOfflineOperations(nowMS: UInt32) {
         while let operation = offlineOperations.first {
             let receipt = publish(operation, nowMS: nowMS)
-            guard case .accepted = receipt else { return }
-            offlineOperations.removeFirst()
+            switch receipt {
+            case .accepted:
+                offlineOperations.removeFirst()
+            case .rejected(.capacityExceeded):
+                return
+            case let .rejected(rejection):
+                offlineOperations.removeFirst()
+                emit(.init(kind: .malformedFrame, detail: "offline operation dropped during replay: \(rejection)"))
+            case .ignored:
+                offlineOperations.removeFirst()
+            }
         }
     }
 
