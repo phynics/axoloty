@@ -22,6 +22,7 @@ write_fixture() {
 run_checker() {
     AXOLOTY_G4_HOST_RUNTIME_SOURCE_DIR="$tmp/Source/Runtime" \
     AXOLOTY_G4_STATIC_RUNTIME_PACKAGE_DIR="$tmp/Packages/AxolotyStaticRuntime" \
+    AXOLOTY_G4_PRODUCTION_SOURCE_DIR="$tmp/Source" \
         "$checker"
 }
 

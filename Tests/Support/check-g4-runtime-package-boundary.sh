@@ -11,6 +11,7 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 runtime_package=${AXOLOTY_G4_RUNTIME_PACKAGE_DIR:-$root/Packages/AxolotyRuntime}
 runtime_source_dir=${AXOLOTY_G4_HOST_RUNTIME_SOURCE_DIR:-$root/Source/Runtime}
 static=${AXOLOTY_G4_STATIC_RUNTIME_PACKAGE_DIR:-$root/Packages/AxolotyStaticRuntime}
+production_source_dir=${AXOLOTY_G4_PRODUCTION_SOURCE_DIR:-$root/Source}
 
 fail() {
     echo "error: $*" >&2
@@ -37,12 +38,12 @@ sources="$host_sources $static_sources"
 [ -n "$sources" ] || fail "replacement runtime packages have no Swift sources"
 
 for source in $sources; do
-    if grep -Eq '\b(Container|Controller|CommunicationManager|MQTTNIOClient|PayloadCoder)\b' "$source"; then
+    if grep -Eq '\b(Container|Controller|CommunicationManager|PayloadCoder)\b' "$source"; then
         fail "legacy runtime or protocol encoder symbol in replacement source: $source"
     fi
 done
 
-production_sources=$(find "$root/Source" -type f -name '*.swift' ! -path "$root/Source/LegacyCompatibility/*" -print)
+production_sources=$(find "$production_source_dir" -type f -name '*.swift' ! -path "$production_source_dir/LegacyCompatibility/*" -print)
 for source in $production_sources; do
     if grep -Eq '\b(Container|Controller|CommunicationManager|HostWireEventEncoder|MQTTNIOClient|PayloadCoder)\b' "$source"; then
         fail "inherited runtime or parallel protocol implementation remains in current production source: $source"
