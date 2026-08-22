@@ -82,11 +82,13 @@ final class RuntimeMQTTClient: @unchecked Sendable {
         }
     }
 
-    func disconnect() {
+    func disconnect() async {
         lock.withLock { intentionalDisconnect = true }
-        client.disconnect().whenFailure { [weak self] error in
-            self?.delegate.runtimeMQTTClientDidFail(error)
-        }
+        // Intentional teardown is not a transport failure. In particular, a
+        // clean reconnect may begin while the old connection has already
+        // disappeared; forwarding that expected no-connection result would
+        // race and fail the fresh start continuation.
+        _ = try? await client.disconnect()
     }
 
     func publish(topic: String, payload: [UInt8]) {

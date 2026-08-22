@@ -89,7 +89,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
             }
         } catch {
             lock.withLock { started = false }
-            client.disconnect()
+            await client.disconnect()
             delegate.clearReceive()
             throw error
         }
@@ -113,7 +113,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     public func stop() async {
         lock.withLock { started = false }
         delegate.failStart(AxolotyError.runtime(code: .cancelled, reason: "MQTT binding stopped while connecting"))
-        client.disconnect()
+        await client.disconnect()
         delegate.clearReceive()
     }
 
