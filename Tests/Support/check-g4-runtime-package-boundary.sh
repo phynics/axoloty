@@ -44,10 +44,13 @@ for source in $sources; do
 done
 
 production_sources=$(find "$production_source_dir" -type f -name '*.swift' ! -path "$production_source_dir/LegacyCompatibility/*" -print)
+violations=0
 for source in $production_sources; do
     if grep -Eq '\b(Container|Controller|CommunicationManager|HostWireEventEncoder|MQTTNIOClient|PayloadCoder)\b' "$source"; then
-        fail "inherited runtime or parallel protocol implementation remains in current production source: $source"
+        echo "error: inherited runtime or parallel protocol implementation remains in current production source: $source" >&2
+        violations=1
     fi
 done
+[ "$violations" -eq 0 ] || exit 1
 
 echo "G4 replacement runtime package boundary passed"
