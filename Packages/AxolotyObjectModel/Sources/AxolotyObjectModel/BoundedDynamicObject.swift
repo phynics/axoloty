@@ -124,9 +124,9 @@ public struct BoundedDynamicObject<let byteCapacity: Int, let fieldCapacity: Int
     }
 
     /// Borrows the complete encoded object for the duration of `body`.
-    public borrowing func withEncodedBytes<R>(_ body: (borrowing ByteSlice) throws -> R) rethrows -> R {
-        try withUnsafeBytesOfRaw { pointer in
-            try body(ByteSlice(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: rawLength))
+    public borrowing func withEncodedBytes(_ body: (borrowing ByteSlice) -> Void) {
+        withUnsafeBytesOfRaw { pointer in
+            body(ByteSlice(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: rawLength))
         }
     }
 

@@ -20,14 +20,9 @@ public struct BoundedObject<
         let dynamic = try BoundedDynamicObject<byteCapacity, fieldCapacity>(decoding: bytes)
         // These explicit preset bounds keep envelope decoding from inheriting
         // an arbitrary default; callers can use `withEnvelope` for other bounds.
-        let envelope: ObjectEnvelope<64, 128>
-        do {
-            envelope = try dynamic.withEncodedBytes { encoded in
-                try ObjectEnvelope<64, 128>(decoding: encoded)
-            }
-        } catch {
-            throw ObjectError(.invalidEnvelope)
-        }
+        var envelope: ObjectEnvelope<64, 128>?
+        try dynamic.withEnvelope { decoded in envelope = decoded }
+        guard let envelope else { throw ObjectError(.invalidEnvelope) }
         guard envelope.objectType == Schema.schema.objectType,
               envelope.coreType == Schema.schema.coreType else { throw ObjectError(.invalidEnvelope) }
         let model: Schema
