@@ -41,6 +41,12 @@ grep -Fq 'schemaRegistryOperation' "$probe/Sources/BoundedObjectModelProbe/main.
 grep -Fq 'typedObjectOperation' "$probe/Sources/BoundedObjectModelProbe/main.swift"
 grep -Fq 'predicateOperation' "$probe/Sources/BoundedObjectModelProbe/main.swift"
 grep -Fq 'CoatyFilterAdapter<16, 16, 16, 64>' "$root/Embedded/swift/main/CoatyModelsModuleConsumer.swift"
+grep -Fq 'do throws(ProtocolError)' "$root/Embedded/swift/main/CoatyModelsModuleConsumer.swift"
+grep -Fq 'let adapter = try CoatyFilterAdapter<16, 16, 16, 64>' "$root/Embedded/swift/main/CoatyModelsModuleConsumer.swift"
+if grep -Fq 'let adapter: CoatyFilterAdapter' "$root/Embedded/swift/main/CoatyModelsModuleConsumer.swift"; then
+    echo "error: embedded CoatyModels consumer reintroduces an outer noncopyable adapter binding" >&2
+    exit 1
+fi
 grep -Fq 'adapter.matches(object: object)' "$root/Embedded/swift/main/CoatyModelsModuleConsumer.swift"
 grep -Fq 'adapter.encode(to: &writer)' "$root/Embedded/swift/main/CoatyModelsModuleConsumer.swift"
 grep -Fq 'heaptrack-call-growth' "$assembler"
