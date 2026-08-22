@@ -43,15 +43,36 @@ and fixed action sink seam, without promoting a second processor. Issue
 move; [#641](https://github.com/phynics/axoloty/issues/641) is closed by the
 binding-supplied route classifier.
 
+### G3 status: object-model authority and boundary work in progress
+
+G3 is not complete. This checkpoint records the accepted portable object-model
+seam, contributor constraints, and executable boundary tests while the
+production `AxolotyObjectModel`, `AxolotyObjectMacros`, and first-party model
+sources are still being implemented under [#631](https://github.com/phynics/axoloty/issues/631).
+The current root product still owns the inherited Foundation-backed object
+hierarchy and runtime composition. No G4 runtime replacement is implied by
+this documentation checkpoint.
+
+The accepted seam is recorded in [ADR 0005](./docs/adr/0005-portable-object-model-boundary.md):
+`AxolotyWire` remains the syntax and borrowed-value layer; the future
+`AxolotyObjectModel` will own semantic envelopes, bounded objects, schemas,
+presence, predicates, and runtime-local registration; the future
+`AxolotyObjectMacros` package will remain build-time only. The G3 boundary
+checker and negative self-tests are authority checks for that package graph;
+they must pass only once the expected production sources and Embedded Swift
+source inclusion are present.
+
 ## Accepted 0.6 delta
 
 The target package graph and runtime boundaries below are accepted direction,
 with the shared `AxolotyProtocol` processor now implemented as the G2 slice.
 G1 accepted [ADR 0004](./docs/adr/0004-literal-inline-bounded-runtime-state.md)
 from host and ESP32-C6 evidence, selecting measured tiny/static/host capacity
-presets of 1/16/64. G3 owns the object model; G4 owns runtime
-replacement; G5 owns IO and optional-product boundaries; G6 owns
-non-divergence and release proof.
+presets of 1/16/64 for runtime state. Those measurements do not select G3
+object byte/field capacities: G3 owns the object model and its own evidence;
+its production implementation is in progress. G4 owns runtime replacement;
+G5 owns IO and optional-product boundaries; G6 owns non-divergence and release
+proof.
 
 ## Product boundary
 
@@ -87,6 +108,8 @@ Outbound processing follows the same boundary in reverse, beginning with a typed
 ```text
 AxolotyWire
     ^
+AxolotyObjectModel
+    ^
 AxolotyProtocol
     ^
 AxolotyStaticRuntime
@@ -97,10 +120,17 @@ Optional products -------> supported Axoloty runtime and object APIs
 Inspector / MCP ---------> supported Axoloty runtime APIs
 ```
 
-`AxolotyWire` owns wire syntax, codecs, validation, object-envelope decoding,
-borrowed and owned wire values, caller-owned parser workspaces, wire errors,
-and wire errors. It owns no subscriber, endpoint, association, correlation,
-handler, or processor state.
+`AxolotyWire` owns wire syntax, codecs, validation, low-level object-envelope
+decoding, borrowed and owned wire values, caller-owned parser workspaces, and
+wire errors. It owns no semantic object schema, subscriber, endpoint,
+association, correlation, handler, or processor state.
+
+`AxolotyObjectModel` is the accepted G3 semantic layer above `AxolotyWire`.
+When implemented, it will own bounded typed/dynamic objects, presence,
+semantic envelopes, JSON value/number views, predicates, and explicit sealed
+schema registries. It will not own a transport, protocol processor, runtime
+lifecycle, or global mutable registry. `AxolotyObjectMacros` is a build-time
+schema-generation package and is not part of the portable runtime graph.
 
 `AxolotyProtocol` owns the closed built-in profile inventory, capabilities,
 routing keys, portable frames, structured protocol errors, fixed-inline

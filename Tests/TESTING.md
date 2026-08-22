@@ -26,6 +26,17 @@ is unmapped or owned by more than one target. It does not invoke Swift; run it
 through `make test-support` for the standard Makefile path. Build and test
 execution must always use the root Makefile and Podman.
 
+G3 adds the optional `g3-object-boundary` manifest node while the object-model
+packages are under implementation. `Tests/Support/check-axoloty-object-boundary.sh`
+is deliberately a failing authority check until both portable packages and
+their Embedded Swift source inclusion exist; its paired
+`test-check-axoloty-object-boundary.sh` uses a synthetic fixture to prove that
+Foundation, MQTT/NIO, logging, actors/controllers/lifecycle, growable
+`Array`/`Dictionary`, global mutable state, forbidden manifest dependencies,
+and missing source inclusion are rejected. The node becomes a required G3
+gate only when issue [#631](https://github.com/phynics/axoloty/issues/631)
+acceptance evidence promotes the production package graph.
+
 ## Canonical `axoloty-tool` workflow
 
 The Swift `axoloty-tool` executable is the in-progress replacement for build and test
@@ -71,6 +82,7 @@ separate from protocol-scenario execution.
 | Smoke | `make build` | yes | Proves the package compiles and links |
 | Unit | `make test-unit` | yes | `ObjectMatcherTests` |
 | Module | `make test-module` | yes | Topic, payload, registry, and configuration module tests |
+| G3 boundary | `axoloty-tool` manifest node `g3-object-boundary` | no | Portable object-model dependency and Embedded Swift source-inclusion authority check |
 | Property | `make test-fuzz` | yes | Seeded `DeterministicFuzzTests` |
 | Integration | `make test` | yes | Full suite against a fresh Mosquitto |
 | Wire offline | `make test-wire` | yes | `WireFixtureTests` and lifecycle scenarios |
