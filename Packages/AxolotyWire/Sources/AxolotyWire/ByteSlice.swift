@@ -50,6 +50,26 @@ public struct ByteSlice: Equatable, Hashable {
         return true
     }
 
+    /// Compares JSON string content using escape-aware scalar semantics.
+    public func semanticEquals(_ staticString: StaticString) -> Bool {
+        withBytes { pointer, count in
+            var first = WireKeyCursor(bytes: pointer, range: 0..<count, decodesEscapes: true)
+            var second = WireKeyCursor(key: staticString)
+            return wireSemanticKeysEqual(&first, &second)
+        }
+    }
+
+    /// Compares two JSON string contents using escape-aware scalar semantics.
+    public func semanticEquals(_ other: ByteSlice) -> Bool {
+        withBytes { firstPointer, firstCount in
+            other.withBytes { secondPointer, secondCount in
+                var first = WireKeyCursor(bytes: firstPointer, range: 0..<firstCount, decodesEscapes: true)
+                var second = WireKeyCursor(bytes: secondPointer, range: 0..<secondCount, decodesEscapes: true)
+                return wireSemanticKeysEqual(&first, &second)
+            }
+        }
+    }
+
     /// Returns the index of the first occurrence of `target`, or nil if absent.
     ///
     /// This is distinct from the slicing `findByte(_:)` helper used by topic

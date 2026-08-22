@@ -35,9 +35,12 @@ extension WireWriter {
         try writePlainStringField(key, value)
     }
 
-    /// Writes validated string content already containing JSON escapes.
-    @usableFromInline
-    mutating func writeEncodedStringField(
+    /// Writes already encoded JSON-string content as a JSON string field.
+    ///
+    /// The input must contain valid UTF-8 and valid JSON escape sequences.
+    /// The bytes are consumed synchronously and copied into the writer's
+    /// caller-owned output buffer.
+    public mutating func writeEncodedStringField(
         _ key: StaticString, _ value: ByteSlice
     ) throws(WireEncodeError) {
         guard Self.isValidUTF8(value) else { throw .invalidValue }
