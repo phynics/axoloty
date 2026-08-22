@@ -17,6 +17,8 @@ public struct MQTTBindingConfiguration: Sendable, Equatable {
     public let username: String?
     /// Optional broker password.
     public let password: String?
+    /// Maximum time to wait for the broker to report an online state.
+    public let connectionTimeoutMS: UInt32
 
     /// Creates a bounded MQTT binding configuration.
     public init(
@@ -24,16 +26,24 @@ public struct MQTTBindingConfiguration: Sendable, Equatable {
         port: UInt16 = 1883,
         usesTLS: Bool = false,
         username: String? = nil,
-        password: String? = nil
+        password: String? = nil,
+        connectionTimeoutMS: UInt32 = 10_000
     ) throws {
         guard !host.isEmpty, port > 0 else {
             throw AxolotyError.invalidArgument(argument: "broker", reason: "host and port are required")
+        }
+        guard connectionTimeoutMS > 0, connectionTimeoutMS <= 120_000 else {
+            throw AxolotyError.invalidArgument(
+                argument: "connectionTimeoutMS",
+                reason: "must be in 1...120000"
+            )
         }
         self.host = host
         self.port = port
         self.usesTLS = usesTLS
         self.username = username
         self.password = password
+        self.connectionTimeoutMS = connectionTimeoutMS
     }
 }
 
@@ -45,6 +55,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     private let lock = NIOLock()
     private let client: MQTTNIOClient
     private let delegate: RuntimeMQTTDelegate
+    private let connectionTimeoutMS: UInt32
     private let routeClassifier = ExactProtocolRouteClassifier(
         externalRoute: "external/wire-compat-v1/io-external-1"
     )
@@ -67,24 +78,44 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         )
         options.clientId = "axoloty-runtime-\(UUID().uuidString)"
         self.delegate = delegate
+        self.connectionTimeoutMS = configuration.connectionTimeoutMS
         self.client = try MQTTNIOClient(mqttClientOptions: options, delegate: delegate)
     }
 
     /// Starts the broker connection and installs the copied frame callback.
     public func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
-        delegate.setReceive(receive)
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            let admitted = lock.withLock {
-                guard !started else { return false }
-                started = true
-                return true
+        do {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                let admitted = lock.withLock {
+                    guard !started else { return false }
+                    started = true
+                    return true
+                }
+                guard admitted else {
+                    continuation.resume(throwing: AxolotyError.runtime(code: .notStarted, reason: "MQTT binding is already started"))
+                    return
+                }
+                delegate.setReceive(receive)
+                delegate.setStartContinuation(continuation)
+                let timeout = connectionTimeoutMS
+                Task { [weak delegate] in
+                    do {
+                        try await Task.sleep(for: .milliseconds(Int64(timeout)))
+                        delegate?.failStart(AxolotyError.runtime(
+                            code: .brokerUnavailable,
+                            reason: "MQTT broker did not become online before the connection deadline"
+                        ))
+                    } catch {
+                        // Cancellation is only an optimization; the continuation
+                        // is completed by the connection state or stop path.
+                    }
+                }
+                client.connect(lastWillTopic: "", lastWillMessage: "")
             }
-            guard admitted else {
-                continuation.resume(throwing: AxolotyError.runtime(code: .notStarted, reason: "MQTT binding is already started"))
-                return
-            }
-            delegate.setStartContinuation(continuation)
-            client.connect(lastWillTopic: "", lastWillMessage: "")
+        } catch {
+            lock.withLock { started = false }
+            delegate.clearReceive()
+            throw error
         }
     }
 
@@ -100,6 +131,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     /// Stops the MQTT connection and releases callback admission.
     public func stop() async {
         lock.withLock { started = false }
+        delegate.failStart(AxolotyError.runtime(code: .cancelled, reason: "MQTT binding stopped while connecting"))
         client.disconnect()
         delegate.clearReceive()
     }
@@ -189,13 +221,29 @@ private final class RuntimeMQTTDelegate: CommunicationClientDelegate, @unchecked
     func didReceiveStart() {}
 
     func didUpdateCommunicationState(_ state: CommunicationState) {
-        guard state == .online else { return }
+        guard state == .online else {
+            if state == .offline {
+                failStart(AxolotyError.runtime(
+                    code: .brokerUnavailable,
+                    reason: "MQTT broker connection failed before the runtime became online"
+                ))
+            }
+            return
+        }
         let continuation: CheckedContinuation<Void, Error>? = lock.withLock {
             defer { startContinuation = nil }
             return startContinuation
         }
         guard let continuation else { return }
         continuation.resume()
+    }
+
+    func failStart(_ error: Error) {
+        let continuation: CheckedContinuation<Void, Error>? = lock.withLock {
+            defer { startContinuation = nil }
+            return startContinuation
+        }
+        continuation?.resume(throwing: error)
     }
 
     func didReceiveRawMQTTMessage(topic: String, payload: [UInt8]) {

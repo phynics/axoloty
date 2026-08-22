@@ -15,6 +15,8 @@ public struct RuntimeCapacities: Sendable, Equatable {
     public let handlersInFlight: Int
     /// Maximum values retained by each public runtime stream.
     public let stream: Int
+    /// Maximum event streams registered before startup.
+    public let eventStreams: Int
 
     /// Creates finite runtime limits.
     public init(
@@ -22,17 +24,18 @@ public struct RuntimeCapacities: Sendable, Equatable {
         dispatch: Int = 64,
         handlers: Int = 64,
         handlersInFlight: Int = 16,
-        stream: Int = 64
+        stream: Int = 64,
+        eventStreams: Int = 64
     ) throws {
         guard ingress > 0, dispatch > 0, handlers > 0,
-              handlersInFlight > 0, stream > 0 else {
+              handlersInFlight > 0, stream > 0, eventStreams > 0 else {
             throw AxolotyError.invalidArgument(
                 argument: "capacities",
                 reason: "all runtime capacities must be greater than zero"
             )
         }
         guard ingress <= 64, dispatch <= 64, handlers <= 64,
-              handlersInFlight <= 64, stream <= 64 else {
+              handlersInFlight <= 64, stream <= 64, eventStreams <= 64 else {
             throw AxolotyError.invalidArgument(
                 argument: "capacities",
                 reason: "host runtime capacities cannot exceed 64"
@@ -43,6 +46,7 @@ public struct RuntimeCapacities: Sendable, Equatable {
         self.handlers = handlers
         self.handlersInFlight = handlersInFlight
         self.stream = stream
+        self.eventStreams = eventStreams
     }
 }
 
@@ -134,7 +138,8 @@ public struct RuntimeEventContext: Sendable, Equatable {
 /// Application stream buffering policy. Transport ingress never uses a lossy
 /// policy; these policies apply only after normalized actions are owned.
 public enum RuntimeBufferingPolicy: Sendable, Equatable {
-    case suspendProducer(capacity: Int)
+    /// Fails the runtime when a stream reaches its bound; no event is dropped.
+    case failFast(capacity: Int)
     case fail(capacity: Int)
     case dropOldest(capacity: Int)
     case dropNewest(capacity: Int)
@@ -639,7 +644,7 @@ public struct RuntimeDefinition: Sendable {
     ) throws -> RuntimeEventStream {
         let capacity: Int
         switch policy {
-        case let .suspendProducer(value), let .fail(value), let .dropOldest(value), let .dropNewest(value):
+        case let .failFast(value), let .fail(value), let .dropOldest(value), let .dropNewest(value):
             guard value > 0, value <= capacities.stream else {
                 throw AxolotyError.invalidArgument(argument: "capacity", reason: "stream capacity must be in 1...runtime stream capacity")
             }
@@ -649,9 +654,12 @@ public struct RuntimeDefinition: Sendable {
         }
         let buffering: AsyncStream<RuntimeEventValue>.Continuation.BufferingPolicy
         switch policy {
-        case .suspendProducer, .dropNewest: buffering = .bufferingOldest(capacity)
+        case .failFast, .dropNewest: buffering = .bufferingOldest(capacity)
         case .fail, .dropOldest: buffering = .bufferingNewest(capacity)
         case .coalesceLatest: buffering = .bufferingNewest(1)
+        }
+        guard eventRegistrations.count < capacities.eventStreams else {
+            throw AxolotyError.runtime(code: .capacityExceeded, reason: "runtime event-stream capacity is full")
         }
         let pair = AsyncStream<RuntimeEventValue>.makeStream(bufferingPolicy: buffering)
         eventRegistrations.append(RuntimeEventRegistration(selector: selector, policy: policy, continuation: pair.continuation))
@@ -743,7 +751,7 @@ public extension RuntimeDefinition {
         /// Registers an event stream in the immutable runtime definition.
         public mutating func events(
             matching selector: RuntimeEventSelector,
-            buffering policy: RuntimeBufferingPolicy = .suspendProducer(capacity: 64)
+            buffering policy: RuntimeBufferingPolicy = .failFast(capacity: 64)
         ) throws -> RuntimeEventStream {
             try definition.registerEvents(matching: selector, buffering: policy)
         }

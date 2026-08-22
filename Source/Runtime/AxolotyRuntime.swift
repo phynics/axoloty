@@ -536,7 +536,7 @@ private actor ProtocolExecutor {
                 diagnosticsSnapshotValue.dispatchSaturation += 1
                 emit(.init(kind: .capacityExceeded, detail: "application event stream is full"))
                 switch registration.policy {
-                case .suspendProducer, .fail:
+                case .failFast, .fail:
                     failRuntime(
                         code: .capacityExceeded,
                         detail: "strict application event stream is full",
