@@ -125,7 +125,8 @@ func runAgent() async throws {
 ```
 
 Call `runAgent()` from your application lifecycle when the MQTT broker is
-available. The `shouldAutoStart: false` setting keeps startup explicit.
+available. Startup is explicit: `run()` is the operation that starts and owns
+the runtime lifecycle.
 
 ### Minimal AxolotyWire example
 
