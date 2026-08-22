@@ -33,7 +33,8 @@ private func predicateObject(_ value: StaticString) throws -> BoundedDynamicObje
     for (filter, expected) in cases {
         let predicate = try ObjectPredicate<64, 8, 8, 512>(decoding: predicateSlice(filter))
         let object = try predicateObject("{\"v\":2}")
-        #expect(predicate.matches(object: object) == expected)
+        let matched = predicate.matches(object: object)
+        #expect(matched == expected)
     }
 }
 
@@ -41,46 +42,55 @@ private func predicateObject(_ value: StaticString) throws -> BoundedDynamicObje
     let filter = predicateSlice("{\"conditions\":{\"or\":[[\"nested.value\",[7,2]],[[\"a.b\"],[7,3]] ]}}")
     let predicate = try ObjectPredicate<128, 16, 8, 512>(decoding: filter)
     let object = try predicateObject("{\"nested\":{\"value\":2},\"a.b\":3}")
-    #expect(predicate.matches(object: object))
+    let matched = predicate.matches(object: object)
+    #expect(matched)
 }
 
 @Test func exactDecimalsAndNegativeZeroCompareWithoutDouble() throws {
     let equality = try ObjectPredicate<64, 4, 4, 256>(decoding: predicateSlice("{\"conditions\":[[\"value\",[7,1.0]]]}"))
     let zero = try ObjectPredicate<64, 4, 4, 256>(decoding: predicateSlice("{\"conditions\":[[\"value\",[7,-0.0]]]}"))
     let object = try predicateObject("{\"value\":1e0}")
-    #expect(equality.matches(object: object))
-    #expect(zero.matches(object: object) == false)
+    let equalityMatched = equality.matches(object: object)
+    let zeroMatched = zero.matches(object: object)
+    #expect(equalityMatched)
+    #expect(zeroMatched == false)
 }
 
 @Test func stringOrderingUsesScalarLexicographicOrder() throws {
     let greater = try ObjectPredicate<64, 4, 4, 128>(path: "name", expression: .greaterThan(.string("aa")))
     let object = try predicateObject("{\"name\":\"b\"}")
-    #expect(greater.matches(object: object))
+    let matched = greater.matches(object: object)
+    #expect(matched)
 }
 
 @Test func maximumValidWireStringDoesNotTruncate() throws {
     let predicate = try ObjectPredicate<8, 4, 2, 1024>(path: "name", expression: .equals(.string("${a}")))
     let object = try BoundedDynamicObject<1024, 8>(decoding: predicateSlice("{\"name\":\"${a}\"}"))
-    #expect(predicate.matches(object: object))
+    let matched = predicate.matches(object: object)
+    #expect(matched)
 }
 
 @Test func containsAndMembershipAreRecursiveAndOrderIndependent() throws {
     let contains = try ObjectPredicate<128, 4, 8, 512>(decoding: predicateSlice("{\"conditions\":[[\"value\",[11,{\"b\":[2],\"a\":1}]]]}"))
     let membership = try ObjectPredicate<128, 4, 8, 512>(decoding: predicateSlice("{\"conditions\":[[\"value\",[13,[{\"a\":1,\"b\":[2]}]]]]}"))
     let object = try predicateObject("{\"value\":{\"a\":1,\"b\":[2,3],\"extra\":true}}")
-    #expect(contains.matches(object: object))
-    #expect(membership.matches(object: object))
+    let containsMatched = contains.matches(object: object)
+    let membershipMatched = membership.matches(object: object)
+    #expect(containsMatched)
+    #expect(membershipMatched)
 }
 
 @Test func likeUsesPercentUnderscoreAndEscapes() throws {
     let like = try ObjectPredicate<128, 4, 4, 256>(decoding: predicateSlice("{\"conditions\":[[\"name\",[6,\"a_%\"]]]}"))
     let object = try predicateObject("{\"name\":\"abc\"}")
-    #expect(like.matches(object: object))
+    let likeMatched = like.matches(object: object)
+    #expect(likeMatched)
 
     // The JSON `\\\\%` spelling decodes to a LIKE escape plus a literal `%`.
     let escaped = try ObjectPredicate<128, 4, 4, 256>(decoding: predicateSlice("{\"conditions\":[[\"name\",[6,\"a\\\\%b\"]]]}"))
     let escapedObject = try predicateObject("{\"name\":\"a%b\"}")
-    #expect(escaped.matches(object: escapedObject))
+    let escapedMatched = escaped.matches(object: escapedObject)
+    #expect(escapedMatched)
 }
 
 @Test func failedAppendConditionIsAtomic() throws {
@@ -89,7 +99,8 @@ private func predicateObject(_ value: StaticString) throws -> BoundedDynamicObje
         try predicate.appendCondition(path: "a", expression: .equals(.string("this value cannot fit")))
     }
     let object = try predicateObject("{\"value\":1,\"a\":\"this value cannot fit\"}")
-    #expect(predicate.matches(object: object))
+    let matched = predicate.matches(object: object)
+    #expect(matched)
 }
 
 @Test func malformedWirePredicatesAreRejected() throws {
@@ -111,7 +122,8 @@ private func predicateObject(_ value: StaticString) throws -> BoundedDynamicObje
 @Test func absentConditionsRetainsCoatyMatchAllSemantics() throws {
     let predicate = try ObjectPredicate<16, 2, 2, 64>(decoding: predicateSlice("{}"))
     let object = try predicateObject("{\"unfiltered\":true}")
-    #expect(predicate.matches(object: object))
+    let matched = predicate.matches(object: object)
+    #expect(matched)
 }
 
 @Test func eachInlineCapacityFailurePreservesPreviousProgram() throws {
@@ -119,17 +131,21 @@ private func predicateObject(_ value: StaticString) throws -> BoundedDynamicObje
 
     var nodes = try ObjectPredicate<1, 4, 4, 128>(path: "a", expression: .equals(.number("1")))
     #expect(throws: ObjectError.self) { try nodes.appendCondition(path: "b", expression: .equals(.number("2"))) }
-    #expect(nodes.matches(object: object))
+    let nodesMatched = nodes.matches(object: object)
+    #expect(nodesMatched)
 
     var paths = try ObjectPredicate<4, 1, 4, 128>(path: "a", expression: .equals(.number("1")))
     #expect(throws: ObjectError.self) { try paths.appendCondition(path: "b", expression: .equals(.number("2"))) }
-    #expect(paths.matches(object: object))
+    let pathsMatched = paths.matches(object: object)
+    #expect(pathsMatched)
 
     var literals = try ObjectPredicate<4, 4, 1, 128>(path: "a", expression: .equals(.number("1")))
     #expect(throws: ObjectError.self) { try literals.appendCondition(path: "b", expression: .equals(.number("2"))) }
-    #expect(literals.matches(object: object))
+    let literalsMatched = literals.matches(object: object)
+    #expect(literalsMatched)
 
     var arena = try ObjectPredicate<4, 4, 4, 4>(path: "a", expression: .equals(.number("1")))
     #expect(throws: ObjectError.self) { try arena.appendCondition(path: "b", expression: .equals(.number("2"))) }
-    #expect(arena.matches(object: object))
+    let arenaMatched = arena.matches(object: object)
+    #expect(arenaMatched)
 }
