@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+// Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
+
 import _JSONCore
 
 /// The lexical kind of one complete JSON value.
@@ -22,12 +24,11 @@ public enum WireValueKind: UInt8, Sendable, Equatable {
     case invalid
 }
 
-@usableFromInline
 enum WireValueReaderLimits {
     // One direct array element needs at least one payload byte. Therefore the
     // wire's measured 512-byte payload bound is also the exact direct-element
     // index bound; a 513th direct element is rejected deterministically.
-    @usableFromInline static let directArrayElementCapacity = 512
+    static let directArrayElementCapacity = 512
 }
 
 /// A borrowed view over one complete JSON value.
@@ -124,7 +125,6 @@ public struct WireValueReader: ~Copyable {
     }
 }
 
-@usableFromInline
 struct WireArrayElementDestination: JSONTokenizerDestination {
     typealias ArrayStartContext = WireArrayContext
     typealias ObjectStartContext = WireArrayContext
@@ -196,7 +196,6 @@ struct WireArrayElementDestination: JSONTokenizerDestination {
     }
 }
 
-@usableFromInline
 struct WireArrayContext {
     let start: Int
     let isRoot: Bool

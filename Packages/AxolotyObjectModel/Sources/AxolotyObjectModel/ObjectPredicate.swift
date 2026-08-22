@@ -521,12 +521,15 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
     private func compare(_ lhs: ByteSlice, _ rhs: ByteSlice, _ operation: ObjectPredicateOperator) -> Bool {
         let result: Int
         if WireValueReader(lhs).kind == .number && WireValueReader(rhs).kind == .number { result = compareNumbers(lhs, rhs) }
-        else if WireValueReader(lhs).kind == .string && WireValueReader(rhs).kind == .string { result = compareStrings(lhs, rhs) }
+        else if WireValueReader(lhs).kind == .string && WireValueReader(rhs).kind == .string {
+            guard let stringResult = compareStrings(lhs, rhs) else { return false }
+            result = stringResult
+        }
         else { return false }
         switch operation { case .lessThan: return result < 0; case .lessThanOrEqual: return result <= 0; case .greaterThan: return result > 0; case .greaterThanOrEqual: return result >= 0; default: return false }
     }
 
-    private func compareStrings(_ lhs: ByteSlice, _ rhs: ByteSlice) -> Int {
+    private func compareStrings(_ lhs: ByteSlice, _ rhs: ByteSlice) -> Int? {
         // WireReader's measured maximum payload is 512 bytes. Overflow is a
         // deterministic non-match, never silent truncation.
         var left = InlineArray<512, UInt32>(repeating: 0)
@@ -534,7 +537,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
         var lc = 0; var rc = 0; var overflow = false
         try? WireValueReader(lhs).withStringScalars { if lc < PredicateScratchLimits.scalarCapacity { left[lc] = $0; lc += 1 } else { overflow = true } }
         try? WireValueReader(rhs).withStringScalars { if rc < PredicateScratchLimits.scalarCapacity { right[rc] = $0; rc += 1 } else { overflow = true } }
-        guard !overflow else { return 0 }
+        guard !overflow else { return nil }
         for index in 0..<min(lc, rc) where left[index] != right[index] { return left[index] < right[index] ? -1 : 1 }
         return lc == rc ? 0 : (lc < rc ? -1 : 1)
     }
