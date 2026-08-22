@@ -82,6 +82,13 @@ struct AxolotyLifecycleSubjectTests {
                 // The capture verifier separately proves that the responder
                 // published the late Return on the wire.
             }
+            // The responder intentionally waits four seconds before sending
+            // its Return.  A canceled AsyncStream iterator may finish
+            // immediately on the second read, so keep the runtime alive for
+            // a bounded grace window instead of relying on that read to sleep
+            // for the full interval.  This keeps the retained capture causal:
+            // the late publication must occur before the subject disconnects.
+            try await Task.sleep(for: .seconds(5))
             report(state: "done", scenario: "late-reply")
             await runtime.stop()
         } catch {
