@@ -80,6 +80,7 @@ idf_component_register_swift(
 # parallel builds cannot race module publication.
 add_dependencies(${COMPONENT_LIB} axoloty_object_model_module_alias)
 add_dependencies(${COMPONENT_LIB} axoloty_coaty_models_module_alias)
+add_dependencies(${COMPONENT_LIB} axoloty_protocol_module_alias)
 
 # StaticDeviceAgent consumes the noncopyable ProtocolProcessor from the
 # protocol component. Explicitly enable the same lifetime feature for the

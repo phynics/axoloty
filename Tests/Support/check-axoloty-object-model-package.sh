@@ -16,6 +16,7 @@ root_manifest=${AXOLOTY_ROOT_MANIFEST:-$root/Package.swift}
 component=${AXOLOTY_OBJECT_MODEL_COMPONENT:-$root/Embedded/swift/components/axoloty_object_model/CMakeLists.txt}
 component_manifest=${AXOLOTY_OBJECT_MODEL_COMPONENT_MANIFEST:-$root/Embedded/swift/components/axoloty_object_model/idf_component.yml}
 main_component=${AXOLOTY_OBJECT_MODEL_MAIN_COMPONENT:-$root/Embedded/swift/main/CMakeLists.txt}
+protocol_component=${AXOLOTY_PROTOCOL_COMPONENT:-$root/Embedded/swift/components/axoloty_protocol/CMakeLists.txt}
 coaty_package_dir=${AXOLOTY_COATY_MODELS_PACKAGE_DIR:-$root/Packages/AxolotyCoatyModels}
 coaty_source_dir="$coaty_package_dir/Sources/AxolotyCoatyModels"
 coaty_manifest=${AXOLOTY_COATY_MODELS_MANIFEST:-$coaty_package_dir/Package.swift}
@@ -53,6 +54,10 @@ if [ ! -f "$component_manifest" ]; then
 fi
 if [ ! -f "$main_component" ]; then
     echo "error: missing embedded main component" >&2
+    exit 1
+fi
+if [ ! -f "$protocol_component" ]; then
+    echo "error: missing AxolotyProtocol ESP-IDF component" >&2
     exit 1
 fi
 
@@ -111,6 +116,12 @@ fi
 if ! grep -Fq 'axoloty_object_model' "$main_component" || \
    ! grep -Fq 'add_dependencies(${COMPONENT_LIB} axoloty_object_model_module_alias)' "$main_component"; then
     echo "error: embedded main does not depend on the model module output" >&2
+    exit 1
+fi
+if ! grep -Fq 'OUTPUT ${AXOLOTY_PROTOCOL_MODULE_ALIAS}' "$protocol_component" || \
+   ! grep -Fq 'add_custom_target(axoloty_protocol_module_alias' "$protocol_component" || \
+   ! grep -Fq 'add_dependencies(${COMPONENT_LIB} axoloty_protocol_module_alias)' "$main_component"; then
+    echo "error: protocol module publication is not an explicit main compile dependency" >&2
     exit 1
 fi
 

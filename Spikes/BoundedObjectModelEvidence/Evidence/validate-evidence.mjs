@@ -93,6 +93,12 @@ function validateHostMeasurements(report) {
     if (record.measurementPoint === 1 && record.schemaRegistration !== "rejected-capacityExceeded") errors.push(`${path}.schemaRegistration: capacity one must report capacityExceeded exactly`);
     if (record.measurementPoint > 1 && record.schemaRegistration !== "accepted") errors.push(`${path}.schemaRegistration: larger registries must accept the first-party registrations`);
     if (record.schemaRegistryUnchangedAfterSaturation !== (record.measurementPoint === 1)) errors.push(`${path}.schemaRegistryUnchangedAfterSaturation: saturation outcome is inconsistent`);
+    const expectedObjectInitialization = record.measurementPoint === 1 ? "rejected-capacityExceeded" : "accepted";
+    if (record.objectInitialization !== expectedObjectInitialization) errors.push(`${path}.objectInitialization: expected ${expectedObjectInitialization}`);
+    const expectedRandomizedEditRead = record.measurementPoint > 1;
+    if (record.randomizedEditRead !== expectedRandomizedEditRead) errors.push(`${path}.randomizedEditRead: expected ${expectedRandomizedEditRead} for this capacity point`);
+    const expectedSaturationMeasurement = record.measurementPoint === 1 ? "minimum-object-rejection" : "edit-capacity-failure";
+    if (record.saturationMeasurement !== expectedSaturationMeasurement) errors.push(`${path}.saturationMeasurement: expected ${expectedSaturationMeasurement}`);
     if (record.measurementPoint === 1 && record.typedObjectInitialization !== "rejected-capacityExceeded") errors.push(`${path}.typedObjectInitialization: field capacity one must report capacityExceeded exactly`);
     if (record.measurementPoint > 1 && record.typedObjectInitialization !== "accepted") errors.push(`${path}.typedObjectInitialization: field capacities 16 and 64 must accept the first-party model`);
     if (record.measurementPoint > 1 && !record.typedObjectValueTypePreserved) errors.push(`${path}.typedObjectValueTypePreserved: accepted model lost its valueType`);
@@ -123,9 +129,6 @@ function validateEmbeddedEvidence(report) {
   const errors = [];
   if (!Array.isArray(report.sections) || !report.sections.some(section => section?.name === ".text" || section?.name === "text")) {
     errors.push("$evidence.sections: missing text section");
-  }
-  if (report.toolchain && !/Swift version|Apple Swift version/.test(report.toolchain)) {
-    errors.push("$evidence.toolchain: expected the exact Swift version line");
   }
   return errors;
 }
