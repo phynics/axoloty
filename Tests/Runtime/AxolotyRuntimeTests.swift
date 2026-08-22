@@ -1,12 +1,18 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Testing
-import Axoloty
+@testable import Axoloty
 import AxolotyProtocol
 import AxolotyWire
 
 @Suite("Axoloty runtime")
 struct AxolotyRuntimeTests {
+    @Test("MQTT topics preserve the complete UUID")
+    func mqttUUIDFormattingPreservesAllBytes() throws {
+        let id = try #require(UUID16(parsing: "44444444-4444-4444-8444-444444444444"))
+        #expect(MQTTBinding.uuidString(id) == "44444444-4444-4444-8444-444444444444")
+    }
+
     @Test("builder seals typed event streams and responders")
     func builderSealsModernContracts() throws {
         let identity = try RuntimeIdentity(id: .zero, name: "inspector")

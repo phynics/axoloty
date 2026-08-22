@@ -174,11 +174,11 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         return try JSONSerialization.data(withJSONObject: ["object": object], options: [.sortedKeys]).map { $0 }
     }
 
-    private static func uuidString(_ value: UUID16) -> String {
+    static func uuidString(_ value: UUID16) -> String {
         let bytes = value.bytes
         let raw: [UInt8] = [bytes.0, bytes.1, bytes.2, bytes.3, bytes.4, bytes.5, bytes.6, bytes.7, bytes.8, bytes.9, bytes.10, bytes.11, bytes.12, bytes.13, bytes.14, bytes.15]
         let hex = raw.map { String(format: "%02x", $0) }
-        return "\(hex[0])\(hex[1])\(hex[2])\(hex[3])\(hex[4])\(hex[5])\(hex[6])\(hex[7])-\(hex[8])\(hex[9])-\(hex[10])\(hex[11])-\(hex[12])\(hex[13])-\(hex[14])\(hex[15])\(hex[16])\(hex[17])\(hex[18])\(hex[19])\(hex[20])\(hex[21])\(hex[22])\(hex[23])\(hex[24])\(hex[25])\(hex[26])\(hex[27])\(hex[28])\(hex[29])\(hex[30])\(hex[31])"
+        return "\(hex[0...3].joined())-\(hex[4...5].joined())-\(hex[6...7].joined())-\(hex[8...9].joined())-\(hex[10...15].joined())"
     }
 }
 
