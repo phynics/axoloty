@@ -95,6 +95,7 @@ function validateHostMeasurements(report) {
     if (record.schemaRegistryUnchangedAfterSaturation !== (record.measurementPoint === 1)) errors.push(`${path}.schemaRegistryUnchangedAfterSaturation: saturation outcome is inconsistent`);
     const expectedObjectInitialization = record.measurementPoint === 1 ? "rejected-capacityExceeded" : "accepted";
     if (record.objectInitialization !== expectedObjectInitialization) errors.push(`${path}.objectInitialization: expected ${expectedObjectInitialization}`);
+    if (record.envelopeInitialization !== true) errors.push(`${path}.envelopeInitialization: envelope fixture must decode successfully at every measurement point`);
     const expectedRandomizedEditRead = record.measurementPoint > 1;
     if (record.randomizedEditRead !== expectedRandomizedEditRead) errors.push(`${path}.randomizedEditRead: expected ${expectedRandomizedEditRead} for this capacity point`);
     const expectedSaturationMeasurement = record.measurementPoint === 1 ? "minimum-object-rejection" : "edit-capacity-failure";

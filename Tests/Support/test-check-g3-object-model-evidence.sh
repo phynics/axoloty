@@ -97,6 +97,7 @@ write("missing-sections", report => { delete report.compilation.releaseSections;
 write("wrong-capacity", report => { report.operations[0].measurementPoint = 2; });
 write("wrong-toolchain", report => { report.toolchain = "Swift 6.3"; });
 write("wrong-object-initialization", report => { report.operations[0].objectInitialization = "accepted"; });
+write("wrong-envelope-initialization", report => { report.operations[1].envelopeInitialization = false; });
 write("wrong-randomized-edit-read", report => { report.operations[1].randomizedEditRead = false; });
 write("wrong-saturation-measurement", report => { report.operations[1].saturationMeasurement = "minimum-object-rejection"; });
 write("fake-predicate", report => { report.operations[1].predicateDecodeEvaluateEncode = false; });
@@ -107,7 +108,7 @@ write("wrong-predicate-rejection", report => { report.operations[0].predicateIni
 write("fake-registry", report => { report.operations[1].schemaRegistryCount = 1; });
 write("nonzero-warmed", report => { report.allocations[1].objectWarmed = 1; });
 NODE
-for invalid in duplicate-layout missing-layout missing-predicate-layout duplicate-operation missing-operation duplicate-allocation missing-allocation missing-sections wrong-capacity wrong-toolchain wrong-object-initialization wrong-randomized-edit-read wrong-saturation-measurement fake-predicate fake-canonical wrong-schema-rejection wrong-typed-rejection wrong-predicate-rejection fake-registry nonzero-warmed; do
+for invalid in duplicate-layout missing-layout missing-predicate-layout duplicate-operation missing-operation duplicate-allocation missing-allocation missing-sections wrong-capacity wrong-toolchain wrong-object-initialization wrong-envelope-initialization wrong-randomized-edit-read wrong-saturation-measurement fake-predicate fake-canonical wrong-schema-rejection wrong-typed-rejection wrong-predicate-rejection fake-registry nonzero-warmed; do
     if node "$validator" "$schema" "$tmp/$invalid.json" >/dev/null 2>&1; then
         echo "error: validator accepted $invalid evidence" >&2
         exit 1

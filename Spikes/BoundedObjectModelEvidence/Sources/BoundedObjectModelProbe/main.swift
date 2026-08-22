@@ -7,7 +7,7 @@ import Foundation
 
 private let measurementPoints = [1, 16, 64]
 private let objectBytes: StaticString = "{\"a\":0}"
-private let envelopeBytes: StaticString = "{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.Measurement\",\"name\":\"\",\"coreType\":\"Task\",\"externalId\":\"x\"}"
+private let envelopeBytes: StaticString = "{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.Measurement\",\"name\":\"M\",\"coreType\":\"Task\",\"externalId\":\"x\"}"
 private let oversizedValue: StaticString = "999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999"
 private let ioSourceBytes: StaticString = "{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"coaty.IoSource\",\"name\":\"source\",\"coreType\":\"IoSource\",\"valueType\":\"T\"}"
 private let predicateBytes: StaticString = "{\"conditions\":[\"value\",[7,1]]}"
