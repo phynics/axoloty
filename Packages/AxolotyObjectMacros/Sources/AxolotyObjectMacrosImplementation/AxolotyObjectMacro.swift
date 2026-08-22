@@ -155,7 +155,7 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
         public static let schema: PortableObjectSchema<\(raw: typeName)> = {
             var fields = InlineArray<64, ObjectFieldDescriptor>(repeating: .empty)
             \(raw: assignments)
-            return PortableObjectSchema<\(raw: typeName)>(objectType: \(raw: literal(objectType)), coreType: \(raw: literal(coreType)), fieldCount: \(descriptors.count), fields: fields)
+            return PortableObjectSchema<\(raw: typeName)>(objectType: \(raw: literal(objectType)), coreType: \(raw: literal(coreType)), fieldCount: \(raw: descriptors.count), fields: fields)
         }()
 
         /// Decodes the typed fields through the bounded object-field decoder.
@@ -178,7 +178,8 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
-        let extensionDecl: ExtensionDeclSyntax = "extension \(type): ObjectSchema {}"
+        let extensionDecl: DeclSyntax = "extension \(type): ObjectSchema {}"
+        guard let extensionDecl = extensionDecl.as(ExtensionDeclSyntax.self) else { return [] }
         return [extensionDecl]
     }
 
