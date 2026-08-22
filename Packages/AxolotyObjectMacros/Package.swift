@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import PackageDescription
+import CompilerPluginSupport
 
 let package = Package(
     name: "AxolotyObjectMacros",
@@ -35,4 +36,3 @@ let package = Package(
     ],
     swiftLanguageModes: [.v6]
 )
-
