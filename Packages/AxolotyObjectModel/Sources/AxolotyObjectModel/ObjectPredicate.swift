@@ -160,6 +160,116 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
         evaluateNode(0, fields: fields)
     }
 
+    /// Encodes the canonical Coaty `objectFilter` value into a caller-owned
+    /// wire writer.
+    ///
+    /// A match-all predicate encodes as `{}`. One root condition uses the
+    /// direct `[property, expression]` form; multiple conditions and logical
+    /// groups use the Coaty `and`/`or` condition-set form. The writer position
+    /// is rewound if the bounded output buffer is too small.
+    public borrowing func encode(to writer: inout WireWriter) throws(WireEncodeError) {
+        let checkpoint = writer.position
+        do throws(WireEncodeError) {
+            try writer.beginObject()
+            guard nodeCount > 1 else {
+                try writer.endObject()
+                return
+            }
+            try writer.writeKey("conditions")
+            let first = nodes[0].firstChild
+            guard first >= 0 else {
+                try writer.endObject()
+                return
+            }
+            if nodes[first].kind == 0, nodes[first].nextSibling < 0 {
+                try encodeCondition(nodes[first], to: &writer)
+            } else if nodes[first].kind == 1, nodes[first].nextSibling < 0 {
+                try encodeGroup(first, to: &writer)
+            } else {
+                try encodeGroupChildren(first, kind: 1, to: &writer)
+            }
+            try writer.endObject()
+        } catch {
+            writer.rewind(to: checkpoint)
+            throw error
+        }
+    }
+
+    private borrowing func encodeGroupChildren(_ first: Int, kind: UInt8, to writer: inout WireWriter) throws(WireEncodeError) {
+        try writer.beginObject()
+        try writer.writeKey(kind == 2 ? "or" : "and")
+        try writer.beginArray()
+        var child = first
+        var isFirst = true
+        while child >= 0 {
+            if !isFirst { try writer.writeComma() }
+            try encodeNode(child, to: &writer)
+            isFirst = false
+            child = nodes[child].nextSibling
+        }
+        try writer.endArray()
+        try writer.endObject()
+    }
+
+    private borrowing func encodeGroup(_ index: Int, to writer: inout WireWriter) throws(WireEncodeError) {
+        try encodeGroupChildren(nodes[index].firstChild, kind: nodes[index].kind, to: &writer)
+    }
+
+    private borrowing func encodeNode(_ index: Int, to writer: inout WireWriter) throws(WireEncodeError) {
+        if nodes[index].kind == 0 { try encodeCondition(nodes[index], to: &writer) }
+        else { try encodeGroup(index, to: &writer) }
+    }
+
+    private borrowing func encodeCondition(_ node: PredicateNode, to writer: inout WireWriter) throws(WireEncodeError) {
+        try writer.beginArray()
+        try encodePath(node.path, to: &writer)
+        try writer.writeComma()
+        try writer.beginArray()
+        try writer.writeInt(Int(node.operation.rawValue))
+        for offset in 0..<node.operandCount {
+            try writer.writeComma()
+            try writeLiteral(node.operand + offset, to: &writer)
+        }
+        try writer.endArray()
+        try writer.endArray()
+    }
+
+    private borrowing func encodePath(_ index: Int, to writer: inout WireWriter) throws(WireEncodeError) {
+        let path = paths[index]
+        if path.segmentCount == 1 {
+            try writeSegment(path.firstSegment, to: &writer)
+            return
+        }
+        try writer.beginArray()
+        for offset in 0..<path.segmentCount {
+            if offset > 0 { try writer.writeComma() }
+            try writeSegment(path.firstSegment + offset, to: &writer)
+        }
+        try writer.endArray()
+    }
+
+    private borrowing func writeSegment(_ index: Int, to writer: inout WireWriter) throws(WireEncodeError) {
+        withUnsafeBytes(of: arena) { buffer in
+            let segment = segments[index]
+            let slice = ByteSlice(
+                bytes: buffer.baseAddress!.assumingMemoryBound(to: UInt8.self).advanced(by: segment.start),
+                length: segment.length
+            )
+            try writer.writeEncodedStringValue(slice)
+        }
+    }
+
+    private borrowing func writeLiteral(_ index: Int, to writer: inout WireWriter) throws(WireEncodeError) {
+        withUnsafeBytes(of: arena) { buffer in
+            let literal = literals[index]
+            let slice = ByteSlice(
+                bytes: buffer.baseAddress!.assumingMemoryBound(to: UInt8.self).advanced(by: literal.start),
+                length: literal.length
+            )
+            try writer.writeRawValue(slice)
+        }
+    }
+
     private mutating func appendConditionValue(_ bytes: ByteSlice, parent: Int, failure: inout ObjectError?) {
         guard failure == nil else { return }
         let value = WireValueReader(bytes)
@@ -168,11 +278,13 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
             var expressionInfo: (operation: ObjectPredicateOperator, operand: Int, count: Int)?
             var index = 0
             do throws(WireDecodeError) {
-                try value.withArrayElements { element in
-                    if index == 0 { pathIndex = self.appendPathValue(element, failure: &failure) }
-                    else if index == 1 { expressionInfo = self.appendExpressionValue(element, failure: &failure) }
-                    else if failure == nil { failure = ObjectError(.invalidPredicateExpression) }
-                    index += 1
+                try withUnsafeMutablePointer(to: &self) { state in
+                    try value.withArrayElements { element in
+                        if index == 0 { pathIndex = state.pointee.appendPathValue(element, failure: &failure) }
+                        else if index == 1 { expressionInfo = state.pointee.appendExpressionValue(element, failure: &failure) }
+                        else if failure == nil { failure = ObjectError(.invalidPredicateExpression) }
+                        index += 1
+                    }
                 }
             } catch { failure = ObjectError(.invalidPredicateExpression) }
             guard failure == nil, index == 2, let pathIndex, let expressionInfo else { failure = ObjectError(.invalidPredicateExpression); return }
@@ -197,7 +309,11 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
                         do throws(ObjectError) { groupNode = try appendNode(PredicateNode.group(kind: isAnd ? 1 : 2), parent: parent) }
                         catch { failure = error; return }
                         do throws(WireDecodeError) {
-                            try groupReader.withArrayElements { condition in self.appendConditionValue(condition, parent: groupNode, failure: &failure) }
+                            try withUnsafeMutablePointer(to: &self) { state in
+                                try groupReader.withArrayElements { condition in
+                                    state.pointee.appendConditionValue(condition, parent: groupNode, failure: &failure)
+                                }
+                            }
                         } catch { failure = ObjectError(.invalidPredicateExpression) }
                     }
                 }
@@ -252,11 +368,13 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
         var operandIndexes = InlineArray<2, Int>(repeating: -1)
         var operandCount = 0
         do throws(WireDecodeError) {
-            try value.withArrayElements { element in
-                if operandCount == 0 { operation = parseOperator(element) }
-                else if operandCount <= 2 { operandIndexes[operandCount - 1] = self.appendLiteralValue(element, failure: &failure) ?? -1 }
-                else { failure = ObjectError(.invalidPredicateExpression) }
-                operandCount += 1
+            try withUnsafeMutablePointer(to: &self) { state in
+                try value.withArrayElements { element in
+                    if operandCount == 0 { operation = Self.parseOperator(element) }
+                    else if operandCount <= 2 { operandIndexes[operandCount - 1] = state.pointee.appendLiteralValue(element, failure: &failure) ?? -1 }
+                    else { failure = ObjectError(.invalidPredicateExpression) }
+                    operandCount += 1
+                }
             }
         } catch { failure = ObjectError(.invalidPredicateExpression) }
         guard failure == nil, let operation else { failure = ObjectError(.invalidPredicateExpression); return nil }
@@ -273,7 +391,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
         return (operation, firstIndex, operation == .between || operation == .notBetween ? 2 : 1)
     }
 
-    private func parseOperator(_ bytes: ByteSlice) -> ObjectPredicateOperator? {
+    private static func parseOperator(_ bytes: ByteSlice) -> ObjectPredicateOperator? {
         guard bytes.length > 0 else { return nil }
         var value = 0
         for index in 0..<bytes.length {
@@ -508,7 +626,8 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
             var inside = false
             _ = literalSlice(operand) { first in
             _ = literalSlice(operand + 1) { second in
-                if compareNumbers(first, second) <= 0 {
+                guard let boundsComparison = compareNumbers(first, second) else { return false }
+                if boundsComparison <= 0 {
                     inside = compare(raw, first, .greaterThanOrEqual) && compare(raw, second, .lessThanOrEqual)
                 } else {
                     inside = compare(raw, second, .greaterThanOrEqual) && compare(raw, first, .lessThanOrEqual)
@@ -524,7 +643,10 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
 
     private func compare(_ lhs: ByteSlice, _ rhs: ByteSlice, _ operation: ObjectPredicateOperator) -> Bool {
         let result: Int
-        if WireValueReader(lhs).kind == .number && WireValueReader(rhs).kind == .number { result = compareNumbers(lhs, rhs) }
+        if WireValueReader(lhs).kind == .number && WireValueReader(rhs).kind == .number {
+            guard let numberResult = compareNumbers(lhs, rhs) else { return false }
+            result = numberResult
+        }
         else if WireValueReader(lhs).kind == .string && WireValueReader(rhs).kind == .string {
             guard let stringResult = compareStrings(lhs, rhs) else { return false }
             result = stringResult
@@ -546,10 +668,11 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
         return lc == rc ? 0 : (lc < rc ? -1 : 1)
     }
 
-    private func compareNumbers(_ lhs: ByteSlice, _ rhs: ByteSlice) -> Int {
+    private func compareNumbers(_ lhs: ByteSlice, _ rhs: ByteSlice) -> Int? {
         // Exact decimal ordering without converting through Double. The bounded
         // raw lexemes are compared after sign, leading-zero, and exponent removal.
         let left = DecimalParts(lhs); let right = DecimalParts(rhs)
+        guard left.valid && right.valid else { return nil }
         if left.zero && right.zero { return 0 }
         if left.negative != right.negative { return left.negative ? -1 : 1 }
         let sign = left.negative ? -1 : 1
@@ -562,7 +685,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
 
     private func jsonEqual(_ lhs: ByteSlice, _ rhs: ByteSlice) -> Bool {
         let left = WireValueReader(lhs).kind; let right = WireValueReader(rhs).kind
-        if left == .number && right == .number { return compareNumbers(lhs, rhs) == 0 }
+        if left == .number && right == .number { return compareNumbers(lhs, rhs) == .some(0) }
         if left != right { return false }
         if left == .string { return scalarEqual(lhs, rhs) }
         if left == .object { return objectEqual(lhs, rhs) }
@@ -717,14 +840,14 @@ private struct BigSignedDecimal {
         self.negative = negative
     }
 
-    mutating func add(_ offset: Int) {
-        guard offset != 0 else { return }
+    mutating func add(_ offset: Int) -> Bool {
+        guard offset != 0 else { return true }
         let amountNegative = offset < 0
         let amount = amountNegative ? -offset : offset
         guard count > 0 else {
             setSmall(amount)
             negative = amountNegative
-            return
+            return true
         }
         guard negative == amountNegative else {
             let magnitudeComparison = compareMagnitude(to: amount)
@@ -737,9 +860,9 @@ private struct BigSignedDecimal {
                 replaceWithSmallMinusSelf(amount)
                 negative = amountNegative
             }
-            return
+            return true
         }
-        addSmall(amount)
+        return addSmall(amount)
     }
 
     func compare(to other: BigSignedDecimal) -> Int {
@@ -782,10 +905,11 @@ private struct BigSignedDecimal {
         return 0
     }
 
-    private mutating func addSmall(_ value: Int) {
+    private mutating func addSmall(_ value: Int) -> Bool {
         var remaining = value
         var index = 0
         while remaining > 0 || index < count {
+            guard index < 512 else { return false }
             let sum = Int(digits[index]) + (remaining % 10) + (index < count ? 0 : 0)
             digits[index] = UInt8(sum % 10)
             let carry = sum / 10
@@ -793,6 +917,7 @@ private struct BigSignedDecimal {
             index += 1
             if index == count && remaining > 0 { count += 1 }
         }
+        return true
     }
 
     private mutating func subtractSmall(_ value: Int) {
@@ -830,6 +955,7 @@ private struct DecimalParts {
     let raw: ByteSlice
     let negative: Bool
     let zero: Bool
+    let valid: Bool
     let position: BigSignedDecimal
     let count: Int
     init(_ raw: ByteSlice) {
@@ -867,8 +993,9 @@ private struct DecimalParts {
             exponentEnd = index
         }
         var adjustedPosition = BigSignedDecimal(raw: raw, start: exponentStart, end: exponentEnd, negative: exponentNegative)
-        if significant > 0 { adjustedPosition.add(digitsBeforeDecimal - firstSignificant) }
+        let positionValid = significant == 0 || adjustedPosition.add(digitsBeforeDecimal - firstSignificant)
         self.zero = significant == 0
+        self.valid = positionValid
         self.count = significant
         self.position = adjustedPosition
     }

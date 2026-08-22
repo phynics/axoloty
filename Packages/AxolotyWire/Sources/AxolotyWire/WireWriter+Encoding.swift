@@ -1,6 +1,25 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 extension WireWriter {
+    /// Writes one complete, already encoded JSON value.
+    public mutating func writeRawValue(_ value: ByteSlice) throws(WireEncodeError) {
+        guard WireReader.isValidJSON(value) else { throw .invalidValue }
+        try writeByteSlice(value)
+    }
+
+    /// Writes one JSON string from encoded string-content bytes.
+    public mutating func writeEncodedStringValue(_ value: ByteSlice) throws(WireEncodeError) {
+        guard Self.isValidUTF8(value) else { throw .invalidValue }
+        try writeByte(0x22)
+        var index = 0
+        while index < value.length {
+            let byte = value.byte(at: index)!
+            try writeEncodedByte(byte, value: value, index: &index)
+            index += 1
+        }
+        try writeByte(0x22)
+    }
+
     /// Writes a key-value pair where the value is a JSON string.
     public mutating func writeStringField(
         _ key: StaticString, _ value: ByteSlice
@@ -43,16 +62,8 @@ extension WireWriter {
     public mutating func writeEncodedStringField(
         _ key: StaticString, _ value: ByteSlice
     ) throws(WireEncodeError) {
-        guard Self.isValidUTF8(value) else { throw .invalidValue }
         try writeKey(key)
-        try writeByte(0x22)
-        var index = 0
-        while index < value.length {
-            let byte = value.byte(at: index)!
-            try writeEncodedByte(byte, value: value, index: &index)
-            index += 1
-        }
-        try writeByte(0x22)
+        try writeEncodedStringValue(value)
     }
 
     private mutating func writeEncodedByte(

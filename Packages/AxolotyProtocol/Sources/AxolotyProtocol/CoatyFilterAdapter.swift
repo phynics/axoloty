@@ -51,4 +51,11 @@ public struct CoatyFilterAdapter<let nodeCapacity: Int, let pathCapacity: Int, l
     ) -> Bool {
         predicate.matches(object: object)
     }
+
+    /// Encodes the owned filter value for a query event's `objectFilter`
+    /// member. Object-type and core-type query selectors remain owned by the
+    /// query DTO and are intentionally outside this adapter.
+    public borrowing func encode(to writer: inout WireWriter) throws(WireEncodeError) {
+        try predicate.encode(to: &writer)
+    }
 }

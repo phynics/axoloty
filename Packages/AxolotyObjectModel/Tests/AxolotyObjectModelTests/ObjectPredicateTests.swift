@@ -178,6 +178,61 @@ private func predicateObject(_ value: StaticString) throws -> BoundedDynamicObje
     #expect(matched)
 }
 
+@Test func encodeDecodeRoundTripsDirectAndGroupedPredicates() throws {
+    let direct = try ObjectPredicate<64, 4, 4, 256>(
+        decoding: predicateSlice("{\"conditions\":[\"value\",[7,1.00]]}")
+    )
+    let grouped = try ObjectPredicate<128, 8, 8, 512>(
+        decoding: predicateSlice("{\"conditions\":{\"or\":[[\"value\",[7,1.00]],[\"missing\",[9]]]}}")
+    )
+    var output = [UInt8](repeating: 0, count: 1024)
+    let roundTrips = try output.withUnsafeMutableBufferPointer { buffer -> (Bool, Bool) in
+        var writer = WireWriter(buffer: buffer.baseAddress!, capacity: buffer.count)
+        try direct.encode(to: &writer)
+        let directBytes = ByteSlice(bytes: buffer.baseAddress!, length: writer.position)
+        let decodedDirect = try ObjectPredicate<64, 4, 4, 256>(decoding: directBytes)
+        let directObject = try predicateObject("{\"value\":1e0}")
+        let directMatched = decodedDirect.matches(object: directObject)
+
+        writer = WireWriter(buffer: buffer.baseAddress!, capacity: buffer.count)
+        try grouped.encode(to: &writer)
+        let groupedBytes = ByteSlice(bytes: buffer.baseAddress!, length: writer.position)
+        let decodedGrouped = try ObjectPredicate<128, 8, 8, 512>(decoding: groupedBytes)
+        let groupedObject = try predicateObject("{\"value\":1e0}")
+        let groupedMatched = decodedGrouped.matches(object: groupedObject)
+        return (directMatched, groupedMatched)
+    }
+    #expect(roundTrips.0)
+    #expect(roundTrips.1)
+}
+
+@Test func matchAllEncodingAndWriterCapacityAreAtomic() throws {
+    let matchAll = ObjectPredicate<16, 2, 2, 64>()
+    var output = [UInt8](repeating: 0, count: 8)
+    let encoded = try output.withUnsafeMutableBufferPointer { buffer -> Int in
+        var writer = WireWriter(buffer: buffer.baseAddress!, capacity: buffer.count)
+        try matchAll.encode(to: &writer)
+        return writer.position
+    }
+    #expect(encoded == 2)
+
+    let predicate = try ObjectPredicate<64, 4, 4, 256>(
+        path: "value", expression: .equals(.number("123456789"))
+    )
+    var tiny = [UInt8](repeating: 0xA5, count: 4)
+    let failure = tiny.withUnsafeMutableBufferPointer { buffer -> (Bool, Int) in
+        var writer = WireWriter(buffer: buffer.baseAddress!, capacity: buffer.count)
+        do {
+            try predicate.encode(to: &writer)
+            return (false, writer.position)
+        } catch {
+            return (true, writer.position)
+        }
+    }
+    #expect(failure.0)
+    #expect(failure.1 == 0)
+}
+
 @Test func eachInlineCapacityFailurePreservesPreviousProgram() throws {
     let object = try predicateObject("{\"a\":1,\"b\":2}")
 
