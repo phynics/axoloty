@@ -113,6 +113,7 @@ let package = Package(
                 "Common/AxolotyError.swift",
                 "Runtime/AxolotyRuntimeDefinition.swift",
                 "Runtime/AxolotyRuntime.swift",
+                "Runtime/RuntimeSupport.swift",
                 "Runtime/MQTTBinding.swift",
                 "Runtime/RuntimeMQTTClient.swift",
             ]

@@ -157,7 +157,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     }
 
     private static func topic(for key: ProtocolRoutingKey, namespace: String, eventTypeFilter: [UInt8]? = nil) -> String {
-        let filter = eventTypeFilter.map { ":\(String(decoding: $0, as: UTF8.self))" } ?? ""
+        let filter = eventTypeFilter.map { ":\(String(bytes: $0, encoding: .utf8) ?? "")" } ?? ""
         var topic = "coaty/3/\(namespace)/\(key.capability.wireEventType.rawValue)\(filter)/\(uuidString(key.sourceID))"
         if let correlationID = key.correlationID {
             topic += "/\(uuidString(correlationID))"
