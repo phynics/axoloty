@@ -21,6 +21,13 @@ build="$artifact/embedded-build"
 export_dir="$artifact/embedded-export"
 mkdir -p "$export_dir"
 
+# The build helper runs in a child process and its sourced ESP-IDF PATH does
+# not survive here. Activate the toolchain in this evidence subshell as well
+# so post-build section measurement uses the same pinned environment.
+idf_log=$(mktemp)
+. "${IDF_PATH:-/opt/esp/idf}/export.sh" >"$idf_log" 2>&1 || { cat "$idf_log" >&2; exit 1; }
+rm -f "$idf_log"
+
 start_ns=$(date +%s%N)
 EMBEDDED_PROJECT_DIR=/workspace/Embedded/swift \
 EMBEDDED_BUILD_DIR="$build" \
