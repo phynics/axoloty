@@ -188,7 +188,7 @@ private func predicateObject(_ value: StaticString) throws -> BoundedDynamicObje
             decoding: predicateSlice("{\"conditions\":[\"v\",[7,1]]}")
         )
         Issue.record("expected predicate capacity failure")
-    } catch let error as ObjectError {
+    } catch {
         #expect(error.reason == .capacityExceeded)
     }
 }
