@@ -43,6 +43,14 @@ public struct WireObjectField: ~Copyable {
         body(ByteSlice(bytes: bytes.advanced(by: keyRange.lowerBound).assumingMemoryBound(to: UInt8.self), length: keyRange.count))
     }
 
+    /// Borrows decoded key bytes as a noncopyable scoped view.
+    public borrowing func withBorrowedKey(_ body: (borrowing WireValueView) -> Void) {
+        body(WireValueView(
+            bytes: bytes.advanced(by: keyRange.lowerBound),
+            length: keyRange.count
+        ))
+    }
+
     /// Borrows the complete encoded value for the duration of `body`.
     public borrowing func withValue(_ body: (ByteSlice) -> Void) {
         body(ByteSlice(bytes: bytes.advanced(by: valueRange.lowerBound).assumingMemoryBound(to: UInt8.self), length: valueRange.count))

@@ -52,6 +52,36 @@ public struct WireValueView: ~Copyable {
         return bytes.load(fromByteOffset: index, as: UInt8.self)
     }
 
+    /// Runs a synchronous callback over the encoded value without returning a
+    /// slice that could outlive this borrowed view.
+    public borrowing func withBorrowedByteSlice(_ body: (ByteSlice) -> Void) {
+        body(ByteSlice(bytes: bytes.assumingMemoryBound(to: UInt8.self), length: length))
+    }
+
+    /// Compares encoded key-content bytes with a static key using JSON escape semantics.
+    public borrowing func semanticEquals(_ key: StaticString) -> Bool {
+        var left = WireKeyCursor(bytes: bytes, range: 0..<length, decodesEscapes: true)
+        var right = WireKeyCursor(key: key)
+        return wireSemanticKeysEqual(&left, &right)
+    }
+
+    /// Compares two borrowed encoded key-content views using JSON escape semantics.
+    public borrowing func semanticEquals(_ other: borrowing WireValueView) -> Bool {
+        var left = WireKeyCursor(bytes: bytes, range: 0..<length, decodesEscapes: true)
+        var right = WireKeyCursor(bytes: other.bytes, range: 0..<other.length, decodesEscapes: true)
+        return wireSemanticKeysEqual(&left, &right)
+    }
+
+    /// Compares a borrowed encoded key-content view with a scoped byte slice.
+    public borrowing func semanticEquals(_ other: ByteSlice) -> Bool {
+        var left = WireKeyCursor(bytes: bytes, range: 0..<length, decodesEscapes: true)
+        let right = other.withBytes { pointer, count in
+            var cursor = WireKeyCursor(bytes: pointer, range: 0..<count, decodesEscapes: true)
+            return wireSemanticKeysEqual(&left, &cursor)
+        }
+        return right
+    }
+
     /// The lexical kind of this borrowed value.
     public var kind: WireValueKind {
         guard let byte = byte(at: 0) else { return .invalid }
@@ -70,6 +100,19 @@ public struct WireValueView: ~Copyable {
     /// Visits direct elements without exposing a copyable byte slice.
     public borrowing func withBorrowedArrayElements(_ body: (borrowing WireValueView) -> Void) throws(WireDecodeError) {
         try WireValueReader(bytes: bytes, length: length).withBorrowedArrayElements(body)
+    }
+
+    /// Visits decoded Unicode scalars in an encoded string-content range.
+    public borrowing func withDecodedScalars(
+        in range: Range<Int>,
+        _ body: (UInt32) -> Void
+    ) throws(WireDecodeError) {
+        guard range.lowerBound >= 0, range.upperBound <= length else {
+            throw WireDecodeError(.unexpectedEndOfInput, byteOffset: length)
+        }
+        var cursor = WireKeyCursor(bytes: bytes, range: range, decodesEscapes: true)
+        while let scalar = cursor.nextScalar() { body(scalar) }
+        guard cursor.isValid else { throw WireDecodeError(.invalidEscape, byteOffset: range.lowerBound) }
     }
 
     /// Visits direct object fields while this value remains borrowed.
@@ -102,7 +145,7 @@ public struct WireValueReader: ~Copyable {
     public let length: Int
 
     /// Creates a reader over a borrowed complete JSON value.
-    public init(_ value: ByteSlice) {
+    init(_ value: ByteSlice) {
         self.bytes = value.withBytes { pointer, _ in pointer }
         self.length = value.length
     }

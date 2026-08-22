@@ -13,10 +13,9 @@ private func predicateObject(_ value: StaticString) throws -> BoundedDynamicObje
 }
 
 @Test func borrowedWireValueViewsRemainScopedToTraversal() throws {
-    let reader = WireValueReader(predicateSlice("[1,{\"v\":2},null]"))
     var count = 0
     var allNonEmpty = true
-    try reader.withBorrowedArrayElements { value in
+    try predicateSlice("[1,{\"v\":2},null]").withBorrowedArrayElements { value in
         count += 1
         allNonEmpty = allNonEmpty && value.length > 0
     }
@@ -216,6 +215,26 @@ private func predicateObject(_ value: StaticString) throws -> BoundedDynamicObje
     }
     #expect(roundTrips.0)
     #expect(roundTrips.1)
+}
+
+@Test func escapedPathSegmentsSurviveCanonicalRoundTrip() throws {
+    let predicate = try ObjectPredicate<64, 8, 4, 256>(
+        decoding: predicateSlice("{\"conditions\":[[\"a\\u002eb\"],[7,1]]}")
+    )
+    var output = [UInt8](repeating: 0, count: 256)
+    let result = try output.withUnsafeMutableBufferPointer { buffer -> (Bool, Bool) in
+        var writer = WireWriter(buffer: buffer.baseAddress!, capacity: buffer.count)
+        try predicate.encode(to: &writer)
+        let encoded = ByteSlice(bytes: buffer.baseAddress!, length: writer.position)
+        let decoded = try ObjectPredicate<64, 8, 4, 256>(decoding: encoded)
+        let object = try predicateObject("{\"a.b\":1}")
+        return (
+            encoded.equals("{\"conditions\":[[\"a.b\"],[7,1]]}"),
+            decoded.matches(object: object)
+        )
+    }
+    #expect(result.0)
+    #expect(result.1)
 }
 
 @Test func matchAllEncodingAndWriterCapacityAreAtomic() throws {

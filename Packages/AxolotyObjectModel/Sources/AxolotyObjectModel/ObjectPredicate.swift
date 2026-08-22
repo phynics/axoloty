@@ -128,7 +128,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
     /// Decodes a Coaty `objectFilter` object using ``AxolotyWire`` tokenization.
     public init(decoding bytes: ByteSlice) throws(ObjectError) {
         var candidate = Self()
-        guard WireValueReader(bytes).kind == .object else { throw ObjectError(.invalidPredicate) }
+        guard bytes.wireValueKind == .object else { throw ObjectError(.invalidPredicate) }
         var failure: ObjectError?
         bytes.withBytes { pointer, count in
             let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: count)
@@ -236,7 +236,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
 
     private borrowing func encodePath(_ index: Int, to writer: inout WireWriter) throws(WireEncodeError) {
         let path = paths[index]
-        if path.segmentCount == 1 {
+        if path.segmentCount == 1, !segmentContainsDot(path.firstSegment) {
             try writeSegment(path.firstSegment, to: &writer)
             return
         }
@@ -246,6 +246,15 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
             try writeSegment(path.firstSegment + offset, to: &writer)
         }
         try writer.endArray()
+    }
+
+    private borrowing func segmentContainsDot(_ index: Int) -> Bool {
+        withUnsafeBytes(of: arena) { buffer in
+            let segment = segments[index]
+            let pointer = buffer.baseAddress!.assumingMemoryBound(to: UInt8.self).advanced(by: segment.start)
+            for offset in 0..<segment.length where pointer[offset] == 0x2E { return true }
+            return false
+        }
     }
 
     private borrowing func writeSegment(_ index: Int, to writer: inout WireWriter) throws(WireEncodeError) {
@@ -283,8 +292,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
     }
 
     private mutating func appendConditionValue(_ bytes: ByteSlice, parent: Int, failure: inout ObjectError?) {
-        let reader = WireValueReader(bytes)
-        reader.withBorrowedValue { value in
+        bytes.withBorrowedWireValue { value in
             appendConditionValue(value, parent: parent, failure: &failure)
         }
     }
@@ -316,7 +324,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
         var groupCount = 0
         do throws(WireDecodeError) {
             try bytes.withObjectFields { field in
-                field.withKey { key in
+                field.withBorrowedKey { key in
                     let isAnd = key.semanticEquals("and")
                     let isOr = key.semanticEquals("or")
                     guard isAnd || isOr else { failure = ObjectError(.invalidPredicateExpression); return }
@@ -453,7 +461,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
                 for index in 0...content.length {
                     if index == content.length || content.byte(at: index) == 46 {
                         guard index > start else { failure = ObjectError(.invalidPredicatePath); return }
-                        appendSegment(content, start: start, length: index - start, failure: &failure)
+                        appendDecodedSegment(content, start: start, length: index - start, failure: &failure)
                         segmentCount += 1; start = index + 1
                     }
                 }
@@ -461,7 +469,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
         } else if value.kind == .array {
             do throws(WireDecodeError) { try value.withBorrowedArrayElements { segment in
                 guard segment.kind == .string, segment.length >= 2 else { failure = ObjectError(.invalidPredicatePath); return }
-                appendSegment(segment, start: 1, length: segment.length - 2, failure: &failure); segmentCount += 1
+                appendDecodedSegment(segment, start: 1, length: segment.length - 2, failure: &failure); segmentCount += 1
             }} catch { failure = ObjectError(.invalidPredicatePath) }
         } else { failure = ObjectError(.invalidPredicatePath) }
         guard failure == nil, segmentCount > 0 else { return nil }
@@ -493,6 +501,38 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
         arenaLength += length
     }
 
+    private mutating func appendDecodedSegment(_ value: borrowing WireValueView, start: Int, length: Int, failure: inout ObjectError?) {
+        guard failure == nil, segmentsCount < pathCapacity else {
+            failure = failure ?? ObjectError(.capacityExceeded); return
+        }
+        let segmentIndex = segmentsCount
+        let arenaStart = arenaLength
+        do throws(WireDecodeError) {
+            try value.withDecodedScalars(in: start..<(start + length)) { scalar in
+                appendUTF8Scalar(scalar, failure: &failure)
+            }
+        } catch { failure = ObjectError(.invalidPredicatePath) }
+        guard failure == nil else { arenaLength = arenaStart; return }
+        segments[segmentIndex] = PredicateSegment(start: arenaStart, length: arenaLength - arenaStart)
+    }
+
+    private mutating func appendUTF8Scalar(_ scalar: UInt32, failure: inout ObjectError?) {
+        guard failure == nil else { return }
+        if scalar <= 0x7F {
+            guard arenaLength < arenaCapacity else { failure = ObjectError(.capacityExceeded); return }
+            arena[arenaLength] = UInt8(scalar); arenaLength += 1
+        } else if scalar <= 0x7FF {
+            guard arenaLength + 2 <= arenaCapacity else { failure = ObjectError(.capacityExceeded); return }
+            arena[arenaLength] = UInt8(0xC0 | (scalar >> 6)); arena[arenaLength + 1] = UInt8(0x80 | (scalar & 0x3F)); arenaLength += 2
+        } else if scalar <= 0xFFFF {
+            guard arenaLength + 3 <= arenaCapacity else { failure = ObjectError(.capacityExceeded); return }
+            arena[arenaLength] = UInt8(0xE0 | (scalar >> 12)); arena[arenaLength + 1] = UInt8(0x80 | ((scalar >> 6) & 0x3F)); arena[arenaLength + 2] = UInt8(0x80 | (scalar & 0x3F)); arenaLength += 3
+        } else {
+            guard arenaLength + 4 <= arenaCapacity else { failure = ObjectError(.capacityExceeded); return }
+            arena[arenaLength] = UInt8(0xF0 | (scalar >> 18)); arena[arenaLength + 1] = UInt8(0x80 | ((scalar >> 12) & 0x3F)); arena[arenaLength + 2] = UInt8(0x80 | ((scalar >> 6) & 0x3F)); arena[arenaLength + 3] = UInt8(0x80 | (scalar & 0x3F)); arenaLength += 4
+        }
+    }
+
     private mutating func appendLiteral(_ literal: ObjectPredicateLiteral) throws(ObjectError) -> Int {
         guard literalCount < literalCapacity else { throw ObjectError(.capacityExceeded) }
         let start = arenaLength
@@ -508,7 +548,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
             try appendByte(34)
         case .number(let value):
             let bytes = ByteSlice(bytes: value.utf8Start, length: value.utf8CodeUnitCount)
-            guard WireReader.isValidJSONValue(bytes), WireValueReader(bytes).kind == .number else { throw ObjectError(.invalidPredicateExpression) }
+            guard WireReader.isValidJSONValue(bytes), bytes.wireValueKind == .number else { throw ObjectError(.invalidPredicateExpression) }
             try copy(bytes)
         }
         literals[literalCount] = PredicateLiteralRecord(start: start, length: arenaLength - start)
@@ -558,7 +598,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
         arena[arenaLength] = byte; arenaLength += 1
     }
 
-    private borrowing func literalIsArray(_ index: Int) -> Bool { literalSlice(index) { WireValueReader($0).kind == .array } }
+    private borrowing func literalIsArray(_ index: Int) -> Bool { literalSlice(index) { $0.wireValueKind == .array } }
 
     private mutating func appendNode(_ node: PredicateNode, parent: Int? = nil) throws(ObjectError) -> Int {
         guard nodeCount < nodeCapacity else { throw ObjectError(.capacityExceeded) }
@@ -609,7 +649,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
             _ = fields.withValue(for: key) { value in
                 value.withRaw { raw in
                     found = segment + 1 == path.segmentCount
-                        ? body(raw, WireValueReader(raw).kind)
+                        ? body(raw, raw.wireValueKind)
                         : resolveNested(raw, path: path, segment: segment + 1, body)
                 }
             }
@@ -618,24 +658,53 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
     }
 
     private borrowing func resolveNested(_ raw: ByteSlice, path: PredicatePath, segment: Int, _ body: (ByteSlice, WireValueKind) -> Bool) -> Bool {
-        let reader = WireValueReader(raw)
-        guard reader.kind == .object else { return false }
+        guard raw.wireValueKind == .object else { return false }
         var result = false
-        do throws(WireDecodeError) { try reader.withObjectFields { field in
-            field.withKey { key in
-                _ = withSegment(path, segment) { wanted in
-                    guard key.semanticEquals(wanted) else { return false }
-                    field.withValue { child in result = resolveNestedValue(child, path: path, segment: segment, body) }
-                    return result
+        do throws(WireDecodeError) {
+            try raw.withBorrowedObjectFields { field in
+                field.withBorrowedKey { key in
+                    _ = withSegment(path, segment) { wanted in
+                        guard key.semanticEquals(wanted) else { return false }
+                        field.withBorrowedValue { child in
+                            result = resolveNestedView(child, path: path, segment: segment, body)
+                        }
+                        return result
+                    }
                 }
             }
-        }} catch { return false }
+        } catch { return false }
         return result
     }
 
-    private borrowing func resolveNestedValue(_ raw: ByteSlice, path: PredicatePath, segment: Int, _ body: (ByteSlice, WireValueKind) -> Bool) -> Bool {
-        if segment + 1 == path.segmentCount { return body(raw, WireValueReader(raw).kind) }
-        return resolveNested(raw, path: path, segment: segment + 1, body)
+    private borrowing func resolveNestedView(
+        _ raw: borrowing WireValueView,
+        path: PredicatePath,
+        segment: Int,
+        _ body: (ByteSlice, WireValueKind) -> Bool
+    ) -> Bool {
+        if segment + 1 == path.segmentCount {
+            var result = false
+            raw.withBorrowedByteSlice { value in
+                result = body(value, value.wireValueKind)
+            }
+            return result
+        }
+        guard raw.kind == .object else { return false }
+        var result = false
+        do throws(WireDecodeError) {
+            try raw.withObjectFields { field in
+                field.withBorrowedKey { key in
+                    _ = withSegment(path, segment + 1) { wanted in
+                        guard key.semanticEquals(wanted) else { return false }
+                        field.withBorrowedValue { child in
+                            result = resolveNestedView(child, path: path, segment: segment + 1, body)
+                        }
+                        return result
+                    }
+                }
+            }
+        } catch { return false }
+        return result
     }
 
     /// Runs a segment callback while the segment slice is borrowed from the
@@ -687,11 +756,11 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
 
     private func compare(_ lhs: ByteSlice, _ rhs: ByteSlice, _ operation: ObjectPredicateOperator) -> Bool {
         let result: Int
-        if WireValueReader(lhs).kind == .number && WireValueReader(rhs).kind == .number {
+        if lhs.wireValueKind == .number && rhs.wireValueKind == .number {
             guard let numberResult = compareNumbers(lhs, rhs) else { return false }
             result = numberResult
         }
-        else if WireValueReader(lhs).kind == .string && WireValueReader(rhs).kind == .string {
+        else if lhs.wireValueKind == .string && rhs.wireValueKind == .string {
             guard let stringResult = compareStrings(lhs, rhs) else { return false }
             result = stringResult
         }
@@ -705,8 +774,8 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
         var left = InlineArray<512, UInt32>(repeating: 0)
         var right = InlineArray<512, UInt32>(repeating: 0)
         var lc = 0; var rc = 0; var overflow = false
-        try? WireValueReader(lhs).withStringScalars { if lc < PredicateScratchLimits.scalarCapacity { left[lc] = $0; lc += 1 } else { overflow = true } }
-        try? WireValueReader(rhs).withStringScalars { if rc < PredicateScratchLimits.scalarCapacity { right[rc] = $0; rc += 1 } else { overflow = true } }
+        try? lhs.withStringScalars { if lc < PredicateScratchLimits.scalarCapacity { left[lc] = $0; lc += 1 } else { overflow = true } }
+        try? rhs.withStringScalars { if rc < PredicateScratchLimits.scalarCapacity { right[rc] = $0; rc += 1 } else { overflow = true } }
         guard !overflow else { return nil }
         for index in 0..<min(lc, rc) where left[index] != right[index] { return left[index] < right[index] ? -1 : 1 }
         return lc == rc ? 0 : (lc < rc ? -1 : 1)
@@ -728,7 +797,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
     }
 
     private func jsonEqual(_ lhs: ByteSlice, _ rhs: ByteSlice) -> Bool {
-        let left = WireValueReader(lhs).kind; let right = WireValueReader(rhs).kind
+        let left = lhs.wireValueKind; let right = rhs.wireValueKind
         if left == .number && right == .number { return compareNumbers(lhs, rhs) == .some(0) }
         if left != right { return false }
         if left == .string { return scalarEqual(lhs, rhs) }
@@ -739,31 +808,39 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
 
     private func objectEqual(_ lhs: ByteSlice, _ rhs: ByteSlice) -> Bool {
         var leftCount = 0; var result = true
-        do throws(WireDecodeError) { try WireValueReader(lhs).withObjectFields { left in
+        do throws(WireDecodeError) { try lhs.withBorrowedObjectFields { left in
             leftCount += 1; var found = false
-            left.withKey { key in
-                do throws(WireDecodeError) { try WireValueReader(rhs).withObjectFields { right in right.withKey { rightKey in if key.semanticEquals(rightKey) { right.withValue { rv in left.withValue { lv in found = jsonEqual(lv, rv) } } } } } } catch { result = false }
+            left.withBorrowedKey { key in
+                do throws(WireDecodeError) { try rhs.withBorrowedObjectFields { right in right.withBorrowedKey { rightKey in
+                    if key.semanticEquals(rightKey) {
+                        right.withBorrowedValue { rv in left.withBorrowedValue { lv in
+                            rv.withBorrowedByteSlice { rightBytes in
+                                lv.withBorrowedByteSlice { leftBytes in found = jsonEqual(leftBytes, rightBytes) }
+                            }
+                        } }
+                    }
+                } } } catch { result = false }
             }
             if !found { result = false }
-        }; if result { var rightCount = 0; try WireValueReader(rhs).withObjectFields { _ in rightCount += 1 }; if rightCount != leftCount { result = false } } } catch { return false }
+        }; if result { var rightCount = 0; try rhs.withBorrowedObjectFields { _ in rightCount += 1 }; if rightCount != leftCount { result = false } } } catch { return false }
         return result
     }
 
     private func arrayEqual(_ lhs: ByteSlice, _ rhs: ByteSlice) -> Bool {
         var index = 0; var result = true
-        do throws(WireDecodeError) { try WireValueReader(lhs).withArrayElements { element in
+        do throws(WireDecodeError) { try lhs.withArrayElements { element in
             if !arrayElementEquals(rhs, at: index, to: element) { result = false }; index += 1
         }; if arrayHasElement(rhs, at: index) { result = false } } catch { return false }
         return result
     }
 
     private func jsonContains(_ lhs: ByteSlice, _ rhs: ByteSlice) -> Bool {
-        let leftKind = WireValueReader(lhs).kind; let rightKind = WireValueReader(rhs).kind
+        let leftKind = lhs.wireValueKind; let rightKind = rhs.wireValueKind
         if leftKind == .string && rightKind == .string { return stringContains(lhs, rhs) }
         if leftKind == .object && rightKind == .object { return objectContains(lhs, rhs) }
         if leftKind == .array {
             if rightKind == .array {
-                var result = true; do throws(WireDecodeError) { try WireValueReader(rhs).withArrayElements { requested in if !arrayContains(lhs, requested) { result = false } } } catch { return false }; return result
+                var result = true; do throws(WireDecodeError) { try rhs.withArrayElements { requested in if !arrayContains(lhs, requested) { result = false } } } catch { return false }; return result
             }
             return arrayContains(lhs, rhs)
         }
@@ -772,34 +849,46 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
 
     private func objectContains(_ lhs: ByteSlice, _ rhs: ByteSlice) -> Bool {
         var result = true
-        do throws(WireDecodeError) { try WireValueReader(rhs).withObjectFields { wanted in wanted.withKey { key in var found = false; try? WireValueReader(lhs).withObjectFields { candidate in candidate.withKey { candidateKey in if key.semanticEquals(candidateKey) { candidate.withValue { cv in wanted.withValue { wv in found = jsonContains(cv, wv) } } } } }; if !found { result = false } } } } catch { return false }
+        do throws(WireDecodeError) { try rhs.withBorrowedObjectFields { wanted in wanted.withBorrowedKey { key in
+            var found = false
+            try? lhs.withBorrowedObjectFields { candidate in candidate.withBorrowedKey { candidateKey in
+                if key.semanticEquals(candidateKey) {
+                    candidate.withBorrowedValue { cv in wanted.withBorrowedValue { wv in
+                        cv.withBorrowedByteSlice { candidateBytes in wv.withBorrowedByteSlice { wantedBytes in
+                            found = jsonContains(candidateBytes, wantedBytes)
+                        } }
+                    } }
+                }
+            } }
+            if !found { result = false }
+        } } } catch { return false }
         return result
     }
 
     private func arrayContains(_ lhs: ByteSlice, _ wanted: ByteSlice) -> Bool {
-        var found = false; try? WireValueReader(lhs).withArrayElements { candidate in if jsonEqual(candidate, wanted) { found = true } }; return found
+        var found = false; try? lhs.withArrayElements { candidate in if jsonEqual(candidate, wanted) { found = true } }; return found
     }
 
     private func jsonIn(_ value: ByteSlice, _ values: ByteSlice) -> Bool {
-        var found = false; try? WireValueReader(values).withArrayElements { candidate in if jsonEqual(value, candidate) { found = true } }; return found
+        var found = false; try? values.withArrayElements { candidate in if jsonEqual(value, candidate) { found = true } }; return found
     }
 
     private func arrayElementEquals(_ value: ByteSlice, at target: Int, to wanted: ByteSlice) -> Bool {
         var index = 0; var result = false
-        try? WireValueReader(value).withArrayElements { element in if index == target { result = jsonEqual(element, wanted) }; index += 1 }
+        try? value.withArrayElements { element in if index == target { result = jsonEqual(element, wanted) }; index += 1 }
         return result
     }
 
     private func arrayHasElement(_ value: ByteSlice, at target: Int) -> Bool {
         var index = 0; var result = false
-        try? WireValueReader(value).withArrayElements { _ in if index == target { result = true }; index += 1 }
+        try? value.withArrayElements { _ in if index == target { result = true }; index += 1 }
         return result
     }
 
     private func scalarEqual(_ lhs: ByteSlice, _ rhs: ByteSlice) -> Bool {
         // The same 512-byte wire bound is the scalar scratch bound.
         var left = InlineArray<512, UInt32>(repeating: 0); var right = InlineArray<512, UInt32>(repeating: 0); var lc = 0; var rc = 0; var overflow = false
-        try? WireValueReader(lhs).withStringScalars { if lc < PredicateScratchLimits.scalarCapacity { left[lc] = $0; lc += 1 } else { overflow = true } }; try? WireValueReader(rhs).withStringScalars { if rc < PredicateScratchLimits.scalarCapacity { right[rc] = $0; rc += 1 }
+        try? lhs.withStringScalars { if lc < PredicateScratchLimits.scalarCapacity { left[lc] = $0; lc += 1 } else { overflow = true } }; try? rhs.withStringScalars { if rc < PredicateScratchLimits.scalarCapacity { right[rc] = $0; rc += 1 }
             else { overflow = true }
         }; guard !overflow, lc == rc else { return false }; for i in 0..<lc where left[i] != right[i] { return false }; return true
     }
@@ -810,7 +899,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
 
     private func wildcardMatch(_ value: ByteSlice, _ pattern: ByteSlice, like: Bool) -> Bool {
         var text = InlineArray<512, UInt32>(repeating: 0); var pat = InlineArray<512, UInt32>(repeating: 0); var tc = 0; var pc = 0; var overflow = false
-        try? WireValueReader(value).withStringScalars { if tc < PredicateScratchLimits.scalarCapacity { text[tc] = $0; tc += 1 } else { overflow = true } }; try? WireValueReader(pattern).withStringScalars { if pc < PredicateScratchLimits.scalarCapacity { pat[pc] = $0; pc += 1 } else { overflow = true } }
+        try? value.withStringScalars { if tc < PredicateScratchLimits.scalarCapacity { text[tc] = $0; tc += 1 } else { overflow = true } }; try? pattern.withStringScalars { if pc < PredicateScratchLimits.scalarCapacity { pat[pc] = $0; pc += 1 } else { overflow = true } }
         guard !overflow else { return false }
         if !like {
             if pc == 0 { return true }
