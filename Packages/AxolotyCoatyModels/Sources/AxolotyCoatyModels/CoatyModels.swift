@@ -16,8 +16,16 @@ public struct CoatyObject: ObjectSchema, Sendable {
     /// Creates an empty Coaty object model.
     public init() {}
     /// Decodes the common envelope-only Coaty object.
+    ///
+    /// - Parameter fields: The borrowed decoder for object-specific fields.
+    /// - Throws: This envelope-only schema does not throw while decoding its
+    ///   empty field set.
     public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) { self.init() }
     /// Encodes no schema-specific fields.
+    ///
+    /// - Parameter encoder: The transactional editor receiving object fields.
+    /// - Throws: This envelope-only schema does not throw while encoding its
+    ///   empty field set.
     public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {}
 }
 
@@ -35,12 +43,22 @@ public enum IoSourceBackpressureStrategy: Int, Sendable, Equatable {
 
 extension IoSourceBackpressureStrategy: ObjectFieldDecodable, ObjectFieldEncodable {
     /// Decodes the wire integer strategy value.
+    ///
+    /// - Parameter value: The borrowed JSON integer.
+    /// - Returns: The matching backpressure strategy.
+    /// - Throws: ``ObjectDecodingError/invalidField`` when the value is not a
+    ///   supported strategy integer.
     public static func decode(from value: borrowing JSONValueView) throws(ObjectDecodingError) -> Self {
         guard let raw = try? Int.decode(from: value), let strategy = Self(rawValue: raw) else { throw .invalidField }
         return strategy
     }
 
     /// Encodes the strategy's stable wire integer value.
+    ///
+    /// - Parameters:
+    ///   - editor: The transactional editor receiving the strategy.
+    ///   - key: The bounded wire key for the strategy.
+    /// - Throws: ``ObjectEncodingError`` when the editor rejects the integer.
     public func encode<let editorCapacity: Int>(to editor: inout ObjectFieldEncoder<editorCapacity>, forKey key: StaticString) throws(ObjectEncodingError) {
         try rawValue.encode(to: &editor, forKey: key)
     }
@@ -67,6 +85,14 @@ public struct IoSource: ObjectSchema, Sendable {
     )
 
     /// Creates a bounded IoSource model.
+    ///
+    /// - Parameters:
+    ///   - valueType: The required non-empty semantic value type.
+    ///   - updateStrategy: The optional source backpressure strategy.
+    ///   - useRawIoValues: Whether values use raw-byte transport.
+    ///   - updateRate: The optional recommended update interval.
+    ///   - externalRoute: The optional external binding route.
+    /// - Throws: ``ObjectError/invalidField`` when `valueType` is empty.
     public init(
         valueType: BoundedEncodedText<128>,
         updateStrategy: IoSourceBackpressureStrategy? = nil,
@@ -80,6 +106,10 @@ public struct IoSource: ObjectSchema, Sendable {
     }
 
     /// Decodes all IoSource fields from a borrowed object view.
+    ///
+    /// - Parameter fields: The borrowed decoder for the source fields.
+    /// - Throws: ``ObjectDecodingError`` when a required or optional field is
+    ///   absent, malformed, or outside its bounded representation.
     public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
         let valueType = try fields.decode("valueType", as: BoundedEncodedText<128>.self)
         guard valueType.length > 0 else { throw .invalidField }
@@ -91,6 +121,10 @@ public struct IoSource: ObjectSchema, Sendable {
     }
 
     /// Encodes all IoSource fields into a transactional editor.
+    ///
+    /// - Parameter encoder: The transactional editor receiving source fields.
+    /// - Throws: ``ObjectEncodingError`` when a field cannot be represented or
+    ///   the editor has insufficient capacity.
     public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
         try encoder.encode(valueType, forKey: "valueType"); try encoder.encode(updateStrategy, forKey: "updateStrategy")
         try encoder.encode(useRawIoValues, forKey: "useRawIoValues"); try encoder.encode(updateRate, forKey: "updateRate")
@@ -116,6 +150,13 @@ public struct IoActor: ObjectSchema, Sendable {
     )
 
     /// Creates a bounded IoActor model.
+    ///
+    /// - Parameters:
+    ///   - valueType: The required non-empty semantic value type.
+    ///   - useRawIoValues: Whether values use raw-byte transport.
+    ///   - updateRate: The optional recommended update interval.
+    ///   - externalRoute: The optional external binding route.
+    /// - Throws: ``ObjectError/invalidField`` when `valueType` is empty.
     public init(
         valueType: BoundedEncodedText<128>, useRawIoValues: Bool? = false, updateRate: Int? = nil,
         externalRoute: BoundedEncodedText<128>? = nil
@@ -125,6 +166,10 @@ public struct IoActor: ObjectSchema, Sendable {
     }
 
     /// Decodes all IoActor fields from a borrowed object view.
+    ///
+    /// - Parameter fields: The borrowed decoder for the actor fields.
+    /// - Throws: ``ObjectDecodingError`` when a required or optional field is
+    ///   absent, malformed, or outside its bounded representation.
     public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
         let valueType = try fields.decode("valueType", as: BoundedEncodedText<128>.self)
         guard valueType.length > 0 else { throw .invalidField }
@@ -135,6 +180,10 @@ public struct IoActor: ObjectSchema, Sendable {
     }
 
     /// Encodes all IoActor fields into a transactional editor.
+    ///
+    /// - Parameter encoder: The transactional editor receiving actor fields.
+    /// - Throws: ``ObjectEncodingError`` when a field cannot be represented or
+    ///   the editor has insufficient capacity.
     public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
         try encoder.encode(valueType, forKey: "valueType"); try encoder.encode(useRawIoValues, forKey: "useRawIoValues")
         try encoder.encode(updateRate, forKey: "updateRate"); try encoder.encode(externalRoute, forKey: "externalRoute")
@@ -148,8 +197,16 @@ public struct IoContext: ObjectSchema, Sendable {
     /// Creates an empty IoContext model.
     public init() {}
     /// Decodes the common envelope-only IoContext object.
+    ///
+    /// - Parameter fields: The borrowed decoder for object-specific fields.
+    /// - Throws: This envelope-only schema does not throw while decoding its
+    ///   empty field set.
     public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) { self.init() }
     /// Encodes no schema-specific fields.
+    ///
+    /// - Parameter encoder: The transactional editor receiving object fields.
+    /// - Throws: This envelope-only schema does not throw while encoding its
+    ///   empty field set.
     public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {}
 }
 
