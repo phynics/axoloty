@@ -2,7 +2,12 @@
 
 import Testing
 import AxolotyProtocol
+import AxolotyObjectModel
 import AxolotyWire
+
+private func protocolSlice(_ value: StaticString) -> ByteSlice {
+    ByteSlice(bytes: value.utf8Start, length: value.utf8CodeUnitCount)
+}
 
 @Suite("AxolotyProtocol foundation")
 struct ProtocolFoundationTests {
@@ -73,6 +78,49 @@ struct ProtocolFoundationTests {
                     let bytes = ByteSlice(bytes: payloadBuffer.baseAddress ?? UnsafePointer<UInt8>(bitPattern: 1)!, length: 0)
                     _ = try BorrowedProtocolFrame(topic: view, payload: bytes)
                 }
+            }
+        }
+    }
+
+    @Test("protocol owns Coaty object-filter adaptation")
+    func coatyFilterAdapterDecodesDirectAndGroupedFilters() throws {
+        let directPayload = Array("{\"objectFilter\":{\"conditions\":[\"value\",[7,2]]}}".utf8)
+        let groupedPayload = Array("{\"objectFilter\":{\"conditions\":{\"and\":[[\"value\",[7,2]],[\"present\",[9]]]}}}".utf8)
+        let directMatched = try directPayload.withUnsafeBufferPointer { buffer -> Bool in
+            let query = try QueryWireData(from: WireReader(bytes: buffer.baseAddress!, length: buffer.count))
+            let adapter = try CoatyFilterAdapter<64, 8, 8, 256>(query: query)
+            let object = try BoundedDynamicObject<128, 4>(decoding: protocolSlice("{\"value\":2,\"present\":null}"))
+            return adapter.matches(object: object)
+        }
+        let groupedMatched = try groupedPayload.withUnsafeBufferPointer { buffer -> Bool in
+            let query = try QueryWireData(from: WireReader(bytes: buffer.baseAddress!, length: buffer.count))
+            let adapter = try CoatyFilterAdapter<64, 8, 8, 256>(query: query)
+            let object = try BoundedDynamicObject<128, 4>(decoding: protocolSlice("{\"value\":2,\"present\":null}"))
+            return adapter.matches(object: object)
+        }
+        #expect(directMatched)
+        #expect(groupedMatched)
+    }
+
+    @Test("an absent query filter is protocol match-all")
+    func coatyFilterAdapterAbsentFilterMatches() throws {
+        let payload = Array("{}".utf8)
+        let matched = try payload.withUnsafeBufferPointer { buffer -> Bool in
+            let query = try QueryWireData(from: WireReader(bytes: buffer.baseAddress!, length: buffer.count))
+            let adapter = try CoatyFilterAdapter<16, 2, 2, 64>(query: query)
+            let object = try BoundedDynamicObject<128, 4>(decoding: protocolSlice("{\"other\":true}"))
+            return adapter.matches(object: object)
+        }
+        #expect(matched)
+    }
+
+    @Test("malformed query filters map to protocol payload errors")
+    func coatyFilterAdapterRejectsMalformedFilter() throws {
+        let payload = Array("{\"objectFilter\":{\"conditions\":{\"and\":[],\"or\":[]}}}".utf8)
+        #expect(throws: ProtocolError.self) {
+            try payload.withUnsafeBufferPointer { buffer in
+                let query = try QueryWireData(from: WireReader(bytes: buffer.baseAddress!, length: buffer.count))
+                _ = try CoatyFilterAdapter<64, 8, 8, 256>(query: query)
             }
         }
     }
