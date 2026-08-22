@@ -108,7 +108,8 @@ let package = Package(
                 .product(name: "ErrorKit", package: "ErrorKit"),
                 .product(name: "IkigaJSON", package: "swift-json"),
             ],
-            path: "Source"
+            path: "Source",
+            exclude: ["Runtime/AGENTS.md"]
         ),
         .testTarget(
             name: "AxolotyTests",
