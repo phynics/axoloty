@@ -82,6 +82,16 @@ The required G3 evidence nodes additionally record measured layouts, heaptrack
 allocation growth, deterministic edit/read behavior, sanitizer results, and
 release size/timing under `.testing/g3-object-model/<candidate-sha>/`.
 
+G4 migration is represented by the optional `g4-runtime` tier. Run
+`make test-tier TIER=g4-runtime` while developing the replacement runtime.
+`g4-runtime-package-boundary` and `g4-runtime-consumer-boundary` are explicitly
+deferred until both `AxolotyRuntime` and `AxolotyStaticRuntime` package roots
+exist. Once those roots exist, the same nodes reject inherited
+Container/controller/CommunicationManager symbols, the current protocol
+encoder, raw MQTT dependencies, and stale first-party tool imports. A deferred
+pass is a migration-state report, not evidence that G4 runtime replacement is
+complete; the tier becomes a real boundary gate when the replacement seams land.
+
 ## Command-to-tier map
 
 Tiers with a direct Make target record it in the contract. The manual macOS
@@ -94,6 +104,7 @@ separate from protocol-scenario execution.
 | Unit | `make test-unit` | yes | `ObjectMatcherTests` |
 | Module | `make test-module` | yes | Topic, payload, registry, and configuration module tests |
 | G3 boundary | `axoloty-tool` manifest node `g3-object-boundary` | no | Portable object-model dependency and Embedded Swift source-inclusion authority check |
+| G4 migration | `make test-tier TIER=g4-runtime` | no | Deferred replacement-runtime package and first-party consumer boundary checks; strict once G4 roots exist |
 | Property | `make test-fuzz` | yes | Seeded `DeterministicFuzzTests` |
 | Integration | `make test` | yes | Full suite against a fresh Mosquitto |
 | Wire offline | `make test-wire` | yes | `WireFixtureTests` and lifecycle scenarios |

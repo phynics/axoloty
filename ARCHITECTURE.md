@@ -86,6 +86,16 @@ proves same-source compilation and linkage. G4 owns runtime replacement;
 G5 owns IO and optional-product boundaries; G6 owns non-divergence and release
 proof.
 
+The canonical `g4-runtime` tier is an optional migration gate until the
+replacement runtime roots exist. Its package and consumer boundary nodes
+report that state without claiming a replacement implementation. When
+`AxolotyRuntime` and `AxolotyStaticRuntime` are introduced, those nodes become
+strict checks: replacement sources must not retain the inherited lifecycle or
+protocol-encoder symbols, and inspector/MCP/example consumers must no longer
+depend on the inherited runtime or raw MQTT path. Legacy deletion and consumer
+migration remain a later integrated G4 change; this gate does not delete or
+duplicate the current runtime.
+
 ## Product boundary
 
 Axoloty is a core runtime plus first-party development tools.
