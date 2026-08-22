@@ -123,6 +123,7 @@ private actor ProtocolExecutor {
     private var hasStarted = false
     private var ingress: [RuntimeInboundFrame] = []
     private var activeHandlers = 0
+    private var handlerInFlight: [Int: Int] = [:]
     private var transportEpoch: UInt64 = 0
     private var transportIngressContinuation: AsyncStream<RuntimeInboundFrame>.Continuation?
     private var transportIngressTask: Task<Void, Never>?
@@ -456,7 +457,7 @@ private actor ProtocolExecutor {
             case .publish:
                 enqueueOutbound(action)
             case .deliver, .associate, .disassociate:
-                dispatchToHandler(action)
+                dispatchToHandler(action, operation: operationName(for: borrowed))
             }
         }
         actionSink.removeAll()
@@ -531,30 +532,46 @@ private actor ProtocolExecutor {
         _ = receive(frame)
     }
 
-    private func dispatchToHandler(_ action: OwnedProtocolAction) {
-        guard let registration = definition.registrations.first(where: { $0.capability == action.kindCapability }) else {
+    private func dispatchToHandler(_ action: OwnedProtocolAction, operation: String?) {
+        guard let match = definition.registrations.enumerated().first(where: {
+            guard $0.element.capability == action.kindCapability else { return false }
+            return $0.element.operation == nil || $0.element.operation == operation
+        }) else {
             return
         }
-        eventContinuation.yield(.invocation(RuntimeInvocation(action: action)))
+        let registrationIndex = match.offset
+        let registration = match.element
         guard activeHandlers < definition.capacities.handlersInFlight else {
             diagnosticsSnapshotValue.handlerSaturation += 1
             emit(.init(kind: .capacityExceeded, detail: "handler supervision capacity is full"))
             return
         }
+        guard handlerInFlight[registrationIndex, default: 0] < registration.maximumConcurrentInvocations else {
+            diagnosticsSnapshotValue.handlerSaturation += 1
+            emit(.init(kind: .capacityExceeded, detail: "handler registration concurrency is full"))
+            return
+        }
         activeHandlers += 1
-        let invocation = RuntimeInvocation(action: action)
+        handlerInFlight[registrationIndex, default: 0] += 1
+        let invocation = RuntimeInvocation(
+            action: action,
+            operation: operation,
+            registrationIndex: registrationIndex
+        )
+        eventContinuation.yield(.invocation(invocation))
         Task { [weak self] in
             do {
                 let result = try await registration.handler(invocation)
                 await self?.complete(invocation: invocation, result: result)
             } catch {
-                await self?.handlerFailed(String(describing: error))
+                await self?.handlerFailed(String(describing: error), registrationIndex: registrationIndex)
             }
         }
     }
 
     private func complete(invocation: RuntimeInvocation, result: RuntimeHandlerResult) {
         activeHandlers = max(0, activeHandlers - 1)
+        decrementHandler(registrationIndex: invocation.registrationIndex)
         guard let correlation = invocation.action.routingKey.correlationID else { return }
         let responseCapability: ProtocolCapability
         switch invocation.action.routingKey.capability {
@@ -583,9 +600,37 @@ private actor ProtocolExecutor {
         )
     }
 
-    private func handlerFailed(_ detail: String) {
+    private func handlerFailed(_ detail: String, registrationIndex: Int = -1) {
         activeHandlers = max(0, activeHandlers - 1)
+        decrementHandler(registrationIndex: registrationIndex)
         emit(.init(kind: .handlerFailed, detail: detail))
+    }
+
+    private func decrementHandler(registrationIndex: Int) {
+        guard registrationIndex >= 0 else { return }
+        let remaining = max(0, handlerInFlight[registrationIndex, default: 0] - 1)
+        if remaining == 0 {
+            handlerInFlight.removeValue(forKey: registrationIndex)
+        } else {
+            handlerInFlight[registrationIndex] = remaining
+        }
+    }
+
+    /// Extracts a binding-owned Call operation while the action still borrows
+    /// the transport topic. The resulting string is copied before the handler
+    /// task crosses the actor boundary.
+    private func operationName(for action: BorrowedProtocolAction) -> String? {
+        guard action.routingKey.capability == .call, let topic = action.topic else { return nil }
+        return topic.withBytes { pointer, length in
+            let view = TopicView(topicBytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
+            guard let filter = view.eventTypeFilter else { return nil }
+            return filter.withBytes { filterPointer, filterLength in
+                String(decoding: UnsafeBufferPointer(
+                    start: filterPointer.assumingMemoryBound(to: UInt8.self),
+                    count: filterLength
+                ), as: UTF8.self)
+            }
+        }
     }
 
     private func enqueueOutbound(_ action: OwnedProtocolAction) {

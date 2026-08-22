@@ -262,6 +262,32 @@ struct ProtocolFoundationTests {
         #expect(processor.state.pendingCorrelations == 1)
     }
 
+    @Test("response DTOs reject payloads missing required fields")
+    func responsePayloadSchemaIsEnforced() throws {
+        let correlation = UUID16.zero
+        var processor = ProtocolProcessor<1>()
+        let operation = try ProtocolLocalOperation(
+            capability: .discover,
+            sourceID: correlation,
+            correlationID: correlation,
+            payload: protocolSlice("{}"),
+            requestTimeoutMS: 100
+        )
+        var sink = InlineProtocolActionSink<1>()
+        #expect(processor.processOutbound(operation, nowMS: 10, sink: &sink) == .accepted)
+        sink.removeAll()
+        let malformed = try withResponseFrame(
+            correlation: "00000000-0000-0000-0000-000000000000",
+            event: "RSV",
+            payload: "{}"
+        ) { frame in
+            var responseSink = InlineProtocolActionSink<1>()
+            return processor.processInbound(frame, nowMS: 20, sink: &responseSink)
+        }
+        #expect(malformed == .rejected(.malformedPayload))
+        #expect(processor.state.pendingCorrelations == 1)
+    }
+
     @Test("cancellation rejects a late response and permits another correlation")
     func cancellation() throws {
         let first = UUID16.zero
@@ -324,10 +350,22 @@ private func withStaticPayload<R>(_ body: (ByteSlice) -> R) -> R {
 private func withResponseFrame<R>(
     correlation: String,
     event: String = "RSV",
+    payload explicitPayload: String? = nil,
     _ body: (BorrowedProtocolFrame) throws -> R
 ) throws -> R {
     let topic = Array("coaty/3/test/\(event)/00000000-0000-0000-0000-000000000000/\(correlation)".utf8)
-    let payload = Array("{}".utf8)
+    let payloadString: String
+    if let explicitPayload {
+        payloadString = explicitPayload
+    } else {
+        switch event {
+        case "RSV": payloadString = "{\"object\":{}}"
+        case "RTV": payloadString = "{\"objects\":[]}"
+        case "UPD": payloadString = "{\"object\":{}}"
+        default: payloadString = "{}"
+        }
+    }
+    let payload = Array(payloadString.utf8)
     return try topic.withUnsafeBufferPointer { topicBuffer in
         try payload.withUnsafeBufferPointer { payloadBuffer in
             let view = TopicView(topicBytes: topicBuffer.baseAddress!, length: topicBuffer.count)

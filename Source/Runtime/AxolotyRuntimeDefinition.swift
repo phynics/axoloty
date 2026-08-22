@@ -437,10 +437,18 @@ public enum RuntimeReceipt: Sendable, Equatable {
 public struct RuntimeInvocation: Sendable, Equatable {
     /// The normalized protocol action.
     public let action: OwnedProtocolAction
+    /// The binding-supplied operation name for a Call, when present.
+    public let operation: String?
+
+    /// Internal registration identity used to account for bounded handler
+    /// concurrency. It never participates in the public protocol contract.
+    let registrationIndex: Int
 
     /// Creates an invocation from an owned action.
-    init(action: OwnedProtocolAction) {
+    init(action: OwnedProtocolAction, operation: String? = nil, registrationIndex: Int = -1) {
         self.action = action
+        self.operation = operation
+        self.registrationIndex = registrationIndex
     }
 }
 
@@ -523,6 +531,8 @@ public struct RuntimeHandlerRegistration: Sendable {
     public let capability: ProtocolCapability
     /// An optional application-level operation label.
     public let operation: String?
+    /// Maximum number of concurrent invocations for this registration.
+    public let maximumConcurrentInvocations: Int
     /// The bounded asynchronous handler.
     public let handler: @Sendable (RuntimeInvocation) async throws -> RuntimeHandlerResult
 
@@ -530,10 +540,12 @@ public struct RuntimeHandlerRegistration: Sendable {
     public init(
         capability: ProtocolCapability,
         operation: String? = nil,
+        maximumConcurrentInvocations: Int = 1,
         handler: @escaping @Sendable (RuntimeInvocation) async throws -> RuntimeHandlerResult
     ) {
         self.capability = capability
         self.operation = operation
+        self.maximumConcurrentInvocations = maximumConcurrentInvocations
         self.handler = handler
     }
 }
@@ -573,6 +585,7 @@ public struct RuntimeDefinition: Sendable {
     public mutating func register(
         capability: ProtocolCapability,
         operation: String? = nil,
+        maximumConcurrentInvocations: Int = 1,
         handler: @escaping @Sendable (RuntimeInvocation) async throws -> RuntimeHandlerResult
     ) throws -> Int {
         guard !sealed else {
@@ -586,7 +599,19 @@ public struct RuntimeDefinition: Sendable {
                 throw AxolotyError.invalidArgument(argument: "operation", reason: "must be a non-empty name without '/'")
             }
         }
-        registrations.append(RuntimeHandlerRegistration(capability: capability, operation: operation, handler: handler))
+        guard maximumConcurrentInvocations > 0,
+              maximumConcurrentInvocations <= capacities.handlersInFlight else {
+            throw AxolotyError.invalidArgument(
+                argument: "maximumConcurrentInvocations",
+                reason: "must fit the runtime handler limit"
+            )
+        }
+        registrations.append(RuntimeHandlerRegistration(
+            capability: capability,
+            operation: operation,
+            maximumConcurrentInvocations: maximumConcurrentInvocations,
+            handler: handler
+        ))
         return registrations.count - 1
     }
 
@@ -687,9 +712,15 @@ public extension RuntimeDefinition {
         public mutating func respond(
             to capability: ProtocolCapability,
             operation: String? = nil,
+            maximumConcurrentInvocations: Int = 1,
             handler: @escaping @Sendable (RuntimeInvocation) async throws -> RuntimeHandlerResult
         ) throws -> Int {
-            try definition.register(capability: capability, operation: operation, handler: handler)
+            try definition.register(
+                capability: capability,
+                operation: operation,
+                maximumConcurrentInvocations: maximumConcurrentInvocations,
+                handler: handler
+            )
         }
 
         /// Registers an event stream in the immutable runtime definition.
@@ -710,7 +741,12 @@ public extension RuntimeDefinition {
             guard maximumConcurrentInvocations > 0, maximumConcurrentInvocations <= definition.capacities.handlersInFlight else {
                 throw AxolotyError.invalidArgument(argument: "maximumConcurrentInvocations", reason: "must fit the runtime handler limit")
             }
-            return try definition.register(capability: selector.capability, operation: selector.operation, handler: handler)
+            return try definition.register(
+                capability: selector.capability,
+                operation: selector.operation,
+                maximumConcurrentInvocations: maximumConcurrentInvocations,
+                handler: handler
+            )
         }
 
         /// Finishes registration and returns the immutable definition.

@@ -772,8 +772,16 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 return (try? QueryWireData(from: reader)) != nil
             case .call:
                 return (try? CallWireData(from: reader)) != nil
-            case .resolve, .retrieve, .update, .complete, .returnEvent:
-                return (try? reader.validate()) != nil
+            case .resolve:
+                return (try? ResolveWireData(from: reader)) != nil
+            case .retrieve:
+                return (try? RetrieveWireData(from: reader)) != nil
+            case .update:
+                return (try? UpdateWireData(from: reader)) != nil
+            case .complete:
+                return (try? CompleteWireData(from: reader)) != nil
+            case .returnEvent:
+                return (try? ReturnWireData(from: reader)) != nil
             }
         }
     }

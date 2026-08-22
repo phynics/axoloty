@@ -34,23 +34,21 @@ fi
 
 static_sources=$(find "$static/Sources" -type f -name '*.swift' -print 2>/dev/null || true)
 [ -n "$static_sources" ] || fail "replacement static runtime package has no Swift sources"
-sources="$host_sources $static_sources"
-[ -n "$sources" ] || fail "replacement runtime packages have no Swift sources"
-
-for source in $sources; do
+for source in $host_sources $static_sources; do
     if grep -Eq '\b(Container|Controller|CommunicationManager|PayloadCoder)\b' "$source"; then
         fail "legacy runtime or protocol encoder symbol in replacement source: $source"
     fi
 done
 
-production_sources=$(find "$production_source_dir" -type f -name '*.swift' ! -path "$production_source_dir/LegacyCompatibility/*" -print)
 violations=0
-for source in $production_sources; do
+while IFS= read -r source; do
     if grep -Eq '\b(Container|Controller|CommunicationManager|HostWireEventEncoder|MQTTNIOClient|PayloadCoder)\b' "$source"; then
         echo "error: inherited runtime or parallel protocol implementation remains in current production source: $source" >&2
         violations=1
     fi
-done
+done <<EOF
+$(find "$production_source_dir" -type f -name '*.swift' ! -path "$production_source_dir/LegacyCompatibility/*" -print)
+EOF
 [ "$violations" -eq 0 ] || exit 1
 
 echo "G4 replacement runtime package boundary passed"
