@@ -249,25 +249,37 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
     }
 
     private borrowing func writeSegment(_ index: Int, to writer: inout WireWriter) throws(WireEncodeError) {
+        var failure: WireEncodeError?
         withUnsafeBytes(of: arena) { buffer in
-            let segment = segments[index]
-            let slice = ByteSlice(
-                bytes: buffer.baseAddress!.assumingMemoryBound(to: UInt8.self).advanced(by: segment.start),
-                length: segment.length
-            )
-            try writer.writeEncodedStringValue(slice)
+            do throws(WireEncodeError) {
+                let segment = segments[index]
+                let slice = ByteSlice(
+                    bytes: buffer.baseAddress!.assumingMemoryBound(to: UInt8.self).advanced(by: segment.start),
+                    length: segment.length
+                )
+                try writer.writeEncodedStringValue(slice)
+            } catch {
+                failure = error
+            }
         }
+        if let failure { throw failure }
     }
 
     private borrowing func writeLiteral(_ index: Int, to writer: inout WireWriter) throws(WireEncodeError) {
+        var failure: WireEncodeError?
         withUnsafeBytes(of: arena) { buffer in
-            let literal = literals[index]
-            let slice = ByteSlice(
-                bytes: buffer.baseAddress!.assumingMemoryBound(to: UInt8.self).advanced(by: literal.start),
-                length: literal.length
-            )
-            try writer.writeRawValue(slice)
+            do throws(WireEncodeError) {
+                let literal = literals[index]
+                let slice = ByteSlice(
+                    bytes: buffer.baseAddress!.assumingMemoryBound(to: UInt8.self).advanced(by: literal.start),
+                    length: literal.length
+                )
+                try writer.writeRawValue(slice)
+            } catch {
+                failure = error
+            }
         }
+        if let failure { throw failure }
     }
 
     private mutating func appendConditionValue(_ bytes: ByteSlice, parent: Int, failure: inout ObjectError?) {
@@ -277,16 +289,18 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
             var pathIndex: Int?
             var expressionInfo: (operation: ObjectPredicateOperator, operand: Int, count: Int)?
             var index = 0
-            do throws(WireDecodeError) {
-                try withUnsafeMutablePointer(to: &self) { state in
+            var wireFailure: WireDecodeError?
+            withUnsafeMutablePointer(to: &self) { state in
+                do throws(WireDecodeError) {
                     try value.withArrayElements { element in
                         if index == 0 { pathIndex = state.pointee.appendPathValue(element, failure: &failure) }
                         else if index == 1 { expressionInfo = state.pointee.appendExpressionValue(element, failure: &failure) }
                         else if failure == nil { failure = ObjectError(.invalidPredicateExpression) }
                         index += 1
                     }
-                }
-            } catch { failure = ObjectError(.invalidPredicateExpression) }
+                } catch { wireFailure = error }
+            }
+            if wireFailure != nil { failure = ObjectError(.invalidPredicateExpression) }
             guard failure == nil, index == 2, let pathIndex, let expressionInfo else { failure = ObjectError(.invalidPredicateExpression); return }
             do throws(ObjectError) { _ = try appendNode(PredicateNode.condition(path: pathIndex, operation: expressionInfo.operation, operand: expressionInfo.operand, operandCount: expressionInfo.count), parent: parent) }
             catch { failure = error }
@@ -308,13 +322,15 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
                         let groupNode: Int
                         do throws(ObjectError) { groupNode = try appendNode(PredicateNode.group(kind: isAnd ? 1 : 2), parent: parent) }
                         catch { failure = error; return }
-                        do throws(WireDecodeError) {
-                            try withUnsafeMutablePointer(to: &self) { state in
+                        var wireFailure: WireDecodeError?
+                        withUnsafeMutablePointer(to: &self) { state in
+                            do throws(WireDecodeError) {
                                 try groupReader.withArrayElements { condition in
                                     state.pointee.appendConditionValue(condition, parent: groupNode, failure: &failure)
                                 }
-                            }
-                        } catch { failure = ObjectError(.invalidPredicateExpression) }
+                            } catch { wireFailure = error }
+                        }
+                        if wireFailure != nil { failure = ObjectError(.invalidPredicateExpression) }
                     }
                 }
             }
@@ -367,16 +383,18 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
         var operation: ObjectPredicateOperator?
         var operandIndexes = InlineArray<2, Int>(repeating: -1)
         var operandCount = 0
-        do throws(WireDecodeError) {
-            try withUnsafeMutablePointer(to: &self) { state in
+        var wireFailure: WireDecodeError?
+        withUnsafeMutablePointer(to: &self) { state in
+            do throws(WireDecodeError) {
                 try value.withArrayElements { element in
                     if operandCount == 0 { operation = Self.parseOperator(element) }
                     else if operandCount <= 2 { operandIndexes[operandCount - 1] = state.pointee.appendLiteralValue(element, failure: &failure) ?? -1 }
                     else { failure = ObjectError(.invalidPredicateExpression) }
                     operandCount += 1
                 }
-            }
-        } catch { failure = ObjectError(.invalidPredicateExpression) }
+            } catch { wireFailure = error }
+        }
+        if wireFailure != nil { failure = ObjectError(.invalidPredicateExpression) }
         guard failure == nil, let operation else { failure = ObjectError(.invalidPredicateExpression); return nil }
         let expected: Int
         switch operation { case .exists, .notExists: expected = 1; case .between, .notBetween: expected = 3; default: expected = 2 }
