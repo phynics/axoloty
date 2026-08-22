@@ -197,7 +197,9 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     }
 
     private struct ObjectRecord {
+        /// Identity of the advertised object, distinct from its source agent.
         var id = UUID16.zero
+        var sourceID = UUID16.zero
         var active = false
         var local = false
         var announced = false
@@ -242,7 +244,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
 
     private enum ObjectPlan {
         case none
-        case insert(Int, UUID16, Bool)
+        case insert(Int, UUID16, UUID16, Bool)
         case replay(Int)
         case remove(Int)
     }
@@ -448,23 +450,24 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         let objectPlan: ObjectPlan
         switch frame.routingKey.capability {
         case .advertise:
+            let objectID = Self.advertisedObjectID(frame.payload) ?? frame.routingKey.sourceID
             var existing = false
             var activeCount = 0
             var freeIndex: Int?
             for index in 0..<capacity {
                 if objects[index].active {
                     activeCount += 1
-                    if objects[index].id == frame.routingKey.sourceID { existing = true }
+                    if objects[index].sourceID == frame.routingKey.sourceID && objects[index].id == objectID { existing = true }
                 } else if freeIndex == nil {
                     freeIndex = index
                 }
             }
             guard !existing else { return .rejected(.duplicate) }
             guard activeCount < maximumObjects, let freeIndex else { return .rejected(.capacityExceeded) }
-            objectPlan = .insert(freeIndex, frame.routingKey.sourceID, false)
+            objectPlan = .insert(freeIndex, frame.routingKey.sourceID, objectID, false)
         case .deadvertise:
             var foundIndex: Int?
-            for index in 0..<capacity where objects[index].active && objects[index].id == frame.routingKey.sourceID {
+            for index in 0..<capacity where objects[index].active && objects[index].sourceID == frame.routingKey.sourceID {
                 foundIndex = index
                 break
             }
@@ -551,6 +554,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         let objectPlan: ObjectPlan
         switch operation.capability {
         case .advertise:
+            let objectID = Self.advertisedObjectID(operation.payload) ?? operation.sourceID
             var existing = false
             var activeCount = 0
             var freeIndex: Int?
@@ -558,7 +562,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             for index in 0..<capacity {
                 if objects[index].active {
                     activeCount += 1
-                    if objects[index].id == operation.sourceID {
+                    if objects[index].sourceID == operation.sourceID && objects[index].id == objectID {
                         existing = true
                         if objects[index].local && !objects[index].announced { replayIndex = index }
                     }
@@ -571,11 +575,11 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 objectPlan = .replay(replayIndex)
             } else {
                 guard activeCount < maximumObjects, let freeIndex else { return .rejected(.capacityExceeded) }
-                objectPlan = .insert(freeIndex, operation.sourceID, true)
+                objectPlan = .insert(freeIndex, operation.sourceID, objectID, true)
             }
         case .deadvertise:
             var foundIndex: Int?
-            for index in 0..<capacity where objects[index].active && objects[index].id == operation.sourceID {
+            for index in 0..<capacity where objects[index].active && objects[index].sourceID == operation.sourceID {
                 foundIndex = index
                 break
             }
@@ -699,12 +703,26 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     private mutating func apply(_ plan: ObjectPlan) {
         switch plan {
         case .none: return
-        case .insert(let index, let id, let local):
-            objects[index] = ObjectRecord(id: id, active: true, local: local, announced: true)
+        case .insert(let index, let sourceID, let objectID, let local):
+            objects[index] = ObjectRecord(id: objectID, sourceID: sourceID, active: true, local: local, announced: true)
         case .replay(let index):
             objects[index].announced = true
         case .remove(let index):
             objects[index] = ObjectRecord()
+        }
+    }
+
+    private static func advertisedObjectID(_ payload: ByteSlice) -> UUID16? {
+        payload.withBytes { pointer, length in
+            let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
+            guard let object = reader.readRaw("object") else { return nil }
+            return object.withBytes { objectPointer, objectLength in
+                let objectReader = WireReader(
+                    bytes: objectPointer.assumingMemoryBound(to: UInt8.self),
+                    length: objectLength
+                )
+                return objectReader.readUUID("objectId")
+            }
         }
     }
 

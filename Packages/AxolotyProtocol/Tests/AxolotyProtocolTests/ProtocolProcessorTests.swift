@@ -39,6 +39,37 @@ struct ProtocolProcessorTests {
         #expect(sink.count == 1)
     }
 
+    @Test("one source can advertise multiple object identities")
+    func multipleAdvertisementsPerSource() throws {
+        let source = Self.source
+        let first = Array("{\"object\":{\"objectId\":\"11111111-1111-4111-8111-111111111111\"}}".utf8)
+        let second = Array("{\"object\":{\"objectId\":\"22222222-2222-4222-8222-222222222222\"}}".utf8)
+        var processor = ProtocolProcessor<2>()
+        var sink = InlineProtocolActionSink<2>()
+        for payload in [first, second] {
+            let outcome = try payload.withUnsafeBufferPointer { buffer in
+                let operation = try ProtocolLocalOperation(
+                    capability: .advertise,
+                    sourceID: source,
+                    payload: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+                )
+                return processor.processOutbound(operation, sink: &sink)
+            }
+            #expect(outcome == .accepted)
+            sink.removeAll()
+        }
+        let duplicate = try first.withUnsafeBufferPointer { buffer in
+            let operation = try ProtocolLocalOperation(
+                capability: .advertise,
+                sourceID: source,
+                payload: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+            )
+            return processor.processOutbound(operation, sink: &sink)
+        }
+        #expect(duplicate == .rejected(.duplicate))
+        #expect(processor.state.activeObjects == 2)
+    }
+
     @Test("subscription tokens reject stale generations and inactive entries")
     func subscriptionGenerationAndActivity() throws {
         let callback: ProtocolHandlerFunction = { _, _, _, _, _ in }

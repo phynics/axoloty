@@ -310,7 +310,6 @@ private actor ProtocolExecutor {
         diagnosticsSnapshotValue.reconnects += 1
         transportIngressContinuation?.finish()
         transportIngressTask?.cancel()
-        await stopOutboundPump()
         let ingressPipe = AsyncStream<RuntimeInboundFrame>.makeStream(
             bufferingPolicy: .bufferingOldest(definition.capacities.ingress)
         )
@@ -322,12 +321,6 @@ private actor ProtocolExecutor {
                 await self?.receiveTransport(frame, epoch: epoch)
             }
         }
-        outboundContinuation?.finish()
-        outboundTask?.cancel()
-        outboundContinuation = nil
-        outboundTask = nil
-        outboundQueued = 0
-        installOutboundPump()
         do {
             // A broker-side close can race this explicit reconnect.  The
             // binding may therefore already have lost its subscription
@@ -335,6 +328,12 @@ private actor ProtocolExecutor {
             // subscription installation below is authoritative.
             try? await transport.removeSubscriptions(namespace: definition.namespace)
             await transport.stop()
+            // Stop the socket before awaiting the old pump. A transport send
+            // is allowed to suspend until the socket closes; draining first
+            // would make reconnect dependent on an unbounded cancellation
+            // guarantee that the transport protocol does not provide.
+            await stopOutboundPump()
+            installOutboundPump()
             await transport.setFailureHandler { [weak self] error in
                 Task { await self?.transportFailed(runtimeErrorDetail(error)) }
             }
