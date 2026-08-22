@@ -164,6 +164,7 @@ printf '%s\n' 'secret' | axoloty-inspect catalog --username operator --password-
 ```
 axoloty-inspect (executable)
     ├── Axoloty (AxolotyRuntime + MQTTBinding)
+    ├── AxolotyInspectorRuntime (session and event adapter)
     └── AxolotyInspectorCore (pure: catalogue, filter, reducer, records)
 ```
 
