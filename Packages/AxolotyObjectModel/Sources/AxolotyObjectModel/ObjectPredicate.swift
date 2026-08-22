@@ -102,7 +102,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
     private var nodes: InlineArray<nodeCapacity, PredicateNode>
     private var paths: InlineArray<pathCapacity, PredicatePath>
     private var segments: InlineArray<pathCapacity, PredicateSegment>
-    private var literals: InlineArray<literalCapacity, PredicateLiteral>
+    private var literals: InlineArray<literalCapacity, PredicateLiteralRecord>
     private var arena: InlineArray<arenaCapacity, UInt8>
     private var nodeCount: Int
     private var pathCount: Int
@@ -114,7 +114,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
         nodes = InlineArray(repeating: PredicateNode.andRoot)
         paths = InlineArray(repeating: PredicatePath())
         segments = InlineArray(repeating: PredicateSegment())
-        literals = InlineArray(repeating: PredicateLiteral())
+        literals = InlineArray(repeating: PredicateLiteralRecord())
         arena = InlineArray(repeating: 0)
         nodeCount = 1; pathCount = 0; literalCount = 0; arenaLength = 0
     }
@@ -366,7 +366,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
             guard WireReader.isValidJSONValue(bytes), WireValueReader(bytes).kind == .number else { throw ObjectError(.invalidPredicateExpression) }
             try copy(bytes)
         }
-        literals[literalCount] = PredicateLiteral(start: start, length: arenaLength - start)
+        literals[literalCount] = PredicateLiteralRecord(start: start, length: arenaLength - start)
         literalCount += 1
         return literalCount - 1
     }
@@ -412,7 +412,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
 
     private borrowing func evaluateNode(_ index: Int, fields: borrowing ObjectFields) -> Bool {
         let node = nodes[index]
-        if node.kind == .condition { return evaluateCondition(node, fields: fields) }
+        if node.kind == 0 { return evaluateCondition(node, fields: fields) }
         var child = node.firstChild
         var result = node.kind == 1
         while child >= 0 {
@@ -502,8 +502,8 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
             return literalSlice(operand) { compare(raw, $0, operation) }
         case .between, .notBetween:
             var inside = false
-            literalSlice(operand) { first in
-            literalSlice(operand + 1) { second in
+            _ = literalSlice(operand) { first in
+            _ = literalSlice(operand + 1) { second in
                 if compareNumbers(first, second) <= 0 {
                     inside = compare(raw, first, .greaterThanOrEqual) && compare(raw, second, .lessThanOrEqual)
                 } else {
@@ -629,7 +629,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
         var left = InlineArray<512, UInt32>(repeating: 0); var right = InlineArray<512, UInt32>(repeating: 0); var lc = 0; var rc = 0; var overflow = false
         try? WireValueReader(lhs).withStringScalars { if lc < PredicateScratchLimits.scalarCapacity { left[lc] = $0; lc += 1 } else { overflow = true } }; try? WireValueReader(rhs).withStringScalars { if rc < PredicateScratchLimits.scalarCapacity { right[rc] = $0; rc += 1 }
             else { overflow = true }
-        }; guard lc == rc else { return false }; for i in 0..<lc where left[i] != right[i] { return false }; return true
+        }; guard !overflow, lc == rc else { return false }; for i in 0..<lc where left[i] != right[i] { return false }; return true
     }
 
     private func stringContains(_ lhs: ByteSlice, _ rhs: ByteSlice) -> Bool { wildcardMatch(lhs, rhs, like: false) }
@@ -689,7 +689,7 @@ private struct PredicateNode {
 
 private struct PredicatePath { var firstSegment = 0; var segmentCount = 0 }
 private struct PredicateSegment { var start = 0; var length = 0 }
-private struct PredicateLiteral { var start = 0; var length = 0 }
+private struct PredicateLiteralRecord { var start = 0; var length = 0 }
 
 private struct DecimalParts {
     let raw: ByteSlice
