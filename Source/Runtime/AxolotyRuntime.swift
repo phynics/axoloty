@@ -223,7 +223,12 @@ private actor ProtocolExecutor {
             return nil
         } catch {
             cancelTransportPumps()
-            state = .failed
+            // A concurrent stop/close may have advanced the epoch while the
+            // transport was suspended. Preserve that terminal transition
+            // instead of resurrecting the runtime as failed.
+            if state == .starting, transportEpoch == epoch {
+                state = .failed
+            }
             return (.brokerUnavailable, String(describing: error))
         }
     }
@@ -292,6 +297,7 @@ private actor ProtocolExecutor {
             guard state == .reconnecting, transportEpoch == epoch else { return }
             state = .running
         } catch {
+            guard state == .reconnecting, transportEpoch == epoch else { return }
             state = .failed
             diagnosticsSnapshotValue.transportFailures += 1
             emit(.init(kind: .transportFailed, detail: String(describing: error)))
