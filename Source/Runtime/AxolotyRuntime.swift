@@ -2,6 +2,7 @@
 
 import AxolotyProtocol
 import AxolotyWire
+import ErrorKit
 import Foundation
 import NIOConcurrencyHelpers
 
@@ -223,7 +224,7 @@ private actor ProtocolExecutor {
                 do {
                     try await transport.send(action, namespace: namespace)
                 } catch {
-                    await self?.transportFailed(String(describing: error))
+                    await self?.transportFailed(runtimeErrorDetail(error))
                 }
             }
         }
@@ -258,11 +259,11 @@ private actor ProtocolExecutor {
             if state == .starting, transportEpoch == epoch {
                 failRuntime(
                     code: .brokerUnavailable,
-                    detail: String(describing: error),
+                    detail: runtimeErrorDetail(error),
                     diagnostic: .transportFailed
                 )
             }
-            return (.brokerUnavailable, String(describing: error))
+            return (.brokerUnavailable, runtimeErrorDetail(error))
         }
     }
 
@@ -276,7 +277,7 @@ private actor ProtocolExecutor {
             try await transport.deadvertise(identity: definition.identity, namespace: definition.namespace)
             try await transport.removeSubscriptions(namespace: definition.namespace)
         } catch {
-            emit(.init(kind: .transportFailed, detail: String(describing: error)))
+            emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
         }
         await transport.stop()
         guard state == .stopping, transportEpoch == stoppingEpoch else { return }
@@ -336,7 +337,7 @@ private actor ProtocolExecutor {
             guard state == .reconnecting, transportEpoch == epoch else { return }
             failRuntime(
                 code: .brokerUnavailable,
-                detail: String(describing: error),
+                detail: runtimeErrorDetail(error),
                 diagnostic: .transportFailed
             )
         }
@@ -458,7 +459,7 @@ private actor ProtocolExecutor {
             do throws(WireDecodeError) {
                 try topicView.validate()
             } catch {
-                parseFailure = String(describing: error)
+                parseFailure = runtimeErrorDetail(error)
                 return .rejected(.malformedFrame)
             }
             return frame.payload.withUnsafeBufferPointer { payloadBuffer in
@@ -479,7 +480,7 @@ private actor ProtocolExecutor {
                         sink: &actionSink
                     )
                 } catch {
-                    parseFailure = String(describing: error)
+                    parseFailure = runtimeErrorDetail(error)
                     return .rejected(.malformedFrame)
                 }
             }
@@ -637,7 +638,7 @@ private actor ProtocolExecutor {
                 await self?.handlerCancelled(invocation)
             } catch {
                 await self?.handlerFailed(
-                    String(describing: error),
+                    runtimeErrorDetail(error),
                     registrationIndex: registrationIndex
                 )
             }
@@ -859,6 +860,11 @@ private struct TransportRouteClassifier: ProtocolRouteClassifier {
     func classify(_ route: ByteSlice) -> ProtocolRouteClassification {
         transport.classifyRoute(route)
     }
+}
+
+private func runtimeErrorDetail(_ error: Error) -> String {
+    let wrapped = error as? AxolotyError ?? AxolotyError.caught(error)
+    return ErrorKit.errorChainDescription(for: wrapped)
 }
 
 private final class RuntimeOverflowGate: @unchecked Sendable {

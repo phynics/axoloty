@@ -222,6 +222,8 @@ struct StaticDeviceAgent: ~Copyable {
         ) else { throw .invalidValue }
         let outcome = runtime.send(operation, classifier: routeClassifier)
         var materialized = false
+        var outputTopicLength = 0
+        var outputPayloadLength = 0
         _ = runtime.drain { action in
             guard !materialized, action.kind == .publish else { return }
             var topic = TopicBuilder(buffer: topicBuffer, capacity: topicCapacity)
@@ -243,14 +245,14 @@ struct StaticDeviceAgent: ~Copyable {
                 return length
             }
             guard let copiedLength else { return }
-            topicLength.pointee = Int32(topic.position)
-            payloadLength.pointee = Int32(copiedLength)
+            outputTopicLength = topic.position
+            outputPayloadLength = copiedLength
             materialized = true
         }
         guard outcome == .accepted, materialized else {
             throw .invalidValue
         }
-        return (Int(topicLength.pointee), Int(payloadLength.pointee))
+        return (outputTopicLength, outputPayloadLength)
     }
 
     /// Copies the currently associated local actor route into fixed caller
