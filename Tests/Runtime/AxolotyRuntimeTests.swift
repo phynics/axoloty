@@ -69,6 +69,28 @@ struct AxolotyRuntimeTests {
         await runtime.stop()
     }
 
+    @Test("runtime orders subscription and identity lifecycle around transport")
+    func lifecycleOrdering() async throws {
+        let definition = try makeDefinition()
+        let transport = TestTransport()
+        let runtime = AxolotyRuntime(definition: definition, transport: transport)
+        #expect(await runtime.state() == .initialized)
+        try await runtime.start()
+        #expect(await runtime.state() == .running)
+        #expect(await transport.lifecycle == ["install", "start", "advertise"])
+
+        await runtime.reconnect()
+        #expect(await runtime.state() == .running)
+        #expect(await transport.lifecycle == [
+            "install", "start", "advertise", "remove", "stop", "install", "start", "advertise"
+        ])
+
+        await runtime.stop()
+        #expect(await runtime.state() == .stopped)
+        let lifecycle = await transport.lifecycle
+        #expect(Array(lifecycle.suffix(3)) == ["deadvertise", "remove", "stop"])
+    }
+
     private func makeDefinition() throws -> SealedRuntimeDefinition {
         let definition = try RuntimeDefinition(
             namespace: "test",
@@ -82,9 +104,11 @@ struct AxolotyRuntimeTests {
 private actor TestTransport: AxolotyRuntimeTransport {
     private var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
     private var sent: [OwnedProtocolAction] = []
+    private(set) var lifecycle: [String] = []
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
         self.receive = receive
+        lifecycle.append("start")
     }
 
     func send(_ action: OwnedProtocolAction, namespace: String) async throws {
@@ -93,7 +117,13 @@ private actor TestTransport: AxolotyRuntimeTransport {
 
     func stop() async {
         receive = nil
+        lifecycle.append("stop")
     }
+
+    func installSubscriptions(namespace: String) async throws { lifecycle.append("install") }
+    func removeSubscriptions(namespace: String) async throws { lifecycle.append("remove") }
+    func advertise(identity: RuntimeIdentity?, namespace: String) async throws { lifecycle.append("advertise") }
+    func deadvertise(identity: RuntimeIdentity?, namespace: String) async throws { lifecycle.append("deadvertise") }
 
     func sentCount() -> Int { sent.count }
 }
