@@ -489,17 +489,23 @@ private actor ProtocolExecutor {
                 return .rejected(.invalidCorrelation)
             }
             actionSink.removeAll()
-            return processor.processOutbound(
+            let outcome = processor.processOutbound(
                 local,
                 nowMS: nowMS,
                 classifier: TransportRouteClassifier(transport: transport),
                 sink: &actionSink
             )
+            // The processor emits borrowed action views into `operation.payload`.
+            // Drain them before this buffer borrow ends; only owned values may
+            // escape the closure into runtime queues or application streams.
+            if case .accepted = outcome {
+                dispatchActions(nowMS: nowMS)
+            }
+            return outcome
         }
         let receipt = receipt(for: outcome)
         eventContinuation.yield(.transition(receipt))
         guard case .accepted = receipt else { return receipt }
-        dispatchActions(nowMS: nowMS)
         return receipt
     }
 
@@ -549,12 +555,19 @@ private actor ProtocolExecutor {
                         payload: ByteSlice(bytes: payloadBase, length: payloadBuffer.count)
                     )
                     actionSink.removeAll()
-                    return processor.processInbound(
+                    let outcome = processor.processInbound(
                         borrowed,
                         nowMS: frame.nowMS,
                         classifier: TransportRouteClassifier(transport: transport),
                         sink: &actionSink
                     )
+                    // The processor's delivery key, topic, and payload are
+                    // borrowed from this frame. Dispatch synchronously while
+                    // both topic and payload buffers remain valid.
+                    if case .accepted = outcome {
+                        dispatchActions(nowMS: frame.nowMS)
+                    }
+                    return outcome
                 } catch {
                     parseFailure = runtimeErrorDetail(error)
                     return .rejected(.malformedFrame)
@@ -568,7 +581,6 @@ private actor ProtocolExecutor {
         let receipt = receipt(for: outcome)
         eventContinuation.yield(.transition(receipt))
         guard case .accepted = receipt else { return receipt }
-        dispatchActions(nowMS: frame.nowMS)
         return receipt
     }
 
