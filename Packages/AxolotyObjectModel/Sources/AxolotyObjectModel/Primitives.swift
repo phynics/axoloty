@@ -125,12 +125,13 @@ public struct BoundedEncodedText<let capacity: Int>: Equatable, Hashable, Sendab
         _ key: StaticString,
         to editor: inout ObjectEditor<editorCapacity>
     ) throws(ObjectError) {
+        let localLength = length
         let localStorage = storage
         var failure: ObjectError?
         withUnsafeBytes(of: localStorage) { buffer in
             let bytes = ByteSlice(
                 bytes: buffer.baseAddress!.assumingMemoryBound(to: UInt8.self),
-                length: length
+                length: localLength
             )
             do throws(ObjectError) { try editor.setEncodedString(key, value: bytes) }
             catch { failure = error }
