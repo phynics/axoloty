@@ -120,12 +120,22 @@ public struct BoundedEncodedText<let capacity: Int>: Equatable, Hashable, Sendab
         return true
     }
 
-    /// Borrows the retained encoded string content synchronously.
-    public borrowing func withEncodedBytes(_ body: (borrowing ByteSlice) -> Void) {
+    /// Encodes this retained string into a transactional object editor.
+    public borrowing func encodeField<let editorCapacity: Int>(
+        _ key: StaticString,
+        to editor: inout ObjectEditor<editorCapacity>
+    ) throws(ObjectError) {
         let localStorage = storage
+        var failure: ObjectError?
         withUnsafeBytes(of: localStorage) { buffer in
-            body(ByteSlice(bytes: buffer.baseAddress!.assumingMemoryBound(to: UInt8.self), length: length))
+            let bytes = ByteSlice(
+                bytes: buffer.baseAddress!.assumingMemoryBound(to: UInt8.self),
+                length: length
+            )
+            do throws(ObjectError) { try editor.setEncodedString(key, value: bytes) }
+            catch { failure = error }
         }
+        if let failure { throw failure }
     }
 
     /// Writes this encoded string value synchronously without exposing its storage.

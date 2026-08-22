@@ -274,12 +274,8 @@ extension BoundedEncodedText: ObjectFieldDecodable, ObjectFieldEncodable {
         to editor: inout ObjectFieldEncoder<editorCapacity>,
         forKey key: StaticString
     ) throws(ObjectEncodingError) {
-        var failure: ObjectError?
-        withEncodedBytes { bytes in
-            do throws(ObjectError) { try editor.setEncodedString(key, value: bytes) }
-            catch { failure = error }
-        }
-        if let failure { throw failure.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
+        do throws(ObjectError) { try encodeField(key, to: &editor) }
+        catch { throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
     }
 }
 
