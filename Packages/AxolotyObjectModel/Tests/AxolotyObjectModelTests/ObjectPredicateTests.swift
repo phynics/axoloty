@@ -99,7 +99,12 @@ private func predicateObject(_ value: StaticString) throws -> BoundedDynamicObje
 
     let oversized = "{\"name\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}"
     #expect(throws: ObjectError.self) {
-        _ = try BoundedDynamicObject<1024, 8>(decoding: predicateSlice(oversized))
+        let bytes = Array(oversized.utf8)
+        try bytes.withUnsafeBufferPointer { buffer in
+            _ = try BoundedDynamicObject<1024, 8>(decoding: ByteSlice(
+                bytes: buffer.baseAddress!, length: buffer.count
+            ))
+        }
     }
 }
 
