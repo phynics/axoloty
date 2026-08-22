@@ -20,6 +20,14 @@ test -f "$embedded_assembler"
 sh -n "$probe/check-host.sh" "$probe/check-sanitized.sh" \
     "$probe/check-embedded.sh" \
     "$root/Spikes/BoundedPortableRuntime/measure-allocations.sh"
+node - "$probe/check-sanitized.sh" <<'NODE'
+const fs = require("node:fs");
+const source = fs.readFileSync(process.argv[2], "utf8");
+const propagated = /CONTAINER_ENV_VARS=ASAN_OPTIONS\s*\\\n\s*ASAN_OPTIONS="\$\{ASAN_OPTIONS:-detect_leaks=0\}"\s*\\\n\s*run_swift swift test/;
+if (!propagated.test(source)) {
+  throw new Error("sanitized node does not propagate ASAN_OPTIONS=detect_leaks=0 to both execution branches");
+}
+NODE
 node --check "$validator"
 node --check "$embedded_assembler"
 jq empty "$schema"
