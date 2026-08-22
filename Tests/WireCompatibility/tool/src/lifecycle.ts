@@ -87,7 +87,7 @@ export function verifyLifecycleBehavior(scenarioId: string, applicationPath: str
   const capture = parseJSONLines<CaptureRecord>(capturePath);
   if (scenarioId === "offline-queueing") {
     const payloads = capture
-      .filter((record) => record.mqtt?.topic?.includes("/ADV/"))
+      .filter((record) => isAdvertiseTopic(record.mqtt?.topic))
       .map(decodePayload)
       .filter((payload): payload is string => payload !== undefined);
     const first = payloads.filter((payload) => payload.includes('"name":"first"'));
@@ -109,12 +109,19 @@ export function verifyLifecycleBehavior(scenarioId: string, applicationPath: str
     }
   } else if (scenarioId === "reconnect-resubscribe" || scenarioId === "broker-restart" || scenarioId === "clean-session") {
     const hasProbe = capture.some((record) => {
-      if (!record.mqtt?.topic?.includes("/ADV/")) return false;
+      if (!isAdvertiseTopic(record.mqtt?.topic)) return false;
       const payload = decodePayload(record);
       return payload?.includes("com.coaty.test.WireFixture") ?? false;
     });
     if (!hasProbe) throw new Error(`${scenarioId} capture is missing the post-reconnect CoatyJS probe`);
   }
+}
+
+/** Return true for the unfiltered and filtered Coaty Advertise route forms. */
+function isAdvertiseTopic(topic: string | undefined): boolean {
+  if (!topic) return false;
+  const route = topic.split("/")[3];
+  return route === "ADV" || route?.startsWith("ADV:") === true;
 }
 
 function parseJSONLines<T>(path: string): T[] {

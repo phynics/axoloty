@@ -35,3 +35,21 @@ test("lifecycle verifier rejects a fabricated duplicate result", () => {
     ['{"variant":"original"}']);
   assert.throws(() => verifyLifecycleBehavior("duplicate-reply", application, capture), /original and duplicate/);
 });
+
+test("lifecycle verifier recognizes filtered Coaty Advertise routes", () => {
+  const directory = mkdtempSync(join(tmpdir(), "axoloty-lifecycle-verifier-"));
+  const application = join(directory, "application.jsonl");
+  const capture = join(directory, "capture.jsonl");
+  writeFileSync(application, [
+    "ready",
+    "offline",
+    "reconnected",
+    "probe-received",
+    "done",
+  ].map((state) => JSON.stringify({ state })).join("\n") + "\n");
+  writeFileSync(capture, JSON.stringify({
+    mqtt: { topic: "coaty/3/test/ADV:CoatyObject/11111111-1111-4111-8111-111111111111" },
+    payload: { encoding: "base64", bytes: Buffer.from('{"objectType":"com.coaty.test.WireFixture"}').toString("base64") },
+  }) + "\n");
+  assert.doesNotThrow(() => verifyLifecycleBehavior("reconnect-resubscribe", application, capture));
+});
