@@ -8,6 +8,12 @@ private func slice(_ value: StaticString) -> ByteSlice {
     ByteSlice(bytes: value.utf8Start, length: value.utf8CodeUnitCount)
 }
 
+@Test func schemaDescriptorUsesCompactLiteralKeys() {
+    #expect(MemoryLayout<ObjectFieldKey>.size <= 16)
+    #expect(MemoryLayout<ObjectFieldDescriptor>.size <= 32)
+    #expect(MemoryLayout<InlineArray<24, ObjectFieldDescriptor>>.size <= 24 * 32)
+}
+
 @Test func dynamicObjectReadsBorrowedFields() throws {
     let bytes = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.Reading\",\"temperature\":21.50,\"unknown\":1e2}")
     let object = try BoundedDynamicObject<512, 8>(decoding: bytes)

@@ -20,10 +20,10 @@ func schemaMacroExpansion() {
             var temperature: Int
             @WireName("alarmCodes") var alarms: Int?
             public static let schema: PortableObjectSchema<Reading> = {
-                var fields = InlineArray<64, ObjectFieldDescriptor>(repeating: .empty)
-                fields[0] = ObjectFieldDescriptor(sourceName: "temperature", wireName: "temperature", index: 0, isOptional: false, hasDefault: false)
-                fields[1] = ObjectFieldDescriptor(sourceName: "alarms", wireName: "alarmCodes", index: 1, isOptional: true, hasDefault: false)
-                return PortableObjectSchema<Reading>(objectType: "com.example.Reading", coreType: "CoatyObject", fieldCount: 2, fields: fields)
+                var fields = InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
+                fields[0] = ObjectFieldDescriptor(key: ObjectFieldKey("temperature")!, index: 0, flags: .required)
+                fields[1] = ObjectFieldDescriptor(key: ObjectFieldKey("alarmCodes")!, index: 1, flags: .optional)
+                return PortableObjectSchema<Reading>(objectType: ObjectType("com.example.Reading")!, coreType: .coatyObject, fieldCount: 2, fields: fields)
             }()
             public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
                 self.init(
@@ -31,7 +31,7 @@ func schemaMacroExpansion() {
                     alarms: try fields.decodeIfPresent("alarmCodes", as: Int.self)
                 )
             }
-            public borrowing func encodeFields(to encoder: inout ObjectFieldEncoder) throws(ObjectEncodingError) {
+            public borrowing func encodeFields<let capacity: Int>(to encoder: inout ObjectFieldEncoder<capacity>) throws(ObjectEncodingError) {
                 try encoder.encode(temperature, forKey: "temperature")
                 try encoder.encode(alarms, forKey: "alarmCodes")
             }
@@ -63,11 +63,11 @@ func schemaMacroDiagnostics() {
             @WireName("first") var second: Int
             @WireName("objectId") var third: Int
             public static let schema: PortableObjectSchema<Bad> = {
-                var fields = InlineArray<64, ObjectFieldDescriptor>(repeating: .empty)
-                fields[0] = ObjectFieldDescriptor(sourceName: "first", wireName: "first", index: 0, isOptional: false, hasDefault: false)
-                fields[1] = ObjectFieldDescriptor(sourceName: "second", wireName: "first", index: 1, isOptional: false, hasDefault: false)
-                fields[2] = ObjectFieldDescriptor(sourceName: "third", wireName: "objectId", index: 2, isOptional: false, hasDefault: false)
-                return PortableObjectSchema<Bad>(objectType: "com.example.Bad", coreType: "CoatyObject", fieldCount: 3, fields: fields)
+                var fields = InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
+                fields[0] = ObjectFieldDescriptor(key: ObjectFieldKey("first")!, index: 0, flags: .required)
+                fields[1] = ObjectFieldDescriptor(key: ObjectFieldKey("first")!, index: 1, flags: .required)
+                fields[2] = ObjectFieldDescriptor(key: ObjectFieldKey("objectId")!, index: 2, flags: .required)
+                return PortableObjectSchema<Bad>(objectType: ObjectType("com.example.Bad")!, coreType: .coatyObject, fieldCount: 3, fields: fields)
             }()
             public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
                 self.init(
@@ -76,7 +76,7 @@ func schemaMacroDiagnostics() {
                     third: try fields.decode("objectId", as: Int.self)
                 )
             }
-            public borrowing func encodeFields(to encoder: inout ObjectFieldEncoder) throws(ObjectEncodingError) {
+            public borrowing func encodeFields<let capacity: Int>(to encoder: inout ObjectFieldEncoder<capacity>) throws(ObjectEncodingError) {
                 try encoder.encode(first, forKey: "first")
                 try encoder.encode(second, forKey: "first")
                 try encoder.encode(third, forKey: "objectId")
@@ -139,13 +139,13 @@ private func assertValidCoreType(_ coreType: String) {
         expandedSource: """
         struct CoreProbe {
             public static let schema: PortableObjectSchema<CoreProbe> = {
-                var fields = InlineArray<64, ObjectFieldDescriptor>(repeating: .empty)
-                return PortableObjectSchema<CoreProbe>(objectType: "com.example.CoreProbe", coreType: "\(coreType)", fieldCount: 0, fields: fields)
+                var fields = InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
+                return PortableObjectSchema<CoreProbe>(objectType: ObjectType("com.example.CoreProbe")!, coreType: .\(coreTypeExpression(coreType)), fieldCount: 0, fields: fields)
             }()
             public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
                 self.init()
             }
-            public borrowing func encodeFields(to encoder: inout ObjectFieldEncoder) throws(ObjectEncodingError) {
+            public borrowing func encodeFields<let capacity: Int>(to encoder: inout ObjectFieldEncoder<capacity>) throws(ObjectEncodingError) {
             }
         }
         extension CoreProbe: ObjectSchema {}
@@ -156,6 +156,24 @@ private func assertValidCoreType(_ coreType: String) {
             "Default": DefaultMacro.self,
         ]
     )
+}
+
+private func coreTypeExpression(_ value: String) -> String {
+    switch value {
+    case "CoatyObject": return "coatyObject"
+    case "User": return "user"
+    case "Annotation": return "annotation"
+    case "Task": return "task"
+    case "IoSource": return "ioSource"
+    case "IoActor": return "ioActor"
+    case "IoNode": return "ioNode"
+    case "IoContext": return "ioContext"
+    case "Identity": return "identity"
+    case "Log": return "log"
+    case "Location": return "location"
+    case "Snapshot": return "snapshot"
+    default: return "coatyObject"
+    }
 }
 
 @Test("schema macro accepts every sealed Coaty core type")
@@ -175,19 +193,46 @@ func schemaMacroRejectsInventedCoreType() {
         expandedSource: """
         struct Bad {
             public static let schema: PortableObjectSchema<Bad> = {
-                var fields = InlineArray<64, ObjectFieldDescriptor>(repeating: .empty)
-                return PortableObjectSchema<Bad>(objectType: "com.example.Bad", coreType: "CoatyThing", fieldCount: 0, fields: fields)
+                var fields = InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
+                return PortableObjectSchema<Bad>(objectType: ObjectType("com.example.Bad")!, coreType: .coatyObject, fieldCount: 0, fields: fields)
             }()
             public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
                 self.init()
             }
-            public borrowing func encodeFields(to encoder: inout ObjectFieldEncoder) throws(ObjectEncodingError) {
+            public borrowing func encodeFields<let capacity: Int>(to encoder: inout ObjectFieldEncoder<capacity>) throws(ObjectEncodingError) {
             }
         }
         extension Bad: ObjectSchema {}
         """,
         diagnostics: [
             DiagnosticSpec(message: "coreType 'CoatyThing' is not a supported portable core type", line: 2, column: 1),
+        ],
+        macros: [
+            "AxolotyObject": AxolotyObjectMacro.self,
+            "WireName": WireNameMacro.self,
+            "Default": DefaultMacro.self,
+        ]
+    )
+}
+
+@Test("schema macro diagnoses the authoritative 24-field limit")
+func schemaMacroRejectsMoreThan24Fields() {
+    let fields = (0..<25).map { "    var value\($0): Int" }.joined(separator: "\n")
+    assertMacroExpansion(
+        """
+        @AxolotyObject(objectType: "com.example.TooMany")
+        struct TooMany {
+        \(fields)
+        }
+        """,
+        expandedSource: """
+        struct TooMany {
+        \(fields)
+        }
+        extension TooMany: ObjectSchema {}
+        """,
+        diagnostics: [
+            DiagnosticSpec(message: "portable object schemas support at most 24 fields", line: 2, column: 1),
         ],
         macros: [
             "AxolotyObject": AxolotyObjectMacro.self,

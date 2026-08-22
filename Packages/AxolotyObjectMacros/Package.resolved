@@ -2,6 +2,15 @@
   "originHash" : "2e3e51da495e68e6064606893c1b67ae30a3554d7983ea48ad9b82b5c8053fe5",
   "pins" : [
     {
+      "identity" : "swift-json",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/phynics/swift-json.git",
+      "state" : {
+        "revision" : "ec81216be5bbe2f02f45831d05256de2af452be8",
+        "version" : "2.5.3"
+      }
+    },
+    {
       "identity" : "swift-syntax",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/swiftlang/swift-syntax.git",

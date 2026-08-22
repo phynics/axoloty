@@ -172,6 +172,11 @@ public struct JSONValueView: ~Copyable {
         guard kind == .number else { return false }
         body(JSONNumberView(lexeme: raw)); return true
     }
+    /// Borrows encoded JSON-string content for the duration of `body`.
+    public borrowing func withString(_ body: (borrowing ByteSlice) -> Void) -> Bool {
+        guard kind == .string, raw.length >= 2 else { return false }
+        body(raw.subSlice(from: 1, length: raw.length - 2)); return true
+    }
     /// Returns true when the value is the JSON null literal.
     public var isNull: Bool { kind == .null }
 

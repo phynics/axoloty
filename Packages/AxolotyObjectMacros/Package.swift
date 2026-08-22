@@ -11,6 +11,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "603.0.0"),
+        .package(path: "../AxolotyObjectModel"),
     ],
     targets: [
         .macro(
@@ -24,12 +25,13 @@ let package = Package(
         ),
         .target(
             name: "AxolotyObjectMacros",
-            dependencies: ["AxolotyObjectMacrosImplementation"]
+            dependencies: ["AxolotyObjectMacrosImplementation", "AxolotyObjectModel"]
         ),
         .testTarget(
             name: "AxolotyObjectMacrosTests",
             dependencies: [
                 "AxolotyObjectMacros",
+                "AxolotyObjectModel",
                 .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax"),
             ]
         ),

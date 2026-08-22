@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+import AxolotyObjectModel
+
 /// Synthesizes a portable object schema and its ``ObjectSchema`` conformance.
 @attached(member, names: named(schema))
 @attached(extension, conformances: ObjectSchema)

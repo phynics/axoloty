@@ -1,170 +1,344 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-/// A wire field declared by a portable object schema.
-///
-/// Descriptors are deliberately small and contain no reflection metadata. The
-/// macro and a hand-written conformance both create the same descriptor value,
-/// which keeps the generated and Embedded Swift paths interchangeable.
-public struct ObjectFieldDescriptor: Sendable {
-    /// A descriptor representing an unused slot in a fixed schema table.
-    public static let empty = ObjectFieldDescriptor(
-        sourceName: "",
-        wireName: "",
-        index: 0,
-        isOptional: false,
-        hasDefault: false
-    )
+/// Errors raised while decoding a typed schema.
+public enum ObjectDecodingError: Error, Sendable, Equatable {
+    /// A required field was absent.
+    case missingRequiredField
+    /// A field had an incompatible JSON kind or value.
+    case invalidField
+    /// A bounded field or object limit was exceeded.
+    case capacityExceeded
+}
 
-    /// The Swift source property name.
-    public let sourceName: String
-    /// The name used on the wire.
-    public let wireName: String
-    /// Stable source-order index of this field.
-    public let index: Int
-    /// Whether omission is valid for this field.
-    public let isOptional: Bool
-    /// Whether the schema supplies a value when the field is omitted.
-    public let hasDefault: Bool
+/// Errors raised while encoding a typed schema.
+public enum ObjectEncodingError: Error, Sendable, Equatable {
+    /// A field could not be represented by the bounded wire codec.
+    case invalidField
+    /// A bounded field or object limit was exceeded.
+    case capacityExceeded
+}
 
-    /// Creates a field descriptor.
-    public init(
-        sourceName: String,
-        wireName: String,
-        index: Int,
-        isOptional: Bool,
-        hasDefault: Bool
-    ) {
-        self.sourceName = sourceName
-        self.wireName = wireName
-        self.index = index
-        self.isOptional = isOptional
-        self.hasDefault = hasDefault
+/// A field's wire presence policy.
+public struct ObjectFieldFlags: OptionSet, Sendable, Equatable {
+    /// A field must be present on decode.
+    public static let required = Self(rawValue: 1 << 0)
+    /// A field may be omitted and maps to an optional value.
+    public static let optional = Self(rawValue: 1 << 1)
+    /// A field has a generated/manual default when omitted.
+    public static let defaulted = Self(rawValue: 1 << 2)
+    /// A field preserves missing/null/value distinction.
+    public static let presence = Self(rawValue: 1 << 3)
+
+    /// The compact flag representation.
+    public let rawValue: UInt8
+
+    /// Creates a flag set from its bounded raw bits.
+    public init(rawValue: UInt8) { self.rawValue = rawValue }
+}
+
+/// A bounded wire key stored separately from the larger object-type vocabulary.
+public struct ObjectFieldKey: Sendable, Equatable {
+    private let literal: StaticString
+    /// Number of meaningful UTF-8 bytes.
+    public let length: Int
+
+    /// Creates a key from a static UTF-8 literal.
+    public init?(_ value: StaticString) {
+        guard value.utf8CodeUnitCount <= WireBufferConfig.maxTopicLength else { return nil }
+        literal = value
+        length = value.utf8CodeUnitCount
     }
 
-    /// Whether two descriptors contain the same wire contract.
+    /// Compares the key against a static UTF-8 literal.
+    public borrowing func equals(_ value: StaticString) -> Bool {
+        guard length == value.utf8CodeUnitCount else { return false }
+        for index in 0..<length where literal.utf8Start[index] != value.utf8Start[index] { return false }
+        return true
+    }
+
     public static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.sourceName == rhs.sourceName &&
-            lhs.wireName == rhs.wireName &&
-            lhs.index == rhs.index &&
-            lhs.isOptional == rhs.isOptional &&
-            lhs.hasDefault == rhs.hasDefault
+        guard lhs.length == rhs.length else { return false }
+        for index in 0..<lhs.length where lhs.literal.utf8Start[index] != rhs.literal.utf8Start[index] { return false }
+        return true
     }
 }
 
-extension ObjectFieldDescriptor: Equatable {}
+/// A fixed descriptor for one typed schema field.
+public struct ObjectFieldDescriptor: Sendable, Equatable {
+    /// An unused fixed-table entry.
+    public static let empty = ObjectFieldDescriptor(key: ObjectFieldKey("")!, index: 0, flags: [])
+    /// The field's bounded wire key.
+    public let key: ObjectFieldKey
+    /// Stable source-order field index.
+    public let index: UInt8
+    /// Presence/default policy.
+    public let flags: ObjectFieldFlags
 
-/// The immutable, generated-or-manual description of one object schema.
-///
-/// The descriptor table is fixed at 64 entries. A schema with fewer fields
-/// leaves the remaining entries as ``ObjectFieldDescriptor/empty``. This is a
-/// compile-time upper bound, not a request to allocate a growable collection.
-public struct PortableObjectSchema<Value>: Sendable where Value: Sendable {
-    /// Maximum number of fields in one portable schema.
-    public static let maxFieldCount = 64
+    /// Creates a field descriptor.
+    public init(key: ObjectFieldKey, index: UInt8, flags: ObjectFieldFlags) {
+        self.key = key
+        self.index = index
+        self.flags = flags
+    }
+}
 
-    /// Canonical object type name.
-    public let objectType: String
-    /// Canonical core type name.
-    ///
-    /// This remains textual at the model boundary so the standalone model
-    /// package does not depend on the protocol package's core-type inventory.
-    public let coreType: String
-    /// Number of occupied descriptors in ``fields``.
-    public let fieldCount: Int
+/// An immutable fixed-inline schema descriptor shared by manual and macro forms.
+public struct PortableObjectSchema<Value: Sendable>: Sendable {
+    /// Maximum fields supported by the authoritative wire index.
+    public static let maxFieldCount = WireBufferConfig.maxIndexedFields
+    /// Object type carried by this schema.
+    public let objectType: ObjectType
+    /// Core type carried by this schema.
+    public let coreType: ObjectCoreType
+    /// Number of occupied descriptors.
+    public let fieldCount: UInt8
+    /// Fixed descriptor table. Entries after `fieldCount` are empty.
+    public let fields: InlineArray<24, ObjectFieldDescriptor>
 
-    private let fields: InlineArray<64, ObjectFieldDescriptor>
-
-    /// Creates an immutable schema descriptor from an inline table.
+    /// Creates a schema from its fixed descriptor table.
     public init(
-        objectType: String,
-        coreType: String,
-        fieldCount: Int,
-        fields: InlineArray<64, ObjectFieldDescriptor>
+        objectType: ObjectType,
+        coreType: ObjectCoreType,
+        fieldCount: UInt8,
+        fields: InlineArray<24, ObjectFieldDescriptor>
     ) {
         self.objectType = objectType
         self.coreType = coreType
-        self.fieldCount = min(max(0, fieldCount), Self.maxFieldCount)
+        self.fieldCount = min(fieldCount, UInt8(Self.maxFieldCount))
         self.fields = fields
     }
-
-    /// Creates an empty schema descriptor. Useful for a manual zero-field
-    /// conformance and for compile-time macro probes.
-    public init(objectType: String = "", coreType: String = "", fieldCount: Int = 0) {
-        self.init(
-            objectType: objectType,
-            coreType: coreType,
-            fieldCount: fieldCount,
-            fields: InlineArray(repeating: .empty)
-        )
-    }
-
-    /// Returns the descriptor at `index`, or `nil` outside the occupied range.
-    public subscript(index: Int) -> ObjectFieldDescriptor? {
-        guard index >= 0, index < fieldCount else { return nil }
-        return fields[index]
-    }
-
-    /// Returns all occupied descriptors in stable source order.
-    ///
-    /// The returned array is intended for host inspection and diagnostics. The
-    /// runtime lookup path should use ``subscript(_:)`` to avoid a collection.
-    #if !hasFeature(Embedded)
-    public var fieldDescriptors: [ObjectFieldDescriptor] {
-        var result: [ObjectFieldDescriptor] = []
-        result.reserveCapacity(fieldCount)
-        for index in 0..<fieldCount { result.append(fields[index]) }
-        return result
-    }
-    #endif
 }
 
-/// A bounded decoder handed to a typed schema conformance.
-///
-/// The storage and JSON token semantics are supplied by the object-foundation
-/// layer. This façade is intentionally synchronous and non-escaping so a
-/// schema cannot retain borrowed wire data.
+/// A typed value that can be decoded from one borrowed JSON value.
+public protocol ObjectFieldDecodable: Sendable {
+    static func decode(from value: JSONValueView) throws(ObjectDecodingError) -> Self
+}
+
+/// A typed value that can be encoded into a transactional object editor.
+public protocol ObjectFieldEncodable: Sendable {
+    func encode<let capacity: Int>(
+        to editor: inout ObjectFieldEncoder<capacity>,
+        forKey key: StaticString
+    ) throws(ObjectEncodingError)
+}
+
+/// A bounded decoder over one synchronous object-field borrow.
 public struct ObjectFieldDecoder: ~Copyable {
-    /// Creates an empty decoder for manual schema construction and tests.
-    public init() {}
+    private let bytes: UnsafeRawPointer
+    private let length: Int
+
+    @usableFromInline
+    init(bytes: UnsafeRawPointer, length: Int) {
+        self.bytes = bytes
+        self.length = length
+    }
+
+    /// Decodes one required field.
+    public borrowing func decode<T: ObjectFieldDecodable>(
+        _ key: StaticString,
+        as type: T.Type
+    ) throws(ObjectDecodingError) -> T {
+        var decoded: T?
+        var found = false
+        var failed = false
+        let reader = WireReader(bytes: bytes.assumingMemoryBound(to: UInt8.self), length: length)
+        do {
+            try reader.withObjectFields { field in
+                if decoded == nil && field.keyEquals(key) {
+                    found = true
+                    do { decoded = try T.decode(from: JSONValueView(raw: field.value)) }
+                    catch { failed = true }
+                }
+            }
+        } catch { throw .invalidField }
+        if failed { throw .invalidField }
+        guard found else { throw .missingRequiredField }
+        guard let decoded else { throw .missingRequiredField }
+        return decoded
+    }
+
+    /// Decodes an optional field, preserving omission and JSON null as `nil`.
+    public borrowing func decodeIfPresent<T: ObjectFieldDecodable>(
+        _ key: StaticString,
+        as type: T.Type
+    ) throws(ObjectDecodingError) -> T? {
+        var decoded: T?
+        var found = false
+        var failed = false
+        let reader = WireReader(bytes: bytes.assumingMemoryBound(to: UInt8.self), length: length)
+        do {
+            try reader.withObjectFields { field in
+                if decoded == nil && field.keyEquals(key), field.kind != .null {
+                    found = true
+                    do { decoded = try T.decode(from: JSONValueView(raw: field.value)) }
+                    catch { failed = true }
+                } else if field.keyEquals(key) {
+                    found = true
+                }
+            }
+        } catch { throw .invalidField }
+        if failed { throw .invalidField }
+        _ = found
+        return decoded
+    }
+
+    /// Decodes a field while preserving missing, null, and value states.
+    public borrowing func presence<T: ObjectFieldDecodable>(
+        _ key: StaticString,
+        as type: T.Type
+    ) throws(ObjectDecodingError) -> Presence<T> {
+        var found = false
+        var decoded: T?
+        var isNull = false
+        var failed = false
+        let reader = WireReader(bytes: bytes.assumingMemoryBound(to: UInt8.self), length: length)
+        do {
+            try reader.withObjectFields { field in
+                guard !found && field.keyEquals(key) else { return }
+                found = true
+                isNull = field.kind == .null
+                if !isNull {
+                    do { decoded = try T.decode(from: JSONValueView(raw: field.value)) }
+                    catch { failed = true }
+                }
+            }
+        } catch { throw .invalidField }
+        if failed { throw .invalidField }
+        if !found { return .missing }
+        if isNull { return .null }
+        guard let decoded else { throw .invalidField }
+        return .value(decoded)
+    }
 }
 
-/// A bounded encoder handed to a typed schema conformance.
-public struct ObjectFieldEncoder: ~Copyable {
-    /// Creates an empty encoder for manual schema construction and tests.
-    public init() {}
-}
-
-/// A typed schema decoding failure.
-public enum ObjectDecodingError: Error, Sendable, Equatable {
-    /// The schema did not contain a required field.
-    case missingRequiredField(String)
-    /// A field had a value of the wrong wire kind.
-    case invalidField(String)
-    /// The input exceeded one of the schema's static bounds.
-    case capacityExceeded
-}
-
-/// A typed schema encoding failure.
-public enum ObjectEncodingError: Error, Sendable, Equatable {
-    /// A field could not be represented in the declared wire shape.
-    case invalidField(String)
-    /// The encoded object exceeded one of the schema's static bounds.
-    case capacityExceeded
-}
-
-/// A portable typed object schema.
-///
-/// Both generated and hand-written models expose the same static descriptor.
-/// Coding remains an explicit model concern; runtime storage is provided by
-/// ``BoundedObject`` and the foundation object-field implementation.
+/// The schema contract implemented by manual and generated models.
 public protocol ObjectSchema: Sendable {
-    /// The immutable descriptor for this object type.
+    /// Immutable schema metadata.
     static var schema: PortableObjectSchema<Self> { get }
+    /// Decodes typed fields from a borrowed object view.
+    init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError)
+    /// Encodes typed fields into a capacity-specialized transactional editor.
+    borrowing func encodeFields<let capacity: Int>(
+        to encoder: inout ObjectFieldEncoder<capacity>
+    ) throws(ObjectEncodingError)
 }
 
-/// A marker used by manual conformances to document defaulted fields.
-public protocol ObjectSchemaDefaultValue {
-    associatedtype Value: Sendable
-    static var defaultValue: Value { get }
+/// The fixed inline editor used by typed schema encoders.
+public typealias ObjectFieldEncoder<let capacity: Int> = ObjectEditor<capacity>
+
+extension ObjectEditor {
+    /// Encodes one bounded primitive or application-defined field value.
+    public mutating func encode<T: ObjectFieldEncodable>(
+        _ value: T,
+        forKey key: StaticString
+    ) throws(ObjectEncodingError) {
+        do { try value.encode(to: &self, forKey: key) }
+        catch let error as ObjectEncodingError { throw error }
+        catch { throw .invalidField }
+    }
 }
 
+extension Optional: ObjectFieldEncodable where Wrapped: ObjectFieldEncodable {
+    public func encode<let capacity: Int>(
+        to editor: inout ObjectFieldEncoder<capacity>,
+        forKey key: StaticString
+    ) throws(ObjectEncodingError) {
+        switch self {
+        case .some(let value): try value.encode(to: &editor, forKey: key)
+        case .none:
+            do { try editor.remove(key) }
+            catch let error as ObjectError {
+                throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField
+            }
+            catch { throw .invalidField }
+        }
+    }
+}
+
+extension Presence: ObjectFieldEncodable where Value: ObjectFieldEncodable {
+    public func encode<let capacity: Int>(
+        to editor: inout ObjectFieldEncoder<capacity>,
+        forKey key: StaticString
+    ) throws(ObjectEncodingError) {
+        switch self {
+        case .missing:
+            do { try editor.remove(key) }
+            catch let error as ObjectError {
+                throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField
+            }
+            catch { throw .invalidField }
+        case .null:
+            do { try editor.setNull(key) }
+            catch let error as ObjectError {
+                throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField
+            }
+            catch { throw .invalidField }
+        case .value(let value): try value.encode(to: &editor, forKey: key)
+        }
+    }
+}
+
+extension Int: ObjectFieldDecodable, ObjectFieldEncodable {
+    public static func decode(from value: JSONValueView) throws(ObjectDecodingError) -> Int {
+        guard value.kind == .number, let number = value.number?.intValue,
+              number >= Int64(Int.min), number <= Int64(Int.max) else { throw .invalidField }
+        return Int(number)
+    }
+
+    public func encode<let capacity: Int>(to editor: inout ObjectFieldEncoder<capacity>, forKey key: StaticString) throws(ObjectEncodingError) {
+        do { try editor.setInteger(self, forKey: key) }
+        catch let error as ObjectError { throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
+        catch { throw .invalidField }
+    }
+}
+
+extension Bool: ObjectFieldDecodable, ObjectFieldEncodable {
+    public static func decode(from value: JSONValueView) throws(ObjectDecodingError) -> Bool {
+        switch value.kind { case .trueValue: return true; case .falseValue: return false; default: throw .invalidField }
+    }
+
+    public func encode<let capacity: Int>(to editor: inout ObjectFieldEncoder<capacity>, forKey key: StaticString) throws(ObjectEncodingError) {
+        do { try editor.setBoolean(self, forKey: key) }
+        catch let error as ObjectError { throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
+        catch { throw .invalidField }
+    }
+}
+
+extension BoundedEncodedText: ObjectFieldDecodable, ObjectFieldEncodable {
+    public static func decode(from value: JSONValueView) throws(ObjectDecodingError) -> Self {
+        var decoded: Self?
+        _ = value.withString { bytes in decoded = Self(bytes: bytes) }
+        guard let decoded else { throw .invalidField }
+        return decoded
+    }
+
+    public borrowing func encode<let capacity: Int>(
+        to editor: inout ObjectFieldEncoder<capacity>,
+        forKey key: StaticString
+    ) throws(ObjectEncodingError) {
+        var failure: ObjectError?
+        withEncodedBytes { bytes in
+            do throws(ObjectError) { try editor.setEncodedString(key, value: bytes) }
+            catch { failure = error }
+        }
+        if let failure { throw failure.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
+    }
+}
+
+extension ObjectID: ObjectFieldDecodable, ObjectFieldEncodable {
+    public static func decode(from value: JSONValueView) throws(ObjectDecodingError) -> Self {
+        var decoded: Self?
+        _ = value.withString { bytes in decoded = Self(bytes: bytes) }
+        guard let decoded else { throw .invalidField }
+        return decoded
+    }
+
+    public func encode<let capacity: Int>(
+        to editor: inout ObjectFieldEncoder<capacity>,
+        forKey key: StaticString
+    ) throws(ObjectEncodingError) {
+        do { try editor.setUUID(key, value: uuid) }
+        catch let error as ObjectError { throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
+        catch { throw .invalidField }
+    }
+}

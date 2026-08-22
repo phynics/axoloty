@@ -120,6 +120,13 @@ public struct BoundedEncodedText<let capacity: Int>: Equatable, Hashable, Sendab
         return true
     }
 
+    /// Borrows the retained encoded string content synchronously.
+    public borrowing func withEncodedBytes<R>(_ body: (borrowing ByteSlice) -> R) -> R {
+        withUnsafeBytes(of: storage) { buffer in
+            body(ByteSlice(bytes: buffer.baseAddress!.assumingMemoryBound(to: UInt8.self), length: length))
+        }
+    }
+
     /// Writes this encoded string value synchronously without exposing its storage.
     ///
     /// The writer validates escapes and copies bytes into its caller-owned

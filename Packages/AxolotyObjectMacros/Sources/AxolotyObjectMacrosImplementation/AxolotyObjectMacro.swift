@@ -52,6 +52,8 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
         }
         if objectType.isEmpty {
             context.diagnose(Diagnostic(node: Syntax(node), message: SchemaDiagnostic(.invalidObjectType, "objectType must be a non-empty string literal")))
+        } else if objectType.utf8.count > 128 {
+            context.diagnose(Diagnostic(node: Syntax(node), message: SchemaDiagnostic(.invalidObjectType, "objectType exceeds the bounded 128-byte type limit")))
         } else if !isValidIdentifier(objectType) {
             context.diagnose(Diagnostic(node: Syntax(node), message: SchemaDiagnostic(.invalidObjectType, "objectType must contain only letters, digits, and dots")))
         }
@@ -113,8 +115,19 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
             let isOptional = fieldType.hasSuffix("?")
             let hasDefault = defaultExpression != nil
 
+            if !isSupportedFieldType(fieldType) {
+                context.diagnose(Diagnostic(node: Syntax(variable), message: SchemaDiagnostic(.unsupportedField, "field type '\(fieldType)' is not supported by the bounded schema codec")))
+                continue
+            }
+            if hasDefault && fieldType.hasPrefix("Presence<") {
+                context.diagnose(Diagnostic(node: Syntax(defaultAttribute!), message: SchemaDiagnostic(.invalidDefault, "@Default cannot be applied to Presence fields")))
+            }
+
             if reserved.contains(where: { decodeEscapes($0) == wireName }) {
                 context.diagnose(Diagnostic(node: Syntax(variable), message: SchemaDiagnostic(.reservedWireName, "wire field '\(wireName)' is reserved by the object envelope")))
+            }
+            if wireName.utf8.count > 128 {
+                context.diagnose(Diagnostic(node: Syntax(variable), message: SchemaDiagnostic(.malformedWireName, "wire field exceeds the bounded 128-byte key limit")))
             }
             if wireNames.contains(where: { decodeEscapes($0) == wireName }) {
                 context.diagnose(Diagnostic(node: Syntax(variable), message: SchemaDiagnostic(.duplicateWireName, "wire field '\(wireName)' is declared more than once")))
@@ -123,18 +136,27 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
             descriptors.append((sourceName, fieldType, wireName, isOptional, hasDefault, defaultExpression))
         }
 
-        if descriptors.count > 64 {
-            context.diagnose(Diagnostic(node: Syntax(declaration), message: SchemaDiagnostic(.tooManyFields, "portable object schemas support at most 64 fields")))
+        if descriptors.count > 24 {
+            context.diagnose(Diagnostic(node: Syntax(declaration), message: SchemaDiagnostic(.tooManyFields, "portable object schemas support at most 24 fields")))
+            return []
         }
 
         var assignments = ""
-        for (index, descriptor) in descriptors.prefix(64).enumerated() {
-            assignments += "fields[\(index)] = ObjectFieldDescriptor(sourceName: \(literal(descriptor.name)), wireName: \(literal(descriptor.wireName)), index: \(index), isOptional: \(descriptor.optional), hasDefault: \(descriptor.defaulted))\n"
+        for (index, descriptor) in descriptors.prefix(24).enumerated() {
+            assignments += "fields[\(index)] = ObjectFieldDescriptor(key: ObjectFieldKey(\(literal(descriptor.wireName)))!, index: \(index), flags: \(flags(for: descriptor)))\n"
         }
-        let decoderArguments = descriptors.prefix(64).map { descriptor in
+        let decoderArguments = descriptors.prefix(24).map { descriptor in
             let decode: String
-            let decodeType = descriptor.type.hasSuffix("?") ? String(descriptor.type.dropLast()) : descriptor.type
-            if let defaultExpression = descriptor.defaultExpression {
+            let isPresence = descriptor.type.hasPrefix("Presence<")
+            let decodeType: String
+            if isPresence {
+                decodeType = String(descriptor.type.dropFirst("Presence<".count).dropLast())
+            } else {
+                decodeType = descriptor.type.hasSuffix("?") ? String(descriptor.type.dropLast()) : descriptor.type
+            }
+            if isPresence {
+                decode = "try fields.presence(\(literal(descriptor.wireName)), as: \(decodeType).self)"
+            } else if let defaultExpression = descriptor.defaultExpression {
                 decode = "try fields.decodeIfPresent(\(literal(descriptor.wireName)), as: \(decodeType).self) ?? \(defaultExpression)"
             } else if descriptor.optional {
                 decode = "try fields.decodeIfPresent(\(literal(descriptor.wireName)), as: \(decodeType).self)"
@@ -143,7 +165,7 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
             }
             return "\(descriptor.name): \(decode)"
         }.joined(separator: ",\n            ")
-        let encoderStatements = descriptors.prefix(64).map { descriptor in
+        let encoderStatements = descriptors.prefix(24).map { descriptor in
             "try encoder.encode(\(descriptor.name), forKey: \(literal(descriptor.wireName)))"
         }.joined(separator: "\n        ")
         let decoderWitness = decoderArguments.isEmpty
@@ -153,9 +175,9 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
         let generated: DeclSyntax = """
         /// The fixed descriptor synthesized by `@AxolotyObject`.
         public static let schema: PortableObjectSchema<\(raw: typeName)> = {
-            var fields = InlineArray<64, ObjectFieldDescriptor>(repeating: .empty)
+            var fields = InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
             \(raw: assignments)
-            return PortableObjectSchema<\(raw: typeName)>(objectType: \(raw: literal(objectType)), coreType: \(raw: literal(coreType)), fieldCount: \(raw: descriptors.count), fields: fields)
+            return PortableObjectSchema<\(raw: typeName)>(objectType: ObjectType(\(raw: literal(objectType)))!, coreType: \(raw: coreExpression(coreType)), fieldCount: \(raw: min(descriptors.count, 24)), fields: fields)
         }()
 
         /// Decodes the typed fields through the bounded object-field decoder.
@@ -164,7 +186,7 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
         }
 
         /// Encodes the typed fields through the bounded object-field encoder.
-        public borrowing func encodeFields(to encoder: inout ObjectFieldEncoder) throws(ObjectEncodingError) {
+        public borrowing func encodeFields<let capacity: Int>(to encoder: inout ObjectFieldEncoder<capacity>) throws(ObjectEncodingError) {
             \(raw: encoderWitness)
         }
         """
@@ -201,6 +223,32 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
     private static func defaultArgument(_ attribute: AttributeSyntax) -> String? {
         guard let arguments = attribute.arguments?.as(LabeledExprListSyntax.self), arguments.count == 1 else { return nil }
         return arguments.first?.expression.trimmedDescription
+    }
+
+    private static func flags(for descriptor: (name: String, type: String, wireName: String, optional: Bool, defaulted: Bool, defaultExpression: String?)) -> String {
+        var values: [String] = []
+        if descriptor.optional { values.append(".optional") } else { values.append(".required") }
+        if descriptor.defaulted { values.append(".defaulted") }
+        if descriptor.type.hasPrefix("Presence<") { values.append(".presence") }
+        return values.joined(separator: ", ")
+    }
+
+    private static func coreExpression(_ value: String) -> String {
+        switch value {
+        case "CoatyObject": return ".coatyObject"
+        case "User": return ".user"
+        case "Annotation": return ".annotation"
+        case "Task": return ".task"
+        case "IoSource": return ".ioSource"
+        case "IoActor": return ".ioActor"
+        case "IoNode": return ".ioNode"
+        case "IoContext": return ".ioContext"
+        case "Identity": return ".identity"
+        case "Log": return ".log"
+        case "Location": return ".location"
+        case "Snapshot": return ".snapshot"
+        default: return ".coatyObject"
+        }
     }
 
     private static func isValidIdentifier(_ value: String) -> Bool {
@@ -246,13 +294,31 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
 
     private static func defaultMatches(fieldType: String, expression: String) -> Bool {
         let type = fieldType.hasSuffix("?") ? String(fieldType.dropLast()) : fieldType
-        if expression.hasPrefix("\"") { return type == "String" || type.hasPrefix("InlineText") }
+        if expression.hasPrefix("\"") { return false }
         if expression == "true" || expression == "false" { return type == "Bool" }
         if expression == "nil" { return fieldType.hasSuffix("?") }
         if expression.first.map({ $0 == "-" || $0.isNumber }) == true {
-            return type == "Int" || type == "UInt" || type == "Int64" || type == "UInt64" || type == "Double" || type == "Float"
+            return type == "Int"
         }
-        return true
+        return false
+    }
+
+    private static func isSupportedFieldType(_ value: String) -> Bool {
+        if value == "Int" || value == "Bool" || value == "ObjectID" { return true }
+        if value == "Int?" || value == "Bool?" || value == "ObjectID?" { return true }
+        if isBoundedText(value) || isBoundedText(value, optional: true) { return true }
+        if value.hasPrefix("Presence<") && value.hasSuffix(">") {
+            let wrapped = value.dropFirst("Presence<".count).dropLast()
+            return isSupportedFieldType(String(wrapped))
+        }
+        return false
+    }
+
+    private static func isBoundedText(_ value: String, optional: Bool = false) -> Bool {
+        let spelling = optional ? String(value.dropLast()) : value
+        guard spelling.hasPrefix("BoundedEncodedText<"), spelling.hasSuffix(">") else { return false }
+        let capacity = spelling.dropFirst("BoundedEncodedText<".count).dropLast()
+        return !capacity.isEmpty && capacity.allSatisfy(\.isNumber)
     }
 
     private static func literal(_ value: String) -> String {

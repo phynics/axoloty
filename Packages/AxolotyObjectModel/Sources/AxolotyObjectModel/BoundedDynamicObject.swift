@@ -61,10 +61,15 @@ public struct ObjectFields: ~Copyable {
         guard let kind else { return .missing }
         return kind == .null ? .null : .value(kind)
     }
+
+    /// Creates a bounded decoder whose borrow ends with `body`.
+    public borrowing func withDecoder<R>(_ body: (borrowing ObjectFieldDecoder) throws -> R) rethrows -> R {
+        try body(ObjectFieldDecoder(bytes: bytes, length: length))
+    }
 }
 
 /// A bounded dynamic JSON object with inline raw bytes and field descriptors.
-public struct BoundedDynamicObject<let byteCapacity: Int, let fieldCapacity: Int>: ~Copyable {
+public struct BoundedDynamicObject<let byteCapacity: Int, let fieldCapacity: Int>: ~Copyable, Sendable {
     private var raw: InlineArray<byteCapacity, UInt8>
     private var descriptors: InlineArray<fieldCapacity, DynamicFieldDescriptor>
     private var rawLength: Int
@@ -115,6 +120,13 @@ public struct BoundedDynamicObject<let byteCapacity: Int, let fieldCapacity: Int
     public borrowing func encodedEquals(_ value: StaticString) -> Bool {
         withUnsafeBytesOfRaw { pointer in
             ByteSlice(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: rawLength).equals(value)
+        }
+    }
+
+    /// Borrows the complete encoded object for the duration of `body`.
+    public borrowing func withEncodedBytes<R>(_ body: (borrowing ByteSlice) throws -> R) rethrows -> R {
+        try withUnsafeBytesOfRaw { pointer in
+            try body(ByteSlice(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: rawLength))
         }
     }
 
@@ -230,6 +242,72 @@ public struct ObjectEditor<let byteCapacity: Int> {
         try addOperation(key: key, valueStart: valueStart, valueLength: 4, kind: 0)
     }
 
+    /// Sets a field from already encoded JSON-string content.
+    public mutating func setEncodedString(_ key: StaticString, value: ByteSlice) throws(ObjectError) {
+        let valueStart = valueLength
+        try appendByte(34)
+        var valid = true
+        var failure: ObjectError?
+        value.withBytes { pointer, count in
+            for index in 0..<count {
+                let byte = pointer.load(fromByteOffset: index, as: UInt8.self)
+                if byte < 0x20 { valid = false; return }
+                do throws(ObjectError) { try appendByte(byte) }
+                catch { failure = error; return }
+            }
+        }
+        if let failure { throw failure }
+        guard valid else { throw ObjectError(.invalidEditValue) }
+        try appendByte(34)
+        try addOperation(key: key, valueStart: valueStart, valueLength: valueLength - valueStart, kind: 0)
+    }
+
+    /// Sets a canonical hyphenated UUID string field without Foundation.
+    public mutating func setUUID(_ key: StaticString, value: UUID16) throws(ObjectError) {
+        let start = valueLength
+        try appendByte(34)
+        var raw = value.bytes
+        var failure: ObjectError?
+        withUnsafeBytes(of: &raw) { buffer in
+            for index in 0..<16 {
+                if index == 4 || index == 6 || index == 8 || index == 10 {
+                    do throws(ObjectError) { try appendByte(45) }
+                    catch { failure = error; return }
+                }
+                let byte = buffer[index]
+                do throws(ObjectError) {
+                    try appendByte(hexDigit(byte >> 4)); try appendByte(hexDigit(byte & 15))
+                } catch { failure = error; return }
+            }
+        }
+        if let failure { throw failure }
+        try appendByte(34)
+        try addOperation(key: key, valueStart: start, valueLength: valueLength - start, kind: 0)
+    }
+
+    /// Sets a signed integer without constructing a String.
+    public mutating func setInteger(_ value: Int, forKey key: StaticString) throws(ObjectError) {
+        let start = valueLength
+        var magnitude = value < 0 ? UInt64(-(value + 1)) + 1 : UInt64(value)
+        if value < 0 { try appendByte(45) }
+        var digits = InlineArray<20, UInt8>(repeating: 0)
+        var count = 0
+        repeat {
+            digits[count] = UInt8(magnitude % 10) + 48
+            magnitude /= 10
+            count += 1
+        } while magnitude > 0
+        for index in stride(from: count - 1, through: 0, by: -1) { try appendByte(digits[index]) }
+        try addOperation(key: key, valueStart: start, valueLength: valueLength - start, kind: 0)
+    }
+
+    /// Sets a Boolean without constructing a String.
+    public mutating func setBoolean(_ value: Bool, forKey key: StaticString) throws(ObjectError) {
+        let start = valueLength
+        try appendStatic(value ? "true" : "false")
+        try addOperation(key: key, valueStart: start, valueLength: valueLength - start, kind: 0)
+    }
+
     /// Removes a field if present. Removing an absent field is idempotent.
     public mutating func remove(_ key: StaticString) throws(ObjectError) {
         try addOperation(key: key, valueStart: 0, valueLength: 0, kind: 1)
@@ -282,6 +360,10 @@ public struct ObjectEditor<let byteCapacity: Int> {
     private mutating func appendByte(_ value: UInt8) throws(ObjectError) {
         guard valueLength < byteCapacity else { throw ObjectError(.capacityExceeded) }
         values[valueLength] = value; valueLength += 1
+    }
+
+    private func hexDigit(_ value: UInt8) -> UInt8 {
+        value < 10 ? value + 48 : value + 87
     }
 
     private mutating func buildOutput() throws(ObjectError) {
