@@ -20,7 +20,7 @@ file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/empty_bridging_header.h "")
 
 idf_component_register(
     SRCS "component_anchor.c"
-    PRIV_REQUIRES idf_swift axoloty_object_model
+    PRIV_REQUIRES idf_swift axoloty_object_model axoloty_wire
 )
 
 idf_component_register_swift(
@@ -42,6 +42,24 @@ set_source_files_properties(${AXOLOTY_COATY_MODELS_SOURCES}
     PROPERTIES OBJECT_DEPENDS "${OBJECT_MODEL_MODULE_ALIAS}"
 )
 
+# AxolotyObjectModel's public module imports AxolotyWire. The object-model
+# component's private wire dependency does not make that transitive module
+# search path or its alias visible to this Swift compile, so declare the
+# transitive dependency explicitly and order both the module lookup and
+# source compilation on the published AxolotyWire module.
+idf_component_get_property(WIRE_COMPONENT_LIB axoloty_wire COMPONENT_LIB)
+get_target_property(WIRE_COMPONENT_BINARY_DIR ${WIRE_COMPONENT_LIB} BINARY_DIR)
+set(WIRE_MODULE_ALIAS
+    "${WIRE_COMPONENT_BINARY_DIR}/AxolotyWire.swiftmodule"
+)
+if(TARGET axoloty_wire_module_alias)
+    add_dependencies(axoloty_wire_module_alias ${WIRE_COMPONENT_LIB})
+    add_dependencies(${COMPONENT_LIB} axoloty_wire_module_alias)
+endif()
+set_source_files_properties(${AXOLOTY_COATY_MODELS_SOURCES}
+    APPEND PROPERTIES OBJECT_DEPENDS "${WIRE_MODULE_ALIAS}"
+)
+
 set_property(TARGET ${COMPONENT_LIB} PROPERTY INTERFACE_COMPILE_OPTIONS "")
 target_compile_options(${COMPONENT_LIB} PRIVATE
     "$<$<COMPILE_LANGUAGE:Swift>:-swift-version>"
@@ -54,6 +72,7 @@ target_compile_options(${COMPONENT_LIB} PRIVATE
 
 target_include_directories(${COMPONENT_LIB} PUBLIC
     ${CMAKE_CURRENT_BINARY_DIR}
+    ${WIRE_COMPONENT_BINARY_DIR}
 )
 
 set(AXOLOTY_COATY_MODELS_MODULE_ALIAS
