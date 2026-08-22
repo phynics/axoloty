@@ -23,6 +23,10 @@ let package = Package(
             name: "AxolotyProtocol",
             targets: ["AxolotyProtocol"]
         ),
+        .library(
+            name: "AxolotyObjectModel",
+            targets: ["AxolotyObjectModel"]
+        ),
         .executable(
             name: "axoloty-tool",
             targets: ["AxolotyCLI"]
@@ -66,6 +70,11 @@ let package = Package(
             name: "AxolotyProtocol",
             dependencies: ["AxolotyWire"],
             path: "Packages/AxolotyProtocol/Sources/AxolotyProtocol"
+        ),
+        .target(
+            name: "AxolotyObjectModel",
+            dependencies: ["AxolotyWire"],
+            path: "Packages/AxolotyObjectModel/Sources/AxolotyObjectModel"
         ),
         .target(
             name: "Axoloty",
@@ -144,6 +153,11 @@ let package = Package(
             name: "AxolotyProtocolTests",
             dependencies: ["AxolotyProtocol", "AxolotyWire"],
             path: "Packages/AxolotyProtocol/Tests/AxolotyProtocolTests"
+        ),
+        .testTarget(
+            name: "AxolotyObjectModelTests",
+            dependencies: ["AxolotyObjectModel", "AxolotyWire"],
+            path: "Packages/AxolotyObjectModel/Tests/AxolotyObjectModelTests"
         ),
         // The tooling control plane. It intentionally has no product-runtime
         // dependencies so it can bootstrap repository workflows independently.

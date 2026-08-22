@@ -10,6 +10,7 @@
 
 import AxolotyWire
 import AxolotyProtocol
+import AxolotyObjectModel
 
 @inline(__always)
 private func recordRouterDispatch(
@@ -33,6 +34,9 @@ func app_main() -> Int32 {
     var passed: UInt32 = 0
     var failed: UInt32 = 0
     guard axoloty_protocol_embedded_link_probe() == 3 else {
+        return 1
+    }
+    guard axoloty_object_model_embedded_link_probe() else {
         return 1
     }
     let networkRole = axoloty_network_role()

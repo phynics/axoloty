@@ -71,6 +71,14 @@ Linux-only ESP-IDF nodes. This is an explicit platform capability difference,
 not a silent skip. MQTT-backed integration remains a separate tier; wire parser
 correctness never requires a broker.
 
+The G3 object-model foundation has an opt-in canonical tier while the remaining
+G3 lanes land. Run `axoloty-tool test-tier object-model` (or invoke the
+standalone package directly) to validate the bounded model tests and its
+source/dependency boundary. The tier is deliberately not a required gate yet.
+The embedded Swift image compiles the same sources through the
+`axoloty_object_model` ESP-IDF component and the static main consumer imports
+`AxolotyObjectModel` to prove module discovery and linkage.
+
 ## Command-to-tier map
 
 Tiers with a direct Make target record it in the contract. The manual macOS
