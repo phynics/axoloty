@@ -38,6 +38,36 @@ struct AxolotyRuntimeTests {
         #expect(sealed.handlerCount == 1)
     }
 
+    @Test("definition bounds event-stream registration")
+    func definitionBoundsEventStreams() throws {
+        let capacities = try RuntimeCapacities(eventStreams: 1)
+        var definition = try RuntimeDefinition(
+            namespace: "test",
+            sourceID: .zero,
+            capacities: capacities
+        )
+        _ = try definition.registerEvents(
+            matching: .family(.advertise),
+            buffering: .failFast(capacity: 1)
+        )
+        do {
+            _ = try definition.registerEvents(
+                matching: .family(.deadvertise),
+                buffering: .coalesceLatest
+            )
+            Issue.record("event-stream registration exceeded its configured capacity")
+        } catch let error as AxolotyError {
+            guard case let .runtime(code, reason) = error else {
+                Issue.record("unexpected error: \(error.userFriendlyMessage)")
+                return
+            }
+            #expect(code == .capacityExceeded)
+            #expect(reason == "runtime event-stream capacity is full")
+        } catch {
+            Issue.record("unexpected error: \(error)")
+        }
+    }
+
     @Test("runtime rejects work before start")
     func rejectsBeforeStart() async throws {
         let definition = try makeDefinition()
