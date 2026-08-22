@@ -23,6 +23,23 @@ func schemaAndTypedObjectEvidence() throws {
     #expect(typed.value.valueType.encodedEquals("T"))
 }
 
+@Test("predicate decode evaluation encode and canonical round trip are sanitizer-covered")
+func predicateEvidence() throws {
+    let predicateBytes = slice("{\"conditions\":[\"value\",[7,1]]}")
+    let predicate = try ObjectPredicate<16, 16, 16, 64>(decoding: predicateBytes)
+    let object = try BoundedDynamicObject<128, 4>(decoding: slice("{\"value\":1}"))
+    #expect(predicate.matches(object: object))
+
+    let output = UnsafeMutablePointer<UInt8>.allocate(capacity: 128)
+    defer { output.deallocate() }
+    var writer = WireWriter(buffer: output, capacity: 128)
+    try predicate.encode(to: &writer)
+    let encoded = ByteSlice(bytes: output, length: writer.position)
+    #expect(encoded.equals("{\"conditions\":[\"value\",[7,1]]}"))
+    let decoded = try ObjectPredicate<16, 16, 16, 64>(decoding: encoded)
+    #expect(decoded.matches(object: object))
+}
+
 private let objectBytes = slice("{\"a\":0}")
 private let envelopeBytes = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.Measurement\",\"name\":\"\",\"coreType\":\"Task\",\"externalId\":\"x\"}")
 

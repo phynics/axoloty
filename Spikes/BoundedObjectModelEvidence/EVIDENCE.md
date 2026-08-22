@@ -43,8 +43,14 @@ through the pinned ESP-IDF toolchain and records the exact Swift version,
 compile duration, firmware/ELF/MAP sizes, and ELF section sizes. Its
 `coverage` is `foundation-schema-model-predicate-module-linkage`: it proves
 the currently integrated object foundation, schema/model sources, and their
-static consumers are compiled and linked into firmware. Predicate evidence is
-not included in this harness. The node is build-only and hardware-forbidden.
+static consumers are compiled and linked into firmware. The static consumer
+contains and calls the predicate decode/evaluation/encode path and the
+protocol filter adapter path from `app_main`, so those symbols cannot be
+satisfied solely by dead-stripped source. The embedded node does not run that
+firmware: host probe/heaptrack is the only runtime allocation measurement, and
+the embedded build does not measure ESP runtime behavior or select product
+capacities. It is compile/link evidence, not an on-device predicate execution
+measurement. The node is build-only and hardware-forbidden.
 
 Schema validation is local and dependency-free:
 

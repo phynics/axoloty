@@ -87,7 +87,7 @@
     },
     "operation": {
       "type": "object",
-      "required": ["measurementPoint", "byteCapacity", "fieldCapacity", "nameCapacity", "externalIDCapacity", "objectInitialization", "envelopeInitialization", "randomizedEditRead", "saturationMeasurement", "saturationRejected", "unchangedAfterSaturation", "schemaRegistration", "schemaRegistryCount", "schemaRegistrySaturated", "typedObjectInitialization", "typedObjectValueTypePreserved", "predicateInitialization", "predicateDecodeEvaluateEncode", "predicateRoundTrip"],
+      "required": ["measurementPoint", "byteCapacity", "fieldCapacity", "nameCapacity", "externalIDCapacity", "objectInitialization", "envelopeInitialization", "randomizedEditRead", "saturationMeasurement", "saturationRejected", "unchangedAfterSaturation", "schemaRegistration", "schemaRegistryCount", "schemaRegistrySaturated", "schemaRegistryUnchangedAfterSaturation", "typedObjectInitialization", "typedObjectValueTypePreserved", "typedObjectByteCapacity", "typedObjectFieldCapacity", "predicateInitialization", "predicateDecodeEvaluateEncode", "predicateRoundTrip"],
       "properties": {
         "measurementPoint": {"enum": [1, 16, 64]},
         "byteCapacity": {"enum": [1, 16, 64]},
@@ -103,8 +103,11 @@
         "schemaRegistration": {"type": "string", "minLength": 1},
         "schemaRegistryCount": {"type": "integer", "minimum": 1},
         "schemaRegistrySaturated": {"type": "boolean"},
+        "schemaRegistryUnchangedAfterSaturation": {"type": "boolean"},
         "typedObjectInitialization": {"type": "string", "minLength": 1},
         "typedObjectValueTypePreserved": {"type": "boolean"},
+        "typedObjectByteCapacity": {"const": 512},
+        "typedObjectFieldCapacity": {"enum": [1, 16, 64]},
         "predicateInitialization": {"type": "string", "minLength": 1},
         "predicateDecodeEvaluateEncode": {"type": "boolean"},
         "predicateRoundTrip": {"type": "boolean"}

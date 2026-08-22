@@ -32,6 +32,9 @@ grep -Fq 'saturationMeasurement' "$probe/Sources/BoundedObjectModelProbe/main.sw
 grep -Fq 'schemaRegistryOperation' "$probe/Sources/BoundedObjectModelProbe/main.swift"
 grep -Fq 'typedObjectOperation' "$probe/Sources/BoundedObjectModelProbe/main.swift"
 grep -Fq 'predicateOperation' "$probe/Sources/BoundedObjectModelProbe/main.swift"
+grep -Fq 'CoatyFilterAdapter<16, 16, 16, 64>' "$root/Embedded/swift/main/CoatyModelsModuleConsumer.swift"
+grep -Fq 'adapter.matches(object: object)' "$root/Embedded/swift/main/CoatyModelsModuleConsumer.swift"
+grep -Fq 'adapter.encode(to: &writer)' "$root/Embedded/swift/main/CoatyModelsModuleConsumer.swift"
 grep -Fq 'heaptrack-call-growth' "$assembler"
 grep -Fq 'foundation-schema-model-predicate-module-linkage' "$embedded_assembler"
 
@@ -49,7 +52,7 @@ fs.writeFileSync(probe, JSON.stringify({
   ]),
   schemaLayouts: [1, 16, 64].map(measurementPoint => ({measurementPoint, axis: "schema-registry", type: "ObjectSchemaRegistry", size: 1, alignment: 1, stride: 1, registryCapacity: measurementPoint})),
   predicateLayouts: [1, 16, 64].map(measurementPoint => ({measurementPoint, axis: "predicate", type: "ObjectPredicate", size: 1, alignment: 1, stride: 1, nodeCapacity: measurementPoint, pathCapacity: measurementPoint, literalCapacity: measurementPoint, arenaCapacity: measurementPoint})),
-  operations: [1, 16, 64].map(measurementPoint => ({measurementPoint, byteCapacity: measurementPoint, fieldCapacity: measurementPoint, nameCapacity: measurementPoint, externalIDCapacity: measurementPoint, objectInitialization: "accepted", envelopeInitialization: true, randomizedEditRead: true, saturationMeasurement: "edit-capacity-failure", saturationRejected: true, unchangedAfterSaturation: true, schemaRegistration: "accepted", schemaRegistryCount: measurementPoint === 1 ? 1 : 4, schemaRegistrySaturated: measurementPoint === 1, typedObjectInitialization: measurementPoint === 1 ? "rejected-capacity" : "accepted", typedObjectValueTypePreserved: measurementPoint > 1, predicateInitialization: measurementPoint === 1 ? "rejected-capacity" : "accepted", predicateDecodeEvaluateEncode: measurementPoint > 1, predicateRoundTrip: measurementPoint > 1})),
+  operations: [1, 16, 64].map(measurementPoint => ({measurementPoint, byteCapacity: measurementPoint, fieldCapacity: measurementPoint, nameCapacity: measurementPoint, externalIDCapacity: measurementPoint, objectInitialization: "accepted", envelopeInitialization: true, randomizedEditRead: true, saturationMeasurement: "edit-capacity-failure", saturationRejected: true, unchangedAfterSaturation: true, schemaRegistration: measurementPoint === 1 ? "rejected-capacityExceeded" : "accepted", schemaRegistryCount: measurementPoint === 1 ? 1 : 4, schemaRegistrySaturated: measurementPoint === 1, schemaRegistryUnchangedAfterSaturation: measurementPoint === 1, typedObjectInitialization: measurementPoint === 1 ? "rejected-capacityExceeded" : "accepted", typedObjectValueTypePreserved: measurementPoint > 1, typedObjectByteCapacity: 512, typedObjectFieldCapacity: measurementPoint, predicateInitialization: measurementPoint === 1 ? "rejected-capacityExceeded" : "accepted", predicateDecodeEvaluateEncode: measurementPoint > 1, predicateRoundTrip: measurementPoint > 1})),
 }));
 fs.writeFileSync(allocations, [1, 16, 64].flatMap(capacity => [
   [capacity, "object-initialization", 3, 4, 7],
@@ -93,8 +96,14 @@ write("missing-allocation", report => { report.allocations.pop(); });
 write("missing-sections", report => { delete report.compilation.releaseSections; });
 write("wrong-capacity", report => { report.operations[0].measurementPoint = 2; });
 write("fake-predicate", report => { report.operations[1].predicateDecodeEvaluateEncode = false; });
+write("fake-canonical", report => { report.operations[1].predicateRoundTrip = false; });
+write("wrong-schema-rejection", report => { report.operations[0].schemaRegistration = "rejected-invalidSchema"; });
+write("wrong-typed-rejection", report => { report.operations[0].typedObjectInitialization = "rejected-invalidField"; });
+write("wrong-predicate-rejection", report => { report.operations[0].predicateInitialization = "rejected-invalidPredicate"; });
+write("fake-registry", report => { report.operations[1].schemaRegistryCount = 1; });
+write("nonzero-warmed", report => { report.allocations[1].objectWarmed = 1; });
 NODE
-for invalid in duplicate-layout missing-layout missing-predicate-layout duplicate-operation missing-operation duplicate-allocation missing-allocation missing-sections wrong-capacity fake-predicate; do
+for invalid in duplicate-layout missing-layout missing-predicate-layout duplicate-operation missing-operation duplicate-allocation missing-allocation missing-sections wrong-capacity fake-predicate fake-canonical wrong-schema-rejection wrong-typed-rejection wrong-predicate-rejection fake-registry nonzero-warmed; do
     if node "$validator" "$schema" "$tmp/$invalid.json" >/dev/null 2>&1; then
         echo "error: validator accepted $invalid evidence" >&2
         exit 1

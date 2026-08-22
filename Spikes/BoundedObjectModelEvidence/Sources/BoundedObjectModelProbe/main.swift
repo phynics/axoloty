@@ -40,8 +40,11 @@ private struct OperationRecord: Encodable {
     let schemaRegistration: String
     let schemaRegistryCount: Int
     let schemaRegistrySaturated: Bool
+    let schemaRegistryUnchangedAfterSaturation: Bool
     let typedObjectInitialization: String
     let typedObjectValueTypePreserved: Bool
+    let typedObjectByteCapacity: Int
+    let typedObjectFieldCapacity: Int
     let predicateInitialization: String
     let predicateDecodeEvaluateEncode: Bool
     let predicateRoundTrip: Bool
@@ -164,7 +167,7 @@ private func randomizedEditRead<let capacity: Int>(_: BoundedDynamicObject<capac
     return true
 }
 
-private func schemaRegistryOperation<let capacity: Int>(_: ObjectSchemaRegistry<capacity>.Type) -> (registration: String, count: Int, saturated: Bool) {
+private func schemaRegistryOperation<let capacity: Int>(_: ObjectSchemaRegistry<capacity>.Type) -> (registration: String, count: Int, saturated: Bool, unchangedAfterSaturation: Bool) {
     var registry = ObjectSchemaRegistry<capacity>()
     var registration = "accepted"
     do throws(ObjectSchemaRegistryError) {
@@ -176,14 +179,24 @@ private func schemaRegistryOperation<let capacity: Int>(_: ObjectSchemaRegistry<
         registration = "rejected-\(error)"
     }
     var saturated = false
+    let beforeSaturation = registry.sealed().count
     do throws(ObjectSchemaRegistryError) {
-        try registry.use(IoSource.self)
-        try registry.use(IoActor.self)
-    } catch {
+        if capacity == 1 {
+            // IoActor was not admitted after IoSource filled the one-slot
+            // registry, so this probes capacity rather than idempotency.
+            try registry.use(IoActor.self)
+        } else {
+            // Larger points intentionally exercise idempotent registration;
+            // they are not expected to be saturated.
+            try registry.use(IoSource.self)
+        }
+    } catch .capacityExceeded {
         saturated = true
+    } catch {
+        // A non-capacity outcome is not saturation evidence.
     }
     let sealed = registry.sealed()
-    return (registration, sealed.count, saturated)
+    return (registration, sealed.count, saturated, saturated && sealed.count == beforeSaturation)
 }
 
 private func typedObjectOperation<let fieldCapacity: Int>(_: BoundedObject<IoSource, 512, fieldCapacity>.Type) -> (initialization: String, valueTypePreserved: Bool) {
@@ -201,13 +214,14 @@ private func predicateOperation<let capacity: Int>(_: ObjectPredicate<capacity, 
         let object = try BoundedDynamicObject<capacity, capacity>(decoding: slice("{\"value\":1}"))
         let matched = predicate.matches(object: object)
         var output = [UInt8](repeating: 0, count: 128)
-        let encoded = try output.withUnsafeMutableBufferPointer { buffer -> (Bool, Bool) in
+        let encoded = try output.withUnsafeMutableBufferPointer { buffer -> (canonical: Bool, decodedMatches: Bool) in
             var writer = WireWriter(buffer: buffer.baseAddress!, capacity: buffer.count)
             try predicate.encode(to: &writer)
-            let decoded = try ObjectPredicate<capacity, capacity, capacity, capacity>(decoding: ByteSlice(bytes: buffer.baseAddress!, length: writer.position))
-            return (writer.position > 0, decoded.matches(object: object))
+            let outputSlice = ByteSlice(bytes: buffer.baseAddress!, length: writer.position)
+            let decoded = try ObjectPredicate<capacity, capacity, capacity, capacity>(decoding: outputSlice)
+            return (outputSlice.equals(predicateBytes), decoded.matches(object: object))
         }
-        return ("accepted", encoded.0 && encoded.1, matched && encoded.0)
+        return ("accepted", encoded.canonical && encoded.decodedMatches, matched && encoded.canonical)
     } catch {
         return ("rejected-\(error.reason)", false, false)
     }
@@ -261,8 +275,11 @@ private func operationRecord<let capacity: Int>(_: BoundedDynamicObject<capacity
         schemaRegistration: schema.registration,
         schemaRegistryCount: schema.count,
         schemaRegistrySaturated: schema.saturated,
+        schemaRegistryUnchangedAfterSaturation: schema.unchangedAfterSaturation,
         typedObjectInitialization: typed.initialization,
         typedObjectValueTypePreserved: typed.valueTypePreserved,
+        typedObjectByteCapacity: 512,
+        typedObjectFieldCapacity: capacity,
         predicateInitialization: predicate.initialization,
         predicateDecodeEvaluateEncode: predicate.decodeEvaluateEncode,
         predicateRoundTrip: predicate.roundTrip
@@ -376,13 +393,12 @@ private func allocationRun<let capacity: Int>(_: BoundedDynamicObject<capacity, 
     case .predicateWarmed:
         guard let predicate = try? ObjectPredicate<capacity, capacity, capacity, capacity>(decoding: slice(predicateBytes)),
               let object = try? BoundedDynamicObject<capacity, capacity>(decoding: slice("{\"value\":1}")) else { return }
+        let output = UnsafeMutablePointer<UInt8>.allocate(capacity: 128)
+        defer { output.deallocate() }
         for _ in 0..<iterations {
             allocationSink &+= predicate.matches(object: object) ? 1 : 0
-            var output = [UInt8](repeating: 0, count: 128)
-            try? output.withUnsafeMutableBufferPointer { buffer in
-                var writer = WireWriter(buffer: buffer.baseAddress!, capacity: buffer.count)
-                try predicate.encode(to: &writer)
-            }
+            var writer = WireWriter(buffer: output, capacity: 128)
+            try? predicate.encode(to: &writer)
         }
     }
 }

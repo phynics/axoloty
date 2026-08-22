@@ -88,10 +88,17 @@ function validateHostMeasurements(report) {
     }
     if (record.measurementPoint === 1 && !record.schemaRegistrySaturated) errors.push(`${path}.schemaRegistrySaturated: capacity one must exercise registry saturation`);
     if (record.measurementPoint > 1 && record.schemaRegistrySaturated) errors.push(`${path}.schemaRegistrySaturated: larger registries must retain free capacity`);
-    if (record.measurementPoint === 1 && !record.typedObjectInitialization.startsWith("rejected-")) errors.push(`${path}.typedObjectInitialization: field capacity one must reject the first-party model`);
+    const expectedRegistryCount = record.measurementPoint === 1 ? 1 : 4;
+    if (record.schemaRegistryCount !== expectedRegistryCount) errors.push(`${path}.schemaRegistryCount: expected ${expectedRegistryCount} registered first-party schemas`);
+    if (record.measurementPoint === 1 && record.schemaRegistration !== "rejected-capacityExceeded") errors.push(`${path}.schemaRegistration: capacity one must report capacityExceeded exactly`);
+    if (record.measurementPoint > 1 && record.schemaRegistration !== "accepted") errors.push(`${path}.schemaRegistration: larger registries must accept the first-party registrations`);
+    if (record.schemaRegistryUnchangedAfterSaturation !== (record.measurementPoint === 1)) errors.push(`${path}.schemaRegistryUnchangedAfterSaturation: saturation outcome is inconsistent`);
+    if (record.measurementPoint === 1 && record.typedObjectInitialization !== "rejected-capacityExceeded") errors.push(`${path}.typedObjectInitialization: field capacity one must report capacityExceeded exactly`);
     if (record.measurementPoint > 1 && record.typedObjectInitialization !== "accepted") errors.push(`${path}.typedObjectInitialization: field capacities 16 and 64 must accept the first-party model`);
     if (record.measurementPoint > 1 && !record.typedObjectValueTypePreserved) errors.push(`${path}.typedObjectValueTypePreserved: accepted model lost its valueType`);
-    if (record.measurementPoint === 1 && !record.predicateInitialization.startsWith("rejected-")) errors.push(`${path}.predicateInitialization: capacity one must reject a single predicate condition`);
+    if (record.typedObjectByteCapacity !== 512) errors.push(`${path}.typedObjectByteCapacity: must record the explicit 512-byte arena`);
+    if (record.typedObjectFieldCapacity !== record.measurementPoint) errors.push(`${path}.typedObjectFieldCapacity: must match the measured field point`);
+    if (record.measurementPoint === 1 && record.predicateInitialization !== "rejected-capacityExceeded") errors.push(`${path}.predicateInitialization: capacity one must report capacityExceeded exactly`);
     if (record.measurementPoint > 1 && record.predicateInitialization !== "accepted") errors.push(`${path}.predicateInitialization: predicate capacities 16 and 64 must accept the canonical condition`);
     if (record.measurementPoint > 1 && (!record.predicateDecodeEvaluateEncode || !record.predicateRoundTrip)) errors.push(`${path}: predicate decode/evaluate/encode round trip failed`);
   }
@@ -99,6 +106,9 @@ function validateHostMeasurements(report) {
     const path = `$evidence.allocations[${index}]`;
     for (const field of ["byteCapacity", "fieldCapacity", "nameCapacity", "externalIDCapacity"]) {
       if (record[field] !== record.measurementPoint) errors.push(`${path}.${field}: must match measurementPoint`);
+    }
+    for (const field of ["objectWarmed", "envelopeWarmed", "typedObjectWarmed", "predicateWarmed"]) {
+      if (record[field] !== 0) errors.push(`${path}.${field}: warmed fixed-inline operation must have zero allocation growth`);
     }
   }
   if (!Array.isArray(report.compilation?.releaseSections)) return errors;
