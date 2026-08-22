@@ -60,6 +60,36 @@ public struct RuntimeInboundFrame: Sendable, Equatable {
     }
 }
 
+/// The externally visible lifecycle of a host runtime instance.
+public enum RuntimeLifecycleState: UInt8, Sendable, Equatable {
+    /// The runtime is not connected and may be started.
+    case stopped
+    /// The transport is being opened.
+    case starting
+    /// The transport and protocol executor are accepting work.
+    case running
+    /// The transport is being closed.
+    case stopping
+    /// Startup or transport initialization failed.
+    case failed
+    /// The runtime can no longer be started.
+    case closed
+}
+
+/// A structured reason for a rejected runtime transition.
+public enum RuntimeRejection: Sendable, Equatable {
+    /// The runtime is not accepting work in its current lifecycle state.
+    case notRunning(RuntimeLifecycleState)
+    /// The inbound topic is empty or malformed.
+    case malformedFrame(ProtocolError.Code)
+    /// The operation payload is empty or invalid for its family.
+    case malformedPayload
+    /// The finite runtime storage is saturated.
+    case capacityExceeded
+    /// A transport callback belongs to an earlier start epoch.
+    case staleTransport
+}
+
 /// An owned local operation submitted to the shared protocol processor.
 public struct RuntimeOperation: Sendable, Equatable {
     /// The Coaty capability to publish.
@@ -87,6 +117,59 @@ public struct RuntimeOperation: Sendable, Equatable {
         self.payload = payload
         self.requestTimeoutMS = requestTimeoutMS
     }
+
+    /// Creates an Advertise operation.
+    public static func advertise(sourceID: UUID16, payload: [UInt8]) -> Self {
+        Self(capability: .advertise, sourceID: sourceID, payload: payload)
+    }
+    /// Creates a Deadvertise operation.
+    public static func deadvertise(sourceID: UUID16, payload: [UInt8]) -> Self {
+        Self(capability: .deadvertise, sourceID: sourceID, payload: payload)
+    }
+    /// Creates a Channel operation.
+    public static func channel(sourceID: UUID16, payload: [UInt8]) -> Self {
+        Self(capability: .channel, sourceID: sourceID, payload: payload)
+    }
+    /// Creates an Associate operation.
+    public static func associate(sourceID: UUID16, payload: [UInt8]) -> Self {
+        Self(capability: .associate, sourceID: sourceID, payload: payload)
+    }
+    /// Creates an IoValue operation.
+    public static func ioValue(sourceID: UUID16, payload: [UInt8]) -> Self {
+        Self(capability: .ioValue, sourceID: sourceID, payload: payload)
+    }
+    /// Creates a Discover request.
+    public static func discover(sourceID: UUID16, correlationID: UUID16, payload: [UInt8], timeoutMS: UInt32) -> Self {
+        Self(capability: .discover, sourceID: sourceID, correlationID: correlationID, payload: payload, requestTimeoutMS: timeoutMS)
+    }
+    /// Creates a Resolve response.
+    public static func resolve(sourceID: UUID16, correlationID: UUID16, payload: [UInt8]) -> Self {
+        Self(capability: .resolve, sourceID: sourceID, correlationID: correlationID, payload: payload)
+    }
+    /// Creates a Query request.
+    public static func query(sourceID: UUID16, correlationID: UUID16, payload: [UInt8], timeoutMS: UInt32) -> Self {
+        Self(capability: .query, sourceID: sourceID, correlationID: correlationID, payload: payload, requestTimeoutMS: timeoutMS)
+    }
+    /// Creates a Retrieve response.
+    public static func retrieve(sourceID: UUID16, correlationID: UUID16, payload: [UInt8]) -> Self {
+        Self(capability: .retrieve, sourceID: sourceID, correlationID: correlationID, payload: payload)
+    }
+    /// Creates an Update request.
+    public static func update(sourceID: UUID16, correlationID: UUID16, payload: [UInt8], timeoutMS: UInt32) -> Self {
+        Self(capability: .update, sourceID: sourceID, correlationID: correlationID, payload: payload, requestTimeoutMS: timeoutMS)
+    }
+    /// Creates a Complete response.
+    public static func complete(sourceID: UUID16, correlationID: UUID16, payload: [UInt8]) -> Self {
+        Self(capability: .complete, sourceID: sourceID, correlationID: correlationID, payload: payload)
+    }
+    /// Creates a Call request.
+    public static func call(sourceID: UUID16, correlationID: UUID16, payload: [UInt8], timeoutMS: UInt32) -> Self {
+        Self(capability: .call, sourceID: sourceID, correlationID: correlationID, payload: payload, requestTimeoutMS: timeoutMS)
+    }
+    /// Creates a Return response.
+    public static func returnEvent(sourceID: UUID16, correlationID: UUID16, payload: [UInt8]) -> Self {
+        Self(capability: .returnEvent, sourceID: sourceID, correlationID: correlationID, payload: payload)
+    }
 }
 
 /// The result of a bounded runtime transition.
@@ -96,9 +179,7 @@ public enum RuntimeReceipt: Sendable, Equatable {
     /// The binding did not own the supplied route.
     case ignored
     /// The transition was rejected without state mutation.
-    case rejected(String)
-    /// The bounded ingress or dispatch queue was full.
-    case capacityExceeded
+    case rejected(RuntimeRejection)
 }
 
 /// A materialized invocation delivered to an application handler.

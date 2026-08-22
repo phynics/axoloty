@@ -19,13 +19,23 @@ public final class AxolotyRuntime: Sendable {
     /// Starts the runtime transport and protocol executor.
     public func start() async throws {
         if let failure = await executor.start() {
-            throw AxolotyError.runtime(code: .brokerUnavailable, reason: failure)
+            throw AxolotyError.runtime(code: failure.code, reason: failure.reason)
         }
     }
 
     /// Stops the runtime. Stopping is idempotent.
     public func stop() async {
         await executor.stop()
+    }
+
+    /// Permanently closes the runtime and finishes its streams.
+    public func close() async {
+        await executor.close()
+    }
+
+    /// Returns the current lifecycle state.
+    public func lifecycleState() async -> RuntimeLifecycleState {
+        await executor.lifecycleState()
     }
 
     /// Submits one owned inbound frame to the bounded ingress queue.
@@ -50,19 +60,23 @@ public final class AxolotyRuntime: Sendable {
 }
 
 private actor ProtocolExecutor {
-    private enum State: Equatable {
-        case stopped
-        case running
-        case closed
+    private struct StartFailure: Sendable {
+        let code: AxolotyError.RuntimeErrorCode
+        let reason: String
     }
 
     private let definition: SealedRuntimeDefinition
     private let transport: AxolotyRuntimeTransport
     private var processor = ProtocolProcessor<64>()
     private var actionSink = ReusableProtocolActionSink(capacity: 64)
-    private var state: State = .stopped
+    private var state: RuntimeLifecycleState = .stopped
     private var ingress: [RuntimeInboundFrame] = []
     private var activeHandlers = 0
+    private var transportEpoch: UInt64 = 0
+    private var transportIngressContinuation: AsyncStream<RuntimeInboundFrame>.Continuation?
+    private var transportIngressTask: Task<Void, Never>?
+    private var outboundContinuation: AsyncStream<OwnedProtocolAction>.Continuation?
+    private var outboundTask: Task<Void, Never>?
 
     private let eventStream: AsyncStream<RuntimeEvent>
     private let eventContinuation: AsyncStream<RuntimeEvent>.Continuation
@@ -86,34 +100,79 @@ private actor ProtocolExecutor {
         self.diagnosticContinuation = diagnostics.continuation
     }
 
-    func start() async -> String? {
+    func start() async -> StartFailure? {
         switch state {
         case .running:
-            return "runtime is already running"
+            return StartFailure(code: .notStarted, reason: "runtime is already running")
         case .closed:
-            return "runtime is closed"
+            return StartFailure(code: .notStarted, reason: "runtime is closed")
+        case .starting, .stopping:
+            return StartFailure(code: .notStarted, reason: "runtime lifecycle transition is already in progress")
+        case .failed:
+            return StartFailure(code: .notStarted, reason: "runtime failed; stop it before restarting")
         case .stopped:
             break
         }
+        state = .starting
+        transportEpoch &+= 1
+        let epoch = transportEpoch
+        let ingressPipe = AsyncStream<RuntimeInboundFrame>.makeStream(
+            bufferingPolicy: .bufferingNewest(definition.capacities.ingress)
+        )
+        transportIngressContinuation = ingressPipe.continuation
+        transportIngressTask = Task { [weak self, stream = ingressPipe.stream] in
+            for await frame in stream {
+                guard !Task.isCancelled else { break }
+                await self?.receiveTransport(frame, epoch: epoch)
+            }
+        }
+        let outboundPipe = AsyncStream<OwnedProtocolAction>.makeStream(
+            bufferingPolicy: .bufferingNewest(definition.capacities.dispatch)
+        )
+        outboundContinuation = outboundPipe.continuation
+        outboundTask = Task { [weak self, stream = outboundPipe.stream, transport, namespace = definition.namespace] in
+            for await action in stream {
+                guard !Task.isCancelled else { break }
+                do {
+                    try await transport.send(action, namespace: namespace)
+                } catch {
+                    await self?.transportFailed(String(describing: error))
+                }
+            }
+        }
         do {
-            try await transport.start { [weak self] frame in
-                guard let self else { return }
-                Task { await self.receive(frame) }
+            try await transport.start { [continuation = ingressPipe.continuation] frame in
+                continuation.yield(frame)
             }
             state = .running
             return nil
         } catch {
-            return String(describing: error)
+            cancelTransportPumps()
+            state = .failed
+            return StartFailure(code: .brokerUnavailable, reason: String(describing: error))
         }
     }
 
     func stop() async {
-        guard state == .running else { return }
+        guard state == .running || state == .starting || state == .failed else { return }
+        state = .stopping
+        transportEpoch &+= 1
         await transport.stop()
+        cancelTransportPumps()
         state = .stopped
+    }
+
+    func close() async {
+        guard state != .closed else { return }
+        if state == .running || state == .starting || state == .failed {
+            await stop()
+        }
+        state = .closed
         eventContinuation.finish()
         diagnosticContinuation.finish()
     }
+
+    func lifecycleState() -> RuntimeLifecycleState { state }
 
     func events() -> AsyncStream<RuntimeEvent> { eventStream }
 
@@ -121,11 +180,11 @@ private actor ProtocolExecutor {
 
     func receive(_ frame: RuntimeInboundFrame) -> RuntimeReceipt {
         guard state == .running else {
-            return .rejected("runtime is not running")
+            return .rejected(.notRunning(state))
         }
         guard ingress.count < definition.capacities.ingress else {
             emit(.init(kind: .capacityExceeded, detail: "inbound frame queue is full"))
-            return .capacityExceeded
+            return .rejected(.capacityExceeded)
         }
         ingress.append(frame)
         let next = ingress.removeFirst()
@@ -134,10 +193,10 @@ private actor ProtocolExecutor {
 
     func publish(_ operation: RuntimeOperation, nowMS: UInt32) -> RuntimeReceipt {
         guard state == .running else {
-            return .rejected("runtime is not running")
+            return .rejected(.notRunning(state))
         }
         guard !operation.payload.isEmpty else {
-            return .rejected("operation payload must not be empty")
+            return .rejected(.malformedPayload)
         }
         let outcome: ProtocolProcessOutcome = operation.payload.withUnsafeBufferPointer { buffer in
             guard let base = buffer.baseAddress else { return .rejected(.malformedPayload) }
@@ -162,8 +221,8 @@ private actor ProtocolExecutor {
     }
 
     private func processInbound(_ frame: RuntimeInboundFrame) -> RuntimeReceipt {
-        guard !frame.topic.isEmpty else { return .rejected("topic is empty") }
-        guard !frame.payload.isEmpty else { return .rejected("payload is empty") }
+        guard !frame.topic.isEmpty else { return .rejected(.malformedFrame(.malformedFrame)) }
+        guard !frame.payload.isEmpty else { return .rejected(.malformedPayload) }
 
         var parseFailure: String?
         let outcome: ProtocolProcessOutcome = frame.topic.withUTF8 { topicBuffer in
@@ -222,12 +281,20 @@ private actor ProtocolExecutor {
             let action = borrowed.owned()
             switch action.kind {
             case .publish:
-                send(action)
+                enqueueOutbound(action)
             case .deliver, .associate, .disassociate:
                 dispatchToHandler(action)
             }
         }
         actionSink.removeAll()
+    }
+
+    private func receiveTransport(_ frame: RuntimeInboundFrame, epoch: UInt64) {
+        guard epoch == transportEpoch else {
+            emit(.init(kind: .capacityExceeded, detail: "stale transport frame ignored"))
+            return
+        }
+        _ = receive(frame)
     }
 
     private func dispatchToHandler(_ action: OwnedProtocolAction) {
@@ -271,14 +338,22 @@ private actor ProtocolExecutor {
         emit(.init(kind: .handlerFailed, detail: detail))
     }
 
-    private func send(_ action: OwnedProtocolAction) {
-        Task { [transport, namespace = definition.namespace] in
-            do {
-                try await transport.send(action, namespace: namespace)
-            } catch {
-                await self.transportFailed(String(describing: error))
-            }
+    private func enqueueOutbound(_ action: OwnedProtocolAction) {
+        let result = outboundContinuation?.yield(action)
+        if case .dropped = result {
+            emit(.init(kind: .capacityExceeded, detail: "outbound dispatch queue is full"))
         }
+    }
+
+    private func cancelTransportPumps() {
+        transportIngressContinuation?.finish()
+        outboundContinuation?.finish()
+        transportIngressContinuation = nil
+        outboundContinuation = nil
+        transportIngressTask?.cancel()
+        outboundTask?.cancel()
+        transportIngressTask = nil
+        outboundTask = nil
     }
 
     private func transportFailed(_ detail: String) {
@@ -293,7 +368,7 @@ private actor ProtocolExecutor {
         switch outcome {
         case .accepted: return .accepted
         case .ignored: return .ignored
-        case let .rejected(code): return .rejected(String(describing: code))
+        case let .rejected(code): return .rejected(.protocol(code))
         }
     }
 }
