@@ -20,6 +20,7 @@ const number = key => {
   return value;
 };
 const sections = fs.readFileSync(sectionsPath, "utf8").trim().split(/\n/).filter(Boolean).map(line => {
+  if (line.includes("\\t")) throw new Error("section row uses a literal \\\\t; expected a tab separator: " + line);
   const [name, bytesText] = line.split("\t");
   const bytes = Number(bytesText);
   if (!name || !Number.isInteger(bytes) || bytes < 0) throw new Error(`invalid section line: ${line}`);

@@ -44,6 +44,7 @@ grep -Fq '. "${IDF_PATH:-/opt/esp/idf}/export.sh" >"$idf_log" 2>&1' "$probe/chec
 grep -Fq 'rm -f "$idf_log"' "$probe/check-embedded.sh"
 grep -Fq 'riscv32-esp-elf-size -A "$elf"' "$probe/check-embedded.sh"
 grep -Fq '$1 ~ /^\./' "$probe/check-embedded.sh"
+grep -Fq 'print $1 "\t" $2' "$probe/check-embedded.sh"
 if grep -Fq '$1 ~ /^\\./' "$probe/check-embedded.sh"; then
     echo "error: embedded section extraction still over-escapes the ESP section pattern" >&2
     exit 1
@@ -182,6 +183,11 @@ fs.writeFileSync(process.argv[3], JSON.stringify(report));
 NODE
 if node "$validator" "$schema" "$tmp/invalid-embedded.json" >/dev/null 2>&1; then
     echo "error: evidence validator accepted missing .flash.text section" >&2
+    exit 1
+fi
+printf '%s\n' '.iram0.text\t64' '.flash.text\t128' >"$tmp/literal-tab-sections.tsv"
+if node "$embedded_assembler" "$tmp/embedded-metadata.tsv" "$tmp/literal-tab-sections.tsv" 0123456 "$tmp/literal-tab.json" >/dev/null 2>&1; then
+    echo "error: embedded assembler accepted literal backslash-t section separators" >&2
     exit 1
 fi
 

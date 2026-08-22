@@ -45,7 +45,7 @@ printf "toolchain\\t%s\\n" "$(swift --version | head -1)"
 printf "firmwareBytes\\t%s\\n" "$(stat -c %s "$firmware")"
 printf "elfBytes\\t%s\\n" "$(stat -c %s "$elf")"
 printf "mapBytes\\t%s\\n" "$(stat -c %s "$map")"
-riscv32-esp-elf-size -A "$elf" | awk '"'"'NF >= 2 && $1 ~ /^\./ && $2 ~ /^[0-9]+$/ { print $1 "\\t" $2 }'"'"' >"$export_dir/sections.tsv"
+riscv32-esp-elf-size -A "$elf" | awk '"'"'NF >= 2 && $1 ~ /^\./ && $2 ~ /^[0-9]+$/ { print $1 "\t" $2 }'"'"' >"$export_dir/sections.tsv"
 ' >"$artifact/embedded-metadata.tsv" 2>"$artifact/embedded-build.log"
 
 node "$probe/Evidence/assemble-embedded-evidence.mjs" \
