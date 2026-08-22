@@ -14,21 +14,21 @@ private func predicateObject(_ value: StaticString) throws -> BoundedDynamicObje
 
 @Test func everyCoatyOperatorCodeDecodesAndMatches() throws {
     let cases: [(StaticString, Bool)] = [
-        ("{\"conditions\":[[\"v\",[0,2]]]}" , true),
-        ("{\"conditions\":[[\"v\",[1,2]]]}" , true),
-        ("{\"conditions\":[[\"v\",[2,2]]]}" , false),
-        ("{\"conditions\":[[\"v\",[3,2]]]}" , false),
-        ("{\"conditions\":[[\"v\",[4,2,3]]]}" , true),
-        ("{\"conditions\":[[\"v\",[5,2,3]]]}" , false),
-        ("{\"conditions\":[[\"v\",[6,\"2\"]]]}", false),
-        ("{\"conditions\":[[\"v\",[7,2]]]}" , true),
-        ("{\"conditions\":[[\"v\",[8,3]]]}" , true),
-        ("{\"conditions\":[[\"v\",[9]]]}" , true),
-        ("{\"conditions\":[[\"missing\",[10]]]}" , true),
-        ("{\"conditions\":[[\"v\",[11,2]]]}" , true),
-        ("{\"conditions\":[[\"v\",[12,3]]]}" , true),
-        ("{\"conditions\":[[\"v\",[13,[1,2]]]]}" , true),
-        ("{\"conditions\":[[\"v\",[14,[1,3]]]]}" , true),
+        ("{\"conditions\":[\"v\",[0,2]]}" , true),
+        ("{\"conditions\":[\"v\",[1,2]]}" , true),
+        ("{\"conditions\":[\"v\",[2,2]]}" , false),
+        ("{\"conditions\":[\"v\",[3,2]]}" , false),
+        ("{\"conditions\":[\"v\",[4,2,3]]}" , true),
+        ("{\"conditions\":[\"v\",[5,2,3]]}" , false),
+        ("{\"conditions\":[\"v\",[6,\"2\"]]}", false),
+        ("{\"conditions\":[\"v\",[7,2]]}" , true),
+        ("{\"conditions\":[\"v\",[8,3]]}" , true),
+        ("{\"conditions\":[\"v\",[9]]}" , true),
+        ("{\"conditions\":[\"missing\",[10]]}" , true),
+        ("{\"conditions\":[\"v\",[11,2]]}" , true),
+        ("{\"conditions\":[\"v\",[12,3]]}" , true),
+        ("{\"conditions\":[\"v\",[13,[1,2]]]}" , true),
+        ("{\"conditions\":[\"v\",[14,[1,3]]]}" , true),
     ]
     for (filter, expected) in cases {
         let predicate = try ObjectPredicate<64, 8, 8, 512>(decoding: predicateSlice(filter))
@@ -46,9 +46,19 @@ private func predicateObject(_ value: StaticString) throws -> BoundedDynamicObje
     #expect(matched)
 }
 
+@Test func directConditionAndConditionSetShapesMatchCoatyWire() throws {
+    let direct = try ObjectPredicate<64, 4, 4, 256>(decoding: predicateSlice("{\"conditions\":[\"v\",[7,2]]}"))
+    let grouped = try ObjectPredicate<64, 8, 8, 256>(decoding: predicateSlice("{\"conditions\":{\"and\":[[\"v\",[7,2]],[\"present\",[9]]]}}"))
+    let object = try predicateObject("{\"v\":2,\"present\":null}")
+    let directMatched = direct.matches(object: object)
+    let groupedMatched = grouped.matches(object: object)
+    #expect(directMatched)
+    #expect(groupedMatched)
+}
+
 @Test func exactDecimalsAndNegativeZeroCompareWithoutDouble() throws {
-    let equality = try ObjectPredicate<64, 4, 4, 256>(decoding: predicateSlice("{\"conditions\":[[\"value\",[7,1.0]]]}"))
-    let zero = try ObjectPredicate<64, 4, 4, 256>(decoding: predicateSlice("{\"conditions\":[[\"value\",[7,-0.0]]]}"))
+    let equality = try ObjectPredicate<64, 4, 4, 256>(decoding: predicateSlice("{\"conditions\":[\"value\",[7,1.0]]}"))
+    let zero = try ObjectPredicate<64, 4, 4, 256>(decoding: predicateSlice("{\"conditions\":[\"value\",[7,-0.0]]}"))
     let object = try predicateObject("{\"value\":1e0}")
     let equalityMatched = equality.matches(object: object)
     let zeroMatched = zero.matches(object: object)
@@ -64,15 +74,15 @@ private func predicateObject(_ value: StaticString) throws -> BoundedDynamicObje
 }
 
 @Test func maximumValidWireStringDoesNotTruncate() throws {
-    let predicate = try ObjectPredicate<8, 4, 2, 1024>(path: "name", expression: .equals(.string("${a}")))
-    let object = try BoundedDynamicObject<1024, 8>(decoding: predicateSlice("{\"name\":\"${a}\"}"))
+    let predicate = try ObjectPredicate<8, 4, 2, 1024>(path: "name", expression: .equals(.string("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")))
+    let object = try BoundedDynamicObject<1024, 8>(decoding: predicateSlice("{\"name\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}"))
     let matched = predicate.matches(object: object)
     #expect(matched)
 }
 
 @Test func containsAndMembershipAreRecursiveAndOrderIndependent() throws {
-    let contains = try ObjectPredicate<128, 4, 8, 512>(decoding: predicateSlice("{\"conditions\":[[\"value\",[11,{\"b\":[2],\"a\":1}]]]}"))
-    let membership = try ObjectPredicate<128, 4, 8, 512>(decoding: predicateSlice("{\"conditions\":[[\"value\",[13,[{\"a\":1,\"b\":[2]}]]]]}"))
+    let contains = try ObjectPredicate<128, 4, 8, 512>(decoding: predicateSlice("{\"conditions\":[\"value\",[11,{\"b\":[2],\"a\":1}]]}"))
+    let membership = try ObjectPredicate<128, 4, 8, 512>(decoding: predicateSlice("{\"conditions\":[\"value\",[13,[{\"a\":1,\"b\":[2]}]]]}"))
     let object = try predicateObject("{\"value\":{\"a\":1,\"b\":[2,3],\"extra\":true}}")
     let containsMatched = contains.matches(object: object)
     let membershipMatched = membership.matches(object: object)
@@ -81,13 +91,13 @@ private func predicateObject(_ value: StaticString) throws -> BoundedDynamicObje
 }
 
 @Test func likeUsesPercentUnderscoreAndEscapes() throws {
-    let like = try ObjectPredicate<128, 4, 4, 256>(decoding: predicateSlice("{\"conditions\":[[\"name\",[6,\"a_%\"]]]}"))
+    let like = try ObjectPredicate<128, 4, 4, 256>(decoding: predicateSlice("{\"conditions\":[\"name\",[6,\"a_%\"]]}"))
     let object = try predicateObject("{\"name\":\"abc\"}")
     let likeMatched = like.matches(object: object)
     #expect(likeMatched)
 
     // The JSON `\\\\%` spelling decodes to a LIKE escape plus a literal `%`.
-    let escaped = try ObjectPredicate<128, 4, 4, 256>(decoding: predicateSlice("{\"conditions\":[[\"name\",[6,\"a\\\\%b\"]]]}"))
+    let escaped = try ObjectPredicate<128, 4, 4, 256>(decoding: predicateSlice("{\"conditions\":[\"name\",[6,\"a\\\\%b\"]]}"))
     let escapedObject = try predicateObject("{\"name\":\"a%b\"}")
     let escapedMatched = escaped.matches(object: escapedObject)
     #expect(escapedMatched)
@@ -105,12 +115,12 @@ private func predicateObject(_ value: StaticString) throws -> BoundedDynamicObje
 
 @Test func malformedWirePredicatesAreRejected() throws {
     let malformed: [StaticString] = [
-        ("{\"conditions\":[[\"v\",[99,1]]]}"),
-        ("{\"conditions\":[[\"v\",[9,1]]]}"),
-        ("{\"conditions\":[[\"v\",[4,1]]]}"),
-        ("{\"conditions\":[[\"a..b\",[7,1]]]}"),
-        ("{\"conditions\":[[1,[7,1]]]}"),
-        ("{\"conditions\":[[\"v\",[13,1]]]}"),
+        ("{\"conditions\":[\"v\",[99,1]]}"),
+        ("{\"conditions\":[\"v\",[9,1]]}"),
+        ("{\"conditions\":[\"v\",[4,1]]}"),
+        ("{\"conditions\":[\"a..b\",[7,1]]}"),
+        ("{\"conditions\":[1,[7,1]]}"),
+        ("{\"conditions\":[\"v\",[13,1]]}"),
     ]
     for value in malformed {
         #expect(throws: ObjectError.self) {
@@ -129,7 +139,7 @@ private func predicateObject(_ value: StaticString) throws -> BoundedDynamicObje
 @Test func eachInlineCapacityFailurePreservesPreviousProgram() throws {
     let object = try predicateObject("{\"a\":1,\"b\":2}")
 
-    var nodes = try ObjectPredicate<1, 4, 4, 128>(path: "a", expression: .equals(.number("1")))
+    var nodes = try ObjectPredicate<2, 4, 4, 128>(path: "a", expression: .equals(.number("1")))
     #expect(throws: ObjectError.self) { try nodes.appendCondition(path: "b", expression: .equals(.number("2"))) }
     let nodesMatched = nodes.matches(object: object)
     #expect(nodesMatched)
@@ -144,7 +154,7 @@ private func predicateObject(_ value: StaticString) throws -> BoundedDynamicObje
     let literalsMatched = literals.matches(object: object)
     #expect(literalsMatched)
 
-    var arena = try ObjectPredicate<4, 4, 4, 4>(path: "a", expression: .equals(.number("1")))
+    var arena = try ObjectPredicate<4, 4, 4, 3>(path: "a", expression: .equals(.number("1")))
     #expect(throws: ObjectError.self) { try arena.appendCondition(path: "b", expression: .equals(.number("2"))) }
     let arenaMatched = arena.matches(object: object)
     #expect(arenaMatched)
