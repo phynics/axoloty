@@ -27,8 +27,12 @@ public final class AxolotyRuntime: Sendable {
     /// remains owned by the runtime for the duration of this call.
     public func run() async throws {
         try await start()
-        while await lifecycleState() == .running {
-            await Task.yield()
+        do {
+            while await lifecycleState() == .running {
+                try await Task.sleep(for: .milliseconds(25))
+            }
+        } catch {
+            await stop()
         }
     }
 
@@ -54,13 +58,7 @@ public final class AxolotyRuntime: Sendable {
 
     /// Returns the modern lifecycle spelling used by G4 callers.
     public func state() async -> RuntimeState {
-        switch await lifecycleState() {
-        case .stopped: return .stopped
-        case .starting: return .starting
-        case .running: return .running
-        case .stopping: return .stopping
-        case .failed, .closed: return .failed
-        }
+        await executor.runtimeState()
     }
 
     /// Submits one owned inbound frame to the bounded ingress queue.
@@ -86,6 +84,18 @@ public final class AxolotyRuntime: Sendable {
     /// Publishes a responder response through the shared processor.
     public func respond(_ response: RuntimeResponse, nowMS: UInt32 = 0) async -> RuntimeReceipt {
         await publish(RuntimeOperation(response: response, sourceID: await executor.sourceID()), nowMS: nowMS)
+    }
+
+    /// Expires request correlations using caller-supplied monotonic time.
+    @discardableResult
+    public func expire(nowMS: UInt32) async -> Bool {
+        await executor.expire(nowMS: nowMS)
+    }
+
+    /// Cancels one request correlation before it reaches the wire.
+    @discardableResult
+    public func cancel(correlationID: UUID16) async -> Bool {
+        await executor.cancel(correlationID: correlationID)
     }
 
     /// Returns the bounded runtime event stream.
@@ -118,7 +128,9 @@ private actor ProtocolExecutor {
     private var transportIngressTask: Task<Void, Never>?
     private var outboundContinuation: AsyncStream<OwnedProtocolAction>.Continuation?
     private var outboundTask: Task<Void, Never>?
+    private var outboundQueued = 0
     private var diagnosticsSnapshotValue = RuntimeDiagnostics()
+    private let eventRegistrations: [RuntimeEventRegistration]
 
     private let eventStream: AsyncStream<RuntimeEvent>
     private let eventContinuation: AsyncStream<RuntimeEvent>.Continuation
@@ -128,6 +140,7 @@ private actor ProtocolExecutor {
     init(definition: SealedRuntimeDefinition, transport: AxolotyRuntimeTransport) {
         self.definition = definition
         self.transport = transport
+        self.eventRegistrations = definition.eventRegistrations
         self.ingress.reserveCapacity(definition.capacities.ingress)
         self.actionSink = ReusableProtocolActionSink(capacity: definition.capacities.dispatch)
         let events = AsyncStream<RuntimeEvent>.makeStream(
@@ -148,7 +161,7 @@ private actor ProtocolExecutor {
             return (.notStarted, "runtime is already running")
         case .closed:
             return (.notStarted, "runtime is closed")
-        case .starting, .stopping:
+        case .starting, .reconnecting, .stopping:
             return (.notStarted, "runtime lifecycle transition is already in progress")
         case .failed:
             return (.notStarted, "runtime failed; stop it before restarting")
@@ -163,7 +176,7 @@ private actor ProtocolExecutor {
         transportEpoch &+= 1
         let epoch = transportEpoch
         let ingressPipe = AsyncStream<RuntimeInboundFrame>.makeStream(
-            bufferingPolicy: .bufferingNewest(definition.capacities.ingress)
+            bufferingPolicy: .bufferingOldest(definition.capacities.ingress)
         )
         transportIngressContinuation = ingressPipe.continuation
         transportIngressTask = Task { [weak self, stream = ingressPipe.stream] in
@@ -173,12 +186,13 @@ private actor ProtocolExecutor {
             }
         }
         let outboundPipe = AsyncStream<OwnedProtocolAction>.makeStream(
-            bufferingPolicy: .bufferingNewest(definition.capacities.dispatch)
+            bufferingPolicy: .bufferingOldest(definition.capacities.dispatch)
         )
         outboundContinuation = outboundPipe.continuation
         outboundTask = Task { [weak self, stream = outboundPipe.stream, transport, namespace = definition.namespace] in
             for await action in stream {
                 guard !Task.isCancelled else { break }
+                await self?.decrementOutbound()
                 do {
                     try await transport.send(action, namespace: namespace)
                 } catch {
@@ -187,8 +201,21 @@ private actor ProtocolExecutor {
             }
         }
         do {
-            try await transport.start { [continuation = ingressPipe.continuation] frame in
-                continuation.yield(frame)
+            try await transport.installSubscriptions(namespace: definition.namespace)
+            try await transport.start { [weak self, continuation = ingressPipe.continuation] frame in
+                let result = continuation.yield(frame)
+                if case .dropped = result {
+                    Task { await self?.ingressOverflow() }
+                }
+            }
+            guard state == .starting, transportEpoch == epoch else {
+                await transport.stop()
+                return (.notStarted, "runtime start was superseded by another lifecycle transition")
+            }
+            try await transport.advertise(identity: definition.identity, namespace: definition.namespace)
+            guard state == .starting, transportEpoch == epoch else {
+                await transport.stop()
+                return (.notStarted, "runtime start was superseded during advertisement")
             }
             state = .running
             return nil
@@ -200,20 +227,31 @@ private actor ProtocolExecutor {
     }
 
     func stop() async {
-        guard state == .running || state == .starting || state == .failed else { return }
+        guard state == .running || state == .starting || state == .reconnecting || state == .failed else { return }
         state = .stopping
         transportEpoch &+= 1
+        let stoppingEpoch = transportEpoch
+        do {
+            try await transport.deadvertise(identity: definition.identity, namespace: definition.namespace)
+            try await transport.removeSubscriptions(namespace: definition.namespace)
+        } catch {
+            emit(.init(kind: .transportFailed, detail: String(describing: error)))
+        }
         await transport.stop()
+        guard state == .stopping, transportEpoch == stoppingEpoch else { return }
         cancelTransportPumps()
         state = .stopped
     }
 
     func close() async {
         guard state != .closed else { return }
-        if state == .running || state == .starting || state == .failed {
+        if state == .running || state == .starting || state == .reconnecting || state == .failed {
             await stop()
         }
         state = .closed
+        for registration in eventRegistrations {
+            registration.continuation.finish()
+        }
         eventContinuation.finish()
         diagnosticContinuation.finish()
     }
@@ -222,12 +260,64 @@ private actor ProtocolExecutor {
         guard state == .running else { return }
         state = .reconnecting
         transportEpoch &+= 1
+        let epoch = transportEpoch
         processor.resetTransport()
         diagnosticsSnapshotValue.reconnects += 1
-        state = .running
+        transportIngressContinuation?.finish()
+        transportIngressTask?.cancel()
+        let ingressPipe = AsyncStream<RuntimeInboundFrame>.makeStream(
+            bufferingPolicy: .bufferingOldest(definition.capacities.ingress)
+        )
+        transportIngressContinuation = ingressPipe.continuation
+        transportIngressTask = Task { [weak self, stream = ingressPipe.stream] in
+            for await frame in stream {
+                guard !Task.isCancelled else { break }
+                await self?.receiveTransport(frame, epoch: epoch)
+            }
+        }
+        do {
+            try await transport.removeSubscriptions(namespace: definition.namespace)
+            await transport.stop()
+            try await transport.installSubscriptions(namespace: definition.namespace)
+            try await transport.start { [weak self, continuation = ingressPipe.continuation] frame in
+                let result = continuation.yield(frame)
+                if case .dropped = result {
+                    Task { await self?.ingressOverflow() }
+                }
+            }
+            guard state == .reconnecting, transportEpoch == epoch else { return }
+            try await transport.advertise(identity: definition.identity, namespace: definition.namespace)
+            guard state == .reconnecting, transportEpoch == epoch else { return }
+            state = .running
+        } catch {
+            state = .failed
+            diagnosticsSnapshotValue.transportFailures += 1
+            emit(.init(kind: .transportFailed, detail: String(describing: error)))
+            cancelTransportPumps()
+        }
+    }
+
+    private func ingressOverflow() {
+        guard state == .running else { return }
+        diagnosticsSnapshotValue.ingressSaturation += 1
+        state = .failed
+        transportEpoch &+= 1
+        emit(.init(kind: .capacityExceeded, detail: "transport ingress queue is full"))
+        cancelTransportPumps()
     }
 
     func lifecycleState() -> RuntimeLifecycleState { state }
+
+    func runtimeState() -> RuntimeState {
+        switch state {
+        case .stopped: return hasStarted ? .stopped : .initialized
+        case .starting: return .starting
+        case .running: return .running
+        case .reconnecting: return .reconnecting
+        case .stopping: return .stopping
+        case .failed, .closed: return .failed
+        }
+    }
 
     func sourceID() -> UUID16 { definition.sourceID }
 
@@ -236,6 +326,22 @@ private actor ProtocolExecutor {
     func diagnostics() -> AsyncStream<RuntimeDiagnostic> { diagnosticStream }
 
     func diagnosticsSnapshot() -> RuntimeDiagnostics { diagnosticsSnapshotValue }
+
+    func expire(nowMS: UInt32) -> Bool {
+        guard state == .running else { return false }
+        let didExpire = processor.expire(nowMS: nowMS)
+        if didExpire { diagnosticsSnapshotValue.expiredRequests += 1 }
+        return didExpire
+    }
+
+    func cancel(correlationID: UUID16) -> Bool {
+        guard state == .running else { return false }
+        return processor.cancel(correlationID: correlationID)
+    }
+
+    private func decrementOutbound() {
+        outboundQueued = max(0, outboundQueued - 1)
+    }
 
     func receive(_ frame: RuntimeInboundFrame) -> RuntimeReceipt {
         guard state == .running else {
@@ -258,6 +364,10 @@ private actor ProtocolExecutor {
         guard !operation.payload.isEmpty else {
             return .rejected(.malformedPayload)
         }
+        guard outboundQueued < definition.capacities.dispatch else {
+            diagnosticsSnapshotValue.dispatchSaturation += 1
+            return .rejected(.capacityExceeded)
+        }
         let outcome: ProtocolProcessOutcome = operation.payload.withUnsafeBufferPointer { buffer in
             guard let base = buffer.baseAddress else { return .rejected(.malformedPayload) }
             let payload = ByteSlice(bytes: base, length: buffer.count)
@@ -276,7 +386,7 @@ private actor ProtocolExecutor {
         let receipt = receipt(for: outcome)
         eventContinuation.yield(.transition(receipt))
         guard case .accepted = receipt else { return receipt }
-        dispatchActions()
+        dispatchActions(nowMS: nowMS)
         return receipt
     }
 
@@ -328,11 +438,11 @@ private actor ProtocolExecutor {
         let receipt = receipt(for: outcome)
         eventContinuation.yield(.transition(receipt))
         guard case .accepted = receipt else { return receipt }
-        dispatchActions()
+        dispatchActions(nowMS: frame.nowMS)
         return receipt
     }
 
-    private func dispatchActions() {
+    private func dispatchActions(nowMS: UInt32) {
         guard actionSink.count <= definition.capacities.dispatch else {
             emit(.init(kind: .capacityExceeded, detail: "dispatch queue is full"))
             actionSink.removeAll()
@@ -341,6 +451,7 @@ private actor ProtocolExecutor {
         for index in 0..<actionSink.count {
             guard let borrowed = actionSink[index] else { continue }
             let action = borrowed.owned()
+            emitRegisteredEvents(for: borrowed, owned: action, nowMS: nowMS)
             switch action.kind {
             case .publish:
                 enqueueOutbound(action)
@@ -349,6 +460,67 @@ private actor ProtocolExecutor {
             }
         }
         actionSink.removeAll()
+    }
+
+    private func emitRegisteredEvents(for borrowed: BorrowedProtocolAction, owned: OwnedProtocolAction, nowMS: UInt32) {
+        for registration in eventRegistrations {
+            guard matches(registration.selector, action: borrowed) else { continue }
+            let value = RuntimeEventValue(
+                family: eventFamily(for: borrowed.routingKey.capability),
+                context: RuntimeEventContext(
+                    sourceID: borrowed.routingKey.sourceID,
+                    correlationID: borrowed.routingKey.correlationID,
+                    namespace: definition.namespace,
+                    receiptTimeMS: nowMS,
+                    provenance: borrowed.kind == .publish ? .local : .transport
+                ),
+                value: owned.payload
+            )
+            let result = registration.continuation.yield(value)
+            if case .dropped = result {
+                diagnosticsSnapshotValue.dispatchSaturation += 1
+                emit(.init(kind: .capacityExceeded, detail: "application event stream is full"))
+            }
+        }
+    }
+
+    private func matches(_ selector: RuntimeEventSelector, action: BorrowedProtocolAction) -> Bool {
+        switch selector {
+        case let .family(family):
+            return eventFamily(for: action.routingKey.capability) == family
+        case let .advertise(objectType):
+            guard action.routingKey.capability == .advertise else { return false }
+            guard let objectType else { return true }
+            guard case let .advertiseFilter(filter) = action.deliveryKey else { return false }
+            return filter.utf8Equals(objectType)
+        case let .channel(identifier):
+            guard action.routingKey.capability == .channel,
+                  case let .channel(channel) = action.deliveryKey else { return false }
+            return channel.utf8Equals(identifier)
+        case let .ioActor(actorID):
+            guard case let .ioActor(value) = action.deliveryKey else { return false }
+            return value == actorID
+        case let .correlatedResponse(capability, correlationID):
+            return action.routingKey.capability == capability && action.routingKey.correlationID == correlationID
+        }
+    }
+
+    private func eventFamily(for capability: ProtocolCapability) -> RuntimeEventFamily {
+        switch capability {
+        case .advertise: return .advertise
+        case .deadvertise: return .deadvertise
+        case .channel: return .channel
+        case .associate: return .associate
+        case .ioValue: return .ioValue
+        case .discover: return .discover
+        case .resolve: return .resolve
+        case .query: return .query
+        case .retrieve: return .retrieve
+        case .update: return .update
+        case .complete: return .complete
+        case .call: return .call
+        case .returnEvent: return .returnEvent
+        }
     }
 
     private func receiveTransport(_ frame: RuntimeInboundFrame, epoch: UInt64) {
@@ -383,11 +555,26 @@ private actor ProtocolExecutor {
 
     private func complete(invocation: RuntimeInvocation, result: RuntimeHandlerResult) {
         activeHandlers = max(0, activeHandlers - 1)
-        guard case let .response(payload) = result,
-              let correlation = invocation.action.routingKey.correlationID else { return }
+        guard let correlation = invocation.action.routingKey.correlationID else { return }
+        let responseCapability: ProtocolCapability
+        switch invocation.action.routingKey.capability {
+        case .discover: responseCapability = .resolve
+        case .query: responseCapability = .retrieve
+        case .update: responseCapability = .complete
+        case .call: responseCapability = .returnEvent
+        default:
+            emit(.init(kind: .handlerFailed, detail: "handler completion is not a request family"))
+            return
+        }
+        guard case let .response(payload) = result else {
+            if case let .remoteError(code, message) = result {
+                emit(.init(kind: .handlerFailed, detail: "remote error \(code): \(message)"))
+            }
+            return
+        }
         _ = publish(
             RuntimeOperation(
-                capability: .returnEvent,
+                capability: responseCapability,
                 sourceID: definition.sourceID,
                 correlationID: correlation,
                 payload: payload
@@ -402,10 +589,15 @@ private actor ProtocolExecutor {
     }
 
     private func enqueueOutbound(_ action: OwnedProtocolAction) {
+        outboundQueued += 1
         let result = outboundContinuation?.yield(action)
         if case .dropped = result {
+            outboundQueued = max(0, outboundQueued - 1)
             diagnosticsSnapshotValue.dispatchSaturation += 1
             emit(.init(kind: .capacityExceeded, detail: "outbound dispatch queue is full"))
+            state = .failed
+            transportEpoch &+= 1
+            cancelTransportPumps()
         }
     }
 
@@ -423,6 +615,10 @@ private actor ProtocolExecutor {
     private func transportFailed(_ detail: String) {
         diagnosticsSnapshotValue.transportFailures += 1
         emit(.init(kind: .transportFailed, detail: detail))
+        guard state == .running else { return }
+        state = .failed
+        transportEpoch &+= 1
+        cancelTransportPumps()
     }
 
     private func emit(_ diagnostic: RuntimeDiagnostic) {
@@ -440,4 +636,15 @@ private actor ProtocolExecutor {
 
 private extension OwnedProtocolAction {
     var kindCapability: ProtocolCapability { routingKey.capability }
+}
+
+private extension ByteSlice {
+    func utf8Equals(_ value: String) -> Bool {
+        let bytes = Array(value.utf8)
+        guard bytes.count == length else { return false }
+        for index in 0..<length where byte(at: index) != bytes[index] {
+            return false
+        }
+        return true
+    }
 }

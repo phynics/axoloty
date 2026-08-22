@@ -85,6 +85,7 @@ public struct StaticRuntime<let capacity: Int>: ~Copyable {
         _ operation: ProtocolLocalOperation,
         nowMS: UInt32 = 0
     ) -> ProtocolProcessOutcome {
+        guard sink.count == 0 else { return .rejected(.capacityExceeded) }
         sink.removeAll()
         return processor.processOutbound(operation, nowMS: nowMS, classifier: routeClassifier, sink: &sink)
     }
@@ -94,8 +95,35 @@ public struct StaticRuntime<let capacity: Int>: ~Copyable {
         _ frame: BorrowedProtocolFrame,
         nowMS: UInt32
     ) -> ProtocolProcessOutcome {
+        guard sink.count == 0 else { return .rejected(.capacityExceeded) }
         sink.removeAll()
         return processor.processInbound(frame, nowMS: nowMS, classifier: routeClassifier, sink: &sink)
+    }
+
+    /// Parses one caller-owned topic and payload synchronously, then routes
+    /// the borrowed frame through the shared processor. The input buffers are
+    /// borrowed only for the duration of this call.
+    public mutating func receive(
+        topic: ByteSlice,
+        payload: ByteSlice,
+        nowMS: UInt32
+    ) -> ProtocolProcessOutcome {
+        var result: ProtocolProcessOutcome = .rejected(.malformedFrame)
+        topic.withBytes { pointer, length in
+            payload.withBytes { payloadPointer, payloadLength in
+                let view = TopicView(topicBytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
+                do throws(ProtocolError) {
+                    let frame = try BorrowedProtocolFrame(
+                        topic: view,
+                        payload: ByteSlice(bytes: payloadPointer.assumingMemoryBound(to: UInt8.self), length: payloadLength)
+                    )
+                    result = self.receive(frame, nowMS: nowMS)
+                } catch {
+                    result = .rejected(error.code)
+                }
+            }
+        }
+        return result
     }
 
     /// Processes one inbound frame with a binding-owned route classifier.
@@ -104,6 +132,7 @@ public struct StaticRuntime<let capacity: Int>: ~Copyable {
         nowMS: UInt32,
         classifier: Classifier
     ) -> ProtocolProcessOutcome {
+        guard sink.count == 0 else { return .rejected(.capacityExceeded) }
         sink.removeAll()
         return processor.processInbound(frame, nowMS: nowMS, classifier: classifier, sink: &sink)
     }
@@ -114,6 +143,7 @@ public struct StaticRuntime<let capacity: Int>: ~Copyable {
         nowMS: UInt32 = 0,
         classifier: Classifier
     ) -> ProtocolProcessOutcome {
+        guard sink.count == 0 else { return .rejected(.capacityExceeded) }
         sink.removeAll()
         return processor.processOutbound(operation, nowMS: nowMS, classifier: classifier, sink: &sink)
     }
@@ -160,6 +190,12 @@ public struct StaticRuntime<let capacity: Int>: ~Copyable {
         }
         sink.removeAll()
         return count
+    }
+
+    /// Drains the synchronous action sink through the transport-facing name.
+    @discardableResult
+    public mutating func drainActions(_ body: (BorrowedProtocolAction) -> Void) -> Int {
+        drain(body)
     }
 }
 

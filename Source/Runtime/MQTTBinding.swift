@@ -1,0 +1,183 @@
+// Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
+
+import AxolotyProtocol
+import AxolotyWire
+import Foundation
+import NIOConcurrencyHelpers
+
+/// Host MQTT connection settings for ``MQTTBinding``.
+public struct MQTTBindingConfiguration: Sendable, Equatable {
+    /// Broker host name or address.
+    public let host: String
+    /// Broker TCP port.
+    public let port: UInt16
+    /// Enables TLS in the underlying MQTT client.
+    public let usesTLS: Bool
+    /// Optional broker credentials.
+    public let username: String?
+    /// Optional broker password.
+    public let password: String?
+
+    /// Creates a bounded MQTT binding configuration.
+    public init(
+        host: String = "localhost",
+        port: UInt16 = 1883,
+        usesTLS: Bool = false,
+        username: String? = nil,
+        password: String? = nil
+    ) throws {
+        guard !host.isEmpty, port > 0 else {
+            throw AxolotyError.invalidArgument(argument: "broker", reason: "host and port are required")
+        }
+        self.host = host
+        self.port = port
+        self.usesTLS = usesTLS
+        self.username = username
+        self.password = password
+    }
+}
+
+/// MQTT transport binding used by the structured host runtime.
+///
+/// The binding owns only transport concerns. It copies every callback payload
+/// before handing it to ``AxolotyRuntime`` and never parses protocol families.
+public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
+    private let lock = NIOLock()
+    private let client: MQTTNIOClient
+    private let delegate: RuntimeMQTTDelegate
+    private var started = false
+
+    /// Creates a binding backed by the repository's MQTTNIO implementation.
+    public init(configuration: MQTTBindingConfiguration) throws {
+        let delegate = RuntimeMQTTDelegate()
+        let options = MQTTClientOptions(
+            host: configuration.host,
+            port: configuration.port,
+            enableSSL: configuration.usesTLS,
+            shouldTryMDNSDiscovery: false,
+            username: configuration.username,
+            password: configuration.password,
+            autoReconnect: false,
+            autoReconnectTimeInterval: 1,
+            qos: 0,
+            shouldLog: false
+        )
+        options.clientId = "axoloty-runtime-\(UUID().uuidString)"
+        self.delegate = delegate
+        self.client = try MQTTNIOClient(mqttClientOptions: options, delegate: delegate)
+        delegate.owner = self
+    }
+
+    /// Starts the broker connection and installs the copied frame callback.
+    public func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
+        delegate.receive = receive
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            lock.withLock {
+                guard !started else {
+                    continuation.resume(throwing: AxolotyError.runtime(code: .notStarted, reason: "MQTT binding is already started"))
+                    return
+                }
+                delegate.startContinuation = continuation
+                started = true
+            }
+            client.connect(lastWillTopic: "", lastWillMessage: "")
+        }
+    }
+
+    /// Publishes one normalized action using the canonical Coaty topic shape.
+    public func send(_ action: OwnedProtocolAction, namespace: String) async throws {
+        guard lock.withLock({ started }) else {
+            throw AxolotyError.runtime(code: .notStarted, reason: "MQTT binding is not started")
+        }
+        let topic = Self.topic(for: action.routingKey, namespace: namespace)
+        client.publish(topic, message: action.payload)
+    }
+
+    /// Stops the MQTT connection and releases callback admission.
+    public func stop() async {
+        lock.withLock { started = false }
+        client.disconnect()
+        delegate.receive = nil
+    }
+
+    /// Installs bounded wildcard subscriptions for the closed profile.
+    public func installSubscriptions(namespace: String) async throws {
+        try await client.subscribe(TopicBuilder.subscribeAllOneWayTopics(namespace: namespace))
+        let responseFamilies: [WireEventType] = [.discover, .resolve, .query, .retrieve, .update, .complete, .call, .returnEvent]
+        for family in responseFamilies {
+            try await client.subscribe(TopicBuilder.subscribeTopic(eventType: family, namespace: namespace))
+        }
+    }
+
+    /// Removes the same profile subscriptions during shutdown/reconnect.
+    public func removeSubscriptions(namespace: String) async throws {
+        try await client.unsubscribe(TopicBuilder.subscribeAllOneWayTopics(namespace: namespace))
+        let responseFamilies: [WireEventType] = [.discover, .resolve, .query, .retrieve, .update, .complete, .call, .returnEvent]
+        for family in responseFamilies {
+            try await client.unsubscribe(TopicBuilder.subscribeTopic(eventType: family, namespace: namespace))
+        }
+    }
+
+    /// Publishes a minimal modern Identity advertisement before runtime ready.
+    public func advertise(identity: RuntimeIdentity?, namespace: String) async throws {
+        guard let identity else { return }
+        let payload = try Self.identityPayload(identity)
+        let key = try ProtocolRoutingKey(capability: .advertise, sourceID: identity.id)
+        client.publish(Self.topic(for: key, namespace: namespace), message: payload)
+    }
+
+    /// Publishes a matching Deadvertise payload during graceful shutdown.
+    public func deadvertise(identity: RuntimeIdentity?, namespace: String) async throws {
+        guard let identity else { return }
+        let payload = Array("[\"\(Self.uuidString(identity.id))\"]".utf8)
+        let key = try ProtocolRoutingKey(capability: .deadvertise, sourceID: identity.id)
+        client.publish(Self.topic(for: key, namespace: namespace), message: payload)
+    }
+
+    private static func topic(for key: ProtocolRoutingKey, namespace: String) -> String {
+        var topic = "coaty/3/\(namespace)/\(key.capability.wireEventType.rawValue)/\(uuidString(key.sourceID))"
+        if let correlationID = key.correlationID {
+            topic += "/\(uuidString(correlationID))"
+        }
+        return topic
+    }
+
+    private static func identityPayload(_ identity: RuntimeIdentity) throws -> [UInt8] {
+        let object: [String: Any] = [
+            "objectId": uuidString(identity.id),
+            "coreType": "Identity",
+            "objectType": "coaty.Identity",
+            "name": identity.name
+        ]
+        return try JSONSerialization.data(withJSONObject: ["object": object], options: [.sortedKeys]).map { $0 }
+    }
+
+    private static func uuidString(_ value: UUID16) -> String {
+        let bytes = value.bytes
+        let raw: [UInt8] = [bytes.0, bytes.1, bytes.2, bytes.3, bytes.4, bytes.5, bytes.6, bytes.7, bytes.8, bytes.9, bytes.10, bytes.11, bytes.12, bytes.13, bytes.14, bytes.15]
+        let hex = raw.map { String(format: "%02x", $0) }
+        return "\(hex[0])\(hex[1])\(hex[2])\(hex[3])\(hex[4])\(hex[5])\(hex[6])\(hex[7])-\(hex[8])\(hex[9])-\(hex[10])\(hex[11])-\(hex[12])\(hex[13])-\(hex[14])\(hex[15])\(hex[16])\(hex[17])\(hex[18])\(hex[19])\(hex[20])\(hex[21])\(hex[22])\(hex[23])\(hex[24])\(hex[25])\(hex[26])\(hex[27])\(hex[28])\(hex[29])\(hex[30])\(hex[31])"
+    }
+}
+
+private final class RuntimeMQTTDelegate: CommunicationClientDelegate, @unchecked Sendable {
+    weak var owner: MQTTBinding?
+    var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
+    var startContinuation: CheckedContinuation<Void, Error>?
+
+    func didReceiveStart() {}
+
+    func didUpdateCommunicationState(_ state: CommunicationState) {
+        guard state == .online, let continuation = startContinuation else { return }
+        startContinuation = nil
+        continuation.resume()
+    }
+
+    func didReceiveRawMQTTMessage(topic: String, payload: [UInt8]) {
+        receive?(RuntimeInboundFrame(topic: topic, payload: payload))
+    }
+
+    func didReceiveIoValue(topic: String, payload: [UInt8]) {
+        receive?(RuntimeInboundFrame(topic: topic, payload: payload))
+    }
+}

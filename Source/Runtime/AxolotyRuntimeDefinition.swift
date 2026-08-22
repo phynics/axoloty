@@ -81,6 +81,16 @@ public enum RuntimeState: Sendable, Equatable {
     case failed
 }
 
+/// Provenance of a normalized runtime event.
+public enum RuntimeEventProvenance: Sendable, Equatable {
+    /// Decoded from an owned transport frame.
+    case transport
+    /// Created by a local runtime operation.
+    case local
+    /// Replayed by a bounded test or diagnostic adapter.
+    case replay
+}
+
 /// The thirteen closed Coaty Core families exposed by the host runtime.
 public enum RuntimeEventFamily: Sendable, Equatable, CaseIterable {
     case advertise, deadvertise, channel, associate, ioValue
@@ -100,6 +110,8 @@ public struct RuntimeEventContext: Sendable, Equatable {
     public let route: ProtocolRouteClassification
     /// Monotonic receipt time supplied by the binding.
     public let receiptTimeMS: UInt32
+    /// Whether the event came from transport, a local operation, or replay.
+    public let provenance: RuntimeEventProvenance
 
     /// Creates event context from boundary-owned values.
     public init(
@@ -107,13 +119,15 @@ public struct RuntimeEventContext: Sendable, Equatable {
         correlationID: UUID16? = nil,
         namespace: String,
         route: ProtocolRouteClassification = .coaty,
-        receiptTimeMS: UInt32
+        receiptTimeMS: UInt32,
+        provenance: RuntimeEventProvenance = .transport
     ) {
         self.sourceID = sourceID
         self.correlationID = correlationID
         self.namespace = namespace
         self.route = route
         self.receiptTimeMS = receiptTimeMS
+        self.provenance = provenance
     }
 }
 
@@ -125,6 +139,68 @@ public enum RuntimeBufferingPolicy: Sendable, Equatable {
     case dropOldest(capacity: Int)
     case dropNewest(capacity: Int)
     case coalesceLatest
+}
+
+/// A typed selector for one bounded application event stream.
+public enum RuntimeEventSelector: Sendable, Equatable {
+    /// Matches every action in one Coaty family.
+    case family(RuntimeEventFamily)
+    /// Matches Advertise actions, optionally narrowed by an object type.
+    case advertise(objectType: String?)
+    /// Matches a Channel identifier.
+    case channel(identifier: String)
+    /// Matches IoValue actions addressed to one actor.
+    case ioActor(UUID16)
+    /// Matches one correlated response family and identity.
+    case correlatedResponse(capability: ProtocolCapability, correlationID: UUID16)
+}
+
+/// A bounded asynchronous sequence registered before runtime startup.
+public struct RuntimeEventStream: AsyncSequence, Sendable {
+    /// The value yielded by this stream.
+    public typealias Element = RuntimeEventValue
+
+    private let stream: AsyncStream<RuntimeEventValue>
+
+    init(stream: AsyncStream<RuntimeEventValue>) {
+        self.stream = stream
+    }
+
+    /// Creates an iterator over owned, normalized event values.
+    public func makeAsyncIterator() -> AsyncStream<RuntimeEventValue>.Iterator {
+        stream.makeAsyncIterator()
+    }
+}
+
+struct RuntimeEventRegistration: Sendable {
+    let selector: RuntimeEventSelector
+    let continuation: AsyncStream<RuntimeEventValue>.Continuation
+}
+
+/// The closed responder selector used by the definition builder.
+public enum RuntimeResponderSelector: Sendable, Equatable {
+    /// Responds to Discover requests.
+    case discover
+    /// Responds to Query requests.
+    case query
+    /// Responds to Update requests.
+    case update
+    /// Responds to Call requests, optionally narrowed by operation name.
+    case call(operation: String?)
+
+    var capability: ProtocolCapability {
+        switch self {
+        case .discover: return .discover
+        case .query: return .query
+        case .update: return .update
+        case .call: return .call
+        }
+    }
+
+    var operation: String? {
+        if case let .call(operation) = self { return operation }
+        return nil
+    }
 }
 
 /// One-way local operation accepted by the runtime facade.
@@ -208,6 +284,8 @@ public enum RuntimeLifecycleState: UInt8, Sendable, Equatable {
     case starting
     /// The transport and protocol executor are accepting work.
     case running
+    /// The transport epoch is being replaced.
+    case reconnecting
     /// The transport is being closed.
     case stopping
     /// Startup or transport initialization failed.
@@ -421,6 +499,22 @@ public protocol AxolotyRuntimeTransport: AnyObject, Sendable {
     func send(_ action: OwnedProtocolAction, namespace: String) async throws
     /// Stops the transport and releases its callbacks.
     func stop() async
+
+    /// Installs binding subscriptions before identity is advertised.
+    func installSubscriptions(namespace: String) async throws
+    /// Removes binding subscriptions during graceful shutdown.
+    func removeSubscriptions(namespace: String) async throws
+    /// Publishes the binding-specific identity advertisement.
+    func advertise(identity: RuntimeIdentity?, namespace: String) async throws
+    /// Publishes the binding-specific deadvertisement.
+    func deadvertise(identity: RuntimeIdentity?, namespace: String) async throws
+}
+
+public extension AxolotyRuntimeTransport {
+    func installSubscriptions(namespace: String) async throws {}
+    func removeSubscriptions(namespace: String) async throws {}
+    func advertise(identity: RuntimeIdentity?, namespace: String) async throws {}
+    func deadvertise(identity: RuntimeIdentity?, namespace: String) async throws {}
 }
 
 /// A handler retained by a sealed runtime definition.
@@ -453,19 +547,23 @@ public struct RuntimeDefinition: Sendable {
     public let namespace: String
     /// The local protocol source identity.
     public let sourceID: UUID16
+    /// Optional modern identity metadata used by the binding advertisement.
+    public let identity: RuntimeIdentity?
     /// The fixed limits for this runtime.
     public let capacities: RuntimeCapacities
 
     private var registrations: [RuntimeHandlerRegistration] = []
+    private var eventRegistrations: [RuntimeEventRegistration] = []
     private var sealed = false
 
     /// Creates an empty runtime definition.
-    public init(namespace: String, sourceID: UUID16, capacities: RuntimeCapacities) throws {
+    public init(namespace: String, sourceID: UUID16, identity: RuntimeIdentity? = nil, capacities: RuntimeCapacities) throws {
         guard !namespace.isEmpty, !namespace.contains("/"), !namespace.contains("#"), !namespace.contains("+") else {
             throw AxolotyError.invalidArgument(argument: "namespace", reason: "must be a non-empty MQTT topic level")
         }
         self.namespace = namespace
         self.sourceID = sourceID
+        self.identity = identity
         self.capacities = capacities
         self.registrations.reserveCapacity(capacities.handlers)
     }
@@ -492,6 +590,32 @@ public struct RuntimeDefinition: Sendable {
         return registrations.count - 1
     }
 
+    /// Registers a bounded normalized event stream before startup.
+    public mutating func registerEvents(
+        matching selector: RuntimeEventSelector,
+        buffering policy: RuntimeBufferingPolicy
+    ) throws -> RuntimeEventStream {
+        let capacity: Int
+        switch policy {
+        case let .suspendProducer(value), let .fail(value), let .dropOldest(value), let .dropNewest(value):
+            guard value > 0, value <= capacities.stream else {
+                throw AxolotyError.invalidArgument(argument: "capacity", reason: "stream capacity must be in 1...runtime stream capacity")
+            }
+            capacity = value
+        case .coalesceLatest:
+            capacity = 1
+        }
+        let buffering: AsyncStream<RuntimeEventValue>.Continuation.BufferingPolicy
+        switch policy {
+        case .suspendProducer, .dropNewest: buffering = .bufferingOldest(capacity)
+        case .fail, .dropOldest: buffering = .bufferingNewest(capacity)
+        case .coalesceLatest: buffering = .bufferingNewest(1)
+        }
+        let pair = AsyncStream<RuntimeEventValue>.makeStream(bufferingPolicy: buffering)
+        eventRegistrations.append(RuntimeEventRegistration(selector: selector, continuation: pair.continuation))
+        return RuntimeEventStream(stream: pair.stream)
+    }
+
     /// Seals this definition and prevents further registration.
     public consuming func seal() throws -> SealedRuntimeDefinition {
         guard !sealed else {
@@ -502,8 +626,10 @@ public struct RuntimeDefinition: Sendable {
         return SealedRuntimeDefinition(
             namespace: copy.namespace,
             sourceID: copy.sourceID,
+            identity: copy.identity,
             capacities: copy.capacities,
-            registrations: copy.registrations
+            registrations: copy.registrations,
+            eventRegistrations: copy.eventRegistrations
         )
     }
 }
@@ -514,18 +640,23 @@ public struct SealedRuntimeDefinition: Sendable {
     public let namespace: String
     /// The local protocol source identity.
     public let sourceID: UUID16
+    /// Optional modern identity metadata used by the binding advertisement.
+    public let identity: RuntimeIdentity?
     /// The fixed limits for this runtime.
     public let capacities: RuntimeCapacities
     let registrations: [RuntimeHandlerRegistration]
+    let eventRegistrations: [RuntimeEventRegistration]
 
     /// The number of registered handlers.
     public var handlerCount: Int { registrations.count }
 
-    init(namespace: String, sourceID: UUID16, capacities: RuntimeCapacities, registrations: [RuntimeHandlerRegistration]) {
+    init(namespace: String, sourceID: UUID16, identity: RuntimeIdentity? = nil, capacities: RuntimeCapacities, registrations: [RuntimeHandlerRegistration], eventRegistrations: [RuntimeEventRegistration] = []) {
         self.namespace = namespace
         self.sourceID = sourceID
+        self.identity = identity
         self.capacities = capacities
         self.registrations = registrations
+        self.eventRegistrations = eventRegistrations
     }
 }
 
@@ -546,6 +677,7 @@ public extension RuntimeDefinition {
             self.definition = try RuntimeDefinition(
                 namespace: namespace,
                 sourceID: identity.id,
+                identity: identity,
                 capacities: limits
             )
         }
@@ -558,6 +690,27 @@ public extension RuntimeDefinition {
             handler: @escaping @Sendable (RuntimeInvocation) async throws -> RuntimeHandlerResult
         ) throws -> Int {
             try definition.register(capability: capability, operation: operation, handler: handler)
+        }
+
+        /// Registers an event stream in the immutable runtime definition.
+        public mutating func events(
+            matching selector: RuntimeEventSelector,
+            buffering policy: RuntimeBufferingPolicy = .suspendProducer(capacity: 64)
+        ) throws -> RuntimeEventStream {
+            try definition.registerEvents(matching: selector, buffering: policy)
+        }
+
+        /// Registers a bounded responder for a request family.
+        @discardableResult
+        public mutating func respond(
+            to selector: RuntimeResponderSelector,
+            maximumConcurrentInvocations: Int = 1,
+            handler: @escaping @Sendable (RuntimeInvocation) async throws -> RuntimeHandlerResult
+        ) throws -> Int {
+            guard maximumConcurrentInvocations > 0, maximumConcurrentInvocations <= definition.capacities.handlersInFlight else {
+                throw AxolotyError.invalidArgument(argument: "maximumConcurrentInvocations", reason: "must fit the runtime handler limit")
+            }
+            return try definition.register(capability: selector.capability, operation: selector.operation, handler: handler)
         }
 
         /// Finishes registration and returns the immutable definition.

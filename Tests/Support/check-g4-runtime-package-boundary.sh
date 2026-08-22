@@ -1,10 +1,9 @@
 #!/bin/sh
 # Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-# Enforce the package boundary for the replacement runtime. G4 is not open on
-# every branch yet, so the checker is explicitly deferred until both the host
-# source seam and static runtime package exist. Once they exist, legacy lifecycle and transport symbols
-# are rejected from the replacement sources.
+# Enforce the package boundary for the replacement runtime and the production
+# target that hosts it. Once G4 is present, inherited lifecycle, transport,
+# and Codable protocol state cannot remain compiled as current implementation.
 
 set -eu
 
@@ -20,7 +19,7 @@ fail() {
 
 host_sources=$(find "$runtime_package/Sources" -type f -name '*.swift' -print 2>/dev/null || true)
 if [ -z "$host_sources" ]; then
-    host_sources=$(find "$runtime_source_dir" -maxdepth 1 -type f -name 'AxolotyRuntime*.swift' -print 2>/dev/null || true)
+    host_sources=$(find "$runtime_source_dir" -maxdepth 1 -type f \( -name 'AxolotyRuntime*.swift' -o -name 'MQTTBinding.swift' \) -print 2>/dev/null || true)
 fi
 
 if [ -z "$host_sources" ] && [ ! -d "$static" ]; then
@@ -40,6 +39,13 @@ sources="$host_sources $static_sources"
 for source in $sources; do
     if grep -Eq '\b(Container|Controller|CommunicationManager|MQTTNIOClient|PayloadCoder)\b' "$source"; then
         fail "legacy runtime or protocol encoder symbol in replacement source: $source"
+    fi
+done
+
+production_sources=$(find "$root/Source" -type f -name '*.swift' ! -path "$root/Source/LegacyCompatibility/*" -print)
+for source in $production_sources; do
+    if grep -Eq '\b(Container|Controller|CommunicationManager|HostWireEventEncoder|MQTTNIOClient|PayloadCoder)\b' "$source"; then
+        fail "inherited runtime or parallel protocol implementation remains in current production source: $source"
     fi
 done
 

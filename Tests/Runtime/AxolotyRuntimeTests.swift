@@ -7,6 +7,23 @@ import AxolotyWire
 
 @Suite("Axoloty runtime")
 struct AxolotyRuntimeTests {
+    @Test("builder seals typed event streams and responders")
+    func builderSealsModernContracts() throws {
+        let identity = try RuntimeIdentity(id: .zero, name: "inspector")
+        var builder = try RuntimeDefinition.Builder(identity: identity, namespace: "building-a")
+        _ = try builder.events(
+            matching: .family(.advertise),
+            buffering: .coalesceLatest
+        )
+        _ = try builder.respond(
+            to: .call(operation: "device.read"),
+            maximumConcurrentInvocations: 1
+        ) { _ in .noResponse }
+        let sealed = try builder.finish()
+        #expect(sealed.identity == identity)
+        #expect(sealed.handlerCount == 1)
+    }
+
     @Test("definition seals a finite handler set")
     func definitionSealsHandlers() throws {
         let capacities = try RuntimeCapacities(handlers: 1)

@@ -23,14 +23,6 @@ run_checker() {
         "$checker"
 }
 
-run_historical_checker() {
-    AXOLOTY_G4_HOST_RUNTIME_SOURCE_DIR="$tmp/Source/Runtime" \
-    AXOLOTY_G4_STATIC_RUNTIME_PACKAGE_DIR="$tmp/Packages/AxolotyStaticRuntime" \
-    AXOLOTY_G4_CONSUMER_ROOTS="$tmp/Consumers/Inspector" \
-    AXOLOTY_G4_HISTORICAL_CONSUMER_ROOTS="$tmp/Consumers/Inspector" \
-        "$checker"
-}
-
 write_fixture
 run_checker >/dev/null
 
@@ -54,9 +46,5 @@ if run_checker >/dev/null 2>&1; then
     echo "error: consumer checker accepted a raw MQTT dependency" >&2
     exit 1
 fi
-
-write_fixture
-printf '%s\n' 'import Axoloty' >> "$tmp/Consumers/Inspector/Fixture.swift"
-run_historical_checker >/dev/null
 
 echo "G4 runtime consumer boundary negative tests passed"
