@@ -130,21 +130,17 @@ public final class AxolotyInspectorSession: InspectorSession {
                 continuation.finish()
                 return
             }
-            await withTaskGroup(of: InspectorResponseEvent?.self) { group in
+            await withTaskGroup(of: Void.self) { group in
                 group.addTask {
                     for await event in resolveStream {
                         guard event.context.correlationID == correlation else { continue }
-                        return Self.response(from: event)
+                        continuation.yield(Self.response(from: event))
                     }
-                    return nil
                 }
                 group.addTask {
                     try? await Task.sleep(for: .seconds(5))
-                    return nil
                 }
-                if let response = await group.next() ?? nil {
-                    continuation.yield(response)
-                }
+                _ = await group.next()
                 group.cancelAll()
             }
             continuation.finish()

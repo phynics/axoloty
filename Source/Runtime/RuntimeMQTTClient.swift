@@ -51,7 +51,7 @@ final class RuntimeMQTTClient: @unchecked Sendable {
         self.client = MQTTClient(
             host: configuration.host,
             port: Int(configuration.port),
-            identifier: "axoloty-runtime-(UUID().uuidString)",
+            identifier: "axoloty-runtime-\(UUID().uuidString)",
             eventLoopGroupProvider: .shared(eventLoopGroup),
             logger: nil,
             configuration: mqttConfiguration

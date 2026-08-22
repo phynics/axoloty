@@ -3,9 +3,8 @@
 // Minimal release consumer for the Axoloty host runtime (issue #299).
 //
 // Exercises one stable public path so dead stripping cannot erase the product.
-// The binary size of this consumer captures the full Axoloty dependency
-// closure (MQTTNIO, NIO, NIOSSL, NIOTransportServices, Logging, ErrorKit,
-// IkigaJSON) as a release-mode baseline.
+// The binary size of this consumer captures the modern host runtime and error
+// boundary as a release-mode baseline.
 
 import Axoloty
 

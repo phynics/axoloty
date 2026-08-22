@@ -12,7 +12,7 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 runtime_package=${AXOLOTY_G4_RUNTIME_PACKAGE_DIR:-$root/Packages/AxolotyRuntime}
 runtime_source_dir=${AXOLOTY_G4_HOST_RUNTIME_SOURCE_DIR:-$root/Source/Runtime}
 static=${AXOLOTY_G4_STATIC_RUNTIME_PACKAGE_DIR:-$root/Packages/AxolotyStaticRuntime}
-consumer_roots=${AXOLOTY_G4_CONSUMER_ROOTS:-"$root/Tools/AxolotyInspectorRuntime $root/Tools/AxolotyInspectorRuntimeTests $root/Tools/AxolotyInspectorCLITests $root/Tools/AxolotyMCP $root/Tools/AxolotyMCPTests $root/Tools/axoloty-inspect $root/Tools/axoloty-mcp $root/Examples"}
+consumer_roots=${AXOLOTY_G4_CONSUMER_ROOTS:-"$root/Tools/AxolotyInspectorRuntime $root/Tools/AxolotyInspectorRuntimeTests $root/Tools/AxolotyInspectorCLITests $root/Tools/AxolotyMCP $root/Tools/AxolotyMCPTests $root/Tools/axoloty-inspect $root/Tools/axoloty-mcp $root/Benchmarks/Consumers $root/Embedded/swift/main $root/Examples"}
 
 fail() {
     echo "error: $*" >&2

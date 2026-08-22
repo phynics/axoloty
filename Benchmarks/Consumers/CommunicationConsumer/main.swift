@@ -1,11 +1,9 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-// Release consumer exercising the communication event layer (issue #353).
+// Release consumer exercising the modern protocol layer.
 //
-// Anchors AdvertiseEvent and CommunicationManager so dead stripping cannot
-// erase the communication subsystem. The binary size captures the incremental
-// cost of the event types, snapshot metadata, and topic-building machinery
-// beyond the wire-only baseline.
+// The binary size captures the incremental cost of the shared protocol
+// routing-key and capability machinery beyond the wire-only baseline.
 
 import AxolotyProtocol
 
