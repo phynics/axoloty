@@ -42,7 +42,7 @@ public struct ManualReading: ObjectSchema {
         self.state = try fields.presence("state", as: Bool.self)
     }
 
-    public borrowing func encodeFields<let capacity: Int>(to encoder: inout ObjectFieldEncoder<capacity>) throws(ObjectEncodingError) {
+    public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
         try encoder.encode(temperature, forKey: "temperature")
         try encoder.encode(alarms, forKey: "alarmCodes")
         try encoder.encode(retries, forKey: "retries")
@@ -73,5 +73,24 @@ func generatedSchemaRuntimeBehavior() throws {
     switch unknown {
     case .value(let kind): #expect(kind == .trueValue)
     default: Issue.record("unknown field was not preserved")
+    }
+}
+
+@Test("typed schema maps missing and invalid fields to structured object errors")
+func typedSchemaErrorMapping() {
+    let missing = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.MacroReading\",\"name\":\"Reading\",\"coreType\":\"CoatyObject\"}")
+    do {
+        _ = try Object<MacroReading>(decoding: missing)
+        Issue.record("missing required field should fail")
+    } catch {
+        #expect(error.reason == .invalidField)
+    }
+
+    let invalid = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.MacroReading\",\"name\":\"Reading\",\"coreType\":\"CoatyObject\",\"temperature\":true}")
+    do {
+        _ = try Object<MacroReading>(decoding: invalid)
+        Issue.record("invalid field should fail")
+    } catch {
+        #expect(error.reason == .invalidField)
     }
 }

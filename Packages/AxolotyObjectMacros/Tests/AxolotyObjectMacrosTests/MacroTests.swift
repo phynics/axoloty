@@ -31,7 +31,7 @@ func schemaMacroExpansion() {
                     alarms: try fields.decodeIfPresent("alarmCodes", as: Int.self)
                 )
             }
-            public borrowing func encodeFields<let capacity: Int>(to encoder: inout ObjectFieldEncoder<capacity>) throws(ObjectEncodingError) {
+            public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
                 try encoder.encode(temperature, forKey: "temperature")
                 try encoder.encode(alarms, forKey: "alarmCodes")
             }
@@ -76,7 +76,7 @@ func schemaMacroDiagnostics() {
                     third: try fields.decode("objectId", as: Int.self)
                 )
             }
-            public borrowing func encodeFields<let capacity: Int>(to encoder: inout ObjectFieldEncoder<capacity>) throws(ObjectEncodingError) {
+            public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
                 try encoder.encode(first, forKey: "first")
                 try encoder.encode(second, forKey: "first")
                 try encoder.encode(third, forKey: "objectId")
@@ -145,7 +145,7 @@ private func assertValidCoreType(_ coreType: String) {
             public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
                 self.init()
             }
-            public borrowing func encodeFields<let capacity: Int>(to encoder: inout ObjectFieldEncoder<capacity>) throws(ObjectEncodingError) {
+            public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
             }
         }
         extension CoreProbe: ObjectSchema {}
@@ -199,7 +199,7 @@ func schemaMacroRejectsInventedCoreType() {
             public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
                 self.init()
             }
-            public borrowing func encodeFields<let capacity: Int>(to encoder: inout ObjectFieldEncoder<capacity>) throws(ObjectEncodingError) {
+            public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
             }
         }
         extension Bad: ObjectSchema {}

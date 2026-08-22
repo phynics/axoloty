@@ -18,22 +18,27 @@ public struct BoundedObject<
     /// Creates a typed object from a complete object payload.
     public init(decoding bytes: ByteSlice) throws(ObjectError) {
         let dynamic = try BoundedDynamicObject<byteCapacity, fieldCapacity>(decoding: bytes)
-        // These capacities are measured from the portable metadata fixtures and
-        // are explicit so envelope decoding never inherits an arbitrary default.
+        // These explicit preset bounds keep envelope decoding from inheriting
+        // an arbitrary default; callers can use `withEnvelope` for other bounds.
         let envelope = try dynamic.withEncodedBytes { encoded in
             try ObjectEnvelope<64, 128>(decoding: encoded)
         }
         guard envelope.objectType == Schema.schema.objectType,
               envelope.coreType == Schema.schema.coreType else { throw ObjectError(.invalidEnvelope) }
-        let model = try dynamic.withFields { fields in
-            fields.withDecoder { decoder in try Schema(decoding: decoder) }
+        let model: Schema
+        do {
+            model = try dynamic.withFields { fields in
+                try fields.withDecoder { decoder in try Schema(decoding: decoder) }
+            }
+        } catch {
+            throw ObjectError(.invalidField)
         }
         self.dynamic = dynamic
         self.model = model
     }
 
     /// Borrows the typed model without exposing raw storage.
-    public borrowing var value: Schema { model }
+    public var value: Schema { model }
 
     /// Applies a typed edit and commits raw/model state together.
     public mutating func edit(_ body: (inout Schema) throws -> Void) throws(ObjectError) {
@@ -73,7 +78,7 @@ public struct BoundedObject<
 }
 
 /// The measured host/embedded payload preset: one wire payload and its 24-key index.
-public typealias Object<Schema: ObjectSchema> = BoundedObject<Schema, WireBufferConfig.maxPayloadSize, WireBufferConfig.maxIndexedFields>
+public typealias Object<Schema: ObjectSchema> = BoundedObject<Schema, 512, 24>
 
 /// The fixed-inline preset used when a schema does not need a larger arena.
-public typealias StaticObject<Schema: ObjectSchema> = BoundedObject<Schema, WireBufferConfig.maxPayloadSize, WireBufferConfig.maxIndexedFields>
+public typealias StaticObject<Schema: ObjectSchema> = BoundedObject<Schema, 512, 24>

@@ -186,7 +186,7 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
         }
 
         /// Encodes the typed fields through the bounded object-field encoder.
-        public borrowing func encodeFields<let capacity: Int>(to encoder: inout ObjectFieldEncoder<capacity>) throws(ObjectEncodingError) {
+        public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
             \(raw: encoderWitness)
         }
         """

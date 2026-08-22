@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+import AxolotyWire
+
 /// Errors raised while decoding a typed schema.
 public enum ObjectDecodingError: Error, Sendable, Equatable {
     /// A required field was absent.
@@ -85,7 +87,7 @@ public struct ObjectFieldDescriptor: Sendable, Equatable {
 /// An immutable fixed-inline schema descriptor shared by manual and macro forms.
 public struct PortableObjectSchema<Value: Sendable>: Sendable {
     /// Maximum fields supported by the authoritative wire index.
-    public static let maxFieldCount = WireBufferConfig.maxIndexedFields
+    public static var maxFieldCount: Int { WireBufferConfig.maxIndexedFields }
     /// Object type carried by this schema.
     public let objectType: ObjectType
     /// Core type carried by this schema.
@@ -111,13 +113,13 @@ public struct PortableObjectSchema<Value: Sendable>: Sendable {
 
 /// A typed value that can be decoded from one borrowed JSON value.
 public protocol ObjectFieldDecodable: Sendable {
-    static func decode(from value: JSONValueView) throws(ObjectDecodingError) -> Self
+    static func decode(from value: borrowing JSONValueView) throws(ObjectDecodingError) -> Self
 }
 
 /// A typed value that can be encoded into a transactional object editor.
 public protocol ObjectFieldEncodable: Sendable {
-    func encode<let capacity: Int>(
-        to editor: inout ObjectFieldEncoder<capacity>,
+    func encode<let editorCapacity: Int>(
+        to editor: inout ObjectFieldEncoder<editorCapacity>,
         forKey key: StaticString
     ) throws(ObjectEncodingError)
 }
@@ -218,13 +220,13 @@ public protocol ObjectSchema: Sendable {
     /// Decodes typed fields from a borrowed object view.
     init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError)
     /// Encodes typed fields into a capacity-specialized transactional editor.
-    borrowing func encodeFields<let capacity: Int>(
-        to encoder: inout ObjectFieldEncoder<capacity>
+    borrowing func encodeFields<let editorCapacity: Int>(
+        to encoder: inout ObjectFieldEncoder<editorCapacity>
     ) throws(ObjectEncodingError)
 }
 
 /// The fixed inline editor used by typed schema encoders.
-public typealias ObjectFieldEncoder<let capacity: Int> = ObjectEditor<capacity>
+public typealias ObjectFieldEncoder<let editorCapacity: Int> = ObjectEditor<editorCapacity>
 
 extension ObjectEditor {
     /// Encodes one bounded primitive or application-defined field value.
@@ -233,87 +235,75 @@ extension ObjectEditor {
         forKey key: StaticString
     ) throws(ObjectEncodingError) {
         do { try value.encode(to: &self, forKey: key) }
-        catch let error as ObjectEncodingError { throw error }
-        catch { throw .invalidField }
+        catch { throw error }
     }
 }
 
 extension Optional: ObjectFieldEncodable where Wrapped: ObjectFieldEncodable {
-    public func encode<let capacity: Int>(
-        to editor: inout ObjectFieldEncoder<capacity>,
+    public func encode<let editorCapacity: Int>(
+        to editor: inout ObjectFieldEncoder<editorCapacity>,
         forKey key: StaticString
     ) throws(ObjectEncodingError) {
         switch self {
         case .some(let value): try value.encode(to: &editor, forKey: key)
         case .none:
             do { try editor.remove(key) }
-            catch let error as ObjectError {
-                throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField
-            }
-            catch { throw .invalidField }
+            catch { throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
         }
     }
 }
 
 extension Presence: ObjectFieldEncodable where Value: ObjectFieldEncodable {
-    public func encode<let capacity: Int>(
-        to editor: inout ObjectFieldEncoder<capacity>,
+    public func encode<let editorCapacity: Int>(
+        to editor: inout ObjectFieldEncoder<editorCapacity>,
         forKey key: StaticString
     ) throws(ObjectEncodingError) {
         switch self {
         case .missing:
             do { try editor.remove(key) }
-            catch let error as ObjectError {
-                throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField
-            }
-            catch { throw .invalidField }
+            catch { throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
         case .null:
             do { try editor.setNull(key) }
-            catch let error as ObjectError {
-                throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField
-            }
-            catch { throw .invalidField }
+            catch { throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
         case .value(let value): try value.encode(to: &editor, forKey: key)
         }
     }
 }
 
 extension Int: ObjectFieldDecodable, ObjectFieldEncodable {
-    public static func decode(from value: JSONValueView) throws(ObjectDecodingError) -> Int {
+    public static func decode(from value: borrowing JSONValueView) throws(ObjectDecodingError) -> Int {
         guard value.kind == .number, let number = value.number?.intValue,
               number >= Int64(Int.min), number <= Int64(Int.max) else { throw .invalidField }
         return Int(number)
     }
 
-    public func encode<let capacity: Int>(to editor: inout ObjectFieldEncoder<capacity>, forKey key: StaticString) throws(ObjectEncodingError) {
+    public func encode<let editorCapacity: Int>(to editor: inout ObjectFieldEncoder<editorCapacity>, forKey key: StaticString) throws(ObjectEncodingError) {
         do { try editor.setInteger(self, forKey: key) }
-        catch let error as ObjectError { throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
-        catch { throw .invalidField }
+        catch { throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
     }
 }
 
 extension Bool: ObjectFieldDecodable, ObjectFieldEncodable {
-    public static func decode(from value: JSONValueView) throws(ObjectDecodingError) -> Bool {
+    public static func decode(from value: borrowing JSONValueView) throws(ObjectDecodingError) -> Bool {
         switch value.kind { case .trueValue: return true; case .falseValue: return false; default: throw .invalidField }
     }
 
-    public func encode<let capacity: Int>(to editor: inout ObjectFieldEncoder<capacity>, forKey key: StaticString) throws(ObjectEncodingError) {
+    public func encode<let editorCapacity: Int>(to editor: inout ObjectFieldEncoder<editorCapacity>, forKey key: StaticString) throws(ObjectEncodingError) {
         do { try editor.setBoolean(self, forKey: key) }
-        catch let error as ObjectError { throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
-        catch { throw .invalidField }
+        catch { throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
     }
 }
 
 extension BoundedEncodedText: ObjectFieldDecodable, ObjectFieldEncodable {
-    public static func decode(from value: JSONValueView) throws(ObjectDecodingError) -> Self {
+    public static func decode(from value: borrowing JSONValueView) throws(ObjectDecodingError) -> Self {
         var decoded: Self?
         _ = value.withString { bytes in decoded = Self(bytes: bytes) }
         guard let decoded else { throw .invalidField }
         return decoded
     }
 
-    public borrowing func encode<let capacity: Int>(
-        to editor: inout ObjectFieldEncoder<capacity>,
+    public borrowing func encode<let editorCapacity: Int>(
+        to editor: inout ObjectFieldEncoder<editorCapacity>,
         forKey key: StaticString
     ) throws(ObjectEncodingError) {
         var failure: ObjectError?
@@ -326,19 +316,18 @@ extension BoundedEncodedText: ObjectFieldDecodable, ObjectFieldEncodable {
 }
 
 extension ObjectID: ObjectFieldDecodable, ObjectFieldEncodable {
-    public static func decode(from value: JSONValueView) throws(ObjectDecodingError) -> Self {
+    public static func decode(from value: borrowing JSONValueView) throws(ObjectDecodingError) -> Self {
         var decoded: Self?
         _ = value.withString { bytes in decoded = Self(bytes: bytes) }
         guard let decoded else { throw .invalidField }
         return decoded
     }
 
-    public func encode<let capacity: Int>(
-        to editor: inout ObjectFieldEncoder<capacity>,
+    public func encode<let editorCapacity: Int>(
+        to editor: inout ObjectFieldEncoder<editorCapacity>,
         forKey key: StaticString
     ) throws(ObjectEncodingError) {
         do { try editor.setUUID(key, value: uuid) }
-        catch let error as ObjectError { throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
-        catch { throw .invalidField }
+        catch { throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
     }
 }

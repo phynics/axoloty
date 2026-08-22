@@ -3,7 +3,7 @@
 import AxolotyWire
 
 @usableFromInline
-struct DynamicFieldDescriptor: Equatable {
+struct DynamicFieldDescriptor: Equatable, Sendable {
     var keyStart: Int = 0
     var keyLength: Int = 0
     var valueStart: Int = 0
@@ -103,10 +103,10 @@ public struct BoundedDynamicObject<let byteCapacity: Int, let fieldCapacity: Int
     }
 
     /// Borrows all fields synchronously for the duration of `body`.
-    public borrowing func withFields<R>(_ body: (borrowing ObjectFields) -> R) -> R {
-        withUnsafeBytesOfRaw { pointer in
+    public borrowing func withFields<R>(_ body: (borrowing ObjectFields) throws -> R) rethrows -> R {
+        try withUnsafeBytesOfRaw { pointer in
             withUnsafeBytes(of: descriptors) { descriptorBytes in
-                body(ObjectFields(
+                try body(ObjectFields(
                     bytes: pointer,
                     length: rawLength,
                     descriptors: descriptorBytes.baseAddress!,
