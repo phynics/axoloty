@@ -32,6 +32,7 @@ let package = Package(
             dependencies: [
                 "AxolotyObjectMacros",
                 "AxolotyObjectModel",
+                "AxolotyObjectMacrosImplementation",
                 .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax"),
             ]
         ),

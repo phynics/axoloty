@@ -62,7 +62,10 @@ func generatedSchemaRuntimeBehavior() throws {
     var manual = try BoundedObject<ManualReading, 512, 24>(decoding: bytes)
     #expect(MacroReading.schema.objectType == ManualReading.schema.objectType)
     #expect(MacroReading.schema.coreType == ManualReading.schema.coreType)
-    #expect(MacroReading.schema.fields == ManualReading.schema.fields)
+    #expect(MacroReading.schema.fieldCount == ManualReading.schema.fieldCount)
+    for index in 0..<Int(MacroReading.schema.fieldCount) {
+        #expect(MacroReading.schema.fields[index] == ManualReading.schema.fields[index])
+    }
     #expect(object.temperature == 21)
     #expect(object.alarms == nil)
     #expect(object.retries == 3)

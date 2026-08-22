@@ -4,6 +4,7 @@ import SwiftSyntaxMacros
 import SwiftSyntaxMacrosTestSupport
 import Testing
 @testable import AxolotyObjectMacros
+@testable import AxolotyObjectMacrosImplementation
 
 @Test("schema macro emits a fixed descriptor member")
 func schemaMacroExpansion() {
@@ -26,10 +27,8 @@ func schemaMacroExpansion() {
                 return PortableObjectSchema<Reading>(objectType: ObjectType("com.example.Reading")!, coreType: .coatyObject, fieldCount: 2, fields: fields)
             }()
             public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
-                self.init(
-                    temperature: try fields.decode("temperature", as: Int.self),
-                    alarms: try fields.decodeIfPresent("alarmCodes", as: Int.self)
-                )
+                self.temperature = try fields.decode("temperature", as: Int.self)
+                self.alarms = try fields.decodeIfPresent("alarmCodes", as: Int.self)
             }
             public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
                 try encoder.encode(temperature, forKey: "temperature")
@@ -70,11 +69,9 @@ func schemaMacroDiagnostics() {
                 return PortableObjectSchema<Bad>(objectType: ObjectType("com.example.Bad")!, coreType: .coatyObject, fieldCount: 3, fields: fields)
             }()
             public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
-                self.init(
-                    first: try fields.decode("first", as: Int.self),
-                    second: try fields.decode("first", as: Int.self),
-                    third: try fields.decode("objectId", as: Int.self)
-                )
+                self.first = try fields.decode("first", as: Int.self)
+                self.second = try fields.decode("first", as: Int.self)
+                self.third = try fields.decode("objectId", as: Int.self)
             }
             public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
                 try encoder.encode(first, forKey: "first")
@@ -143,7 +140,6 @@ private func assertValidCoreType(_ coreType: String) {
                 return PortableObjectSchema<CoreProbe>(objectType: ObjectType("com.example.CoreProbe")!, coreType: .\(coreTypeExpression(coreType)), fieldCount: 0, fields: fields)
             }()
             public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
-                self.init()
             }
             public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
             }
@@ -197,7 +193,6 @@ func schemaMacroRejectsInventedCoreType() {
                 return PortableObjectSchema<Bad>(objectType: ObjectType("com.example.Bad")!, coreType: .coatyObject, fieldCount: 0, fields: fields)
             }()
             public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
-                self.init()
             }
             public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
             }
@@ -260,9 +255,7 @@ func schemaMacroRejectsTextDefault() {
                 return PortableObjectSchema<BadDefault>(objectType: ObjectType("com.example.BadDefault")!, coreType: .coatyObject, fieldCount: 1, fields: fields)
             }()
             public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
-                self.init(
-                    label: try fields.decode("label", as: BoundedEncodedText<16>.self)
-                )
+                self.label = try fields.decode("label", as: BoundedEncodedText<16>.self)
             }
             public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
                 try encoder.encode(label, forKey: "label")

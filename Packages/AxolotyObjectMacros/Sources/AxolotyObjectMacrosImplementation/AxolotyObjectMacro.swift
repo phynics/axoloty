@@ -149,7 +149,7 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
         for (index, descriptor) in descriptors.prefix(24).enumerated() {
             assignments += "fields[\(index)] = ObjectFieldDescriptor(key: ObjectFieldKey(\(literal(descriptor.wireName)))!, index: \(index), flags: \(flags(for: descriptor)))\n"
         }
-        let decoderArguments = descriptors.prefix(24).map { descriptor in
+        let decoderStatements = descriptors.prefix(24).map { descriptor in
             let decode: String
             let isPresence = descriptor.type.hasPrefix("Presence<")
             let decodeType: String
@@ -167,17 +167,15 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
             } else {
                 decode = "try fields.decode(\(literal(descriptor.wireName)), as: \(descriptor.type).self)"
             }
-            return "\(descriptor.name): \(decode)"
-        }.joined(separator: ",\n            ")
+            return "self.\(descriptor.name) = \(decode)"
+        }.joined(separator: "\n            ")
         let encoderStatements = descriptors.prefix(24).map { descriptor in
             if let defaultExpression = descriptor.defaultExpression {
                 return "try encoder.encodeDefault(\(descriptor.name), default: \(defaultExpression), forKey: \(literal(descriptor.wireName)))"
             }
             return "try encoder.encode(\(descriptor.name), forKey: \(literal(descriptor.wireName)))"
         }.joined(separator: "\n        ")
-        let decoderWitness = decoderArguments.isEmpty
-            ? "self.init()"
-            : "self.init(\n                \(decoderArguments)\n            )"
+        let decoderWitness = decoderStatements
         let encoderWitness = encoderStatements.isEmpty ? "" : encoderStatements
         let generated: DeclSyntax = """
         /// The fixed descriptor synthesized by `@AxolotyObject`.
@@ -237,7 +235,7 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
         if descriptor.optional { values.append(".optional") } else { values.append(".required") }
         if descriptor.defaulted { values.append(".defaulted") }
         if descriptor.type.hasPrefix("Presence<") { values.append(".presence") }
-        return values.joined(separator: ", ")
+        return values.count == 1 ? values[0] : "[\(values.joined(separator: ", "))]"
     }
 
     private static func coreExpression(_ value: String) -> String {

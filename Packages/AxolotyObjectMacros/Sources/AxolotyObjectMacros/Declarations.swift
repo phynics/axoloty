@@ -3,7 +3,7 @@
 import AxolotyObjectModel
 
 /// Synthesizes a portable object schema and its ``ObjectSchema`` conformance.
-@attached(member, names: named(schema))
+@attached(member, names: named(schema), named(init(decoding:)), named(encodeFields(to:)))
 @attached(extension, conformances: ObjectSchema)
 public macro AxolotyObject(
     objectType: String,
