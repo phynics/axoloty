@@ -83,3 +83,28 @@ public struct ObjectEnvelope<let nameCapacity: Int, let externalIDCapacity: Int>
 }
 
 private func isJSONNull(_ value: ByteSlice) -> Bool { value.length == 4 && value.equals("null") }
+
+@usableFromInline
+func validateObjectIdentity(
+    decoding bytes: ByteSlice,
+    objectType expectedObjectType: ObjectType,
+    coreType expectedCoreType: ObjectCoreType
+) throws(ObjectError) {
+    var matches = false
+    bytes.withBytes { pointer, count in
+        let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: count)
+        do { try reader.validate() } catch { return }
+        guard let idBytes = reader.readString("objectId"), ObjectID(bytes: idBytes) != nil,
+              let nameBytes = reader.readString("name"), nameBytes.length > 0,
+              let typeBytes = reader.readString("objectType"),
+              let coreBytes = reader.readString("coreType"),
+              let objectType = ObjectType(bytes: typeBytes),
+              let coreType = ObjectCoreType(bytes: coreBytes) else { return }
+        if let external = reader.readField("externalId"), !isJSONNull(external), reader.readString("externalId") == nil { return }
+        if let parent = reader.readField("parentObjectId"), !isJSONNull(parent), reader.readUUID("parentObjectId") == nil { return }
+        if let location = reader.readField("locationId"), !isJSONNull(location), reader.readUUID("locationId") == nil { return }
+        if let deactivated = reader.readField("isDeactivated"), !isJSONNull(deactivated), reader.readBool("isDeactivated") == nil { return }
+        matches = objectType == expectedObjectType && coreType == expectedCoreType
+    }
+    guard matches else { throw ObjectError(.invalidEnvelope) }
+}

@@ -342,6 +342,31 @@ extension Int: ObjectFieldDecodable, ObjectFieldEncodable {
     }
 }
 
+extension UInt64: ObjectFieldDecodable, ObjectFieldEncodable {
+    /// Decodes a JSON integer that fits the full unsigned 64-bit range.
+    public static func decode(from value: borrowing JSONValueView) throws(ObjectDecodingError) -> UInt64 {
+        var number: UInt64?
+        guard value.withNumber({ number = $0.uintValue }), let number else { throw .invalidField }
+        return number
+    }
+
+    /// Encodes an unsigned integer as a JSON number.
+    public func encode<let editorCapacity: Int>(to editor: inout ObjectFieldEncoder<editorCapacity>, forKey key: StaticString) throws(ObjectEncodingError) {
+        do { try editor.setUnsignedInteger(self, forKey: key) }
+        catch { throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
+    }
+}
+
+extension Double: ObjectFieldDecodable {
+    /// Decodes a finite JSON number as a `Double`.
+    public static func decode(from value: borrowing JSONValueView) throws(ObjectDecodingError) -> Double {
+        var number: Double?
+        guard value.withNumber({ number = $0.doubleValue }), let number, number.isFinite else { throw .invalidField }
+        return number
+    }
+
+}
+
 extension Bool: ObjectFieldDecodable, ObjectFieldEncodable {
     public static func decode(from value: borrowing JSONValueView) throws(ObjectDecodingError) -> Bool {
         switch value.kind { case .trueValue: return true; case .falseValue: return false; default: throw .invalidField }

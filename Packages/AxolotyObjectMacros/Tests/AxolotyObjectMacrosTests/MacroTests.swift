@@ -241,3 +241,42 @@ func schemaMacroRejectsMoreThan24Fields() {
         ]
     )
 }
+
+@Test("schema macro diagnoses unsupported bounded-text defaults")
+func schemaMacroRejectsTextDefault() {
+    assertMacroExpansion(
+        """
+        @AxolotyObject(objectType: "com.example.BadDefault")
+        struct BadDefault {
+            @Default("ready") var label: BoundedEncodedText<16>
+        }
+        """,
+        expandedSource: """
+        struct BadDefault {
+            @Default("ready") var label: BoundedEncodedText<16>
+            public static let schema: PortableObjectSchema<BadDefault> = {
+                var fields = InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
+                fields[0] = ObjectFieldDescriptor(key: ObjectFieldKey("label")!, index: 0, flags: .required)
+                return PortableObjectSchema<BadDefault>(objectType: ObjectType("com.example.BadDefault")!, coreType: .coatyObject, fieldCount: 1, fields: fields)
+            }()
+            public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
+                self.init(
+                    label: try fields.decode("label", as: BoundedEncodedText<16>.self)
+                )
+            }
+            public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
+                try encoder.encode(label, forKey: "label")
+            }
+        }
+        extension BadDefault: ObjectSchema {}
+        """,
+        diagnostics: [
+            DiagnosticSpec(message: "@Default value does not match field type 'BoundedEncodedText<16>'", line: 4, column: 5),
+        ],
+        macros: [
+            "AxolotyObject": AxolotyObjectMacro.self,
+            "WireName": WireNameMacro.self,
+            "Default": DefaultMacro.self,
+        ]
+    )
+}

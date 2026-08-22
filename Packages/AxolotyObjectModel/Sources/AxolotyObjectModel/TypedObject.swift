@@ -20,13 +20,11 @@ public struct BoundedObject<
         do throws(ObjectSchemaValidationError) { try Schema.schema.validate() }
         catch { throw ObjectError(.invalidSchema) }
         let dynamic = try BoundedDynamicObject<byteCapacity, fieldCapacity>(decoding: bytes)
-        // These explicit preset bounds keep envelope decoding from inheriting
-        // an arbitrary default; callers can use `withEnvelope` for other bounds.
-        var envelope: ObjectEnvelope<64, 128>?
-        try dynamic.withEnvelope { decoded in envelope = decoded }
-        guard let envelope else { throw ObjectError(.invalidEnvelope) }
-        guard envelope.objectType == Schema.schema.objectType,
-              envelope.coreType == Schema.schema.coreType else { throw ObjectError(.invalidEnvelope) }
+        try validateObjectIdentity(
+            decoding: bytes,
+            objectType: Schema.schema.objectType,
+            coreType: Schema.schema.coreType
+        )
         let model: Schema
         do {
             model = try dynamic.withFields { fields in
@@ -37,6 +35,25 @@ public struct BoundedObject<
         }
         self.dynamic = dynamic
         self.model = model
+    }
+
+    /// Creates a typed object and records its schema in a caller-owned registry.
+    ///
+    /// The object is decoded before registration is attempted. A failed decode
+    /// or failed registration therefore leaves the caller's registry unchanged.
+    public init<let registryCapacity: Int>(
+        decoding bytes: ByteSlice,
+        using registry: inout ObjectSchemaRegistry<registryCapacity>
+    ) throws(ObjectError) {
+        let decoded = try Self(decoding: bytes)
+        do throws(ObjectSchemaRegistryError) {
+            try registry.use(Schema.self)
+        } catch .capacityExceeded {
+            throw ObjectError(.capacityExceeded)
+        } catch {
+            throw ObjectError(.invalidSchema)
+        }
+        self = decoded
     }
 
     /// Borrows the typed model without exposing raw storage.
@@ -79,8 +96,15 @@ public struct BoundedObject<
     }
 }
 
-/// The measured host/embedded payload preset: one wire payload and its 24-key index.
-public typealias Object<Schema: ObjectSchema> = BoundedObject<Schema, 512, 24>
+/// The protocol-sized dynamic object convenience form.
+///
+/// The 512-byte and 24-field values are wire-authority bounds, not host or
+/// embedded memory measurements. Use ``BoundedDynamicObject`` when a caller
+/// has a different measured arena or descriptor capacity.
+public typealias DynamicObject = BoundedDynamicObject<512, 24>
 
-/// The fixed-inline preset used when a schema does not need a larger arena.
-public typealias StaticObject<Schema: ObjectSchema> = BoundedObject<Schema, 512, 24>
+/// The protocol-sized typed object convenience form.
+///
+/// The 512-byte and 24-field values are wire-authority bounds, not host or
+/// embedded memory measurements. Use ``BoundedObject`` for explicit capacities.
+public typealias Object<Schema: ObjectSchema> = BoundedObject<Schema, 512, 24>

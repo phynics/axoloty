@@ -301,6 +301,21 @@ public struct ObjectEditor<let byteCapacity: Int> {
         try addOperation(key: key, valueStart: start, valueLength: valueLength - start, kind: 0)
     }
 
+    /// Sets an unsigned integer without constructing an unbounded buffer.
+    public mutating func setUnsignedInteger(_ value: UInt64, forKey key: StaticString) throws(ObjectError) {
+        let start = valueLength
+        var magnitude = value
+        var digits = InlineArray<20, UInt8>(repeating: 0)
+        var count = 0
+        repeat {
+            digits[count] = UInt8(magnitude % 10) + 48
+            magnitude /= 10
+            count += 1
+        } while magnitude > 0
+        for index in stride(from: count - 1, through: 0, by: -1) { try appendByte(digits[index]) }
+        try addOperation(key: key, valueStart: start, valueLength: valueLength - start, kind: 0)
+    }
+
     /// Sets a Boolean without constructing a String.
     public mutating func setBoolean(_ value: Bool, forKey key: StaticString) throws(ObjectError) {
         let start = valueLength

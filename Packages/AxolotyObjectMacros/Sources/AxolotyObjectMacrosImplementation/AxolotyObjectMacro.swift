@@ -104,12 +104,13 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
             let defaultAttribute = variable.attributes.compactMap({ $0.as(AttributeSyntax.self) }).first(where: {
                 $0.attributeName.trimmedDescription == "Default"
             })
-            let defaultExpression = defaultAttribute.flatMap(defaultArgument)
+            var defaultExpression = defaultAttribute.flatMap(defaultArgument)
             if let defaultAttribute {
                 if defaultExpression == nil {
                     context.diagnose(Diagnostic(node: Syntax(defaultAttribute), message: SchemaDiagnostic(.malformedDefault, "@Default requires exactly one value expression")))
-                } else if let defaultExpression, !defaultMatches(fieldType: fieldType, expression: defaultExpression) {
+                } else if let expression = defaultExpression, !defaultMatches(fieldType: fieldType, expression: expression) {
                     context.diagnose(Diagnostic(node: Syntax(defaultAttribute), message: SchemaDiagnostic(.invalidDefault, "@Default value does not match field type '\(fieldType)'")))
+                    defaultExpression = nil
                 }
             }
             let isOptional = fieldType.hasSuffix("?")
@@ -118,6 +119,9 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
             if !isSupportedFieldType(fieldType) {
                 context.diagnose(Diagnostic(node: Syntax(variable), message: SchemaDiagnostic(.unsupportedField, "field type '\(fieldType)' is not supported by the bounded schema codec")))
                 continue
+            }
+            if hasDefault && fieldType.hasSuffix("?") {
+                context.diagnose(Diagnostic(node: Syntax(defaultAttribute!), message: SchemaDiagnostic(.invalidDefault, "@Default cannot be applied to optional fields")))
             }
             if hasDefault && fieldType.hasPrefix("Presence<") {
                 context.diagnose(Diagnostic(node: Syntax(defaultAttribute!), message: SchemaDiagnostic(.invalidDefault, "@Default cannot be applied to Presence fields")))
@@ -296,19 +300,37 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
     }
 
     private static func defaultMatches(fieldType: String, expression: String) -> Bool {
-        let type = fieldType.hasSuffix("?") ? String(fieldType.dropLast()) : fieldType
+        guard !fieldType.hasSuffix("?") else { return false }
+        let type = fieldType
         if expression.hasPrefix("\"") { return false }
         if expression == "true" || expression == "false" { return type == "Bool" }
-        if expression == "nil" { return fieldType.hasSuffix("?") }
         if expression.first.map({ $0 == "-" || $0.isNumber }) == true {
-            return type == "Int"
+            let isDecimal = expression.contains(".") || expression.contains("e") || expression.contains("E")
+            if isDecimal { return type == "Double" && isDecimalLiteral(expression) }
+            if expression.first == "-" { return type == "Int" && isIntegerLiteral(expression) }
+            return (type == "Int" || type == "UInt64") && isIntegerLiteral(expression)
         }
         return false
     }
 
+    private static func isIntegerLiteral(_ expression: String) -> Bool {
+        let digits = expression.first == "-" ? expression.dropFirst() : expression[...]
+        return !digits.isEmpty && digits.allSatisfy(\.isNumber)
+    }
+
+    private static func isDecimalLiteral(_ expression: String) -> Bool {
+        var digits = 0
+        for scalar in expression.unicodeScalars {
+            if scalar.value >= 48 && scalar.value <= 57 { digits += 1; continue }
+            if scalar.value == 45 || scalar.value == 43 || scalar.value == 46 || scalar.value == 101 || scalar.value == 69 { continue }
+            return false
+        }
+        return digits > 0
+    }
+
     private static func isSupportedFieldType(_ value: String) -> Bool {
-        if value == "Int" || value == "Bool" || value == "ObjectID" { return true }
-        if value == "Int?" || value == "Bool?" || value == "ObjectID?" { return true }
+        if value == "Int" || value == "UInt64" || value == "Bool" || value == "ObjectID" { return true }
+        if value == "Int?" || value == "UInt64?" || value == "Bool?" || value == "ObjectID?" { return true }
         if isBoundedText(value) || isBoundedText(value, optional: true) { return true }
         if value.hasPrefix("Presence<") && value.hasSuffix(">") {
             let wrapped = value.dropFirst("Presence<".count).dropLast()

@@ -114,6 +114,12 @@ private struct OtherManualSchema: ObjectSchema {
     #expect(!unchanged.contains(ObjectType("com.example.Other")!))
 }
 
+@Test func publicObjectVocabularyRetainsExplicitBoundedForms() {
+    let _: Object<ValidManualSchema>.Type = Object<ValidManualSchema>.self
+    let _: DynamicObject.Type = DynamicObject.self
+    let _: BoundedObject<ValidManualSchema, 256, 8>.Type = BoundedObject<ValidManualSchema, 256, 8>.self
+}
+
 @Test func dynamicObjectReadsBorrowedFields() throws {
     let bytes = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.Reading\",\"temperature\":21.50,\"unknown\":1e2}")
     let object = try BoundedDynamicObject<512, 8>(decoding: bytes)

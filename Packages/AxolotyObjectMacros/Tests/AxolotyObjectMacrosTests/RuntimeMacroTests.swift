@@ -50,11 +50,16 @@ public struct ManualReading: ObjectSchema {
     }
 }
 
+@AxolotyObject(objectType: "com.example.NumericReading")
+public struct NumericReading {
+    @Default(7) public var count: UInt64
+}
+
 @Test("generated schema decodes, edits atomically, and preserves unknown fields")
 func generatedSchemaRuntimeBehavior() throws {
     let bytes = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.MacroReading\",\"name\":\"Reading\",\"coreType\":\"CoatyObject\",\"temperature\":21,\"unknown\":true}")
-    var object = try Object<MacroReading>(decoding: bytes)
-    var manual = try Object<ManualReading>(decoding: bytes)
+    var object = try BoundedObject<MacroReading, 512, 24>(decoding: bytes)
+    var manual = try BoundedObject<ManualReading, 512, 24>(decoding: bytes)
     #expect(MacroReading.schema.objectType == ManualReading.schema.objectType)
     #expect(MacroReading.schema.coreType == ManualReading.schema.coreType)
     #expect(MacroReading.schema.fields == ManualReading.schema.fields)
@@ -80,7 +85,7 @@ func generatedSchemaRuntimeBehavior() throws {
 func typedSchemaErrorMapping() {
     let missing = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.MacroReading\",\"name\":\"Reading\",\"coreType\":\"CoatyObject\"}")
     do {
-        _ = try Object<MacroReading>(decoding: missing)
+        _ = try BoundedObject<MacroReading, 512, 24>(decoding: missing)
         Issue.record("missing required field should fail")
     } catch {
         #expect(error.reason == .invalidField)
@@ -88,7 +93,7 @@ func typedSchemaErrorMapping() {
 
     let invalid = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.MacroReading\",\"name\":\"Reading\",\"coreType\":\"CoatyObject\",\"temperature\":true}")
     do {
-        _ = try Object<MacroReading>(decoding: invalid)
+        _ = try BoundedObject<MacroReading, 512, 24>(decoding: invalid)
         Issue.record("invalid field should fail")
     } catch {
         #expect(error.reason == .invalidField)
@@ -96,7 +101,7 @@ func typedSchemaErrorMapping() {
 
     let explicitNull = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.MacroReading\",\"name\":\"Reading\",\"coreType\":\"CoatyObject\",\"temperature\":21,\"retries\":null}")
     do {
-        _ = try Object<MacroReading>(decoding: explicitNull)
+        _ = try BoundedObject<MacroReading, 512, 24>(decoding: explicitNull)
         Issue.record("explicit null should not select a default")
     } catch {
         #expect(error.reason == .invalidField)
@@ -106,10 +111,56 @@ func typedSchemaErrorMapping() {
 @Test("default-valued fields are omitted by canonical encoding")
 func defaultEncodingOmitsCanonicalValue() throws {
     let bytes = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.MacroReading\",\"name\":\"Reading\",\"coreType\":\"CoatyObject\",\"temperature\":21,\"retries\":3}")
-    var object = try Object<MacroReading>(decoding: bytes)
+    var object = try BoundedObject<MacroReading, 512, 24>(decoding: bytes)
     try object.edit { $0.temperature = 22 }
     switch object.withFields({ fields in fields.presence(for: "retries") }) {
     case .missing: break
     default: Issue.record("canonical default was emitted")
     }
+}
+
+@Test("numeric codecs and typed-use registration preserve bounded behavior")
+func numericCodecsAndTypedRegistration() throws {
+    let bytes = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.NumericReading\",\"name\":\"Reading\",\"coreType\":\"CoatyObject\",\"count\":9}")
+    var registry = ObjectSchemaRegistry<1>()
+    let object = try BoundedObject<NumericReading, 512, 24>(decoding: bytes, using: &registry)
+    #expect(object.count == 9)
+    #expect(registry.sealed().contains(NumericReading.schema.objectType))
+}
+
+@Test("typed-use registration saturation leaves the registry unchanged")
+func typedRegistrationSaturationIsAtomic() throws {
+    let numericBytes = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.NumericReading\",\"name\":\"Reading\",\"coreType\":\"CoatyObject\",\"count\":9}")
+    let macroBytes = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.MacroReading\",\"name\":\"Reading\",\"coreType\":\"CoatyObject\",\"temperature\":21}")
+    var registry = ObjectSchemaRegistry<1>()
+    _ = try BoundedObject<NumericReading, 512, 24>(decoding: numericBytes, using: &registry)
+    do {
+        _ = try BoundedObject<MacroReading, 512, 24>(decoding: macroBytes, using: &registry)
+        Issue.record("saturated typed registration succeeded")
+    } catch { #expect(error.reason == .capacityExceeded) }
+    let sealed = registry.sealed()
+    #expect(sealed.count == 1)
+    #expect(!sealed.contains(MacroReading.schema.objectType))
+}
+
+@Test("typed identity validation does not impose a hidden name capacity")
+func typedIdentityAllowsLongName() throws {
+    let bytes = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.MacroReading\",\"name\":\"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ\",\"coreType\":\"CoatyObject\",\"temperature\":21}")
+    let object = try BoundedObject<MacroReading, 512, 24>(decoding: bytes)
+    #expect(object.temperature == 21)
+}
+
+@Test("typed identity validation rejects missing or malformed metadata")
+func typedIdentityRejectsInvalidMetadata() {
+    let missingName = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.MacroReading\",\"coreType\":\"CoatyObject\",\"temperature\":21}")
+    do {
+        _ = try BoundedObject<MacroReading, 512, 24>(decoding: missingName)
+        Issue.record("missing name was accepted")
+    } catch { #expect(error.reason == .invalidEnvelope) }
+
+    let invalidParent = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.MacroReading\",\"name\":\"Reading\",\"coreType\":\"CoatyObject\",\"parentObjectId\":true,\"temperature\":21}")
+    do {
+        _ = try BoundedObject<MacroReading, 512, 24>(decoding: invalidParent)
+        Issue.record("invalid parentObjectId was accepted")
+    } catch { #expect(error.reason == .invalidEnvelope) }
 }
