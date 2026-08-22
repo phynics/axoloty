@@ -93,6 +93,74 @@ func schemaMacroDiagnostics() {
     )
 }
 
+@Test("schema macro diagnoses empty decoded wire names")
+func schemaMacroEmptyWireNameDiagnostics() {
+    assertMacroExpansion(
+        """
+        @AxolotyObject(objectType: "com.example.BadWireName")
+        struct BadWireName {
+            @WireName("") var value: Int
+        }
+        """,
+        expandedSource: """
+        struct BadWireName {
+            @WireName("") var value: Int
+            public static let schema: PortableObjectSchema<BadWireName> = {
+                var fields = InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
+                return PortableObjectSchema<BadWireName>(objectType: ObjectType("com.example.BadWireName")!, coreType: .coatyObject, fieldCount: 0, fields: fields)
+            }()
+            public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
+            }
+            public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
+            }
+        }
+        extension BadWireName: ObjectSchema {}
+        """,
+        diagnostics: [
+            DiagnosticSpec(message: "@WireName must decode to a non-empty printable wire key", line: 4, column: 5),
+        ],
+        macros: [
+            "AxolotyObject": AxolotyObjectMacro.self,
+            "WireName": WireNameMacro.self,
+            "Default": DefaultMacro.self,
+        ]
+    )
+}
+
+@Test("schema macro diagnoses control characters after wire-name decoding")
+func schemaMacroInvalidDecodedWireNameDiagnostics() {
+    assertMacroExpansion(
+        """
+        @AxolotyObject(objectType: "com.example.BadWireName")
+        struct BadWireName {
+            @WireName("\\u0001") var value: Int
+        }
+        """,
+        expandedSource: """
+        struct BadWireName {
+            @WireName("\\u0001") var value: Int
+            public static let schema: PortableObjectSchema<BadWireName> = {
+                var fields = InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
+                return PortableObjectSchema<BadWireName>(objectType: ObjectType("com.example.BadWireName")!, coreType: .coatyObject, fieldCount: 0, fields: fields)
+            }()
+            public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
+            }
+            public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
+            }
+        }
+        extension BadWireName: ObjectSchema {}
+        """,
+        diagnostics: [
+            DiagnosticSpec(message: "@WireName must decode to a non-empty printable wire key", line: 4, column: 5),
+        ],
+        macros: [
+            "AxolotyObject": AxolotyObjectMacro.self,
+            "WireName": WireNameMacro.self,
+            "Default": DefaultMacro.self,
+        ]
+    )
+}
+
 @Test("schema macro rejects unsupported declarations and field shapes")
 func schemaMacroShapeDiagnostics() {
     assertMacroExpansion(

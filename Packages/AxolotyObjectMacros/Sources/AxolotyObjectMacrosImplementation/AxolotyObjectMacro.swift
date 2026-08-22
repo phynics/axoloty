@@ -106,7 +106,12 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
                     wireName = sourceName
                     continue
                 }
-                wireName = decodeEscapes(parsed)
+                guard let decoded = decodeEscapes(parsed), !decoded.isEmpty,
+                      !decoded.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F }) else {
+                    context.diagnose(Diagnostic(node: Syntax(wireAttribute), message: SchemaDiagnostic(.malformedWireName, "@WireName must decode to a non-empty printable wire key")))
+                    continue
+                }
+                wireName = decoded
             } else {
                 wireName = sourceName
             }
@@ -136,13 +141,14 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
                 context.diagnose(Diagnostic(node: Syntax(defaultAttribute!), message: SchemaDiagnostic(.invalidDefault, "@Default cannot be applied to Presence fields")))
             }
 
-            if reserved.contains(where: { decodeEscapes($0) == wireName }) {
+            if reserved.contains(where: { decodeEscapes($0) == Optional(wireName) }) {
                 context.diagnose(Diagnostic(node: Syntax(variable), message: SchemaDiagnostic(.reservedWireName, "wire field '\(wireName)' is reserved by the object envelope")))
             }
             if wireName.utf8.count > 128 {
                 context.diagnose(Diagnostic(node: Syntax(variable), message: SchemaDiagnostic(.malformedWireName, "wire field exceeds the bounded 128-byte key limit")))
+                continue
             }
-            if wireNames.contains(where: { decodeEscapes($0) == wireName }) {
+            if wireNames.contains(where: { decodeEscapes($0) == Optional(wireName) }) {
                 context.diagnose(Diagnostic(node: Syntax(variable), message: SchemaDiagnostic(.duplicateWireName, "wire field '\(wireName)' is declared more than once")))
             }
             wireNames.append(wireName)
@@ -286,7 +292,7 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
         return true
     }
 
-    private static func decodeEscapes(_ value: String) -> String {
+    private static func decodeEscapes(_ value: String) -> String? {
         var result = ""
         var iterator = value.unicodeScalars.makeIterator()
         while let scalar = iterator.next() {
@@ -301,9 +307,27 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
             case 116: result.append("\t")
             case 117:
                 var code = 0
-                for _ in 0..<4 { guard let digit = iterator.next(), let value = hexValue(digit.value) else { return value }; code = code * 16 + value }
-                if let unicode = UnicodeScalar(code) { result.unicodeScalars.append(unicode) }
-            default: result.unicodeScalars.append(next)
+                let first = iterator.next()
+                if first?.value == 123 {
+                    var digits = 0
+                    while let digit = iterator.next(), digit.value != 125 {
+                        guard let value = hexValue(digit.value), digits < 8 else { return nil }
+                        code = code * 16 + value
+                        digits += 1
+                    }
+                    guard digits > 0, let unicode = UnicodeScalar(code) else { return nil }
+                    result.unicodeScalars.append(unicode)
+                } else {
+                    guard let first, let firstValue = hexValue(first.value) else { return nil }
+                    code = firstValue
+                    for _ in 1..<4 {
+                        guard let digit = iterator.next(), let value = hexValue(digit.value) else { return nil }
+                        code = code * 16 + value
+                    }
+                    guard let unicode = UnicodeScalar(code) else { return nil }
+                    result.unicodeScalars.append(unicode)
+                }
+            default: return nil
             }
         }
         return result

@@ -36,6 +36,8 @@ public struct ObjectEnvelope<let nameCapacity: Int, let externalIDCapacity: Int>
     ///   - parentObjectID: An optional parent object identifier.
     ///   - locationID: An optional location identifier.
     ///   - isDeactivated: The preserved deactivation presence state.
+    /// - Throws: ``ObjectError/invalidEnvelope`` when `objectType` or `name` is
+    ///   empty.
     public init(
         objectID: ObjectID,
         objectType: ObjectType,
@@ -45,7 +47,10 @@ public struct ObjectEnvelope<let nameCapacity: Int, let externalIDCapacity: Int>
         parentObjectID: ObjectID? = nil,
         locationID: ObjectID? = nil,
         isDeactivated: Presence<Bool> = .missing
-    ) {
+    ) throws(ObjectError) {
+        guard objectType.length > 0, name.length > 0 else {
+            throw ObjectError(.invalidEnvelope)
+        }
         self.objectID = objectID; self.objectType = objectType; self.name = name; self.coreType = coreType
         self.externalID = externalID; self.parentObjectID = parentObjectID; self.locationID = locationID; self.isDeactivated = isDeactivated
     }
@@ -97,7 +102,7 @@ public struct ObjectEnvelope<let nameCapacity: Int, let externalIDCapacity: Int>
             }
         }
         guard !failure, let objectID = decodedID, let objectType = decodedType, let name = decodedName, let coreType = decodedCore else { throw ObjectError(.invalidEnvelope) }
-        self.init(objectID: objectID, objectType: objectType, name: name, coreType: coreType, externalID: decodedExternal, parentObjectID: decodedParent, locationID: decodedLocation, isDeactivated: decodedDeactivated)
+        try self.init(objectID: objectID, objectType: objectType, name: name, coreType: coreType, externalID: decodedExternal, parentObjectID: decodedParent, locationID: decodedLocation, isDeactivated: decodedDeactivated)
     }
 }
 

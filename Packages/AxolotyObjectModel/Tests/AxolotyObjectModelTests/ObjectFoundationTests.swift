@@ -243,6 +243,28 @@ private struct TrailingManualSchema: ObjectSchema {
     }
 }
 
+@Test func envelopeInitializerRejectsEmptyRequiredMembers() {
+    let objectID = ObjectID(bytes: slice("33333333-3333-4333-8333-333333333333"))!
+    let objectType = ObjectType("Reading")!
+    let name = BoundedEncodedText<16>("Reading")!
+    #expect(throws: ObjectError.self) {
+        try ObjectEnvelope<16, 16>(
+            objectID: objectID,
+            objectType: ObjectType("")!,
+            name: name,
+            coreType: .coatyObject
+        )
+    }
+    #expect(throws: ObjectError.self) {
+        try ObjectEnvelope<16, 16>(
+            objectID: objectID,
+            objectType: objectType,
+            name: BoundedEncodedText<16>("")!,
+            coreType: .coatyObject
+        )
+    }
+}
+
 @Test func envelopeCapacityIsChosenByEnvelopeTypeAndKeepsEscapesEncoded() throws {
     let bytes = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"Reading\",\"name\":\"line\\n\",\"coreType\":\"VendorCore\",\"externalId\":\"ext\"}")
     let envelope = try ObjectEnvelope<8, 8>(decoding: bytes)
