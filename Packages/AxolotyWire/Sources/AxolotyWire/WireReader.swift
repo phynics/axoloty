@@ -2,6 +2,69 @@
 
 import _JSONCore
 
+/// The token kind of one field visited in a JSON object.
+public enum WireObjectFieldKind: UInt8, Sendable {
+    /// Object value.
+    case object
+    /// Array value.
+    case array
+    /// String value.
+    case string
+    /// Number value.
+    case number
+    /// Boolean true.
+    case trueValue
+    /// Boolean false.
+    case falseValue
+    /// Null value.
+    case null
+}
+
+/// A borrowed top-level object field produced by ``WireReader/withObjectFields(_:)``.
+public struct WireObjectField: ~Copyable {
+    @usableFromInline let bytes: UnsafeRawPointer
+    /// The decoded key content range, excluding JSON quotes.
+    public let keyRange: Range<Int>
+    /// The complete value range, including container delimiters or quotes.
+    public let valueRange: Range<Int>
+    /// The lexical value kind.
+    public let kind: WireObjectFieldKind
+
+    /// Compares the decoded key against a static key using JSON escape semantics.
+    public borrowing func keyEquals(_ key: StaticString) -> Bool {
+        let pointer = bytes.advanced(by: keyRange.lowerBound)
+        var left = WireKeyCursor(bytes: pointer, range: 0..<keyRange.count, decodesEscapes: true)
+        var right = WireKeyCursor(key: key)
+        return wireSemanticKeysEqual(&left, &right)
+    }
+
+    /// Borrows the decoded key content for the duration of `body`.
+    public borrowing func withKey(_ body: (ByteSlice) -> Void) {
+        body(ByteSlice(bytes: bytes.advanced(by: keyRange.lowerBound).assumingMemoryBound(to: UInt8.self), length: keyRange.count))
+    }
+
+    /// Borrows decoded key bytes as a noncopyable scoped view.
+    public borrowing func withBorrowedKey(_ body: (borrowing WireValueView) -> Void) {
+        body(WireValueView(
+            bytes: bytes.advanced(by: keyRange.lowerBound),
+            length: keyRange.count
+        ))
+    }
+
+    /// Borrows the complete encoded value for the duration of `body`.
+    public borrowing func withValue(_ body: (ByteSlice) -> Void) {
+        body(ByteSlice(bytes: bytes.advanced(by: valueRange.lowerBound).assumingMemoryBound(to: UInt8.self), length: valueRange.count))
+    }
+
+    /// Borrows the complete encoded field value as a noncopyable scoped view.
+    public borrowing func withBorrowedValue(_ body: (borrowing WireValueView) -> Void) {
+        body(WireValueView(
+            bytes: bytes.advanced(by: valueRange.lowerBound),
+            length: valueRange.count
+        ))
+    }
+}
+
 /// The lexical kind retained for an indexed JSON value.
 @usableFromInline enum WireTokenKind: UInt8 { case object, array, string, number, trueValue, falseValue, nullValue }
 
@@ -253,6 +316,27 @@ public struct WireReader {
     public func validate() throws(WireDecodeError) {
         if let failure = index.failure { throw failure }
         guard index.rootObject else { throw WireDecodeError(.typeMismatch(expected: "object")) }
+    }
+
+    /// Visits every top-level field using the same bounded tokenizer as all
+    /// other wire reads. Keys are compared semantically by the tokenizer, so
+    /// escaped-equivalent names and duplicate names are handled consistently.
+    /// The current portable index accepts at most 24 top-level fields;
+    /// exceeding that bound throws ``WireDecodeError/Reason/fieldIndexOverflow``.
+    public func withObjectFields(_ body: (borrowing WireObjectField) -> Void) throws(WireDecodeError) {
+        try validate()
+        for index in 0..<self.index.count {
+            guard let slot = self.index.slot(index),
+                  let kind = WireObjectFieldKind(rawValue: slot.kind.rawValue) else {
+                throw WireDecodeError(.unexpectedEndOfInput, byteOffset: length)
+            }
+            body(WireObjectField(
+                bytes: bytes,
+                keyRange: slot.key,
+                valueRange: slot.value,
+                kind: kind
+            ))
+        }
     }
 
     /// Returns whether the complete input is one JSON value.

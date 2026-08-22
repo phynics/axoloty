@@ -5,9 +5,12 @@ set -euo pipefail
 
 probe=${1:?probe package path required}
 output=${2:?output path required}
-small_iterations=${3:-1}
-large_iterations=${4:-1000}
-binary=$(find "$probe/.build" -type f -path '*/release/bounded-runtime-probe' -perm -111 -print -quit)
+capacities=${3:-"1 4 16 64"}
+cases=${4:-"inline-initialization inline-warmed handler-initialization handler-warmed"}
+binary_name=${5:-bounded-runtime-probe}
+small_iterations=${6:-1}
+large_iterations=${7:-1000}
+binary=$(find "$probe/.build" -type f -path "*/release/$binary_name" -perm -111 -print -quit)
 [ -n "$binary" ] || { echo "allocation probe binary not found" >&2; exit 1; }
 command -v heaptrack >/dev/null 2>&1 || { echo "heaptrack not found" >&2; exit 1; }
 command -v heaptrack_print >/dev/null 2>&1 || { echo "heaptrack_print not found" >&2; exit 1; }
@@ -21,8 +24,8 @@ allocation_count() {
     grep -m1 "calls to allocation functions" "$1.txt" | grep -oE '^[0-9]+'
 }
 
-for capacity in 1 4 16 64; do
-    for allocation_case in inline-initialization inline-warmed handler-initialization handler-warmed; do
+for capacity in $capacities; do
+    for allocation_case in $cases; do
         small="$scratch/${capacity}-${allocation_case}-small"
         large="$scratch/${capacity}-${allocation_case}-large"
         heaptrack -o "$small" "$binary" --allocation-case "$allocation_case" \

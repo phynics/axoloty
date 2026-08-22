@@ -51,6 +51,9 @@ awk -v start="$start_ns" -v end="$end_ns" 'BEGIN { printf "%.3f\n", (end-start)/
 run_swift bash /workspace/Spikes/BoundedPortableRuntime/measure-allocations.sh \
     /workspace/Spikes/BoundedPortableRuntime \
     /workspace/.testing/g1-bounded-runtime/"$candidate"/allocation-measurements.tsv \
+    "1 4 16 64" \
+    "inline-initialization inline-warmed handler-initialization handler-warmed" \
+    bounded-runtime-probe 1 1000 \
     >"$artifact/allocation-measurements.log" 2>&1
 
 probe_json=$(node -e '

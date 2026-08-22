@@ -16,18 +16,20 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../AxolotyWire"),
+        .package(path: "../AxolotyObjectModel"),
     ],
     targets: [
         .target(
             name: "AxolotyProtocol",
             dependencies: [
                 .product(name: "AxolotyWire", package: "AxolotyWire"),
+                .product(name: "AxolotyObjectModel", package: "AxolotyObjectModel"),
             ],
             path: "Sources/AxolotyProtocol"
         ),
         .testTarget(
             name: "AxolotyProtocolTests",
-            dependencies: ["AxolotyProtocol"],
+            dependencies: ["AxolotyProtocol", "AxolotyObjectModel"],
             path: "Tests/AxolotyProtocolTests"
         ),
     ],

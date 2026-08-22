@@ -9,6 +9,10 @@ These rules apply to the entire repository. A scoped guide may specialize them f
 Scoped instructions add local constraints:
 
 - [`Packages/AxolotyWire/AGENTS.md`](./Packages/AxolotyWire/AGENTS.md) — portable wire boundary;
+- [`Packages/AxolotyObjectModel/AGENTS.md`](./Packages/AxolotyObjectModel/AGENTS.md) — portable semantic object boundary;
+- [`Packages/AxolotyObjectMacros/AGENTS.md`](./Packages/AxolotyObjectMacros/AGENTS.md) — build-time schema generation;
+- [`Packages/AxolotyCoatyModels/AGENTS.md`](./Packages/AxolotyCoatyModels/AGENTS.md) — first-party portable Coaty schemas;
+- [`Packages/AxolotyProtocol/AGENTS.md`](./Packages/AxolotyProtocol/AGENTS.md) — shared protocol processor and filter adapter;
 - [`Embedded/AGENTS.md`](./Embedded/AGENTS.md) — Embedded Swift and hardware policy;
 - [`Tools/AGENTS.md`](./Tools/AGENTS.md) — orchestration and first-party tools;
 - [`Tests/AGENTS.md`](./Tests/AGENTS.md) — test tiers and compatibility evidence.

@@ -118,6 +118,9 @@ func checkPlanPrintsStableJSON() {
         "support-container", "support-fuzz-runner", "support-embedded-compile",
         "support-embedded-smoke", "embedded-toolchain", "embedded-build", "embedded-linker",
         "g1-bounded-runtime-host", "g1-bounded-runtime-sanitized", "g1-bounded-runtime-embedded",
+        "g3-object-boundary", "g3-object-model-package", "g3-object-model-tests",
+        "g3-object-macros-tests", "g3-coaty-models-tests", "g3-object-model-evidence-host",
+        "g3-object-model-evidence-sanitized", "g3-object-model-evidence-embedded",
     ]
     #endif
     #expect(plan?.nodes.map(\.name) == expectedNames)
@@ -133,6 +136,37 @@ func checkPlanPrintsStableJSON() {
         guard let seconds = timeout.command.timeoutSeconds else { return false }
         return seconds.isFinite && seconds > 0
     } == true)
+}
+
+@Test
+func g3ObjectModelTierSelectsTheFullAggregate() throws {
+    let runner = RecordingSequenceRunner()
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: runner,
+        fileSystem: StubFileSystem(paths: []),
+        environment: projectEnvironment
+    )
+
+    let result = dispatcher.run(arguments: ["test-tier", "g3-object-model"])
+    let manifest = try JSONDecoder().decode(
+        AxolotyCheckManifest.self,
+        from: Data(result.standardOutput.utf8)
+    )
+    let names = manifest.results.map(\.name)
+
+    #expect(result.exitCode == 0)
+    #expect(names.contains("g3-object-boundary"))
+    #expect(names.contains("g3-object-model-package"))
+    #expect(names.contains("g3-object-model-tests"))
+    #expect(names.contains("g3-object-macros-tests"))
+    #expect(names.contains("g3-coaty-models-tests"))
+    #expect(names.contains("g3-object-model-evidence-host"))
+    #expect(names.contains("g3-object-model-evidence-sanitized"))
+    #if os(Linux)
+    #expect(names.contains("g3-object-model-evidence-embedded"))
+    #else
+    #expect(!names.contains("g3-object-model-evidence-embedded"))
+    #endif
 }
 
 @Test
@@ -394,6 +428,9 @@ func checkpointPlanIncludesRequiredIntegrationAndCompatibilityNodes() throws {
 
     #expect(plan.nodes.contains { $0.name == "integration-tests" })
     #expect(plan.nodes.contains { $0.name == "logging-global" })
+    #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-host" })
+    #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-sanitized" })
+    #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-embedded" })
 
     let hardwarePlan = AxolotyCheckPlan.checkpointHardware(
         source: "Tests/WireCompatibility/Fixtures",
@@ -401,6 +438,9 @@ func checkpointPlanIncludesRequiredIntegrationAndCompatibilityNodes() throws {
     )
     #expect(hardwarePlan.nodes.contains { $0.name == "integration-tests" })
     #expect(hardwarePlan.nodes.contains { $0.name == "logging-global" })
+    #expect(hardwarePlan.nodes.contains { $0.name == "g3-object-model-evidence-host" })
+    #expect(hardwarePlan.nodes.contains { $0.name == "g3-object-model-evidence-sanitized" })
+    #expect(hardwarePlan.nodes.contains { $0.name == "g3-object-model-evidence-embedded" })
 }
 
 @Test
@@ -457,7 +497,7 @@ func checkpointManifestRecordsAllRequiredReleaseGatesInOrder() throws {
 
     #expect(manifest.schemaVersion == 2)
     #expect(manifest.releaseGates.map(\.id) == [
-        "smoke", "unit", "module", "property", "integration", "wire-offline", "wire-live",
+        "smoke", "unit", "module", "property", "integration", "wire-offline", "wire-live", "g3-object-model",
     ])
     #expect(manifest.releaseGates.first { $0.id == "integration" }?.result == .executed)
 }

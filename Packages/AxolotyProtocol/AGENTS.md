@@ -10,8 +10,10 @@ rules apply; this guide specializes them for the portable protocol foundation.
 `AxolotyProtocol` owns the sealed Coaty Core Profile 3 inventory, portable
 routing keys and frame boundaries, protocol errors, bounded request state,
 fixed-inline association/subscription/handler state, action sinks, and the
-shared processor. It may depend on `AxolotyWire` for
-Foundation-free wire views and fixed UUID/event primitives.
+shared processor. It may depend on `AxolotyWire` for Foundation-free wire
+views and fixed UUID/event primitives, and on `AxolotyObjectModel` for the
+bounded Coaty object-filter predicate. The protocol package owns the Coaty
+filter adapter, not a second predicate evaluator.
 
 This package must remain free of Foundation, MQTT/NIO, ErrorKit, logging,
 actors, controllers, lifecycle, and host object hierarchy dependencies. It

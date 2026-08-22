@@ -5,16 +5,19 @@ This document records the accepted architecture for the 0.6 alignment tracked by
 ## Current implementation (0.5.1)
 
 The released implementation now consists of the root `Axoloty` host product,
-the Foundation-free `AxolotyWire` product, the portable `AxolotyProtocol`
-foundation, the inspector/MCP tools, and the existing Embedded Swift
-integration. The host runtime still owns protocol coordination and
-object/lifecycle composition. `AxolotyWire` supplies profile-neutral wire
-syntax, borrowed values, and caller-owned parser workspaces; `AxolotyProtocol`
-supplies the sealed Coaty/3 inventory, routing-key/frame types, structured
-protocol errors, fixed-inline state, caller-owned action sinks, route
-classification, and the shared inbound/outbound processor. The inherited
+the Foundation-free `AxolotyWire`, `AxolotyObjectModel`, and
+`AxolotyProtocol` products, the separate `AxolotyCoatyModels` convenience
+product, the inspector/MCP tools, and the existing Embedded Swift integration.
+The host runtime still owns lifecycle composition and continues to use the
+inherited class-object hierarchy until G4. `AxolotyWire` supplies
+profile-neutral wire syntax, borrowed values, and caller-owned parser
+workspaces; `AxolotyObjectModel` supplies bounded semantic objects, schemas,
+predicates, and runtime-local registration; `AxolotyProtocol` supplies the
+sealed Coaty/3 inventory, routing-key/frame types, structured protocol errors,
+fixed-inline state, caller-owned action sinks, route classification, the
+shared inbound/outbound processor, and Coaty filter adaptation. The inherited
 Container/controller and class-object paths remain current implementation
-details until G2–G5 replace them.
+details until G4–G5 replace them.
 
 This section is the source of truth for what exists today. It must be updated whenever a gate changes the implemented package graph or removes a legacy path.
 
@@ -43,15 +46,45 @@ and fixed action sink seam, without promoting a second processor. Issue
 move; [#641](https://github.com/phynics/axoloty/issues/641) is closed by the
 binding-supplied route classifier.
 
+### G3 status: portable object model complete
+
+Issue [#631](https://github.com/phynics/axoloty/issues/631) establishes the
+production `AxolotyObjectModel`, build-time `AxolotyObjectMacros`, and
+first-party `AxolotyCoatyModels` packages. Host and ESP-IDF consumers compile
+the same object-model and first-party-model sources. The portable model owns
+bounded raw JSON, inline descriptors, semantic envelopes, checked number
+views, presence, typed/manual schemas, transactional edits, fixed runtime-local
+registration, and the bounded Coaty-compatible predicate AST. Macro-generated
+schemas and manual conformances implement the same `ObjectSchema` contract;
+the macro is not an Embedded runtime dependency.
+
+`AxolotyProtocol` adapts Coaty `objectFilter` values into the shared predicate
+implementation. Unknown object types remain dynamic, registration has no
+process-global side effects, and unknown fields and number lexemes remain in
+the same bounded object arena. `AxolotyCoatyModels` supplies the portable
+protocol-required Coaty/IO schemas as a separate convenience product. The
+inherited Foundation-backed hierarchy remains solely as the current host
+runtime path until G4; G3 does not introduce a second runtime or lifecycle.
+The boundary checks and the maintained
+[`Spikes/BoundedObjectModelEvidence`](./Spikes/BoundedObjectModelEvidence)
+host/sanitizer/ESP32-C6 evidence enforce this package graph and its
+fixed-storage claims.
+
 ## Accepted 0.6 delta
 
 The target package graph and runtime boundaries below are accepted direction,
-with the shared `AxolotyProtocol` processor now implemented as the G2 slice.
+with the shared `AxolotyProtocol` processor implemented in G2 and the portable
+object-model slice implemented in G3.
 G1 accepted [ADR 0004](./docs/adr/0004-literal-inline-bounded-runtime-state.md)
 from host and ESP32-C6 evidence, selecting measured tiny/static/host capacity
-presets of 1/16/64. G3 owns the object model; G4 owns runtime
-replacement; G5 owns IO and optional-product boundaries; G6 owns
-non-divergence and release proof.
+presets of 1/16/64 for runtime state. Those measurements do not select G3
+object byte/field capacities: G3 owns the object model and its own evidence;
+host evidence covers bounded operations and specialization growth at the
+1/16/64 measurement points, while the 512-byte/24-field convenience aliases
+remain wire-authority bounds rather than resource presets. The ESP32-C6 node
+proves same-source compilation and linkage. G4 owns runtime replacement;
+G5 owns IO and optional-product boundaries; G6 owns non-divergence and release
+proof.
 
 ## Product boundary
 
@@ -87,6 +120,8 @@ Outbound processing follows the same boundary in reverse, beginning with a typed
 ```text
 AxolotyWire
     ^
+AxolotyObjectModel
+    ^
 AxolotyProtocol
     ^
 AxolotyStaticRuntime
@@ -97,10 +132,22 @@ Optional products -------> supported Axoloty runtime and object APIs
 Inspector / MCP ---------> supported Axoloty runtime APIs
 ```
 
-`AxolotyWire` owns wire syntax, codecs, validation, object-envelope decoding,
-borrowed and owned wire values, caller-owned parser workspaces, wire errors,
-and wire errors. It owns no subscriber, endpoint, association, correlation,
-handler, or processor state.
+`AxolotyWire` owns wire syntax, codecs, validation, low-level object-envelope
+decoding, borrowed and owned wire values, caller-owned parser workspaces, and
+wire errors. It owns no semantic object schema, subscriber, endpoint,
+association, correlation, handler, or processor state.
+
+`AxolotyObjectModel` is the implemented G3 semantic layer above `AxolotyWire`.
+It owns bounded typed/dynamic objects, presence, semantic envelopes, JSON
+value/number views, predicates, and explicit sealed schema registries. It does
+not own a transport, protocol processor, runtime
+lifecycle, or global mutable registry. `AxolotyObjectMacros` is a build-time
+schema-generation package and is not part of the portable runtime graph.
+
+`AxolotyCoatyModels` is a separate first-party convenience product containing
+portable protocol-required Coaty and IO schemas. It depends on
+`AxolotyObjectModel` and is compiled from the same sources for host and
+ESP-IDF, but the inherited `Axoloty` runtime does not depend on it before G4.
 
 `AxolotyProtocol` owns the closed built-in profile inventory, capabilities,
 routing keys, portable frames, structured protocol errors, fixed-inline

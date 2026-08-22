@@ -19,7 +19,7 @@ file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/empty_bridging_header.h "")
 
 idf_component_register(
     SRCS "component_anchor.c"
-    PRIV_REQUIRES idf_swift axoloty_wire json_core
+    PRIV_REQUIRES idf_swift axoloty_wire axoloty_object_model json_core
 )
 
 idf_component_register_swift(
@@ -39,6 +39,18 @@ if(TARGET axoloty_wire_module_alias)
 endif()
 set_source_files_properties(${AXOLOTY_PROTOCOL_SOURCES}
     PROPERTIES OBJECT_DEPENDS "${WIRE_MODULE_ALIAS}"
+)
+idf_component_get_property(OBJECT_MODEL_COMPONENT_LIB axoloty_object_model COMPONENT_LIB)
+get_target_property(OBJECT_MODEL_COMPONENT_BINARY_DIR ${OBJECT_MODEL_COMPONENT_LIB} BINARY_DIR)
+set(OBJECT_MODEL_MODULE_ALIAS
+    "${OBJECT_MODEL_COMPONENT_BINARY_DIR}/AxolotyObjectModel.swiftmodule"
+)
+if(TARGET axoloty_object_model_module_alias)
+    add_dependencies(axoloty_object_model_module_alias ${OBJECT_MODEL_COMPONENT_LIB})
+    add_dependencies(${COMPONENT_LIB} axoloty_object_model_module_alias)
+endif()
+set_source_files_properties(${AXOLOTY_PROTOCOL_SOURCES}
+    APPEND PROPERTIES OBJECT_DEPENDS "${OBJECT_MODEL_MODULE_ALIAS}"
 )
 idf_component_get_property(JSON_CORE_COMPONENT_LIB json_core COMPONENT_LIB)
 add_dependencies(${COMPONENT_LIB} ${JSON_CORE_COMPONENT_LIB})
@@ -60,9 +72,17 @@ target_include_directories(${COMPONENT_LIB} PUBLIC
     ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-add_custom_command(TARGET ${COMPONENT_LIB} POST_BUILD
+set(AXOLOTY_PROTOCOL_MODULE_ALIAS
+    "${CMAKE_CURRENT_BINARY_DIR}/AxolotyProtocol.swiftmodule"
+)
+add_custom_command(
+    OUTPUT ${AXOLOTY_PROTOCOL_MODULE_ALIAS}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_BINARY_DIR}/${COMPONENT_LIB}.swiftmodule
-        ${CMAKE_CURRENT_BINARY_DIR}/AxolotyProtocol.swiftmodule
+        ${AXOLOTY_PROTOCOL_MODULE_ALIAS}
+    DEPENDS ${COMPONENT_LIB}
     VERBATIM
+)
+add_custom_target(axoloty_protocol_module_alias
+    DEPENDS ${AXOLOTY_PROTOCOL_MODULE_ALIAS}
 )
