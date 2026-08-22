@@ -11,4 +11,3 @@ struct AxolotyObjectMacroPlugin: CompilerPlugin {
         DefaultMacro.self,
     ]
 }
-
