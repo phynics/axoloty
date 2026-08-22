@@ -283,16 +283,22 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
     }
 
     private mutating func appendConditionValue(_ bytes: ByteSlice, parent: Int, failure: inout ObjectError?) {
+        let reader = WireValueReader(bytes)
+        reader.withBorrowedValue { value in
+            appendConditionValue(value, parent: parent, failure: &failure)
+        }
+    }
+
+    private mutating func appendConditionValue(_ bytes: borrowing WireValueView, parent: Int, failure: inout ObjectError?) {
         guard failure == nil else { return }
-        let value = WireValueReader(bytes)
-        if value.kind == .array {
+        if bytes.kind == .array {
             var pathIndex: Int?
             var expressionInfo: (operation: ObjectPredicateOperator, operand: Int, count: Int)?
             var index = 0
             var wireFailure: WireDecodeError?
             withUnsafeMutablePointer(to: &self) { state in
                 do throws(WireDecodeError) {
-                    try value.withArrayElements { element in
+                    try bytes.withBorrowedArrayElements { element in
                         if index == 0 { pathIndex = state.pointee.appendPathValue(element, failure: &failure) }
                         else if index == 1 { expressionInfo = state.pointee.appendExpressionValue(element, failure: &failure) }
                         else if failure == nil { failure = ObjectError(.invalidPredicateExpression) }
@@ -306,26 +312,25 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
             catch { failure = error }
             return
         }
-        guard value.kind == .object else { failure = ObjectError(.invalidPredicateExpression); return }
+        guard bytes.kind == .object else { failure = ObjectError(.invalidPredicateExpression); return }
         var groupCount = 0
         do throws(WireDecodeError) {
-            try value.withObjectFields { field in
+            try bytes.withObjectFields { field in
                 field.withKey { key in
                     let isAnd = key.semanticEquals("and")
                     let isOr = key.semanticEquals("or")
                     guard isAnd || isOr else { failure = ObjectError(.invalidPredicateExpression); return }
                     groupCount += 1
                     guard groupCount == 1 else { failure = ObjectError(.invalidPredicateExpression); return }
-                    field.withValue { group in
-                        let groupReader = WireValueReader(group)
-                        guard groupReader.kind == .array else { failure = ObjectError(.invalidPredicateExpression); return }
+                    field.withBorrowedValue { group in
+                        guard group.kind == .array else { failure = ObjectError(.invalidPredicateExpression); return }
                         let groupNode: Int
                         do throws(ObjectError) { groupNode = try appendNode(PredicateNode.group(kind: isAnd ? 1 : 2), parent: parent) }
                         catch { failure = error; return }
                         var wireFailure: WireDecodeError?
                         withUnsafeMutablePointer(to: &self) { state in
                             do throws(WireDecodeError) {
-                                try groupReader.withArrayElements { condition in
+                                try group.withBorrowedArrayElements { condition in
                                     state.pointee.appendConditionValue(condition, parent: groupNode, failure: &failure)
                                 }
                             } catch { wireFailure = error }
@@ -377,16 +382,15 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
         return (operation, index, 1)
     }
 
-    private mutating func appendExpressionValue(_ bytes: ByteSlice, failure: inout ObjectError?) -> (operation: ObjectPredicateOperator, operand: Int, count: Int)? {
-        let value = WireValueReader(bytes)
-        guard value.kind == .array else { failure = ObjectError(.invalidPredicateExpression); return nil }
+    private mutating func appendExpressionValue(_ bytes: borrowing WireValueView, failure: inout ObjectError?) -> (operation: ObjectPredicateOperator, operand: Int, count: Int)? {
+        guard bytes.kind == .array else { failure = ObjectError(.invalidPredicateExpression); return nil }
         var operation: ObjectPredicateOperator?
         var operandIndexes = InlineArray<2, Int>(repeating: -1)
         var operandCount = 0
         var wireFailure: WireDecodeError?
         withUnsafeMutablePointer(to: &self) { state in
             do throws(WireDecodeError) {
-                try value.withArrayElements { element in
+                try bytes.withBorrowedArrayElements { element in
                     if operandCount == 0 { operation = Self.parseOperator(element) }
                     else if operandCount <= 2 { operandIndexes[operandCount - 1] = state.pointee.appendLiteralValue(element, failure: &failure) ?? -1 }
                     else { failure = ObjectError(.invalidPredicateExpression) }
@@ -409,7 +413,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
         return (operation, firstIndex, operation == .between || operation == .notBetween ? 2 : 1)
     }
 
-    private static func parseOperator(_ bytes: ByteSlice) -> ObjectPredicateOperator? {
+    private static func parseOperator(_ bytes: borrowing WireValueView) -> ObjectPredicateOperator? {
         guard bytes.length > 0 else { return nil }
         var value = 0
         for index in 0..<bytes.length {
@@ -419,6 +423,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
             guard !overflow && !digitOverflow else { return nil }
             value = result
         }
+        guard value <= Int(UInt8.max) else { return nil }
         return ObjectPredicateOperator(rawValue: UInt8(value))
     }
 
@@ -438,24 +443,24 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
         return pathIndex
     }
 
-    private mutating func appendPathValue(_ value: ByteSlice, failure: inout ObjectError?) -> Int? {
+    private mutating func appendPathValue(_ value: borrowing WireValueView, failure: inout ObjectError?) -> Int? {
         guard pathCount < pathCapacity else { failure = ObjectError(.capacityExceeded); return nil }
         let pathIndex = pathCount; pathCount += 1
         let first = segmentsCount; var segmentCount = 0
-        let reader = WireValueReader(value)
-        if reader.kind == .string {
-            let content = value.subSlice(from: 1, length: max(0, value.length - 2))
-            var start = 0
-            for index in 0...content.length {
-                if index == content.length || content.byte(at: index) == 46 {
-                    guard index > start else { failure = ObjectError(.invalidPredicatePath); return nil }
-                    appendSegment(content, start: start, length: index - start, failure: &failure)
-                    segmentCount += 1; start = index + 1
+        if value.kind == .string {
+            value.withBorrowedSubView(from: 1, length: max(0, value.length - 2)) { content in
+                var start = 0
+                for index in 0...content.length {
+                    if index == content.length || content.byte(at: index) == 46 {
+                        guard index > start else { failure = ObjectError(.invalidPredicatePath); return }
+                        appendSegment(content, start: start, length: index - start, failure: &failure)
+                        segmentCount += 1; start = index + 1
+                    }
                 }
             }
-        } else if reader.kind == .array {
-            do throws(WireDecodeError) { try reader.withArrayElements { segment in
-                guard WireValueReader(segment).kind == .string, segment.length >= 2 else { failure = ObjectError(.invalidPredicatePath); return }
+        } else if value.kind == .array {
+            do throws(WireDecodeError) { try value.withBorrowedArrayElements { segment in
+                guard segment.kind == .string, segment.length >= 2 else { failure = ObjectError(.invalidPredicatePath); return }
                 appendSegment(segment, start: 1, length: segment.length - 2, failure: &failure); segmentCount += 1
             }} catch { failure = ObjectError(.invalidPredicatePath) }
         } else { failure = ObjectError(.invalidPredicatePath) }
@@ -479,7 +484,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
         arenaLength += length
     }
 
-    private mutating func appendSegment(_ value: ByteSlice, start: Int, length: Int, failure: inout ObjectError?) {
+    private mutating func appendSegment(_ value: borrowing WireValueView, start: Int, length: Int, failure: inout ObjectError?) {
         guard failure == nil, arenaLength + length <= arenaCapacity else { failure = ObjectError(.capacityExceeded); return }
         guard segmentsCount < pathCapacity else { failure = ObjectError(.capacityExceeded); return }
         let segmentIndex = segmentsCount
@@ -511,11 +516,32 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
         return literalCount - 1
     }
 
-    private mutating func appendLiteralValue(_ value: ByteSlice, failure: inout ObjectError?) -> Int? {
-        do throws(ObjectError) { return try appendLiteral(.raw(value)) } catch { failure = error; return nil }
+    private mutating func appendLiteralValue(_ value: borrowing WireValueView, failure: inout ObjectError?) -> Int? {
+        guard value.length <= WireBufferConfig.maxPayloadSize,
+              value.kind != .invalid else {
+            failure = ObjectError(.invalidPredicateExpression)
+            return nil
+        }
+        guard literalCount < literalCapacity,
+              arenaLength + value.length <= arenaCapacity else {
+            failure = ObjectError(.capacityExceeded)
+            return nil
+        }
+        let start = arenaLength
+        for index in 0..<value.length { arena[arenaLength + index] = value.byte(at: index)! }
+        arenaLength += value.length
+        literals[literalCount] = PredicateLiteralRecord(start: start, length: value.length)
+        literalCount += 1
+        return literalCount - 1
     }
 
     private mutating func copy(_ value: ByteSlice) throws(ObjectError) {
+        guard arenaLength + value.length <= arenaCapacity else { throw ObjectError(.capacityExceeded) }
+        for index in 0..<value.length { arena[arenaLength + index] = value.byte(at: index)! }
+        arenaLength += value.length
+    }
+
+    private mutating func copyBorrowed(_ value: borrowing WireValueView) throws(ObjectError) {
         guard arenaLength + value.length <= arenaCapacity else { throw ObjectError(.capacityExceeded) }
         for index in 0..<value.length { arena[arenaLength + index] = value.byte(at: index)! }
         arenaLength += value.length

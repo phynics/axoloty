@@ -12,6 +12,18 @@ private func predicateObject(_ value: StaticString) throws -> BoundedDynamicObje
     try BoundedDynamicObject<512, 8>(decoding: predicateSlice(value))
 }
 
+@Test func borrowedWireValueViewsRemainScopedToTraversal() throws {
+    let reader = WireValueReader(predicateSlice("[1,{\"v\":2},null]"))
+    var count = 0
+    var allNonEmpty = true
+    try reader.withBorrowedArrayElements { value in
+        count += 1
+        allNonEmpty = allNonEmpty && value.length > 0
+    }
+    #expect(count == 3)
+    #expect(allNonEmpty)
+}
+
 @Test func everyCoatyOperatorCodeDecodesAndMatches() throws {
     let cases: [(StaticString, Bool)] = [
         ("{\"conditions\":[\"v\",[0,2]]}" , false),

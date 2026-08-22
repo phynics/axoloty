@@ -47,6 +47,14 @@ public struct WireObjectField: ~Copyable {
     public borrowing func withValue(_ body: (ByteSlice) -> Void) {
         body(ByteSlice(bytes: bytes.advanced(by: valueRange.lowerBound).assumingMemoryBound(to: UInt8.self), length: valueRange.count))
     }
+
+    /// Borrows the complete encoded field value as a noncopyable scoped view.
+    public borrowing func withBorrowedValue(_ body: (borrowing WireValueView) -> Void) {
+        body(WireValueView(
+            bytes: bytes.advanced(by: valueRange.lowerBound),
+            length: valueRange.count
+        ))
+    }
 }
 
 /// The lexical kind retained for an indexed JSON value.

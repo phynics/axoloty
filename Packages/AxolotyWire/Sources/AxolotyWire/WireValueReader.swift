@@ -31,6 +31,67 @@ enum WireValueReaderLimits {
     static let directArrayElementCapacity = 512
 }
 
+/// A synchronous, noncopyable view of one complete borrowed JSON value.
+///
+/// The view can only be borrowed by the visitor that receives it. It has no
+/// owned storage and cannot be retained across the visitor boundary.
+public struct WireValueView: ~Copyable {
+    @usableFromInline let bytes: UnsafeRawPointer
+    /// The encoded value length.
+    public let length: Int
+
+    @usableFromInline
+    init(bytes: UnsafeRawPointer, length: Int) {
+        self.bytes = bytes
+        self.length = length
+    }
+
+    /// Returns one encoded byte while the view is borrowed.
+    public borrowing func byte(at index: Int) -> UInt8? {
+        guard index >= 0, index < length else { return nil }
+        return bytes.load(fromByteOffset: index, as: UInt8.self)
+    }
+
+    /// The lexical kind of this borrowed value.
+    public var kind: WireValueKind {
+        guard let byte = byte(at: 0) else { return .invalid }
+        switch byte {
+        case 0x7B: return .object
+        case 0x5B: return .array
+        case 0x22: return .string
+        case 0x2D, 0x30...0x39: return .number
+        case 0x74: return .trueValue
+        case 0x66: return .falseValue
+        case 0x6E: return .null
+        default: return .invalid
+        }
+    }
+
+    /// Visits direct elements without exposing a copyable byte slice.
+    public borrowing func withBorrowedArrayElements(_ body: (borrowing WireValueView) -> Void) throws(WireDecodeError) {
+        try WireValueReader(bytes: bytes, length: length).withBorrowedArrayElements(body)
+    }
+
+    /// Visits direct object fields while this value remains borrowed.
+    public borrowing func withObjectFields(_ body: (borrowing WireObjectField) -> Void) throws(WireDecodeError) {
+        let reader = WireReader(bytes: bytes.assumingMemoryBound(to: UInt8.self), length: length)
+        try reader.withObjectFields(body)
+    }
+
+    /// Borrows a nested value view synchronously.
+    public borrowing func withBorrowedSubView(
+        from start: Int,
+        length count: Int,
+        _ body: (borrowing WireValueView) -> Void
+    ) {
+        guard start >= 0, count >= 0, start <= length, count <= length - start else {
+            body(WireValueView(bytes: bytes, length: 0))
+            return
+        }
+        body(WireValueView(bytes: bytes.advanced(by: start), length: count))
+    }
+}
+
 /// A borrowed view over one complete JSON value.
 ///
 /// This is a small tokenizer-backed seam for portable consumers. It exposes
@@ -46,6 +107,12 @@ public struct WireValueReader: ~Copyable {
         self.length = value.length
     }
 
+    @usableFromInline
+    init(bytes: UnsafeRawPointer, length: Int) {
+        self.bytes = bytes
+        self.length = length
+    }
+
     /// The lexical kind of this value.
     public var kind: WireValueKind {
         guard let byte = byte(at: 0) else { return .invalid }
@@ -59,6 +126,11 @@ public struct WireValueReader: ~Copyable {
         case 0x6E: return .null
         default: return .invalid
         }
+    }
+
+    /// Borrows this complete value as a noncopyable scoped view.
+    public borrowing func withBorrowedValue(_ body: (borrowing WireValueView) -> Void) {
+        body(WireValueView(bytes: bytes, length: length))
     }
 
     /// Borrows each direct field of an object value.
@@ -101,6 +173,43 @@ public struct WireValueReader: ~Copyable {
         for index in 0..<destination.count {
             let range = destination.elements[index]
             body(ByteSlice(bytes: bytes.advanced(by: range.lowerBound).assumingMemoryBound(to: UInt8.self), length: range.count))
+        }
+    }
+
+    /// Borrows each direct array element as a noncopyable scoped view.
+    public borrowing func withBorrowedArrayElements(_ body: (borrowing WireValueView) -> Void) throws(WireDecodeError) {
+        guard kind == .array else { throw WireDecodeError(.typeMismatch(expected: "array")) }
+        guard length <= WireBufferConfig.maxPayloadSize else {
+            throw WireDecodeError(.payloadExceedsLimit, byteOffset: length)
+        }
+        let value = ByteSlice(bytes: bytes.assumingMemoryBound(to: UInt8.self), length: length)
+        guard WireReader.isValidJSONValue(value) else {
+            throw WireDecodeError(.unexpectedToken(expected: "valid JSON array", actual: byte(at: 0)))
+        }
+        var destination = WireArrayElementDestination(bytes: UnsafeBufferPointer(start: bytes.assumingMemoryBound(to: UInt8.self), count: length))
+        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: WireBufferConfig.maxPayloadSize + 8) { padded in
+            padded.baseAddress!.initialize(from: bytes.assumingMemoryBound(to: UInt8.self), count: length)
+            for offset in length..<(length + 8) { padded[offset] = 0x5D }
+            var tokenizer = JSONTokenizer(
+                bytes: UnsafeBufferPointer(start: padded.baseAddress!, count: length + 8),
+                destination: destination
+            )
+            #if hasFeature(Embedded)
+            _ = tokenizer.scanValueResult()
+            #else
+            try? tokenizer.scanValue()
+            #endif
+            destination = tokenizer.destination
+        }
+        guard destination.rootArray, destination.failure == nil else {
+            throw destination.failure ?? WireDecodeError(.unexpectedToken(expected: "valid JSON array", actual: byte(at: 0)))
+        }
+        for index in 0..<destination.count {
+            let range = destination.elements[index]
+            body(WireValueView(
+                bytes: bytes.advanced(by: range.lowerBound),
+                length: range.count
+            ))
         }
     }
 

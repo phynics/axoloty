@@ -16,7 +16,9 @@ The package must compile the same production source files for host and
 Embedded Swift. It must remain free of Foundation, MQTT/NIO, logging,
 ErrorKit, actors, controllers, lifecycle frameworks, transports, and runtime
 tasks. Do not introduce `Array` or `Dictionary` storage, reflection, global
-mutable registries, static registration side effects, or captured closures.
+mutable registries, static registration side effects, or stored/escaping
+captured closures. Immediate synchronous visitor closures are permitted when
+their contexts remain caller-owned and borrowed values do not escape.
 Use literal-inline storage and explicit capacity parameters. Saturation,
 malformed input, and mutation failures must be atomic.
 
