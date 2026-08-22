@@ -27,6 +27,7 @@ let identity = try RuntimeIdentity(id: agentID, name: "inspector")
 var definition = try RuntimeDefinition(
     namespace: "building-a",
     sourceID: agentID,
+    identity: identity,
     capacities: try RuntimeCapacities()
 )
 let resolves = try definition.registerEvents(
@@ -36,7 +37,7 @@ let resolves = try definition.registerEvents(
 let sealed = try definition.seal()
 let runtime = AxolotyRuntime(
     definition: sealed,
-    transport: MQTTBinding(configuration: configuration)
+    transport: try MQTTBinding(configuration: configuration)
 )
 try await runtime.start()
 ```
