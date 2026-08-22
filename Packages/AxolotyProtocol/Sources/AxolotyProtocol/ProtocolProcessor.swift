@@ -211,7 +211,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
 
     private struct PendingRecord {
         var id = UUID16.zero
-        var deadlineMS: UInt32 = 0
+        var deadlineMS: UInt32?
         var state: PendingState = .free
     }
 
@@ -339,7 +339,8 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         var expired = false
         for index in 0..<capacity {
             guard case .active = pending[index].state,
-                  Self.reached(nowMS, pending[index].deadlineMS) else { continue }
+                  let deadlineMS = pending[index].deadlineMS,
+                  Self.reached(nowMS, deadlineMS) else { continue }
             pending[index].state = .expired
             expired = true
         }
@@ -429,7 +430,10 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             case .expired: return .rejected(.deadlineExpired)
             case .free: return .rejected(.correlationMismatch)
             case .active(let requestKind):
-                guard !Self.reached(nowMS, pending[matchingIndex].deadlineMS) else { return .rejected(.deadlineExpired) }
+                if let deadlineMS = pending[matchingIndex].deadlineMS,
+                   Self.reached(nowMS, deadlineMS) {
+                    return .rejected(.deadlineExpired)
+                }
                 guard Self.accepts(response: frame.routingKey.capability, for: requestKind) else {
                     return .rejected(.correlationMismatch)
                 }
@@ -553,14 +557,23 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         let valid = validatePayload(operation.payload, for: operation.capability)
         guard valid else { return .rejected(.malformedPayload) }
         guard let key = try? ProtocolRoutingKey(capability: operation.capability, sourceID: operation.sourceID, correlationID: operation.correlationID) else { return .rejected(.invalidCorrelation) }
-        var requestPlan: (index: Int, correlationID: UUID16, deadlineMS: UInt32)?
-        if let timeout = operation.requestTimeoutMS {
-            guard timeout > 0 else { return .rejected(.deadlineExpired) }
+        var requestPlan: (index: Int, correlationID: UUID16, deadlineMS: UInt32?)?
+        switch operation.capability {
+        case .discover, .query, .update, .call:
             guard let correlation = operation.correlationID,
                   let index = pendingSlot(for: correlation) else {
                 return .rejected(.capacityExceeded)
             }
-            requestPlan = (index, correlation, nowMS &+ timeout)
+            let deadlineMS: UInt32?
+            if let timeout = operation.requestTimeoutMS {
+                guard timeout > 0 else { return .rejected(.deadlineExpired) }
+                deadlineMS = nowMS &+ timeout
+            } else {
+                deadlineMS = nil
+            }
+            requestPlan = (index, correlation, deadlineMS)
+        default:
+            break
         }
         let objectPlan: ObjectPlan
         var deadvertiseMask = InlineArray<capacity, Bool>(repeating: false)

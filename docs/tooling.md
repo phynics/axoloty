@@ -246,7 +246,8 @@ swift run --package-path Tools axoloty-inspect discover --core-type Identity
 
 The inspector is built from two targets: `AxolotyInspectorCore` (zero external
 dependencies, pure catalogue/filter/reducer/record logic) and
-`axoloty-inspect` (CLI, depends on `Axoloty` for broker connectivity).
+`axoloty-inspect` (CLI, depends on `AxolotyRuntime` and `MQTTBinding` for
+broker connectivity).
 `AxolotyTooling`'s dependency closure is unaffected.
 
 See [inspector.md](inspector.md) for the full reference: connection options,

@@ -28,13 +28,14 @@ public protocol InspectorSession {
 /// values into the inspector's stable catalogue shapes.
 @MainActor
 public final class AxolotyInspectorSession: InspectorSession {
-    private static let unlimitedProtocolTimeoutMS: UInt32 = 86_400_000
     private let runtime: AxolotyRuntime
     private let namespace: String
     private let advertiseStream: RuntimeEventStream
     private let deadvertiseStream: RuntimeEventStream
     private let resolveStream: RuntimeEventStream
     private var discoveryInFlight = false
+    private var discoveryTask: Task<Void, Never>?
+    private var discoveryCorrelation: UUID16?
 
     /// Creates a session from broker configuration.
     public init(configuration: InspectorConnectionConfiguration) throws {
@@ -116,14 +117,19 @@ public final class AxolotyInspectorSession: InspectorSession {
         }
         discoveryInFlight = true
         let correlation = Self.newCorrelation()
+        discoveryCorrelation = correlation
         let runtime = self.runtime
         let resolveStream = self.resolveStream
         let responseTimeout = request.responseTimeout
         let protocolTimeoutMS = responseTimeout.map {
-            UInt32(max(1, min(Int64(Self.unlimitedProtocolTimeoutMS), $0.millisecondsValue)))
-        } ?? Self.unlimitedProtocolTimeoutMS
-        Task { @MainActor in
-            defer { self.discoveryInFlight = false }
+            UInt32(max(1, min(Int64(UInt32.max), $0.millisecondsValue)))
+        }
+        let task = Task { @MainActor in
+            defer {
+                self.discoveryInFlight = false
+                self.discoveryTask = nil
+                self.discoveryCorrelation = nil
+            }
             let receipt = await runtime.request(
                 .discover(
                     correlationID: correlation,
@@ -155,11 +161,25 @@ public final class AxolotyInspectorSession: InspectorSession {
             }
             continuation.finish()
         }
+        discoveryTask = task
+        continuation.onTermination = { [weak self] _ in
+            Task { @MainActor in
+                self?.cancelDiscovery()
+            }
+        }
         return stream
     }
 
     public func stop() {
+        cancelDiscovery()
         Task { await runtime.stop() }
+    }
+
+    private func cancelDiscovery() {
+        discoveryTask?.cancel()
+        guard let correlation = discoveryCorrelation else { return }
+        let runtime = self.runtime
+        Task { _ = await runtime.cancel(correlationID: correlation) }
     }
 
     private func mapAdvertise(_ source: RuntimeEventStream) -> AsyncStream<InspectorAdvertiseEvent> {

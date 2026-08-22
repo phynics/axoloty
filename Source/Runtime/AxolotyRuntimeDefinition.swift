@@ -242,7 +242,9 @@ public enum RuntimeOneWayOperation: Sendable, Equatable {
 
 /// A request operation that may have one or more responses.
 public enum RuntimeRequest: Sendable, Equatable {
-    case discover(correlationID: UUID16, payload: [UInt8], timeoutMS: UInt32)
+    /// Discover may remain active until explicitly canceled when `timeoutMS`
+    /// is `nil`.
+    case discover(correlationID: UUID16, payload: [UInt8], timeoutMS: UInt32?)
     case query(correlationID: UUID16, payload: [UInt8], timeoutMS: UInt32)
     case update(correlationID: UUID16, payload: [UInt8], timeoutMS: UInt32)
     case call(correlationID: UUID16, payload: [UInt8], timeoutMS: UInt32)
@@ -437,7 +439,7 @@ public struct RuntimeOperation: Sendable, Equatable {
         Self(capability: .ioValue, sourceID: sourceID, payload: payload)
     }
     /// Creates a Discover request.
-    public static func discover(sourceID: UUID16, correlationID: UUID16, payload: [UInt8], timeoutMS: UInt32) -> Self {
+    public static func discover(sourceID: UUID16, correlationID: UUID16, payload: [UInt8], timeoutMS: UInt32?) -> Self {
         Self(capability: .discover, sourceID: sourceID, correlationID: correlationID, payload: payload, requestTimeoutMS: timeoutMS)
     }
     /// Creates a Resolve response.

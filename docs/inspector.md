@@ -163,18 +163,17 @@ printf '%s\n' 'secret' | axoloty-inspect catalog --username operator --password-
 
 ```
 axoloty-inspect (executable)
-    ├── Axoloty (runtime: CommunicationManager, Container)
+    ├── Axoloty (AxolotyRuntime + MQTTBinding)
     └── AxolotyInspectorCore (pure: catalogue, filter, reducer, records)
 ```
 
 `AxolotyInspectorCore` has no product-runtime dependencies. The CLI
-target depends on `Axoloty` for broker connectivity via
-`CommunicationManager`. `AxolotyTooling` is unaffected — its dependency
-closure does not change.
+target depends on `Axoloty` for broker connectivity through
+`AxolotyRuntime` and `MQTTBinding`. `AxolotyTooling` is unaffected — its
+dependency closure does not change.
 
-The inspector does not instantiate `MQTTNIO` directly. It uses
-`Container.resolve(...)` to bootstrap and `CommunicationManager`'s public
-stream APIs for event observation.
+The inspector does not instantiate MQTTNIO directly. It builds an immutable
+runtime definition and uses the runtime-owned event streams for observation.
 
 ## Testing
 

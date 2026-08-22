@@ -152,6 +152,21 @@ struct AxolotyRuntimeTests {
         await runtime.stop()
     }
 
+    @Test("unlimited Discover correlations remain active until canceled")
+    func unlimitedDiscoverCanBeCanceled() async throws {
+        let definition = try makeDefinition()
+        let runtime = AxolotyRuntime(definition: definition, transport: TestTransport())
+        try await runtime.start()
+        let correlation = try #require(UUID16(parsing: "58585858-5858-4585-8585-585858585858"))
+        #expect(await runtime.request(.discover(
+            correlationID: correlation,
+            payload: Array("{}".utf8),
+            timeoutMS: nil
+        )) == .accepted)
+        #expect(await runtime.cancel(correlationID: correlation))
+        await runtime.stop()
+    }
+
     @Test("invalid Call operation names are rejected before publication")
     func rejectsInvalidCallOperationNames() async throws {
         let definition = try makeDefinition()
