@@ -43,6 +43,11 @@ grep -Fq 'predicateOperation' "$probe/Sources/BoundedObjectModelProbe/main.swift
 grep -Fq '. "${IDF_PATH:-/opt/esp/idf}/export.sh" >"$idf_log" 2>&1' "$probe/check-embedded.sh"
 grep -Fq 'rm -f "$idf_log"' "$probe/check-embedded.sh"
 grep -Fq 'riscv32-esp-elf-size -A "$elf"' "$probe/check-embedded.sh"
+grep -Fq '$1 ~ /^\./' "$probe/check-embedded.sh"
+if grep -Fq '$1 ~ /^\\./' "$probe/check-embedded.sh"; then
+    echo "error: embedded section extraction still over-escapes the ESP section pattern" >&2
+    exit 1
+fi
 grep -Fq 'CoatyFilterAdapter<16, 16, 16, 64>' "$root/Embedded/swift/main/CoatyModelsModuleConsumer.swift"
 grep -Fq 'do throws(ProtocolError)' "$root/Embedded/swift/main/CoatyModelsModuleConsumer.swift"
 grep -Fq 'let adapter = try CoatyFilterAdapter<16, 16, 16, 64>' "$root/Embedded/swift/main/CoatyModelsModuleConsumer.swift"
@@ -155,13 +160,29 @@ printf '%s\n' \
     'firmwareBytes	100' \
     'elfBytes	200' \
     'mapBytes	300' >"$tmp/embedded-metadata.tsv"
-printf '.text\t64\n.data\t4\n' >"$tmp/embedded-sections.tsv"
+printf '.iram0.text\t64\n.flash.text\t128\n.data\t4\n' >"$tmp/embedded-sections.tsv"
 node "$embedded_assembler" "$tmp/embedded-metadata.tsv" "$tmp/embedded-sections.tsv" 0123456 "$tmp/embedded.json"
 node "$validator" "$schema" "$tmp/embedded.json" >/dev/null
 node - "$tmp/embedded.json" <<'NODE'
 const fs = require("node:fs");
 const report = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 if (report.evidenceKind !== "embedded-cross-build" || report.coverage !== "foundation-schema-model-predicate-module-linkage") process.exit(1);
+if (!report.sections.some(section => section.name === ".iram0.text") || !report.sections.some(section => section.name === ".flash.text")) process.exit(1);
 NODE
+printf '.iram0.text\t64\n.data\t4\n' >"$tmp/missing-embedded-executable-section.tsv"
+if node "$embedded_assembler" "$tmp/embedded-metadata.tsv" "$tmp/missing-embedded-executable-section.tsv" 0123456 "$tmp/missing-embedded.json" >/dev/null 2>&1; then
+    echo "error: embedded assembler accepted missing .flash.text section" >&2
+    exit 1
+fi
+node - "$tmp/embedded.json" "$tmp/invalid-embedded.json" <<'NODE'
+const fs = require("node:fs");
+const report = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+report.sections = report.sections.filter(section => section.name !== ".flash.text");
+fs.writeFileSync(process.argv[3], JSON.stringify(report));
+NODE
+if node "$validator" "$schema" "$tmp/invalid-embedded.json" >/dev/null 2>&1; then
+    echo "error: evidence validator accepted missing .flash.text section" >&2
+    exit 1
+fi
 
 echo "G3 object-model evidence harness checks passed"

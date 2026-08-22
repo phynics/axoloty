@@ -25,8 +25,11 @@ const sections = fs.readFileSync(sectionsPath, "utf8").trim().split(/\n/).filter
   if (!name || !Number.isInteger(bytes) || bytes < 0) throw new Error(`invalid section line: ${line}`);
   return {name, bytes};
 });
-if (!sections.some(section => section.name === ".text" || section.name === "text")) {
-  throw new Error("embedded report is missing the text section");
+for (const name of [".iram0.text", ".flash.text"]) {
+  const section = sections.find(candidate => candidate.name === name);
+  if (!section || section.bytes < 1) {
+    throw new Error("embedded report is missing a positive " + name + " section");
+  }
 }
 
 const report = {

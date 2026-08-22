@@ -128,8 +128,12 @@ function validateHostMeasurements(report) {
 function validateEmbeddedEvidence(report) {
   if (report?.evidenceKind !== "embedded-cross-build") return [];
   const errors = [];
-  if (!Array.isArray(report.sections) || !report.sections.some(section => section?.name === ".text" || section?.name === "text")) {
-    errors.push("$evidence.sections: missing text section");
+  if (!Array.isArray(report.sections)) return ["$evidence.sections: expected an array"];
+  for (const name of [".iram0.text", ".flash.text"]) {
+    const section = report.sections.find(candidate => candidate?.name === name);
+    if (!section || !Number.isInteger(section.bytes) || section.bytes < 1) {
+      errors.push(`$evidence.sections: missing positive ${name} section`);
+    }
   }
   return errors;
 }
