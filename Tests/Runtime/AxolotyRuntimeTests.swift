@@ -63,7 +63,7 @@ struct AxolotyRuntimeTests {
         #expect(receipt == .accepted)
         for _ in 0..<100 {
             if await transport.sentCount() == 1 { break }
-            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(5))
         }
         #expect(await transport.sentCount() == 1)
         await runtime.stop()
