@@ -105,6 +105,32 @@ struct AxolotyRuntimeTests {
         await runtime.stop()
     }
 
+    @Test("advertise selectors match the payload object type")
+    func advertiseSelectorMatchesPayloadObjectType() async throws {
+        let identity = try RuntimeIdentity(id: .zero, name: "selector-test")
+        var builder = try RuntimeDefinition.Builder(identity: identity, namespace: "test")
+        let stream = try builder.events(
+            matching: .advertise(objectType: "com.coaty.test.WireFixture"),
+            buffering: .dropOldest(capacity: 2)
+        )
+        let runtime = AxolotyRuntime(
+            definition: try builder.finish(),
+            transport: TestTransport()
+        )
+        try await runtime.start()
+
+        var iterator = stream.makeAsyncIterator()
+        let receipt = await runtime.receive(RuntimeInboundFrame(
+            topic: "coaty/3/test/ADV:CoatyObject/22222222-2222-4222-8222-222222222222",
+            payload: Array(#"{"object":{"objectId":"11111111-1111-4111-8111-111111111111","coreType":"CoatyObject","objectType":"com.coaty.test.WireFixture","name":"wire-fixture"}}"#.utf8)
+        ))
+        #expect(receipt == .accepted)
+        let event = try #require(await iterator.next())
+        #expect(event.context.sourceID == UUID16(parsing: "22222222-2222-4222-8222-222222222222"))
+        #expect(String(decoding: event.value, as: UTF8.self).contains("com.coaty.test.WireFixture"))
+        await runtime.stop()
+    }
+
     @Test("runtime orders subscription and identity lifecycle around transport")
     func lifecycleOrdering() async throws {
         let definition = try makeDefinition()

@@ -645,6 +645,9 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     private func deliveryKey(for frame: BorrowedProtocolFrame) -> ProtocolDeliveryKey {
         switch frame.routingKey.capability {
         case .advertise:
+            if let objectType = Self.advertisedObjectType(frame.payload) {
+                return .advertiseFilter(objectType)
+            }
             if let filter = frame.topicView.eventTypeFilter { return .advertiseFilter(filter) }
         case .channel:
             if let channel = frame.topicView.eventTypeFilter { return .channel(channel) }
@@ -670,6 +673,10 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
 
     private func deliveryKey(for operation: ProtocolLocalOperation) -> ProtocolDeliveryKey {
         switch operation {
+        case .advertise:
+            if let objectType = Self.advertisedObjectType(operation.payload) {
+                return .advertiseFilter(objectType)
+            }
         case .resolve, .retrieve, .complete, .returnEvent:
             if let correlation = operation.correlationID {
                 return .correlated(operation.capability, correlation)
@@ -678,6 +685,20 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             break
         }
         return .capability(operation.capability)
+    }
+
+    private static func advertisedObjectType(_ payload: ByteSlice) -> ByteSlice? {
+        payload.withBytes { pointer, length in
+            let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
+            guard let object = reader.readRaw("object") else { return nil }
+            return object.withBytes { objectPointer, objectLength in
+                let objectReader = WireReader(
+                    bytes: objectPointer.assumingMemoryBound(to: UInt8.self),
+                    length: objectLength
+                )
+                return objectReader.readString("objectType")
+            }
+        }
     }
 
     private func planAssociation<Classifier: ProtocolRouteClassifier>(_ payload: ByteSlice, classifier: Classifier) -> AssociationResult {
