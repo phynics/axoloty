@@ -129,6 +129,32 @@ struct AxolotyRuntimeTests {
         await runtime.stop()
     }
 
+    @Test("invalid Call operation names are rejected before publication")
+    func rejectsInvalidCallOperationNames() async throws {
+        let definition = try makeDefinition()
+        let transport = TestTransport()
+        let runtime = AxolotyRuntime(definition: definition, transport: transport)
+        try await runtime.start()
+
+        let correlation = try #require(UUID16(parsing: "56565656-5656-4565-8565-565656565656"))
+        let invalidNames = [
+            "",
+            "invalid/operation",
+            String(repeating: "x", count: RuntimeOperationValidation.maximumUTF8Bytes + 1)
+        ]
+        for operation in invalidNames {
+            let receipt = await runtime.request(.call(
+                correlationID: correlation,
+                operation: operation,
+                payload: Array(#"{"parameters":{"operand":7}}"#.utf8),
+                timeoutMS: 1_000
+            ))
+            #expect(receipt == .rejected(.invalidOperationName))
+        }
+        #expect(await transport.sentCount() == 0)
+        await runtime.stop()
+    }
+
     @Test("advertise selectors match the payload object type")
     func advertiseSelectorMatchesPayloadObjectType() async throws {
         let identity = try RuntimeIdentity(id: .zero, name: "selector-test")

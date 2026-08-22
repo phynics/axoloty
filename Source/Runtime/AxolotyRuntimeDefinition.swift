@@ -212,6 +212,24 @@ public enum RuntimeResponderSelector: Sendable, Equatable {
     }
 }
 
+/// Boundary validation shared by Call responders and filtered Call requests.
+///
+/// Operation names become one MQTT topic filter level. Keeping the limit and
+/// character rule in one helper prevents a value accepted by the definition
+/// builder from producing an unroutable topic when it is submitted directly
+/// as a ``RuntimeOperation``.
+enum RuntimeOperationValidation {
+    static let maximumUTF8Bytes = 128
+
+    static func isValidCallOperation(_ operation: String) -> Bool {
+        !operation.isEmpty
+            && operation.utf8.count <= maximumUTF8Bytes
+            && !operation.contains("/")
+            && !operation.contains("#")
+            && !operation.contains("+")
+    }
+}
+
 /// One-way local operation accepted by the runtime facade.
 public enum RuntimeOneWayOperation: Sendable, Equatable {
     case advertise([UInt8])
@@ -323,6 +341,8 @@ public enum RuntimeRejection: Sendable, Equatable {
     case malformedFrame(ProtocolError.Code)
     /// The operation payload is empty or invalid for its family.
     case malformedPayload
+    /// A filtered Call operation name cannot be represented as one MQTT topic level.
+    case invalidOperationName
     /// A processor-defined rejection code.
     case `protocol`(ProtocolError.Code)
     /// The finite runtime storage is saturated.
@@ -644,8 +664,11 @@ public struct RuntimeDefinition: Sendable {
             throw AxolotyError.runtime(code: .subscriptionFailed, reason: "runtime handler capacity is full")
         }
         if let operation {
-            guard !operation.isEmpty, !operation.contains("/") else {
-                throw AxolotyError.invalidArgument(argument: "operation", reason: "must be a non-empty name without '/'")
+            guard RuntimeOperationValidation.isValidCallOperation(operation) else {
+                throw AxolotyError.invalidArgument(
+                    argument: "operation",
+                    reason: "must contain 1 to 128 UTF-8 bytes and no MQTT topic separators"
+                )
             }
         }
         guard maximumConcurrentInvocations > 0,

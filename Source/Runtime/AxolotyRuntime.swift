@@ -454,6 +454,10 @@ private actor ProtocolExecutor {
     }
 
     func publish(_ operation: RuntimeOperation, nowMS: UInt32) -> RuntimeReceipt {
+        if let operationName = operation.operationName,
+           operation.capability != .call || !RuntimeOperationValidation.isValidCallOperation(operationName) {
+            return .rejected(.invalidOperationName)
+        }
         guard !operation.payload.isEmpty else {
             return .rejected(.malformedPayload)
         }
