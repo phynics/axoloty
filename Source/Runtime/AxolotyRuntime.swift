@@ -19,7 +19,16 @@ public final class AxolotyRuntime: Sendable {
     /// Starts the runtime transport and protocol executor.
     public func start() async throws {
         if let failure = await executor.start() {
-            throw AxolotyError.runtime(code: failure.code, reason: failure.reason)
+            throw AxolotyError.runtime(code: failure.0, reason: failure.1)
+        }
+    }
+
+    /// Runs the runtime until a caller invokes ``stop()``. The transport
+    /// remains owned by the runtime for the duration of this call.
+    public func run() async throws {
+        try await start()
+        while await lifecycleState() == .running {
+            await Task.yield()
         }
     }
 
@@ -38,6 +47,17 @@ public final class AxolotyRuntime: Sendable {
         await executor.lifecycleState()
     }
 
+    /// Returns the modern lifecycle spelling used by G4 callers.
+    public func state() async -> RuntimeState {
+        switch await lifecycleState() {
+        case .stopped: return .stopped
+        case .starting: return .starting
+        case .running: return .running
+        case .stopping: return .stopping
+        case .failed, .closed: return .failed
+        }
+    }
+
     /// Submits one owned inbound frame to the bounded ingress queue.
     public func receive(_ frame: RuntimeInboundFrame) async -> RuntimeReceipt {
         await executor.receive(frame)
@@ -46,6 +66,21 @@ public final class AxolotyRuntime: Sendable {
     /// Submits one owned local operation to ``ProtocolProcessor``.
     public func publish(_ operation: RuntimeOperation, nowMS: UInt32 = 0) async -> RuntimeReceipt {
         await executor.publish(operation, nowMS: nowMS)
+    }
+
+    /// Publishes a closed one-way operation through the shared processor.
+    public func publish(_ operation: RuntimeOneWayOperation, nowMS: UInt32 = 0) async -> RuntimeReceipt {
+        await publish(RuntimeOperation(oneWay: operation, sourceID: await executor.sourceID()), nowMS: nowMS)
+    }
+
+    /// Starts a bounded request correlation through the shared processor.
+    public func request(_ request: RuntimeRequest, nowMS: UInt32 = 0) async -> RuntimeReceipt {
+        await publish(RuntimeOperation(request: request, sourceID: await executor.sourceID()), nowMS: nowMS)
+    }
+
+    /// Publishes a responder response through the shared processor.
+    public func respond(_ response: RuntimeResponse, nowMS: UInt32 = 0) async -> RuntimeReceipt {
+        await publish(RuntimeOperation(response: response, sourceID: await executor.sourceID()), nowMS: nowMS)
     }
 
     /// Returns the bounded runtime event stream.
@@ -60,11 +95,6 @@ public final class AxolotyRuntime: Sendable {
 }
 
 private actor ProtocolExecutor {
-    private struct StartFailure: Sendable {
-        let code: AxolotyError.RuntimeErrorCode
-        let reason: String
-    }
-
     private let definition: SealedRuntimeDefinition
     private let transport: AxolotyRuntimeTransport
     private var processor = ProtocolProcessor<64>()
@@ -100,16 +130,16 @@ private actor ProtocolExecutor {
         self.diagnosticContinuation = diagnostics.continuation
     }
 
-    func start() async -> StartFailure? {
+    func start() async -> (AxolotyError.RuntimeErrorCode, String)? {
         switch state {
         case .running:
-            return StartFailure(code: .notStarted, reason: "runtime is already running")
+            return (.notStarted, "runtime is already running")
         case .closed:
-            return StartFailure(code: .notStarted, reason: "runtime is closed")
+            return (.notStarted, "runtime is closed")
         case .starting, .stopping:
-            return StartFailure(code: .notStarted, reason: "runtime lifecycle transition is already in progress")
+            return (.notStarted, "runtime lifecycle transition is already in progress")
         case .failed:
-            return StartFailure(code: .notStarted, reason: "runtime failed; stop it before restarting")
+            return (.notStarted, "runtime failed; stop it before restarting")
         case .stopped:
             break
         }
@@ -149,7 +179,7 @@ private actor ProtocolExecutor {
         } catch {
             cancelTransportPumps()
             state = .failed
-            return StartFailure(code: .brokerUnavailable, reason: String(describing: error))
+            return (.brokerUnavailable, String(describing: error))
         }
     }
 
@@ -173,6 +203,8 @@ private actor ProtocolExecutor {
     }
 
     func lifecycleState() -> RuntimeLifecycleState { state }
+
+    func sourceID() -> UUID16 { definition.sourceID }
 
     func events() -> AsyncStream<RuntimeEvent> { eventStream }
 
@@ -225,7 +257,8 @@ private actor ProtocolExecutor {
         guard !frame.payload.isEmpty else { return .rejected(.malformedPayload) }
 
         var parseFailure: String?
-        let outcome: ProtocolProcessOutcome = frame.topic.withUTF8 { topicBuffer in
+        var topic = frame.topic
+        let outcome: ProtocolProcessOutcome = topic.withUTF8 { topicBuffer in
             guard let topicBase = topicBuffer.baseAddress else {
                 parseFailure = "topic is empty"
                 return .rejected(.malformedFrame)

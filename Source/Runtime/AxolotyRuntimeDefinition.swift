@@ -46,6 +46,129 @@ public struct RuntimeCapacities: Sendable, Equatable {
     }
 }
 
+/// Stable identity supplied to a runtime before it starts.
+public struct RuntimeIdentity: Sendable, Equatable {
+    /// The protocol identity used in routing keys.
+    public let id: UUID16
+    /// A bounded human-readable name used by advertisements and diagnostics.
+    public let name: String
+
+    /// Creates a runtime identity.
+    public init(id: UUID16, name: String) throws {
+        guard !name.isEmpty, name.utf8.count <= 128 else {
+            throw AxolotyError.invalidArgument(argument: "name", reason: "must contain 1 to 128 UTF-8 bytes")
+        }
+        self.id = id
+        self.name = name
+    }
+}
+
+/// Lifecycle state exposed by a runtime instance.
+public enum RuntimeState: Sendable, Equatable {
+    /// Configuration exists but transport has not started.
+    case initialized
+    /// Subscriptions and transport are being installed.
+    case starting
+    /// The runtime accepts protocol work.
+    case running
+    /// Transport is reconnecting and old requests are being resolved.
+    case reconnecting
+    /// Shutdown is draining bounded work.
+    case stopping
+    /// The instance stopped and cannot be started again.
+    case stopped
+    /// A terminal startup or transport failure occurred.
+    case failed
+}
+
+/// The thirteen closed Coaty Core families exposed by the host runtime.
+public enum RuntimeEventFamily: Sendable, Equatable, CaseIterable {
+    case advertise, deadvertise, channel, associate, ioValue
+    case discover, resolve, query, retrieve, update, complete, call, returnEvent
+}
+
+/// Context attached to a normalized event. It deliberately contains no raw
+/// MQTT topic or transport-owned buffer.
+public struct RuntimeEventContext: Sendable, Equatable {
+    /// The source that produced the event.
+    public let sourceID: UUID16
+    /// The request correlation, when the family carries one.
+    public let correlationID: UUID16?
+    /// The configured namespace.
+    public let namespace: String
+    /// Binding-owned route classification.
+    public let route: ProtocolRouteClassification
+    /// Monotonic receipt time supplied by the binding.
+    public let receiptTimeMS: UInt32
+
+    /// Creates event context from boundary-owned values.
+    public init(
+        sourceID: UUID16,
+        correlationID: UUID16? = nil,
+        namespace: String,
+        route: ProtocolRouteClassification = .coaty,
+        receiptTimeMS: UInt32
+    ) {
+        self.sourceID = sourceID
+        self.correlationID = correlationID
+        self.namespace = namespace
+        self.route = route
+        self.receiptTimeMS = receiptTimeMS
+    }
+}
+
+/// Application stream buffering policy. Transport ingress never uses a lossy
+/// policy; these policies apply only after normalized actions are owned.
+public enum RuntimeBufferingPolicy: Sendable, Equatable {
+    case suspendProducer(capacity: Int)
+    case fail(capacity: Int)
+    case dropOldest(capacity: Int)
+    case dropNewest(capacity: Int)
+    case coalesceLatest
+}
+
+/// One-way local operation accepted by the runtime facade.
+public enum RuntimeOneWayOperation: Sendable, Equatable {
+    case advertise([UInt8])
+    case deadvertise([UInt8])
+    case channel([UInt8])
+    case associate([UInt8])
+    case ioValue([UInt8])
+}
+
+/// A request operation that may have one or more responses.
+public enum RuntimeRequest: Sendable, Equatable {
+    case discover(correlationID: UUID16, payload: [UInt8], timeoutMS: UInt32)
+    case query(correlationID: UUID16, payload: [UInt8], timeoutMS: UInt32)
+    case update(correlationID: UUID16, payload: [UInt8], timeoutMS: UInt32)
+    case call(correlationID: UUID16, payload: [UInt8], timeoutMS: UInt32)
+}
+
+/// A response operation produced by a responder.
+public enum RuntimeResponse: Sendable, Equatable {
+    case resolve(correlationID: UUID16, payload: [UInt8])
+    case retrieve(correlationID: UUID16, payload: [UInt8])
+    case complete(correlationID: UUID16, payload: [UInt8])
+    case returnEvent(correlationID: UUID16, payload: [UInt8])
+}
+
+/// A normalized event delivered by a host runtime stream.
+public struct RuntimeEventValue: Sendable, Equatable {
+    /// The closed family.
+    public let family: RuntimeEventFamily
+    /// Boundary-owned event context.
+    public let context: RuntimeEventContext
+    /// Owned, family-codec payload bytes. These bytes are never borrowed.
+    public let value: [UInt8]
+
+    /// Creates an owned normalized event value.
+    public init(family: RuntimeEventFamily, context: RuntimeEventContext, value: [UInt8]) {
+        self.family = family
+        self.context = context
+        self.value = value
+    }
+}
+
 /// An owned inbound frame copied at the transport boundary.
 public struct RuntimeInboundFrame: Sendable, Equatable {
     /// The complete MQTT topic.
@@ -84,6 +207,8 @@ public enum RuntimeRejection: Sendable, Equatable {
     case malformedFrame(ProtocolError.Code)
     /// The operation payload is empty or invalid for its family.
     case malformedPayload
+    /// A processor-defined rejection code.
+    case `protocol`(ProtocolError.Code)
     /// The finite runtime storage is saturated.
     case capacityExceeded
     /// A transport callback belongs to an earlier start epoch.
@@ -116,6 +241,37 @@ public struct RuntimeOperation: Sendable, Equatable {
         self.correlationID = correlationID
         self.payload = payload
         self.requestTimeoutMS = requestTimeoutMS
+    }
+
+    /// Creates an operation from the closed one-way family values.
+    public init(oneWay: RuntimeOneWayOperation, sourceID: UUID16) {
+        switch oneWay {
+        case let .advertise(payload): self.init(capability: .advertise, sourceID: sourceID, payload: payload)
+        case let .deadvertise(payload): self.init(capability: .deadvertise, sourceID: sourceID, payload: payload)
+        case let .channel(payload): self.init(capability: .channel, sourceID: sourceID, payload: payload)
+        case let .associate(payload): self.init(capability: .associate, sourceID: sourceID, payload: payload)
+        case let .ioValue(payload): self.init(capability: .ioValue, sourceID: sourceID, payload: payload)
+        }
+    }
+
+    /// Creates an operation from a closed request family value.
+    public init(request: RuntimeRequest, sourceID: UUID16) {
+        switch request {
+        case let .discover(id, payload, timeout): self.init(capability: .discover, sourceID: sourceID, correlationID: id, payload: payload, requestTimeoutMS: timeout)
+        case let .query(id, payload, timeout): self.init(capability: .query, sourceID: sourceID, correlationID: id, payload: payload, requestTimeoutMS: timeout)
+        case let .update(id, payload, timeout): self.init(capability: .update, sourceID: sourceID, correlationID: id, payload: payload, requestTimeoutMS: timeout)
+        case let .call(id, payload, timeout): self.init(capability: .call, sourceID: sourceID, correlationID: id, payload: payload, requestTimeoutMS: timeout)
+        }
+    }
+
+    /// Creates an operation from a closed responder value.
+    public init(response: RuntimeResponse, sourceID: UUID16) {
+        switch response {
+        case let .resolve(id, payload): self.init(capability: .resolve, sourceID: sourceID, correlationID: id, payload: payload)
+        case let .retrieve(id, payload): self.init(capability: .retrieve, sourceID: sourceID, correlationID: id, payload: payload)
+        case let .complete(id, payload): self.init(capability: .complete, sourceID: sourceID, correlationID: id, payload: payload)
+        case let .returnEvent(id, payload): self.init(capability: .returnEvent, sourceID: sourceID, correlationID: id, payload: payload)
+        }
     }
 
     /// Creates an Advertise operation.
@@ -353,5 +509,44 @@ public struct SealedRuntimeDefinition: Sendable {
         self.sourceID = sourceID
         self.capacities = capacities
         self.registrations = registrations
+    }
+}
+
+public extension RuntimeDefinition {
+    /// Mutable pre-start configuration builder. Calling ``finish()`` seals
+    /// the definition and makes its registration graph immutable.
+    struct Builder {
+        private var definition: RuntimeDefinition
+        private var identity: RuntimeIdentity
+
+        /// Creates a builder with the host defaults.
+        public init(
+            identity: RuntimeIdentity,
+            namespace: String,
+            limits: RuntimeCapacities = try! RuntimeCapacities()
+        ) throws {
+            self.identity = identity
+            self.definition = try RuntimeDefinition(
+                namespace: namespace,
+                sourceID: identity.id,
+                capacities: limits
+            )
+        }
+
+        /// Registers a family handler before startup.
+        @discardableResult
+        public mutating func respond(
+            to capability: ProtocolCapability,
+            operation: String? = nil,
+            handler: @escaping @Sendable (RuntimeInvocation) async throws -> RuntimeHandlerResult
+        ) throws -> Int {
+            try definition.register(capability: capability, operation: operation, handler: handler)
+        }
+
+        /// Finishes registration and returns the immutable definition.
+        public consuming func finish() throws -> SealedRuntimeDefinition {
+            _ = identity
+            return try definition.seal()
+        }
     }
 }

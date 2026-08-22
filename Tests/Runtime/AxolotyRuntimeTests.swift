@@ -44,12 +44,16 @@ struct AxolotyRuntimeTests {
             )
         )
         #expect(receipt == .accepted)
+        for _ in 0..<100 {
+            if await transport.sentCount() == 1 { break }
+            await Task.yield()
+        }
         #expect(await transport.sentCount() == 1)
         await runtime.stop()
     }
 
     private func makeDefinition() throws -> SealedRuntimeDefinition {
-        var definition = try RuntimeDefinition(
+        let definition = try RuntimeDefinition(
             namespace: "test",
             sourceID: .zero,
             capacities: try RuntimeCapacities()

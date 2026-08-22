@@ -171,7 +171,9 @@ struct ProtocolFoundationTests {
             var sink = InlineProtocolActionSink<1>()
             return processor.processInbound(frame, nowMS: 149, sink: &sink)
         }
-        #expect(duplicate == .rejected(.duplicate))
+        // Discover is a multi-response correlation; another valid Resolve is
+        // accepted until its deadline expires.
+        #expect(duplicate == .accepted)
 
         let secondBegin = withStaticPayload { payload in
             let operation = try! ProtocolLocalOperation(
@@ -184,7 +186,7 @@ struct ProtocolFoundationTests {
             var sink = InlineProtocolActionSink<1>()
             return processor.processOutbound(operation, nowMS: 200, sink: &sink) == .accepted
         }
-        #expect(secondBegin)
+        #expect(!secondBegin)
         let expired = processor.expire(nowMS: 210)
         #expect(expired)
     }
@@ -275,7 +277,8 @@ struct ProtocolFoundationTests {
         var sink = InlineProtocolActionSink<1>()
         #expect(processor.processOutbound(operation, nowMS: 10, sink: &sink) == .accepted)
         sink.removeAll()
-        #expect(processor.cancel(correlationID: first))
+        let cancelled = processor.cancel(correlationID: first)
+        #expect(cancelled)
         let late = try withResponseFrame(correlation: "00000000-0000-0000-0000-000000000000", event: "RSV") { frame in
             var responseSink = InlineProtocolActionSink<1>()
             return processor.processInbound(frame, nowMS: 20, sink: &responseSink)
