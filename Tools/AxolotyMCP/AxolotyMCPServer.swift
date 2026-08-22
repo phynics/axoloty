@@ -401,7 +401,9 @@ public final class AxolotyMCPServer {
 
         let discoverEvent: InspectorDiscoverRequest
         do {
-            discoverEvent = try request.makeInspectorDiscoverRequest()
+            discoverEvent = try request.makeInspectorDiscoverRequest(
+                timeout: InspectorDuration(value: .milliseconds(request.timeoutMilliseconds))
+            )
         } catch {
             return .init(content: [.text(error.userFriendlyMessage)], isError: true)
         }

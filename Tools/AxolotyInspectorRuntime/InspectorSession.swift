@@ -28,6 +28,7 @@ public protocol InspectorSession {
 /// values into the inspector's stable catalogue shapes.
 @MainActor
 public final class AxolotyInspectorSession: InspectorSession {
+    private static let unlimitedProtocolTimeoutMS: UInt32 = 86_400_000
     private let runtime: AxolotyRuntime
     private let namespace: String
     private let advertiseStream: RuntimeEventStream
@@ -117,31 +118,40 @@ public final class AxolotyInspectorSession: InspectorSession {
         let correlation = Self.newCorrelation()
         let runtime = self.runtime
         let resolveStream = self.resolveStream
+        let responseTimeout = request.responseTimeout
+        let protocolTimeoutMS = responseTimeout.map {
+            UInt32(max(1, min(Int64(Self.unlimitedProtocolTimeoutMS), $0.millisecondsValue)))
+        } ?? Self.unlimitedProtocolTimeoutMS
         Task { @MainActor in
             defer { self.discoveryInFlight = false }
             let receipt = await runtime.request(
                 .discover(
                     correlationID: correlation,
                     payload: request.payload,
-                    timeoutMS: 5_000
+                    timeoutMS: protocolTimeoutMS
                 )
             )
             guard case .accepted = receipt else {
                 continuation.finish()
                 return
             }
-            await withTaskGroup(of: Void.self) { group in
+            await withTaskGroup(of: Bool.self) { group in
                 group.addTask {
                     for await event in resolveStream {
                         guard event.context.correlationID == correlation else { continue }
                         continuation.yield(Self.response(from: event))
                     }
+                    return false
                 }
-                group.addTask {
-                    try? await Task.sleep(for: .seconds(5))
+                if let responseTimeout {
+                    group.addTask {
+                        try? await Task.sleep(for: responseTimeout)
+                        return true
+                    }
                 }
                 _ = await group.next()
                 group.cancelAll()
+                _ = await runtime.cancel(correlationID: correlation)
             }
             continuation.finish()
         }

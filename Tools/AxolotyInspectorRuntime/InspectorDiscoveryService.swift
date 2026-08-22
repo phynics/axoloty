@@ -72,7 +72,9 @@ public struct InspectorDiscoveryRequest: Sendable, Equatable {
     /// - Returns: The event to publish for this request.
     /// - Throws: ``InspectorError/invalidArguments(reason:)`` when a typed
     ///   selector is malformed or unknown.
-    public func makeInspectorDiscoverRequest() throws(InspectorError) -> InspectorDiscoverRequest {
+    public func makeInspectorDiscoverRequest(
+        timeout: InspectorDuration = InspectorDuration(value: .seconds(5))
+    ) throws(InspectorError) -> InspectorDiscoverRequest {
         guard hasSelector else {
             throw InspectorError.invalidArguments(
                 reason: "at least one selector (coreType, objectType, or objectId) is required"
@@ -124,7 +126,8 @@ public struct InspectorDiscoveryRequest: Sendable, Equatable {
                 objectId: uuid.map(InspectorDiscoverRequest.InspectorObjectIdentifier.init(string:)),
                 objectTypes: uuid == nil ? objectType.map { [$0] } : nil,
                 coreTypes: uuid == nil && objectType == nil ? parsedInspectorCoreType.map { [$0.rawValue] } : nil
-            )
+            ),
+            responseTimeout: timeout.value
         )
     }
 }

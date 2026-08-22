@@ -171,10 +171,18 @@ public struct InspectorDiscoverRequest: Sendable, Equatable {
     public let payload: [UInt8]
     /// Structured selector view.
     public let data: Data
+    /// Maximum time to keep collecting correlated responses. `nil` keeps the
+    /// request open until the runtime or caller cancels it.
+    public let responseTimeout: Duration?
 
     /// Creates a request from an already validated family payload.
-    public init(payload: [UInt8], data: Data = Data(objectId: nil, objectTypes: nil, coreTypes: nil)) {
+    public init(
+        payload: [UInt8],
+        data: Data = Data(objectId: nil, objectTypes: nil, coreTypes: nil),
+        responseTimeout: Duration? = .seconds(5)
+    ) {
         self.payload = payload
         self.data = data
+        self.responseTimeout = responseTimeout
     }
 }

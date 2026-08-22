@@ -87,7 +87,7 @@ public final class InspectorDiscoverApplication {
         )
         let discoverEvent: InspectorDiscoverRequest
         do {
-            discoverEvent = try discoveryRequest.makeInspectorDiscoverRequest()
+            discoverEvent = try discoveryRequest.makeInspectorDiscoverRequest(timeout: cmd.timeout)
         } catch {
             writeDiagnostic("error: \(error.userFriendlyMessage)")
             session.stop()

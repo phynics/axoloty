@@ -15,6 +15,7 @@ final class FakeInspectorSession: InspectorSession {
     var transportState: InspectorTransportState = .offline
     var stopped = false
     var discoverCallCount = 0
+    var lastDiscoverRequest: InspectorDiscoverRequest?
     var streamsCreatedBeforeConnect = false
 
     private var advertiseContinuation: AsyncStream<InspectorAdvertiseEvent>.Continuation?
@@ -71,6 +72,7 @@ final class FakeInspectorSession: InspectorSession {
 
     func discover(_ event: InspectorDiscoverRequest) async -> AsyncStream<InspectorResponseEvent> {
         discoverCallCount += 1
+        lastDiscoverRequest = event
         let (stream, cont) = AsyncStream.makeStream(of: InspectorResponseEvent.self)
         discoverContinuation = cont
         for response in queuedResponses {
@@ -791,6 +793,7 @@ struct InspectorDiscoverApplicationTests {
         )
 
         #expect(await app.run() == nil)
+        #expect(session.lastDiscoverRequest?.responseTimeout == .milliseconds(20))
         let resultLines = output.filter { $0.contains("\"kind\":\"discovery-result\"") }
         #expect(resultLines.count == 1)
         #expect(resultLines[0].contains("\"timedOut\":true"))
@@ -835,6 +838,7 @@ struct InspectorDiscoverApplicationTests {
         let runTask = Task { await app.run() }
         try? await Task.sleep(for: .seconds(10) + .milliseconds(250))
         #expect(!session.stopped)
+        #expect(session.lastDiscoverRequest?.responseTimeout == nil)
 
         signalHandler.wasInterrupted = true
         #expect(await runTask.value == .interrupted)
