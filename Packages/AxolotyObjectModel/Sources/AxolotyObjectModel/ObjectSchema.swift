@@ -144,7 +144,7 @@ public struct ObjectFieldDecoder: ~Copyable {
         do throws(WireDecodeError) { try reader.validate() }
         catch { throw .invalidField }
         guard let raw = reader.readField(key) else { throw .missingRequiredField }
-        var value = JSONValueView(raw: raw)
+        let value = JSONValueView(raw: raw)
         do { return try T.decode(from: value) }
         catch { throw .invalidField }
     }
@@ -158,7 +158,7 @@ public struct ObjectFieldDecoder: ~Copyable {
         do throws(WireDecodeError) { try reader.validate() }
         catch { throw .invalidField }
         guard let raw = reader.readField(key) else { return nil }
-        var value = JSONValueView(raw: raw)
+        let value = JSONValueView(raw: raw)
         guard !value.isNull else { return nil }
         do { return try T.decode(from: value) }
         catch { throw .invalidField }
@@ -173,7 +173,7 @@ public struct ObjectFieldDecoder: ~Copyable {
         do throws(WireDecodeError) { try reader.validate() }
         catch { throw .invalidField }
         guard let raw = reader.readField(key) else { return .missing }
-        var value = JSONValueView(raw: raw)
+        let value = JSONValueView(raw: raw)
         if value.isNull { return .null }
         do { return .value(try T.decode(from: value)) }
         catch { throw .invalidField }
