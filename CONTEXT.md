@@ -43,8 +43,24 @@ An owned object whose schema-specific fields are accessed without compile-time s
 **Object schema**:
 A compile-time description of an object type's schema-specific fields.
 
+**Portable object schema**:
+The fixed descriptor and codecs shared by manual and macro-generated object
+schema conformances.
+
 **Typed object**:
 An `Object<Schema>` combining an object envelope with a statically known object schema.
+
+**Presence**:
+An explicit field state that distinguishes missing, JSON null, and a value.
+
+**Schema registry**:
+A caller-owned, fixed-capacity, runtime-local set of object schemas that is
+explicitly populated and sealed before use.
+_Avoid_: global class registry
+
+**Object predicate**:
+A bounded typed expression for Coaty-compatible object-filter encode, decode,
+and local evaluation.
 
 **External IO route**:
 A transport-binding-specific non-Coaty route associated with a Coaty IO endpoint.

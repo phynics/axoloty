@@ -16,9 +16,14 @@ protocol processor.
 ## Decision
 
 Use one value-oriented object implementation specialized by explicit inline
-capacity parameters. G3 will measure host and ESP32-C6 object byte/field
-capacity points before selecting aliases; the 1/16/64 points accepted by G1
-are runtime-state evidence, not object-model evidence. Dynamic storage owns an
+capacity parameters. G3 host evidence measures object byte/field capacity
+points independently of the 1/16/64 runtime-state evidence accepted by G1;
+the ESP32-C6 evidence proves same-source compilation and linkage rather than
+selecting an embedded object capacity.
+The protocol-sized `DynamicObject` and `Object<Schema>` aliases use the
+512-byte payload and 24-field wire-authority bounds; callers select explicit
+`BoundedDynamicObject` and `BoundedObject` specializations when measured
+deployment capacities differ. Dynamic storage owns an
 inline byte arena and a fixed descriptor table. Unknown fields and original
 number lexemes remain available for lossless round trips. Nested values remain
 borrowed raw slices until accessed.
@@ -34,7 +39,8 @@ Schema registration is an explicit, runtime-local, fixed-inline registry. It
 is idempotent for the same schema, rejects conflicts and saturation without
 partial mutation, and becomes immutable through an explicit sealing
 transition. There is no process-global registry, static registration side
-effect, reflection lookup, or captured closure in the portable path.
+effect, reflection lookup, or stored/escaping captured closure in the portable
+path. Immediate synchronous visitor closures may borrow scoped values.
 
 Predicates use a bounded AST and literal arena. The object model owns the
 generic AST and local evaluator; `AxolotyProtocol` owns only the Coaty filter
@@ -70,6 +76,7 @@ the G3 packages land.
 - G4 can replace the inherited object hierarchy without re-deciding model,
   registry, or predicate semantics.
 
-This ADR records the accepted seam; it does not claim that G3 production
-packages or the runtime replacement are complete. G3 status is tracked by
-issue [#631](https://github.com/phynics/axoloty/issues/631).
+This ADR records the implemented G3 seam and its evidence. It does not claim
+that the inherited host runtime has migrated to the value model; that runtime
+replacement belongs to G4. G3 completion is tracked by issue
+[#631](https://github.com/phynics/axoloty/issues/631).

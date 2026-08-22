@@ -61,10 +61,23 @@ route classification, and shared inbound/outbound processing.
 
 `Packages/AxolotyProtocol` is independently host-buildable and is compiled by
 the ESP-IDF `axoloty_protocol` component from the same source glob. The target
-depends only on `AxolotyWire`; Foundation, MQTT/NIO, logging, ErrorKit,
+depends only on `AxolotyWire` and `AxolotyObjectModel`; Foundation, MQTT/NIO, logging, ErrorKit,
 actors, controllers, lifecycle, and host object hierarchy are prohibited.
 The package is intentionally a foundation rather than a runtime API: its
 processor is a synchronous seam, not a transport or actor API.
+
+## Object filters
+
+**Status: Complete for the portable G3 path; inherited runtime migration remains G4.**
+
+Coaty `objectFilter` values decode into the bounded `ObjectPredicate` AST in
+`AxolotyObjectModel`. That implementation owns all 15 Coaty operators,
+canonical encode/decode, exact decimal comparison, Unicode-scalar string
+ordering, LIKE matching, and local evaluation. `AxolotyProtocol` owns the
+profile adapter and maps absent filters to match-all. The adapter does not
+reinterpret `objectTypes` or `coreTypes` as predicates, and the new portable
+path does not call the inherited host matcher. Predicate storage and failure
+are bounded and atomic.
 
 ## External IO routes
 
@@ -82,4 +95,6 @@ non-divergence and release proof.**
 - [`Tests/WireCompatibility/Fixtures/`](../../Tests/WireCompatibility/Fixtures/)
 - [`Tests/ProtocolTrace/ProtocolTraceTests.swift`](../../Tests/ProtocolTrace/ProtocolTraceTests.swift)
 - [`Packages/AxolotyProtocol/Tests/AxolotyProtocolTests/ProtocolProcessorTests.swift`](../../Packages/AxolotyProtocol/Tests/AxolotyProtocolTests/ProtocolProcessorTests.swift)
+- [`Packages/AxolotyObjectModel/Tests/AxolotyObjectModelTests/ObjectPredicateTests.swift`](../../Packages/AxolotyObjectModel/Tests/AxolotyObjectModelTests/ObjectPredicateTests.swift)
+- [`Spikes/BoundedObjectModelEvidence/EVIDENCE.md`](../../Spikes/BoundedObjectModelEvidence/EVIDENCE.md)
 - [`Tests/Support/check-axoloty-wire-state-boundary.sh`](../../Tests/Support/check-axoloty-wire-state-boundary.sh)
