@@ -27,28 +27,19 @@ bounded event streams and responders before calling `finish()`:
 
 ```swift
 import Axoloty
-import AxolotyWire
 
-func makeRuntime() throws -> AxolotyRuntime {
-    let identity = try RuntimeIdentity(id: UUID16.zero, name: "my-agent")
-    var builder = try RuntimeDefinition.Builder(
-        identity: identity,
-        namespace: "my-app",
-        limits: try RuntimeCapacities()
-    )
+func runAgent() async throws {
+    let identity = try RuntimeIdentity(id: .zero, name: "my-agent")
+    var builder = try RuntimeDefinition.Builder(identity: identity, namespace: "my-app")
     _ = try builder.events(
         matching: .family(.advertise),
         buffering: .fail(capacity: 64)
     )
     let definition = try builder.finish()
-    let binding = try MQTTBinding(
-        configuration: try MQTTBindingConfiguration(host: "localhost", port: 1883)
+    let runtime = AxolotyRuntime(
+        definition: definition,
+        transport: try MQTTBinding(configuration: .init(host: "localhost", port: 1883))
     )
-    return AxolotyRuntime(definition: definition, transport: binding)
-}
-
-func runAgent() async throws {
-    let runtime = try makeRuntime()
     try await runtime.run()
 }
 ```
