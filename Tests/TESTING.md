@@ -70,7 +70,7 @@ not a silent skip. MQTT-backed integration remains a separate tier; wire parser
 correctness never requires a broker.
 
 The G3 object-model foundation is a required canonical tier. Run
-`axoloty-tool test-tier object-model` (or invoke the standalone package
+`axoloty-tool test-tier g3-object-model` (or invoke the standalone package
 directly) to validate the bounded model tests, schema/model packages, and
 source/dependency boundary. Its host, sanitized, and Linux-only embedded
 cross-build evidence nodes are included in the required verification and

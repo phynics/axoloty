@@ -139,6 +139,37 @@ func checkPlanPrintsStableJSON() {
 }
 
 @Test
+func g3ObjectModelTierSelectsTheFullAggregate() throws {
+    let runner = RecordingSequenceRunner()
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: runner,
+        fileSystem: StubFileSystem(paths: []),
+        environment: projectEnvironment
+    )
+
+    let result = dispatcher.run(arguments: ["test-tier", "g3-object-model"])
+    let manifest = try JSONDecoder().decode(
+        AxolotyCheckManifest.self,
+        from: Data(result.standardOutput.utf8)
+    )
+    let names = manifest.results.map(\.name)
+
+    #expect(result.exitCode == 0)
+    #expect(names.contains("g3-object-boundary"))
+    #expect(names.contains("g3-object-model-package"))
+    #expect(names.contains("g3-object-model-tests"))
+    #expect(names.contains("g3-object-macros-tests"))
+    #expect(names.contains("g3-coaty-models-tests"))
+    #expect(names.contains("g3-object-model-evidence-host"))
+    #expect(names.contains("g3-object-model-evidence-sanitized"))
+    #if os(Linux)
+    #expect(names.contains("g3-object-model-evidence-embedded"))
+    #else
+    #expect(!names.contains("g3-object-model-evidence-embedded"))
+    #endif
+}
+
+@Test
 func canonicalManifestDefinesVerifyRootsAndBoundedTestOne() throws {
     let manifest = try AxolotyCanonicalTestManifest.loadDefault()
     #expect(manifest.schemaVersion == 2)
