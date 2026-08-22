@@ -39,8 +39,10 @@ fi
 manifest_without_comments=$(sed -E 's://.*$::' "$manifest")
 package_entries=$(printf '%s' "$manifest_without_comments" | grep -E '^[[:space:]]*\.package\(' || true)
 package_entry_count=$(printf '%s' "$package_entries" | awk 'NF { count++ } END { print count + 0 }')
-if [ "$package_entry_count" -ne 1 ] || ! printf '%s' "$package_entries" | grep -Fq '.package(path: "../AxolotyWire")'; then
-    echo "error: AxolotyProtocol must have exactly one local AxolotyWire package dependency" >&2
+if [ "$package_entry_count" -ne 2 ] || \
+   ! printf '%s' "$package_entries" | grep -Fq '.package(path: "../AxolotyWire")' || \
+   ! printf '%s' "$package_entries" | grep -Fq '.package(path: "../AxolotyObjectModel")'; then
+    echo "error: AxolotyProtocol must depend only on AxolotyWire and AxolotyObjectModel" >&2
     exit 1
 fi
 if printf '%s' "$manifest_without_comments" | grep -Eq '(Foundation|MQTTNIO|NIO|Logging|OSLog|ErrorKit|Combine|Actor|Controller)'; then
@@ -59,6 +61,12 @@ for source in "$@"; do
         *) echo "error: unexpected protocol source $source" >&2; exit 1 ;;
     esac
 done
+if ! grep -Fq 'axoloty_object_model' "$component" || \
+   ! grep -Fq 'AxolotyObjectModel.swiftmodule' "$component" || \
+   ! grep -Fq 'OBJECT_DEPENDS' "$component"; then
+    echo "error: ESP-IDF protocol component does not order AxolotyObjectModel module availability" >&2
+    exit 1
+fi
 
 swift build --package-path "$package_dir" \
     --disable-automatic-resolution \

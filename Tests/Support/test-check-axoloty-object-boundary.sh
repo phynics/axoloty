@@ -17,9 +17,11 @@ write_fixture() {
         "$tmp/Packages/AxolotyObjectModel/Sources/AxolotyObjectModel" \
         "$tmp/Packages/AxolotyObjectMacros/Sources/AxolotyObjectMacros" \
         "$tmp/Packages/AxolotyObjectMacros/Sources/AxolotyObjectMacrosImplementation" \
+        "$tmp/Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels" \
         "$tmp/Embedded/swift/components/axoloty_object_model"
     printf '%s\n' '# fixture' > "$tmp/Packages/AxolotyObjectModel/AGENTS.md"
     printf '%s\n' '# fixture' > "$tmp/Packages/AxolotyObjectMacros/AGENTS.md"
+    printf '%s\n' '// swift-tools-version:6.3' 'import PackageDescription' 'let package = Package(name: "AxolotyCoatyModels", products: [.library(name: "AxolotyCoatyModels", targets: ["AxolotyCoatyModels"])], dependencies: [.package(path: "../AxolotyObjectModel")], targets: [.target(name: "AxolotyCoatyModels", path: "Sources/AxolotyCoatyModels")])' > "$tmp/Packages/AxolotyCoatyModels/Package.swift"
     printf '%s\n' \
         '// swift-tools-version:6.3' \
         'import PackageDescription' \
@@ -33,6 +35,7 @@ write_fixture() {
     printf '%s\n' '{"version":3,"pins":[]}' > "$tmp/Packages/AxolotyObjectModel/Package.resolved"
     printf '%s\n' '{"version":3,"pins":[{"identity":"swift-syntax","state":{"version":"603.0.0"}}]}' > "$tmp/Packages/AxolotyObjectMacros/Package.resolved"
     printf '%s\n' 'struct FixtureObjectModel {}' > "$tmp/Packages/AxolotyObjectModel/Sources/AxolotyObjectModel/Fixture.swift"
+    printf '%s\n' 'struct FixtureCoatyModel {}' > "$tmp/Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels/Fixture.swift"
     printf '%s\n' 'import SwiftSyntax' > "$tmp/Packages/AxolotyObjectMacros/Sources/AxolotyObjectMacros/Fixture.swift"
     printf '%s\n' 'struct FixtureMacroImplementation {}' > "$tmp/Packages/AxolotyObjectMacros/Sources/AxolotyObjectMacrosImplementation/Fixture.swift"
     printf '%s\n' \
@@ -44,6 +47,7 @@ write_fixture() {
 run_checker() {
     AXOLOTY_OBJECT_MODEL_PACKAGE_DIR="$tmp/Packages/AxolotyObjectModel" \
     AXOLOTY_OBJECT_MACROS_PACKAGE_DIR="$tmp/Packages/AxolotyObjectMacros" \
+    AXOLOTY_COATY_MODELS_PACKAGE_DIR="$tmp/Packages/AxolotyCoatyModels" \
     AXOLOTY_OBJECT_MODEL_COMPONENT_DIR="$tmp/Embedded/swift/components/axoloty_object_model" \
         "$checker"
 }
@@ -83,6 +87,9 @@ expect_rejected "lifecycle" "struct ForbiddenLifecycle {}"
 expect_rejected "Array" "let values: Array<Int>"
 expect_rejected "Dictionary" "let values: Dictionary<String, Int>"
 expect_rejected "global mutable registry" "static var globalRegistry = 0"
+write_fixture
+printf '%s\n' 'public static var computedValue: Int { 1 }' >> "$tmp/Packages/AxolotyObjectModel/Sources/AxolotyObjectModel/Fixture.swift"
+run_checker >/dev/null
 expect_macro_rejected "Foundation" "import Foundation"
 
 write_fixture

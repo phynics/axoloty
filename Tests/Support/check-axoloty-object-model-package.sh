@@ -16,6 +16,11 @@ root_manifest=${AXOLOTY_ROOT_MANIFEST:-$root/Package.swift}
 component=${AXOLOTY_OBJECT_MODEL_COMPONENT:-$root/Embedded/swift/components/axoloty_object_model/CMakeLists.txt}
 component_manifest=${AXOLOTY_OBJECT_MODEL_COMPONENT_MANIFEST:-$root/Embedded/swift/components/axoloty_object_model/idf_component.yml}
 main_component=${AXOLOTY_OBJECT_MODEL_MAIN_COMPONENT:-$root/Embedded/swift/main/CMakeLists.txt}
+coaty_package_dir=${AXOLOTY_COATY_MODELS_PACKAGE_DIR:-$root/Packages/AxolotyCoatyModels}
+coaty_source_dir="$coaty_package_dir/Sources/AxolotyCoatyModels"
+coaty_manifest=${AXOLOTY_COATY_MODELS_MANIFEST:-$coaty_package_dir/Package.swift}
+coaty_component=${AXOLOTY_COATY_MODELS_COMPONENT:-$root/Embedded/swift/components/axoloty_coaty_models/CMakeLists.txt}
+coaty_component_manifest=${AXOLOTY_COATY_MODELS_COMPONENT_MANIFEST:-$root/Embedded/swift/components/axoloty_coaty_models/idf_component.yml}
 
 set -- "$source_dir"/*.swift
 if [ "$1" = "$source_dir/*.swift" ]; then
@@ -109,11 +114,71 @@ if ! grep -Fq 'axoloty_object_model' "$main_component" || \
     exit 1
 fi
 
+if [ ! -f "$coaty_manifest" ] || [ ! -d "$coaty_source_dir" ]; then
+    echo "error: missing AxolotyCoatyModels package sources" >&2
+    exit 1
+fi
+if [ ! -f "$coaty_component" ] || [ ! -f "$coaty_component_manifest" ]; then
+    echo "error: missing AxolotyCoatyModels ESP-IDF component" >&2
+    exit 1
+fi
+set -- "$coaty_source_dir"/*.swift
+if [ "$1" = "$coaty_source_dir/*.swift" ]; then
+    echo "error: AxolotyCoatyModels has no production Swift sources" >&2
+    exit 1
+fi
+for source in "$@"; do
+    if grep -Eq '^[[:space:]]*import[[:space:]]+(Foundation|MQTTNIO|NIO|NIOCore|NIOPosix|NIOHTTP1|Logging|OSLog|ErrorKit|Combine)[[:space:]]*$' "$source"; then
+        echo "error: forbidden host dependency in $source" >&2
+        exit 1
+    fi
+done
+coaty_manifest_without_comments=$(sed -E 's://.*$::' "$coaty_manifest")
+if ! printf '%s' "$coaty_manifest_without_comments" | grep -Fq 'name: "AxolotyCoatyModels"' || \
+   ! printf '%s' "$coaty_manifest_without_comments" | grep -Fq 'Sources/AxolotyCoatyModels'; then
+    echo "error: AxolotyCoatyModels manifest is not source-wired" >&2
+    exit 1
+fi
+if ! printf '%s' "$coaty_manifest_without_comments" | grep -Fq 'path: "../AxolotyObjectModel"'; then
+    echo "error: AxolotyCoatyModels must depend on AxolotyObjectModel" >&2
+    exit 1
+fi
+if ! grep -Fq 'name: "AxolotyCoatyModels"' "$root_manifest" || \
+   ! grep -Fq 'targets: ["AxolotyCoatyModels"]' "$root_manifest" || \
+   ! grep -Fq 'path: "Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels"' "$root_manifest"; then
+    echo "error: root package does not publish AxolotyCoatyModels" >&2
+    exit 1
+fi
+if ! grep -Fq 'name: "AxolotyCoatyModelsTests"' "$root_manifest" || \
+   ! grep -Fq 'path: "Packages/AxolotyCoatyModels/Tests/AxolotyCoatyModelsTests"' "$root_manifest"; then
+    echo "error: root package does not wire AxolotyCoatyModels tests" >&2
+    exit 1
+fi
+if ! grep -Fq 'Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels/*.swift' "$coaty_component" || \
+   ! grep -Fq 'axoloty_object_model' "$coaty_component" || \
+   ! grep -Fq 'AxolotyObjectModel.swiftmodule' "$coaty_component" || \
+   ! grep -Fq 'OUTPUT ${AXOLOTY_COATY_MODELS_MODULE_ALIAS}' "$coaty_component"; then
+    echo "error: ESP-IDF CoatyModels component has an incomplete source/module dependency" >&2
+    exit 1
+fi
+if ! grep -Fq 'axoloty_coaty_models' "$main_component" || \
+   ! grep -Fq 'add_dependencies(${COMPONENT_LIB} axoloty_coaty_models_module_alias)' "$main_component" || \
+   ! grep -Fq 'CoatyModelsModuleConsumer.swift' "$main_component"; then
+    echo "error: embedded main does not consume the CoatyModels module output" >&2
+    exit 1
+fi
+
 if [ "${AXOLOTY_OBJECT_MODEL_SKIP_BUILD:-0}" != "1" ]; then
     swift build --package-path "$package_dir" \
         --disable-automatic-resolution \
         --cache-path "$root/.swiftpm-cache" \
         --product AxolotyObjectModel
+fi
+if [ "${AXOLOTY_COATY_MODELS_SKIP_BUILD:-${AXOLOTY_OBJECT_MODEL_SKIP_BUILD:-0}}" != "1" ]; then
+    swift build --package-path "$coaty_package_dir" \
+        --disable-automatic-resolution \
+        --cache-path "$root/.swiftpm-cache" \
+        --product AxolotyCoatyModels
 fi
 
 echo "AxolotyObjectModel host source inclusion and dependency policy passed"

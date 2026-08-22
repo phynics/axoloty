@@ -39,6 +39,9 @@ func app_main() -> Int32 {
     guard axoloty_object_model_embedded_link_probe() else {
         return 1
     }
+    guard axoloty_coaty_models_embedded_link_probe() else {
+        return 1
+    }
     let networkRole = axoloty_network_role()
     let networkScenario = axoloty_network_scenario()
     var emittingExchangeEvidence = false

@@ -20,6 +20,7 @@ set(AXOLOTY_SWIFT_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/EmbeddedMQTTClient.swift
     ${CMAKE_CURRENT_LIST_DIR}/ProtocolModuleConsumer.swift
     ${CMAKE_CURRENT_LIST_DIR}/ObjectModelModuleConsumer.swift
+    ${CMAKE_CURRENT_LIST_DIR}/CoatyModelsModuleConsumer.swift
     ${CMAKE_CURRENT_LIST_DIR}/StaticDeviceAgent.swift
 )
 set(AXOLOTY_CORPUS_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/GeneratedCorpus.swift")
@@ -53,6 +54,7 @@ idf_component_register(
         axoloty_wire
         axoloty_protocol
         axoloty_object_model
+        axoloty_coaty_models
         esp_system
         esp_timer
         heap
@@ -77,6 +79,7 @@ idf_component_register_swift(
 # its explicit module output before compiling any main Swift source so clean
 # parallel builds cannot race module publication.
 add_dependencies(${COMPONENT_LIB} axoloty_object_model_module_alias)
+add_dependencies(${COMPONENT_LIB} axoloty_coaty_models_module_alias)
 
 # StaticDeviceAgent consumes the noncopyable ProtocolProcessor from the
 # protocol component. Explicitly enable the same lifetime feature for the
