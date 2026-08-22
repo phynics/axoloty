@@ -404,6 +404,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             }
         }
         let actionCount = max(1, ioActorActionCount)
+        var deadvertiseMask = InlineArray<capacity, Bool>(repeating: false)
 
         var responsePlan: (index: Int, correlationID: UUID16)?
         switch frame.routingKey.capability {
@@ -466,13 +467,13 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             guard activeCount < maximumObjects, let freeIndex else { return .rejected(.capacityExceeded) }
             objectPlan = .insert(freeIndex, frame.routingKey.sourceID, objectID, false)
         case .deadvertise:
-            var foundIndex: Int?
-            for index in 0..<capacity where objects[index].active && objects[index].sourceID == frame.routingKey.sourceID {
-                foundIndex = index
-                break
-            }
-            guard let index = foundIndex else { return .rejected(.malformedFrame) }
-            objectPlan = .remove(index)
+            let result = markDeadvertisedObjects(
+                frame.payload,
+                sourceID: frame.routingKey.sourceID,
+                into: &deadvertiseMask
+            )
+            guard result.valid, result.matched > 0 else { return .rejected(.malformedFrame) }
+            objectPlan = .none
         default:
             objectPlan = .none
         }
@@ -512,7 +513,13 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             }
         }
         apply(plan)
-        apply(objectPlan)
+        if frame.routingKey.capability == .deadvertise {
+            for index in 0..<capacity where deadvertiseMask[index] {
+                objects[index] = ObjectRecord()
+            }
+        } else {
+            apply(objectPlan)
+        }
         generation &+= 1
         return .accepted
     }
@@ -552,6 +559,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             requestPlan = (index, correlation, nowMS &+ timeout)
         }
         let objectPlan: ObjectPlan
+        var deadvertiseMask = InlineArray<capacity, Bool>(repeating: false)
         switch operation.capability {
         case .advertise:
             let objectID = Self.advertisedObjectID(operation.payload) ?? operation.sourceID
@@ -578,13 +586,13 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 objectPlan = .insert(freeIndex, operation.sourceID, objectID, true)
             }
         case .deadvertise:
-            var foundIndex: Int?
-            for index in 0..<capacity where objects[index].active && objects[index].sourceID == operation.sourceID {
-                foundIndex = index
-                break
-            }
-            guard let index = foundIndex else { return .rejected(.malformedFrame) }
-            objectPlan = .remove(index)
+            let result = markDeadvertisedObjects(
+                operation.payload,
+                sourceID: operation.sourceID,
+                into: &deadvertiseMask
+            )
+            guard result.valid, result.matched > 0 else { return .rejected(.malformedFrame) }
+            objectPlan = .none
         default:
             objectPlan = .none
         }
@@ -623,7 +631,13 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             )
         }
         apply(plan)
-        apply(objectPlan)
+        if operation.capability == .deadvertise {
+            for index in 0..<capacity where deadvertiseMask[index] {
+                objects[index] = ObjectRecord()
+            }
+        } else {
+            apply(objectPlan)
+        }
         generation &+= 1
         return .accepted
     }
@@ -724,6 +738,40 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 return objectReader.readUUID("objectId")
             }
         }
+    }
+
+    private func markDeadvertisedObjects(
+        _ payload: ByteSlice,
+        sourceID: UUID16,
+        into mask: inout InlineArray<capacity, Bool>
+    ) -> (valid: Bool, matched: Int) {
+        var valid = true
+        var matched = 0
+        payload.withBytes { pointer, length in
+            let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
+            guard let rawIDs = reader.readRaw("objectIds") else {
+                valid = false
+                return
+            }
+            do {
+                try rawIDs.withArrayElements { element in
+                    guard element.wireValueKind == .string,
+                          element.length >= 2,
+                          let objectID = UUID16(parsing: element.subSlice(from: 1, length: element.length - 2)) else {
+                        valid = false
+                        return
+                    }
+                    for index in 0..<capacity where objects[index].active && !mask[index] {
+                        guard objects[index].sourceID == sourceID, objects[index].id == objectID else { continue }
+                        mask[index] = true
+                        matched += 1
+                    }
+                }
+            } catch {
+                valid = false
+            }
+        }
+        return (valid, matched)
     }
 
     private func pendingSlot(for correlationID: UUID16) -> Int? {
