@@ -172,6 +172,22 @@ struct AxolotyRuntimeTests {
         }
     }
 
+    @Test("non-Call handlers reject operation filters")
+    func rejectsNonCallOperationFilters() throws {
+        let identity = try RuntimeIdentity(id: .zero, name: "non-call-operation-test")
+        var builder = try RuntimeDefinition.Builder(identity: identity, namespace: "test")
+        do {
+            _ = try builder.respond(to: .advertise, operation: "not-a-call") { _ in .noResponse }
+            Issue.record("the non-Call handler accepted an operation filter")
+        } catch let error as AxolotyError {
+            guard case let .invalidArgument(argument, _) = error else {
+                Issue.record("unexpected error: \(error.userFriendlyMessage)")
+                return
+            }
+            #expect(argument == "operation")
+        }
+    }
+
     @Test("advertise selectors match the payload object type")
     func advertiseSelectorMatchesPayloadObjectType() async throws {
         let identity = try RuntimeIdentity(id: .zero, name: "selector-test")

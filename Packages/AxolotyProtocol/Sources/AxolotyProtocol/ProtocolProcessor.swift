@@ -710,6 +710,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         let reader = payload.withBytes { pointer, length in WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length) }
         guard let event = try? AssociateWireData(from: reader) else { return .rejected(.malformedPayload) }
         guard let route = event.associatingRoute else {
+            if event.isExternalRoute == true { return .rejected(.externalRouteMismatch) }
             for index in 0..<capacity where associations[index].active && associations[index].sourceID == event.ioSourceId && associations[index].actorID == event.ioActorId { return .accepted(.remove(index), .coaty) }
             return .ignored
         }

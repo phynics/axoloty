@@ -208,6 +208,26 @@ struct ProtocolProcessorTests {
         #expect(sink.count == 1)
     }
 
+    @Test("external disassociation flags reject before state mutation")
+    func externalDisassociationFlagRejects() throws {
+        var processor = ProtocolProcessor<1>()
+        var sink = InlineProtocolActionSink<1>()
+        let result = try withBorrowedFrame(
+            topic: "coaty/3/test/ASC/00000000-0000-4000-8000-000000000001",
+            payload: "{\"ioSourceId\":\"00000000-0000-4000-8000-000000000001\",\"ioActorId\":\"00000000-0000-4000-8000-000000000002\",\"isExternalRoute\":true}"
+        ) { frame in
+            processor.processInbound(
+                frame,
+                nowMS: 1,
+                classifier: ExactProtocolRouteClassifier(externalRoute: "external/wire-compat-v1/io-external-1"),
+                sink: &sink
+            )
+        }
+        #expect(result == .rejected(.externalRouteMismatch))
+        #expect(processor.state.activeAssociations == 0)
+        #expect(sink.count == 0)
+    }
+
     @Test("one actor retains multiple source routes until final detach")
     func multipleSourceAssociationLifetime() throws {
         let sourceOne = "00000000-0000-4000-8000-000000000001"

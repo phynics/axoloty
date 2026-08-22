@@ -665,6 +665,12 @@ public struct RuntimeDefinition: Sendable {
             throw AxolotyError.runtime(code: .subscriptionFailed, reason: "runtime handler capacity is full")
         }
         if let operation {
+            guard capability == .call else {
+                throw AxolotyError.invalidArgument(
+                    argument: "operation",
+                    reason: "operation filters are only valid for Call handlers"
+                )
+            }
             guard RuntimeOperationValidation.isValidCallOperation(operation) else {
                 throw AxolotyError.invalidArgument(
                     argument: "operation",
