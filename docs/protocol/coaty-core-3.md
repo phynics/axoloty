@@ -40,8 +40,8 @@ New Axoloty primitives must not add proprietary event codes to `coaty/3`; they b
 
 ## G2 trace contract
 
-**Status: Complete for the package boundary, bounded state, and shared
-processing; runtime integration remains a later gate.**
+**Status: Complete for the package boundary, bounded state, shared processing,
+and G4 runtime integration.**
 
 The fixture-backed corpus and JSON contract in
 [`Tests/ProtocolTrace/`](../../Tests/ProtocolTrace/) record deterministic prior

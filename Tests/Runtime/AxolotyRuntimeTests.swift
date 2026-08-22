@@ -140,6 +140,7 @@ struct AxolotyRuntimeTests {
         let invalidNames = [
             "",
             "invalid/operation",
+            "invalid\0operation",
             String(repeating: "x", count: RuntimeOperationValidation.maximumUTF8Bytes + 1)
         ]
         for operation in invalidNames {
@@ -153,6 +154,22 @@ struct AxolotyRuntimeTests {
         }
         #expect(await transport.sentCount() == 0)
         await runtime.stop()
+    }
+
+    @Test("Call responders reject MQTT-invalid operation names")
+    func rejectsInvalidResponderOperationNames() throws {
+        let identity = try RuntimeIdentity(id: .zero, name: "invalid-operation-test")
+        var builder = try RuntimeDefinition.Builder(identity: identity, namespace: "test")
+        do {
+            _ = try builder.respond(to: .call(operation: "invalid\0operation")) { _ in .noResponse }
+            Issue.record("the responder accepted an operation name containing NUL")
+        } catch let error as AxolotyError {
+            guard case let .invalidArgument(argument, _) = error else {
+                Issue.record("unexpected error: \(error.userFriendlyMessage)")
+                return
+            }
+            #expect(argument == "operation")
+        }
     }
 
     @Test("advertise selectors match the payload object type")

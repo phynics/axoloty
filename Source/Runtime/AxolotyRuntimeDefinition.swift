@@ -227,6 +227,7 @@ enum RuntimeOperationValidation {
             && !operation.contains("/")
             && !operation.contains("#")
             && !operation.contains("+")
+            && !operation.utf8.contains(0)
     }
 }
 

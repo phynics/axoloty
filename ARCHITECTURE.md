@@ -126,8 +126,8 @@ The host and static runtime profiles execute one portable protocol path. They
 may choose different capabilities, capacities, transports, ownership and
 delivery representations, scheduling adapters, and diagnostics, but they may
 not differ in protocol semantics for overlapping inputs. The test adapters
-provide replay evidence for this shared path; runtime actor/lifecycle
-migration remains a later gate.
+provide replay evidence for this shared path; G4 now supplies the host actor
+and lifecycle runtime that owns transport scheduling and application delivery.
 
 Inbound processing is:
 
