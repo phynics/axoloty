@@ -185,6 +185,8 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
                 try encodeCondition(nodes[first], to: &writer)
             } else if nodes[first].kind == 1, nodes[first].nextSibling < 0 {
                 try encodeGroup(first, to: &writer)
+            } else if nodes[first].kind == 2, nodes[first].nextSibling < 0 {
+                try encodeGroup(first, to: &writer)
             } else {
                 try encodeGroupChildren(first, kind: 1, to: &writer)
             }

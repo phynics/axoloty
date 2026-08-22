@@ -217,6 +217,19 @@ private func predicateObject(_ value: StaticString) throws -> BoundedDynamicObje
     #expect(roundTrips.1)
 }
 
+@Test func rootOrGroupRetainsCanonicalShape() throws {
+    let predicate = try ObjectPredicate<128, 8, 8, 512>(
+        decoding: predicateSlice("{\"conditions\":{\"or\":[[\"value\",[7,1]],[\"missing\",[9]]]}}")
+    )
+    var output = [UInt8](repeating: 0, count: 256)
+    let encoded = try output.withUnsafeMutableBufferPointer { buffer -> ByteSlice in
+        var writer = WireWriter(buffer: buffer.baseAddress!, capacity: buffer.count)
+        try predicate.encode(to: &writer)
+        return ByteSlice(bytes: buffer.baseAddress!, length: writer.position)
+    }
+    #expect(encoded.equals("{\"conditions\":{\"or\":[[\"value\",[7,1]],[\"missing\",[9]]]}}"))
+}
+
 @Test func escapedPathSegmentsSurviveCanonicalRoundTrip() throws {
     let predicate = try ObjectPredicate<64, 8, 4, 256>(
         decoding: predicateSlice("{\"conditions\":[[\"a\\u002eb\"],[7,1]]}")
