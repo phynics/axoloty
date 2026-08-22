@@ -731,14 +731,20 @@ public extension RuntimeDefinition {
         public init(
             identity: RuntimeIdentity,
             namespace: String,
-            limits: RuntimeCapacities = try! RuntimeCapacities()
+            limits: RuntimeCapacities? = nil
         ) throws {
             self.identity = identity
+            let resolvedLimits: RuntimeCapacities
+            if let limits {
+                resolvedLimits = limits
+            } else {
+                resolvedLimits = try RuntimeCapacities()
+            }
             self.definition = try RuntimeDefinition(
                 namespace: namespace,
                 sourceID: identity.id,
                 identity: identity,
-                capacities: limits
+                capacities: resolvedLimits
             )
         }
 

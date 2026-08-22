@@ -135,6 +135,10 @@ public final class AxolotyRuntime: Sendable {
     }
 }
 
+// The executor deliberately keeps lifecycle, ingress, dispatch, and handler
+// supervision in one serialized owner. Keep this suppression scoped to the
+// owner rather than weakening the repository-wide type-size rule.
+// swiftlint:disable:next type_body_length
 private actor ProtocolExecutor {
     private let definition: SealedRuntimeDefinition
     private let transport: AxolotyRuntimeTransport
