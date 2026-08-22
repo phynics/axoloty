@@ -44,6 +44,14 @@ struct AxolotyRuntimeTests {
         #expect(sealed.handlerCount == 1)
     }
 
+    @Test("definition rejects MQTT-invalid namespace bytes")
+    func rejectsInvalidNamespaceBytes() throws {
+        let identity = try RuntimeIdentity(id: .zero, name: "namespace-test")
+        #expect(throws: AxolotyError.self) {
+            _ = try RuntimeDefinition.Builder(identity: identity, namespace: "building\0a")
+        }
+    }
+
     @Test("definition bounds event-stream registration")
     func definitionBoundsEventStreams() throws {
         let capacities = try RuntimeCapacities(eventStreams: 1)

@@ -640,7 +640,11 @@ public struct RuntimeDefinition: Sendable {
 
     /// Creates an empty runtime definition.
     public init(namespace: String, sourceID: UUID16, identity: RuntimeIdentity? = nil, capacities: RuntimeCapacities) throws {
-        guard !namespace.isEmpty, !namespace.contains("/"), !namespace.contains("#"), !namespace.contains("+") else {
+        guard !namespace.isEmpty,
+              !namespace.contains("/"),
+              !namespace.contains("#"),
+              !namespace.contains("+"),
+              !namespace.utf8.contains(0) else {
             throw AxolotyError.invalidArgument(argument: "namespace", reason: "must be a non-empty MQTT topic level")
         }
         self.namespace = namespace
