@@ -21,6 +21,15 @@ Reference versions must be pinned before captured fixtures become normative:
 | Decentralized logging | Not tested | Not tested | Not tested | Not tested | Nightly |
 | SensorThings | Compatible with normalization | Compatible with normalization | Not tested | Not tested | Audit |
 
+### G4 embedded Advertise topic normalization
+
+The shared static-runtime migration corrected the embedded Advertise topic
+builder so the object-type filter is emitted as `ADV:coaty.test.Device`
+(not the legacy `ADV::coaty.test.Device` form). The exact ESP32-C6 smoke
+vector in `Embedded/swift/main/StaticDeviceAgent.swift` locks this output;
+the correction is intentional and keeps the topic aligned with the pinned
+Coaty Core 3 grammar.
+
 ### G2 external-route semantics
 
 The binding-owned external-route fixture is exactly
