@@ -78,7 +78,7 @@ release-checkpoint plans; platform filtering omits the embedded node on macOS.
 The embedded Swift image compiles the same sources through the
 `axoloty_object_model` ESP-IDF component and the static main consumer imports
 `AxolotyObjectModel` to prove module discovery and linkage.
-The opt-in G3 evidence nodes additionally record measured layouts, heaptrack
+The required G3 evidence nodes additionally record measured layouts, heaptrack
 allocation growth, deterministic edit/read behavior, sanitizer results, and
 release size/timing under `.testing/g3-object-model/<candidate-sha>/`.
 
