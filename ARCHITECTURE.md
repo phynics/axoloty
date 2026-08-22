@@ -8,8 +8,9 @@ The released implementation now consists of the root `Axoloty` host product,
 the Foundation-free `AxolotyWire`, `AxolotyObjectModel`, and
 `AxolotyProtocol` products, the separate `AxolotyCoatyModels` convenience
 product, the inspector/MCP tools, and the existing Embedded Swift integration.
-The host runtime still owns lifecycle composition and continues to use the
-inherited class-object hierarchy until G4. `AxolotyWire` supplies
+The host runtime now contains the G4 ``AxolotyRuntime`` lifecycle seam and
+``MQTTBinding``, while the inherited class-object hierarchy is still compiled
+as a legacy path until the cutover is complete. `AxolotyWire` supplies
 profile-neutral wire syntax, borrowed values, and caller-owned parser
 workspaces; `AxolotyObjectModel` supplies bounded semantic objects, schemas,
 predicates, and runtime-local registration; `AxolotyProtocol` supplies the
@@ -70,6 +71,20 @@ The boundary checks and the maintained
 host/sanitizer/ESP32-C6 evidence enforce this package graph and its
 fixed-storage claims.
 
+### G4 status: runtime replacement in progress
+
+The branch contains the structured host runtime definition/builder, private
+protocol executor, bounded ingress/dispatch pumps, MQTT binding, and the
+fixed synchronous ``AxolotyStaticRuntime`` profile. These seams use the shared
+``ProtocolProcessor`` and expose typed family operations, event selectors,
+expiry/cancellation, reconnect epochs, and lifecycle hooks. They are not yet
+the repository authority: the active ``Axoloty`` target still compiles the
+inherited Container/controller/CommunicationManager implementation and the
+first-party inspector/MCP consumers still depend on it. The strict G4
+boundary gates therefore remain failing until those production roots and
+consumers are migrated or deleted. No G4 completion, G5 API, or release claim
+may be inferred from the presence of these seams alone.
+
 ## Accepted 0.6 delta
 
 The target package graph and runtime boundaries below are accepted direction,
@@ -86,18 +101,13 @@ proves same-source compilation and linkage. G4 owns runtime replacement;
 G5 owns IO and optional-product boundaries; G6 owns non-divergence and release
 proof.
 
-The canonical `g4-runtime` tier is an optional migration gate until the
-replacement runtime seams exist. Its package and consumer boundary nodes
-report that state without claiming a replacement implementation. When
-the host `AxolotyRuntime` source seam and `AxolotyStaticRuntime` are introduced, those nodes become
-strict checks: replacement sources must not retain the inherited lifecycle or
-protocol-encoder symbols, and inspector/MCP/example consumers must no longer
-depend on the inherited runtime or raw MQTT path. Legacy deletion and consumer
-migration remain a later integrated G4 change; this gate does not delete or
-duplicate the current runtime. Until the host transport adapter and typed
-event projection are available, the existing inspector/MCP roots are an
-explicit historical allowlist in the consumer checker; removing each root
-from that allowlist is part of the migration acceptance evidence.
+The canonical `g4-runtime` tier contains lifecycle, static, host, concurrency,
+boundary, and package checks. It remains optional while this integrated PR is
+in progress, but its boundary nodes are strict: replacement sources must not
+retain inherited lifecycle or parallel encoder symbols, and every current
+inspector/MCP/example consumer must use the replacement runtime or be removed.
+The current failing reports are acceptance evidence, not an allowlist or an
+architecture exception.
 
 ## Product boundary
 

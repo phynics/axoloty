@@ -37,7 +37,7 @@ model boundary.
 | [G1 #629](https://github.com/phynics/axoloty/issues/629) | Prove bounded portable-toolchain assumptions. | Complete |
 | [G2 #630](https://github.com/phynics/axoloty/issues/630) | Establish the portable wire/protocol foundation. | Complete |
 | [G3 #631](https://github.com/phynics/axoloty/issues/631) | Ship the modern object model. | Complete |
-| [G4 #632](https://github.com/phynics/axoloty/issues/632) | Replace the runtime and unify execution. | Next |
+| [G4 #632](https://github.com/phynics/axoloty/issues/632) | Replace the runtime and unify execution. | In progress |
 | [G5 #633](https://github.com/phynics/axoloty/issues/633) | Modernize IO and optional product boundaries. | Blocked by G4 |
 | [G6 #634](https://github.com/phynics/axoloty/issues/634) | Prove non-divergence and release 0.6. | Blocked by G5 |
 
