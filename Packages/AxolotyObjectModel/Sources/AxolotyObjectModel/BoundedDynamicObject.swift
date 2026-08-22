@@ -105,7 +105,7 @@ public struct BoundedDynamicObject<let byteCapacity: Int, let fieldCapacity: Int
     /// Borrows all fields synchronously for the duration of `body`.
     public borrowing func withFields<R>(_ body: (borrowing ObjectFields) throws -> R) rethrows -> R {
         try withUnsafeBytesOfRaw { pointer in
-            withUnsafeBytes(of: descriptors) { descriptorBytes in
+            try withUnsafeBytes(of: descriptors) { descriptorBytes in
                 try body(ObjectFields(
                     bytes: pointer,
                     length: rawLength,

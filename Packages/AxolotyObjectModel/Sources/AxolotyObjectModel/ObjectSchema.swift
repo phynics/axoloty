@@ -140,23 +140,13 @@ public struct ObjectFieldDecoder: ~Copyable {
         _ key: StaticString,
         as type: T.Type
     ) throws(ObjectDecodingError) -> T {
-        var decoded: T?
-        var found = false
-        var failed = false
         let reader = WireReader(bytes: bytes.assumingMemoryBound(to: UInt8.self), length: length)
-        do {
-            try reader.withObjectFields { field in
-                if decoded == nil && field.keyEquals(key) {
-                    found = true
-                    do { decoded = try T.decode(from: JSONValueView(raw: field.value)) }
-                    catch { failed = true }
-                }
-            }
-        } catch { throw .invalidField }
-        if failed { throw .invalidField }
-        guard found else { throw .missingRequiredField }
-        guard let decoded else { throw .missingRequiredField }
-        return decoded
+        do throws(WireDecodeError) { try reader.validate() }
+        catch { throw .invalidField }
+        guard let raw = reader.readField(key) else { throw .missingRequiredField }
+        var value = JSONValueView(raw: raw)
+        do { return try T.decode(from: value) }
+        catch { throw .invalidField }
     }
 
     /// Decodes an optional field, preserving omission and JSON null as `nil`.
@@ -164,24 +154,14 @@ public struct ObjectFieldDecoder: ~Copyable {
         _ key: StaticString,
         as type: T.Type
     ) throws(ObjectDecodingError) -> T? {
-        var decoded: T?
-        var found = false
-        var failed = false
         let reader = WireReader(bytes: bytes.assumingMemoryBound(to: UInt8.self), length: length)
-        do {
-            try reader.withObjectFields { field in
-                if decoded == nil && field.keyEquals(key), field.kind != .null {
-                    found = true
-                    do { decoded = try T.decode(from: JSONValueView(raw: field.value)) }
-                    catch { failed = true }
-                } else if field.keyEquals(key) {
-                    found = true
-                }
-            }
-        } catch { throw .invalidField }
-        if failed { throw .invalidField }
-        _ = found
-        return decoded
+        do throws(WireDecodeError) { try reader.validate() }
+        catch { throw .invalidField }
+        guard let raw = reader.readField(key) else { return nil }
+        var value = JSONValueView(raw: raw)
+        guard !value.isNull else { return nil }
+        do { return try T.decode(from: value) }
+        catch { throw .invalidField }
     }
 
     /// Decodes a field while preserving missing, null, and value states.
@@ -189,27 +169,14 @@ public struct ObjectFieldDecoder: ~Copyable {
         _ key: StaticString,
         as type: T.Type
     ) throws(ObjectDecodingError) -> Presence<T> {
-        var found = false
-        var decoded: T?
-        var isNull = false
-        var failed = false
         let reader = WireReader(bytes: bytes.assumingMemoryBound(to: UInt8.self), length: length)
-        do {
-            try reader.withObjectFields { field in
-                guard !found && field.keyEquals(key) else { return }
-                found = true
-                isNull = field.kind == .null
-                if !isNull {
-                    do { decoded = try T.decode(from: JSONValueView(raw: field.value)) }
-                    catch { failed = true }
-                }
-            }
-        } catch { throw .invalidField }
-        if failed { throw .invalidField }
-        if !found { return .missing }
-        if isNull { return .null }
-        guard let decoded else { throw .invalidField }
-        return .value(decoded)
+        do throws(WireDecodeError) { try reader.validate() }
+        catch { throw .invalidField }
+        guard let raw = reader.readField(key) else { return .missing }
+        var value = JSONValueView(raw: raw)
+        if value.isNull { return .null }
+        do { return .value(try T.decode(from: value)) }
+        catch { throw .invalidField }
     }
 }
 
@@ -272,8 +239,9 @@ extension Presence: ObjectFieldEncodable where Value: ObjectFieldEncodable {
 
 extension Int: ObjectFieldDecodable, ObjectFieldEncodable {
     public static func decode(from value: borrowing JSONValueView) throws(ObjectDecodingError) -> Int {
-        guard value.kind == .number, let number = value.number?.intValue,
-              number >= Int64(Int.min), number <= Int64(Int.max) else { throw .invalidField }
+        var number: Int64?
+        guard value.withNumber({ number = $0.intValue }) else { throw .invalidField }
+        guard let number, number >= Int64(Int.min), number <= Int64(Int.max) else { throw .invalidField }
         return Int(number)
     }
 
