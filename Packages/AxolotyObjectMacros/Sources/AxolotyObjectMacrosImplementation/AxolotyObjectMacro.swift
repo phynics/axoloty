@@ -157,7 +157,7 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
             if isPresence {
                 decode = "try fields.presence(\(literal(descriptor.wireName)), as: \(decodeType).self)"
             } else if let defaultExpression = descriptor.defaultExpression {
-                decode = "try fields.decodeIfPresent(\(literal(descriptor.wireName)), as: \(decodeType).self) ?? \(defaultExpression)"
+                decode = "try fields.decodeWithDefault(\(literal(descriptor.wireName)), as: \(decodeType).self, default: \(defaultExpression))"
             } else if descriptor.optional {
                 decode = "try fields.decodeIfPresent(\(literal(descriptor.wireName)), as: \(decodeType).self)"
             } else {
@@ -166,7 +166,10 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
             return "\(descriptor.name): \(decode)"
         }.joined(separator: ",\n            ")
         let encoderStatements = descriptors.prefix(24).map { descriptor in
-            "try encoder.encode(\(descriptor.name), forKey: \(literal(descriptor.wireName)))"
+            if let defaultExpression = descriptor.defaultExpression {
+                return "try encoder.encodeDefault(\(descriptor.name), default: \(defaultExpression), forKey: \(literal(descriptor.wireName)))"
+            }
+            return "try encoder.encode(\(descriptor.name), forKey: \(literal(descriptor.wireName)))"
         }.joined(separator: "\n        ")
         let decoderWitness = decoderArguments.isEmpty
             ? "self.init()"

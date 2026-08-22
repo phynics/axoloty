@@ -8,6 +8,8 @@ public enum ObjectSchemaRegistryError: Error, Sendable, Equatable {
     case conflictingSchema
     /// The schema has no valid object type.
     case invalidObjectType
+    /// The fixed descriptor table violates the portable schema contract.
+    case invalidSchema
 }
 
 /// A type-erased, recognition-only schema descriptor.
@@ -47,7 +49,9 @@ public struct ObjectSchemaRegistry<let capacity: Int>: ~Copyable {
     public mutating func register<Value: Sendable>(
         _ descriptor: PortableObjectSchema<Value>
     ) throws(ObjectSchemaRegistryError) {
-        guard descriptor.objectType.length > 0 else { throw .invalidObjectType }
+        do throws(ObjectSchemaValidationError) { try descriptor.validate() }
+        catch .invalidObjectType { throw .invalidObjectType }
+        catch { throw .invalidSchema }
         for index in 0..<capacity where entries[index].occupied {
             guard entries[index].objectType == descriptor.objectType else { continue }
             guard entries[index].coreType == descriptor.coreType,

@@ -17,6 +17,8 @@ public struct BoundedObject<
 
     /// Creates a typed object from a complete object payload.
     public init(decoding bytes: ByteSlice) throws(ObjectError) {
+        do throws(ObjectSchemaValidationError) { try Schema.schema.validate() }
+        catch { throw ObjectError(.invalidSchema) }
         let dynamic = try BoundedDynamicObject<byteCapacity, fieldCapacity>(decoding: bytes)
         // These explicit preset bounds keep envelope decoding from inheriting
         // an arbitrary default; callers can use `withEnvelope` for other bounds.

@@ -20,6 +20,24 @@ public enum ObjectEncodingError: Error, Sendable, Equatable {
     case capacityExceeded
 }
 
+/// A manually-authored schema descriptor failed fixed wire validation.
+public enum ObjectSchemaValidationError: Error, Sendable, Equatable {
+    /// The schema has no object type identifier.
+    case invalidObjectType
+    /// The descriptor count exceeds the authoritative wire index.
+    case invalidFieldCount
+    /// A field key is reserved for the common object envelope.
+    case reservedFieldKey
+    /// Two fields use the same wire key.
+    case duplicateFieldKey
+    /// Two fields use the same descriptor index.
+    case duplicateFieldIndex
+    /// A descriptor index lies outside the occupied field range.
+    case invalidFieldIndex
+    /// A descriptor has an unsupported flag combination.
+    case invalidFlags
+}
+
 /// A field's wire presence policy.
 public struct ObjectFieldFlags: OptionSet, Sendable, Equatable {
     /// A field must be present on decode.
@@ -42,13 +60,12 @@ public struct ObjectFieldFlags: OptionSet, Sendable, Equatable {
 public struct ObjectFieldKey: Sendable, Equatable {
     private let literal: StaticString
     /// Number of meaningful UTF-8 bytes.
-    public let length: Int
+    public var length: Int { literal.utf8CodeUnitCount }
 
     /// Creates a key from a static UTF-8 literal.
     public init?(_ value: StaticString) {
         guard value.utf8CodeUnitCount <= WireBufferConfig.maxTopicLength else { return nil }
         literal = value
-        length = value.utf8CodeUnitCount
     }
 
     /// Compares the key against a static UTF-8 literal.
@@ -56,6 +73,18 @@ public struct ObjectFieldKey: Sendable, Equatable {
         guard length == value.utf8CodeUnitCount else { return false }
         for index in 0..<length where literal.utf8Start[index] != value.utf8Start[index] { return false }
         return true
+    }
+
+    /// Compares decoded JSON-key semantics, including escaped equivalents.
+    public borrowing func semanticEquals(_ value: StaticString) -> Bool {
+        ByteSlice(bytes: literal.utf8Start, length: literal.utf8CodeUnitCount).semanticEquals(value)
+    }
+
+    /// Compares two keys using decoded JSON-key semantics.
+    public borrowing func semanticEquals(_ other: ObjectFieldKey) -> Bool {
+        ByteSlice(bytes: literal.utf8Start, length: literal.utf8CodeUnitCount).semanticEquals(
+            ByteSlice(bytes: other.literal.utf8Start, length: other.literal.utf8CodeUnitCount)
+        )
     }
 
     public static func == (lhs: Self, rhs: Self) -> Bool {
@@ -106,9 +135,40 @@ public struct PortableObjectSchema<Value: Sendable>: Sendable {
     ) {
         self.objectType = objectType
         self.coreType = coreType
-        self.fieldCount = min(fieldCount, UInt8(Self.maxFieldCount))
+        self.fieldCount = fieldCount
         self.fields = fields
     }
+
+    /// Validates the fixed descriptor invariants shared by manual and macro schemas.
+    public func validate() throws(ObjectSchemaValidationError) {
+        guard objectType.length > 0 else { throw .invalidObjectType }
+        guard fieldCount <= UInt8(Self.maxFieldCount) else { throw .invalidFieldCount }
+        var index = 0
+        while index < Int(fieldCount) {
+            let field = fields[index]
+            guard field.key.length > 0 else { throw .invalidFieldCount }
+            guard !isReservedObjectFieldKey(field.key) else { throw .reservedFieldKey }
+            guard field.index < fieldCount else { throw .invalidFieldIndex }
+            let required = field.flags.contains(.required)
+            let optional = field.flags.contains(.optional)
+            guard required != optional,
+                  field.flags.rawValue & 0xF0 == 0 else { throw .invalidFlags }
+            var prior = 0
+            while prior < index {
+                if fields[prior].key.semanticEquals(field.key) { throw .duplicateFieldKey }
+                if fields[prior].index == field.index { throw .duplicateFieldIndex }
+                prior += 1
+            }
+            index += 1
+        }
+    }
+}
+
+@usableFromInline
+func isReservedObjectFieldKey(_ key: ObjectFieldKey) -> Bool {
+    key.semanticEquals("objectId") || key.semanticEquals("objectType") || key.semanticEquals("name") ||
+        key.semanticEquals("coreType") || key.semanticEquals("externalId") || key.semanticEquals("parentObjectId") ||
+        key.semanticEquals("locationId") || key.semanticEquals("isDeactivated")
 }
 
 /// A typed value that can be decoded from one borrowed JSON value.
@@ -164,6 +224,23 @@ public struct ObjectFieldDecoder: ~Copyable {
         catch { throw .invalidField }
     }
 
+    /// Decodes a field with a default used only when the key is absent.
+    /// Explicit JSON `null` remains an invalid value for the bounded type.
+    public borrowing func decodeWithDefault<T: ObjectFieldDecodable>(
+        _ key: StaticString,
+        as type: T.Type,
+        default defaultValue: T
+    ) throws(ObjectDecodingError) -> T {
+        let reader = WireReader(bytes: bytes.assumingMemoryBound(to: UInt8.self), length: length)
+        do throws(WireDecodeError) { try reader.validate() }
+        catch { throw .invalidField }
+        guard let raw = reader.readField(key) else { return defaultValue }
+        let value = JSONValueView(raw: raw)
+        guard !value.isNull else { throw .invalidField }
+        do { return try T.decode(from: value) }
+        catch { throw .invalidField }
+    }
+
     /// Decodes a field while preserving missing, null, and value states.
     public borrowing func presence<T: ObjectFieldDecodable>(
         _ key: StaticString,
@@ -203,6 +280,20 @@ extension ObjectEditor {
     ) throws(ObjectEncodingError) {
         do { try value.encode(to: &self, forKey: key) }
         catch { throw error }
+    }
+
+    /// Encodes a field, omitting it when it equals its canonical default.
+    public mutating func encodeDefault<T: ObjectFieldEncodable & Equatable>(
+        _ value: T,
+        default defaultValue: T,
+        forKey key: StaticString
+    ) throws(ObjectEncodingError) {
+        if value == defaultValue {
+            do { try remove(key) }
+            catch { throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
+        } else {
+            try encode(value, forKey: key)
+        }
     }
 }
 

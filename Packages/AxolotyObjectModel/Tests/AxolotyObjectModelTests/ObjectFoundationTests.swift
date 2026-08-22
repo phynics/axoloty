@@ -8,10 +8,108 @@ private func slice(_ value: StaticString) -> ByteSlice {
     ByteSlice(bytes: value.utf8Start, length: value.utf8CodeUnitCount)
 }
 
+private struct ReservedManualSchema: ObjectSchema {
+    static let schema: PortableObjectSchema<Self> = {
+        var fields = InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
+        fields[0] = ObjectFieldDescriptor(key: ObjectFieldKey("object\\u0049d")!, index: 0, flags: .required)
+        return PortableObjectSchema(objectType: ObjectType("com.example.Reserved")!, coreType: .coatyObject, fieldCount: 1, fields: fields)
+    }()
+    init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {}
+    borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {}
+}
+
+private struct DuplicateManualSchema: ObjectSchema {
+    static let schema: PortableObjectSchema<Self> = {
+        var fields = InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
+        fields[0] = ObjectFieldDescriptor(key: ObjectFieldKey("value")!, index: 0, flags: .required)
+        fields[1] = ObjectFieldDescriptor(key: ObjectFieldKey("va\\u006Cue")!, index: 1, flags: .optional)
+        return PortableObjectSchema(objectType: ObjectType("com.example.Duplicate")!, coreType: .coatyObject, fieldCount: 2, fields: fields)
+    }()
+    init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {}
+    borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {}
+}
+
+private struct InvalidFlagsManualSchema: ObjectSchema {
+    static let schema: PortableObjectSchema<Self> = {
+        var fields = InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
+        fields[0] = ObjectFieldDescriptor(key: ObjectFieldKey("value")!, index: 0, flags: [])
+        return PortableObjectSchema(objectType: ObjectType("com.example.Flags")!, coreType: .coatyObject, fieldCount: 1, fields: fields)
+    }()
+    init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {}
+    borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {}
+}
+
+private struct OverflowManualSchema: ObjectSchema {
+    static let schema: PortableObjectSchema<Self> = {
+        PortableObjectSchema(
+            objectType: ObjectType("com.example.Overflow")!, coreType: .coatyObject,
+            fieldCount: 25, fields: InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
+        )
+    }()
+    init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {}
+    borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {}
+}
+
+private struct ValidManualSchema: ObjectSchema {
+    static let schema: PortableObjectSchema<Self> = PortableObjectSchema(
+        objectType: ObjectType("com.example.Valid")!, coreType: .coatyObject, fieldCount: 0,
+        fields: InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
+    )
+    init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {}
+    borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {}
+}
+
+private struct OtherManualSchema: ObjectSchema {
+    static let schema: PortableObjectSchema<Self> = PortableObjectSchema(
+        objectType: ObjectType("com.example.Other")!, coreType: .coatyObject, fieldCount: 0,
+        fields: InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
+    )
+    init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {}
+    borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {}
+}
+
 @Test func schemaDescriptorUsesCompactLiteralKeys() {
     #expect(MemoryLayout<ObjectFieldKey>.size <= 16)
     #expect(MemoryLayout<ObjectFieldDescriptor>.size <= 32)
     #expect(MemoryLayout<InlineArray<24, ObjectFieldDescriptor>>.size <= 24 * 32)
+}
+
+@Test func manualSchemaValidationRejectsUnsafeDescriptors() {
+    do { try ReservedManualSchema.schema.validate(); Issue.record("reserved key accepted") }
+    catch { #expect(error == .reservedFieldKey) }
+    do { try DuplicateManualSchema.schema.validate(); Issue.record("duplicate key accepted") }
+    catch { #expect(error == .duplicateFieldKey) }
+    do { try InvalidFlagsManualSchema.schema.validate(); Issue.record("invalid flags accepted") }
+    catch { #expect(error == .invalidFlags) }
+    do { try OverflowManualSchema.schema.validate(); Issue.record("field-count overflow accepted") }
+    catch { #expect(error == .invalidFieldCount) }
+    var registry = ObjectSchemaRegistry<1>()
+    do { try registry.register(ReservedManualSchema.schema); Issue.record("registry accepted invalid schema") }
+    catch { #expect(error == .invalidSchema) }
+    do {
+        _ = try BoundedObject<ReservedManualSchema, 512, 24>(decoding: slice("{}"))
+        Issue.record("typed object accepted invalid schema")
+    } catch {
+        #expect(error.reason == .invalidSchema)
+    }
+}
+
+@Test func registryUseIsIdempotentAndSaturationIsAtomic() throws {
+    var registry = ObjectSchemaRegistry<1>()
+    try registry.use(ValidManualSchema.self)
+    try registry.use(ValidManualSchema.self)
+    let sealed = registry.sealed()
+    #expect(sealed.count == 1)
+    #expect(sealed.descriptor(for: ObjectType("com.example.Valid")!) != nil)
+
+    var saturated = ObjectSchemaRegistry<1>()
+    try saturated.use(ValidManualSchema.self)
+    do { try saturated.use(OtherManualSchema.self); Issue.record("saturation accepted") }
+    catch { #expect(error == .capacityExceeded) }
+    let unchanged = saturated.sealed()
+    #expect(unchanged.count == 1)
+    #expect(unchanged.contains(ObjectType("com.example.Valid")!))
+    #expect(!unchanged.contains(ObjectType("com.example.Other")!))
 }
 
 @Test func dynamicObjectReadsBorrowedFields() throws {

@@ -18,6 +18,8 @@ public struct ObjectError: Error, Sendable, Equatable {
         case invalidEditValue
         /// An envelope member had the wrong shape or was absent.
         case invalidEnvelope
+        /// The associated typed schema descriptor is invalid.
+        case invalidSchema
         /// The wire tokenizer's authoritative 24-field index was exceeded.
         case fieldIndexOverflow
     }

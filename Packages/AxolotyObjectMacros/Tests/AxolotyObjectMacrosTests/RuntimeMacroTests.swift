@@ -38,14 +38,14 @@ public struct ManualReading: ObjectSchema {
     public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
         self.temperature = try fields.decode("temperature", as: Int.self)
         self.alarms = try fields.decodeIfPresent("alarmCodes", as: Int.self)
-        self.retries = try fields.decodeIfPresent("retries", as: Int.self) ?? 3
+        self.retries = try fields.decodeWithDefault("retries", as: Int.self, default: 3)
         self.state = try fields.presence("state", as: Bool.self)
     }
 
     public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
         try encoder.encode(temperature, forKey: "temperature")
         try encoder.encode(alarms, forKey: "alarmCodes")
-        try encoder.encode(retries, forKey: "retries")
+        try encoder.encodeDefault(retries, default: 3, forKey: "retries")
         try encoder.encode(state, forKey: "state")
     }
 }
@@ -92,5 +92,24 @@ func typedSchemaErrorMapping() {
         Issue.record("invalid field should fail")
     } catch {
         #expect(error.reason == .invalidField)
+    }
+
+    let explicitNull = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.MacroReading\",\"name\":\"Reading\",\"coreType\":\"CoatyObject\",\"temperature\":21,\"retries\":null}")
+    do {
+        _ = try Object<MacroReading>(decoding: explicitNull)
+        Issue.record("explicit null should not select a default")
+    } catch {
+        #expect(error.reason == .invalidField)
+    }
+}
+
+@Test("default-valued fields are omitted by canonical encoding")
+func defaultEncodingOmitsCanonicalValue() throws {
+    let bytes = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.MacroReading\",\"name\":\"Reading\",\"coreType\":\"CoatyObject\",\"temperature\":21,\"retries\":3}")
+    var object = try Object<MacroReading>(decoding: bytes)
+    try object.edit { $0.temperature = 22 }
+    switch object.withFields({ fields in fields.presence(for: "retries") }) {
+    case .missing: break
+    default: Issue.record("canonical default was emitted")
     }
 }
