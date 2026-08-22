@@ -72,7 +72,7 @@ public struct ObjectEnvelope<let nameCapacity: Int, let externalIDCapacity: Int>
         var failure = false
         bytes.withBytes { pointer, count in
             let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: count)
-            do { try reader.validate() } catch { failure = true; return }
+            do throws(WireDecodeError) { try reader.validate() } catch { failure = true; return }
             guard let idSlice = reader.readString("objectId"), let objectID = ObjectID(bytes: idSlice),
                   let typeSlice = reader.readString("objectType"), typeSlice.length > 0,
                   let objectType = ObjectType(bytes: typeSlice),
@@ -117,7 +117,7 @@ func validateObjectIdentity(
     var matches = false
     bytes.withBytes { pointer, count in
         let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: count)
-        do { try reader.validate() } catch { return }
+        do throws(WireDecodeError) { try reader.validate() } catch { return }
         guard let idBytes = reader.readString("objectId"), ObjectID(bytes: idBytes) != nil,
               let nameBytes = reader.readString("name"), nameBytes.length > 0,
               let typeBytes = reader.readString("objectType"),
