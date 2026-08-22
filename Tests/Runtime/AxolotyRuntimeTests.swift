@@ -48,7 +48,7 @@ struct AxolotyRuntimeTests {
         )
         _ = try definition.registerEvents(
             matching: .family(.advertise),
-            buffering: .failFast(capacity: 1)
+            buffering: .failAfterDrop(capacity: 1)
         )
         do {
             _ = try definition.registerEvents(

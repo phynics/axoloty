@@ -97,23 +97,12 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
                 }
                 delegate.setReceive(receive)
                 delegate.setStartContinuation(continuation)
-                let timeout = connectionTimeoutMS
-                Task { [weak delegate] in
-                    do {
-                        try await Task.sleep(for: .milliseconds(Int64(timeout)))
-                        delegate?.failStart(AxolotyError.runtime(
-                            code: .brokerUnavailable,
-                            reason: "MQTT broker did not become online before the connection deadline"
-                        ))
-                    } catch {
-                        // Cancellation is only an optimization; the continuation
-                        // is completed by the connection state or stop path.
-                    }
-                }
+                delegate.armStartTimeout(milliseconds: connectionTimeoutMS)
                 client.connect(lastWillTopic: "", lastWillMessage: "")
             }
         } catch {
             lock.withLock { started = false }
+            client.disconnect()
             delegate.clearReceive()
             throw error
         }
@@ -205,6 +194,7 @@ private final class RuntimeMQTTDelegate: CommunicationClientDelegate, @unchecked
     private let lock = NIOLock()
     private var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
     private var startContinuation: CheckedContinuation<Void, Error>?
+    private var startTimeoutTask: Task<Void, Never>?
 
     func setReceive(_ receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) {
         lock.withLock { self.receive = receive }
@@ -218,32 +208,59 @@ private final class RuntimeMQTTDelegate: CommunicationClientDelegate, @unchecked
         lock.withLock { startContinuation = continuation }
     }
 
+    func armStartTimeout(milliseconds: UInt32) {
+        let timeoutTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(Int64(milliseconds)))
+                self?.failStart(AxolotyError.runtime(
+                    code: .brokerUnavailable,
+                    reason: "MQTT broker did not become online before the connection deadline"
+                ))
+            } catch {
+                // Completion cancels the timer; cancellation is expected.
+            }
+        }
+        lock.withLock {
+            startTimeoutTask?.cancel()
+            startTimeoutTask = timeoutTask
+        }
+    }
+
     func didReceiveStart() {}
 
     func didUpdateCommunicationState(_ state: CommunicationState) {
         guard state == .online else {
             if state == .offline {
-                failStart(AxolotyError.runtime(
+                finishStart(.failure(AxolotyError.runtime(
                     code: .brokerUnavailable,
                     reason: "MQTT broker connection failed before the runtime became online"
-                ))
+                )))
             }
             return
         }
-        let continuation: CheckedContinuation<Void, Error>? = lock.withLock {
-            defer { startContinuation = nil }
-            return startContinuation
-        }
-        guard let continuation else { return }
-        continuation.resume()
+        finishStart(.success(()))
     }
 
     func failStart(_ error: Error) {
-        let continuation: CheckedContinuation<Void, Error>? = lock.withLock {
-            defer { startContinuation = nil }
-            return startContinuation
+        finishStart(.failure(error))
+    }
+
+    private func finishStart(_ result: Result<Void, Error>) {
+        let (continuation, timeoutTask): (CheckedContinuation<Void, Error>?, Task<Void, Never>?) = lock.withLock {
+            let continuation = startContinuation
+            let timeoutTask = startTimeoutTask
+            startContinuation = nil
+            startTimeoutTask = nil
+            return (continuation, timeoutTask)
         }
-        continuation?.resume(throwing: error)
+        timeoutTask?.cancel()
+        guard let continuation else { return }
+        switch result {
+        case .success:
+            continuation.resume()
+        case let .failure(error):
+            continuation.resume(throwing: error)
+        }
     }
 
     func didReceiveRawMQTTMessage(topic: String, payload: [UInt8]) {

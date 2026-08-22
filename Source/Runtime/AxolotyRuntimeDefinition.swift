@@ -138,8 +138,11 @@ public struct RuntimeEventContext: Sendable, Equatable {
 /// Application stream buffering policy. Transport ingress never uses a lossy
 /// policy; these policies apply only after normalized actions are owned.
 public enum RuntimeBufferingPolicy: Sendable, Equatable {
-    /// Fails the runtime when a stream reaches its bound; no event is dropped.
-    case failFast(capacity: Int)
+    /// Fails the runtime after ``AsyncStream`` reports a rejected event.
+    /// The triggering value is not delivered because `AsyncStream` has no
+    /// synchronous reservation API; callers that require lossless delivery
+    /// must use a larger bound or a request/response API.
+    case failAfterDrop(capacity: Int)
     case fail(capacity: Int)
     case dropOldest(capacity: Int)
     case dropNewest(capacity: Int)
@@ -644,7 +647,7 @@ public struct RuntimeDefinition: Sendable {
     ) throws -> RuntimeEventStream {
         let capacity: Int
         switch policy {
-        case let .failFast(value), let .fail(value), let .dropOldest(value), let .dropNewest(value):
+        case let .failAfterDrop(value), let .fail(value), let .dropOldest(value), let .dropNewest(value):
             guard value > 0, value <= capacities.stream else {
                 throw AxolotyError.invalidArgument(argument: "capacity", reason: "stream capacity must be in 1...runtime stream capacity")
             }
@@ -654,7 +657,7 @@ public struct RuntimeDefinition: Sendable {
         }
         let buffering: AsyncStream<RuntimeEventValue>.Continuation.BufferingPolicy
         switch policy {
-        case .failFast, .dropNewest: buffering = .bufferingOldest(capacity)
+        case .failAfterDrop, .dropNewest: buffering = .bufferingOldest(capacity)
         case .fail, .dropOldest: buffering = .bufferingNewest(capacity)
         case .coalesceLatest: buffering = .bufferingNewest(1)
         }
@@ -751,7 +754,7 @@ public extension RuntimeDefinition {
         /// Registers an event stream in the immutable runtime definition.
         public mutating func events(
             matching selector: RuntimeEventSelector,
-            buffering policy: RuntimeBufferingPolicy = .failFast(capacity: 64)
+            buffering policy: RuntimeBufferingPolicy = .failAfterDrop(capacity: 64)
         ) throws -> RuntimeEventStream {
             try definition.registerEvents(matching: selector, buffering: policy)
         }
