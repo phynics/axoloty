@@ -105,6 +105,30 @@ struct AxolotyRuntimeTests {
         await runtime.stop()
     }
 
+    @Test("Call operation names remain topic filters on outbound actions")
+    func callOperationNameReachesTransportAction() async throws {
+        let definition = try makeDefinition()
+        let transport = TestTransport()
+        let runtime = AxolotyRuntime(definition: definition, transport: transport)
+        try await runtime.start()
+
+        let correlation = try #require(UUID16(parsing: "55555555-5555-4555-8555-555555555555"))
+        let receipt = await runtime.request(.call(
+            correlationID: correlation,
+            operation: "wire-fixture-operation",
+            payload: Array(#"{"parameters":{"operand":7}}"#.utf8),
+            timeoutMS: 1_000
+        ))
+        #expect(receipt == .accepted)
+        for _ in 0..<100 {
+            if await transport.sentCount() == 1 { break }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        let action = try #require(await transport.lastSent())
+        #expect(action.eventTypeFilter == Array("wire-fixture-operation".utf8))
+        await runtime.stop()
+    }
+
     @Test("advertise selectors match the payload object type")
     func advertiseSelectorMatchesPayloadObjectType() async throws {
         let identity = try RuntimeIdentity(id: .zero, name: "selector-test")
@@ -270,6 +294,7 @@ private actor TestTransport: AxolotyRuntimeTransport {
     func deadvertise(identity: RuntimeIdentity?, namespace: String) async throws { lifecycle.append("deadvertise") }
 
     func sentCount() -> Int { sent.count }
+    func lastSent() -> OwnedProtocolAction? { sent.last }
 
     func fail(_ error: Error) { failure?(error) }
 }

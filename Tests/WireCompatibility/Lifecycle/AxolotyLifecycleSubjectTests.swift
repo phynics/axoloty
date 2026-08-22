@@ -28,6 +28,7 @@ struct AxolotyLifecycleSubjectTests {
             var iterator = stream.makeAsyncIterator()
             _ = await runtime.request(.call(
                 correlationID: correlation,
+                operation: "wire-fixture-operation",
                 payload: Array(#"{"parameters":{"operand":7}}"#.utf8),
                 timeoutMS: 10_000
             ))
@@ -60,6 +61,7 @@ struct AxolotyLifecycleSubjectTests {
             let requestNowMS = Self.monotonicNowMS()
             _ = await runtime.request(.call(
                 correlationID: correlation,
+                operation: "wire-fixture-operation",
                 payload: Array(#"{"parameters":{"operand":7}}"#.utf8),
                 timeoutMS: 2_000
             ), nowMS: requestNowMS)

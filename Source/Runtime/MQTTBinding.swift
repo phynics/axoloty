@@ -105,7 +105,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         guard lock.withLock({ started }) else {
             throw AxolotyError.runtime(code: .notStarted, reason: "MQTT binding is not started")
         }
-        let topic = Self.topic(for: action.routingKey, namespace: namespace)
+        let topic = Self.topic(for: action.routingKey, namespace: namespace, eventTypeFilter: action.eventTypeFilter)
         client.publish(topic: topic, payload: action.payload)
     }
 
@@ -156,8 +156,9 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         routeClassifier.classify(route)
     }
 
-    private static func topic(for key: ProtocolRoutingKey, namespace: String) -> String {
-        var topic = "coaty/3/\(namespace)/\(key.capability.wireEventType.rawValue)/\(uuidString(key.sourceID))"
+    private static func topic(for key: ProtocolRoutingKey, namespace: String, eventTypeFilter: [UInt8]? = nil) -> String {
+        let filter = eventTypeFilter.map { ":\(String(decoding: $0, as: UTF8.self))" } ?? ""
+        var topic = "coaty/3/\(namespace)/\(key.capability.wireEventType.rawValue)\(filter)/\(uuidString(key.sourceID))"
         if let correlationID = key.correlationID {
             topic += "/\(uuidString(correlationID))"
         }

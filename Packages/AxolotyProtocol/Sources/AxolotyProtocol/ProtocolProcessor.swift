@@ -27,7 +27,7 @@ public enum ProtocolLocalOperation {
     /// Publishes a Complete response.
     case complete(sourceID: UUID16, correlationID: UUID16, payload: ByteSlice)
     /// Publishes a Call request.
-    case call(sourceID: UUID16, correlationID: UUID16, payload: ByteSlice, requestTimeoutMS: UInt32?)
+    case call(sourceID: UUID16, correlationID: UUID16, payload: ByteSlice, requestTimeoutMS: UInt32?, operationName: ByteSlice?)
     /// Publishes a Return response.
     case returnEvent(sourceID: UUID16, correlationID: UUID16, payload: ByteSlice)
 
@@ -40,7 +40,7 @@ public enum ProtocolLocalOperation {
     ///   - payload: Borrowed, already-encoded family data.
     ///   - requestTimeoutMS: Optional timeout for request families.
     /// - Throws: ``ProtocolError`` when correlation presence is invalid.
-    public init(capability: ProtocolCapability, sourceID: UUID16, correlationID: UUID16? = nil, payload: ByteSlice, requestTimeoutMS: UInt32? = nil) throws(ProtocolError) {
+    public init(capability: ProtocolCapability, sourceID: UUID16, correlationID: UUID16? = nil, payload: ByteSlice, requestTimeoutMS: UInt32? = nil, operationName: ByteSlice? = nil) throws(ProtocolError) {
         _ = try ProtocolRoutingKey(capability: capability, sourceID: sourceID, correlationID: correlationID)
         switch capability {
         case .advertise: self = .advertise(sourceID: sourceID, payload: payload)
@@ -54,7 +54,7 @@ public enum ProtocolLocalOperation {
         case .retrieve: self = .retrieve(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload)
         case .update: self = .update(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload, requestTimeoutMS: requestTimeoutMS)
         case .complete: self = .complete(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload)
-        case .call: self = .call(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload, requestTimeoutMS: requestTimeoutMS)
+        case .call: self = .call(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload, requestTimeoutMS: requestTimeoutMS, operationName: operationName)
         case .returnEvent: self = .returnEvent(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload)
         }
     }
@@ -65,19 +65,23 @@ public enum ProtocolLocalOperation {
     }
     /// The operation's source identity.
     public var sourceID: UUID16 {
-        switch self { case let .advertise(id,_), let .deadvertise(id,_), let .channel(id,_), let .associate(id,_), let .ioValue(id,_), let .discover(id,_,_,_), let .resolve(id,_,_), let .query(id,_,_,_), let .retrieve(id,_,_), let .update(id,_,_,_), let .complete(id,_,_), let .call(id,_,_,_), let .returnEvent(id,_,_): return id }
+        switch self { case let .advertise(id,_), let .deadvertise(id,_), let .channel(id,_), let .associate(id,_), let .ioValue(id,_), let .discover(id,_,_,_), let .resolve(id,_,_), let .query(id,_,_,_), let .retrieve(id,_,_), let .update(id,_,_,_), let .complete(id,_,_), let .call(id,_,_,_,_), let .returnEvent(id,_,_): return id }
     }
     /// The operation's optional correlation identity.
     public var correlationID: UUID16? {
-        switch self { case .advertise, .deadvertise, .channel, .associate, .ioValue: return nil; case let .discover(_,id,_,_), let .resolve(_,id,_), let .query(_,id,_,_), let .retrieve(_,id,_), let .update(_,id,_,_), let .complete(_,id,_), let .call(_,id,_,_), let .returnEvent(_,id,_): return id }
+        switch self { case .advertise, .deadvertise, .channel, .associate, .ioValue: return nil; case let .discover(_,id,_,_), let .resolve(_,id,_), let .query(_,id,_,_), let .retrieve(_,id,_), let .update(_,id,_,_), let .complete(_,id,_), let .call(_,id,_,_,_), let .returnEvent(_,id,_): return id }
     }
     /// The operation's borrowed payload.
     public var payload: ByteSlice {
-        switch self { case let .advertise(_,p), let .deadvertise(_,p), let .channel(_,p), let .associate(_,p), let .ioValue(_,p), let .discover(_,_,p,_), let .resolve(_,_,p), let .query(_,_,p,_), let .retrieve(_,_,p), let .update(_,_,p,_), let .complete(_,_,p), let .call(_,_,p,_), let .returnEvent(_,_,p): return p }
+        switch self { case let .advertise(_,p), let .deadvertise(_,p), let .channel(_,p), let .associate(_,p), let .ioValue(_,p), let .discover(_,_,p,_), let .resolve(_,_,p), let .query(_,_,p,_), let .retrieve(_,_,p), let .update(_,_,p,_), let .complete(_,_,p), let .call(_,_,p,_,_), let .returnEvent(_,_,p): return p }
     }
     /// The request timeout, when this operation opens a response ledger entry.
     public var requestTimeoutMS: UInt32? {
-        switch self { case let .discover(_,_,_,t), let .query(_,_,_,t), let .update(_,_,_,t), let .call(_,_,_,t): return t; default: return nil }
+        switch self { case let .discover(_,_,_,t), let .query(_,_,_,t), let .update(_,_,_,t), let .call(_,_,_,t,_): return t; default: return nil }
+    }
+    /// The optional Call operation name carried as the topic filter.
+    public var operationName: ByteSlice? {
+        switch self { case let .call(_,_,_,_,name): return name; default: return nil }
     }
 }
 
@@ -621,7 +625,8 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             routingKey: key,
             payload: operation.payload,
             deliveryKey: deliveryKey(for: operation),
-            routeClassification: routeClassification
+            routeClassification: routeClassification,
+            eventTypeFilter: operation.operationName
         )) else { return .rejected(.capacityExceeded) }
         if let requestPlan {
             pending[requestPlan.index] = PendingRecord(

@@ -227,6 +227,18 @@ public enum RuntimeRequest: Sendable, Equatable {
     case query(correlationID: UUID16, payload: [UInt8], timeoutMS: UInt32)
     case update(correlationID: UUID16, payload: [UInt8], timeoutMS: UInt32)
     case call(correlationID: UUID16, payload: [UInt8], timeoutMS: UInt32)
+    /// Issues a Call request with the operation name encoded as the Coaty topic filter.
+    case callWithOperation(correlationID: UUID16, operation: String, payload: [UInt8], timeoutMS: UInt32)
+
+    /// Creates a filtered Call request while preserving the compact legacy spelling.
+    public static func call(
+        correlationID: UUID16,
+        operation: String,
+        payload: [UInt8],
+        timeoutMS: UInt32
+    ) -> Self {
+        .callWithOperation(correlationID: correlationID, operation: operation, payload: payload, timeoutMS: timeoutMS)
+    }
 }
 
 /// A response operation produced by a responder.
@@ -331,6 +343,8 @@ public struct RuntimeOperation: Sendable, Equatable {
     public let payload: [UInt8]
     /// The request timeout for request capabilities.
     public let requestTimeoutMS: UInt32?
+    /// The optional Call operation name encoded as the topic filter.
+    public let operationName: String?
 
     /// Creates an owned local operation.
     public init(
@@ -338,13 +352,15 @@ public struct RuntimeOperation: Sendable, Equatable {
         sourceID: UUID16,
         correlationID: UUID16? = nil,
         payload: [UInt8],
-        requestTimeoutMS: UInt32? = nil
+        requestTimeoutMS: UInt32? = nil,
+        operationName: String? = nil
     ) {
         self.capability = capability
         self.sourceID = sourceID
         self.correlationID = correlationID
         self.payload = payload
         self.requestTimeoutMS = requestTimeoutMS
+        self.operationName = operationName
     }
 
     /// Creates an operation from the closed one-way family values.
@@ -365,6 +381,7 @@ public struct RuntimeOperation: Sendable, Equatable {
         case let .query(id, payload, timeout): self.init(capability: .query, sourceID: sourceID, correlationID: id, payload: payload, requestTimeoutMS: timeout)
         case let .update(id, payload, timeout): self.init(capability: .update, sourceID: sourceID, correlationID: id, payload: payload, requestTimeoutMS: timeout)
         case let .call(id, payload, timeout): self.init(capability: .call, sourceID: sourceID, correlationID: id, payload: payload, requestTimeoutMS: timeout)
+        case let .callWithOperation(id, operation, payload, timeout): self.init(capability: .call, sourceID: sourceID, correlationID: id, payload: payload, requestTimeoutMS: timeout, operationName: operation)
         }
     }
 

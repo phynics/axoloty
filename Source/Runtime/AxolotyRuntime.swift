@@ -476,32 +476,39 @@ private actor ProtocolExecutor {
             diagnosticsSnapshotValue.dispatchSaturation += 1
             return .rejected(.capacityExceeded)
         }
+        let operationNameBytes: [UInt8] = operation.operationName.map { Array($0.utf8) } ?? []
         let outcome: ProtocolProcessOutcome = operation.payload.withUnsafeBufferPointer { buffer in
             guard let base = buffer.baseAddress else { return .rejected(.malformedPayload) }
             let payload = ByteSlice(bytes: base, length: buffer.count)
-            guard let local = try? ProtocolLocalOperation(
-                capability: operation.capability,
-                sourceID: operation.sourceID,
-                correlationID: operation.correlationID,
-                payload: payload,
-                requestTimeoutMS: operation.requestTimeoutMS
-            ) else {
-                return .rejected(.invalidCorrelation)
+            return operationNameBytes.withUnsafeBufferPointer { operationBuffer in
+                let operationName = operationBuffer.baseAddress.map {
+                    ByteSlice(bytes: $0, length: operationBuffer.count)
+                }
+                guard let local = try? ProtocolLocalOperation(
+                    capability: operation.capability,
+                    sourceID: operation.sourceID,
+                    correlationID: operation.correlationID,
+                    payload: payload,
+                    requestTimeoutMS: operation.requestTimeoutMS,
+                    operationName: operationName
+                ) else {
+                    return .rejected(.invalidCorrelation)
+                }
+                actionSink.removeAll()
+                let outcome = processor.processOutbound(
+                    local,
+                    nowMS: nowMS,
+                    classifier: TransportRouteClassifier(transport: transport),
+                    sink: &actionSink
+                )
+                // The processor emits borrowed action views into `operation.payload`.
+                // Drain them before this buffer borrow ends; only owned values may
+                // escape the closure into runtime queues or application streams.
+                if case .accepted = outcome {
+                    dispatchActions(nowMS: nowMS)
+                }
+                return outcome
             }
-            actionSink.removeAll()
-            let outcome = processor.processOutbound(
-                local,
-                nowMS: nowMS,
-                classifier: TransportRouteClassifier(transport: transport),
-                sink: &actionSink
-            )
-            // The processor emits borrowed action views into `operation.payload`.
-            // Drain them before this buffer borrow ends; only owned values may
-            // escape the closure into runtime queues or application streams.
-            if case .accepted = outcome {
-                dispatchActions(nowMS: nowMS)
-            }
-            return outcome
         }
         let receipt = receipt(for: outcome)
         eventContinuation.yield(.transition(receipt))
