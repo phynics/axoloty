@@ -42,6 +42,11 @@ public final class AxolotyRuntime: Sendable {
         await executor.close()
     }
 
+    /// Advances the transport epoch and clears transport-scoped pending work.
+    public func reconnect() async {
+        await executor.reconnect()
+    }
+
     /// Returns the current lifecycle state.
     public func lifecycleState() async -> RuntimeLifecycleState {
         await executor.lifecycleState()
@@ -92,6 +97,11 @@ public final class AxolotyRuntime: Sendable {
     public func diagnostics() async -> AsyncStream<RuntimeDiagnostic> {
         await executor.diagnostics()
     }
+
+    /// Returns coalesced supervision counters without exposing transport state.
+    public func diagnosticsSnapshot() async -> RuntimeDiagnostics {
+        await executor.diagnosticsSnapshot()
+    }
 }
 
 private actor ProtocolExecutor {
@@ -100,6 +110,7 @@ private actor ProtocolExecutor {
     private var processor = ProtocolProcessor<64>()
     private var actionSink = ReusableProtocolActionSink(capacity: 64)
     private var state: RuntimeLifecycleState = .stopped
+    private var hasStarted = false
     private var ingress: [RuntimeInboundFrame] = []
     private var activeHandlers = 0
     private var transportEpoch: UInt64 = 0
@@ -107,6 +118,7 @@ private actor ProtocolExecutor {
     private var transportIngressTask: Task<Void, Never>?
     private var outboundContinuation: AsyncStream<OwnedProtocolAction>.Continuation?
     private var outboundTask: Task<Void, Never>?
+    private var diagnosticsSnapshotValue = RuntimeDiagnostics()
 
     private let eventStream: AsyncStream<RuntimeEvent>
     private let eventContinuation: AsyncStream<RuntimeEvent>.Continuation
@@ -141,8 +153,12 @@ private actor ProtocolExecutor {
         case .failed:
             return (.notStarted, "runtime failed; stop it before restarting")
         case .stopped:
+            guard !hasStarted else {
+                return (.notStarted, "runtime instances are single-use; construct a new instance")
+            }
             break
         }
+        hasStarted = true
         state = .starting
         transportEpoch &+= 1
         let epoch = transportEpoch
@@ -202,6 +218,15 @@ private actor ProtocolExecutor {
         diagnosticContinuation.finish()
     }
 
+    func reconnect() async {
+        guard state == .running else { return }
+        state = .reconnecting
+        transportEpoch &+= 1
+        processor.resetTransport()
+        diagnosticsSnapshotValue.reconnects += 1
+        state = .running
+    }
+
     func lifecycleState() -> RuntimeLifecycleState { state }
 
     func sourceID() -> UUID16 { definition.sourceID }
@@ -210,11 +235,14 @@ private actor ProtocolExecutor {
 
     func diagnostics() -> AsyncStream<RuntimeDiagnostic> { diagnosticStream }
 
+    func diagnosticsSnapshot() -> RuntimeDiagnostics { diagnosticsSnapshotValue }
+
     func receive(_ frame: RuntimeInboundFrame) -> RuntimeReceipt {
         guard state == .running else {
             return .rejected(.notRunning(state))
         }
         guard ingress.count < definition.capacities.ingress else {
+            diagnosticsSnapshotValue.ingressSaturation += 1
             emit(.init(kind: .capacityExceeded, detail: "inbound frame queue is full"))
             return .rejected(.capacityExceeded)
         }
@@ -283,7 +311,7 @@ private actor ProtocolExecutor {
                     actionSink.removeAll()
                     return processor.processInbound(
                         borrowed,
-                        nowMS: 0,
+                        nowMS: frame.nowMS,
                         classifier: ExactProtocolRouteClassifier(externalRoute: "external/wire-compat-v1/io-external-1"),
                         sink: &actionSink
                     )
@@ -294,6 +322,7 @@ private actor ProtocolExecutor {
             }
         }
         if let parseFailure {
+            diagnosticsSnapshotValue.malformedFrames += 1
             emit(.init(kind: .malformedFrame, detail: parseFailure))
         }
         let receipt = receipt(for: outcome)
@@ -336,6 +365,7 @@ private actor ProtocolExecutor {
         }
         eventContinuation.yield(.invocation(RuntimeInvocation(action: action)))
         guard activeHandlers < definition.capacities.handlersInFlight else {
+            diagnosticsSnapshotValue.handlerSaturation += 1
             emit(.init(kind: .capacityExceeded, detail: "handler supervision capacity is full"))
             return
         }
@@ -374,6 +404,7 @@ private actor ProtocolExecutor {
     private func enqueueOutbound(_ action: OwnedProtocolAction) {
         let result = outboundContinuation?.yield(action)
         if case .dropped = result {
+            diagnosticsSnapshotValue.dispatchSaturation += 1
             emit(.init(kind: .capacityExceeded, detail: "outbound dispatch queue is full"))
         }
     }
@@ -390,6 +421,7 @@ private actor ProtocolExecutor {
     }
 
     private func transportFailed(_ detail: String) {
+        diagnosticsSnapshotValue.transportFailures += 1
         emit(.init(kind: .transportFailed, detail: detail))
     }
 

@@ -175,12 +175,29 @@ public struct RuntimeInboundFrame: Sendable, Equatable {
     public let topic: String
     /// The copied event payload.
     public let payload: [UInt8]
+    /// Monotonic receipt time supplied by the transport binding.
+    public let nowMS: UInt32
 
     /// Creates an owned inbound frame.
-    public init(topic: String, payload: [UInt8]) {
+    public init(topic: String, payload: [UInt8], nowMS: UInt32 = 0) {
         self.topic = topic
         self.payload = payload
+        self.nowMS = nowMS
     }
+}
+
+/// Coalesced supervision counters for a runtime instance.
+public struct RuntimeDiagnostics: Sendable, Equatable {
+    public var ingressSaturation = 0
+    public var dispatchSaturation = 0
+    public var handlerSaturation = 0
+    public var reconnects = 0
+    public var expiredRequests = 0
+    public var malformedFrames = 0
+    public var transportFailures = 0
+
+    /// Creates an empty diagnostics snapshot.
+    public init() {}
 }
 
 /// The externally visible lifecycle of a host runtime instance.

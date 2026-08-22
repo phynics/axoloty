@@ -3,6 +3,23 @@
 import AxolotyProtocol
 import AxolotyWire
 
+/// Fixed configuration consumed exactly once by a static runtime.
+public struct StaticRuntimeDefinition: ~Copyable {
+    /// Families enabled for this firmware image.
+    public let capabilities: ProtocolCapabilities
+    /// Maximum accepted wire payload size.
+    public let maximumPayloadBytes: Int
+
+    /// Creates a bounded static definition.
+    public init(
+        capabilities: ProtocolCapabilities = .coatyCore3,
+        maximumPayloadBytes: Int = 512
+    ) {
+        self.capabilities = capabilities
+        self.maximumPayloadBytes = maximumPayloadBytes
+    }
+}
+
 /// A synchronous, fixed-storage runtime for Embedded Swift.
 ///
 /// One runtime owns exactly one ``ProtocolProcessor`` and one inline action
@@ -14,15 +31,33 @@ public struct StaticRuntime<let capacity: Int>: ~Copyable {
     private var processor: ProtocolProcessor<capacity>
     private var subscriptions: ProtocolSubscriptionRegistry<capacity>
     private var sink: InlineProtocolActionSink<capacity>
+    private let routeClassifier: ExactProtocolRouteClassifier
 
     /// Creates a runtime with a sealed capability profile and fixed limits.
     public init(
         capabilities: ProtocolCapabilities = .coatyCore3,
         maximumPayloadBytes: Int = 512
     ) {
+        self.routeClassifier = ExactProtocolRouteClassifier(
+            externalRoute: "external/wire-compat-v1/io-external-1"
+        )
         self.processor = ProtocolProcessor<capacity>(
             capabilities: capabilities,
             maximumPayloadBytes: maximumPayloadBytes
+        )
+        self.subscriptions = ProtocolSubscriptionRegistry<capacity>()
+        self.sink = InlineProtocolActionSink<capacity>()
+    }
+
+    /// Consumes fixed configuration and binds one exact route classifier.
+    public init(
+        definition: consuming StaticRuntimeDefinition,
+        routeClassifier: ExactProtocolRouteClassifier
+    ) {
+        self.routeClassifier = routeClassifier
+        self.processor = ProtocolProcessor<capacity>(
+            capabilities: definition.capabilities,
+            maximumPayloadBytes: definition.maximumPayloadBytes
         )
         self.subscriptions = ProtocolSubscriptionRegistry<capacity>()
         self.sink = InlineProtocolActionSink<capacity>()
@@ -51,7 +86,7 @@ public struct StaticRuntime<let capacity: Int>: ~Copyable {
         nowMS: UInt32 = 0
     ) -> ProtocolProcessOutcome {
         sink.removeAll()
-        return processor.processOutbound(operation, nowMS: nowMS, sink: &sink)
+        return processor.processOutbound(operation, nowMS: nowMS, classifier: routeClassifier, sink: &sink)
     }
 
     /// Processes one inbound frame and retains its action until ``drain``.
@@ -60,7 +95,7 @@ public struct StaticRuntime<let capacity: Int>: ~Copyable {
         nowMS: UInt32
     ) -> ProtocolProcessOutcome {
         sink.removeAll()
-        return processor.processInbound(frame, nowMS: nowMS, sink: &sink)
+        return processor.processInbound(frame, nowMS: nowMS, classifier: routeClassifier, sink: &sink)
     }
 
     /// Processes one inbound frame with a binding-owned route classifier.
