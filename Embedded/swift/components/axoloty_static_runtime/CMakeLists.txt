@@ -17,7 +17,7 @@ file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/empty_bridging_header.h "")
 
 idf_component_register(
     SRCS "component_anchor.c"
-    PRIV_REQUIRES idf_swift axoloty_protocol axoloty_wire json_core
+    PRIV_REQUIRES idf_swift axoloty_protocol axoloty_object_model axoloty_wire json_core
 )
 
 idf_component_register_swift(
@@ -28,6 +28,19 @@ idf_component_register_swift(
 
 idf_component_get_property(PROTOCOL_COMPONENT_LIB axoloty_protocol COMPONENT_LIB)
 add_dependencies(${COMPONENT_LIB} axoloty_protocol_module_alias ${PROTOCOL_COMPONENT_LIB})
+
+idf_component_get_property(OBJECT_MODEL_COMPONENT_LIB axoloty_object_model COMPONENT_LIB)
+get_target_property(OBJECT_MODEL_COMPONENT_BINARY_DIR ${OBJECT_MODEL_COMPONENT_LIB} BINARY_DIR)
+set(OBJECT_MODEL_MODULE_ALIAS
+    "${OBJECT_MODEL_COMPONENT_BINARY_DIR}/AxolotyObjectModel.swiftmodule"
+)
+if(TARGET axoloty_object_model_module_alias)
+    add_dependencies(axoloty_object_model_module_alias ${OBJECT_MODEL_COMPONENT_LIB})
+    add_dependencies(${COMPONENT_LIB} axoloty_object_model_module_alias)
+endif()
+set_source_files_properties(${AXOLOTY_STATIC_RUNTIME_SOURCES}
+    APPEND PROPERTIES OBJECT_DEPENDS "${OBJECT_MODEL_MODULE_ALIAS}"
+)
 
 # AxolotyProtocol transitively imports AxolotyWire and `_JSONCore`. Make the
 # transitive module aliases explicit so a clean parallel build cannot compile
@@ -66,6 +79,7 @@ target_compile_options(${COMPONENT_LIB} PRIVATE
 
 target_include_directories(${COMPONENT_LIB} PUBLIC
     ${CMAKE_CURRENT_BINARY_DIR}
+    ${OBJECT_MODEL_COMPONENT_BINARY_DIR}
     ${WIRE_COMPONENT_BINARY_DIR}
     ${JSON_CORE_COMPONENT_BINARY_DIR}
 )
