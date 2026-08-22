@@ -118,6 +118,9 @@ func checkPlanPrintsStableJSON() {
         "support-container", "support-fuzz-runner", "support-embedded-compile",
         "support-embedded-smoke", "embedded-toolchain", "embedded-build", "embedded-linker",
         "g1-bounded-runtime-host", "g1-bounded-runtime-sanitized", "g1-bounded-runtime-embedded",
+        "g3-object-boundary", "g3-object-model-package", "g3-object-model-tests",
+        "g3-object-macros-tests", "g3-coaty-models-tests", "g3-object-model-evidence-host",
+        "g3-object-model-evidence-sanitized", "g3-object-model-evidence-embedded",
     ]
     #endif
     #expect(plan?.nodes.map(\.name) == expectedNames)
@@ -394,6 +397,9 @@ func checkpointPlanIncludesRequiredIntegrationAndCompatibilityNodes() throws {
 
     #expect(plan.nodes.contains { $0.name == "integration-tests" })
     #expect(plan.nodes.contains { $0.name == "logging-global" })
+    #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-host" })
+    #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-sanitized" })
+    #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-embedded" })
 
     let hardwarePlan = AxolotyCheckPlan.checkpointHardware(
         source: "Tests/WireCompatibility/Fixtures",
@@ -401,6 +407,9 @@ func checkpointPlanIncludesRequiredIntegrationAndCompatibilityNodes() throws {
     )
     #expect(hardwarePlan.nodes.contains { $0.name == "integration-tests" })
     #expect(hardwarePlan.nodes.contains { $0.name == "logging-global" })
+    #expect(hardwarePlan.nodes.contains { $0.name == "g3-object-model-evidence-host" })
+    #expect(hardwarePlan.nodes.contains { $0.name == "g3-object-model-evidence-sanitized" })
+    #expect(hardwarePlan.nodes.contains { $0.name == "g3-object-model-evidence-embedded" })
 }
 
 @Test
@@ -457,7 +466,7 @@ func checkpointManifestRecordsAllRequiredReleaseGatesInOrder() throws {
 
     #expect(manifest.schemaVersion == 2)
     #expect(manifest.releaseGates.map(\.id) == [
-        "smoke", "unit", "module", "property", "integration", "wire-offline", "wire-live",
+        "smoke", "unit", "module", "property", "integration", "wire-offline", "wire-live", "g3-object-model",
     ])
     #expect(manifest.releaseGates.first { $0.id == "integration" }?.result == .executed)
 }

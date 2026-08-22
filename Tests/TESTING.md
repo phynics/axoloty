@@ -26,16 +26,14 @@ is unmapped or owned by more than one target. It does not invoke Swift; run it
 through `make test-support` for the standard Makefile path. Build and test
 execution must always use the root Makefile and Podman.
 
-G3 adds the optional `g3-object-boundary` manifest node while the object-model
-packages are under implementation. `Tests/Support/check-axoloty-object-boundary.sh`
-is deliberately a failing authority check until both portable packages and
-their Embedded Swift source inclusion exist; its paired
-`test-check-axoloty-object-boundary.sh` uses a synthetic fixture to prove that
+The required G3 object-model gates include the portable package graph and
+`g3-object-boundary`. `Tests/Support/check-axoloty-object-boundary.sh`
+checks the production packages and their Embedded Swift source inclusion; its
+paired `test-check-axoloty-object-boundary.sh` uses a synthetic fixture to prove that
 Foundation, MQTT/NIO, logging, actors/controllers/lifecycle, growable
 `Array`/`Dictionary`, global mutable state, forbidden manifest dependencies,
-and missing source inclusion are rejected. The node becomes a required G3
-gate only when issue [#631](https://github.com/phynics/axoloty/issues/631)
-acceptance evidence promotes the production package graph.
+and missing source inclusion are rejected. The same boundary policy is
+enforced by ordinary verification and the release checkpoint.
 
 ## Canonical `axoloty-tool` workflow
 
@@ -71,10 +69,12 @@ Linux-only ESP-IDF nodes. This is an explicit platform capability difference,
 not a silent skip. MQTT-backed integration remains a separate tier; wire parser
 correctness never requires a broker.
 
-The G3 object-model foundation has an opt-in canonical tier while the remaining
-G3 lanes land. Run `axoloty-tool test-tier object-model` (or invoke the
-standalone package directly) to validate the bounded model tests and its
-source/dependency boundary. The tier is deliberately not a required gate yet.
+The G3 object-model foundation is a required canonical tier. Run
+`axoloty-tool test-tier object-model` (or invoke the standalone package
+directly) to validate the bounded model tests, schema/model packages, and
+source/dependency boundary. Its host, sanitized, and Linux-only embedded
+cross-build evidence nodes are included in the required verification and
+release-checkpoint plans; platform filtering omits the embedded node on macOS.
 The embedded Swift image compiles the same sources through the
 `axoloty_object_model` ESP-IDF component and the static main consumer imports
 `AxolotyObjectModel` to prove module discovery and linkage.
