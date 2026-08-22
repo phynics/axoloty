@@ -55,6 +55,8 @@ public struct ObjectFieldFlags: OptionSet, Sendable, Equatable {
     public let rawValue: UInt8
 
     /// Creates a flag set from its bounded raw bits.
+    ///
+    /// - Parameter rawValue: The bits describing the field policy.
     public init(rawValue: UInt8) { self.rawValue = rawValue }
 }
 
@@ -62,15 +64,23 @@ public struct ObjectFieldFlags: OptionSet, Sendable, Equatable {
 public struct ObjectFieldKey: Sendable, Equatable {
     private let literal: StaticString
     /// Number of meaningful UTF-8 bytes.
+    ///
+    /// - Returns: The encoded byte count of this key.
     public var length: Int { literal.utf8CodeUnitCount }
 
     /// Creates a key from a static UTF-8 literal.
+    ///
+    /// - Parameter value: The literal to retain.
+    /// - Returns: A key, or `nil` when the literal exceeds the wire bound.
     public init?(_ value: StaticString) {
         guard value.utf8CodeUnitCount <= WireBufferConfig.maxTopicLength else { return nil }
         literal = value
     }
 
     /// Compares the key against a static UTF-8 literal.
+    ///
+    /// - Parameter value: The static key to compare.
+    /// - Returns: `true` when the encoded bytes match exactly.
     public borrowing func equals(_ value: StaticString) -> Bool {
         guard length == value.utf8CodeUnitCount else { return false }
         for index in 0..<length where literal.utf8Start[index] != value.utf8Start[index] { return false }
@@ -78,17 +88,29 @@ public struct ObjectFieldKey: Sendable, Equatable {
     }
 
     /// Compares decoded JSON-key semantics, including escaped equivalents.
+    ///
+    /// - Parameter value: The static key to compare after JSON unescaping.
+    /// - Returns: `true` when the decoded key semantics match.
     public borrowing func semanticEquals(_ value: StaticString) -> Bool {
         ByteSlice(bytes: literal.utf8Start, length: literal.utf8CodeUnitCount).semanticEquals(value)
     }
 
     /// Compares two keys using decoded JSON-key semantics.
+    ///
+    /// - Parameter other: The key to compare after JSON unescaping.
+    /// - Returns: `true` when the decoded key semantics match.
     public borrowing func semanticEquals(_ other: ObjectFieldKey) -> Bool {
         ByteSlice(bytes: literal.utf8Start, length: literal.utf8CodeUnitCount).semanticEquals(
             ByteSlice(bytes: other.literal.utf8Start, length: other.literal.utf8CodeUnitCount)
         )
     }
 
+    /// Compares two keys by their retained encoded UTF-8 bytes.
+    ///
+    /// - Parameters:
+    ///   - lhs: The first key.
+    ///   - rhs: The second key.
+    /// - Returns: `true` when both keys have identical encoded bytes.
     public static func == (lhs: Self, rhs: Self) -> Bool {
         guard lhs.length == rhs.length else { return false }
         for index in 0..<lhs.length where lhs.literal.utf8Start[index] != rhs.literal.utf8Start[index] { return false }
@@ -108,6 +130,11 @@ public struct ObjectFieldDescriptor: Sendable, Equatable {
     public let flags: ObjectFieldFlags
 
     /// Creates a field descriptor.
+    ///
+    /// - Parameters:
+    ///   - key: The bounded wire key.
+    ///   - index: The stable descriptor index.
+    ///   - flags: The field's presence and default policy.
     public init(key: ObjectFieldKey, index: UInt8, flags: ObjectFieldFlags) {
         self.key = key
         self.index = index
@@ -118,6 +145,8 @@ public struct ObjectFieldDescriptor: Sendable, Equatable {
 /// An immutable fixed-inline schema descriptor shared by manual and macro forms.
 public struct PortableObjectSchema<Value: Sendable>: Sendable {
     /// Maximum fields supported by the authoritative wire index.
+    ///
+    /// - Returns: The fixed field-count limit.
     public static var maxFieldCount: Int { WireBufferConfig.maxIndexedFields }
     /// Object type carried by this schema.
     public let objectType: ObjectType
@@ -129,6 +158,12 @@ public struct PortableObjectSchema<Value: Sendable>: Sendable {
     public let fields: InlineArray<24, ObjectFieldDescriptor>
 
     /// Creates a schema from its fixed descriptor table.
+    ///
+    /// - Parameters:
+    ///   - objectType: The bounded object type identifier.
+    ///   - coreType: The Coaty core family.
+    ///   - fieldCount: The number of occupied descriptors.
+    ///   - fields: The fixed descriptor table.
     public init(
         objectType: ObjectType,
         coreType: ObjectCoreType,
@@ -142,6 +177,9 @@ public struct PortableObjectSchema<Value: Sendable>: Sendable {
     }
 
     /// Validates the fixed descriptor invariants shared by manual and macro schemas.
+    ///
+    /// - Throws: ``ObjectSchemaValidationError`` when the descriptor count,
+    ///   keys, indices, flags, or trailing entries violate the schema contract.
     public func validate() throws(ObjectSchemaValidationError) {
         guard objectType.length > 0 else { throw .invalidObjectType }
         guard fieldCount <= UInt8(Self.maxFieldCount) else { throw .invalidFieldCount }
@@ -153,8 +191,12 @@ public struct PortableObjectSchema<Value: Sendable>: Sendable {
             guard field.index < fieldCount else { throw .invalidFieldIndex }
             let required = field.flags.contains(.required)
             let optional = field.flags.contains(.optional)
+            let defaulted = field.flags.contains(.defaulted)
+            let presence = field.flags.contains(.presence)
             guard required != optional,
-                  field.flags.rawValue & 0xF0 == 0 else { throw .invalidFlags }
+                  field.flags.rawValue & 0xF0 == 0,
+                  (!defaulted || (required && !presence)),
+                  (!presence || (required && !defaulted)) else { throw .invalidFlags }
             var prior = 0
             while prior < index {
                 if fields[prior].key.semanticEquals(field.key) { throw .duplicateFieldKey }
@@ -180,11 +222,26 @@ func isReservedObjectFieldKey(_ key: ObjectFieldKey) -> Bool {
 
 /// A typed value that can be decoded from one borrowed JSON value.
 public protocol ObjectFieldDecodable: Sendable {
+    /// Decodes one borrowed JSON value into the conforming type.
+    ///
+    /// - Parameter value: The value to decode. The borrow is valid only for
+    ///   the duration of this call.
+    /// - Returns: The decoded value.
+    /// - Throws: ``ObjectDecodingError/invalidField`` when the value cannot
+    ///   be represented by the conforming type.
     static func decode(from value: borrowing JSONValueView) throws(ObjectDecodingError) -> Self
 }
 
 /// A typed value that can be encoded into a transactional object editor.
 public protocol ObjectFieldEncodable: Sendable {
+    /// Encodes the value into a caller-owned transactional editor.
+    ///
+    /// - Parameters:
+    ///   - editor: The editor receiving the encoded field.
+    ///   - key: The bounded wire key for the field.
+    /// - Throws: ``ObjectEncodingError/invalidField`` when the value cannot
+    ///   be represented, or ``ObjectEncodingError/capacityExceeded`` when
+    ///   the editor has no room.
     func encode<let editorCapacity: Int>(
         to editor: inout ObjectFieldEncoder<editorCapacity>,
         forKey key: StaticString
@@ -203,6 +260,14 @@ public struct ObjectFieldDecoder: ~Copyable {
     }
 
     /// Decodes one required field.
+    ///
+    /// - Parameters:
+    ///   - key: The bounded wire key to find.
+    ///   - type: The expected decoded value type.
+    /// - Returns: The decoded field value.
+    /// - Throws: ``ObjectDecodingError/missingRequiredField`` when the key is
+    ///   absent, or ``ObjectDecodingError/invalidField`` when the input or
+    ///   value has an invalid shape.
     public borrowing func decode<T: ObjectFieldDecodable>(
         _ key: StaticString,
         as type: T.Type
@@ -217,6 +282,13 @@ public struct ObjectFieldDecoder: ~Copyable {
     }
 
     /// Decodes an optional field, preserving omission and JSON null as `nil`.
+    ///
+    /// - Parameters:
+    ///   - key: The bounded wire key to find.
+    ///   - type: The expected decoded value type.
+    /// - Returns: The decoded value, or `nil` for omission or JSON `null`.
+    /// - Throws: ``ObjectDecodingError/invalidField`` when the input or value
+    ///   has an invalid shape.
     public borrowing func decodeIfPresent<T: ObjectFieldDecodable>(
         _ key: StaticString,
         as type: T.Type
@@ -233,6 +305,14 @@ public struct ObjectFieldDecoder: ~Copyable {
 
     /// Decodes a field with a default used only when the key is absent.
     /// Explicit JSON `null` remains an invalid value for the bounded type.
+    ///
+    /// - Parameters:
+    ///   - key: The bounded wire key to find.
+    ///   - type: The expected decoded value type.
+    ///   - defaultValue: The value to use when the key is absent.
+    /// - Returns: The decoded field value or `defaultValue` when omitted.
+    /// - Throws: ``ObjectDecodingError/invalidField`` when the input, null,
+    ///   or value has an invalid shape.
     public borrowing func decodeWithDefault<T: ObjectFieldDecodable>(
         _ key: StaticString,
         as type: T.Type,
@@ -249,6 +329,13 @@ public struct ObjectFieldDecoder: ~Copyable {
     }
 
     /// Decodes a field while preserving missing, null, and value states.
+    ///
+    /// - Parameters:
+    ///   - key: The bounded wire key to find.
+    ///   - type: The expected decoded value type.
+    /// - Returns: The field's ``Presence`` state.
+    /// - Throws: ``ObjectDecodingError/invalidField`` when the input or value
+    ///   has an invalid shape.
     public borrowing func presence<T: ObjectFieldDecodable>(
         _ key: StaticString,
         as type: T.Type
@@ -269,8 +356,16 @@ public protocol ObjectSchema: Sendable {
     /// Immutable schema metadata.
     static var schema: PortableObjectSchema<Self> { get }
     /// Decodes typed fields from a borrowed object view.
+    ///
+    /// - Parameter fields: The synchronous decoder for the object's fields.
+    /// - Throws: ``ObjectDecodingError`` when a required field is absent or a
+    ///   field value has an invalid shape.
     init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError)
     /// Encodes typed fields into a capacity-specialized transactional editor.
+    ///
+    /// - Parameter encoder: The transactional editor receiving typed fields.
+    /// - Throws: ``ObjectEncodingError`` when a field is invalid or capacity
+    ///   is exhausted.
     borrowing func encodeFields<let editorCapacity: Int>(
         to encoder: inout ObjectFieldEncoder<editorCapacity>
     ) throws(ObjectEncodingError)
@@ -281,6 +376,11 @@ public typealias ObjectFieldEncoder<let editorCapacity: Int> = ObjectEditor<edit
 
 extension ObjectEditor {
     /// Encodes one bounded primitive or application-defined field value.
+    ///
+    /// - Parameters:
+    ///   - value: The value to encode.
+    ///   - key: The bounded wire key for the value.
+    /// - Throws: ``ObjectEncodingError`` when encoding fails.
     public mutating func encode<T: ObjectFieldEncodable>(
         _ value: T,
         forKey key: StaticString
@@ -290,6 +390,12 @@ extension ObjectEditor {
     }
 
     /// Encodes a field, omitting it when it equals its canonical default.
+    ///
+    /// - Parameters:
+    ///   - value: The value to encode.
+    ///   - defaultValue: The canonical value to omit.
+    ///   - key: The bounded wire key for the value.
+    /// - Throws: ``ObjectEncodingError`` when removal or encoding fails.
     public mutating func encodeDefault<T: ObjectFieldEncodable & Equatable>(
         _ value: T,
         default defaultValue: T,
@@ -305,6 +411,12 @@ extension ObjectEditor {
 }
 
 extension Optional: ObjectFieldEncodable where Wrapped: ObjectFieldEncodable {
+    /// Encodes a present optional value or removes its field when absent.
+    ///
+    /// - Parameters:
+    ///   - editor: The transactional editor receiving the field.
+    ///   - key: The bounded wire key for the field.
+    /// - Throws: ``ObjectEncodingError`` when removal or encoding fails.
     public func encode<let editorCapacity: Int>(
         to editor: inout ObjectFieldEncoder<editorCapacity>,
         forKey key: StaticString
@@ -319,6 +431,12 @@ extension Optional: ObjectFieldEncodable where Wrapped: ObjectFieldEncodable {
 }
 
 extension Presence: ObjectFieldEncodable where Value: ObjectFieldEncodable {
+    /// Encodes the missing, null, or value state without collapsing it.
+    ///
+    /// - Parameters:
+    ///   - editor: The transactional editor receiving the field.
+    ///   - key: The bounded wire key for the field.
+    /// - Throws: ``ObjectEncodingError`` when removal or encoding fails.
     public func encode<let editorCapacity: Int>(
         to editor: inout ObjectFieldEncoder<editorCapacity>,
         forKey key: StaticString
@@ -336,6 +454,12 @@ extension Presence: ObjectFieldEncodable where Value: ObjectFieldEncodable {
 }
 
 extension Int: ObjectFieldDecodable, ObjectFieldEncodable {
+    /// Decodes a JSON integer that fits the platform `Int` range.
+    ///
+    /// - Parameter value: The borrowed JSON value.
+    /// - Returns: The decoded integer.
+    /// - Throws: ``ObjectDecodingError/invalidField`` when the value is not a
+    ///   representable integer.
     public static func decode(from value: borrowing JSONValueView) throws(ObjectDecodingError) -> Int {
         var number: Int64?
         guard value.withNumber({ number = $0.intValue }) else { throw .invalidField }
@@ -343,6 +467,12 @@ extension Int: ObjectFieldDecodable, ObjectFieldEncodable {
         return Int(number)
     }
 
+    /// Encodes the integer as a JSON number.
+    ///
+    /// - Parameters:
+    ///   - editor: The transactional editor receiving the number.
+    ///   - key: The bounded wire key for the number.
+    /// - Throws: ``ObjectEncodingError`` when the editor rejects the value.
     public func encode<let editorCapacity: Int>(to editor: inout ObjectFieldEncoder<editorCapacity>, forKey key: StaticString) throws(ObjectEncodingError) {
         do { try editor.setInteger(self, forKey: key) }
         catch { throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
@@ -351,13 +481,23 @@ extension Int: ObjectFieldDecodable, ObjectFieldEncodable {
 
 extension UInt64: ObjectFieldDecodable, ObjectFieldEncodable {
     /// Decodes a JSON integer that fits the full unsigned 64-bit range.
+    ///
+    /// - Parameter value: The borrowed JSON value.
+    /// - Returns: The decoded unsigned integer.
+    /// - Throws: ``ObjectDecodingError/invalidField`` when the value is not a
+    ///   representable unsigned integer.
     public static func decode(from value: borrowing JSONValueView) throws(ObjectDecodingError) -> UInt64 {
         var number: UInt64?
         guard value.withNumber({ number = $0.uintValue }), let number else { throw .invalidField }
         return number
     }
 
-    /// Encodes an unsigned integer as a JSON number.
+    /// Encodes the unsigned integer as a JSON number.
+    ///
+    /// - Parameters:
+    ///   - editor: The transactional editor receiving the number.
+    ///   - key: The bounded wire key for the number.
+    /// - Throws: ``ObjectEncodingError`` when the editor rejects the value.
     public func encode<let editorCapacity: Int>(to editor: inout ObjectFieldEncoder<editorCapacity>, forKey key: StaticString) throws(ObjectEncodingError) {
         do { try editor.setUnsignedInteger(self, forKey: key) }
         catch { throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
@@ -366,6 +506,11 @@ extension UInt64: ObjectFieldDecodable, ObjectFieldEncodable {
 
 extension Double: ObjectFieldDecodable {
     /// Decodes a finite JSON number as a `Double`.
+    ///
+    /// - Parameter value: The borrowed JSON value.
+    /// - Returns: The decoded finite number.
+    /// - Throws: ``ObjectDecodingError/invalidField`` when the value is not a
+    ///   finite JSON number.
     public static func decode(from value: borrowing JSONValueView) throws(ObjectDecodingError) -> Double {
         var number: Double?
         guard value.withNumber({ number = $0.doubleValue }), let number, number.isFinite else { throw .invalidField }
@@ -375,10 +520,22 @@ extension Double: ObjectFieldDecodable {
 }
 
 extension Bool: ObjectFieldDecodable, ObjectFieldEncodable {
+    /// Decodes a JSON boolean.
+    ///
+    /// - Parameter value: The borrowed JSON value.
+    /// - Returns: The decoded Boolean.
+    /// - Throws: ``ObjectDecodingError/invalidField`` when the value is not a
+    ///   JSON boolean.
     public static func decode(from value: borrowing JSONValueView) throws(ObjectDecodingError) -> Bool {
         switch value.kind { case .trueValue: return true; case .falseValue: return false; default: throw .invalidField }
     }
 
+    /// Encodes the Boolean as a JSON literal.
+    ///
+    /// - Parameters:
+    ///   - editor: The transactional editor receiving the Boolean.
+    ///   - key: The bounded wire key for the Boolean.
+    /// - Throws: ``ObjectEncodingError`` when the editor rejects the value.
     public func encode<let editorCapacity: Int>(to editor: inout ObjectFieldEncoder<editorCapacity>, forKey key: StaticString) throws(ObjectEncodingError) {
         do { try editor.setBoolean(self, forKey: key) }
         catch { throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
@@ -386,6 +543,12 @@ extension Bool: ObjectFieldDecodable, ObjectFieldEncodable {
 }
 
 extension BoundedEncodedText: ObjectFieldDecodable, ObjectFieldEncodable {
+    /// Decodes a bounded encoded JSON string.
+    ///
+    /// - Parameter value: The borrowed JSON value.
+    /// - Returns: The bounded string value.
+    /// - Throws: ``ObjectDecodingError/invalidField`` when the value is not a
+    ///   string or exceeds the capacity.
     public static func decode(from value: borrowing JSONValueView) throws(ObjectDecodingError) -> Self {
         var decoded: Self?
         _ = value.withString { bytes in decoded = Self(bytes: bytes) }
@@ -393,6 +556,13 @@ extension BoundedEncodedText: ObjectFieldDecodable, ObjectFieldEncodable {
         return decoded
     }
 
+    /// Encodes the retained string into the transactional editor.
+    ///
+    /// - Parameters:
+    ///   - editor: The transactional editor receiving the string.
+    ///   - key: The bounded wire key for the string.
+    /// - Throws: ``ObjectEncodingError`` when the string is invalid or the
+    ///   editor has insufficient capacity.
     public borrowing func encode<let editorCapacity: Int>(
         to editor: inout ObjectFieldEncoder<editorCapacity>,
         forKey key: StaticString
@@ -403,6 +573,12 @@ extension BoundedEncodedText: ObjectFieldDecodable, ObjectFieldEncodable {
 }
 
 extension ObjectID: ObjectFieldDecodable, ObjectFieldEncodable {
+    /// Decodes a UUID string into an object identifier.
+    ///
+    /// - Parameter value: The borrowed JSON value.
+    /// - Returns: The decoded object identifier.
+    /// - Throws: ``ObjectDecodingError/invalidField`` when the value is not a
+    ///   valid UUID string.
     public static func decode(from value: borrowing JSONValueView) throws(ObjectDecodingError) -> Self {
         var decoded: Self?
         _ = value.withString { bytes in decoded = Self(bytes: bytes) }
@@ -410,6 +586,12 @@ extension ObjectID: ObjectFieldDecodable, ObjectFieldEncodable {
         return decoded
     }
 
+    /// Encodes the UUID as a JSON string.
+    ///
+    /// - Parameters:
+    ///   - editor: The transactional editor receiving the identifier.
+    ///   - key: The bounded wire key for the identifier.
+    /// - Throws: ``ObjectEncodingError`` when the editor rejects the value.
     public func encode<let editorCapacity: Int>(
         to editor: inout ObjectFieldEncoder<editorCapacity>,
         forKey key: StaticString

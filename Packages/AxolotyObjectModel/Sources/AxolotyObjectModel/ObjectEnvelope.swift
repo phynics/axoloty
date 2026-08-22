@@ -26,6 +26,16 @@ public struct ObjectEnvelope<let nameCapacity: Int, let externalIDCapacity: Int>
     public let isDeactivated: Presence<Bool>
 
     /// Creates an envelope from its portable identity components.
+    ///
+    /// - Parameters:
+    ///   - objectID: The object's stable identifier.
+    ///   - objectType: The bounded object type identifier.
+    ///   - name: The required non-empty object name.
+    ///   - coreType: The object's Coaty core family.
+    ///   - externalID: An optional external identifier.
+    ///   - parentObjectID: An optional parent object identifier.
+    ///   - locationID: An optional location identifier.
+    ///   - isDeactivated: The preserved deactivation presence state.
     public init(
         objectID: ObjectID,
         objectType: ObjectType,
@@ -41,6 +51,10 @@ public struct ObjectEnvelope<let nameCapacity: Int, let externalIDCapacity: Int>
     }
 
     /// Decodes the standard envelope members from one complete JSON object.
+    ///
+    /// - Parameter bytes: The complete JSON object to decode.
+    /// - Throws: ``ObjectError/invalidEnvelope`` when a required member is
+    ///   missing, empty, malformed, or exceeds the selected capacity.
     public init(decoding bytes: ByteSlice) throws(ObjectError) {
         var decodedID: ObjectID?
         var decodedType: ObjectType?
@@ -55,7 +69,8 @@ public struct ObjectEnvelope<let nameCapacity: Int, let externalIDCapacity: Int>
             let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: count)
             do { try reader.validate() } catch { failure = true; return }
             guard let idSlice = reader.readString("objectId"), let objectID = ObjectID(bytes: idSlice),
-                  let typeSlice = reader.readString("objectType"), let objectType = ObjectType(bytes: typeSlice),
+                  let typeSlice = reader.readString("objectType"), typeSlice.length > 0,
+                  let objectType = ObjectType(bytes: typeSlice),
                   let nameSlice = reader.readString("name"), nameSlice.length > 0,
                   let name = BoundedEncodedText<nameCapacity>(bytes: nameSlice),
                   let coreSlice = reader.readString("coreType"), let core = ObjectCoreType(bytes: coreSlice)

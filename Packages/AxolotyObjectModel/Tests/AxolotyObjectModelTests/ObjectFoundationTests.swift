@@ -109,6 +109,30 @@ private struct TrailingManualSchema: ObjectSchema {
     }
 }
 
+@Test func manualSchemaValidationRejectsIncoherentPresenceAndDefaultFlags() {
+    func schema(flags: ObjectFieldFlags) -> PortableObjectSchema<ValidManualSchema> {
+        var fields = InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
+        fields[0] = ObjectFieldDescriptor(key: ObjectFieldKey("value")!, index: 0, flags: flags)
+        return PortableObjectSchema(
+            objectType: ObjectType("com.example.FlagCombination")!,
+            coreType: .coatyObject,
+            fieldCount: 1,
+            fields: fields
+        )
+    }
+
+    for flags in [ObjectFieldFlags.optional.union(.defaulted),
+                  ObjectFieldFlags.optional.union(.presence),
+                  ObjectFieldFlags.required.union(.defaulted).union(.presence)] {
+        do {
+            try schema(flags: flags).validate()
+            Issue.record("accepted incoherent flags: \(flags.rawValue)")
+        } catch {
+            #expect(error == .invalidFlags)
+        }
+    }
+}
+
 @Test func registryUseIsIdempotentAndSaturationIsAtomic() throws {
     var registry = ObjectSchemaRegistry<1>()
     try registry.use(ValidManualSchema.self)
@@ -211,6 +235,12 @@ private struct TrailingManualSchema: ObjectSchema {
     #expect(absent.isDeactivated == .missing)
     #expect(explicitNull.isDeactivated == .null)
     #expect(explicitValue.isDeactivated == .value(true))
+}
+
+@Test func envelopeRejectsEmptyObjectType() {
+    #expect(throws: ObjectError.self) {
+        try ObjectEnvelope<16, 16>(decoding: slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"\",\"name\":\"Reading\",\"coreType\":\"CoatyObject\"}"))
+    }
 }
 
 @Test func envelopeCapacityIsChosenByEnvelopeTypeAndKeepsEscapesEncoded() throws {

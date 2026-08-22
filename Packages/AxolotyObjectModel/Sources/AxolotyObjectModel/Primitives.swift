@@ -36,6 +36,10 @@ public struct ObjectError: Error, Sendable, Equatable {
     public let byteOffset: Int
 
     /// Creates a structured object error.
+    ///
+    /// - Parameters:
+    ///   - reason: The machine-readable failure category.
+    ///   - byteOffset: The associated input offset, or `0` when unknown.
     public init(_ reason: Reason, byteOffset: Int = 0) {
         self.reason = reason
         self.byteOffset = byteOffset
@@ -48,9 +52,15 @@ public struct ObjectID: Equatable, Hashable, Sendable {
     public let uuid: UUID16
 
     /// Creates an object identifier from a fixed-size UUID.
+    ///
+    /// - Parameter uuid: The fixed-size UUID backing the identifier.
     public init(uuid: UUID16) { self.uuid = uuid }
 
     /// Parses a hyphenated UUID borrowed from a wire buffer.
+    ///
+    /// - Parameter bytes: The borrowed bytes containing the UUID.
+    /// - Returns: An identifier when the bytes contain a valid UUID; otherwise
+    ///   `nil`.
     public init?(bytes: ByteSlice) {
         guard let uuid = UUID16(parsing: bytes) else { return nil }
         self.uuid = uuid
@@ -65,6 +75,10 @@ public struct ObjectType: Equatable, Hashable, Sendable {
     public private(set) var length: Int
 
     /// Creates a type identifier from an ASCII/static UTF-8 literal.
+    ///
+    /// - Parameter value: The literal to copy into bounded storage.
+    /// - Returns: A type identifier, or `nil` when the literal exceeds the
+    ///   bounded capacity.
     public init?(_ value: StaticString) {
         let count = value.utf8CodeUnitCount
         guard count <= Self.capacity else { return nil }
@@ -74,6 +88,9 @@ public struct ObjectType: Equatable, Hashable, Sendable {
     }
 
     /// Copies a borrowed UTF-8 type identifier into bounded storage.
+    ///
+    /// - Parameter bytes: The borrowed bytes to copy.
+    /// - Returns: A type identifier, or `nil` when the bytes exceed capacity.
     public init?(bytes: ByteSlice) {
         guard bytes.length <= Self.capacity else { return nil }
         storage = InlineArray(repeating: 0)
@@ -82,18 +99,30 @@ public struct ObjectType: Equatable, Hashable, Sendable {
     }
 
     /// Compares the type against a static UTF-8 literal without allocation.
+    ///
+    /// - Parameter value: The static type spelling to compare.
+    /// - Returns: `true` when the bounded bytes match exactly.
     public func equals(_ value: StaticString) -> Bool {
         guard length == value.utf8CodeUnitCount else { return false }
         for index in 0..<length where storage[index] != value.utf8Start[index] { return false }
         return true
     }
 
+    /// Compares two object types by their bounded UTF-8 bytes.
+    ///
+    /// - Parameters:
+    ///   - lhs: The first object type.
+    ///   - rhs: The second object type.
+    /// - Returns: `true` when both identifiers contain identical bytes.
     public static func == (lhs: ObjectType, rhs: ObjectType) -> Bool {
         guard lhs.length == rhs.length else { return false }
         for index in 0..<lhs.length where lhs.storage[index] != rhs.storage[index] { return false }
         return true
     }
 
+    /// Adds the bounded UTF-8 bytes to a hasher.
+    ///
+    /// - Parameter hasher: The hasher receiving this type's identity.
     public func hash(into hasher: inout Hasher) {
         hasher.combine(length)
         for index in 0..<length { hasher.combine(storage[index]) }
@@ -108,6 +137,9 @@ public struct BoundedEncodedText<let capacity: Int>: Equatable, Hashable, Sendab
     public private(set) var length: Int
 
     /// Copies UTF-8 bytes from a borrowed wire slice.
+    ///
+    /// - Parameter bytes: The borrowed encoded string bytes.
+    /// - Returns: A bounded value, or `nil` when the bytes exceed capacity.
     public init?(bytes: ByteSlice) {
         guard bytes.length <= capacity else { return nil }
         storage = InlineArray(repeating: 0); length = bytes.length
@@ -115,6 +147,9 @@ public struct BoundedEncodedText<let capacity: Int>: Equatable, Hashable, Sendab
     }
 
     /// Creates bounded text from a static UTF-8 literal.
+    ///
+    /// - Parameter value: The literal to copy into bounded storage.
+    /// - Returns: A bounded value, or `nil` when the literal exceeds capacity.
     public init?(_ value: StaticString) {
         guard value.utf8CodeUnitCount <= capacity else { return nil }
         storage = InlineArray(repeating: 0); length = value.utf8CodeUnitCount
@@ -122,6 +157,9 @@ public struct BoundedEncodedText<let capacity: Int>: Equatable, Hashable, Sendab
     }
 
     /// Compares the retained encoded JSON-string content with a static value.
+    ///
+    /// - Parameter value: The static encoded string to compare.
+    /// - Returns: `true` when the retained bytes match exactly.
     public borrowing func encodedEquals(_ value: StaticString) -> Bool {
         guard length == value.utf8CodeUnitCount else { return false }
         for index in 0..<length where storage[index] != value.utf8Start[index] { return false }
@@ -129,6 +167,12 @@ public struct BoundedEncodedText<let capacity: Int>: Equatable, Hashable, Sendab
     }
 
     /// Encodes this retained string into a transactional object editor.
+    ///
+    /// - Parameters:
+    ///   - key: The bounded wire key for the string.
+    ///   - editor: The transactional editor receiving the string.
+    /// - Throws: ``ObjectError`` when the string is invalid or the editor has
+    ///   insufficient capacity.
     public borrowing func encodeField<let editorCapacity: Int>(
         _ key: StaticString,
         to editor: inout ObjectEditor<editorCapacity>
@@ -151,6 +195,11 @@ public struct BoundedEncodedText<let capacity: Int>: Equatable, Hashable, Sendab
     ///
     /// The writer validates escapes and copies bytes into its caller-owned
     /// output buffer before this borrow ends.
+    ///
+    /// - Parameters:
+    ///   - key: The bounded wire key for the string.
+    ///   - writer: The writer receiving the encoded field.
+    /// - Throws: ``WireEncodeError`` when the writer rejects the field.
     public borrowing func writeEncodedStringField(
         _ key: StaticString,
         to writer: inout WireWriter
@@ -169,12 +218,21 @@ public struct BoundedEncodedText<let capacity: Int>: Equatable, Hashable, Sendab
         if let failure { throw failure }
     }
 
+    /// Compares two bounded text values by their retained encoded bytes.
+    ///
+    /// - Parameters:
+    ///   - lhs: The first text value.
+    ///   - rhs: The second text value.
+    /// - Returns: `true` when both values contain identical bytes.
     public static func == (lhs: Self, rhs: Self) -> Bool {
         guard lhs.length == rhs.length else { return false }
         for index in 0..<lhs.length where lhs.storage[index] != rhs.storage[index] { return false }
         return true
     }
 
+    /// Adds the retained encoded bytes to a hasher.
+    ///
+    /// - Parameter hasher: The hasher receiving this value's identity.
     public func hash(into hasher: inout Hasher) {
         hasher.combine(length)
         for index in 0..<length { hasher.combine(storage[index]) }

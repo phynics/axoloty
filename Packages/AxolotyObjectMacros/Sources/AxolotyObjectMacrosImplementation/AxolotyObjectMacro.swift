@@ -31,6 +31,15 @@ private struct SchemaDiagnostic: DiagnosticMessage {
 
 /// Implements the portable schema member/conformance macro.
 public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
+    /// Expands the annotated declaration with schema metadata and witnesses.
+    ///
+    /// - Parameters:
+    ///   - node: The `@AxolotyObject` attribute syntax.
+    ///   - declaration: The declaration receiving generated members.
+    ///   - protocols: The protocols requested by the expansion context.
+    ///   - context: The macro expansion context used for diagnostics.
+    /// - Returns: Generated schema, decoder, and encoder declarations.
+    /// - Throws: A macro expansion error when syntax generation fails.
     public static func expansion(
         of node: AttributeSyntax,
         providingMembersOf declaration: some DeclGroupSyntax,
@@ -198,6 +207,16 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
         return [generated]
     }
 
+    /// Adds the generated ``ObjectSchema`` conformance extension.
+    ///
+    /// - Parameters:
+    ///   - node: The `@AxolotyObject` attribute syntax.
+    ///   - declaration: The declaration receiving the extension.
+    ///   - type: The declared type name.
+    ///   - protocols: The protocols requested by the expansion context.
+    ///   - context: The macro expansion context used for diagnostics.
+    /// - Returns: The generated conformance extension.
+    /// - Throws: A macro expansion error when extension generation fails.
     public static func expansion(
         of node: AttributeSyntax,
         attachedTo declaration: some DeclGroupSyntax,
@@ -364,6 +383,15 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
 /// The marker macro for ``WireName``; all work is performed by the parent
 /// ``AxolotyObjectMacro`` while inspecting the declaration.
 public struct WireNameMacro: PeerMacro {
+    /// Consumes the marker attribute without adding a peer declaration.
+    ///
+    /// - Parameters:
+    ///   - node: The `@WireName` attribute syntax.
+    ///   - declaration: The annotated declaration.
+    ///   - context: The macro expansion context.
+    /// - Returns: No peer declarations; the parent schema macro reads the
+    ///   marker directly.
+    /// - Throws: A macro expansion error when the expansion cannot proceed.
     public static func expansion(
         of node: AttributeSyntax,
         providingPeersOf declaration: some DeclSyntaxProtocol,
@@ -373,6 +401,15 @@ public struct WireNameMacro: PeerMacro {
 
 /// The marker macro for ``Default``.
 public struct DefaultMacro: PeerMacro {
+    /// Consumes the marker attribute without adding a peer declaration.
+    ///
+    /// - Parameters:
+    ///   - node: The `@Default` attribute syntax.
+    ///   - declaration: The annotated declaration.
+    ///   - context: The macro expansion context.
+    /// - Returns: No peer declarations; the parent schema macro reads the
+    ///   marker directly.
+    /// - Throws: A macro expansion error when the expansion cannot proceed.
     public static func expansion(
         of node: AttributeSyntax,
         providingPeersOf declaration: some DeclSyntaxProtocol,
