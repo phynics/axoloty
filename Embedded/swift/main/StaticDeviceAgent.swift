@@ -2,6 +2,7 @@
 
 import AxolotyWire
 import AxolotyProtocol
+import AxolotyStaticRuntime
 
 @inline(__always)
 private func staticDeviceAgentNoop(
@@ -85,10 +86,8 @@ struct StaticDeviceAgent: ~Copyable {
     let agentId: UUID16
     let deviceObjectId: UUID16
     private(set) var hasAdvertisedPeer = false
-    private var processor: ProtocolProcessor<16>
+    private var runtime: AxolotyStaticRuntime
     private let routeClassifier: ExactProtocolRouteClassifier
-    private var subscriptions: ProtocolSubscriptionRegistry<16>
-    private var actionSink = InlineProtocolActionSink<16>()
 
     /// The object-type filter the device advertises with and discovers under.
     /// Matches the `ADV:<filter>` topic bytes after the `:` separator and the
@@ -105,12 +104,10 @@ struct StaticDeviceAgent: ~Copyable {
         self.routeClassifier = ExactProtocolRouteClassifier(
             externalRoute: "external/wire-compat-v1/io-external-1"
         )
-        self.processor = ProtocolProcessor<16>(capabilities: .coatyCore3, maximumPayloadBytes: 512)
+        self.runtime = AxolotyStaticRuntime(capabilities: .coatyCore3, maximumPayloadBytes: 512)
         let isA = agentId == Self.agentAId
-        self.subscriptions = ProtocolSubscriptionRegistry<16>()
-        self.actionSink = InlineProtocolActionSink<16>()
         let actorId = isA ? Self.actorAId : Self.actorBId
-        _ = try! self.subscriptions.register(
+        _ = try! self.runtime.register(
             selector: .ioActor(actorId),
             handler: ProtocolHandlerEntry(function: staticDeviceAgentNoop, context: 0)
         )
@@ -129,9 +126,8 @@ struct StaticDeviceAgent: ~Copyable {
             payload: payload,
             requestTimeoutMS: Self.discoverTimeoutMS
         ) else { return false }
-        actionSink.removeAll()
-        let outcome = processor.processOutbound(operation, nowMS: nowMS, sink: &actionSink)
-        actionSink.removeAll()
+        let outcome = runtime.send(operation, nowMS: nowMS)
+        _ = runtime.drain { _ in }
         return outcome == .accepted
     }
 
@@ -140,7 +136,7 @@ struct StaticDeviceAgent: ~Copyable {
     /// Time is supplied by the caller so this static processor remains
     /// deterministic and does not need an asynchronous task.
     mutating func expireDiscover(nowMS: UInt32) -> Bool {
-        processor.expire(nowMS: nowMS)
+        runtime.expire(nowMS: nowMS)
     }
 
     mutating func dispatch(_ message: BorrowedMessage, nowMS: UInt32) -> StaticDeviceDispatchResult {
@@ -152,10 +148,7 @@ struct StaticDeviceAgent: ~Copyable {
         guard let frame = try? BorrowedProtocolFrame(topic: message.topic, payload: message.payload) else {
             return .malformed
         }
-        actionSink.removeAll()
-        let outcome = processor.processInbound(
-            frame, nowMS: nowMS, classifier: routeClassifier, sink: &actionSink
-        )
+        let outcome = runtime.receive(frame, nowMS: nowMS, classifier: routeClassifier)
         guard outcome == .accepted else {
             switch outcome {
             case .ignored: return .unsupported
@@ -165,17 +158,15 @@ struct StaticDeviceAgent: ~Copyable {
             }
         }
 
-        guard let action = actionSink[0] else { return .malformed }
         let actorId = agentId == Self.agentAId ? Self.actorAId : Self.actorBId
         var actorDelivery = false
-        for index in 0..<actionSink.count {
-            if let deliveredAction = actionSink[index] {
-                _ = subscriptions.dispatch(deliveredAction)
-                actorDelivery = actorDelivery || deliveredAction.deliveryKey.isActor(actorId: actorId)
-            }
+        var actionKind: ProtocolActionKind?
+        _ = runtime.drain { deliveredAction in
+            actionKind = actionKind ?? deliveredAction.kind
+            actorDelivery = actorDelivery || deliveredAction.deliveryKey.isActor(actorId: actorId)
         }
-        actionSink.removeAll()
-        switch action.kind {
+        guard let actionKind else { return .malformed }
+        switch actionKind {
         case .associate: return actorDelivery ? .ioActorAssociated : .ioSourceAssociated
         case .disassociate: return actorDelivery ? .ioActorDisassociated : .ioSourceDisassociated
         default: break
@@ -228,9 +219,8 @@ struct StaticDeviceAgent: ~Copyable {
             payload: borrowedPayload,
             requestTimeoutMS: eventType == .discover ? Self.discoverTimeoutMS : nil
         ) else { throw .invalidValue }
-        var actionSink = InlineProtocolActionSink<1>()
-        let outcome = processor.processOutbound(operation, classifier: routeClassifier, sink: &actionSink)
-        actionSink.removeAll()
+        let outcome = runtime.send(operation, classifier: routeClassifier)
+        _ = runtime.drain { _ in }
         guard outcome == .accepted else {
             throw .invalidValue
         }
@@ -243,7 +233,7 @@ struct StaticDeviceAgent: ~Copyable {
         to output: UnsafeMutablePointer<UInt8>, capacity: Int
     ) -> Int? {
         let actorId = agentId == Self.agentAId ? Self.actorAId : Self.actorBId
-        return processor.copyActorRoute(actorId: actorId, to: output, capacity: capacity)
+        return runtime.copyActorRoute(actorId: actorId, to: output, capacity: capacity)
     }
 }
 

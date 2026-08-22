@@ -188,6 +188,129 @@ struct ProtocolFoundationTests {
         let expired = processor.expire(nowMS: 210)
         #expect(expired)
     }
+
+    @Test("discover and query retain active correlations for multi-response flows")
+    func multiResponseCorrelations() throws {
+        let correlation = UUID16.zero
+        var processor = ProtocolProcessor<2>()
+        let discover = try ProtocolLocalOperation(
+            capability: .discover,
+            sourceID: correlation,
+            correlationID: correlation,
+            payload: protocolSlice("{}"),
+            requestTimeoutMS: 100
+        )
+        var outbound = InlineProtocolActionSink<2>()
+        #expect(processor.processOutbound(discover, nowMS: 10, sink: &outbound) == .accepted)
+        outbound.removeAll()
+        let first = try withResponseFrame(correlation: "00000000-0000-0000-0000-000000000000", event: "RSV") { frame in
+            var sink = InlineProtocolActionSink<2>()
+            return processor.processInbound(frame, nowMS: 20, sink: &sink)
+        }
+        let second = try withResponseFrame(correlation: "00000000-0000-0000-0000-000000000000", event: "RSV") { frame in
+            var sink = InlineProtocolActionSink<2>()
+            return processor.processInbound(frame, nowMS: 30, sink: &sink)
+        }
+        #expect(first == .accepted)
+        #expect(second == .accepted)
+        #expect(processor.state.pendingCorrelations == 1)
+
+        processor.resetTransport()
+        let query = try ProtocolLocalOperation(
+            capability: .query,
+            sourceID: correlation,
+            correlationID: correlation,
+            payload: protocolSlice("{}"),
+            requestTimeoutMS: 100
+        )
+        #expect(processor.processOutbound(query, nowMS: 40, sink: &outbound) == .accepted)
+        outbound.removeAll()
+        let retrieve = try withResponseFrame(correlation: "00000000-0000-0000-0000-000000000000", event: "RTV") { frame in
+            var sink = InlineProtocolActionSink<2>()
+            return processor.processInbound(frame, nowMS: 50, sink: &sink)
+        }
+        let complete = try withResponseFrame(correlation: "00000000-0000-0000-0000-000000000000", event: "CPL") { frame in
+            var sink = InlineProtocolActionSink<2>()
+            return processor.processInbound(frame, nowMS: 60, sink: &sink)
+        }
+        #expect(retrieve == .accepted)
+        #expect(complete == .accepted)
+        #expect(processor.state.pendingCorrelations == 0)
+    }
+
+    @Test("response families cannot cross request correlation policies")
+    func responseFamilyMismatch() throws {
+        let correlation = UUID16.zero
+        var processor = ProtocolProcessor<1>()
+        let operation = try ProtocolLocalOperation(
+            capability: .call,
+            sourceID: correlation,
+            correlationID: correlation,
+            payload: protocolSlice("{}"),
+            requestTimeoutMS: 100
+        )
+        var sink = InlineProtocolActionSink<1>()
+        #expect(processor.processOutbound(operation, nowMS: 10, sink: &sink) == .accepted)
+        sink.removeAll()
+        let wrong = try withResponseFrame(correlation: "00000000-0000-0000-0000-000000000000", event: "RSV") { frame in
+            var responseSink = InlineProtocolActionSink<1>()
+            return processor.processInbound(frame, nowMS: 20, sink: &responseSink)
+        }
+        #expect(wrong == .rejected(.correlationMismatch))
+        #expect(processor.state.pendingCorrelations == 1)
+    }
+
+    @Test("cancellation rejects a late response and permits another correlation")
+    func cancellation() throws {
+        let first = UUID16.zero
+        let second = UUID16(bytes: (1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+        var processor = ProtocolProcessor<1>()
+        let operation = try ProtocolLocalOperation(
+            capability: .discover,
+            sourceID: first,
+            correlationID: first,
+            payload: protocolSlice("{}"),
+            requestTimeoutMS: 100
+        )
+        var sink = InlineProtocolActionSink<1>()
+        #expect(processor.processOutbound(operation, nowMS: 10, sink: &sink) == .accepted)
+        sink.removeAll()
+        #expect(processor.cancel(correlationID: first))
+        let late = try withResponseFrame(correlation: "00000000-0000-0000-0000-000000000000", event: "RSV") { frame in
+            var responseSink = InlineProtocolActionSink<1>()
+            return processor.processInbound(frame, nowMS: 20, sink: &responseSink)
+        }
+        #expect(late == .rejected(.duplicate))
+        let next = try ProtocolLocalOperation(
+            capability: .discover,
+            sourceID: second,
+            correlationID: second,
+            payload: protocolSlice("{}"),
+            requestTimeoutMS: 100
+        )
+        #expect(processor.processOutbound(next, nowMS: 20, sink: &sink) == .accepted)
+    }
+
+    @Test("transport reset retains local advertisements for one replay")
+    func localAdvertisementReplay() throws {
+        let source = UUID16.zero
+        let payload = protocolSlice("{\"object\":{}}")
+        let advertise = try ProtocolLocalOperation(
+            capability: .advertise,
+            sourceID: source,
+            payload: payload
+        )
+        var processor = ProtocolProcessor<1>()
+        var sink = InlineProtocolActionSink<1>()
+        #expect(processor.processOutbound(advertise, sink: &sink) == .accepted)
+        sink.removeAll()
+        processor.resetTransport()
+        #expect(processor.state.activeObjects == 1)
+        #expect(processor.processOutbound(advertise, sink: &sink) == .accepted)
+        sink.removeAll()
+        #expect(processor.processOutbound(advertise, sink: &sink) == .rejected(.duplicate))
+        #expect(processor.state.activeObjects == 1)
+    }
 }
 
 private func withStaticPayload<R>(_ body: (ByteSlice) -> R) -> R {
@@ -197,9 +320,10 @@ private func withStaticPayload<R>(_ body: (ByteSlice) -> R) -> R {
 
 private func withResponseFrame<R>(
     correlation: String,
+    event: String = "RSV",
     _ body: (BorrowedProtocolFrame) throws -> R
 ) throws -> R {
-    let topic = Array("coaty/3/test/RTN/00000000-0000-0000-0000-000000000000/\(correlation)".utf8)
+    let topic = Array("coaty/3/test/\(event)/00000000-0000-0000-0000-000000000000/\(correlation)".utf8)
     let payload = Array("{}".utf8)
     return try topic.withUnsafeBufferPointer { topicBuffer in
         try payload.withUnsafeBufferPointer { payloadBuffer in

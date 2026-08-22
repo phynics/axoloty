@@ -53,6 +53,7 @@ idf_component_register(
         idf_swift
         axoloty_wire
         axoloty_protocol
+        axoloty_static_runtime
         axoloty_object_model
         axoloty_coaty_models
         esp_system
@@ -81,6 +82,7 @@ idf_component_register_swift(
 add_dependencies(${COMPONENT_LIB} axoloty_object_model_module_alias)
 add_dependencies(${COMPONENT_LIB} axoloty_coaty_models_module_alias)
 add_dependencies(${COMPONENT_LIB} axoloty_protocol_module_alias)
+add_dependencies(${COMPONENT_LIB} axoloty_static_runtime_module_alias)
 
 # StaticDeviceAgent consumes the noncopyable ProtocolProcessor from the
 # protocol component. Explicitly enable the same lifetime feature for the
