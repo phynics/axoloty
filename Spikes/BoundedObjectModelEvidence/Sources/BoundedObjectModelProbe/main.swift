@@ -214,12 +214,18 @@ private func predicateOperation<let capacity: Int>(_: ObjectPredicate<capacity, 
         let object = try BoundedDynamicObject<capacity, capacity>(decoding: slice("{\"value\":1}"))
         let matched = predicate.matches(object: object)
         var output = [UInt8](repeating: 0, count: 128)
-        let encoded = try output.withUnsafeMutableBufferPointer { buffer -> (canonical: Bool, decodedMatches: Bool) in
-            var writer = WireWriter(buffer: buffer.baseAddress!, capacity: buffer.count)
-            try predicate.encode(to: &writer)
-            let outputSlice = ByteSlice(bytes: buffer.baseAddress!, length: writer.position)
-            let decoded = try ObjectPredicate<capacity, capacity, capacity, capacity>(decoding: outputSlice)
-            return (outputSlice.equals(predicateBytes), decoded.matches(object: object))
+        let encoded: (canonical: Bool, decodedMatches: Bool)
+        do {
+            encoded = try output.withUnsafeMutableBufferPointer { buffer -> (canonical: Bool, decodedMatches: Bool) in
+                var writer = WireWriter(buffer: buffer.baseAddress!, capacity: buffer.count)
+                try predicate.encode(to: &writer)
+                let outputSlice = ByteSlice(bytes: buffer.baseAddress!, length: writer.position)
+                let decoded = try ObjectPredicate<capacity, capacity, capacity, capacity>(decoding: outputSlice)
+                return (outputSlice.equals(predicateBytes), decoded.matches(object: object))
+            }
+        } catch {
+            let mapped = (error as? ObjectError) ?? ObjectError(.invalidPredicate)
+            return ("rejected-\(mapped.reason)", false, false)
         }
         return ("accepted", encoded.canonical && encoded.decodedMatches, matched && encoded.canonical)
     } catch {
@@ -230,6 +236,13 @@ private func predicateOperation<let capacity: Int>(_: ObjectPredicate<capacity, 
 private func isNull(_ presence: Presence<JSONValueKind>) -> Bool {
     if case .null = presence { return true }
     return false
+}
+
+private func isTrue(_ presence: Presence<Bool>) -> Bool {
+    switch presence {
+    case .missing, .null: return false
+    case .value(let value): return value
+    }
 }
 
 private func saturation<let capacity: Int>(_: BoundedDynamicObject<capacity, capacity>.Type) -> (rejected: Bool, unchanged: Bool) {
@@ -366,7 +379,7 @@ private func allocationRun<let capacity: Int>(_: BoundedDynamicObject<capacity, 
         }
     case .envelopeWarmed:
         guard let envelope = try? ObjectEnvelope<capacity, capacity>(decoding: slice(envelopeBytes)) else { return }
-        for _ in 0..<iterations { allocationSink &+= UInt64(envelope.name.length) + (envelope.isDeactivated ? 1 : 0) }
+        for _ in 0..<iterations { allocationSink &+= UInt64(envelope.name.length) + (isTrue(envelope.isDeactivated) ? 1 : 0) }
     case .schemaRegistryInitialization:
         var registry = ObjectSchemaRegistry<capacity>()
         for _ in 0..<iterations {
