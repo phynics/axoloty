@@ -53,7 +53,7 @@ public struct MQTTBindingConfiguration: Sendable, Equatable {
 /// before handing it to ``AxolotyRuntime`` and never parses protocol families.
 public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     private let lock = NIOLock()
-    private let client: MQTTNIOClient
+    private let client: RuntimeMQTTClient
     private let delegate: RuntimeMQTTDelegate
     private let connectionTimeoutMS: UInt32
     private let routeClassifier = ExactProtocolRouteClassifier(
@@ -64,22 +64,9 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     /// Creates a binding backed by the repository's MQTTNIO implementation.
     public init(configuration: MQTTBindingConfiguration) throws {
         let delegate = RuntimeMQTTDelegate()
-        let options = MQTTClientOptions(
-            host: configuration.host,
-            port: configuration.port,
-            enableSSL: configuration.usesTLS,
-            shouldTryMDNSDiscovery: false,
-            username: configuration.username,
-            password: configuration.password,
-            autoReconnect: false,
-            autoReconnectTimeInterval: 1,
-            qos: 0,
-            shouldLog: false
-        )
-        options.clientId = "axoloty-runtime-\(UUID().uuidString)"
         self.delegate = delegate
         self.connectionTimeoutMS = configuration.connectionTimeoutMS
-        self.client = try MQTTNIOClient(mqttClientOptions: options, delegate: delegate)
+        self.client = try RuntimeMQTTClient(configuration: configuration, delegate: delegate)
     }
 
     /// Starts the broker connection and installs the copied frame callback.
@@ -98,7 +85,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
                 delegate.setReceive(receive)
                 delegate.setStartContinuation(continuation)
                 delegate.armStartTimeout(milliseconds: connectionTimeoutMS)
-                client.connect(lastWillTopic: "", lastWillMessage: "")
+                client.connect()
             }
         } catch {
             lock.withLock { started = false }
@@ -114,7 +101,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
             throw AxolotyError.runtime(code: .notStarted, reason: "MQTT binding is not started")
         }
         let topic = Self.topic(for: action.routingKey, namespace: namespace)
-        client.publish(topic, message: action.payload)
+        client.publish(topic: topic, payload: action.payload)
     }
 
     /// Stops the MQTT connection and releases callback admission.
@@ -127,19 +114,19 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
 
     /// Installs bounded wildcard subscriptions for the closed profile.
     public func installSubscriptions(namespace: String) async throws {
-        try await client.subscribe(TopicBuilder.subscribeAllOneWayTopics(namespace: namespace))
+        try await client.subscribe(RuntimeTopicBuilder.subscribeAllOneWayTopics(namespace: namespace))
         let responseFamilies: [WireEventType] = [.discover, .resolve, .query, .retrieve, .update, .complete, .call, .returnEvent]
         for family in responseFamilies {
-            try await client.subscribe(TopicBuilder.subscribeTopic(eventType: family, namespace: namespace))
+            try await client.subscribe(RuntimeTopicBuilder.subscribeTopic(eventType: family, namespace: namespace))
         }
     }
 
     /// Removes the same profile subscriptions during shutdown/reconnect.
     public func removeSubscriptions(namespace: String) async throws {
-        try await client.unsubscribe(TopicBuilder.subscribeAllOneWayTopics(namespace: namespace))
+        try await client.unsubscribe(RuntimeTopicBuilder.subscribeAllOneWayTopics(namespace: namespace))
         let responseFamilies: [WireEventType] = [.discover, .resolve, .query, .retrieve, .update, .complete, .call, .returnEvent]
         for family in responseFamilies {
-            try await client.unsubscribe(TopicBuilder.subscribeTopic(eventType: family, namespace: namespace))
+            try await client.unsubscribe(RuntimeTopicBuilder.subscribeTopic(eventType: family, namespace: namespace))
         }
     }
 
@@ -148,7 +135,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         guard let identity else { return }
         let payload = try Self.identityPayload(identity)
         let key = try ProtocolRoutingKey(capability: .advertise, sourceID: identity.id)
-        client.publish(Self.topic(for: key, namespace: namespace), message: payload)
+        client.publish(topic: Self.topic(for: key, namespace: namespace), payload: payload)
     }
 
     /// Publishes a matching Deadvertise payload during graceful shutdown.
@@ -156,7 +143,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         guard let identity else { return }
         let payload = Array("[\"\(Self.uuidString(identity.id))\"]".utf8)
         let key = try ProtocolRoutingKey(capability: .deadvertise, sourceID: identity.id)
-        client.publish(Self.topic(for: key, namespace: namespace), message: payload)
+        client.publish(topic: Self.topic(for: key, namespace: namespace), payload: payload)
     }
 
     /// Classifies the binding's exact external compatibility route.
@@ -190,7 +177,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     }
 }
 
-private final class RuntimeMQTTDelegate: CommunicationClientDelegate, @unchecked Sendable {
+private final class RuntimeMQTTDelegate: RuntimeMQTTClientDelegate, @unchecked Sendable {
     private let lock = NIOLock()
     private var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
     private var startContinuation: CheckedContinuation<Void, Error>?
@@ -226,19 +213,19 @@ private final class RuntimeMQTTDelegate: CommunicationClientDelegate, @unchecked
         }
     }
 
-    func didReceiveStart() {}
-
-    func didUpdateCommunicationState(_ state: CommunicationState) {
-        guard state == .online else {
-            if state == .offline {
-                finishStart(.failure(AxolotyError.runtime(
-                    code: .brokerUnavailable,
-                    reason: "MQTT broker connection failed before the runtime became online"
-                )))
-            }
-            return
-        }
+    func runtimeMQTTClientDidBecomeOnline() {
         finishStart(.success(()))
+    }
+
+    func runtimeMQTTClientDidBecomeOffline() {
+        failStart(AxolotyError.runtime(
+            code: .brokerUnavailable,
+            reason: "MQTT broker connection failed before the runtime became online"
+        ))
+    }
+
+    func runtimeMQTTClientDidFail(_ error: Error) {
+        failStart(error)
     }
 
     func failStart(_ error: Error) {
@@ -263,13 +250,19 @@ private final class RuntimeMQTTDelegate: CommunicationClientDelegate, @unchecked
         }
     }
 
-    func didReceiveRawMQTTMessage(topic: String, payload: [UInt8]) {
+    func runtimeMQTTClientDidReceive(topic: String, payload: [UInt8]) {
         let callback = lock.withLock { receive }
         callback?(RuntimeInboundFrame(topic: topic, payload: payload))
     }
+}
 
-    func didReceiveIoValue(topic: String, payload: [UInt8]) {
-        let callback = lock.withLock { receive }
-        callback?(RuntimeInboundFrame(topic: topic, payload: payload))
+private enum RuntimeTopicBuilder {
+    static func subscribeAllOneWayTopics(namespace: String) -> String {
+        "coaty/3/\(namespace)/+/+"
+    }
+
+    static func subscribeTopic(eventType: WireEventType, namespace: String) -> String {
+        let correlation = eventType.isOneWay ? "" : "/+"
+        return "coaty/3/\(namespace)/\(eventType.rawValue)/+\(correlation)"
     }
 }

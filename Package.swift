@@ -99,17 +99,22 @@ let package = Package(
             dependencies: [
                 "AxolotyWire",
                 "AxolotyProtocol",
+                "AxolotyObjectModel",
                 .product(name: "MQTTNIO", package: "mqtt-nio"),
                 .product(name: "NIO", package: "swift-nio"),
                 .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
                 .product(name: "NIOSSL", package: "swift-nio-ssl", condition: .when(platforms: [.linux])),
                 .product(name: "NIOTransportServices", package: "swift-nio-transport-services", condition: .when(platforms: [.macOS, .iOS])),
-                .product(name: "Logging", package: "swift-log"),
                 .product(name: "ErrorKit", package: "ErrorKit"),
-                .product(name: "IkigaJSON", package: "swift-json"),
             ],
             path: "Source",
-            exclude: ["Runtime/AGENTS.md"]
+            sources: [
+                "Common/AxolotyError.swift",
+                "Runtime/AxolotyRuntimeDefinition.swift",
+                "Runtime/AxolotyRuntime.swift",
+                "Runtime/MQTTBinding.swift",
+                "Runtime/RuntimeMQTTClient.swift",
+            ]
         ),
         .testTarget(
             name: "AxolotyTests",
@@ -153,6 +158,12 @@ let package = Package(
                 "WireCompatibility/Reverse/coatyjs-core-requester.js",
                 "WireCompatibility/Reverse/coatyjs-to-modern-requester.js",
                 "ProtocolTrace/README.md",
+            ],
+            sources: [
+                "ProtocolTrace/ProtocolTrace.swift",
+                "ProtocolTrace/ProtocolTraceCorpus.swift",
+                "ProtocolTrace/ProtocolTraceTests.swift",
+                "Runtime/AxolotyRuntimeTests.swift",
             ],
             resources: [
                 .copy("ProtocolTrace/trace.schema.json"),
@@ -295,17 +306,17 @@ let package = Package(
         // can measure its incremental contribution to binary size.
         .executableTarget(
             name: "CommunicationConsumer",
-            dependencies: ["Axoloty"],
+            dependencies: ["AxolotyProtocol"],
             path: "Benchmarks/Consumers/CommunicationConsumer"
         ),
         .executableTarget(
             name: "IoRoutingConsumer",
-            dependencies: ["Axoloty"],
+            dependencies: ["AxolotyObjectModel"],
             path: "Benchmarks/Consumers/IoRoutingConsumer"
         ),
         .executableTarget(
             name: "SensorThingsConsumer",
-            dependencies: ["Axoloty"],
+            dependencies: ["AxolotyObjectModel"],
             path: "Benchmarks/Consumers/SensorThingsConsumer"
         ),
         // Release-only wire benchmark executable (issue #300). Measures

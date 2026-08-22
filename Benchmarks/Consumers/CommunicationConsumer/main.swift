@@ -7,8 +7,7 @@
 // cost of the event types, snapshot metadata, and topic-building machinery
 // beyond the wire-only baseline.
 
-import Axoloty
+import AxolotyProtocol
 
-let identity = Identity(name: "communication-consumer-anchor")
-let event = try AdvertiseEvent.with(object: identity)
-print("COMMUNICATION_CONSUMER_OK: \(type(of: event))")
+let key = try ProtocolRoutingKey(capability: .advertise, sourceID: .zero)
+print("COMMUNICATION_CONSUMER_OK: \(key.capability)")
