@@ -12,7 +12,9 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 package_dir=${AXOLOTY_OBJECT_MODEL_PACKAGE_DIR:-$root/Packages/AxolotyObjectModel}
 source_dir="$package_dir/Sources/AxolotyObjectModel"
 manifest="$package_dir/Package.swift"
+root_manifest=${AXOLOTY_ROOT_MANIFEST:-$root/Package.swift}
 component=${AXOLOTY_OBJECT_MODEL_COMPONENT:-$root/Embedded/swift/components/axoloty_object_model/CMakeLists.txt}
+component_manifest=${AXOLOTY_OBJECT_MODEL_COMPONENT_MANIFEST:-$root/Embedded/swift/components/axoloty_object_model/idf_component.yml}
 main_component=${AXOLOTY_OBJECT_MODEL_MAIN_COMPONENT:-$root/Embedded/swift/main/CMakeLists.txt}
 
 set -- "$source_dir"/*.swift
@@ -26,7 +28,7 @@ for source in "$@"; do
         echo "error: forbidden host dependency in $source" >&2
         exit 1
     fi
-    if grep -Eq '^[[:space:]]*@MainActor([[:space:]]|$)|^[[:space:]]*(distributed[[:space:]]+)?actor[[:space:]]' "$source"; then
+    if grep -Eq '^[[:space:]]*@MainActor([[:space:]]|$)|^[[:space:]]*@globalActor([[:space:]]|$)|^[[:space:]]*(distributed[[:space:]]+)?actor[[:space:]]|^[[:space:]]*(class|struct|enum|protocol)[[:space:]]+[A-Za-z0-9_]*(Controller|Lifecycle|HostObject)[[:space:]]*[{:]' "$source"; then
         echo "error: host-runtime isolation in $source" >&2
         exit 1
     fi
@@ -38,6 +40,10 @@ if [ ! -f "$manifest" ]; then
 fi
 if [ ! -f "$component" ]; then
     echo "error: missing AxolotyObjectModel ESP-IDF component" >&2
+    exit 1
+fi
+if [ ! -f "$component_manifest" ]; then
+    echo "error: missing AxolotyObjectModel ESP-IDF manifest" >&2
     exit 1
 fi
 if [ ! -f "$main_component" ]; then
@@ -56,8 +62,36 @@ if printf '%s' "$manifest_without_comments" | grep -Eq '(Foundation|MQTTNIO|NIO|
     echo "error: forbidden host/runtime manifest dependency" >&2
     exit 1
 fi
+if [ ! -f "$root_manifest" ]; then
+    echo "error: missing root Package.swift" >&2
+    exit 1
+fi
+if ! grep -Fq '.library(' "$root_manifest" || \
+   ! grep -Fq 'name: "AxolotyObjectModel"' "$root_manifest" || \
+   ! grep -Fq 'targets: ["AxolotyObjectModel"]' "$root_manifest"; then
+    echo "error: root package does not publish AxolotyObjectModel" >&2
+    exit 1
+fi
+if ! grep -Fq 'dependencies: ["AxolotyWire"]' "$root_manifest" || \
+   ! grep -Fq 'path: "Packages/AxolotyObjectModel/Sources/AxolotyObjectModel"' "$root_manifest"; then
+    echo "error: root AxolotyObjectModel target has the wrong dependency closure" >&2
+    exit 1
+fi
+if ! grep -Fq 'name: "AxolotyObjectModelTests"' "$root_manifest" || \
+   ! grep -Fq 'dependencies: ["AxolotyObjectModel", "AxolotyWire"]' "$root_manifest" || \
+   ! grep -Fq 'path: "Packages/AxolotyObjectModel/Tests/AxolotyObjectModelTests"' "$root_manifest"; then
+    echo "error: root AxolotyObjectModel test target is not wired to the standalone tests" >&2
+    exit 1
+fi
 if ! grep -Fq 'AxolotyObjectModel/Sources/AxolotyObjectModel/*.swift' "$component"; then
     echo "error: ESP-IDF component does not compile the AxolotyObjectModel source glob" >&2
+    exit 1
+fi
+if ! grep -Fq 'idf_swift' "$component_manifest" || \
+   ! grep -Fq 'idf_swift' "$component" || \
+   ! grep -Fq 'axoloty_wire' "$component" || \
+   ! grep -Fq 'json_core' "$component"; then
+    echo "error: ESP-IDF model component dependencies are incomplete" >&2
     exit 1
 fi
 if ! grep -Fq 'AxolotyWire' "$component" || ! grep -Fq 'AxolotyObjectModel' "$component"; then
@@ -69,14 +103,17 @@ if ! grep -Fq 'OUTPUT ${AXOLOTY_OBJECT_MODEL_MODULE_ALIAS}' "$component" || \
     echo "error: ESP-IDF component does not publish an explicit model module output" >&2
     exit 1
 fi
-if ! grep -Fq 'add_dependencies(${COMPONENT_LIB} axoloty_object_model_module_alias)' "$main_component"; then
+if ! grep -Fq 'axoloty_object_model' "$main_component" || \
+   ! grep -Fq 'add_dependencies(${COMPONENT_LIB} axoloty_object_model_module_alias)' "$main_component"; then
     echo "error: embedded main does not depend on the model module output" >&2
     exit 1
 fi
 
-swift build --package-path "$package_dir" \
-    --disable-automatic-resolution \
-    --cache-path "$root/.swiftpm-cache" \
-    --product AxolotyObjectModel
+if [ "${AXOLOTY_OBJECT_MODEL_SKIP_BUILD:-0}" != "1" ]; then
+    swift build --package-path "$package_dir" \
+        --disable-automatic-resolution \
+        --cache-path "$root/.swiftpm-cache" \
+        --product AxolotyObjectModel
+fi
 
 echo "AxolotyObjectModel host source inclusion and dependency policy passed"
