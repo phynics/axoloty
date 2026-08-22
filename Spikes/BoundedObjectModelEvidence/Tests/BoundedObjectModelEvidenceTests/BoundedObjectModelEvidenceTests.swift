@@ -98,10 +98,12 @@ private func saturation<let capacity: Int>(_: BoundedDynamicObject<capacity, cap
     let initialBytesMatch = object.encodedEquals("{\"a\":0}")
     #expect(initialBytesMatch)
     var editRejected = false
-    do throws(ObjectError) {
+    do {
         try object.edit { try $0.setRaw("overflow", value: slice("999999999999999999999999999999999999999999999999999999999999999999999999999999")) }
     } catch {
-        editRejected = error.reason == .capacityExceeded
+        if let objectError = error as? ObjectError {
+            editRejected = objectError.reason == .capacityExceeded
+        }
     }
     #expect(editRejected)
     let unchanged = object.encodedEquals("{\"a\":0}")
@@ -123,12 +125,26 @@ private func randomized<let capacity: Int>(_: BoundedDynamicObject<capacity, cap
             try object.edit { try $0.setNull("a") }
             var presence: Presence<JSONValueKind> = .missing
             object.withFields { fields in presence = fields.presence(for: "a") }
-            if case .null = presence { #expect(true) } else { Issue.record("expected null presence") }
+            let hasNullPresence: Bool
+            if case .null = presence {
+                hasNullPresence = true
+            } else {
+                hasNullPresence = false
+                Issue.record("expected null presence")
+            }
+            #expect(hasNullPresence)
         } else {
             try object.edit { try $0.set("a", to: .number("1")) }
             var presence: Presence<JSONValueKind> = .missing
             object.withFields { fields in presence = fields.presence(for: "a") }
-            if case .value(.number) = presence { #expect(true) } else { Issue.record("expected number presence") }
+            let hasNumberPresence: Bool
+            if case .value(.number) = presence {
+                hasNumberPresence = true
+            } else {
+                hasNumberPresence = false
+                Issue.record("expected number presence")
+            }
+            #expect(hasNumberPresence)
         }
     }
 }
