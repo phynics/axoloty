@@ -316,8 +316,9 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
                     }
                 } catch { wireFailure = error }
             }
-            if wireFailure != nil { failure = ObjectError(.invalidPredicateExpression) }
-            guard failure == nil, index == 2, let pathIndex, let expressionInfo else { failure = ObjectError(.invalidPredicateExpression); return }
+            if wireFailure != nil, failure == nil { failure = ObjectError(.invalidPredicateExpression) }
+            guard failure == nil else { return }
+            guard index == 2, let pathIndex, let expressionInfo else { failure = ObjectError(.invalidPredicateExpression); return }
             do throws(ObjectError) { _ = try appendNode(PredicateNode.condition(path: pathIndex, operation: expressionInfo.operation, operand: expressionInfo.operand, operandCount: expressionInfo.count), parent: parent) }
             catch { failure = error }
             return
@@ -345,11 +346,11 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
                                 }
                             } catch { wireFailure = error }
                         }
-                        if wireFailure != nil { failure = ObjectError(.invalidPredicateExpression) }
+                        if wireFailure != nil, failure == nil { failure = ObjectError(.invalidPredicateExpression) }
                     }
                 }
             }
-        } catch { failure = ObjectError(.invalidPredicateExpression) }
+        } catch { if failure == nil { failure = ObjectError(.invalidPredicateExpression) } }
         if failure == nil, groupCount != 1 { failure = ObjectError(.invalidPredicateExpression) }
     }
 
@@ -393,7 +394,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
     }
 
     private mutating func appendExpressionValue(_ bytes: borrowing WireValueView, failure: inout ObjectError?) -> (operation: ObjectPredicateOperator, operand: Int, count: Int)? {
-        guard bytes.kind == .array else { failure = ObjectError(.invalidPredicateExpression); return nil }
+        guard bytes.kind == .array else { if failure == nil { failure = ObjectError(.invalidPredicateExpression) }; return nil }
         var operation: ObjectPredicateOperator?
         var operandIndexes = InlineArray<2, Int>(repeating: -1)
         var operandCount = 0
@@ -408,18 +409,19 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
                 }
             } catch { wireFailure = error }
         }
-        if wireFailure != nil { failure = ObjectError(.invalidPredicateExpression) }
-        guard failure == nil, let operation else { failure = ObjectError(.invalidPredicateExpression); return nil }
+        if wireFailure != nil, failure == nil { failure = ObjectError(.invalidPredicateExpression) }
+        guard failure == nil else { return nil }
+        guard let operation else { failure = ObjectError(.invalidPredicateExpression); return nil }
         let expected: Int
         switch operation { case .exists, .notExists: expected = 1; case .between, .notBetween: expected = 3; default: expected = 2 }
-        guard operandCount == expected else { failure = ObjectError(.invalidPredicateExpression); return nil }
+        guard operandCount == expected else { if failure == nil { failure = ObjectError(.invalidPredicateExpression) }; return nil }
         if operation == .exists || operation == .notExists { return (operation, 0, 0) }
         let firstIndex = operandIndexes[0]
-        guard firstIndex >= 0 else { failure = ObjectError(.invalidPredicateExpression); return nil }
+        guard firstIndex >= 0 else { if failure == nil { failure = ObjectError(.invalidPredicateExpression) }; return nil }
         if operation == .between || operation == .notBetween {
-            guard operandIndexes[1] == firstIndex + 1 else { failure = ObjectError(.invalidPredicateExpression); return nil }
+            guard operandIndexes[1] == firstIndex + 1 else { if failure == nil { failure = ObjectError(.invalidPredicateExpression) }; return nil }
         }
-        if operation == .valuesIn || operation == .valuesNotIn, !literalIsArray(firstIndex) { failure = ObjectError(.invalidPredicateExpression); return nil }
+        if operation == .valuesIn || operation == .valuesNotIn, !literalIsArray(firstIndex) { if failure == nil { failure = ObjectError(.invalidPredicateExpression) }; return nil }
         return (operation, firstIndex, operation == .between || operation == .notBetween ? 2 : 1)
     }
 

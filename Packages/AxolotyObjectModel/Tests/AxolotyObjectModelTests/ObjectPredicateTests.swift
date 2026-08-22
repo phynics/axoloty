@@ -182,6 +182,17 @@ private func predicateObject(_ value: StaticString) throws -> BoundedDynamicObje
     }
 }
 
+@Test func predicateCapacityFailureRetainsStructuredReason() throws {
+    do {
+        _ = try ObjectPredicate<1, 1, 1, 1>(
+            decoding: predicateSlice("{\"conditions\":[\"v\",[7,1]]}")
+        )
+        Issue.record("expected predicate capacity failure")
+    } catch let error as ObjectError {
+        #expect(error.reason == .capacityExceeded)
+    }
+}
+
 @Test func absentConditionsRetainsCoatyMatchAllSemantics() throws {
     let predicate = try ObjectPredicate<16, 2, 2, 64>(decoding: predicateSlice("{}"))
     let object = try predicateObject("{\"unfiltered\":true}")
