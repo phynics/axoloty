@@ -22,8 +22,8 @@ public struct ObjectEnvelope<let nameCapacity: Int, let externalIDCapacity: Int>
     public let parentObjectID: ObjectID?
     /// Optional location object identifier.
     public let locationID: ObjectID?
-    /// Whether the object is deactivated.
-    public let isDeactivated: Bool
+    /// Whether the object is deactivated, preserving missing and explicit null.
+    public let isDeactivated: Presence<Bool>
 
     /// Creates an envelope from its portable identity components.
     public init(
@@ -34,7 +34,7 @@ public struct ObjectEnvelope<let nameCapacity: Int, let externalIDCapacity: Int>
         externalID: BoundedEncodedText<externalIDCapacity>? = nil,
         parentObjectID: ObjectID? = nil,
         locationID: ObjectID? = nil,
-        isDeactivated: Bool = false
+        isDeactivated: Presence<Bool> = .missing
     ) {
         self.objectID = objectID; self.objectType = objectType; self.name = name; self.coreType = coreType
         self.externalID = externalID; self.parentObjectID = parentObjectID; self.locationID = locationID; self.isDeactivated = isDeactivated
@@ -49,14 +49,15 @@ public struct ObjectEnvelope<let nameCapacity: Int, let externalIDCapacity: Int>
         var decodedExternal: BoundedEncodedText<externalIDCapacity>?
         var decodedParent: ObjectID?
         var decodedLocation: ObjectID?
-        var decodedDeactivated = false
+        var decodedDeactivated: Presence<Bool> = .missing
         var failure = false
         bytes.withBytes { pointer, count in
             let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: count)
             do { try reader.validate() } catch { failure = true; return }
             guard let idSlice = reader.readString("objectId"), let objectID = ObjectID(bytes: idSlice),
                   let typeSlice = reader.readString("objectType"), let objectType = ObjectType(bytes: typeSlice),
-                  let nameSlice = reader.readString("name"), let name = BoundedEncodedText<nameCapacity>(bytes: nameSlice),
+                  let nameSlice = reader.readString("name"), nameSlice.length > 0,
+                  let name = BoundedEncodedText<nameCapacity>(bytes: nameSlice),
                   let coreSlice = reader.readString("coreType"), let core = ObjectCoreType(bytes: coreSlice)
             else { failure = true; return }
             decodedID = objectID; decodedType = objectType; decodedName = name; decodedCore = core
@@ -72,9 +73,12 @@ public struct ObjectEnvelope<let nameCapacity: Int, let externalIDCapacity: Int>
                 guard let value = reader.readString("locationId"), let bounded = ObjectID(bytes: value) else { failure = true; return }
                 decodedLocation = bounded
             }
-            if let field = reader.readField("isDeactivated"), !isJSONNull(field) {
-                guard let value = reader.readBool("isDeactivated") else { failure = true; return }
-                decodedDeactivated = value
+            if let field = reader.readField("isDeactivated") {
+                if isJSONNull(field) { decodedDeactivated = .null }
+                else {
+                    guard let value = reader.readBool("isDeactivated") else { failure = true; return }
+                    decodedDeactivated = .value(value)
+                }
             }
         }
         guard !failure, let objectID = decodedID, let objectType = decodedType, let name = decodedName, let coreType = decodedCore else { throw ObjectError(.invalidEnvelope) }

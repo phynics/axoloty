@@ -36,6 +36,8 @@ public enum ObjectSchemaValidationError: Error, Sendable, Equatable {
     case invalidFieldIndex
     /// A descriptor has an unsupported flag combination.
     case invalidFlags
+    /// A descriptor after `fieldCount` is not the empty sentinel.
+    case nonEmptyTrailingField
 }
 
 /// A field's wire presence policy.
@@ -159,6 +161,11 @@ public struct PortableObjectSchema<Value: Sendable>: Sendable {
                 if fields[prior].index == field.index { throw .duplicateFieldIndex }
                 prior += 1
             }
+            index += 1
+        }
+        index = Int(fieldCount)
+        while index < Self.maxFieldCount {
+            guard fields[index] == .empty else { throw .nonEmptyTrailingField }
             index += 1
         }
     }

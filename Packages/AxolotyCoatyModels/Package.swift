@@ -10,6 +10,7 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../AxolotyObjectModel"),
+        .package(path: "../AxolotyWire"),
     ],
     targets: [
         .target(
@@ -19,7 +20,7 @@ let package = Package(
         ),
         .testTarget(
             name: "AxolotyCoatyModelsTests",
-            dependencies: ["AxolotyCoatyModels", "AxolotyObjectModel"],
+            dependencies: ["AxolotyCoatyModels", "AxolotyObjectModel", "AxolotyWire"],
             path: "Tests/AxolotyCoatyModelsTests"
         ),
     ],

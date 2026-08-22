@@ -2,6 +2,7 @@
 
 import AxolotyCoatyModels
 import AxolotyObjectModel
+import AxolotyWire
 import Testing
 
 private func slice(_ value: StaticString) -> ByteSlice {
@@ -27,4 +28,13 @@ func ioPointFieldsRoundTrip() throws {
     #expect(source.value.updateStrategy == .sample)
     #expect(source.value.updateRate == 250)
     #expect(source.value.externalRoute?.encodedEquals("external/temperature") == true)
+}
+
+@Test("empty IO value types are rejected")
+func ioPointRejectsEmptyValueType() throws {
+    let bytes = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"coaty.IoActor\",\"name\":\"actor\",\"coreType\":\"IoActor\",\"valueType\":\"\"}")
+    do {
+        _ = try BoundedObject<IoActor, 512, 24>(decoding: bytes)
+        Issue.record("empty valueType was accepted")
+    } catch { #expect(error.reason == .invalidField) }
 }

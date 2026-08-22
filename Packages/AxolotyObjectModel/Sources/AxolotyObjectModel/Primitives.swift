@@ -233,3 +233,4 @@ public enum Presence<Value> {
 }
 
 extension Presence: Sendable where Value: Sendable {}
+extension Presence: Equatable where Value: Equatable {}

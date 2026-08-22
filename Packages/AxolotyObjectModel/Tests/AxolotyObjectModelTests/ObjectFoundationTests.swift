@@ -68,6 +68,16 @@ private struct OtherManualSchema: ObjectSchema {
     borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {}
 }
 
+private struct TrailingManualSchema: ObjectSchema {
+    static let schema: PortableObjectSchema<Self> = {
+        var fields = InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
+        fields[1] = ObjectFieldDescriptor(key: ObjectFieldKey("late")!, index: 1, flags: .required)
+        return PortableObjectSchema(objectType: ObjectType("com.example.Trailing")!, coreType: .coatyObject, fieldCount: 1, fields: fields)
+    }()
+    init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {}
+    borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {}
+}
+
 @Test func schemaDescriptorUsesCompactLiteralKeys() {
     // StaticString layout is toolchain-specific. Keep the evidence as a
     // relationship: a key must fit within one descriptor and the fixed table
@@ -83,6 +93,8 @@ private struct OtherManualSchema: ObjectSchema {
     catch { #expect(error == .duplicateFieldKey) }
     do { try InvalidFlagsManualSchema.schema.validate(); Issue.record("invalid flags accepted") }
     catch { #expect(error == .invalidFlags) }
+    do { try TrailingManualSchema.schema.validate(); Issue.record("non-empty trailing descriptor accepted") }
+    catch { #expect(error == .nonEmptyTrailingField) }
     do { try OverflowManualSchema.schema.validate(); Issue.record("field-count overflow accepted") }
     catch { #expect(error == .invalidFieldCount) }
     var registry = ObjectSchemaRegistry<1>()
@@ -188,7 +200,16 @@ private struct OtherManualSchema: ObjectSchema {
     #expect(envelope.externalID == BoundedEncodedText<128>("external"))
     #expect(envelope.parentObjectID == ObjectID(bytes: slice("44444444-4444-4444-8444-444444444444")))
     #expect(envelope.locationID == ObjectID(bytes: slice("55555555-5555-4555-8555-555555555555")))
-    #expect(envelope.isDeactivated)
+    #expect(envelope.isDeactivated == .value(true))
+}
+
+@Test func envelopePreservesDeactivationPresence() throws {
+    let absent = try ObjectEnvelope<16, 16>(decoding: slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"Reading\",\"name\":\"Reading\",\"coreType\":\"CoatyObject\"}"))
+    let explicitNull = try ObjectEnvelope<16, 16>(decoding: slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"Reading\",\"name\":\"Reading\",\"coreType\":\"CoatyObject\",\"isDeactivated\":null}"))
+    let explicitValue = try ObjectEnvelope<16, 16>(decoding: slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"Reading\",\"name\":\"Reading\",\"coreType\":\"CoatyObject\",\"isDeactivated\":true}"))
+    #expect(absent.isDeactivated == .missing)
+    #expect(explicitNull.isDeactivated == .null)
+    #expect(explicitValue.isDeactivated == .value(true))
 }
 
 @Test func envelopeCapacityIsChosenByEnvelopeTypeAndKeepsEscapesEncoded() throws {

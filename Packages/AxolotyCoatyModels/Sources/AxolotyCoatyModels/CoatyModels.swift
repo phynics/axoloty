@@ -73,14 +73,17 @@ public struct IoSource: ObjectSchema, Sendable {
         useRawIoValues: Bool? = false,
         updateRate: Int? = nil,
         externalRoute: BoundedEncodedText<128>? = nil
-    ) {
+    ) throws(ObjectError) {
+        guard valueType.length > 0 else { throw ObjectError(.invalidField) }
         self.valueType = valueType; self.updateStrategy = updateStrategy; self.useRawIoValues = useRawIoValues
         self.updateRate = updateRate; self.externalRoute = externalRoute
     }
 
     /// Decodes all IoSource fields from a borrowed object view.
     public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
-        self.valueType = try fields.decode("valueType", as: BoundedEncodedText<128>.self)
+        let valueType = try fields.decode("valueType", as: BoundedEncodedText<128>.self)
+        guard valueType.length > 0 else { throw .invalidField }
+        self.valueType = valueType
         self.updateStrategy = try fields.decodeIfPresent("updateStrategy", as: IoSourceBackpressureStrategy.self)
         self.useRawIoValues = try fields.decodeIfPresent("useRawIoValues", as: Bool.self)
         self.updateRate = try fields.decodeIfPresent("updateRate", as: Int.self)
@@ -116,13 +119,16 @@ public struct IoActor: ObjectSchema, Sendable {
     public init(
         valueType: BoundedEncodedText<128>, useRawIoValues: Bool? = false, updateRate: Int? = nil,
         externalRoute: BoundedEncodedText<128>? = nil
-    ) {
+    ) throws(ObjectError) {
+        guard valueType.length > 0 else { throw ObjectError(.invalidField) }
         self.valueType = valueType; self.useRawIoValues = useRawIoValues; self.updateRate = updateRate; self.externalRoute = externalRoute
     }
 
     /// Decodes all IoActor fields from a borrowed object view.
     public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
-        self.valueType = try fields.decode("valueType", as: BoundedEncodedText<128>.self)
+        let valueType = try fields.decode("valueType", as: BoundedEncodedText<128>.self)
+        guard valueType.length > 0 else { throw .invalidField }
+        self.valueType = valueType
         self.useRawIoValues = try fields.decodeIfPresent("useRawIoValues", as: Bool.self)
         self.updateRate = try fields.decodeIfPresent("updateRate", as: Int.self)
         self.externalRoute = try fields.decodeIfPresent("externalRoute", as: BoundedEncodedText<128>.self)
