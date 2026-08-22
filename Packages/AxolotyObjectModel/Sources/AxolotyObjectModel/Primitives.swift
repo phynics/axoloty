@@ -22,6 +22,12 @@ public struct ObjectError: Error, Sendable, Equatable {
         case invalidSchema
         /// The wire tokenizer's authoritative 24-field index was exceeded.
         case fieldIndexOverflow
+        /// A predicate program was malformed.
+        case invalidPredicate
+        /// A predicate path was malformed.
+        case invalidPredicatePath
+        /// A predicate operator or operand was malformed.
+        case invalidPredicateExpression
     }
 
     /// The machine-readable category.

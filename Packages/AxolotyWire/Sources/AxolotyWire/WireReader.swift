@@ -37,6 +37,16 @@ public struct WireObjectField: ~Copyable {
         var right = WireKeyCursor(key: key)
         return wireSemanticKeysEqual(&left, &right)
     }
+
+    /// Borrows the decoded key content for the duration of `body`.
+    public borrowing func withKey(_ body: (ByteSlice) -> Void) {
+        body(ByteSlice(bytes: bytes.advanced(by: keyRange.lowerBound).assumingMemoryBound(to: UInt8.self), length: keyRange.count))
+    }
+
+    /// Borrows the complete encoded value for the duration of `body`.
+    public borrowing func withValue(_ body: (ByteSlice) -> Void) {
+        body(ByteSlice(bytes: bytes.advanced(by: valueRange.lowerBound).assumingMemoryBound(to: UInt8.self), length: valueRange.count))
+    }
 }
 
 /// The lexical kind retained for an indexed JSON value.

@@ -35,6 +35,20 @@ public struct ObjectFields: ~Copyable {
         return false
     }
 
+    /// Borrows a field selected by an encoded key slice for the duration of `body`.
+    public borrowing func withValue(for key: ByteSlice, _ body: (borrowing JSONValueView) -> Void) -> Bool {
+        let descriptorBuffer = descriptors.assumingMemoryBound(to: DynamicFieldDescriptor.self)
+        for index in 0..<descriptorCount {
+            let descriptor = descriptorBuffer[index]
+            let keySlice = ByteSlice(bytes: bytes.advanced(by: descriptor.keyStart).assumingMemoryBound(to: UInt8.self), length: descriptor.keyLength)
+            if keySlice.semanticEquals(key) {
+                let value = ByteSlice(bytes: bytes.advanced(by: descriptor.valueStart).assumingMemoryBound(to: UInt8.self), length: descriptor.valueLength)
+                body(JSONValueView(raw: value)); return true
+            }
+        }
+        return false
+    }
+
     /// Returns an owned value snapshot that remains valid after the object changes.
     ///
     /// A missing key returns `nil`. A present value that cannot fit or is not

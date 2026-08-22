@@ -182,6 +182,9 @@ public struct JSONValueView: ~Copyable {
 
     /// Compares the exact retained value bytes without exposing borrowed storage.
     public borrowing func rawEquals(_ value: StaticString) -> Bool { raw.equals(value) }
+
+    /// Borrows the complete encoded value for the duration of `body`.
+    public borrowing func withRaw(_ body: (ByteSlice) -> Void) { body(raw) }
 }
 
 /// An owned, bounded JSON value snapshot that can safely outlive its source object.
