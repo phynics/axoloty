@@ -14,6 +14,16 @@ public struct ProtocolError: Error, Sendable, Equatable {
         case borrowedValueEscaped = 4
         /// An action or frame exceeds a bounded portable capacity.
         case capacityExceeded = 5
+        /// The operation repeats an already-consumed correlation or association.
+        case duplicate = 6
+        /// The caller supplied a time after the protocol deadline.
+        case deadlineExpired = 7
+        /// A response correlation does not match the pending request.
+        case correlationMismatch = 8
+        /// An external-route flag disagrees with binding classification.
+        case externalRouteMismatch = 9
+        /// The payload is syntactically valid JSON but not valid for its family.
+        case malformedPayload = 10
     }
 
     /// The stable failure category.

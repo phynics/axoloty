@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 // Dedicated host allocation-regression probe for the AxolotyWire borrowed
-// decode + static routing hot path (issue #490).
+// decode + shared protocol processor hot path (issue #490).
 //
 // This executable performs ONLY a warmed steady-state decode/route pass, so a
 // malloc-counting instrument (heaptrack) measures the hot path in isolation.
@@ -16,6 +16,7 @@
 // It emits no per-iteration JSON; the check script wraps it in heaptrack.
 
 import AxolotyWire
+import AxolotyProtocol
 
 @inline(never)
 func hotPath(
@@ -26,8 +27,7 @@ func hotPath(
     iterations: Int
 ) -> UInt32 {
     var sink: UInt32 = 0
-    let router = try! EmbeddedMessageRouter()
-    _ = router.subscribe(.associate) { _ in }
+    var processor = ProtocolProcessor<16>()
     for _ in 0..<iterations {
         let message = BorrowedMessage(
             topicBytes: topicBuffer, topicLength: topicLength,
@@ -35,8 +35,11 @@ func hotPath(
         )
         // DTO decode through the borrowed reader.
         if (try? AssociateWireData(from: message.reader())) != nil { sink &+= 1 }
-        // Synchronous static routing.
-        router.dispatch(message)
+        // Shared fixed-inline protocol processing.
+        var actionSink = InlineProtocolActionSink<1>()
+        if let frame = try? BorrowedProtocolFrame(topic: message.topic, payload: message.payload) {
+            if processor.processInbound(frame, nowMS: 1, sink: &actionSink) == .accepted { sink &+= 1 }
+        }
     }
     return sink
 }

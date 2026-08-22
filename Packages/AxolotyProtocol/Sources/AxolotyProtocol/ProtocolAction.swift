@@ -2,6 +2,20 @@
 
 import AxolotyWire
 
+/// The normalized selector used by protocol consumers after topic parsing.
+public enum ProtocolDeliveryKey {
+    /// Match every action in a capability family.
+    case capability(ProtocolCapability)
+    /// Match an Advertise filter.
+    case advertiseFilter(ByteSlice)
+    /// Match a Channel identifier.
+    case channel(ByteSlice)
+    /// Match an IoValue actor endpoint.
+    case ioActor(UUID16)
+    /// Match a response family and correlation identity.
+    case correlated(ProtocolCapability, UUID16)
+}
+
 /// The finite action kinds exposed by the portable processor boundary.
 public enum ProtocolActionKind: UInt8, Sendable, Equatable {
     /// Deliver an inbound frame to a protocol consumer.
@@ -23,6 +37,10 @@ public struct BorrowedProtocolAction {
     public let kind: ProtocolActionKind
     /// The action routing key.
     public let routingKey: ProtocolRoutingKey
+    /// The normalized delivery selector.
+    public let deliveryKey: ProtocolDeliveryKey
+    /// The original borrowed topic, when the action came from inbound wire data.
+    public let topic: ByteSlice?
     /// The borrowed action payload.
     public let payload: ByteSlice
 
@@ -30,10 +48,14 @@ public struct BorrowedProtocolAction {
     public init(
         kind: ProtocolActionKind,
         routingKey: ProtocolRoutingKey,
-        payload: ByteSlice
+        payload: ByteSlice,
+        deliveryKey: ProtocolDeliveryKey? = nil,
+        topic: ByteSlice? = nil
     ) {
         self.kind = kind
         self.routingKey = routingKey
+        self.deliveryKey = deliveryKey ?? .capability(routingKey.capability)
+        self.topic = topic
         self.payload = payload
     }
 

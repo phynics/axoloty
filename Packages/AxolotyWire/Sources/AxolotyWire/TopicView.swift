@@ -23,6 +23,13 @@ public struct TopicView {
     public var levelCount: Int {
         _levelCount
     }
+
+    /// The complete borrowed topic buffer.
+    ///
+    /// The slice is valid only while the source topic buffer remains pinned.
+    public var rawBytes: ByteSlice {
+        ByteSlice(pointer: bytes, length: byteCount)
+    }
     private var _levelCount: Int
 
     /// Start offsets of up to 7 parsed topic levels within ``bytes``.

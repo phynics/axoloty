@@ -4,7 +4,7 @@
     {"family": "ADV", "valid": "{\"object\":{\"objectId\":\"test\"}}", "malformed": "{\"object\":", "externalRoute": "{\"ioSourceId\":\"source-001\",\"ioActorId\":\"actor-001\",\"route\":\"devices/001/temperature\"}"},
     {"family": "DAD", "valid": "{\"objectIds\":[\"object-001\"]}", "malformed": "{\"objectIds\":", "externalRoute": "{\"objectIds\":[\"object-001\"],"},
     {"family": "CHN", "valid": "{\"object\":{\"id\":\"x\"}}", "malformed": "{\"object\":", "externalRoute": "{\"object\":{\"id\":\"x\"},\"privateData\":"},
-    {"family": "ASC", "valid": "{\"ioSourceId\":\"source-001\",\"ioActorId\":\"actor-001\"}", "malformed": "{\"ioSourceId\":", "externalRoute": "{\"ioSourceId\":\"source-001\",\"ioActorId\":\"actor-001\",\"associatingRoute\":\"external/wire-compat-v1/io-external-1\"}"},
+    {"family": "ASC", "valid": "{\"ioSourceId\":\"00000000-0000-4000-8000-000000000001\",\"ioActorId\":\"00000000-0000-4000-8000-000000000002\"}", "malformed": "{\"ioSourceId\":", "externalRoute": "{\"ioSourceId\":\"00000000-0000-4000-8000-000000000001\",\"ioActorId\":\"00000000-0000-4000-8000-000000000002\",\"associatingRoute\":\"external/wire-compat-v1/io-external-1\"}"},
     {"family": "IOV", "valid": "{\"payload\":1}", "malformed": "{\"payload\":", "externalRoute": "{\"payload\":1,"},
     {"family": "DSC", "valid": "{}", "malformed": "{\"objectTypes\":", "externalRoute": "{\"objectTypes\":[\"com.example.Sensor\"],"},
     {"family": "RSV", "valid": "{\"object\":{\"id\":\"x\"}}", "malformed": "{\"object\":", "externalRoute": "{\"object\":{\"id\":\"x\"},"},

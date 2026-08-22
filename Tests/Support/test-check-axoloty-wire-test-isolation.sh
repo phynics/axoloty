@@ -5,7 +5,7 @@ set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 
-for suite in BorrowedMessageTests MessageRouterTests StaticDispatchTests WireCodecTests; do
+for suite in BorrowedMessageTests WireCodecTests; do
     isolated="$root/Tests/AxolotyWire/$suite.swift"
     legacy="$root/Tests/WireCodec/$suite.swift"
 

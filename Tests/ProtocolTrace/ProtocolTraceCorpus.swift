@@ -78,7 +78,9 @@ enum ProtocolTraceCorpus {
             correlationID: correlationID,
             associatingRoute: route,
             routeClassification: family == .associate ? .external : nil,
-            isExternalRoute: family == .associate
+            // The pinned CoatyJS external fixture omits the optional wire flag;
+            // binding classification is carried separately above.
+            isExternalRoute: nil
         )
         let step = TraceStep(
             sequence: 1,
@@ -159,12 +161,12 @@ enum ProtocolTraceCorpus {
         case .resolve, .retrieve, .complete, .return:
             return (.inbound, .processInbound, nil, "correlation-001", nil, TraceState(pendingCorrelationIDs: ["correlation-001"], generation: 1), TraceState(generation: 2))
         case .channel, .ioValue:
-            return (.inbound, .processInbound, nil, nil, nil, TraceState(), TraceState())
+            return (.inbound, .processInbound, nil, nil, nil, TraceState(), TraceState(generation: 1))
         }
     }
 
     private static func saturationTrace(seed: FixtureSeed) -> ProtocolTrace {
-        let state = TraceState(activeObjectIDs: ["object-001"])
+        let state = TraceState(activeObjectIDs: ["object-001"], generation: 1)
         let input = TraceInput(
             family: .advertise,
             direction: .inbound,
@@ -183,7 +185,7 @@ enum ProtocolTraceCorpus {
     }
 
     private static func duplicateTrace(seed: FixtureSeed) -> ProtocolTrace {
-        let state = TraceState(activeObjectIDs: ["object-001"])
+        let state = TraceState(activeObjectIDs: ["object-001"], generation: 1)
         let input = TraceInput(
             family: .advertise,
             direction: .inbound,
@@ -286,7 +288,7 @@ enum ProtocolTraceCorpus {
             objectID: "external-route-001",
             associatingRoute: "external/wire-compat-v1/io-external-1",
             routeClassification: .external,
-            isExternalRoute: true
+            isExternalRoute: nil
         )
         return singleStep(
             id: "positive-external-route",
@@ -307,7 +309,7 @@ enum ProtocolTraceCorpus {
             family: .associate,
             direction: .inbound,
             fixtureID: fixtureID(.associate, "externalRoute"),
-            fixturePayload: seed.externalRoute,
+            fixturePayload: String(seed.externalRoute.dropLast()) + ",\"isExternalRoute\":true}",
             objectID: "invalid-route-001",
             associatingRoute: "external/wire-compat-v1/io-external-1",
             routeClassification: .coaty,

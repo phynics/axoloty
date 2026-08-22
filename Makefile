@@ -298,7 +298,7 @@ build:
 
 wire-codec-test: build
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \
-		swift test $(SWIFT_LOCKED_ARGS) --filter 'WireCodecTests|StaticDispatchTests|WireDifferentialTests|MessageRouterTests|BorrowedMessageTests'
+		swift test $(SWIFT_LOCKED_ARGS) --filter 'WireCodecTests|WireDifferentialTests|BorrowedMessageTests|ProtocolProcessorTests'
 
 test-decoder-context-sendable:
 	@build_log=$$(mktemp); \

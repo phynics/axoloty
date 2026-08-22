@@ -52,6 +52,10 @@ public struct ProtocolFrame: Sendable, Equatable {
 /// source topic and payload buffers remain pinned. Call ``owned()`` before an
 /// asynchronous or isolation-domain boundary.
 public struct BorrowedProtocolFrame {
+    /// The complete borrowed topic buffer.
+    public let topic: ByteSlice
+    /// The parsed topic view retained for synchronous selector derivation.
+    public let topicView: TopicView
     /// The validated routing key.
     public let routingKey: ProtocolRoutingKey
     /// The borrowed payload view.
@@ -82,6 +86,8 @@ public struct BorrowedProtocolFrame {
         } else {
             correlationID = nil
         }
+        self.topic = topic.rawBytes
+        self.topicView = topic
         self.routingKey = try ProtocolRoutingKey(
             capability: capability,
             sourceID: sourceID,

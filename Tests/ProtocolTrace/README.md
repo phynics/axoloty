@@ -8,9 +8,11 @@ next state. The JSON schema is [`trace.schema.json`](trace.schema.json).
 The corpus has fixture-backed accepted and genuinely malformed cases for each
 of the thirteen Coaty Core wire families, plus bounded saturation, duplicate,
 stale-correlation, unsupported, deadline, payload-limit, and typed external-route
-cases. `HostTraceReplayAdapter` and `StaticTraceReplayAdapter` are independent
-test-only implementations over the same contract; equality between them is the
-G2 seam proof. G2's shared processor replaces them; no trace type here is a
+cases. `HostTraceReplayAdapter` and `StaticTraceReplayAdapter` are test-only
+storage adapters over the same contract. Both invoke the shared
+`ProtocolProcessor` inbound/outbound Interfaces with real borrowed frames and
+typed local operations, then compare normalized observations;
+their equality is the G2 shared-replay evidence. No trace type here is a
 product API.
 
 The payload-limit case derives a 513-byte payload from the `CHN.valid` fixture;
