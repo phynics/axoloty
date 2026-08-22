@@ -90,7 +90,11 @@ deferred until the host `AxolotyRuntime` source seam and
 Container/controller/CommunicationManager symbols, the current protocol
 encoder, raw MQTT dependencies, and stale first-party tool imports. A deferred
 pass is a migration-state report, not evidence that G4 runtime replacement is
-complete; the tier becomes a real boundary gate when the replacement seams land.
+complete. The existing inspector/MCP roots are explicitly listed as historical
+consumers until the host transport adapter and typed event projection land;
+new examples or consumer roots are not covered by that allowlist and fail the
+boundary immediately. The tier becomes a strict migration gate as those
+historical roots are removed from the allowlist.
 
 ## Command-to-tier map
 

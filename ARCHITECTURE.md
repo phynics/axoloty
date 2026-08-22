@@ -94,7 +94,10 @@ strict checks: replacement sources must not retain the inherited lifecycle or
 protocol-encoder symbols, and inspector/MCP/example consumers must no longer
 depend on the inherited runtime or raw MQTT path. Legacy deletion and consumer
 migration remain a later integrated G4 change; this gate does not delete or
-duplicate the current runtime.
+duplicate the current runtime. Until the host transport adapter and typed
+event projection are available, the existing inspector/MCP roots are an
+explicit historical allowlist in the consumer checker; removing each root
+from that allowlist is part of the migration acceptance evidence.
 
 ## Product boundary
 
