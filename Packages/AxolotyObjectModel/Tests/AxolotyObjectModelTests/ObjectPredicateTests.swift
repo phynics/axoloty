@@ -66,6 +66,24 @@ private func predicateObject(_ value: StaticString) throws -> BoundedDynamicObje
     #expect(zeroMatched == false)
 }
 
+@Test func arbitraryExponentOrderingRemainsExact() throws {
+    let equal = try ObjectPredicate<64, 4, 4, 256>(decoding: predicateSlice("{\"conditions\":[\"v\",[7,1e1000000]]}"))
+    let different = try ObjectPredicate<64, 4, 4, 256>(decoding: predicateSlice("{\"conditions\":[\"v\",[7,1e1000001]]}"))
+    let greater = try ObjectPredicate<64, 4, 4, 256>(decoding: predicateSlice("{\"conditions\":[\"v\",[2,1e1000000]]}"))
+    let negative = try ObjectPredicate<64, 4, 4, 256>(decoding: predicateSlice("{\"conditions\":[\"v\",[2,-1e-1000000]]}"))
+    let object = try predicateObject("{\"v\":1e1000000}")
+    let largerObject = try predicateObject("{\"v\":1e1000001}")
+    let negativeObject = try predicateObject("{\"v\":-1e-1000001}")
+    let equalMatched = equal.matches(object: object)
+    let differentMatched = different.matches(object: object)
+    let greaterMatched = greater.matches(object: largerObject)
+    let negativeMatched = negative.matches(object: negativeObject)
+    #expect(equalMatched)
+    #expect(!differentMatched)
+    #expect(greaterMatched)
+    #expect(negativeMatched)
+}
+
 @Test func stringOrderingUsesScalarLexicographicOrder() throws {
     let greater = try ObjectPredicate<64, 4, 4, 128>(path: "name", expression: .greaterThan(.string("aa")))
     let object = try predicateObject("{\"name\":\"b\"}")
@@ -127,6 +145,19 @@ private func predicateObject(_ value: StaticString) throws -> BoundedDynamicObje
         ("{\"conditions\":[\"a..b\",[7,1]]}"),
         ("{\"conditions\":[1,[7,1]]}"),
         ("{\"conditions\":[\"v\",[13,1]]}"),
+    ]
+    for value in malformed {
+        #expect(throws: ObjectError.self) {
+            _ = try ObjectPredicate<64, 8, 8, 256>(decoding: predicateSlice(value))
+        }
+    }
+}
+
+@Test func malformedConditionSetsMatchObjectFilterCodableRules() throws {
+    let malformed: [StaticString] = [
+        ("{\"conditions\":{}}"),
+        ("{\"conditions\":{\"xor\":[]}}"),
+        ("{\"conditions\":{\"and\":[],\"or\":[]}}"),
     ]
     for value in malformed {
         #expect(throws: ObjectError.self) {
