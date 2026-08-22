@@ -9,15 +9,15 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 write_fixture() {
-    rm -rf "$tmp/Packages" "$tmp/Consumers"
-    mkdir -p "$tmp/Packages/AxolotyRuntime" "$tmp/Packages/AxolotyStaticRuntime" "$tmp/Consumers/Inspector"
-    : > "$tmp/Packages/AxolotyRuntime/Package.swift"
+    rm -rf "$tmp/Packages" "$tmp/Source" "$tmp/Consumers"
+    mkdir -p "$tmp/Source/Runtime" "$tmp/Packages/AxolotyStaticRuntime" "$tmp/Consumers/Inspector"
+    : > "$tmp/Source/Runtime/AxolotyRuntime.swift"
     : > "$tmp/Packages/AxolotyStaticRuntime/Package.swift"
     printf '%s\n' 'import AxolotyRuntime' 'struct InspectorFixture {}' > "$tmp/Consumers/Inspector/Fixture.swift"
 }
 
 run_checker() {
-    AXOLOTY_G4_RUNTIME_PACKAGE_DIR="$tmp/Packages/AxolotyRuntime" \
+    AXOLOTY_G4_HOST_RUNTIME_SOURCE_DIR="$tmp/Source/Runtime" \
     AXOLOTY_G4_STATIC_RUNTIME_PACKAGE_DIR="$tmp/Packages/AxolotyStaticRuntime" \
     AXOLOTY_G4_CONSUMER_ROOTS="$tmp/Consumers/Inspector" \
         "$checker"

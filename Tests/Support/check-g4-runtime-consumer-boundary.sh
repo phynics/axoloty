@@ -9,7 +9,8 @@
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
-runtime=${AXOLOTY_G4_RUNTIME_PACKAGE_DIR:-$root/Packages/AxolotyRuntime}
+runtime_package=${AXOLOTY_G4_RUNTIME_PACKAGE_DIR:-$root/Packages/AxolotyRuntime}
+runtime_source_dir=${AXOLOTY_G4_HOST_RUNTIME_SOURCE_DIR:-$root/Source/Runtime}
 static=${AXOLOTY_G4_STATIC_RUNTIME_PACKAGE_DIR:-$root/Packages/AxolotyStaticRuntime}
 consumer_roots=${AXOLOTY_G4_CONSUMER_ROOTS:-"$root/Tools/AxolotyInspectorRuntime $root/Tools/AxolotyInspectorRuntimeTests $root/Tools/AxolotyMCP $root/Tools/AxolotyMCPTests $root/Tools/axoloty-inspect $root/Tools/axoloty-mcp $root/Examples"}
 
@@ -18,12 +19,17 @@ fail() {
     exit 1
 }
 
-if [ ! -d "$runtime" ] && [ ! -d "$static" ]; then
+host_sources=$(find "$runtime_package/Sources" -type f -name '*.swift' -print 2>/dev/null || true)
+if [ -z "$host_sources" ]; then
+    host_sources=$(find "$runtime_source_dir" -maxdepth 1 -type f -name 'AxolotyRuntime*.swift' -print 2>/dev/null || true)
+fi
+
+if [ -z "$host_sources" ] && [ ! -d "$static" ]; then
     echo "G4 runtime consumer migration deferred: replacement runtime roots are not present"
     exit 0
 fi
 
-[ -d "$runtime" ] || fail "replacement host runtime package is missing: $runtime"
+[ -n "$host_sources" ] || fail "replacement host runtime source seam is missing"
 [ -d "$static" ] || fail "replacement static runtime package is missing: $static"
 
 for consumer in $consumer_roots; do

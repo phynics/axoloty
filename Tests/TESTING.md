@@ -85,8 +85,8 @@ release size/timing under `.testing/g3-object-model/<candidate-sha>/`.
 G4 migration is represented by the optional `g4-runtime` tier. Run
 `make test-tier TIER=g4-runtime` while developing the replacement runtime.
 `g4-runtime-package-boundary` and `g4-runtime-consumer-boundary` are explicitly
-deferred until both `AxolotyRuntime` and `AxolotyStaticRuntime` package roots
-exist. Once those roots exist, the same nodes reject inherited
+deferred until the host `AxolotyRuntime` source seam and
+`AxolotyStaticRuntime` package root exist. Once those seams exist, the same nodes reject inherited
 Container/controller/CommunicationManager symbols, the current protocol
 encoder, raw MQTT dependencies, and stale first-party tool imports. A deferred
 pass is a migration-state report, not evidence that G4 runtime replacement is

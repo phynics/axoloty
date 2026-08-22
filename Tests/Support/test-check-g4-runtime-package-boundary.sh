@@ -9,21 +9,18 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 write_fixture() {
-    rm -rf "$tmp/Packages"
-    mkdir -p "$tmp/Packages/AxolotyRuntime/Sources/AxolotyRuntime" \
+    rm -rf "$tmp/Packages" "$tmp/Source"
+    mkdir -p "$tmp/Source/Runtime" \
         "$tmp/Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntime"
-    printf '%s\n' '// swift-tools-version:6.3' 'import PackageDescription' \
-        'let package = Package(name: "AxolotyRuntime", targets: [.target(name: "AxolotyRuntime")])' \
-        > "$tmp/Packages/AxolotyRuntime/Package.swift"
     printf '%s\n' '// swift-tools-version:6.3' 'import PackageDescription' \
         'let package = Package(name: "AxolotyStaticRuntime", targets: [.target(name: "AxolotyStaticRuntime")])' \
         > "$tmp/Packages/AxolotyStaticRuntime/Package.swift"
-    printf '%s\n' 'struct RuntimeFixture {}' > "$tmp/Packages/AxolotyRuntime/Sources/AxolotyRuntime/Fixture.swift"
+    printf '%s\n' 'struct AxolotyRuntimeFixture {}' > "$tmp/Source/Runtime/AxolotyRuntimeFixture.swift"
     printf '%s\n' 'struct StaticFixture {}' > "$tmp/Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntime/Fixture.swift"
 }
 
 run_checker() {
-    AXOLOTY_G4_RUNTIME_PACKAGE_DIR="$tmp/Packages/AxolotyRuntime" \
+    AXOLOTY_G4_HOST_RUNTIME_SOURCE_DIR="$tmp/Source/Runtime" \
     AXOLOTY_G4_STATIC_RUNTIME_PACKAGE_DIR="$tmp/Packages/AxolotyStaticRuntime" \
         "$checker"
 }
@@ -32,7 +29,7 @@ write_fixture
 run_checker >/dev/null
 
 write_fixture
-printf '%s\n' 'struct Legacy: CommunicationManager {}' >> "$tmp/Packages/AxolotyRuntime/Sources/AxolotyRuntime/Fixture.swift"
+printf '%s\n' 'struct Legacy: CommunicationManager {}' >> "$tmp/Source/Runtime/AxolotyRuntimeFixture.swift"
 if run_checker >/dev/null 2>&1; then
     echo "error: package checker accepted a legacy lifecycle symbol" >&2
     exit 1

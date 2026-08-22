@@ -87,9 +87,9 @@ G5 owns IO and optional-product boundaries; G6 owns non-divergence and release
 proof.
 
 The canonical `g4-runtime` tier is an optional migration gate until the
-replacement runtime roots exist. Its package and consumer boundary nodes
+replacement runtime seams exist. Its package and consumer boundary nodes
 report that state without claiming a replacement implementation. When
-`AxolotyRuntime` and `AxolotyStaticRuntime` are introduced, those nodes become
+the host `AxolotyRuntime` source seam and `AxolotyStaticRuntime` are introduced, those nodes become
 strict checks: replacement sources must not retain the inherited lifecycle or
 protocol-encoder symbols, and inspector/MCP/example consumers must no longer
 depend on the inherited runtime or raw MQTT path. Legacy deletion and consumer
