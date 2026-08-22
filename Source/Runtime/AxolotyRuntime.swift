@@ -306,7 +306,7 @@ private actor ProtocolExecutor {
     }
 
     func reconnect() async {
-        guard state == .running else { return }
+        guard state == .running || state == .reconnecting else { return }
         state = .reconnecting
         transportEpoch &+= 1
         let epoch = transportEpoch
@@ -326,7 +326,11 @@ private actor ProtocolExecutor {
             }
         }
         do {
-            try await transport.removeSubscriptions(namespace: definition.namespace)
+            // A broker-side close can race this explicit reconnect.  The
+            // binding may therefore already have lost its subscription
+            // session; removal is best-effort in that path and a fresh
+            // subscription installation below is authoritative.
+            try? await transport.removeSubscriptions(namespace: definition.namespace)
             await transport.stop()
             await transport.setFailureHandler { [weak self] error in
                 Task { await self?.transportFailed(runtimeErrorDetail(error)) }
@@ -824,7 +828,24 @@ private actor ProtocolExecutor {
     private func transportFailed(_ detail: String) {
         diagnosticsSnapshotValue.transportFailures += 1
         guard state == .running || state == .reconnecting || state == .starting else { return }
-        failRuntime(code: .brokerUnavailable, detail: detail, diagnostic: .transportFailed)
+        emit(.init(kind: .transportFailed, detail: detail))
+        // Established-connection loss is recoverable transport state, not a
+        // terminal runtime failure.  Leave the executor in an explicit
+        // reconnecting state so the caller can restore the network path and
+        // invoke `reconnect()` without losing the immutable definition.
+        guard state == .running else { return }
+        state = .reconnecting
+        transportEpoch &+= 1
+        processor.resetTransport()
+        diagnosticsSnapshotValue.reconnects += 1
+        transportIngressContinuation?.finish()
+        transportIngressTask?.cancel()
+        transportIngressContinuation = nil
+        transportIngressTask = nil
+        outboundContinuation?.finish()
+        outboundTask?.cancel()
+        outboundContinuation = nil
+        outboundTask = nil
     }
 
     private func failRuntime(

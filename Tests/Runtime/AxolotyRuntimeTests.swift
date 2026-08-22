@@ -121,8 +121,8 @@ struct AxolotyRuntimeTests {
         #expect(Array(lifecycle.suffix(3)) == ["deadvertise", "remove", "stop"])
     }
 
-    @Test("post-start transport failures terminate the runtime")
-    func postStartTransportFailureTerminatesRuntime() async throws {
+    @Test("post-start transport failures enter recoverable reconnecting state")
+    func postStartTransportFailureEntersReconnect() async throws {
         let definition = try makeDefinition()
         let transport = TestTransport()
         let runtime = AxolotyRuntime(definition: definition, transport: transport)
@@ -130,11 +130,12 @@ struct AxolotyRuntimeTests {
 
         await transport.fail(TestTransportFailure())
         for _ in 0..<100 {
-            if await runtime.state() == .stopped { break }
+            if await runtime.state() == .reconnecting { break }
             try? await Task.sleep(for: .milliseconds(5))
         }
-        #expect(await runtime.state() == .stopped)
+        #expect(await runtime.state() == .reconnecting)
         #expect((await runtime.diagnosticsSnapshot()).transportFailures == 1)
+        await runtime.stop()
     }
 
     private func makeDefinition() throws -> SealedRuntimeDefinition {
