@@ -1,6 +1,5 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-import Foundation
 import SwiftDiagnostics
 import SwiftSyntax
 import SwiftSyntaxBuilder
@@ -12,6 +11,11 @@ private enum SchemaDiagnosticID: String {
     case reservedWireName
     case tooManyFields
     case unsupportedDeclaration
+    case invalidCoreType
+    case malformedWireName
+    case unsupportedField
+    case malformedDefault
+    case invalidDefault
 }
 
 private struct SchemaDiagnostic: DiagnosticMessage {
@@ -33,53 +37,86 @@ public struct AxolotyObjectMacro: MemberMacro, ConformanceMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [DeclSyntax] {
-        guard let typeName = declaration.as(StructDeclSyntax.self)?.name.text
-                ?? declaration.as(ClassDeclSyntax.self)?.name.text else {
-            context.diagnose(Diagnostic(node: Syntax(declaration), message: SchemaDiagnostic(.unsupportedDeclaration, "@AxolotyObject can only annotate a struct or class")))
+        guard let structDecl = declaration.as(StructDeclSyntax.self) else {
+            context.diagnose(Diagnostic(node: Syntax(declaration), message: SchemaDiagnostic(.unsupportedDeclaration, "@AxolotyObject can only annotate a struct")))
             return []
         }
+        let typeName = structDecl.name.text
 
         let arguments = node.arguments?.as(LabeledExprListSyntax.self)
         let objectType = stringArgument(named: "objectType", in: arguments) ?? ""
-        let coreType = stringArgument(named: "coreType", in: arguments) ?? "coatyObject"
+        let coreType = stringArgument(named: "coreType", in: arguments) ?? "CoatyObject"
+        if arguments?.contains(where: { $0.label?.text == "coreType" }) == true,
+           stringArgument(named: "coreType", in: arguments) == nil {
+            context.diagnose(Diagnostic(node: Syntax(node), message: SchemaDiagnostic(.invalidCoreType, "coreType must be a string literal")))
+        }
         if objectType.isEmpty {
             context.diagnose(Diagnostic(node: Syntax(node), message: SchemaDiagnostic(.invalidObjectType, "objectType must be a non-empty string literal")))
+        } else if !isValidIdentifier(objectType) {
+            context.diagnose(Diagnostic(node: Syntax(node), message: SchemaDiagnostic(.invalidObjectType, "objectType must contain only letters, digits, and dots")))
+        }
+        let validCoreTypes = ["CoatyObject", "CoatyIo", "CoatyThing", "CoatySource", "CoatyChannel", "CoatyAgent"]
+        if !validCoreTypes.contains(coreType) {
+            context.diagnose(Diagnostic(node: Syntax(node), message: SchemaDiagnostic(.invalidCoreType, "coreType '\(coreType)' is not a supported portable core type")))
         }
 
-        var descriptors: [(name: String, wireName: String, optional: Bool, defaulted: Bool)] = []
+        var descriptors: [(name: String, type: String, wireName: String, optional: Bool, defaulted: Bool, defaultExpression: String?)] = []
         var wireNames: [String] = []
         let reserved: Set<String> = ["objectId", "coreType", "objectType", "name", "externalId", "parentObjectId", "locationId", "isDeactivated"]
 
-        let members: MemberBlockItemListSyntax
-        if let structDecl = declaration.as(StructDeclSyntax.self) {
-            members = structDecl.memberBlock.members
-        } else if let classDecl = declaration.as(ClassDeclSyntax.self) {
-            members = classDecl.memberBlock.members
-        } else {
-            return []
-        }
+        let members = structDecl.memberBlock.members
 
         for member in members {
-            guard let variable = member.decl.as(VariableDeclSyntax.self),
-                  variable.bindingSpecifier.tokenKind == .keyword(.var),
+            guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
+            guard variable.bindings.count == 1,
                   let binding = variable.bindings.first,
-                  let pattern = binding.pattern.as(IdentifierPatternSyntax.self) else { continue }
+                  let pattern = binding.pattern.as(IdentifierPatternSyntax.self),
+                  variable.bindingSpecifier.tokenKind == .keyword(.var),
+                  binding.typeAnnotation != nil,
+                  binding.accessorBlock == nil,
+                  !variable.modifiers.contains(where: { modifier in
+                      modifier.name.tokenKind == .keyword(.static) || modifier.name.tokenKind == .keyword(.class)
+                  }) else {
+                context.diagnose(Diagnostic(node: Syntax(variable), message: SchemaDiagnostic(.unsupportedField, "schema fields must be one stored, instance `var` with an explicit type")))
+                continue
+            }
             let sourceName = pattern.identifier.text
-            let wireName = wireName(for: variable, fallback: sourceName)
-            let isOptional = binding.typeAnnotation?.type.description.contains("?") == true
-            let hasDefault = variable.attributes?.contains(where: { attribute in
-                guard let attribute = attribute.as(AttributeSyntax.self) else { return false }
-                return attribute.attributeName.trimmedDescription == "Default"
-            }) == true
+            let fieldType = binding.typeAnnotation!.type.trimmedDescription
+            let wireAttribute = variable.attributes?.compactMap({ $0.as(AttributeSyntax.self) }).first(where: {
+                $0.attributeName.trimmedDescription == "WireName"
+            })
+            let wireName: String
+            if let wireAttribute {
+                guard let parsed = stringAttributeArgument(wireAttribute) else {
+                    context.diagnose(Diagnostic(node: Syntax(wireAttribute), message: SchemaDiagnostic(.malformedWireName, "@WireName requires one string literal argument")))
+                    wireName = sourceName
+                    continue
+                }
+                wireName = decodeEscapes(parsed)
+            } else {
+                wireName = sourceName
+            }
+            let defaultAttribute = variable.attributes?.compactMap({ $0.as(AttributeSyntax.self) }).first(where: {
+                $0.attributeName.trimmedDescription == "Default"
+            })
+            let defaultExpression = defaultAttribute.flatMap(defaultArgument)
+            if defaultAttribute != nil && defaultExpression == nil {
+                context.diagnose(Diagnostic(node: Syntax(defaultAttribute!), message: SchemaDiagnostic(.malformedDefault, "@Default requires exactly one value expression")))
+            }
+            if let defaultExpression, !defaultMatches(fieldType: fieldType, expression: defaultExpression) {
+                context.diagnose(Diagnostic(node: Syntax(defaultAttribute!), message: SchemaDiagnostic(.invalidDefault, "@Default value does not match field type '\(fieldType)'")))
+            }
+            let isOptional = fieldType.hasSuffix("?")
+            let hasDefault = defaultExpression != nil
 
-            if reserved.contains(wireName) {
+            if reserved.contains(where: { decodeEscapes($0) == wireName }) {
                 context.diagnose(Diagnostic(node: Syntax(variable), message: SchemaDiagnostic(.reservedWireName, "wire field '\(wireName)' is reserved by the object envelope")))
             }
-            if wireNames.contains(wireName) {
+            if wireNames.contains(where: { decodeEscapes($0) == wireName }) {
                 context.diagnose(Diagnostic(node: Syntax(variable), message: SchemaDiagnostic(.duplicateWireName, "wire field '\(wireName)' is declared more than once")))
             }
             wireNames.append(wireName)
-            descriptors.append((sourceName, wireName, isOptional, hasDefault))
+            descriptors.append((sourceName, fieldType, wireName, isOptional, hasDefault, defaultExpression))
         }
 
         if descriptors.count > 64 {
@@ -90,6 +127,21 @@ public struct AxolotyObjectMacro: MemberMacro, ConformanceMacro {
         for (index, descriptor) in descriptors.prefix(64).enumerated() {
             assignments += "fields[\(index)] = ObjectFieldDescriptor(sourceName: \(literal(descriptor.name)), wireName: \(literal(descriptor.wireName)), index: \(index), isOptional: \(descriptor.optional), hasDefault: \(descriptor.defaulted))\n"
         }
+        let decoderArguments = descriptors.prefix(64).map { descriptor in
+            let decode: String
+            let decodeType = descriptor.type.hasSuffix("?") ? String(descriptor.type.dropLast()) : descriptor.type
+            if let defaultExpression = descriptor.defaultExpression {
+                decode = "try fields.decodeIfPresent(\(literal(descriptor.wireName)), as: \(decodeType).self) ?? \(defaultExpression)"
+            } else if descriptor.optional {
+                decode = "try fields.decodeIfPresent(\(literal(descriptor.wireName)), as: \(decodeType).self)"
+            } else {
+                decode = "try fields.decode(\(literal(descriptor.wireName)), as: \(descriptor.type).self)"
+            }
+            return "\(descriptor.name): \(decode)"
+        }.joined(separator: ",\n            ")
+        let encoderStatements = descriptors.prefix(64).map { descriptor in
+            "try encoder.encode(\(descriptor.name), forKey: \(literal(descriptor.wireName)))"
+        }.joined(separator: "\n        ")
         let generated: DeclSyntax = """
         /// The fixed descriptor synthesized by `@AxolotyObject`.
         public static let schema: PortableObjectSchema<\(raw: typeName)> = {
@@ -97,6 +149,18 @@ public struct AxolotyObjectMacro: MemberMacro, ConformanceMacro {
             \(raw: assignments)
             return PortableObjectSchema<\(raw: typeName)>(objectType: \(literal(objectType)), coreType: \(literal(coreType)), fieldCount: \(descriptors.count), fields: fields)
         }()
+
+        /// Decodes the typed fields through the bounded object-field decoder.
+        public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
+            self.init(
+                \(raw: decoderArguments)
+            )
+        }
+
+        /// Encodes the typed fields through the bounded object-field encoder.
+        public borrowing func encodeFields(to encoder: inout ObjectFieldEncoder) throws(ObjectEncodingError) {
+            \(raw: encoderStatements)
+        }
         """
         return [generated]
     }
@@ -116,17 +180,86 @@ public struct AxolotyObjectMacro: MemberMacro, ConformanceMacro {
         return segment.content.text
     }
 
-    private static func wireName(for variable: VariableDeclSyntax, fallback: String) -> String {
-        guard let attribute = variable.attributes?.compactMap({ $0.as(AttributeSyntax.self) }).first(where: {
-            $0.attributeName.trimmedDescription == "WireName"
-        }), let arguments = attribute.arguments?.as(LabeledExprListSyntax.self),
+    private static func stringAttributeArgument(_ attribute: AttributeSyntax) -> String? {
+        guard let arguments = attribute.arguments?.as(LabeledExprListSyntax.self), arguments.count == 1,
               let expression = arguments.first?.expression,
               let literal = expression.as(StringLiteralExprSyntax.self), literal.segments.count == 1,
-              let segment = literal.segments.first?.as(StringSegmentSyntax.self) else { return fallback }
+              let segment = literal.segments.first?.as(StringSegmentSyntax.self) else { return nil }
         return segment.content.text
     }
 
-    private static func literal(_ value: String) -> String { "\"\(value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\"" }
+    private static func defaultArgument(_ attribute: AttributeSyntax) -> String? {
+        guard let arguments = attribute.arguments?.as(LabeledExprListSyntax.self), arguments.count == 1 else { return nil }
+        return arguments.first?.expression.trimmedDescription
+    }
+
+    private static func isValidIdentifier(_ value: String) -> Bool {
+        guard !value.isEmpty else { return false }
+        for scalar in value.unicodeScalars {
+            let valid = (scalar.value >= 48 && scalar.value <= 57) ||
+                (scalar.value >= 65 && scalar.value <= 90) ||
+                (scalar.value >= 97 && scalar.value <= 122) || scalar.value == 46
+            if !valid { return false }
+        }
+        return true
+    }
+
+    private static func decodeEscapes(_ value: String) -> String {
+        var result = ""
+        var iterator = value.unicodeScalars.makeIterator()
+        while let scalar = iterator.next() {
+            guard scalar.value == 92, let next = iterator.next() else {
+                result.unicodeScalars.append(scalar); continue
+            }
+            switch next.value {
+            case 34: result.append("\"")
+            case 92: result.append("\\")
+            case 110: result.append("\n")
+            case 114: result.append("\r")
+            case 116: result.append("\t")
+            case 117:
+                var code = 0
+                for _ in 0..<4 { guard let digit = iterator.next(), let value = hexValue(digit.value) else { return value }; code = code * 16 + value }
+                if let unicode = UnicodeScalar(code) { result.unicodeScalars.append(unicode) }
+            default: result.unicodeScalars.append(next)
+            }
+        }
+        return result
+    }
+
+    private static func hexValue(_ value: UInt32) -> Int? {
+        if value >= 48 && value <= 57 { return Int(value - 48) }
+        if value >= 65 && value <= 70 { return Int(value - 55) }
+        if value >= 97 && value <= 102 { return Int(value - 87) }
+        return nil
+    }
+
+    private static func defaultMatches(fieldType: String, expression: String) -> Bool {
+        let type = fieldType.hasSuffix("?") ? String(fieldType.dropLast()) : fieldType
+        if expression.hasPrefix("\"") { return type == "String" || type.hasPrefix("InlineText") }
+        if expression == "true" || expression == "false" { return type == "Bool" }
+        if expression == "nil" { return fieldType.hasSuffix("?") }
+        if expression.first.map({ $0 == "-" || $0.isNumber }) == true {
+            return type == "Int" || type == "UInt" || type == "Int64" || type == "UInt64" || type == "Double" || type == "Float"
+        }
+        return true
+    }
+
+    private static func literal(_ value: String) -> String {
+        var result = "\""
+        for scalar in value.unicodeScalars {
+            switch scalar.value {
+            case 34: result.append("\\\"")
+            case 92: result.append("\\\\")
+            case 10: result.append("\\n")
+            case 13: result.append("\\r")
+            case 9: result.append("\\t")
+            default: result.unicodeScalars.append(scalar)
+            }
+        }
+        result.append("\"")
+        return result
+    }
 }
 
 /// The marker macro for ``WireName``; all work is performed by the parent
