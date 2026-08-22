@@ -47,19 +47,16 @@ deliberately misbehaving Call responder):
 
 - `duplicate-reply`: Axoloty calls `wire-fixture-operation`; CoatyJS's
   responder sends two genuine wire `Return` publishes for the same
-  correlationId, "original" then "duplicate" 300ms later (nothing in
-  `@coaty/core` 2.4.0's `CallEvent.returnEvent` prevents a responder from
-  doing this — confirmed by reading `call-return.js` and
-  `communication-manager.js` before relying on it). Axoloty's `EventHub` does
-  not deduplicate `Return` events by correlationId either, so the "accept
-  only the first" behavior asserted here is real application-level caller
-  logic, not a library guarantee — documented as such, not silently assumed.
+  correlationId, "original" then "duplicate" 300ms later. The shared
+  processor accepts the first response and rejects the duplicate correlation
+  without delivering a second runtime event; the capture proves both wire
+  publishes occurred.
 - `late-reply`: Axoloty calls with a 2s response deadline; CoatyJS's responder
   deliberately withholds its `Return` for 4s. The independent MQTT capture
-  proves the late `Return` genuinely reached the broker only after Axoloty's
-  `CM+Publish.swift` `responseStream` had already released (unsubscribed) the
-  correlated response topic on timeout — the late reply is provably
-  unobservable by Axoloty, not merely unobserved in this one run.
+  proves the late `Return` genuinely reached the broker after that deadline.
+  Axoloty keeps its bounded profile-wide response subscriptions installed, but
+  the shared processor has expired the correlation and rejects the late
+  response without mutating state or delivering a runtime event.
 
 Both are verified against a cross-referenced independent MQTT capture and the
 Axoloty application log by the lifecycle Swift test suite, matching the
