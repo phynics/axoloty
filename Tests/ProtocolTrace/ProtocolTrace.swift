@@ -151,9 +151,10 @@ private struct SharedProtocolTraceReplay<let capacity: Int>: ~Copyable {
                     sink.removeAll()
                 }
                 if let correlationID = state.pendingCorrelationIDs.first {
-                    try Self.withBorrowedPayload("{}") { payload in
+                    let request = Self.requestSeed(for: trace.steps.first?.input.family ?? .resolve)
+                    try Self.withBorrowedPayload(request.payload) { payload in
                         let operation = try ProtocolLocalOperation(
-                            capability: .discover,
+                            capability: request.capability,
                             sourceID: Self.identity("trace-requester"),
                             correlationID: Self.identity(correlationID),
                             payload: payload,
@@ -257,6 +258,15 @@ private struct SharedProtocolTraceReplay<let capacity: Int>: ~Copyable {
     private static func withBorrowedPayload<R>(_ payload: String, _ body: (ByteSlice) throws -> R) throws -> R {
         let bytes = Array(payload.utf8)
         return try bytes.withUnsafeBufferPointer { try body(ByteSlice(bytes: $0.baseAddress!, length: $0.count)) }
+    }
+    private static func requestSeed(for responseFamily: TraceEventFamily) -> (capability: ProtocolCapability, payload: String) {
+        switch responseFamily {
+        case .resolve: return (.discover, "{}")
+        case .retrieve: return (.query, "{}")
+        case .complete: return (.update, "{\"object\":{\"id\":\"x\"}}")
+        case .return: return (.call, "{\"parameters\":{\"value\":1},\"filter\":null}")
+        default: return (.discover, "{}")
+        }
     }
     private static func capability(_ family: TraceEventFamily) -> ProtocolCapability {
         switch family { case .advertise: return .advertise; case .deadvertise: return .deadvertise; case .channel: return .channel; case .associate: return .associate; case .ioValue: return .ioValue; case .discover: return .discover; case .resolve: return .resolve; case .query: return .query; case .retrieve: return .retrieve; case .update: return .update; case .complete: return .complete; case .call: return .call; case .return: return .returnEvent }

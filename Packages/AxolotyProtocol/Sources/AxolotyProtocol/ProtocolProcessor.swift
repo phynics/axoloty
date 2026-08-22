@@ -27,7 +27,7 @@ public enum ProtocolLocalOperation {
     /// Publishes a Complete response.
     case complete(sourceID: UUID16, correlationID: UUID16, payload: ByteSlice)
     /// Publishes a Call request.
-    case call(sourceID: UUID16, correlationID: UUID16, payload: ByteSlice, requestTimeoutMS: UInt32?)
+    case call(sourceID: UUID16, correlationID: UUID16, payload: ByteSlice, requestTimeoutMS: UInt32?, operationName: ByteSlice?)
     /// Publishes a Return response.
     case returnEvent(sourceID: UUID16, correlationID: UUID16, payload: ByteSlice)
 
@@ -40,7 +40,7 @@ public enum ProtocolLocalOperation {
     ///   - payload: Borrowed, already-encoded family data.
     ///   - requestTimeoutMS: Optional timeout for request families.
     /// - Throws: ``ProtocolError`` when correlation presence is invalid.
-    public init(capability: ProtocolCapability, sourceID: UUID16, correlationID: UUID16? = nil, payload: ByteSlice, requestTimeoutMS: UInt32? = nil) throws(ProtocolError) {
+    public init(capability: ProtocolCapability, sourceID: UUID16, correlationID: UUID16? = nil, payload: ByteSlice, requestTimeoutMS: UInt32? = nil, operationName: ByteSlice? = nil) throws(ProtocolError) {
         _ = try ProtocolRoutingKey(capability: capability, sourceID: sourceID, correlationID: correlationID)
         switch capability {
         case .advertise: self = .advertise(sourceID: sourceID, payload: payload)
@@ -54,7 +54,7 @@ public enum ProtocolLocalOperation {
         case .retrieve: self = .retrieve(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload)
         case .update: self = .update(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload, requestTimeoutMS: requestTimeoutMS)
         case .complete: self = .complete(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload)
-        case .call: self = .call(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload, requestTimeoutMS: requestTimeoutMS)
+        case .call: self = .call(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload, requestTimeoutMS: requestTimeoutMS, operationName: operationName)
         case .returnEvent: self = .returnEvent(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload)
         }
     }
@@ -65,19 +65,23 @@ public enum ProtocolLocalOperation {
     }
     /// The operation's source identity.
     public var sourceID: UUID16 {
-        switch self { case let .advertise(id,_), let .deadvertise(id,_), let .channel(id,_), let .associate(id,_), let .ioValue(id,_), let .discover(id,_,_,_), let .resolve(id,_,_), let .query(id,_,_,_), let .retrieve(id,_,_), let .update(id,_,_,_), let .complete(id,_,_), let .call(id,_,_,_), let .returnEvent(id,_,_): return id }
+        switch self { case let .advertise(id,_), let .deadvertise(id,_), let .channel(id,_), let .associate(id,_), let .ioValue(id,_), let .discover(id,_,_,_), let .resolve(id,_,_), let .query(id,_,_,_), let .retrieve(id,_,_), let .update(id,_,_,_), let .complete(id,_,_), let .call(id,_,_,_,_), let .returnEvent(id,_,_): return id }
     }
     /// The operation's optional correlation identity.
     public var correlationID: UUID16? {
-        switch self { case .advertise, .deadvertise, .channel, .associate, .ioValue: return nil; case let .discover(_,id,_,_), let .resolve(_,id,_), let .query(_,id,_,_), let .retrieve(_,id,_), let .update(_,id,_,_), let .complete(_,id,_), let .call(_,id,_,_), let .returnEvent(_,id,_): return id }
+        switch self { case .advertise, .deadvertise, .channel, .associate, .ioValue: return nil; case let .discover(_,id,_,_), let .resolve(_,id,_), let .query(_,id,_,_), let .retrieve(_,id,_), let .update(_,id,_,_), let .complete(_,id,_), let .call(_,id,_,_,_), let .returnEvent(_,id,_): return id }
     }
     /// The operation's borrowed payload.
     public var payload: ByteSlice {
-        switch self { case let .advertise(_,p), let .deadvertise(_,p), let .channel(_,p), let .associate(_,p), let .ioValue(_,p), let .discover(_,_,p,_), let .resolve(_,_,p), let .query(_,_,p,_), let .retrieve(_,_,p), let .update(_,_,p,_), let .complete(_,_,p), let .call(_,_,p,_), let .returnEvent(_,_,p): return p }
+        switch self { case let .advertise(_,p), let .deadvertise(_,p), let .channel(_,p), let .associate(_,p), let .ioValue(_,p), let .discover(_,_,p,_), let .resolve(_,_,p), let .query(_,_,p,_), let .retrieve(_,_,p), let .update(_,_,p,_), let .complete(_,_,p), let .call(_,_,p,_,_), let .returnEvent(_,_,p): return p }
     }
     /// The request timeout, when this operation opens a response ledger entry.
     public var requestTimeoutMS: UInt32? {
-        switch self { case let .discover(_,_,_,t), let .query(_,_,_,t), let .update(_,_,_,t), let .call(_,_,_,t): return t; default: return nil }
+        switch self { case let .discover(_,_,_,t), let .query(_,_,_,t), let .update(_,_,_,t), let .call(_,_,_,t,_): return t; default: return nil }
+    }
+    /// The optional Call operation name carried as the topic filter.
+    public var operationName: ByteSlice? {
+        switch self { case let .call(_,_,_,_,name): return name; default: return nil }
     }
 }
 
@@ -197,14 +201,33 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     }
 
     private struct ObjectRecord {
+        /// Identity of the advertised object, distinct from its source agent.
         var id = UUID16.zero
+        var sourceID = UUID16.zero
         var active = false
+        var local = false
+        var announced = false
     }
 
     private struct PendingRecord {
         var id = UUID16.zero
-        var deadlineMS: UInt32 = 0
-        var active = false
+        var deadlineMS: UInt32?
+        var state: PendingState = .free
+    }
+
+    private enum PendingState {
+        case free
+        case active(PendingRequestKind)
+        case resolved
+        case expired
+        case cancelled
+    }
+
+    private enum PendingRequestKind {
+        case discover
+        case query
+        case update
+        case call
     }
 
     private enum AssociationPlan {
@@ -218,22 +241,21 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         }
     }
     private enum AssociationResult {
-        case accepted(AssociationPlan)
+        case accepted(AssociationPlan, ProtocolRouteClassification)
         case ignored
         case rejected(ProtocolError.Code)
     }
 
     private enum ObjectPlan {
         case none
-        case insert(Int, UUID16)
+        case insert(Int, UUID16, UUID16, Bool)
+        case replay(Int)
         case remove(Int)
     }
 
     private var associations: InlineArray<capacity, Association>
     private var objects: InlineArray<capacity, ObjectRecord>
     private var pending: InlineArray<capacity, PendingRecord>
-    private var lastResolvedCorrelation: UUID16?
-    private var lastExpiredCorrelation: UUID16?
     private var generation: UInt32 = 0
     private let capabilities: ProtocolCapabilities
     private let maximumPayloadBytes: Int
@@ -258,8 +280,6 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         self.associations = InlineArray(repeating: Association())
         self.objects = InlineArray(repeating: ObjectRecord())
         self.pending = InlineArray(repeating: PendingRecord())
-        self.lastResolvedCorrelation = nil
-        self.lastExpiredCorrelation = nil
         self.maximumObjects = min(max(0, maximumObjects), capacity)
         self.maximumPendingCorrelations = min(max(0, maximumPendingCorrelations), capacity)
     }
@@ -271,7 +291,9 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         var pendingCount = 0
         for index in 0..<capacity where associations[index].active { associationCount += 1 }
         for index in 0..<capacity where objects[index].active { objectCount += 1 }
-        for index in 0..<capacity where pending[index].active { pendingCount += 1 }
+        for index in 0..<capacity {
+            if case .active = pending[index].state { pendingCount += 1 }
+        }
         return ProtocolStateSnapshot(
             activeRecords: associationCount,
             activeAssociations: associationCount,
@@ -290,7 +312,9 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             projection.appendAssociation(source: associations[index].sourceID, actor: associations[index].actorID)
         }
         for index in 0..<capacity where objects[index].active { projection.appendObject(objects[index].id) }
-        for index in 0..<capacity where pending[index].active { projection.appendPending(pending[index].id) }
+        for index in 0..<capacity {
+            if case .active = pending[index].state { projection.appendPending(pending[index].id) }
+        }
     }
 
     /// Copies an active actor route into caller-owned transport storage.
@@ -313,12 +337,45 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     /// Expires the outstanding request using caller-supplied monotonic time.
     public mutating func expire(nowMS: UInt32) -> Bool {
         var expired = false
-        for index in 0..<capacity where pending[index].active && Self.reached(nowMS, pending[index].deadlineMS) {
-            lastExpiredCorrelation = pending[index].id
-            pending[index].active = false
+        for index in 0..<capacity {
+            guard case .active = pending[index].state,
+                  let deadlineMS = pending[index].deadlineMS,
+                  Self.reached(nowMS, deadlineMS) else { continue }
+            pending[index].state = .expired
             expired = true
         }
         return expired
+    }
+
+    /// Cancels one outstanding request without emitting a wire operation.
+    ///
+    /// Cancellation is local policy: the peer may still publish a response,
+    /// but the processor rejects it as a duplicate rather than delivering it.
+    /// The terminal slot remains reclaimable by a later request.
+    public mutating func cancel(correlationID: UUID16) -> Bool {
+        for index in 0..<capacity where pending[index].id == correlationID {
+            guard case .active = pending[index].state else { return false }
+            pending[index].state = .cancelled
+            generation &+= 1
+            return true
+        }
+        return false
+    }
+
+    /// Resets transport-local state while retaining the processor's static
+    /// configuration. Local advertisement identities remain in the logical
+    /// registry and become replayable; peer-only records are discarded.
+    public mutating func resetTransport() {
+        for index in 0..<capacity {
+            associations[index] = Association()
+            pending[index] = PendingRecord()
+            if objects[index].active && objects[index].local {
+                objects[index].announced = false
+            } else {
+                objects[index] = ObjectRecord()
+            }
+        }
+        generation &+= 1
     }
 
     /// Processes a validated borrowed inbound frame.
@@ -352,30 +409,47 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             }
         }
         let actionCount = max(1, ioActorActionCount)
+        var deadvertiseMask = InlineArray<capacity, Bool>(repeating: false)
 
         var responsePlan: (index: Int, correlationID: UUID16)?
         switch frame.routingKey.capability {
         case .resolve, .retrieve, .complete, .returnEvent:
             guard let correlation = frame.routingKey.correlationID else { return .rejected(.correlationMismatch) }
             var matchingIndex: Int?
-            for index in 0..<capacity where pending[index].id == correlation {
-                if pending[index].active { matchingIndex = index }
+            for index in 0..<capacity {
+                guard pending[index].id == correlation else { continue }
+                if case .free = pending[index].state { continue }
+                matchingIndex = index
+                break
             }
             guard let matchingIndex else {
-                if lastResolvedCorrelation == correlation { return .rejected(.duplicate) }
-                if lastExpiredCorrelation == correlation { return .rejected(.deadlineExpired) }
                 return .rejected(.correlationMismatch)
             }
-            guard !Self.reached(nowMS, pending[matchingIndex].deadlineMS) else { return .rejected(.deadlineExpired) }
-            responsePlan = (matchingIndex, correlation)
+            switch pending[matchingIndex].state {
+            case .resolved, .cancelled: return .rejected(.duplicate)
+            case .expired: return .rejected(.deadlineExpired)
+            case .free: return .rejected(.correlationMismatch)
+            case .active(let requestKind):
+                if let deadlineMS = pending[matchingIndex].deadlineMS,
+                   Self.reached(nowMS, deadlineMS) {
+                    return .rejected(.deadlineExpired)
+                }
+                guard Self.accepts(response: frame.routingKey.capability, for: requestKind) else {
+                    return .rejected(.correlationMismatch)
+                }
+                responsePlan = (matchingIndex, correlation)
+            }
         default:
             break
         }
 
         let plan: AssociationPlan
+        var routeClassification: ProtocolRouteClassification = .coaty
         if frame.routingKey.capability == .associate {
             switch planAssociation(frame.payload, classifier: classifier) {
-            case .accepted(let value): plan = value
+            case .accepted(let value, let classification):
+                plan = value
+                routeClassification = classification
             case .ignored: return .ignored
             case .rejected(let code): return .rejected(code)
             }
@@ -385,28 +459,29 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         let objectPlan: ObjectPlan
         switch frame.routingKey.capability {
         case .advertise:
+            let objectID = Self.advertisedObjectID(frame.payload) ?? frame.routingKey.sourceID
             var existing = false
             var activeCount = 0
             var freeIndex: Int?
             for index in 0..<capacity {
                 if objects[index].active {
                     activeCount += 1
-                    if objects[index].id == frame.routingKey.sourceID { existing = true }
+                    if objects[index].sourceID == frame.routingKey.sourceID && objects[index].id == objectID { existing = true }
                 } else if freeIndex == nil {
                     freeIndex = index
                 }
             }
             guard !existing else { return .rejected(.duplicate) }
             guard activeCount < maximumObjects, let freeIndex else { return .rejected(.capacityExceeded) }
-            objectPlan = .insert(freeIndex, frame.routingKey.sourceID)
+            objectPlan = .insert(freeIndex, frame.routingKey.sourceID, objectID, false)
         case .deadvertise:
-            var foundIndex: Int?
-            for index in 0..<capacity where objects[index].active && objects[index].id == frame.routingKey.sourceID {
-                foundIndex = index
-                break
-            }
-            guard let index = foundIndex else { return .rejected(.malformedFrame) }
-            objectPlan = .remove(index)
+            let result = markDeadvertisedObjects(
+                frame.payload,
+                sourceID: frame.routingKey.sourceID,
+                into: &deadvertiseMask
+            )
+            guard result.valid, result.matched > 0 else { return .rejected(.malformedFrame) }
+            objectPlan = .none
         default:
             objectPlan = .none
         }
@@ -422,7 +497,10 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                     routingKey: frame.routingKey,
                     payload: frame.payload,
                     deliveryKey: .ioActor(associations[index].actorID),
-                    topic: frame.topic
+                    topic: frame.topic,
+                    routeClassification: frame.routingKey.capability == .ioValue && associations[index].external
+                        ? .external
+                        : routeClassification
                 )
                 guard sink.append(action) else { return .rejected(.capacityExceeded) }
             }
@@ -432,16 +510,24 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 routingKey: frame.routingKey,
                 payload: frame.payload,
                 deliveryKey: deliveryKey(for: frame),
-                topic: frame.topic
+                topic: frame.topic,
+                routeClassification: routeClassification
             )
             guard sink.append(action) else { return .rejected(.capacityExceeded) }
         }
         if let responsePlan {
-            pending[responsePlan.index].active = false
-            lastResolvedCorrelation = responsePlan.correlationID
+            if Self.isTerminalResponse(frame.routingKey.capability) {
+                pending[responsePlan.index].state = .resolved
+            }
         }
         apply(plan)
-        apply(objectPlan)
+        if frame.routingKey.capability == .deadvertise {
+            for index in 0..<capacity where deadvertiseMask[index] {
+                objects[index] = ObjectRecord()
+            }
+        } else {
+            apply(objectPlan)
+        }
         generation &+= 1
         return .accepted
     }
@@ -471,44 +557,64 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         let valid = validatePayload(operation.payload, for: operation.capability)
         guard valid else { return .rejected(.malformedPayload) }
         guard let key = try? ProtocolRoutingKey(capability: operation.capability, sourceID: operation.sourceID, correlationID: operation.correlationID) else { return .rejected(.invalidCorrelation) }
-        var requestPlan: (index: Int, correlationID: UUID16, deadlineMS: UInt32)?
-        if let timeout = operation.requestTimeoutMS {
-            guard timeout > 0 else { return .rejected(.deadlineExpired) }
+        var requestPlan: (index: Int, correlationID: UUID16, deadlineMS: UInt32?)?
+        switch operation.capability {
+        case .discover, .query, .update, .call:
             guard let correlation = operation.correlationID,
                   let index = pendingSlot(for: correlation) else {
                 return .rejected(.capacityExceeded)
             }
-            requestPlan = (index, correlation, nowMS &+ timeout)
+            let deadlineMS: UInt32?
+            if let timeout = operation.requestTimeoutMS {
+                guard timeout > 0 else { return .rejected(.deadlineExpired) }
+                deadlineMS = nowMS &+ timeout
+            } else {
+                deadlineMS = nil
+            }
+            requestPlan = (index, correlation, deadlineMS)
+        default:
+            break
         }
         let objectPlan: ObjectPlan
+        var deadvertiseMask = InlineArray<capacity, Bool>(repeating: false)
         switch operation.capability {
         case .advertise:
+            let objectID = Self.advertisedObjectID(operation.payload) ?? operation.sourceID
             var existing = false
             var activeCount = 0
             var freeIndex: Int?
+            var replayIndex: Int?
             for index in 0..<capacity {
                 if objects[index].active {
                     activeCount += 1
-                    if objects[index].id == operation.sourceID { existing = true }
+                    if objects[index].sourceID == operation.sourceID && objects[index].id == objectID {
+                        existing = true
+                        if objects[index].local && !objects[index].announced { replayIndex = index }
+                    }
                 } else if freeIndex == nil {
                     freeIndex = index
                 }
             }
-            guard !existing else { return .rejected(.duplicate) }
-            guard activeCount < maximumObjects, let freeIndex else { return .rejected(.capacityExceeded) }
-            objectPlan = .insert(freeIndex, operation.sourceID)
-        case .deadvertise:
-            var foundIndex: Int?
-            for index in 0..<capacity where objects[index].active && objects[index].id == operation.sourceID {
-                foundIndex = index
-                break
+            if existing {
+                guard let replayIndex else { return .rejected(.duplicate) }
+                objectPlan = .replay(replayIndex)
+            } else {
+                guard activeCount < maximumObjects, let freeIndex else { return .rejected(.capacityExceeded) }
+                objectPlan = .insert(freeIndex, operation.sourceID, objectID, true)
             }
-            guard let index = foundIndex else { return .rejected(.malformedFrame) }
-            objectPlan = .remove(index)
+        case .deadvertise:
+            let result = markDeadvertisedObjects(
+                operation.payload,
+                sourceID: operation.sourceID,
+                into: &deadvertiseMask
+            )
+            guard result.valid, result.matched > 0 else { return .rejected(.malformedFrame) }
+            objectPlan = .none
         default:
             objectPlan = .none
         }
         let plan: AssociationPlan
+        var routeClassification: ProtocolRouteClassification = .coaty
         if operation.capability == .associate {
             let associateReader = operation.payload.withBytes { pointer, length in
                 WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
@@ -517,7 +623,9 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 return .rejected(.externalRouteMismatch)
             }
             switch planAssociation(operation.payload, classifier: classifier) {
-            case .accepted(let value): plan = value
+            case .accepted(let value, let classification):
+                plan = value
+                routeClassification = classification
             case .ignored: return .ignored
             case .rejected(let code): return .rejected(code)
             }
@@ -529,17 +637,25 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             kind: .publish,
             routingKey: key,
             payload: operation.payload,
-            deliveryKey: deliveryKey(for: operation)
+            deliveryKey: deliveryKey(for: operation),
+            routeClassification: routeClassification,
+            eventTypeFilter: operation.operationName
         )) else { return .rejected(.capacityExceeded) }
         if let requestPlan {
             pending[requestPlan.index] = PendingRecord(
                 id: requestPlan.correlationID,
                 deadlineMS: requestPlan.deadlineMS,
-                active: true
+                state: .active(Self.requestKind(for: operation.capability))
             )
         }
         apply(plan)
-        apply(objectPlan)
+        if operation.capability == .deadvertise {
+            for index in 0..<capacity where deadvertiseMask[index] {
+                objects[index] = ObjectRecord()
+            }
+        } else {
+            apply(objectPlan)
+        }
         generation &+= 1
         return .accepted
     }
@@ -547,6 +663,9 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     private func deliveryKey(for frame: BorrowedProtocolFrame) -> ProtocolDeliveryKey {
         switch frame.routingKey.capability {
         case .advertise:
+            if let objectType = Self.advertisedObjectType(frame.payload) {
+                return .advertiseFilter(objectType)
+            }
             if let filter = frame.topicView.eventTypeFilter { return .advertiseFilter(filter) }
         case .channel:
             if let channel = frame.topicView.eventTypeFilter { return .channel(channel) }
@@ -572,6 +691,10 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
 
     private func deliveryKey(for operation: ProtocolLocalOperation) -> ProtocolDeliveryKey {
         switch operation {
+        case .advertise:
+            if let objectType = Self.advertisedObjectType(operation.payload) {
+                return .advertiseFilter(objectType)
+            }
         case .resolve, .retrieve, .complete, .returnEvent:
             if let correlation = operation.correlationID {
                 return .correlated(operation.capability, correlation)
@@ -582,11 +705,26 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         return .capability(operation.capability)
     }
 
+    private static func advertisedObjectType(_ payload: ByteSlice) -> ByteSlice? {
+        payload.withBytes { pointer, length in
+            let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
+            guard let object = reader.readRaw("object") else { return nil }
+            return object.withBytes { objectPointer, objectLength in
+                let objectReader = WireReader(
+                    bytes: objectPointer.assumingMemoryBound(to: UInt8.self),
+                    length: objectLength
+                )
+                return objectReader.readString("objectType")
+            }
+        }
+    }
+
     private func planAssociation<Classifier: ProtocolRouteClassifier>(_ payload: ByteSlice, classifier: Classifier) -> AssociationResult {
         let reader = payload.withBytes { pointer, length in WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length) }
         guard let event = try? AssociateWireData(from: reader) else { return .rejected(.malformedPayload) }
         guard let route = event.associatingRoute else {
-            for index in 0..<capacity where associations[index].active && associations[index].sourceID == event.ioSourceId && associations[index].actorID == event.ioActorId { return .accepted(.remove(index)) }
+            if event.isExternalRoute == true { return .rejected(.externalRouteMismatch) }
+            for index in 0..<capacity where associations[index].active && associations[index].sourceID == event.ioSourceId && associations[index].actorID == event.ioActorId { return .accepted(.remove(index), .coaty) }
             return .ignored
         }
         guard route.length > 0, route.length <= 128 else { return .rejected(.capacityExceeded) }
@@ -598,12 +736,12 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             association.routeLength = route.length
             for offset in 0..<route.length { association.route[offset] = route.byte(at: offset) ?? 0 }
             association.external = classification == .external
-            return .accepted(.upsert(index, association))
+            return .accepted(.upsert(index, association), classification)
         }
         for index in 0..<capacity where !associations[index].active {
             var association = Association(sourceID: event.ioSourceId, actorID: event.ioActorId, active: true, routeLength: route.length, route: InlineArray(repeating: 0), external: classification == .external)
             for offset in 0..<route.length { association.route[offset] = route.byte(at: offset) ?? 0 }
-            return .accepted(.upsert(index, association))
+            return .accepted(.upsert(index, association), classification)
         }
         return .rejected(.capacityExceeded)
     }
@@ -619,21 +757,107 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     private mutating func apply(_ plan: ObjectPlan) {
         switch plan {
         case .none: return
-        case .insert(let index, let id):
-            objects[index] = ObjectRecord(id: id, active: true)
+        case .insert(let index, let sourceID, let objectID, let local):
+            objects[index] = ObjectRecord(id: objectID, sourceID: sourceID, active: true, local: local, announced: true)
+        case .replay(let index):
+            objects[index].announced = true
         case .remove(let index):
             objects[index] = ObjectRecord()
         }
     }
 
+    private static func advertisedObjectID(_ payload: ByteSlice) -> UUID16? {
+        payload.withBytes { pointer, length in
+            let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
+            guard let object = reader.readRaw("object") else { return nil }
+            return object.withBytes { objectPointer, objectLength in
+                let objectReader = WireReader(
+                    bytes: objectPointer.assumingMemoryBound(to: UInt8.self),
+                    length: objectLength
+                )
+                return objectReader.readUUID("objectId")
+            }
+        }
+    }
+
+    private func markDeadvertisedObjects(
+        _ payload: ByteSlice,
+        sourceID: UUID16,
+        into mask: inout InlineArray<capacity, Bool>
+    ) -> (valid: Bool, matched: Int) {
+        var valid = true
+        var matched = 0
+        payload.withBytes { pointer, length in
+            let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
+            guard let rawIDs = reader.readRaw("objectIds") else {
+                valid = false
+                return
+            }
+            do throws(WireDecodeError) {
+                try rawIDs.withArrayElements { element in
+                    guard element.wireValueKind == .string,
+                          element.length >= 2,
+                          let objectID = UUID16(parsing: element.subSlice(from: 1, length: element.length - 2)) else {
+                        valid = false
+                        return
+                    }
+                    for index in 0..<capacity where objects[index].active && !mask[index] {
+                        guard objects[index].sourceID == sourceID, objects[index].id == objectID else { continue }
+                        mask[index] = true
+                        matched += 1
+                    }
+                }
+            } catch {
+                valid = false
+            }
+        }
+        return (valid, matched)
+    }
+
     private func pendingSlot(for correlationID: UUID16) -> Int? {
-        for index in 0..<capacity where pending[index].active && pending[index].id == correlationID { return nil }
-        guard lastResolvedCorrelation != correlationID, lastExpiredCorrelation != correlationID else { return nil }
+        for index in 0..<capacity {
+            guard case .free = pending[index].state else {
+                guard pending[index].id == correlationID else { continue }
+                return nil
+            }
+            continue
+        }
         var occupied = 0
-        for index in 0..<capacity where pending[index].active { occupied += 1 }
+        for index in 0..<capacity {
+            if case .active = pending[index].state { occupied += 1 }
+        }
         guard occupied < maximumPendingCorrelations else { return nil }
-        for index in 0..<capacity where !pending[index].active { return index }
+        for index in 0..<capacity {
+            switch pending[index].state {
+            case .free, .resolved, .expired, .cancelled: return index
+            case .active: continue
+            }
+        }
         return nil
+    }
+
+    private static func requestKind(for capability: ProtocolCapability) -> PendingRequestKind {
+        switch capability {
+        case .discover: return .discover
+        case .query: return .query
+        case .update: return .update
+        case .call: return .call
+        default: return .discover
+        }
+    }
+
+    private static func accepts(response: ProtocolCapability, for request: PendingRequestKind) -> Bool {
+        switch (request, response) {
+        case (.discover, .resolve), (.query, .retrieve), (.query, .complete),
+             (.update, .complete), (.call, .returnEvent):
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func isTerminalResponse(_ response: ProtocolCapability) -> Bool {
+        response == .complete || response == .returnEvent
     }
 
     private func validatePayload(_ payload: ByteSlice, for capability: ProtocolCapability) -> Bool {
@@ -665,8 +889,16 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 return (try? QueryWireData(from: reader)) != nil
             case .call:
                 return (try? CallWireData(from: reader)) != nil
-            case .resolve, .retrieve, .update, .complete, .returnEvent:
-                return (try? reader.validate()) != nil
+            case .resolve:
+                return (try? ResolveWireData(from: reader)) != nil
+            case .retrieve:
+                return (try? RetrieveWireData(from: reader)) != nil
+            case .update:
+                return (try? UpdateWireData(from: reader)) != nil
+            case .complete:
+                return (try? CompleteWireData(from: reader)) != nil
+            case .returnEvent:
+                return (try? ReturnWireData(from: reader)) != nil
             }
         }
     }

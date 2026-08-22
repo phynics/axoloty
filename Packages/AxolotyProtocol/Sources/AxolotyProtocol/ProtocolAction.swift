@@ -39,6 +39,10 @@ public struct BorrowedProtocolAction {
     public let routingKey: ProtocolRoutingKey
     /// The normalized delivery selector.
     public let deliveryKey: ProtocolDeliveryKey
+    /// The binding-owned association route classification for this action.
+    public let routeClassification: ProtocolRouteClassification
+    /// The optional outbound event-type filter, such as a Call operation name.
+    public let eventTypeFilter: ByteSlice?
     /// The original borrowed topic, when the action came from inbound wire data.
     public let topic: ByteSlice?
     /// The borrowed action payload.
@@ -50,11 +54,15 @@ public struct BorrowedProtocolAction {
         routingKey: ProtocolRoutingKey,
         payload: ByteSlice,
         deliveryKey: ProtocolDeliveryKey? = nil,
-        topic: ByteSlice? = nil
+        topic: ByteSlice? = nil,
+        routeClassification: ProtocolRouteClassification = .coaty,
+        eventTypeFilter: ByteSlice? = nil
     ) {
         self.kind = kind
         self.routingKey = routingKey
         self.deliveryKey = deliveryKey ?? .capability(routingKey.capability)
+        self.routeClassification = routeClassification
+        self.eventTypeFilter = eventTypeFilter
         self.topic = topic
         self.payload = payload
     }
@@ -67,7 +75,13 @@ public struct BorrowedProtocolAction {
                 count: length
             ))
         }
-        return OwnedProtocolAction(kind: kind, routingKey: routingKey, payload: copied)
+        let copiedFilter = eventTypeFilter?.withBytes { pointer, length in
+            Array(UnsafeBufferPointer(
+                start: pointer.assumingMemoryBound(to: UInt8.self),
+                count: length
+            ))
+        }
+        return OwnedProtocolAction(kind: kind, routingKey: routingKey, payload: copied, eventTypeFilter: copiedFilter)
     }
 }
 
@@ -79,15 +93,19 @@ public struct OwnedProtocolAction: Sendable, Equatable {
     public let routingKey: ProtocolRoutingKey
     /// The owned action payload.
     public let payload: [UInt8]
+    /// The copied outbound event-type filter, when one was supplied.
+    public let eventTypeFilter: [UInt8]?
 
     /// Creates an owned action.
     public init(
         kind: ProtocolActionKind,
         routingKey: ProtocolRoutingKey,
-        payload: [UInt8]
+        payload: [UInt8],
+        eventTypeFilter: [UInt8]? = nil
     ) {
         self.kind = kind
         self.routingKey = routingKey
         self.payload = payload
+        self.eventTypeFilter = eventTypeFilter
     }
 }

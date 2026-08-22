@@ -1,122 +1,72 @@
 # Getting Started
 
-Add Axoloty to a Swift Package Manager project, configure a container, and
-bootstrap a Coaty agent that connects to an MQTT broker.
+Add Axoloty to a Swift Package Manager project, build an immutable runtime
+definition, and connect it to an MQTT broker.
 
 ## Add the package dependency
 
-Add Axoloty to the `dependencies` array in your `Package.swift`:
+Add the package dependency and link the ``Axoloty`` product:
 
 ```swift
 dependencies: [
     .package(url: "https://github.com/phynics/axoloty", from: "0.5.1"),
 ]
-```
 
-Then link it into your target:
-
-```swift
 .target(
     name: "MyApp",
     dependencies: [
         .product(name: "Axoloty", package: "axoloty"),
-    ]),
+    ]
+)
 ```
 
-## Configure and start a container
+## Define and start a runtime
 
-A Coaty agent is bootstrapped by a ``Container``. You configure it with a
-``Configuration`` (built from common and communication options) and a
-``Components`` registration of your application's controllers and object
-types.
-
-This minimal example configures a broker on `localhost:1883`, resolves a
-container, explicitly starts communication, and then shuts it down. The
-function is not invoked by the example, so it can be type-checked without a
-broker:
+The builder is mutable only before ``RuntimeDefinition`` is sealed. Register
+bounded event streams and responders before calling `finish()`:
 
 ```swift
 import Axoloty
 
-@MainActor
 func runAgent() async throws {
-    let configuration = try Configuration.build { builder in
-        builder.common = CommonOptions(agentIdentity: ["name": "my-agent"])
-        builder.communication = CommunicationOptions(
-            namespace: "my-app",
-            mqttClientOptions: MQTTClientOptions(host: "localhost", port: 1883),
-            shouldAutoStart: false
-        )
-    }
-    let components = Components(controllers: [:], objectTypes: [])
-    let container = try Container.resolve(
-        components: components,
-        configuration: configuration
+    let identity = try RuntimeIdentity(id: .zero, name: "my-agent")
+    var builder = try RuntimeDefinition.Builder(identity: identity, namespace: "my-app")
+    _ = try builder.events(
+        matching: .family(.advertise),
+        buffering: .fail(capacity: 64)
     )
-    defer { container.shutdown() }
-    guard let manager = container.communicationManager else {
-        throw AxolotyError.invalidConfiguration(
-            option: "communicationManager",
-            reason: "was not initialized"
-        )
-    }
-
-    let stream = try await manager.observeAdvertiseStream(
-        withObjectType: Identity.objectType
+    let definition = try builder.finish()
+    let runtime = AxolotyRuntime(
+        definition: definition,
+        transport: try MQTTBinding(configuration: .init(host: "localhost", port: 1883))
     )
-    var iterator = stream.makeAsyncIterator()
-    try await container.startAndWaitUntilReady()
-    manager.publishAdvertise(try AdvertiseEvent.with(object: Identity(name: "my-agent")))
-
-    _ = await iterator.next()
+    try await runtime.run()
 }
 ```
 
-## Register a controller
+`run()` is single-use. Call ``AxolotyRuntime/stop()`` for graceful shutdown,
+or create a new runtime after a terminal failure. Event values and handler
+inputs are owned before they cross an asynchronous boundary; raw MQTT topics
+are never part of the public runtime API.
 
-Controllers contain your application logic and are resolved by the container.
-Subclass ``Controller``, register it under a key, and supply matching
-``ControllerOptions``:
+## Observe events
 
-```swift
-class MyController: Controller {
-    override func onCommunicationManagerStarting() {
-        // Subscribe to communication events here.
-    }
-}
+Register streams in the definition, retain the returned stream, and consume
+owned ``RuntimeEventValue`` values from a task you control. Use the event
+context for source identity, correlation, namespace, route classification,
+and receipt time.
 
-let components = Components(
-    controllers: ["MyController": MyController.self],
-    objectTypes: []
-)
+The same thirteen Coaty Core families are processed by the host and static
+profiles. Unknown object types remain dynamic, while malformed known payloads
+are rejected at the protocol boundary.
 
-let configuration = try Configuration.build { builder in
-    builder.common = CommonOptions(agentIdentity: ["name": "my-agent"])
-    builder.communication = CommunicationOptions(
-        mqttClientOptions: MQTTClientOptions(host: "localhost", port: 1883),
-        shouldAutoStart: true
-    )
-    builder.controllers = ControllerConfig(controllerOptions: [
-        "MyController": ControllerOptions(),
-    ])
-}
+## Static execution
 
-let container = try Container.resolve(components: components, configuration: configuration)
-```
-
-## Shut down
-
-When the agent should stop, shut down the container to cleanly disconnect from
-the broker and dispose of controller resources:
-
-```swift
-container.shutdown()
-```
+Embedded applications use `AxolotyStaticRuntime` with a fixed capacity and a
+caller-owned action sink. Firmware owns only transport, clock, persistence,
+and device callbacks; protocol transitions remain in ``AxolotyProtocol``.
 
 ## Next steps
 
-- Explore the ``CommunicationEvent`` families (discover, query, channel,
-  call/return, etc.) in the `Communication` section.
-- See ``MQTTClientOptions`` for TLS, last-will, and broker fallback settings.
-- Read the [project README](https://github.com/phynics/axoloty) for build
-  and testing instructions.
+Read the project README for build and verification instructions. Typed IO
+endpoint and SensorThings APIs are intentionally deferred to G5.

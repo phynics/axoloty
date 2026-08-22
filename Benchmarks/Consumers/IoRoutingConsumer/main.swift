@@ -7,11 +7,7 @@
 // the incremental cost of the router, source/actor controllers, and
 // association registry beyond the communication event baseline.
 
-import Axoloty
+import AxolotyObjectModel
 
-let rule = IoAssociationRule(
-    name: "io-routing-consumer-anchor",
-    valueType: "number",
-    condition: { _, _, _, _, _, _ in true }
-)
-print("IO_ROUTING_CONSUMER_OK: \(type(of: rule))")
+let coreType = ObjectCoreType.coatyObject
+print("IO_ROUTING_CONSUMER_OK: \(coreType)")

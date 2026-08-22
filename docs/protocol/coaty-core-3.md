@@ -40,8 +40,8 @@ New Axoloty primitives must not add proprietary event codes to `coaty/3`; they b
 
 ## G2 trace contract
 
-**Status: Complete for the package boundary, bounded state, and shared
-processing; runtime integration remains a later gate.**
+**Status: Complete for the package boundary, bounded state, shared processing,
+and G4 runtime integration.**
 
 The fixture-backed corpus and JSON contract in
 [`Tests/ProtocolTrace/`](../../Tests/ProtocolTrace/) record deterministic prior
@@ -57,18 +57,22 @@ route classification, and shared inbound/outbound processing.
 
 ## Portable package boundary
 
-**Status: Complete for #638, #639, #640, and #641.**
+**Status: Complete for #638, #639, #640, #641, and the G4 runtime integration
+in #632.**
 
 `Packages/AxolotyProtocol` is independently host-buildable and is compiled by
 the ESP-IDF `axoloty_protocol` component from the same source glob. The target
 depends only on `AxolotyWire` and `AxolotyObjectModel`; Foundation, MQTT/NIO, logging, ErrorKit,
 actors, controllers, lifecycle, and host object hierarchy are prohibited.
-The package is intentionally a foundation rather than a runtime API: its
-processor is a synchronous seam, not a transport or actor API.
+The package remains a foundation rather than a transport API: its processor is
+the single semantic engine used by both ``AxolotyRuntime`` and
+``AxolotyStaticRuntime``. Actor scheduling, MQTT ownership, and stream delivery
+remain in the host runtime; synchronous transport integration remains in the
+static runtime.
 
 ## Object filters
 
-**Status: Complete for the portable G3 path; inherited runtime migration remains G4.**
+**Status: Complete for the portable G3 path and the G4 runtime migration.**
 
 Coaty `objectFilter` values decode into the bounded `ObjectPredicate` AST in
 `AxolotyObjectModel`. That implementation owns all 15 Coaty operators,
@@ -81,7 +85,8 @@ are bounded and atomic.
 
 ## External IO routes
 
-**Status: Complete for G2 semantics; later transport integration remains G5.**
+**Status: Complete for G2 semantics and the G4 transport/runtime boundary;
+typed IO endpoint ergonomics remain G5.**
 
 External IO routes are transport-binding-specific exact non-Coaty routes associated through Coaty IO semantics. Canonical outbound Associate objects omit `isExternalRoute`. Inbound processing accepts the optional field only when it agrees with the binding-supplied classification; unrelated routes are ignored without inventing a global grammar.
 

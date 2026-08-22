@@ -1,12 +1,11 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-import Axoloty
 import AxolotyInspectorCore
 import Foundation
 
 private struct ResolveResponsePayload: Decodable {
-    let object: CoatyObjectSnapshot?
-    let relatedObjects: [CoatyObjectSnapshot]?
+    let object: InspectorObjectPayload?
+    let relatedObjects: [InspectorObjectPayload]?
 }
 
 /// Decodes all objects carried by a Resolve response.
@@ -21,7 +20,7 @@ public enum InspectorResolveObjectDecoder {
     /// - Parameter response: The correlated Resolve response snapshot.
     /// - Returns: Every decoded object in wire order, or `nil` when the
     ///   response payload cannot be decoded.
-    public static func objects(from response: ResponseEventSnapshot) -> [InspectorObject]? {
+    public static func objects(from response: InspectorResponseEvent) -> [InspectorObject]? {
         guard let payload = response.decodePayload(ResolveResponsePayload.self) else {
             return nil
         }
@@ -66,54 +65,70 @@ public struct InspectorDiscoveryRequest: Sendable, Equatable {
     /// Builds the Coaty Discover event after validating its typed selectors.
     ///
     /// Object IDs must be valid Coaty UUIDs and core types must be known
-    /// ``CoreType`` values. When multiple selectors are supplied, the
+    /// ``InspectorCoreType`` values. When multiple selectors are supplied, the
     /// existing precedence is preserved: object ID, object type, then core
     /// type.
     ///
     /// - Returns: The event to publish for this request.
     /// - Throws: ``InspectorError/invalidArguments(reason:)`` when a typed
     ///   selector is malformed or unknown.
-    public func makeDiscoverEvent() throws(InspectorError) -> DiscoverEvent {
+    public func makeInspectorDiscoverRequest(
+        timeout: InspectorDuration = InspectorDuration(value: .seconds(5))
+    ) throws(InspectorError) -> InspectorDiscoverRequest {
         guard hasSelector else {
             throw InspectorError.invalidArguments(
                 reason: "at least one selector (coreType, objectType, or objectId) is required"
             )
         }
 
-        let uuid: CoatyUUID?
+        let uuid: String?
         if let objectId {
-            guard let parsedUUID = CoatyUUID(uuidString: objectId) else {
+            guard UUID(uuidString: objectId) != nil else {
                 throw InspectorError.invalidArguments(
                     reason: "objectId must be a valid UUID: \(objectId)"
                 )
             }
-            uuid = parsedUUID
+            uuid = objectId
         } else {
             uuid = nil
         }
 
-        let parsedCoreType: CoreType?
+        let parsedInspectorCoreType: InspectorCoreType?
         if let coreType {
-            guard let parsed = CoreType(rawValue: coreType) else {
+            let parsed = InspectorCoreType(rawValue: coreType)
+            guard [InspectorCoreType.Identity, .Sensor, .Task, .Node, .Device].contains(parsed) else {
                 throw InspectorError.invalidArguments(
                     reason: "coreType must be a known core type: \(coreType)"
                 )
             }
-            parsedCoreType = parsed
+            parsedInspectorCoreType = parsed
         } else {
-            parsedCoreType = nil
+            parsedInspectorCoreType = nil
         }
 
+        var fields: [String: Any] = [:]
         if let uuid {
-            return DiscoverEvent.with(objectId: uuid)
+            fields["objectId"] = uuid
+        } else if let objectType {
+            fields["objectTypes"] = [objectType]
+        } else if let parsedInspectorCoreType {
+            fields["coreTypes"] = [parsedInspectorCoreType.rawValue]
+        } else {
+            throw InspectorError.invalidArguments(reason: "discovery selector could not be represented")
         }
-        if let objectType {
-            return DiscoverEvent.with(objectTypes: [objectType])
+        guard JSONSerialization.isValidJSONObject(fields),
+              let data = try? JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys]) else {
+            throw InspectorError.invalidArguments(reason: "discovery selector could not be encoded")
         }
-        if let parsedCoreType {
-            return DiscoverEvent.with(coreTypes: [parsedCoreType])
-        }
-        throw InspectorError.invalidArguments(reason: "discovery selector could not be represented")
+        return InspectorDiscoverRequest(
+            payload: Array(data),
+            data: InspectorDiscoverRequest.Data(
+                objectId: uuid.map(InspectorDiscoverRequest.InspectorObjectIdentifier.init(string:)),
+                objectTypes: uuid == nil ? objectType.map { [$0] } : nil,
+                coreTypes: uuid == nil && objectType == nil ? parsedInspectorCoreType.map { [$0.rawValue] } : nil
+            ),
+            responseTimeout: timeout.value
+        )
     }
 }
 

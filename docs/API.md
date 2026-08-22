@@ -1,195 +1,129 @@
 # Axoloty 0.5.1 API documentation
 
-> Axoloty 0.5.1 is a development checkpoint. Public APIs may continue to
-> change before 1.0.
+Axoloty 0.5.1 is the published package version. The repository is preparing
+the 0.6 runtime at the G4 checkpoint. The APIs below describe the current
+runtime cutover; typed IO and SensorThings products remain later work.
+
+## Package boundaries
+
+| Package | Responsibility |
+|---|---|
+| `AxolotyWire` | Foundation-free topics, codecs, envelopes, validation, and borrowed/owned wire values. |
+| `AxolotyObjectModel` | Bounded object envelopes, dynamic objects, predicates, and sealed schema registries. |
+| `AxolotyProtocol` | The shared fixed-inline processor, correlations, association state, route classification, and normalized actions. |
+| `Axoloty` | The host lifecycle, bounded ingress, scheduling, handler supervision, and `MQTTBinding`. |
+| `AxolotyStaticRuntime` | Synchronous fixed-storage composition for Embedded Swift. |
+
+Every host and static protocol transition enters `AxolotyProtocol`. The host
+runtime owns transport and concurrency policy; the static runtime owns only a
+caller-supplied clock, transport loop, and fixed callbacks.
+
+## Host runtime
+
+Configure a runtime before starting it, then seal the definition:
+
+```swift
+let identity = try RuntimeIdentity(id: agentID, name: "inspector")
+var definition = try RuntimeDefinition(
+    namespace: "building-a",
+    sourceID: agentID,
+    identity: identity,
+    capacities: try RuntimeCapacities()
+)
+let resolves = try definition.registerEvents(
+    matching: .family(.resolve),
+    buffering: .dropOldest(capacity: 64)
+)
+let sealed = try definition.seal()
+let runtime = AxolotyRuntime(
+    definition: sealed,
+    transport: try MQTTBinding(configuration: configuration)
+)
+try await runtime.start()
+```
+
+`RuntimeDefinition` is mutable only during configuration. A sealed definition
+contains the bounded identity, capacities, event registrations, and responder
+registrations used by one `AxolotyRuntime` instance. A runtime is single-use:
+`start()` transitions it to `.running`, `stop()` drains bounded work and leaves
+it `.stopped`, and a new instance is required after shutdown.
+
+The public lifecycle states are `initialized`, `starting`, `running`,
+`reconnecting`, `stopping`, `stopped`, and `failed`. `run()` owns a normal
+long-lived lifecycle loop; `start()` and `stop()` are useful for callers that
+own their surrounding task.
+
+## Operations and events
+
+The runtime exposes the thirteen closed Coaty Core families through typed
+values:
+
+- one-way operations: `advertise`, `deadvertise`, `channel`, `associate`, and
+  `ioValue`;
+- requests: `discover`, `query`, `update`, and `call`;
+- responses: `resolve`, `retrieve`, `complete`, and `returnEvent`.
+
+`RuntimeEventValue` contains an owned payload and a `RuntimeEventContext` with
+source identity, optional correlation, namespace, route classification,
+monotonic receipt time, and provenance. It never exposes a raw transport topic
+or a transport-owned buffer.
+
+Discover and Query are multi-response correlations. Update and Call are unary
+correlations. A request with a finite `timeoutMS` expires at the caller's
+monotonic deadline; a Discover request with `timeoutMS: nil` remains active
+until a response, explicit cancellation, reconnect, or shutdown. Late,
+duplicate, mismatched, and expired responses are rejected without mutation.
+
+Application event streams are registered before startup and use one bounded
+`RuntimeBufferingPolicy`: `fail`, `dropOldest`, `dropNewest`, or
+`coalesceLatest`. Transport ingress is never lossy. If its bounded queue is
+full, the runtime reports a structured overload failure rather than silently
+discarding protocol input.
+
+## Static runtime
+
+`AxolotyStaticRuntime.StaticRuntime<capacity>` composes one
+`ProtocolProcessor`, one `ProtocolSubscriptionRegistry`, and one inline action
+sink. `receive`, `send`, `expire`, `cancel`, and `drain` are synchronous. The
+caller drains actions before borrowed topic or payload bytes leave scope.
+
+The accepted storage profiles are `tiny = 1`, `esp32C6Static = 16`, and
+`hostDefault = 64`. Static handlers are noncapturing thin functions with
+caller-owned numeric context handles; no task, actor, Foundation value, or
+growable collection is part of the static runtime.
 
 ## Borrowed-value lifetime rules
 
-Wire-codec views such as `BorrowedMessage`, `ByteSlice`, and `TopicView`
-borrow externally owned bytes for synchronous, zero-copy work. The
-following rules are mandatory:
+Wire views such as `ByteSlice` and `TopicView` borrow externally owned bytes for
+synchronous work. Never retain them, pass them across an actor or task, or
+store them in an asynchronous stream. Copy the required bytes into an owned
+value before any suspension point. Validate untrusted bytes at the wire
+boundary before reading fields.
 
-1. **Never retain borrowed views.** Borrowed bytes are valid only for the
-   duration of the callback or buffer that owns them. Do not store a
-   `BorrowedMessage`, `ByteSlice`, or `TopicView` in a property, array, or
-   capture.
+`BorrowedProtocolAction` is valid only during the synchronous handler or sink
+call that receives it. Use its owned conversion when data must outlive that
+call.
 
-2. **Never cross async seams.** Borrowed views are not `Sendable`. Do not
-   pass them across actor boundaries, into `Task` bodies, or through
-   `AsyncStream` continuations. Copy the data into an owned `String` or
-   `[UInt8]` before any suspension point.
+## Errors and diagnostics
 
-3. **Validate before use.** Always call the validation method (e.g.
-   `BorrowedMessage.validated(topicBytes:topicLength:payloadBytes:payloadLength:)`)
-   before accessing borrowed fields from untrusted input.
+Public runtime boundaries wrap foreign failures in `AxolotyError`. Stable
+categories include invalid arguments, invalid configuration, decoding
+failures, runtime state failures, transport failures, and caught underlying
+errors. Runtime receipts preserve protocol categories such as malformed frame,
+malformed payload, capacity exceeded, duplicate, deadline expired, stale
+correlation, and unsupported capability.
 
-4. **Copy before returning.** If a borrowed value must outlive its
-   callback, copy the relevant bytes into an owned allocation first.
+`RuntimeDiagnostics` provides bounded counters for ingress saturation, stream
+drops, handler saturation, reconnects, expired requests, malformed frames, and
+transport failures. Diagnostic streams contain owned values and can be
+consumed independently of application event streams.
 
-## Owned raw JSON construction
+## Wire and route authority
 
-Owned wire payload types store independent `[UInt8]` copies. Every public raw-
-byte initializer validates complete JSON syntax and the semantic shape required
-by each event field before publishing the owned value, and throws
-`WireDecodeError` on failure.
-
-`BorrowedWireEvent.owned()` copies fields and performs the same validation
-before returning. Malformed borrowed data therefore cannot cross the ownership
-boundary. The package remains Foundation-free; callers receive the structured
-wire error and Axoloty API boundaries wrap it as `AxolotyError`.
-
-The host adapter validates Codable-produced raw fields with Foundation's JSON
-parser, then calls the same public validating constructors. Host-sized values
-are revalidated by the Foundation-free wire layer within the bounded host
-payload limit. There is no cross-module unchecked construction route. Internal
-unchecked initializers are used only by those validating constructors.
-Validation failures are wrapped as `AxolotyError.caught`, preserving the
-underlying `WireDecodeError` for cause-chain diagnostics.
-
-## Suspension points
-
-The following public API operations may suspend (`async` or `async throws`):
-
-### Container and communication-manager lifecycle
-Synchronous start and asynchronous readiness waiting are separate APIs:
-
-- `Container.resolve(components:configuration:)` — `throws` (synchronous);
-  bootstraps the container and its communication manager without connecting
-  to the broker.
-- `CommunicationManager.start()` — `throws` but **synchronous**; connects
-  the MQTT client and transitions the operating state to `.started` without
-  suspending. Throws `AxolotyError.invalidConfiguration(option:reason:)` if
-  the MQTT client options are missing on the restart path.
-- `Container.startAndWaitUntilReady()` — `async throws`; prepares registered
-  controllers, starts communication, and waits until their desired
-  subscriptions are acknowledged by the broker. Use this to await readiness.
-- `CommunicationManager.startAndWaitUntilReady()` — internal; awaits
-  broker connection and subscription completion.
-
-### Observation streams
-All `observe*Stream()` methods return `AsyncStream<T>` which suspends while
-waiting for the next event:
-- `observeAdvertiseStream(withCoreType:)` — `async`
-- `observeAdvertiseStream(withObjectType:)` — `async throws`
-- `observeAdvertiseStream()` — `async` (namespace-wide, no type filter)
-- `observeDeadvertiseStream()` — `async`
-- `observeDiscoverStream()` — `async`
-- `observeQueryStream()` — `async`
-- `observeCallStream(operation:)` — `async throws`
-- `observeUpdateStream(withCoreType:)` — `async`
-- `observeChannelStream(channelId:)` — `async throws`
-- `observeIoValueStream()` — `async`
-- `observeIoStateStream(ioPoint:)` — `async`
-- `observeOperatingStateStream()` — `async`
-- `observeCommunicationStateStream()` — `async`
-- `observeRawMQTTMessageStream()` — `async`
-
-For provider-side unary handling, use
-`registerCallHandler(operation:context:handler:)` — `async throws`. It returns a
-`CallHandlerRegistration` that explicitly owns observation and in-flight task
-lifetime. Retain it while active and call `cancel()` to unregister. Incoming
-context filters are matched before provider code runs, correlation identifiers
-are handled at most once, and the registration publishes the correlated
-`ReturnEvent` internally from a `CallHandlerResult`. The raw
-`observeCallStream(operation:)` API remains available for lower-level consumers.
-
-### Request/response publishing
-These publish an event and return an `AsyncStream` of responses, which
-suspends while waiting for peer replies:
-- `publishDiscover(_:)` — `async`
-- `publishQuery(_:)` — `async`
-- `publishUpdate(_:)` — `async`
-- `publishCall(_:)` — `async`
-
-For a single generic Call/Return exchange, use
-`call(operation:parameters:context:timeout:)` — `async throws`. It installs
-the correlated Return observation before publishing the Call and returns a
-`UnaryCallResult` for the first Return. Observation ownership is released on
-success, remote error, malformed response, timeout, or caller cancellation, so
-duplicate and late Returns are ignored. `publishCall(_:)` remains the API for
-multi-response behavior.
-
-The unary API accepts parameters as optional raw JSON object or array text and
-an optional domain-neutral `ContextFilter` used by providers for selection.
-Its successful `result` and `executionInfo` remain raw JSON text and its
-`sourceId` identifies the responding provider when the wire topic supplies it.
-Remote Return errors throw `RemoteCallFailure`, preserving the remote numeric
-`code` and `message`. A malformed Return throws `AxolotyError.decodingFailure`;
-timeout and caller cancellation throw `AxolotyError.runtime` with `.timedOut`
-and `.cancelled`, respectively. The timeout must be greater than zero.
-
-### Raw publish
-- `publishRaw(topic:withString:)` — synchronous (no suspension)
-- `publishRaw(topic:withBinary:)` — synchronous (no suspension)
-
-## AxolotyError categories
-
-`AxolotyError` is the package's `Throwable` base error type. It has six
-stable cases:
-
-| Case | Associated values | When to throw |
-|---|---|---|
-| `.invalidArgument` | `argument: String`, `reason: String` | A caller passed an invalid argument value (e.g. invalid topic name). |
-| `.decodingFailure` | `type: String`, `reason: String`, `payload: String?` | A Coaty object or event could not be decoded. The optional payload aids debugging. |
-| `.invalidConfiguration` | `option: String`, `reason: String` | A configuration option is missing or has an invalid value. |
-| `.runtime` | `code: RuntimeErrorCode`, `reason: String` | A runtime condition failed. The code is a stable, machine-readable enum that downstream code may switch on. |
-| `.network` | `error: Error`, `reason: String` | A transport-level network error caught at an API boundary. The original foreign error is preserved for chain diagnostics. |
-| `.caught` | `Error` | A foreign error wrapped at an Axoloty API boundary via `AxolotyError.caught(_:)`. Never let a bare `Error` escape an Axoloty API. |
-
-### RuntimeErrorCode
-
-`RuntimeErrorCode` is a semver-relevant public surface. Downstream code
-switches on it, so additions are additive-only:
-
-| Code | When |
-|---|---|
-| `.notStarted` | A component was used before being started. |
-| `.timedOut` | A wait for a runtime condition exceeded its deadline. |
-| `.cancelled` | An asynchronous operation was cancelled by its caller. |
-| `.streamEnded` | An event or state stream ended before delivering an expected value. |
-| `.brokerUnavailable` | No broker could be reached or discovered. |
-| `.subscriptionFailed` | A topic subscription was rejected by the transport. |
-| `.notRegistered` | A referenced entity (e.g. a sensor) was not registered. |
-
-## Initialization and lifecycle invariants
-
-1. **Container before manager.** A `Container` must be bootstrapped from
-   `Configuration` before a `CommunicationManager` is created. The
-   container resolves controllers and communication components.
-
-2. **Start before use.** `Container.startAndWaitUntilReady()` must complete
-   before any observe or publish API is called. Calling these before
-   start throws `AxolotyError.runtime(code: .notStarted)`.
-
-3. **Main-actor isolation.** `CommunicationManager` is `@MainActor`.
-   All public observe/publish methods execute on the main actor. The
-   underlying MQTT client delivers messages from a non-main context;
-   the manager bridges via `onMain(_:)`.
-
-4. **Shutdown is final.** After `Container.shutdown()` (which disposes the
-   communication manager via `CommunicationManager.onDispose()`), the
-   container and its manager cannot be restarted. Create a new `Container`
-   and `CommunicationManager` for a fresh lifecycle. By contrast,
-   `CommunicationManager.stop()` is reversible: invoke `start()` to
-   reconnect and continue processing.
-
-5. **Dynamic controller registration.**
-   `Container.registerController(name:controllerType:controllerOptions:)`
-   can register a controller after bootstrap. If the manager is already
-   started, the controller's `onCommunicationManagerStarting()` is called
-   immediately.
-
-## `@unchecked Sendable` audit
-
-All five production `@unchecked Sendable` declarations are internal or
-private, with documented synchronization rationale:
-
-| Type | File | Visibility | Justification |
-|---|---|---|---|
-| `CoreTypeKeysContext` | `AnyCoatyObjectDecodable.swift` | internal | Mutable state accessed only synchronously during one decode; stack's single-decode ownership prevents concurrent mutation. |
-| `DecodingContextStack` | `Decoder+Context.swift` | internal | Stored in `JSONDecoder.userInfo`; mutable state accessed only synchronously during one decode. `JSONDecoder` does not invoke decoders concurrently. |
-| `RawJSONObjectContext` | `RawJSONObjectContext.swift` | internal | Created for one decode operation; `currentObject` accessed only synchronously by that operation; never shared by concurrent decodes. |
-| `MQTTNIOCallbackAdapter` | `MQTTNIOClient.swift` | private | mqtt-nio invokes callbacks from independent contexts; `NIOLock` guards delegate, stream, and client access. |
-| `LevelStore` | `LogManager.swift` | private | `NSLock` guards every read and write of subsystem levels and default level. |
-
-No public types use `@unchecked Sendable`. No unjustified uses were found.
+All family payloads are encoded and decoded through `AxolotyWire` and the
+Foundation-free protocol codecs. The binding supplies route classification;
+there is no profile-wide route grammar. Canonical outbound Associate omits the
+optional external-route flag. Inbound omission is accepted, an explicit flag
+must agree with the binding classification, and unrelated routes are ignored.
+The exact CoatyJS external fixture is
+`external/wire-compat-v1/io-external-1`.

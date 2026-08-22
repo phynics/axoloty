@@ -2,35 +2,17 @@
 
 import Axoloty
 
-@MainActor
 func runAgent() async throws {
-    let configuration = try Configuration.build { builder in
-        builder.common = CommonOptions(agentIdentity: ["name": "my-agent"])
-        builder.communication = CommunicationOptions(
-            namespace: "my-app",
-            mqttClientOptions: MQTTClientOptions(host: "localhost", port: 1883),
-            shouldAutoStart: false
-        )
-    }
-    let components = Components(controllers: [:], objectTypes: [])
-    let container = try Container.resolve(
-        components: components,
-        configuration: configuration
+    let identity = try RuntimeIdentity(id: .zero, name: "my-agent")
+    var builder = try RuntimeDefinition.Builder(identity: identity, namespace: "my-app")
+    _ = try builder.events(
+        matching: .family(.advertise),
+        buffering: .fail(capacity: 64)
     )
-    defer { container.shutdown() }
-    guard let manager = container.communicationManager else {
-        throw AxolotyError.invalidConfiguration(
-            option: "communicationManager",
-            reason: "was not initialized"
-        )
-    }
-
-    let stream = try await manager.observeAdvertiseStream(
-        withObjectType: Identity.objectType
+    let definition = try builder.finish()
+    let runtime = AxolotyRuntime(
+        definition: definition,
+        transport: try MQTTBinding(configuration: .init(host: "localhost", port: 1883))
     )
-    var iterator = stream.makeAsyncIterator()
-    try await container.startAndWaitUntilReady()
-    manager.publishAdvertise(try AdvertiseEvent.with(object: Identity(name: "my-agent")))
-
-    _ = await iterator.next()
+    try await runtime.run()
 }

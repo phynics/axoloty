@@ -16,17 +16,17 @@ import FoundationNetworking
 
 @MainActor
 private final class StatusSession: InspectorSession {
-    var state: CommunicationState = .online
+    var state: InspectorTransportState = .online
 
     func connect() async throws {}
-    func communicationState() async -> CommunicationState { state }
-    func advertiseEvents() async -> AsyncStream<AdvertiseEventSnapshot> {
+    func transportState() async -> InspectorTransportState { state }
+    func advertiseEvents() async -> AsyncStream<InspectorAdvertiseEvent> {
         AsyncStream { $0.finish() }
     }
-    func deadvertiseEvents() async -> AsyncStream<DeadvertiseEventSnapshot> {
+    func deadvertiseEvents() async -> AsyncStream<InspectorDeadvertiseEvent> {
         AsyncStream { $0.finish() }
     }
-    func discover(_ event: DiscoverEvent) async -> AsyncStream<ResponseEventSnapshot> {
+    func discover(_ event: InspectorDiscoverRequest) async -> AsyncStream<InspectorResponseEvent> {
         AsyncStream { _ in }
     }
     func stop() {}
@@ -41,7 +41,7 @@ private struct ForcedEncodingError: LocalizedError {
 private func makeResolveResponse(
     objectId: String? = "obj-1",
     relatedObjectIds: [String] = []
-) -> ResponseEventSnapshot {
+) -> InspectorResponseEvent {
     var fields: [String] = []
     if let objectId {
         fields.append("\"object\":{\"objectId\":\"\(objectId)\",\"coreType\":\"Identity\",\"objectType\":\"coaty.object.Identity\",\"name\":\"Agent\"}")
@@ -52,7 +52,7 @@ private func makeResolveResponse(
         }.joined(separator: ",")
         fields.append("\"relatedObjects\":[\(relatedJSON)]")
     }
-    return ResponseEventSnapshot(
+    return InspectorResponseEvent(
         eventType: "resolve",
         sourceId: "src-1",
         correlationId: "corr-1",
@@ -62,7 +62,7 @@ private func makeResolveResponse(
 
 @MainActor
 private func discoverResultJSON(
-    for responses: [ResponseEventSnapshot]
+    for responses: [InspectorResponseEvent]
 ) async throws -> [String: Any] {
     let result = await AxolotyMCPServer.handleDiscoverObjects([
         "coreType": .string("Identity"),
@@ -96,11 +96,11 @@ private final class EncodingLogCapture {
 
 @MainActor
 private final class ResponseStreamFixture {
-    let stream: AsyncThrowingStream<ResponseEventSnapshot, Error>
-    private let continuation: AsyncThrowingStream<ResponseEventSnapshot, Error>.Continuation
+    let stream: AsyncThrowingStream<InspectorResponseEvent, Error>
+    private let continuation: AsyncThrowingStream<InspectorResponseEvent, Error>.Continuation
 
-    init(response: ResponseEventSnapshot) {
-        let (stream, continuation) = AsyncThrowingStream<ResponseEventSnapshot, Error>.makeStream()
+    init(response: InspectorResponseEvent) {
+        let (stream, continuation) = AsyncThrowingStream<InspectorResponseEvent, Error>.makeStream()
         self.stream = stream
         self.continuation = continuation
         continuation.yield(response)
@@ -124,9 +124,9 @@ private actor StreamTerminationProbe {
     }
 }
 
-private func makeResolveResponse(objectId: String, name: String) -> ResponseEventSnapshot {
+private func makeResolveResponse(objectId: String, name: String) -> InspectorResponseEvent {
     let payload = "{\"object\":{\"objectId\":\"\(objectId)\",\"coreType\":\"Identity\",\"objectType\":\"coaty.object.Identity\",\"name\":\"\(name)\"}}"
-    return ResponseEventSnapshot(
+    return InspectorResponseEvent(
         eventType: "resolve",
         sourceId: "source-1",
         correlationId: "correlation-1",
@@ -217,7 +217,7 @@ func discoverToolTimeoutClamp() {
 
 @Test("Status reflects live online and offline communication state")
 @MainActor
-func statusReflectsCommunicationState() async throws {
+func statusReflectsInspectorTransportState() async throws {
     let session = StatusSession()
     let server = AxolotyMCPServer(session: session, namespace: "test")
 
@@ -319,9 +319,9 @@ func discoverHandlerRejectsInvalidObjectId() async {
 
 @MainActor
 @Test("Discover handler rejects unknown core type before discovery")
-func discoverHandlerRejectsUnknownCoreType() async {
+func discoverHandlerRejectsUnknownInspectorCoreType() async {
     var discoveryCount = 0
-    let result = await AxolotyMCPServer.handleDiscoverObjects(["coreType": .string("UnknownCoreType")]) { _ in
+    let result = await AxolotyMCPServer.handleDiscoverObjects(["coreType": .string("UnknownInspectorCoreType")]) { _ in
         discoveryCount += 1
         return AsyncThrowingStream { $0.finish() }
     }
@@ -455,7 +455,7 @@ func discoverAbruptCloseIsNotReportedAsTimeout() async throws {
 @Test("Production discovery adapter reports broker disconnect as abrupt stream exhaustion")
 func productionDiscoveryAdapterReportsBrokerDisconnect() async throws {
     let session = StatusSession()
-    let event = try InspectorDiscoveryRequest(coreType: "Identity").makeDiscoverEvent()
+    let event = try InspectorDiscoveryRequest(coreType: "Identity").makeInspectorDiscoverRequest()
     let stream = await AxolotyMCPServer.discoveryResponseStream(session: session, event: event)
     let responseTask = Task {
         var iterator = stream.makeAsyncIterator()

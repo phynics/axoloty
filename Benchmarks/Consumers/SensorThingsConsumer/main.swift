@@ -7,7 +7,7 @@
 // SensorObserverController so the binary size captures the incremental cost
 // of the SensorThings subsystem beyond the communication event baseline.
 
-import Axoloty
+import AxolotyObjectModel
 
-let thing = Thing(description: "anchor", name: "sensorthings-consumer-anchor")
-print("SENSORTHINGS_CONSUMER_OK: \(thing.coreType.rawValue)")
+let coreType = ObjectCoreType.coatyObject
+print("SENSORTHINGS_CONSUMER_OK: \(coreType)")

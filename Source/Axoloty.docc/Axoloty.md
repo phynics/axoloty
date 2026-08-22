@@ -1,68 +1,46 @@
 # ``Axoloty``
 
-A [Coaty](https://coaty.io/) implementation written in Swift.
-
-Axoloty provides a lightweight, object-oriented middleware for building
-distributed IoT applications out of loosely coupled, decentralized *Coaty
-agents* that communicate over an open publish-subscribe messaging protocol
-(MQTT). Agents discover, distribute, share, query, and persist hierarchically
-typed data using a platform-agnostic, extensible object model.
+Axoloty is a Swift implementation of the Coaty Core 3 wire profile. The
+public host runtime is immutable after configuration, and the portable
+protocol processor is shared with the fixed-storage static runtime.
 
 ## Overview
 
-A Coaty application is built around a ``Container`` that resolves components
-and configuration, manages the lifecycle of its controllers, and mediates
-communication with other agents through a ``CommunicationManager`` backed by
-an MQTT broker.
+Configure a ``RuntimeDefinition`` with ``RuntimeDefinition/Builder``, then
+start one ``AxolotyRuntime`` with an ``MQTTBinding``. Transport bytes are
+copied at the binding boundary, processed by ``AxolotyProtocol``, and exposed
+as owned ``RuntimeEventValue`` values. The host runtime owns lifecycle and
+concurrency; protocol semantics remain in the shared processor.
 
-The typical startup flow is:
+The static profile uses `AxolotyStaticRuntime` and caller-owned fixed
+storage. It is suitable for embedded builds and does not depend on actors,
+Foundation, MQTT, or dynamic protocol state.
 
-1. Build a ``Configuration`` from ``CommonOptions`` and ``CommunicationOptions``
-   (including ``MQTTClientOptions`` for broker connectivity).
-2. Register application-specific controllers and object types in a
-   ``Components`` instance.
-3. Resolve a ``Container`` via ``Container/resolve(components:configuration:)``.
-4. The container bootstraps the ``Runtime``, communication manager, and
-   controllers; controllers then exchange ``CommunicationEvent``s over MQTT.
+Failures are represented by ``AxolotyError`` at the public boundary. Runtime
+health is available through ``RuntimeState`` and bounded
+``RuntimeDiagnostics`` snapshots and streams.
 
-Error handling is unified through [ErrorKit](https://github.com/FlineDev/ErrorKit):
-package-defined failures conform to `Throwable` and surface stable,
-user-facing messages via ``AxolotyError``.
-
-For a step-by-step introduction including a compiling minimal example, see
-<doc:GettingStarted>.
+For a compiling introduction, see <doc:GettingStarted>.
 
 ## Topics
 
 ### Runtime
 
-- ``Container``
-- ``Runtime``
-- ``Configuration``
-- ``ConfigurationBuilder``
-- ``Components``
-- ``Controller``
+- ``RuntimeDefinition``
+- ``RuntimeDefinition/Builder``
+- ``AxolotyRuntime``
+- ``RuntimeState``
+- ``RuntimeEventValue``
+- ``RuntimeDiagnostics``
 
-### Communication
+### Transport
 
-- ``CommunicationManager``
-- ``CommunicationEvent``
-
-### Configuration
-
-- ``CommonOptions``
-- ``CommunicationOptions``
-- ``MQTTClientOptions``
-- ``ControllerOptions``
+- ``MQTTBinding``
+- ``MQTTBindingConfiguration``
 
 ### Errors
 
 - ``AxolotyError``
-
-### Logging
-
-- ``LogManager``
-- ``Subsystem``
 
 ### Articles
 
