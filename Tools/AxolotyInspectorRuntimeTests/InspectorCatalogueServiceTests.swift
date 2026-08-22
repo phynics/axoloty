@@ -13,12 +13,12 @@ private final class RetryInspectorSession: InspectorSession {
     private(set) var connectAttempts = 0
     private(set) var streamsCreatedBeforeConnect: [Bool] = []
     private(set) var connectStarted = false
-    var currentCommunicationState: CommunicationState = .offline
+    var currentInspectorTransportState: InspectorTransportState = .offline
 
     private var advertiseStreamCreated = false
     private var deadvertiseStreamCreated = false
-    private var advertiseContinuations: [AsyncStream<AdvertiseEventSnapshot>.Continuation] = []
-    private var deadvertiseContinuations: [AsyncStream<DeadvertiseEventSnapshot>.Continuation] = []
+    private var advertiseContinuations: [AsyncStream<InspectorAdvertiseEvent>.Continuation] = []
+    private var deadvertiseContinuations: [AsyncStream<InspectorDeadvertiseEvent>.Continuation] = []
     private var connectWaiter: CheckedContinuation<Void, Never>?
 
     func connect() async throws {
@@ -41,42 +41,42 @@ private final class RetryInspectorSession: InspectorSession {
             failuresRemaining -= 1
             throw InspectorError.connectionUnavailable(reason: "fake failure")
         }
-        currentCommunicationState = .online
+        currentInspectorTransportState = .online
     }
 
-    func communicationState() async -> CommunicationState {
-        currentCommunicationState
+    func transportState() async -> InspectorTransportState {
+        currentInspectorTransportState
     }
 
-    func advertiseEvents() async -> AsyncStream<AdvertiseEventSnapshot> {
+    func advertiseEvents() async -> AsyncStream<InspectorAdvertiseEvent> {
         advertiseStreamCreated = true
-        let (stream, continuation) = AsyncStream.makeStream(of: AdvertiseEventSnapshot.self)
+        let (stream, continuation) = AsyncStream.makeStream(of: InspectorAdvertiseEvent.self)
         advertiseContinuations.append(continuation)
         return stream
     }
 
-    func deadvertiseEvents() async -> AsyncStream<DeadvertiseEventSnapshot> {
+    func deadvertiseEvents() async -> AsyncStream<InspectorDeadvertiseEvent> {
         deadvertiseStreamCreated = true
-        let (stream, continuation) = AsyncStream.makeStream(of: DeadvertiseEventSnapshot.self)
+        let (stream, continuation) = AsyncStream.makeStream(of: InspectorDeadvertiseEvent.self)
         deadvertiseContinuations.append(continuation)
         return stream
     }
 
-    func discover(_ event: DiscoverEvent) async -> AsyncStream<ResponseEventSnapshot> {
+    func discover(_ event: InspectorDiscoverRequest) async -> AsyncStream<InspectorResponseEvent> {
         AsyncStream { continuation in continuation.finish() }
     }
 
     func stop() {}
 
-    func emitAdvertise(_ snapshot: AdvertiseEventSnapshot) {
+    func emitAdvertise(_ snapshot: InspectorAdvertiseEvent) {
         advertiseContinuations.last?.yield(snapshot)
     }
 
-    func emitAdvertise(_ snapshot: AdvertiseEventSnapshot, onStream index: Int) {
+    func emitAdvertise(_ snapshot: InspectorAdvertiseEvent, onStream index: Int) {
         advertiseContinuations[index].yield(snapshot)
     }
 
-    func emitDeadvertise(_ snapshot: DeadvertiseEventSnapshot) {
+    func emitDeadvertise(_ snapshot: InspectorDeadvertiseEvent) {
         deadvertiseContinuations.last?.yield(snapshot)
     }
 
@@ -105,10 +105,10 @@ func catalogueServiceCanRetryAfterFailedConnection() async {
     #expect(session.streamsCreatedBeforeConnect == [true, true])
 
     session.emitAdvertise(
-        AdvertiseEventSnapshot(
+        InspectorAdvertiseEvent(
             sourceId: "source-1",
-            eventTypeFilter: CoreType.Identity.rawValue,
-            object: CoatyObjectSnapshot(
+            eventTypeFilter: InspectorCoreType.Identity.rawValue,
+            object: InspectorObjectPayload(
                 objectId: "object-1",
                 coreType: .Identity,
                 objectType: "coaty.object.Identity",
@@ -124,7 +124,7 @@ func catalogueServiceCanRetryAfterFailedConnection() async {
     }
     #expect(await service.store.count == 1)
 
-    session.emitDeadvertise(DeadvertiseEventSnapshot(objectIds: ["object-1"]))
+    session.emitDeadvertise(InspectorDeadvertiseEvent(objectIds: ["object-1"]))
     for _ in 0..<100 {
         if await service.store.count == 0 {
             break
@@ -190,10 +190,10 @@ func stoppingDuringCatalogueServiceStartPreventsLateConsumer() async {
     } catch {
         Issue.record("Expected retry after stop to connect successfully, got \(error)")
     }
-    let object = AdvertiseEventSnapshot(
+    let object = InspectorAdvertiseEvent(
         sourceId: "source-1",
-        eventTypeFilter: CoreType.Identity.rawValue,
-        object: CoatyObjectSnapshot(
+        eventTypeFilter: InspectorCoreType.Identity.rawValue,
+        object: InspectorObjectPayload(
             objectId: "object-1",
             coreType: .Identity,
             objectType: "coaty.object.Identity",

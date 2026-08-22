@@ -12,21 +12,21 @@ final class FakeInspectorSession: InspectorSession {
     var connectShouldFail = false
     var connectError: InspectorError?
     var connected = false
-    var communicationState: CommunicationState = .offline
+    var transportState: InspectorTransportState = .offline
     var stopped = false
     var discoverCallCount = 0
     var streamsCreatedBeforeConnect = false
 
-    private var advertiseContinuation: AsyncStream<AdvertiseEventSnapshot>.Continuation?
-    private var deadvertiseContinuation: AsyncStream<DeadvertiseEventSnapshot>.Continuation?
-    private var discoverContinuation: AsyncStream<ResponseEventSnapshot>.Continuation?
+    private var advertiseContinuation: AsyncStream<InspectorAdvertiseEvent>.Continuation?
+    private var deadvertiseContinuation: AsyncStream<InspectorDeadvertiseEvent>.Continuation?
+    private var discoverContinuation: AsyncStream<InspectorResponseEvent>.Continuation?
 
     private var advertiseStreamCreated = false
     private var deadvertiseStreamCreated = false
 
-    var queuedAdvertises: [AdvertiseEventSnapshot] = []
-    var queuedDeadvertises: [DeadvertiseEventSnapshot] = []
-    var queuedResponses: [ResponseEventSnapshot] = []
+    var queuedAdvertises: [InspectorAdvertiseEvent] = []
+    var queuedDeadvertises: [InspectorDeadvertiseEvent] = []
+    var queuedResponses: [InspectorResponseEvent] = []
     var finishDiscoverStream = true
 
     func connect() async throws {
@@ -34,7 +34,7 @@ final class FakeInspectorSession: InspectorSession {
             throw connectError ?? .connectionUnavailable(reason: "fake failure")
         }
         connected = true
-        communicationState = .online
+        transportState = .online
         streamsCreatedBeforeConnect = advertiseStreamCreated && deadvertiseStreamCreated
         for snapshot in queuedAdvertises {
             advertiseContinuation?.yield(snapshot)
@@ -44,19 +44,19 @@ final class FakeInspectorSession: InspectorSession {
         }
     }
 
-    func advertiseEvents() async -> AsyncStream<AdvertiseEventSnapshot> {
-        let (stream, cont) = AsyncStream.makeStream(of: AdvertiseEventSnapshot.self)
+    func advertiseEvents() async -> AsyncStream<InspectorAdvertiseEvent> {
+        let (stream, cont) = AsyncStream.makeStream(of: InspectorAdvertiseEvent.self)
         advertiseContinuation = cont
         advertiseStreamCreated = true
         return stream
     }
 
-    func communicationState() async -> CommunicationState {
-        communicationState
+    func transportState() async -> InspectorTransportState {
+        transportState
     }
 
-    func deadvertiseEvents() async -> AsyncStream<DeadvertiseEventSnapshot> {
-        let (stream, cont) = AsyncStream.makeStream(of: DeadvertiseEventSnapshot.self)
+    func deadvertiseEvents() async -> AsyncStream<InspectorDeadvertiseEvent> {
+        let (stream, cont) = AsyncStream.makeStream(of: InspectorDeadvertiseEvent.self)
         deadvertiseContinuation = cont
         deadvertiseStreamCreated = true
         return stream
@@ -69,9 +69,9 @@ final class FakeInspectorSession: InspectorSession {
         discoverContinuation?.finish()
     }
 
-    func discover(_ event: DiscoverEvent) async -> AsyncStream<ResponseEventSnapshot> {
+    func discover(_ event: InspectorDiscoverRequest) async -> AsyncStream<InspectorResponseEvent> {
         discoverCallCount += 1
-        let (stream, cont) = AsyncStream.makeStream(of: ResponseEventSnapshot.self)
+        let (stream, cont) = AsyncStream.makeStream(of: InspectorResponseEvent.self)
         discoverContinuation = cont
         for response in queuedResponses {
             cont.yield(response)
@@ -82,11 +82,11 @@ final class FakeInspectorSession: InspectorSession {
         return stream
     }
 
-    func emitAdvertise(_ snapshot: AdvertiseEventSnapshot) {
+    func emitAdvertise(_ snapshot: InspectorAdvertiseEvent) {
         advertiseContinuation?.yield(snapshot)
     }
 
-    func emitDeadvertise(_ snapshot: DeadvertiseEventSnapshot) {
+    func emitDeadvertise(_ snapshot: InspectorDeadvertiseEvent) {
         deadvertiseContinuation?.yield(snapshot)
     }
 
@@ -125,16 +125,16 @@ struct InspectorApplicationTests {
 
     private func makeSnapshot(
         objectId: String = "obj-1",
-        coreType: CoreType = .Identity,
+        coreType: InspectorCoreType = .Identity,
         objectType: String = "coaty.object.Identity",
         name: String = "Agent",
         sourceId: String? = "src-1",
         privateData: String? = nil
-    ) -> AdvertiseEventSnapshot {
-        AdvertiseEventSnapshot(
+    ) -> InspectorAdvertiseEvent {
+        InspectorAdvertiseEvent(
             sourceId: sourceId,
             eventTypeFilter: coreType.rawValue,
-            object: CoatyObjectSnapshot(
+            object: InspectorObjectPayload(
                 objectId: objectId,
                 coreType: coreType,
                 objectType: objectType,
@@ -237,7 +237,7 @@ struct InspectorApplicationTests {
         }
         _ = try #require(advertise)
 
-        session.emitDeadvertise(DeadvertiseEventSnapshot(sourceId: "src-1", objectIds: ["obj-1"]))
+        session.emitDeadvertise(InspectorDeadvertiseEvent(sourceId: "src-1", objectIds: ["obj-1"]))
 
         var deadvertise: String?
         while let line = await outputIterator.next() {
@@ -531,11 +531,11 @@ struct InspectorDiscoverApplicationTests {
 
     private func makeResolveResponse(
         objectId: String? = "obj-1",
-        coreType: CoreType = .Identity,
+        coreType: InspectorCoreType = .Identity,
         objectType: String = "coaty.object.Identity",
         name: String = "Agent",
         relatedObjectIds: [String] = []
-    ) -> ResponseEventSnapshot {
+    ) -> InspectorResponseEvent {
         var fields: [String] = []
         if let objectId {
             fields.append("\"object\":{\"objectId\":\"\(objectId)\",\"coreType\":\"\(coreType.rawValue)\",\"objectType\":\"\(objectType)\",\"name\":\"\(name)\"}")
@@ -547,7 +547,7 @@ struct InspectorDiscoverApplicationTests {
             fields.append("\"relatedObjects\":[\(relatedJSON)]")
         }
         let payload = "{\(fields.joined(separator: ","))}"
-        return ResponseEventSnapshot(
+        return InspectorResponseEvent(
             eventType: "resolve",
             sourceId: "src-1",
             correlationId: "corr-1",
@@ -881,10 +881,10 @@ struct InspectorDiscoverApplicationTests {
     }
 
     @Test
-    func invalidCoreTypeDoesNotInvokeDiscovery() async {
+    func invalidInspectorCoreTypeDoesNotInvokeDiscovery() async {
         let session = FakeInspectorSession()
         let app = InspectorDiscoverApplication(
-            configuration: makeDiscoverConfig(coreType: "UnknownCoreType"),
+            configuration: makeDiscoverConfig(coreType: "UnknownInspectorCoreType"),
             session: session,
             writeOutput: { _ in },
             writeDiagnostic: { _ in },
@@ -894,7 +894,7 @@ struct InspectorDiscoverApplicationTests {
 
         let result = await app.run()
 
-        #expect(result == .invalidArguments(reason: "coreType must be a known core type: UnknownCoreType"))
+        #expect(result == .invalidArguments(reason: "coreType must be a known core type: UnknownInspectorCoreType"))
         #expect(session.discoverCallCount == 0)
     }
 }

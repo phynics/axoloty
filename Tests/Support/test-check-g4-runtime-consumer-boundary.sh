@@ -27,9 +27,9 @@ write_fixture
 run_checker >/dev/null
 
 write_fixture
-printf '%s\n' 'import Axoloty' >> "$tmp/Consumers/Inspector/Fixture.swift"
+printf '%s\n' 'let old: Container? = nil' >> "$tmp/Consumers/Inspector/Fixture.swift"
 if run_checker >/dev/null 2>&1; then
-    echo "error: consumer checker accepted the inherited Axoloty import" >&2
+    echo "error: consumer checker accepted a legacy runtime symbol" >&2
     exit 1
 fi
 

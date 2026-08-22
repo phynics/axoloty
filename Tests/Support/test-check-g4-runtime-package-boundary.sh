@@ -23,11 +23,28 @@ run_checker() {
     AXOLOTY_G4_HOST_RUNTIME_SOURCE_DIR="$tmp/Source/Runtime" \
     AXOLOTY_G4_STATIC_RUNTIME_PACKAGE_DIR="$tmp/Packages/AxolotyStaticRuntime" \
     AXOLOTY_G4_PRODUCTION_SOURCE_DIR="$tmp/Source" \
+    AXOLOTY_G4_MANIFEST="$tmp/Package.swift" \
         "$checker"
 }
 
+cat > "$tmp/Package.swift" <<'EOF'
+let package = Package(name: "fixture", targets: [
+    .target(name: "Axoloty", path: "Source", sources: ["Runtime/AxolotyRuntimeFixture.swift"])
+])
+EOF
+
 write_fixture
 run_checker >/dev/null
+
+cat > "$tmp/Package.swift" <<'EOF'
+let package = Package(name: "fixture", targets: [
+    .target(name: "Axoloty", path: "Source")
+])
+EOF
+if run_checker >/dev/null 2>&1; then
+    echo "error: package checker accepted legacy Source discovery" >&2
+    exit 1
+fi
 
 write_fixture
 printf '%s\n' 'struct Legacy: CommunicationManager {}' >> "$tmp/Source/Runtime/AxolotyRuntimeFixture.swift"

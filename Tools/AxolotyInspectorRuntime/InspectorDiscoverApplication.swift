@@ -6,7 +6,7 @@ import Foundation
 
 /// Internal event type for the discover event loop.
 private enum DiscoverLoopEvent: Sendable {
-    case response(ResponseEventSnapshot)
+    case response(InspectorResponseEvent)
     case responsesExhausted
     case timeoutExpired
     case interrupted
@@ -85,9 +85,9 @@ public final class InspectorDiscoverApplication {
             objectType: cmd.objectType,
             objectId: cmd.objectId
         )
-        let discoverEvent: DiscoverEvent
+        let discoverEvent: InspectorDiscoverRequest
         do {
-            discoverEvent = try discoveryRequest.makeDiscoverEvent()
+            discoverEvent = try discoveryRequest.makeInspectorDiscoverRequest()
         } catch {
             writeDiagnostic("error: \(error.userFriendlyMessage)")
             session.stop()

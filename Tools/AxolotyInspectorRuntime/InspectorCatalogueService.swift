@@ -95,13 +95,13 @@ public final class InspectorCatalogueService {
     /// Returns the session's current communication state.
     ///
     /// - Returns: The latest broker communication state.
-    public func communicationState() async -> CommunicationState {
-        await session.communicationState()
+    public func transportState() async -> InspectorTransportState {
+        await session.transportState()
     }
 
     private func consumeStreams(
-        advertise: AsyncStream<AdvertiseEventSnapshot>,
-        deadvertise: AsyncStream<DeadvertiseEventSnapshot>,
+        advertise: AsyncStream<InspectorAdvertiseEvent>,
+        deadvertise: AsyncStream<InspectorDeadvertiseEvent>,
         store: InspectorCatalogueStore
     ) async {
         await withTaskGroup(of: Void.self) { group in

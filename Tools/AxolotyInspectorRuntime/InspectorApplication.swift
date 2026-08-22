@@ -6,8 +6,8 @@ import Foundation
 
 /// Internal event type for the merged event loop.
 private enum ApplicationEvent: Sendable {
-    case advertise(AdvertiseEventSnapshot)
-    case deadvertise(DeadvertiseEventSnapshot)
+    case advertise(InspectorAdvertiseEvent)
+    case deadvertise(InspectorDeadvertiseEvent)
     case durationExpired
     case interrupted
     case streamEnded
@@ -268,7 +268,7 @@ public final class InspectorApplication {
     }
 
     private static func convert(
-        _ snapshot: AdvertiseEventSnapshot,
+        _ snapshot: InspectorAdvertiseEvent,
         cmd: CatalogCommand
     ) -> InspectorObject {
         InspectorObject(

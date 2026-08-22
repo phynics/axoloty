@@ -12,6 +12,7 @@ runtime_package=${AXOLOTY_G4_RUNTIME_PACKAGE_DIR:-$root/Packages/AxolotyRuntime}
 runtime_source_dir=${AXOLOTY_G4_HOST_RUNTIME_SOURCE_DIR:-$root/Source/Runtime}
 static=${AXOLOTY_G4_STATIC_RUNTIME_PACKAGE_DIR:-$root/Packages/AxolotyStaticRuntime}
 production_source_dir=${AXOLOTY_G4_PRODUCTION_SOURCE_DIR:-$root/Source}
+manifest=${AXOLOTY_G4_MANIFEST:-$root/Package.swift}
 
 fail() {
     echo "error: $*" >&2
@@ -31,6 +32,15 @@ fi
 [ -n "$host_sources" ] || fail "replacement host runtime source seam is missing"
 [ -d "$static" ] || fail "replacement static runtime package is missing: $static"
 [ -f "$static/Package.swift" ] || fail "replacement static runtime manifest is missing: $static/Package.swift"
+[ -f "$manifest" ] || fail "package manifest is missing: $manifest"
+
+target_block=$(awk '
+    /^[[:space:]]*\.target\(/ { in_target=1; found=0 }
+    in_target { print }
+    in_target && /name: "Axoloty",/ { found=1 }
+    in_target && found && /^[[:space:]]*\),[[:space:]]*$/ { exit }
+' "$manifest")
+printf '%s\n' "$target_block" | grep -q 'sources:' || fail "Axoloty target must declare an explicit Swift source list"
 
 static_sources=$(find "$static/Sources" -type f -name '*.swift' -print 2>/dev/null || true)
 [ -n "$static_sources" ] || fail "replacement static runtime package has no Swift sources"
