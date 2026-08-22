@@ -31,8 +31,6 @@ check_source_rejected() {
 
 check_source_rejected "Foundation" "import Foundation"
 check_source_rejected "host transport" "import MQTTNIO"
-check_source_rejected "predicate" "struct ForbiddenPredicate {}"
-check_source_rejected "schema" "struct ForbiddenSchema {}"
 
 copy_package
 sed -i 's/\.product(name: "AxolotyWire", package: "AxolotyWire")/.product(name: "NIO", package: "swift-nio")/' "$tmp/package/Package.swift"

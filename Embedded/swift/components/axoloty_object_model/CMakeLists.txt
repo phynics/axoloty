@@ -59,9 +59,19 @@ target_include_directories(${COMPONENT_LIB} PUBLIC
     ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-add_custom_command(TARGET ${COMPONENT_LIB} POST_BUILD
+# Publish the importable module as an explicit build output. A POST_BUILD copy
+# alone can race the main component's Swift compile in a clean parallel build.
+set(AXOLOTY_OBJECT_MODEL_MODULE_ALIAS
+    "${CMAKE_CURRENT_BINARY_DIR}/AxolotyObjectModel.swiftmodule"
+)
+add_custom_command(
+    OUTPUT ${AXOLOTY_OBJECT_MODEL_MODULE_ALIAS}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_BINARY_DIR}/${COMPONENT_LIB}.swiftmodule
-        ${CMAKE_CURRENT_BINARY_DIR}/AxolotyObjectModel.swiftmodule
+        ${AXOLOTY_OBJECT_MODEL_MODULE_ALIAS}
+    DEPENDS ${COMPONENT_LIB}
     VERBATIM
+)
+add_custom_target(axoloty_object_model_module_alias
+    DEPENDS ${AXOLOTY_OBJECT_MODEL_MODULE_ALIAS}
 )

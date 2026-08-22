@@ -73,6 +73,11 @@ idf_component_register_swift(
     SRCS ${AXOLOTY_SWIFT_SOURCES}
 )
 
+# Main.swift and the static model consumer import AxolotyObjectModel. Require
+# its explicit module output before compiling any main Swift source so clean
+# parallel builds cannot race module publication.
+add_dependencies(${COMPONENT_LIB} axoloty_object_model_module_alias)
+
 # StaticDeviceAgent consumes the noncopyable ProtocolProcessor from the
 # protocol component. Explicitly enable the same lifetime feature for the
 # application consumer; otherwise the standalone protocol check would not
