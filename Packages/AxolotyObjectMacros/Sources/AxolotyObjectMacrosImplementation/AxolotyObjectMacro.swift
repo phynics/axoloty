@@ -30,7 +30,7 @@ private struct SchemaDiagnostic: DiagnosticMessage {
 }
 
 /// Implements the portable schema member/conformance macro.
-public struct AxolotyObjectMacro: MemberMacro, ConformanceMacro {
+public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
     public static func expansion(
         of node: AttributeSyntax,
         providingMembersOf declaration: some DeclGroupSyntax,
@@ -85,7 +85,7 @@ public struct AxolotyObjectMacro: MemberMacro, ConformanceMacro {
             }
             let sourceName = pattern.identifier.text
             let fieldType = binding.typeAnnotation!.type.trimmedDescription
-            let wireAttribute = variable.attributes?.compactMap({ $0.as(AttributeSyntax.self) }).first(where: {
+            let wireAttribute = variable.attributes.compactMap({ $0.as(AttributeSyntax.self) }).first(where: {
                 $0.attributeName.trimmedDescription == "WireName"
             })
             let wireName: String
@@ -99,15 +99,16 @@ public struct AxolotyObjectMacro: MemberMacro, ConformanceMacro {
             } else {
                 wireName = sourceName
             }
-            let defaultAttribute = variable.attributes?.compactMap({ $0.as(AttributeSyntax.self) }).first(where: {
+            let defaultAttribute = variable.attributes.compactMap({ $0.as(AttributeSyntax.self) }).first(where: {
                 $0.attributeName.trimmedDescription == "Default"
             })
             let defaultExpression = defaultAttribute.flatMap(defaultArgument)
-            if defaultAttribute != nil && defaultExpression == nil {
-                context.diagnose(Diagnostic(node: Syntax(defaultAttribute!), message: SchemaDiagnostic(.malformedDefault, "@Default requires exactly one value expression")))
-            }
-            if let defaultExpression, !defaultMatches(fieldType: fieldType, expression: defaultExpression) {
-                context.diagnose(Diagnostic(node: Syntax(defaultAttribute!), message: SchemaDiagnostic(.invalidDefault, "@Default value does not match field type '\(fieldType)'")))
+            if let defaultAttribute {
+                if defaultExpression == nil {
+                    context.diagnose(Diagnostic(node: Syntax(defaultAttribute), message: SchemaDiagnostic(.malformedDefault, "@Default requires exactly one value expression")))
+                } else if let defaultExpression, !defaultMatches(fieldType: fieldType, expression: defaultExpression) {
+                    context.diagnose(Diagnostic(node: Syntax(defaultAttribute), message: SchemaDiagnostic(.invalidDefault, "@Default value does not match field type '\(fieldType)'")))
+                }
             }
             let isOptional = fieldType.hasSuffix("?")
             let hasDefault = defaultExpression != nil
@@ -154,7 +155,7 @@ public struct AxolotyObjectMacro: MemberMacro, ConformanceMacro {
         public static let schema: PortableObjectSchema<\(raw: typeName)> = {
             var fields = InlineArray<64, ObjectFieldDescriptor>(repeating: .empty)
             \(raw: assignments)
-            return PortableObjectSchema<\(raw: typeName)>(objectType: \(literal(objectType)), coreType: \(literal(coreType)), fieldCount: \(descriptors.count), fields: fields)
+            return PortableObjectSchema<\(raw: typeName)>(objectType: \(raw: literal(objectType)), coreType: \(raw: literal(coreType)), fieldCount: \(descriptors.count), fields: fields)
         }()
 
         /// Decodes the typed fields through the bounded object-field decoder.
@@ -172,10 +173,13 @@ public struct AxolotyObjectMacro: MemberMacro, ConformanceMacro {
 
     public static func expansion(
         of node: AttributeSyntax,
-        providingConformancesOf declaration: some DeclGroupSyntax,
+        attachedTo declaration: some DeclGroupSyntax,
+        providingExtensionsOf type: some TypeSyntaxProtocol,
+        conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
-    ) throws -> [TypeSyntax] {
-        [TypeSyntax("ObjectSchema")]
+    ) throws -> [ExtensionDeclSyntax] {
+        let extensionDecl: ExtensionDeclSyntax = "extension \(type): ObjectSchema {}"
+        return [extensionDecl]
     }
 
     private static func stringArgument(named name: String, in arguments: LabeledExprListSyntax?) -> String? {

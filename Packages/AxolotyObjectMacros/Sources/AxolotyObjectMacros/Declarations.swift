@@ -2,10 +2,10 @@
 
 /// Synthesizes a portable object schema and its ``ObjectSchema`` conformance.
 @attached(member, names: named(schema))
-@attached(conformance)
+@attached(extension, conformances: ObjectSchema)
 public macro AxolotyObject(
     objectType: String,
-    coreType: String = "coatyObject"
+    coreType: String = "CoatyObject"
 ) = #externalMacro(
     module: "AxolotyObjectMacrosImplementation",
     type: "AxolotyObjectMacro"

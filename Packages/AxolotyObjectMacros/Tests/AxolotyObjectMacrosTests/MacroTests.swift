@@ -36,6 +36,7 @@ func schemaMacroExpansion() {
                 try encoder.encode(alarms, forKey: "alarmCodes")
             }
         }
+        extension Reading: ObjectSchema {}
         """,
         macros: [
             "AxolotyObject": AxolotyObjectMacro.self,
@@ -81,6 +82,7 @@ func schemaMacroDiagnostics() {
                 try encoder.encode(third, forKey: "objectId")
             }
         }
+        extension Bad: ObjectSchema {}
         """,
         diagnostics: [
             DiagnosticSpec(message: "wire field 'first' is declared more than once", line: 4, column: 5),
@@ -146,6 +148,7 @@ private func assertValidCoreType(_ coreType: String) {
             public borrowing func encodeFields(to encoder: inout ObjectFieldEncoder) throws(ObjectEncodingError) {
             }
         }
+        extension CoreProbe: ObjectSchema {}
         """,
         macros: [
             "AxolotyObject": AxolotyObjectMacro.self,
@@ -181,6 +184,7 @@ func schemaMacroRejectsInventedCoreType() {
             public borrowing func encodeFields(to encoder: inout ObjectFieldEncoder) throws(ObjectEncodingError) {
             }
         }
+        extension Bad: ObjectSchema {}
         """,
         diagnostics: [
             DiagnosticSpec(message: "coreType 'CoatyThing' is not a supported portable core type", line: 2, column: 1),
