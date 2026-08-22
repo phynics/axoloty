@@ -4,21 +4,30 @@ import AxolotyObjectModel
 import AxolotyWire
 import Foundation
 
-private let measurementCapacities = [1, 16, 64]
+private let measurementPoints = [1, 16, 64]
 private let objectBytes: StaticString = "{\"a\":0}"
 private let envelopeBytes: StaticString = "{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.Measurement\",\"name\":\"\",\"coreType\":\"Task\",\"externalId\":\"x\"}"
 private let oversizedValue: StaticString = "999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999"
 
 private struct LayoutRecord: Encodable {
-    let capacity: Int
+    let measurementPoint: Int
+    let axis: String
     let type: String
     let size: Int
     let alignment: Int
     let stride: Int
+    let byteCapacity: Int?
+    let fieldCapacity: Int?
+    let nameCapacity: Int?
+    let externalIDCapacity: Int?
 }
 
 private struct OperationRecord: Encodable {
-    let capacity: Int
+    let measurementPoint: Int
+    let byteCapacity: Int
+    let fieldCapacity: Int
+    let nameCapacity: Int
+    let externalIDCapacity: Int
     let objectInitialization: String
     let envelopeInitialization: Bool
     let randomizedEditRead: Bool
@@ -30,8 +39,8 @@ private struct OperationRecord: Encodable {
 private struct ProbeReport: Encodable {
     let schemaVersion = 1
     let evidenceKind = "object-model-probe"
-    let measurementCapacities: [Int]
-    let capacityPolicy = "measurement-points-only"
+    let measurementPoints: [Int]
+    let measurementPolicy = "simultaneous-object-and-envelope-specializations"
     let layouts: [LayoutRecord]
     let operations: [OperationRecord]
 }
@@ -51,21 +60,31 @@ private func slice(_ value: StaticString) -> ByteSlice {
 
 private func objectLayout<let capacity: Int>(_: BoundedDynamicObject<capacity, capacity>.Type) -> LayoutRecord {
     LayoutRecord(
-        capacity: capacity,
+        measurementPoint: capacity,
+        axis: "object",
         type: "BoundedDynamicObject<\(capacity),\(capacity)>",
         size: MemoryLayout<BoundedDynamicObject<capacity, capacity>>.size,
         alignment: MemoryLayout<BoundedDynamicObject<capacity, capacity>>.alignment,
-        stride: MemoryLayout<BoundedDynamicObject<capacity, capacity>>.stride
+        stride: MemoryLayout<BoundedDynamicObject<capacity, capacity>>.stride,
+        byteCapacity: capacity,
+        fieldCapacity: capacity,
+        nameCapacity: nil,
+        externalIDCapacity: nil
     )
 }
 
 private func envelopeLayout<let capacity: Int>(_: ObjectEnvelope<capacity, capacity>.Type) -> LayoutRecord {
     LayoutRecord(
-        capacity: capacity,
+        measurementPoint: capacity,
+        axis: "envelope",
         type: "ObjectEnvelope<\(capacity),\(capacity)>",
         size: MemoryLayout<ObjectEnvelope<capacity, capacity>>.size,
         alignment: MemoryLayout<ObjectEnvelope<capacity, capacity>>.alignment,
-        stride: MemoryLayout<ObjectEnvelope<capacity, capacity>>.stride
+        stride: MemoryLayout<ObjectEnvelope<capacity, capacity>>.stride,
+        byteCapacity: nil,
+        fieldCapacity: nil,
+        nameCapacity: capacity,
+        externalIDCapacity: capacity
     )
 }
 
@@ -135,7 +154,11 @@ private func operationRecord<let capacity: Int>(_: BoundedDynamicObject<capacity
     }
     let saturationResult = saturation(BoundedDynamicObject<capacity, capacity>.self)
     return OperationRecord(
-        capacity: capacity,
+        measurementPoint: capacity,
+        byteCapacity: capacity,
+        fieldCapacity: capacity,
+        nameCapacity: capacity,
+        externalIDCapacity: capacity,
         objectInitialization: initialization,
         envelopeInitialization: envelopeInitialization(ObjectEnvelope<capacity, capacity>.self),
         randomizedEditRead: randomizedEditRead(BoundedDynamicObject<capacity, capacity>.self),
@@ -147,7 +170,7 @@ private func operationRecord<let capacity: Int>(_: BoundedDynamicObject<capacity
 
 private func report() -> ProbeReport {
     ProbeReport(
-        measurementCapacities: measurementCapacities,
+        measurementPoints: measurementPoints,
         layouts: [
             objectLayout(BoundedDynamicObject<1, 1>.self), envelopeLayout(ObjectEnvelope<1, 1>.self),
             objectLayout(BoundedDynamicObject<16, 16>.self), envelopeLayout(ObjectEnvelope<16, 16>.self),

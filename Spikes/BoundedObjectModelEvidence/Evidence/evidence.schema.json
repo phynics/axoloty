@@ -3,7 +3,8 @@
   "title": "Axoloty G3 bounded object-model evidence",
   "oneOf": [
     {"$ref": "#/$defs/host"},
-    {"$ref": "#/$defs/sanitized"}
+    {"$ref": "#/$defs/sanitized"},
+    {"$ref": "#/$defs/embedded"}
   ],
   "$defs": {
     "identity": {
@@ -16,22 +17,50 @@
       }
     },
     "layout": {
+      "oneOf": [
+        {"$ref": "#/$defs/objectLayout"},
+        {"$ref": "#/$defs/envelopeLayout"}
+      ]
+    },
+    "objectLayout": {
       "type": "object",
-      "required": ["capacity", "type", "size", "alignment", "stride"],
+      "required": ["measurementPoint", "axis", "type", "size", "alignment", "stride", "byteCapacity", "fieldCapacity"],
       "properties": {
-        "capacity": {"enum": [1, 16, 64]},
+        "measurementPoint": {"enum": [1, 16, 64]},
+        "axis": {"const": "object"},
         "type": {"type": "string", "minLength": 1},
         "size": {"type": "integer", "minimum": 1},
         "alignment": {"type": "integer", "minimum": 1},
-        "stride": {"type": "integer", "minimum": 1}
+        "stride": {"type": "integer", "minimum": 1},
+        "byteCapacity": {"enum": [1, 16, 64]},
+        "fieldCapacity": {"enum": [1, 16, 64]}
+      },
+      "additionalProperties": false
+    },
+    "envelopeLayout": {
+      "type": "object",
+      "required": ["measurementPoint", "axis", "type", "size", "alignment", "stride", "nameCapacity", "externalIDCapacity"],
+      "properties": {
+        "measurementPoint": {"enum": [1, 16, 64]},
+        "axis": {"const": "envelope"},
+        "type": {"type": "string", "minLength": 1},
+        "size": {"type": "integer", "minimum": 1},
+        "alignment": {"type": "integer", "minimum": 1},
+        "stride": {"type": "integer", "minimum": 1},
+        "nameCapacity": {"enum": [1, 16, 64]},
+        "externalIDCapacity": {"enum": [1, 16, 64]}
       },
       "additionalProperties": false
     },
     "operation": {
       "type": "object",
-      "required": ["capacity", "objectInitialization", "envelopeInitialization", "randomizedEditRead", "saturationMeasurement", "saturationRejected", "unchangedAfterSaturation"],
+      "required": ["measurementPoint", "byteCapacity", "fieldCapacity", "nameCapacity", "externalIDCapacity", "objectInitialization", "envelopeInitialization", "randomizedEditRead", "saturationMeasurement", "saturationRejected", "unchangedAfterSaturation"],
       "properties": {
-        "capacity": {"enum": [1, 16, 64]},
+        "measurementPoint": {"enum": [1, 16, 64]},
+        "byteCapacity": {"enum": [1, 16, 64]},
+        "fieldCapacity": {"enum": [1, 16, 64]},
+        "nameCapacity": {"enum": [1, 16, 64]},
+        "externalIDCapacity": {"enum": [1, 16, 64]},
         "objectInitialization": {"type": "string", "minLength": 1},
         "envelopeInitialization": {"const": true},
         "randomizedEditRead": {"type": "boolean"},
@@ -43,9 +72,13 @@
     },
     "allocation": {
       "type": "object",
-      "required": ["capacity", "measurement", "objectInitialization", "objectWarmed", "envelopeInitialization", "envelopeWarmed"],
+      "required": ["measurementPoint", "byteCapacity", "fieldCapacity", "nameCapacity", "externalIDCapacity", "measurement", "objectInitialization", "objectWarmed", "envelopeInitialization", "envelopeWarmed"],
       "properties": {
-        "capacity": {"enum": [1, 16, 64]},
+        "measurementPoint": {"enum": [1, 16, 64]},
+        "byteCapacity": {"enum": [1, 16, 64]},
+        "fieldCapacity": {"enum": [1, 16, 64]},
+        "nameCapacity": {"enum": [1, 16, 64]},
+        "externalIDCapacity": {"enum": [1, 16, 64]},
         "measurement": {"const": "heaptrack-call-growth"},
         "objectInitialization": {"type": "integer", "minimum": 0},
         "objectWarmed": {"type": "integer", "minimum": 0},
@@ -56,17 +89,17 @@
     },
     "host": {
       "type": "object",
-      "required": ["schemaVersion", "evidenceKind", "candidateSha", "toolchain", "measurementCapacities", "capacityPolicy", "layouts", "operations", "allocations", "compilation", "hardware"],
+      "required": ["schemaVersion", "evidenceKind", "candidateSha", "toolchain", "measurementPoints", "measurementPolicy", "layouts", "operations", "allocations", "compilation", "hardware"],
       "properties": {
         "schemaVersion": {"const": 1},
         "evidenceKind": {"const": "host"},
         "candidateSha": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"},
         "toolchain": {"type": "string", "minLength": 1},
-        "measurementCapacities": {"const": [1, 16, 64]},
-        "capacityPolicy": {"const": "measurement-points-only"},
-        "layouts": {"type": "array", "minItems": 6, "items": {"$ref": "#/$defs/layout"}},
-        "operations": {"type": "array", "minItems": 3, "items": {"$ref": "#/$defs/operation"}},
-        "allocations": {"type": "array", "minItems": 3, "items": {"$ref": "#/$defs/allocation"}},
+        "measurementPoints": {"const": [1, 16, 64]},
+        "measurementPolicy": {"const": "simultaneous-object-and-envelope-specializations"},
+        "layouts": {"type": "array", "minItems": 6, "maxItems": 6, "items": {"$ref": "#/$defs/layout"}},
+        "operations": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/operation"}},
+        "allocations": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"$ref": "#/$defs/allocation"}},
         "compilation": {
           "type": "object",
           "required": ["debugTests", "sanitizedTests", "compileSeconds", "releaseBinaryBytes", "releaseSections"],
@@ -85,14 +118,35 @@
     },
     "sanitized": {
       "type": "object",
-      "required": ["schemaVersion", "evidenceKind", "candidateSha", "status", "sanitizer", "measurementCapacities", "hardware"],
+      "required": ["schemaVersion", "evidenceKind", "candidateSha", "status", "sanitizer", "measurementPoints", "hardware"],
       "properties": {
         "schemaVersion": {"const": 1},
         "evidenceKind": {"const": "sanitized"},
         "candidateSha": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"},
         "status": {"const": "passed"},
         "sanitizer": {"const": "address"},
-        "measurementCapacities": {"const": [1, 16, 64]},
+        "measurementPoints": {"const": [1, 16, 64]},
+        "hardware": {"const": "pending-hardware"}
+      },
+      "additionalProperties": false
+    },
+    "embedded": {
+      "type": "object",
+      "required": ["schemaVersion", "evidenceKind", "candidateSha", "status", "compileSuccess", "coverage", "source", "toolchain", "compileSeconds", "firmwareBytes", "elfBytes", "mapBytes", "sections", "hardware"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "evidenceKind": {"const": "embedded-cross-build"},
+        "candidateSha": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"},
+        "status": {"const": "passed"},
+        "compileSuccess": {"const": true},
+        "coverage": {"const": "foundation-module-linkage-only"},
+        "source": {"const": "Embedded/swift"},
+        "toolchain": {"type": "string", "minLength": 1},
+        "compileSeconds": {"type": "number", "minimum": 0},
+        "firmwareBytes": {"type": "integer", "minimum": 1},
+        "elfBytes": {"type": "integer", "minimum": 1},
+        "mapBytes": {"type": "integer", "minimum": 1},
+        "sections": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["name", "bytes"], "properties": {"name": {"type": "string", "minLength": 1}, "bytes": {"type": "integer", "minimum": 0}}, "additionalProperties": false}},
         "hardware": {"const": "pending-hardware"}
       },
       "additionalProperties": false

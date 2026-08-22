@@ -39,6 +39,7 @@ run_swift swift build -Xswiftc -warnings-as-errors \
     >"$artifact/release-build.log" 2>&1
 end_ns=$(date +%s%N)
 compile_seconds=$(awk -v start="$start_ns" -v end="$end_ns" 'BEGIN { printf "%.3f", (end-start)/1000000000 }')
+toolchain=$(run_swift swift --version | head -1)
 
 run_swift bash /workspace/Spikes/BoundedPortableRuntime/measure-allocations.sh \
     /workspace/Spikes/BoundedObjectModelEvidence \
@@ -48,55 +49,14 @@ run_swift bash /workspace/Spikes/BoundedPortableRuntime/measure-allocations.sh \
     bounded-object-model-probe 1 1000 \
     >"$artifact/allocation-measurements.log" 2>&1
 
-release_binary=$(find "$probe/.build" -type f -path '*/release/bounded-object-model-probe' -perm -111 -print -quit)
+release_binary=$(find "$build" "$probe/.build" -type f -path '*/release/bounded-object-model-probe' -perm -111 -print -quit 2>/dev/null || true)
 [ -n "$release_binary" ] || { echo "release probe binary not found" >&2; exit 1; }
 release_bytes=$(stat -c '%s' "$release_binary")
 size -A "$release_binary" | awk '$2 ~ /^[0-9]+$/ { print $1 "\t" $2 }' >"$artifact/release-sections.tsv"
 
-CANDIDATE_SHA="$candidate" PROBE_JSON="$artifact/probe.json" \
-COMPILE_SECONDS="$compile_seconds" RELEASE_BYTES="$release_bytes" \
-ALLOCATIONS="$artifact/allocation-measurements.tsv" SECTIONS="$artifact/release-sections.tsv" \
-ARTIFACT="$artifact/host-evidence.json" node <<'NODE'
-const fs = require("fs");
-
-const report = JSON.parse(fs.readFileSync(process.env.PROBE_JSON, "utf8"));
-const allocationRows = fs.readFileSync(process.env.ALLOCATIONS, "utf8").trim().split(/\n/).filter(Boolean).map(line => {
-  const [capacity, measurementCase, growth, smallCount, largeCount] = line.split("\t").map(Number);
-  return {capacity, measurementCase, growth, smallCount, largeCount};
-});
-const allocations = [1, 16, 64].map(capacity => {
-  const value = measurementCase => allocationRows.find(row => row.capacity === capacity && row.measurementCase === measurementCase);
-  return {
-    capacity,
-    measurement: "heaptrack-call-growth",
-    objectInitialization: value("object-initialization").growth,
-    objectWarmed: value("object-warmed").growth,
-    envelopeInitialization: value("envelope-initialization").growth,
-    envelopeWarmed: value("envelope-warmed").growth,
-  };
-});
-const sections = fs.readFileSync(process.env.SECTIONS, "utf8").trim().split(/\n/).filter(Boolean).map(line => {
-  const [name, bytes] = line.split("\t");
-  return {name, bytes: Number(bytes)};
-});
-const evidence = {
-  ...report,
-  schemaVersion: 1,
-  evidenceKind: "host",
-  candidateSha: process.env.CANDIDATE_SHA,
-  toolchain: "Swift 6.3",
-  compilation: {
-    debugTests: "passed",
-    sanitizedTests: "separate-node",
-    compileSeconds: Number(process.env.COMPILE_SECONDS),
-    releaseBinaryBytes: Number(process.env.RELEASE_BYTES),
-    releaseSections: sections,
-  },
-  allocations,
-  hardware: "pending-hardware",
-};
-fs.writeFileSync(process.env.ARTIFACT, JSON.stringify(evidence, null, 2) + "\n");
-NODE
+node "$probe/Evidence/assemble-host-evidence.mjs" \
+    "$artifact/probe.json" "$artifact/allocation-measurements.tsv" "$artifact/release-sections.tsv" \
+    "$candidate" "$compile_seconds" "$release_bytes" "$toolchain" "$artifact/host-evidence.json"
 
 node "$probe/Evidence/validate-evidence.mjs" \
     "$probe/Evidence/evidence.schema.json" "$artifact/host-evidence.json"

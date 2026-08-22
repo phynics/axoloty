@@ -50,7 +50,59 @@ function validate(value, rule, path) {
   return errors;
 }
 
-const errors = validate(evidence, schema, "$evidence");
+function validateHostMeasurements(report) {
+  if (report?.evidenceKind !== "host") return [];
+  const errors = [];
+  if (!Array.isArray(report.layouts) || !Array.isArray(report.operations) || !Array.isArray(report.allocations)) return errors;
+  const points = [1, 16, 64];
+  const exact = (values, expected, label) => {
+    if (values.length !== expected.length || new Set(values).size !== values.length || !expected.every(value => values.includes(value))) {
+      errors.push(`${label}: expected each measurement point exactly once`);
+    }
+  };
+  exact(report.layouts.map(layout => `${layout.axis}:${layout.measurementPoint}`), points.flatMap(point => [`object:${point}`, `envelope:${point}`]), "$evidence.layouts");
+  exact(report.operations.map(operation => operation.measurementPoint), points, "$evidence.operations");
+  exact(report.allocations.map(allocation => allocation.measurementPoint), points, "$evidence.allocations");
+  for (const [index, layout] of report.layouts.entries()) {
+    const path = `$evidence.layouts[${index}]`;
+    if (layout.axis === "object") {
+      if (layout.byteCapacity !== layout.measurementPoint || layout.fieldCapacity !== layout.measurementPoint) errors.push(`${path}: object capacities must match its measurement point`);
+    } else if (layout.axis === "envelope") {
+      if (layout.nameCapacity !== layout.measurementPoint || layout.externalIDCapacity !== layout.measurementPoint) errors.push(`${path}: envelope capacities must match its measurement point`);
+    }
+  }
+  for (const [index, record] of report.operations.entries()) {
+    const path = `$evidence.operations[${index}]`;
+    for (const field of ["byteCapacity", "fieldCapacity", "nameCapacity", "externalIDCapacity"]) {
+      if (record[field] !== record.measurementPoint) errors.push(`${path}.${field}: must match measurementPoint`);
+    }
+  }
+  for (const [index, record] of report.allocations.entries()) {
+    const path = `$evidence.allocations[${index}]`;
+    for (const field of ["byteCapacity", "fieldCapacity", "nameCapacity", "externalIDCapacity"]) {
+      if (record[field] !== record.measurementPoint) errors.push(`${path}.${field}: must match measurementPoint`);
+    }
+  }
+  if (!Array.isArray(report.compilation?.releaseSections)) return errors;
+  if (!report.compilation.releaseSections.some(section => section.name === ".text" || section.name === "text")) {
+    errors.push("$evidence.compilation.releaseSections: missing text section");
+  }
+  return errors;
+}
+
+function validateEmbeddedEvidence(report) {
+  if (report?.evidenceKind !== "embedded-cross-build") return [];
+  const errors = [];
+  if (!Array.isArray(report.sections) || !report.sections.some(section => section?.name === ".text" || section?.name === "text")) {
+    errors.push("$evidence.sections: missing text section");
+  }
+  if (report.toolchain && !/Swift version|Apple Swift version/.test(report.toolchain)) {
+    errors.push("$evidence.toolchain: expected the exact Swift version line");
+  }
+  return errors;
+}
+
+const errors = [...validate(evidence, schema, "$evidence"), ...validateHostMeasurements(evidence), ...validateEmbeddedEvidence(evidence)];
 if (errors.length) {
   console.error(errors.join("\n"));
   process.exit(1);
