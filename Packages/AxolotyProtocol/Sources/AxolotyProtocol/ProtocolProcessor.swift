@@ -780,7 +780,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 valid = false
                 return
             }
-            do {
+            do throws(WireDecodeError) {
                 try rawIDs.withArrayElements { element in
                     guard element.wireValueKind == .string,
                           element.length >= 2,

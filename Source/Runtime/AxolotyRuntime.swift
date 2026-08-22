@@ -88,22 +88,22 @@ public final class AxolotyRuntime: Sendable {
     }
 
     /// Submits one owned local operation to ``ProtocolProcessor``.
-    public func publish(_ operation: RuntimeOperation, nowMS: UInt32 = 0) async -> RuntimeReceipt {
-        await executor.publish(operation, nowMS: nowMS)
+    public func publish(_ operation: RuntimeOperation, nowMS: UInt32? = nil) async -> RuntimeReceipt {
+        await executor.publish(operation, nowMS: nowMS ?? monotonicNowMS())
     }
 
     /// Publishes a closed one-way operation through the shared processor.
-    public func publish(_ operation: RuntimeOneWayOperation, nowMS: UInt32 = 0) async -> RuntimeReceipt {
+    public func publish(_ operation: RuntimeOneWayOperation, nowMS: UInt32? = nil) async -> RuntimeReceipt {
         await publish(RuntimeOperation(oneWay: operation, sourceID: await executor.sourceID()), nowMS: nowMS)
     }
 
     /// Starts a bounded request correlation through the shared processor.
-    public func request(_ request: RuntimeRequest, nowMS: UInt32 = 0) async -> RuntimeReceipt {
+    public func request(_ request: RuntimeRequest, nowMS: UInt32? = nil) async -> RuntimeReceipt {
         await publish(RuntimeOperation(request: request, sourceID: await executor.sourceID()), nowMS: nowMS)
     }
 
     /// Publishes a responder response through the shared processor.
-    public func respond(_ response: RuntimeResponse, nowMS: UInt32 = 0) async -> RuntimeReceipt {
+    public func respond(_ response: RuntimeResponse, nowMS: UInt32? = nil) async -> RuntimeReceipt {
         await publish(RuntimeOperation(response: response, sourceID: await executor.sourceID()), nowMS: nowMS)
     }
 

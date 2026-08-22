@@ -137,6 +137,21 @@ struct AxolotyRuntimeTests {
         await runtime.stop()
     }
 
+    @Test("default request deadlines use the monotonic runtime clock")
+    func defaultRequestUsesMonotonicClock() async throws {
+        let definition = try makeDefinition()
+        let runtime = AxolotyRuntime(definition: definition, transport: TestTransport())
+        try await runtime.start()
+        let correlation = try #require(UUID16(parsing: "57575757-5757-4575-8575-575757575757"))
+        #expect(await runtime.request(.discover(
+            correlationID: correlation,
+            payload: Array("{}".utf8),
+            timeoutMS: 1
+        )) == .accepted)
+        #expect(await runtime.expire(nowMS: 1) == false)
+        await runtime.stop()
+    }
+
     @Test("invalid Call operation names are rejected before publication")
     func rejectsInvalidCallOperationNames() async throws {
         let definition = try makeDefinition()
