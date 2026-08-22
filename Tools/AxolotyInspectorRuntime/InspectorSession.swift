@@ -33,6 +33,7 @@ public final class AxolotyInspectorSession: InspectorSession {
     private let advertiseStream: RuntimeEventStream
     private let deadvertiseStream: RuntimeEventStream
     private let resolveStream: RuntimeEventStream
+    private var discoveryInFlight = false
 
     /// Creates a session from broker configuration.
     public init(configuration: InspectorConnectionConfiguration) throws {
@@ -103,10 +104,21 @@ public final class AxolotyInspectorSession: InspectorSession {
         let (stream, continuation) = AsyncStream<InspectorResponseEvent>.makeStream(
             bufferingPolicy: .bufferingOldest(64)
         )
+        guard !discoveryInFlight else {
+            // Inspector catalogue consumers are intentionally single-flight:
+            // the runtime event stream is single-consumer, so admitting a
+            // second request would allow the two requests to steal each
+            // other's correlated responses. The bounded empty stream is a
+            // deterministic rejection that preserves the existing API.
+            continuation.finish()
+            return stream
+        }
+        discoveryInFlight = true
         let correlation = Self.newCorrelation()
         let runtime = self.runtime
         let resolveStream = self.resolveStream
         Task { @MainActor in
+            defer { self.discoveryInFlight = false }
             let receipt = await runtime.request(
                 .discover(
                     correlationID: correlation,
@@ -118,9 +130,22 @@ public final class AxolotyInspectorSession: InspectorSession {
                 continuation.finish()
                 return
             }
-            for await event in resolveStream {
-                guard event.context.correlationID == correlation else { continue }
-                continuation.yield(Self.response(from: event))
+            await withTaskGroup(of: InspectorResponseEvent?.self) { group in
+                group.addTask {
+                    for await event in resolveStream {
+                        guard event.context.correlationID == correlation else { continue }
+                        return Self.response(from: event)
+                    }
+                    return nil
+                }
+                group.addTask {
+                    try? await Task.sleep(for: .seconds(5))
+                    return nil
+                }
+                if let response = await group.next() ?? nil {
+                    continuation.yield(response)
+                }
+                group.cancelAll()
             }
             continuation.finish()
         }
@@ -169,7 +194,7 @@ public final class AxolotyInspectorSession: InspectorSession {
         return InspectorDeadvertiseEvent(sourceId: uuidString(event.context.sourceID), objectIds: values)
     }
 
-    private static func response(from event: RuntimeEventValue) -> InspectorResponseEvent {
+    nonisolated private static func response(from event: RuntimeEventValue) -> InspectorResponseEvent {
         InspectorResponseEvent(
             eventType: eventFamilyName(event.family),
             sourceId: uuidString(event.context.sourceID),
@@ -204,7 +229,7 @@ public final class AxolotyInspectorSession: InspectorSession {
         return String(decoding: data, as: UTF8.self)
     }
 
-    private static func eventFamilyName(_ family: RuntimeEventFamily) -> String {
+    nonisolated private static func eventFamilyName(_ family: RuntimeEventFamily) -> String {
         switch family {
         case .advertise: return "advertise"
         case .deadvertise: return "deadvertise"
@@ -233,7 +258,7 @@ public final class AxolotyInspectorSession: InspectorSession {
         }
     }
 
-    private static func uuidString(_ value: UUID16) -> String {
+    nonisolated private static func uuidString(_ value: UUID16) -> String {
         let b = value.bytes
         let bytes = [b.0,b.1,b.2,b.3,b.4,b.5,b.6,b.7,b.8,b.9,b.10,b.11,b.12,b.13,b.14,b.15]
         let hex = bytes.map { String(format: "%02x", $0) }

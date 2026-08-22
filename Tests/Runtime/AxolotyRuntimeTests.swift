@@ -121,6 +121,22 @@ struct AxolotyRuntimeTests {
         #expect(Array(lifecycle.suffix(3)) == ["deadvertise", "remove", "stop"])
     }
 
+    @Test("post-start transport failures terminate the runtime")
+    func postStartTransportFailureTerminatesRuntime() async throws {
+        let definition = try makeDefinition()
+        let transport = TestTransport()
+        let runtime = AxolotyRuntime(definition: definition, transport: transport)
+        try await runtime.start()
+
+        await transport.fail(TestTransportFailure())
+        for _ in 0..<100 {
+            if await runtime.state() == .stopped { break }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(await runtime.state() == .stopped)
+        #expect((await runtime.diagnosticsSnapshot()).transportFailures == 1)
+    }
+
     private func makeDefinition() throws -> SealedRuntimeDefinition {
         let definition = try RuntimeDefinition(
             namespace: "test",
@@ -133,12 +149,17 @@ struct AxolotyRuntimeTests {
 
 private actor TestTransport: AxolotyRuntimeTransport {
     private var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
+    private var failure: (@Sendable (Error) -> Void)?
     private var sent: [OwnedProtocolAction] = []
     private(set) var lifecycle: [String] = []
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
         self.receive = receive
         lifecycle.append("start")
+    }
+
+    func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) {
+        failure = handler
     }
 
     func send(_ action: OwnedProtocolAction, namespace: String) async throws {
@@ -156,4 +177,8 @@ private actor TestTransport: AxolotyRuntimeTransport {
     func deadvertise(identity: RuntimeIdentity?, namespace: String) async throws { lifecycle.append("deadvertise") }
 
     func sentCount() -> Int { sent.count }
+
+    func fail(_ error: Error) { failure?(error) }
 }
+
+private struct TestTransportFailure: Error, Sendable {}

@@ -520,6 +520,12 @@ public struct RuntimeDiagnostic: Sendable, Equatable {
 public protocol AxolotyRuntimeTransport: AnyObject, Sendable {
     /// Starts the transport and installs the owned-frame receive callback.
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws
+    /// Installs a callback for failures after startup has completed.
+    ///
+    /// The callback is invoked with an owned error value and may be called
+    /// from a transport event-loop thread. Implementations must not retain
+    /// borrowed protocol data in this callback.
+    func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) async
     /// Publishes an owned normalized protocol action.
     func send(_ action: OwnedProtocolAction, namespace: String) async throws
     /// Stops the transport and releases its callbacks.
@@ -541,6 +547,7 @@ public protocol AxolotyRuntimeTransport: AnyObject, Sendable {
 }
 
 public extension AxolotyRuntimeTransport {
+    func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) async { _ = handler }
     func installSubscriptions(namespace: String) async throws {}
     func removeSubscriptions(namespace: String) async throws {}
     func advertise(identity: RuntimeIdentity?, namespace: String) async throws {}

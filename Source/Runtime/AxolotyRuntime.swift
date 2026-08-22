@@ -229,6 +229,9 @@ private actor ProtocolExecutor {
             }
         }
         do {
+            await transport.setFailureHandler { [weak self] error in
+                Task { await self?.transportFailed(runtimeErrorDetail(error)) }
+            }
             try await transport.start { [weak self, continuation = ingressPipe.continuation, overflowGate = ingressOverflowGate] frame in
                 let result = continuation.yield(frame)
                 if case .dropped = result, overflowGate.claim() {
@@ -321,6 +324,9 @@ private actor ProtocolExecutor {
         do {
             try await transport.removeSubscriptions(namespace: definition.namespace)
             await transport.stop()
+            await transport.setFailureHandler { [weak self] error in
+                Task { await self?.transportFailed(runtimeErrorDetail(error)) }
+            }
             try await transport.start { [weak self, continuation = ingressPipe.continuation, overflowGate = ingressOverflowGate] frame in
                 let result = continuation.yield(frame)
                 if case .dropped = result, overflowGate.claim() {

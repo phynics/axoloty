@@ -95,6 +95,11 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         }
     }
 
+    /// Forwards post-start transport failures to the owning runtime.
+    public func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) async {
+        delegate.setFailureHandler(handler)
+    }
+
     /// Publishes one normalized action using the canonical Coaty topic shape.
     public func send(_ action: OwnedProtocolAction, namespace: String) async throws {
         guard lock.withLock({ started }) else {
@@ -218,21 +223,34 @@ private final class RuntimeMQTTDelegate: RuntimeMQTTClientDelegate, @unchecked S
     }
 
     func runtimeMQTTClientDidBecomeOffline() {
-        failStart(AxolotyError.runtime(
+        let error = AxolotyError.runtime(
             code: .brokerUnavailable,
             reason: "MQTT broker connection failed before the runtime became online"
-        ))
+        )
+        if !finishStart(.failure(error)) { emitFailure(error) }
     }
 
     func runtimeMQTTClientDidFail(_ error: Error) {
-        failStart(error)
+        if !finishStart(.failure(error)) { emitFailure(error) }
     }
 
     func failStart(_ error: Error) {
         finishStart(.failure(error))
     }
 
-    private func finishStart(_ result: Result<Void, Error>) {
+    func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) {
+        lock.withLock { failure = handler }
+    }
+
+    private var failure: (@Sendable (Error) -> Void)?
+
+    private func emitFailure(_ error: Error) {
+        let callback = lock.withLock { failure }
+        callback?(error)
+    }
+
+    @discardableResult
+    private func finishStart(_ result: Result<Void, Error>) -> Bool {
         let (continuation, timeoutTask): (CheckedContinuation<Void, Error>?, Task<Void, Never>?) = lock.withLock {
             let continuation = startContinuation
             let timeoutTask = startTimeoutTask
@@ -241,13 +259,14 @@ private final class RuntimeMQTTDelegate: RuntimeMQTTClientDelegate, @unchecked S
             return (continuation, timeoutTask)
         }
         timeoutTask?.cancel()
-        guard let continuation else { return }
+        guard let continuation else { return false }
         switch result {
         case .success:
             continuation.resume()
         case let .failure(error):
             continuation.resume(throwing: error)
         }
+        return true
     }
 
     func runtimeMQTTClientDidReceive(topic: String, payload: [UInt8]) {
