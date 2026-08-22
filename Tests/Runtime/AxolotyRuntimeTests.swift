@@ -138,6 +138,34 @@ struct AxolotyRuntimeTests {
         await runtime.stop()
     }
 
+    @Test("runtime queues bounded one-way publications across reconnect")
+    func queuesOfflineOneWayPublication() async throws {
+        let definition = try makeDefinition()
+        let transport = TestTransport()
+        let runtime = AxolotyRuntime(definition: definition, transport: transport)
+        try await runtime.start()
+        await transport.fail(TestTransportFailure())
+        for _ in 0..<100 {
+            if await runtime.state() == .reconnecting { break }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(await runtime.state() == .reconnecting)
+        let receipt = await runtime.publish(RuntimeOperation.advertise(
+            sourceID: .zero,
+            payload: Array(#"{"object":{"objectId":"66666666-6666-4666-8666-666666666666","coreType":"CoatyObject","objectType":"com.coaty.test.WireQueuedFixture","name":"first"}}"#.utf8)
+        ))
+        #expect(receipt == .accepted)
+        #expect(await transport.sentCount() == 0)
+        await runtime.reconnect()
+        for _ in 0..<100 {
+            if await transport.sentCount() == 1 { break }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(await runtime.state() == .running)
+        #expect(await transport.sentCount() == 1)
+        await runtime.stop()
+    }
+
     private func makeDefinition() throws -> SealedRuntimeDefinition {
         let definition = try RuntimeDefinition(
             namespace: "test",

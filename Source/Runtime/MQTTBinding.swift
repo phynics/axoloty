@@ -271,7 +271,11 @@ private final class RuntimeMQTTDelegate: RuntimeMQTTClientDelegate, @unchecked S
 
     func runtimeMQTTClientDidReceive(topic: String, payload: [UInt8]) {
         let callback = lock.withLock { receive }
-        callback?(RuntimeInboundFrame(topic: topic, payload: payload))
+        callback?(RuntimeInboundFrame(
+            topic: topic,
+            payload: payload,
+            nowMS: UInt32(truncatingIfNeeded: DispatchTime.now().uptimeNanoseconds / 1_000_000)
+        ))
     }
 }
 

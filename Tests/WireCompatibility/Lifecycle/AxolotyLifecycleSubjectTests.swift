@@ -25,16 +25,20 @@ struct AxolotyLifecycleSubjectTests {
         )
         do {
             report(state: "ready", scenario: "duplicate-reply")
+            var iterator = stream.makeAsyncIterator()
             _ = await runtime.request(.call(
                 correlationID: correlation,
                 payload: Array(#"{"parameters":{"operand":7}}"#.utf8),
                 timeoutMS: 10_000
             ))
-            var iterator = stream.makeAsyncIterator()
             _ = try await nextEvent(&iterator, timeout: .seconds(10))
             report(state: "accepted", scenario: "duplicate-reply", extra: ["variant": "original"])
-            try await Task.sleep(for: .milliseconds(500))
-            report(state: "ignored", scenario: "duplicate-reply", extra: ["variant": "duplicate"])
+            do {
+                _ = try await nextEvent(&iterator, timeout: .seconds(1))
+                Issue.record("the duplicate Return was delivered to the runtime event stream")
+            } catch is LifecycleTimeout {
+                report(state: "ignored", scenario: "duplicate-reply", extra: ["variant": "duplicate"])
+            }
             report(state: "done", scenario: "duplicate-reply")
             await runtime.stop()
         } catch {
@@ -52,19 +56,30 @@ struct AxolotyLifecycleSubjectTests {
         )
         do {
             report(state: "ready", scenario: "late-reply")
+            var iterator = stream.makeAsyncIterator()
+            let requestNowMS = Self.monotonicNowMS()
             _ = await runtime.request(.call(
                 correlationID: correlation,
                 payload: Array(#"{"parameters":{"operand":7}}"#.utf8),
                 timeoutMS: 2_000
-            ))
-            var iterator = stream.makeAsyncIterator()
+            ), nowMS: requestNowMS)
             do {
-                _ = try await nextEvent(&iterator, timeout: .seconds(2))
+                _ = try await nextEvent(&iterator, timeout: .seconds(2.5))
                 Issue.record("the deliberately late Return arrived before the request deadline")
             } catch is LifecycleTimeout {
+                guard await runtime.expire(nowMS: requestNowMS &+ 2_500) else {
+                    Issue.record("the request deadline did not expire")
+                    throw LifecycleFailure.deadlineNotExpired
+                }
                 report(state: "gave-up", scenario: "late-reply")
             }
-            try await Task.sleep(for: .seconds(5))
+            do {
+                _ = try await nextEvent(&iterator, timeout: .seconds(3))
+                Issue.record("the late Return was delivered after expiry")
+            } catch is LifecycleTimeout {
+                // The capture verifier separately proves that the responder
+                // published the late Return on the wire.
+            }
             report(state: "done", scenario: "late-reply")
             await runtime.stop()
         } catch {
@@ -102,18 +117,26 @@ struct AxolotyLifecycleSubjectTests {
             report(state: "ready", scenario: scenario)
             try await waitForState(.reconnecting, runtime: runtime)
             report(state: "offline", scenario: scenario)
+            if publishAfterReconnect {
+                let first = await runtime.publish(RuntimeOperation.advertise(
+                    sourceID: Self.identityID,
+                    payload: queuedPayload(name: "first")
+                ))
+                let second = await runtime.publish(RuntimeOperation.advertise(
+                    sourceID: Self.identityID,
+                    payload: queuedPayload(name: "second")
+                ))
+                guard first == .accepted, second == .accepted else {
+                    throw LifecycleFailure.offlinePublicationRejected
+                }
+                report(state: "published-offline", scenario: scenario, extra: ["count": "2"])
+            }
+            try await waitForReconnectMarker()
             await runtime.reconnect()
             try await waitForState(.running, runtime: runtime)
             report(state: "reconnected", scenario: scenario)
 
-            if publishAfterReconnect {
-                let payload = Array(#"{"object":{"objectId":"66666666-6666-4666-8666-666666666666","coreType":"CoatyObject","objectType":"com.coaty.test.WireQueuedFixture","name":"reconnected"}}"#.utf8)
-                _ = await runtime.publish(RuntimeOperation(
-                    capability: .advertise,
-                    sourceID: Self.identityID,
-                    payload: payload
-                ))
-            } else {
+            if !publishAfterReconnect {
                 var iterator = stream.makeAsyncIterator()
                 let event = try await nextEvent(&iterator, timeout: .seconds(60))
                 guard String(decoding: event.value, as: UTF8.self).contains("com.coaty.test.WireFixture") else {
@@ -161,6 +184,24 @@ struct AxolotyLifecycleSubjectTests {
         throw LifecycleTimeout()
     }
 
+    private func waitForReconnectMarker() async throws {
+        let path = ProcessInfo.processInfo.environment["WIRE_RECONNECT_READY"]
+        guard let path, !path.isEmpty else { throw LifecycleFailure.reconnectHandshakeMissing }
+        for _ in 0..<1_200 {
+            if FileManager.default.fileExists(atPath: path) { return }
+            try await Task.sleep(for: .milliseconds(250))
+        }
+        throw LifecycleTimeout()
+    }
+
+    private func queuedPayload(name: String) -> [UInt8] {
+        Array("{\"object\":{\"objectId\":\"66666666-6666-4666-8666-666666666666\",\"coreType\":\"CoatyObject\",\"objectType\":\"com.coaty.test.WireQueuedFixture\",\"name\":\"\(name)\"}}".utf8)
+    }
+
+    private static func monotonicNowMS() -> UInt32 {
+        UInt32(truncatingIfNeeded: DispatchTime.now().uptimeNanoseconds / 1_000_000)
+    }
+
     private func nextEvent(
         _ iterator: inout AsyncStream<RuntimeEventValue>.Iterator,
         timeout: Duration
@@ -196,6 +237,9 @@ private struct LifecycleTimeout: Error {}
 
 private enum LifecycleFailure: Error {
     case invalidProbe
+    case deadlineNotExpired
+    case offlinePublicationRejected
+    case reconnectHandshakeMissing
 }
 
 private final class EventIteratorBox: @unchecked Sendable {

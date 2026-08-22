@@ -144,6 +144,10 @@ private actor ProtocolExecutor {
     private let transport: AxolotyRuntimeTransport
     private var processor = ProtocolProcessor<64>()
     private var actionSink = ReusableProtocolActionSink(capacity: 64)
+    /// One-way operations accepted while the transport is reconnecting.
+    /// This queue is bounded by the dispatch capacity and is replayed in
+    /// publication order after a successful reconnect.
+    private var offlineOperations: [RuntimeOperation] = []
     private var state: RuntimeLifecycleState = .stopped
     private var hasStarted = false
     private var ingress: [RuntimeInboundFrame] = []
@@ -217,21 +221,12 @@ private actor ProtocolExecutor {
                 await self?.receiveTransport(frame, epoch: epoch)
             }
         }
-        let outboundPipe = AsyncStream<OwnedProtocolAction>.makeStream(
-            bufferingPolicy: .bufferingOldest(definition.capacities.dispatch)
-        )
-        outboundContinuation = outboundPipe.continuation
-        outboundTask = Task { [weak self, stream = outboundPipe.stream, transport, namespace = definition.namespace] in
-            for await action in stream {
-                guard !Task.isCancelled else { break }
-                await self?.decrementOutbound()
-                do {
-                    try await transport.send(action, namespace: namespace)
-                } catch {
-                    await self?.transportFailed(runtimeErrorDetail(error))
-                }
-            }
-        }
+        outboundContinuation?.finish()
+        outboundTask?.cancel()
+        outboundContinuation = nil
+        outboundTask = nil
+        outboundQueued = 0
+        installOutboundPump()
         do {
             await transport.setFailureHandler { [weak self] error in
                 Task { await self?.transportFailed(runtimeErrorDetail(error)) }
@@ -325,6 +320,12 @@ private actor ProtocolExecutor {
                 await self?.receiveTransport(frame, epoch: epoch)
             }
         }
+        outboundContinuation?.finish()
+        outboundTask?.cancel()
+        outboundContinuation = nil
+        outboundTask = nil
+        outboundQueued = 0
+        installOutboundPump()
         do {
             // A broker-side close can race this explicit reconnect.  The
             // binding may therefore already have lost its subscription
@@ -347,6 +348,7 @@ private actor ProtocolExecutor {
             try await transport.advertise(identity: definition.identity, namespace: definition.namespace)
             guard state == .reconnecting, transportEpoch == epoch else { return }
             state = .running
+            flushOfflineOperations(nowMS: monotonicNowMS())
         } catch {
             guard state == .reconnecting, transportEpoch == epoch else { return }
             failRuntime(
@@ -406,6 +408,24 @@ private actor ProtocolExecutor {
         outboundQueued = max(0, outboundQueued - 1)
     }
 
+    private func installOutboundPump() {
+        let outboundPipe = AsyncStream<OwnedProtocolAction>.makeStream(
+            bufferingPolicy: .bufferingOldest(definition.capacities.dispatch)
+        )
+        outboundContinuation = outboundPipe.continuation
+        outboundTask = Task { [weak self, stream = outboundPipe.stream, transport, namespace = definition.namespace] in
+            for await action in stream {
+                guard !Task.isCancelled else { break }
+                await self?.decrementOutbound()
+                do {
+                    try await transport.send(action, namespace: namespace)
+                } catch {
+                    await self?.transportFailed(runtimeErrorDetail(error))
+                }
+            }
+        }
+    }
+
     func receive(_ frame: RuntimeInboundFrame) -> RuntimeReceipt {
         guard state == .running else {
             return .rejected(.notRunning(state))
@@ -421,11 +441,23 @@ private actor ProtocolExecutor {
     }
 
     func publish(_ operation: RuntimeOperation, nowMS: UInt32) -> RuntimeReceipt {
-        guard state == .running else {
-            return .rejected(.notRunning(state))
-        }
         guard !operation.payload.isEmpty else {
             return .rejected(.malformedPayload)
+        }
+        if state == .reconnecting {
+            guard operation.capability.isOneWay, operation.correlationID == nil else {
+                return .rejected(.notRunning(state))
+            }
+            guard offlineOperations.count < definition.capacities.dispatch else {
+                diagnosticsSnapshotValue.dispatchSaturation += 1
+                return .rejected(.capacityExceeded)
+            }
+            offlineOperations.append(operation)
+            eventContinuation.yield(.transition(.accepted))
+            return .accepted
+        }
+        guard state == .running else {
+            return .rejected(.notRunning(state))
         }
         guard outboundQueued < definition.capacities.dispatch else {
             diagnosticsSnapshotValue.dispatchSaturation += 1
@@ -456,6 +488,14 @@ private actor ProtocolExecutor {
         guard case .accepted = receipt else { return receipt }
         dispatchActions(nowMS: nowMS)
         return receipt
+    }
+
+    private func flushOfflineOperations(nowMS: UInt32) {
+        while let operation = offlineOperations.first {
+            let receipt = publish(operation, nowMS: nowMS)
+            guard case .accepted = receipt else { return }
+            offlineOperations.removeFirst()
+        }
     }
 
     private func processInbound(_ frame: RuntimeInboundFrame) -> RuntimeReceipt {
@@ -823,6 +863,7 @@ private actor ProtocolExecutor {
         outboundTask?.cancel()
         transportIngressTask = nil
         outboundTask = nil
+        outboundQueued = 0
     }
 
     private func transportFailed(_ detail: String) {
@@ -846,6 +887,7 @@ private actor ProtocolExecutor {
         outboundTask?.cancel()
         outboundContinuation = nil
         outboundTask = nil
+        outboundQueued = 0
     }
 
     private func failRuntime(
@@ -896,6 +938,10 @@ private struct TransportRouteClassifier: ProtocolRouteClassifier {
 private func runtimeErrorDetail(_ error: Error) -> String {
     let wrapped = error as? AxolotyError ?? AxolotyError.caught(error)
     return ErrorKit.errorChainDescription(for: wrapped)
+}
+
+private func monotonicNowMS() -> UInt32 {
+    UInt32(truncatingIfNeeded: DispatchTime.now().uptimeNanoseconds / 1_000_000)
 }
 
 private final class RuntimeOverflowGate: @unchecked Sendable {
