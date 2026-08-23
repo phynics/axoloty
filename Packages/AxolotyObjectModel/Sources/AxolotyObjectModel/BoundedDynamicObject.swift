@@ -89,6 +89,15 @@ public struct BoundedDynamicObject<let byteCapacity: Int, let fieldCapacity: Int
     private var rawLength: Int
     private var descriptorCount: Int
 
+    @usableFromInline
+    init(empty: Void = ()) {
+        raw = InlineArray(repeating: 0)
+        raw[0] = 123; raw[1] = 125
+        descriptors = InlineArray(repeating: DynamicFieldDescriptor())
+        rawLength = 2
+        descriptorCount = 0
+    }
+
     /// Decodes and owns one complete JSON object in the inline arena.
     public init(decoding bytes: ByteSlice) throws(ObjectError) {
         guard bytes.length <= byteCapacity else { throw ObjectError(.capacityExceeded, byteOffset: bytes.length) }
@@ -138,9 +147,9 @@ public struct BoundedDynamicObject<let byteCapacity: Int, let fieldCapacity: Int
     }
 
     /// Borrows the complete encoded object for the duration of `body`.
-    public borrowing func withEncodedBytes(_ body: (borrowing ByteSlice) -> Void) {
-        withUnsafeBytesOfRaw { pointer in
-            body(ByteSlice(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: rawLength))
+    public borrowing func withEncodedBytes<R>(_ body: (borrowing ByteSlice) throws -> R) rethrows -> R {
+        try withUnsafeBytesOfRaw { pointer in
+            try body(ByteSlice(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: rawLength))
         }
     }
 
@@ -196,6 +205,12 @@ public struct BoundedDynamicObject<let byteCapacity: Int, let fieldCapacity: Int
         rawLength = nextLength
         descriptorCount = nextCount
     }
+
+    @usableFromInline
+    init(committing editor: inout ObjectEditor<byteCapacity>) throws(ObjectError) {
+        self.init(empty: ())
+        try editor.commit(into: &self)
+    }
 }
 
 @usableFromInline
@@ -226,6 +241,14 @@ public struct ObjectEditor<let byteCapacity: Int> {
         operations = InlineArray(repeating: EditOperation()); operationCount = 0
         output = InlineArray(repeating: 0); outputLength = 0
         for index in 0..<bytes.length { source[index] = bytes.byte(at: index)! }
+    }
+
+    @usableFromInline init(empty: Void = ()) {
+        source = InlineArray(repeating: 0); sourceLength = 2
+        source[0] = 123; source[1] = 125
+        values = InlineArray(repeating: 0); valueLength = 0
+        operations = InlineArray(repeating: EditOperation()); operationCount = 0
+        output = InlineArray(repeating: 0); outputLength = 0
     }
 
     /// Sets a field to a borrowed raw JSON value or a small literal.

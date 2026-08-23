@@ -106,6 +106,27 @@ public struct ObjectEnvelope<let nameCapacity: Int, let externalIDCapacity: Int>
     }
 }
 
+extension ObjectEnvelope {
+    borrowing func encode<let editorCapacity: Int>(
+        to editor: inout ObjectEditor<editorCapacity>
+    ) throws(ObjectError) {
+        do {
+            try objectID.encode(to: &editor, forKey: "objectId")
+            try objectType.encode(to: &editor, forKey: "objectType")
+            try name.encode(to: &editor, forKey: "name")
+            try coreType.encode(to: &editor, forKey: "coreType")
+            try externalID.encode(to: &editor, forKey: "externalId")
+            try parentObjectID.encode(to: &editor, forKey: "parentObjectId")
+            try locationID.encode(to: &editor, forKey: "locationId")
+            try isDeactivated.encode(to: &editor, forKey: "isDeactivated")
+        } catch {
+            throw error == .capacityExceeded
+                ? ObjectError(.capacityExceeded)
+                : ObjectError(.invalidField)
+        }
+    }
+}
+
 private func isJSONNull(_ value: ByteSlice) -> Bool { value.length == 4 && value.equals("null") }
 
 @usableFromInline
