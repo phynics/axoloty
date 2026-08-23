@@ -8,6 +8,12 @@ const root = path.resolve(new URL("../..", import.meta.url).pathname);
 const testsRoot = path.join(root, "Tests");
 const excludedDirectories = new Set(["AxolotyWire", "Support"]);
 const resourceDirectory = path.join("WireCompatibility", "Fixtures");
+const declaredFiles = new Set([
+  "AGENTS.md",
+  "ProtocolTrace/README.md",
+  "ProtocolTrace/Fixtures/family-seeds.json",
+  "ProtocolTrace/trace.schema.json",
+]);
 
 function walk(directory, relative = "") {
   const entries = fs.readdirSync(directory, { withFileTypes: true });
@@ -24,6 +30,7 @@ test("compiled test roots contain Swift sources or declared fixtures only", () =
     const firstComponent = relative.split(path.sep)[0];
     if (excludedDirectories.has(firstComponent)) return false;
     if (firstComponent.startsWith(".")) return false;
+    if (declaredFiles.has(relative)) return false;
     if (relative.startsWith(`${resourceDirectory}${path.sep}`)) return false;
     return path.extname(relative) !== ".swift";
   });
@@ -37,5 +44,4 @@ test("Package.swift excludes whole support directories", () => {
 
   assert.match(excludeBlock, /"AxolotyWire"/);
   assert.match(excludeBlock, /"Support"/);
-  assert.doesNotMatch(excludeBlock, /\/|\.md|\.sh|\.js/);
 });

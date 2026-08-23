@@ -19,6 +19,18 @@ let package = Package(
             name: "AxolotyWire",
             targets: ["AxolotyWire"]
         ),
+        .library(
+            name: "AxolotyProtocol",
+            targets: ["AxolotyProtocol"]
+        ),
+        .library(
+            name: "AxolotyObjectModel",
+            targets: ["AxolotyObjectModel"]
+        ),
+        .library(
+            name: "AxolotyCoatyModels",
+            targets: ["AxolotyCoatyModels"]
+        ),
         .executable(
             name: "axoloty-tool",
             targets: ["AxolotyCLI"]
@@ -56,9 +68,25 @@ let package = Package(
             path: "Packages/AxolotyWire/Sources/AxolotyWire"
         ),
         .target(
+            name: "AxolotyProtocol",
+            dependencies: ["AxolotyWire", "AxolotyObjectModel"],
+            path: "Packages/AxolotyProtocol/Sources/AxolotyProtocol"
+        ),
+        .target(
+            name: "AxolotyObjectModel",
+            dependencies: ["AxolotyWire"],
+            path: "Packages/AxolotyObjectModel/Sources/AxolotyObjectModel"
+        ),
+        .target(
+            name: "AxolotyCoatyModels",
+            dependencies: ["AxolotyObjectModel"],
+            path: "Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels"
+        ),
+        .target(
             name: "Axoloty",
             dependencies: [
                 "AxolotyWire",
+                "AxolotyProtocol",
                 .product(name: "MQTTNIO", package: "mqtt-nio"),
                 .product(name: "NIO", package: "swift-nio"),
                 .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
@@ -83,14 +111,21 @@ let package = Package(
             dependencies: [
                 "Axoloty",
                 "AxolotyWire",
+                "AxolotyProtocol",
                 .product(name: "IkigaJSON", package: "swift-json"),
             ],
             path: "Tests",
             exclude: [
+                "AGENTS.md",
                 "AxolotyWire",
+                "ProtocolTrace/README.md",
+                "ProtocolTrace/Fixtures/family-seeds.json",
+                "ProtocolTrace/trace.schema.json",
                 "Support",
             ],
             resources: [
+                .copy("ProtocolTrace/trace.schema.json"),
+                .copy("ProtocolTrace/Fixtures/family-seeds.json"),
                 .process("WireCompatibility/Fixtures"),
             ]
         ),
@@ -98,8 +133,24 @@ let package = Package(
             name: "AxolotyWireTests",
             dependencies: [
                 "AxolotyWire",
+                "AxolotyProtocol",
             ],
             path: "Tests/AxolotyWire"
+        ),
+        .testTarget(
+            name: "AxolotyProtocolTests",
+            dependencies: ["AxolotyProtocol", "AxolotyWire"],
+            path: "Packages/AxolotyProtocol/Tests/AxolotyProtocolTests"
+        ),
+        .testTarget(
+            name: "AxolotyObjectModelTests",
+            dependencies: ["AxolotyObjectModel", "AxolotyWire"],
+            path: "Packages/AxolotyObjectModel/Tests/AxolotyObjectModelTests"
+        ),
+        .testTarget(
+            name: "AxolotyCoatyModelsTests",
+            dependencies: ["AxolotyCoatyModels", "AxolotyObjectModel", "AxolotyWire"],
+            path: "Packages/AxolotyCoatyModels/Tests/AxolotyCoatyModelsTests"
         ),
         // The tooling control plane. It intentionally has no product-runtime
         // dependencies so it can bootstrap repository workflows independently.
@@ -234,6 +285,7 @@ let package = Package(
             name: "WireBenchmark",
             dependencies: [
                 "AxolotyWire",
+                "AxolotyProtocol",
             ],
             path: "Benchmarks/WireBenchmark"
         ),
@@ -245,6 +297,7 @@ let package = Package(
             name: "WireAllocation",
             dependencies: [
                 "AxolotyWire",
+                "AxolotyProtocol",
             ],
             path: "Benchmarks/WireAllocation"
         ),

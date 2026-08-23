@@ -13,7 +13,7 @@ RUNTIME="${CONTAINER_RUNTIME:-podman}"
 runtime() { "$RUNTIME" "$@"; }
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)
-IO_DIR="$ROOT_DIR/Tests/WireCompatibility/IO"
+IO_DIR="$ROOT_DIR/Tests/Support/WireCompatibility/IO"
 LIVE_DIR="$ROOT_DIR/Tests/Support/WireCompatibility/Live"
 REFERENCE_DIR="$ROOT_DIR/Tests/Support/WireCompatibility/ReferenceAgents"
 RUN_ID="${WIRE_RUN_ID:-$$}"
