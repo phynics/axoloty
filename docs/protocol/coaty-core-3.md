@@ -34,7 +34,7 @@ cover all 13 family transitions without promoting a runtime API.
 
 **Status: Complete.**
 
-Axoloty matches the pinned CoatyJS reference where possible. A captured discrepancy is a defect unless matching is impossible or more harmful than an intentional break. Any unavoidable divergence requires regression coverage, evidence, and an update to [`Tests/Support/WireCompatibility/CompatibilityMatrix.md`](../../Tests/Support/WireCompatibility/CompatibilityMatrix.md).
+Axoloty matches the pinned CoatyJS reference where possible. A captured discrepancy is a defect unless matching is impossible or more harmful than an intentional break. Any unavoidable divergence requires regression coverage, evidence, and an update to [`docs/wire-compatibility.md`](../wire-compatibility.md).
 
 New Axoloty primitives must not add proprietary event codes to `coaty/3`; they belong to separately versioned Axoloty extension profiles.
 
@@ -90,7 +90,7 @@ External IO routes are transport-binding-specific exact non-Coaty routes associa
 **Status: Complete for current G2 evidence; G6 extends the evidence for
 non-divergence and release proof.**
 
-- [`Tests/Support/WireCompatibility/CompatibilityMatrix.md`](../../Tests/Support/WireCompatibility/CompatibilityMatrix.md)
+- [`docs/wire-compatibility.md`](../wire-compatibility.md)
 - [`Tests/Support/WireCompatibility/ReferenceAgents/`](../../Tests/Support/WireCompatibility/ReferenceAgents/)
 - [`Tests/WireCompatibility/Fixtures/`](../../Tests/WireCompatibility/Fixtures/)
 - [`Tests/ProtocolTrace/ProtocolTraceTests.swift`](../../Tests/ProtocolTrace/ProtocolTraceTests.swift)
