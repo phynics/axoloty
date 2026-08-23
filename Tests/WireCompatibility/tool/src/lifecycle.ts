@@ -86,8 +86,15 @@ export function verifyLifecycleBehavior(scenarioId: string, applicationPath: str
 
   const capture = parseJSONLines<CaptureRecord>(capturePath);
   if (scenarioId === "offline-queueing") {
-    const payloads = capture
-      .filter((record) => isAdvertiseTopic(record.mqtt?.topic))
+    const advertiseRecords = capture.filter((record) => isAdvertiseTopic(record.mqtt?.topic));
+    // Advertise publishes a CoatyObject on both its core-type and object-type
+    // routes. Validate one canonical route so a single logical publication is
+    // not counted twice in the independent capture.
+    const objectTypeRecords = advertiseRecords.filter((record) => {
+      const route = record.mqtt?.topic?.split("/")[3];
+      return route?.startsWith("ADV::") === true;
+    });
+    const payloads = (objectTypeRecords.length > 0 ? objectTypeRecords : advertiseRecords)
       .map(decodePayload)
       .filter((payload): payload is string => payload !== undefined);
     const first = payloads.filter((payload) => payload.includes('"name":"first"'));

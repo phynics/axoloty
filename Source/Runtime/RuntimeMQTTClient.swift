@@ -91,12 +91,14 @@ final class RuntimeMQTTClient: @unchecked Sendable {
         _ = try? await client.disconnect()
     }
 
-    func publish(topic: String, payload: [UInt8]) {
+    func publish(topic: String, payload: [UInt8]) async throws {
         var buffer = ByteBufferAllocator().buffer(capacity: payload.count)
         buffer.writeBytes(payload)
-        client.publish(to: topic, payload: buffer, qos: qos, retain: false).whenFailure { [weak self] error in
-            self?.delegate.runtimeMQTTClientDidFail(error)
-        }
+        // Await the write future so the runtime's outbound pump can provide
+        // its drain-before-stop guarantee. Returning after merely scheduling
+        // the MQTT publish lets an immediate reconnect/shutdown disconnect
+        // the socket before queued lifecycle publications reach the broker.
+        try await client.publish(to: topic, payload: buffer, qos: qos, retain: false).get()
     }
 
     @MainActor

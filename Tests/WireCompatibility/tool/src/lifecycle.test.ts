@@ -28,6 +28,32 @@ test("lifecycle verifier requires the offline publication state and order", () =
   assert.doesNotThrow(() => verifyLifecycleBehavior("offline-queueing", application, capture));
 });
 
+test("lifecycle verifier counts dual Advertise routes once", () => {
+  const directory = mkdtempSync(join(tmpdir(), "axoloty-lifecycle-verifier-"));
+  const application = join(directory, "application.jsonl");
+  const capture = join(directory, "capture.jsonl");
+  writeFileSync(application, [
+    "ready",
+    "offline",
+    "published-offline",
+    "reconnected",
+    "done",
+  ].map((state) => JSON.stringify({ state, at: "2026-08-22T00:00:00.000Z" })).join("\n") + "\n");
+  const records: Array<[string, string]> = [
+    ["ADV:CoatyObject", '{"name":"first"}'],
+    ["ADV::com.coaty.test.WireQueuedFixture", '{"name":"first"}'],
+    ["ADV:CoatyObject", '{"name":"second"}'],
+    ["ADV::com.coaty.test.WireQueuedFixture", '{"name":"second"}'],
+  ];
+  writeFileSync(capture, records.map(([route, payload], index) => JSON.stringify({
+    capturedAt: "2026-08-22T00:00:01.000Z",
+    mqtt: { topic: `coaty/3/test/${route}/00000000-0000-0000-0000-000000000000` },
+    payload: { encoding: "base64", bytes: Buffer.from(payload).toString("base64") },
+    sequence: index + 1,
+  })).join("\n") + "\n");
+  assert.doesNotThrow(() => verifyLifecycleBehavior("offline-queueing", application, capture));
+});
+
 test("lifecycle verifier rejects a fabricated duplicate result", () => {
   const directory = mkdtempSync(join(tmpdir(), "axoloty-lifecycle-verifier-"));
   const [application, capture] = fixture(directory,

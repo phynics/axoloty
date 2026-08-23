@@ -111,7 +111,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
             eventTypeFilter: action.eventTypeFilter,
             eventTypeFilterKind: action.eventTypeFilterKind
         )
-        client.publish(topic: topic, payload: action.payload)
+        try await client.publish(topic: topic, payload: action.payload)
     }
 
     /// Stops the MQTT connection and releases callback admission.
@@ -145,7 +145,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         guard let identity else { return }
         let payload = try Self.identityPayload(identity)
         let key = try ProtocolRoutingKey(capability: .advertise, sourceID: identity.id)
-        client.publish(
+        try await client.publish(
             topic: Self.topic(
                 for: key,
                 namespace: namespace,
@@ -160,7 +160,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         guard let identity else { return }
         let payload = Array("[\"\(Self.uuidString(identity.id))\"]".utf8)
         let key = try ProtocolRoutingKey(capability: .deadvertise, sourceID: identity.id)
-        client.publish(topic: Self.topic(for: key, namespace: namespace), payload: payload)
+        try await client.publish(topic: Self.topic(for: key, namespace: namespace), payload: payload)
     }
 
     /// Classifies the binding's exact external compatibility route.
