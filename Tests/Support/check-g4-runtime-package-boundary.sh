@@ -35,10 +35,19 @@ fi
 [ -f "$manifest" ] || fail "package manifest is missing: $manifest"
 
 target_block=$(awk '
-    /^[[:space:]]*\.target\(/ { in_target=1; found=0 }
+    /^[[:space:]]*\.target\(/ {
+        in_target=1
+        found=0
+        target_indent=$0
+        sub(/[^[:space:]].*/, "", target_indent)
+    }
     in_target { print }
     in_target && /name: "Axoloty",/ { found=1 }
-    in_target && found && /^[[:space:]]*\),[[:space:]]*$/ { exit }
+    in_target && found && /^[[:space:]]*\),[[:space:]]*$/ {
+        closing_indent=$0
+        sub(/[^[:space:]].*/, "", closing_indent)
+        if (closing_indent == target_indent) exit
+    }
 ' "$manifest")
 printf '%s\n' "$target_block" | grep -q 'sources:' || fail "Axoloty target must declare an explicit Swift source list"
 
