@@ -131,6 +131,12 @@ public struct ObjectType: Equatable, Hashable, Sendable {
 
 extension ObjectType: ObjectFieldEncodable {
     /// Encodes this bounded object type as a JSON string field.
+    ///
+    /// - Parameters:
+    ///   - editor: The transactional editor receiving the field.
+    ///   - key: The field key to encode.
+    /// - Throws: ``ObjectEncodingError`` when the editor is full or the value
+    ///   cannot be represented.
     public borrowing func encode<let editorCapacity: Int>(
         to editor: inout ObjectFieldEncoder<editorCapacity>,
         forKey key: StaticString
@@ -309,6 +315,12 @@ public enum ObjectCoreType: Sendable, Equatable {
 
 extension ObjectCoreType: ObjectFieldEncodable {
     /// Encodes the canonical Coaty core spelling as a JSON string field.
+    ///
+    /// - Parameters:
+    ///   - editor: The transactional editor receiving the field.
+    ///   - key: The field key to encode.
+    /// - Throws: ``ObjectEncodingError`` when the editor is full or the value
+    ///   cannot be represented.
     public func encode<let editorCapacity: Int>(
         to editor: inout ObjectFieldEncoder<editorCapacity>,
         forKey key: StaticString

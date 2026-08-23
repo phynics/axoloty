@@ -69,6 +69,26 @@ private struct OtherManualSchema: ObjectSchema {
     borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {}
 }
 
+private struct TypedValueSchema: ObjectSchema {
+    var value: Int
+
+    static let schema: PortableObjectSchema<Self> = {
+        var fields = InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
+        fields[0] = ObjectFieldDescriptor(key: ObjectFieldKey("value")!, index: 0, flags: .required)
+        return PortableObjectSchema(objectType: ObjectType("com.example.TypedValue")!, coreType: .coatyObject, fieldCount: 1, fields: fields)
+    }()
+
+    init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
+        value = try fields.decode("value", as: Int.self)
+    }
+
+    init(value: Int) { self.value = value }
+
+    borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
+        try encoder.encode(value, forKey: "value")
+    }
+}
+
 private struct TrailingManualSchema: ObjectSchema {
     static let schema: PortableObjectSchema<Self> = {
         var fields = InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
@@ -192,6 +212,16 @@ private struct TrailingManualSchema: ObjectSchema {
     )
     #expect(throws: ObjectError.self) {
         _ = try BoundedObject<ValidManualSchema, 64, 24>(envelope: oversized, fields: ValidManualSchema())
+    }
+}
+
+@Test func typedObjectEditPreservesUnknownFields() throws {
+    let bytes = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.TypedValue\",\"name\":\"Typed\",\"coreType\":\"CoatyObject\",\"value\":1,\"unknown\":1e2}")
+    var object = try Object<TypedValueSchema>(decoding: bytes)
+    #expect(object.value.value == 1)
+    try object.edit { $0.value = 2 }
+    object.withEncodedBytes { encoded in
+        #expect(encoded.equals("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.TypedValue\",\"name\":\"Typed\",\"coreType\":\"CoatyObject\",\"value\":2,\"unknown\":1e2}"))
     }
 }
 

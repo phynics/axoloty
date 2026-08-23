@@ -80,6 +80,13 @@ public struct ObjectFields: ~Copyable {
     public borrowing func withDecoder<R>(_ body: (borrowing ObjectFieldDecoder) throws -> R) rethrows -> R {
         try body(ObjectFieldDecoder(bytes: bytes, length: length))
     }
+
+    /// Decodes a typed schema without opening an untyped throwing closure.
+    public borrowing func decode<Schema: ObjectSchema>(
+        _ type: Schema.Type
+    ) throws(ObjectDecodingError) -> Schema {
+        try Schema(decoding: ObjectFieldDecoder(bytes: bytes, length: length))
+    }
 }
 
 /// A bounded dynamic JSON object with inline raw bytes and field descriptors.
@@ -139,6 +146,31 @@ public struct BoundedDynamicObject<let byteCapacity: Int, let fieldCapacity: Int
         }
     }
 
+    /// Decodes a typed schema directly from the owned object fields.
+    public borrowing func decode<Schema: ObjectSchema>(
+        _ type: Schema.Type
+    ) throws(ObjectDecodingError) -> Schema {
+        var result: Schema?
+        var failure: ObjectDecodingError?
+        withUnsafeBytesOfRaw { pointer in
+            withUnsafeBytes(of: descriptors) { descriptorBytes in
+                let fields = ObjectFields(
+                    bytes: pointer,
+                    length: rawLength,
+                    descriptors: descriptorBytes.baseAddress!,
+                    descriptorCount: descriptorCount
+                )
+                do throws(ObjectDecodingError) {
+                    result = try fields.decode(type)
+                } catch {
+                    failure = error
+                }
+            }
+        }
+        if let failure { throw failure }
+        return result!
+    }
+
     /// Compares the exact encoded bytes against a static UTF-8 literal.
     public borrowing func encodedEquals(_ value: StaticString) -> Bool {
         withUnsafeBytesOfRaw { pointer in
@@ -147,6 +179,10 @@ public struct BoundedDynamicObject<let byteCapacity: Int, let fieldCapacity: Int
     }
 
     /// Borrows the complete encoded object for the duration of `body`.
+    ///
+    /// - Parameter body: A synchronous operation receiving the borrowed bytes.
+    /// - Returns: The value returned by `body`.
+    /// - Throws: Any error thrown by `body`.
     public borrowing func withEncodedBytes<R>(_ body: (borrowing ByteSlice) throws -> R) rethrows -> R {
         try withUnsafeBytesOfRaw { pointer in
             try body(ByteSlice(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: rawLength))
