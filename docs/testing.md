@@ -10,7 +10,7 @@ The versioned, typed execution manifest is the sole source of truth for
 commands, filters, deadlines, expected duration, cadence, required local/CI
 gates, network/broker/hardware policy, resource ownership, isolation lanes,
 dependencies, and artifacts:
-[`Support/test-tiers.json`](Support/test-tiers.json). Swift
+[`Tests/Support/test-tiers.json`](../Tests/Support/test-tiers.json). Swift
 `AxolotyTooling` loads this file for every plan; the Node validator and its
 self-tests validate the same document. Each maintained `Tests/**/*.test.mjs` /
 `Tests/**/test-*.sh` harness self-test is mapped to exactly one owning Make
