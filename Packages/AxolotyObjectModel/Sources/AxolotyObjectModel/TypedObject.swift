@@ -15,6 +15,51 @@ public struct BoundedObject<
     /// The descriptor used for envelope validation and registry recognition.
     public static var schema: PortableObjectSchema<Schema> { Schema.schema }
 
+    /// Creates a typed object from an envelope and its typed field model.
+    ///
+    /// The schema, envelope, fields, and final wire representation are
+    /// validated before this value is initialized. A capacity or encoding
+    /// failure therefore cannot leave a partially initialized object.
+    ///
+    /// - Parameters:
+    ///   - envelope: The common object identity and lifecycle fields.
+    ///   - fields: The typed schema value to encode and retain.
+    /// - Throws: ``ObjectError`` when the schema, envelope identity, field
+    ///   values, or bounded storage are invalid.
+    public init<let nameCapacity: Int, let externalIDCapacity: Int>(
+        envelope: ObjectEnvelope<nameCapacity, externalIDCapacity>,
+        fields: consuming Schema
+    ) throws(ObjectError) {
+        do throws(ObjectSchemaValidationError) { try Schema.schema.validate() }
+        catch { throw ObjectError(.invalidSchema) }
+        guard envelope.objectType == Schema.schema.objectType,
+              envelope.coreType == Schema.schema.coreType else {
+            throw ObjectError(.invalidEnvelope)
+        }
+        guard byteCapacity >= 2 else { throw ObjectError(.capacityExceeded) }
+
+        var editor = ObjectEditor<byteCapacity>(empty: ())
+        do throws(ObjectError) {
+            try envelope.encode(to: &editor)
+        } catch {
+            throw error
+        }
+        do throws(ObjectEncodingError) {
+            try fields.encodeFields(to: &editor)
+        } catch {
+            throw error == .capacityExceeded
+                ? ObjectError(.capacityExceeded)
+                : ObjectError(.invalidField)
+        }
+
+        let dynamic = try BoundedDynamicObject<byteCapacity, fieldCapacity>(committing: &editor)
+        let model: Schema
+        do throws(ObjectDecodingError) { model = try dynamic.decode(Schema.self) }
+        catch { throw ObjectError(.invalidField) }
+        self.dynamic = dynamic
+        self.model = model
+    }
+
     /// Creates a typed object from a complete object payload.
     public init(decoding bytes: ByteSlice) throws(ObjectError) {
         do throws(ObjectSchemaValidationError) { try Schema.schema.validate() }
@@ -26,13 +71,8 @@ public struct BoundedObject<
             coreType: Schema.schema.coreType
         )
         let model: Schema
-        do {
-            model = try dynamic.withFields { fields in
-                try fields.withDecoder { decoder in try Schema(decoding: decoder) }
-            }
-        } catch {
-            throw ObjectError(.invalidField)
-        }
+        do throws(ObjectDecodingError) { model = try dynamic.decode(Schema.self) }
+        catch { throw ObjectError(.invalidField) }
         self.dynamic = dynamic
         self.model = model
     }
@@ -86,6 +126,17 @@ public struct BoundedObject<
     /// Borrows unknown/raw fields synchronously.
     public borrowing func withFields<R>(_ body: (borrowing ObjectFields) -> R) -> R {
         dynamic.withFields(body)
+    }
+
+    /// Borrows the canonical encoded object bytes for the duration of `body`.
+    ///
+    /// - Parameter body: A synchronous operation receiving the borrowed bytes.
+    /// - Returns: The value returned by `body`.
+    /// - Throws: Any error thrown by `body`.
+    public borrowing func withEncodedBytes<R>(
+        _ body: (borrowing ByteSlice) throws -> R
+    ) rethrows -> R {
+        try dynamic.withEncodedBytes(body)
     }
 
     /// Borrows the current envelope snapshot without creating a second mutable state.

@@ -129,6 +129,33 @@ public struct ObjectType: Equatable, Hashable, Sendable {
     }
 }
 
+extension ObjectType: ObjectFieldEncodable {
+    /// Encodes this bounded object type as a JSON string field.
+    ///
+    /// - Parameters:
+    ///   - editor: The transactional editor receiving the field.
+    ///   - key: The field key to encode.
+    /// - Throws: ``ObjectEncodingError`` when the editor is full or the value
+    ///   cannot be represented.
+    public borrowing func encode<let editorCapacity: Int>(
+        to editor: inout ObjectFieldEncoder<editorCapacity>,
+        forKey key: StaticString
+    ) throws(ObjectEncodingError) {
+        let localStorage = storage
+        let localLength = length
+        var failure: ObjectError?
+        withUnsafeBytes(of: localStorage) { buffer in
+            let bytes = ByteSlice(
+                bytes: buffer.baseAddress!.assumingMemoryBound(to: UInt8.self),
+                length: localLength
+            )
+            do throws(ObjectError) { try editor.setEncodedString(key, value: bytes) }
+            catch { failure = error }
+        }
+        if let failure { throw failure.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
+    }
+}
+
 /// A bounded owned JSON-string-content byte value used for common metadata.
 /// Escape sequences are retained exactly; this type does not claim Unicode decoding.
 public struct BoundedEncodedText<let capacity: Int>: Equatable, Hashable, Sendable {
@@ -283,6 +310,43 @@ public enum ObjectCoreType: Sendable, Equatable {
         else if bytes.equals("Snapshot") { self = .snapshot }
         else if let raw = ObjectType(bytes: bytes) { self = .unknown(raw) }
         else { return nil }
+    }
+}
+
+extension ObjectCoreType: ObjectFieldEncodable {
+    /// Encodes the canonical Coaty core spelling as a JSON string field.
+    ///
+    /// - Parameters:
+    ///   - editor: The transactional editor receiving the field.
+    ///   - key: The field key to encode.
+    /// - Throws: ``ObjectEncodingError`` when the editor is full or the value
+    ///   cannot be represented.
+    public func encode<let editorCapacity: Int>(
+        to editor: inout ObjectFieldEncoder<editorCapacity>,
+        forKey key: StaticString
+    ) throws(ObjectEncodingError) {
+        func set(_ value: StaticString) throws(ObjectEncodingError) {
+            do {
+                try editor.setEncodedString(key, value: ByteSlice(bytes: value.utf8Start, length: value.utf8CodeUnitCount))
+            } catch {
+                throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField
+            }
+        }
+        switch self {
+        case .coatyObject: try set("CoatyObject")
+        case .user: try set("User")
+        case .annotation: try set("Annotation")
+        case .task: try set("Task")
+        case .ioSource: try set("IoSource")
+        case .ioActor: try set("IoActor")
+        case .ioNode: try set("IoNode")
+        case .ioContext: try set("IoContext")
+        case .identity: try set("Identity")
+        case .log: try set("Log")
+        case .location: try set("Location")
+        case .snapshot: try set("Snapshot")
+        case .unknown(let value): try value.encode(to: &editor, forKey: key)
+        }
     }
 }
 

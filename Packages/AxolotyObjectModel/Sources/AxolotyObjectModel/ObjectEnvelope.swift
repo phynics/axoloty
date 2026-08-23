@@ -106,6 +106,37 @@ public struct ObjectEnvelope<let nameCapacity: Int, let externalIDCapacity: Int>
     }
 }
 
+extension ObjectEnvelope {
+    borrowing func encode<let editorCapacity: Int>(
+        to editor: inout ObjectEditor<editorCapacity>
+    ) throws(ObjectError) {
+        func encodeField<T: ObjectFieldEncodable>(
+            _ value: borrowing T,
+            forKey key: StaticString
+        ) throws(ObjectError) {
+            do throws(ObjectEncodingError) {
+                try value.encode(to: &editor, forKey: key)
+            } catch {
+                throw error == .capacityExceeded
+                    ? ObjectError(.capacityExceeded)
+                    : ObjectError(.invalidField)
+            }
+        }
+        try encodeField(objectID, forKey: "objectId")
+        try encodeField(objectType, forKey: "objectType")
+        try encodeField(name, forKey: "name")
+        try encodeField(coreType, forKey: "coreType")
+        if let externalID { try encodeField(externalID, forKey: "externalId") }
+        if let parentObjectID { try encodeField(parentObjectID, forKey: "parentObjectId") }
+        if let locationID { try encodeField(locationID, forKey: "locationId") }
+        switch isDeactivated {
+        case .missing: break
+        case .null: try editor.setNull("isDeactivated")
+        case .value(let value): try editor.setBoolean(value, forKey: "isDeactivated")
+        }
+    }
+}
+
 private func isJSONNull(_ value: ByteSlice) -> Bool { value.length == 4 && value.equals("null") }
 
 @usableFromInline

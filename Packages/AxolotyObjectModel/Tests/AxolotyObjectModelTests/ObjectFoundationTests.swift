@@ -57,6 +57,7 @@ private struct ValidManualSchema: ObjectSchema {
     )
     init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {}
     borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {}
+    init() {}
 }
 
 private struct OtherManualSchema: ObjectSchema {
@@ -66,6 +67,26 @@ private struct OtherManualSchema: ObjectSchema {
     )
     init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {}
     borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {}
+}
+
+private struct TypedValueSchema: ObjectSchema {
+    var value: Int
+
+    static let schema: PortableObjectSchema<Self> = {
+        var fields = InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
+        fields[0] = ObjectFieldDescriptor(key: ObjectFieldKey("value")!, index: 0, flags: .required)
+        return PortableObjectSchema(objectType: ObjectType("com.example.TypedValue")!, coreType: .coatyObject, fieldCount: 1, fields: fields)
+    }()
+
+    init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
+        value = try fields.decode("value", as: Int.self)
+    }
+
+    init(value: Int) { self.value = value }
+
+    borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
+        try encoder.encode(value, forKey: "value")
+    }
 }
 
 private struct TrailingManualSchema: ObjectSchema {
@@ -155,6 +176,53 @@ private struct TrailingManualSchema: ObjectSchema {
     let _: Object<ValidManualSchema>.Type = Object<ValidManualSchema>.self
     let _: DynamicObject.Type = DynamicObject.self
     let _: BoundedObject<ValidManualSchema, 256, 8>.Type = BoundedObject<ValidManualSchema, 256, 8>.self
+}
+
+@Test func typedObjectConstructsAndBorrowsCanonicalBytes() throws {
+    let objectID = ObjectID(bytes: slice("33333333-3333-4333-8333-333333333333"))!
+    let envelope = try ObjectEnvelope<64, 64>(
+        objectID: objectID,
+        objectType: ObjectType("com.example.Valid")!,
+        name: BoundedEncodedText<64>("Valid")!,
+        coreType: .coatyObject
+    )
+    let object = try Object<ValidManualSchema>(envelope: envelope, fields: ValidManualSchema())
+    object.withEncodedBytes { bytes in
+        #expect(bytes.equals("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.Valid\",\"name\":\"Valid\",\"coreType\":\"CoatyObject\"}"))
+    }
+}
+
+@Test func typedObjectConstructionValidatesEnvelopeIdentityAndCapacity() throws {
+    let objectID = ObjectID(bytes: slice("33333333-3333-4333-8333-333333333333"))!
+    let mismatched = try ObjectEnvelope<64, 64>(
+        objectID: objectID,
+        objectType: ObjectType("com.example.Other")!,
+        name: BoundedEncodedText<64>("Other")!,
+        coreType: .coatyObject
+    )
+    #expect(throws: ObjectError.self) {
+        _ = try Object<ValidManualSchema>(envelope: mismatched, fields: ValidManualSchema())
+    }
+
+    let oversized = try ObjectEnvelope<128, 64>(
+        objectID: objectID,
+        objectType: ObjectType("com.example.Valid")!,
+        name: BoundedEncodedText<128>("This name deliberately exceeds the tiny object arena")!,
+        coreType: .coatyObject
+    )
+    #expect(throws: ObjectError.self) {
+        _ = try BoundedObject<ValidManualSchema, 64, 24>(envelope: oversized, fields: ValidManualSchema())
+    }
+}
+
+@Test func typedObjectEditPreservesUnknownFields() throws {
+    let bytes = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.TypedValue\",\"name\":\"Typed\",\"coreType\":\"CoatyObject\",\"value\":1,\"unknown\":1e2}")
+    var object = try Object<TypedValueSchema>(decoding: bytes)
+    #expect(object.value.value == 1)
+    try object.edit { $0.value = 2 }
+    object.withEncodedBytes { encoded in
+        #expect(encoded.equals("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.TypedValue\",\"name\":\"Typed\",\"coreType\":\"CoatyObject\",\"value\":2,\"unknown\":1e2}"))
+    }
 }
 
 @Test func dynamicObjectReadsBorrowedFields() throws {
