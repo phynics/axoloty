@@ -1,53 +1,42 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Axoloty
+import AxolotyProtocol
+import AxolotyWire
 import Foundation
 import Testing
 
 @MainActor
 struct AxolotyAdvertiseProducerTests {
+    private static let sourceID = UUID16(parsing: "22222222-2222-4222-8222-222222222222")!
+
     @Test(.enabled(if: ProcessInfo.processInfo.environment["WIRE_REVERSE_LIVE"] == "1"))
     func publishesAdvertiseForCoatyJS() async throws {
         let environment = ProcessInfo.processInfo.environment
+        let runtime = try makeRuntime(environment: environment)
+        do {
+            try await runtime.start()
+            #expect(await runtime.publish(.advertise(fixturePayload)) == .accepted)
+            try await Task.sleep(for: .milliseconds(500))
+            await runtime.stop()
+        } catch {
+            await runtime.stop()
+            throw error
+        }
+    }
+
+    private var fixturePayload: [UInt8] {
+        Array(#"{"object":{"coreType":"CoatyObject","objectType":"com.coaty.test.WireFixture","objectId":"11111111-1111-4111-8111-111111111111","name":"wire-fixture"}}"#.utf8)
+    }
+
+    private func makeRuntime(environment: [String: String]) throws -> AxolotyRuntime {
         let host = environment["WIRE_BROKER_HOST"] ?? "127.0.0.1"
         let port = UInt16(environment["WIRE_BROKER_PORT"] ?? "1883") ?? 1883
         let namespace = environment["WIRE_NAMESPACE"] ?? "wire-compat-v1"
-
-        let communication = CommunicationOptions(
-            namespace: namespace,
-            mqttClientOptions: MQTTClientOptions(host: host, port: port),
-            shouldAutoStart: false
-        )
-        let container = try Container.resolve(
-            components: Components(controllers: [:], objectTypes: []),
-            configuration: Configuration(communication: communication)
-        )
-        defer { container.shutdown() }
-
-        if container.communicationManager == nil {
-            Issue.record("Container did not resolve a communication manager")
-            return
-        }
-
-        // Waits for the actual online transition rather than guessing how
-        // long connecting takes; see Container.startAndWaitUntilReady().
-        try await container.startAndWaitUntilReady()
-
-        let object = try CoatyObject(
-            coreType: .CoatyObject,
-            objectType: "com.coaty.test.WireFixture",
-            objectId: #require(CoatyUUID(uuidString: "11111111-1111-4111-8111-111111111111")),
-            name: "wire-fixture"
-        )
-        try container.communicationManager?.publishAdvertise(AdvertiseEvent.with(object: object))
-
-        // `publish` has no completion signal to await: the underlying
-        // CommunicationClient protocol's publish methods are synchronous,
-        // fire-and-forget calls with no future or callback for "the packet
-        // reached the wire". Without some wait here, `container.shutdown()`
-        // (deferred above) could tear down the MQTT connection before this
-        // publish is flushed. This is the one wait in this suite with no
-        // observable condition to poll instead of a fixed duration.
-        try await Task.sleep(for: .milliseconds(500))
+        let identity = try RuntimeIdentity(id: Self.sourceID, name: "axoloty-advertise-producer")
+        let builder = try RuntimeDefinition.Builder(identity: identity, namespace: namespace)
+        let definition = try builder.finish()
+        let binding = try MQTTBinding(configuration: try MQTTBindingConfiguration(host: host, port: port))
+        return AxolotyRuntime(definition: definition, transport: binding)
     }
 }

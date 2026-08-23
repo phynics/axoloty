@@ -166,6 +166,8 @@ let package = Package(
                 "ProtocolTrace/ProtocolTraceCorpus.swift",
                 "ProtocolTrace/ProtocolTraceTests.swift",
                 "WireCompatibility/Lifecycle/AxolotyLifecycleSubjectTests.swift",
+                "WireCompatibility/Reverse/AxolotyAdvertiseProducerTests.swift",
+                "WireCompatibility/Reverse/AxolotyCoreProducerTests.swift",
                 "Runtime/AxolotyRuntimeTests.swift",
             ],
             resources: [
