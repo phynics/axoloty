@@ -34,7 +34,7 @@ concurrency:
 
 # Exemption label: add `live-wire-exemption` to a protocol-affecting PR together
 # with a comment/description citing the recorded decision (issue/PR/link) and
-# its expiry. See Tests/WireCompatibility/CompatibilityMatrix.md.
+# its expiry. See docs/wire-compatibility.md.
 env:
   WIRE_EXEMPTION_LABEL: live-wire-exemption
 
@@ -75,7 +75,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: Tests/WireCompatibility/tool/package-lock.json
+          cache-dependency-path: Tests/Support/WireCompatibility/tool/package-lock.json
 
       - name: Build wire CLI
         run: make wire-tool
@@ -180,7 +180,7 @@ jobs:
           test "$captures" -gt 0 || { echo "::error::no live wire captures produced"; exit 1; }
           # The authoritative aggregate manifest was produced by the wire capture
           # plan; verify it references the captures rather than regenerating it.
-          node Tests/WireCompatibility/tool/dist/index.js manifest "$cap_dir" /tmp/wire-verify-manifest.json
+          node Tests/Support/WireCompatibility/tool/dist/index.js manifest "$cap_dir" /tmp/wire-verify-manifest.json
           echo "Live wire evidence OK: $(find "$cap_dir" -name '*.jsonl' -printf '%P\n' | sort | tr '\n' ' ')"
           echo "Authoritative manifest: $manifest"
 

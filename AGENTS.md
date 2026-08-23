@@ -39,7 +39,10 @@ Use the repository entry points rather than reproducing container or toolchain c
 3. `make test-tier TIER=unit` — one canonical tier.
 4. `make explain TIER=unit` — inspect the graph and policies without execution.
 
-Use `make verify-ci` only to reproduce required CI. Release and hardware validation are opt-in and must never be folded into ordinary verification. `Tests/TESTING.md` owns the executable tier contract.
+Use `make verify-ci` only when reproducing the required CI plan. Use
+`make checkpoint`/`make checkpoint-hardware` for release validation; hardware
+is never probed by ordinary verification. See `docs/testing.md` for the
+manifest and compatibility aliases.
 
 The Makefile is a thin compatibility/bootstrap surface; orchestration policy belongs in `AxolotyTooling`. Linux product and Embedded Swift builds use the pinned container through root Make targets. Do not run native Swift product builds on Linux. `Package.resolved` is authoritative; dependency resolution changes require the dedicated repository target.
 
@@ -102,4 +105,8 @@ Use `LogManager.logger(.subsystem)` for existing host concerns. Keep message tex
 
 ### Wire compatibility
 
-The pinned CoatyJS reference agent is the source of truth for Coaty wire shape. Match it where possible and tolerate legitimate peer omissions. A wire change requires regression coverage and an update to `Tests/WireCompatibility/CompatibilityMatrix.md`; record only deliberate, unavoidable divergences with capture evidence and a linked decision.
+Axoloty targets wire compatibility with pinned CoatyJS reference agent (`Tests/Support/WireCompatibility/ReferenceAgents/`). Reference = source of truth for wire shape.
+
+- **Match CoatyJS where possible.** Axoloty/CoatyJS disagree on wire detail (field presence, payload wrapping, encoding overload): default = change Axoloty to match reference, not record difference as accepted. Captured discrepancy = defect to fix, not divergence to ratify — unless matching impossible or more harmful than breaking.
+- **Remain compatible despite divergence.** Unavoidable divergence: Axoloty must still tolerate peer's wire shape. Decode optional fields defensively (never force-unwrap field peer may omit), accept bare payload external producer sends. Trapping on peer's legitimate omission = bug, not compatibility boundary.
+- **No accidental divergences.** Wire-format or field-presence change requires regression test locking in new behavior + update to `docs/wire-compatibility.md`. Record only deliberate, unavoidable divergences (e.g. platform constraint like CoatyJS hardcoding QoS 0) with capture evidence + linked decision.

@@ -20,8 +20,8 @@ test("protocol-affecting globs cover wire codec and core types", () => {
     ["Source/SensorThings/Sensor.swift", true],
     ["Source/Communication/Client/MQTTNIOClient.swift", true],
     ["Tests/WireCompatibility/Fixtures/advertise.jsonl", true],
-    ["Tests/WireCompatibility/tool/src/capture.ts", true],
-    ["Tests/WireCompatibility/Live/run-coatyjs-core.sh", true],
+    ["Tests/Support/WireCompatibility/tool/src/capture.ts", true],
+    ["Tests/Support/WireCompatibility/Live/run-coatyjs-core.sh", true],
     ["Tests/AxolotyWire/WireCodecTests.swift", true],
     ["Package.swift", true],
     ["Package.resolved", true],
@@ -41,9 +41,9 @@ test("unrelated, documentation, orchestration, and policy changes stay on the fa
     ".github/workflows/wire-compatibility.yml",
     "Source/Axoloty.docc/index.md",
     "Source/Axoloty.docc/main.md",
-    "Tests/WireCompatibility/CompatibilityMatrix.md",
-    "Tests/WireCompatibility/README.md",
-    "Tests/WireCompatibility/Audit/IOAndSensorThingsDecisions.md",
+    "docs/wire-compatibility.md",
+    "Tests/Support/WireCompatibility/Live/README.md",
+    "Tests/Support/WireCompatibility/Audit/IOAndSensorThingsDecisions.md",
     "Tests/Support/test-tiers.json",
     "Tools/AxolotyTooling/AxolotyCheck.swift",
     "LICENSE",
@@ -83,7 +83,7 @@ test("CLI emits an unambiguous machine-readable gate marker first", () => {
   const run = args => spawnSync(process.execPath, [script, ...args], { encoding: "utf8" });
   const required = run(["--changed", "Source/Communication/Events/CallEvent.swift"]).stdout;
   assert.match(required, /^gate=require\n/);
-  const fast = run(["--changed", "Tests/WireCompatibility/CompatibilityMatrix.md"]).stdout;
+  const fast = run(["--changed", "docs/wire-compatibility.md"]).stdout;
   assert.match(fast, /^gate=fastpath\n/);
 });
 

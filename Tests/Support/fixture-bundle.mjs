@@ -96,7 +96,7 @@ export function generateBundle(source, destination, environment = process.env) {
     return { file: path.join("captures", file), sha256: sha256(bytes), ...captureMetadata(bytes, file) };
   });
   const normalizationSource = environment.AXOLOTY_NORMALIZATION_RULES
-    ?? "Tests/WireCompatibility/Capture/normalization-rules.json";
+    ?? "Tests/Support/WireCompatibility/Capture/normalization-rules.json";
   if (!fs.existsSync(normalizationSource)) throw new Error(`normalization rules not found: ${normalizationSource}`);
   const normalizationBytes = fs.readFileSync(normalizationSource);
   fs.writeFileSync(path.join(destination, "normalization-rules.json"), normalizationBytes);

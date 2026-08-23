@@ -208,7 +208,7 @@ struct StaticDeviceAgent: ~Copyable {
         var topic = TopicBuilder(buffer: topicBuffer, capacity: topicCapacity)
         try topic.writePrefix()
         try topic.writeNamespace(Self.namespace)
-        let objectTypeFilter: StaticString = ":coaty.test.Device"
+        let objectTypeFilter: StaticString = "coaty.test.Device"
         let filter = eventType == .advertise
             ? ByteSlice(bytes: objectTypeFilter.utf8Start, length: objectTypeFilter.utf8CodeUnitCount)
             : nil

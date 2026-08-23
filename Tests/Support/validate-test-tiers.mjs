@@ -187,8 +187,6 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
     for (const node of [...plan.nodes, ...(plan.ciNodes ?? [])]) if (!nodeIds.has(node)) errors.push(`plan ${name}: unknown node ${JSON.stringify(node)}`);
   }
   const makeAliases = {
-    check: "offline",
-    "test-tooling": "test-tooling",
     "test-wire": "wire-offline",
     "test-unit": "unit",
     "test-module": "module",
@@ -197,7 +195,7 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
   };
   for (const [target, planName] of Object.entries(makeAliases)) {
     const tier = document.tiers.find(candidate => candidate.makeTarget === target);
-    if (!tier && target !== "check" && target !== "test-tooling") errors.push(`Make target ${target} has no canonical tier`);
+    if (!tier) errors.push(`Make target ${target} has no canonical tier`);
     if (target === "test-wire" && document.plans?.[planName]?.nodes?.includes("test-tooling")) errors.push("test-wire must not include tooling tests");
   }
   if (!document.plans?.verify || !Array.isArray(document.plans.verify.nodes)) errors.push("verify plan must exist");

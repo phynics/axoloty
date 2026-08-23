@@ -15,7 +15,7 @@ import Testing
 /// exercises the modern -> JS direction end to end.
 ///
 /// Findings recorded here feed the keep/diverge/remove decisions in
-/// `Tests/WireCompatibility/Audit/IOAndSensorThingsDecisions.md`.
+/// `Tests/Support/WireCompatibility/Audit/IOAndSensorThingsDecisions.md`.
 @MainActor
 struct AxolotyIoAssociateTests {
 

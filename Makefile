@@ -58,7 +58,25 @@ export AXOLOTY_CONSUMER_REPOSITORY_URL AXOLOTY_CONSUMER_VERSION AXOLOTY_CONSUMER
 # https://<user>.github.io/axoloty/). Leave empty for root-hosted output.
 DOC_HOSTING_BASE_PATH ?=
 
-.PHONY: help image resolve coverage-resolve worktree-bootstrap worktree-warm axoloty-tool check verify verify-ci test-one test-tier explain hardware-check hardware-require g1-bounded-runtime-device release-fixture-bundle checkpoint checkpoint-hardware test-tooling build wire-codec-test test-decoder-context-sendable test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test-axoloty-wire-distribution test-axoloty-semver-consumer test test-tsan test-communication test-broker-regressions test-unit test-module test-fuzz fuzz-long test-fast test-wire test-wire-live test-wire-all test-support test-observation-linux coverage coverage-check ci-preflight ci-fast ci broker broker-stop shell docs lint wire-tool clean embedded-toolchain-doctor embedded-device-info embedded-reproducible-build benchmark-size benchmark-wire benchmark-wire-allocation benchmark-wire-bounds benchmark-wire-device check-budget-manifest check-embedded-swift check-embedded-swift-linker embedded-swift-build embedded-swift-flash embedded-swift-test embedded-mqtt-test embedded-network-test embedded-agent-test embedded-coatyjs-test embedded-host-test embedded-last-will-test embedded-broker-restart-test embedded-interop-test
+.PHONY: \
+	help image resolve coverage-resolve worktree-bootstrap worktree-warm \
+	axoloty-tool verify verify-ci test-one test-tier explain \
+	hardware-check hardware-require release-fixture-bundle checkpoint checkpoint-hardware \
+	build test-decoder-context-sendable \
+	test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies \
+	test-axoloty-wire-independent-resolution test-axoloty-wire-distribution \
+	test-axoloty-semver-consumer test tsan-resolve test-tsan \
+	test-broker-regressions test-unit test-module test-fuzz fuzz-long \
+	test-wire test-wire-live test-support \
+	coverage coverage-check ci-preflight ci shell docs lint \
+	wire-tool clean serve-mqtt serve-mcp serve-dev embedded-toolchain-doctor \
+	embedded-device-info embedded-device-smoke embedded-reproducible-build \
+	benchmark-size benchmark-wire benchmark-wire-allocation benchmark-wire-bounds \
+	benchmark-wire-device check-budget-manifest check-embedded-swift \
+	check-embedded-swift-linker embedded-swift-build embedded-swift-flash \
+	embedded-swift-test embedded-swift-reproducible-build \
+	embedded-network-test embedded-agent-test embedded-coatyjs-test embedded-host-test \
+	embedded-last-will-test embedded-broker-restart-test embedded-interop-test
 
 # Quote user-provided values before placing them in a shell assignment. The
 # resulting value is still passed to run.sh as one argv element.
@@ -205,9 +223,6 @@ serve-dev: image
 	set -f; set -- $$args; \
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" CONTAINER_NETWORK=host .devcontainer/run.sh /opt/axoloty/bin/ax serve dev "$$@"
 
-check:
-	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS=check
-
 verify:
 	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS=verify
 
@@ -282,23 +297,37 @@ checkpoint-hardware:
 			AXOLOTY_GIT_COMMIT="$$AXOLOTY_GIT_COMMIT" AXOLOTY_GIT_CLEAN="$$AXOLOTY_GIT_CLEAN" \
 			AXOLOTY_DEVICE="$${AXOLOTY_DEVICE:-/dev/ttyACM0}"
 
-test-tooling:
-	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='test tooling'
-
-test-communication: image
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \
-		swift test $(SWIFT_LOCKED_ARGS) --filter 'CommunicationSubscriptionCoordinatorTests|BroadcastTransportTests|MQTTNIOClientTests'
-
 test-broker-regressions: image
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \
 		sh -c 'pgrep mosquitto >/dev/null 2>&1 || mosquitto -d; swift test $(SWIFT_LOCKED_ARGS) --filter "UnaryCallBrokerIntegrationTests|DecentralizedLoggingTest|ObjectLifecycleControllerTests"'
 
-build:
-	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS=build
+define run_test_tier
+	@$(MAKE) --no-print-directory test-tier TIER="$(TIER)"
+endef
 
-wire-codec-test: build
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \
-		swift test $(SWIFT_LOCKED_ARGS) --filter 'WireCodecTests|WireDifferentialTests|BorrowedMessageTests|ProtocolProcessorTests'
+build:
+	$(run_test_tier)
+build: TIER=smoke
+
+test:
+	$(run_test_tier)
+test: TIER=integration
+
+test-unit:
+	$(run_test_tier)
+test-unit: TIER=unit
+
+test-module:
+	$(run_test_tier)
+test-module: TIER=module
+
+test-fuzz:
+	$(run_test_tier)
+test-fuzz: TIER=property
+
+test-wire:
+	$(run_test_tier)
+test-wire: TIER=wire-offline
 
 test-decoder-context-sendable:
 	@build_log=$$(mktemp); \
@@ -327,9 +356,6 @@ test-axoloty-semver-consumer: image
 		CONTAINER_ENV_VARS='AXOLOTY_CONSUMER_REPOSITORY_URL AXOLOTY_CONSUMER_VERSION AXOLOTY_CONSUMER_LOCAL AXOLOTY_CONSUMER_LOCAL_VERSION' \
 		.devcontainer/run.sh sh Tests/Support/check-axoloty-semver-consumer.sh
 
-test:
-	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='test-tier integration'
-
 tsan-resolve: image
 	@mkdir -p "$(SPM_CACHE_DIR)"
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(TSAN_BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh .devcontainer/resolve.sh
@@ -340,24 +366,12 @@ test-tsan: tsan-resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(TSAN_BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \
 		bash -o pipefail -c 'set -e; pgrep mosquitto >/dev/null 2>&1 || mosquitto -d; swift test $(SWIFT_LOCKED_ARGS) --no-parallel --sanitize=thread --filter "CommunicationSubscriptionCoordinatorTests|BroadcastTransportTests|ObjectLifecycleControllerTests|DecentralizedLoggingTest"'
 
-test-unit:
-	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='test-tier unit'
-
-test-module:
-	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='test-tier module'
-
-test-fuzz:
-	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='test-tier property'
-
 fuzz-long:
 	AXOLOTY_FUZZ_ITERATIONS="$(or $(AXOLOTY_FUZZ_ITERATIONS),100000)" \
 	AXOLOTY_FUZZ_SEEDS="$(if $(AXOLOTY_FUZZ_SEEDS),$(AXOLOTY_FUZZ_SEEDS),1$(COMMA)2$(COMMA)3$(COMMA)4)" \
 	AXOLOTY_FUZZ_REPETITIONS="$(or $(AXOLOTY_FUZZ_REPETITIONS),1)" \
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
-		Tests/Fuzzing/run-fuzz.sh
-
-test-wire:
-	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='wire verify'
+		Tests/Support/Fuzzing/run-fuzz.sh
 
 # Harness self-tests are host-side Shell/JavaScript checks, apart from the
 # Embedded Swift compiler check, which uses the pinned toolchain.
@@ -394,18 +408,16 @@ test-support: resolve
 	Tests/Support/test-embedded-mqtt-client.sh
 	Tests/Support/test-embedded-coatyjs.sh
 	Tests/Support/test-run-container.sh
-	Tests/Fuzzing/test-run-fuzz.sh
-	cd Tests/WireCompatibility/tool && npm ci && npm test
+	Tests/Support/Fuzzing/test-run-fuzz.sh
+	cd Tests/Support/WireCompatibility/tool && npm ci && npm test
 	node --test Tests/Support/*.test.mjs
 	node Tests/Support/validate-test-tiers.mjs Tests/Support/test-tiers.json
 
 test-wire-live:
 	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='wire capture' AXOLOTY_HOST_RUNTIME_BRIDGE=1
 
-test-wire-all: test-wire test-wire-live
-
 wire-tool:
-	cd Tests/WireCompatibility/tool && npm ci && npm test
+	cd Tests/Support/WireCompatibility/tool && npm ci && npm test
 
 # ESP32-C6 embedded toolchain is included in the single dev image.
 # See .devcontainer/Dockerfile and docs/embedded-toolchain.md.
@@ -475,8 +487,6 @@ embedded-network-test:
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
 	.devcontainer/run.sh /workspace/Tests/Support/embedded-network-test.sh
 
-embedded-mqtt-test: embedded-network-test
-
 embedded-agent-test:
 	@test -n "$$AXOLOTY_WIFI_SSID" && test -n "$$AXOLOTY_WIFI_PASSWORD" || { echo 'embedded agent test requires AXOLOTY_WIFI_SSID and AXOLOTY_WIFI_PASSWORD' >&2; exit 2; }
 	@CONTAINER_DEVICES="$${EMBEDDED_DEVICE_A:-/dev/ttyACM0} $${EMBEDDED_DEVICE_B:-/dev/ttyACM1}" CONTAINER_RECLAIM_BUILD_DIR=1 \
@@ -532,11 +542,6 @@ embedded-swift-reproducible-build:
 	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
 	.devcontainer/run.sh /workspace/Tests/Support/embedded-swift-reproducible-build.sh
 
-test-observation-linux: resolve
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh swift test $(SWIFT_LOCKED_ARGS) --filter "ObservationLinuxTests|BroadcastTests"
-
-test-fast: test-unit test-module test-fuzz test-wire test-support test-axoloty-wire-dependencies test-axoloty-wire-independent-resolution test-axoloty-wire-distribution
-
 coverage-resolve: image
 	@mkdir -p "$(SPM_CACHE_DIR)"
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(COVERAGE_BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh .devcontainer/resolve.sh
@@ -561,24 +566,12 @@ coverage: coverage-resolve
 coverage-check: coverage
 	node Tests/Support/coverage-tools.mjs check .testing/coverage/coverage.json Tests/Support/coverage-baseline.json
 
-ci-fast: build test-fast
-
 ci-preflight:
 	@if [ "$${CI:-}" = "true" ] && [ "$(BUILD_LOCK)" != "0" ]; then echo 'CI must set BUILD_LOCK=0 because its workspace-local build directory is not shared' >&2; exit 2; fi
 
 ci: ci-preflight
 	$(MAKE) verify-ci
 	sh Tests/Support/check-decoder-context-diagnostic.sh .testing/coverage/build.log
-
-broker: image
-	@printf '%s\n' 'warning: make broker is deprecated; use make serve-mqtt' >&2
-	@$(CONTAINER_RUNTIME) rm -f $(BROKER_NAME) >/dev/null 2>&1 || true
-	$(CONTAINER_RUNTIME) run -d --name $(BROKER_NAME) -p 1883:1883 $(IMAGE) \
-		mosquitto -c /etc/mosquitto/conf.d/coatyswift.conf
-
-broker-stop:
-	@printf '%s\n' 'warning: make broker-stop is deprecated; use Ctrl-C on make serve-mqtt' >&2
-	$(CONTAINER_RUNTIME) rm -f $(BROKER_NAME)
 
 shell: image
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh bash
