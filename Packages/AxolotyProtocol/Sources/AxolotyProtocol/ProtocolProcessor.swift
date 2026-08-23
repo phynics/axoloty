@@ -10,8 +10,8 @@ public enum ProtocolLocalOperation {
     case deadvertise(sourceID: UUID16, payload: ByteSlice)
     /// Publishes a Channel operation.
     case channel(sourceID: UUID16, payload: ByteSlice, identifier: ByteSlice)
-    /// Publishes an Associate operation.
-    case associate(sourceID: UUID16, payload: ByteSlice)
+    /// Publishes an Associate operation, optionally scoped to an IO context.
+    case associate(sourceID: UUID16, payload: ByteSlice, contextName: ByteSlice?)
     /// Publishes an IoValue operation.
     case ioValue(sourceID: UUID16, payload: ByteSlice)
     /// Publishes a Discover request.
@@ -50,7 +50,11 @@ public enum ProtocolLocalOperation {
                 throw ProtocolError(.malformedFrame)
             }
             self = .channel(sourceID: sourceID, payload: payload, identifier: operationName)
-        case .associate: self = .associate(sourceID: sourceID, payload: payload)
+        case .associate:
+            if let operationName, !Self.isValidTopicLevel(operationName) {
+                throw ProtocolError(.malformedFrame)
+            }
+            self = .associate(sourceID: sourceID, payload: payload, contextName: operationName)
         case .ioValue: self = .ioValue(sourceID: sourceID, payload: payload)
         case .discover: self = .discover(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload, requestTimeoutMS: requestTimeoutMS)
         case .resolve: self = .resolve(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload)
@@ -79,7 +83,7 @@ public enum ProtocolLocalOperation {
     }
     /// The operation's source identity.
     public var sourceID: UUID16 {
-        switch self { case let .advertise(id,_), let .deadvertise(id,_), let .channel(id,_,_), let .associate(id,_), let .ioValue(id,_), let .discover(id,_,_,_), let .resolve(id,_,_), let .query(id,_,_,_), let .retrieve(id,_,_), let .update(id,_,_,_), let .complete(id,_,_), let .call(id,_,_,_,_), let .returnEvent(id,_,_): return id }
+        switch self { case let .advertise(id,_), let .deadvertise(id,_), let .channel(id,_,_), let .associate(id,_,_), let .ioValue(id,_), let .discover(id,_,_,_), let .resolve(id,_,_), let .query(id,_,_,_), let .retrieve(id,_,_), let .update(id,_,_,_), let .complete(id,_,_), let .call(id,_,_,_,_), let .returnEvent(id,_,_): return id }
     }
     /// The operation's optional correlation identity.
     public var correlationID: UUID16? {
@@ -87,16 +91,17 @@ public enum ProtocolLocalOperation {
     }
     /// The operation's borrowed payload.
     public var payload: ByteSlice {
-        switch self { case let .advertise(_,p), let .deadvertise(_,p), let .channel(_,p,_), let .associate(_,p), let .ioValue(_,p), let .discover(_,_,p,_), let .resolve(_,_,p), let .query(_,_,p,_), let .retrieve(_,_,p), let .update(_,_,p,_), let .complete(_,_,p), let .call(_,_,p,_,_), let .returnEvent(_,_,p): return p }
+        switch self { case let .advertise(_,p), let .deadvertise(_,p), let .channel(_,p,_), let .associate(_,p,_), let .ioValue(_,p), let .discover(_,_,p,_), let .resolve(_,_,p), let .query(_,_,p,_), let .retrieve(_,_,p), let .update(_,_,p,_), let .complete(_,_,p), let .call(_,_,p,_,_), let .returnEvent(_,_,p): return p }
     }
     /// The request timeout, when this operation opens a response ledger entry.
     public var requestTimeoutMS: UInt32? {
         switch self { case let .discover(_,_,_,t), let .query(_,_,_,t), let .update(_,_,_,t), let .call(_,_,_,t,_): return t; default: return nil }
     }
-    /// The optional Channel identifier or Call operation topic filter.
+    /// The optional IO context, Channel identifier, or Call operation topic filter.
     public var operationName: ByteSlice? {
         switch self {
         case let .channel(_, _, identifier): return identifier
+        case let .associate(_, _, contextName): return contextName
         case let .call(_, _, _, _, name): return name
         default: return nil
         }
@@ -117,6 +122,9 @@ public enum ProtocolLocalOperation {
         switch capability {
         case .channel:
             guard let operationName else { return false }
+            return Self.isValidTopicLevel(operationName)
+        case .associate:
+            guard let operationName else { return true }
             return Self.isValidTopicLevel(operationName)
         case .call:
             guard let operationName else { return true }
@@ -802,7 +810,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 return (nil, nil)
             }
             return ((coreType, .direct), nil)
-        case .channel, .call:
+        case .channel, .call, .associate:
             return (operation.operationName.map { ($0, .direct) }, nil)
         default:
             return (nil, nil)

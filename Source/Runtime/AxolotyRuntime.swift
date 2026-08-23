@@ -456,7 +456,7 @@ private actor ProtocolExecutor {
             return .rejected(.invalidOperationName)
         }
         if let operationName = operation.operationName,
-           (operation.capability != .call && operation.capability != .channel)
+           (operation.capability != .call && operation.capability != .channel && operation.capability != .associate)
             || !RuntimeOperationValidation.isValidCallOperation(operationName) {
             return .rejected(.invalidOperationName)
         }

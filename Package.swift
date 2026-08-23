@@ -104,7 +104,16 @@ let package = Package(
                 .product(name: "ErrorKit", package: "ErrorKit"),
                 .product(name: "IkigaJSON", package: "swift-json"),
             ],
-            path: "Source"
+            path: "Source",
+            exclude: ["Runtime/AGENTS.md"],
+            sources: [
+                "Common/AxolotyError.swift",
+                "Runtime/AxolotyRuntimeDefinition.swift",
+                "Runtime/AxolotyRuntime.swift",
+                "Runtime/RuntimeSupport.swift",
+                "Runtime/MQTTBinding.swift",
+                "Runtime/RuntimeMQTTClient.swift",
+            ]
         ),
         .testTarget(
             name: "AxolotyTests",
@@ -127,6 +136,7 @@ let package = Package(
                 "ProtocolTrace/ProtocolTrace.swift",
                 "ProtocolTrace/ProtocolTraceCorpus.swift",
                 "ProtocolTrace/ProtocolTraceTests.swift",
+                "WireCompatibility/IO/AxolotyIoAssociateTests.swift",
                 "WireCompatibility/Lifecycle/AxolotyLifecycleSubjectTests.swift",
                 "WireCompatibility/Reverse/AxolotyAdvertiseProducerTests.swift",
                 "WireCompatibility/Reverse/AxolotyAdvertiseConsumerTests.swift",

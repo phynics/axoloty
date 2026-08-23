@@ -382,6 +382,8 @@ test-support: resolve
 	Tests/Support/test-check-g3-object-model-evidence.sh
 	Tests/Support/test-check-axoloty-wire-state-boundary.sh
 	Tests/Support/test-check-axoloty-object-boundary.sh
+	Tests/Support/test-check-g4-runtime-package-boundary.sh
+	Tests/Support/test-check-g4-runtime-consumer-boundary.sh
 	Tests/Support/test-check-axoloty-wire-independent-resolution.sh
 	Tests/Support/test-check-axoloty-wire-distribution.sh
 	Tests/Support/test-check-axoloty-wire-test-isolation.sh
