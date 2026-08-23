@@ -31,10 +31,6 @@ let package = Package(
             name: "AxolotyCoatyModels",
             targets: ["AxolotyCoatyModels"]
         ),
-        .library(
-            name: "AxolotyStaticRuntime",
-            targets: ["AxolotyStaticRuntime"]
-        ),
         .executable(
             name: "axoloty-tool",
             targets: ["AxolotyCLI"]
@@ -59,10 +55,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio-transport-services.git", from: "1.28.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.14.0"),
         .package(url: "https://github.com/FlineDev/ErrorKit.git", exact: "1.2.1"),
-        .package(
-            url: "https://github.com/phynics/swift-json.git",
-            exact: "2.5.3"
-        ),
+        .package(url: "https://github.com/phynics/swift-json.git", exact: "2.5.3"),
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", exact: "0.12.1"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin.git", from: "1.5.0"),
     ],
@@ -90,33 +83,28 @@ let package = Package(
             path: "Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels"
         ),
         .target(
-            name: "AxolotyStaticRuntime",
-            dependencies: ["AxolotyProtocol", "AxolotyWire"],
-            path: "Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntime"
-        ),
-        .target(
             name: "Axoloty",
             dependencies: [
                 "AxolotyWire",
                 "AxolotyProtocol",
-                "AxolotyObjectModel",
                 .product(name: "MQTTNIO", package: "mqtt-nio"),
                 .product(name: "NIO", package: "swift-nio"),
                 .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
-                .product(name: "NIOSSL", package: "swift-nio-ssl", condition: .when(platforms: [.linux])),
-                .product(name: "NIOTransportServices", package: "swift-nio-transport-services", condition: .when(platforms: [.macOS, .iOS])),
+                .product(
+                    name: "NIOSSL",
+                    package: "swift-nio-ssl",
+                    condition: .when(platforms: [.linux])
+                ),
+                .product(
+                    name: "NIOTransportServices",
+                    package: "swift-nio-transport-services",
+                    condition: .when(platforms: [.macOS, .iOS])
+                ),
+                .product(name: "Logging", package: "swift-log"),
                 .product(name: "ErrorKit", package: "ErrorKit"),
+                .product(name: "IkigaJSON", package: "swift-json"),
             ],
-            path: "Source",
-            exclude: ["Runtime/AGENTS.md"],
-            sources: [
-                "Common/AxolotyError.swift",
-                "Runtime/AxolotyRuntimeDefinition.swift",
-                "Runtime/AxolotyRuntime.swift",
-                "Runtime/RuntimeSupport.swift",
-                "Runtime/MQTTBinding.swift",
-                "Runtime/RuntimeMQTTClient.swift",
-            ]
+            path: "Source"
         ),
         .testTarget(
             name: "AxolotyTests",
@@ -130,36 +118,10 @@ let package = Package(
             exclude: [
                 "AGENTS.md",
                 "AxolotyWire",
-                "TESTING.md",
-                "Fuzzing/Artifacts",
-                "Fuzzing/run-fuzz.sh",
-                "Fuzzing/test-run-fuzz.sh",
-                "Support",
-                "WireCompatibility/Audit",
-                "WireCompatibility/Capture",
-                "WireCompatibility/CompatibilityMatrix.md",
-                "WireCompatibility/IO/coatyjs-io-runner.js",
-                "WireCompatibility/IO/Live",
-                "WireCompatibility/Legacy/macOS-runner",
-                "WireCompatibility/Legacy/README.md",
-                "WireCompatibility/Legacy/run-modern-to-legacy.sh",
-                "WireCompatibility/Legacy/run_capture_on_macos.sh",
-                "WireCompatibility/Lifecycle/README.md",
-                "WireCompatibility/Lifecycle/Live",
-                "WireCompatibility/Live",
-                "WireCompatibility/ReferenceAgents",
-                "WireCompatibility/tool",
-                "WireCompatibility/Reverse/Artifacts",
-                "WireCompatibility/Reverse/README.md",
-                "WireCompatibility/Reverse/coatyjs-advertise-consumer.js",
-                "WireCompatibility/Reverse/coatyjs-core-consumer.js",
-                "WireCompatibility/Reverse/run-axoloty-advertise.sh",
-                "WireCompatibility/Reverse/run-axoloty-core.sh",
-                "WireCompatibility/Reverse/run-coatyjs-to-axoloty-advertise.sh",
-                "WireCompatibility/Reverse/run-coatyjs-to-axoloty-core.sh",
-                "WireCompatibility/Reverse/coatyjs-core-requester.js",
-                "WireCompatibility/Reverse/coatyjs-to-modern-requester.js",
                 "ProtocolTrace/README.md",
+                "ProtocolTrace/Fixtures/family-seeds.json",
+                "ProtocolTrace/trace.schema.json",
+                "Support",
             ],
             sources: [
                 "ProtocolTrace/ProtocolTrace.swift",
@@ -204,11 +166,6 @@ let package = Package(
             name: "AxolotyCoatyModelsTests",
             dependencies: ["AxolotyCoatyModels", "AxolotyObjectModel", "AxolotyWire"],
             path: "Packages/AxolotyCoatyModels/Tests/AxolotyCoatyModelsTests"
-        ),
-        .testTarget(
-            name: "AxolotyStaticRuntimeTests",
-            dependencies: ["AxolotyStaticRuntime", "AxolotyProtocol", "AxolotyWire"],
-            path: "Packages/AxolotyStaticRuntime/Tests/AxolotyStaticRuntimeTests"
         ),
         // The tooling control plane. It intentionally has no product-runtime
         // dependencies so it can bootstrap repository workflows independently.
@@ -293,7 +250,13 @@ let package = Package(
         ),
         .executableTarget(
             name: "AxolotyMCPServer",
-            dependencies: ["AxolotyMCP", "AxolotyTooling", "Axoloty", "AxolotyInspectorCore", "AxolotyInspectorRuntime"],
+            dependencies: [
+                "AxolotyMCP",
+                "AxolotyTooling",
+                "Axoloty",
+                "AxolotyInspectorCore",
+                "AxolotyInspectorRuntime",
+            ],
             path: "Tools/axoloty-mcp"
         ),
         // Build-only release consumers for binary-size and dependency-closure
@@ -317,17 +280,17 @@ let package = Package(
         // can measure its incremental contribution to binary size.
         .executableTarget(
             name: "CommunicationConsumer",
-            dependencies: ["AxolotyProtocol"],
+            dependencies: ["Axoloty"],
             path: "Benchmarks/Consumers/CommunicationConsumer"
         ),
         .executableTarget(
             name: "IoRoutingConsumer",
-            dependencies: ["AxolotyObjectModel"],
+            dependencies: ["Axoloty"],
             path: "Benchmarks/Consumers/IoRoutingConsumer"
         ),
         .executableTarget(
             name: "SensorThingsConsumer",
-            dependencies: ["AxolotyObjectModel"],
+            dependencies: ["Axoloty"],
             path: "Benchmarks/Consumers/SensorThingsConsumer"
         ),
         // Release-only wire benchmark executable (issue #300). Measures

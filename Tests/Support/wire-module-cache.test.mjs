@@ -8,14 +8,14 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const subjectScripts = [
-  "Tests/WireCompatibility/IO/Live/run-io-associate-js-to-modern.sh",
-  "Tests/WireCompatibility/IO/Live/run-io-associate.sh",
-  "Tests/WireCompatibility/Lifecycle/Live/run-lifecycle-call-return.sh",
-  "Tests/WireCompatibility/Lifecycle/Live/run-lifecycle-network.sh",
-  "Tests/WireCompatibility/Reverse/run-axoloty-advertise.sh",
-  "Tests/WireCompatibility/Reverse/run-axoloty-core.sh",
-  "Tests/WireCompatibility/Reverse/run-coatyjs-to-axoloty-advertise.sh",
-  "Tests/WireCompatibility/Reverse/run-coatyjs-to-axoloty-core.sh",
+  "Tests/Support/WireCompatibility/IO/Live/run-io-associate-js-to-modern.sh",
+  "Tests/Support/WireCompatibility/IO/Live/run-io-associate.sh",
+  "Tests/Support/WireCompatibility/Lifecycle/Live/run-lifecycle-call-return.sh",
+  "Tests/Support/WireCompatibility/Lifecycle/Live/run-lifecycle-network.sh",
+  "Tests/Support/WireCompatibility/Reverse/run-axoloty-advertise.sh",
+  "Tests/Support/WireCompatibility/Reverse/run-axoloty-core.sh",
+  "Tests/Support/WireCompatibility/Reverse/run-coatyjs-to-axoloty-advertise.sh",
+  "Tests/Support/WireCompatibility/Reverse/run-coatyjs-to-axoloty-core.sh",
 ];
 
 test("nested live-wire Swift commands isolate their module cache", () => {

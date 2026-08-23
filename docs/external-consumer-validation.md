@@ -111,6 +111,6 @@ from the host runtime, rather than dependency-free at package resolution.
 - **macOS:** Not validated on this host (Linux only). The package declares
   macOS 26.0+ and uses NIOTransportServices (Network.framework) on Apple
   platforms. Manual macOS oracle verification is documented in
-  `Tests/TESTING.md`.
+  `docs/testing.md`.
 - **iOS:** Not validated. Declared in Package.swift (iOS 26.0+) and shares
   the Apple-platform code path with macOS. Zero dedicated test coverage.

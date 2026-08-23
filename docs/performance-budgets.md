@@ -252,7 +252,7 @@ make benchmark-wire-allocation
 make benchmark-size
 make benchmark-wire-bounds
 make benchmark-wire-device
-make test-wire-all
+make test-wire test-wire-live
 sh Tests/Support/check-budget-manifest.sh
 sh Tests/Support/test-check-budget-manifest.sh
 sh Tests/Support/check-benchmark-wire-allocation.sh

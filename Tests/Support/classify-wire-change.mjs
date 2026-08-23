@@ -4,14 +4,15 @@
 //
 // This is the single source of truth for which paths carry live wire
 // semantics (issue #457). Keep `PROTOCOL_AFFECTING` rules in sync with
-// `Tests/WireCompatibility/CompatibilityMatrix.md`.
+// `docs/wire-compatibility.md`.
 
 import { fileURLToPath } from "node:url";
 
 export const PROTOCOL_AFFECTING = [
   { glob: "Packages/AxolotyWire/**", description: "AxolotyWire codec and routing" },
   { glob: "Source/**", description: "host wire codecs, events, core types, IO, SensorThings" },
-  { glob: "Tests/WireCompatibility/**", description: "wire fixtures, reference agents, scenarios" },
+  { glob: "Tests/WireCompatibility/**", description: "wire Swift tests and fixtures" },
+  { glob: "Tests/Support/WireCompatibility/**", description: "wire scenarios, reference agents, and tooling" },
   { glob: "Tests/AxolotyWire/**", description: "wire codec tests" },
   { glob: "Package.swift", description: "package manifest" },
   { glob: "Package.resolved", description: "resolved dependency graph" },
@@ -28,7 +29,7 @@ export const PROTOCOL_AFFECTING = [
 // live gate.
 export const NON_PROTOCOL_EXCLUSIONS = [
   "Source/Axoloty.docc/**",
-  "Tests/WireCompatibility/Audit/**",
+  "Tests/Support/WireCompatibility/Audit/**",
 ];
 
 function globToRegex(glob) {
@@ -47,7 +48,8 @@ function isExcluded(normalized) {
   }
   // Documentation and decision records under the wire tree are not wire
   // evidence; executable fixtures and scenario code are.
-  if (normalized.startsWith("Tests/WireCompatibility/")
+  if ((normalized.startsWith("Tests/WireCompatibility/")
+      || normalized.startsWith("Tests/Support/WireCompatibility/"))
       && /\.(md|rst)$/.test(normalized)) {
     return true;
   }

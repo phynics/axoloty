@@ -2,7 +2,6 @@
 
 import AxolotyWire
 import AxolotyProtocol
-import AxolotyStaticRuntime
 
 @inline(__always)
 private func staticDeviceAgentNoop(
@@ -86,8 +85,10 @@ struct StaticDeviceAgent: ~Copyable {
     let agentId: UUID16
     let deviceObjectId: UUID16
     private(set) var hasAdvertisedPeer = false
-    private var runtime: AxolotyStaticRuntime
+    private var processor: ProtocolProcessor<16>
     private let routeClassifier: ExactProtocolRouteClassifier
+    private var subscriptions: ProtocolSubscriptionRegistry<16>
+    private var actionSink = InlineProtocolActionSink<16>()
 
     /// The object-type filter the device advertises with and discovers under.
     /// Matches the `ADV:<filter>` topic bytes after the `:` separator and the
@@ -104,18 +105,20 @@ struct StaticDeviceAgent: ~Copyable {
         self.routeClassifier = ExactProtocolRouteClassifier(
             externalRoute: "external/wire-compat-v1/io-external-1"
         )
-        self.runtime = AxolotyStaticRuntime(capabilities: .coatyCore3, maximumPayloadBytes: 512)
+        self.processor = ProtocolProcessor<16>(capabilities: .coatyCore3, maximumPayloadBytes: 512)
         let isA = agentId == Self.agentAId
+        self.subscriptions = ProtocolSubscriptionRegistry<16>()
+        self.actionSink = InlineProtocolActionSink<16>()
         let actorId = isA ? Self.actorAId : Self.actorBId
-        _ = try! self.runtime.register(
+        _ = try! self.subscriptions.register(
             selector: .ioActor(actorId),
             handler: ProtocolHandlerEntry(function: staticDeviceAgentNoop, context: 0)
         )
     }
 
     /// Starts a bounded Discover request through the processor's outbound
-    /// operation seam. The caller-owned action is synchronously drained so
-    /// the processor remains the only source of protocol acceptance.
+    /// operation seam. The emitted action is discarded by this firmware-only
+    /// convenience because the transport already owns the encoded buffers.
     mutating func beginDiscover(correlationId: UUID16, nowMS: UInt32) -> Bool {
         let payloadText: StaticString = "{}"
         let payload = ByteSlice(bytes: payloadText.utf8Start, length: payloadText.utf8CodeUnitCount)
@@ -126,10 +129,10 @@ struct StaticDeviceAgent: ~Copyable {
             payload: payload,
             requestTimeoutMS: Self.discoverTimeoutMS
         ) else { return false }
-        let outcome = runtime.send(operation, nowMS: nowMS)
-        var emitted = false
-        _ = runtime.drain { action in emitted = emitted || action.kind == .publish }
-        return outcome == .accepted && emitted
+        actionSink.removeAll()
+        let outcome = processor.processOutbound(operation, nowMS: nowMS, sink: &actionSink)
+        actionSink.removeAll()
+        return outcome == .accepted
     }
 
     /// Expires the outstanding Discover once its deadline has passed.
@@ -137,7 +140,7 @@ struct StaticDeviceAgent: ~Copyable {
     /// Time is supplied by the caller so this static processor remains
     /// deterministic and does not need an asynchronous task.
     mutating func expireDiscover(nowMS: UInt32) -> Bool {
-        runtime.expire(nowMS: nowMS)
+        processor.expire(nowMS: nowMS)
     }
 
     mutating func dispatch(_ message: BorrowedMessage, nowMS: UInt32) -> StaticDeviceDispatchResult {
@@ -149,7 +152,10 @@ struct StaticDeviceAgent: ~Copyable {
         guard let frame = try? BorrowedProtocolFrame(topic: message.topic, payload: message.payload) else {
             return .malformed
         }
-        let outcome = runtime.receive(frame, nowMS: nowMS, classifier: routeClassifier)
+        actionSink.removeAll()
+        let outcome = processor.processInbound(
+            frame, nowMS: nowMS, classifier: routeClassifier, sink: &actionSink
+        )
         guard outcome == .accepted else {
             switch outcome {
             case .ignored: return .unsupported
@@ -159,15 +165,17 @@ struct StaticDeviceAgent: ~Copyable {
             }
         }
 
+        guard let action = actionSink[0] else { return .malformed }
         let actorId = agentId == Self.agentAId ? Self.actorAId : Self.actorBId
         var actorDelivery = false
-        var actionKind: ProtocolActionKind?
-        _ = runtime.drain { deliveredAction in
-            actionKind = actionKind ?? deliveredAction.kind
-            actorDelivery = actorDelivery || deliveredAction.deliveryKey.isActor(actorId: actorId)
+        for index in 0..<actionSink.count {
+            if let deliveredAction = actionSink[index] {
+                _ = subscriptions.dispatch(deliveredAction)
+                actorDelivery = actorDelivery || deliveredAction.deliveryKey.isActor(actorId: actorId)
+            }
         }
-        guard let actionKind else { return .malformed }
-        switch actionKind {
+        actionSink.removeAll()
+        switch action.kind {
         case .associate: return actorDelivery ? .ioActorAssociated : .ioSourceAssociated
         case .disassociate: return actorDelivery ? .ioActorDisassociated : .ioSourceDisassociated
         default: break
@@ -192,13 +200,22 @@ struct StaticDeviceAgent: ~Copyable {
         _ value: T,
         eventType: WireEventType,
         correlationId: UUID16?,
-        eventTypeFilter: ByteSlice? = nil,
-        nowMS: UInt32,
         topicBuffer: UnsafeMutablePointer<UInt8>,
         topicCapacity: Int,
         payloadBuffer: UnsafeMutablePointer<UInt8>,
         payloadCapacity: Int
     ) throws(WireEncodeError) -> (topicLength: Int, payloadLength: Int) {
+        var topic = TopicBuilder(buffer: topicBuffer, capacity: topicCapacity)
+        try topic.writePrefix()
+        try topic.writeNamespace(Self.namespace)
+        let objectTypeFilter: StaticString = "coaty.test.Device"
+        let filter = eventType == .advertise
+            ? ByteSlice(bytes: objectTypeFilter.utf8Start, length: objectTypeFilter.utf8CodeUnitCount)
+            : nil
+        try topic.writeEventType(eventType, filter: filter)
+        try topic.writeSourceId(agentId)
+        if let correlationId { try topic.writeCorrelationId(correlationId) }
+
         var payload = WireWriter(buffer: payloadBuffer, capacity: payloadCapacity)
         try value.encode(to: &payload)
         let borrowedPayload = ByteSlice(bytes: payloadBuffer, length: payload.position)
@@ -209,48 +226,15 @@ struct StaticDeviceAgent: ~Copyable {
             sourceID: agentId,
             correlationID: correlationId,
             payload: borrowedPayload,
-            requestTimeoutMS: eventType == .discover ? Self.discoverTimeoutMS : nil,
-            operationName: eventTypeFilter
+            requestTimeoutMS: eventType == .discover ? Self.discoverTimeoutMS : nil
         ) else { throw .invalidValue }
-        let outcome = runtime.send(operation, nowMS: nowMS, classifier: routeClassifier)
-        var materialized = false
-        var outputTopicLength = 0
-        var outputPayloadLength = 0
-        _ = runtime.drain { action in
-            let isObjectTypeAdvertise = eventType == .advertise
-                && action.eventTypeFilterKind == .objectType
-            let isFallbackPublication = !materialized && action.isApplicationDelivery
-            guard action.kind == .publish,
-                  isObjectTypeAdvertise || isFallbackPublication else { return }
-            var topic = TopicBuilder(buffer: topicBuffer, capacity: topicCapacity)
-            guard (try? topic.writePrefix()) != nil,
-                  (try? topic.writeNamespace(Self.namespace)) != nil else { return }
-            guard (try? topic.writeEventType(
-                eventType,
-                // The static compatibility profile emits one flattened
-                // Advertise route even when the shared processor exposes the
-                // host binding's canonical object-type variant.
-                filter: action.eventTypeFilter
-            )) != nil,
-                  (try? topic.writeSourceId(action.routingKey.sourceID)) != nil else { return }
-            if let correlation = action.routingKey.correlationID,
-               (try? topic.writeCorrelationId(correlation)) == nil { return }
-            let copiedLength = action.payload.withBytes { pointer, length -> Int? in
-                guard length <= payloadCapacity else { return nil }
-                for index in 0..<length {
-                    payloadBuffer[index] = pointer.assumingMemoryBound(to: UInt8.self)[index]
-                }
-                return length
-            }
-            guard let copiedLength else { return }
-            outputTopicLength = topic.position
-            outputPayloadLength = copiedLength
-            materialized = true
-        }
-        guard outcome == .accepted, materialized else {
+        var actionSink = InlineProtocolActionSink<1>()
+        let outcome = processor.processOutbound(operation, classifier: routeClassifier, sink: &actionSink)
+        actionSink.removeAll()
+        guard outcome == .accepted else {
             throw .invalidValue
         }
-        return (outputTopicLength, outputPayloadLength)
+        return (topic.position, payload.position)
     }
 
     /// Copies the currently associated local actor route into fixed caller
@@ -259,7 +243,7 @@ struct StaticDeviceAgent: ~Copyable {
         to output: UnsafeMutablePointer<UInt8>, capacity: Int
     ) -> Int? {
         let actorId = agentId == Self.agentAId ? Self.actorAId : Self.actorBId
-        return runtime.copyActorRoute(actorId: actorId, to: output, capacity: capacity)
+        return processor.copyActorRoute(actorId: actorId, to: output, capacity: capacity)
     }
 }
 
@@ -279,7 +263,7 @@ private var phase4AgentB = StaticDeviceAgent(
 )
 
 @inline(__always)
-func phase4NowMS() -> UInt32 {
+private func phase4NowMS() -> UInt32 {
     UInt32(truncatingIfNeeded: esp_timer_get_time() / 1_000)
 }
 
@@ -288,7 +272,6 @@ private func phase4Encode<T: WireEncodable>(
     value: T,
     eventType: WireEventType,
     correlationId: UUID16?,
-    eventTypeFilter: ByteSlice? = nil,
     topicBuffer: UnsafeMutablePointer<UInt8>,
     topicCapacity: Int32,
     payloadBuffer: UnsafeMutablePointer<UInt8>,
@@ -297,14 +280,12 @@ private func phase4Encode<T: WireEncodable>(
     if role == 1 {
         return try phase4AgentA.encode(
             value, eventType: eventType, correlationId: correlationId,
-            eventTypeFilter: eventTypeFilter, nowMS: phase4NowMS(),
             topicBuffer: topicBuffer, topicCapacity: Int(topicCapacity),
             payloadBuffer: payloadBuffer, payloadCapacity: Int(payloadCapacity)
         )
     }
     return try phase4AgentB.encode(
         value, eventType: eventType, correlationId: correlationId,
-        eventTypeFilter: eventTypeFilter, nowMS: phase4NowMS(),
         topicBuffer: topicBuffer, topicCapacity: Int(topicCapacity),
         payloadBuffer: payloadBuffer, payloadCapacity: Int(payloadCapacity)
     )

@@ -6,7 +6,7 @@ This guide applies to `Tests/`. The root [`AGENTS.md`](../AGENTS.md) rules apply
 
 ## Specialized rules
 
-[`TESTING.md`](./TESTING.md) and the canonical manifest own test tiers, policies, and compatibility aliases. Use root Make targets; do not reproduce container invocations.
+[`docs/testing.md`](../docs/testing.md) and the canonical manifest own test tiers, policies, and compatibility aliases. Use root Make targets; do not reproduce container invocations.
 
 Swift tests use Swift Testing: `import Testing`, `@Test`, `#expect`, `#require`, and `Issue.record`. Broker-backed tests synchronize with Swift concurrency primitives or explicit deadlines. Ordinary tests are hardware-free.
 

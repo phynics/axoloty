@@ -5,7 +5,7 @@ import Foundation
 import Testing
 
 /// Decodes real, provenance-bound CoatySwift 2.4.0 captures generated on a
-/// macOS host by `Tests/WireCompatibility/Legacy/run_capture_on_macos.sh` and
+/// macOS host by `Tests/Support/WireCompatibility/Legacy/run_capture_on_macos.sh` and
 /// committed under `Tests/WireCompatibility/Fixtures/coatyswift-2.4.0/`.
 ///
 /// Unlike `WireFixtureTests`, which only exercises the harness against a

@@ -321,9 +321,9 @@ func app_main() -> Int32 {
     record("malformed:number", reader(#"{"value":1e}"#).readInt("value") == nil)
     record("malformed:missing", reader(#"{"other":1}"#).readString("name") == nil)
     record("malformed:unknown", reader(#"{"unknown":1}"#).readString("name") == nil)
-    record("malformed:duplicate", reader(#"{"name":1,"name":2}"#).readString("name") != nil)
+    record("malformed:duplicate", reader(#"{"name":1,"name":2}"#).readString("name") == nil)
     record("malformed:reordered", reader(#"{"value":1,"name":"x"}"#).readString("name") != nil)
-    record("malformed:trailing", reader(#"{"value":1}x"#).readInt("value") != nil)
+    record("malformed:trailing", reader(#"{"value":1}x"#).readInt("value") == nil)
     record("malformed:nesting", reader(#"{"value":{"x":[1,2]}}"#).readRaw("value") != nil)
 
     withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 32) { payload in

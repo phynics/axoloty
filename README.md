@@ -175,7 +175,7 @@ macOS runs the same offline plan with native Swift:
 
 ```sh
 make worktree-bootstrap  # resolve dependencies into the shared SwiftPM cache
-make check               # Linux: offline host, wire, and embedded checks
+make verify              # Linux: canonical ordinary verification
 make hardware-check      # run or skip the sporadically attached ESP32-C6
 make hardware-require    # require the ESP32-C6 for an explicit release gate
 make release-fixture-bundle   # bundle committed wire fixtures offline (not fresh wire evidence)
