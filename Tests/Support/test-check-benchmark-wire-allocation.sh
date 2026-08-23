@@ -32,8 +32,8 @@ check "WireAllocation target exists in Package.swift" \
 check "probe runs a decode + dispatch hot path" \
     grep -q 'AssociateWireData(from: message.reader())' "$ROOT/Benchmarks/WireAllocation/main.swift"
 
-check "probe dispatches through EmbeddedMessageRouter" \
-    grep -q 'router.dispatch(message)' "$ROOT/Benchmarks/WireAllocation/main.swift"
+check "probe dispatches through ProtocolProcessor" \
+    grep -q 'processor.processInbound' "$ROOT/Benchmarks/WireAllocation/main.swift"
 
 check "check script requires heaptrack" \
     grep -q 'command -v heaptrack' "$SCRIPT_DIR/check-benchmark-wire-allocation.sh"

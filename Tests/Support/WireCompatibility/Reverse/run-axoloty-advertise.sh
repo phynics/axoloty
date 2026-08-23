@@ -23,6 +23,7 @@ CACHE_NAMESPACE="${CACHE_NAMESPACE:-swift-6.3-linux}"
 REPOSITORY_NAME="${REPOSITORY_NAME:-$(git -C "$ROOT_DIR" rev-parse --git-common-dir | sed 's|/.git$||' | xargs basename)}"
 BUILD_DIR="${BUILD_DIR:-/tmp/coaty-swift-build/$REPOSITORY_NAME/$CACHE_NAMESPACE/debug}"
 SPM_CACHE_DIR="${SPM_CACHE_DIR:-$HOME/.cache/coaty-swift/swiftpm/$CACHE_NAMESPACE}"
+SWIFTPM_MODULECACHE_OVERRIDE=/tmp/axoloty-wire-module-cache
 
 cleanup() {
     runtime rm -f "$CONSUMER" "$PROBE" "$BROKER" >/dev/null 2>&1 || true
@@ -68,7 +69,9 @@ grep -q '"state":"ready"' "$CONSUMER_LOG" || { cat "$CONSUMER_LOG" >&2; exit 1; 
 runtime run --rm --network "$NETWORK" -v "$ROOT_DIR:/workspace" -v "$BUILD_DIR:/workspace/.build" -v "$SPM_CACHE_DIR:/swiftpm-cache" -w /workspace \
     -e WIRE_REVERSE_LIVE=1 -e WIRE_BROKER_HOST="$BROKER" \
     -e WIRE_BROKER_PORT=1883 -e WIRE_NAMESPACE=wire-compat-v1 \
-    "$DEV_IMAGE" swift test --skip-build --cache-path /swiftpm-cache --disable-automatic-resolution --filter AxolotyAdvertiseProducerTests
+    -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
+    "$DEV_IMAGE" swift test -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
+    --skip-build --cache-path /swiftpm-cache --disable-automatic-resolution --filter AxolotyAdvertiseProducerTests
 
 sleep 0.5
 runtime stop -t 1 "$PROBE" >/dev/null || true

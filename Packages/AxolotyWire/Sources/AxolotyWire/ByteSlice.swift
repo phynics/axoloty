@@ -50,6 +50,26 @@ public struct ByteSlice: Equatable, Hashable {
         return true
     }
 
+    /// Compares JSON string content using escape-aware scalar semantics.
+    public func semanticEquals(_ staticString: StaticString) -> Bool {
+        withBytes { pointer, count in
+            var first = WireKeyCursor(bytes: pointer, range: 0..<count, decodesEscapes: true)
+            var second = WireKeyCursor(key: staticString)
+            return wireSemanticKeysEqual(&first, &second)
+        }
+    }
+
+    /// Compares two JSON string contents using escape-aware scalar semantics.
+    public func semanticEquals(_ other: ByteSlice) -> Bool {
+        withBytes { firstPointer, firstCount in
+            other.withBytes { secondPointer, secondCount in
+                var first = WireKeyCursor(bytes: firstPointer, range: 0..<firstCount, decodesEscapes: true)
+                var second = WireKeyCursor(bytes: secondPointer, range: 0..<secondCount, decodesEscapes: true)
+                return wireSemanticKeysEqual(&first, &second)
+            }
+        }
+    }
+
     /// Returns the index of the first occurrence of `target`, or nil if absent.
     ///
     /// This is distinct from the slicing `findByte(_:)` helper used by topic
@@ -117,6 +137,84 @@ public struct ByteSlice: Equatable, Hashable {
     public func hash(into hasher: inout Hasher) {
         for i in 0..<length {
             hasher.combine(pointer.load(fromByteOffset: i, as: UInt8.self))
+        }
+    }
+}
+
+extension ByteSlice {
+    /// Runs a synchronous callback with a noncopyable view of this value.
+    public func withBorrowedWireValue(_ body: (borrowing WireValueView) -> Void) {
+        withBytes { pointer, count in
+            let reader = WireValueReader(bytes: pointer, length: count)
+            reader.withBorrowedValue(body)
+        }
+    }
+
+    /// Borrows direct array elements without exposing the tokenizer reader.
+    public func withBorrowedArrayElements(
+        _ body: (borrowing WireValueView) -> Void
+    ) throws(WireDecodeError) {
+        var failure: WireDecodeError?
+        withBytes { pointer, count in
+            let reader = WireValueReader(bytes: pointer, length: count)
+            do throws(WireDecodeError) { try reader.withBorrowedArrayElements(body) }
+            catch { failure = error }
+        }
+        if let failure { throw failure }
+    }
+
+    /// Borrows direct object fields without exposing the tokenizer reader.
+    public func withBorrowedObjectFields(
+        _ body: (borrowing WireObjectField) -> Void
+    ) throws(WireDecodeError) {
+        var failure: WireDecodeError?
+        withBytes { pointer, count in
+            let reader = WireValueReader(bytes: pointer, length: count)
+            do throws(WireDecodeError) { try reader.withObjectFields(body) }
+            catch { failure = error }
+        }
+        if let failure { throw failure }
+    }
+
+    /// Visits decoded Unicode scalars through the compatibility wire seam.
+    public func withStringScalars(_ body: (UInt32) -> Void) throws(WireDecodeError) {
+        var failure: WireDecodeError?
+        withBytes { pointer, count in
+            let reader = WireValueReader(bytes: pointer, length: count)
+            do throws(WireDecodeError) { try reader.withStringScalars(body) }
+            catch { failure = error }
+        }
+        if let failure { throw failure }
+    }
+
+    /// Borrows direct array elements through the copyable compatibility seam.
+    public func withArrayElements(_ body: (ByteSlice) -> Void) throws(WireDecodeError) {
+        var failure: WireDecodeError?
+        withBytes { pointer, count in
+            let reader = WireValueReader(bytes: pointer, length: count)
+            do throws(WireDecodeError) { try reader.withArrayElements(body) }
+            catch { failure = error }
+        }
+        if let failure { throw failure }
+    }
+
+    /// Borrows direct object fields through the copyable compatibility seam.
+    public func withObjectFields(_ body: (borrowing WireObjectField) -> Void) throws(WireDecodeError) {
+        try withBorrowedObjectFields(body)
+    }
+
+    /// The lexical kind of this complete JSON value.
+    public var wireValueKind: WireValueKind {
+        guard let byte = byte(at: 0) else { return .invalid }
+        switch byte {
+        case 0x7B: return .object
+        case 0x5B: return .array
+        case 0x22: return .string
+        case 0x2D, 0x30...0x39: return .number
+        case 0x74: return .trueValue
+        case 0x66: return .falseValue
+        case 0x6E: return .null
+        default: return .invalid
         }
     }
 }

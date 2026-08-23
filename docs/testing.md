@@ -26,6 +26,15 @@ is unmapped or owned by more than one target. It does not invoke Swift; run it
 through `make test-support` for the standard Makefile path. Build and test
 execution must always use the root Makefile and Podman.
 
+The required G3 object-model gates include the portable package graph and
+`g3-object-boundary`. `Tests/Support/check-axoloty-object-boundary.sh`
+checks the production packages and their Embedded Swift source inclusion; its
+paired `test-check-axoloty-object-boundary.sh` uses a synthetic fixture to prove that
+Foundation, MQTT/NIO, logging, actors/controllers/lifecycle, growable
+`Array`/`Dictionary`, global mutable state, forbidden manifest dependencies,
+and missing source inclusion are rejected. The same boundary policy is
+enforced by ordinary verification and the release checkpoint.
+
 ## Canonical `axoloty-tool` workflow
 
 The Swift `axoloty-tool` executable is the in-progress replacement for build and test
@@ -62,6 +71,19 @@ Linux-only ESP-IDF nodes. This is an explicit platform capability difference,
 not a silent skip. MQTT-backed integration remains a separate tier; wire parser
 correctness never requires a broker.
 
+The G3 object-model foundation is a required canonical tier. Run
+`axoloty-tool test-tier g3-object-model` (or invoke the standalone package
+directly) to validate the bounded model tests, schema/model packages, and
+source/dependency boundary. Its host, sanitized, and Linux-only embedded
+cross-build evidence nodes are included in the required verification and
+release-checkpoint plans; platform filtering omits the embedded node on macOS.
+The embedded Swift image compiles the same sources through the
+`axoloty_object_model` ESP-IDF component and the static main consumer imports
+`AxolotyObjectModel` to prove module discovery and linkage.
+The required G3 evidence nodes additionally record measured layouts, heaptrack
+allocation growth, deterministic edit/read behavior, sanitizer results, and
+release size/timing under `.testing/g3-object-model/<candidate-sha>/`.
+
 ## Command-to-tier map
 
 Tiers with a direct Make target record it in the contract. The manual macOS
@@ -73,6 +95,7 @@ separate from protocol-scenario execution.
 | Smoke | `make build` | yes | Proves the package compiles and links |
 | Unit | `make test-unit` | yes | `ObjectMatcherTests` |
 | Module | `make test-module` | yes | Topic, payload, registry, and configuration module tests |
+| G3 boundary | `axoloty-tool` manifest node `g3-object-boundary` | no | Portable object-model dependency and Embedded Swift source-inclusion authority check |
 | Property | `make test-fuzz` | yes | Seeded `DeterministicFuzzTests` |
 | Integration | `make test` | yes | Full suite against a fresh Mosquitto |
 | Wire offline | `make test-wire` | yes | `WireFixtureTests` and lifecycle scenarios |

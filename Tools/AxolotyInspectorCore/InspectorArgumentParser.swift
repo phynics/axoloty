@@ -17,7 +17,7 @@ public enum InspectorParseOutcome: Equatable, Sendable {
 /// A bounded, pure parser for the inspector command surface.
 public struct InspectorArgumentParser: Sendable {
     /// The inspector version string.
-    public static let version = "0.5.0"
+    public static let version = "0.5.1"
 
     /// The help text printed for `--help` or unknown commands.
     public static let helpText = """

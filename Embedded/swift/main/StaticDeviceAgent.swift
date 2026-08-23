@@ -1,6 +1,14 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import AxolotyWire
+import AxolotyProtocol
+
+@inline(__always)
+private func staticDeviceAgentNoop(
+    _: UInt32,
+    _: UnsafePointer<UInt8>?, _: Int,
+    _: UnsafePointer<UInt8>?, _: Int
+) {}
 
 enum StaticDeviceDispatchResult: Equatable {
     case advertise
@@ -18,25 +26,22 @@ enum StaticDeviceDispatchResult: Equatable {
     case ioValueDelivered
 }
 
+private extension ProtocolDeliveryKey {
+    func isActor(actorId: UUID16) -> Bool {
+        if case .ioActor(let candidate) = self { return candidate == actorId }
+        return false
+    }
+}
+
 /// The production static device-agent ingress for the embedded firmware.
 ///
-/// This type owns an ``EmbeddedMessageRouter`` and routes every supported
-/// non-correlated event family through it (issue #493): Discover and Associate
-/// on the flat per-event-type tables, Advertise and Deadvertise on the
-/// advertise family, and IoValue on the dedicated IoValue table. Dispatching a
-/// ``BorrowedMessage`` therefore flows through the generic router's
-/// ``StaticDispatchTable``/``StaticFamilyTable`` seam instead of a hand-rolled
-/// per-event switch. The agent keeps the single-outstanding-Discover
-/// correlation state machine greedy for Resolve because the generic router's
-/// correlation-keyed response family cannot express rejecting a Resolve whose
-/// correlation ID does not match (see ``dispatch(_:nowMS:)``).
+/// This type delegates protocol decisions to the shared fixed-inline
+/// ``ProtocolProcessor``. Endpoint callbacks remain caller-owned firmware
+/// state; the processor owns correlation, capacity, and association semantics.
 ///
-/// The class is `@unchecked Sendable` and intentionally non-`Sendable` in the
-/// strict sense of the router: it is a fixed-phase singleton owned by the
-/// firmware and mutated only from one synchronous dispatch context. Router
-/// handler closures capture it strongly for the lifetime of the firmware, which
-/// forms a benign cycle with the owned router and requires no external retain.
-final class StaticDeviceAgent: @unchecked Sendable {
+/// The value is intentionally non-`Sendable`: one firmware callback owns and
+/// mutates it synchronously. Transport callbacks remain outside this module.
+struct StaticDeviceAgent: ~Copyable {
     static let agentAId = UUID16(bytes: (
         0x32, 0x40, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00,
         0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01
@@ -80,12 +85,10 @@ final class StaticDeviceAgent: @unchecked Sendable {
     let agentId: UUID16
     let deviceObjectId: UUID16
     private(set) var hasAdvertisedPeer = false
-    private var pendingCorrelation: UUID16?
-    private var pendingDeadlineMS: UInt32?
-    private var resolvedCorrelation: UUID16?
-    private var ioEndpoints: StaticIoEndpoints
-    private let router: EmbeddedMessageRouter
-    private var routedOutcome: StaticDeviceDispatchResult = .unsupported
+    private var processor: ProtocolProcessor<16>
+    private let routeClassifier: ExactProtocolRouteClassifier
+    private var subscriptions: ProtocolSubscriptionRegistry<16>
+    private var actionSink = InlineProtocolActionSink<16>()
 
     /// The object-type filter the device advertises with and discovers under.
     /// Matches the `ADV:<filter>` topic bytes after the `:` separator and the
@@ -99,161 +102,101 @@ final class StaticDeviceAgent: @unchecked Sendable {
     init(agentId: UUID16 = StaticDeviceAgent.agentAId, deviceObjectId: UUID16 = StaticDeviceAgent.objectAId) {
         self.agentId = agentId
         self.deviceObjectId = deviceObjectId
-        let isA = agentId == Self.agentAId
-        // Endpoint counts are bounded startup constants; construction is
-        // expected to succeed for the fixed firmware profile.
-        self.ioEndpoints = try! StaticIoEndpoints(
-            sources: [StaticIoEndpointDescriptor(
-                id: isA ? Self.sourceAId : Self.sourceBId,
-                valueType: "com.axoloty.embedded.StaticIoValue",
-                mode: .json
-            )],
-            actors: [StaticIoEndpointDescriptor(
-                id: isA ? Self.actorAId : Self.actorBId,
-                valueType: "com.axoloty.embedded.StaticIoValue",
-                mode: .json
-            )],
-            // Application firmware replaces this fixed synchronous callback
-            // with its sensor/actuator action. It must not retain the borrow.
-            actorHandlers: [{ _ in }]
+        self.routeClassifier = ExactProtocolRouteClassifier(
+            externalRoute: "external/wire-compat-v1/io-external-1"
         )
-        self.router = try! EmbeddedMessageRouter()
-        installIngressHandlers()
+        self.processor = ProtocolProcessor<16>(capabilities: .coatyCore3, maximumPayloadBytes: 512)
+        let isA = agentId == Self.agentAId
+        self.subscriptions = ProtocolSubscriptionRegistry<16>()
+        self.actionSink = InlineProtocolActionSink<16>()
+        let actorId = isA ? Self.actorAId : Self.actorBId
+        _ = try! self.subscriptions.register(
+            selector: .ioActor(actorId),
+            handler: ProtocolHandlerEntry(function: staticDeviceAgentNoop, context: 0)
+        )
     }
 
-    /// Registers the supported ingress event families on the owned generic
-    /// router (issue #493) so dispatch flows through ``EmbeddedMessageRouter``.
-    ///
-    /// - Discover and Associate use the flat per-event-type tables.
-    /// - Advertise and Deadvertise use the advertise family keyed by
-    ///   ``deviceFilter``. A filterless publish and every Deadvertise fan out
-    ///   through ``StaticFamilyTable``'s `dispatchAll`; a matching-filter
-    ///   advertise routes through the byte-slice filter lookup.
-    /// - IoValue uses the dedicated IoValue table.
-    ///
-    /// Each handler stores the outcome it selected into ``routedOutcome`` so
-    /// ``dispatch(_:nowMS:)`` can report it back to the C ingress bridge while
-    /// still pushing the routing decision through the generic seam.
-    private func installIngressHandlers() {
-        router.subscribe(.discover) { [self] message in
-            guard let discover = try? DiscoverWireData(from: message.reader()) else {
-                self.routedOutcome = .malformed
-                return
-            }
-            let matchesObjectId = discover.objectId?.equals(
-                "32400000-0000-4000-8000-000000000002"
-            ) ?? false
-            let matchesObjectType = discover.objectTypes?.equals(
-                "[\"coaty.test.Device\"]"
-            ) ?? false
-            guard matchesObjectId || matchesObjectType else {
-                self.routedOutcome = .unsupported
-                return
-            }
-            self.routedOutcome = .discover
-        }
-
-        router.subscribe(.associate) { [self] message in
-            guard let associate = try? AssociateWireData(from: message.reader()) else {
-                self.routedOutcome = .malformed
-                return
-            }
-            let localActorId = self.agentId == Self.agentAId ? Self.actorAId : Self.actorBId
-            switch self.ioEndpoints.consumeAssociate(message) {
-            case .associated:
-                self.routedOutcome = associate.ioActorId == localActorId
-                    ? .ioActorAssociated : .ioSourceAssociated
-            case .disassociated:
-                self.routedOutcome = associate.ioActorId == localActorId
-                    ? .ioActorDisassociated : .ioSourceDisassociated
-            default:
-                self.routedOutcome = .malformed
-            }
-        }
-
-        // The advertise family key is an owned ``String`` (required by
-        // ``StaticFamilyTable``); it is allocated once at startup, not per
-        // steady-state dispatch.
-        router.subscribeAdvertise(filter: "coaty.test.Device") { [self] message in
-            switch message.eventType {
-            case .advertise:
-                guard (try? AdvertiseWireData(from: message.reader())) != nil else {
-                    self.routedOutcome = .malformed
-                    return
-                }
-                self.hasAdvertisedPeer = true
-                self.routedOutcome = .advertise
-            case .deadvertise:
-                guard (try? DeadvertiseWireData(from: message.reader())) != nil else {
-                    self.routedOutcome = .malformed
-                    return
-                }
-                self.hasAdvertisedPeer = false
-                self.routedOutcome = .deadvertise
-            default:
-                self.routedOutcome = .unsupported
-            }
-        }
-
-        router.subscribeIoValue { [self] message in
-            self.routedOutcome = self.ioEndpoints.consumeIoValue(message) == .delivered
-                ? .ioValueDelivered : .malformed
-        }
-    }
-
-    /// Starts the one bounded outstanding Discover request.
-    ///
-    /// Returns `false` when a request is already awaiting a Resolve.
-    func beginDiscover(correlationId: UUID16, nowMS: UInt32) -> Bool {
-        guard pendingCorrelation == nil else { return false }
-        pendingCorrelation = correlationId
-        pendingDeadlineMS = nowMS &+ Self.discoverTimeoutMS
-        resolvedCorrelation = nil
-        return true
+    /// Starts a bounded Discover request through the processor's outbound
+    /// operation seam. The emitted action is discarded by this firmware-only
+    /// convenience because the transport already owns the encoded buffers.
+    mutating func beginDiscover(correlationId: UUID16, nowMS: UInt32) -> Bool {
+        let payloadText: StaticString = "{}"
+        let payload = ByteSlice(bytes: payloadText.utf8Start, length: payloadText.utf8CodeUnitCount)
+        guard let operation = try? ProtocolLocalOperation(
+            capability: .discover,
+            sourceID: agentId,
+            correlationID: correlationId,
+            payload: payload,
+            requestTimeoutMS: Self.discoverTimeoutMS
+        ) else { return false }
+        actionSink.removeAll()
+        let outcome = processor.processOutbound(operation, nowMS: nowMS, sink: &actionSink)
+        actionSink.removeAll()
+        return outcome == .accepted
     }
 
     /// Expires the outstanding Discover once its deadline has passed.
     ///
-    /// Time is supplied by the caller so this static router remains
+    /// Time is supplied by the caller so this static processor remains
     /// deterministic and does not need an asynchronous task.
-    func expireDiscover(nowMS: UInt32) -> Bool {
-        guard let deadlineMS = pendingDeadlineMS,
-              Int32(bitPattern: nowMS &- deadlineMS) >= 0 else { return false }
-        pendingCorrelation = nil
-        pendingDeadlineMS = nil
-        return true
+    mutating func expireDiscover(nowMS: UInt32) -> Bool {
+        processor.expire(nowMS: nowMS)
     }
 
-    func dispatch(_ message: BorrowedMessage, nowMS: UInt32) -> StaticDeviceDispatchResult {
-        if expireDiscover(nowMS: nowMS), message.eventType == .resolve { return .wrongCorrelation }
-
-        // Resolve is handled greedily and directly rather than through the
-        // generic router. The router's response family routes only to a
-        // subscriber registered for the exact correlation ID, so it cannot
-        // deliver a wrong- or duplicate-correlation Resolve for rejection. The
-        // device agent must observe every Resolve to enforce its bounded
-        // single-outstanding-Discover invariant, so only this correlation
-        // state machine handles it.
-        if message.eventType == .resolve {
-            guard (try? ResolveWireData(from: message.reader())) != nil else { return .malformed }
-            guard let correlationId = message.topic.correlationIdLevel.flatMap(UUID16.init(parsing:)) else {
-                return .wrongCorrelation
+    mutating func dispatch(_ message: BorrowedMessage, nowMS: UInt32) -> StaticDeviceDispatchResult {
+        if message.eventType == .discover,
+           let filter = message.topic.eventTypeFilter,
+           !filter.equals(Self.deviceFilter) {
+            return .unsupported
+        }
+        guard let frame = try? BorrowedProtocolFrame(topic: message.topic, payload: message.payload) else {
+            return .malformed
+        }
+        actionSink.removeAll()
+        let outcome = processor.processInbound(
+            frame, nowMS: nowMS, classifier: routeClassifier, sink: &actionSink
+        )
+        guard outcome == .accepted else {
+            switch outcome {
+            case .ignored: return .unsupported
+            case .rejected(.duplicate): return .duplicateResolve
+            case .rejected(.correlationMismatch), .rejected(.deadlineExpired): return .wrongCorrelation
+            default: return .malformed
             }
-            if correlationId == resolvedCorrelation { return .duplicateResolve }
-            guard pendingCorrelation == correlationId else { return .wrongCorrelation }
-            pendingCorrelation = nil
-            pendingDeadlineMS = nil
-            resolvedCorrelation = correlationId
-            return .resolve
         }
 
-        guard message.eventType != nil else { return .malformed }
-        routedOutcome = .unsupported
-        router.dispatch(message)
-        return routedOutcome
+        guard let action = actionSink[0] else { return .malformed }
+        let actorId = agentId == Self.agentAId ? Self.actorAId : Self.actorBId
+        var actorDelivery = false
+        for index in 0..<actionSink.count {
+            if let deliveredAction = actionSink[index] {
+                _ = subscriptions.dispatch(deliveredAction)
+                actorDelivery = actorDelivery || deliveredAction.deliveryKey.isActor(actorId: actorId)
+            }
+        }
+        actionSink.removeAll()
+        switch action.kind {
+        case .associate: return actorDelivery ? .ioActorAssociated : .ioSourceAssociated
+        case .disassociate: return actorDelivery ? .ioActorDisassociated : .ioSourceDisassociated
+        default: break
+        }
+        switch message.eventType {
+        case .advertise:
+            hasAdvertisedPeer = true; return .advertise
+        case .deadvertise:
+            hasAdvertisedPeer = false; return .deadvertise
+        case .discover:
+            return .discover
+        case .resolve:
+            return .resolve
+        case .ioValue:
+            return actorDelivery ? .ioValueDelivered : .malformed
+        default:
+            return .unsupported
+        }
     }
 
-    func encode<T: WireEncodable>(
+    mutating func encode<T: WireEncodable>(
         _ value: T,
         eventType: WireEventType,
         correlationId: UUID16?,
@@ -275,6 +218,22 @@ final class StaticDeviceAgent: @unchecked Sendable {
 
         var payload = WireWriter(buffer: payloadBuffer, capacity: payloadCapacity)
         try value.encode(to: &payload)
+        let borrowedPayload = ByteSlice(bytes: payloadBuffer, length: payload.position)
+        let capability = ProtocolCapability(wireEventType: eventType)
+        guard let capability else { throw .invalidValue }
+        guard let operation = try? ProtocolLocalOperation(
+            capability: capability,
+            sourceID: agentId,
+            correlationID: correlationId,
+            payload: borrowedPayload,
+            requestTimeoutMS: eventType == .discover ? Self.discoverTimeoutMS : nil
+        ) else { throw .invalidValue }
+        var actionSink = InlineProtocolActionSink<1>()
+        let outcome = processor.processOutbound(operation, classifier: routeClassifier, sink: &actionSink)
+        actionSink.removeAll()
+        guard outcome == .accepted else {
+            throw .invalidValue
+        }
         return (topic.position, payload.position)
     }
 
@@ -284,7 +243,7 @@ final class StaticDeviceAgent: @unchecked Sendable {
         to output: UnsafeMutablePointer<UInt8>, capacity: Int
     ) -> Int? {
         let actorId = agentId == Self.agentAId ? Self.actorAId : Self.actorBId
-        return ioEndpoints.copyActorRoute(actorId: actorId, to: output, capacity: capacity)
+        return processor.copyActorRoute(actorId: actorId, to: output, capacity: capacity)
     }
 }
 
@@ -293,12 +252,12 @@ private let phase4Correlation = UUID16(bytes: (
     0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04
 ))
 
-private let phase4AgentA = StaticDeviceAgent(
+private var phase4AgentA = StaticDeviceAgent(
     agentId: StaticDeviceAgent.agentAId,
     deviceObjectId: StaticDeviceAgent.objectAId
 )
 
-private let phase4AgentB = StaticDeviceAgent(
+private var phase4AgentB = StaticDeviceAgent(
     agentId: StaticDeviceAgent.agentBId,
     deviceObjectId: StaticDeviceAgent.objectBId
 )
@@ -306,6 +265,30 @@ private let phase4AgentB = StaticDeviceAgent(
 @inline(__always)
 private func phase4NowMS() -> UInt32 {
     UInt32(truncatingIfNeeded: esp_timer_get_time() / 1_000)
+}
+
+private func phase4Encode<T: WireEncodable>(
+    role: Int32,
+    value: T,
+    eventType: WireEventType,
+    correlationId: UUID16?,
+    topicBuffer: UnsafeMutablePointer<UInt8>,
+    topicCapacity: Int32,
+    payloadBuffer: UnsafeMutablePointer<UInt8>,
+    payloadCapacity: Int32
+) throws(WireEncodeError) -> (topicLength: Int, payloadLength: Int) {
+    if role == 1 {
+        return try phase4AgentA.encode(
+            value, eventType: eventType, correlationId: correlationId,
+            topicBuffer: topicBuffer, topicCapacity: Int(topicCapacity),
+            payloadBuffer: payloadBuffer, payloadCapacity: Int(payloadCapacity)
+        )
+    }
+    return try phase4AgentB.encode(
+        value, eventType: eventType, correlationId: correlationId,
+        topicBuffer: topicBuffer, topicCapacity: Int(topicCapacity),
+        payloadBuffer: payloadBuffer, payloadCapacity: Int(payloadCapacity)
+    )
 }
 
 @_cdecl("axoloty_static_agent_expire")
@@ -359,33 +342,32 @@ private func preparePhase4Message(
         return false
     }
 
-    let agent = role == 1 ? phase4AgentA : phase4AgentB
     let result: (topicLength: Int, payloadLength: Int)?
     let reader = WireReader(bytes: source.utf8Start, length: source.utf8CodeUnitCount)
     switch eventType {
     case .advertise:
         result = (try? AdvertiseWireData(from: reader)).flatMap {
-            try? agent.encode($0, eventType: eventType, correlationId: correlationId,
-                              topicBuffer: topicBuffer, topicCapacity: Int(topicCapacity),
-                              payloadBuffer: payloadBuffer, payloadCapacity: Int(payloadCapacity))
+            try? phase4Encode(role: role, value: $0, eventType: eventType, correlationId: correlationId,
+                              topicBuffer: topicBuffer, topicCapacity: topicCapacity,
+                              payloadBuffer: payloadBuffer, payloadCapacity: payloadCapacity)
         }
     case .deadvertise:
         result = (try? DeadvertiseWireData(from: reader)).flatMap {
-            try? agent.encode($0, eventType: eventType, correlationId: correlationId,
-                              topicBuffer: topicBuffer, topicCapacity: Int(topicCapacity),
-                              payloadBuffer: payloadBuffer, payloadCapacity: Int(payloadCapacity))
+            try? phase4Encode(role: role, value: $0, eventType: eventType, correlationId: correlationId,
+                              topicBuffer: topicBuffer, topicCapacity: topicCapacity,
+                              payloadBuffer: payloadBuffer, payloadCapacity: payloadCapacity)
         }
     case .discover:
         result = (try? DiscoverWireData(from: reader)).flatMap {
-            try? agent.encode($0, eventType: eventType, correlationId: correlationId,
-                              topicBuffer: topicBuffer, topicCapacity: Int(topicCapacity),
-                              payloadBuffer: payloadBuffer, payloadCapacity: Int(payloadCapacity))
+            try? phase4Encode(role: role, value: $0, eventType: eventType, correlationId: correlationId,
+                              topicBuffer: topicBuffer, topicCapacity: topicCapacity,
+                              payloadBuffer: payloadBuffer, payloadCapacity: payloadCapacity)
         }
     case .resolve:
         result = (try? ResolveWireData(from: reader)).flatMap {
-            try? agent.encode($0, eventType: eventType, correlationId: correlationId,
-                              topicBuffer: topicBuffer, topicCapacity: Int(topicCapacity),
-                              payloadBuffer: payloadBuffer, payloadCapacity: Int(payloadCapacity))
+            try? phase4Encode(role: role, value: $0, eventType: eventType, correlationId: correlationId,
+                              topicBuffer: topicBuffer, topicCapacity: topicCapacity,
+                              payloadBuffer: payloadBuffer, payloadCapacity: payloadCapacity)
         }
     default:
         result = nil
@@ -453,7 +435,7 @@ func axolotyStaticAgentReceive(
             payloadBuffer: outputPayload, payloadCapacity: outputPayloadCapacity,
             topicLength: outputTopicLength, payloadLength: outputPayloadLength
         )
-        return prepared && phase4AgentB.beginDiscover(correlationId: phase4Correlation, nowMS: nowMS) ? 1 : -1
+        return prepared ? 1 : -1
     }
     if role == 2 && message.eventType == .resolve {
         return phase4AgentB.dispatch(message, nowMS: nowMS) == .resolve ? 2 : -1
@@ -462,9 +444,12 @@ func axolotyStaticAgentReceive(
         return phase4AgentB.dispatch(message, nowMS: nowMS) == .deadvertise ? 3 : -1
     }
     if message.eventType == .associate {
-        let result = role == 1
-            ? phase4AgentA.dispatch(message, nowMS: nowMS)
-            : phase4AgentB.dispatch(message, nowMS: nowMS)
+    let result: StaticDeviceDispatchResult
+    if role == 1 {
+        result = phase4AgentA.dispatch(message, nowMS: nowMS)
+    } else {
+        result = phase4AgentB.dispatch(message, nowMS: nowMS)
+    }
         switch result {
         case .ioActorAssociated: return 4
         case .ioActorDisassociated: return 5
@@ -473,9 +458,12 @@ func axolotyStaticAgentReceive(
         }
     }
     if message.eventType == .ioValue {
-        let result = role == 1
-            ? phase4AgentA.dispatch(message, nowMS: nowMS)
-            : phase4AgentB.dispatch(message, nowMS: nowMS)
+        let result: StaticDeviceDispatchResult
+        if role == 1 {
+            result = phase4AgentA.dispatch(message, nowMS: nowMS)
+        } else {
+            result = phase4AgentB.dispatch(message, nowMS: nowMS)
+        }
         return result == .ioValueDelivered ? 6 : -1
     }
     return 0

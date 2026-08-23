@@ -94,7 +94,7 @@ func versionCommandPrintsVersion() {
     let result = AxolotyCommandDispatcher().run(arguments: ["--version"])
 
     #expect(result.exitCode == 0)
-        #expect(result.standardOutput == "axoloty-tool 0.5.0")
+        #expect(result.standardOutput == "axoloty-tool 0.5.1")
     #expect(result.standardError.isEmpty)
 }
 
@@ -106,7 +106,7 @@ func checkPlanPrintsStableJSON() {
     #expect(result.standardError.isEmpty)
     let plan = try? JSONDecoder().decode(AxolotyCheckPlan.self, from: Data(result.standardOutput.utf8))
     var expectedNames = [
-        "resolve", "build", "lint", "test-tooling", "test-inspector-cli", "test-unit", "test-module",
+        "resolve", "build", "g2-trace-corpus", "g2-protocol-package", "g2-wire-state", "lint", "test-tooling", "test-inspector-cli", "test-unit", "test-module",
         "test-fuzz", "test-wire", "no-anycodable", "no-foundation-wire",
         "wire-dependencies", "wire-independent-resolution", "wire-distribution", "support-wire-dependencies",
         "support-wire-resolution", "support-wire-isolation", "support-benchmark-corpus",
@@ -117,6 +117,10 @@ func checkPlanPrintsStableJSON() {
     expectedNames += [
         "support-container", "support-fuzz-runner", "support-embedded-compile",
         "support-embedded-smoke", "embedded-toolchain", "embedded-build", "embedded-linker",
+        "g1-bounded-runtime-host", "g1-bounded-runtime-sanitized", "g1-bounded-runtime-embedded",
+        "g3-object-boundary", "g3-object-model-package", "g3-object-model-tests",
+        "g3-object-macros-tests", "g3-coaty-models-tests", "g3-object-model-evidence-host",
+        "g3-object-model-evidence-sanitized", "g3-object-model-evidence-embedded",
     ]
     #endif
     #expect(plan?.nodes.map(\.name) == expectedNames)
@@ -132,6 +136,37 @@ func checkPlanPrintsStableJSON() {
         guard let seconds = timeout.command.timeoutSeconds else { return false }
         return seconds.isFinite && seconds > 0
     } == true)
+}
+
+@Test
+func g3ObjectModelTierSelectsTheFullAggregate() throws {
+    let runner = RecordingSequenceRunner()
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: runner,
+        fileSystem: StubFileSystem(paths: []),
+        environment: projectEnvironment
+    )
+
+    let result = dispatcher.run(arguments: ["test-tier", "g3-object-model"])
+    let manifest = try JSONDecoder().decode(
+        AxolotyCheckManifest.self,
+        from: Data(result.standardOutput.utf8)
+    )
+    let names = manifest.results.map(\.name)
+
+    #expect(result.exitCode == 0)
+    #expect(names.contains("g3-object-boundary"))
+    #expect(names.contains("g3-object-model-package"))
+    #expect(names.contains("g3-object-model-tests"))
+    #expect(names.contains("g3-object-macros-tests"))
+    #expect(names.contains("g3-coaty-models-tests"))
+    #expect(names.contains("g3-object-model-evidence-host"))
+    #expect(names.contains("g3-object-model-evidence-sanitized"))
+    #if os(Linux)
+    #expect(names.contains("g3-object-model-evidence-embedded"))
+    #else
+    #expect(!names.contains("g3-object-model-evidence-embedded"))
+    #endif
 }
 
 @Test
@@ -393,6 +428,9 @@ func checkpointPlanIncludesRequiredIntegrationAndCompatibilityNodes() throws {
 
     #expect(plan.nodes.contains { $0.name == "integration-tests" })
     #expect(plan.nodes.contains { $0.name == "logging-global" })
+    #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-host" })
+    #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-sanitized" })
+    #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-embedded" })
 
     let hardwarePlan = AxolotyCheckPlan.checkpointHardware(
         source: "Tests/WireCompatibility/Fixtures",
@@ -400,6 +438,9 @@ func checkpointPlanIncludesRequiredIntegrationAndCompatibilityNodes() throws {
     )
     #expect(hardwarePlan.nodes.contains { $0.name == "integration-tests" })
     #expect(hardwarePlan.nodes.contains { $0.name == "logging-global" })
+    #expect(hardwarePlan.nodes.contains { $0.name == "g3-object-model-evidence-host" })
+    #expect(hardwarePlan.nodes.contains { $0.name == "g3-object-model-evidence-sanitized" })
+    #expect(hardwarePlan.nodes.contains { $0.name == "g3-object-model-evidence-embedded" })
 }
 
 @Test
@@ -456,7 +497,7 @@ func checkpointManifestRecordsAllRequiredReleaseGatesInOrder() throws {
 
     #expect(manifest.schemaVersion == 2)
     #expect(manifest.releaseGates.map(\.id) == [
-        "smoke", "unit", "module", "property", "integration", "wire-offline", "wire-live",
+        "smoke", "unit", "module", "property", "integration", "wire-offline", "wire-live", "g3-object-model",
     ])
     #expect(manifest.releaseGates.first { $0.id == "integration" }?.result == .executed)
 }
@@ -513,9 +554,9 @@ func wireCaptureRunsEveryNodeThroughSupportedBridge() throws {
     #expect(result.exitCode == 0)
     let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
     #expect(manifest.results.allSatisfy { $0.status == .passed })
-    #expect(runner.commands.count == 10)
-    #expect(runner.commands.prefix(2).allSatisfy { $0.executionContext == .project })
-    #expect(runner.commands.dropFirst(2).dropLast().allSatisfy { $0.executionContext == .host })
+    #expect(runner.commands.count == 11)
+    #expect(runner.commands.prefix(3).allSatisfy { $0.executionContext == .project })
+    #expect(runner.commands.dropFirst(3).dropLast().allSatisfy { $0.executionContext == .host })
     #expect(runner.commands.last?.executionContext == .project)
     #expect(clock.now - startedAt < .seconds(5))
 }

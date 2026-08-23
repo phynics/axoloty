@@ -54,6 +54,7 @@ public struct AxolotyCommandDispatcher: Sendable {
     private let portProbe: any AxolotyServiceProbing
     private let tempDirProvider: any AxolotyTempDirectoryProvider
     private let timingRunner: AxolotyTimingRunner
+    private let repositoryRoot: URL
     private let installSignalHandler: Bool
     private let cancellation: AxolotyCommandCancellation
     private let outputMode: AxolotyCommandOutputMode
@@ -72,6 +73,7 @@ public struct AxolotyCommandDispatcher: Sendable {
     ///   - portProbe: The TCP probe for service readiness checks.
     ///   - tempDirProvider: The temporary directory provider for service configs.
     ///   - timingRunner: The runner for explicit hardware-free timing evidence.
+    ///   - repositoryRoot: The repository checkout used by authority validation; defaults to the current directory.
     ///   - installSignalHandler: Whether the dispatcher installs signal handling.
     ///   - cancellation: Optional shared cancellation state for this invocation.
     public init(
@@ -85,6 +87,7 @@ public struct AxolotyCommandDispatcher: Sendable {
         portProbe: (any AxolotyServiceProbing)? = nil,
         tempDirProvider: (any AxolotyTempDirectoryProvider)? = nil,
         timingRunner: AxolotyTimingRunner? = nil,
+        repositoryRoot: URL? = nil,
         installSignalHandler: Bool = true,
         cancellation: AxolotyCommandCancellation? = nil
     ) {
@@ -115,6 +118,7 @@ public struct AxolotyCommandDispatcher: Sendable {
             commandRunner: commandRunner,
             environment: environment
         )
+        self.repositoryRoot = (repositoryRoot ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)).standardizedFileURL
         self.installSignalHandler = installSignalHandler && runnerConfiguration.installSignalHandler
         self.cancellation = invocationCancellation
         outputMode = runnerConfiguration.outputMode
@@ -134,6 +138,9 @@ public struct AxolotyCommandDispatcher: Sendable {
         }
         if arguments.count >= 2, arguments[0] == "measure", arguments[1] == "timing" {
             return timingResult(arguments: Array(arguments.dropFirst(2)))
+        }
+        if arguments.first == "repository", arguments.dropFirst().first == "validate" {
+            return repositoryAuthorityResult(arguments: Array(arguments.dropFirst(2)))
         }
         if arguments.count == 4, arguments[0] == "hardware", ["check", "require"].contains(arguments[1]), arguments[2] == "--device" {
             return hardwareResult(required: arguments[1] == "require", device: arguments[3])
@@ -211,7 +218,7 @@ public struct AxolotyCommandDispatcher: Sendable {
         }
     }
 
-    private static let version = "0.5.0"
+    private static let version = "0.5.1"
 
     private static func manifestDiagnostic(_ error: Error) -> String {
         if let manifestError = error as? AxolotyCanonicalTestManifestError {
@@ -250,6 +257,7 @@ public struct AxolotyCommandDispatcher: Sendable {
       release checkpoint-hardware  Run checkpoint with ESP32-C6 smoke test.
          --device PATH      Override AXOLOTY_DEVICE (default: /dev/ttyACM0).
       measure timing        Measure cold/warm hardware-free builds (Linux only).
+      repository validate    Validate version, documentation, and architecture authority.
       serve mqtt           Start a local Mosquitto broker in the foreground.
       serve mcp            Start an Axoloty MCP server (stdio or HTTP).
       serve dev            Start MQTT + MCP as a supervised development stack.
@@ -354,6 +362,50 @@ public struct AxolotyCommandDispatcher: Sendable {
                 exitCode: 70
             )
         }
+    }
+
+    private func repositoryAuthorityResult(arguments: [String]) -> AxolotyCommandResult {
+        var format = "human"
+        var index = 0
+        while index < arguments.count {
+            switch arguments[index] {
+            case "--json":
+                format = "json"
+            case "--format":
+                guard index + 1 < arguments.count, ["human", "json"].contains(arguments[index + 1]) else {
+                    return AxolotyCommandResult(
+                        standardError: "error: repository validate --format requires human or json\n",
+                        exitCode: 64
+                    )
+                }
+                format = arguments[index + 1]
+                index += 1
+            case "--help", "-h":
+                return AxolotyCommandResult(standardOutput: "Usage: axoloty-tool repository validate [--format human|json]\n")
+            default:
+                return AxolotyCommandResult(
+                    standardError: "error: unsupported repository validate option: \(arguments[index])\n",
+                    exitCode: 64
+                )
+            }
+            index += 1
+        }
+        let report = AxolotyRepositoryAuthorityValidator(root: repositoryRoot).validate()
+        if format == "json" {
+            return (try? Self.jsonResult(report, exitCode: report.status == "passed" ? 0 : 1))
+                ?? AxolotyCommandResult(standardError: "error: unable to encode repository authority report\n", exitCode: 70)
+        }
+        if report.findings.isEmpty {
+            return AxolotyCommandResult(standardOutput: "repository authority: passed\n")
+        }
+        let lines = report.findings.map { finding in
+            let location = finding.path.map { " [\($0)]" } ?? ""
+            return "- \(finding.rule)\(location): \(finding.message)"
+        }
+        return AxolotyCommandResult(
+            standardOutput: "repository authority: failed\n\(lines.joined(separator: "\n"))\n",
+            exitCode: 1
+        )
     }
 
     private func serveResult(arguments: [String]) -> AxolotyCommandResult {
@@ -479,7 +531,15 @@ public struct AxolotyCommandDispatcher: Sendable {
         }
         do {
             let manifest = try AxolotyCanonicalTestManifest.loadDefault(environment: environment)
-            let command = manifest.testOneCommand(filter: filter)
+            let command: AxolotyCommandPlan
+            if let node = try? manifest.node(named: filter),
+               node.filter == nil,
+               node.local,
+               node.isAvailable(on: AxolotyCheckPlan.currentPlatform) {
+                command = node.checkNode().command
+            } else {
+                command = manifest.testOneCommand(filter: filter)
+            }
             if let failure = contextValidator.failureResult(validating: [command]) {
                 return Self.commandResult(failure)
             }

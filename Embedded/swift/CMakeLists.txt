@@ -1,8 +1,9 @@
 # CMake top-level project file for the Axoloty ESP32-C6 Embedded Swift image.
 #
-# This is a standalone ESP-IDF project that compiles AxolotyWire in Embedded
-# Swift mode via the espressif/idf_swift component. AxolotyWire is compiled
-# as a separate Swift module that the main application imports.
+# This is a standalone ESP-IDF project that compiles the portable AxolotyWire,
+# AxolotyProtocol, and AxolotyObjectModel modules in Embedded Swift mode via
+# the espressif/idf_swift component. The main application imports each module
+# through static link probes.
 
 cmake_minimum_required(VERSION 3.29)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)

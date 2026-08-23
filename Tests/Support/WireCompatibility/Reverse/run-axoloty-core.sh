@@ -21,6 +21,7 @@ DEV_IMAGE="${DEV_IMAGE:-localhost/axoloty-dev:latest}"
 JS_IMAGE="${JS_IMAGE:-localhost/coatyswift-wire-coatyjs:2.4.0}"
 OUTPUT_DIR="${WIRE_OUTPUT_DIR:-$ROOT_DIR/.testing/wire}"
 SPM_CACHE_DIR="${SPM_CACHE_DIR:-$ROOT_DIR/.swiftpm-cache}"
+SWIFTPM_MODULECACHE_OVERRIDE=/tmp/axoloty-wire-module-cache
 CONSUMER_LOG=$(mktemp)
 CAPTURE_READY=""
 
@@ -39,7 +40,9 @@ runtime build -t "$JS_IMAGE" "$REFERENCE_DIR/coatyjs"
 # longer than their 60-second protocol deadline and must not consume it.
 runtime run --rm -v "$ROOT_DIR:/workspace" -v "$BUILD_DIR:/workspace/.build" \
     -v "$SPM_CACHE_DIR:/swiftpm-cache" -w /workspace \
-    "$DEV_IMAGE" swift build --build-tests --cache-path /swiftpm-cache --disable-automatic-resolution
+    -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
+    "$DEV_IMAGE" swift build -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
+    --build-tests --cache-path /swiftpm-cache --disable-automatic-resolution
 runtime network create "$NETWORK" >/dev/null
 runtime run -d --name "$BROKER" --network "$NETWORK" \
     -v "$LIVE_DIR/mosquitto.conf:/etc/mosquitto/wire-compat.conf:ro" \
@@ -87,7 +90,9 @@ for scenario in $SCENARIOS; do
     runtime run --rm --network "$NETWORK" -v "$ROOT_DIR:/workspace" -v "$BUILD_DIR:/workspace/.build" -v "$SPM_CACHE_DIR:/swiftpm-cache" -w /workspace \
         -e WIRE_REVERSE_LIVE=1 -e WIRE_SCENARIO="$scenario" \
         -e WIRE_BROKER_HOST="$BROKER" -e WIRE_BROKER_PORT=1883 -e WIRE_NAMESPACE=wire-compat-v1 \
-        "$DEV_IMAGE" swift test --skip-build --cache-path /swiftpm-cache --disable-automatic-resolution --filter AxolotyCoreProducerTests
+        -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
+        "$DEV_IMAGE" swift test -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
+        --skip-build --cache-path /swiftpm-cache --disable-automatic-resolution --filter AxolotyCoreProducerTests
 
     runtime wait "$CONSUMER" >/dev/null
     runtime logs "$CONSUMER" >"$CONSUMER_LOG" 2>&1

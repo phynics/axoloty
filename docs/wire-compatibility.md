@@ -21,6 +21,24 @@ Reference versions must be pinned before captured fixtures become normative:
 | Decentralized logging | Not tested | Not tested | Not tested | Not tested | Nightly |
 | SensorThings | Compatible with normalization | Compatible with normalization | Not tested | Not tested | Audit |
 
+### G2 external-route semantics
+
+The binding-owned external-route fixture is exactly
+`external/wire-compat-v1/io-external-1`. The positive CoatyJS Associate payload
+does **not** serialize `isExternalRoute`; its classification is supplied as
+trace/binding metadata. G2 offline coverage records all of the following as
+shared-processor evidence:
+
+- omitted `isExternalRoute` is accepted;
+- an explicit value is accepted only when it agrees with the binding
+  classifier;
+- a contradictory value is rejected without state mutation; and
+- an unrelated route is ignored.
+
+The fixed-inline processor and both host/static trace adapters have unit
+coverage for these semantics. Live cross-implementation IO evidence remains
+governed by the existing IO runners and is a separate transport/runtime gate.
+
 Allowed results are `Compatible`, `Compatible with normalization`, `Intentional divergence`, `Unsupported`, and `Not tested`. Any intentional divergence requires a linked decision and fixture update.
 
 As of issue #397, both shipping host directions use AxolotyWire event codecs:

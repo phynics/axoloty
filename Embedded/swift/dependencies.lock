@@ -15,6 +15,6 @@ dependencies:
     version: 5.4.0
 direct_dependencies:
 - espressif/idf_swift
-manifest_hash: 10599d350355ea9062f6f806de5838d151a1bff8cc209b529e06fc6da99a407e
+manifest_hash: 0361210c3e67b4788e9bf8633def2c5c698e17ce3b72576c5f79e7ab165cb678
 target: esp32c6
 version: 2.0.0

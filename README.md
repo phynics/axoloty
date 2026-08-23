@@ -9,8 +9,9 @@ version](https://img.shields.io/badge/swift-6.3-%23F05138?logo=swift)](https://d
 [![License:
 MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-> **Development checkpoint.** Axoloty 0.4 is a development checkpoint, not
-> a stable release. Public APIs may continue to change before 1.0.
+> **Development checkpoint.** [`VERSION`](./VERSION) identifies the current
+> release. Axoloty is not API-stable, and the source-breaking 0.6 architecture
+> alignment is being planned in [epic #627](https://github.com/phynics/axoloty/issues/627).
 
 ## About Axoloty
 
@@ -40,11 +41,17 @@ collaborative, and ad-hoc fashion. Its key properties include:
 * a structured logging facade backed by [swift-log](https://github.com/apple/swift-log),
 * a Foundation-free `AxolotyWire` module with a separately resolvable
   standalone package boundary for embedded targets,
+* a Foundation-free `AxolotyProtocol` foundation package for the 0.6 portable
+  profile boundary (profile inventory, frames, routing keys, errors, bounded
+  request state, and borrowed/owned actions; runtime processing and fixed
+  router storage are planned),
 * and an ESP32-C6 embedded proof in Embedded Swift.
 
 Axoloty is a modernized fork of
 [coatyio/coaty-swift](https://github.com/coatyio/coaty-swift) and follows its
-own direction documented in [ROADMAP.md](./docs/ROADMAP.md). For an explicit
+own direction documented in [ROADMAP.md](./docs/ROADMAP.md). The accepted 0.6
+boundaries and transition state are documented in
+[ARCHITECTURE.md](./ARCHITECTURE.md). For an explicit
 comparison against CoatyJS and legacy CoatySwift, see
 [FEATURE_MATRIX.md](./docs/FEATURE_MATRIX.md). For support levels per
 capability, see [SUPPORT_MATRIX.md](./docs/SUPPORT_MATRIX.md).
@@ -66,7 +73,7 @@ Add Axoloty to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.5.0"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.5.1"),
 ],
 targets: [
     .executableTarget(
@@ -82,7 +89,7 @@ For a wire target in a consumer that already resolves the root package:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.5.0"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.5.1"),
 ],
 targets: [
     .executableTarget(
@@ -219,9 +226,9 @@ swift run --package-path Tools axoloty-inspect discover --core-type Identity
 
 See [docs/inspector.md](./docs/inspector.md) for the full reference.
 
-For this checkpoint's changes and source-breaking migration, see
-[0.4-RELEASE-NOTES.md](./docs/0.4-RELEASE-NOTES.md). For migrating from legacy
-CoatySwift, see [0.2-MIGRATION.md](./docs/0.2-MIGRATION.md).
+For the current checkpoint's changes, see
+[0.5.1 release notes](./docs/releases/0.5.1.md). For migrating from legacy
+CoatySwift, see [the 0.2 migration guide](./docs/migration/from-coatyswift-to-0.2.md).
 
 ## Contributing
 

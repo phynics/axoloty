@@ -95,7 +95,9 @@ extension BonjourResolver: NetServiceDelegate {
             port: sender.port,
             callbacks: BonjourResolutionCallbacks(
                 onWarning: { [log] warning in
-                    log.warning(warning.message, metadata: warning.metadata.mapValues { .string($0) })
+                    var metadata = warning.metadata
+                    metadata["message"] = warning.message
+                    log.warning("Bonjour resolution warning", metadata: metadata.mapValues { .string($0) })
                 },
                 onRetry: { [weak self] in
                     self?.startDiscovery()

@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import AxolotyWire
+import AxolotyProtocol
 import Foundation
 import Testing
 
@@ -698,73 +699,6 @@ struct SizeLimitTests {
                 )
             }
         }
-    }
-}
-
-// MARK: - Router capacity tests
-
-@Suite("Router capacity bounds")
-struct RouterCapacityTests {
-    @Test("Flat subscribers at capacity (8) succeed, 9th is rejected")
-    func flatSubscribersAtCapacity() {
-        let router = try! EmbeddedMessageRouter()
-        for _ in 0..<WireBufferConfig.maxSubscribers {
-            let token = router.subscribe(.advertise) { _ in }
-            #expect(token != nil)
-        }
-        // 9th subscription should return nil.
-        let overflow = router.subscribe(.advertise) { _ in }
-        #expect(overflow == nil)
-    }
-
-    @Test("Unsubscribe frees a slot for reuse")
-    func unsubscribeReusesSlot() {
-        let router = try! EmbeddedMessageRouter()
-        var tokens: [StaticDispatchTable.Token] = []
-        for _ in 0..<WireBufferConfig.maxSubscribers {
-            tokens.append(router.subscribe(.advertise) { _ in }!)
-        }
-        // Remove one.
-        router.unsubscribe(.advertise, tokens[0])
-        // New subscription should succeed.
-        let newToken = router.subscribe(.advertise) { _ in }
-        #expect(newToken != nil)
-    }
-
-    @Test("Family entries at capacity (16) succeed, 17th is rejected")
-    func familyEntriesAtCapacity() {
-        let router = try! EmbeddedMessageRouter()
-        for i in 0..<WireBufferConfig.maxFamilyEntries {
-            let token = router.subscribeAdvertise(filter: "filter-\(i)") { _ in }
-            #expect(token != nil)
-        }
-        // 17th entry should return nil.
-        let overflow = router.subscribeAdvertise(filter: "overflow") { _ in }
-        #expect(overflow == nil)
-    }
-
-    @Test("Family subscribers at capacity (4) succeed, 5th is rejected")
-    func familySubscribersAtCapacity() {
-        let router = try! EmbeddedMessageRouter()
-        for _ in 0..<WireBufferConfig.maxFamilySubscribers {
-            let token = router.subscribeAdvertise(filter: "same-filter") { _ in }
-            #expect(token != nil)
-        }
-        // 5th subscriber for same key should return nil.
-        let overflow = router.subscribeAdvertise(filter: "same-filter") { _ in }
-        #expect(overflow == nil)
-    }
-
-    @Test("Family unsubscribe frees a slot for reuse")
-    func familyUnsubscribeReusesSlot() {
-        let router = try! EmbeddedMessageRouter()
-        var tokens: [StaticFamilyTable<String>.Token] = []
-        for _ in 0..<WireBufferConfig.maxFamilySubscribers {
-            tokens.append(router.subscribeAdvertise(filter: "reuse") { _ in }!)
-        }
-        router.unsubscribeAdvertise(tokens[0])
-        let newToken = router.subscribeAdvertise(filter: "reuse") { _ in }
-        #expect(newToken != nil)
     }
 }
 

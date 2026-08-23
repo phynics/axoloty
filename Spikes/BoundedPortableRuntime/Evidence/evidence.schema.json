@@ -1,0 +1,210 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Axoloty bounded portable runtime evidence",
+  "oneOf": [
+    {"$ref": "#/$defs/host"},
+    {"$ref": "#/$defs/sanitized"},
+    {"$ref": "#/$defs/embedded"},
+    {"$ref": "#/$defs/hardware"}
+  ],
+  "$defs": {
+    "identity": {
+      "type": "object",
+      "required": ["schemaVersion", "evidenceKind", "candidateSha"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "evidenceKind": {"type": "string"},
+        "candidateSha": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"}
+      }
+    },
+    "host": {
+      "type": "object",
+      "required": ["schemaVersion", "evidenceKind", "candidateSha", "toolchain", "capacities", "experiments", "parser", "allocations", "macroBoundary", "compilation", "hardware"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "evidenceKind": {"const": "host"},
+        "candidateSha": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"},
+        "toolchain": {"type": "string", "minLength": 1},
+        "capacities": {"const": [1, 4, 16, 64]},
+        "experiments": {"type": "array", "minItems": 4},
+        "parser": {"type": "object", "required": ["embeddedAccepted", "hostAccepted", "identicalActionTrace", "embeddedWorkspaceBytes", "hostWorkspaceBytes", "payloadLimit"]},
+        "allocations": {"type": "array", "minItems": 4, "items": {"$ref": "#/$defs/allocation"}},
+        "macroBoundary": {"type": "string", "minLength": 1},
+        "compilation": {"type": "object", "required": ["debugTests", "sanitizedTests", "macroHost", "embedded", "compileSeconds", "releaseBinaryBytes", "releaseSectionBytes"]},
+        "hardware": {"enum": ["pending-hardware", "measured"]}
+      },
+      "additionalProperties": false
+    },
+    "allocation": {
+      "type": "object",
+      "required": ["capacity", "measurement", "inlineInitialization", "inlineWarmed", "handlerInitialization", "handlerWarmed"],
+      "properties": {
+        "capacity": {"enum": [1, 4, 16, 64]},
+        "measurement": {"const": "heaptrack-call-growth"},
+        "inlineInitialization": {"type": "integer", "minimum": 0},
+        "inlineWarmed": {"type": "integer", "minimum": 0},
+        "handlerInitialization": {"type": "integer", "minimum": 0},
+        "handlerWarmed": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "sanitized": {
+      "type": "object",
+      "required": ["schemaVersion", "evidenceKind", "candidateSha", "status", "sanitizer", "hardware"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "evidenceKind": {"const": "sanitized"},
+        "candidateSha": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"},
+        "status": {"const": "passed"},
+        "sanitizer": {"const": "address"},
+        "hardware": {"const": "pending-hardware"}
+      },
+      "additionalProperties": false
+    },
+    "embedded": {
+      "type": "object",
+      "required": ["schemaVersion", "evidenceKind", "candidateSha", "status", "compileSuccess", "toolchain", "macroBoundary", "configurations", "hardware"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "evidenceKind": {"const": "embedded-cross-build"},
+        "candidateSha": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"},
+        "status": {"const": "passed"},
+        "compileSuccess": {"const": true},
+        "toolchain": {"type": "string", "minLength": 1},
+        "macroBoundary": {"enum": ["compiled", "unsupported-embedded-manual-conformance"]},
+        "configurations": {"type": "array", "minItems": 5, "items": {"$ref": "#/$defs/embeddedConfiguration"}},
+        "hardware": {"const": "pending-hardware"}
+      },
+      "additionalProperties": false
+    },
+    "embeddedConfiguration": {
+      "type": "object",
+      "required": ["capacity", "compileSeconds", "firmwareBytes", "elfBytes", "mapBytes", "sections", "growth"],
+      "properties": {
+        "capacity": {"enum": [0, 1, 4, 16, 64]},
+        "compileSeconds": {"type": "number", "minimum": 0},
+        "firmwareBytes": {"type": "integer", "minimum": 1},
+        "elfBytes": {"type": "integer", "minimum": 1},
+        "mapBytes": {"type": "integer", "minimum": 1},
+        "sections": {
+          "type": "object",
+          "required": ["text", "data", "bss", "iram"],
+          "properties": {
+            "text": {"type": "integer", "minimum": 1},
+            "data": {"type": "integer", "minimum": 1},
+            "bss": {"type": "integer", "minimum": 1},
+            "iram": {"type": "integer", "minimum": 0}
+          },
+          "additionalProperties": false
+        },
+        "growth": {
+          "type": "object",
+          "required": ["firmwareBytes", "text", "data", "bss", "iram"],
+          "properties": {
+            "firmwareBytes": {"type": "integer"},
+            "text": {"type": "integer"},
+            "data": {"type": "integer"},
+            "bss": {"type": "integer"},
+            "iram": {"type": "integer"}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "layout": {
+      "type": "object",
+      "required": ["size", "alignment", "stride"],
+      "properties": {
+        "size": {"type": "integer", "minimum": 1},
+        "alignment": {"type": "integer", "minimum": 1},
+        "stride": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "deviceRun": {
+      "type": "object",
+      "required": [
+        "schemaVersion", "evidenceKind", "runNumber", "capacity",
+        "initializationAllocations", "steadyStateAllocations",
+        "initializationHeapBefore", "initializationHeapAfter",
+        "steadyStateHeapBefore", "steadyStateHeapAfter",
+        "minimumFreeInternalHeap", "largestInternalBlock",
+        "mainStackHighWater", "mainStackSize", "resetReason",
+        "boardRevision", "flashBytes", "operations", "elapsedMicroseconds",
+        "sustainedRatePerSecond", "rateSamplesPerSecond",
+        "inlineLayout", "handlerLayout", "relativeMAD"
+      ],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "evidenceKind": {"const": "g1-device-run"},
+        "runNumber": {"enum": [1, 2]},
+        "capacity": {"enum": [1, 4, 16, 64]},
+        "initializationAllocations": {"const": 0},
+        "steadyStateAllocations": {"const": 0},
+        "initializationHeapBefore": {"type": "integer", "minimum": 1},
+        "initializationHeapAfter": {"type": "integer", "minimum": 1},
+        "steadyStateHeapBefore": {"type": "integer", "minimum": 1},
+        "steadyStateHeapAfter": {"type": "integer", "minimum": 1},
+        "minimumFreeInternalHeap": {"type": "integer", "minimum": 1},
+        "largestInternalBlock": {"type": "integer", "minimum": 1},
+        "mainStackHighWater": {"type": "integer", "minimum": 1},
+        "mainStackSize": {"type": "integer", "minimum": 1},
+        "resetReason": {"type": "integer", "minimum": 0},
+        "boardRevision": {"type": "integer", "minimum": 0},
+        "flashBytes": {"type": "integer", "minimum": 1},
+        "operations": {"type": "integer", "minimum": 1},
+        "elapsedMicroseconds": {"type": "integer", "minimum": 1},
+        "sustainedRatePerSecond": {"type": "number", "minimum": 0},
+        "rateSamplesPerSecond": {"type": "array", "minItems": 1, "items": {"type": "number", "minimum": 0}},
+        "inlineLayout": {"$ref": "#/$defs/layout"},
+        "handlerLayout": {"$ref": "#/$defs/layout"},
+        "relativeMAD": {"type": "number", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "hardwareConfiguration": {
+      "type": "object",
+      "required": ["capacity", "crossBuild", "runs"],
+      "properties": {
+        "capacity": {"enum": [1, 4, 16, 64]},
+        "crossBuild": {"$ref": "#/$defs/embeddedConfiguration"},
+        "runs": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/deviceRun"}}
+      },
+      "additionalProperties": false
+    },
+    "hardware": {
+      "type": "object",
+      "required": ["schemaVersion", "evidenceKind", "candidateSha", "status", "board", "budget", "configurations"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "evidenceKind": {"const": "hardware"},
+        "candidateSha": {"type": "string", "pattern": "^[0-9a-f]{7,64}$"},
+        "status": {"const": "passed"},
+        "board": {
+          "type": "object",
+          "required": ["target", "revision", "flashBytes"],
+          "properties": {
+            "target": {"const": "esp32c6"},
+            "revision": {"type": "string", "minLength": 1},
+            "flashBytes": {"type": "integer", "minimum": 1}
+          },
+          "additionalProperties": false
+        },
+        "budget": {
+          "type": "object",
+          "required": ["manifestSha256", "relativeMAD", "allocationRule", "stackReserveBytes"],
+          "properties": {
+            "manifestSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "relativeMAD": {"type": "number", "minimum": 0},
+            "allocationRule": {"const": "exact-zero"},
+            "stackReserveBytes": {"type": "integer", "minimum": 4000}
+          },
+          "additionalProperties": false
+        },
+        "configurations": {"type": "array", "minItems": 4, "maxItems": 4, "items": {"$ref": "#/$defs/hardwareConfiguration"}}
+      },
+      "additionalProperties": false
+    }
+  }
+}

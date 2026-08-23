@@ -2,8 +2,11 @@
 
 Status: implements issue #297, updated by #320 and #321. The ESP32-C6
 toolchain is included in the single dev image (`axoloty-dev`). Embedded
-Swift cross-compilation is working — AxolotyWire compiles and runs
-on-device via the `espressif/idf_swift` component.
+Swift cross-compilation is working — AxolotyWire compiles and runs on-device,
+and the portable AxolotyProtocol foundation, including its bounded correlation
+state, cross-compiles through the companion
+`axoloty_protocol` component, via the `espressif/idf_swift`
+component.
 
 ## NixOS host prerequisites
 
@@ -112,8 +115,9 @@ Swift 6.3 compiles AxolotyWire for `riscv32-none-none-eabi` using
 component (v1.0.1) integrates the Swift compiler into the ESP-IDF build
 system via `idf_component_register_swift()`.
 
-The Swift firmware (`Embedded/swift/`) compiles AxolotyWire as a separate
-Embedded Swift module and links it into the application. Verified on physical
+The Swift firmware (`Embedded/swift/`) compiles AxolotyWire and the
+AxolotyProtocol foundation as separate Embedded Swift modules and links their
+components into the application. Verified on physical
 ESP32-C6:
 `AXOLOTY_SMOKE_OK` captured, `WireReader.readUUID` and `TopicView.eventType`
 work on-device.
@@ -159,7 +163,7 @@ The MQTT callback accepts a message only when the first fragment is also the
 complete payload (`current_data_offset == 0` and `data_len == total_data_len`).
 The configured 129-byte topic and 513-byte payload buffers cover the approved
 128/512-byte wire limits; fragmented or oversized messages are rejected before
-constructing a `BorrowedMessage`. The synchronous Swift router returns before
+constructing a `BorrowedMessage`. The synchronous Swift protocol processor returns before
 ESP-IDF invalidates the callback buffers.
 
 `EmbeddedMQTTClient` is the firmware-local Swift overlay for bounded QoS 0

@@ -47,6 +47,7 @@ test("principal Make workflows use the canonical tooling entry points", () => {
     "check-embedded-swift-linker",
     "hardware-check",
     "hardware-require",
+    "g1-bounded-runtime-device",
     "release-fixture-bundle",
   ]) {
     assert.match(recipe(makefile, target), /\$\(MAKE\).*\baxoloty-tool\b/, `${target} must forward to axoloty-tool`);
@@ -69,6 +70,14 @@ test("principal Make workflows use the canonical tooling entry points", () => {
   ]) {
     assert.doesNotMatch(makefile, new RegExp(`^${target}:`, "m"), `${target} should not remain a Make target`);
   }
+});
+
+test("G1 device wrapper delegates policy and device access to axoloty-tool", () => {
+  const makefile = fs.readFileSync("Makefile", "utf8");
+  const target = recipe(makefile, "g1-bounded-runtime-device");
+  assert.match(target, /AXOLOTY_TOOL_ARGS='test-one --filter g1-bounded-runtime-device'/);
+  assert.match(target, /AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES='\$\(AXOLOTY_DEVICE\)'/);
+  assert.doesNotMatch(target, /\.devcontainer\/run\.sh|CONTAINER_DEVICES=/);
 });
 
 test("support runs the Embedded Swift self-test in the pinned container", () => {

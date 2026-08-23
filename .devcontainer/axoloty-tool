@@ -5,11 +5,13 @@ set -eu
 
 scratch_path=${TOOLING_BUILD_DIR:-/workspace/.build/tooling}
 cache_path=${SPM_CACHE_DIR:-/workspace/.swiftpm-cache}
+module_cache_path=${SWIFTPM_MODULECACHE_OVERRIDE:-/tmp/axoloty-tooling-module-cache}
 export AXOLOTY_MCP_EXECUTABLE=${AXOLOTY_MCP_EXECUTABLE:-/opt/axoloty/bin/axoloty-mcp}
 
 exec swift run \
     --package-path Tools \
     --scratch-path "$scratch_path" \
     --cache-path "$cache_path" \
+    -Xswiftc -module-cache-path -Xswiftc "$module_cache_path" \
     --disable-automatic-resolution \
     axoloty-tool "$@"

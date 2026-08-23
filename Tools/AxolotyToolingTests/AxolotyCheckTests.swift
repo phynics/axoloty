@@ -244,7 +244,50 @@ func offlinePlanOmitsEmbeddedChecksOnMacOS() {
 @Test
 func offlinePlanIncludesEmbeddedChecksOnLinux() {
     let plan = AxolotyCheckPlan.initialOffline(for: .linux)
-    #expect(plan.nodes.map(\.name).suffix(2) == ["embedded-build", "embedded-linker"])
+    let names = plan.nodes.map(\.name)
+    let embeddedBuild = names.firstIndex(of: "embedded-build")
+    let embeddedLinker = names.firstIndex(of: "embedded-linker")
+    let boundedHost = names.firstIndex(of: "g1-bounded-runtime-host")
+    let boundedSanitized = names.firstIndex(of: "g1-bounded-runtime-sanitized")
+    let boundedEmbedded = names.firstIndex(of: "g1-bounded-runtime-embedded")
+    let objectBoundary = names.firstIndex(of: "g3-object-boundary")
+    let objectPackage = names.firstIndex(of: "g3-object-model-package")
+    let objectTests = names.firstIndex(of: "g3-object-model-tests")
+    let objectMacros = names.firstIndex(of: "g3-object-macros-tests")
+    let coatyModels = names.firstIndex(of: "g3-coaty-models-tests")
+    let objectHost = names.firstIndex(of: "g3-object-model-evidence-host")
+    let objectSanitized = names.firstIndex(of: "g3-object-model-evidence-sanitized")
+    let objectEmbedded = names.firstIndex(of: "g3-object-model-evidence-embedded")
+
+    #expect(embeddedBuild != nil)
+    #expect(embeddedLinker != nil)
+    #expect(boundedHost != nil)
+    #expect(boundedSanitized != nil)
+    #expect(boundedEmbedded != nil)
+    #expect(objectBoundary != nil)
+    #expect(objectPackage != nil)
+    #expect(objectTests != nil)
+    #expect(objectMacros != nil)
+    #expect(coatyModels != nil)
+    #expect(objectHost != nil)
+    #expect(objectSanitized != nil)
+    #expect(objectEmbedded != nil)
+    if let embeddedBuild, let embeddedLinker, let boundedHost, let boundedSanitized, let boundedEmbedded,
+       let objectBoundary, let objectPackage, let objectTests, let objectMacros, let coatyModels,
+       let objectHost, let objectSanitized, let objectEmbedded {
+        #expect(embeddedBuild < embeddedLinker)
+        #expect(embeddedLinker < boundedHost)
+        #expect(boundedHost < boundedSanitized)
+        #expect(boundedSanitized < boundedEmbedded)
+        #expect(boundedEmbedded < objectBoundary)
+        #expect(objectBoundary < objectPackage)
+        #expect(objectPackage < objectTests)
+        #expect(objectTests < objectMacros)
+        #expect(objectMacros < coatyModels)
+        #expect(coatyModels < objectHost)
+        #expect(objectHost < objectSanitized)
+        #expect(objectSanitized < objectEmbedded)
+    }
 }
 
 @Test

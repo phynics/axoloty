@@ -36,6 +36,15 @@ public struct WireWriter {
     /// Remaining capacity in the buffer.
     public var remaining: Int { capacity - position }
 
+    /// Rewinds a failed transactional encode to a prior position.
+    ///
+    /// Bytes after the restored position are outside the writer's logical
+    /// output and may be overwritten by the next encode.
+    public mutating func rewind(to position: Int) {
+        guard position >= 0, position <= self.position else { return }
+        self.position = position
+    }
+
     // MARK: - Value writing
 
     /// Writes a JSON object opening brace.
@@ -48,6 +57,16 @@ public struct WireWriter {
         try writeByte(0x7D)
     }
 
+    /// Writes a JSON array opening bracket.
+    public mutating func beginArray() throws(WireEncodeError) {
+        try writeByte(0x5B)
+    }
+
+    /// Writes a JSON array closing bracket.
+    public mutating func endArray() throws(WireEncodeError) {
+        try writeByte(0x5D)
+    }
+
     /// Writes a comma separator.
     public mutating func writeComma() throws(WireEncodeError) {
         try writeByte(0x2C)
@@ -55,8 +74,8 @@ public struct WireWriter {
 
     // MARK: - Internal
 
-    @inline(__always)
-    mutating func writeKey(_ key: StaticString) throws(WireEncodeError) {
+    /// Writes an object member key and leaves the writer ready for its value.
+    public mutating func writeKey(_ key: StaticString) throws(WireEncodeError) {
         try writeByte(0x22) // '"'
         try writeBytes(key)
         try writeByte(0x22) // '"'
