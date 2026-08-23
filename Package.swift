@@ -43,10 +43,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio-transport-services.git", from: "1.28.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.14.0"),
         .package(url: "https://github.com/FlineDev/ErrorKit.git", exact: "1.2.1"),
-        .package(
-            url: "https://github.com/phynics/swift-json.git",
-            exact: "2.5.3"
-        ),
+        .package(url: "https://github.com/phynics/swift-json.git", exact: "2.5.3"),
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", exact: "0.12.1"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin.git", from: "1.5.0"),
     ],
@@ -65,8 +62,16 @@ let package = Package(
                 .product(name: "MQTTNIO", package: "mqtt-nio"),
                 .product(name: "NIO", package: "swift-nio"),
                 .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
-                .product(name: "NIOSSL", package: "swift-nio-ssl", condition: .when(platforms: [.linux])),
-                .product(name: "NIOTransportServices", package: "swift-nio-transport-services", condition: .when(platforms: [.macOS, .iOS])),
+                .product(
+                    name: "NIOSSL",
+                    package: "swift-nio-ssl",
+                    condition: .when(platforms: [.linux])
+                ),
+                .product(
+                    name: "NIOTransportServices",
+                    package: "swift-nio-transport-services",
+                    condition: .when(platforms: [.macOS, .iOS])
+                ),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "ErrorKit", package: "ErrorKit"),
                 .product(name: "IkigaJSON", package: "swift-json"),
@@ -83,35 +88,7 @@ let package = Package(
             path: "Tests",
             exclude: [
                 "AxolotyWire",
-                "TESTING.md",
-                "Fuzzing/Artifacts",
-                "Fuzzing/run-fuzz.sh",
-                "Fuzzing/test-run-fuzz.sh",
                 "Support",
-                "WireCompatibility/Audit",
-                "WireCompatibility/Capture",
-                "WireCompatibility/CompatibilityMatrix.md",
-                "WireCompatibility/IO/coatyjs-io-runner.js",
-                "WireCompatibility/IO/Live",
-                "WireCompatibility/Legacy/macOS-runner",
-                "WireCompatibility/Legacy/README.md",
-                "WireCompatibility/Legacy/run-modern-to-legacy.sh",
-                "WireCompatibility/Legacy/run_capture_on_macos.sh",
-                "WireCompatibility/Lifecycle/README.md",
-                "WireCompatibility/Lifecycle/Live",
-                "WireCompatibility/Live",
-                "WireCompatibility/ReferenceAgents",
-                "WireCompatibility/tool",
-                "WireCompatibility/Reverse/Artifacts",
-                "WireCompatibility/Reverse/README.md",
-                "WireCompatibility/Reverse/coatyjs-advertise-consumer.js",
-                "WireCompatibility/Reverse/coatyjs-core-consumer.js",
-                "WireCompatibility/Reverse/run-axoloty-advertise.sh",
-                "WireCompatibility/Reverse/run-axoloty-core.sh",
-                "WireCompatibility/Reverse/run-coatyjs-to-axoloty-advertise.sh",
-                "WireCompatibility/Reverse/run-coatyjs-to-axoloty-core.sh",
-                "WireCompatibility/Reverse/coatyjs-core-requester.js",
-                "WireCompatibility/Reverse/coatyjs-to-modern-requester.js",
             ],
             resources: [
                 .process("WireCompatibility/Fixtures"),
@@ -207,7 +184,13 @@ let package = Package(
         ),
         .executableTarget(
             name: "AxolotyMCPServer",
-            dependencies: ["AxolotyMCP", "AxolotyTooling", "Axoloty", "AxolotyInspectorCore", "AxolotyInspectorRuntime"],
+            dependencies: [
+                "AxolotyMCP",
+                "AxolotyTooling",
+                "Axoloty",
+                "AxolotyInspectorCore",
+                "AxolotyInspectorRuntime",
+            ],
             path: "Tools/axoloty-mcp"
         ),
         // Build-only release consumers for binary-size and dependency-closure

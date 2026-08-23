@@ -122,7 +122,7 @@ remain Codable and are unaffected.
 ## Linux container workflow
 
 Axoloty builds and tests in a pinned Podman/Docker container on Linux.
-The `make check` command extracts a static `axoloty-tool` binary from the
+The `make verify` command extracts a static `axoloty-tool` binary from the
 container image and runs it on the host; product commands execute inside
 the container. macOS runs the same plan natively.
 

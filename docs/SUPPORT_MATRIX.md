@@ -75,7 +75,7 @@ consistent vocabulary:
 ## Wire compatibility evidence summary
 
 Cross-implementation evidence is recorded in
-[Tests/WireCompatibility/CompatibilityMatrix.md](../Tests/WireCompatibility/CompatibilityMatrix.md).
+[docs/wire-compatibility.md](../docs/wire-compatibility.md).
 The pinned CoatyJS 2.4.0 reference agent is the source of truth for wire
 shape. Live wire captures are generated with `make test-wire-live` and
 physical embedded evidence with the `make embedded-*-test` harnesses.

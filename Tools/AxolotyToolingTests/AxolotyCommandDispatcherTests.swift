@@ -539,7 +539,7 @@ func wireCaptureRejectsHostNodesWithoutBridgeBeforeStartingCommands() throws {
     )
     #expect(try JSONDecoder().decode(AxolotyExecutionContextDiagnostic.self, from: diagnosticData) ==
         AxolotyExecutionContextDiagnostic(
-            executable: "Tests/WireCompatibility/Live/run-coatyjs-advertise.sh",
+            executable: "Tests/Support/WireCompatibility/Live/run-coatyjs-advertise.sh",
             declaredContext: .host,
             detectedContext: .project
         ))

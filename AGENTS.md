@@ -13,7 +13,7 @@ Normal workflow uses four commands:
 
 Use `make verify-ci` only when reproducing the required CI plan. Use
 `make checkpoint`/`make checkpoint-hardware` for release validation; hardware
-is never probed by ordinary verification. See `Tests/TESTING.md` for the
+is never probed by ordinary verification. See `docs/testing.md` for the
 manifest and compatibility aliases.
 
 - `axoloty-tool` = typed orchestration control plane. Linux: invoke it through root Make targets so product and ESP-IDF work stays in the pinned container. The Makefile is a thin compatibility/bootstrap surface; do not reproduce its `docker`/`podman` invocation manually. The runner supplies the arbitrary host UID, writable temporary home, mounted SwiftPM cache, and worktree-specific build directory. The image path `/opt/axoloty/bin/axoloty-tool` is a launcher that runs the mounted `Tools` package in a dedicated `BUILD_DIR/tooling` scratch directory; no project binary is baked into the image or extracted to the host. macOS: native Swift via isolated tooling package: `swift run --package-path Tools axoloty-tool check`. No native Swift product builds on Linux.
@@ -108,8 +108,8 @@ Historical T-### tickets migrated to GitHub Issues, T-ID retained in title/body.
 
 ### Wire compatibility
 
-Axoloty targets wire compatibility with pinned CoatyJS reference agent (`Tests/WireCompatibility/ReferenceAgents/`). Reference = source of truth for wire shape.
+Axoloty targets wire compatibility with pinned CoatyJS reference agent (`Tests/Support/WireCompatibility/ReferenceAgents/`). Reference = source of truth for wire shape.
 
 - **Match CoatyJS where possible.** Axoloty/CoatyJS disagree on wire detail (field presence, payload wrapping, encoding overload): default = change Axoloty to match reference, not record difference as accepted. Captured discrepancy = defect to fix, not divergence to ratify — unless matching impossible or more harmful than breaking.
 - **Remain compatible despite divergence.** Unavoidable divergence: Axoloty must still tolerate peer's wire shape. Decode optional fields defensively (never force-unwrap field peer may omit), accept bare payload external producer sends. Trapping on peer's legitimate omission = bug, not compatibility boundary.
-- **No accidental divergences.** Wire-format or field-presence change requires regression test locking in new behavior + update to `Tests/WireCompatibility/CompatibilityMatrix.md`. Record only deliberate, unavoidable divergences (e.g. platform constraint like CoatyJS hardcoding QoS 0) with capture evidence + linked decision.
+- **No accidental divergences.** Wire-format or field-presence change requires regression test locking in new behavior + update to `docs/wire-compatibility.md`. Record only deliberate, unavoidable divergences (e.g. platform constraint like CoatyJS hardcoding QoS 0) with capture evidence + linked decision.

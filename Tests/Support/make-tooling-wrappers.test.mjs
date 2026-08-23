@@ -17,13 +17,30 @@ function swiftCodeBlockAfter(document, marker) {
   return match[1];
 }
 
-test("principal Make workflows are direct axoloty-tool wrappers", () => {
+test("principal Make workflows use the canonical tooling entry points", () => {
   const makefile = fs.readFileSync("Makefile", "utf8");
-  const recursiveTargets = [
-    "check",
+  const tierTargets = [
     "build",
-    "test-tooling",
+    "test",
+    "test-unit",
+    "test-module",
+    "test-fuzz",
     "test-wire",
+  ];
+  const tierMappings = {
+    build: "smoke",
+    test: "integration",
+    "test-unit": "unit",
+    "test-module": "module",
+    "test-fuzz": "property",
+    "test-wire": "wire-offline",
+  };
+  assert.match(makefile, /define run_test_tier[\s\S]+?test-tier TIER=/);
+  for (const target of tierTargets) {
+    assert.match(recipe(makefile, target), /\$\(run_test_tier\)/, `${target} must use the shared tier wrapper`);
+    assert.match(makefile, new RegExp(`^${target}: TIER=${tierMappings[target]}$`, "m"));
+  }
+  for (const target of [
     "test-wire-live",
     "embedded-toolchain-doctor",
     "embedded-swift-build",
@@ -31,12 +48,26 @@ test("principal Make workflows are direct axoloty-tool wrappers", () => {
     "hardware-check",
     "hardware-require",
     "release-fixture-bundle",
-  ];
-  for (const target of recursiveTargets) {
+  ]) {
     assert.match(recipe(makefile, target), /\$\(MAKE\).*\baxoloty-tool\b/, `${target} must forward to axoloty-tool`);
   }
   for (const target of ["verify", "verify-ci", "test-one", "test-tier", "explain"]) {
     assert.match(recipe(makefile, target), /(?:\.devcontainer\/run\.sh.*axoloty-tool|\$\(MAKE\).*\baxoloty-tool\b)/, `${target} must run axoloty-tool in the pinned container`);
+  }
+  for (const target of [
+    "check",
+    "test-tooling",
+    "wire-codec-test",
+    "test-communication",
+    "test-observation-linux",
+    "test-fast",
+    "ci-fast",
+    "test-wire-all",
+    "broker",
+    "broker-stop",
+    "embedded-mqtt-test",
+  ]) {
+    assert.doesNotMatch(makefile, new RegExp(`^${target}:`, "m"), `${target} should not remain a Make target`);
   }
 });
 

@@ -8,7 +8,7 @@ import Testing
 /// CoatyJS 2.4.0 acting as a (deliberately misbehaving, for these two
 /// scenarios) responder. This is the request/reply half of the lifecycle
 /// catalog's `duplicate-reply` and `late-reply` scenarios: see
-/// `Tests/WireCompatibility/Reverse/coatyjs-core-consumer.js` for the
+/// `Tests/Support/WireCompatibility/Reverse/coatyjs-core-consumer.js` for the
 /// responder side, which sends a genuine second wire `Return` (duplicate) or
 /// deliberately withholds its `Return` past the point this test gives up
 /// (late).

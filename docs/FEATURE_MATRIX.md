@@ -13,7 +13,7 @@ feature parity:
 Legend: **Yes** = implemented; **Partial** = useful subset or platform-limited;
 **No** = not implemented; **Planned** = tracked but not implemented. “Present”
 does not mean cross-language compatibility has already been proven; see the
-wire-evidence section and `../Tests/WireCompatibility/CompatibilityMatrix.md`.
+wire-evidence section and `../docs/wire-compatibility.md`.
 
 ## Runtime and platform
 
@@ -98,7 +98,7 @@ wire-evidence section and `../Tests/WireCompatibility/CompatibilityMatrix.md`.
 ## Current wire-compatibility evidence
 
 See [SUPPORT_MATRIX.md](SUPPORT_MATRIX.md) for the full 0.2 support
-classification and [Tests/WireCompatibility/CompatibilityMatrix.md](../Tests/WireCompatibility/CompatibilityMatrix.md)
+classification and [docs/wire-compatibility.md](../docs/wire-compatibility.md)
 for per-direction wire evidence.
 
 | Direction/capability | Status |
@@ -127,4 +127,4 @@ platform module belongs in Swift.
 - [Coaty communication-event specification](https://coatyio.github.io/coaty-js/man/communication-events/)
 - [Legacy CoatySwift developer guide](https://coatyio.github.io/coaty-swift/man/developer-guide/)
 - Axoloty source tree under `../Source/`, roadmap, container tests, and
-  `../Tests/WireCompatibility/`
+  `../Tests/WireCompatibility/` and `../Tests/Support/WireCompatibility/`

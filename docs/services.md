@@ -42,8 +42,8 @@ swift run --package-path . ax serve mcp --transport http
 swift run --package-path . ax serve dev
 ```
 
-`make broker` and `make broker-stop` remain for compatibility and print a
-deprecation warning. Prefer `make serve-mqtt`.
+Use `make serve-mqtt` to run the local broker in the foreground. Stop it with
+Ctrl-C when the service is no longer needed.
 
 ## MQTT service
 

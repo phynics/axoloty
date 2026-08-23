@@ -2,16 +2,16 @@
 
 `axoloty-tool` is Axoloty's typed command-line control plane. Its plans, process results,
 hardware outcomes, and JSON manifests are defined in Swift and tested with
-Swift Testing. The principal root Make targets forward to `axoloty-tool`; the Makefile
-also retains compatibility recipes for specialized evidence workflows that do
-not belong to the canonical offline check.
+Swift Testing. The root Make targets forward to `axoloty-tool`; the Makefile
+also retains focused recipes for specialized evidence workflows that do not
+belong to the canonical verification plan.
 
 ## Platform entry points
 
 Linux product and ESP-IDF work is containerized:
 
 ```sh
-make check
+make verify
 make axoloty-tool AXOLOTY_TOOL_ARGS='wire verify'
 make hardware-check
 make release-fixture-bundle
@@ -60,13 +60,12 @@ place. Wire parsing correctness belongs to the offline tier; MQTT tests only
 transport behavior.
 
 The tooling test suite preserves an end-to-end development-service test as
-opt-in evidence. Ordinary `test tooling` and `make test-tooling` runs skip it
-before looking up or starting Mosquitto and MCP. On Linux, run it explicitly
-with:
+opt-in evidence. Ordinary `test tooling` runs skip it before looking up or
+starting Mosquitto and MCP. On Linux, run it explicitly with:
 
 ```sh
-AXOLOTY_RUN_DEV_SERVICE_E2E=1 make test-tooling \
-  AXOLOTY_TOOL_CONTAINER_ENV_VARS=AXOLOTY_RUN_DEV_SERVICE_E2E
+AXOLOTY_RUN_DEV_SERVICE_E2E=1 make axoloty-tool AXOLOTY_TOOL_ARGS='test tooling' \
+	AXOLOTY_TOOL_CONTAINER_ENV_VARS=AXOLOTY_RUN_DEV_SERVICE_E2E
 ```
 
 ## Structured output
@@ -127,7 +126,7 @@ manifest, and verifier logs; otherwise it fast-paths to a pass. The
 `live-wire-exemption` label records a dated, expiring reviewed exemption that
 waives only the capture. The authoritative path list and exemption convention
 live in `Tests/Support/classify-wire-change.mjs` and
-`Tests/WireCompatibility/CompatibilityMatrix.md`, respectively.
+`docs/wire-compatibility.md`, respectively.
 
 ### Fixture bundle (offline, deterministic)
 
