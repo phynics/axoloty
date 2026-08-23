@@ -167,7 +167,13 @@ let package = Package(
                 "ProtocolTrace/ProtocolTraceTests.swift",
                 "WireCompatibility/Lifecycle/AxolotyLifecycleSubjectTests.swift",
                 "WireCompatibility/Reverse/AxolotyAdvertiseProducerTests.swift",
+                "WireCompatibility/Reverse/AxolotyAdvertiseConsumerTests.swift",
                 "WireCompatibility/Reverse/AxolotyCoreProducerTests.swift",
+                "WireCompatibility/Reverse/AxolotyCoreConsumerTests.swift",
+                "WireCompatibility/Reverse/AxolotyCoreRequestConsumerTests.swift",
+                "WireCompatibility/Reverse/AxolotyUpdateCompleteConsumerTests.swift",
+                "WireCompatibility/Reverse/AxolotyCallReturnConsumerTests.swift",
+                "WireCompatibility/Reverse/ModernConsumerSupport.swift",
                 "Runtime/AxolotyRuntimeTests.swift",
             ],
             resources: [

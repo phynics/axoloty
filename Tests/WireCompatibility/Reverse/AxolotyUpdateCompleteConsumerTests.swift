@@ -1,110 +1,47 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-@testable import Axoloty
+import Axoloty
 import Foundation
 import Testing
-import AxolotyWire
 
-/// Verifies the CoatyJS Update -> modern Swift Complete direction.
+/// Responds to a CoatyJS Update with a correlated modern Complete.
 @MainActor
 struct AxolotyUpdateCompleteConsumerTests {
-    @Test(.enabled(if: updateCompleteConsumerIsEnabled))
+    @Test(.enabled(if: scenarioIsEnabled))
     func decodesUpdateAndPublishesCorrelatedComplete() async throws {
-        let environment = ProcessInfo.processInfo.environment
-        let manager = try makeUpdateCompleteConsumerManager(environment: environment)
-        defer { manager.container.shutdown() }
-
-        try await manager.container.startAndWaitUntilReady()
-        let parsedStream = await manager.communication.observeParsedMessages()
-        var iterator = parsedStream.makeAsyncIterator()
-        let objectTypeFilter = EVENT_TYPE_FILTER_SEPARATOR + "com.coaty.test.WireFixture"
-        let updateTopic = TopicBuilder.subscribeTopic(
-            eventType: .update,
-            eventTypeFilter: objectTypeFilter,
-            namespace: environment["WIRE_NAMESPACE"] ?? "wire-compat-v1"
+        let environment = ModernConsumerSupport.environment()
+        var builder = try RuntimeDefinition.Builder(
+            identity: ModernConsumerSupport.identity(name: "axoloty-modern-update-responder"),
+            namespace: ModernConsumerSupport.namespace(environment: environment)
         )
-        await manager.communication.subscriptionCoordinator.acquire(topic: updateTopic)
-        try signalUpdateCompleteReadiness(environment: environment)
-
-        let parsed = try await nextUpdateCompleteMessage(&iterator)
-        #expect(parsed.eventType == .update)
-        #expect(parsed.eventTypeFilter == objectTypeFilter)
-        #expect(parsed.sourceId == "22222222-2222-4222-8222-222222222222")
-        let update: UpdateEvent = try PayloadCoder.decode(try #require(parsed.payloadString))
-        #expect(update.data.object.coreType == .CoatyObject)
-        #expect(update.data.object.objectType == "com.coaty.test.WireFixture")
-        #expect(update.data.object.objectId.string == "11111111-1111-4111-8111-111111111111")
-        #expect(update.data.object.name == "wire-fixture")
-
-        let completed = CoatyObject(
-            coreType: .CoatyObject,
-            objectType: "com.coaty.test.WireFixture",
-            objectId: try #require(CoatyUUID(uuidString: "11111111-1111-4111-8111-111111111111")),
-            name: "wire-fixture-completed"
+        let stream = try builder.events(matching: .family(.update), buffering: .failAfterDrop(capacity: 4))
+        let runtime = AxolotyRuntime(
+            definition: try builder.finish(),
+            transport: try ModernConsumerSupport.binding(environment: environment)
         )
-        let correlationId = try #require(parsed.correlationId)
-        manager.communication.publishComplete(
-            event: CompleteEvent.with(object: completed, privateData: ["reference": "axoloty-modern"]),
-            correlationId: correlationId
-        )
-        emitUpdateCompleteState("{\"state\":\"ack\",\"scenario\":\"update-complete\",\"response\":\"complete\"}")
+        do {
+            try await runtime.start()
+            try ModernConsumerSupport.signalReadiness(environment: environment)
+            let event = try await ModernConsumerSupport.next(from: stream, timeout: .seconds(120), scenario: "Update")
+            let root = try ModernConsumerSupport.jsonObject(event.value)
+            let object = try #require(root["object"] as? [String: Any])
+            #expect(event.context.sourceID == ModernConsumerSupport.requesterID)
+            #expect(object["coreType"] as? String == "CoatyObject")
+            #expect(object["objectType"] as? String == ModernConsumerSupport.fixtureType)
+            #expect(object["objectId"] as? String == ModernConsumerSupport.fixtureID)
+            #expect(object["name"] as? String == "wire-fixture")
+            let correlationID = try #require(event.context.correlationID)
+            let payload = Array(#"{"object":{"coreType":"CoatyObject","objectType":"com.coaty.test.WireFixture","objectId":"11111111-1111-4111-8111-111111111111","name":"wire-fixture-completed"},"privateData":{"reference":"axoloty-modern"}}"#.utf8)
+            #expect(await runtime.respond(.complete(correlationID: correlationID, payload: payload)) == .accepted)
+            ModernConsumerSupport.emit("{\"state\":\"ack\",\"scenario\":\"update-complete\",\"response\":\"complete\"}")
+            await runtime.stop()
+        } catch {
+            await runtime.stop()
+            throw error
+        }
     }
 }
 
-private let updateCompleteConsumerIsEnabled =
+private let scenarioIsEnabled =
     ProcessInfo.processInfo.environment["WIRE_JS_TO_MODERN_LIVE"] == "1" &&
     ProcessInfo.processInfo.environment["WIRE_SCENARIO"] == "update-complete"
-
-@MainActor
-private func makeUpdateCompleteConsumerManager(environment: [String: String]) throws ->
-    (container: Container, communication: CommunicationManager)
-{
-    let container = try Container.resolve(
-        components: Components(controllers: [:], objectTypes: []),
-        configuration: Configuration(
-            common: CommonOptions(agentIdentity: [
-                "name": "axoloty-modern-update-responder",
-                "objectId": CoatyUUID(uuidString: "33333333-3333-4333-8333-333333333333")!,
-            ]),
-            communication: CommunicationOptions(
-                namespace: environment["WIRE_NAMESPACE"] ?? "wire-compat-v1",
-                mqttClientOptions: MQTTClientOptions(
-                    host: environment["WIRE_BROKER_HOST"] ?? "127.0.0.1",
-                    port: UInt16(environment["WIRE_BROKER_PORT"] ?? "1883") ?? 1883
-                ),
-                shouldAutoStart: false
-            )
-        )
-    )
-    guard let communication = container.communicationManager else {
-        throw AxolotyError.invalidConfiguration(option: "communicationManager", reason: "container did not resolve a communication manager")
-    }
-    return (container, communication)
-}
-
-private func nextUpdateCompleteMessage(
-    _ iterator: inout AsyncStream<ParsedMQTTMessage>.Iterator
-) async throws -> ParsedMQTTMessage {
-    do {
-        while true {
-            let message = try await nextValue(&iterator, timeout: .seconds(120))
-            guard message.eventType == .update,
-                  message.eventTypeFilter == EVENT_TYPE_FILTER_SEPARATOR + "com.coaty.test.WireFixture"
-            else { continue }
-            return message
-        }
-    } catch is CancellationError {
-        throw AxolotyError.runtime(code: .streamEnded, reason: "Update stream ended before CoatyJS published")
-    } catch {
-        throw AxolotyError.runtime(code: .timedOut, reason: "Timed out waiting for CoatyJS Update")
-    }
-}
-
-private func signalUpdateCompleteReadiness(environment: [String: String]) throws {
-    guard let path = environment["WIRE_READY_FILE"] else { return }
-    try Data("ready\n".utf8).write(to: URL(fileURLWithPath: path), options: .atomic)
-}
-
-private func emitUpdateCompleteState(_ line: String) {
-    FileHandle.standardError.write(Data((line + "\n").utf8))
-}

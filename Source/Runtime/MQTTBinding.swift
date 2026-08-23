@@ -125,19 +125,20 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     /// Installs bounded wildcard subscriptions for the closed profile.
     public func installSubscriptions(namespace: String) async throws {
         try await client.subscribe(RuntimeTopicBuilder.subscribeAllOneWayTopics(namespace: namespace))
-        let responseFamilies: [WireEventType] = [.discover, .resolve, .query, .retrieve, .update, .complete, .call, .returnEvent]
-        for family in responseFamilies {
-            try await client.subscribe(RuntimeTopicBuilder.subscribeTopic(eventType: family, namespace: namespace))
-        }
+        // Request/reply filters (for example `UPD::com.example.Type` and
+        // `CLL:operation`) are encoded in the event-type topic segment. MQTT
+        // wildcards match complete segments, so a family-specific `UPD/+`-
+        // style filter would not match those suffixed event types. The
+        // correlated shape has exactly three segments after the namespace;
+        // subscribe once to that bounded shape and let ProtocolProcessor
+        // enforce the closed capability set.
+        try await client.subscribe(RuntimeTopicBuilder.subscribeAllCorrelatedTopics(namespace: namespace))
     }
 
     /// Removes the same profile subscriptions during shutdown/reconnect.
     public func removeSubscriptions(namespace: String) async throws {
         try await client.unsubscribe(RuntimeTopicBuilder.subscribeAllOneWayTopics(namespace: namespace))
-        let responseFamilies: [WireEventType] = [.discover, .resolve, .query, .retrieve, .update, .complete, .call, .returnEvent]
-        for family in responseFamilies {
-            try await client.unsubscribe(RuntimeTopicBuilder.subscribeTopic(eventType: family, namespace: namespace))
-        }
+        try await client.unsubscribe(RuntimeTopicBuilder.subscribeAllCorrelatedTopics(namespace: namespace))
     }
 
     /// Publishes a minimal modern Identity advertisement before runtime ready.
@@ -303,8 +304,7 @@ private enum RuntimeTopicBuilder {
         "coaty/3/\(namespace)/+/+"
     }
 
-    static func subscribeTopic(eventType: WireEventType, namespace: String) -> String {
-        let correlation = eventType.isOneWay ? "" : "/+"
-        return "coaty/3/\(namespace)/\(eventType.rawValue)/+\(correlation)"
+    static func subscribeAllCorrelatedTopics(namespace: String) -> String {
+        "coaty/3/\(namespace)/+/+/+"
     }
 }
