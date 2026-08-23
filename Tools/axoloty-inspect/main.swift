@@ -124,18 +124,7 @@ func runInspector(
 
 /// Applies the validated inspector level before inspector lifecycle work begins.
 func applyInspectorLogLevel(_ level: InspectorLogLevel) {
-    switch level {
-    case .trace:
-        LogManager.setLevel(.trace, for: nil)
-    case .debug:
-        LogManager.setLevel(.debug, for: nil)
-    case .info:
-        LogManager.setLevel(.info, for: nil)
-    case .notice:
-        LogManager.setLevel(.notice, for: nil)
-    case .warning:
-        LogManager.setLevel(.warning, for: nil)
-    case .error:
-        LogManager.setLevel(.error, for: nil)
-    }
+    // Runtime diagnostics are surfaced through the structured inspector
+    // errors; the modern runtime has no process-global logger to mutate.
+    _ = level
 }

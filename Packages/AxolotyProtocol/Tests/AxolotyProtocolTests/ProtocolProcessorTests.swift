@@ -39,6 +39,119 @@ struct ProtocolProcessorTests {
         #expect(sink.count == 1)
     }
 
+    @Test("Advertise reserves canonical core and object-type publications atomically")
+    func advertiseFiltersAreAtomic() throws {
+        let payload = Array(#"{"object":{"objectId":"11111111-1111-4111-8111-111111111111","coreType":"CoatyObject","objectType":"com.coaty.test.WireFixture","name":"wire-fixture"}}"#.utf8)
+        try payload.withUnsafeBufferPointer { buffer in
+            let operation = try ProtocolLocalOperation(
+                capability: .advertise,
+                sourceID: Self.source,
+                payload: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+            )
+            var saturatedProcessor = ProtocolProcessor<1>()
+            var saturatedSink = InlineProtocolActionSink<1>()
+            #expect(saturatedProcessor.processOutbound(operation, sink: &saturatedSink) == .rejected(.capacityExceeded))
+            #expect(saturatedProcessor.state.activeObjects == 0)
+            #expect(saturatedSink.count == 0)
+
+            var processor = ProtocolProcessor<1>()
+            var sink = InlineProtocolActionSink<2>()
+            #expect(processor.processOutbound(operation, sink: &sink) == .accepted)
+            let coreAction = try #require(sink[0]).owned()
+            let objectAction = try #require(sink[1]).owned()
+            #expect(coreAction.eventTypeFilter == Array("CoatyObject".utf8))
+            #expect(coreAction.eventTypeFilterKind == .direct)
+            #expect(objectAction.eventTypeFilter == Array("com.coaty.test.WireFixture".utf8))
+            #expect(objectAction.eventTypeFilterKind == .objectType)
+            #expect(processor.state.activeObjects == 1)
+        }
+    }
+
+    @Test("Update retains the pinned single core-type publication")
+    func updateUsesOnlyCoreTypeFilter() throws {
+        let payload = Array(#"{"object":{"objectId":"11111111-1111-4111-8111-111111111111","coreType":"CoatyObject","objectType":"com.coaty.test.WireFixture","name":"updated"}}"#.utf8)
+        try payload.withUnsafeBufferPointer { buffer in
+            let operation = try ProtocolLocalOperation(
+                capability: .update,
+                sourceID: Self.source,
+                correlationID: Self.source,
+                payload: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count),
+                requestTimeoutMS: 100
+            )
+            var processor = ProtocolProcessor<1>()
+            var sink = InlineProtocolActionSink<2>()
+            #expect(processor.processOutbound(operation, sink: &sink) == .accepted)
+            #expect(sink.count == 1)
+            let action = try #require(sink[0]).owned()
+            #expect(action.eventTypeFilter == Array("CoatyObject".utf8))
+            #expect(action.eventTypeFilterKind == .direct)
+        }
+    }
+
+    @Test("one source can advertise multiple object identities")
+    func multipleAdvertisementsPerSource() throws {
+        let source = Self.source
+        let first = Array("{\"object\":{\"objectId\":\"11111111-1111-4111-8111-111111111111\"}}".utf8)
+        let second = Array("{\"object\":{\"objectId\":\"22222222-2222-4222-8222-222222222222\"}}".utf8)
+        var processor = ProtocolProcessor<2>()
+        var sink = InlineProtocolActionSink<2>()
+        for payload in [first, second] {
+            let outcome = try payload.withUnsafeBufferPointer { buffer in
+                let operation = try ProtocolLocalOperation(
+                    capability: .advertise,
+                    sourceID: source,
+                    payload: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+                )
+                return processor.processOutbound(operation, sink: &sink)
+            }
+            #expect(outcome == .accepted)
+            sink.removeAll()
+        }
+        let duplicate = try first.withUnsafeBufferPointer { buffer in
+            let operation = try ProtocolLocalOperation(
+                capability: .advertise,
+                sourceID: source,
+                payload: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+            )
+            return processor.processOutbound(operation, sink: &sink)
+        }
+        #expect(duplicate == .rejected(.duplicate))
+        #expect(processor.state.activeObjects == 2)
+    }
+
+    @Test("deadvertise removes every object named by one source atomically")
+    func deadvertiseRemovesMultipleObjects() throws {
+        let source = Self.source
+        let first = Array("{\"object\":{\"objectId\":\"11111111-1111-4111-8111-111111111111\"}}".utf8)
+        let second = Array("{\"object\":{\"objectId\":\"22222222-2222-4222-8222-222222222222\"}}".utf8)
+        let removal = Array("{\"objectIds\":[\"11111111-1111-4111-8111-111111111111\",\"22222222-2222-4222-8222-222222222222\"]}".utf8)
+        var processor = ProtocolProcessor<2>()
+        var sink = InlineProtocolActionSink<2>()
+        for payload in [first, second] {
+            let outcome = try payload.withUnsafeBufferPointer { buffer in
+                let operation = try ProtocolLocalOperation(
+                    capability: .advertise,
+                    sourceID: source,
+                    payload: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+                )
+                return processor.processOutbound(operation, sink: &sink)
+            }
+            #expect(outcome == .accepted)
+            sink.removeAll()
+        }
+
+        let outcome = try removal.withUnsafeBufferPointer { buffer in
+            let operation = try ProtocolLocalOperation(
+                capability: .deadvertise,
+                sourceID: source,
+                payload: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+            )
+            return processor.processOutbound(operation, sink: &sink)
+        }
+        #expect(outcome == .accepted)
+        #expect(processor.state.activeObjects == 0)
+    }
+
     @Test("subscription tokens reject stale generations and inactive entries")
     func subscriptionGenerationAndActivity() throws {
         let callback: ProtocolHandlerFunction = { _, _, _, _, _ in }
@@ -142,6 +255,26 @@ struct ProtocolProcessorTests {
         #expect(result == .accepted)
         #expect(processor.state.activeAssociations == 1)
         #expect(sink.count == 1)
+    }
+
+    @Test("external disassociation flags reject before state mutation")
+    func externalDisassociationFlagRejects() throws {
+        var processor = ProtocolProcessor<1>()
+        var sink = InlineProtocolActionSink<1>()
+        let result = try withBorrowedFrame(
+            topic: "coaty/3/test/ASC/00000000-0000-4000-8000-000000000001",
+            payload: "{\"ioSourceId\":\"00000000-0000-4000-8000-000000000001\",\"ioActorId\":\"00000000-0000-4000-8000-000000000002\",\"isExternalRoute\":true}"
+        ) { frame in
+            processor.processInbound(
+                frame,
+                nowMS: 1,
+                classifier: ExactProtocolRouteClassifier(externalRoute: "external/wire-compat-v1/io-external-1"),
+                sink: &sink
+            )
+        }
+        #expect(result == .rejected(.externalRouteMismatch))
+        #expect(processor.state.activeAssociations == 0)
+        #expect(sink.count == 0)
     }
 
     @Test("one actor retains multiple source routes until final detach")

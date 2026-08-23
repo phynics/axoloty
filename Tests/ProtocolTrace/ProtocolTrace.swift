@@ -151,9 +151,10 @@ private struct SharedProtocolTraceReplay<let capacity: Int>: ~Copyable {
                     sink.removeAll()
                 }
                 if let correlationID = state.pendingCorrelationIDs.first {
-                    try Self.withBorrowedPayload("{}") { payload in
+                    let request = Self.requestSeed(for: trace.steps.first?.input.family ?? .resolve)
+                    try Self.withBorrowedPayload(request.payload) { payload in
                         let operation = try ProtocolLocalOperation(
-                            capability: .discover,
+                            capability: request.capability,
                             sourceID: Self.identity("trace-requester"),
                             correlationID: Self.identity(correlationID),
                             payload: payload,
@@ -184,7 +185,11 @@ private struct SharedProtocolTraceReplay<let capacity: Int>: ~Copyable {
     private static func seedObject<S: ~Copyable & ProtocolActionSink>(_ name: String, processor: inout ProtocolProcessor<capacity>, sink: inout S, time: UInt64) throws {
         let object = Self.identity(name)
         let topic = "coaty/3/trace/ADV/\(Self.uuidText(object))"
-        let payload = "{\"object\":{}}"
+        // Seed through the same validated Advertise path as the trace step.
+        // An empty object is syntactically JSON but is not an accepted
+        // AdvertiseWireData value, which would leave a following Deadvertise
+        // trace without the object it claims to remove.
+        let payload = "{\"object\":{\"objectId\":\"\(Self.uuidText(object))\",\"coreType\":\"CoatyObject\",\"objectType\":\"trace.Object\",\"name\":\"\(name)\"}}"
         try Self.withBorrowed(topic: topic, payload: payload) { frame in
             _ = processor.processInbound(frame, nowMS: UInt32(time), sink: &sink)
         }
@@ -257,6 +262,15 @@ private struct SharedProtocolTraceReplay<let capacity: Int>: ~Copyable {
     private static func withBorrowedPayload<R>(_ payload: String, _ body: (ByteSlice) throws -> R) throws -> R {
         let bytes = Array(payload.utf8)
         return try bytes.withUnsafeBufferPointer { try body(ByteSlice(bytes: $0.baseAddress!, length: $0.count)) }
+    }
+    private static func requestSeed(for responseFamily: TraceEventFamily) -> (capability: ProtocolCapability, payload: String) {
+        switch responseFamily {
+        case .resolve: return (.discover, "{}")
+        case .retrieve: return (.query, "{}")
+        case .complete: return (.update, "{\"object\":{\"id\":\"x\"}}")
+        case .return: return (.call, "{\"parameters\":{\"value\":1},\"filter\":null}")
+        default: return (.discover, "{}")
+        }
     }
     private static func capability(_ family: TraceEventFamily) -> ProtocolCapability {
         switch family { case .advertise: return .advertise; case .deadvertise: return .deadvertise; case .channel: return .channel; case .associate: return .associate; case .ioValue: return .ioValue; case .discover: return .discover; case .resolve: return .resolve; case .query: return .query; case .retrieve: return .retrieve; case .update: return .update; case .complete: return .complete; case .call: return .call; case .return: return .returnEvent }

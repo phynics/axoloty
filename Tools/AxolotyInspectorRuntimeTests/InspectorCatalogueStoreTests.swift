@@ -73,7 +73,7 @@ func catalogueStoreDeduplicatesByObjectId() async {
 }
 
 @Test
-func catalogueStoreFilterMatchesByCoreType() async {
+func catalogueStoreFilterMatchesByInspectorCoreType() async {
     let store = InspectorCatalogueStore(observedSince: "2026-01-01T00:00:00Z", namespace: "test")
     await store.apply(InspectorObject(objectId: "id-1", coreType: "Identity", objectType: "coaty.Identity"))
     await store.apply(InspectorObject(objectId: "id-2", coreType: "Task", objectType: "coaty.Task"))
@@ -95,16 +95,16 @@ func discoveryRequestHasSelectorWhenAnyFieldProvided() {
 func discoveryRequestRejectsInvalidTypedSelectors() {
     let missingSelector = InspectorDiscoveryRequest()
     let invalidUUID = InspectorDiscoveryRequest(objectId: "not-a-uuid")
-    let invalidCoreType = InspectorDiscoveryRequest(coreType: "UnknownCoreType")
+    let invalidInspectorCoreType = InspectorDiscoveryRequest(coreType: "UnknownInspectorCoreType")
 
     #expect(throws: InspectorError.invalidArguments(reason: "at least one selector (coreType, objectType, or objectId) is required")) {
-        try missingSelector.makeDiscoverEvent()
+        try missingSelector.makeInspectorDiscoverRequest()
     }
     #expect(throws: InspectorError.invalidArguments(reason: "objectId must be a valid UUID: not-a-uuid")) {
-        try invalidUUID.makeDiscoverEvent()
+        try invalidUUID.makeInspectorDiscoverRequest()
     }
-    #expect(throws: InspectorError.invalidArguments(reason: "coreType must be a known core type: UnknownCoreType")) {
-        try invalidCoreType.makeDiscoverEvent()
+    #expect(throws: InspectorError.invalidArguments(reason: "coreType must be a known core type: UnknownInspectorCoreType")) {
+        try invalidInspectorCoreType.makeInspectorDiscoverRequest()
     }
 }
 
@@ -116,7 +116,7 @@ func discoveryRequestPreservesSelectorPrecedenceForValidSelectors() throws {
         objectId: "00000000-0000-4000-8000-000000000001"
     )
 
-    let event = try request.makeDiscoverEvent()
+    let event = try request.makeInspectorDiscoverRequest()
 
     #expect(event.data.objectId?.string == "00000000-0000-4000-8000-000000000001")
     #expect(event.data.objectTypes == nil)

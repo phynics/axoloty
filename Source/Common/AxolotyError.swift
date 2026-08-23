@@ -56,6 +56,8 @@ public enum AxolotyError: Throwable, Catching {
         case subscriptionFailed
         /// A referenced entity (e.g. a sensor) was not registered.
         case notRegistered
+        /// A bounded runtime queue or supervision limit was exhausted.
+        case capacityExceeded
     }
 
     public var userFriendlyMessage: String {

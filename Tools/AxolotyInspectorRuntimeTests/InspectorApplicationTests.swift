@@ -16,19 +16,19 @@ private final class SuspendedInspectorSession: InspectorSession {
         try await Task.sleep(for: .seconds(60))
     }
 
-    func communicationState() async -> CommunicationState {
+    func transportState() async -> InspectorTransportState {
         .offline
     }
 
-    func advertiseEvents() async -> AsyncStream<AdvertiseEventSnapshot> {
+    func advertiseEvents() async -> AsyncStream<InspectorAdvertiseEvent> {
         AsyncStream { continuation in continuation.finish() }
     }
 
-    func deadvertiseEvents() async -> AsyncStream<DeadvertiseEventSnapshot> {
+    func deadvertiseEvents() async -> AsyncStream<InspectorDeadvertiseEvent> {
         AsyncStream { continuation in continuation.finish() }
     }
 
-    func discover(_ event: DiscoverEvent) async -> AsyncStream<ResponseEventSnapshot> {
+    func discover(_ event: InspectorDiscoverRequest) async -> AsyncStream<InspectorResponseEvent> {
         AsyncStream { continuation in continuation.finish() }
     }
 

@@ -5,7 +5,7 @@ import Foundation
 /// An inspector-owned, immutable representation of a Coaty object observed
 /// through Advertise events.
 ///
-/// Created at the runtime boundary by converting ``AdvertiseEventSnapshot``
+/// Created at the runtime boundary by converting ``InspectorAdvertiseEvent``
 /// values. The ``payload`` field is populated only when the operator
 /// explicitly requests it via `--full`; ``privateData`` is populated only
 /// when both `--full` and `--include-private-data` are requested.

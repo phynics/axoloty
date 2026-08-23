@@ -1,275 +1,238 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Axoloty
+import AxolotyProtocol
+import AxolotyWire
 import Foundation
 import Testing
 
-/// Axoloty (modern Swift) as the Call/Return initiator against pinned
-/// CoatyJS 2.4.0 acting as a (deliberately misbehaving, for these two
-/// scenarios) responder. This is the request/reply half of the lifecycle
-/// catalog's `duplicate-reply` and `late-reply` scenarios: see
-/// `Tests/Support/WireCompatibility/Reverse/coatyjs-core-consumer.js` for the
-/// responder side, which sends a genuine second wire `Return` (duplicate) or
-/// deliberately withholds its `Return` past the point this test gives up
-/// (late).
+/// Live lifecycle subjects for the modern host runtime.
 ///
-/// Every state transition is written as a JSONL line to stdout so the
-/// orchestrating shell script (`run-lifecycle-call-return.sh`) and the
-/// retained `.testing/wire` application log can be cross-referenced against
-/// the independent MQTT capture without inferring timing from prose.
+/// These tests deliberately use only ``AxolotyRuntime`` and ``MQTTBinding``.
+/// The shell runners keep the broker and proxy controls outside the subject;
+/// the subject reports bounded state transitions as JSONL so the independent
+/// MQTT capture can be correlated with application behavior.
 @MainActor
 struct AxolotyLifecycleSubjectTests {
+    private static let identityID = UUID16(parsing: "44444444-4444-4444-8444-444444444444")!
+
     @Test(.enabled(if: ProcessInfo.processInfo.environment["WIRE_LIFECYCLE_DUPLICATE_REPLY_LIVE"] == "1"))
     func duplicateReply() async throws {
-        let (container, manager) = try makeManager()
-        defer { container.shutdown() }
-        try await container.startAndWaitUntilReady()
-
-        let stream = try await manager.publishCall(CallEvent.with(
-            operation: "wire-fixture-operation",
-            parameters: "{\"operand\":7}"
-        ))
-        var iterator = stream.makeAsyncIterator()
-        report(state: "ready", scenario: "duplicate-reply")
-
-        // Real application-level duplicate handling: Axoloty's EventHub does
-        // not itself deduplicate Return events by correlationId (there is no
-        // such filter in CM+Publish.swift's responseStream/publishWithResponse),
-        // so a correct caller must do it. This loop is exactly that caller
-        // logic, not a shortcut around the library.
-        var acceptedVariant: String?
-        var ignoredVariant: String?
-        var accepted = false
-        for _ in 0 ..< 2 {
-            let response = try await nextResponse(&iterator, timeout: .seconds(5))
-            let variant = try decodeVariant(from: response)
-            if !accepted {
-                accepted = true
-                acceptedVariant = variant
-                report(state: "accepted", scenario: "duplicate-reply", extra: ["variant": variant])
-            } else {
-                ignoredVariant = variant
-                report(state: "ignored", scenario: "duplicate-reply", extra: ["variant": variant])
+        let correlation = UUID16(parsing: "55555555-5555-4555-8555-555555555555")!
+        let (runtime, stream) = try await makeRuntime(
+            scenario: "duplicate-reply",
+            selector: .correlatedResponse(capability: .returnEvent, correlationID: correlation)
+        )
+        do {
+            report(state: "ready", scenario: "duplicate-reply")
+            var iterator = stream.makeAsyncIterator()
+            _ = await runtime.request(.call(
+                correlationID: correlation,
+                operation: "wire-fixture-operation",
+                payload: Array(#"{"parameters":{"operand":7}}"#.utf8),
+                timeoutMS: 10_000
+            ))
+            _ = try await nextEvent(&iterator, timeout: .seconds(10))
+            report(state: "accepted", scenario: "duplicate-reply", extra: ["variant": "original"])
+            do {
+                _ = try await nextEvent(&iterator, timeout: .seconds(1))
+                Issue.record("the duplicate Return was delivered to the runtime event stream")
+            } catch is LifecycleTimeout {
+                report(state: "ignored", scenario: "duplicate-reply", extra: ["variant": "duplicate"])
             }
+            report(state: "done", scenario: "duplicate-reply")
+            await runtime.stop()
+        } catch {
+            await runtime.stop()
+            throw error
         }
-
-        #expect(acceptedVariant == "original")
-        #expect(ignoredVariant == "duplicate")
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["WIRE_LIFECYCLE_LATE_REPLY_LIVE"] == "1"))
     func lateReply() async throws {
-        let (container, manager) = try makeManager()
-        defer { container.shutdown() }
-        try await container.startAndWaitUntilReady()
-
-        let stream = try await manager.publishCall(CallEvent.with(
-            operation: "wire-fixture-operation",
-            parameters: "{\"operand\":7}"
-        ))
-        var iterator = stream.makeAsyncIterator()
-        report(state: "ready", scenario: "late-reply")
-
-        // A deliberately short deadline: CoatyJS's responder (see
-        // LIFECYCLE_LATE_REPLY_DELAY_MS, default 4s) waits well past this
-        // before publishing its Return. Timing out here and letting the
-        // enclosing task group cancel the pending `iterator.next()` task
-        // exercises the real give-up path: EventStream.Iterator.next()'s
-        // onCancel calls continuation.finish(), which (once it's the last
-        // consumer) drives CM+Publish.swift's responseStream onLast handler
-        // to release/unsubscribe the correlated response topic. A Return
-        // published after that point cannot reach this process even in
-        // principle -- there is no longer a live subscription for it.
+        let correlation = UUID16(parsing: "55555555-5555-4555-8555-555555555556")!
+        let (runtime, stream) = try await makeRuntime(
+            scenario: "late-reply",
+            selector: .correlatedResponse(capability: .returnEvent, correlationID: correlation)
+        )
         do {
-            _ = try await nextResponse(&iterator, timeout: .seconds(2))
-            Issue.record("Expected the Call to time out before CoatyJS's deliberately late Return")
-        } catch is TimeoutGivingUp {
-            report(state: "gave-up", scenario: "late-reply")
+            report(state: "ready", scenario: "late-reply")
+            var iterator = stream.makeAsyncIterator()
+            let requestNowMS = Self.monotonicNowMS()
+            _ = await runtime.request(.call(
+                correlationID: correlation,
+                operation: "wire-fixture-operation",
+                payload: Array(#"{"parameters":{"operand":7}}"#.utf8),
+                timeoutMS: 2_000
+            ), nowMS: requestNowMS)
+            do {
+                _ = try await nextEvent(&iterator, timeout: .seconds(2.5))
+                Issue.record("the deliberately late Return arrived before the request deadline")
+            } catch is LifecycleTimeout {
+                guard await runtime.expire(nowMS: requestNowMS &+ 2_500) else {
+                    Issue.record("the request deadline did not expire")
+                    throw LifecycleFailure.deadlineNotExpired
+                }
+                report(state: "gave-up", scenario: "late-reply")
+            }
+            do {
+                _ = try await nextEvent(&iterator, timeout: .seconds(3))
+                Issue.record("the late Return was delivered after expiry")
+            } catch is LifecycleTimeout {
+                // The capture verifier separately proves that the responder
+                // published the late Return on the wire.
+            }
+            // The responder intentionally waits four seconds before sending
+            // its Return.  A canceled AsyncStream iterator may finish
+            // immediately on the second read, so keep the runtime alive for
+            // a bounded grace window instead of relying on that read to sleep
+            // for the full interval.  This keeps the retained capture causal:
+            // the late publication must occur before the subject disconnects.
+            try await Task.sleep(for: .seconds(5))
+            report(state: "done", scenario: "late-reply")
+            await runtime.stop()
+        } catch {
+            await runtime.stop()
+            throw error
         }
-
-        // Give CoatyJS's later Return (published on its own delayed timer)
-        // time to actually reach the broker, so the independent MQTT capture
-        // this scenario is verified against has a genuine late PUBLISH to
-        // compare timestamps with -- not just an absence of one.
-        try await Task.sleep(for: .seconds(5))
-        report(state: "done", scenario: "late-reply")
     }
-
-    // MARK: - Network-failure scenarios (driven through axoloty-wire proxy).
-    //
-    // These four tests are the Axoloty-subject half of the lifecycle
-    // catalog's connectivity scenarios. The orchestrating script
-    // (run-lifecycle-network.sh) watches the JSONL state lines below and
-    // severs/restores the TCP path (or stops/starts the broker itself) at
-    // the documented points; the subject only ever observes its own
-    // communication state stream and reports transitions. Assertions about
-        // what actually crossed the wire live in the lifecycle capture,
-    // against the independent MQTT capture.
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["WIRE_LIFECYCLE_OFFLINE_QUEUEING_LIVE"] == "1"))
     func offlineQueueing() async throws {
-        let (container, manager) = try makeManager()
-        defer { container.shutdown() }
-        try await container.startAndWaitUntilReady()
-
-        let states = await manager.observeCommunicationStateStream()
-        var stateIterator = states.makeAsyncIterator()
-        report(state: "ready", scenario: "offline-queueing")
-
-        try await waitForState(.offline, &stateIterator, scenario: "offline-queueing")
-        report(state: "offline", scenario: "offline-queueing")
-
-        // Published while provably offline: CommunicationManager.publish
-        // appends to deferredPublications and flushes them, in order, on the
-        // next online transition. The wire capture (which bypasses the
-        // severed proxy) proves each label then appears exactly once.
-        for label in ["first", "second"] {
-            let object = CoatyObject(
-                coreType: .CoatyObject,
-                objectType: "com.coaty.test.WireQueuedFixture",
-                objectId: CoatyUUID(),
-                name: label
-            )
-            try manager.publishAdvertise(AdvertiseEvent.with(object: object))
-        }
-        report(state: "published-offline", scenario: "offline-queueing")
-
-        try await waitForState(.online, &stateIterator, scenario: "offline-queueing")
-        report(state: "reconnected", scenario: "offline-queueing")
-
-        // publish is fire-and-forget (see AxolotyAdvertiseProducerTests);
-        // give the flushed queue time to reach the broker before shutdown.
-        try await Task.sleep(for: .seconds(2))
-        report(state: "done", scenario: "offline-queueing")
+        try await runNetworkScenario(named: "offline-queueing", publishAfterReconnect: true)
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["WIRE_LIFECYCLE_RECONNECT_RESUBSCRIBE_LIVE"] == "1"))
     func reconnectResubscribe() async throws {
-        try await runReconnectProbeScenario(named: "reconnect-resubscribe")
+        try await runNetworkScenario(named: "reconnect-resubscribe", publishAfterReconnect: false)
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["WIRE_LIFECYCLE_BROKER_RESTART_LIVE"] == "1"))
     func brokerRestart() async throws {
-        try await runReconnectProbeScenario(named: "broker-restart")
+        try await runNetworkScenario(named: "broker-restart", publishAfterReconnect: false)
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["WIRE_LIFECYCLE_CLEAN_SESSION_LIVE"] == "1"))
     func cleanSession() async throws {
-        // Identical subject behavior to reconnect-resubscribe: Axoloty always
-        // connects with cleanSession: true (MQTTNIOClient.performConnect), so
-        // the subscription being restored after reconnect is the coordinator
-        // genuinely re-subscribing, not broker session state. The proxy's
-        // CONNACK log proves the
-        // broker reported sessionPresent=false on the reconnect handshake.
-        try await runReconnectProbeScenario(named: "clean-session")
+        try await runNetworkScenario(named: "clean-session", publishAfterReconnect: false)
     }
 
-    /// Shared subject flow for the three scenarios whose wire observation is
-    /// "a subscription survives a connectivity interruption": subscribe,
-    /// report ready, wait out an orchestrated offline/online cycle, then
-    /// require a genuinely decoded post-reconnect Advertise probe published
-    /// by pinned CoatyJS 2.4.0.
-    private func runReconnectProbeScenario(named scenario: String) async throws {
-        let (container, manager) = try makeManager()
-        defer { container.shutdown() }
-        try await container.startAndWaitUntilReady()
-
-        let advertises = try await manager.observeAdvertiseStream(
-            withObjectType: "com.coaty.test.WireFixture"
+    private func runNetworkScenario(named scenario: String, publishAfterReconnect: Bool) async throws {
+        let (runtime, stream) = try await makeRuntime(
+            scenario: scenario,
+            selector: .advertise(objectType: "com.coaty.test.WireFixture")
         )
-        var advertiseIterator = advertises.makeAsyncIterator()
-        let states = await manager.observeCommunicationStateStream()
-        var stateIterator = states.makeAsyncIterator()
-        report(state: "ready", scenario: scenario)
-
-        try await waitForState(.offline, &stateIterator, scenario: scenario)
-        report(state: "offline", scenario: scenario)
-
-        try await waitForState(.online, &stateIterator, scenario: scenario)
-        report(state: "reconnected", scenario: scenario)
-
-        // The orchestrator publishes the CoatyJS probe only after seeing
-        // "reconnected", so receiving it here proves the re-subscription
-        // (SubscriptionCoordinator.setOnline) actually happened on the new
-        // connection -- with cleanSession: true there is no broker-side
-        // session for the old subscription to survive in.
-        // Generous deadline: the probe is a freshly spawned node process
-        // (pinned @coaty/core), whose cold start alone has been observed to
-        // take ~20s on this harness's hosts.
-        let probe = try await nextAdvertise(&advertiseIterator, timeout: .seconds(60))
-        #expect(probe.object.objectType == "com.coaty.test.WireFixture")
-        #expect(probe.object.name == "wire-fixture")
-        report(state: "probe-received", scenario: scenario, extra: ["name": probe.object.name])
-        report(state: "done", scenario: scenario)
-    }
-
-    private func waitForState(
-        _ target: CommunicationState,
-        _ iterator: inout AsyncStream<CommunicationState>.Iterator,
-        scenario: String
-    ) async throws {
-        // The state stream replays the current state to a new iterator, so
-        // this loop tolerates an immediate non-target value and simply waits
-        // until the orchestrated transition genuinely happens.
-        let box = AsyncStreamBox(iterator)
-        defer { iterator = box.iterator }
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            group.addTask {
-                while let state = await box.iterator.next() {
-                    if state == target {
-                        return
-                    }
+        do {
+            report(state: "ready", scenario: scenario)
+            try await waitForState(.reconnecting, runtime: runtime)
+            report(state: "offline", scenario: scenario)
+            if publishAfterReconnect {
+                let first = await runtime.publish(RuntimeOperation.advertise(
+                    sourceID: Self.identityID,
+                    payload: queuedPayload(name: "first")
+                ))
+                let second = await runtime.publish(RuntimeOperation.advertise(
+                    sourceID: Self.identityID,
+                    payload: queuedPayload(name: "second")
+                ))
+                guard first == .accepted, second == .accepted else {
+                    throw LifecycleFailure.offlinePublicationRejected
                 }
-                throw TimeoutGivingUp()
+                report(state: "published-offline", scenario: scenario, extra: ["count": "2"])
             }
-            group.addTask {
-                try await Task.sleep(for: .seconds(60))
-                throw TimeoutGivingUp()
+            try await waitForReconnectMarker()
+            await runtime.reconnect()
+            try await waitForState(.running, runtime: runtime)
+            report(state: "reconnected", scenario: scenario)
+
+            if !publishAfterReconnect {
+                var iterator = stream.makeAsyncIterator()
+                let event = try await nextEvent(&iterator, timeout: .seconds(60))
+                guard String(decoding: event.value, as: UTF8.self).contains("com.coaty.test.WireFixture") else {
+                    throw LifecycleFailure.invalidProbe
+                }
+                report(state: "probe-received", scenario: scenario, extra: ["name": "wire-fixture"])
             }
-            try await group.next()
-            group.cancelAll()
+            report(state: "done", scenario: scenario)
+            await runtime.stop()
+        } catch {
+            await runtime.stop()
+            throw error
         }
     }
 
-    private func makeManager() throws -> (container: Container, communication: CommunicationManager) {
+    private func makeRuntime(
+        scenario: String,
+        selector: RuntimeEventSelector
+    ) async throws -> (AxolotyRuntime, RuntimeEventStream) {
         let environment = ProcessInfo.processInfo.environment
         let host = environment["WIRE_BROKER_HOST"] ?? "127.0.0.1"
         let port = UInt16(environment["WIRE_BROKER_PORT"] ?? "1883") ?? 1883
         let namespace = environment["WIRE_NAMESPACE"] ?? "wire-compat-v1"
-        let common = try CommonOptions(agentIdentity: [
-            "name": "axoloty-lifecycle-subject",
-            "objectId": #require(CoatyUUID(uuidString: "44444444-4444-4444-8444-444444444444")),
-        ])
-        let container = try Container.resolve(
-            components: Components(controllers: [:], objectTypes: []),
-            configuration: Configuration(
-                common: common,
-                communication: CommunicationOptions(
-                    namespace: namespace,
-                    mqttClientOptions: MQTTClientOptions(host: host, port: port),
-                    shouldAutoStart: false
-                )
-            )
-        )
-        guard let communication = container.communicationManager else {
-            throw AxolotyError.invalidConfiguration(option: "communicationManager", reason: "container did not resolve a communication manager")
+        let identity = try RuntimeIdentity(id: Self.identityID, name: "axoloty-lifecycle-subject")
+        var builder = try RuntimeDefinition.Builder(identity: identity, namespace: namespace)
+        let stream = try builder.events(matching: selector, buffering: .dropOldest(capacity: 16))
+        let definition = try builder.finish()
+        let binding = try MQTTBinding(configuration: try MQTTBindingConfiguration(host: host, port: port))
+        let runtime = AxolotyRuntime(definition: definition, transport: binding)
+        do {
+            try await runtime.start()
+        } catch {
+            await runtime.stop()
+            throw error
         }
-        return (container, communication)
+        _ = scenario
+        return (runtime, stream)
     }
 
-    private func decodeVariant(from response: ResponseEventSnapshot) throws -> String {
-        #expect(response.eventType == "RTN")
-        let event: ReturnEvent = try PayloadCoder.decode(response.payload)
-        let resultJSON = try #require(event.data.result)
-        let result = try JSONDecoder().decode(LifecycleReturnResult.self, from: Data(resultJSON.utf8))
-        return result.variant
+    private func waitForState(_ expected: RuntimeState, runtime: AxolotyRuntime) async throws {
+        for _ in 0..<240 {
+            if await runtime.state() == expected { return }
+            try await Task.sleep(for: .milliseconds(250))
+        }
+        throw LifecycleTimeout()
+    }
+
+    private func waitForReconnectMarker() async throws {
+        let path = ProcessInfo.processInfo.environment["WIRE_RECONNECT_READY"]
+        guard let path, !path.isEmpty else { throw LifecycleFailure.reconnectHandshakeMissing }
+        for _ in 0..<1_200 {
+            if FileManager.default.fileExists(atPath: path) { return }
+            try await Task.sleep(for: .milliseconds(250))
+        }
+        throw LifecycleTimeout()
+    }
+
+    private func queuedPayload(name: String) -> [UInt8] {
+        let objectID = name == "first"
+            ? "66666666-6666-4666-8666-666666666661"
+            : "66666666-6666-4666-8666-666666666662"
+        return Array("{\"object\":{\"objectId\":\"\(objectID)\",\"coreType\":\"CoatyObject\",\"objectType\":\"com.coaty.test.WireQueuedFixture\",\"name\":\"\(name)\"}}".utf8)
+    }
+
+    private static func monotonicNowMS() -> UInt32 {
+        UInt32(truncatingIfNeeded: DispatchTime.now().uptimeNanoseconds / 1_000_000)
+    }
+
+    private func nextEvent(
+        _ iterator: inout AsyncStream<RuntimeEventValue>.Iterator,
+        timeout: Duration
+    ) async throws -> RuntimeEventValue {
+        let box = EventIteratorBox(iterator)
+        defer { iterator = box.iterator }
+        return try await withThrowingTaskGroup(of: RuntimeEventValue?.self) { group in
+            group.addTask { await box.iterator.next() }
+            group.addTask {
+                try await Task.sleep(for: timeout)
+                throw LifecycleTimeout()
+            }
+            defer { group.cancelAll() }
+            guard let value = try await group.next() ?? nil else { throw LifecycleTimeout() }
+            return value
+        }
     }
 
     private func report(state: String, scenario: String, extra: [String: String] = [:]) {
-        // A UTC wall-clock timestamp on every state line, with the same
-        // format as the capture probe's `capturedAt`,
-        // so the lifecycle evidence can genuinely compare wire
-        // timing against subject timing instead of trusting prose.
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         var fields = [
@@ -277,43 +240,24 @@ struct AxolotyLifecycleSubjectTests {
             "\"scenario\":\"\(scenario)\"",
             "\"at\":\"\(formatter.string(from: Date()))\"",
         ]
-        for (key, value) in extra {
-            fields.append("\"\(key)\":\"\(value)\"")
-        }
-        // The network-scenario orchestrator tails this process's redirected
-        // stdout to time its sever/restore commands, so each state line is
-        // written as an unbuffered FileHandle syscall: file-backed stdio
-        // would hold block-buffered lines until process exit, and Swift 6
-        // rejects touching C's shared `stdout` for an explicit fflush.
-        let line = "{\(fields.joined(separator: ","))}\n"
-        FileHandle.standardOutput.write(Data(line.utf8))
+        for (key, value) in extra { fields.append("\"\(key)\":\"\(value)\"") }
+        FileHandle.standardOutput.write(Data("{\(fields.joined(separator: ","))}\n".utf8))
     }
 }
 
-private struct TimeoutGivingUp: Swift.Error {}
+private struct LifecycleTimeout: Error {}
 
-private struct LifecycleReturnResult: Decodable {
-    let variant: String
+private enum LifecycleFailure: Error {
+    case invalidProbe
+    case deadlineNotExpired
+    case offlinePublicationRejected
+    case reconnectHandshakeMissing
 }
 
-private func nextAdvertise(
-    _ iterator: inout AsyncStream<AdvertiseEventSnapshot>.Iterator,
-    timeout: Duration
-) async throws -> AdvertiseEventSnapshot {
-    do {
-        return try await nextValue(&iterator, timeout: timeout)
-    } catch {
-        throw TimeoutGivingUp()
-    }
-}
+private final class EventIteratorBox: @unchecked Sendable {
+    var iterator: AsyncStream<RuntimeEventValue>.Iterator
 
-private func nextResponse(
-    _ iterator: inout AsyncStream<ResponseEventSnapshot>.Iterator,
-    timeout: Duration
-) async throws -> ResponseEventSnapshot {
-    do {
-        return try await nextValue(&iterator, timeout: timeout)
-    } catch {
-        throw TimeoutGivingUp()
+    init(_ iterator: AsyncStream<RuntimeEventValue>.Iterator) {
+        self.iterator = iterator
     }
 }

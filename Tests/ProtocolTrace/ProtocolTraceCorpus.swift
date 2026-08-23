@@ -158,7 +158,9 @@ enum ProtocolTraceCorpus {
             return (.inbound, .processInbound, "route-001", nil, "external/wire-compat-v1/io-external-1", TraceState(), TraceState(associationIDs: ["route-001"], generation: 1))
         case .discover, .query, .update, .call:
             return (.outbound, .publishOutbound, nil, "correlation-001", nil, TraceState(), TraceState(pendingCorrelationIDs: ["correlation-001"], generation: 1))
-        case .resolve, .retrieve, .complete, .return:
+        case .resolve, .retrieve:
+            return (.inbound, .processInbound, nil, "correlation-001", nil, TraceState(pendingCorrelationIDs: ["correlation-001"], generation: 1), TraceState(pendingCorrelationIDs: ["correlation-001"], generation: 2))
+        case .complete, .return:
             return (.inbound, .processInbound, nil, "correlation-001", nil, TraceState(pendingCorrelationIDs: ["correlation-001"], generation: 1), TraceState(generation: 2))
         case .channel, .ioValue:
             return (.inbound, .processInbound, nil, nil, nil, TraceState(), TraceState(generation: 1))

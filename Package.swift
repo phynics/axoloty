@@ -104,7 +104,16 @@ let package = Package(
                 .product(name: "ErrorKit", package: "ErrorKit"),
                 .product(name: "IkigaJSON", package: "swift-json"),
             ],
-            path: "Source"
+            path: "Source",
+            exclude: ["Runtime/AGENTS.md"],
+            sources: [
+                "Common/AxolotyError.swift",
+                "Runtime/AxolotyRuntimeDefinition.swift",
+                "Runtime/AxolotyRuntime.swift",
+                "Runtime/RuntimeSupport.swift",
+                "Runtime/MQTTBinding.swift",
+                "Runtime/RuntimeMQTTClient.swift",
+            ]
         ),
         .testTarget(
             name: "AxolotyTests",
@@ -122,6 +131,22 @@ let package = Package(
                 "ProtocolTrace/Fixtures/family-seeds.json",
                 "ProtocolTrace/trace.schema.json",
                 "Support",
+            ],
+            sources: [
+                "ProtocolTrace/ProtocolTrace.swift",
+                "ProtocolTrace/ProtocolTraceCorpus.swift",
+                "ProtocolTrace/ProtocolTraceTests.swift",
+                "WireCompatibility/IO/AxolotyIoAssociateTests.swift",
+                "WireCompatibility/Lifecycle/AxolotyLifecycleSubjectTests.swift",
+                "WireCompatibility/Reverse/AxolotyAdvertiseProducerTests.swift",
+                "WireCompatibility/Reverse/AxolotyAdvertiseConsumerTests.swift",
+                "WireCompatibility/Reverse/AxolotyCoreProducerTests.swift",
+                "WireCompatibility/Reverse/AxolotyCoreConsumerTests.swift",
+                "WireCompatibility/Reverse/AxolotyCoreRequestConsumerTests.swift",
+                "WireCompatibility/Reverse/AxolotyUpdateCompleteConsumerTests.swift",
+                "WireCompatibility/Reverse/AxolotyCallReturnConsumerTests.swift",
+                "WireCompatibility/Reverse/ModernConsumerSupport.swift",
+                "Runtime/AxolotyRuntimeTests.swift",
             ],
             resources: [
                 .copy("ProtocolTrace/trace.schema.json"),

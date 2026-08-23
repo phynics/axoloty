@@ -1,14 +1,11 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-// Release consumer exercising the communication event layer (issue #353).
+// Release consumer exercising the modern protocol layer.
 //
-// Anchors AdvertiseEvent and CommunicationManager so dead stripping cannot
-// erase the communication subsystem. The binary size captures the incremental
-// cost of the event types, snapshot metadata, and topic-building machinery
-// beyond the wire-only baseline.
+// The binary size captures the incremental cost of the shared protocol
+// routing-key and capability machinery beyond the wire-only baseline.
 
-import Axoloty
+import AxolotyProtocol
 
-let identity = Identity(name: "communication-consumer-anchor")
-let event = try AdvertiseEvent.with(object: identity)
-print("COMMUNICATION_CONSUMER_OK: \(type(of: event))")
+let key = try ProtocolRoutingKey(capability: .advertise, sourceID: .zero)
+print("COMMUNICATION_CONSUMER_OK: \(key.capability)")

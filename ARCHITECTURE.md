@@ -1,23 +1,27 @@
 # Axoloty architecture
 
-This document records the accepted architecture for the 0.6 alignment tracked by [epic #627](https://github.com/phynics/axoloty/issues/627). The repository is transitioning from the inherited Container/controller runtime; the current implementation and the accepted migration delta are intentionally separated below.
+This document records the accepted architecture for the 0.6 alignment tracked by [epic #627](https://github.com/phynics/axoloty/issues/627). The repository has completed the G4 runtime cutover in PR [#649](https://github.com/phynics/axoloty/pull/649); the published version remains `0.5.1` until the 0.6 gates finish.
 
-## Current implementation (0.5.1)
+## Current implementation (0.6 G4 checkpoint)
 
 The released implementation now consists of the root `Axoloty` host product,
 the Foundation-free `AxolotyWire`, `AxolotyObjectModel`, and
 `AxolotyProtocol` products, the separate `AxolotyCoatyModels` convenience
 product, the inspector/MCP tools, and the existing Embedded Swift integration.
-The host runtime still owns lifecycle composition and continues to use the
-inherited class-object hierarchy until G4. `AxolotyWire` supplies
+The host runtime contains the G4 ``AxolotyRuntime`` lifecycle and
+``MQTTBinding``. The inherited class-object, controller, manager, and
+SensorThings runtime hierarchy has been removed from active production
+targets; G5 will reintroduce only modern optional products. `AxolotyWire` supplies
 profile-neutral wire syntax, borrowed values, and caller-owned parser
 workspaces; `AxolotyObjectModel` supplies bounded semantic objects, schemas,
 predicates, and runtime-local registration; `AxolotyProtocol` supplies the
 sealed Coaty/3 inventory, routing-key/frame types, structured protocol errors,
 fixed-inline state, caller-owned action sinks, route classification, the
-shared inbound/outbound processor, and Coaty filter adaptation. The inherited
-Container/controller and class-object paths remain current implementation
-details until G4–G5 replace them.
+shared inbound/outbound processor, and Coaty filter adaptation. Inspector and MCP
+consume the runtime through owned event/request values and
+do not expose transport topics. Embedded firmware composes
+``AxolotyStaticRuntime`` and owns only transport, platform, and main-loop
+concerns.
 
 This section is the source of truth for what exists today. It must be updated whenever a gate changes the implemented package graph or removes a legacy path.
 
@@ -63,12 +67,29 @@ implementation. Unknown object types remain dynamic, registration has no
 process-global side effects, and unknown fields and number lexemes remain in
 the same bounded object arena. `AxolotyCoatyModels` supplies the portable
 protocol-required Coaty/IO schemas as a separate convenience product. The
-inherited Foundation-backed hierarchy remains solely as the current host
-runtime path until G4; G3 does not introduce a second runtime or lifecycle.
+inherited Foundation-backed hierarchy was removed by G4; excluded legacy
+fixtures remain historical evidence only. G3 does not introduce a second
+runtime or lifecycle.
 The boundary checks and the maintained
 [`Spikes/BoundedObjectModelEvidence`](./Spikes/BoundedObjectModelEvidence)
 host/sanitizer/ESP32-C6 evidence enforce this package graph and its
 fixed-storage claims.
+
+### G4 status: runtime replacement complete
+
+The ``Axoloty`` target has an explicit modern source list containing the
+runtime definition, host runtime, MQTT binding, transport client, and error
+boundary. Its private actor executor owns bounded ingress, dispatch, lifecycle,
+reconnect, cancellation, and diagnostics while all thirteen protocol families
+enter the shared ``ProtocolProcessor``. ``AxolotyStaticRuntime`` provides the
+fixed synchronous profile for Embedded Swift. Inspector and MCP use the same
+runtime contracts, and neutral benchmark consumers measure protocol,
+object-model, host-runtime, and static-runtime products.
+
+The strict G4 package and consumer boundaries are required gates. They reject
+legacy runtime symbols, raw MQTT APIs outside the binding, parallel encoders,
+and implicit SwiftPM source discovery. Controller-based IO and SensorThings
+remain intentionally absent until G5.
 
 ## Accepted 0.6 delta
 
@@ -86,6 +107,13 @@ proves same-source compilation and linkage. G4 owns runtime replacement;
 G5 owns IO and optional-product boundaries; G6 owns non-divergence and release
 proof.
 
+The canonical `g4-runtime` tier contains lifecycle, static, host, concurrency,
+boundary, and package checks. The tier and its boundary nodes are required:
+replacement sources must not retain inherited lifecycle or parallel encoder
+symbols, and every current inspector/MCP consumer must use the replacement
+runtime or be removed. The reports are acceptance evidence, not an allowlist
+or an architecture exception.
+
 ## Product boundary
 
 Axoloty is a core runtime plus first-party development tools.
@@ -98,8 +126,8 @@ The host and static runtime profiles execute one portable protocol path. They
 may choose different capabilities, capacities, transports, ownership and
 delivery representations, scheduling adapters, and diagnostics, but they may
 not differ in protocol semantics for overlapping inputs. The test adapters
-provide replay evidence for this shared path; runtime actor/lifecycle
-migration remains a later gate.
+provide replay evidence for this shared path; G4 now supplies the host actor
+and lifecycle runtime that owns transport scheduling and application delivery.
 
 Inbound processing is:
 
@@ -147,7 +175,8 @@ schema-generation package and is not part of the portable runtime graph.
 `AxolotyCoatyModels` is a separate first-party convenience product containing
 portable protocol-required Coaty and IO schemas. It depends on
 `AxolotyObjectModel` and is compiled from the same sources for host and
-ESP-IDF, but the inherited `Axoloty` runtime does not depend on it before G4.
+ESP-IDF. The G4 host runtime does not expose typed IO; G5 owns that optional
+product boundary.
 
 `AxolotyProtocol` owns the closed built-in profile inventory, capabilities,
 routing keys, portable frames, structured protocol errors, fixed-inline

@@ -80,7 +80,7 @@ struct InspectorArgumentParserTests {
     }
 
     @Test
-    func discoverWithCoreType() {
+    func discoverWithInspectorCoreType() {
         let outcome = InspectorArgumentParser().parse(["discover", "--core-type", "Identity"])
         guard case let .run(config) = outcome else {
             Issue.record("Expected run outcome")
@@ -761,7 +761,7 @@ struct InspectorArgumentParserTests {
     // MARK: - Duplicate singleton options
 
     @Test
-    func duplicateCoreTypeRejected() {
+    func duplicateInspectorCoreTypeRejected() {
         let outcome = InspectorArgumentParser().parse(["catalog", "--core-type", "Identity", "--core-type", "Sensor"])
         if case let .error(error) = outcome {
             #expect(error == .invalidArguments(reason: "--core-type specified more than once"))

@@ -1,4 +1,12 @@
-# Coaty feature matrix
+# Coaty feature matrix — Axoloty 0.5.1 historical snapshot
+
+> This matrix is frozen release-era evidence for Axoloty 0.5.1. It is not the
+> authority for the active 0.6 runtime. The current architecture and support
+> classification are defined by [ARCHITECTURE.md](../ARCHITECTURE.md),
+> [ROADMAP.md](ROADMAP.md), and [SUPPORT_MATRIX.md](SUPPORT_MATRIX.md).
+> In particular, controller-based IO and SensorThings runtime APIs shown in
+> this historical comparison are retired from the G4 product and deferred to
+> G5.
 
 This matrix compares three distinct products rather than assuming historical
 feature parity:
@@ -6,9 +14,8 @@ feature parity:
 - **CoatyJS 2.4.x** — the broad reference implementation and ecosystem.
 - **CoatySwift 2.4.0** — the final upstream Swift release used as the legacy
   Swift compatibility oracle.
-- **Axoloty** — this repository's current `main`, newly renamed at the
-  package level while its library product and Swift module are still named
-  `CoatySwift`.
+- **Axoloty** — the 0.5.1 release-era implementation represented by this
+  frozen snapshot.
 
 Legend: **Yes** = implemented; **Partial** = useful subset or platform-limited;
 **No** = not implemented; **Planned** = tracked but not implemented. “Present”

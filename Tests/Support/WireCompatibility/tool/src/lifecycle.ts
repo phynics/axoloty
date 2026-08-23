@@ -42,6 +42,7 @@ export function writeLifecycleManifest(scenarioId: string, applicationLog: strin
     return;
   }
   if (!applicationLog || !capture) throw new Error(`${scenarioId} requires --application-log and --capture`);
+  verifyLifecycleBehavior(scenarioId, applicationLog, capture);
   atomicWriteFileSync(output, JSON.stringify({
     format: "axoloty-lifecycle-evidence/v1",
     scenario: scenarioId,
@@ -49,6 +50,105 @@ export function writeLifecycleManifest(scenarioId: string, applicationLog: strin
     limitation: scenario.reason,
     evidence: { applicationLog: artifact(applicationLog, true), capture: artifact(capture, true) },
   }, null, 2) + "\n");
+}
+
+interface LifecycleLogEntry {
+  state?: string;
+  at?: string;
+  [key: string]: unknown;
+}
+
+interface CaptureRecord {
+  capturedAt?: string;
+  mqtt?: { topic?: string };
+  payload?: { encoding?: string; bytes?: string };
+}
+
+const requiredStates: Record<string, string[]> = {
+  "offline-queueing": ["ready", "offline", "published-offline", "reconnected", "done"],
+  "reconnect-resubscribe": ["ready", "offline", "reconnected", "probe-received", "done"],
+  "broker-restart": ["ready", "offline", "reconnected", "probe-received", "done"],
+  "clean-session": ["ready", "offline", "reconnected", "probe-received", "done"],
+  "duplicate-reply": ["ready", "accepted", "ignored", "done"],
+  "late-reply": ["ready", "gave-up", "done"],
+};
+
+/** Validate the causal application/capture contract for the modern subjects. */
+export function verifyLifecycleBehavior(scenarioId: string, applicationPath: string, capturePath: string): void {
+  const application = parseJSONLines<LifecycleLogEntry>(applicationPath);
+  const expected = requiredStates[scenarioId];
+  if (expected) {
+    const actual = application.map((entry) => entry.state).filter((state): state is string => typeof state === "string");
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      throw new Error(`${scenarioId} application states ${JSON.stringify(actual)} do not equal ${JSON.stringify(expected)}`);
+    }
+  }
+
+  const capture = parseJSONLines<CaptureRecord>(capturePath);
+  if (scenarioId === "offline-queueing") {
+    const advertiseRecords = capture.filter((record) => isAdvertiseTopic(record.mqtt?.topic));
+    // Advertise publishes a CoatyObject on both its core-type and object-type
+    // routes. Validate one canonical route so a single logical publication is
+    // not counted twice in the independent capture.
+    const objectTypeRecords = advertiseRecords.filter((record) => {
+      const route = record.mqtt?.topic?.split("/")[3];
+      return route?.startsWith("ADV::") === true;
+    });
+    const payloads = (objectTypeRecords.length > 0 ? objectTypeRecords : advertiseRecords)
+      .map(decodePayload)
+      .filter((payload): payload is string => payload !== undefined);
+    const first = payloads.filter((payload) => payload.includes('"name":"first"'));
+    const second = payloads.filter((payload) => payload.includes('"name":"second"'));
+    if (first.length !== 1 || second.length !== 1 || payloads.indexOf(first[0]!) > payloads.indexOf(second[0]!)) {
+      throw new Error("offline-queueing capture must contain first then second exactly once");
+    }
+  } else if (scenarioId === "duplicate-reply") {
+    const returns = capture.filter((record) => record.mqtt?.topic?.includes("/RTN/"));
+    const texts = returns.map(decodePayload).filter((payload): payload is string => payload !== undefined).join("\n");
+    if (returns.length < 2 || !texts.includes('"variant":"original"') || !texts.includes('"variant":"duplicate"')) {
+      throw new Error("duplicate-reply capture must contain original and duplicate Return publications");
+    }
+  } else if (scenarioId === "late-reply") {
+    const gaveUp = application.find((entry) => entry.state === "gave-up")?.at;
+    const lateReturn = capture.find((record) => record.mqtt?.topic?.includes("/RTN/"));
+    if (!gaveUp || !lateReturn?.capturedAt || Date.parse(lateReturn.capturedAt) <= Date.parse(gaveUp)) {
+      throw new Error("late-reply capture must show a Return after the application deadline");
+    }
+  } else if (scenarioId === "reconnect-resubscribe" || scenarioId === "broker-restart" || scenarioId === "clean-session") {
+    const hasProbe = capture.some((record) => {
+      if (!isAdvertiseTopic(record.mqtt?.topic)) return false;
+      const payload = decodePayload(record);
+      return payload?.includes("com.coaty.test.WireFixture") ?? false;
+    });
+    if (!hasProbe) throw new Error(`${scenarioId} capture is missing the post-reconnect CoatyJS probe`);
+  }
+}
+
+/** Return true for the unfiltered and filtered Coaty Advertise route forms. */
+function isAdvertiseTopic(topic: string | undefined): boolean {
+  if (!topic) return false;
+  const route = topic.split("/")[3];
+  return route === "ADV" || route?.startsWith("ADV:") === true;
+}
+
+function parseJSONLines<T>(path: string): T[] {
+  const lines = readFileSync(path, "utf8").split(/\r?\n/).filter((line) => line.trim().length > 0);
+  return lines.map((line, index) => {
+    try {
+      return JSON.parse(line) as T;
+    } catch (error) {
+      throw new Error(`${path}:${index + 1} is not JSON: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  });
+}
+
+function decodePayload(record: CaptureRecord): string | undefined {
+  if (record.payload?.encoding !== "base64" || !record.payload.bytes) return undefined;
+  try {
+    return Buffer.from(record.payload.bytes, "base64").toString("utf8");
+  } catch {
+    return undefined;
+  }
 }
 
 function artifact(path: string, jsonLines: boolean): Record<string, string | number> {

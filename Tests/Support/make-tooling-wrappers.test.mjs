@@ -112,7 +112,7 @@ test("host consumer journey stays synchronized across source and documentation",
     .replace(/^\/\/ Copyright[^\n]*\n\n/, "")
     .trimEnd();
   const readme = swiftCodeBlockAfter(fs.readFileSync("README.md", "utf8"), "### Minimal host example");
-  const docc = swiftCodeBlockAfter(fs.readFileSync("Source/Axoloty.docc/GettingStarted.md", "utf8"), "## Configure and start a container");
+  const docc = swiftCodeBlockAfter(fs.readFileSync("Source/Axoloty.docc/GettingStarted.md", "utf8"), "## Define and start a runtime");
   assert.equal(readme, fixture, "README host example must match the compiled consumer fixture");
   assert.equal(docc, fixture, "DocC host example must match the compiled consumer fixture");
 });

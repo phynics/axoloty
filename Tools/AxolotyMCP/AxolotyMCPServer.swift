@@ -22,12 +22,14 @@ private func makeMCPPropertySchema(type: String, description: String) -> Value {
 /// tools and resources.
 @MainActor
 public final class AxolotyMCPServer {
+    private static let logger = Logger(label: "axoloty.mcp")
     private let server: Server
     private let catalogueService: InspectorCatalogueService
     private let session: InspectorSession
     private let responseEncoder: ResponseEncoder
     private let encodingFailureLogger: EncodingFailureLogger
     private var httpServer: MCPHTTPServer?
+    private var catalogueStartTask: Task<Void, Never>? = nil
 
     typealias SnapshotEncoder = (InspectorCatalogueSnapshot) throws -> String
     typealias ObjectEncoder = (InspectorObject) throws -> String
@@ -205,8 +207,6 @@ public final class AxolotyMCPServer {
     ///   ``AxolotyError`` if `listenHost` is not loopback, or an `MCPError` if
     ///   the HTTP server cannot start.
     public func startHTTP(listenHost: String, listenPort: UInt16, path: String = "/mcp") async throws {
-        try await catalogueService.start()
-
         let httpServer = MCPHTTPServer(
             host: listenHost,
             port: listenPort,
@@ -226,9 +226,15 @@ public final class AxolotyMCPServer {
             }
         )
         self.httpServer = httpServer
+        let startTask = Task { @MainActor [catalogueService] () -> Void in
+            _ = try? await catalogueService.start()
+        }
+        self.catalogueStartTask = startTask
         do {
             try await httpServer.start()
         } catch {
+            startTask.cancel()
+            self.catalogueStartTask = nil
             self.httpServer = nil
             await httpServer.stop()
             throw error
@@ -239,6 +245,8 @@ public final class AxolotyMCPServer {
     public func stop() async {
         let httpServer = httpServer
         self.httpServer = nil
+        catalogueStartTask?.cancel()
+        catalogueStartTask = nil
         await httpServer?.stop()
         await server.stop()
         catalogueService.stop()
@@ -344,8 +352,8 @@ public final class AxolotyMCPServer {
 
     static func discoveryResponseStream(
         session: InspectorSession,
-        event: DiscoverEvent
-    ) async -> AsyncThrowingStream<ResponseEventSnapshot, Error> {
+        event: InspectorDiscoverRequest
+    ) async -> AsyncThrowingStream<InspectorResponseEvent, Error> {
         let responseStream = await session.discover(event)
         return AsyncThrowingStream { continuation in
             let responseTask = Task {
@@ -358,7 +366,7 @@ public final class AxolotyMCPServer {
             }
             let stateTask = Task {
                 while !Task.isCancelled {
-                    if await session.communicationState() == .offline {
+                    if await session.transportState() == .offline {
                         continuation.finish(throwing: AxolotyError.runtime(
                             code: .streamEnded,
                             reason: "Broker communication transitioned offline during discovery"
@@ -383,7 +391,7 @@ public final class AxolotyMCPServer {
         _ args: [String: Value]?,
         responseEncoder: ResponseEncoder = ResponseEncoder(),
         encodingFailureLogger: EncodingFailureLogger = AxolotyMCPServer.logEncodingFailure,
-        discover: (DiscoverEvent) async -> AsyncThrowingStream<ResponseEventSnapshot, Error>
+        discover: (InspectorDiscoverRequest) async -> AsyncThrowingStream<InspectorResponseEvent, Error>
     ) async -> CallTool.Result {
         let request = Self.makeDiscoveryRequest(from: args)
 
@@ -391,9 +399,11 @@ public final class AxolotyMCPServer {
             return .init(content: [.text("At least one selector (coreType, objectType, or objectId) is required")], isError: true)
         }
 
-        let discoverEvent: DiscoverEvent
+        let discoverEvent: InspectorDiscoverRequest
         do {
-            discoverEvent = try request.makeDiscoverEvent()
+            discoverEvent = try request.makeInspectorDiscoverRequest(
+                timeout: InspectorDuration(value: .milliseconds(request.timeoutMilliseconds))
+            )
         } catch {
             return .init(content: [.text(error.userFriendlyMessage)], isError: true)
         }
@@ -532,9 +542,9 @@ public final class AxolotyMCPServer {
     func collectStatus() async -> ServerStatus {
         let count = await catalogueService.store.count
         let snapshot = await catalogueService.store.snapshot(filter: ObjectCatalogueFilter())
-        let communicationState = await catalogueService.communicationState()
+        let transportState = await catalogueService.transportState()
         return ServerStatus(
-            mqttConnected: communicationState == .online,
+            mqttConnected: transportState == .online,
             namespace: snapshot.namespace,
             catalogueObservedSince: snapshot.observedSince,
             catalogueObjectCount: count
@@ -576,7 +586,7 @@ public final class AxolotyMCPServer {
         _: String,
         _ metadata: Logging.Logger.Metadata
     ) {
-        LogManager.logger(.runtime).error("Failed to encode MCP response", metadata: metadata)
+        logger.error("Failed to encode MCP response", metadata: metadata)
     }
 
     nonisolated private static func encodeSnapshot(_ snapshot: InspectorCatalogueSnapshot) throws -> String {
@@ -623,7 +633,7 @@ private extension Tool.Content {
 // MARK: - Discovery loop events
 
 private enum DiscoverLoopEvent: Sendable {
-    case response(ResponseEventSnapshot)
+    case response(InspectorResponseEvent)
     case responsesExhausted
     case timeoutExpired
     case responseStreamFailed(reason: String)

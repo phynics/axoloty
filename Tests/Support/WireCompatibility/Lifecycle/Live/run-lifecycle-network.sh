@@ -36,6 +36,11 @@ APPLICATION_LOG="$OUT/axoloty-$SCENARIO.application.jsonl"
 RAW_LOG="$OUT/axoloty-$SCENARIO.subject.log"
 CONNACK_LOG="$OUT/axoloty-$SCENARIO.connack.jsonl"
 PROXY_READY="$OUT/axoloty-$SCENARIO.proxy-ready"
+RECONNECT_READY="$OUT/axoloty-$SCENARIO.reconnect-ready"
+case "$RECONNECT_READY" in
+    "$ROOT"/*) RECONNECT_READY_REL="${RECONNECT_READY#"$ROOT/"}" ;;
+    *) echo "WIRE_OUTPUT_DIR must be inside the repository so the subject can observe reconnect readiness" >&2; exit 64 ;;
+esac
 
 cleanup() {
     runtime logs "$SUBJECT" >"$OUT/subject-container-$SCENARIO.log" 2>&1 || true
@@ -47,7 +52,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 mkdir -p "$OUT"
-rm -f "$CAPTURE" "$CAPTURE.post-restart" "$CAPTURE_READY" "$APPLICATION_LOG" "$RAW_LOG" "$CONNACK_LOG" "$PROXY_READY"
+rm -f "$CAPTURE" "$CAPTURE.post-restart" "$CAPTURE_READY" "$APPLICATION_LOG" "$RAW_LOG" "$CONNACK_LOG" "$PROXY_READY" "$RECONNECT_READY"
 
 runtime build -t "$DEV_IMAGE" -f "$ROOT/.devcontainer/Dockerfile" "$ROOT"
 runtime build -t "$JS_IMAGE" "$REF"
@@ -92,6 +97,7 @@ test_name="$(case "$SCENARIO" in offline-queueing) echo offlineQueueing ;; recon
 env_flag="WIRE_LIFECYCLE_$(echo "$SCENARIO" | tr 'a-z-' 'A-Z_')_LIVE"
 runtime run -d -t --name "$SUBJECT" --network "$NETWORK" -v "$ROOT:/workspace" -v "$SPM_CACHE_DIR:/swiftpm-cache" -v "$BUILD_DIR:/swift-build" -w /workspace \
     -e "$env_flag=1" -e WIRE_BROKER_HOST="$SUBJECT_HOST" -e WIRE_BROKER_PORT=1883 -e WIRE_NAMESPACE="$NAMESPACE" \
+    -e WIRE_RECONNECT_READY="/workspace/$RECONNECT_READY_REL" \
     -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
     "$DEV_IMAGE" swift test -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
     --skip-build --scratch-path /swift-build --cache-path /swiftpm-cache --disable-automatic-resolution --filter "AxolotyLifecycleSubjectTests/$test_name" >/dev/null
@@ -112,6 +118,7 @@ if [ "$SCENARIO" = "broker-restart" ]; then
     wait_for "subject offline transition" "subject_reported offline"
     start_broker
     wait_for "Mosquitto restart" broker_ready
+    touch "$RECONNECT_READY"
     wait_for "subject reconnect" "subject_reported reconnected"
     start_capture "$CAPTURE.post-restart"
     publish_probe
@@ -119,6 +126,7 @@ else
     proxy_control sever
     wait_for "subject offline transition" "subject_reported offline"
     proxy_control restore
+    touch "$RECONNECT_READY"
     wait_for "subject reconnect" "subject_reported reconnected"
     if [ "$SCENARIO" != "offline-queueing" ]; then publish_probe; fi
 fi

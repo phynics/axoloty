@@ -484,7 +484,7 @@ func app_main() -> Int32 {
         withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 512) { payloadBuffer in
             guard let advertiseData,
                   let encoded = try? staticAgent.encode(
-                    advertiseData, eventType: .advertise, correlationId: nil,
+                    advertiseData, eventType: .advertise, correlationId: nil, nowMS: phase4NowMS(),
                     topicBuffer: topicBuffer.baseAddress!, topicCapacity: topicBuffer.count,
                     payloadBuffer: payloadBuffer.baseAddress!, payloadCapacity: payloadBuffer.count
                   ) else {
@@ -517,7 +517,7 @@ func app_main() -> Int32 {
         withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 128) { topicBuffer in
             withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 512) { payloadBuffer in
                 guard let encoded = try? staticAgent.encode(
-                    data, eventType: eventType, correlationId: correlationId,
+                    data, eventType: eventType, correlationId: correlationId, nowMS: phase4NowMS(),
                     topicBuffer: topicBuffer.baseAddress!, topicCapacity: topicBuffer.count,
                     payloadBuffer: payloadBuffer.baseAddress!, payloadCapacity: payloadBuffer.count
                 ) else { return }

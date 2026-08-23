@@ -10,8 +10,8 @@ version](https://img.shields.io/badge/swift-6.3-%23F05138?logo=swift)](https://d
 MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 > **Development checkpoint.** [`VERSION`](./VERSION) identifies the current
-> release. Axoloty is not API-stable, and the source-breaking 0.6 architecture
-> alignment is being planned in [epic #627](https://github.com/phynics/axoloty/issues/627).
+> published release (`0.5.1`). Axoloty is not API-stable; the source-breaking
+> 0.6 architecture is implemented through G4 in [epic #627](https://github.com/phynics/axoloty/issues/627).
 
 ## About Axoloty
 
@@ -27,13 +27,11 @@ collaborative, and ad-hoc fashion. Its key properties include:
 
 * a lightweight, modular, object-oriented software architecture favoring a
   resource-oriented and declarative programming style,
-* an IoC container with controller-based dependency injection and lifecycle
-  management as the entry point for any Axoloty application,
+* an immutable runtime definition and single-use `AxolotyRuntime` lifecycle,
 * standardized event-based communication patterns — Advertise / Deadvertise,
   Discover / Resolve, Query / Retrieve, Update / Complete, Channel, and
   Call / Return — on top of [MQTT](https://mqtt.org),
-* an IO routing model for routing streams of sensor data between sources and
-  actors with pluggable backpressure strategies,
+* a fixed synchronous `AxolotyStaticRuntime` profile for Embedded Swift,
 * a platform-agnostic, extensible object model to discover, distribute, share,
   query, and persist hierarchically typed data,
 * structured error handling through [ErrorKit](https://github.com/FlineDev/ErrorKit),
@@ -41,10 +39,8 @@ collaborative, and ad-hoc fashion. Its key properties include:
 * a structured logging facade backed by [swift-log](https://github.com/apple/swift-log),
 * a Foundation-free `AxolotyWire` module with a separately resolvable
   standalone package boundary for embedded targets,
-* a Foundation-free `AxolotyProtocol` foundation package for the 0.6 portable
-  profile boundary (profile inventory, frames, routing keys, errors, bounded
-  request state, and borrowed/owned actions; runtime processing and fixed
-  router storage are planned),
+* a Foundation-free `AxolotyProtocol` foundation package with the shared
+  fixed-inline processor, bounded request state, and borrowed/owned actions,
 * and an ESP32-C6 embedded proof in Embedded Swift.
 
 Axoloty is a modernized fork of
@@ -112,42 +108,25 @@ independent wire-only package resolution, use the standalone package at
 ```swift
 import Axoloty
 
-@MainActor
 func runAgent() async throws {
-    let configuration = try Configuration.build { builder in
-        builder.common = CommonOptions(agentIdentity: ["name": "my-agent"])
-        builder.communication = CommunicationOptions(
-            namespace: "my-app",
-            mqttClientOptions: MQTTClientOptions(host: "localhost", port: 1883),
-            shouldAutoStart: false
-        )
-    }
-    let components = Components(controllers: [:], objectTypes: [])
-    let container = try Container.resolve(
-        components: components,
-        configuration: configuration
+    let identity = try RuntimeIdentity(id: .zero, name: "my-agent")
+    var builder = try RuntimeDefinition.Builder(identity: identity, namespace: "my-app")
+    _ = try builder.events(
+        matching: .family(.advertise),
+        buffering: .fail(capacity: 64)
     )
-    defer { container.shutdown() }
-    guard let manager = container.communicationManager else {
-        throw AxolotyError.invalidConfiguration(
-            option: "communicationManager",
-            reason: "was not initialized"
-        )
-    }
-
-    let stream = try await manager.observeAdvertiseStream(
-        withObjectType: Identity.objectType
+    let definition = try builder.finish()
+    let runtime = AxolotyRuntime(
+        definition: definition,
+        transport: try MQTTBinding(configuration: .init(host: "localhost", port: 1883))
     )
-    var iterator = stream.makeAsyncIterator()
-    try await container.startAndWaitUntilReady()
-    manager.publishAdvertise(try AdvertiseEvent.with(object: Identity(name: "my-agent")))
-
-    _ = await iterator.next()
+    try await runtime.run()
 }
 ```
 
 Call `runAgent()` from your application lifecycle when the MQTT broker is
-available. The `shouldAutoStart: false` setting keeps startup explicit.
+available. Startup is explicit: `run()` is the operation that starts and owns
+the runtime lifecycle.
 
 ### Minimal AxolotyWire example
 

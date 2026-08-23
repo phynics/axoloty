@@ -200,6 +200,7 @@ struct StaticDeviceAgent: ~Copyable {
         _ value: T,
         eventType: WireEventType,
         correlationId: UUID16?,
+        nowMS: UInt32,
         topicBuffer: UnsafeMutablePointer<UInt8>,
         topicCapacity: Int,
         payloadBuffer: UnsafeMutablePointer<UInt8>,
@@ -229,7 +230,9 @@ struct StaticDeviceAgent: ~Copyable {
             requestTimeoutMS: eventType == .discover ? Self.discoverTimeoutMS : nil
         ) else { throw .invalidValue }
         var actionSink = InlineProtocolActionSink<1>()
-        let outcome = processor.processOutbound(operation, classifier: routeClassifier, sink: &actionSink)
+        let outcome = processor.processOutbound(
+            operation, nowMS: nowMS, classifier: routeClassifier, sink: &actionSink
+        )
         actionSink.removeAll()
         guard outcome == .accepted else {
             throw .invalidValue
@@ -263,7 +266,7 @@ private var phase4AgentB = StaticDeviceAgent(
 )
 
 @inline(__always)
-private func phase4NowMS() -> UInt32 {
+func phase4NowMS() -> UInt32 {
     UInt32(truncatingIfNeeded: esp_timer_get_time() / 1_000)
 }
 
@@ -279,13 +282,13 @@ private func phase4Encode<T: WireEncodable>(
 ) throws(WireEncodeError) -> (topicLength: Int, payloadLength: Int) {
     if role == 1 {
         return try phase4AgentA.encode(
-            value, eventType: eventType, correlationId: correlationId,
+            value, eventType: eventType, correlationId: correlationId, nowMS: phase4NowMS(),
             topicBuffer: topicBuffer, topicCapacity: Int(topicCapacity),
             payloadBuffer: payloadBuffer, payloadCapacity: Int(payloadCapacity)
         )
     }
     return try phase4AgentB.encode(
-        value, eventType: eventType, correlationId: correlationId,
+        value, eventType: eventType, correlationId: correlationId, nowMS: phase4NowMS(),
         topicBuffer: topicBuffer, topicCapacity: Int(topicCapacity),
         payloadBuffer: payloadBuffer, payloadCapacity: Int(payloadCapacity)
     )
