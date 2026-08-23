@@ -9,7 +9,7 @@ public enum ProtocolLocalOperation {
     /// Publishes a Deadvertise operation.
     case deadvertise(sourceID: UUID16, payload: ByteSlice)
     /// Publishes a Channel operation.
-    case channel(sourceID: UUID16, payload: ByteSlice)
+    case channel(sourceID: UUID16, payload: ByteSlice, identifier: ByteSlice)
     /// Publishes an Associate operation.
     case associate(sourceID: UUID16, payload: ByteSlice)
     /// Publishes an IoValue operation.
@@ -45,7 +45,11 @@ public enum ProtocolLocalOperation {
         switch capability {
         case .advertise: self = .advertise(sourceID: sourceID, payload: payload)
         case .deadvertise: self = .deadvertise(sourceID: sourceID, payload: payload)
-        case .channel: self = .channel(sourceID: sourceID, payload: payload)
+        case .channel:
+            guard let operationName, Self.isValidTopicLevel(operationName) else {
+                throw ProtocolError(.malformedFrame)
+            }
+            self = .channel(sourceID: sourceID, payload: payload, identifier: operationName)
         case .associate: self = .associate(sourceID: sourceID, payload: payload)
         case .ioValue: self = .ioValue(sourceID: sourceID, payload: payload)
         case .discover: self = .discover(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload, requestTimeoutMS: requestTimeoutMS)
@@ -54,7 +58,17 @@ public enum ProtocolLocalOperation {
         case .retrieve: self = .retrieve(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload)
         case .update: self = .update(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload, requestTimeoutMS: requestTimeoutMS)
         case .complete: self = .complete(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload)
-        case .call: self = .call(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload, requestTimeoutMS: requestTimeoutMS, operationName: operationName)
+        case .call:
+            if let operationName, !Self.isValidTopicLevel(operationName) {
+                throw ProtocolError(.malformedFrame)
+            }
+            self = .call(
+                sourceID: sourceID,
+                correlationID: try requireCorrelation(correlationID),
+                payload: payload,
+                requestTimeoutMS: requestTimeoutMS,
+                operationName: operationName
+            )
         case .returnEvent: self = .returnEvent(sourceID: sourceID, correlationID: try requireCorrelation(correlationID), payload: payload)
         }
     }
@@ -65,7 +79,7 @@ public enum ProtocolLocalOperation {
     }
     /// The operation's source identity.
     public var sourceID: UUID16 {
-        switch self { case let .advertise(id,_), let .deadvertise(id,_), let .channel(id,_), let .associate(id,_), let .ioValue(id,_), let .discover(id,_,_,_), let .resolve(id,_,_), let .query(id,_,_,_), let .retrieve(id,_,_), let .update(id,_,_,_), let .complete(id,_,_), let .call(id,_,_,_,_), let .returnEvent(id,_,_): return id }
+        switch self { case let .advertise(id,_), let .deadvertise(id,_), let .channel(id,_,_), let .associate(id,_), let .ioValue(id,_), let .discover(id,_,_,_), let .resolve(id,_,_), let .query(id,_,_,_), let .retrieve(id,_,_), let .update(id,_,_,_), let .complete(id,_,_), let .call(id,_,_,_,_), let .returnEvent(id,_,_): return id }
     }
     /// The operation's optional correlation identity.
     public var correlationID: UUID16? {
@@ -73,15 +87,43 @@ public enum ProtocolLocalOperation {
     }
     /// The operation's borrowed payload.
     public var payload: ByteSlice {
-        switch self { case let .advertise(_,p), let .deadvertise(_,p), let .channel(_,p), let .associate(_,p), let .ioValue(_,p), let .discover(_,_,p,_), let .resolve(_,_,p), let .query(_,_,p,_), let .retrieve(_,_,p), let .update(_,_,p,_), let .complete(_,_,p), let .call(_,_,p,_,_), let .returnEvent(_,_,p): return p }
+        switch self { case let .advertise(_,p), let .deadvertise(_,p), let .channel(_,p,_), let .associate(_,p), let .ioValue(_,p), let .discover(_,_,p,_), let .resolve(_,_,p), let .query(_,_,p,_), let .retrieve(_,_,p), let .update(_,_,p,_), let .complete(_,_,p), let .call(_,_,p,_,_), let .returnEvent(_,_,p): return p }
     }
     /// The request timeout, when this operation opens a response ledger entry.
     public var requestTimeoutMS: UInt32? {
         switch self { case let .discover(_,_,_,t), let .query(_,_,_,t), let .update(_,_,_,t), let .call(_,_,_,t,_): return t; default: return nil }
     }
-    /// The optional Call operation name carried as the topic filter.
+    /// The optional Channel identifier or Call operation topic filter.
     public var operationName: ByteSlice? {
-        switch self { case let .call(_,_,_,_,name): return name; default: return nil }
+        switch self {
+        case let .channel(_, _, identifier): return identifier
+        case let .call(_, _, _, _, name): return name
+        default: return nil
+        }
+    }
+
+    private static func isValidTopicLevel(_ value: ByteSlice) -> Bool {
+        guard value.length > 0, value.length <= 128 else { return false }
+        for index in 0..<value.length {
+            guard let byte = value.byte(at: index),
+                  byte != 0, byte != 0x2F, byte != 0x23, byte != 0x2B else {
+                return false
+            }
+        }
+        return true
+    }
+
+    fileprivate var hasValidTopicFilter: Bool {
+        switch capability {
+        case .channel:
+            guard let operationName else { return false }
+            return Self.isValidTopicLevel(operationName)
+        case .call:
+            guard let operationName else { return true }
+            return Self.isValidTopicLevel(operationName)
+        default:
+            return true
+        }
     }
 }
 
@@ -553,6 +595,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     /// - Returns: The atomic transition result.
     public mutating func processOutbound<Classifier: ProtocolRouteClassifier, S: ~Copyable & ProtocolActionSink>(_ operation: ProtocolLocalOperation, nowMS: UInt32 = 0, classifier: Classifier, sink: inout S) -> ProtocolProcessOutcome {
         guard capabilities.contains(operation.capability) else { return .rejected(.unsupportedCapability) }
+        guard operation.hasValidTopicFilter else { return .rejected(.malformedFrame) }
         guard operation.payload.length <= maximumPayloadBytes else { return .rejected(.capacityExceeded) }
         let valid = validatePayload(operation.payload, for: operation.capability)
         guard valid else { return .rejected(.malformedPayload) }
@@ -632,15 +675,30 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         } else {
             plan = .none
         }
-        guard sink.preflight(actionCount: 1) else { return .rejected(.capacityExceeded) }
+        let filters = outboundEventTypeFilters(for: operation)
+        let actionCount = filters.secondary == nil ? 1 : 2
+        guard sink.preflight(actionCount: actionCount) else { return .rejected(.capacityExceeded) }
         guard sink.append(BorrowedProtocolAction(
             kind: .publish,
             routingKey: key,
             payload: operation.payload,
             deliveryKey: deliveryKey(for: operation),
             routeClassification: routeClassification,
-            eventTypeFilter: operation.operationName
+            eventTypeFilter: filters.primary?.value,
+            eventTypeFilterKind: filters.primary?.kind ?? .direct
         )) else { return .rejected(.capacityExceeded) }
+        if let secondary = filters.secondary {
+            guard sink.append(BorrowedProtocolAction(
+                kind: .publish,
+                routingKey: key,
+                payload: operation.payload,
+                deliveryKey: deliveryKey(for: operation),
+                routeClassification: routeClassification,
+                eventTypeFilter: secondary.value,
+                eventTypeFilterKind: secondary.kind,
+                isApplicationDelivery: false
+            )) else { return .rejected(.capacityExceeded) }
+        }
         if let requestPlan {
             pending[requestPlan.index] = PendingRecord(
                 id: requestPlan.correlationID,
@@ -706,6 +764,10 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     }
 
     private static func advertisedObjectType(_ payload: ByteSlice) -> ByteSlice? {
+        advertisedObjectField("objectType", payload: payload)
+    }
+
+    private static func advertisedObjectField(_ field: StaticString, payload: ByteSlice) -> ByteSlice? {
         payload.withBytes { pointer, length in
             let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
             guard let object = reader.readRaw("object") else { return nil }
@@ -714,9 +776,45 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                     bytes: objectPointer.assumingMemoryBound(to: UInt8.self),
                     length: objectLength
                 )
-                return objectReader.readString("objectType")
+                return objectReader.readString(field)
             }
         }
+    }
+
+    private func outboundEventTypeFilters(
+        for operation: ProtocolLocalOperation
+    ) -> (
+        primary: (value: ByteSlice, kind: ProtocolEventTypeFilterKind)?,
+        secondary: (value: ByteSlice, kind: ProtocolEventTypeFilterKind)?
+    ) {
+        switch operation.capability {
+        case .advertise:
+            guard let coreType = Self.advertisedObjectField("coreType", payload: operation.payload) else {
+                return (nil, nil)
+            }
+            guard Self.equals(coreType, "CoatyObject"),
+                  let objectType = Self.advertisedObjectType(operation.payload) else {
+                return ((coreType, .direct), nil)
+            }
+            return ((coreType, .direct), (objectType, .objectType))
+        case .update:
+            guard let coreType = Self.advertisedObjectField("coreType", payload: operation.payload) else {
+                return (nil, nil)
+            }
+            return ((coreType, .direct), nil)
+        case .channel, .call:
+            return (operation.operationName.map { ($0, .direct) }, nil)
+        default:
+            return (nil, nil)
+        }
+    }
+
+    private static func equals(_ slice: ByteSlice, _ value: StaticString) -> Bool {
+        guard slice.length == value.utf8CodeUnitCount else { return false }
+        for index in 0..<slice.length where slice.byte(at: index) != value.utf8Start[index] {
+            return false
+        }
+        return true
     }
 
     private func planAssociation<Classifier: ProtocolRouteClassifier>(_ payload: ByteSlice, classifier: Classifier) -> AssociationResult {

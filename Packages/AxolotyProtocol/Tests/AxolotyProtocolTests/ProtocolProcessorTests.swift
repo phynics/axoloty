@@ -39,6 +39,55 @@ struct ProtocolProcessorTests {
         #expect(sink.count == 1)
     }
 
+    @Test("Advertise reserves canonical core and object-type publications atomically")
+    func advertiseFiltersAreAtomic() throws {
+        let payload = Array(#"{"object":{"objectId":"11111111-1111-4111-8111-111111111111","coreType":"CoatyObject","objectType":"com.coaty.test.WireFixture","name":"wire-fixture"}}"#.utf8)
+        try payload.withUnsafeBufferPointer { buffer in
+            let operation = try ProtocolLocalOperation(
+                capability: .advertise,
+                sourceID: Self.source,
+                payload: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+            )
+            var saturatedProcessor = ProtocolProcessor<1>()
+            var saturatedSink = InlineProtocolActionSink<1>()
+            #expect(saturatedProcessor.processOutbound(operation, sink: &saturatedSink) == .rejected(.capacityExceeded))
+            #expect(saturatedProcessor.state.activeObjects == 0)
+            #expect(saturatedSink.count == 0)
+
+            var processor = ProtocolProcessor<1>()
+            var sink = InlineProtocolActionSink<2>()
+            #expect(processor.processOutbound(operation, sink: &sink) == .accepted)
+            let coreAction = try #require(sink[0]).owned()
+            let objectAction = try #require(sink[1]).owned()
+            #expect(coreAction.eventTypeFilter == Array("CoatyObject".utf8))
+            #expect(coreAction.eventTypeFilterKind == .direct)
+            #expect(objectAction.eventTypeFilter == Array("com.coaty.test.WireFixture".utf8))
+            #expect(objectAction.eventTypeFilterKind == .objectType)
+            #expect(processor.state.activeObjects == 1)
+        }
+    }
+
+    @Test("Update retains the pinned single core-type publication")
+    func updateUsesOnlyCoreTypeFilter() throws {
+        let payload = Array(#"{"object":{"objectId":"11111111-1111-4111-8111-111111111111","coreType":"CoatyObject","objectType":"com.coaty.test.WireFixture","name":"updated"}}"#.utf8)
+        try payload.withUnsafeBufferPointer { buffer in
+            let operation = try ProtocolLocalOperation(
+                capability: .update,
+                sourceID: Self.source,
+                correlationID: Self.source,
+                payload: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count),
+                requestTimeoutMS: 100
+            )
+            var processor = ProtocolProcessor<1>()
+            var sink = InlineProtocolActionSink<2>()
+            #expect(processor.processOutbound(operation, sink: &sink) == .accepted)
+            #expect(sink.count == 1)
+            let action = try #require(sink[0]).owned()
+            #expect(action.eventTypeFilter == Array("CoatyObject".utf8))
+            #expect(action.eventTypeFilterKind == .direct)
+        }
+    }
+
     @Test("one source can advertise multiple object identities")
     func multipleAdvertisementsPerSource() throws {
         let source = Self.source

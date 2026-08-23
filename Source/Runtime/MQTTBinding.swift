@@ -105,7 +105,12 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         guard lock.withLock({ started }) else {
             throw AxolotyError.runtime(code: .notStarted, reason: "MQTT binding is not started")
         }
-        let topic = Self.topic(for: action.routingKey, namespace: namespace, eventTypeFilter: action.eventTypeFilter)
+        let topic = Self.topic(
+            for: action.routingKey,
+            namespace: namespace,
+            eventTypeFilter: action.eventTypeFilter,
+            eventTypeFilterKind: action.eventTypeFilterKind
+        )
         client.publish(topic: topic, payload: action.payload)
     }
 
@@ -140,7 +145,14 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         guard let identity else { return }
         let payload = try Self.identityPayload(identity)
         let key = try ProtocolRoutingKey(capability: .advertise, sourceID: identity.id)
-        client.publish(topic: Self.topic(for: key, namespace: namespace), payload: payload)
+        client.publish(
+            topic: Self.topic(
+                for: key,
+                namespace: namespace,
+                eventTypeFilter: Array("Identity".utf8)
+            ),
+            payload: payload
+        )
     }
 
     /// Publishes a matching Deadvertise payload during graceful shutdown.
@@ -156,8 +168,14 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         routeClassifier.classify(route)
     }
 
-    private static func topic(for key: ProtocolRoutingKey, namespace: String, eventTypeFilter: [UInt8]? = nil) -> String {
-        let filter = eventTypeFilter.map { ":\(String(bytes: $0, encoding: .utf8) ?? "")" } ?? ""
+    static func topic(
+        for key: ProtocolRoutingKey,
+        namespace: String,
+        eventTypeFilter: [UInt8]? = nil,
+        eventTypeFilterKind: ProtocolEventTypeFilterKind = .direct
+    ) -> String {
+        let separator = eventTypeFilterKind == .objectType ? "::" : ":"
+        let filter = eventTypeFilter.map { "\(separator)\(String(bytes: $0, encoding: .utf8) ?? "")" } ?? ""
         var topic = "coaty/3/\(namespace)/\(key.capability.wireEventType.rawValue)\(filter)/\(uuidString(key.sourceID))"
         if let correlationID = key.correlationID {
             topic += "/\(uuidString(correlationID))"

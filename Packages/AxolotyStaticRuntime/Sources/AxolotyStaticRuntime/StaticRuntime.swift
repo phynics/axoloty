@@ -186,7 +186,9 @@ public struct StaticRuntime<let capacity: Int>: ~Copyable {
         for index in 0..<count {
             guard let action = sink[index] else { continue }
             body(action)
-            _ = subscriptions.dispatch(action)
+            if action.isApplicationDelivery {
+                _ = subscriptions.dispatch(action)
+            }
         }
         sink.removeAll()
         return count

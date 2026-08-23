@@ -452,8 +452,12 @@ private actor ProtocolExecutor {
     }
 
     func publish(_ operation: RuntimeOperation, nowMS: UInt32) -> RuntimeReceipt {
+        if operation.capability == .channel, operation.operationName == nil {
+            return .rejected(.invalidOperationName)
+        }
         if let operationName = operation.operationName,
-           operation.capability != .call || !RuntimeOperationValidation.isValidCallOperation(operationName) {
+           (operation.capability != .call && operation.capability != .channel)
+            || !RuntimeOperationValidation.isValidCallOperation(operationName) {
             return .rejected(.invalidOperationName)
         }
         guard !operation.payload.isEmpty else {
@@ -496,7 +500,7 @@ private actor ProtocolExecutor {
                 ) else {
                     return .rejected(.invalidCorrelation)
                 }
-                actionSink.removeAll()
+                actionSink.prepare(maximumActionCount: definition.capacities.dispatch - outboundQueued)
                 let outcome = processor.processOutbound(
                     local,
                     nowMS: nowMS,
@@ -602,7 +606,9 @@ private actor ProtocolExecutor {
         for index in 0..<actionSink.count {
             guard let borrowed = actionSink[index] else { continue }
             let action = borrowed.owned()
-            emitRegisteredEvents(for: borrowed, owned: action, nowMS: nowMS)
+            if borrowed.isApplicationDelivery {
+                emitRegisteredEvents(for: borrowed, owned: action, nowMS: nowMS)
+            }
             switch action.kind {
             case .publish:
                 enqueueOutbound(action)
@@ -957,6 +963,7 @@ private actor ProtocolExecutor {
         switch outcome {
         case .accepted: return .accepted
         case .ignored: return .ignored
+        case .rejected(.capacityExceeded): return .rejected(.capacityExceeded)
         case let .rejected(code): return .rejected(.protocol(code))
         }
     }

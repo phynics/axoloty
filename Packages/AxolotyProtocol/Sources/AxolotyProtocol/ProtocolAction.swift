@@ -28,6 +28,14 @@ public enum ProtocolActionKind: UInt8, Sendable, Equatable {
     case disassociate = 4
 }
 
+/// The canonical separator used before an outbound event-type filter.
+public enum ProtocolEventTypeFilterKind: UInt8, Sendable, Equatable {
+    /// A single-colon filter such as a core type, channel, or Call operation.
+    case direct = 1
+    /// A double-colon object-type filter.
+    case objectType = 2
+}
+
 /// A synchronous action that borrows its payload from a frame buffer.
 ///
 /// Borrowed actions are intentionally non-sendable. Consumers must call
@@ -43,6 +51,13 @@ public struct BorrowedProtocolAction {
     public let routeClassification: ProtocolRouteClassification
     /// The optional outbound event-type filter, such as a Call operation name.
     public let eventTypeFilter: ByteSlice?
+    /// The canonical separator form for ``eventTypeFilter``.
+    public let eventTypeFilterKind: ProtocolEventTypeFilterKind
+    /// Whether this wire action also represents the logical application event.
+    ///
+    /// A processor transition can require multiple MQTT publications while
+    /// still representing one semantic event to handlers and streams.
+    public let isApplicationDelivery: Bool
     /// The original borrowed topic, when the action came from inbound wire data.
     public let topic: ByteSlice?
     /// The borrowed action payload.
@@ -56,13 +71,17 @@ public struct BorrowedProtocolAction {
         deliveryKey: ProtocolDeliveryKey? = nil,
         topic: ByteSlice? = nil,
         routeClassification: ProtocolRouteClassification = .coaty,
-        eventTypeFilter: ByteSlice? = nil
+        eventTypeFilter: ByteSlice? = nil,
+        eventTypeFilterKind: ProtocolEventTypeFilterKind = .direct,
+        isApplicationDelivery: Bool = true
     ) {
         self.kind = kind
         self.routingKey = routingKey
         self.deliveryKey = deliveryKey ?? .capability(routingKey.capability)
         self.routeClassification = routeClassification
         self.eventTypeFilter = eventTypeFilter
+        self.eventTypeFilterKind = eventTypeFilterKind
+        self.isApplicationDelivery = isApplicationDelivery
         self.topic = topic
         self.payload = payload
     }
@@ -81,7 +100,14 @@ public struct BorrowedProtocolAction {
                 count: length
             ))
         }
-        return OwnedProtocolAction(kind: kind, routingKey: routingKey, payload: copied, eventTypeFilter: copiedFilter)
+        return OwnedProtocolAction(
+            kind: kind,
+            routingKey: routingKey,
+            payload: copied,
+            eventTypeFilter: copiedFilter,
+            eventTypeFilterKind: eventTypeFilterKind,
+            isApplicationDelivery: isApplicationDelivery
+        )
     }
 }
 
@@ -95,17 +121,25 @@ public struct OwnedProtocolAction: Sendable, Equatable {
     public let payload: [UInt8]
     /// The copied outbound event-type filter, when one was supplied.
     public let eventTypeFilter: [UInt8]?
+    /// The canonical separator form for ``eventTypeFilter``.
+    public let eventTypeFilterKind: ProtocolEventTypeFilterKind
+    /// Whether this wire action also represents the logical application event.
+    public let isApplicationDelivery: Bool
 
     /// Creates an owned action.
     public init(
         kind: ProtocolActionKind,
         routingKey: ProtocolRoutingKey,
         payload: [UInt8],
-        eventTypeFilter: [UInt8]? = nil
+        eventTypeFilter: [UInt8]? = nil,
+        eventTypeFilterKind: ProtocolEventTypeFilterKind = .direct,
+        isApplicationDelivery: Bool = true
     ) {
         self.kind = kind
         self.routingKey = routingKey
         self.payload = payload
         self.eventTypeFilter = eventTypeFilter
+        self.eventTypeFilterKind = eventTypeFilterKind
+        self.isApplicationDelivery = isApplicationDelivery
     }
 }

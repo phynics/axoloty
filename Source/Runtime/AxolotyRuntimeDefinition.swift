@@ -235,7 +235,7 @@ enum RuntimeOperationValidation {
 public enum RuntimeOneWayOperation: Sendable, Equatable {
     case advertise([UInt8])
     case deadvertise([UInt8])
-    case channel([UInt8])
+    case channel(identifier: String, payload: [UInt8])
     case associate([UInt8])
     case ioValue([UInt8])
 }
@@ -366,11 +366,11 @@ public struct RuntimeOperation: Sendable, Equatable {
     public let payload: [UInt8]
     /// The request timeout for request capabilities.
     public let requestTimeoutMS: UInt32?
-    /// The optional Call operation name encoded as the topic filter.
+    /// The optional Channel identifier or Call operation encoded as the topic filter.
     public let operationName: String?
 
-    /// Creates an owned local operation.
-    public init(
+    /// Creates an owned local operation inside the runtime boundary.
+    init(
         capability: ProtocolCapability,
         sourceID: UUID16,
         correlationID: UUID16? = nil,
@@ -391,7 +391,12 @@ public struct RuntimeOperation: Sendable, Equatable {
         switch oneWay {
         case let .advertise(payload): self.init(capability: .advertise, sourceID: sourceID, payload: payload)
         case let .deadvertise(payload): self.init(capability: .deadvertise, sourceID: sourceID, payload: payload)
-        case let .channel(payload): self.init(capability: .channel, sourceID: sourceID, payload: payload)
+        case let .channel(identifier, payload): self.init(
+            capability: .channel,
+            sourceID: sourceID,
+            payload: payload,
+            operationName: identifier
+        )
         case let .associate(payload): self.init(capability: .associate, sourceID: sourceID, payload: payload)
         case let .ioValue(payload): self.init(capability: .ioValue, sourceID: sourceID, payload: payload)
         }
@@ -426,9 +431,9 @@ public struct RuntimeOperation: Sendable, Equatable {
     public static func deadvertise(sourceID: UUID16, payload: [UInt8]) -> Self {
         Self(capability: .deadvertise, sourceID: sourceID, payload: payload)
     }
-    /// Creates a Channel operation.
-    public static func channel(sourceID: UUID16, payload: [UInt8]) -> Self {
-        Self(capability: .channel, sourceID: sourceID, payload: payload)
+    /// Creates a Channel operation with its required topic identifier.
+    public static func channel(sourceID: UUID16, identifier: String, payload: [UInt8]) -> Self {
+        Self(capability: .channel, sourceID: sourceID, payload: payload, operationName: identifier)
     }
     /// Creates an Associate operation.
     public static func associate(sourceID: UUID16, payload: [UInt8]) -> Self {

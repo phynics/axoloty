@@ -61,10 +61,12 @@ public struct InlineProtocolActionSink<let capacity: Int>: ~Copyable, ProtocolAc
 public struct ReusableProtocolActionSink: ProtocolActionSink {
     private var storage: [BorrowedProtocolAction]
     private let capacity: Int
+    private var operationCapacity: Int
 
     /// Creates a reusable sink with the requested bounded capacity.
     public init(capacity: Int = 64) {
         self.capacity = max(0, capacity)
+        self.operationCapacity = max(0, capacity)
         self.storage = []
         self.storage.reserveCapacity(max(0, capacity))
     }
@@ -72,7 +74,15 @@ public struct ReusableProtocolActionSink: ProtocolActionSink {
     /// Number of actions currently stored.
     public var count: Int { storage.count }
     /// Remaining action slots available to the next operation.
-    public var remainingCapacity: Int { capacity - storage.count }
+    public var remainingCapacity: Int { operationCapacity - storage.count }
+
+    /// Clears retained actions and bounds the next operation by downstream capacity.
+    /// - Parameter maximumActionCount: Complete action count the downstream
+    ///   dispatcher can accept without loss.
+    public mutating func prepare(maximumActionCount: Int) {
+        storage.removeAll(keepingCapacity: true)
+        operationCapacity = min(capacity, max(0, maximumActionCount))
+    }
 
     /// Checks capacity without changing the sink.
     public mutating func preflight(actionCount: Int) -> Bool {
@@ -81,7 +91,7 @@ public struct ReusableProtocolActionSink: ProtocolActionSink {
 
     /// Appends a borrowed action while retaining the preallocated buffer.
     public mutating func append(_ action: BorrowedProtocolAction) -> Bool {
-        guard storage.count < capacity else { return false }
+        guard storage.count < operationCapacity else { return false }
         storage.append(action)
         return true
     }
@@ -93,5 +103,8 @@ public struct ReusableProtocolActionSink: ProtocolActionSink {
     }
 
     /// Removes all actions while retaining contiguous host capacity.
-    public mutating func removeAll() { storage.removeAll(keepingCapacity: true) }
+    public mutating func removeAll() {
+        storage.removeAll(keepingCapacity: true)
+        operationCapacity = capacity
+    }
 }

@@ -192,6 +192,7 @@ struct StaticDeviceAgent: ~Copyable {
         _ value: T,
         eventType: WireEventType,
         correlationId: UUID16?,
+        eventTypeFilter: ByteSlice? = nil,
         nowMS: UInt32,
         topicBuffer: UnsafeMutablePointer<UInt8>,
         topicCapacity: Int,
@@ -208,22 +209,29 @@ struct StaticDeviceAgent: ~Copyable {
             sourceID: agentId,
             correlationID: correlationId,
             payload: borrowedPayload,
-            requestTimeoutMS: eventType == .discover ? Self.discoverTimeoutMS : nil
+            requestTimeoutMS: eventType == .discover ? Self.discoverTimeoutMS : nil,
+            operationName: eventTypeFilter
         ) else { throw .invalidValue }
         let outcome = runtime.send(operation, nowMS: nowMS, classifier: routeClassifier)
         var materialized = false
         var outputTopicLength = 0
         var outputPayloadLength = 0
         _ = runtime.drain { action in
-            guard !materialized, action.kind == .publish else { return }
+            let isObjectTypeAdvertise = eventType == .advertise
+                && action.eventTypeFilterKind == .objectType
+            let isFallbackPublication = !materialized && action.isApplicationDelivery
+            guard action.kind == .publish,
+                  isObjectTypeAdvertise || isFallbackPublication else { return }
             var topic = TopicBuilder(buffer: topicBuffer, capacity: topicCapacity)
             guard (try? topic.writePrefix()) != nil,
                   (try? topic.writeNamespace(Self.namespace)) != nil else { return }
-            let objectTypeFilter: StaticString = "coaty.test.Device"
-            let filter = eventType == .advertise
-                ? ByteSlice(bytes: objectTypeFilter.utf8Start, length: objectTypeFilter.utf8CodeUnitCount)
-                : nil
-            guard (try? topic.writeEventType(eventType, filter: filter)) != nil,
+            guard (try? topic.writeEventType(
+                eventType,
+                // The static compatibility profile emits one flattened
+                // Advertise route even when the shared processor exposes the
+                // host binding's canonical object-type variant.
+                filter: action.eventTypeFilter
+            )) != nil,
                   (try? topic.writeSourceId(action.routingKey.sourceID)) != nil else { return }
             if let correlation = action.routingKey.correlationID,
                (try? topic.writeCorrelationId(correlation)) == nil { return }
@@ -280,6 +288,7 @@ private func phase4Encode<T: WireEncodable>(
     value: T,
     eventType: WireEventType,
     correlationId: UUID16?,
+    eventTypeFilter: ByteSlice? = nil,
     topicBuffer: UnsafeMutablePointer<UInt8>,
     topicCapacity: Int32,
     payloadBuffer: UnsafeMutablePointer<UInt8>,
@@ -287,13 +296,15 @@ private func phase4Encode<T: WireEncodable>(
 ) throws(WireEncodeError) -> (topicLength: Int, payloadLength: Int) {
     if role == 1 {
         return try phase4AgentA.encode(
-            value, eventType: eventType, correlationId: correlationId, nowMS: phase4NowMS(),
+            value, eventType: eventType, correlationId: correlationId,
+            eventTypeFilter: eventTypeFilter, nowMS: phase4NowMS(),
             topicBuffer: topicBuffer, topicCapacity: Int(topicCapacity),
             payloadBuffer: payloadBuffer, payloadCapacity: Int(payloadCapacity)
         )
     }
     return try phase4AgentB.encode(
-        value, eventType: eventType, correlationId: correlationId, nowMS: phase4NowMS(),
+        value, eventType: eventType, correlationId: correlationId,
+        eventTypeFilter: eventTypeFilter, nowMS: phase4NowMS(),
         topicBuffer: topicBuffer, topicCapacity: Int(topicCapacity),
         payloadBuffer: payloadBuffer, payloadCapacity: Int(payloadCapacity)
     )

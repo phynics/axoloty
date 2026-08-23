@@ -13,6 +13,17 @@ struct AxolotyRuntimeTests {
         #expect(MQTTBinding.uuidString(id) == "44444444-4444-4444-8444-444444444444")
     }
 
+    @Test("identity startup advertisement uses the canonical core-type filter")
+    func identityStartupTopicIsFiltered() throws {
+        let id = try #require(UUID16(parsing: "44444444-4444-4444-8444-444444444444"))
+        let key = try ProtocolRoutingKey(capability: .advertise, sourceID: id)
+        #expect(MQTTBinding.topic(
+            for: key,
+            namespace: "test",
+            eventTypeFilter: Array("Identity".utf8)
+        ) == "coaty/3/test/ADV:Identity/44444444-4444-4444-8444-444444444444")
+    }
+
     @Test("builder seals typed event streams and responders")
     func builderSealsModernContracts() throws {
         let identity = try RuntimeIdentity(id: .zero, name: "inspector")
@@ -134,6 +145,85 @@ struct AxolotyRuntimeTests {
         }
         let action = try #require(await transport.lastSent())
         #expect(action.eventTypeFilter == Array("wire-fixture-operation".utf8))
+        await runtime.stop()
+    }
+
+    @Test("Channel identifiers remain typed topic filters on outbound actions")
+    func channelIdentifierReachesTransportAction() async throws {
+        let definition = try makeDefinition()
+        let transport = TestTransport()
+        let runtime = AxolotyRuntime(definition: definition, transport: transport)
+        try await runtime.start()
+
+        let receipt = await runtime.publish(.channel(
+            identifier: "wire-fixture-channel",
+            payload: Array(#"{"privateData":{"sequence":7}}"#.utf8)
+        ))
+        #expect(receipt == .accepted)
+        for _ in 0..<100 {
+            if await transport.sentCount() == 1 { break }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        let action = try #require(await transport.lastSent())
+        #expect(action.eventTypeFilter == Array("wire-fixture-channel".utf8))
+        #expect(action.eventTypeFilterKind == .direct)
+        await runtime.stop()
+    }
+
+    @Test("dispatch reservation rejects a complete multi-action publication atomically")
+    func multiActionDispatchReservationIsAtomic() async throws {
+        let definition = try RuntimeDefinition(
+            namespace: "test",
+            sourceID: .zero,
+            capacities: try RuntimeCapacities(dispatch: 1)
+        ).seal()
+        let transport = TestTransport()
+        let runtime = AxolotyRuntime(definition: definition, transport: transport)
+        try await runtime.start()
+
+        let payload = Array(#"{"object":{"objectId":"66666666-6666-4666-8666-666666666666","coreType":"CoatyObject","objectType":"com.coaty.test.WireQueuedFixture","name":"first"}}"#.utf8)
+        #expect(await runtime.publish(.advertise(payload)) == .rejected(.capacityExceeded))
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(await transport.sentCount() == 0)
+        await runtime.stop()
+    }
+
+    @Test("wire publication variants emit one logical runtime event")
+    func advertiseVariantsDoNotDuplicateRuntimeEvents() async throws {
+        let identity = try RuntimeIdentity(id: .zero, name: "semantic-event-test")
+        var builder = try RuntimeDefinition.Builder(
+            identity: identity,
+            namespace: "test",
+            limits: try RuntimeCapacities(dispatch: 2)
+        )
+        _ = try builder.events(
+            matching: .family(.advertise),
+            buffering: .fail(capacity: 1)
+        )
+        let transport = TestTransport()
+        let runtime = AxolotyRuntime(definition: try builder.finish(), transport: transport)
+        try await runtime.start()
+
+        let payload = Array(#"{"object":{"objectId":"77777777-7777-4777-8777-777777777777","coreType":"CoatyObject","objectType":"com.coaty.test.WireFixture","name":"wire-fixture"}}"#.utf8)
+        #expect(await runtime.publish(.advertise(payload)) == .accepted)
+        for _ in 0..<100 {
+            if await transport.sentCount() == 2 { break }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(await transport.sentCount() == 2)
+        #expect(await runtime.state() == .running)
+        await runtime.stop()
+    }
+
+    @Test("Channel requires a typed identifier")
+    func channelRejectsMissingIdentifier() async throws {
+        let runtime = AxolotyRuntime(definition: try makeDefinition(), transport: TestTransport())
+        try await runtime.start()
+        #expect(await runtime.publish(RuntimeOperation(
+            capability: .channel,
+            sourceID: .zero,
+            payload: Array("{}".utf8)
+        )) == .rejected(.invalidOperationName))
         await runtime.stop()
     }
 
@@ -311,11 +401,11 @@ struct AxolotyRuntimeTests {
         #expect(await transport.sentCount() == 0)
         await runtime.reconnect()
         for _ in 0..<100 {
-            if await transport.sentCount() == 1 { break }
+            if await transport.sentCount() == 2 { break }
             try? await Task.sleep(for: .milliseconds(5))
         }
         #expect(await runtime.state() == .running)
-        #expect(await transport.sentCount() == 1)
+        #expect(await transport.sentCount() == 2)
         await runtime.stop()
     }
 
