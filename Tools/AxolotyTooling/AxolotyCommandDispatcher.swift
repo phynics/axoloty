@@ -819,8 +819,9 @@ public struct AxolotyCommandDispatcher: Sendable {
     }
 
     private func humanExplanation(_ explanation: AxolotyCanonicalTestExplanation) -> String {
+        let deadline = explanation.timeoutSeconds.map { String($0) } ?? "none"
         var lines = [
-            "PLAN \(explanation.name) schema=\(explanation.schemaVersion) ci=\(explanation.ci) deadline=\(explanation.timeoutSeconds.map(String.init) ?? "none")",
+            "PLAN \(explanation.name) schema=\(explanation.schemaVersion) ci=\(explanation.ci) deadline=\(deadline)",
         ]
         lines += explanation.nodes.map { node in
             let dependencies = node.dependencies.isEmpty ? "-" : node.dependencies.joined(separator: ",")
