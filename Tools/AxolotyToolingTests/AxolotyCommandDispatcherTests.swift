@@ -592,7 +592,7 @@ func wireCaptureForwardsInvocationScopedOutputToEveryNode() throws {
     #expect(runner.commands.last?.arguments == [
         "Tests/Support/WireCompatibility/tool/dist/index.js",
         "manifest",
-        outputDirectory,
+        ".testing/wire",
         "\(outputDirectory)/manifest.json",
     ])
 }

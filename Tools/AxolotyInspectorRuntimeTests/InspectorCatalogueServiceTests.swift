@@ -172,20 +172,37 @@ private final class RetryInspectorSession: InspectorSession {
         finishPhases()
     }
 
-    func emitAdvertise(_ snapshot: InspectorAdvertiseEvent) {
-        guard let index = advertiseContinuations.indices.last else { return }
-        emitAdvertise(snapshot, onStream: index)
+    @discardableResult
+    func emitAdvertise(_ snapshot: InspectorAdvertiseEvent) -> Bool {
+        guard let index = advertiseContinuations.indices.last else { return false }
+        return emitAdvertise(snapshot, onStream: index)
     }
 
-    func emitAdvertise(_ snapshot: InspectorAdvertiseEvent, onStream index: Int) {
-        advertiseContinuations[index].yield(snapshot)
-        advertisePhases[index].signal()
+    @discardableResult
+    func emitAdvertise(_ snapshot: InspectorAdvertiseEvent, onStream index: Int) -> Bool {
+        switch advertiseContinuations[index].yield(snapshot) {
+        case .enqueued:
+            advertisePhases[index].signal()
+            return true
+        case .dropped, .terminated:
+            return false
+        @unknown default:
+            return false
+        }
     }
 
-    func emitDeadvertise(_ snapshot: InspectorDeadvertiseEvent) {
-        guard let index = deadvertiseContinuations.indices.last else { return }
-        deadvertiseContinuations[index].yield(snapshot)
-        deadvertisePhases[index].signal()
+    @discardableResult
+    func emitDeadvertise(_ snapshot: InspectorDeadvertiseEvent) -> Bool {
+        guard let index = deadvertiseContinuations.indices.last else { return false }
+        switch deadvertiseContinuations[index].yield(snapshot) {
+        case .enqueued:
+            deadvertisePhases[index].signal()
+            return true
+        case .dropped, .terminated:
+            return false
+        @unknown default:
+            return false
+        }
     }
 
     func releaseConnect() {
@@ -256,7 +273,7 @@ func catalogueServiceCanRetryAfterFailedConnection() async {
 
     session.emitDeadvertise(InspectorDeadvertiseEvent(objectIds: ["object-1"]))
     #expect(await waitForPhase(
-        session.deadvertiseSignal(),
+        session.deadvertiseSignal(onStream: 1),
         description: "deadvertise event enqueued on active stream"
     ))
     #expect(await waitForStableStoreCount(
@@ -360,11 +377,7 @@ func stoppingDuringCatalogueServiceStartPreventsLateConsumer() async {
             name: "Agent"
         )
     )
-    session.emitAdvertise(staleObject, onStream: 0)
-    #expect(await waitForPhase(
-        session.advertiseSignal(onStream: 0),
-        description: "stale advertise event enqueued after stop"
-    ))
+    #expect(!session.emitAdvertise(staleObject, onStream: 0))
     #expect(await waitForStableStoreCount(
         service.store,
         expected: 0,
