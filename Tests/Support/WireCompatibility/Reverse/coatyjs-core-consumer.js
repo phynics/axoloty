@@ -21,6 +21,7 @@ const scenario = process.env.SCENARIO;
 const timeoutMs = Number(process.env.SCENARIO_TIMEOUT_MS || "10000");
 const peerAckFile = process.env.WIRE_PEER_ACK_FILE;
 const peerAckToken = process.env.WIRE_PEER_ACK_TOKEN;
+const responseReadyFile = process.env.WIRE_RESPONSE_READY_FILE;
 const object = {
     coreType: "CoatyObject",
     objectType: "com.coaty.test.WireFixture",
@@ -89,6 +90,45 @@ const ack = details => {
     }, 500);
 };
 const timeout = setTimeout(() => fail(new Error(`Timed out waiting for ${scenario}`)), timeoutMs);
+
+async function waitForResponseReady(operation) {
+    if (!responseReadyFile) {
+        throw new Error(`WIRE_RESPONSE_READY_FILE is required for ${scenario}`);
+    }
+    const startedAt = Date.now();
+    const deadline = startedAt + timeoutMs;
+    process.stdout.write(`${JSON.stringify({
+        phase: "response-ready-wait",
+        scenario,
+        operation,
+        marker: responseReadyFile,
+        pid: process.pid,
+    })}\n`);
+    while (Date.now() < deadline) {
+        if (fs.existsSync(responseReadyFile)) {
+            let marker;
+            try {
+                marker = JSON.parse(fs.readFileSync(responseReadyFile, "utf8"));
+            } catch (error) {
+                throw new Error(`response-ready marker is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+            }
+            if (marker.phase !== "response-ready" || marker.scenario !== scenario || marker.operation !== operation) {
+                throw new Error(`response-ready marker does not match ${scenario}/${operation}`);
+            }
+            process.stdout.write(`${JSON.stringify({
+                phase: "response-ready",
+                scenario,
+                operation,
+                marker: responseReadyFile,
+                pid: process.pid,
+                elapsedMS: Date.now() - startedAt,
+            })}\n`);
+            return;
+        }
+        await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    throw new Error(`Timed out waiting for response-ready marker phase=${scenario} operation=${operation} pid=${process.pid}`);
+}
 
 function matchesFixture(candidate) {
     return candidate && candidate.objectId === object.objectId &&
@@ -221,17 +261,20 @@ async function run() {
         // fabricated one about CoatyJS.
         subscription = manager.observeCall("wire-fixture-operation").subscribe(event => {
             if (event.data.getParameterByName("operand") !== 7) return;
-            event.returnEvent(ReturnEvent.withResult(
-                { answer: 49, objectId: object.objectId, variant: "original" },
-                { responder: "coatyjs-2.4.0" }
-            ));
-            setTimeout(() => {
+            void (async () => {
+                await waitForResponseReady("wire-fixture-operation");
                 event.returnEvent(ReturnEvent.withResult(
-                    { answer: 49, objectId: object.objectId, variant: "duplicate" },
+                    { answer: 49, objectId: object.objectId, variant: "original" },
                     { responder: "coatyjs-2.4.0" }
                 ));
-                ack({ objectId: object.objectId });
-            }, 300);
+                setTimeout(() => {
+                    event.returnEvent(ReturnEvent.withResult(
+                        { answer: 49, objectId: object.objectId, variant: "duplicate" },
+                        { responder: "coatyjs-2.4.0" }
+                    ));
+                    ack({ objectId: object.objectId });
+                }, 300);
+            })().catch(fail);
         }, fail);
     } else if (scenario === "late-reply") {
         // Backs the `late-reply` lifecycle scenario: this responder withholds
@@ -243,13 +286,16 @@ async function run() {
         const delayMs = Number(process.env.LIFECYCLE_LATE_REPLY_DELAY_MS || "4000");
         subscription = manager.observeCall("wire-fixture-operation").subscribe(event => {
             if (event.data.getParameterByName("operand") !== 7) return;
-            setTimeout(() => {
-                event.returnEvent(ReturnEvent.withResult(
-                    { answer: 49, objectId: object.objectId, variant: "late" },
-                    { responder: "coatyjs-2.4.0" }
-                ));
-                ack({ objectId: object.objectId });
-            }, delayMs);
+            void (async () => {
+                await waitForResponseReady("wire-fixture-operation");
+                setTimeout(() => {
+                    event.returnEvent(ReturnEvent.withResult(
+                        { answer: 49, objectId: object.objectId, variant: "late" },
+                        { responder: "coatyjs-2.4.0" }
+                    ));
+                    ack({ objectId: object.objectId });
+                }, delayMs);
+            })().catch(fail);
         }, fail);
     } else {
         throw new Error(`unsupported scenario: ${scenario}`);

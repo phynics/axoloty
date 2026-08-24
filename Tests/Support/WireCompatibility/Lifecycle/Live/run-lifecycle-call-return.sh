@@ -49,6 +49,8 @@ ACK_BASENAME="axoloty-$SCENARIO-$RUN_ID.peer-ack.json"
 ACK_DIR="$OUT/peer-acks"
 ACK_FILE="$ACK_DIR/$ACK_BASENAME"
 ACK_TOKEN="${RUN_ID}-lifecycle-$SCENARIO"
+RESPONSE_READY_BASENAME="axoloty-$SCENARIO-$RUN_ID.response-ready.json"
+RESPONSE_READY_FILE="$ACK_DIR/$RESPONSE_READY_BASENAME"
 DEADLINE_SECONDS="${WIRE_LIFECYCLE_DEADLINE_SECONDS:-600}"
 RUNTIME_LABELS=(
     --label "io.axoloty.managed-by=${WIRE_RUNTIME_MANAGED_BY:-axoloty-wire-lifecycle}"
@@ -67,7 +69,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 mkdir -p "$OUT" "$ACK_DIR"
 chmod 0777 "$ACK_DIR"
-rm -f "$CAPTURE" "$CAPTURE_READY" "$CONSUMER_LOG" "$APPLICATION_LOG" "$RAW_LOG" "$ACK_FILE"
+rm -f "$CAPTURE" "$CAPTURE_READY" "$CONSUMER_LOG" "$APPLICATION_LOG" "$RAW_LOG" "$ACK_FILE" "$RESPONSE_READY_FILE"
 
 runtime build -t "$DEV_IMAGE" -f "$ROOT/.devcontainer/Dockerfile" "$ROOT"
 runtime build -t "$JS_IMAGE" "$REF"
@@ -105,6 +107,7 @@ runtime run -d --name "$RESPONDER" --network "$NETWORK" \
     -e BROKER_URL="mqtt://$BROKER:1883" -e COATY_NAMESPACE="$NAMESPACE" \
     -e SCENARIO="$SCENARIO" -e SCENARIO_TIMEOUT_MS=30000 \
     -e LIFECYCLE_LATE_REPLY_DELAY_MS="${LIFECYCLE_LATE_REPLY_DELAY_MS:-4000}" \
+    -e WIRE_RESPONSE_READY_FILE="/artifacts/$RESPONSE_READY_BASENAME" \
     -e WIRE_PEER_ACK_FILE="/artifacts/$ACK_BASENAME" -e WIRE_PEER_ACK_TOKEN="$ACK_TOKEN" \
     "$JS_IMAGE" /agent/coatyjs-core-consumer.js >/dev/null
 responder_ready() { runtime logs "$RESPONDER" 2>&1 >"$CONSUMER_LOG"; grep -q '"state":"ready"' "$CONSUMER_LOG"; }
@@ -124,9 +127,10 @@ ENV_FLAG="$(
     esac
 )"
 runtime run -d -t --name "$SUBJECT" --network "$NETWORK" \
-    -v "$ROOT:/workspace" -v "$SPM_CACHE_DIR:/swiftpm-cache" -v "$BUILD_DIR:/swift-build" -w /workspace \
+    -v "$ROOT:/workspace" -v "$ACK_DIR:/peer-acks" -v "$SPM_CACHE_DIR:/swiftpm-cache" -v "$BUILD_DIR:/swift-build" -w /workspace \
     "${RUNTIME_LABELS[@]}" \
     -e "$ENV_FLAG=1" -e WIRE_BROKER_HOST="$BROKER" -e WIRE_BROKER_PORT=1883 -e WIRE_NAMESPACE="$NAMESPACE" \
+    -e WIRE_RESPONSE_READY="/peer-acks/$RESPONSE_READY_BASENAME" \
     -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
     "$DEV_IMAGE" swift test -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
     --skip-build --scratch-path /swift-build --cache-path /swiftpm-cache --disable-automatic-resolution \
@@ -136,6 +140,13 @@ runtime run -d -t --name "$SUBJECT" --network "$NETWORK" \
 runtime wait "$SUBJECT" >/dev/null
 runtime logs "$SUBJECT" 2>&1 >"$RAW_LOG"
 grep -E '^\{"state":' "$RAW_LOG" >"$APPLICATION_LOG" || true
+
+# The responder is gated on this marker, so its presence proves that the
+# subject reached the response-ready phase before any Return was published.
+test -s "$RESPONSE_READY_FILE" || {
+    echo "Swift subject did not publish response-ready marker: $RESPONSE_READY_FILE; see $RAW_LOG" >&2
+    exit 1
+}
 
 # Verify responder ack.
 runtime logs "$RESPONDER" 2>&1 >"$CONSUMER_LOG"

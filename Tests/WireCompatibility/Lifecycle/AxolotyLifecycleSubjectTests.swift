@@ -25,12 +25,20 @@ struct AxolotyLifecycleSubjectTests {
         do {
             report(state: "ready", scenario: "duplicate-reply")
             var iterator = stream.makeAsyncIterator()
-            _ = await runtime.request(.call(
+            let requestReceipt = await runtime.request(.call(
                 correlationID: correlation,
                 operation: "wire-fixture-operation",
                 payload: Array(#"{"parameters":{"operand":7}}"#.utf8),
                 timeoutMS: 10_000
             ))
+            guard requestReceipt == .accepted else {
+                throw LifecycleFailure.requestRejected(requestReceipt)
+            }
+            try signalResponseReady(
+                scenario: "duplicate-reply",
+                operation: "wire-fixture-operation",
+                correlationID: correlation
+            )
             _ = try await nextEvent(&iterator, timeout: .seconds(10))
             report(state: "accepted", scenario: "duplicate-reply", extra: ["variant": "original"])
             do {
@@ -58,12 +66,20 @@ struct AxolotyLifecycleSubjectTests {
             report(state: "ready", scenario: "late-reply")
             var iterator = stream.makeAsyncIterator()
             let requestNowMS = Self.monotonicNowMS()
-            _ = await runtime.request(.call(
+            let requestReceipt = await runtime.request(.call(
                 correlationID: correlation,
                 operation: "wire-fixture-operation",
                 payload: Array(#"{"parameters":{"operand":7}}"#.utf8),
                 timeoutMS: 2_000
             ), nowMS: requestNowMS)
+            guard requestReceipt == .accepted else {
+                throw LifecycleFailure.requestRejected(requestReceipt)
+            }
+            try signalResponseReady(
+                scenario: "late-reply",
+                operation: "wire-fixture-operation",
+                correlationID: correlation
+            )
             do {
                 _ = try await nextEvent(&iterator, timeout: .seconds(2.5))
                 Issue.record("the deliberately late Return arrived before the request deadline")
@@ -222,6 +238,51 @@ struct AxolotyLifecycleSubjectTests {
         for (key, value) in extra { fields.append("\"\(key)\":\"\(value)\"") }
         FileHandle.standardOutput.write(Data("{\(fields.joined(separator: ","))}\n".utf8))
     }
+
+    private func signalResponseReady(
+        scenario: String,
+        operation: String,
+        correlationID: UUID16
+    ) throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let path = environment["WIRE_RESPONSE_READY"], !path.isEmpty else {
+            throw LifecycleFailure.responseHandshakeMissing
+        }
+        let directory = URL(fileURLWithPath: path).deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let temporaryPath = "\(path).tmp-\(ProcessInfo.processInfo.processIdentifier)"
+        let document = "{\"phase\":\"response-ready\",\"scenario\":\"\(scenario)\",\"operation\":\"\(operation)\",\"correlationId\":\"\(correlationID)\",\"pid\":\(ProcessInfo.processInfo.processIdentifier)}\n"
+        try Data(document.utf8).write(to: URL(fileURLWithPath: temporaryPath), options: .atomic)
+        try FileManager.default.moveItem(
+            at: URL(fileURLWithPath: temporaryPath),
+            to: URL(fileURLWithPath: path)
+        )
+        reportPhase(
+            scenario: scenario,
+            phase: "response-ready",
+            extra: [
+                "operation": operation,
+                "correlationId": String(describing: correlationID),
+                "pid": String(ProcessInfo.processInfo.processIdentifier),
+            ]
+        )
+    }
+
+    private func reportPhase(
+        scenario: String,
+        phase: String,
+        extra: [String: String] = [:]
+    ) {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var fields = [
+            "\"phase\":\"\(phase)\"",
+            "\"scenario\":\"\(scenario)\"",
+            "\"at\":\"\(formatter.string(from: Date()))\"",
+        ]
+        for (key, value) in extra { fields.append("\"\(key)\":\"\(value)\"") }
+        FileHandle.standardOutput.write(Data("{\(fields.joined(separator: ","))}\n".utf8))
+    }
 }
 
 private enum LifecycleFailure: Error {
@@ -229,4 +290,6 @@ private enum LifecycleFailure: Error {
     case deadlineNotExpired
     case offlinePublicationRejected
     case reconnectHandshakeMissing
+    case requestRejected(RuntimeReceipt)
+    case responseHandshakeMissing
 }
