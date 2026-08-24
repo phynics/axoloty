@@ -11,6 +11,65 @@ private func protocolSlice(_ value: StaticString) -> ByteSlice {
 
 @Suite("AxolotyProtocol foundation")
 struct ProtocolFoundationTests {
+    @Test("exhaustive borrowed actions preserve every owned case")
+    func exhaustiveBorrowedOwnedActions() throws {
+        let routingKey = try ProtocolRoutingKey(capability: .channel, sourceID: .zero)
+        let topic = protocolSlice("coaty/3/test/CHN:fixture/00000000-0000-0000-0000-000000000000")
+        let payload = protocolSlice("{\"value\":1}")
+        let delivery = BorrowedProtocolDelivery(
+            routingKey: routingKey,
+            deliveryKey: .channel(protocolSlice("fixture")),
+            routeClassification: .coaty,
+            topic: topic,
+            payload: payload
+        )
+        let publication = BorrowedProtocolPublication(
+            routingKey: routingKey,
+            target: .profile(eventTypeFilter: protocolSlice("fixture"), filterKind: .direct),
+            payload: payload
+        )
+        let association = BorrowedIoAssociationTransition(
+            delivery: delivery,
+            sourceID: .zero,
+            actorID: UUID16(bytes: (1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)),
+            change: .updated,
+            route: BorrowedProtocolRouteSnapshot(slice: payload),
+            routeClassification: .external
+        )
+        let external = BorrowedExternalRouteTransition(sourceID: .zero, actorID: .zero, route: topic)
+
+        #expect(BorrowedProtocolAction.deliver(delivery).owned() == .deliver(delivery.owned()))
+        #expect(BorrowedProtocolAction.publish(publication).owned() == .publish(publication.owned()))
+        #expect(BorrowedProtocolAction.associationChanged(association).owned() == .associationChanged(association.owned()))
+        #expect(BorrowedProtocolAction.externalRouteActivated(external).owned() == .externalRouteActivated(external.owned()))
+        #expect(BorrowedProtocolAction.externalRouteDeactivated(external).owned() == .externalRouteDeactivated(external.owned()))
+    }
+
+    @Test("owned actions copy borrowed bytes before the source scope ends")
+    func ownedActionsCopyBorrowedBytes() throws {
+        var bytes = Array("payload".utf8)
+        let owned: OwnedProtocolAction = bytes.withUnsafeBufferPointer { buffer in
+            let slice = ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+            let key = try! ProtocolRoutingKey(capability: .channel, sourceID: .zero)
+            return BorrowedProtocolAction.deliver(
+                BorrowedProtocolDelivery(
+                    routingKey: key,
+                    deliveryKey: .channel(slice),
+                    topic: slice,
+                    payload: slice
+                )
+            ).owned()
+        }
+        bytes[0] = Character("X").asciiValue!
+        guard case .deliver(let delivery) = owned else {
+            Issue.record("owned action changed case")
+            return
+        }
+        #expect(delivery.payload == Array("payload".utf8))
+        #expect(delivery.topic == Array("payload".utf8))
+        #expect(delivery.deliveryKey == .channel(Array("payload".utf8)))
+    }
+
     @Test("Coaty Core Profile 3 is closed")
     func profileIsClosed() {
         #expect(CoatyCore3Profile.namespace == "coaty")
@@ -63,8 +122,14 @@ struct ProtocolFoundationTests {
         #expect(owned.routingKey.capability == .discover)
         #expect(owned.payload == payload)
 
-        let action = BorrowedProtocolAction(kind: .deliver, routingKey: owned.routingKey, payload: frame.payload)
-        #expect(action.owned().payload == payload)
+        let action = BorrowedProtocolAction.deliver(
+            BorrowedProtocolDelivery(routingKey: owned.routingKey, payload: frame.payload)
+        )
+        guard case .deliver(let ownedAction) = action.owned() else {
+            Issue.record("borrowed delivery changed action case")
+            return
+        }
+        #expect(ownedAction.payload == payload)
     }
 
     @Test("raw and malformed topics are rejected before routing")

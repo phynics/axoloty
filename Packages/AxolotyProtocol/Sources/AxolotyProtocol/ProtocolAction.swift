@@ -2,8 +2,8 @@
 
 import AxolotyWire
 
-/// The normalized selector used by protocol consumers after topic parsing.
-public enum ProtocolDeliveryKey {
+/// A delivery selector borrowed from the frame that produced an action.
+public enum BorrowedProtocolDeliveryKey {
     /// Match every action in a capability family.
     case capability(ProtocolCapability)
     /// Match an Advertise filter.
@@ -16,16 +16,18 @@ public enum ProtocolDeliveryKey {
     case correlated(ProtocolCapability, UUID16)
 }
 
-/// The finite action kinds exposed by the portable processor boundary.
-public enum ProtocolActionKind: UInt8, Sendable, Equatable {
-    /// Deliver an inbound frame to a protocol consumer.
-    case deliver = 1
-    /// Publish an outbound frame through a binding.
-    case publish = 2
-    /// Record an association transition.
-    case associate = 3
-    /// Record a disassociation transition.
-    case disassociate = 4
+/// A delivery selector safe to store or send across an isolation boundary.
+public enum OwnedProtocolDeliveryKey: Sendable, Equatable {
+    /// Match every action in a capability family.
+    case capability(ProtocolCapability)
+    /// Match an Advertise filter.
+    case advertiseFilter([UInt8])
+    /// Match a Channel identifier.
+    case channel([UInt8])
+    /// Match an IoValue actor endpoint.
+    case ioActor(UUID16)
+    /// Match a response family and correlation identity.
+    case correlated(ProtocolCapability, UUID16)
 }
 
 /// The canonical separator used before an outbound event-type filter.
@@ -36,110 +38,384 @@ public enum ProtocolEventTypeFilterKind: UInt8, Sendable, Equatable {
     case objectType = 2
 }
 
-/// A synchronous action that borrows its payload from a frame buffer.
-///
-/// Borrowed actions are intentionally non-sendable. Consumers must call
-/// ``owned()`` before storing, awaiting, or crossing an isolation boundary.
-public struct BorrowedProtocolAction {
-    /// The normalized action kind.
-    public let kind: ProtocolActionKind
-    /// The action routing key.
+/// The target of a borrowed publication.
+public enum BorrowedProtocolPublishTarget {
+    /// A publication on the Coaty profile route.
+    case profile(eventTypeFilter: ByteSlice?, filterKind: ProtocolEventTypeFilterKind)
+    /// A publication on an exact external route.
+    case associationRoute(route: ByteSlice, kind: ProtocolRouteClassification)
+}
+
+/// The target of an owned publication.
+public enum OwnedProtocolPublishTarget: Sendable, Equatable {
+    /// A publication on the Coaty profile route.
+    case profile(eventTypeFilter: [UInt8]?, filterKind: ProtocolEventTypeFilterKind)
+    /// A publication on an exact external route.
+    case associationRoute(route: [UInt8], kind: ProtocolRouteClassification)
+}
+
+/// The complete delivery context borrowed from a protocol frame.
+public struct BorrowedProtocolDelivery {
+    /// The normalized routing key.
     public let routingKey: ProtocolRoutingKey
-    /// The normalized delivery selector.
-    public let deliveryKey: ProtocolDeliveryKey
-    /// The binding-owned association route classification for this action.
+    /// The typed subscription selector.
+    public let deliveryKey: BorrowedProtocolDeliveryKey
+    /// The binding-owned route classification.
     public let routeClassification: ProtocolRouteClassification
-    /// The optional outbound event-type filter, such as a Call operation name.
-    public let eventTypeFilter: ByteSlice?
-    /// The canonical separator form for ``eventTypeFilter``.
-    public let eventTypeFilterKind: ProtocolEventTypeFilterKind
-    /// Whether this wire action also represents the logical application event.
-    ///
-    /// A processor transition can require multiple MQTT publications while
-    /// still representing one semantic event to handlers and streams.
-    public let isApplicationDelivery: Bool
-    /// The original borrowed topic, when the action came from inbound wire data.
+    /// The original topic, when the action came from inbound wire data.
     public let topic: ByteSlice?
-    /// The borrowed action payload.
+    /// The borrowed payload.
     public let payload: ByteSlice
 
-    /// Creates a borrowed action.
+    /// Creates a borrowed delivery context.
     public init(
-        kind: ProtocolActionKind,
         routingKey: ProtocolRoutingKey,
-        payload: ByteSlice,
-        deliveryKey: ProtocolDeliveryKey? = nil,
-        topic: ByteSlice? = nil,
+        deliveryKey: BorrowedProtocolDeliveryKey? = nil,
         routeClassification: ProtocolRouteClassification = .coaty,
-        eventTypeFilter: ByteSlice? = nil,
-        eventTypeFilterKind: ProtocolEventTypeFilterKind = .direct,
-        isApplicationDelivery: Bool = true
+        topic: ByteSlice? = nil,
+        payload: ByteSlice
     ) {
-        self.kind = kind
         self.routingKey = routingKey
         self.deliveryKey = deliveryKey ?? .capability(routingKey.capability)
         self.routeClassification = routeClassification
-        self.eventTypeFilter = eventTypeFilter
-        self.eventTypeFilterKind = eventTypeFilterKind
-        self.isApplicationDelivery = isApplicationDelivery
         self.topic = topic
         self.payload = payload
     }
 
-    /// Materializes an owned action before an asynchronous boundary.
-    public func owned() -> OwnedProtocolAction {
-        let copied = payload.withBytes { pointer, length in
-            Array(UnsafeBufferPointer(
-                start: pointer.assumingMemoryBound(to: UInt8.self),
-                count: length
-            ))
-        }
-        let copiedFilter = eventTypeFilter?.withBytes { pointer, length in
-            Array(UnsafeBufferPointer(
-                start: pointer.assumingMemoryBound(to: UInt8.self),
-                count: length
-            ))
-        }
-        return OwnedProtocolAction(
-            kind: kind,
+    /// Copies the complete delivery context.
+    public borrowing func owned() -> OwnedProtocolDelivery {
+        OwnedProtocolDelivery(
             routingKey: routingKey,
-            payload: copied,
-            eventTypeFilter: copiedFilter,
-            eventTypeFilterKind: eventTypeFilterKind,
+            deliveryKey: deliveryKey.owned(),
+            routeClassification: routeClassification,
+            topic: topic?.ownedBytes(),
+            payload: payload.ownedBytes()
+        )
+    }
+}
+
+/// The complete delivery context safe to store or send.
+public struct OwnedProtocolDelivery: Sendable, Equatable {
+    /// The normalized routing key.
+    public let routingKey: ProtocolRoutingKey
+    /// The copied subscription selector.
+    public let deliveryKey: OwnedProtocolDeliveryKey
+    /// The binding-owned route classification.
+    public let routeClassification: ProtocolRouteClassification
+    /// The copied original topic.
+    public let topic: [UInt8]?
+    /// The copied payload.
+    public let payload: [UInt8]
+
+    /// Creates an owned delivery context.
+    public init(
+        routingKey: ProtocolRoutingKey,
+        deliveryKey: OwnedProtocolDeliveryKey,
+        routeClassification: ProtocolRouteClassification,
+        topic: [UInt8]? = nil,
+        payload: [UInt8]
+    ) {
+        self.routingKey = routingKey
+        self.deliveryKey = deliveryKey
+        self.routeClassification = routeClassification
+        self.topic = topic
+        self.payload = payload
+    }
+}
+
+/// A borrowed outbound publication.
+public struct BorrowedProtocolPublication {
+    /// The normalized routing key.
+    public let routingKey: ProtocolRoutingKey
+    /// The publication target and route information.
+    public let target: BorrowedProtocolPublishTarget
+    /// The borrowed payload.
+    public let payload: ByteSlice
+    /// Whether this publication represents the logical application event.
+    public let isApplicationDelivery: Bool
+
+    /// Creates a borrowed publication.
+    public init(
+        routingKey: ProtocolRoutingKey,
+        target: BorrowedProtocolPublishTarget,
+        payload: ByteSlice,
+        isApplicationDelivery: Bool = true
+    ) {
+        self.routingKey = routingKey
+        self.target = target
+        self.payload = payload
+        self.isApplicationDelivery = isApplicationDelivery
+    }
+
+    /// Copies the complete publication context.
+    public borrowing func owned() -> OwnedProtocolPublication {
+        OwnedProtocolPublication(
+            routingKey: routingKey,
+            target: target.owned(),
+            payload: payload.ownedBytes(),
             isApplicationDelivery: isApplicationDelivery
         )
     }
 }
 
-/// An owned, sendable normalized protocol action.
-public struct OwnedProtocolAction: Sendable, Equatable {
-    /// The normalized action kind.
-    public let kind: ProtocolActionKind
-    /// The action routing key.
+/// An owned outbound publication.
+public struct OwnedProtocolPublication: Sendable, Equatable {
+    /// The normalized routing key.
     public let routingKey: ProtocolRoutingKey
-    /// The owned action payload.
+    /// The copied publication target and route information.
+    public let target: OwnedProtocolPublishTarget
+    /// The copied payload.
     public let payload: [UInt8]
-    /// The copied outbound event-type filter, when one was supplied.
-    public let eventTypeFilter: [UInt8]?
-    /// The canonical separator form for ``eventTypeFilter``.
-    public let eventTypeFilterKind: ProtocolEventTypeFilterKind
-    /// Whether this wire action also represents the logical application event.
+    /// Whether this publication represents the logical application event.
     public let isApplicationDelivery: Bool
 
-    /// Creates an owned action.
+    /// Creates an owned publication.
     public init(
-        kind: ProtocolActionKind,
         routingKey: ProtocolRoutingKey,
+        target: OwnedProtocolPublishTarget,
         payload: [UInt8],
-        eventTypeFilter: [UInt8]? = nil,
-        eventTypeFilterKind: ProtocolEventTypeFilterKind = .direct,
         isApplicationDelivery: Bool = true
     ) {
-        self.kind = kind
         self.routingKey = routingKey
+        self.target = target
         self.payload = payload
-        self.eventTypeFilter = eventTypeFilter
-        self.eventTypeFilterKind = eventTypeFilterKind
         self.isApplicationDelivery = isApplicationDelivery
+    }
+}
+
+/// A bounded route snapshot carried by an association transition.
+///
+/// Association removal frames omit the route being removed. The processor
+/// snapshots that route in fixed inline storage before committing removal.
+public struct BorrowedProtocolRouteSnapshot {
+    private var bytes: InlineArray<128, UInt8>
+    /// Number of meaningful route bytes.
+    public let length: Int
+
+    /// Creates a bounded snapshot from borrowed route bytes.
+    public init?(slice: ByteSlice) {
+        guard slice.length > 0, slice.length <= 128 else { return nil }
+        var storage = InlineArray<128, UInt8>(repeating: 0)
+        for index in 0..<slice.length { storage[index] = slice.byte(at: index) ?? 0 }
+        self.bytes = storage
+        self.length = slice.length
+    }
+
+    /// Creates a snapshot from already-filled fixed storage.
+    init(length: Int, storage: InlineArray<128, UInt8>) {
+        self.bytes = storage
+        self.length = length
+    }
+
+    /// Returns one route byte by index.
+    public func byte(at index: Int) -> UInt8? {
+        guard index >= 0, index < length else { return nil }
+        return bytes[index]
+    }
+
+    /// Copies the snapshot into an owned route.
+    public borrowing func owned() -> [UInt8] {
+        var result: [UInt8] = []
+        result.reserveCapacity(length)
+        for index in 0..<length { result.append(bytes[index]) }
+        return result
+    }
+}
+
+/// The kind of association transition represented by an action.
+public enum ProtocolIoAssociationChange: Sendable, Equatable {
+    /// A new source-to-actor association.
+    case established
+    /// An existing association changed route or metadata.
+    case updated
+    /// An existing association was removed.
+    case removed
+}
+
+/// A borrowed association transition with its complete delivery context.
+public struct BorrowedIoAssociationTransition {
+    /// The delivery context for the Associate frame.
+    public let delivery: BorrowedProtocolDelivery
+    /// The source endpoint identity.
+    public let sourceID: UUID16
+    /// The actor endpoint identity.
+    public let actorID: UUID16
+    /// The transition kind.
+    public let change: ProtocolIoAssociationChange
+    /// The resulting or removed exact route, when one exists.
+    public let route: BorrowedProtocolRouteSnapshot?
+    /// The route classification.
+    public let routeClassification: ProtocolRouteClassification
+
+    /// Creates a borrowed association transition.
+    public init(
+        delivery: BorrowedProtocolDelivery,
+        sourceID: UUID16,
+        actorID: UUID16,
+        change: ProtocolIoAssociationChange,
+        route: BorrowedProtocolRouteSnapshot?,
+        routeClassification: ProtocolRouteClassification
+    ) {
+        self.delivery = delivery
+        self.sourceID = sourceID
+        self.actorID = actorID
+        self.change = change
+        self.route = route
+        self.routeClassification = routeClassification
+    }
+
+    /// Copies the complete association transition.
+    public borrowing func owned() -> OwnedIoAssociationTransition {
+        OwnedIoAssociationTransition(
+            delivery: delivery.owned(),
+            sourceID: sourceID,
+            actorID: actorID,
+            change: change,
+            route: route?.owned(),
+            routeClassification: routeClassification
+        )
+    }
+}
+
+/// An owned association transition.
+public struct OwnedIoAssociationTransition: Sendable, Equatable {
+    /// The copied delivery context for the Associate frame.
+    public let delivery: OwnedProtocolDelivery
+    /// The source endpoint identity.
+    public let sourceID: UUID16
+    /// The actor endpoint identity.
+    public let actorID: UUID16
+    /// The transition kind.
+    public let change: ProtocolIoAssociationChange
+    /// The copied resulting or removed route.
+    public let route: [UInt8]?
+    /// The route classification.
+    public let routeClassification: ProtocolRouteClassification
+
+    /// Creates an owned association transition.
+    public init(
+        delivery: OwnedProtocolDelivery,
+        sourceID: UUID16,
+        actorID: UUID16,
+        change: ProtocolIoAssociationChange,
+        route: [UInt8]?,
+        routeClassification: ProtocolRouteClassification
+    ) {
+        self.delivery = delivery
+        self.sourceID = sourceID
+        self.actorID = actorID
+        self.change = change
+        self.route = route
+        self.routeClassification = routeClassification
+    }
+}
+
+/// A borrowed external-route lifecycle transition.
+public struct BorrowedExternalRouteTransition {
+    /// The source endpoint identity.
+    public let sourceID: UUID16
+    /// The actor endpoint identity.
+    public let actorID: UUID16
+    /// The exact external route.
+    public let route: ByteSlice
+
+    /// Creates a borrowed external-route transition.
+    public init(sourceID: UUID16, actorID: UUID16, route: ByteSlice) {
+        self.sourceID = sourceID
+        self.actorID = actorID
+        self.route = route
+    }
+
+    /// Copies the transition before crossing an ownership boundary.
+    public borrowing func owned() -> OwnedExternalRouteTransition {
+        OwnedExternalRouteTransition(sourceID: sourceID, actorID: actorID, route: route.ownedBytes())
+    }
+}
+
+/// An owned external-route lifecycle transition.
+public struct OwnedExternalRouteTransition: Sendable, Equatable {
+    /// The source endpoint identity.
+    public let sourceID: UUID16
+    /// The actor endpoint identity.
+    public let actorID: UUID16
+    /// The copied exact external route.
+    public let route: [UInt8]
+
+    /// Creates an owned external-route transition.
+    public init(sourceID: UUID16, actorID: UUID16, route: [UInt8]) {
+        self.sourceID = sourceID
+        self.actorID = actorID
+        self.route = route
+    }
+}
+
+/// A normalized protocol action produced by the portable processor.
+public enum BorrowedProtocolAction {
+    /// Deliver an inbound frame to a protocol consumer.
+    case deliver(BorrowedProtocolDelivery)
+    /// Publish an outbound frame through a binding.
+    case publish(BorrowedProtocolPublication)
+    /// Record an association transition.
+    case associationChanged(BorrowedIoAssociationTransition)
+    /// Activate an exact external route.
+    case externalRouteActivated(BorrowedExternalRouteTransition)
+    /// Deactivate an exact external route.
+    case externalRouteDeactivated(BorrowedExternalRouteTransition)
+
+    /// Materializes an owned action before an asynchronous boundary.
+    public borrowing func owned() -> OwnedProtocolAction {
+        switch self {
+        case .deliver(let delivery): return .deliver(delivery.owned())
+        case .publish(let publication): return .publish(publication.owned())
+        case .associationChanged(let transition): return .associationChanged(transition.owned())
+        case .externalRouteActivated(let transition): return .externalRouteActivated(transition.owned())
+        case .externalRouteDeactivated(let transition): return .externalRouteDeactivated(transition.owned())
+        }
+    }
+}
+
+/// An owned, sendable normalized protocol action.
+public enum OwnedProtocolAction: Sendable, Equatable {
+    /// An owned inbound delivery.
+    case deliver(OwnedProtocolDelivery)
+    /// An owned outbound publication.
+    case publish(OwnedProtocolPublication)
+    /// An owned association transition.
+    case associationChanged(OwnedIoAssociationTransition)
+    /// An owned external-route activation.
+    case externalRouteActivated(OwnedExternalRouteTransition)
+    /// An owned external-route deactivation.
+    case externalRouteDeactivated(OwnedExternalRouteTransition)
+}
+
+private extension BorrowedProtocolDeliveryKey {
+    borrowing func owned() -> OwnedProtocolDeliveryKey {
+        switch self {
+        case .capability(let value): return .capability(value)
+        case .advertiseFilter(let value): return .advertiseFilter(value.ownedBytes())
+        case .channel(let value): return .channel(value.ownedBytes())
+        case .ioActor(let value): return .ioActor(value)
+        case .correlated(let capability, let identity): return .correlated(capability, identity)
+        }
+    }
+}
+
+private extension BorrowedProtocolPublishTarget {
+    borrowing func owned() -> OwnedProtocolPublishTarget {
+        switch self {
+        case .profile(let filter, let kind): return .profile(eventTypeFilter: filter?.ownedBytes(), filterKind: kind)
+        case .associationRoute(let route, let kind): return .associationRoute(route: route.ownedBytes(), kind: kind)
+        }
+    }
+}
+
+private extension ByteSlice {
+    borrowing func ownedBytes() -> [UInt8] {
+        withBytes { pointer, length in
+            Array(UnsafeBufferPointer(
+                start: pointer.assumingMemoryBound(to: UInt8.self),
+                count: length
+            ))
+        }
     }
 }
