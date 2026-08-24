@@ -398,6 +398,28 @@ struct ProtocolProcessorTests {
         #expect(established == .accepted)
         sink.removeAll()
 
+        let updatedRoute = "coaty/source-updated"
+        let updatedAction: OwnedProtocolAction = try withBorrowedFrame(
+            topic: "coaty/3/test/ASC/\(source)",
+            payload: "{\"ioSourceId\":\"\(source)\",\"ioActorId\":\"\(actor)\",\"associatingRoute\":\"\(updatedRoute)\"}"
+        ) { frame in
+            let result = processor.processInbound(frame, nowMS: 2, classifier: classifier, sink: &sink)
+            #expect(result == .accepted)
+            return try #require(sink[0]).owned()
+        }
+        guard case .associationChanged(let updatedTransition) = updatedAction else {
+            Issue.record("Reassociation did not emit an association transition")
+            return
+        }
+        #expect(updatedTransition.change == .updated)
+        #expect(updatedTransition.sourceID == UUID16(parsing: source)!)
+        #expect(updatedTransition.actorID == UUID16(parsing: actor)!)
+        #expect(updatedTransition.route == Array(updatedRoute.utf8))
+        #expect(updatedTransition.routeClassification == .coaty)
+        #expect(updatedTransition.delivery.routingKey.capability == .associate)
+        #expect(updatedTransition.delivery.routeClassification == .coaty)
+        sink.removeAll()
+
         let removedAction: OwnedProtocolAction = try withBorrowedFrame(
             topic: "coaty/3/test/ASC/\(source)",
             payload: "{\"ioSourceId\":\"\(source)\",\"ioActorId\":\"\(actor)\"}"
@@ -413,7 +435,7 @@ struct ProtocolProcessorTests {
         #expect(transition.change == .removed)
         #expect(transition.sourceID == UUID16(parsing: source))
         #expect(transition.actorID == UUID16(parsing: actor))
-        #expect(transition.route == Array(route.utf8))
+        #expect(transition.route == Array(updatedRoute.utf8))
         #expect(transition.routeClassification == .coaty)
     }
 
