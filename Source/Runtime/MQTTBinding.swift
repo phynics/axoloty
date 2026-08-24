@@ -192,16 +192,25 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
             namespaceStorage.withUnsafeBufferPointer { namespace in
                 filterStorage.withUnsafeBufferPointer { filter in
                     var builder = TopicBuilder(buffer: output.baseAddress!, capacity: output.count)
-                    try! builder.writePrefix()
-                    try! builder.writeNamespace(ByteSlice(bytes: namespace.baseAddress!, length: namespaceBytes.count))
+                    let namespaceSlice = ByteSlice(bytes: namespace.baseAddress!, length: namespaceBytes.count)
+                    guard (try? builder.writePrefix()) != nil,
+                          (try? builder.writeNamespace(namespaceSlice)) != nil else {
+                        preconditionFailure("topic storage capacity calculation is invalid")
+                    }
                     let filterSlice = eventTypeFilter == nil ? nil : ByteSlice(bytes: filter.baseAddress!, length: filterBytes.count)
-                    try! builder.writeEventType(
+                    let wroteEventType = (try? builder.writeEventType(
                         key.capability.wireEventType,
                         filter: filterSlice,
                         filterKind: eventTypeFilterKind == .objectType ? .objectType : .direct
-                    )
-                    try! builder.writeSourceId(key.sourceID)
-                    if let correlationID = key.correlationID { try! builder.writeCorrelationId(correlationID) }
+                    )) != nil
+                    guard wroteEventType,
+                          (try? builder.writeSourceId(key.sourceID)) != nil else {
+                        preconditionFailure("topic storage capacity calculation is invalid")
+                    }
+                    if let correlationID = key.correlationID,
+                       (try? builder.writeCorrelationId(correlationID)) == nil {
+                        preconditionFailure("topic storage capacity calculation is invalid")
+                    }
                 }
             }
         }
@@ -222,7 +231,9 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         var bytes = [UInt8](repeating: 0, count: 36)
         bytes.withUnsafeMutableBufferPointer { output in
             var builder = TopicBuilder(buffer: output.baseAddress!, capacity: output.count)
-            try! builder.writeSourceId(value)
+            guard (try? builder.writeSourceId(value)) != nil else {
+                preconditionFailure("UUID storage capacity calculation is invalid")
+            }
         }
         return String(decoding: bytes, as: UTF8.self)
     }
