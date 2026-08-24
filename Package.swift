@@ -355,7 +355,7 @@ let package = Package(
         ),
         .testTarget(
             name: "AxolotyInspectorCLITests",
-            dependencies: ["Axoloty", "AxolotyInspectorCore", "AxolotyInspectorRuntime", "AxolotyInspectorCLI"],
+            dependencies: ["Axoloty", "AxolotyInspectorCore", "AxolotyInspectorRuntime"],
             path: "Tools/AxolotyInspectorCLITests"
         ),
         // Axoloty MCP server. Depends on the inspector runtime for broker
