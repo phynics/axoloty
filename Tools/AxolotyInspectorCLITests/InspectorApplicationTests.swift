@@ -7,6 +7,112 @@ import AxolotyInspectorRuntime
 import Foundation
 import Testing
 
+private final class OneShotPhase: @unchecked Sendable {
+    let stream: AsyncStream<Void>
+    private let continuation: AsyncStream<Void>.Continuation
+
+    init() {
+        (stream, continuation) = AsyncStream.makeStream(of: Void.self)
+    }
+
+    func signal() {
+        continuation.yield(())
+        continuation.finish()
+    }
+
+    func finish() {
+        continuation.finish()
+    }
+}
+
+private final class CompletionSignal: @unchecked Sendable {
+    let stream: AsyncStream<InspectorError?>
+    private let continuation: AsyncStream<InspectorError?>.Continuation
+
+    init() {
+        (stream, continuation) = AsyncStream.makeStream(of: InspectorError?.self)
+    }
+
+    func signal(_ result: InspectorError?) {
+        continuation.yield(result)
+        continuation.finish()
+    }
+
+    func finish() {
+        continuation.finish()
+    }
+}
+
+private func waitForPhase(
+    _ phase: OneShotPhase,
+    description: String,
+    timeout: Duration = .seconds(2)
+) async -> Bool {
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: timeout)
+
+    return await withTaskGroup(of: Bool.self) { group in
+        group.addTask {
+            for await _ in phase.stream {
+                return true
+            }
+            return false
+        }
+        group.addTask {
+            do {
+                try await clock.sleep(until: deadline)
+            } catch {
+                return false
+            }
+            return false
+        }
+
+        let result = await group.next() ?? false
+        group.cancelAll()
+        if !result {
+            Issue.record("Timed out waiting for inspector phase: \(description)")
+        }
+        return result
+    }
+}
+
+private enum BoundedRunObservation: Sendable {
+    case finished(InspectorError?)
+    case timedOut
+}
+
+private func awaitBounded(
+    _ completion: CompletionSignal,
+    phase: String,
+    timeout: Duration = .seconds(2),
+    onTimeout: @escaping @MainActor @Sendable () -> Void
+) async -> BoundedRunObservation {
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: timeout)
+
+    return await withTaskGroup(of: BoundedRunObservation.self) { group in
+        group.addTask {
+            for await result in completion.stream {
+                return .finished(result)
+            }
+            return .timedOut
+        }
+        group.addTask {
+            do {
+                try await clock.sleep(until: deadline)
+            } catch {
+                return .timedOut
+            }
+            await onTimeout()
+            Issue.record("Timed out waiting for inspector phase: \(phase)")
+            return .timedOut
+        }
+        let result = await group.next() ?? .timedOut
+        group.cancelAll()
+        return result
+    }
+}
+
 @MainActor
 final class FakeInspectorSession: InspectorSession {
     var connectShouldFail = false
@@ -29,6 +135,10 @@ final class FakeInspectorSession: InspectorSession {
     var queuedDeadvertises: [InspectorDeadvertiseEvent] = []
     var queuedResponses: [InspectorResponseEvent] = []
     var finishDiscoverStream = true
+
+    private let discoverStartedPhase = OneShotPhase()
+
+    init() {}
 
     func connect() async throws {
         if connectShouldFail {
@@ -68,6 +178,7 @@ final class FakeInspectorSession: InspectorSession {
         advertiseContinuation?.finish()
         deadvertiseContinuation?.finish()
         discoverContinuation?.finish()
+        discoverStartedPhase.finish()
     }
 
     func discover(_ event: InspectorDiscoverRequest) async -> AsyncStream<InspectorResponseEvent> {
@@ -75,6 +186,7 @@ final class FakeInspectorSession: InspectorSession {
         lastDiscoverRequest = event
         let (stream, cont) = AsyncStream.makeStream(of: InspectorResponseEvent.self)
         discoverContinuation = cont
+        discoverStartedPhase.signal()
         for response in queuedResponses {
             cont.yield(response)
         }
@@ -95,6 +207,14 @@ final class FakeInspectorSession: InspectorSession {
     func endStreams() {
         advertiseContinuation?.finish()
         deadvertiseContinuation?.finish()
+    }
+
+    func discoverStartedSignal() -> OneShotPhase {
+        discoverStartedPhase
+    }
+
+    func finishPhases() {
+        discoverStartedPhase.finish()
     }
 }
 
@@ -835,14 +955,39 @@ struct InspectorDiscoverApplicationTests {
             signalHandler: signalHandler
         )
 
-        let runTask = Task { await app.run() }
-        try? await Task.sleep(for: .seconds(10) + .milliseconds(250))
-        #expect(!session.stopped)
+        let completion = CompletionSignal()
+        let runTask = Task {
+            let result = await app.run()
+            completion.signal(result)
+        }
+        defer {
+            runTask.cancel()
+            session.stop()
+            session.finishPhases()
+        }
+
+        #expect(await waitForPhase(
+            session.discoverStartedSignal(),
+            description: "unlimited discovery request start"
+        ))
+        #expect(!session.stopped, "discovery should remain pending until interrupted")
         #expect(session.lastDiscoverRequest?.responseTimeout == nil)
 
         signalHandler.wasInterrupted = true
-        #expect(await runTask.value == .interrupted)
-        #expect(session.stopped)
+        switch await awaitBounded(
+            completion,
+            phase: "unlimited discovery interruption",
+            onTimeout: { @MainActor in
+                runTask.cancel()
+                session.stop()
+            }
+        ) {
+        case let .finished(result):
+            #expect(result == .interrupted)
+            #expect(session.stopped)
+        case .timedOut:
+            Issue.record("Unlimited discovery did not complete after interruption")
+        }
     }
 
     @Test
