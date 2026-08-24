@@ -372,6 +372,30 @@ struct AxolotyRuntimeTests {
         #expect(Array(lifecycle.suffix(3)) == ["deadvertise", "remove", "stop"])
     }
 
+    @Test("startup failure injection preserves terminal cleanup", arguments: SetupFailureStage.allCases)
+    func startupFailureInjectionPreservesTerminalCleanup(stage: SetupFailureStage) async throws {
+        let transport = TestTransport(failing: stage)
+        let runtime = AxolotyRuntime(definition: try makeDefinition(), transport: transport)
+
+        do {
+            try await runtime.start()
+            Issue.record("runtime start unexpectedly succeeded while failing \(stage)")
+        } catch let error as AxolotyError {
+            guard case let .runtime(code, _) = error else {
+                Issue.record("unexpected startup failure: \(error.userFriendlyMessage)")
+                return
+            }
+            #expect(code == .brokerUnavailable)
+        }
+
+        for _ in 0..<100 {
+            if await runtime.state() == .stopped { break }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(await runtime.state() == .stopped)
+        #expect(await transport.lifecycle == stage.expectedLifecycle)
+    }
+
     @Test("post-start transport failures enter recoverable reconnecting state")
     func postStartTransportFailureEntersReconnect() async throws {
         let definition = try makeDefinition()
@@ -459,15 +483,38 @@ struct AxolotyRuntimeTests {
     }
 }
 
+private enum SetupFailureStage: String, CaseIterable, Sendable {
+    case start
+    case subscriptions
+    case advertisement
+
+    var expectedLifecycle: [String] {
+        switch self {
+        case .start:
+            return ["start", "stop"]
+        case .subscriptions:
+            return ["start", "install", "stop"]
+        case .advertisement:
+            return ["start", "install", "advertise", "stop"]
+        }
+    }
+}
+
 private actor TestTransport: AxolotyRuntimeTransport {
     private var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
     private var failure: (@Sendable (Error) -> Void)?
     private var sent: [OwnedProtocolPublication] = []
     private(set) var lifecycle: [String] = []
+    private let failureStage: SetupFailureStage?
+
+    init(failing failureStage: SetupFailureStage? = nil) {
+        self.failureStage = failureStage
+    }
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
         self.receive = receive
         lifecycle.append("start")
+        if failureStage == .start { throw TestTransportFailure() }
     }
 
     func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) {
@@ -483,9 +530,15 @@ private actor TestTransport: AxolotyRuntimeTransport {
         lifecycle.append("stop")
     }
 
-    func installSubscriptions(namespace: String) async throws { lifecycle.append("install") }
+    func installSubscriptions(namespace: String) async throws {
+        lifecycle.append("install")
+        if failureStage == .subscriptions { throw TestTransportFailure() }
+    }
     func removeSubscriptions(namespace: String) async throws { lifecycle.append("remove") }
-    func advertise(identity: RuntimeIdentity?, namespace: String) async throws { lifecycle.append("advertise") }
+    func advertise(identity: RuntimeIdentity?, namespace: String) async throws {
+        lifecycle.append("advertise")
+        if failureStage == .advertisement { throw TestTransportFailure() }
+    }
     func deadvertise(identity: RuntimeIdentity?, namespace: String) async throws { lifecycle.append("deadvertise") }
 
     func sentCount() -> Int { sent.count }
