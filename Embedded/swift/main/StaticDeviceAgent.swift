@@ -154,7 +154,7 @@ struct StaticDeviceAgent: ~Copyable {
         }
         actionSink.removeAll()
         let outcome = processor.processInbound(
-            frame, nowMS: nowMS, classifier: routeClassifier, sink: &actionSink
+            .profile(frame), nowMS: nowMS, classifier: routeClassifier, sink: &actionSink
         )
         guard outcome == .accepted else {
             switch outcome {
