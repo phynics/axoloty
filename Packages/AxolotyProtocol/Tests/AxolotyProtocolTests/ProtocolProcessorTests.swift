@@ -276,14 +276,25 @@ struct ProtocolProcessorTests {
         let classifier = ExactProtocolRouteClassifier(externalRoute: "external/wire-compat-v1/io-external-1")
         var processor = ProtocolProcessor<2>()
 
-        let established = try withBorrowedFrame(
+        let establishedAction: OwnedProtocolAction = try withBorrowedFrame(
             topic: "coaty/3/test/ASC/\(source)",
             payload: "{\"ioSourceId\":\"\(source)\",\"ioActorId\":\"\(actor)\",\"associatingRoute\":\"\(route)\"}"
         ) { frame in
             var sink = InlineProtocolActionSink<1>()
-            return processor.processInbound(frame, nowMS: 1, classifier: classifier, sink: &sink)
+            let result = processor.processInbound(frame, nowMS: 1, classifier: classifier, sink: &sink)
+            #expect(result == .accepted)
+            return try #require(sink[0]).owned()
         }
-        #expect(established == .accepted)
+        guard case .associationChanged(let transition) = establishedAction else {
+            Issue.record("external Associate did not emit an association transition")
+            return
+        }
+        #expect(transition.change == .established)
+        #expect(transition.sourceID == UUID16(parsing: source)!)
+        #expect(transition.actorID == UUID16(parsing: actor)!)
+        #expect(transition.route == Array(route.utf8))
+        #expect(transition.routeClassification == .external)
+        #expect(transition.delivery.routeClassification == .external)
 
         let delivered: OwnedProtocolAction = try withBorrowedFrame(
             topic: "coaty/3/test/IOV/\(source)",

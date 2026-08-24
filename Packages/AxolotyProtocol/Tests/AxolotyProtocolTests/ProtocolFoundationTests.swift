@@ -99,6 +99,11 @@ struct ProtocolFoundationTests {
                             payload: payload,
                             isApplicationDelivery: false
                         )
+                        let associationPublication = BorrowedProtocolPublication(
+                            routingKey: routingKey,
+                            target: .associationRoute(route: route, kind: .external),
+                            payload: payload
+                        )
                         let association = BorrowedIoAssociationTransition(
                             delivery: delivery,
                             sourceID: .zero,
@@ -112,12 +117,37 @@ struct ProtocolFoundationTests {
                             actorID: .zero,
                             route: route
                         )
+                        let capability = BorrowedProtocolDelivery(
+                            routingKey: routingKey,
+                            deliveryKey: .capability(.channel),
+                            payload: payload
+                        )
+                        let advertiseFilter = BorrowedProtocolDelivery(
+                            routingKey: routingKey,
+                            deliveryKey: .advertiseFilter(selector),
+                            payload: payload
+                        )
+                        let actor = BorrowedProtocolDelivery(
+                            routingKey: routingKey,
+                            deliveryKey: .ioActor(.zero),
+                            payload: payload
+                        )
+                        let correlated = BorrowedProtocolDelivery(
+                            routingKey: routingKey,
+                            deliveryKey: .correlated(.discover, .zero),
+                            payload: payload
+                        )
                         return [
                             BorrowedProtocolAction.deliver(delivery).owned(),
                             BorrowedProtocolAction.publish(profile).owned(),
                             BorrowedProtocolAction.associationChanged(association).owned(),
                             BorrowedProtocolAction.externalRouteActivated(external).owned(),
-                            BorrowedProtocolAction.externalRouteDeactivated(external).owned()
+                            BorrowedProtocolAction.externalRouteDeactivated(external).owned(),
+                            BorrowedProtocolAction.publish(associationPublication).owned(),
+                            BorrowedProtocolAction.deliver(capability).owned(),
+                            BorrowedProtocolAction.deliver(advertiseFilter).owned(),
+                            BorrowedProtocolAction.deliver(actor).owned(),
+                            BorrowedProtocolAction.deliver(correlated).owned()
                         ]
                     }
                 }
@@ -135,7 +165,12 @@ struct ProtocolFoundationTests {
               case .profile(let profileSelector, _) = publication.target,
               case .associationChanged(let association) = owned[2],
               case .externalRouteActivated(let activated) = owned[3],
-              case .externalRouteDeactivated(let deactivated) = owned[4] else {
+              case .externalRouteDeactivated(let deactivated) = owned[4],
+              case .publish(let externalPublication) = owned[5],
+              case .deliver(let capabilityDelivery) = owned[6],
+              case .deliver(let advertiseFilterDelivery) = owned[7],
+              case .deliver(let actorDelivery) = owned[8],
+              case .deliver(let correlatedDelivery) = owned[9] else {
             Issue.record("owned action cases changed during copying")
             return
         }
@@ -148,6 +183,23 @@ struct ProtocolFoundationTests {
         #expect(association.route == Array("external/fixture".utf8))
         #expect(activated.route == Array("external/fixture".utf8))
         #expect(deactivated.route == Array("external/fixture".utf8))
+        guard case .associationRoute(let externalRoute, let routeKind) = externalPublication.target else {
+            Issue.record("association publication target changed during copying")
+            return
+        }
+        #expect(externalRoute == Array("external/fixture".utf8))
+        #expect(routeKind == .external)
+        #expect(capabilityDelivery.deliveryKey == .capability(.channel))
+        guard case .advertiseFilter(let advertiseFilterBytes) = advertiseFilterDelivery.deliveryKey,
+              case .ioActor(let actorID) = actorDelivery.deliveryKey,
+              case .correlated(let correlatedCapability, let correlationID) = correlatedDelivery.deliveryKey else {
+            Issue.record("delivery selector cases changed during copying")
+            return
+        }
+        #expect(advertiseFilterBytes == Array("selector".utf8))
+        #expect(actorID == .zero)
+        #expect(correlatedCapability == .discover)
+        #expect(correlationID == .zero)
     }
 
     @Test("Coaty Core Profile 3 is closed")
