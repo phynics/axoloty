@@ -154,6 +154,10 @@ esac
     timeout: 4_000,
     env: {
       ...process.env,
+      // The fallback invokes the host Make image target. Do not let a
+      // development-container environment inherited by the support test turn
+      // that real fallback into an intentional no-op.
+      AXOLOTY_DEVCONTAINER: "0",
       PATH: `${tempRoot}${path.delimiter}${process.env.PATH ?? ""}`,
       RUNTIME: fakeRuntime,
       LOCK_FILE: lockFile,

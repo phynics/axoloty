@@ -59,9 +59,17 @@ target_include_directories(${COMPONENT_LIB} PUBLIC
     ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-add_custom_command(TARGET ${COMPONENT_LIB} POST_BUILD
+set(JSON_CORE_MODULE_ALIAS
+    "${CMAKE_CURRENT_BINARY_DIR}/_JSONCore.swiftmodule"
+)
+add_custom_command(
+    OUTPUT ${JSON_CORE_MODULE_ALIAS}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_BINARY_DIR}/${COMPONENT_LIB}.swiftmodule
-        ${CMAKE_CURRENT_BINARY_DIR}/_JSONCore.swiftmodule
+        ${JSON_CORE_MODULE_ALIAS}
+    DEPENDS ${COMPONENT_LIB}
     VERBATIM
+)
+add_custom_target(json_core_module_alias
+    DEPENDS ${JSON_CORE_MODULE_ALIAS}
 )
