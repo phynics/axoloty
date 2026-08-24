@@ -210,6 +210,10 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
     const node = document.nodes.find(candidate => candidate.id === gate);
     if (!node?.required || !node.ci) errors.push(`CI required gate ${JSON.stringify(gate)} must be required and CI-available`);
   }
+  const toolingNode = (document.nodes ?? []).find(node => node?.id === "test-tooling");
+  if (!toolingNode?.filter?.split("|").includes("RepositoryAuthorityTests")) {
+    errors.push("test-tooling must select RepositoryAuthorityTests");
+  }
   const checkpointRoots = new Set([...(document.plans?.checkpoint?.nodes ?? []), ...(document.plans?.["checkpoint-hardware"]?.nodes ?? [])]);
   for (const gate of document.releaseGates ?? []) {
     const tier = (document.tiers ?? []).find(candidate => candidate?.id === gate);

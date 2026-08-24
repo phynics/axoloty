@@ -53,6 +53,19 @@ test("discovery includes shell and Node self-tests", () => {
   assert.deepEqual(discoverSelfTests(tests), ["Tests/Support/one.test.mjs", "Tests/Support/test-one.sh"]);
 });
 
+test("validator requires repository authority tests in the tooling filter", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const node = document.nodes.find(candidate => candidate.id === "test-tooling");
+  node.filter = node.filter.split("|").filter(suite => suite !== "RepositoryAuthorityTests").join("|");
+  node.command.arguments[node.command.arguments.indexOf("--filter") + 1] = node.filter;
+  const errors = validate(document, {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  });
+  assert.ok(errors.includes("test-tooling must select RepositoryAuthorityTests"));
+});
+
 test("target self-test discovery recognizes shell commands and Node test globs", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-tool-invocations-"));
   const makefile = path.join(directory, "Makefile");
