@@ -91,6 +91,29 @@ legacy runtime symbols, raw MQTT APIs outside the binding, parallel encoders,
 and implicit SwiftPM source discovery. Controller-based IO and SensorThings
 remain intentionally absent until G5.
 
+### Transport-session transition investigation
+
+Issue [#664](https://github.com/phynics/axoloty/issues/664) investigated whether
+the repeated transport mechanics in `ProtocolExecutor.start()` and
+`reconnect()` should move into an internal transport-session module.
+
+Decision: DENY
+
+`ProtocolExecutor` remains the sole mutable lifecycle owner. Its state includes
+the lifecycle transition and single-use guard, transport epoch, protocol
+processor, ingress and outbound pumps, bounded offline work, handler
+supervision, terminal-failure teardown, and diagnostics. Start, reconnect,
+stop, close, and transport-failure paths make distinct lifecycle decisions
+around those values; extracting the repeated calls would either create a
+shallow helper or split ownership across actor boundaries.
+
+The `AxolotyRuntimeTransport` protocol remains the useful failure-test seam.
+Runtime tests inject failures at transport start, subscription installation,
+and identity advertisement and verify terminal cleanup ordering. Epoch
+supersession, cancellation, reconnect replay, and outbound shutdown draining
+therefore remain explicit responsibilities of the actor rather than a hidden
+session object.
+
 ## Accepted 0.6 delta
 
 The target package graph and runtime boundaries below are accepted direction,
