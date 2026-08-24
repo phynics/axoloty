@@ -48,10 +48,11 @@ jobs:
           # Canonical verification is implemented by the tooling binary, so CI
           # must never execute orchestration embedded from a stale revision.
           require-current-build-inputs: "true"
-          # A same-repository PR image workflow publishes the immutable image
-          # in parallel. Wait for it instead of rebuilding on every fresh CI
-          # runner; retain the local fallback if publication fails.
-          wait-for-published-seconds: "600"
+          # The image workflow is separate and path-filtered, so this job
+          # cannot observe its live publication state. The setup action still
+          # supports publisher-in-progress for callers with concrete evidence;
+          # CI uses the no-wait bounded fallback here.
+          content-tag-prefix: swift-6.3
           candidate-tag-prefix: ${{ github.event_name == 'pull_request' && format('swift-6.3-pr-{0}', github.event.pull_request.number) || 'swift-6.3' }}
 
       - name: Restore SwiftPM dependency cache

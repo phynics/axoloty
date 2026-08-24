@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -35,6 +36,103 @@ function workflowRunScript(name) {
   return match[1].trimEnd().split("\n").map((line) => line.slice(10)).join("\n");
 }
 
+function setupActionRunScript() {
+  const marker = "      run: |\n";
+  const start = setupAction.indexOf(marker);
+  assert.notEqual(start, -1, "missing setup action run script");
+  const lines = setupAction.slice(start + marker.length).split("\n");
+  const body = [];
+  for (const line of lines) {
+    if (line.length > 0 && !line.startsWith("        ")) break;
+    body.push(line.length === 0 ? "" : line.slice(8));
+  }
+  return body.join("\n").trimEnd();
+}
+
+function imageInputHash() {
+  const result = spawnSync("bash", [".devcontainer/image-inputs.sh"], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  return crypto.createHash("sha256").update(result.stdout).digest("hex");
+}
+
+function runSetupActionScenario({ availableTag = "", publisherInProgress = "false", candidateBackoffSeconds = "0", availableAfterFirstCandidate = false, candidateTagPrefix = "swift-6.3-pr-42" } = {}) {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-setup-image-"));
+  const lockFile = path.join(tempRoot, "image-lock.json");
+  const runtimeLog = path.join(tempRoot, "runtime.log");
+  const actualHash = imageInputHash();
+  const fakeRuntime = path.join(tempRoot, "fake-runtime");
+  const image = "ghcr.io/test/axoloty-dev";
+  fs.writeFileSync(lockFile, JSON.stringify({
+    image,
+    digest: "sha256:locked",
+    buildInputsSha256: "stale-lock",
+  }));
+  fs.writeFileSync(fakeRuntime, `#!/bin/sh
+set -eu
+printf '%s\\n' "$*" >> "$FAKE_RUNTIME_LOG"
+case "$1" in
+  pull)
+    case "$2" in
+      "$FAKE_AVAILABLE_TAG")
+        if [ "$FAKE_AVAILABLE_AFTER_FIRST" = 1 ]; then
+          count_file="$FAKE_RUNTIME_LOG.candidate-count"
+          count=0
+          [ -f "$count_file" ] && count=$(cat "$count_file")
+          count=$((count + 1))
+          printf '%s\\n' "$count" > "$count_file"
+          [ "$count" -ge 2 ] || exit 1
+        fi
+        exit 0
+        ;;
+      *) exit 1 ;;
+    esac
+    ;;
+  image)
+    if [ "$2" = inspect ] && [ "\${3:-}" = --format ]; then
+      case "\${5:-}" in
+        "$FAKE_AVAILABLE_TAG") printf '%s\\n' "$FAKE_IMAGE_HASH" ;;
+        *) printf '\\n' ;;
+      esac
+    fi
+    ;;
+  tag) exit 0 ;;
+  build) printf 'build\\n' >> "$FAKE_RUNTIME_LOG" ;;
+esac
+`);
+  fs.chmodSync(fakeRuntime, 0o755);
+
+  const script = setupActionRunScript();
+  const started = performance.now();
+  const result = spawnSync("bash", ["-c", script], {
+    cwd: ".",
+    encoding: "utf8",
+    timeout: 4_000,
+    env: {
+      ...process.env,
+      RUNTIME: fakeRuntime,
+      LOCK_FILE: lockFile,
+      ALLOW_BUILD_FALLBACK: "true",
+      REQUIRE_CURRENT_BUILD_INPUTS: "true",
+      PUBLISHER_IN_PROGRESS: publisherInProgress,
+      CANDIDATE_BACKOFF_SECONDS: candidateBackoffSeconds,
+      CONTENT_TAG_PREFIX: "swift-6.3",
+      CANDIDATE_TAG_PREFIX: candidateTagPrefix,
+      FAKE_AVAILABLE_TAG: availableTag,
+      FAKE_AVAILABLE_AFTER_FIRST: availableAfterFirstCandidate ? "1" : "0",
+      FAKE_IMAGE_HASH: actualHash,
+      FAKE_RUNTIME_LOG: runtimeLog,
+      RUNNER_TEMP: tempRoot,
+      BUILD_DIR: path.join(tempRoot, "build"),
+      SPM_CACHE_DIR: path.join(tempRoot, "cache"),
+      IMAGE: "axoloty-dev",
+    },
+  });
+  const elapsedMilliseconds = performance.now() - started;
+  const log = fs.existsSync(runtimeLog) ? fs.readFileSync(runtimeLog, "utf8").trim().split("\n").filter(Boolean) : [];
+  fs.rmSync(tempRoot, { force: true, recursive: true });
+  return { result, log, elapsedMilliseconds, actualHash };
+}
+
 test("the development image does not bake root package products or source", () => {
   assert.doesNotMatch(dockerfile, /axoloty-service-builder/);
   assert.doesNotMatch(dockerfile, /COPY (?:Package\.swift|Package\.resolved|Packages|Source|Tests|Benchmarks|Tools)\b/);
@@ -65,6 +163,57 @@ test("image freshness is keyed by immutable inputs and can skip a current image"
   assert.match(makefile, /io\.axoloty\.image-inputs-sha256/);
   assert.match(makefile, /if \[ "\$\$inputs_sha256" = "\$\$image_sha256" \]/);
   assert.match(makefile, /echo "Using current development image/);
+});
+
+test("setup action falls back after two missing candidate probes", () => {
+  const scenario = runSetupActionScenario();
+  assert.equal(scenario.result.status, 0, scenario.result.stderr);
+  const candidatePulls = scenario.log.filter((line) => line === `pull ghcr.io/test/axoloty-dev:swift-6.3-pr-42-${scenario.actualHash}`);
+  assert.equal(candidatePulls.length, 2, `${scenario.result.stderr}\n${scenario.log.join("\\n")}`);
+  assert.equal(scenario.log.at(-1), "build");
+  assert.match(scenario.result.stderr, /candidate probes=2/);
+  assert.equal(scenario.result.stderr.trim().split("\n").length, 2, scenario.result.stderr);
+  assert.ok(scenario.elapsedMilliseconds < 5_000, `fallback took ${scenario.elapsedMilliseconds}ms`);
+});
+
+test("setup action prefers an available canonical content-keyed image", () => {
+  const hash = imageInputHash();
+  const availableTag = `ghcr.io/test/axoloty-dev:swift-6.3-${hash}`;
+  const available = runSetupActionScenario({ availableTag });
+  assert.equal(available.result.status, 0, available.result.stderr);
+  assert.ok(available.log.includes(`pull ${availableTag}`));
+  assert.ok(available.log.includes(`tag ${availableTag} axoloty-dev`));
+  assert.equal(available.log.filter((line) => line.includes("swift-6.3-pr-42-")).length, 0);
+  assert.doesNotMatch(available.result.stderr, /stale/);
+});
+
+test("setup action probes the canonical tag once when main has no separate candidate", () => {
+  const hash = imageInputHash();
+  const canonicalTag = `ghcr.io/test/axoloty-dev:swift-6.3-${hash}`;
+  const available = runSetupActionScenario({ availableTag: canonicalTag, candidateTagPrefix: "swift-6.3" });
+  assert.equal(available.result.status, 0, available.result.stderr);
+  assert.equal(available.log.filter((line) => line === `pull ${canonicalTag}`).length, 1);
+  assert.ok(available.log.includes(`tag ${canonicalTag} axoloty-dev`));
+
+  const missing = runSetupActionScenario({ candidateTagPrefix: "swift-6.3" });
+  assert.equal(missing.result.status, 0, missing.result.stderr);
+  assert.equal(missing.log.filter((line) => line === `pull ${canonicalTag}`).length, 1);
+  assert.equal(missing.log.at(-1), "build");
+  assert.match(missing.result.stderr, /candidate probes=1/);
+});
+
+test("setup action keeps the publisher candidate retry bounded and synchronized", () => {
+  const hash = imageInputHash();
+  const candidateTag = `ghcr.io/test/axoloty-dev:swift-6.3-pr-42-${hash}`;
+  const scenario = runSetupActionScenario({
+    availableTag: candidateTag,
+    publisherInProgress: "true",
+    availableAfterFirstCandidate: true,
+  });
+  assert.equal(scenario.result.status, 0, scenario.result.stderr);
+  assert.equal(scenario.log.filter((line) => line === `pull ${candidateTag}`).length, 2);
+  assert.ok(scenario.log.includes(`tag ${candidateTag} axoloty-dev`));
+  assert.match(scenario.result.stderr, /PR-published content-keyed/);
 });
 
 test("image is a no-op when Make runs inside the development container", () => {
@@ -288,9 +437,10 @@ esac
 test("published content-keyed images avoid repeated fallback builds and refresh the lock", () => {
   const publishPr = imageWorkflow.slice(imageWorkflow.indexOf("  publish-pr:"), imageWorkflow.indexOf("  publish-main:"));
   const publishMain = imageWorkflow.slice(imageWorkflow.indexOf("  publish-main:"));
+  assert.match(setupAction, /content_tag=.*\$CONTENT_TAG_PREFIX-\$actual_hash/);
   assert.match(setupAction, /candidate_tag=.*\$CANDIDATE_TAG_PREFIX-\$actual_hash/);
   assert.match(setupAction, /candidate_hash=.*image inspect/);
-  assert.match(setupAction, /automated lock-refresh PR is pending/);
+  assert.match(setupAction, /candidate probes=\$candidate_attempts/);
   assert.match(imageWorkflow, /publish-pr:[\s\S]*packages: write/);
   assert.match(imageWorkflow, /publish-pr:[\s\S]*contents: read/);
   assert.match(imageWorkflow, /publish-main:[\s\S]*pull-requests: write/);
@@ -325,9 +475,11 @@ test("published content-keyed images avoid repeated fallback builds and refresh 
     imageWorkflow,
     /locked_tag=.*\.tag[\s\S]*locked_digest=.*\.digest[\s\S]*locked_hash=.*\.buildInputsSha256[\s\S]*if \[\[ "\$locked_tag" == "\$image_tag" && "\$locked_digest" == "\$digest" && "\$locked_hash" == "\$build_inputs_hash" \]\]; then\s+echo "Development image lock is already current\."\s+exit 0\s+fi[\s\S]*jq \\\s+--arg tag/,
   );
-  assert.match(setupAction, /WAIT_FOR_PUBLISHED_SECONDS/);
-  assert.match(setupAction, /Waiting for the content-keyed development image publisher/);
-  assert.match(ciWorkflow, /wait-for-published-seconds: "600"/);
+  assert.match(setupAction, /PUBLISHER_IN_PROGRESS/);
+  assert.match(setupAction, /CANDIDATE_BACKOFF_SECONDS/);
+  assert.match(setupAction, /default: "5"/);
+  assert.doesNotMatch(ciWorkflow, /publisher-in-progress:/);
+  assert.doesNotMatch(ciWorkflow, /wait-for-published-seconds: "600"/);
   assert.match(imageWorkflow, /\.github\/scripts\/open-image-lock-pr\.sh/);
   assert.match(openImageLockPR, /gh pr create/);
   assert.match(openImageLockPR, /GitHub Actions is not permitted to create or approve pull requests \(createPullRequest\)/);

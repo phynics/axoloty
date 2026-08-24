@@ -18,10 +18,18 @@ inputs:
     description: Require the pinned image to contain the current immutable image/toolchain inputs.
     required: false
     default: "true"
-  wait-for-published-seconds:
-    description: Wait this long for a concurrent content-keyed image publisher before using the local build fallback.
+  publisher-in-progress:
+    description: The caller has concrete evidence that the matching image publisher is running; retain the bounded candidate retry.
     required: false
-    default: "0"
+    default: "false"
+  candidate-backoff-seconds:
+    description: Delay between the two candidate tag probes. Must be between 0 and 30 seconds so local fallback starts within 60 seconds.
+    required: false
+    default: "5"
+  content-tag-prefix:
+    description: Prefix for the immutable content-keyed image tag.
+    required: false
+    default: swift-6.3
   candidate-tag-prefix:
     description: Tag prefix used by a concurrent image publisher for stale-lock candidates.
     required: false
@@ -37,7 +45,9 @@ runs:
         LOCK_FILE: ${{ inputs.lock-file }}
         ALLOW_BUILD_FALLBACK: ${{ inputs.allow-build-fallback }}
         REQUIRE_CURRENT_BUILD_INPUTS: ${{ inputs.require-current-build-inputs }}
-        WAIT_FOR_PUBLISHED_SECONDS: ${{ inputs.wait-for-published-seconds }}
+        PUBLISHER_IN_PROGRESS: ${{ inputs.publisher-in-progress }}
+        CANDIDATE_BACKOFF_SECONDS: ${{ inputs.candidate-backoff-seconds }}
+        CONTENT_TAG_PREFIX: ${{ inputs.content-tag-prefix }}
         CANDIDATE_TAG_PREFIX: ${{ inputs.candidate-tag-prefix }}
       run: |
         set -euo pipefail
@@ -56,33 +66,83 @@ runs:
                 echo "::error::$LOCK_FILE is stale (locks $locked_hash, build inputs are $actual_hash) and the build fallback is disabled." >&2
                 exit 1
               fi
-              candidate_tag="$image:$CANDIDATE_TAG_PREFIX-$actual_hash"
-              case "$WAIT_FOR_PUBLISHED_SECONDS" in
-                ''|*[!0-9]*)
-                  echo "::error::wait-for-published-seconds must be a non-negative integer, got: $WAIT_FOR_PUBLISHED_SECONDS" >&2
+              case "$PUBLISHER_IN_PROGRESS" in
+                true|false) ;;
+                *)
+                  echo "::error::publisher-in-progress must be true or false, got: $PUBLISHER_IN_PROGRESS" >&2
                   exit 2
                   ;;
               esac
-              wait_deadline=$((SECONDS + WAIT_FOR_PUBLISHED_SECONDS))
-              while (( SECONDS < wait_deadline )); do
-                if "$RUNTIME" pull "$candidate_tag"; then
-                  break
-                fi
-                echo "Waiting for the content-keyed development image publisher..." >&2
-                sleep 15
-              done
-              if "$RUNTIME" pull "$candidate_tag"; then
-                candidate_hash=$("$RUNTIME" image inspect \
+              case "$CANDIDATE_BACKOFF_SECONDS" in
+                ''|*[!0-9]*)
+                  echo "::error::candidate-backoff-seconds must be a non-negative integer, got: $CANDIDATE_BACKOFF_SECONDS" >&2
+                  exit 2
+                  ;;
+              esac
+              if (( CANDIDATE_BACKOFF_SECONDS > 30 )); then
+                echo "::error::candidate-backoff-seconds must be <= 30, got: $CANDIDATE_BACKOFF_SECONDS" >&2
+                exit 2
+              fi
+
+              # The canonical content-keyed tag is immutable and is shared by
+              # main and PR publishers. Prefer it before waiting for a
+              # PR-specific promotion tag.
+              content_tag="$image:$CONTENT_TAG_PREFIX-$actual_hash"
+              candidate_tag="$image:$CANDIDATE_TAG_PREFIX-$actual_hash"
+              runtime_error=$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/axoloty-image-pull.XXXXXX")
+              candidate_backoff=0
+              if [[ "$PUBLISHER_IN_PROGRESS" == "true" ]]; then
+                candidate_backoff=$CANDIDATE_BACKOFF_SECONDS
+              fi
+
+              content_hash=""
+              if "$RUNTIME" pull "$content_tag" > /dev/null 2>"$runtime_error"; then
+                content_hash=$("$RUNTIME" image inspect \
                   --format '{{ index .Config.Labels "io.axoloty.image-inputs-sha256" }}' \
-                  "$candidate_tag")
-                if [[ "$candidate_hash" == "$actual_hash" ]]; then
-                  echo "::warning::$LOCK_FILE is stale; using the published content-keyed image while its automated lock-refresh PR is pending." >&2
-                  "$RUNTIME" tag "$candidate_tag" axoloty-dev
+                  "$content_tag" 2>"$runtime_error" || true)
+                if [[ "$content_hash" == "$actual_hash" ]]; then
+                  echo "Using immutable content-keyed development image $content_tag." >&2
+                  rm -f "$runtime_error"
+                  "$RUNTIME" tag "$content_tag" axoloty-dev
                   exit 0
                 fi
-                echo "::warning::Published candidate $candidate_tag has image-input label $candidate_hash; rebuilding locally." >&2
               fi
-              echo "::warning::$LOCK_FILE is stale (locks $locked_hash, build inputs are $actual_hash); building the image locally until the content-keyed image publishes." >&2
+
+              candidate_attempts=0
+              candidate_error="content-keyed tag unavailable"
+              if [[ "$content_tag" == "$candidate_tag" ]]; then
+                candidate_attempts=1
+                candidate_error="canonical tag is also the candidate"
+              else
+                for candidate_attempt in 1 2; do
+                  candidate_attempts=$candidate_attempt
+                  if "$RUNTIME" pull "$candidate_tag" > /dev/null 2>"$runtime_error"; then
+                    candidate_hash=$("$RUNTIME" image inspect \
+                      --format '{{ index .Config.Labels "io.axoloty.image-inputs-sha256" }}' \
+                      "$candidate_tag" 2>"$runtime_error" || true)
+                    if [[ "$candidate_hash" == "$actual_hash" ]]; then
+                      if [[ "$PUBLISHER_IN_PROGRESS" == "true" ]]; then
+                        echo "Using PR-published content-keyed development image $candidate_tag." >&2
+                      else
+                        echo "Using available content-keyed development image $candidate_tag." >&2
+                      fi
+                      rm -f "$runtime_error"
+                      "$RUNTIME" tag "$candidate_tag" axoloty-dev
+                      exit 0
+                    fi
+                    candidate_error="image-input label mismatch"
+                  else
+                    candidate_error=$(tr '\n' ' ' < "$runtime_error" | sed 's/[[:space:]]\+/ /g' | cut -c1-240)
+                    [[ -n "$candidate_error" ]] || candidate_error="tag unavailable"
+                  fi
+                  if (( candidate_attempt < 2 )); then
+                    sleep "$candidate_backoff"
+                  fi
+                done
+              fi
+              echo "::notice::No reusable content-keyed image; candidate probes=$candidate_attempts, last error: $candidate_error" >&2
+              echo "::warning::$LOCK_FILE is stale (locks $locked_hash, build inputs are $actual_hash); building the image locally." >&2
+              rm -f "$runtime_error"
               make image CONTAINER_RUNTIME="$RUNTIME"
               exit 0
             fi
