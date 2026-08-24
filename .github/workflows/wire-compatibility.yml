@@ -55,7 +55,7 @@ jobs:
       # export it for later steps.
       - name: Compute cache key
         run: |
-          echo "SWIFT_CACHE_KEY=swiftpm-6.3-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile') }}" >> "$GITHUB_ENV"
+          echo "SWIFT_CACHE_KEY=swiftpm-v2-6.3-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile', '.devcontainer/image-lock.json') }}" >> "$GITHUB_ENV"
 
       - name: Setup container image
         uses: ./.github/actions/setup-container
@@ -67,8 +67,6 @@ jobs:
         with:
           path: .swiftpm-cache
           key: ${{ env.SWIFT_CACHE_KEY }}
-          restore-keys: |
-            swiftpm-6.3-linux-
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0

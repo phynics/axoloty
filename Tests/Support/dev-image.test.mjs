@@ -13,17 +13,27 @@ const inputs = fs.readFileSync(".devcontainer/image-inputs.sh", "utf8");
 const makefile = fs.readFileSync("Makefile", "utf8");
 const setupAction = fs.readFileSync(".github/actions/setup-container/action.yml", "utf8");
 const ciWorkflow = fs.readFileSync(".github/workflows/ci.yml", "utf8");
+const swiftPMWorkflows = [
+  ciWorkflow,
+  fs.readFileSync(".github/workflows/docs.yml", "utf8"),
+  fs.readFileSync(".github/workflows/fuzz.yml", "utf8"),
+  fs.readFileSync(".github/workflows/wire-compatibility.yml", "utf8"),
+];
 const imageWorkflow = fs.readFileSync(".github/workflows/container-image.yml", "utf8");
 const openImageLockPR = fs.readFileSync(".github/scripts/open-image-lock-pr.sh", "utf8");
 const requiredCIJob = ciWorkflow.slice(ciWorkflow.indexOf("  required-checks:"), ciWorkflow.indexOf("\n  coverage:"));
 const coverageCIJob = ciWorkflow.slice(ciWorkflow.indexOf("  coverage:"), ciWorkflow.indexOf("\n  prune-build-caches:"));
 
-function workflowStep(name) {
+function workflowStepFrom(source, name) {
   const marker = `      - name: ${name}`;
-  const start = ciWorkflow.indexOf(marker);
+  const start = source.indexOf(marker);
   assert.notEqual(start, -1, `missing workflow step: ${name}`);
-  const nextStep = ciWorkflow.indexOf("\n      - name:", start + marker.length);
-  return ciWorkflow.slice(start, nextStep === -1 ? undefined : nextStep);
+  const nextStep = source.indexOf("\n      - name:", start + marker.length);
+  return source.slice(start, nextStep === -1 ? undefined : nextStep);
+}
+
+function workflowStep(name) {
+  return workflowStepFrom(ciWorkflow, name);
 }
 
 function workflowPathList(name) {
@@ -379,6 +389,24 @@ test("CI reuses stable, bounded Swift build cache namespaces", () => {
   assert.match(ciWorkflow, /gh cache list --ref refs\/heads\/main --key "swift-build-v2-coverage-6\.3-linux-"/);
   assert.match(ciWorkflow, /gh cache list --ref refs\/heads\/main --key "swift-build-coverage-6\.3-linux-"/);
   assert.match(ciWorkflow, /gh cache delete "\$cache_id"/);
+});
+
+test("SwiftPM caches are content-exact and safe to save after a failed plan", () => {
+  for (const workflow of swiftPMWorkflows) {
+    assert.match(workflow, /SWIFT_CACHE_KEY=swiftpm-v2-6\.3-linux-\$\{\{ hashFiles\('Package\.resolved', '\.devcontainer\/Dockerfile', '\.devcontainer\/image-lock\.json'\) \}\}/);
+    assert.doesNotMatch(workflowStepFrom(workflow, "Restore SwiftPM dependency cache"), /restore-keys:/);
+  }
+
+  const healthStep = workflowStep("Validate SwiftPM dependency cache before failure-safe save");
+  const dependencySaveStep = workflowStep("Save SwiftPM dependency cache");
+  const compilerSaveStep = workflowStep("Save Swift compiler cache");
+  assert.match(healthStep, /if: always\(\)[\s\S]*steps\.swiftpm_cache\.outcome == 'success'/);
+  assert.match(healthStep, /make resolve CONTAINER_RUNTIME=podman BUILD_DIR="\.build\/ci" BUILD_LOCK=0 SPM_CACHE_DIR=\.swiftpm-cache/);
+  assert.match(healthStep, /ready=true/);
+  assert.match(healthStep, /ready=false/);
+  assert.match(dependencySaveStep, /if: always\(\)[\s\S]*steps\.swiftpm_cache_health\.outputs\.ready == 'true'/);
+  assert.match(compilerSaveStep, /if: success\(\)/);
+  assert.doesNotMatch(compilerSaveStep, /if: always\(\)/);
 });
 
 test("CI pruning keeps two current caches and deletes superseded layouts", () => {

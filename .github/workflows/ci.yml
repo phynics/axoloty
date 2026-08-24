@@ -33,7 +33,7 @@ jobs:
       # export it for later steps.
       - name: Compute cache key
         run: |
-          echo "SWIFT_CACHE_KEY=swiftpm-6.3-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile') }}" >> "$GITHUB_ENV"
+          echo "SWIFT_CACHE_KEY=swiftpm-v2-6.3-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile', '.devcontainer/image-lock.json') }}" >> "$GITHUB_ENV"
           # Compiler intermediates and planner metadata are specific to the
           # development container toolchain. Key them by the reviewed image
           # identity too, so an image-lock refresh never reuses a cache built
@@ -71,8 +71,6 @@ jobs:
         with:
           path: .swiftpm-cache
           key: ${{ env.SWIFT_CACHE_KEY }}
-          restore-keys: |
-            swiftpm-6.3-linux-
 
       # Keep this separate from the download cache. Cache compiler intermediates
       # and planner metadata: final binaries, fuzz output, tooling, and ESP-IDF
@@ -143,8 +141,26 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Validate SwiftPM dependency cache before failure-safe save
+        id: swiftpm_cache_health
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.swiftpm_cache.outcome == 'success' && steps.swiftpm_cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -u
+          if make resolve CONTAINER_RUNTIME=podman BUILD_DIR=".build/ci" BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "SwiftPM dependency cache passed a post-plan resolution check and is safe to save."
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::SwiftPM dependency cache failed post-plan validation; it will not be saved."
+          fi
+
+      # SwiftPM's cache is content-addressed downloaded dependency data. A
+      # successful post-plan resolve proves the cache is complete even when a
+      # later test failed. The compiler cache below remains success-only: its
+      # mutable incremental state must never be archived from a failed build.
       - name: Save SwiftPM dependency cache
-        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.swiftpm_cache.outputs.cache-hit != 'true'
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.swiftpm_cache_health.outputs.ready == 'true' && steps.swiftpm_cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .swiftpm-cache
@@ -193,7 +209,7 @@ jobs:
 
       - name: Compute cache key
         run: |
-          echo "SWIFT_CACHE_KEY=swiftpm-6.3-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile') }}" >> "$GITHUB_ENV"
+          echo "SWIFT_CACHE_KEY=swiftpm-v2-6.3-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile', '.devcontainer/image-lock.json') }}" >> "$GITHUB_ENV"
 
       - name: Prepare coverage diagnostics
         shell: bash
@@ -216,8 +232,6 @@ jobs:
         with:
           path: .swiftpm-cache
           key: ${{ env.SWIFT_CACHE_KEY }}
-          restore-keys: |
-            swiftpm-6.3-linux-
 
       - name: Run coverage plan
         env:
