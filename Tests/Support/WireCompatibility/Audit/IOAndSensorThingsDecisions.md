@@ -1,9 +1,11 @@
 # IO routing and SensorThings compatibility decisions (T-021)
 
-Status: recorded keep/diverge/remove decisions for T-021, backed by the
-evidence below. Where a gate is not yet satisfied by live capture, the
-capability is marked **not yet tested** per the audit's requirement; it is
-never marked compatible, divergent, or removable on a current failure alone.
+Status: Phase 4 ownership decision for T-021. G4 retains only the generic
+Associate/IoValue protocol families and their current-runtime subjects.
+Controller-based and rule-based IO routing, SensorThings models/controllers,
+and automatic product registration are absent from G4 and deferred to G5.
+Where a gate is not yet satisfied by live capture, the capability remains
+**not yet tested**; it is never promoted by an offline mirror alone.
 
 Reference versions: CoatyJS `@coaty/core@2.4.0` (commit
 `4a77168`); modern Swift = current `main`. Legacy CoatySwift 2.4.0 IO
@@ -32,39 +34,24 @@ by the modern→JS runner where CoatyJS subscribed to the route and received
 the IoValue). Required fields `ioSourceId`, `ioActorId`, `associatingRoute`,
 and `updateRate` round-trip in both directions.
 
-**Divergence (defect):** Axoloty's `handleAssociate`
-(`CommunicationManager.swift:557`) force-unwraps
-`event.data.isExternalRoute!` on the actor-association path. Pinned CoatyJS
-2.4.0's `AssociateEventData.toJsonObject` never serializes `isExternalRoute`
-(confirmed by capture: the Associate payload contained only the four required
-fields). Axoloty decodes that omitted field to `nil` (asserted offline by
-`associateEventDecodesCoatyJSPayloadWithoutIsExternalRoute`), so an Axoloty
-**actor** receiving a CoatyJS Associate would trap. This blocks the
-JS → modern direction. Additionally, Axoloty *encodes* `isExternalRoute:
-false` for a generated route (`encodeIfPresent` on a non-nil `Bool?`), an
-asymmetry with CoatyJS that is benign for decoding (CoatyJS ignores the
-field) but should be normalized.
-
-**Remediation (#211):** force-unwrap replaced with `event.data.isExternalRoute ?? false`, regression test added, and Associate encoding normalized to omit the field when `false`. The JS → modern column is provisionally `Compatible with normalization` pending live re-run with the updated encoding.
+The current runtime decodes omitted `isExternalRoute` defensively and the
+offline subject locks the required field-presence contract. The generated
+route and ASC topic remain portable protocol behavior. Controller association
+policy, automatic routing, and IoState publication are not G4 contracts.
 
 ### JSON IoValue: REMEDIATED (bare-value publish shipped)
 
-Axoloty's `publishIoValue` now emits the bare JSON payload directly
-(`CM+Publish.swift:170-176`), matching CoatyJS 2.4.0's wire shape. The fix
-was shipped as part of the AnyCodable removal (#194) and the JSON value rename
-(#204). Offline regression tests (`AxolotyIoValuePayloadTests`) lock in the
-bare-value encode/decode round-trip for scalar and object JSON payloads. The
-live modern→JS scenario still needs re-running to update the capture evidence;
-the column is provisionally moved to `Compatible with normalization` based on
-the offline assertion, pending live re-confirmation.
+The current runtime publishes the generic IoValue wire family through the
+shared protocol/wire path. Portable encode/decode behavior is owned by the
+`AxolotyWire` and `AxolotyProtocol` package tests; root product tests no longer
+mirror the retired controller API. The live modern→JS scenario still needs
+re-running to update the capture evidence, so the matrix remains partial.
 
 ### Raw IoValue: REMEDIATED (byte overload shipped)
 
-The raw path now calls the `[UInt8]` publish overload
-(`CM+Publish.swift:170-171`), preserving the original byte sequence. Offline
-regression tests cover empty, NUL-containing, and invalid-UTF8 raw payloads
-(`AxolotyIoValuePayloadTests`). The live raw capture remains to be run;
-the column is provisionally moved based on the offline evidence.
+The raw path is a generic wire concern and remains owned by the current
+protocol/wire packages. Root controller tests and unverified raw fixtures are
+not retained; the live raw capture remains to be run before claiming support.
 
 ### External route, fan-out/transitions, negative cases, forward compat: PARTIALLY TESTED
 
@@ -100,7 +87,7 @@ constraint, not an Axoloty defect. Integer IoValues exceeding 2^53 must be
 documented as not reliably round-tripping through a CoatyJS peer; Axoloty
 preserves Int64 exactly. KEEP, with a normalization note in the matrix.
 
-### SensorThings: PARTIALLY TESTED (field-schema fixtures captured)
+### SensorThings: REMOVED FROM G4; DEFERRED TO G5
 
 No `@coaty/sensor-things` npm package (E404) and `@coaty/core@2.4.0` exports
 no SensorThings types, so cross-implementation live coverage is not possible.
@@ -109,21 +96,14 @@ contract is ordinary Coaty object JSON with an `objectType` of
 `coaty.sensorThings.*` over standard Advertise/Channel topics, so transport
 compatibility reduces to the already-proven Advertise/Channel rows.
 
-Offline field-schema fixture tests have been added
-(`SensorThingsWireFixtureTests`): fully-populated and minimal objects of all
-four types (FeatureOfInterest, Observation, Sensor, Thing), covering nested
-UnitOfMeasurement, ObservedProperty, Polygon observedArea, CoatyTimeInterval,
-heterogeneous raw JSON fields (metadata as null/object/string, result as
-number/object/null/string), Unicode, forward-compat (unknown fields, reordered
-keys, unknown observationType rejection), and omitted optionals.
-
-Column: `Compatible with normalization` (transport proven via Advertise/Channel;
-field-schema decode locked in offline). Live cross-implementation capture
-remains unavailable due to the missing SensorThings npm package.
+The former root SensorThings fixture suite was a product-model mirror of the
+retired controller hierarchy and is intentionally deleted in Phase 4. Portable
+JSON and predicate behavior remains owned by the ObjectModel and Wire package
+tests. A future G5 implementation must add schema, ownership, and
+cross-implementation evidence together; no placeholder target or compatibility
+shim is retained here.
 
 ## Summary matrix update
 
 See `docs/wire-compatibility.md` rows 20 (`Associate / IoState / IoValue`) and 22
-(`SensorThings`) for the per-direction results. Both Associate and IoValue
-defects have been remediated (#211, #212); the columns are provisionally
-`Compatible with normalization` pending live re-confirmation.
+(`SensorThings`) for the current G4 ownership and gate status.

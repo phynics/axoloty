@@ -31,7 +31,7 @@ authored or silently regenerated.
 `Tests/WireCompatibility/Fixtures/coatyswift-2.4.0/{advertise,deadvertise,discover-resolve}.jsonl`
 and their manifests are real captures generated this way on a macOS 26 /
 Xcode 26.6 / Apple Swift 6.3.3 (arm64) host against a local Mosquitto broker,
-and decoded (not just parsed) by `LegacyCaptureFixtureTests.swift` in the
+and decoded (not just parsed) by `WireCaptureContractTests.swift` in the
 Swift test target. Generating them surfaced two real bugs in the previously
 unexercised macOS runner, both fixed in
 `Tests/Support/WireCompatibility/Legacy/macOS-runner/Sources/LegacyCoatySwiftScenarioRunner/main.swift`:

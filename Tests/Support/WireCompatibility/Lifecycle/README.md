@@ -1,10 +1,11 @@
 # Lifecycle and failure compatibility
 
-`LifecycleCompatibilityScenarioTests.swift` is the executable contract for
-the lifecycle interoperability runner. It defines broker/participant actions
-and the wire observations required for a pass. The catalog itself is tested so
-that required scenarios cannot silently disappear while the live runner is
-being built.
+The lifecycle catalog and live runner define the executable contract for
+interoperability. Swift subjects in `Tests/WireCompatibility/Lifecycle/`
+implement only current-runtime scenarios; the retired
+`LifecycleCompatibilityScenarioTests.swift` subject is no longer selected.
+The catalog itself is tested so that required scenarios cannot silently
+disappear while the live runner is being built.
 
 ## Runner protocol
 
