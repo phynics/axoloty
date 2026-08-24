@@ -491,11 +491,11 @@ private enum SetupFailureStage: String, CaseIterable, Sendable {
     var expectedLifecycle: [String] {
         switch self {
         case .start:
-            return ["start", "stop"]
+            return ["start", "deadvertise", "remove", "stop"]
         case .subscriptions:
-            return ["start", "install", "stop"]
+            return ["start", "install", "deadvertise", "remove", "stop"]
         case .advertisement:
-            return ["start", "install", "advertise", "stop"]
+            return ["start", "install", "advertise", "deadvertise", "remove", "stop"]
         }
     }
 }
