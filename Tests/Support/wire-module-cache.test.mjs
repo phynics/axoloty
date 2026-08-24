@@ -31,3 +31,42 @@ test("nested live-wire Swift commands isolate their module cache", () => {
     assert.match(source, /SWIFTPM_MODULECACHE_OVERRIDE=\/tmp\/axoloty-wire-module-cache/);
   }
 });
+
+test("live producer subjects require a run-scoped peer acknowledgement", () => {
+  const contracts = [
+    [
+      "Tests/WireCompatibility/Reverse/AxolotyAdvertiseProducerTests.swift",
+      "Tests/Support/WireCompatibility/Reverse/run-axoloty-advertise.sh",
+      "Tests/Support/WireCompatibility/Reverse/coatyjs-advertise-consumer.js",
+    ],
+    [
+      "Tests/WireCompatibility/Reverse/AxolotyCoreProducerTests.swift",
+      "Tests/Support/WireCompatibility/Reverse/run-axoloty-core.sh",
+      "Tests/Support/WireCompatibility/Reverse/coatyjs-core-consumer.js",
+    ],
+    [
+      "Tests/WireCompatibility/IO/AxolotyIoAssociateTests.swift",
+      "Tests/Support/WireCompatibility/IO/Live/run-io-associate.sh",
+      "Tests/Support/WireCompatibility/IO/coatyjs-io-runner.js",
+    ],
+  ];
+  const support = readFileSync(
+    path.join(root, "Tests/WireCompatibility/Reverse/ModernConsumerSupport.swift"),
+    "utf8",
+  );
+  assert.match(support, /WIRE_PEER_ACK_FILE/);
+  assert.match(support, /phase == "peer-ack"/);
+
+  for (const [subjectPath, runnerPath, peerPath] of contracts) {
+    const subject = readFileSync(path.join(root, subjectPath), "utf8");
+    const runner = readFileSync(path.join(root, runnerPath), "utf8");
+    const peer = readFileSync(path.join(root, peerPath), "utf8");
+
+    assert.match(subject, /awaitPeerAcknowledgement\(/, `${subjectPath} must await peer evidence`);
+    assert.match(runner, /WIRE_PEER_ACK_FILE=/, `${runnerPath} must pass the marker path`);
+    assert.match(runner, /WIRE_PEER_ACK_TOKEN=/, `${runnerPath} must pass a run-scoped token`);
+    assert.match(runner, /rm -f[^\n]*ACK|rm -f[^\n]*ack/i, `${runnerPath} must clear stale markers`);
+    assert.match(peer, /phase: "peer-ack"/, `${peerPath} must write phase-labelled evidence`);
+    assert.match(peer, /WIRE_PEER_ACK_TOKEN/, `${peerPath} must bind evidence to the run token`);
+  }
+});

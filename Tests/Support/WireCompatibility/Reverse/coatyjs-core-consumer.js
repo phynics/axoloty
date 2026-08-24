@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 "use strict";
 
+const fs = require("node:fs");
 const {
     CallEvent,
     ChannelEvent,
@@ -18,6 +19,8 @@ const brokerUrl = process.env.BROKER_URL;
 const namespace = process.env.COATY_NAMESPACE || "wire-compat-v1";
 const scenario = process.env.SCENARIO;
 const timeoutMs = Number(process.env.SCENARIO_TIMEOUT_MS || "10000");
+const peerAckFile = process.env.WIRE_PEER_ACK_FILE;
+const peerAckToken = process.env.WIRE_PEER_ACK_TOKEN;
 const object = {
     coreType: "CoatyObject",
     objectType: "com.coaty.test.WireFixture",
@@ -50,8 +53,29 @@ const fail = error => {
     process.stderr.write(`${error.stack || error}\n`);
     process.exitCode = 1;
 };
+const writePeerAcknowledgement = details => {
+    if (!peerAckFile || !peerAckToken) {
+        throw new Error("WIRE_PEER_ACK_FILE and WIRE_PEER_ACK_TOKEN are required");
+    }
+    const marker = {
+        version: 1,
+        phase: "peer-ack",
+        scenario,
+        token: peerAckToken,
+        ...details,
+    };
+    const temporary = `${peerAckFile}.tmp-${process.pid}`;
+    fs.writeFileSync(temporary, `${JSON.stringify(marker)}\n`, "utf8");
+    fs.renameSync(temporary, peerAckFile);
+};
 const ack = details => {
     if (finished) return;
+    try {
+        writePeerAcknowledgement(details);
+    } catch (error) {
+        fail(error);
+        return;
+    }
     finished = true;
     clearTimeout(timeout);
     if (subscription) subscription.unsubscribe();

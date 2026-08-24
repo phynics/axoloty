@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 "use strict";
 
+const fs = require("node:fs");
+
 // CoatyJS 2.4.0 IO reference runner for T-021 wire-compatibility captures.
 //
 // Plays one of several roles selected by the ROLE environment variable so a
@@ -38,6 +40,9 @@ const role = process.env.ROLE || "associate-source";
 const contextName = process.env.IO_CONTEXT_NAME || "wire-compat-io-context-1";
 const settleMs = Number(process.env.SCENARIO_SETTLE_MS || "1000");
 const timeoutMs = Number(process.env.SCENARIO_TIMEOUT_MS || "20000");
+const peerAckFile = process.env.WIRE_PEER_ACK_FILE;
+const peerAckToken = process.env.WIRE_PEER_ACK_TOKEN;
+const peerAckScenario = process.env.WIRE_SCENARIO || "io-associate";
 
 // Deterministic identifiers shared with the Axoloty test side and the capture.
 const SOURCE_ID = "33333333-3333-4333-8333-333333333333";
@@ -57,6 +62,22 @@ const EXTERNAL_ROUTE = "external/wire-compat-v1/io-external-1";
 
 const report = (state, details = {}) => {
     process.stdout.write(`${JSON.stringify({ state, role, ...details })}\n`);
+};
+
+const writePeerAcknowledgement = details => {
+    if (!peerAckFile || !peerAckToken) {
+        throw new Error("WIRE_PEER_ACK_FILE and WIRE_PEER_ACK_TOKEN are required");
+    }
+    const marker = {
+        version: 1,
+        phase: "peer-ack",
+        scenario: peerAckScenario,
+        token: peerAckToken,
+        ...details,
+    };
+    const temporary = `${peerAckFile}.tmp-${process.pid}`;
+    fs.writeFileSync(temporary, `${JSON.stringify(marker)}\n`, "utf8");
+    fs.renameSync(temporary, peerAckFile);
 };
 
 const makeSource = (raw) => ({
@@ -210,6 +231,7 @@ async function runActor(raw) {
         if (received >= expected) {
             clearTimeout(timeout);
             sub.unsubscribe();
+            writePeerAcknowledgement({ role, count: received });
             report("ack", { mode: raw ? "raw" : "json", count: received });
             setTimeout(() => {
                 container.shutdown();

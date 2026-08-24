@@ -40,7 +40,15 @@ struct AxolotyIoAssociateTests {
             try await Task.sleep(for: .milliseconds(1_500))
             #expect(await runtime.publish(RuntimeOneWayOperation.ioValue(Array("42".utf8))) == .accepted)
             ModernConsumerSupport.emit("{\"state\":\"published-iovalue\",\"scenario\":\"io-associate\",\"route\":\"\(route)\"}")
-            try await Task.sleep(for: .milliseconds(1_500))
+            ModernConsumerSupport.emit(
+                "{\"state\":\"awaiting-peer-ack\",\"phase\":\"peer-ack\",\"scenario\":\"io-associate\",\"route\":\"\(route)\",\"sourceId\":\"\(Self.sourceID)\",\"actorId\":\"\(Self.actorID)\"}"
+            )
+            try await ModernConsumerSupport.awaitPeerAcknowledgement(
+                environment: environment,
+                scenario: "io-associate",
+                context: "route=\(route) sourceId=\(Self.sourceID) actorId=\(Self.actorID)",
+                timeout: .seconds(60)
+            )
             let disassociateOperation = RuntimeOperation(
                 capability: .associate,
                 sourceID: Self.sourceID,
