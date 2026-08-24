@@ -292,11 +292,18 @@ public struct AxolotyCanonicalTestPlanDefinition: Codable, Equatable, Sendable {
     public let nodes: [String]
     /// Roots for CI execution. Missing means the ordinary roots.
     public let ciNodes: [String]?
+    /// The absolute wall-clock budget for this plan, in seconds.
+    public let timeoutSeconds: TimeInterval?
 
     /// Creates a plan definition.
-    public init(nodes: [String], ciNodes: [String]? = nil) {
+    public init(
+        nodes: [String],
+        ciNodes: [String]? = nil,
+        timeoutSeconds: TimeInterval? = nil
+    ) {
         self.nodes = nodes
         self.ciNodes = ciNodes
+        self.timeoutSeconds = timeoutSeconds
     }
 }
 
@@ -424,14 +431,23 @@ public struct AxolotyCanonicalTestExplanation: Codable, Equatable, Sendable {
     public let name: String
     /// Whether CI roots were selected.
     public let ci: Bool
+    /// The absolute wall-clock budget for this plan, in seconds.
+    public let timeoutSeconds: TimeInterval?
     /// Ordered nodes in the command graph.
     public let nodes: [AxolotyCanonicalTestNodeExplanation]
 
     /// Creates an execution explanation.
-    public init(schemaVersion: Int, name: String, ci: Bool, nodes: [AxolotyCanonicalTestNodeExplanation]) {
+    public init(
+        schemaVersion: Int,
+        name: String,
+        ci: Bool,
+        timeoutSeconds: TimeInterval? = nil,
+        nodes: [AxolotyCanonicalTestNodeExplanation]
+    ) {
         self.schemaVersion = schemaVersion
         self.name = name
         self.ci = ci
+        self.timeoutSeconds = timeoutSeconds
         self.nodes = nodes
     }
 }
@@ -480,9 +496,10 @@ public enum AxolotyCanonicalTestManifestError: Error, Equatable, Sendable, Local
 /// The versioned, checked-in source of all canonical test execution plans.
 ///
 /// Resolved nodes are consumed by ``AxolotyCheckExecutor`` in dependency order
-/// and one node at a time. Consequently, manifest lanes, resources, and
-/// process-isolation declarations describe and enforce non-overlap at the
-/// graph boundary without requiring a parallel scheduler.
+/// and one node at a time. The enclosing plan deadline is carried into the
+/// resolved plan and enforced by the executor. Consequently, manifest lanes,
+/// resources, and process-isolation declarations describe and enforce
+/// non-overlap at the graph boundary without requiring a parallel scheduler.
 public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
     /// The current manifest schema version.
     public static let currentSchemaVersion = 2
@@ -622,7 +639,8 @@ public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
         return try resolvedPlan(
             roots: definition.nodes,
             platform: platform,
-            availability: { $0.local }
+            availability: { $0.local },
+            deadlineSeconds: definition.timeoutSeconds
         )
     }
 
@@ -638,7 +656,8 @@ public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
         return try resolvedPlan(
             roots: definition.nodes,
             platform: platform,
-            availability: { ci ? $0.ci : $0.local }
+            availability: { ci ? $0.ci : $0.local },
+            deadlineSeconds: definition.timeoutSeconds
         )
     }
 
@@ -664,7 +683,12 @@ public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
         } else {
             roots = declaredRoots
         }
-        return try resolvedPlan(roots: roots, platform: platform, availability: { ci ? $0.ci : $0.local })
+        return try resolvedPlan(
+            roots: roots,
+            platform: platform,
+            availability: { ci ? $0.ci : $0.local },
+            deadlineSeconds: definition.timeoutSeconds
+        )
     }
 
     /// Builds an explanation for a named plan.
@@ -707,7 +731,8 @@ public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
     private func resolvedPlan(
         roots: [String],
         platform: AxolotyCheckPlan.Platform,
-        availability: (AxolotyCanonicalTestNode) -> Bool
+        availability: (AxolotyCanonicalTestNode) -> Bool,
+        deadlineSeconds: TimeInterval?
     ) throws -> AxolotyCheckPlan {
         let available = nodes.filter { $0.isAvailable(on: platform) && availability($0) }
         for root in roots {
@@ -720,7 +745,11 @@ public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
             guard let node = nodes.first(where: { $0.id == root }) else { return false }
             return node.isAvailable(on: platform) && availability(node)
         }
-        return try AxolotyCheckPlanner().plan(checkNodes, requested: availableRoots)
+        return try AxolotyCheckPlanner().plan(
+            checkNodes,
+            requested: availableRoots,
+            deadlineSeconds: deadlineSeconds
+        )
     }
 
     private func explanation(
@@ -751,6 +780,7 @@ public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
             schemaVersion: schemaVersion,
             name: name,
             ci: ci,
+            timeoutSeconds: plan.deadlineSeconds,
             nodes: entries
         )
     }

@@ -492,7 +492,11 @@ public struct AxolotyCommandDispatcher: Sendable {
                     exitCode: 69
                 )
             }
-            let plan = try AxolotyCheckPlanner().plan(availablePlan.nodes, requested: requested)
+            let plan = try AxolotyCheckPlanner().plan(
+                availablePlan.nodes,
+                requested: requested,
+                deadlineSeconds: availablePlan.deadlineSeconds
+            )
             let results = executor.execute(plan)
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
             return manifestResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
@@ -616,12 +620,14 @@ public struct AxolotyCommandDispatcher: Sendable {
                 .reduce(into: [String: String]()) { values, name in
                     values[name] = environment[name]
                 }
+            let sourcePlan = AxolotyCheckPlan.releaseSnapshots(
+                source: source,
+                destination: destination,
+                environment: forwardedEnvironment
+            )
             let plan = try AxolotyCheckPlanner().plan(
-                AxolotyCheckPlan.releaseSnapshots(
-                    source: source,
-                    destination: destination,
-                    environment: forwardedEnvironment
-                ).nodes
+                sourcePlan.nodes,
+                deadlineSeconds: sourcePlan.deadlineSeconds
             )
             let results = executor.execute(plan)
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
@@ -654,7 +660,8 @@ public struct AxolotyCommandDispatcher: Sendable {
                             timeoutSeconds: node.command.timeoutSeconds
                         )
                     )
-                }
+                },
+                deadlineSeconds: canonicalPlan.deadlineSeconds
             )
             let results = executor.execute(plan)
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
@@ -752,7 +759,10 @@ public struct AxolotyCommandDispatcher: Sendable {
         }
 
         do {
-            let planned = try AxolotyCheckPlanner().plan(plan.nodes)
+            let planned = try AxolotyCheckPlanner().plan(
+                plan.nodes,
+                deadlineSeconds: plan.deadlineSeconds
+            )
             let results = executor.execute(planned)
             let gitCommit = environment["AXOLOTY_GIT_COMMIT"]
                 ?? commandRunner.run(gitCommitCommand).standardOutput
@@ -796,7 +806,10 @@ public struct AxolotyCommandDispatcher: Sendable {
 
     private func execute(plan availablePlan: AxolotyCheckPlan) -> AxolotyCommandResult {
         do {
-            let plan = try AxolotyCheckPlanner().plan(availablePlan.nodes)
+            let plan = try AxolotyCheckPlanner().plan(
+                availablePlan.nodes,
+                deadlineSeconds: availablePlan.deadlineSeconds
+            )
             let results = executor.execute(plan)
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
             return manifestResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
@@ -807,7 +820,7 @@ public struct AxolotyCommandDispatcher: Sendable {
 
     private func humanExplanation(_ explanation: AxolotyCanonicalTestExplanation) -> String {
         var lines = [
-            "PLAN \(explanation.name) schema=\(explanation.schemaVersion) ci=\(explanation.ci)",
+            "PLAN \(explanation.name) schema=\(explanation.schemaVersion) ci=\(explanation.ci) deadline=\(explanation.timeoutSeconds.map(String.init) ?? "none")",
         ]
         lines += explanation.nodes.map { node in
             let dependencies = node.dependencies.isEmpty ? "-" : node.dependencies.joined(separator: ",")
@@ -1004,6 +1017,9 @@ private struct CanonicalTierCommandRunner: AxolotyLifecycleCommandRunning {
         context: AxolotyCommandRunContext
     ) -> AxolotyCheckCommandResult {
         if context.node == "integration-tests" {
+            if let boundedRunner = integrationRunner as? any AxolotyBoundedIntegrationRunning {
+                return boundedRunner.run(timeoutSeconds: command.timeoutSeconds)
+            }
             return integrationRunner.run()
         }
         if let lifecycleRunner = commandRunner as? any AxolotyLifecycleCommandRunning {

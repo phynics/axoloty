@@ -177,6 +177,8 @@ func canonicalManifestDefinesVerifyRootsAndBoundedTestOne() throws {
     #expect(manifest.ciRequiredGates.allSatisfy { gate in manifest.nodes.contains { $0.id == gate } })
     #expect(manifest.testOneCommand(filter: "suite;touch /tmp/injected").arguments.last == "suite;touch /tmp/injected")
     #expect(manifest.testOne.timeoutSeconds > 0)
+    #expect(try manifest.plan(tier: "unit").deadlineSeconds == 1_800)
+    #expect(try manifest.plan(named: "verify", ci: true).deadlineSeconds == 4_800)
 }
 
 @Test
@@ -662,6 +664,37 @@ func integrationContextMismatchPrecedesIntegrationRunnerEffects() throws {
 private struct StubIntegrationRunner: AxolotyIntegrationRunning {
     let result: AxolotyCheckCommandResult
     func run() -> AxolotyCheckCommandResult { result }
+}
+
+private final class RecordingBoundedIntegrationRunner: AxolotyBoundedIntegrationRunning, @unchecked Sendable {
+    private(set) var receivedTimeout: TimeInterval?
+
+    func run() -> AxolotyCheckCommandResult {
+        AxolotyCheckCommandResult(exitCode: 0)
+    }
+
+    func run(timeoutSeconds: TimeInterval?) -> AxolotyCheckCommandResult {
+        receivedTimeout = timeoutSeconds
+        return AxolotyCheckCommandResult(exitCode: 0)
+    }
+}
+
+@Test
+func integrationTierPassesRemainingTierBudgetToBoundedRunner() throws {
+    let commandRunner = RecordingSequenceRunner()
+    let integrationRunner = RecordingBoundedIntegrationRunner()
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: commandRunner,
+        integrationRunner: integrationRunner,
+        fileSystem: StubFileSystem(paths: []),
+        environment: projectEnvironment
+    )
+
+    let result = dispatcher.run(arguments: ["test-tier", "integration"])
+
+    #expect(result.exitCode == 0)
+    #expect(commandRunner.commands.map(\.executable) == ["swift"])
+    #expect(integrationRunner.receivedTimeout.map { $0 > 0 && $0 <= 3_600 } == true)
 }
 
 @Test

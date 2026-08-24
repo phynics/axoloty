@@ -170,6 +170,28 @@ test("validator rejects duplicated verify roots", () => {
   assert.ok(errors.some(error => error.includes("verify roots must be derived")));
 });
 
+test("validator rejects a plan without an absolute deadline", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  delete document.plans.verify.timeoutSeconds;
+  const errors = validate(document, {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  });
+  assert.ok(errors.includes("plan verify: timeoutSeconds must be a positive integer"));
+});
+
+test("validator enforces the canonical CI plan budget below the job deadline", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  document.plans.verify.timeoutSeconds = 5400;
+  const errors = validate(document, {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  });
+  assert.ok(errors.includes("plan verify: timeoutSeconds must be 4800 seconds (80 minutes), below the 90-minute CI job deadline"));
+});
+
 test("validator rejects required release tier absent from releaseGates", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
   document.releaseGates = document.releaseGates.filter(gate => gate !== "wire-live");

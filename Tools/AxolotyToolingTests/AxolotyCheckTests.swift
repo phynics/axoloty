@@ -25,6 +25,47 @@ private struct StubCommandRunner: AxolotyCheckCommandRunning {
     }
 }
 
+private final class CheckTestClock: AxolotyTimingClock, @unchecked Sendable {
+    private(set) var value: TimeInterval
+
+    init(_ value: TimeInterval = 0) {
+        self.value = value
+    }
+
+    func now() -> TimeInterval {
+        value
+    }
+
+    func advance(by seconds: TimeInterval) {
+        value += seconds
+    }
+}
+
+private final class DeadlineRecordingRunner: AxolotyCheckCommandRunning, @unchecked Sendable {
+    let clock: CheckTestClock
+    let failedCommands: Set<String>
+    let advancePerCommand: TimeInterval
+    private(set) var commands: [AxolotyCommandPlan] = []
+
+    init(
+        clock: CheckTestClock,
+        failedCommands: Set<String> = [],
+        advancePerCommand: TimeInterval = 0
+    ) {
+        self.clock = clock
+        self.failedCommands = failedCommands
+        self.advancePerCommand = advancePerCommand
+    }
+
+    func run(_ command: AxolotyCommandPlan) -> AxolotyCheckCommandResult {
+        commands.append(command)
+        clock.advance(by: advancePerCommand)
+        return AxolotyCheckCommandResult(
+            exitCode: failedCommands.contains(command.executable) ? 1 : 0
+        )
+    }
+}
+
 private final class OutputEvents: @unchecked Sendable {
     private let lock = NSLock()
     private var events: [(AxolotyCommandOutputStream, String)] = []
@@ -303,6 +344,73 @@ func executorRunsIndependentNodesAfterFailure() throws {
     #expect(results.map(\.name) == ["failed", "blocked", "independent"])
     #expect(results.map(\.status) == [.failed, .skipped, .passed])
     #expect(results[1].command == nil)
+}
+
+@Test
+func executorPassesRemainingPlanBudgetAndContinuesIndependentNodesAfterFailure() throws {
+    let clock = CheckTestClock()
+    let runner = DeadlineRecordingRunner(
+        clock: clock,
+        failedCommands: ["failed"],
+        advancePerCommand: 3
+    )
+    let plan = try AxolotyCheckPlanner().plan(
+        [
+            node("blocked", dependencies: ["failed"]),
+            node("independent"),
+            AxolotyCheckNode(
+                name: "failed",
+                command: AxolotyCommandPlan(executable: "failed", timeoutSeconds: 2)
+            ),
+        ],
+        deadlineSeconds: 10
+    )
+    let validator = AxolotyExecutionContextValidator(
+        environment: ["AXOLOTY_DEVCONTAINER": "1"],
+        platform: .linux
+    )
+
+    let results = AxolotyCheckExecutor(
+        commandRunner: runner,
+        contextValidator: validator,
+        clock: clock
+    ).execute(plan)
+
+    #expect(results.map(\.status) == [.failed, .skipped, .passed])
+    #expect(runner.commands.map(\.executable) == ["failed", "independent"])
+    #expect(runner.commands.map(\.timeoutSeconds) == [2, 7])
+}
+
+@Test
+func executorMarksAllPendingNodesExpiredWhenACommandExceedsPlanDeadline() throws {
+    let clock = CheckTestClock()
+    let runner = DeadlineRecordingRunner(clock: clock, advancePerCommand: 6)
+    let plan = try AxolotyCheckPlanner().plan(
+        [
+            node("dependent", dependencies: ["first"]),
+            node("independent"),
+            node("first"),
+        ],
+        deadlineSeconds: 5
+    )
+    let validator = AxolotyExecutionContextValidator(
+        environment: ["AXOLOTY_DEVCONTAINER": "1"],
+        platform: .linux
+    )
+
+    let results = AxolotyCheckExecutor(
+        commandRunner: runner,
+        contextValidator: validator,
+        clock: clock
+    ).execute(plan)
+
+    #expect(results.map(\.status) == [.failed, .expired, .expired])
+    #expect(runner.commands.map(\.executable) == ["first"])
+    #expect(results[0].command?.exitCode == 124)
+    #expect(results[0].command?.standardError ==
+        "check plan deadline exceeded after node completed: node=first elapsed=6.000s budget=5.000s\n")
+    #expect(results[1].command?.standardError ==
+        "check plan deadline exceeded before node started: node=dependent elapsed=6.000s budget=5.000s dependencies=first\n")
 }
 
 @Test

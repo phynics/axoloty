@@ -12,6 +12,8 @@ public enum AxolotyCheckStatus: String, Codable, Equatable, Sendable {
     case failed
     /// The node was not run because a prerequisite failed or was skipped.
     case skipped
+    /// The node could not start because the enclosing check plan deadline expired.
+    case expired
 }
 
 /// A command that a check executor may run later.
@@ -262,7 +264,8 @@ public struct AxolotyCheckResult: Codable, Equatable, Sendable {
     public let name: String
     /// The final node status.
     public let status: AxolotyCheckStatus
-    /// The command result, when execution occurred.
+    /// The command result, when execution occurred or the executor emitted a
+    /// lifecycle diagnostic such as an expired plan deadline.
     public let command: AxolotyCheckCommandResult?
 
     /// Creates a check result.
@@ -279,11 +282,22 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
     public let schemaVersion: Int
     /// Nodes ordered so every prerequisite precedes its dependants.
     public let nodes: [AxolotyCheckNode]
+    /// The absolute wall-clock budget for executing this plan, in seconds.
+    ///
+    /// The executor starts this budget before the first node and passes the
+    /// remaining time to each command. A missing value means that this plan
+    /// has no enclosing budget; individual command deadlines still apply.
+    public let deadlineSeconds: TimeInterval?
 
     /// Creates a check plan.
-    public init(schemaVersion: Int = 1, nodes: [AxolotyCheckNode]) {
+    public init(
+        schemaVersion: Int = 1,
+        nodes: [AxolotyCheckNode],
+        deadlineSeconds: TimeInterval? = nil
+    ) {
         self.schemaVersion = schemaVersion
         self.nodes = nodes
+        self.deadlineSeconds = deadlineSeconds
     }
 
     /// The canonical broker-free project checks owned by the CLI.
@@ -381,7 +395,11 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
             }
             return node
         }
-        return AxolotyCheckPlan(schemaVersion: manifest.schemaVersion, nodes: nodes)
+        return AxolotyCheckPlan(
+            schemaVersion: manifest.schemaVersion,
+            nodes: nodes,
+            deadlineSeconds: plan.deadlineSeconds
+        )
     }
 
     /// Creates the explicit host/container plan for live wire capture.
@@ -438,7 +456,11 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
                 )
             )
         }
-        return AxolotyCheckPlan(schemaVersion: manifest.schemaVersion, nodes: nodes)
+        return AxolotyCheckPlan(
+            schemaVersion: manifest.schemaVersion,
+            nodes: nodes,
+            deadlineSeconds: plan.deadlineSeconds
+        )
     }
 
     /// Creates the release checkpoint hardware validation plan.
@@ -484,7 +506,11 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
                 )
             )
         }
-        return AxolotyCheckPlan(schemaVersion: manifest.schemaVersion, nodes: nodes)
+        return AxolotyCheckPlan(
+            schemaVersion: manifest.schemaVersion,
+            nodes: nodes,
+            deadlineSeconds: plan.deadlineSeconds
+        )
     }
 
 }
@@ -621,7 +647,11 @@ public struct AxolotyCheckPlanner: Sendable {
     ///
     /// Duplicate prerequisites are emitted once. Ties are resolved by the
     /// order in which nodes were supplied, making output reproducible.
-    public func plan(_ nodes: [AxolotyCheckNode], requested: [String]? = nil) throws -> AxolotyCheckPlan {
+    public func plan(
+        _ nodes: [AxolotyCheckNode],
+        requested: [String]? = nil,
+        deadlineSeconds: TimeInterval? = nil
+    ) throws -> AxolotyCheckPlan {
         var byName: [String: AxolotyCheckNode] = [:]
         for node in nodes {
             guard byName[node.name] == nil else { throw AxolotyCheckPlanningError.duplicateNode(node.name) }
@@ -652,7 +682,7 @@ public struct AxolotyCheckPlanner: Sendable {
         }
 
         for root in roots { try visit(root) }
-        return AxolotyCheckPlan(nodes: ordered)
+        return AxolotyCheckPlan(nodes: ordered, deadlineSeconds: deadlineSeconds)
     }
 }
 
@@ -681,6 +711,7 @@ public struct AxolotyCheckExecutor: Sendable {
     private let commandRunner: any AxolotyCheckCommandRunning
     private let contextValidator: AxolotyExecutionContextValidator
     private let cancellation: AxolotyCommandCancellation?
+    private let clock: any AxolotyTimingClock
 
     /// Creates an executor with the command runner used for every node.
     ///
@@ -689,19 +720,23 @@ public struct AxolotyCheckExecutor: Sendable {
         commandRunner: any AxolotyCheckCommandRunning,
         cancellation: AxolotyCommandCancellation? = nil
     ) {
-        self.commandRunner = commandRunner
-        contextValidator = AxolotyExecutionContextValidator()
-        self.cancellation = cancellation
+        self.init(
+            commandRunner: commandRunner,
+            contextValidator: AxolotyExecutionContextValidator(),
+            cancellation: cancellation
+        )
     }
 
     init(
         commandRunner: any AxolotyCheckCommandRunning,
         contextValidator: AxolotyExecutionContextValidator,
-        cancellation: AxolotyCommandCancellation? = nil
+        cancellation: AxolotyCommandCancellation? = nil,
+        clock: any AxolotyTimingClock = AxolotyContinuousTimingClock()
     ) {
         self.commandRunner = commandRunner
         self.contextValidator = contextValidator
         self.cancellation = cancellation
+        self.clock = clock
     }
 
     /// Runs a plan in dependency order, serializing every graph node.
@@ -717,6 +752,8 @@ public struct AxolotyCheckExecutor: Sendable {
     /// - Parameter plan: The plan to execute.
     /// - Returns: Results in the plan's deterministic order.
     public func execute(_ plan: AxolotyCheckPlan) -> [AxolotyCheckResult] {
+        let planStartedAt = clock.now()
+        let planDeadline = plan.deadlineSeconds.map { planStartedAt + $0 }
         let validator = contextValidator
         let diagnostics = plan.nodes.reduce(
             into: [String: AxolotyExecutionContextDiagnostic]()
@@ -749,26 +786,117 @@ public struct AxolotyCheckExecutor: Sendable {
                 results.append(AxolotyCheckResult(name: node.name, status: .skipped))
                 continue
             }
+            let nodeReadyAt = clock.now()
+            if let planDeadline, nodeReadyAt >= planDeadline {
+                statuses[node.name] = .expired
+                results.append(Self.expiredResult(
+                    node: node,
+                    planStartedAt: planStartedAt,
+                    planDeadline: planDeadline,
+                    now: nodeReadyAt
+                ))
+                continue
+            }
             guard node.dependencies.allSatisfy({ statuses[$0] == .passed }) else {
                 statuses[node.name] = .skipped
                 results.append(AxolotyCheckResult(name: node.name, status: .skipped))
                 continue
             }
 
+            let command = Self.commandBoundedByPlanDeadline(
+                node.command,
+                planDeadline: planDeadline,
+                now: nodeReadyAt
+            )
             let commandResult: AxolotyCheckCommandResult
             if let lifecycleRunner = commandRunner as? any AxolotyLifecycleCommandRunning {
                 commandResult = lifecycleRunner.run(
-                    node.command,
+                    command,
                     context: AxolotyCommandRunContext(node: node.name, stage: "check")
                 )
             } else {
-                commandResult = commandRunner.run(node.command)
+                commandResult = commandRunner.run(command)
             }
-            let status: AxolotyCheckStatus = commandResult.exitCode == 0 ? .passed : .failed
+            let finishedAt = clock.now()
+            let result = Self.resultAfterPlanDeadline(
+                commandResult,
+                node: node,
+                planStartedAt: planStartedAt,
+                planDeadline: planDeadline,
+                finishedAt: finishedAt
+            )
+            let status: AxolotyCheckStatus = result.exitCode == 0 ? .passed : .failed
             statuses[node.name] = status
-            results.append(AxolotyCheckResult(name: node.name, status: status, command: commandResult))
+            results.append(AxolotyCheckResult(name: node.name, status: status, command: result))
         }
 
         return results
+    }
+
+    private static func commandBoundedByPlanDeadline(
+        _ command: AxolotyCommandPlan,
+        planDeadline: TimeInterval?,
+        now: TimeInterval
+    ) -> AxolotyCommandPlan {
+        guard let planDeadline else { return command }
+        let remaining = planDeadline - now
+        let timeout = command.timeoutSeconds.map { min($0, remaining) } ?? remaining
+        return AxolotyCommandPlan(
+            executable: command.executable,
+            arguments: command.arguments,
+            environment: command.environment,
+            executionContext: command.executionContext,
+            timeoutSeconds: timeout
+        )
+    }
+
+    private static func expiredResult(
+        node: AxolotyCheckNode,
+        planStartedAt: TimeInterval,
+        planDeadline: TimeInterval,
+        now: TimeInterval
+    ) -> AxolotyCheckResult {
+        let elapsed = max(0, now - planStartedAt)
+        let dependencies = node.dependencies.isEmpty ? "none" : node.dependencies.joined(separator: ",")
+        let diagnostic = String(
+            format: "check plan deadline exceeded before node started: node=%@ elapsed=%.3fs budget=%.3fs dependencies=%@\n",
+            locale: Locale(identifier: "en_US_POSIX"),
+            node.name,
+            elapsed,
+            max(0, planDeadline - planStartedAt),
+            dependencies
+        )
+        return AxolotyCheckResult(
+            name: node.name,
+            status: .expired,
+            command: AxolotyCheckCommandResult(exitCode: 124, standardError: diagnostic)
+        )
+    }
+
+    private static func resultAfterPlanDeadline(
+        _ result: AxolotyCheckCommandResult,
+        node: AxolotyCheckNode,
+        planStartedAt: TimeInterval,
+        planDeadline: TimeInterval?,
+        finishedAt: TimeInterval
+    ) -> AxolotyCheckCommandResult {
+        guard let planDeadline, finishedAt >= planDeadline else { return result }
+        let elapsed = max(0, finishedAt - planStartedAt)
+        let diagnostic = String(
+            format: "check plan deadline exceeded after node completed: node=%@ elapsed=%.3fs budget=%.3fs\n",
+            locale: Locale(identifier: "en_US_POSIX"),
+            node.name,
+            elapsed,
+            max(0, planDeadline - planStartedAt)
+        )
+        var standardError = result.standardError
+        if !standardError.isEmpty, !standardError.hasSuffix("\n") { standardError.append("\n") }
+        standardError.append(diagnostic)
+        return AxolotyCheckCommandResult(
+            exitCode: result.exitCode == 0 ? 124 : result.exitCode,
+            standardOutput: result.standardOutput,
+            standardError: standardError,
+            lifecycle: result.lifecycle
+        )
     }
 }

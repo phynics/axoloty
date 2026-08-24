@@ -184,6 +184,11 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
   }
   for (const [name, plan] of Object.entries(document.plans ?? {})) {
     if (!Array.isArray(plan?.nodes)) { errors.push(`plan ${name}: nodes must be an array`); continue; }
+    if (!Number.isInteger(plan.timeoutSeconds) || plan.timeoutSeconds <= 0) {
+      errors.push(`plan ${name}: timeoutSeconds must be a positive integer`);
+    } else if (name === "verify" && plan.timeoutSeconds !== 4800) {
+      errors.push("plan verify: timeoutSeconds must be 4800 seconds (80 minutes), below the 90-minute CI job deadline");
+    }
     for (const node of [...plan.nodes, ...(plan.ciNodes ?? [])]) if (!nodeIds.has(node)) errors.push(`plan ${name}: unknown node ${JSON.stringify(node)}`);
   }
   const makeAliases = {
