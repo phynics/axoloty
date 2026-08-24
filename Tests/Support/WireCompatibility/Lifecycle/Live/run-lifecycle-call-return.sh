@@ -110,7 +110,7 @@ runtime run -d --name "$RESPONDER" --network "$NETWORK" \
     -e WIRE_RESPONSE_READY_FILE="/artifacts/$RESPONSE_READY_BASENAME" \
     -e WIRE_PEER_ACK_FILE="/artifacts/$ACK_BASENAME" -e WIRE_PEER_ACK_TOKEN="$ACK_TOKEN" \
     "$JS_IMAGE" /agent/coatyjs-core-consumer.js >/dev/null
-responder_ready() { runtime logs "$RESPONDER" 2>&1 >"$CONSUMER_LOG"; grep -q '"state":"ready"' "$CONSUMER_LOG"; }
+responder_ready() { runtime logs "$RESPONDER" >"$CONSUMER_LOG" 2>&1; grep -q '"state":"ready"' "$CONSUMER_LOG"; }
 wait_for "CoatyJS Call responder readiness" responder_ready
 
 # Run the Swift test subject.
@@ -138,7 +138,7 @@ runtime run -d -t --name "$SUBJECT" --network "$NETWORK" \
 
 # Wait for the Swift test to complete.
 runtime wait "$SUBJECT" >/dev/null
-runtime logs "$SUBJECT" 2>&1 >"$RAW_LOG"
+runtime logs "$SUBJECT" >"$RAW_LOG" 2>&1
 grep -E '^\{"state":' "$RAW_LOG" >"$APPLICATION_LOG" || true
 
 # The responder is gated on this marker, so its presence proves that the
@@ -149,7 +149,7 @@ test -s "$RESPONSE_READY_FILE" || {
 }
 
 # Verify responder ack.
-runtime logs "$RESPONDER" 2>&1 >"$CONSUMER_LOG"
+runtime logs "$RESPONDER" >"$CONSUMER_LOG" 2>&1
 grep -q '"state":"ack"' "$CONSUMER_LOG" || { echo "CoatyJS responder did not ack; see $CONSUMER_LOG" >&2; exit 1; }
 test -s "$ACK_FILE" || { echo "CoatyJS responder acknowledgement marker is missing: $ACK_FILE" >&2; exit 1; }
 
