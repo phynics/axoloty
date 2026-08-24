@@ -13,11 +13,12 @@ const inputs = fs.readFileSync(".devcontainer/image-inputs.sh", "utf8");
 const makefile = fs.readFileSync("Makefile", "utf8");
 const setupAction = fs.readFileSync(".github/actions/setup-container/action.yml", "utf8");
 const ciWorkflow = fs.readFileSync(".github/workflows/ci.yml", "utf8");
+const wireWorkflow = fs.readFileSync(".github/workflows/wire-compatibility.yml", "utf8");
 const swiftPMWorkflows = [
   ciWorkflow,
   fs.readFileSync(".github/workflows/docs.yml", "utf8"),
   fs.readFileSync(".github/workflows/fuzz.yml", "utf8"),
-  fs.readFileSync(".github/workflows/wire-compatibility.yml", "utf8"),
+  wireWorkflow,
 ];
 const imageWorkflow = fs.readFileSync(".github/workflows/container-image.yml", "utf8");
 const openImageLockPR = fs.readFileSync(".github/scripts/open-image-lock-pr.sh", "utf8");
@@ -558,11 +559,20 @@ test("published content-keyed images avoid repeated fallback builds and refresh 
 test("required CI preserves the plan budget and uploads durable run evidence", () => {
   assert.match(requiredCIJob, /timeout-minutes: 90/);
   assert.match(requiredCIJob, /AXOLOTY_RUNS_DIR: \.testing\/runs/);
-  assert.match(requiredCIJob, /AXOLOTY_TOOL_CONTAINER_ENV_VARS="AXOLOTY_OUTPUT AXOLOTY_RUNS_DIR"/);
+  assert.match(requiredCIJob, /CONTAINER_CREATE_TIMEOUT_SECONDS: "300"/);
+  assert.match(requiredCIJob, /AXOLOTY_TOOL_CONTAINER_ENV_VARS="AXOLOTY_OUTPUT CONTAINER_CREATE_TIMEOUT_SECONDS AXOLOTY_RUNS_DIR"/);
   assert.match(requiredCIJob, /Upload verification run diagnostics[\s\S]*\.testing\/required-checks\.log[\s\S]*\.testing\/runs\/\*\*[\s\S]*if-no-files-found: warn/);
   assert.match(requiredCIJob, /Summarize verification evidence[\s\S]*manifest\.json[\s\S]*verifier\.log/);
   assert.doesNotMatch(requiredCIJob, /COVERAGE_BUILD_DIR|\.testing\/coverage|Upload coverage/);
   assert.match(requiredCIJob, /Save Swift compiler cache[\s\S]*if: success\(\)/);
+});
+
+test("live wire allows bounded container creation on busy runners", () => {
+  assert.match(wireWorkflow, /CONTAINER_CREATE_TIMEOUT_SECONDS: "300"/);
+  assert.match(
+    wireWorkflow,
+    /make test-wire-live[^\n]*AXOLOTY_TOOL_CONTAINER_ENV_VARS=CONTAINER_CREATE_TIMEOUT_SECONDS/,
+  );
 });
 
 test("coverage is an explicit job with a truthful missing-report failure", () => {

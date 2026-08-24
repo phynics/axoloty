@@ -40,6 +40,9 @@ concurrency:
 # with a comment/description citing the recorded decision (issue/PR/link) and
 # its expiry. See docs/wire-compatibility.md.
 env:
+  # Rootless Podman may need longer than the default two minutes to create the
+  # first container after image setup on a busy hosted runner.
+  CONTAINER_CREATE_TIMEOUT_SECONDS: "300"
   WIRE_EXEMPTION_LABEL: live-wire-exemption
   WIRE_OUTPUT_DIR: .testing/runs/wire-${{ github.run_id }}-${{ github.run_attempt }}/wire
   WIRE_CI_EVIDENCE_ROOT: .testing/runs/wire-${{ github.run_id }}-${{ github.run_attempt }}/ci
@@ -222,7 +225,7 @@ jobs:
           node Tests/Support/WireCompatibility/Live/record-ci-run.mjs \
             --file "$WIRE_CI_EVIDENCE_ROOT/run-status.json" --phase capture --capture-state running || true
           set +e
-          make test-wire-live CONTAINER_RUNTIME=podman BUILD_DIR=.build BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache AXOLOTY_HOST_RUNTIME_BRIDGE=1
+          make test-wire-live CONTAINER_RUNTIME=podman BUILD_DIR=.build BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache AXOLOTY_HOST_RUNTIME_BRIDGE=1 AXOLOTY_TOOL_CONTAINER_ENV_VARS=CONTAINER_CREATE_TIMEOUT_SECONDS
           capture_status=$?
           set -e
           if [ "$capture_status" -eq 0 ]; then capture_state=succeeded; else capture_state=failed; fi
