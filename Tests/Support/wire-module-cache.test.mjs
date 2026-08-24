@@ -65,6 +65,9 @@ test("live producer subjects require a run-scoped peer acknowledgement", () => {
     assert.match(subject, /awaitPeerAcknowledgement\(/, `${subjectPath} must await peer evidence`);
     assert.match(runner, /WIRE_PEER_ACK_FILE=/, `${runnerPath} must pass the marker path`);
     assert.match(runner, /WIRE_PEER_ACK_TOKEN=/, `${runnerPath} must pass a run-scoped token`);
+    assert.match(runner, /ACK_DIR=.*peer-acks/, `${runnerPath} must isolate peer-writable evidence`);
+    assert.match(runner, /chmod 0777 "\$ACK_DIR"/, `${runnerPath} must permit the unprivileged peer to write`);
+    assert.match(runner, /-v "\$ACK_DIR:\/peer-acks"/, `${runnerPath} must mount only the peer acknowledgement directory`);
     assert.match(runner, /rm -f[^\n]*ACK|rm -f[^\n]*ack/i, `${runnerPath} must clear stale markers`);
     assert.match(peer, /phase: "peer-ack"/, `${peerPath} must write phase-labelled evidence`);
     assert.match(peer, /WIRE_PEER_ACK_TOKEN/, `${peerPath} must bind evidence to the run token`);

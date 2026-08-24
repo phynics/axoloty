@@ -33,7 +33,8 @@ JS_IMAGE="${JS_IMAGE:-localhost/coatyswift-wire-coatyjs:2.4.0}"
 ACTOR_LOG=$(mktemp)
 OUTPUT_DIR="${WIRE_OUTPUT_DIR:-$ROOT_DIR/.testing/wire/io/associate}"
 ACK_BASENAME="io-associate-$RUN_ID.peer-ack.json"
-ACK_FILE="$OUTPUT_DIR/$ACK_BASENAME"
+ACK_DIR="$OUTPUT_DIR/peer-acks"
+ACK_FILE="$ACK_DIR/$ACK_BASENAME"
 ACK_TOKEN="${RUN_ID}-io-associate"
 SPM_CACHE_DIR="${SPM_CACHE_DIR:-$ROOT_DIR/.swiftpm-cache}"
 SWIFTPM_MODULECACHE_OVERRIDE=/tmp/axoloty-wire-module-cache
@@ -44,7 +45,8 @@ cleanup() {
     rm -f "$ACTOR_LOG"
 }
 trap cleanup EXIT INT TERM
-mkdir -p "$OUTPUT_DIR"
+mkdir -p "$OUTPUT_DIR" "$ACK_DIR"
+chmod 0777 "$ACK_DIR"
 rm -f "$OUTPUT_DIR/io-associate.jsonl" "$ACK_FILE"
 
 runtime build -t "$DEV_IMAGE" -f "$ROOT_DIR/.devcontainer/Dockerfile" "$ROOT_DIR"
@@ -72,10 +74,10 @@ sleep 0.5
 # it publishes (see Task 0 baseline: ~54s to ready).
 runtime run -d --name "$ACTOR" --network "$NETWORK" --entrypoint node \
     -v "$IO_DIR/coatyjs-io-runner.js:/agent/coatyjs-io-runner.js:ro,Z" \
-    -v "$OUTPUT_DIR:/artifacts" \
+    -v "$ACK_DIR:/peer-acks" \
     -e BROKER_URL="mqtt://$BROKER:1883" -e COATY_NAMESPACE=wire-compat-v1 \
     -e ROLE=actor -e IO_EXPECTED_VALUES=1 -e WIRE_SCENARIO=io-associate \
-    -e WIRE_PEER_ACK_FILE="/artifacts/$ACK_BASENAME" -e WIRE_PEER_ACK_TOKEN="$ACK_TOKEN" \
+    -e WIRE_PEER_ACK_FILE="/peer-acks/$ACK_BASENAME" -e WIRE_PEER_ACK_TOKEN="$ACK_TOKEN" \
     -e SCENARIO_TIMEOUT_MS=600000 \
     "$JS_IMAGE" /agent/coatyjs-io-runner.js >/dev/null
 
@@ -91,7 +93,7 @@ grep -q '"state":"ready"' "$ACTOR_LOG" || { cat "$ACTOR_LOG" >&2; exit 1; }
 runtime run --rm --network "$NETWORK" -v "$ROOT_DIR:/workspace" -v "$OUTPUT_DIR:/artifacts" -v "$SPM_CACHE_DIR:/swiftpm-cache" -w /workspace \
     -e WIRE_IO_MODERN_TO_JS_LIVE=1 -e WIRE_BROKER_HOST="$BROKER" \
     -e WIRE_BROKER_PORT=1883 -e WIRE_NAMESPACE=wire-compat-v1 \
-    -e WIRE_PEER_ACK_FILE="/artifacts/$ACK_BASENAME" -e WIRE_PEER_ACK_TOKEN="$ACK_TOKEN" \
+    -e WIRE_PEER_ACK_FILE="/artifacts/peer-acks/$ACK_BASENAME" -e WIRE_PEER_ACK_TOKEN="$ACK_TOKEN" \
     -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
     "$DEV_IMAGE" swift test -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
     --cache-path /swiftpm-cache --disable-automatic-resolution --filter AxolotyIoAssociateTests

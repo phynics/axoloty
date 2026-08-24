@@ -20,6 +20,7 @@ PROBE="axoloty-wire-core-probe-$RUN_ID"
 DEV_IMAGE="${DEV_IMAGE:-localhost/axoloty-dev:latest}"
 JS_IMAGE="${JS_IMAGE:-localhost/coatyswift-wire-coatyjs:2.4.0}"
 OUTPUT_DIR="${WIRE_OUTPUT_DIR:-$ROOT_DIR/.testing/wire}"
+ACK_DIR="$OUTPUT_DIR/peer-acks"
 SPM_CACHE_DIR="${SPM_CACHE_DIR:-$ROOT_DIR/.swiftpm-cache}"
 BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/.build}"
 SWIFTPM_MODULECACHE_OVERRIDE=/tmp/axoloty-wire-module-cache
@@ -34,7 +35,8 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-mkdir -p "$OUTPUT_DIR" "$BUILD_DIR" "$SPM_CACHE_DIR"
+mkdir -p "$OUTPUT_DIR" "$ACK_DIR" "$BUILD_DIR" "$SPM_CACHE_DIR"
+chmod 0777 "$ACK_DIR"
 runtime build -t "$DEV_IMAGE" -f "$ROOT_DIR/.devcontainer/Dockerfile" "$ROOT_DIR"
 runtime build -t "$JS_IMAGE" "$REFERENCE_DIR/coatyjs"
 # Build before starting timeout-bound consumers. A clean test build can take
@@ -59,7 +61,7 @@ SCENARIOS="${WIRE_SCENARIOS:-deadvertise channel discover-resolve query-retrieve
 for scenario in $SCENARIOS; do
     capture="$OUTPUT_DIR/axoloty-$scenario.jsonl"
     ack_basename="axoloty-$scenario-$RUN_ID.peer-ack.json"
-    ack_file="$OUTPUT_DIR/$ack_basename"
+    ack_file="$ACK_DIR/$ack_basename"
     ack_token="${RUN_ID}-axoloty-$scenario"
     CAPTURE_READY="$OUTPUT_DIR/axoloty-$scenario.capture-ready"
     rm -f "$capture" "$CAPTURE_READY" "$ack_file"
@@ -81,10 +83,10 @@ for scenario in $SCENARIOS; do
 
     runtime run -d --name "$CONSUMER" --network "$NETWORK" --entrypoint node \
         -v "$REVERSE_DIR/coatyjs-core-consumer.js:/agent/coatyjs-core-consumer.js:ro,Z" \
-        -v "$OUTPUT_DIR:/artifacts" \
+        -v "$ACK_DIR:/peer-acks" \
         -e BROKER_URL="mqtt://$BROKER:1883" -e COATY_NAMESPACE=wire-compat-v1 \
         -e SCENARIO="$scenario" -e SCENARIO_TIMEOUT_MS=60000 \
-        -e WIRE_PEER_ACK_FILE="/artifacts/$ack_basename" -e WIRE_PEER_ACK_TOKEN="$ack_token" \
+        -e WIRE_PEER_ACK_FILE="/peer-acks/$ack_basename" -e WIRE_PEER_ACK_TOKEN="$ack_token" \
         "$JS_IMAGE" /agent/coatyjs-core-consumer.js >/dev/null
     for _ in $(seq 1 30); do
         runtime logs "$CONSUMER" >"$CONSUMER_LOG" 2>&1
@@ -96,7 +98,7 @@ for scenario in $SCENARIOS; do
     runtime run --rm --network "$NETWORK" -v "$ROOT_DIR:/workspace" -v "$OUTPUT_DIR:/artifacts" -v "$BUILD_DIR:/workspace/.build" -v "$SPM_CACHE_DIR:/swiftpm-cache" -w /workspace \
         -e WIRE_REVERSE_LIVE=1 -e WIRE_SCENARIO="$scenario" \
         -e WIRE_BROKER_HOST="$BROKER" -e WIRE_BROKER_PORT=1883 -e WIRE_NAMESPACE=wire-compat-v1 \
-        -e WIRE_PEER_ACK_FILE="/artifacts/$ack_basename" -e WIRE_PEER_ACK_TOKEN="$ack_token" \
+        -e WIRE_PEER_ACK_FILE="/artifacts/peer-acks/$ack_basename" -e WIRE_PEER_ACK_TOKEN="$ack_token" \
         -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
         "$DEV_IMAGE" swift test -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
         --skip-build --cache-path /swiftpm-cache --disable-automatic-resolution --filter AxolotyCoreProducerTests
