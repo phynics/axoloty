@@ -97,6 +97,33 @@ test("call-return lifecycle responders receive a run-scoped acknowledgement", ()
   assert.match(peer, /phase: "peer-ack"/);
 });
 
+test("call-return lifecycle responders wait for subject response readiness", () => {
+  const subject = readFileSync(
+    path.join(root, "Tests/WireCompatibility/Lifecycle/AxolotyLifecycleSubjectTests.swift"),
+    "utf8",
+  );
+  const runner = readFileSync(
+    path.join(root, "Tests/Support/WireCompatibility/Lifecycle/Live/run-lifecycle-call-return.sh"),
+    "utf8",
+  );
+  const peer = readFileSync(
+    path.join(root, "Tests/Support/WireCompatibility/Reverse/coatyjs-core-consumer.js"),
+    "utf8",
+  );
+
+  assert.match(subject, /requestReceipt == \.accepted/);
+  assert.match(subject, /WIRE_RESPONSE_READY/);
+  assert.match(subject, /phase: "response-ready"/);
+  assert.match(runner, /RESPONSE_READY_FILE=/);
+  assert.match(runner, /rm -f[^\n]*RESPONSE_READY_FILE/);
+  assert.match(runner, /-e WIRE_RESPONSE_READY_FILE=/);
+  assert.match(runner, /-e WIRE_RESPONSE_READY=/);
+  assert.match(runner, /-v "\$ACK_DIR:\/peer-acks"/);
+  assert.match(peer, /waitForResponseReady\("wire-fixture-operation"\)/);
+  assert.match(peer, /phase: "response-ready-wait"/);
+  assert.match(peer, /response-ready marker does not match/);
+});
+
 test("wire CI summary prints evidence paths without shell substitution", () => {
   const workflow = readFileSync(
     path.join(root, ".github/workflows/wire-compatibility.yml"),
