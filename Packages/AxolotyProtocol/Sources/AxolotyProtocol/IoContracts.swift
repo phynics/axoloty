@@ -127,21 +127,48 @@ public protocol IoValue: IoEndpointValue {
 
 /// JSON IO value contract.
 public protocol JSONIoValue: IoValue {
+    /// Decodes a validated borrowed JSON value.
+    ///
+    /// - Parameter value: Validated JSON bytes borrowed for the initializer call.
+    /// - Throws: ``IoValueError`` when the JSON value cannot initialize this type.
     init(ioJSON value: borrowing JSONValueView) throws(IoValueError)
+
+    /// Encodes this value into bounded JSON output.
+    ///
+    /// - Parameter output: Destination for one complete JSON value.
+    /// - Throws: ``IoValueError`` when encoding fails or exceeds the output capacity.
     borrowing func encodeIoJSON(into output: inout IoJSONOutput) throws(IoValueError)
 }
 /// Binary IO value contract.
 public protocol BinaryIoValue: IoValue {
+    /// Decodes borrowed binary payload bytes.
+    ///
+    /// - Parameter ioBytes: Complete payload bytes borrowed for the initializer call.
+    /// - Throws: ``IoValueError`` when the bytes cannot initialize this type.
     init(ioBytes: borrowing ByteSlice) throws(IoValueError)
+
+    /// Encodes this value into bounded binary output.
+    ///
+    /// - Parameter output: Destination for one complete binary payload.
+    /// - Throws: ``IoValueError`` when encoding fails or exceeds the output capacity.
     borrowing func encodeIoBytes(into output: inout IoByteOutput) throws(IoValueError)
 }
 extension IoValue {
+    /// Representation fixed by the conforming value type.
     public static var fixedRepresentation: IoValueRepresentation? { representation }
 }
 
 extension JSONIoValue {
+    /// JSON representation supplied by the refinement.
     public static var representation: IoValueRepresentation { .json }
 
+    /// Decodes a complete JSON endpoint payload.
+    ///
+    /// - Parameters:
+    ///   - payload: Complete borrowed JSON payload bytes.
+    ///   - representation: Representation selected during endpoint registration.
+    /// - Returns: The decoded application value.
+    /// - Throws: ``IoValueError`` when the representation or payload is invalid.
     public static func decodeIoPayload(
         _ payload: borrowing ByteSlice,
         representation: IoValueRepresentation
@@ -162,6 +189,13 @@ extension JSONIoValue {
         return decoded
     }
 
+    /// Encodes a JSON endpoint payload for a synchronous visitor.
+    ///
+    /// - Parameters:
+    ///   - representation: Representation selected during endpoint registration.
+    ///   - body: Nonescaping visitor for the encoded payload bytes.
+    /// - Returns: The visitor result.
+    /// - Throws: ``IoValueError`` or an error thrown by `body`.
     public borrowing func withEncodedIoPayload<R>(
         representation: IoValueRepresentation,
         _ body: (borrowing ByteSlice) throws -> R
@@ -174,8 +208,16 @@ extension JSONIoValue {
 }
 
 extension BinaryIoValue {
+    /// Binary representation supplied by the refinement.
     public static var representation: IoValueRepresentation { .binary }
 
+    /// Decodes a complete binary endpoint payload.
+    ///
+    /// - Parameters:
+    ///   - payload: Complete borrowed binary payload bytes.
+    ///   - representation: Representation selected during endpoint registration.
+    /// - Returns: The decoded application value.
+    /// - Throws: ``IoValueError`` when the representation or payload is invalid.
     public static func decodeIoPayload(
         _ payload: borrowing ByteSlice,
         representation: IoValueRepresentation
@@ -184,6 +226,13 @@ extension BinaryIoValue {
         return try Self(ioBytes: payload)
     }
 
+    /// Encodes a binary endpoint payload for a synchronous visitor.
+    ///
+    /// - Parameters:
+    ///   - representation: Representation selected during endpoint registration.
+    ///   - body: Nonescaping visitor for the encoded payload bytes.
+    /// - Returns: The visitor result.
+    /// - Throws: ``IoValueError`` or an error thrown by `body`.
     public borrowing func withEncodedIoPayload<R>(
         representation: IoValueRepresentation,
         _ body: (borrowing ByteSlice) throws -> R
@@ -198,32 +247,59 @@ extension BinaryIoValue {
 /// A fixed-capacity JSON writer.
 public struct IoJSONOutput: ~Copyable, Sendable {
     private var value: BoundedJSONValue<512> = BoundedJSONValue()
+
+    /// Creates an empty bounded JSON output.
     public init() {}
+
     /// Copies one complete JSON value.
+    ///
+    /// - Parameter bytes: Complete validated or unvalidated JSON value bytes.
+    /// - Throws: ``IoValueError`` when the bytes are invalid or exceed capacity.
     public mutating func writeRaw(_ bytes: ByteSlice) throws(IoValueError) {
         do throws(ProtocolError) { value = try BoundedJSONValue(copying: bytes) }
         catch { throw error.code == .capacityExceeded ? .capacityExceeded : .invalidValue }
     }
     /// Writes a static JSON literal.
+    ///
+    /// - Parameter literal: Complete static JSON literal to copy.
+    /// - Throws: ``IoValueError`` when the literal is invalid or exceeds capacity.
     public mutating func write(_ literal: StaticString) throws(IoValueError) { try writeRaw(ByteSlice(bytes: literal.utf8Start, length: literal.utf8CodeUnitCount)) }
     /// Borrows the encoded value.
+    ///
+    /// - Parameter body: Nonescaping visitor for the encoded bytes.
+    /// - Returns: The visitor result.
+    /// - Throws: An error thrown by `body`.
     public borrowing func withBytes<R>(_ body: (borrowing ByteSlice) throws -> R) rethrows -> R { try value.withBytes(body) }
     /// Finishes the output.
+    ///
+    /// - Returns: The complete bounded JSON value.
     public consuming func finish() -> BoundedJSONValue<512> { value }
 }
 
 /// A fixed-capacity binary writer.
 public struct IoByteOutput: ~Copyable, Sendable {
     private var value: BoundedIoBytes<512> = BoundedIoBytes()
+
+    /// Creates an empty bounded binary output.
     public init() {}
+
     /// Copies bytes into the output.
+    ///
+    /// - Parameter bytes: Complete binary payload bytes to copy.
+    /// - Throws: ``IoValueError`` when the payload exceeds capacity.
     public mutating func write(_ bytes: ByteSlice) throws(IoValueError) {
         do throws(ProtocolError) { value = try BoundedIoBytes(copying: bytes) }
         catch { throw error.code == .capacityExceeded ? .capacityExceeded : .invalidValue }
     }
     /// Borrows the encoded value.
+    ///
+    /// - Parameter body: Nonescaping visitor for the encoded bytes.
+    /// - Returns: The visitor result.
+    /// - Throws: An error thrown by `body`.
     public borrowing func withBytes<R>(_ body: (borrowing ByteSlice) throws -> R) rethrows -> R { try value.withBytes(body) }
     /// Finishes the output.
+    ///
+    /// - Returns: The complete bounded binary payload.
     public consuming func finish() -> BoundedIoBytes<512> { value }
 }
 

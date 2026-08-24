@@ -7,6 +7,15 @@ import SwiftSyntaxMacros
 
 /// Generates a concrete C-convention IO actor trampoline and conformance.
 public struct StaticIoActorMacro: MemberMacro, ExtensionMacro {
+    /// Generates the concrete value alias and noncapturing handler entry.
+    ///
+    /// - Parameters:
+    ///   - node: Attached `StaticIoActor` attribute.
+    ///   - declaration: Enum receiving the generated members.
+    ///   - protocols: Protocols requested by the macro expansion host.
+    ///   - context: Compiler expansion and diagnostic context.
+    /// - Returns: Generated handler members, or an empty array after diagnosis.
+    /// - Throws: An expansion error reported by SwiftSyntax.
     public static func expansion(
         of node: AttributeSyntax,
         providingMembersOf declaration: some DeclGroupSyntax,
@@ -50,6 +59,16 @@ public struct StaticIoActorMacro: MemberMacro, ExtensionMacro {
         """)]
     }
 
+    /// Generates the ``StaticIoActorHandler`` conformance extension.
+    ///
+    /// - Parameters:
+    ///   - node: Attached `StaticIoActor` attribute.
+    ///   - declaration: Enum receiving the generated conformance.
+    ///   - type: Type syntax naming the annotated enum.
+    ///   - protocols: Protocols requested by the macro expansion host.
+    ///   - context: Compiler expansion and diagnostic context.
+    /// - Returns: The generated conformance extension, or an empty array when invalid.
+    /// - Throws: An expansion error reported by SwiftSyntax.
     public static func expansion(
         of node: AttributeSyntax,
         attachedTo declaration: some DeclGroupSyntax,
