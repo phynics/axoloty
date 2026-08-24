@@ -70,3 +70,40 @@ test("live producer subjects require a run-scoped peer acknowledgement", () => {
     assert.match(peer, /WIRE_PEER_ACK_TOKEN/, `${peerPath} must bind evidence to the run token`);
   }
 });
+
+test("call-return lifecycle responders receive a run-scoped acknowledgement", () => {
+  const runner = readFileSync(
+    path.join(root, "Tests/Support/WireCompatibility/Lifecycle/Live/run-lifecycle-call-return.sh"),
+    "utf8",
+  );
+  const peer = readFileSync(
+    path.join(root, "Tests/Support/WireCompatibility/Reverse/coatyjs-core-consumer.js"),
+    "utf8",
+  );
+
+  assert.match(runner, /ACK_BASENAME=/);
+  assert.match(runner, /ACK_TOKEN=/);
+  assert.match(runner, /-v "\$OUT:\/artifacts"/);
+  assert.match(runner, /-e WIRE_PEER_ACK_FILE="\/artifacts\/\$ACK_BASENAME"/);
+  assert.match(runner, /-e WIRE_PEER_ACK_TOKEN="\$ACK_TOKEN"/);
+  assert.match(runner, /test -s "\$ACK_FILE"/);
+  assert.match(peer, /scenario === "duplicate-reply"/);
+  assert.match(peer, /scenario === "late-reply"/);
+  assert.match(peer, /phase: "peer-ack"/);
+});
+
+test("wire CI summary prints evidence paths without shell substitution", () => {
+  const workflow = readFileSync(
+    path.join(root, ".github/workflows/wire-compatibility.yml"),
+    "utf8",
+  );
+  const summaryLines = workflow
+    .split("\n")
+    .filter((line) => line.includes("CI run record:") || line.includes("Runner/owned-runtime diagnostics:"));
+
+  assert.equal(summaryLines.length, 2);
+  for (const line of summaryLines) {
+    assert.equal((line.match(/\\`/g) ?? []).length, 2, line);
+    assert.doesNotMatch(line, /(^|[^\\])`/);
+  }
+});

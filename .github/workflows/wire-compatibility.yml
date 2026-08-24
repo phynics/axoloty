@@ -328,6 +328,6 @@ jobs:
             else
               echo "- **Protocol-affecting**: live CoatyJS capture + verifier enforced (or recorded as unavailable)."
             fi
-            echo "- CI run record: `$WIRE_CI_EVIDENCE_ROOT/run-status.json`"
-            echo "- Runner/owned-runtime diagnostics: `$WIRE_CI_EVIDENCE_ROOT/runner-and-owned-runtime-inventory.txt`"
+            echo "- CI run record: \`$WIRE_CI_EVIDENCE_ROOT/run-status.json\`"
+            echo "- Runner/owned-runtime diagnostics: \`$WIRE_CI_EVIDENCE_ROOT/runner-and-owned-runtime-inventory.txt\`"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -45,6 +45,9 @@ CAPTURE_READY="$OUT/axoloty-$SCENARIO.capture-ready"
 CONSUMER_LOG="$OUT/coatyjs-$SCENARIO.consumer.log"
 APPLICATION_LOG="$OUT/axoloty-$SCENARIO.application.jsonl"
 RAW_LOG="$OUT/axoloty-$SCENARIO.subject.log"
+ACK_BASENAME="axoloty-$SCENARIO-$RUN_ID.peer-ack.json"
+ACK_FILE="$OUT/$ACK_BASENAME"
+ACK_TOKEN="${RUN_ID}-lifecycle-$SCENARIO"
 DEADLINE_SECONDS="${WIRE_LIFECYCLE_DEADLINE_SECONDS:-600}"
 RUNTIME_LABELS=(
     --label "io.axoloty.managed-by=${WIRE_RUNTIME_MANAGED_BY:-axoloty-wire-lifecycle}"
@@ -62,7 +65,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 mkdir -p "$OUT"
-rm -f "$CAPTURE" "$CAPTURE_READY" "$CONSUMER_LOG" "$APPLICATION_LOG" "$RAW_LOG"
+rm -f "$CAPTURE" "$CAPTURE_READY" "$CONSUMER_LOG" "$APPLICATION_LOG" "$RAW_LOG" "$ACK_FILE"
 
 runtime build -t "$DEV_IMAGE" -f "$ROOT/.devcontainer/Dockerfile" "$ROOT"
 runtime build -t "$JS_IMAGE" "$REF"
@@ -96,9 +99,11 @@ wait_for "capture subscription" "test -f '$CAPTURE_READY'"
 runtime run -d --name "$RESPONDER" --network "$NETWORK" \
     --entrypoint node "${RUNTIME_LABELS[@]}" \
     -v "$REVERSE/coatyjs-core-consumer.js:/agent/coatyjs-core-consumer.js:ro" \
+    -v "$OUT:/artifacts" \
     -e BROKER_URL="mqtt://$BROKER:1883" -e COATY_NAMESPACE="$NAMESPACE" \
     -e SCENARIO="$SCENARIO" -e SCENARIO_TIMEOUT_MS=30000 \
     -e LIFECYCLE_LATE_REPLY_DELAY_MS="${LIFECYCLE_LATE_REPLY_DELAY_MS:-4000}" \
+    -e WIRE_PEER_ACK_FILE="/artifacts/$ACK_BASENAME" -e WIRE_PEER_ACK_TOKEN="$ACK_TOKEN" \
     "$JS_IMAGE" /agent/coatyjs-core-consumer.js >/dev/null
 responder_ready() { runtime logs "$RESPONDER" 2>&1 >"$CONSUMER_LOG"; grep -q '"state":"ready"' "$CONSUMER_LOG"; }
 wait_for "CoatyJS Call responder readiness" responder_ready
@@ -133,6 +138,7 @@ grep -E '^\{"state":' "$RAW_LOG" >"$APPLICATION_LOG" || true
 # Verify responder ack.
 runtime logs "$RESPONDER" 2>&1 >"$CONSUMER_LOG"
 grep -q '"state":"ack"' "$CONSUMER_LOG" || { echo "CoatyJS responder did not ack; see $CONSUMER_LOG" >&2; exit 1; }
+test -s "$ACK_FILE" || { echo "CoatyJS responder acknowledgement marker is missing: $ACK_FILE" >&2; exit 1; }
 
 # Verify capture.
 runtime rm -f "$PROBE" >/dev/null 2>&1 || true
