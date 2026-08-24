@@ -136,7 +136,7 @@ func checkPlanPrintsStableJSON() {
     #expect(plan?.nodes.first(where: { $0.name == "test-tooling" })?.command.arguments == [
         "test", "-Xswiftc", "-warnings-as-errors", "--cache-path", ".swiftpm-cache",
         "--disable-automatic-resolution", "--filter",
-        "AxolotyCommandDispatcherTests|AxolotyTimingTests|AxolotyDeviceLeaseTests|AxolotyDevelopmentServiceTests|AxolotyMQTTServiceTests|AxolotyServeParserTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyMCPTests",
+        "AxolotyCommandDispatcherTests|AxolotyTimingTests|AxolotyDeviceLeaseTests|AxolotyResourceLeaseTests|AxolotyDevelopmentServiceTests|AxolotyMQTTServiceTests|AxolotyServeParserTests|RepositoryAuthorityTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyMCPTests",
     ])
     #expect(plan?.nodes.allSatisfy { timeout in
         guard let seconds = timeout.command.timeoutSeconds else { return false }
@@ -654,7 +654,7 @@ func testToolingUsesOnlyItsCheckPlanDependencyClosure() throws {
     #expect(runner.commands.last?.arguments == [
         "test", "-Xswiftc", "-warnings-as-errors", "--cache-path", ".swiftpm-cache",
         "--disable-automatic-resolution", "--filter",
-        "AxolotyCommandDispatcherTests|AxolotyTimingTests|AxolotyDeviceLeaseTests|AxolotyDevelopmentServiceTests|AxolotyMQTTServiceTests|AxolotyServeParserTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyMCPTests",
+        "AxolotyCommandDispatcherTests|AxolotyTimingTests|AxolotyDeviceLeaseTests|AxolotyResourceLeaseTests|AxolotyDevelopmentServiceTests|AxolotyMQTTServiceTests|AxolotyServeParserTests|RepositoryAuthorityTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyMCPTests",
     ])
 }
 
