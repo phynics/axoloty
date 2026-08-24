@@ -179,7 +179,7 @@ struct ProtocolProcessorTests {
             topic: "coaty/3/test/ADV/\(sourceText)", payload: advertise
         ) { frame in
             var sink = InlineProtocolActionSink<1>()
-            return inbound.processInbound(frame, nowMS: 1, sink: &sink)
+            return inbound.processInbound(.profile(frame), nowMS: 1, sink: &sink)
         }
         let outboundAdvertise = try advertise.withUTF8 { bytes in
             var sink = InlineProtocolActionSink<2>()
@@ -200,7 +200,7 @@ struct ProtocolProcessorTests {
             topic: "coaty/3/test/DAD/\(sourceText)", payload: deadvertise
         ) { frame in
             var sink = InlineProtocolActionSink<1>()
-            return inbound.processInbound(frame, nowMS: 2, sink: &sink)
+            return inbound.processInbound(.profile(frame), nowMS: 2, sink: &sink)
         }
         let outboundDeadvertise = try deadvertise.withUTF8 { bytes in
             var sink = InlineProtocolActionSink<1>()
@@ -221,7 +221,7 @@ struct ProtocolProcessorTests {
             topic: "coaty/3/test/ASC/\(sourceText)", payload: associate
         ) { frame in
             var sink = InlineProtocolActionSink<1>()
-            return inbound.processInbound(frame, nowMS: 3, sink: &sink)
+            return inbound.processInbound(.profile(frame), nowMS: 3, sink: &sink)
         }
         let outboundAssociate = try associate.withUTF8 { bytes in
             var sink = InlineProtocolActionSink<1>()
