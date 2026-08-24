@@ -126,7 +126,6 @@ let package = Package(
                     package: "swift-nio-transport-services",
                     condition: .when(platforms: [.macOS, .iOS])
                 ),
-                .product(name: "Logging", package: "swift-log"),
                 .product(name: "ErrorKit", package: "ErrorKit"),
                 .product(name: "IkigaJSON", package: "swift-json"),
             ],
@@ -321,6 +320,7 @@ let package = Package(
                 "AxolotyInspectorCore",
                 "AxolotyInspectorRuntime",
                 .product(name: "MCP", package: "swift-sdk"),
+                .product(name: "Logging", package: "swift-log"),
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOPosix", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
