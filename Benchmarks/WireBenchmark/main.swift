@@ -249,7 +249,7 @@ func validateAllocations() {
                 if (try? AssociateWireData(from: message.reader())) != nil { sink += 1 }
                 var actionSink = InlineProtocolActionSink<1>()
                 if let frame = try? BorrowedProtocolFrame(topic: message.topic, payload: message.payload) {
-                    _ = processor.processInbound(frame, nowMS: 1, sink: &actionSink)
+                    _ = processor.processInbound(.profile(frame), nowMS: 1, sink: &actionSink)
                 }
             }
         }

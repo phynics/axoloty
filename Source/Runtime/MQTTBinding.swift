@@ -147,29 +147,6 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         try await client.unsubscribe(RuntimeTopicBuilder.subscribeAllCorrelatedTopics(namespace: namespace))
     }
 
-    /// Publishes a minimal modern Identity advertisement before runtime ready.
-    public func advertise(identity: RuntimeIdentity?, namespace: String) async throws {
-        guard let identity else { return }
-        let payload = try Self.identityPayload(identity)
-        let key = try ProtocolRoutingKey(capability: .advertise, sourceID: identity.id)
-        try await client.publish(
-            topic: Self.topic(
-                for: key,
-                namespace: namespace,
-                eventTypeFilter: Array("Identity".utf8)
-            ),
-            payload: payload
-        )
-    }
-
-    /// Publishes a matching Deadvertise payload during graceful shutdown.
-    public func deadvertise(identity: RuntimeIdentity?, namespace: String) async throws {
-        guard let identity else { return }
-        let payload = Array("[\"\(Self.uuidString(identity.id))\"]".utf8)
-        let key = try ProtocolRoutingKey(capability: .deadvertise, sourceID: identity.id)
-        try await client.publish(topic: Self.topic(for: key, namespace: namespace), payload: payload)
-    }
-
     /// Classifies the binding's exact external compatibility route.
     public func classifyRoute(_ route: ByteSlice) -> ProtocolRouteClassification {
         routeClassifier.classify(route)
@@ -188,16 +165,6 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
             topic += "/\(uuidString(correlationID))"
         }
         return topic
-    }
-
-    private static func identityPayload(_ identity: RuntimeIdentity) throws -> [UInt8] {
-        let object: [String: Any] = [
-            "objectId": uuidString(identity.id),
-            "coreType": "Identity",
-            "objectType": "coaty.Identity",
-            "name": identity.name
-        ]
-        return try JSONSerialization.data(withJSONObject: ["object": object], options: [.sortedKeys]).map { $0 }
     }
 
     static func uuidString(_ value: UUID16) -> String {
