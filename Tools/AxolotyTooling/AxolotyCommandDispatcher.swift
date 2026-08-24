@@ -193,7 +193,7 @@ public struct AxolotyCommandDispatcher: Sendable {
         case ["wire", "verify"]:
             checkResult(requested: ["test-wire"])
         case ["wire", "capture"]:
-            execute(plan: AxolotyCheckPlan.wireCapture)
+            execute(plan: AxolotyCheckPlan.wireCapture(environment: environment))
         case ["embedded", "build"]:
             checkResult(requested: ["embedded-build"])
         case ["embedded", "doctor"]:

@@ -206,7 +206,8 @@ public struct AxolotyCanonicalTestNode: Codable, Equatable, Sendable {
             command: command.commandPlan(
                 filter: filterOverride ?? filter,
                 timeoutSeconds: timeoutSeconds
-            )
+            ),
+            resources: resources
         )
     }
 }

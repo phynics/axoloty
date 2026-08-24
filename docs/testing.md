@@ -289,6 +289,10 @@ for a recorded, expiring reviewed exemption.
   every live-test artifact bundle.
 - Give each scenario a unique MQTT namespace, client IDs, broker network, and
   output directory. Tests must be safe to run concurrently.
+- Root-level Make invocations provide a unique `AXOLOTY_RUN_ID`; wire outputs
+  inherit that run namespace. Collision-prone external resources such as the
+  fixed MQTT port use named cross-process leases with bounded contention
+  diagnostics, while independent named resources remain concurrent.
 - Inject or record clocks, UUIDs, random seeds, and retry schedules.
 - Never depend on test execution order or artifacts from an earlier test.
 - Poll an observable condition with a deadline instead of sleeping for an

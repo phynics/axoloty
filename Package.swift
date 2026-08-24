@@ -281,9 +281,14 @@ let package = Package(
             dependencies: ["AxolotyTooling"],
             path: "Tools/AxolotyDeviceLeaseProbe"
         ),
+        .executableTarget(
+            name: "AxolotyResourceLeaseProbe",
+            dependencies: ["AxolotyTooling"],
+            path: "Tools/AxolotyResourceLeaseProbe"
+        ),
         .testTarget(
             name: "AxolotyToolingTests",
-            dependencies: ["AxolotyTooling", "AxolotyDeviceLeaseProbe"],
+            dependencies: ["AxolotyTooling", "AxolotyDeviceLeaseProbe", "AxolotyResourceLeaseProbe"],
             path: "Tools/AxolotyToolingTests",
             resources: [.copy("Fixtures/legacy-check-plan-v1.json")]
         ),

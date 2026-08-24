@@ -15,6 +15,21 @@ CACHE_NAMESPACE ?= swift-6.3-linux
 REPOSITORY_NAME ?= $(shell git rev-parse --git-common-dir 2>/dev/null | sed 's|/.git$$||' | xargs basename 2>/dev/null || basename "$(CURDIR)")
 BUILD_CACHE_ROOT ?= /tmp/coaty-swift-build/$(REPOSITORY_NAME)/$(CACHE_NAMESPACE)
 WORKTREE_NAME ?= $(notdir $(CURDIR))
+# Every top-level make invocation owns a distinct mutable-output namespace.
+# AXOLOTY_RUN_ID is inherited by recursive make calls and may be supplied by
+# CI when a workflow needs a stable, externally named run.
+RUN_ID ?= $(AXOLOTY_RUN_ID)
+ifeq ($(strip $(RUN_ID)),)
+RUN_ID := $(shell printf '%s-%s' "$$(date +%s)" "$$$$")
+endif
+AXOLOTY_RUN_ID ?= $(RUN_ID)
+AXOLOTY_RUNS_DIR ?= .testing/runs
+WIRE_OUTPUT_DIR ?= $(AXOLOTY_RUNS_DIR)/$(RUN_ID)/wire
+# This is deliberately container-visible. The path is relative to the
+# mounted worktree, while .swiftpm-cache is the shared cache mount.
+AXOLOTY_RESOURCE_LEASE_ROOT ?= .swiftpm-cache/.axoloty-resource-leases
+AXOLOTY_RUN_CONTAINER_ENV_VARS := AXOLOTY_RUN_ID AXOLOTY_RUNS_DIR WIRE_OUTPUT_DIR AXOLOTY_RESOURCE_LEASE_ROOT
+export AXOLOTY_RUN_ID AXOLOTY_RUNS_DIR WIRE_OUTPUT_DIR AXOLOTY_RESOURCE_LEASE_ROOT
 BUILD_LOCK ?= 1
 export BUILD_LOCK
 ifeq ($(AXOLOTY_DEVCONTAINER),1)
@@ -202,7 +217,7 @@ axoloty-tool: image
 	AXOLOTY_DEVICE="$(AXOLOTY_DEVICE)" \
 	AXOLOTY_DEVICE_LEASE_ROOT="$(AXOLOTY_DEVICE_LEASE_ROOT)" \
 	CONTAINER_OPTIONAL_DEVICES="$(AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES)" \
-	CONTAINER_ENV_VARS="$(AXOLOTY_TOOL_CONTAINER_ENV_VARS) AXOLOTY_DEVICE_LEASE_ROOT AXOLOTY_EMBEDDED_LINKER_CLEAN" \
+	CONTAINER_ENV_VARS="$(AXOLOTY_TOOL_CONTAINER_ENV_VARS) AXOLOTY_DEVICE_LEASE_ROOT AXOLOTY_EMBEDDED_LINKER_CLEAN AXOLOTY_RUN_ID AXOLOTY_RUNS_DIR WIRE_OUTPUT_DIR AXOLOTY_RESOURCE_LEASE_ROOT" \
 	.devcontainer/run.sh /opt/axoloty/bin/axoloty-tool $(AXOLOTY_TOOL_ARGS)
 
 serve-mqtt: image
@@ -233,12 +248,14 @@ test-one: image
 	@filter=$(call shell_quote,$(FILTER)); \
 		test -n "$$filter" || { echo 'FILTER is required' >&2; exit 2; }; \
 		CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+		CONTAINER_ENV_VARS="$(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
 		.devcontainer/run.sh /opt/axoloty/bin/axoloty-tool test-one --filter "$$filter"
 
 test-tier: image
 	@tier=$(call shell_quote,$(TIER)); \
 		test -n "$$tier" || { echo 'TIER is required' >&2; exit 2; }; \
 		CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+		CONTAINER_ENV_VARS="$(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
 		.devcontainer/run.sh /opt/axoloty/bin/axoloty-tool test-tier "$$tier"
 
 explain: image

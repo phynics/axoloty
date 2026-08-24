@@ -109,6 +109,13 @@ per-worktree `BUILD_DIR` and are guarded by a process-aware `flock` unless isola
 evidence that must survive a run belongs under `.testing/`, never only in
 volatile `/tmp`.
 
+Each top-level Make invocation derives an `AXOLOTY_RUN_ID`; live wire evidence
+defaults to `AXOLOTY_RUNS_DIR/<run>/wire`. Collision-prone external resources
+such as `fixed-port-1883` and `wire-containers` use process-aware leases rooted
+at the container-visible `AXOLOTY_RESOURCE_LEASE_ROOT` (by default,
+`.swiftpm-cache/.axoloty-resource-leases`). This directory contains only named
+resource locks and does not serialize SwiftPM operations.
+
 ESP-IDF C/C++ compilation uses the separately mounted
 `AXOLOTY_ESP_IDF_CCACHE_DIR`. Cache entries are namespaced by the pinned IDF
 revision, compiler identity, target, and build purpose, so worktrees reuse

@@ -571,6 +571,33 @@ func wireCaptureRunsEveryNodeThroughSupportedBridge() throws {
 }
 
 @Test
+func wireCaptureForwardsInvocationScopedOutputToEveryNode() throws {
+    let bridge = try BridgeCapabilityFixture()
+    let runner = RecordingSequenceRunner()
+    let outputDirectory = ".testing/runs/concurrent-wire/wire"
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: runner,
+        fileSystem: StubFileSystem(paths: []),
+        environment: bridge.environment.merging([
+            "AXOLOTY_RUN_ID": "concurrent-wire",
+            "WIRE_OUTPUT_DIR": outputDirectory,
+        ]) { _, value in value }
+    )
+
+    let result = dispatcher.run(arguments: ["wire", "capture"])
+
+    #expect(result.exitCode == 0)
+    #expect(runner.commands.allSatisfy { $0.environment["WIRE_OUTPUT_DIR"] == outputDirectory })
+    #expect(runner.commands.allSatisfy { $0.environment["WIRE_RUN_ID"] == "concurrent-wire" })
+    #expect(runner.commands.last?.arguments == [
+        "Tests/Support/WireCompatibility/tool/dist/index.js",
+        "manifest",
+        outputDirectory,
+        "\(outputDirectory)/manifest.json",
+    ])
+}
+
+@Test
 func wireCaptureRejectsHostNodesWithoutBridgeBeforeStartingCommands() throws {
     let runner = RecordingSequenceRunner()
     let dispatcher = AxolotyCommandDispatcher(
