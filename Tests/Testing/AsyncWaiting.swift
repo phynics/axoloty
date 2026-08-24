@@ -236,8 +236,8 @@ func withTimeout<T: Sendable>(
 /// `Element: Sendable` so the captured metatype is `Sendable`.
 ///
 /// Shared by the timeout-racing `nextValue` overload above and by the
-/// long-lived consumer tasks in `SensorThingsMocks` and
-/// `AxolotyLifecycleSubjectTests`, replacing the per-file `@unchecked
+/// long-lived consumer tasks in `AxolotyLifecycleSubjectTests`, replacing the
+/// per-file `@unchecked
 /// Sendable` box copies those files used to carry.
 final class AsyncStreamBox<E: Sendable>: @unchecked Sendable {
     var iterator: AsyncStream<E>.Iterator

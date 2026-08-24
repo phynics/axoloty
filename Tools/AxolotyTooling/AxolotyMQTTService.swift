@@ -66,8 +66,8 @@ struct ServiceDiagnosticRecord: Codable, Sendable, Equatable {
     let metadata: [String: String]
 }
 
-// The tooling target is intentionally independent of Axoloty's LogManager. Keep
-// the same level/message/metadata shape while allowing tests to inject stderr.
+// The tooling target owns this diagnostic shape instead of depending on a
+// product logger. Tests can inject stderr and assert the structured output.
 struct ServiceDiagnosticLogger: Sendable {
     private let output: ServeOutputMode
     private let standardError: FileHandle

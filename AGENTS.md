@@ -101,7 +101,12 @@ Current host package APIs use `AxolotyError`/ErrorKit and must not leak bare for
 
 ### Logging
 
-Use `LogManager.logger(.subsystem)` for existing host concerns. Keep message text stable and put dynamic values in metadata. Correlate multi-hop flows with an existing correlation or attempt identifier, or mint a local one without changing the wire contract.
+Applications choose their `swift-log` bootstrap and filtering policy. Use
+`Logging.Logger` only in targets that declare the `swift-log` product. Keep
+message text stable and put dynamic values in metadata. Correlate multi-hop
+flows with an existing correlation or attempt identifier, or mint a local one
+without changing the wire contract. Use `RuntimeDiagnostics` for bounded host
+runtime counters and streams.
 
 ### Wire compatibility
 

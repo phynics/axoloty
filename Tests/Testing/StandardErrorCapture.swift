@@ -6,12 +6,10 @@ import Foundation
 /// operation runs, so tests can assert that an absorbed (best-effort) failure
 /// actually logged a diagnosable line rather than being silently dropped.
 ///
-/// `LogManager`'s handler writes every level to stderr (see
-/// `AxolotyLogHandler`), so a failure-path test can drive a forced
-/// publication/construction failure and assert the wrapped error chain text
-/// made it to the log stream. The default `LogManager` level is `.error`, so
-/// the captured line is emitted for error-level absorbed failures without any
-/// handler reconfiguration.
+/// A failure-path test can drive a forced publication/construction failure and
+/// assert that the wrapped error-chain text reached the process log stream.
+/// The application-owned logger remains responsible for selecting the emitted
+/// level; this helper only captures the resulting stderr bytes.
 enum StandardErrorCapture {
     private static let lock = NSLock()
 
