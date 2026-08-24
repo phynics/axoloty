@@ -117,9 +117,9 @@ help:
 		'make test-axoloty-semver-consumer  Build clean semver consumers for both products' \
 		'make test          Run the full test suite (starts Mosquitto)' \
 		'make test-tsan     Run broker-backed transport/lifecycle tests under Thread Sanitizer' \
-		'make test-unit     Run ObjectMatcherTests' \
-		'make test-module   Run targeted infrastructure module tests' \
-		'make test-fuzz     Run deterministic property/fuzz tests' \
+		'make test-unit     Run portable object-model and wire value tests' \
+		'make test-module   Run portable topic, wire, protocol, and model module tests' \
+		'make test-fuzz     Run bounded wire parser property/fuzz tests' \
 		'make fuzz-long     Run an auditable multi-seed fuzz campaign' \
 		'make test-fast     Run unit, module, fuzz, offline wire, and support self-tests' \
 		'make test-wire     Run offline wire fixtures and capture tests' \
@@ -411,6 +411,8 @@ test-support: resolve
 	Tests/Support/test-embedded-coatyjs.sh
 	Tests/Support/test-run-container.sh
 	Tests/Support/Fuzzing/test-run-fuzz.sh
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+		.devcontainer/run.sh /workspace/Tests/Support/check-swift-test-filter-contract.sh
 	cd Tests/Support/WireCompatibility/tool && npm ci && npm test
 	node --test Tests/Support/*.test.mjs
 	node Tests/Support/validate-test-tiers.mjs Tests/Support/test-tiers.json

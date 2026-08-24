@@ -1,113 +1,119 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-@testable import Axoloty
-import Testing
 import AxolotyWire
+import Testing
 
-/// Tests for the host-runtime topic builders, validators, and MQTT filter
-/// matching on ``TopicBuilder``, plus round-trip parsing through ``TopicView``.
+/// Exercises the portable fixed-buffer topic writer and its borrowed parser.
 ///
-/// These replaced the builder/validation/matching logic that previously
-/// lived on the removed `CommunicationTopic` class.
+/// This is the maintained replacement for the removed `CommunicationTopic`
+/// contract. The test name is intentionally explicit so tier filters cannot
+/// silently revive the legacy Foundation-backed API.
 @Suite
-struct TopicBuilderTests {
-    private let sourceId = CoatyUUID(uuidString: "01234567-89ab-4cde-8fab-0123456789ab")!
+struct PortableTopicBuilderTests {
+    private let sourceID = UUID16(parsing: "01234567-89ab-4cde-8fab-0123456789ab")!
+    private let correlationID = UUID16(parsing: "fedcba98-7654-4321-8fed-cba987654321")!
 
     @Test
-    func testPublishTopicRoundTripsThroughTopicView() throws {
-        let topicString = TopicBuilder.publishTopic(
-            namespace: "factory",
-            sourceId: sourceId,
-            eventType: .advertise,
-            eventTypeFilter: "com.example.Sensor"
-        )
-
-        #expect(topicString == "coaty/3/factory/ADV:com.example.Sensor/\(sourceId.string)")
-
-        let bytes = Array(topicString.utf8)
-        let view = bytes.withUnsafeBufferPointer { buf in
-            TopicView(topicBytes: buf.baseAddress!, length: buf.count)
+    func writesCanonicalOneWayTopicAndRoundTripsThroughView() throws {
+        let topic = try makeTopic { builder in
+            try builder.writePrefix()
+            try builder.writeNamespace("factory")
+            let filter = Array("com.example.Sensor".utf8)
+            try filter.withUnsafeBufferPointer { buffer in
+                try builder.writeEventType(
+                    .advertise,
+                    filter: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+                )
+            }
+            try builder.writeSourceId(sourceID)
         }
 
-        #expect(view.eventType == .advertise)
-        #expect(try #require(view.eventTypeFilter).asString() == "com.example.Sensor")
-        #expect(try #require(view.namespaceLevel).asString() == "factory")
-        #expect(try #require(view.sourceIdLevel).asString() == sourceId.string)
-        #expect(view.correlationIdLevel == nil)
+        #expect(topic == "coaty/3/factory/ADV:com.example.Sensor/01234567-89ab-4cde-8fab-0123456789ab")
+        try withTopicView(topic) { view in
+            try view.validate()
+            #expect(view.eventType == .advertise)
+            #expect(view.eventTypeFilter?.asString() == "com.example.Sensor")
+            #expect(view.namespaceLevel?.asString() == "factory")
+            #expect(view.sourceIdLevel?.asString() == "01234567-89ab-4cde-8fab-0123456789ab")
+            #expect(view.correlationIdLevel == nil)
+        }
     }
 
     @Test
-    func testTwoWayPublishAndSubscribeTopicsIncludeCorrelationLevel() throws {
-        let publication = TopicBuilder.publishTopic(
-            namespace: "factory",
-            sourceId: sourceId,
-            eventType: .discover,
-            correlationId: "request-42"
-        )
-        #expect(publication == "coaty/3/factory/DSC/\(sourceId.string)/request-42")
-
-        let bytes = Array(publication.utf8)
-        let view = bytes.withUnsafeBufferPointer { buf in
-            TopicView(topicBytes: buf.baseAddress!, length: buf.count)
+    func writesCanonicalTwoWayTopicWithCorrelationLevel() throws {
+        let topic = try makeTopic { builder in
+            try builder.writePrefix()
+            try builder.writeNamespace("factory")
+            try builder.writeEventType(.discover)
+            try builder.writeSourceId(sourceID)
+            try builder.writeCorrelationId(correlationID)
         }
-        #expect(try #require(view.correlationIdLevel).asString() == "request-42")
 
-        #expect(TopicBuilder.subscribeTopic(
-            eventType: .resolve,
-            namespace: "factory",
-            correlationId: "request-42"
-        ) == "coaty/3/factory/RSV/+/request-42")
-        #expect(TopicBuilder.subscribeTopic(eventType: .discover) == "coaty/3/+/DSC/+/+")
-        #expect(TopicBuilder.subscribeAllOneWayTopics(namespace: "factory") == "coaty/3/factory/+/+")
+        #expect(topic == "coaty/3/factory/DSC/01234567-89ab-4cde-8fab-0123456789ab/fedcba98-7654-4321-8fed-cba987654321")
+        try withTopicView(topic) { view in
+            try view.validate()
+            #expect(view.eventType == .discover)
+            #expect(view.correlationIdLevel?.asString() == "fedcba98-7654-4321-8fed-cba987654321")
+        }
     }
 
     @Test
-    func testValidateRejectsStructurallyInvalidTopics() {
+    func rejectsStructurallyInvalidTopics() {
         let invalidTopics = [
-            "coaty/3/factory/ADV/\(sourceId.string)",
-            "coaty/3/factory/ADV:type/\(sourceId.string)/unexpected",
-            "coaty/3/factory/DSC/\(sourceId.string)",
-            "coaty/3/factory/DSC:type/\(sourceId.string)/correlation",
-            "coaty/3/factory/UNKNOWN/\(sourceId.string)",
+            "coaty/3/factory/ADV/01234567-89ab-4cde-8fab-0123456789ab/extra",
+            "coaty/3/factory/DSC/01234567-89ab-4cde-8fab-0123456789ab",
+            "coaty/3/factory/UNKNOWN/01234567-89ab-4cde-8fab-0123456789ab",
             "coaty/3/factory/DAD/not-a-uuid",
-            "other/3/factory/DAD/\(sourceId.string)",
-            "coaty/3//DAD/\(sourceId.string)"
+            "other/3/factory/DAD/01234567-89ab-4cde-8fab-0123456789ab",
+            "coaty/3//DAD/01234567-89ab-4cde-8fab-0123456789ab",
         ]
 
         for topic in invalidTopics {
             #expect(throws: (any Error).self, "Expected rejection of \(topic)") {
-                try TopicBuilder.validate(topic)
+                try withTopicView(topic) { view in try view.validate() }
             }
         }
     }
 
     @Test
-    func testTopicValidation() {
-        #expect(TopicBuilder.isValidPublicationTopic("sensors/temperature"))
-        #expect(!TopicBuilder.isValidPublicationTopic("sensors/+"))
-        #expect(!TopicBuilder.isValidPublicationTopic("sensors/#"))
-        #expect(!TopicBuilder.isValidPublicationTopic(""))
-        #expect(TopicBuilder.isValidSubscriptionTopic("sensors/+/value"))
-        #expect(!TopicBuilder.isValidSubscriptionTopic("bad\u{0000}topic"))
+    func rejectsBufferOverflowWithoutAdvancingPastCapacity() throws {
+        var bytes = [UInt8](repeating: 0, count: 5)
+        try bytes.withUnsafeMutableBufferPointer { buffer in
+            var builder = TopicBuilder(buffer: buffer.baseAddress!, capacity: buffer.count)
+
+            #expect(throws: WireEncodeError.self) { try builder.writePrefix() }
+            #expect(builder.position == 5)
+        }
     }
 
     @Test
-    func testMQTTWildcardMatching() {
-        #expect(TopicBuilder.matches("a/b/c", "a/+/c"))
-        #expect(TopicBuilder.matches("a/b/c/d", "a/b/#"))
-        #expect(TopicBuilder.matches("a//b", "a/+/b"))
-        #expect(!TopicBuilder.matches("a/b/c/d", "a/+/c"))
-        #expect(!TopicBuilder.matches("a/b", "a/b/c"))
-        #expect(!TopicBuilder.matches("", "#"))
+    func parsesRawTopicsWithoutInventingCoatyStructure() throws {
+        try withTopicView("application/device/temperature") { view in
+            #expect(view.isRawTopic)
+            #expect(view.eventType == nil)
+            #expect(view.namespaceLevel?.asString() == "temperature")
+        }
     }
 
-    @Test
-    func testSingleLevelWildcardDoesNotMatchMissingLevel() {
-        #expect(!TopicBuilder.matches("ac1a0ba", "+/+/#"))
-        #expect(!TopicBuilder.matches("a/", "+/+/+/#"))
-        #expect(TopicBuilder.matches("a/", "a/+"))
-        #expect(TopicBuilder.matches("a//b", "+/+/b"))
-        #expect(TopicBuilder.matches("a", "a/#"))
-        #expect(TopicBuilder.matches("a/", "+/+/#"))
+    private func makeTopic(
+        _ body: (inout TopicBuilder) throws -> Void
+    ) throws -> String {
+        var bytes = [UInt8](repeating: 0, count: 256)
+        return try bytes.withUnsafeMutableBufferPointer { buffer in
+            var builder = TopicBuilder(buffer: buffer.baseAddress!, capacity: buffer.count)
+            try body(&builder)
+            return builder.build().asString()
+        }
+    }
+
+    private func withTopicView(
+        _ topic: String,
+        _ body: (TopicView) throws -> Void
+    ) rethrows {
+        let bytes = Array(topic.utf8)
+        try bytes.withUnsafeBufferPointer { buffer in
+            let view = TopicView(topicBytes: buffer.baseAddress!, length: buffer.count)
+            try body(view)
+        }
     }
 }

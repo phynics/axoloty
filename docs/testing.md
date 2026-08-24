@@ -107,11 +107,11 @@ separate from protocol-scenario execution.
 | Tier | Make target | Runs Swift? | Notes |
 |---|---|:---:|---|
 | Smoke | `make build` | yes | Proves the package compiles and links |
-| Unit | `make test-unit` | yes | `ObjectMatcherTests` |
-| Module | `make test-module` | yes | Topic, payload, registry, and configuration module tests |
+| Unit | `make test-unit` | yes | Portable object-model predicates and wire value semantics |
+| Module | `make test-module` | yes | Portable topic, wire, protocol, and Coaty model module tests |
 | G3 boundary | `axoloty-tool` manifest node `g3-object-boundary` | no | Portable object-model dependency and Embedded Swift source-inclusion authority check |
 | G4 migration | `make test-tier TIER=g4-runtime` | no | Deferred replacement-runtime package and first-party consumer boundary checks; strict once G4 roots exist |
-| Property | `make test-fuzz` | yes | Seeded `DeterministicFuzzTests` |
+| Property | `make test-fuzz` | yes | Deterministic wire parser bounds and corruption tests |
 | Integration | `make test` | yes | Full suite against a fresh Mosquitto |
 | Wire offline | `make test-wire` | yes | `WireFixtureTests` and lifecycle scenarios |
 | Wire live | `make test-wire-live` | yes | Live CoatyJS interop (host-run containers) |

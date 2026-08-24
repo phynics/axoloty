@@ -136,6 +136,7 @@ let package = Package(
                 "ProtocolTrace/ProtocolTrace.swift",
                 "ProtocolTrace/ProtocolTraceCorpus.swift",
                 "ProtocolTrace/ProtocolTraceTests.swift",
+                "Infrastructure/TopicBuilderTests.swift",
                 "Testing/AsyncWaiting.swift",
                 "Testing/AsyncWaitingTests.swift",
                 "WireCompatibility/IO/AxolotyIoAssociateTests.swift",
