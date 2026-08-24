@@ -398,6 +398,84 @@ func commandRunnerKeepsJSONStdoutReservedForTheFinalResult() {
 }
 
 @Test
+func commandRunnerRejectsSwiftTestSuccessWhenNoTestsMatched() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: "axoloty-tool-empty-test-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let fakeSwift = root.appending(path: "swift")
+    try """
+    #!/bin/sh
+    printf 'warning: No matching test cases were run\\n' >&2
+    printf 'Test run with 0 tests in 0 suites passed after 0.001 seconds.\\n'
+    exit 0
+    """.write(to: fakeSwift, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeSwift.path)
+
+    let validator = AxolotyExecutionContextValidator(
+        environment: ["AXOLOTY_DEVCONTAINER": "1"],
+        platform: .linux
+    )
+    let runner = FoundationCommandRunner(
+        contextValidator: validator,
+        environment: validator.environment,
+        configuration: AxolotyCommandRunnerConfiguration(
+            commandTimeout: 2,
+            artifactRoot: root,
+            runID: "empty-test",
+            installSignalHandler: false
+        )
+    )
+
+    let result = runner.run(AxolotyCommandPlan(
+        executable: fakeSwift.path,
+        arguments: ["test", "--filter", "MissingSuite"]
+    ))
+
+    #expect(result.exitCode == 65)
+    #expect(result.standardError.contains("executed zero non-skipped tests"))
+}
+
+@Test
+func commandRunnerRejectsSwiftTestSuccessWhenEverySelectedTestWasSkipped() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: "axoloty-tool-skipped-tests-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let fakeSwift = root.appending(path: "swift")
+    try """
+    #!/bin/sh
+    printf '➜ Test brokerScenario() skipped.\\n'
+    printf '✔ Test run with 1 test in 1 suite passed after 0.001 seconds.\\n'
+    exit 0
+    """.write(to: fakeSwift, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeSwift.path)
+
+    let validator = AxolotyExecutionContextValidator(
+        environment: ["AXOLOTY_DEVCONTAINER": "1"],
+        platform: .linux
+    )
+    let runner = FoundationCommandRunner(
+        contextValidator: validator,
+        environment: validator.environment,
+        configuration: AxolotyCommandRunnerConfiguration(
+            commandTimeout: 2,
+            artifactRoot: root,
+            runID: "skipped-tests",
+            installSignalHandler: false
+        )
+    )
+
+    let result = runner.run(AxolotyCommandPlan(
+        executable: fakeSwift.path,
+        arguments: ["test", "--filter", "BrokerScenario"]
+    ))
+
+    #expect(result.exitCode == 65)
+    #expect(result.standardError.contains("executed zero non-skipped tests"))
+}
+
+@Test
 func commandRunnerEscalatesTimeoutTracksLastTestAndPersistsSafeArtifacts() throws {
     let root = FileManager.default.temporaryDirectory
         .appending(path: "axoloty-tool-timeout-\(UUID().uuidString)")
