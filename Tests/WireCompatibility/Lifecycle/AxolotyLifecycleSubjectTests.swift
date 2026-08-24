@@ -77,9 +77,10 @@ struct AxolotyLifecycleSubjectTests {
             do {
                 _ = try await nextEvent(&iterator, timeout: .seconds(3))
                 Issue.record("the late Return was delivered after expiry")
-            } catch is AsyncWaitTimeoutError {
+            } catch is AsyncWaitTimeoutError, is CancellationError {
                 // The capture verifier separately proves that the responder
-                // published the late Return on the wire.
+                // published the late Return on the wire. A timed read may
+                // also cancel this iterator before the second read begins.
             }
             // The responder intentionally waits four seconds before sending
             // its Return.  A canceled AsyncStream iterator may finish
