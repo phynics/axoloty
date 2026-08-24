@@ -23,7 +23,7 @@ consistent vocabulary:
 
 | Capability | Support level | Evidence |
 |---|---|---|
-| Advertise / Deadvertise | Validated | Offline fixtures (CoatyJS, legacy CoatySwift, contract-seed); live both directions; embedded physical evidence (10/10). Failure/boundary: invalid-object-type rejection, malformed-input rejection. |
+| Advertise / Deadvertise | Validated | Offline fixtures (CoatyJS and legacy CoatySwift); live both directions; embedded physical evidence (10/10). Failure/boundary: invalid-object-type rejection, malformed-input rejection. |
 | Discover / Resolve | Validated | Offline fixtures (CoatyJS, legacy); live both directions; embedded physical evidence. Failure/boundary: correlation matching, bounded outstanding Discover, 5s timeout, wrong-correlation rejection, duplicate rejection. |
 | Query / Retrieve | Validated | Offline fixtures (CoatyJS); live both directions with filter coverage. Failure/boundary: negative filter scenarios, unknown-operator rejection, unknown-sorting-order rejection. Legacy CoatySwift direction: Compatibility-unverified. |
 | Update / Complete | Validated | Offline fixtures (CoatyJS); live both directions. Failure/boundary: omitted-optional-field decoding. Legacy directions: Compatibility-unverified. |

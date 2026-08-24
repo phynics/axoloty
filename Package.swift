@@ -199,7 +199,6 @@ let package = Package(
                 "WireCompatibility/IO/AxolotyIoValuePayloadTests.swift",
                 "WireCompatibility/Legacy/LegacyCaptureFixtureTests.swift",
                 "WireCompatibility/SensorThings/SensorThingsWireFixtureTests.swift",
-                "WireCompatibility/WireFixtureTests.swift",
             ],
             sources: [
                 "ProtocolTrace/ProtocolTrace.swift",
