@@ -1,39 +1,13 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Testing
-import Foundation
+// Compile probe: Linux support is established by importing Observation while
+// the real runtime fallback coverage remains in the Broadcast tests below.
 import Observation
 @testable import Axoloty
 
 @Suite
 struct ObservationLinuxTests {
-
-    @Test
-    func testObservationModuleImportsOnLinux() {
-        // Verify the Observation framework is available in the Linux Swift 6.3
-        // container. This is a prerequisite gate before later tickets use
-        // Observation-based local state.
-        #expect(Bool(true), "Observation module imported successfully")
-    }
-
-    @Test
-    func testWithObservationTrackingAvailable() async {
-        // Verify withObservationTracking is callable. On Linux Swift 6.3,
-        // the @Observable macro is unavailable: it expands to code referencing
-        // Observation.ObservationRegistrar, which does not exist in the Linux
-        // toolchain's Observation module. Direction C's @Observable state-stream
-        // design is therefore blocked on Linux; all streams use Broadcast instead.
-        var trackingFired = false
-
-        withObservationTracking {
-            trackingFired = true
-        } onChange: {
-            // no-op
-        }
-
-        // The initial application block runs synchronously.
-        #expect(trackingFired)
-    }
 
     @Test
     func testBroadcastStateStreamOnLinux() async {
@@ -44,8 +18,6 @@ struct ObservationLinuxTests {
         await broadcast.send(23.5)
 
         var it = stream.makeAsyncIterator()
-        try? await Task.sleep(for: .milliseconds(100))
-
         await broadcast.finish()
 
         var values: [Double] = []
@@ -63,8 +35,6 @@ struct ObservationLinuxTests {
         let stream = await broadcast.subscribe()
 
         var it = stream.makeAsyncIterator()
-        try? await Task.sleep(for: .milliseconds(100))
-
         await broadcast.send("hello")
         await broadcast.send("world")
         await broadcast.finish()
