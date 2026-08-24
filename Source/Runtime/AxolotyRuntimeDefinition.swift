@@ -237,8 +237,8 @@ public enum RuntimeOneWayOperation: Sendable, Equatable {
     case deadvertise([UInt8])
     case channel(identifier: String, payload: [UInt8])
     case associate([UInt8])
-    /// Associates IO routes, optionally scoped to a context name.
-    case associate(contextName: String?, payload: [UInt8])
+    /// Associates IO routes scoped to a context name.
+    case associateInContext(contextName: String, payload: [UInt8])
     case ioValue([UInt8])
 }
 
@@ -400,7 +400,7 @@ public struct RuntimeOperation: Sendable, Equatable {
             operationName: identifier
         )
         case let .associate(payload): self.init(capability: .associate, sourceID: sourceID, payload: payload)
-        case let .associate(contextName, payload): self.init(
+        case let .associateInContext(contextName, payload): self.init(
             capability: .associate,
             sourceID: sourceID,
             payload: payload,

@@ -30,7 +30,7 @@ struct AxolotyIoAssociateTests {
         do {
             try await runtime.start()
             ModernConsumerSupport.emit("{\"state\":\"ready\",\"scenario\":\"io-associate\",\"route\":\"\(route)\"}")
-            let associateOperation = RuntimeOneWayOperation.associate(
+            let associateOperation = RuntimeOneWayOperation.associateInContext(
                 contextName: contextName,
                 payload: associate
             )
@@ -39,7 +39,7 @@ struct AxolotyIoAssociateTests {
             #expect(await runtime.publish(RuntimeOneWayOperation.ioValue(Array("42".utf8))) == .accepted)
             ModernConsumerSupport.emit("{\"state\":\"published-iovalue\",\"scenario\":\"io-associate\",\"route\":\"\(route)\"}")
             try await Task.sleep(for: .milliseconds(1_500))
-            let disassociateOperation = RuntimeOneWayOperation.associate(
+            let disassociateOperation = RuntimeOneWayOperation.associateInContext(
                 contextName: contextName,
                 payload: disassociate
             )
