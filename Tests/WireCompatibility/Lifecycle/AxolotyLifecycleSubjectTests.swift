@@ -12,7 +12,6 @@ import Testing
 /// The shell runners keep the broker and proxy controls outside the subject;
 /// the subject reports bounded state transitions as JSONL so the independent
 /// MQTT capture can be correlated with application behavior.
-@MainActor
 struct AxolotyLifecycleSubjectTests {
     private static let identityID = UUID16(parsing: "44444444-4444-4444-8444-444444444444")!
 
