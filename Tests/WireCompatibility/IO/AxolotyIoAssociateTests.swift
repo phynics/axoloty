@@ -30,22 +30,18 @@ struct AxolotyIoAssociateTests {
         do {
             try await runtime.start()
             ModernConsumerSupport.emit("{\"state\":\"ready\",\"scenario\":\"io-associate\",\"route\":\"\(route)\"}")
-            let associateOperation = RuntimeOperation(
-                capability: .associate,
-                sourceID: Self.sourceID,
-                payload: associate,
-                operationName: contextName
+            let associateOperation = RuntimeOneWayOperation.associate(
+                contextName: contextName,
+                payload: associate
             )
             #expect(await runtime.publish(associateOperation) == .accepted)
             try await Task.sleep(for: .milliseconds(1_500))
             #expect(await runtime.publish(RuntimeOneWayOperation.ioValue(Array("42".utf8))) == .accepted)
             ModernConsumerSupport.emit("{\"state\":\"published-iovalue\",\"scenario\":\"io-associate\",\"route\":\"\(route)\"}")
             try await Task.sleep(for: .milliseconds(1_500))
-            let disassociateOperation = RuntimeOperation(
-                capability: .associate,
-                sourceID: Self.sourceID,
-                payload: disassociate,
-                operationName: contextName
+            let disassociateOperation = RuntimeOneWayOperation.associate(
+                contextName: contextName,
+                payload: disassociate
             )
             #expect(await runtime.publish(disassociateOperation) == .accepted)
             try await Task.sleep(for: .milliseconds(500))

@@ -101,20 +101,14 @@ struct AxolotyRuntimeTests {
         #expect(receipt == .rejected(.notRunning(.stopped)))
     }
 
-    @Test("runtime uses the shared processor for an accepted local operation")
-    func acceptsLocalOperation() async throws {
+    @Test("runtime uses the shared processor for an accepted one-way operation")
+    func acceptsOneWayOperation() async throws {
         let definition = try makeDefinition()
         let transport = TestTransport()
         let runtime = AxolotyRuntime(definition: definition, transport: transport)
         try await runtime.start()
 
-        let receipt = await runtime.publish(
-            RuntimeOperation(
-                capability: .ioValue,
-                sourceID: .zero,
-                payload: [0x7B, 0x7D]
-            )
-        )
+        let receipt = await runtime.publish(.ioValue([0x7B, 0x7D]))
         #expect(receipt == .accepted)
         for _ in 0..<100 {
             if await transport.sentCount() == 1 { break }
@@ -220,18 +214,6 @@ struct AxolotyRuntimeTests {
         }
         #expect(await transport.sentCount() == 2)
         #expect(await runtime.state() == .running)
-        await runtime.stop()
-    }
-
-    @Test("Channel requires a typed identifier")
-    func channelRejectsMissingIdentifier() async throws {
-        let runtime = AxolotyRuntime(definition: try makeDefinition(), transport: TestTransport())
-        try await runtime.start()
-        #expect(await runtime.publish(RuntimeOperation(
-            capability: .channel,
-            sourceID: .zero,
-            payload: Array("{}".utf8)
-        )) == .rejected(.invalidOperationName))
         await runtime.stop()
     }
 
@@ -401,9 +383,8 @@ struct AxolotyRuntimeTests {
             try? await Task.sleep(for: .milliseconds(5))
         }
         #expect(await runtime.state() == .reconnecting)
-        let receipt = await runtime.publish(RuntimeOperation.advertise(
-            sourceID: .zero,
-            payload: Array(#"{"object":{"objectId":"66666666-6666-4666-8666-666666666666","coreType":"CoatyObject","objectType":"com.coaty.test.WireQueuedFixture","name":"first"}}"#.utf8)
+        let receipt = await runtime.publish(.advertise(
+            Array(#"{"object":{"objectId":"66666666-6666-4666-8666-666666666666","coreType":"CoatyObject","objectType":"com.coaty.test.WireQueuedFixture","name":"first"}}"#.utf8)
         ))
         #expect(receipt == .accepted)
         #expect(await transport.sentCount() == 0)
@@ -423,11 +404,7 @@ struct AxolotyRuntimeTests {
         let transport = DrainingTransport()
         let runtime = AxolotyRuntime(definition: definition, transport: transport)
         try await runtime.start()
-        #expect(await runtime.publish(RuntimeOperation(
-            capability: .ioValue,
-            sourceID: .zero,
-            payload: [0x7B, 0x7D]
-        )) == .accepted)
+        #expect(await runtime.publish(.ioValue([0x7B, 0x7D])) == .accepted)
         for _ in 0..<100 {
             if await transport.sendStarted { break }
             try? await Task.sleep(for: .milliseconds(5))

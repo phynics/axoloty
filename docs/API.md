@@ -63,6 +63,13 @@ values:
 - requests: `discover`, `query`, `update`, and `call`;
 - responses: `resolve`, `retrieve`, `complete`, and `returnEvent`.
 
+Submit these values through the matching runtime entry point: `publish(_:)`
+for one-way operations, `request(_:)` for requests, and `respond(_:)` for
+responses. The runtime supplies its configured source identity when it
+translates each value to the shared protocol operation. Associate accepts an
+optional context name through `.associate(contextName:payload:)`; use the
+existing `.associate(_:)` spelling when no context is required.
+
 `RuntimeEventValue` contains an owned payload and a `RuntimeEventContext` with
 source identity, optional correlation, namespace, route classification,
 monotonic receipt time, and provenance. It never exposes a raw transport topic
