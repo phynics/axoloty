@@ -262,6 +262,7 @@ BUILD_LOCK_TIMEOUT=0 AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" \
 status=$?
 set -e
 [[ "$status" -eq 75 ]]
+grep -Fxq "Waiting up to 0s for build lock: $lock_file" "$flock_timeout_output"
 grep -Fxq "Timed out waiting for build lock: $lock_file" "$flock_timeout_output"
 
 set +e
@@ -270,6 +271,7 @@ BUILD_LOCK_TIMEOUT=1 AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" \
 status=$?
 set -e
 [[ "$status" -eq 75 ]]
+grep -Fxq "Waiting up to 1s for build lock: $lock_file" "$flock_timeout_output"
 grep -Fxq "Timed out waiting for build lock: $lock_file" "$flock_timeout_output"
 kill "$holder" 2>/dev/null || true
 wait_bounded "$holder" flock-timeout-holder 5 || true

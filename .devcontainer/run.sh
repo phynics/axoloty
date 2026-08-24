@@ -556,9 +556,14 @@ if [ "$build_lock" = "1" ]; then
     if [ "${BUILD_LOCK_FORCE_DIRECTORY:-0}" != "1" ] && command -v flock >/dev/null 2>&1; then
         exec 9>"$lock_file"
         if [ "$lock_timeout" -ge 0 ]; then
-            if ! flock -w "$lock_timeout" 9; then
-                echo "Timed out waiting for build lock: $lock_file" >&2
-                exit 75
+            if flock -n 9; then
+                :
+            else
+                echo "Waiting up to ${lock_timeout}s for build lock: $lock_file" >&2
+                if ! flock -w "$lock_timeout" 9; then
+                    echo "Timed out waiting for build lock: $lock_file" >&2
+                    exit 75
+                fi
             fi
         else
             flock 9
@@ -566,7 +571,12 @@ if [ "$build_lock" = "1" ]; then
         lock_kind="flock"
     else
         lock_started=$(date +%s)
+        lock_wait_reported=0
         while ! mkdir "$lock_dir" 2>/dev/null; do
+            if [ "$lock_wait_reported" = "0" ]; then
+                echo "Waiting up to ${lock_timeout}s for build lock: $lock_dir" >&2
+                lock_wait_reported=1
+            fi
             if lock_is_stale; then
                 echo "Removing stale build lock: $lock_dir" >&2
                 rm -f "$lock_owner_file"
