@@ -754,7 +754,7 @@ public struct AxolotyCheckExecutor: Sendable {
     public init(
         commandRunner: any AxolotyCheckCommandRunning,
         cancellation: AxolotyCommandCancellation? = nil,
-        resourceLeaseManager: any AxolotyResourceLeasing? = nil
+        resourceLeaseManager: (any AxolotyResourceLeasing)? = nil
     ) {
         self.init(
             commandRunner: commandRunner,
