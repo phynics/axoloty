@@ -41,6 +41,10 @@ concurrency:
 # its expiry. See docs/wire-compatibility.md.
 env:
   WIRE_EXEMPTION_LABEL: live-wire-exemption
+  WIRE_OUTPUT_DIR: .testing/runs/wire-${{ github.run_id }}-${{ github.run_attempt }}/wire
+  WIRE_CI_EVIDENCE_ROOT: .testing/runs/wire-${{ github.run_id }}-${{ github.run_attempt }}/ci
+  WIRE_RUN_ID: wire-${{ github.run_id }}-${{ github.run_attempt }}
+  WIRE_LIFECYCLE_RUN_ID: wire-${{ github.run_id }}-${{ github.run_attempt }}
 
 jobs:
   live-coatyjs:
@@ -53,6 +57,26 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      # Create the CI-owned record before any setup or dependency step can
+      # fail. This is run metadata, not wire evidence.
+      - name: Initialize wire run record
+        if: always()
+        shell: bash
+        run: |
+          set -u
+          mkdir -p "$WIRE_CI_EVIDENCE_ROOT"
+          node Tests/Support/WireCompatibility/Live/record-ci-run.mjs \
+            --file "$WIRE_CI_EVIDENCE_ROOT/run-status.json" \
+            --phase init \
+            --run-id "$WIRE_RUN_ID" \
+            --run-attempt "${GITHUB_RUN_ATTEMPT:-1}" \
+            --event "${GITHUB_EVENT_NAME:-unknown}" \
+            --sha "${GITHUB_SHA:-unknown}" \
+            --note "initialized before live-wire setup" || {
+              echo "::warning::could not initialize the wire CI run record"
+              printf '%s\n' '{"format":"axoloty-wire-ci-run/v1","captureEvidence":"not-claimed","lastPhase":"init"}' > "$WIRE_CI_EVIDENCE_ROOT/run-status.json"
+            }
 
       # hashFiles() is only valid in step-level expressions, not
       # workflow/job-level `env:`, so compute the cache key here and
@@ -110,10 +134,11 @@ jobs:
               ;;
           esac
           if [ -n "$base" ]; then
-            changed="$(git diff --name-only "$base" "$head" | tr '\n' ' ' | sed 's/ $//')"
+            git diff --name-only "$base" "$head" > "$WIRE_CI_EVIDENCE_ROOT/changed-paths.txt"
           else
-            changed=""
+            : > "$WIRE_CI_EVIDENCE_ROOT/changed-paths.txt"
           fi
+          changed="$(tr '\n' ' ' < "$WIRE_CI_EVIDENCE_ROOT/changed-paths.txt" | sed 's/ $//')"
           echo "changed=${changed}" >> "$GITHUB_OUTPUT"
           echo "Changed files: ${changed:-<none>}"
 
@@ -134,25 +159,51 @@ jobs:
           if [[ "$FORCE_RUN" == "true" ]]; then
             echo "protocol=1" >> "$GITHUB_OUTPUT"
             echo "exempt=0" >> "$GITHUB_OUTPUT"
+            node Tests/Support/WireCompatibility/Live/record-ci-run.mjs \
+              --file "$WIRE_CI_EVIDENCE_ROOT/run-status.json" --phase classification \
+              --protocol 1 --exempt 0 --changed-file-list "$WIRE_CI_EVIDENCE_ROOT/changed-paths.txt" \
+              --note "forced live run" || echo "::warning::could not persist forced-run classification"
             echo "Collecting fresh live wire evidence (forced)."
             exit 0
           fi
+          set +e
           classifier="$(node Tests/Support/classify-wire-change.mjs \
-            --changed "${CHANGED:-}" --exempt "${exemption:-}" || true)"
+            --changed "${CHANGED:-}" --exempt "${exemption:-}")"
+          classifier_status=$?
+          set -e
           echo "$classifier"
+          if [[ "$classifier_status" -gt 1 ]]; then
+            echo "protocol=unknown" >> "$GITHUB_OUTPUT"
+            echo "exempt=0" >> "$GITHUB_OUTPUT"
+            node Tests/Support/WireCompatibility/Live/record-ci-run.mjs \
+              --file "$WIRE_CI_EVIDENCE_ROOT/run-status.json" --phase classification \
+              --protocol unknown --exempt 0 --changed-file-list "$WIRE_CI_EVIDENCE_ROOT/changed-paths.txt" \
+              --note "classifier failed with exit $classifier_status" || true
+            exit "$classifier_status"
+          fi
           # Consume the machine-readable marker emitted on the first line; the
           # free-text summary below it is for humans only.
           if printf '%s' "$classifier" | grep -q "^gate=require"; then
             echo "protocol=1" >> "$GITHUB_OUTPUT"
             if printf '%s' "$classifier" | grep -q "exemption recorded"; then
               echo "exempt=1" >> "$GITHUB_OUTPUT"
+              classification_exempt=1
             else
               echo "exempt=0" >> "$GITHUB_OUTPUT"
+              classification_exempt=0
             fi
+            classification_protocol=1
           else
             echo "protocol=0" >> "$GITHUB_OUTPUT"
             echo "exempt=0" >> "$GITHUB_OUTPUT"
+            classification_protocol=0
+            classification_exempt=0
           fi
+          node Tests/Support/WireCompatibility/Live/record-ci-run.mjs \
+            --file "$WIRE_CI_EVIDENCE_ROOT/run-status.json" --phase classification \
+            --protocol "$classification_protocol" --exempt "$classification_exempt" \
+            --changed-file-list "$WIRE_CI_EVIDENCE_ROOT/changed-paths.txt" || \
+            echo "::warning::could not persist change-set classification"
 
       - name: Fast path (no protocol-affecting change, no forced run)
         if: steps.classify.outputs.protocol == '0'
@@ -168,32 +219,97 @@ jobs:
       - name: Run live wire capture and verifier
         if: steps.classify.outputs.protocol == '1' && steps.classify.outputs.exempt == '0'
         run: |
+          node Tests/Support/WireCompatibility/Live/record-ci-run.mjs \
+            --file "$WIRE_CI_EVIDENCE_ROOT/run-status.json" --phase capture --capture-state running || true
+          set +e
           make test-wire-live CONTAINER_RUNTIME=podman BUILD_DIR=.build BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache AXOLOTY_HOST_RUNTIME_BRIDGE=1
+          capture_status=$?
+          set -e
+          if [ "$capture_status" -eq 0 ]; then capture_state=succeeded; else capture_state=failed; fi
+          node Tests/Support/WireCompatibility/Live/record-ci-run.mjs \
+            --file "$WIRE_CI_EVIDENCE_ROOT/run-status.json" --phase capture \
+            --capture-state "$capture_state" --note "capture command exit $capture_status" || true
+          exit "$capture_status"
 
       - name: Verify live evidence is present
         if: steps.classify.outputs.protocol == '1' && steps.classify.outputs.exempt == '0'
         run: |
-          set -euo pipefail
-          manifest=".testing/wire/manifest.json"
-          cap_dir=".testing/wire"
-          test -d "$cap_dir" || { echo "::error::live wire capture directory missing: $cap_dir"; exit 1; }
-          test -s "$manifest" || { echo "::error::live wire manifest missing: $manifest"; exit 1; }
-          captures="$(find "$cap_dir" -name '*.jsonl' | wc -l)"
-          test "$captures" -gt 0 || { echo "::error::no live wire captures produced"; exit 1; }
-          # The authoritative aggregate manifest was produced by the wire capture
-          # plan; verify it references the captures rather than regenerating it.
-          node Tests/Support/WireCompatibility/tool/dist/index.js manifest "$cap_dir" /tmp/wire-verify-manifest.json
-          echo "Live wire evidence OK: $(find "$cap_dir" -name '*.jsonl' -printf '%P\n' | sort | tr '\n' ' ')"
-          echo "Authoritative manifest: $manifest"
+          set -u
+          node Tests/Support/WireCompatibility/Live/record-ci-run.mjs \
+            --file "$WIRE_CI_EVIDENCE_ROOT/run-status.json" --phase verification \
+            --verification-state running || true
+          set +e
+          manifest="$WIRE_OUTPUT_DIR/manifest.json"
+          cap_dir="$WIRE_OUTPUT_DIR"
+          verify_status=0
+          test -d "$cap_dir" || { echo "::error::live wire capture directory missing: $cap_dir"; verify_status=1; }
+          test -s "$manifest" || { echo "::error::live wire manifest missing: $manifest"; verify_status=1; }
+          captures="$(find "$cap_dir" -name '*.jsonl' -type f | wc -l)"
+          if [ "$captures" -eq 0 ]; then
+            echo "::error::no live wire captures produced"
+            verify_status=1
+          fi
+          if [ "$verify_status" -eq 0 ]; then
+            # The authoritative aggregate manifest was produced by the wire
+            # capture plan; verify it references the captures rather than
+            # regenerating it.
+            node Tests/Support/WireCompatibility/tool/dist/index.js manifest "$cap_dir" /tmp/wire-verify-manifest.json || verify_status=$?
+          fi
+          if [ "$verify_status" -eq 0 ]; then
+            echo "Live wire evidence OK: $(find "$cap_dir" -name '*.jsonl' -type f -printf '%P\n' | sort | tr '\n' ' ')"
+            echo "Authoritative manifest: $manifest"
+            verification_state=succeeded
+          else
+            verification_state=failed
+          fi
+          node Tests/Support/WireCompatibility/Live/record-ci-run.mjs \
+            --file "$WIRE_CI_EVIDENCE_ROOT/run-status.json" --phase verification \
+            --verification-state "$verification_state" --note "verification exit $verify_status" || true
+          exit "$verify_status"
+
+      - name: Collect wire runner and owned-runtime diagnostics
+        if: always()
+        shell: bash
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set +e
+          root="$WIRE_CI_EVIDENCE_ROOT"
+          mkdir -p "$root"
+          inventory="$root/runner-and-owned-runtime-inventory.txt"
+          {
+            echo "run_id=$WIRE_RUN_ID"
+            echo "job_status=${JOB_STATUS:-unknown}"
+            echo "# runner process inventory"
+            ps -eo pid=,ppid=,pgid=,sid=,stat=,etime=,args=
+            echo "# owned containers"
+            if command -v podman >/dev/null 2>&1; then
+              timeout 10s podman ps -a --no-trunc \
+                --filter "label=io.axoloty.run-id=$WIRE_RUN_ID" \
+                --format 'container={{.ID}} name={{.Names}} status={{.Status}} labels={{.Labels}}'
+              echo "# owned networks"
+              timeout 10s podman network ls --no-trunc \
+                --filter "label=io.axoloty.run-id=$WIRE_RUN_ID" \
+                --format 'network={{.ID}} name={{.Name}} labels={{.Labels}}'
+            else
+              echo "runtime unavailable: podman"
+            fi
+          } > "$inventory" 2>&1
+          node Tests/Support/WireCompatibility/Live/record-ci-run.mjs \
+            --file "$root/run-status.json" --phase diagnostics \
+            --job-status "${JOB_STATUS:-unknown}" --inventory-path "$inventory" || \
+            echo "::warning::could not persist wire runner diagnostics"
 
       - name: Upload live wire evidence
-        if: always() && steps.classify.outputs.protocol == '1'
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: wire-captures-${{ github.run_id }}
           path: |
-            .testing/wire/
-          if-no-files-found: ignore
+            .testing/runs/**
+          # The init step guarantees the CI record even on setup failure or a
+          # fast path. An empty upload is therefore a real artifact failure.
+          if-no-files-found: error
           retention-days: 30
 
       - name: Report gate summary
@@ -210,7 +326,8 @@ jobs:
               echo "- **Exemption**: protocol-affecting change written by recorded reviewed exemption."
               echo "- Evidence upload: exempt -- no fresh capture produced."
             else
-              echo "- **Protocol-affecting**: live CoatyJS capture + verifier enforced."
-              echo "- Evidence uploaded on success and failure."
+              echo "- **Protocol-affecting**: live CoatyJS capture + verifier enforced (or recorded as unavailable)."
             fi
+            echo "- CI run record: `$WIRE_CI_EVIDENCE_ROOT/run-status.json`"
+            echo "- Runner/owned-runtime diagnostics: `$WIRE_CI_EVIDENCE_ROOT/runner-and-owned-runtime-inventory.txt`"
           } >> "$GITHUB_STEP_SUMMARY"

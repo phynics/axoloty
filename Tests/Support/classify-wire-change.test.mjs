@@ -3,11 +3,15 @@
 import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 import path from "node:path";
+import fs from "node:fs";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { classify, isProtocolAffecting, main, PROTOCOL_AFFECTING } from "./classify-wire-change.mjs";
 
 const script = path.join(path.dirname(fileURLToPath(import.meta.url)), "classify-wire-change.mjs");
+const runRecorder = path.join(path.dirname(fileURLToPath(import.meta.url)), "WireCompatibility/Live/record-ci-run.mjs");
+const wireWorkflow = fs.readFileSync(".github/workflows/wire-compatibility.yml", "utf8");
 
 test("protocol-affecting globs cover wire codec and core types", () => {
   const cases = [
@@ -97,4 +101,48 @@ test("every rule has a glob and description and nonempty rule set", () => {
 
 test("main returns exit code without throwing on empty input", () => {
   assert.equal(main([]), 0);
+});
+
+test("wire CI records classification and never calls unverified captures evidence", () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-wire-ci-record-"));
+  const record = path.join(temporary, "run-status.json");
+  const changed = path.join(temporary, "changed-paths.txt");
+  fs.writeFileSync(changed, "README.md\nSource/Communication/Events/CallEvent.swift\n");
+  const invoke = args => spawnSync(process.execPath, [runRecorder, "--file", record, ...args], { encoding: "utf8" });
+
+  assert.equal(invoke(["--phase", "init", "--run-id", "wire-self-test"]).status, 0);
+  assert.equal(invoke([
+    "--phase", "classification", "--protocol", "1", "--exempt", "0",
+    "--changed-file-list", changed,
+  ]).status, 0);
+  assert.equal(invoke(["--phase", "capture", "--capture-state", "failed"]).status, 0);
+
+  const result = JSON.parse(fs.readFileSync(record, "utf8"));
+  assert.deepEqual(result.classification.changedFiles, [
+    "README.md",
+    "Source/Communication/Events/CallEvent.swift",
+  ]);
+  assert.equal(result.run.id, "wire-self-test");
+  assert.equal(result.classification.protocolAffecting, true);
+  assert.equal(result.capture.state, "failed");
+  assert.equal(result.captureEvidence, "unverified");
+  assert.notEqual(result.captureEvidence, "verified");
+  fs.rmSync(temporary, { force: true, recursive: true });
+});
+
+test("live wire workflow persists early status, diagnoses owned runtime, and uploads every run", () => {
+  assert.match(wireWorkflow, /name: Initialize wire run record/);
+  assert.match(wireWorkflow, /--phase classification/);
+  assert.match(wireWorkflow, /name: Collect wire runner and owned-runtime diagnostics/);
+  assert.match(wireWorkflow, /--filter "label=io\.axoloty\.run-id=\$WIRE_RUN_ID"/);
+  assert.match(wireWorkflow, /name: Upload live wire evidence\n\s+if: always\(\)/);
+  assert.match(wireWorkflow, /WIRE_OUTPUT_DIR: \.testing\/runs\/wire-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}\/wire/);
+  assert.match(wireWorkflow, /WIRE_CI_EVIDENCE_ROOT: \.testing\/runs\/wire-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}\/ci/);
+  assert.match(wireWorkflow, /manifest="\$WIRE_OUTPUT_DIR\/manifest\.json"/);
+  assert.match(wireWorkflow, /cap_dir="\$WIRE_OUTPUT_DIR"/);
+  assert.match(wireWorkflow, /\.testing\/runs\/\*\*/);
+  assert.match(wireWorkflow, /if-no-files-found: error/);
+  assert.doesNotMatch(wireWorkflow, /if-no-files-found: ignore/);
+  assert.match(wireWorkflow, /--capture-state "\$capture_state"/);
+  assert.match(wireWorkflow, /captureEvidence.*not-claimed/);
 });
