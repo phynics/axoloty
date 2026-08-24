@@ -83,7 +83,7 @@ for scenario in $SCENARIOS; do
         -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
         "$DEV_IMAGE" swift test -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
         --cache-path /workspace/.swiftpm-cache --disable-automatic-resolution \
-        --target AxolotyLiveWireTests --filter "$test_filter" >/dev/null
+        --filter "$test_filter" >/dev/null
 
     for _ in $(seq 1 "$CONSUMER_READY_TIMEOUT_SECONDS"); do
         test -s "$ready_file" && break

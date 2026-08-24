@@ -113,7 +113,7 @@ runtime run -d -t --name "$SUBJECT" --network "$NETWORK" -v "$ROOT:/workspace" -
     -e WIRE_RECONNECT_READY="/workspace/$RECONNECT_READY_REL" \
     -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
     "$DEV_IMAGE" swift test -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
-    --skip-build --scratch-path /swift-build --cache-path /swiftpm-cache --disable-automatic-resolution --target AxolotyLiveWireTests --filter "AxolotyLifecycleSubjectTests/$test_name" >/dev/null
+    --skip-build --scratch-path /swift-build --cache-path /swiftpm-cache --disable-automatic-resolution --filter "AxolotyLifecycleSubjectTests/$test_name" >/dev/null
 subject_reported() { runtime logs "$SUBJECT" 2>&1 >"$RAW_LOG"; grep -q "\"state\":\"$1\"" "$RAW_LOG"; }
 wait_for "subject readiness" "subject_reported ready"
 

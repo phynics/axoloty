@@ -11,7 +11,7 @@ interop target.
 Ordinary Swift tests live under `Tests/AxolotyTests` and are safe for the
 hardware-free verification path. Live interoperability subjects live under
 `Tests/AxolotyLiveWireTests`; every test there is environment-gated and the
-live runners select that target explicitly. Shared deadline and confirmation
+live runners select the corresponding suite filters. Shared deadline and confirmation
 helpers live in the non-product `AxolotyTestSupport` target. `Tests/AxolotyWire`
 remains an independent package-boundary test target, while `Tests/Support`
 contains orchestration scripts and fixtures outside SwiftPM test discovery.

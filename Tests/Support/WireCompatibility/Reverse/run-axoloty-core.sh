@@ -102,7 +102,7 @@ for scenario in $SCENARIOS; do
         -e WIRE_PEER_ACK_FILE="/artifacts/peer-acks/$ack_basename" -e WIRE_PEER_ACK_TOKEN="$ack_token" \
         -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
         "$DEV_IMAGE" swift test -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
-        --skip-build --cache-path /swiftpm-cache --disable-automatic-resolution --target AxolotyLiveWireTests --filter AxolotyCoreProducerTests
+        --skip-build --cache-path /swiftpm-cache --disable-automatic-resolution --filter AxolotyCoreProducerTests
 
     if ! runtime_bounded wait "$CONSUMER" >/dev/null; then
         runtime logs "$CONSUMER" >&2 || true
