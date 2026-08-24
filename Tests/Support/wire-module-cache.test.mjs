@@ -82,8 +82,10 @@ test("call-return lifecycle responders receive a run-scoped acknowledgement", ()
   );
 
   assert.match(runner, /ACK_BASENAME=/);
+  assert.match(runner, /ACK_DIR="\$OUT\/peer-acks"/);
   assert.match(runner, /ACK_TOKEN=/);
-  assert.match(runner, /-v "\$OUT:\/artifacts"/);
+  assert.match(runner, /chmod 0777 "\$ACK_DIR"/);
+  assert.match(runner, /-v "\$ACK_DIR:\/artifacts"/);
   assert.match(runner, /-e WIRE_PEER_ACK_FILE="\/artifacts\/\$ACK_BASENAME"/);
   assert.match(runner, /-e WIRE_PEER_ACK_TOKEN="\$ACK_TOKEN"/);
   assert.match(runner, /test -s "\$ACK_FILE"/);

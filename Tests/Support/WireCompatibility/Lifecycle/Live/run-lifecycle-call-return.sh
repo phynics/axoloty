@@ -46,7 +46,8 @@ CONSUMER_LOG="$OUT/coatyjs-$SCENARIO.consumer.log"
 APPLICATION_LOG="$OUT/axoloty-$SCENARIO.application.jsonl"
 RAW_LOG="$OUT/axoloty-$SCENARIO.subject.log"
 ACK_BASENAME="axoloty-$SCENARIO-$RUN_ID.peer-ack.json"
-ACK_FILE="$OUT/$ACK_BASENAME"
+ACK_DIR="$OUT/peer-acks"
+ACK_FILE="$ACK_DIR/$ACK_BASENAME"
 ACK_TOKEN="${RUN_ID}-lifecycle-$SCENARIO"
 DEADLINE_SECONDS="${WIRE_LIFECYCLE_DEADLINE_SECONDS:-600}"
 RUNTIME_LABELS=(
@@ -64,7 +65,8 @@ cleanup() {
     runtime network rm "$NETWORK" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT INT TERM
-mkdir -p "$OUT"
+mkdir -p "$OUT" "$ACK_DIR"
+chmod 0777 "$ACK_DIR"
 rm -f "$CAPTURE" "$CAPTURE_READY" "$CONSUMER_LOG" "$APPLICATION_LOG" "$RAW_LOG" "$ACK_FILE"
 
 runtime build -t "$DEV_IMAGE" -f "$ROOT/.devcontainer/Dockerfile" "$ROOT"
@@ -99,7 +101,7 @@ wait_for "capture subscription" "test -f '$CAPTURE_READY'"
 runtime run -d --name "$RESPONDER" --network "$NETWORK" \
     --entrypoint node "${RUNTIME_LABELS[@]}" \
     -v "$REVERSE/coatyjs-core-consumer.js:/agent/coatyjs-core-consumer.js:ro" \
-    -v "$OUT:/artifacts" \
+    -v "$ACK_DIR:/artifacts" \
     -e BROKER_URL="mqtt://$BROKER:1883" -e COATY_NAMESPACE="$NAMESPACE" \
     -e SCENARIO="$SCENARIO" -e SCENARIO_TIMEOUT_MS=30000 \
     -e LIFECYCLE_LATE_REPLY_DELAY_MS="${LIFECYCLE_LATE_REPLY_DELAY_MS:-4000}" \
