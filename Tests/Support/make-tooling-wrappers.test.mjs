@@ -186,6 +186,22 @@ test("long fuzz campaign delegates to the canonical nightly tier", () => {
   assert.doesNotMatch(target, /run-fuzz\.sh/);
 });
 
+test("long fuzz campaign delegates to the canonical nightly tier", () => {
+  const makefile = fs.readFileSync("Makefile", "utf8");
+  const target = recipe(makefile, "fuzz-long");
+  assert.match(target, /\$\(MAKE\).*axoloty-tool/);
+  assert.match(target, /AXOLOTY_TOOL_ARGS='test-tier nightly'/);
+  for (const name of [
+    "AXOLOTY_FUZZ_ITERATIONS",
+    "AXOLOTY_FUZZ_SEEDS",
+    "AXOLOTY_FUZZ_REPETITIONS",
+    "AXOLOTY_FUZZ_JOBS",
+  ]) {
+    assert.match(target, new RegExp(`AXOLOTY_TOOL_CONTAINER_ENV_VARS=[^\n]*${name}`));
+  }
+  assert.doesNotMatch(target, /run-fuzz\.sh/);
+});
+
 test("G1 device wrapper delegates policy and device access to axoloty-tool", () => {
   const makefile = fs.readFileSync("Makefile", "utf8");
   const target = recipe(makefile, "g1-bounded-runtime-device");
