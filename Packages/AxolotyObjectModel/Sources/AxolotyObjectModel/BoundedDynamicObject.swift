@@ -216,6 +216,22 @@ public struct BoundedDynamicObject<let byteCapacity: Int, let fieldCapacity: Int
         return result
     }
 
+    mutating func editEncodedFields<Schema: ObjectSchema>(
+        _ model: borrowing Schema
+    ) throws(ObjectError) where Schema: Sendable {
+        var editor = withUnsafeBytesOfRaw { pointer in
+            ObjectEditor<byteCapacity>(source: ByteSlice(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: rawLength))
+        }
+        do {
+            try model.encodeFields(to: &editor)
+        } catch {
+            throw error == .capacityExceeded
+                ? ObjectError(.capacityExceeded)
+                : ObjectError(.invalidEditValue)
+        }
+        try editor.commit(into: &self)
+    }
+
     private func withUnsafeBytesOfRaw<R>(_ body: (UnsafeRawPointer) throws -> R) rethrows -> R {
         try withUnsafeBytes(of: raw) { buffer in try body(buffer.baseAddress!) }
     }

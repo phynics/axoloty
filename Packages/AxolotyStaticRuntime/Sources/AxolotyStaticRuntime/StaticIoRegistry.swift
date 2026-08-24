@@ -2,6 +2,7 @@
 
 @_spi(AxolotyRuntimeAdapter) import AxolotyProtocol
 import AxolotyObjectModel
+import AxolotyWire
 
 enum StaticIoEndpointRole: UInt8 {
     case source
