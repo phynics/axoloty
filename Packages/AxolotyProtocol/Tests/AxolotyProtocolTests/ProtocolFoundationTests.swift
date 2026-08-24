@@ -70,6 +70,86 @@ struct ProtocolFoundationTests {
         #expect(delivery.deliveryKey == .channel(Array("payload".utf8)))
     }
 
+    @Test("owned actions copy every borrowed selector, target, route, and payload")
+    func ownedActionsCopyEveryBorrowedByteField() throws {
+        var selectorBytes = Array("selector".utf8)
+        var topicBytes = Array("coaty/3/test/CHN/fixture".utf8)
+        var payloadBytes = Array("payload".utf8)
+        var routeBytes = Array("external/fixture".utf8)
+
+        let owned: [OwnedProtocolAction] = selectorBytes.withUnsafeBufferPointer { selectorBuffer in
+            topicBytes.withUnsafeBufferPointer { topicBuffer in
+                payloadBytes.withUnsafeBufferPointer { payloadBuffer in
+                    routeBytes.withUnsafeBufferPointer { routeBuffer in
+                        let selector = ByteSlice(bytes: selectorBuffer.baseAddress!, length: selectorBuffer.count)
+                        let topic = ByteSlice(bytes: topicBuffer.baseAddress!, length: topicBuffer.count)
+                        let payload = ByteSlice(bytes: payloadBuffer.baseAddress!, length: payloadBuffer.count)
+                        let route = ByteSlice(bytes: routeBuffer.baseAddress!, length: routeBuffer.count)
+                        let routingKey = try! ProtocolRoutingKey(capability: .channel, sourceID: .zero)
+                        let delivery = BorrowedProtocolDelivery(
+                            routingKey: routingKey,
+                            deliveryKey: .channel(selector),
+                            routeClassification: .external,
+                            topic: topic,
+                            payload: payload
+                        )
+                        let profile = BorrowedProtocolPublication(
+                            routingKey: routingKey,
+                            target: .profile(eventTypeFilter: selector, filterKind: .direct),
+                            payload: payload,
+                            isApplicationDelivery: false
+                        )
+                        let association = BorrowedIoAssociationTransition(
+                            delivery: delivery,
+                            sourceID: .zero,
+                            actorID: .zero,
+                            change: .removed,
+                            route: BorrowedProtocolRouteSnapshot(slice: route),
+                            routeClassification: .external
+                        )
+                        let external = BorrowedExternalRouteTransition(
+                            sourceID: .zero,
+                            actorID: .zero,
+                            route: route
+                        )
+                        return [
+                            BorrowedProtocolAction.deliver(delivery).owned(),
+                            BorrowedProtocolAction.publish(profile).owned(),
+                            BorrowedProtocolAction.associationChanged(association).owned(),
+                            BorrowedProtocolAction.externalRouteActivated(external).owned(),
+                            BorrowedProtocolAction.externalRouteDeactivated(external).owned()
+                        ]
+                    }
+                }
+            }
+        }
+
+        selectorBytes[0] = Character("X").asciiValue!
+        topicBytes[0] = Character("X").asciiValue!
+        payloadBytes[0] = Character("X").asciiValue!
+        routeBytes[0] = Character("X").asciiValue!
+
+        guard case .deliver(let delivery) = owned[0],
+              case .channel(let deliverySelector) = delivery.deliveryKey,
+              case .publish(let publication) = owned[1],
+              case .profile(let profileSelector, _) = publication.target,
+              case .associationChanged(let association) = owned[2],
+              case .externalRouteActivated(let activated) = owned[3],
+              case .externalRouteDeactivated(let deactivated) = owned[4] else {
+            Issue.record("owned action cases changed during copying")
+            return
+        }
+        #expect(deliverySelector == Array("selector".utf8))
+        #expect(delivery.topic == Array("coaty/3/test/CHN/fixture".utf8))
+        #expect(delivery.payload == Array("payload".utf8))
+        #expect(profileSelector == Array("selector".utf8))
+        #expect(publication.payload == Array("payload".utf8))
+        #expect(!publication.isApplicationDelivery)
+        #expect(association.route == Array("external/fixture".utf8))
+        #expect(activated.route == Array("external/fixture".utf8))
+        #expect(deactivated.route == Array("external/fixture".utf8))
+    }
+
     @Test("Coaty Core Profile 3 is closed")
     func profileIsClosed() {
         #expect(CoatyCore3Profile.namespace == "coaty")

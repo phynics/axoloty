@@ -544,6 +544,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 let delivery = BorrowedProtocolDelivery(
                     routingKey: frame.routingKey,
                     deliveryKey: .ioActor(associations[index].actorID),
+                    routeClassification: associations[index].external ? .external : .coaty,
                     topic: frame.topic,
                     payload: frame.payload
                 )

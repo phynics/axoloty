@@ -268,6 +268,40 @@ struct ProtocolProcessorTests {
         #expect(sink.count == 1)
     }
 
+    @Test("external association fanout retains external route classification")
+    func externalAssociationDeliveryClassification() throws {
+        let source = "00000000-0000-4000-8000-000000000001"
+        let actor = "00000000-0000-4000-8000-000000000002"
+        let route = "external/wire-compat-v1/io-external-1"
+        let classifier = ExactProtocolRouteClassifier(externalRoute: "external/wire-compat-v1/io-external-1")
+        var processor = ProtocolProcessor<2>()
+
+        let established = try withBorrowedFrame(
+            topic: "coaty/3/test/ASC/\(source)",
+            payload: "{\"ioSourceId\":\"\(source)\",\"ioActorId\":\"\(actor)\",\"associatingRoute\":\"\(route)\"}"
+        ) { frame in
+            var sink = InlineProtocolActionSink<1>()
+            return processor.processInbound(frame, nowMS: 1, classifier: classifier, sink: &sink)
+        }
+        #expect(established == .accepted)
+
+        let delivered: OwnedProtocolAction = try withBorrowedFrame(
+            topic: "coaty/3/test/IOV/\(source)",
+            payload: "{\"value\":1}"
+        ) { frame in
+            var sink = InlineProtocolActionSink<1>()
+            let result = processor.processInbound(frame, nowMS: 2, classifier: classifier, sink: &sink)
+            #expect(result == .accepted)
+            return try #require(sink[0]).owned()
+        }
+        guard case .deliver(let delivery) = delivered else {
+            Issue.record("external IoValue did not emit a delivery")
+            return
+        }
+        #expect(delivery.routeClassification == .external)
+        #expect(delivery.deliveryKey == .ioActor(UUID16(parsing: actor)!))
+    }
+
     @Test("external disassociation flags reject before state mutation")
     func externalDisassociationFlagRejects() throws {
         var processor = ProtocolProcessor<1>()
