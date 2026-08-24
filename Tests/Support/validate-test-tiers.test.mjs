@@ -102,7 +102,7 @@ test("G4 runtime filters are disjoint and use their owning Swift packages", () =
 
   const packageAssertions = [
     ["g4-protocol-lifecycle", "Packages/AxolotyProtocol", "ProtocolFoundationTests|ProtocolProcessorTests"],
-    ["g4-static-runtime", "Packages/AxolotyStaticRuntime", "StaticRuntimeTests"],
+    ["g4-static-runtime", "Packages/AxolotyStaticRuntime", "StaticRuntimeTests|StaticTypedIoTests"],
   ];
   for (const [id, packagePath, filter] of packageAssertions) {
     const candidate = node(id);

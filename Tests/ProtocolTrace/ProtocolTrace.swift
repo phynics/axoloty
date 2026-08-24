@@ -366,7 +366,7 @@ private struct SharedProtocolTraceReplay<let capacity: Int>: ~Copyable {
         }
     }
     private static func traceCode(_ code: ProtocolError.Code) -> TraceRejectionCode {
-        switch code { case .malformedFrame, .malformedPayload, .invalidCorrelation: return .malformed; case .unsupportedCapability: return .unsupported; case .capacityExceeded: return .saturated; case .duplicate: return .duplicate; case .deadlineExpired: return .deadlineExpired; case .correlationMismatch: return .correlationMismatch; case .externalRouteMismatch: return .externalRouteMismatch; case .borrowedValueEscaped: return .malformed }
+        switch code { case .malformedFrame, .malformedPayload, .invalidCorrelation, .invalidEndpoint: return .malformed; case .unsupportedCapability: return .unsupported; case .capacityExceeded: return .saturated; case .duplicate: return .duplicate; case .deadlineExpired: return .deadlineExpired; case .correlationMismatch: return .correlationMismatch; case .externalRouteMismatch: return .externalRouteMismatch; case .borrowedValueEscaped: return .malformed }
     }
     private static func reason(_ code: TraceRejectionCode) -> String {
         switch code { case .payloadTooLarge: return "payload exceeds bounded trace workspace"; case .malformed: return "fixture is marked malformed"; case .deadlineExpired: return "operation deadline has elapsed"; case .unsupported: return "family is outside the runtime capability set"; case .duplicate: return "object is already active"; case .saturated: return "object table is at capacity"; case .correlationMismatch: return "response correlation is not pending"; case .externalRouteMismatch: return "external route flag does not match the binding route" }

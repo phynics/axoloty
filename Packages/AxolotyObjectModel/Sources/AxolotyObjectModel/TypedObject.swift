@@ -104,17 +104,10 @@ public struct BoundedObject<
         var nextModel = model
         do { try body(&nextModel) } catch { throw ObjectError(.invalidEditValue) }
         do {
-            try dynamic.edit { editor in
-                try nextModel.encodeFields(to: &editor)
-            }
-        } catch let error as ObjectError {
-            switch error.reason {
-            case .capacityExceeded, .fieldIndexOverflow: throw error
-            default: throw ObjectError(.invalidEditValue, byteOffset: error.byteOffset)
-            }
-        } catch let error as ObjectEncodingError {
-            throw error == .capacityExceeded ? ObjectError(.capacityExceeded) : ObjectError(.invalidEditValue)
-        } catch { throw ObjectError(.invalidEditValue) }
+            try dynamic.editEncodedFields(nextModel)
+        } catch {
+            throw error
+        }
         model = nextModel
     }
 

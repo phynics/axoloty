@@ -9,6 +9,8 @@ get_filename_component(AXOLOTY_ROOT
 set(AXOLOTY_STATIC_RUNTIME_SOURCES
     "${AXOLOTY_ROOT}/Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntime/StaticRuntime.swift"
     "${AXOLOTY_ROOT}/Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntime/StaticIoActor.swift"
+    "${AXOLOTY_ROOT}/Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntime/StaticIoRegistry.swift"
+    "${AXOLOTY_ROOT}/Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntime/StaticIoRuntime.swift"
 )
 foreach(AXOLOTY_STATIC_RUNTIME_SOURCE IN LISTS AXOLOTY_STATIC_RUNTIME_SOURCES)
     if(NOT EXISTS "${AXOLOTY_STATIC_RUNTIME_SOURCE}")
