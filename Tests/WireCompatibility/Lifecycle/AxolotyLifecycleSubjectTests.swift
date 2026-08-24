@@ -37,7 +37,7 @@ struct AxolotyLifecycleSubjectTests {
             do {
                 _ = try await nextEvent(&iterator, timeout: .seconds(1))
                 Issue.record("the duplicate Return was delivered to the runtime event stream")
-            } catch is LifecycleTimeout {
+            } catch is AsyncWaitTimeoutError {
                 report(state: "ignored", scenario: "duplicate-reply", extra: ["variant": "duplicate"])
             }
             report(state: "done", scenario: "duplicate-reply")
@@ -68,7 +68,7 @@ struct AxolotyLifecycleSubjectTests {
             do {
                 _ = try await nextEvent(&iterator, timeout: .seconds(2.5))
                 Issue.record("the deliberately late Return arrived before the request deadline")
-            } catch is LifecycleTimeout {
+            } catch is AsyncWaitTimeoutError {
                 guard await runtime.expire(nowMS: requestNowMS &+ 2_500) else {
                     Issue.record("the request deadline did not expire")
                     throw LifecycleFailure.deadlineNotExpired
@@ -78,7 +78,7 @@ struct AxolotyLifecycleSubjectTests {
             do {
                 _ = try await nextEvent(&iterator, timeout: .seconds(3))
                 Issue.record("the late Return was delivered after expiry")
-            } catch is LifecycleTimeout {
+            } catch is AsyncWaitTimeoutError {
                 // The capture verifier separately proves that the responder
                 // published the late Return on the wire.
             }
@@ -186,21 +186,17 @@ struct AxolotyLifecycleSubjectTests {
     }
 
     private func waitForState(_ expected: RuntimeState, runtime: AxolotyRuntime) async throws {
-        for _ in 0..<240 {
-            if await runtime.state() == expected { return }
-            try await Task.sleep(for: .milliseconds(250))
+        try await waitUntil("runtime to enter \(expected) state", timeout: .seconds(60)) {
+            await runtime.state() == expected
         }
-        throw LifecycleTimeout()
     }
 
     private func waitForReconnectMarker() async throws {
         let path = ProcessInfo.processInfo.environment["WIRE_RECONNECT_READY"]
         guard let path, !path.isEmpty else { throw LifecycleFailure.reconnectHandshakeMissing }
-        for _ in 0..<1_200 {
-            if FileManager.default.fileExists(atPath: path) { return }
-            try await Task.sleep(for: .milliseconds(250))
+        try await waitUntil("reconnect handshake marker", timeout: .seconds(300)) {
+            FileManager.default.fileExists(atPath: path)
         }
-        throw LifecycleTimeout()
     }
 
     private func queuedPayload(name: String) -> [UInt8] {
@@ -218,18 +214,7 @@ struct AxolotyLifecycleSubjectTests {
         _ iterator: inout AsyncStream<RuntimeEventValue>.Iterator,
         timeout: Duration
     ) async throws -> RuntimeEventValue {
-        let box = EventIteratorBox(iterator)
-        defer { iterator = box.iterator }
-        return try await withThrowingTaskGroup(of: RuntimeEventValue?.self) { group in
-            group.addTask { await box.iterator.next() }
-            group.addTask {
-                try await Task.sleep(for: timeout)
-                throw LifecycleTimeout()
-            }
-            defer { group.cancelAll() }
-            guard let value = try await group.next() ?? nil else { throw LifecycleTimeout() }
-            return value
-        }
+        try await nextValue(&iterator, timeout: timeout)
     }
 
     private func report(state: String, scenario: String, extra: [String: String] = [:]) {
@@ -245,19 +230,9 @@ struct AxolotyLifecycleSubjectTests {
     }
 }
 
-private struct LifecycleTimeout: Error {}
-
 private enum LifecycleFailure: Error {
     case invalidProbe
     case deadlineNotExpired
     case offlinePublicationRejected
     case reconnectHandshakeMissing
-}
-
-private final class EventIteratorBox: @unchecked Sendable {
-    var iterator: AsyncStream<RuntimeEventValue>.Iterator
-
-    init(_ iterator: AsyncStream<RuntimeEventValue>.Iterator) {
-        self.iterator = iterator
-    }
 }

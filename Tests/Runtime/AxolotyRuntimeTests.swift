@@ -116,9 +116,8 @@ struct AxolotyRuntimeTests {
             )
         )
         #expect(receipt == .accepted)
-        for _ in 0..<100 {
-            if await transport.sentCount() == 1 { break }
-            try? await Task.sleep(for: .milliseconds(5))
+        try await waitUntil("local operation to reach the transport") {
+            await transport.sentCount() == 1
         }
         #expect(await transport.sentCount() == 1)
         await runtime.stop()
@@ -139,9 +138,8 @@ struct AxolotyRuntimeTests {
             timeoutMS: 1_000
         ))
         #expect(receipt == .accepted)
-        for _ in 0..<100 {
-            if await transport.sentCount() == 1 { break }
-            try? await Task.sleep(for: .milliseconds(5))
+        try await waitUntil("Call operation to reach the transport") {
+            await transport.sentCount() == 1
         }
         let action = try #require(await transport.lastSent())
         guard case .profile(let filter, _) = action.target else {
@@ -164,9 +162,8 @@ struct AxolotyRuntimeTests {
             payload: Array(#"{"privateData":{"sequence":7}}"#.utf8)
         ))
         #expect(receipt == .accepted)
-        for _ in 0..<100 {
-            if await transport.sentCount() == 1 { break }
-            try? await Task.sleep(for: .milliseconds(5))
+        try await waitUntil("Channel operation to reach the transport") {
+            await transport.sentCount() == 1
         }
         let action = try #require(await transport.lastSent())
         guard case .profile(let filter, let kind) = action.target else {
@@ -214,9 +211,8 @@ struct AxolotyRuntimeTests {
 
         let payload = Array(#"{"object":{"objectId":"77777777-7777-4777-8777-777777777777","coreType":"CoatyObject","objectType":"com.coaty.test.WireFixture","name":"wire-fixture"}}"#.utf8)
         #expect(await runtime.publish(.advertise(payload)) == .accepted)
-        for _ in 0..<100 {
-            if await transport.sentCount() == 2 { break }
-            try? await Task.sleep(for: .milliseconds(5))
+        try await waitUntil("both Advertise variants to reach the transport") {
+            await transport.sentCount() == 2
         }
         #expect(await transport.sentCount() == 2)
         #expect(await runtime.state() == .running)
@@ -380,9 +376,8 @@ struct AxolotyRuntimeTests {
         try await runtime.start()
 
         await transport.fail(TestTransportFailure())
-        for _ in 0..<100 {
-            if await runtime.state() == .reconnecting { break }
-            try? await Task.sleep(for: .milliseconds(5))
+        try await waitUntil("runtime to enter reconnecting state") {
+            await runtime.state() == .reconnecting
         }
         #expect(await runtime.state() == .reconnecting)
         #expect((await runtime.diagnosticsSnapshot()).transportFailures == 1)
@@ -396,9 +391,8 @@ struct AxolotyRuntimeTests {
         let runtime = AxolotyRuntime(definition: definition, transport: transport)
         try await runtime.start()
         await transport.fail(TestTransportFailure())
-        for _ in 0..<100 {
-            if await runtime.state() == .reconnecting { break }
-            try? await Task.sleep(for: .milliseconds(5))
+        try await waitUntil("runtime to enter reconnecting state") {
+            await runtime.state() == .reconnecting
         }
         #expect(await runtime.state() == .reconnecting)
         let receipt = await runtime.publish(RuntimeOperation.advertise(
@@ -408,9 +402,8 @@ struct AxolotyRuntimeTests {
         #expect(receipt == .accepted)
         #expect(await transport.sentCount() == 0)
         await runtime.reconnect()
-        for _ in 0..<100 {
-            if await transport.sentCount() == 2 { break }
-            try? await Task.sleep(for: .milliseconds(5))
+        try await waitUntil("queued publications to reach the transport") {
+            await transport.sentCount() == 2
         }
         #expect(await runtime.state() == .running)
         #expect(await transport.sentCount() == 2)
@@ -428,16 +421,14 @@ struct AxolotyRuntimeTests {
             sourceID: .zero,
             payload: [0x7B, 0x7D]
         )) == .accepted)
-        for _ in 0..<100 {
-            if await transport.sendStarted { break }
-            try? await Task.sleep(for: .milliseconds(5))
+        try await waitUntil("outbound transport send to start") {
+            await transport.sendStarted
         }
         #expect(await transport.sendStarted)
 
         let stopping = Task { await runtime.stop() }
-        for _ in 0..<100 {
-            if await transport.didStop { break }
-            try? await Task.sleep(for: .milliseconds(5))
+        try await waitUntil("transport stop to begin") {
+            await transport.didStop
         }
         #expect(await transport.didStop)
         #expect(await runtime.lifecycleState() == .stopping)
@@ -500,14 +491,17 @@ private actor DrainingTransport: AxolotyRuntimeTransport {
     private(set) var sendStarted = false
     private(set) var didStop = false
     private var released = false
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
     func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) {}
 
     func send(_ publication: OwnedProtocolPublication, namespace: String) async throws {
         sendStarted = true
-        while !released {
-            try? await Task.sleep(for: .milliseconds(5))
+        if !released {
+            await withCheckedContinuation { continuation in
+                releaseContinuation = continuation
+            }
         }
     }
 
@@ -517,5 +511,9 @@ private actor DrainingTransport: AxolotyRuntimeTransport {
     func advertise(identity: RuntimeIdentity?, namespace: String) async throws {}
     func deadvertise(identity: RuntimeIdentity?, namespace: String) async throws {}
 
-    func releaseSend() { released = true }
+    func releaseSend() {
+        released = true
+        releaseContinuation?.resume()
+        releaseContinuation = nil
+    }
 }
