@@ -17,7 +17,10 @@ jobs:
   required-checks:
     name: Required Linux checks
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # The canonical verify plan has an 80-minute budget. Keep enough room for
+    # image setup, cache restoration, and durable artifact upload before the
+    # runner's hard deadline.
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -40,6 +43,13 @@ jobs:
           SWIFT_BUILD_CACHE_PREFIX="swift-build-v3-compiler-6.3-linux-${image_identity}-${{ hashFiles('Package.resolved', '**/Package.swift', '.devcontainer/Dockerfile') }}-"
           echo "SWIFT_BUILD_CACHE_PREFIX=${SWIFT_BUILD_CACHE_PREFIX}" >> "$GITHUB_ENV"
           echo "SWIFT_BUILD_CACHE_KEY=${SWIFT_BUILD_CACHE_PREFIX}${GITHUB_SHA}" >> "$GITHUB_ENV"
+
+      - name: Prepare verification diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .testing/runs
+          : > .testing/required-checks.log
 
       - name: Setup container image
         uses: ./.github/actions/setup-container
@@ -95,23 +105,13 @@ jobs:
           restore-keys: |
             ${{ env.SWIFT_BUILD_CACHE_PREFIX }}
 
-      - name: Prepare changed-line diff
-        if: github.event_name == 'pull_request'
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p .testing/coverage
-          git diff --unified=0 "$BASE_SHA" "$GITHUB_SHA" > .testing/coverage/changed.diff
-
       - name: Run canonical CI verification plan
         env:
-          COVERAGE_DIFF_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
           AXOLOTY_OUTPUT: human
+          AXOLOTY_RUNS_DIR: .testing/runs
         run: |
-          mkdir -p .testing
-          make verify-ci CONTAINER_RUNTIME=podman BUILD_DIR=".build/ci" COVERAGE_BUILD_DIR=".build/ci-coverage" BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache AXOLOTY_TOOL_CONTAINER_ENV_VARS=AXOLOTY_OUTPUT
+          set -o pipefail
+          make verify-ci CONTAINER_RUNTIME=podman BUILD_DIR=".build/ci" BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache AXOLOTY_TOOL_CONTAINER_ENV_VARS="AXOLOTY_OUTPUT AXOLOTY_RUNS_DIR" 2>&1 | tee .testing/required-checks.log
 
       - name: Report Swift build cache reuse
         if: always()
@@ -123,8 +123,24 @@ jobs:
             echo "### Swift build cache"
             echo "- Exact hit: \`${CACHE_EXACT_HIT}\`"
             echo "- Restored key: \`${CACHE_MATCHED_KEY}\`"
-            echo "- Active paths: \`.build/ci\`, \`.build/ci-coverage\`"
-            du -sh .build/ci .build/ci-coverage 2>/dev/null || true
+            echo "- Active path: \`.build/ci\`"
+            du -sh .build/ci 2>/dev/null || true
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Summarize verification evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifests=$(find .testing/runs -type f -name manifest.json -print 2>/dev/null | wc -l)
+          verifier_logs=$(find .testing/runs -type f -name verifier.log -print 2>/dev/null | wc -l)
+          {
+            echo "### Verification evidence"
+            echo "- Run manifests: \`${manifests}\`"
+            echo "- Verifier logs: \`${verifier_logs}\`"
+            if [ "$manifests" -eq 0 ] || [ "$verifier_logs" -eq 0 ]; then
+              echo "- Warning: the tooling did not leave a complete run artifact set."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Save SwiftPM dependency cache
@@ -153,24 +169,96 @@ jobs:
             .build/ci/x86_64-unknown-linux-gnu/debug/ModuleCache
           key: ${{ env.SWIFT_BUILD_CACHE_KEY }}
 
-      - name: Upload coverage summary
+      - name: Upload verification run diagnostics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: coverage-summary-${{ github.run_id }}
+          name: verification-runs-${{ github.run_id }}
+          path: |
+            .testing/required-checks.log
+            .testing/runs/**
+          if-no-files-found: warn
+          retention-days: 7
+
+  coverage:
+    name: Source coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Compute cache key
+        run: |
+          echo "SWIFT_CACHE_KEY=swiftpm-6.3-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile') }}" >> "$GITHUB_ENV"
+
+      - name: Prepare coverage diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .testing/coverage
+          : > .testing/coverage/job.log
+
+      - name: Setup container image
+        uses: ./.github/actions/setup-container
+        with:
+          runtime: podman
+          require-current-build-inputs: "true"
+          content-tag-prefix: swift-6.3
+          candidate-tag-prefix: ${{ github.event_name == 'pull_request' && format('swift-6.3-pr-{0}', github.event.pull_request.number) || 'swift-6.3' }}
+
+      - name: Restore SwiftPM dependency cache
+        id: swiftpm_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .swiftpm-cache
+          key: ${{ env.SWIFT_CACHE_KEY }}
+          restore-keys: |
+            swiftpm-6.3-linux-
+
+      - name: Run coverage plan
+        env:
+          COVERAGE_DIFF_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+        shell: bash
+        run: |
+          set -o pipefail
+          make coverage-check CONTAINER_RUNTIME=podman BUILD_DIR=".build/coverage" COVERAGE_BUILD_DIR=".build/coverage" BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache 2>&1 | tee .testing/coverage/job.log
+
+      - name: Require coverage report
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -s .testing/coverage/report.json ]; then
+            echo "::error::Coverage did not produce .testing/coverage/report.json" >&2
+            exit 1
+          fi
+          if [ ! -s .testing/coverage/report.txt ]; then
+            echo "::error::Coverage did not produce .testing/coverage/report.txt" >&2
+            exit 1
+          fi
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-report-${{ github.run_id }}
           path: |
             .testing/coverage/report.json
             .testing/coverage/report.txt
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 7
 
       - name: Upload coverage diagnostics
-        if: failure() || github.event_name == 'workflow_dispatch'
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-diagnostics-${{ github.run_id }}
-          path: .testing/coverage/
-          if-no-files-found: ignore
+          path: .testing/coverage/**
+          if-no-files-found: warn
           retention-days: 7
 
   prune-build-caches:

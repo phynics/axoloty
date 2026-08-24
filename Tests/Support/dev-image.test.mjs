@@ -15,6 +15,8 @@ const setupAction = fs.readFileSync(".github/actions/setup-container/action.yml"
 const ciWorkflow = fs.readFileSync(".github/workflows/ci.yml", "utf8");
 const imageWorkflow = fs.readFileSync(".github/workflows/container-image.yml", "utf8");
 const openImageLockPR = fs.readFileSync(".github/scripts/open-image-lock-pr.sh", "utf8");
+const requiredCIJob = ciWorkflow.slice(ciWorkflow.indexOf("  required-checks:"), ciWorkflow.indexOf("\n  coverage:"));
+const coverageCIJob = ciWorkflow.slice(ciWorkflow.indexOf("  coverage:"), ciWorkflow.indexOf("\n  prune-build-caches:"));
 
 function workflowStep(name) {
   const marker = `      - name: ${name}`;
@@ -369,7 +371,7 @@ test("CI reuses stable, bounded Swift build cache namespaces", () => {
   assert.doesNotMatch(ciWorkflow, /^ {12}\.build\/ci(?:-coverage)?$/m);
   assert.doesNotMatch(ciWorkflow, /^ {12}\.build\/ci-coverage\//m);
   assert.match(ciWorkflow, /key: \$\{\{ env\.SWIFT_BUILD_CACHE_KEY \}\}[\s\S]*restore-keys: \|\s+\$\{\{ env\.SWIFT_BUILD_CACHE_PREFIX \}\}/);
-  assert.match(ciWorkflow, /BUILD_DIR="\.build\/ci" COVERAGE_BUILD_DIR="\.build\/ci-coverage"/);
+  assert.match(requiredCIJob, /make verify-ci CONTAINER_RUNTIME=podman BUILD_DIR="\.build\/ci" BUILD_LOCK=0/);
   assert.doesNotMatch(ciWorkflow, /BUILD_DIR="\.build\/\$\{GITHUB_SHA\}"/);
   assert.match(ciWorkflow, /actions: write/);
   assert.match(ciWorkflow, /gh cache list --ref refs\/heads\/main --key "swift-build-v3-compiler-6\.3-linux-"/);
@@ -485,6 +487,26 @@ test("published content-keyed images avoid repeated fallback builds and refresh 
   assert.match(openImageLockPR, /GitHub Actions is not permitted to create or approve pull requests \(createPullRequest\)/);
   assert.match(openImageLockPR, /compare\/main\.\.\.automation\/dev-image-lock\?expand=1/);
   assert.match(openImageLockPR, /GITHUB_STEP_SUMMARY/);
+});
+
+test("required CI preserves the plan budget and uploads durable run evidence", () => {
+  assert.match(requiredCIJob, /timeout-minutes: 90/);
+  assert.match(requiredCIJob, /AXOLOTY_RUNS_DIR: \.testing\/runs/);
+  assert.match(requiredCIJob, /AXOLOTY_TOOL_CONTAINER_ENV_VARS="AXOLOTY_OUTPUT AXOLOTY_RUNS_DIR"/);
+  assert.match(requiredCIJob, /Upload verification run diagnostics[\s\S]*\.testing\/required-checks\.log[\s\S]*\.testing\/runs\/\*\*[\s\S]*if-no-files-found: warn/);
+  assert.match(requiredCIJob, /Summarize verification evidence[\s\S]*manifest\.json[\s\S]*verifier\.log/);
+  assert.doesNotMatch(requiredCIJob, /COVERAGE_BUILD_DIR|\.testing\/coverage|Upload coverage/);
+  assert.match(requiredCIJob, /Save Swift compiler cache[\s\S]*if: success\(\)/);
+});
+
+test("coverage is an explicit job with a truthful missing-report failure", () => {
+  assert.match(coverageCIJob, /name: Source coverage/);
+  assert.match(coverageCIJob, /timeout-minutes: 90/);
+  assert.match(coverageCIJob, /make coverage-check CONTAINER_RUNTIME=podman BUILD_DIR="\.build\/coverage" COVERAGE_BUILD_DIR="\.build\/coverage"/);
+  assert.match(coverageCIJob, /Require coverage report[\s\S]*Coverage did not produce \.testing\/coverage\/report\.json/);
+  assert.match(coverageCIJob, /Upload coverage report[\s\S]*if-no-files-found: error/);
+  assert.match(coverageCIJob, /Upload coverage diagnostics[\s\S]*if-no-files-found: warn/);
+  assert.doesNotMatch(coverageCIJob, /actions\/cache\/save/);
 });
 
 test("image lock PR fallback accepts only the exact repository policy denial", () => {

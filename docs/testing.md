@@ -49,7 +49,10 @@ make explain TIER=unit
 ```
 
 `make verify` runs the ordinary pre-PR plan from the manifest. `make verify-ci`
-runs the same mandatory plan plus CI-only coverage and support gates. Use
+runs the mandatory CI plan and support gates. GitHub Actions runs source
+coverage in the separate, clearly named `Source coverage` job with
+`make coverage-check`; coverage artifacts are not part of the required test
+orchestration. Use
 `AXOLOTY_OUTPUT=json` for parseable manifests or `AXOLOTY_OUTPUT=human` for
 streaming progress and summaries. `FILTER` is passed as one argv element, never
 through a shell command string. `make explain` never executes a command and

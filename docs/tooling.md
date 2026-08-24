@@ -113,11 +113,13 @@ ESP-IDF C/C++ compilation uses the separately mounted
 revision, compiler identity, target, and build purpose, so worktrees reuse
 immutable outputs without sharing their mutable build directories.
 
-Required CI checks restore separate SwiftPM download and coverage-build caches.
-Only successful `main` runs save them, so pull requests can reuse compiled
-dependencies without writing trusted caches. Development image publishing uses
-a GHCR-backed BuildKit cache; ordinary source checks pull the reviewed image by
-digest instead of rebuilding it.
+Required CI checks restore separate SwiftPM download and compiler-metadata
+caches. Only successful `main` runs save these caches, so pull requests can
+reuse compiled dependencies without writing trusted caches. The separate
+coverage job uses an isolated instrumented build directory and does not save
+mutable coverage build outputs. Development image publishing uses a GHCR-backed
+BuildKit cache; ordinary source checks pull the reviewed image by digest instead
+of rebuilding it.
 
 ## Fixture bundling vs fresh wire evidence
 
