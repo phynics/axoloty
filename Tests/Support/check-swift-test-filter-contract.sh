@@ -41,7 +41,7 @@ while IFS=$'\t' read -r node_id filter; do
 done < <(node - "$manifest" <<'NODE'
 const fs = require("node:fs");
 const manifest = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-for (const id of ["test-unit", "test-module", "test-fuzz"]) {
+for (const id of ["test-unit", "test-module", "test-fuzz", "test-wire"]) {
   const node = manifest.nodes.find(candidate => candidate.id === id);
   if (!node || typeof node.filter !== "string" || !node.filter) {
     throw new Error(`${id}: missing canonical Swift test filter`);

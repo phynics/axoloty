@@ -113,7 +113,7 @@ separate from protocol-scenario execution.
 | G4 migration | `make test-tier TIER=g4-runtime` | no | Deferred replacement-runtime package and first-party consumer boundary checks; strict once G4 roots exist |
 | Property | `make test-fuzz` | yes | Deterministic wire parser bounds and corruption tests |
 | Integration | `make test` | yes | Full suite against a fresh Mosquitto |
-| Wire offline | `make test-wire` | yes | `WireFixtureTests` and lifecycle scenarios |
+| Wire offline | `make test-wire` | yes | Maintained wire fixture/capture, IO boundary, and lifecycle compatibility contracts; no broker |
 | Wire live | `make test-wire-live` | yes | Live CoatyJS interop (host-run containers) |
 | Nightly | `make fuzz-long` | yes | Multi-seed fuzz campaign |
 | Harness self-tests | `make test-support` | no | Fuzz runner, capture/verifier tools, tier validation |
