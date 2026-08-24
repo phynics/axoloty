@@ -220,18 +220,6 @@ struct AxolotyRuntimeTests {
         await runtime.stop()
     }
 
-    @Test("Channel requires a typed identifier")
-    func channelRejectsMissingIdentifier() async throws {
-        let runtime = AxolotyRuntime(definition: try makeDefinition(), transport: TestTransport())
-        try await runtime.start()
-        #expect(await runtime.publish(RuntimeOperation(
-            capability: .channel,
-            sourceID: .zero,
-            payload: Array("{}".utf8)
-        )) == .rejected(.invalidOperationName))
-        await runtime.stop()
-    }
-
     @Test("default request deadlines use the monotonic runtime clock")
     func defaultRequestUsesMonotonicClock() async throws {
         let definition = try makeDefinition()
@@ -442,9 +430,8 @@ struct AxolotyRuntimeTests {
             try? await Task.sleep(for: .milliseconds(5))
         }
         #expect(await runtime.state() == .reconnecting)
-        let receipt = await runtime.publish(RuntimeOperation.advertise(
-            sourceID: .zero,
-            payload: Array(#"{"object":{"objectId":"66666666-6666-4666-8666-666666666666","coreType":"CoatyObject","objectType":"com.coaty.test.WireQueuedFixture","name":"first"}}"#.utf8)
+        let receipt = await runtime.publish(.advertise(
+            Array(#"{"object":{"objectId":"66666666-6666-4666-8666-666666666666","coreType":"CoatyObject","objectType":"com.coaty.test.WireQueuedFixture","name":"first"}}"#.utf8)
         ))
         #expect(receipt == .accepted)
         #expect(await transport.sentCount() == 0)

@@ -408,7 +408,11 @@ func serveMqttCLIOverridesEnvPort() {
 
 @Test(arguments: ["mqtt", "mcp", "dev"])
 func dispatcherServeSubcommandHelpPrintsContextualUsage(subcommand: String) {
-    let dispatcher = AxolotyCommandDispatcher(executableName: "ax", environment: [:])
+    let dispatcher = AxolotyCommandDispatcher(
+        executableName: "ax",
+        environment: [:],
+        installSignalHandler: false
+    )
 
     let result = dispatcher.run(arguments: ["serve", subcommand, "--help"])
 
