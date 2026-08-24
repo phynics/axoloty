@@ -8,10 +8,15 @@ get_filename_component(AXOLOTY_ROOT
 
 set(AXOLOTY_STATIC_RUNTIME_SOURCES
     "${AXOLOTY_ROOT}/Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntime/StaticRuntime.swift"
+    "${AXOLOTY_ROOT}/Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntime/StaticIoActor.swift"
 )
-if(NOT EXISTS "${AXOLOTY_STATIC_RUNTIME_SOURCES}")
-    message(FATAL_ERROR "No AxolotyStaticRuntime source found at ${AXOLOTY_STATIC_RUNTIME_SOURCES}")
-endif()
+foreach(AXOLOTY_STATIC_RUNTIME_SOURCE IN LISTS AXOLOTY_STATIC_RUNTIME_SOURCES)
+    if(NOT EXISTS "${AXOLOTY_STATIC_RUNTIME_SOURCE}")
+        message(FATAL_ERROR
+            "No AxolotyStaticRuntime source found at ${AXOLOTY_STATIC_RUNTIME_SOURCE}"
+        )
+    endif()
+endforeach()
 
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/empty_bridging_header.h "")
 

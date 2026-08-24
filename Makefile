@@ -87,7 +87,8 @@ DOC_HOSTING_BASE_PATH ?=
 	coverage coverage-check ci-preflight ci shell docs lint \
 	wire-tool clean serve-mqtt serve-mcp serve-dev embedded-toolchain-doctor \
 	embedded-device-info embedded-device-smoke embedded-reproducible-build \
-	benchmark-size benchmark-wire benchmark-wire-allocation benchmark-wire-bounds \
+	benchmark-size benchmark-wire benchmark-wire-allocation benchmark-static-io-ownership-allocation benchmark-wire-bounds \
+	check-static-io-macro-embedded \
 	benchmark-wire-device check-budget-manifest check-embedded-swift \
 	check-embedded-swift-linker embedded-swift-build embedded-swift-flash \
 	embedded-swift-test embedded-swift-reproducible-build \
@@ -159,6 +160,8 @@ help:
 		'make benchmark-size  Build release consumers and compare binary-size baselines' \
 		'make benchmark-wire  Run release wire benchmarks (p50/p95 latency + allocations)' \
 		'make benchmark-wire-allocation  Host zero-per-iteration allocation gate for wire decode/route' \
+		'make benchmark-static-io-ownership-allocation  Host zero-growth allocation gate for static IO ownership primitives' \
+		'make check-static-io-macro-embedded  Type-check macro-generated IO handler for ESP32-C6' \
 		'make benchmark-wire-bounds  Run malformed-input and capacity bounds tests' \
 		'make benchmark-wire-device  Run ESP32-C6 on-device wire benchmarks' \
 		'make check-budget-manifest  Validate the performance budget manifest' \
@@ -629,6 +632,19 @@ benchmark-wire-allocation: resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
 	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
 	.devcontainer/run.sh /workspace/Tests/Support/check-benchmark-wire-allocation.sh
+
+# Host allocation-regression gate for the macro-generated static handler and
+# fixed owning action-buffer operations introduced by G5.
+benchmark-static-io-ownership-allocation: resolve
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
+	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+	.devcontainer/run.sh /workspace/Tests/Support/check-static-io-ownership-allocation.sh
+
+check-static-io-macro-embedded:
+	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='embedded verify'
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
+	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+	.devcontainer/run.sh /workspace/Tests/Support/check-static-io-macro-embedded.sh
 
 benchmark-wire-bounds: resolve
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \

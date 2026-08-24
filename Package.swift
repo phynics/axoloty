@@ -1,6 +1,7 @@
 // swift-tools-version:6.3
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
+import CompilerPluginSupport
 import PackageDescription
 
 let package = Package(
@@ -31,6 +32,10 @@ let package = Package(
             name: "AxolotyCoatyModels",
             targets: ["AxolotyCoatyModels"]
         ),
+        .library(
+            name: "AxolotyStaticRuntime",
+            targets: ["AxolotyStaticRuntime"]
+        ),
         .executable(
             name: "axoloty-tool",
             targets: ["AxolotyCLI"]
@@ -58,8 +63,20 @@ let package = Package(
         .package(url: "https://github.com/phynics/swift-json.git", exact: "2.5.3"),
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", exact: "0.12.1"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin.git", from: "1.5.0"),
+        .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "603.0.0"),
     ],
     targets: [
+        .macro(
+            name: "AxolotyStaticRuntimeMacrosImplementation",
+            dependencies: [
+                .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
+                .product(name: "SwiftDiagnostics", package: "swift-syntax"),
+                .product(name: "SwiftSyntax", package: "swift-syntax"),
+                .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
+                .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
+            ],
+            path: "Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntimeMacrosImplementation"
+        ),
         .target(
             name: "AxolotyWire",
             dependencies: [
@@ -81,6 +98,15 @@ let package = Package(
             name: "AxolotyCoatyModels",
             dependencies: ["AxolotyObjectModel"],
             path: "Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels"
+        ),
+        .target(
+            name: "AxolotyStaticRuntime",
+            dependencies: [
+                "AxolotyProtocol",
+                "AxolotyWire",
+                "AxolotyStaticRuntimeMacrosImplementation",
+            ],
+            path: "Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntime"
         ),
         .target(
             name: "Axoloty",
@@ -262,6 +288,18 @@ let package = Package(
             dependencies: ["AxolotyCoatyModels", "AxolotyObjectModel", "AxolotyWire"],
             path: "Packages/AxolotyCoatyModels/Tests/AxolotyCoatyModelsTests"
         ),
+        .testTarget(
+            name: "AxolotyStaticRuntimeTests",
+            dependencies: [
+                "AxolotyStaticRuntime",
+                "AxolotyProtocol",
+                "AxolotyObjectModel",
+                "AxolotyWire",
+                "AxolotyStaticRuntimeMacrosImplementation",
+                .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax"),
+            ],
+            path: "Packages/AxolotyStaticRuntime/Tests/AxolotyStaticRuntimeTests"
+        ),
         // The tooling control plane. It intentionally has no product-runtime
         // dependencies so it can bootstrap repository workflows independently.
         .executableTarget(
@@ -415,6 +453,14 @@ let package = Package(
                 "AxolotyProtocol",
             ],
             path: "Benchmarks/WireAllocation"
+        ),
+        // Warming regression probe for the static IO ownership primitives.
+        // heaptrack compares short and long runs to require zero allocation
+        // growth from macro dispatch and owning-action copy/visit operations.
+        .executableTarget(
+            name: "StaticIoOwnershipAllocation",
+            dependencies: ["AxolotyStaticRuntime", "AxolotyProtocol", "AxolotyWire"],
+            path: "Packages/AxolotyStaticRuntime/Benchmarks/StaticIoOwnershipAllocation"
         ),
     ],
     swiftLanguageModes: [.v6]

@@ -4,13 +4,14 @@
 public protocol ProtocolActionSink: ~Copyable {
     /// Remaining action slots available to the processor.
     var remainingCapacity: Int { get }
-    /// Reserves all slots needed for one atomic processor operation.
+    /// Admits all slots needed for one atomic processor operation.
     /// - Parameter actionCount: Number of actions the processor will append.
-    /// - Returns: `true` when the complete operation fits without mutation;
-    ///   otherwise the sink remains unchanged.
+    /// - Returns: `true` when the complete operation fits. A sink may reserve
+    ///   those slots until append; failed admission leaves it unchanged.
     mutating func preflight(actionCount: Int) -> Bool
-    /// Appends a borrowed action without copying its payload.
-    /// - Parameter action: Action whose borrowed payload remains owned by the caller.
+    /// Accepts one borrowed action into the sink's storage policy.
+    /// - Parameter action: Action whose borrowed payload remains owned by the
+    ///   caller. A retaining sink must copy every borrowed byte.
     /// - Returns: `true` when the action was appended, or `false` when no
     ///   preflighted slot remains.
     mutating func append(_ action: BorrowedProtocolAction) -> Bool
