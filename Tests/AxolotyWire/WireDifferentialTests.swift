@@ -10,7 +10,7 @@ import Testing
 /// decode borrowed bytes, encode synchronously into caller-owned storage, and
 /// decode the result again without allowing borrowed values to escape.
 @Suite("Wire DTO boundaries")
-struct WireDifferentialTests {
+struct WireDTOBoundaryTests {
     @Test("associate fields preserve optional and boundary values")
     func associateFieldsRoundTrip() throws {
         let input = #"{"ioSourceId":"33333333-3333-4333-8333-333333333333","ioActorId":"44444444-4444-4444-8444-444444444444","associatingRoute":"coaty/3/fuzz/IOV/33333333-3333-4333-8333-333333333333","isExternalRoute":true,"updateRate":250}"#
@@ -78,8 +78,10 @@ struct WireDifferentialTests {
             do {
                 try withReader(bytes) { reader in _ = try AssociateWireData(from: reader) }
                 Issue.record("invalid associate payload was accepted")
-            } catch let error {
+            } catch let error as WireDecodeError {
                 #expect(error.field != nil)
+            } catch {
+                Issue.record("unexpected error type: \(error)")
             }
         }
     }
@@ -96,8 +98,10 @@ struct WireDifferentialTests {
                     try value.encode(to: &writer)
                 }
                 Issue.record("undersized writer accepted an overflowing payload")
-            } catch let error {
+            } catch let error as WireEncodeError {
                 #expect(error == .bufferOverflow)
+            } catch {
+                Issue.record("unexpected error type: \(error)")
             }
         }
     }
