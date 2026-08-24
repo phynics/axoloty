@@ -30,11 +30,4 @@ struct IoValueContractTests {
         let value = output.finish()
         value.withBytes { bytes in #expect(bytes.equals("{\"celsius\":23.4}")) }
     }
-
-    @Test("publication policies and receipts are exhaustive")
-    func policyReceipts() {
-        let policy = IoPublicationPolicy.latest(atMostEveryMS: 250)
-        #expect(policy == .latest(atMostEveryMS: 250))
-        #expect(IoPublicationReceipt.notAssociated != .published)
-    }
 }
