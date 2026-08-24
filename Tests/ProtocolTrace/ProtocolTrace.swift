@@ -230,10 +230,26 @@ private struct SharedProtocolTraceReplay<let capacity: Int>: ~Copyable {
             var actions: [TraceAction] = []
             for index in 0..<sink.count {
                 guard let action = sink[index] else { continue }
+                let kind: String
+                let routingKey: ProtocolRoutingKey
+                switch action {
+                case .publish(let publication):
+                    kind = "publish"
+                    routingKey = publication.routingKey
+                case .deliver(let delivery):
+                    kind = "deliver"
+                    routingKey = delivery.routingKey
+                case .associationChanged(let transition):
+                    kind = "deliver"
+                    routingKey = transition.delivery.routingKey
+                case .externalRouteActivated, .externalRouteDeactivated:
+                    kind = "deliver"
+                    continue
+                }
                 actions.append(TraceAction(
-                    kind: action.kind == .publish ? "publish" : "deliver",
-                    family: Self.traceFamily(action.routingKey.capability),
-                    correlationID: action.routingKey.correlationID.map { labels.correlationLabel(for: $0) ?? Self.uuidText($0) }
+                    kind: kind,
+                    family: Self.traceFamily(routingKey.capability),
+                    correlationID: routingKey.correlationID.map { labels.correlationLabel(for: $0) ?? Self.uuidText($0) }
                 ))
             }
             return TraceObservation(actions: actions, rejection: nil, nextState: nextState)

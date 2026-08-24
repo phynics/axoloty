@@ -7,7 +7,19 @@ import Foundation
 import NIOConcurrencyHelpers
 
 extension OwnedProtocolAction {
-    var kindCapability: ProtocolCapability { routingKey.capability }
+    var capability: ProtocolCapability {
+        switch self {
+        case .deliver(let value): return value.routingKey.capability
+        case .publish(let value): return value.routingKey.capability
+        case .associationChanged(let value): return value.delivery.routingKey.capability
+        case .externalRouteActivated, .externalRouteDeactivated: return .associate
+        }
+    }
+
+    var isPublication: Bool {
+        if case .publish = self { return true }
+        return false
+    }
 }
 
 struct TransportRouteClassifier: ProtocolRouteClassifier {

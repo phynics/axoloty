@@ -100,18 +100,24 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         delegate.setFailureHandler(handler)
     }
 
-    /// Publishes one normalized action using the canonical Coaty topic shape.
-    public func send(_ action: OwnedProtocolAction, namespace: String) async throws {
+    /// Publishes one normalized publication using its typed target.
+    public func send(_ publication: OwnedProtocolPublication, namespace: String) async throws {
         guard lock.withLock({ started }) else {
             throw AxolotyError.runtime(code: .notStarted, reason: "MQTT binding is not started")
         }
-        let topic = Self.topic(
-            for: action.routingKey,
-            namespace: namespace,
-            eventTypeFilter: action.eventTypeFilter,
-            eventTypeFilterKind: action.eventTypeFilterKind
-        )
-        try await client.publish(topic: topic, payload: action.payload)
+        let topic: String
+        switch publication.target {
+        case .profile(let eventTypeFilter, let eventTypeFilterKind):
+            topic = Self.topic(
+                for: publication.routingKey,
+                namespace: namespace,
+                eventTypeFilter: eventTypeFilter,
+                eventTypeFilterKind: eventTypeFilterKind
+            )
+        case .associationRoute(let route, _):
+            topic = String(decoding: route, as: UTF8.self)
+        }
+        try await client.publish(topic: topic, payload: publication.payload)
     }
 
     /// Stops the MQTT connection and releases callback admission.

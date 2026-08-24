@@ -143,13 +143,20 @@ public struct ProtocolSubscriptionRegistry<let capacity: Int>: ~Copyable {
 
     /// Dispatches a borrowed action to every matching active handler.
     public mutating func dispatch(_ action: BorrowedProtocolAction) -> ProtocolSubscriptionOutcome {
+        let delivery: BorrowedProtocolDelivery
+        switch action {
+        case .deliver(let value): delivery = value
+        case .associationChanged(let value): delivery = value.delivery
+        case .publish, .externalRouteActivated, .externalRouteDeactivated:
+            return .mismatch
+        }
         var delivered = false
         for index in 0..<capacity {
             guard let handler = slots[index].handler,
                   handler.active,
                   handler.generation == slots[index].generation,
-                  Self.matches(slots[index], action: action) else { continue }
-            handler.invoke(topic: action.topic, payload: action.payload)
+                  Self.matches(slots[index], delivery: delivery) else { continue }
+            handler.invoke(topic: delivery.topic, payload: delivery.payload)
             delivered = true
         }
         return delivered ? .delivered : .mismatch
@@ -165,23 +172,23 @@ public struct ProtocolSubscriptionRegistry<let capacity: Int>: ~Copyable {
         }
     }
 
-    private static func matches(_ slot: Slot, action: BorrowedProtocolAction) -> Bool {
+    private static func matches(_ slot: Slot, delivery: BorrowedProtocolDelivery) -> Bool {
         switch slot.selector {
         case .empty: return false
-        case .capability(let capability): return capability == action.routingKey.capability
+        case .capability(let capability): return capability == delivery.routingKey.capability
         case .ioActor(let actor):
-            if case .ioActor(let actionActor) = action.deliveryKey { return actor == actionActor }
+            if case .ioActor(let actionActor) = delivery.deliveryKey { return actor == actionActor }
             return false
         case .correlated(let capability, let correlation):
-            if case .correlated(let actionCapability, let actionCorrelation) = action.deliveryKey {
+            if case .correlated(let actionCapability, let actionCorrelation) = delivery.deliveryKey {
                 return capability == actionCapability && correlation == actionCorrelation
             }
             return false
         case .advertise:
-            guard case .advertiseFilter(let filter) = action.deliveryKey else { return false }
+            guard case .advertiseFilter(let filter) = delivery.deliveryKey else { return false }
             return Self.bytesEqual(slot.key, length: slot.keyLength, filter)
         case .channel:
-            guard case .channel(let channel) = action.deliveryKey else { return false }
+            guard case .channel(let channel) = delivery.deliveryKey else { return false }
             return Self.bytesEqual(slot.key, length: slot.keyLength, channel)
         }
     }

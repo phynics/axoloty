@@ -11,6 +11,197 @@ private func protocolSlice(_ value: StaticString) -> ByteSlice {
 
 @Suite("AxolotyProtocol foundation")
 struct ProtocolFoundationTests {
+    @Test("exhaustive borrowed actions preserve every owned case")
+    func exhaustiveBorrowedOwnedActions() throws {
+        let routingKey = try ProtocolRoutingKey(capability: .channel, sourceID: .zero)
+        let topic = protocolSlice("coaty/3/test/CHN:fixture/00000000-0000-0000-0000-000000000000")
+        let payload = protocolSlice("{\"value\":1}")
+        let delivery = BorrowedProtocolDelivery(
+            routingKey: routingKey,
+            deliveryKey: .channel(protocolSlice("fixture")),
+            routeClassification: .coaty,
+            topic: topic,
+            payload: payload
+        )
+        let publication = BorrowedProtocolPublication(
+            routingKey: routingKey,
+            target: .profile(eventTypeFilter: protocolSlice("fixture"), filterKind: .direct),
+            payload: payload
+        )
+        let association = BorrowedIoAssociationTransition(
+            delivery: delivery,
+            sourceID: .zero,
+            actorID: UUID16(bytes: (1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)),
+            change: .updated,
+            route: BorrowedProtocolRouteSnapshot(slice: payload),
+            routeClassification: .external
+        )
+        let external = BorrowedExternalRouteTransition(sourceID: .zero, actorID: .zero, route: topic)
+
+        #expect(BorrowedProtocolAction.deliver(delivery).owned() == .deliver(delivery.owned()))
+        #expect(BorrowedProtocolAction.publish(publication).owned() == .publish(publication.owned()))
+        #expect(BorrowedProtocolAction.associationChanged(association).owned() == .associationChanged(association.owned()))
+        #expect(BorrowedProtocolAction.externalRouteActivated(external).owned() == .externalRouteActivated(external.owned()))
+        #expect(BorrowedProtocolAction.externalRouteDeactivated(external).owned() == .externalRouteDeactivated(external.owned()))
+    }
+
+    @Test("owned actions copy borrowed bytes before the source scope ends")
+    func ownedActionsCopyBorrowedBytes() throws {
+        var bytes = Array("payload".utf8)
+        let owned: OwnedProtocolAction = bytes.withUnsafeBufferPointer { buffer in
+            let slice = ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+            let key = try! ProtocolRoutingKey(capability: .channel, sourceID: .zero)
+            return BorrowedProtocolAction.deliver(
+                BorrowedProtocolDelivery(
+                    routingKey: key,
+                    deliveryKey: .channel(slice),
+                    topic: slice,
+                    payload: slice
+                )
+            ).owned()
+        }
+        bytes[0] = Character("X").asciiValue!
+        guard case .deliver(let delivery) = owned else {
+            Issue.record("owned action changed case")
+            return
+        }
+        #expect(delivery.payload == Array("payload".utf8))
+        #expect(delivery.topic == Array("payload".utf8))
+        #expect(delivery.deliveryKey == .channel(Array("payload".utf8)))
+    }
+
+    @Test("owned actions copy every borrowed selector, target, route, and payload")
+    func ownedActionsCopyEveryBorrowedByteField() throws {
+        var selectorBytes = Array("selector".utf8)
+        var topicBytes = Array("coaty/3/test/CHN/fixture".utf8)
+        var payloadBytes = Array("payload".utf8)
+        var routeBytes = Array("external/fixture".utf8)
+
+        let owned: [OwnedProtocolAction] = selectorBytes.withUnsafeBufferPointer { selectorBuffer in
+            topicBytes.withUnsafeBufferPointer { topicBuffer in
+                payloadBytes.withUnsafeBufferPointer { payloadBuffer in
+                    routeBytes.withUnsafeBufferPointer { routeBuffer in
+                        let selector = ByteSlice(bytes: selectorBuffer.baseAddress!, length: selectorBuffer.count)
+                        let topic = ByteSlice(bytes: topicBuffer.baseAddress!, length: topicBuffer.count)
+                        let payload = ByteSlice(bytes: payloadBuffer.baseAddress!, length: payloadBuffer.count)
+                        let route = ByteSlice(bytes: routeBuffer.baseAddress!, length: routeBuffer.count)
+                        let routingKey = try! ProtocolRoutingKey(capability: .channel, sourceID: .zero)
+                        let delivery = BorrowedProtocolDelivery(
+                            routingKey: routingKey,
+                            deliveryKey: .channel(selector),
+                            routeClassification: .external,
+                            topic: topic,
+                            payload: payload
+                        )
+                        let profile = BorrowedProtocolPublication(
+                            routingKey: routingKey,
+                            target: .profile(eventTypeFilter: selector, filterKind: .direct),
+                            payload: payload,
+                            isApplicationDelivery: false
+                        )
+                        let associationPublication = BorrowedProtocolPublication(
+                            routingKey: routingKey,
+                            target: .associationRoute(route: route, kind: .external),
+                            payload: payload
+                        )
+                        let association = BorrowedIoAssociationTransition(
+                            delivery: delivery,
+                            sourceID: .zero,
+                            actorID: .zero,
+                            change: .removed,
+                            route: BorrowedProtocolRouteSnapshot(slice: route),
+                            routeClassification: .external
+                        )
+                        let external = BorrowedExternalRouteTransition(
+                            sourceID: .zero,
+                            actorID: .zero,
+                            route: route
+                        )
+                        let capability = BorrowedProtocolDelivery(
+                            routingKey: routingKey,
+                            deliveryKey: .capability(.channel),
+                            payload: payload
+                        )
+                        let advertiseFilter = BorrowedProtocolDelivery(
+                            routingKey: routingKey,
+                            deliveryKey: .advertiseFilter(selector),
+                            payload: payload
+                        )
+                        let actor = BorrowedProtocolDelivery(
+                            routingKey: routingKey,
+                            deliveryKey: .ioActor(.zero),
+                            payload: payload
+                        )
+                        let correlated = BorrowedProtocolDelivery(
+                            routingKey: routingKey,
+                            deliveryKey: .correlated(.discover, .zero),
+                            payload: payload
+                        )
+                        return [
+                            BorrowedProtocolAction.deliver(delivery).owned(),
+                            BorrowedProtocolAction.publish(profile).owned(),
+                            BorrowedProtocolAction.associationChanged(association).owned(),
+                            BorrowedProtocolAction.externalRouteActivated(external).owned(),
+                            BorrowedProtocolAction.externalRouteDeactivated(external).owned(),
+                            BorrowedProtocolAction.publish(associationPublication).owned(),
+                            BorrowedProtocolAction.deliver(capability).owned(),
+                            BorrowedProtocolAction.deliver(advertiseFilter).owned(),
+                            BorrowedProtocolAction.deliver(actor).owned(),
+                            BorrowedProtocolAction.deliver(correlated).owned()
+                        ]
+                    }
+                }
+            }
+        }
+
+        selectorBytes[0] = Character("X").asciiValue!
+        topicBytes[0] = Character("X").asciiValue!
+        payloadBytes[0] = Character("X").asciiValue!
+        routeBytes[0] = Character("X").asciiValue!
+
+        guard case .deliver(let delivery) = owned[0],
+              case .channel(let deliverySelector) = delivery.deliveryKey,
+              case .publish(let publication) = owned[1],
+              case .profile(let profileSelector, _) = publication.target,
+              case .associationChanged(let association) = owned[2],
+              case .externalRouteActivated(let activated) = owned[3],
+              case .externalRouteDeactivated(let deactivated) = owned[4],
+              case .publish(let externalPublication) = owned[5],
+              case .deliver(let capabilityDelivery) = owned[6],
+              case .deliver(let advertiseFilterDelivery) = owned[7],
+              case .deliver(let actorDelivery) = owned[8],
+              case .deliver(let correlatedDelivery) = owned[9] else {
+            Issue.record("owned action cases changed during copying")
+            return
+        }
+        #expect(deliverySelector == Array("selector".utf8))
+        #expect(delivery.topic == Array("coaty/3/test/CHN/fixture".utf8))
+        #expect(delivery.payload == Array("payload".utf8))
+        #expect(profileSelector == Array("selector".utf8))
+        #expect(publication.payload == Array("payload".utf8))
+        #expect(!publication.isApplicationDelivery)
+        #expect(association.route == Array("external/fixture".utf8))
+        #expect(activated.route == Array("external/fixture".utf8))
+        #expect(deactivated.route == Array("external/fixture".utf8))
+        guard case .associationRoute(let externalRoute, let routeKind) = externalPublication.target else {
+            Issue.record("association publication target changed during copying")
+            return
+        }
+        #expect(externalRoute == Array("external/fixture".utf8))
+        #expect(routeKind == .external)
+        #expect(capabilityDelivery.deliveryKey == .capability(.channel))
+        guard case .advertiseFilter(let advertiseFilterBytes) = advertiseFilterDelivery.deliveryKey,
+              case .ioActor(let actorID) = actorDelivery.deliveryKey,
+              case .correlated(let correlatedCapability, let correlationID) = correlatedDelivery.deliveryKey else {
+            Issue.record("delivery selector cases changed during copying")
+            return
+        }
+        #expect(advertiseFilterBytes == Array("selector".utf8))
+        #expect(actorID == .zero)
+        #expect(correlatedCapability == .discover)
+        #expect(correlationID == .zero)
+    }
+
     @Test("Coaty Core Profile 3 is closed")
     func profileIsClosed() {
         #expect(CoatyCore3Profile.namespace == "coaty")
@@ -63,8 +254,14 @@ struct ProtocolFoundationTests {
         #expect(owned.routingKey.capability == .discover)
         #expect(owned.payload == payload)
 
-        let action = BorrowedProtocolAction(kind: .deliver, routingKey: owned.routingKey, payload: frame.payload)
-        #expect(action.owned().payload == payload)
+        let action = BorrowedProtocolAction.deliver(
+            BorrowedProtocolDelivery(routingKey: owned.routingKey, payload: frame.payload)
+        )
+        guard case .deliver(let ownedAction) = action.owned() else {
+            Issue.record("borrowed delivery changed action case")
+            return
+        }
+        #expect(ownedAction.payload == payload)
     }
 
     @Test("raw and malformed topics are rejected before routing")

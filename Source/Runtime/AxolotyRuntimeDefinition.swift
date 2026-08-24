@@ -571,8 +571,8 @@ public protocol AxolotyRuntimeTransport: AnyObject, Sendable {
     /// from a transport event-loop thread. Implementations must not retain
     /// borrowed protocol data in this callback.
     func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) async
-    /// Publishes an owned normalized protocol action.
-    func send(_ action: OwnedProtocolAction, namespace: String) async throws
+    /// Publishes an owned normalized protocol publication.
+    func send(_ publication: OwnedProtocolPublication, namespace: String) async throws
     /// Stops the transport and releases its callbacks.
     func stop() async
 
