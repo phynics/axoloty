@@ -13,7 +13,7 @@ struct AsyncWaitTimeoutError: Error, CustomStringConvertible {
     let description: String
 }
 
-private enum AsyncWaitResolution<Value> {
+private enum AsyncWaitResolution<Value: Sendable>: Sendable {
     case operation(Result<Value, Error>)
     case timeout(AsyncWaitTimeoutError)
     case cancelled
@@ -24,7 +24,7 @@ private enum AsyncWaitResolution<Value> {
 /// The continuation is deliberately resumed outside the lock. A late
 /// operation or timer can still call ``resolve(_:)`` after the caller has
 /// returned, but it is ignored once another phase has won the race.
-private final class AsyncWaitResultBox<Value>: @unchecked Sendable {
+private final class AsyncWaitResultBox<Value: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<AsyncWaitResolution<Value>, Never>?
     private var resolution: AsyncWaitResolution<Value>?
