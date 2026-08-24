@@ -306,4 +306,14 @@ struct StaticTypedIoTests {
         _ = runtime.drain { _ in }
         #expect(runtime.state.activeObjects == 1)
     }
+
+    @Test("named static runtime capacities retain fixed ordered layouts")
+    func runtimeCapacityLayouts() {
+        let tiny = MemoryLayout<StaticRuntimeTiny>.size
+        let embedded = MemoryLayout<StaticRuntimeESP32C6>.size
+        let host = MemoryLayout<StaticRuntimeHostTest>.size
+        #expect(tiny > 0)
+        #expect(tiny < embedded)
+        #expect(embedded < host)
+    }
 }

@@ -4,7 +4,12 @@ import AxolotyObjectModel
 import AxolotyWire
 
 /// The representation negotiated for an IO endpoint.
-public enum IoValueRepresentation: UInt8, Sendable, Equatable, Hashable { case json, binary }
+public enum IoValueRepresentation: UInt8, Sendable, Equatable, Hashable {
+    /// A JSON-encoded endpoint payload.
+    case json
+    /// A binary endpoint payload.
+    case binary
+}
 
 /// A stable semantic application value type.
 public struct IoValueType: Sendable, Equatable, Hashable {
@@ -38,6 +43,7 @@ public struct IoValueType: Sendable, Equatable, Hashable {
 }
 
 extension IoValueType: ObjectFieldEncodable {
+    /// Encodes the semantic value type into one object field.
     public borrowing func encode<let capacity: Int>(to editor: inout ObjectFieldEncoder<capacity>, forKey key: StaticString) throws(ObjectEncodingError) {
         do throws(ObjectError) { try value.encodeField(key, to: &editor) }
         catch { throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
@@ -45,6 +51,7 @@ extension IoValueType: ObjectFieldEncodable {
 }
 
 extension IoValueType: ObjectFieldDecodable {
+    /// Decodes a semantic value type from one JSON string field.
     public static func decode(from value: borrowing JSONValueView) throws(ObjectDecodingError) -> Self {
         var result: Self?
         guard value.withString({ bytes in result = try? Self(bytes: bytes) }), let result else { throw .invalidField }
@@ -75,6 +82,7 @@ public struct BoundedIoBytes<let capacity: Int>: Sendable, Equatable {
             ))
         }
     }
+    /// Compares two bounded payloads byte-for-byte.
     public static func == (lhs: Self, rhs: Self) -> Bool {
         guard lhs.length == rhs.length else { return false }
         for index in 0..<lhs.length where lhs.storage[index] != rhs.storage[index] { return false }
@@ -86,7 +94,12 @@ public struct BoundedIoBytes<let capacity: Int>: Sendable, Equatable {
 public typealias BoundedJSONValue<let capacity: Int> = BoundedIoBytes<capacity>
 
 /// Structured IO value failures.
-public enum IoValueError: UInt8, Error, Sendable, Equatable { case invalidValue, capacityExceeded }
+public enum IoValueError: UInt8, Error, Sendable, Equatable {
+    /// The payload does not match the endpoint value.
+    case invalidValue
+    /// The bounded payload storage was insufficient.
+    case capacityExceeded
+}
 
 /// A value that can be decoded and encoded at a registered IO endpoint.
 public protocol IoEndpointValue: Sendable {
@@ -305,7 +318,9 @@ public struct IoByteOutput: ~Copyable, Sendable {
 
 /// A dynamic endpoint value with a fixed registration-time representation.
 public enum DynamicIoValue: IoEndpointValue, Equatable {
+    /// A bounded JSON payload.
     case json(BoundedJSONValue<512>)
+    /// A bounded binary payload.
     case binary(BoundedIoBytes<512>)
     /// Returns the carried representation.
     public var representation: IoValueRepresentation { switch self { case .json: return .json; case .binary: return .binary } }
@@ -412,16 +427,39 @@ public struct IoDeliveryContext: Sendable, Equatable {
 }
 
 /// Source publication policy.
-public enum IoPublicationPolicy: Sendable, Equatable { case immediate, latest(atMostEveryMS: UInt32), throttle(forMS: UInt32) }
+public enum IoPublicationPolicy: Sendable, Equatable {
+    /// Publishes every value admitted by the processor.
+    case immediate
+    /// Publishes immediately when eligible and retains one replacement.
+    case latest(atMostEveryMS: UInt32)
+    /// Publishes only when the policy interval is eligible.
+    case throttle(forMS: UInt32)
+}
 /// Publication admission result.
-public enum IoPublicationReceipt: Sendable, Equatable { case published, queuedLatest, throttled, notAssociated, rejected(ProtocolError.Code) }
+public enum IoPublicationReceipt: Sendable, Equatable {
+    /// The current value was accepted for publication.
+    case published
+    /// A latest replacement was retained.
+    case queuedLatest
+    /// The value was constrained by the effective interval.
+    case throttled
+    /// No active association accepted the value.
+    case notAssociated
+    /// The processor rejected the value.
+    case rejected(ProtocolError.Code)
+}
 
 /// Public association snapshot.
 public struct IoAssociationState: Sendable, Equatable {
+    /// Processor generation at which this snapshot was observed.
     public let generation: UInt32
+    /// Whether at least one association is active.
     public let hasAssociations: Bool
+    /// Number of active associations matching the endpoint.
     public let associationCount: Int
+    /// Maximum recommended update rate among active associations.
     public let recommendedUpdateRateMS: UInt32?
+    /// Creates an association snapshot.
     public init(generation: UInt32 = 0, hasAssociations: Bool = false, associationCount: Int = 0, recommendedUpdateRateMS: UInt32? = nil) {
         self.generation = generation; self.hasAssociations = hasAssociations; self.associationCount = associationCount; self.recommendedUpdateRateMS = recommendedUpdateRateMS
     }
@@ -433,6 +471,7 @@ public struct IoSource<Value: IoEndpointValue>: Sendable, Hashable {
     private let slot: UInt16
     private let generation: UInt32
     private let representation: IoValueRepresentation
+    /// Public endpoint identity.
     public let id: ObjectID
 
     /// Creates a provenance-complete handle for a runtime adapter.
@@ -474,11 +513,13 @@ public struct IoSource<Value: IoEndpointValue>: Sendable, Hashable {
     @_spi(AxolotyRuntimeAdapter)
     public var runtimeSlot: UInt16 { slot }
 
+    /// Compares two source handles including their hidden provenance.
     public static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.registryID == rhs.registryID && lhs.slot == rhs.slot &&
             lhs.generation == rhs.generation && lhs.id == rhs.id &&
             lhs.representation == rhs.representation
     }
+    /// Hashes the complete source handle provenance.
     public func hash(into hasher: inout Hasher) {
         hasher.combine(registryID); hasher.combine(slot); hasher.combine(generation)
         hasher.combine(id); hasher.combine(representation)
@@ -490,6 +531,7 @@ public struct IoActor<Value: IoEndpointValue>: Sendable, Hashable {
     private let slot: UInt16
     private let generation: UInt32
     private let representation: IoValueRepresentation
+    /// Public endpoint identity.
     public let id: ObjectID
 
     /// Creates a provenance-complete handle for a runtime adapter.
@@ -531,11 +573,13 @@ public struct IoActor<Value: IoEndpointValue>: Sendable, Hashable {
     @_spi(AxolotyRuntimeAdapter)
     public var runtimeSlot: UInt16 { slot }
 
+    /// Compares two actor handles including their hidden provenance.
     public static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.registryID == rhs.registryID && lhs.slot == rhs.slot &&
             lhs.generation == rhs.generation && lhs.id == rhs.id &&
             lhs.representation == rhs.representation
     }
+    /// Hashes the complete actor handle provenance.
     public func hash(into hasher: inout Hasher) {
         hasher.combine(registryID); hasher.combine(slot); hasher.combine(generation)
         hasher.combine(id); hasher.combine(representation)
@@ -544,16 +588,20 @@ public struct IoActor<Value: IoEndpointValue>: Sendable, Hashable {
 
 /// Portable source metadata; policy fields are derived by the runtime builder.
 public struct IoSourceMetadata: ObjectSchema, Sendable {
+    /// Semantic value type owned by the endpoint metadata.
     public let valueType: IoValueType
     var updateStrategy: UInt64?
     var useRawIoValues: Bool?
     var updateRate: UInt64?
     var externalRoute: BoundedEncodedText<128>?
+    /// Schema descriptor for a source endpoint.
     public static let schema = ioMetadataSchema(IoSourceMetadata.self, objectType: "coaty.IoSource", coreType: .ioSource, actor: false)
+    /// Creates source metadata with no runtime-derived fields.
     public init(valueType: IoValueType) {
         self.valueType = valueType; updateStrategy = nil; useRawIoValues = nil
         updateRate = nil; externalRoute = nil
     }
+    /// Decodes source metadata from object fields.
     public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
         valueType = try fields.decode("valueType", as: IoValueType.self)
         updateStrategy = try fields.decodeIfPresent("updateStrategy", as: UInt64.self)
@@ -561,6 +609,7 @@ public struct IoSourceMetadata: ObjectSchema, Sendable {
         updateRate = try fields.decodeIfPresent("updateRate", as: UInt64.self)
         externalRoute = try fields.decodeIfPresent("externalRoute", as: BoundedEncodedText<128>.self)
     }
+    /// Encodes source metadata fields.
     public borrowing func encodeFields<let capacity: Int>(to encoder: inout ObjectFieldEncoder<capacity>) throws(ObjectEncodingError) {
         try encoder.encode(valueType, forKey: "valueType")
         try encoder.encode(updateStrategy, forKey: "updateStrategy")
@@ -571,20 +620,25 @@ public struct IoSourceMetadata: ObjectSchema, Sendable {
 }
 /// Portable actor metadata; policy fields are derived by the runtime builder.
 public struct IoActorMetadata: ObjectSchema, Sendable {
+    /// Semantic value type owned by the endpoint metadata.
     public let valueType: IoValueType
     var useRawIoValues: Bool?
     var updateRate: UInt64?
     var externalRoute: BoundedEncodedText<128>?
+    /// Schema descriptor for an actor endpoint.
     public static let schema = ioMetadataSchema(IoActorMetadata.self, objectType: "coaty.IoActor", coreType: .ioActor, actor: true)
+    /// Creates actor metadata with no runtime-derived fields.
     public init(valueType: IoValueType) {
         self.valueType = valueType; useRawIoValues = nil; updateRate = nil; externalRoute = nil
     }
+    /// Decodes actor metadata from object fields.
     public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
         valueType = try fields.decode("valueType", as: IoValueType.self)
         useRawIoValues = try fields.decodeIfPresent("useRawIoValues", as: Bool.self)
         updateRate = try fields.decodeIfPresent("updateRate", as: UInt64.self)
         externalRoute = try fields.decodeIfPresent("externalRoute", as: BoundedEncodedText<128>.self)
     }
+    /// Encodes actor metadata fields.
     public borrowing func encodeFields<let capacity: Int>(to encoder: inout ObjectFieldEncoder<capacity>) throws(ObjectEncodingError) {
         try encoder.encode(valueType, forKey: "valueType")
         try encoder.encode(useRawIoValues, forKey: "useRawIoValues")
@@ -610,8 +664,12 @@ private func ioMetadataSchema<Value: Sendable>(_ type: Value.Type, objectType: S
 }
 /// Portable IO context metadata.
 public struct IoContext: ObjectSchema, Sendable {
+    /// Schema descriptor for an empty IO context.
     public static let schema = PortableObjectSchema<IoContext>(objectType: ObjectType("coaty.IoContext")!, coreType: .ioContext, fieldCount: 0, fields: InlineArray<24, ObjectFieldDescriptor>(repeating: .empty))
+    /// Creates an empty IO context.
     public init() {}
+    /// Decodes an empty IO context.
     public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {}
+    /// Encodes an empty IO context.
     public borrowing func encodeFields<let capacity: Int>(to encoder: inout ObjectFieldEncoder<capacity>) throws(ObjectEncodingError) {}
 }
