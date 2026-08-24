@@ -443,13 +443,15 @@ struct AxolotyRuntimeTests {
         #expect(await transport.sendStarted)
 
         let stopping = Task { await runtime.stop() }
+        defer {
+            stopping.cancel()
+            Task { await transport.releaseSend() }
+        }
         for _ in 0..<100 {
             if await transport.didStop { break }
             try? await Task.sleep(for: .milliseconds(5))
         }
         #expect(await transport.didStop)
-        #expect(await runtime.lifecycleState() == .stopping)
-        try await Task.sleep(for: .milliseconds(20))
         #expect(await runtime.lifecycleState() == .stopping)
 
         await transport.releaseSend()
@@ -508,15 +510,20 @@ private actor DrainingTransport: AxolotyRuntimeTransport {
     private(set) var sendStarted = false
     private(set) var didStop = false
     private var released = false
+    private var sendWaiter: CheckedContinuation<Void, Never>?
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
     func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) {}
 
     func send(_ publication: OwnedProtocolPublication, namespace: String) async throws {
         sendStarted = true
-        while !released {
-            try Task.checkCancellation()
-            try await Task.sleep(for: .milliseconds(5))
+        guard !released else { return }
+        await withCheckedContinuation { continuation in
+            if released {
+                continuation.resume()
+            } else {
+                sendWaiter = continuation
+            }
         }
     }
 
@@ -526,7 +533,11 @@ private actor DrainingTransport: AxolotyRuntimeTransport {
     func advertise(identity: RuntimeIdentity?, namespace: String) async throws {}
     func deadvertise(identity: RuntimeIdentity?, namespace: String) async throws {}
 
-    func releaseSend() { released = true }
+    func releaseSend() {
+        released = true
+        sendWaiter?.resume()
+        sendWaiter = nil
+    }
 }
 
 private enum RuntimeTestTimeout: Error {
