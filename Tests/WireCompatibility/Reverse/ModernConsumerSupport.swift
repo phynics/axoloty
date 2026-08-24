@@ -101,18 +101,14 @@ enum ModernConsumerSupport {
         timeout: Duration,
         scenario: String
     ) async throws -> RuntimeEventValue {
-        let box = RuntimeEventIteratorBox(stream.makeAsyncIterator())
-        return try await withThrowingTaskGroup(of: RuntimeEventValue?.self) { group in
-            group.addTask { await box.next() }
-            group.addTask {
-                try await Task.sleep(for: timeout)
-                return nil
-            }
-            defer { group.cancelAll() }
-            guard let value = try await group.next() ?? nil else {
-                throw AxolotyError.runtime(code: .timedOut, reason: "Timed out waiting for CoatyJS \(scenario)")
-            }
-            return value
+        var iterator = stream.makeAsyncIterator()
+        do {
+            return try await nextValue(&iterator, timeout: timeout)
+        } catch {
+            throw AxolotyError.runtime(
+                code: .timedOut,
+                reason: "Timed out waiting for CoatyJS \(scenario): \(error)"
+            )
         }
     }
 
@@ -143,17 +139,5 @@ private struct PeerAcknowledgementFailure: Error, CustomStringConvertible {
 
     var description: String {
         "Peer acknowledgement failure: \(reason); phase=peer-ack scenario=\(scenario) context=\(context)"
-    }
-}
-
-private final class RuntimeEventIteratorBox: @unchecked Sendable {
-    var iterator: AsyncStream<RuntimeEventValue>.Iterator
-
-    init(_ iterator: AsyncStream<RuntimeEventValue>.Iterator) {
-        self.iterator = iterator
-    }
-
-    func next() async -> RuntimeEventValue? {
-        await iterator.next()
     }
 }

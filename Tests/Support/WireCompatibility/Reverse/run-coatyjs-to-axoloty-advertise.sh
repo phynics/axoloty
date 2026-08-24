@@ -77,7 +77,12 @@ runtime run --rm --network "$NETWORK" --entrypoint node \
     -e SCENARIO_SETTLE_MS=1500 \
     "$JS_IMAGE" /agent/coatyjs-advertise-runner.js
 
-runtime wait "$CONSUMER" >/dev/null
+if ! timeout "${WIRE_CONTAINER_WAIT_SECONDS:-120}s" runtime wait "$CONSUMER" >/dev/null; then
+    runtime logs "$CONSUMER" >&2 || true
+    runtime stop -t 1 "$CONSUMER" >/dev/null 2>&1 || true
+    runtime kill "$CONSUMER" >/dev/null 2>&1 || true
+    exit 1
+fi
 runtime logs "$CONSUMER" >"$CONSUMER_LOG" 2>&1
 cat "$CONSUMER_LOG"
 grep -q '"state":"ack"' "$CONSUMER_LOG"

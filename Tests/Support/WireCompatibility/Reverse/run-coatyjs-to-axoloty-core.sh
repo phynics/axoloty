@@ -116,8 +116,10 @@ for scenario in $SCENARIOS; do
         -e SCENARIO="$scenario" -e SCENARIO_SETTLE_MS=1500 \
         "$JS_IMAGE" "$requester_script" >"$requester_log" 2>&1
 
-    if ! runtime wait "$CONSUMER" >/dev/null; then
+    if ! timeout "${WIRE_CONTAINER_WAIT_SECONDS:-120}s" runtime wait "$CONSUMER" >/dev/null; then
         runtime logs "$CONSUMER" >&2 || true
+        runtime stop -t 1 "$CONSUMER" >/dev/null 2>&1 || true
+        runtime kill "$CONSUMER" >/dev/null 2>&1 || true
         exit 1
     fi
     runtime logs "$CONSUMER" >"$consumer_log" 2>&1
