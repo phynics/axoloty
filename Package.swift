@@ -136,7 +136,6 @@ let package = Package(
                 "ProtocolTrace/ProtocolTrace.swift",
                 "ProtocolTrace/ProtocolTraceCorpus.swift",
                 "ProtocolTrace/ProtocolTraceTests.swift",
-                "Communication/CommunicationSubscriptionCoordinatorTests.swift",
                 "Communication/EventHubTransportTests.swift",
                 "Communication/MQTTNIOClientTests.swift",
                 "Communication/UnaryCallBrokerIntegrationTests.swift",
