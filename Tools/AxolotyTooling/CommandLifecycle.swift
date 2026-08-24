@@ -351,6 +351,8 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
     struct Artifact {
         let directory: URL
         let metadata: URL
+        let manifest: URL
+        let verifierLog: URL
         let standardOutput: URL
         let standardError: URL
         let result: URL
@@ -400,6 +402,9 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
         try createDirectorySafely(at: runDirectory)
         if shouldWriteRunMetadata {
             let runMetadata: [String: Any] = [
+                "artifactContract": [
+                    "manifest.json", "verifier.log", "metadata.json", "stdout.txt", "stderr.txt", "result.json",
+                ],
                 "environmentKeys": environmentKeys,
                 "runId": runID,
                 "startedAt": ISO8601DateFormatter().string(from: startedAt),
@@ -416,6 +421,8 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
         let artifact = Artifact(
             directory: directory,
             metadata: directory.appending(path: "metadata.json"),
+            manifest: directory.appending(path: "manifest.json"),
+            verifierLog: directory.appending(path: "verifier.log"),
             standardOutput: directory.appending(path: "stdout.txt"),
             standardError: directory.appending(path: "stderr.txt"),
             result: directory.appending(path: "result.json"),
@@ -434,6 +441,20 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
             "startedAt": ISO8601DateFormatter().string(from: startedAt),
         ]
         try writeJSON(metadata, to: artifact.metadata)
+        try writeJSON([
+            "artifactFiles": [
+                "manifest.json", "verifier.log", "metadata.json", "stdout.txt", "stderr.txt", "result.json",
+            ],
+            "deadline": deadline.map { ISO8601DateFormatter().string(from: $0) } ?? NSNull(),
+            "node": context.node ?? NSNull(),
+            "runId": runID,
+            "stage": context.stage,
+            "startedAt": ISO8601DateFormatter().string(from: startedAt),
+            "status": "running",
+        ], to: artifact.manifest)
+        try Data([
+            "[axoloty] phase=started run-id=\(runID) node=\(context.node ?? "command") stage=\(context.stage)\n",
+        ].joined().utf8).write(to: artifact.verifierLog, options: .atomic)
         return artifact
     }
 
@@ -444,12 +465,31 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
         result: AxolotyCheckCommandResult,
         standardOutput: Data,
         standardError: Data,
+        progress: Data = Data(),
         additionalEnvironment: [String: String] = [:]
     ) {
-        try? redacted(standardOutput, artifact: artifact, additionalEnvironment: additionalEnvironment)
-            .write(to: artifact.standardOutput, options: .atomic)
-        try? redacted(standardError, artifact: artifact, additionalEnvironment: additionalEnvironment)
-            .write(to: artifact.standardError, options: .atomic)
+        let output = redacted(standardOutput, artifact: artifact, additionalEnvironment: additionalEnvironment)
+        let error = redacted(standardError, artifact: artifact, additionalEnvironment: additionalEnvironment)
+        try? output.write(to: artifact.standardOutput, options: .atomic)
+        try? error.write(to: artifact.standardError, options: .atomic)
+
+        let outputText = String(decoding: output, as: UTF8.self)
+        let errorText = String(decoding: error, as: UTF8.self)
+        let progressText = String(
+            decoding: redacted(progress, artifact: artifact, additionalEnvironment: additionalEnvironment),
+            as: UTF8.self
+        )
+        let verifierText = "[progress]\n"
+            + progressText
+            + (progressText.hasSuffix("\n") ? "" : "\n")
+            + "[stdout]\n"
+            + outputText
+            + (outputText.hasSuffix("\n") ? "" : "\n")
+            + "[stderr]\n"
+            + errorText
+            + (errorText.hasSuffix("\n") ? "" : "\n")
+        let verifier = Data(verifierText.utf8)
+        try? verifier.write(to: artifact.verifierLog, options: .atomic)
 
         var metadata: [String: Any] = [
             "elapsedSeconds": finishedAt.timeIntervalSince(startedAt),
@@ -467,12 +507,29 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
         }
         try? writeJSON(metadata, to: artifact.metadata, mergeWithExisting: true)
 
+        var manifest: [String: Any] = [
+            "endedAt": ISO8601DateFormatter().string(from: finishedAt),
+            "elapsedSeconds": finishedAt.timeIntervalSince(startedAt),
+            "exitCode": result.exitCode,
+            "status": result.exitCode == 0 ? "passed" : "failed",
+        ]
+        if let lifecycle = result.lifecycle {
+            manifest["outcome"] = lifecycle.outcome.rawValue
+            manifest["lastTest"] = lifecycle.lastTest ?? NSNull()
+            manifest["escalatedToKill"] = lifecycle.escalatedToKill
+        } else {
+            manifest["outcome"] = result.exitCode == 0 ? "passed" : "failed"
+        }
+        try? writeJSON(manifest, to: artifact.manifest, mergeWithExisting: true)
+
         let durableResult: [String: Any] = [
             "artifactPath": artifact.directory.path,
             "elapsedSeconds": finishedAt.timeIntervalSince(startedAt),
             "exitCode": result.exitCode,
             "outcome": result.lifecycle?.outcome.rawValue ?? (result.exitCode == 0 ? "passed" : "failed"),
             "timedOut": result.lifecycle?.outcome == .timedOut,
+            "lastTest": result.lifecycle?.lastTest ?? NSNull(),
+            "escalatedToKill": result.lifecycle?.escalatedToKill ?? false,
         ]
         try? writeJSON(durableResult, to: artifact.result)
     }
@@ -653,6 +710,7 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
 final class AxolotyCommandOutputCollector: @unchecked Sendable {
     private let lock = NSLock()
     private var output: [AxolotyCommandOutputStream: Data] = [:]
+    private var progress = Data()
     private var pendingLines: [AxolotyCommandOutputStream: String] = [:]
     private var latestStartedTest: String?
     private let streamOutput: @Sendable (AxolotyCommandOutputStream, String) -> Void
@@ -694,6 +752,9 @@ final class AxolotyCommandOutputCollector: @unchecked Sendable {
 
     func emitProgress(_ text: String) {
         streamLock.lock()
+        lock.lock()
+        progress.append(Data(text.utf8))
+        lock.unlock()
         streamOutput(.standardError, text)
         streamLock.unlock()
     }
@@ -708,6 +769,19 @@ final class AxolotyCommandOutputCollector: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return latestStartedTest
+    }
+
+    func diagnosticSnapshot() -> (lastTest: String?, outputBytes: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        let outputBytes = output.values.reduce(into: 0) { total, data in total += data.count }
+        return (latestStartedTest, outputBytes)
+    }
+
+    func progressData() -> Data {
+        lock.lock()
+        defer { lock.unlock() }
+        return progress
     }
 
     func finishLines() {

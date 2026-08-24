@@ -114,10 +114,12 @@ final class FoundationCommandExecution: @unchecked Sendable {
 
         let heartbeat = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
         let heartbeatHandler: @Sendable () -> Void = { [context, collector] in
+            let snapshot = collector.diagnosticSnapshot()
             Self.emitHeartbeat(
                 context: context,
                 startedAt: startedAt,
-                lastTest: collector.latestTest,
+                lastTest: snapshot.lastTest,
+                outputBytes: snapshot.outputBytes,
                 collector: collector
             )
         }
@@ -164,8 +166,9 @@ final class FoundationCommandExecution: @unchecked Sendable {
                 startedAt: startedAt,
                 finishedAt: Date(),
                 result: result,
-                standardOutput: collector.data(for: .standardOutput),
-                standardError: collector.data(for: .standardError),
+                standardOutput: Data(result.standardOutput.utf8),
+                standardError: Data(result.standardError.utf8),
+                progress: collector.progressData(),
                 additionalEnvironment: environment.merging(command.environment) { _, value in value }
             )
             return result
@@ -265,8 +268,9 @@ final class FoundationCommandExecution: @unchecked Sendable {
             startedAt: state.startedAt,
             finishedAt: Date(),
             result: result,
-            standardOutput: standardOutput ?? state.collector.data(for: .standardOutput),
-            standardError: standardError ?? state.collector.data(for: .standardError),
+            standardOutput: standardOutput ?? Data(result.standardOutput.utf8),
+            standardError: standardError ?? Data(result.standardError.utf8),
+            progress: state.collector.progressData(),
             additionalEnvironment: environment.merging(state.command.environment) { _, value in value }
         )
     }
@@ -311,8 +315,14 @@ final class FoundationCommandExecution: @unchecked Sendable {
         }
         process.waitUntilExit()
         if !readersFinished {
+            // Once the process group is dead, let pipe readers reach EOF so
+            // TERM-trap output already in the kernel pipe is retained. Only
+            // cancel a reader that remains blocked on a detached descendant.
+            readersFinished = readers.wait(timeout: .now() + readerShutdownGrace)
+        }
+        if !readersFinished {
             readers.cancel()
-            _ = readers.wait(timeout: .now() + readerShutdownGrace)
+            _ = readers.wait(timeout: .now() + .milliseconds(250))
         }
         if let processGroupID {
             _ = axoloty_reap_process_group(processGroupID)
@@ -342,8 +352,9 @@ final class FoundationCommandExecution: @unchecked Sendable {
             startedAt: startedAt,
             finishedAt: Date(),
             result: result,
-            standardOutput: collector.data(for: .standardOutput),
-            standardError: collector.data(for: .standardError),
+            standardOutput: Data(result.standardOutput.utf8),
+            standardError: Data(result.standardError.utf8),
+            progress: collector.progressData(),
             additionalEnvironment: environment.merging(command.environment) { _, value in value }
         )
         return result
@@ -473,18 +484,20 @@ final class FoundationCommandExecution: @unchecked Sendable {
         context: AxolotyCommandRunContext,
         startedAt: Date,
         lastTest: String?,
+        outputBytes: Int,
         collector: AxolotyCommandOutputCollector
     ) {
         let elapsed = Date().timeIntervalSince(startedAt)
         let node = context.node ?? "command"
         let test = lastTest ?? "none"
         let heartbeat = String(
-            format: "heartbeat node=%@ stage=%@ elapsed=%.1fs last-test=%@\n",
+            format: "heartbeat node=%@ stage=%@ elapsed=%.1fs last-test=%@ output-bytes=%d\n",
             locale: Locale(identifier: "en_US_POSIX"),
             node,
             context.stage,
             elapsed,
-            test
+            test,
+            outputBytes
         )
         collector.emitProgress(heartbeat)
     }

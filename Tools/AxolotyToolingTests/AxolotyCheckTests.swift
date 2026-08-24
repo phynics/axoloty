@@ -519,10 +519,13 @@ func commandRunnerEscalatesTimeoutTracksLastTestAndPersistsSafeArtifacts() throw
     #expect(lifecycle.escalatedToKill)
     #expect(events.text(for: .standardOutput).isEmpty)
     #expect(events.text(for: .standardError).contains("heartbeat node=test-tooling stage=check"))
+    #expect(events.text(for: .standardError).contains("output-bytes="))
 
     let artifact = try #require(lifecycle.artifactPath)
     let artifactDirectory = URL(fileURLWithPath: artifact)
     #expect(FileManager.default.fileExists(atPath: artifactDirectory.appending(path: "metadata.json").path))
+    #expect(FileManager.default.fileExists(atPath: artifactDirectory.appending(path: "manifest.json").path))
+    #expect(FileManager.default.fileExists(atPath: artifactDirectory.appending(path: "verifier.log").path))
     #expect(FileManager.default.fileExists(atPath: artifactDirectory.appending(path: "stdout.txt").path))
     #expect(FileManager.default.fileExists(atPath: artifactDirectory.appending(path: "stderr.txt").path))
     #expect(FileManager.default.fileExists(atPath: artifactDirectory.appending(path: "result.json").path))
@@ -533,6 +536,66 @@ func commandRunnerEscalatesTimeoutTracksLastTestAndPersistsSafeArtifacts() throw
     ) as? [String: Any]
     #expect(metadata?["environmentKeys"] as? [String] == ["AXOLOTY_DEVCONTAINER", "AXOLOTY_SECRET"])
     #expect(metadata?["exitCode"] as? Int == 124)
+    let manifest = try JSONSerialization.jsonObject(
+        with: Data(contentsOf: artifactDirectory.appending(path: "manifest.json"))
+    ) as? [String: Any]
+    #expect(manifest?["status"] as? String == "failed")
+    #expect(manifest?["outcome"] as? String == "timedOut")
+    let verifier = try String(
+        contentsOf: artifactDirectory.appending(path: "verifier.log"),
+        encoding: .utf8
+    )
+    #expect(verifier.contains("[progress]"))
+    #expect(verifier.contains("[stderr]"))
+    #expect(verifier.contains("heartbeat node=test-tooling"))
+    #expect(verifier.contains("command timed out"))
+    #expect(!verifier.contains("timeout-secret"))
+}
+
+@Test
+func commandRunnerDrainsTermTrapTailBeforeCancellingReaders() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: "axoloty-tool-term-tail-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let validator = AxolotyExecutionContextValidator(
+        environment: ["AXOLOTY_DEVCONTAINER": "1"],
+        platform: .linux
+    )
+    let runner = FoundationCommandRunner(
+        contextValidator: validator,
+        environment: validator.environment,
+        configuration: AxolotyCommandRunnerConfiguration(
+            commandTimeout: 0.15,
+            terminationGracePeriod: 0.05,
+            heartbeatInterval: 1,
+            artifactRoot: root,
+            runID: "term-tail",
+            installSignalHandler: false
+        )
+    )
+    let result = runner.run(AxolotyCommandPlan(
+        executable: "/bin/sh",
+        arguments: [
+            "-c",
+            "trap 'printf \"TERM-TRAP-TAIL\\n\" >&2; trap - TERM; sleep 10' TERM; while :; do sleep 1; done",
+        ]
+    ))
+
+    let lifecycle = try #require(result.lifecycle)
+    #expect(lifecycle.outcome == .timedOut)
+    #expect(result.standardError.contains("TERM-TRAP-TAIL"))
+    let artifact = try #require(lifecycle.artifactPath)
+    let artifactDirectory = URL(fileURLWithPath: artifact)
+    let durableError = try String(
+        contentsOf: artifactDirectory.appending(path: "stderr.txt"),
+        encoding: .utf8
+    )
+    let verifier = try String(
+        contentsOf: artifactDirectory.appending(path: "verifier.log"),
+        encoding: .utf8
+    )
+    #expect(durableError.contains("TERM-TRAP-TAIL"))
+    #expect(verifier.contains("TERM-TRAP-TAIL"))
 }
 
 @Test
