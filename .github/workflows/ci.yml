@@ -108,6 +108,9 @@ jobs:
         env:
           COVERAGE_DIFF_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
           AXOLOTY_OUTPUT: human
+          # Rootless Podman may need longer than the default two minutes to
+          # create the first container after a locally rebuilt image.
+          CONTAINER_CREATE_TIMEOUT_SECONDS: "300"
         run: |
           mkdir -p .testing
           make verify-ci CONTAINER_RUNTIME=podman BUILD_DIR=".build/ci" COVERAGE_BUILD_DIR=".build/ci-coverage" BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache AXOLOTY_TOOL_CONTAINER_ENV_VARS=AXOLOTY_OUTPUT
