@@ -153,7 +153,6 @@ let package = Package(
                 "Communication/ReturnEventWireRoundTripTests.swift",
                 "Communication/UnaryCallBrokerIntegrationTests.swift",
                 "Concurrency/BroadcastTests.swift",
-                "Concurrency/ObservationLinuxTests.swift",
                 "Controller/ObjectLifecycleControllerTests.swift",
                 "Controller/ObjectLifecyclePublicationFailureTests.swift",
                 "Fuzzing/DeterministicFuzzTests.swift",
