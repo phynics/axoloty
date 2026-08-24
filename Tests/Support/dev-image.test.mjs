@@ -569,6 +569,10 @@ test("required CI preserves the plan budget and uploads durable run evidence", (
 
 test("live wire allows bounded container creation on busy runners", () => {
   assert.match(wireWorkflow, /CONTAINER_CREATE_TIMEOUT_SECONDS: "300"/);
+  assert.match(
+    wireWorkflow,
+    /make test-wire-live[^\n]*AXOLOTY_TOOL_CONTAINER_ENV_VARS=CONTAINER_CREATE_TIMEOUT_SECONDS/,
+  );
 });
 
 test("coverage is an explicit job with a truthful missing-report failure", () => {
