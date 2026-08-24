@@ -85,6 +85,15 @@ struct AxolotyIoAssociateTests {
                 payload: associate
             )
             #expect(await runtime.publish(associateOperation) == .accepted)
+            // CoatyJS installs the generated IOV route asynchronously after
+            // consuming Associate. Re-publish the idempotent association at
+            // bounded phase boundaries so the peer has an observable chance
+            // to finish route setup before the first IoValue is sent.
+            for _ in 0..<2 {
+                try await Task.sleep(for: .milliseconds(500))
+                #expect(await runtime.publish(associateOperation) == .accepted)
+            }
+            try await Task.sleep(for: .milliseconds(500))
             #expect(await runtime.publish(RuntimeOneWayOperation.ioValue(Array("42".utf8))) == .accepted)
             ModernConsumerSupport.emit("{\"state\":\"published-iovalue\",\"scenario\":\"io-associate\",\"route\":\"\(route)\"}")
             ModernConsumerSupport.emit(
