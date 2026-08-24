@@ -103,6 +103,7 @@ let package = Package(
             name: "AxolotyStaticRuntime",
             dependencies: [
                 "AxolotyProtocol",
+                "AxolotyObjectModel",
                 "AxolotyWire",
                 "AxolotyStaticRuntimeMacrosImplementation",
             ],

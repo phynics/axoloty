@@ -1,10 +1,13 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-import AxolotyProtocol
+import AxolotyObjectModel
+@_spi(AxolotyRuntimeAdapter) import AxolotyProtocol
 import AxolotyWire
 
 /// Fixed configuration consumed exactly once by a static runtime.
 public struct StaticRuntimeDefinition: ~Copyable {
+    /// Opaque identity used to reject handles from another runtime registry.
+    public let registryID: ObjectID
     /// Families enabled for this firmware image.
     public let capabilities: ProtocolCapabilities
     /// Maximum accepted wire payload size.
@@ -12,9 +15,11 @@ public struct StaticRuntimeDefinition: ~Copyable {
 
     /// Creates a bounded static definition.
     public init(
+        registryID: ObjectID,
         capabilities: ProtocolCapabilities = .coatyCore3,
         maximumPayloadBytes: Int = 512
     ) {
+        self.registryID = registryID
         self.capabilities = capabilities
         self.maximumPayloadBytes = maximumPayloadBytes
     }
@@ -29,16 +34,21 @@ public struct StaticRuntimeDefinition: ~Copyable {
 /// task, actor, Foundation value, or heap-backed registry is part of this
 /// runtime.
 public struct StaticRuntime<let capacity: Int>: ~Copyable {
-    private var processor: ProtocolProcessor<capacity>
-    private var subscriptions: ProtocolSubscriptionRegistry<capacity>
-    private var sink: InlineOwnedProtocolActionSink<capacity>
-    private let routeClassifier: ExactProtocolRouteClassifier
+    let registryID: ObjectID
+    var processor: ProtocolProcessor<capacity>
+    var subscriptions: ProtocolSubscriptionRegistry<capacity>
+    var sink: InlineOwnedProtocolActionSink<capacity>
+    let routeClassifier: ExactProtocolRouteClassifier
+    var ioRegistry: StaticIoEndpointRegistry<capacity>
+    var receiveContext: StaticIoReceiveContext?
 
     /// Creates a runtime with a sealed capability profile and fixed limits.
     public init(
+        registryID: ObjectID,
         capabilities: ProtocolCapabilities = .coatyCore3,
         maximumPayloadBytes: Int = 512
     ) {
+        self.registryID = registryID
         self.routeClassifier = ExactProtocolRouteClassifier(
             externalRoute: "external/wire-compat-v1/io-external-1"
         )
@@ -48,6 +58,8 @@ public struct StaticRuntime<let capacity: Int>: ~Copyable {
         )
         self.subscriptions = ProtocolSubscriptionRegistry<capacity>()
         self.sink = InlineOwnedProtocolActionSink<capacity>()
+        self.ioRegistry = StaticIoEndpointRegistry()
+        self.receiveContext = nil
     }
 
     /// Consumes fixed configuration and binds one exact route classifier.
@@ -55,6 +67,7 @@ public struct StaticRuntime<let capacity: Int>: ~Copyable {
         definition: consuming StaticRuntimeDefinition,
         routeClassifier: ExactProtocolRouteClassifier
     ) {
+        self.registryID = definition.registryID
         self.routeClassifier = routeClassifier
         self.processor = ProtocolProcessor<capacity>(
             capabilities: definition.capabilities,
@@ -62,6 +75,8 @@ public struct StaticRuntime<let capacity: Int>: ~Copyable {
         )
         self.subscriptions = ProtocolSubscriptionRegistry<capacity>()
         self.sink = InlineOwnedProtocolActionSink<capacity>()
+        self.ioRegistry = StaticIoEndpointRegistry()
+        self.receiveContext = nil
     }
 
     /// The processor's fixed-storage state observation.
@@ -98,7 +113,14 @@ public struct StaticRuntime<let capacity: Int>: ~Copyable {
     ) -> ProtocolProcessOutcome {
         guard sink.count == 0 else { return .rejected(.capacityExceeded) }
         sink.removeAll()
-        return processor.processInbound(.profile(frame), nowMS: nowMS, classifier: routeClassifier, sink: &sink)
+        let outcome = processor.processInbound(.profile(frame), nowMS: nowMS, classifier: routeClassifier, sink: &sink)
+        if case .accepted = outcome {
+            receiveContext = StaticIoReceiveContext(
+                receivedAtMS: nowMS,
+                associationGeneration: processor.state.generation
+            )
+        }
+        return outcome
     }
 
     /// Parses one caller-owned topic and payload synchronously, then routes
@@ -135,7 +157,14 @@ public struct StaticRuntime<let capacity: Int>: ~Copyable {
     ) -> ProtocolProcessOutcome {
         guard sink.count == 0 else { return .rejected(.capacityExceeded) }
         sink.removeAll()
-        return processor.processInbound(.profile(frame), nowMS: nowMS, classifier: classifier, sink: &sink)
+        let outcome = processor.processInbound(.profile(frame), nowMS: nowMS, classifier: classifier, sink: &sink)
+        if case .accepted = outcome {
+            receiveContext = StaticIoReceiveContext(
+                receivedAtMS: nowMS,
+                associationGeneration: processor.state.generation
+            )
+        }
+        return outcome
     }
 
     /// Processes one local operation with a binding-owned route classifier.
@@ -163,6 +192,8 @@ public struct StaticRuntime<let capacity: Int>: ~Copyable {
     public mutating func resetTransport() {
         processor.resetTransport()
         sink.removeAll()
+        ioRegistry.clearAllTransportState()
+        receiveContext = nil
     }
 
     /// Copies one active actor route into caller-owned transport storage.
@@ -184,18 +215,39 @@ public struct StaticRuntime<let capacity: Int>: ~Copyable {
     @discardableResult
     public mutating func drain(_ body: (BorrowedProtocolAction) -> Void) -> Int {
         let count = sink.count
+        var cleanupSources = InlineArray<capacity, Bool>(repeating: false)
         for index in 0..<count {
             _ = sink.visit(at: index) { action in
                 body(action)
                 switch action {
-                case .deliver, .associationChanged:
+                case .deliver(let delivery):
                     _ = subscriptions.dispatch(action)
+                    dispatchStaticIoDelivery(
+                        delivery,
+                        registry: ioRegistry,
+                        receiveContext: receiveContext
+                    )
+                case .associationChanged(let transition):
+                    _ = subscriptions.dispatch(action)
+                    let sourceID = transition.sourceID
+                    if let slot = ioRegistry.sourceSlot(forID: ObjectID(uuid: sourceID)) {
+                        cleanupSources[slot] = true
+                    }
                 case .publish, .externalRouteActivated, .externalRouteDeactivated:
                     break
                 }
             }
         }
+        for slot in 0..<capacity where cleanupSources[slot] {
+            guard let record = ioRegistry.endpoint(at: slot),
+                  !processor.ioAssociationState(forSource: record.id.uuid).hasAssociations else {
+                continue
+            }
+            ioRegistry.clearSourceTransportState(at: slot)
+        }
         sink.removeAll()
+        ioRegistry.clearInFlight()
+        receiveContext = nil
         return count
     }
 
@@ -207,4 +259,14 @@ public struct StaticRuntime<let capacity: Int>: ~Copyable {
 }
 
 /// The fixed profile used by the static device agent.
-public typealias AxolotyStaticRuntime = StaticRuntime<16>
+/// A one-slot saturation and atomicity preset.
+public typealias StaticRuntimeTiny = StaticRuntime<1>
+
+/// The fixed ESP32-C6 runtime preset.
+public typealias StaticRuntimeESP32C6 = StaticRuntime<16>
+
+/// A larger host-only static runtime test preset.
+public typealias StaticRuntimeHostTest = StaticRuntime<64>
+
+/// The default static device runtime.
+public typealias AxolotyStaticRuntime = StaticRuntimeESP32C6

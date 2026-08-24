@@ -32,6 +32,7 @@ let package = Package(
             name: "AxolotyStaticRuntime",
             dependencies: [
                 .product(name: "AxolotyProtocol", package: "AxolotyProtocol"),
+                .product(name: "AxolotyObjectModel", package: "AxolotyObjectModel"),
                 .product(name: "AxolotyWire", package: "AxolotyWire"),
                 "AxolotyStaticRuntimeMacrosImplementation",
             ],

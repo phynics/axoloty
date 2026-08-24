@@ -3,10 +3,15 @@
 import Testing
 import AxolotyStaticRuntime
 import AxolotyProtocol
+import AxolotyObjectModel
 import AxolotyWire
 
 private func staticPayload(_ value: StaticString = "{}") -> ByteSlice {
     ByteSlice(bytes: value.utf8Start, length: value.utf8CodeUnitCount)
+}
+
+private func staticRegistryID(_ literal: StaticString = "00000000-0000-4000-8000-000000000001") -> ObjectID {
+    ObjectID(bytes: staticPayload(literal))!
 }
 
 @Suite("Axoloty static runtime")
@@ -21,7 +26,7 @@ struct StaticRuntimeTests {
             payload: staticPayload(),
             requestTimeoutMS: 100
         )
-        var runtime = AxolotyStaticRuntime()
+        var runtime = AxolotyStaticRuntime(registryID: staticRegistryID())
         #expect(runtime.send(operation, nowMS: 10) == .accepted)
         #expect(runtime.actionCount == 1)
         var drained = 0
@@ -42,7 +47,7 @@ struct StaticRuntimeTests {
             sourceID: .zero,
             payload: staticPayload(payload)
         )
-        var runtime = AxolotyStaticRuntime()
+        var runtime = AxolotyStaticRuntime(registryID: staticRegistryID())
         #expect(runtime.send(operation) == .accepted)
         #expect(runtime.actionCount == 2)
         var publications = 0
@@ -77,7 +82,7 @@ struct StaticRuntimeTests {
             payload: staticPayload(#"{"privateData":{"sequence":7}}"#),
             operationName: identifierSlice
         )
-        var runtime = AxolotyStaticRuntime()
+        var runtime = AxolotyStaticRuntime(registryID: staticRegistryID())
         #expect(runtime.send(operation) == .accepted)
         var copiedFilter: [UInt8]?
         var copiedKind: ProtocolEventTypeFilterKind?
@@ -132,7 +137,7 @@ struct StaticRuntimeTests {
             requestTimeoutMS: 100,
             operationName: invalidSlice
         )
-        var runtime = AxolotyStaticRuntime()
+        var runtime = AxolotyStaticRuntime(registryID: staticRegistryID())
         #expect(runtime.send(direct) == .rejected(.malformedFrame))
         #expect(runtime.actionCount == 0)
         #expect(runtime.state.pendingCorrelations == 0)
@@ -148,7 +153,7 @@ struct StaticRuntimeTests {
             payload: staticPayload(),
             requestTimeoutMS: 100
         )
-        var runtime = AxolotyStaticRuntime()
+        var runtime = AxolotyStaticRuntime(registryID: staticRegistryID())
         #expect(runtime.send(operation, nowMS: 10) == .accepted)
         let cancelled = runtime.cancel(correlationID: source)
         #expect(cancelled)

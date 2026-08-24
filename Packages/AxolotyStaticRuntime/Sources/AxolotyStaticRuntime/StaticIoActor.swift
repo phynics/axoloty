@@ -28,6 +28,28 @@ public protocol StaticIoActorHandler {
     static var staticIoHandlerEntry: StaticIoHandlerEntry { get }
 }
 
+/// A statically retained IO actor entry and numeric application context.
+///
+/// The macro-generated handler type supplies the concrete entry. The runtime
+/// stores only that entry and the numeric context, so heterogeneous handlers
+/// do not require a closure, existential, or heap box.
+public struct StaticIoHandler<Handler: StaticIoActorHandler>: Sendable {
+    /// Numeric application context passed to the handler.
+    public let context: UInt32
+    let entry: StaticIoHandlerEntry
+
+    /// Creates a handler registration value.
+    ///
+    /// - Parameters:
+    ///   - type: Macro-generated handler type.
+    ///   - context: Numeric application context retained by the runtime.
+    public init(_ type: Handler.Type = Handler.self, context: UInt32) {
+        _ = type
+        self.context = context
+        self.entry = Handler.staticIoHandlerEntry
+    }
+}
+
 /// Statically noncapturing handler ABI used by generated IO actor entries.
 ///
 /// The arguments are numeric context, borrowed payload pointer and length,
