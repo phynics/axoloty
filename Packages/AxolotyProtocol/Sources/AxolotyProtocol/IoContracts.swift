@@ -428,41 +428,185 @@ public struct IoAssociationState: Sendable, Equatable {
 }
 
 /// Copyable typed source registry key.
-public struct IoSource<Value: IoValue>: Sendable, Hashable {
+public struct IoSource<Value: IoEndpointValue>: Sendable, Hashable {
+    private let registryID: ObjectID
+    private let slot: UInt16
+    private let generation: UInt32
+    private let representation: IoValueRepresentation
     public let id: ObjectID
-    public init(id: ObjectID) { self.id = id }
-    public static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
-    public func hash(into hasher: inout Hasher) { hasher.combine(id) }
+
+    /// Creates a provenance-complete handle for a runtime adapter.
+    ///
+    /// Application code receives handles from endpoint registration and does
+    /// not construct them directly.
+    @_spi(AxolotyRuntimeAdapter)
+    public init(
+        registryID: ObjectID,
+        slot: UInt16,
+        generation: UInt32,
+        id: ObjectID,
+        representation: IoValueRepresentation
+    ) {
+        self.registryID = registryID
+        self.slot = slot
+        self.generation = generation
+        self.id = id
+        self.representation = representation
+    }
+
+    /// Tests every opaque provenance component against a registry record.
+    @_spi(AxolotyRuntimeAdapter)
+    public borrowing func matches(
+        registryID: ObjectID,
+        slot: UInt16,
+        generation: UInt32,
+        id: ObjectID,
+        representation: IoValueRepresentation
+    ) -> Bool {
+        guard self.registryID == registryID else { return false }
+        guard self.slot == slot else { return false }
+        guard self.generation == generation else { return false }
+        guard self.id == id else { return false }
+        return self.representation == representation
+    }
+
+    /// Returns the opaque slot for bounded runtime validation.
+    @_spi(AxolotyRuntimeAdapter)
+    public var runtimeSlot: UInt16 { slot }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.registryID == rhs.registryID && lhs.slot == rhs.slot &&
+            lhs.generation == rhs.generation && lhs.id == rhs.id &&
+            lhs.representation == rhs.representation
+    }
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(registryID); hasher.combine(slot); hasher.combine(generation)
+        hasher.combine(id); hasher.combine(representation)
+    }
 }
 /// Copyable typed actor registry key.
-public struct IoActor<Value: IoValue>: Sendable, Hashable {
+public struct IoActor<Value: IoEndpointValue>: Sendable, Hashable {
+    private let registryID: ObjectID
+    private let slot: UInt16
+    private let generation: UInt32
+    private let representation: IoValueRepresentation
     public let id: ObjectID
-    public init(id: ObjectID) { self.id = id }
-    public static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
-    public func hash(into hasher: inout Hasher) { hasher.combine(id) }
+
+    /// Creates a provenance-complete handle for a runtime adapter.
+    ///
+    /// Application code receives handles from endpoint registration and does
+    /// not construct them directly.
+    @_spi(AxolotyRuntimeAdapter)
+    public init(
+        registryID: ObjectID,
+        slot: UInt16,
+        generation: UInt32,
+        id: ObjectID,
+        representation: IoValueRepresentation
+    ) {
+        self.registryID = registryID
+        self.slot = slot
+        self.generation = generation
+        self.id = id
+        self.representation = representation
+    }
+
+    /// Tests every opaque provenance component against a registry record.
+    @_spi(AxolotyRuntimeAdapter)
+    public borrowing func matches(
+        registryID: ObjectID,
+        slot: UInt16,
+        generation: UInt32,
+        id: ObjectID,
+        representation: IoValueRepresentation
+    ) -> Bool {
+        guard self.registryID == registryID else { return false }
+        guard self.slot == slot else { return false }
+        guard self.generation == generation else { return false }
+        guard self.id == id else { return false }
+        return self.representation == representation
+    }
+
+    /// Returns the opaque slot for bounded runtime validation.
+    @_spi(AxolotyRuntimeAdapter)
+    public var runtimeSlot: UInt16 { slot }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.registryID == rhs.registryID && lhs.slot == rhs.slot &&
+            lhs.generation == rhs.generation && lhs.id == rhs.id &&
+            lhs.representation == rhs.representation
+    }
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(registryID); hasher.combine(slot); hasher.combine(generation)
+        hasher.combine(id); hasher.combine(representation)
+    }
 }
 
 /// Portable source metadata; policy fields are derived by the runtime builder.
 public struct IoSourceMetadata: ObjectSchema, Sendable {
     public let valueType: IoValueType
-    public static let schema = ioMetadataSchema(IoSourceMetadata.self, objectType: "coaty.IoSource", coreType: .ioSource)
-    public init(valueType: IoValueType) { self.valueType = valueType }
-    public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) { self.valueType = try fields.decode("valueType", as: IoValueType.self) }
-    public borrowing func encodeFields<let capacity: Int>(to encoder: inout ObjectFieldEncoder<capacity>) throws(ObjectEncodingError) { try encoder.encode(valueType, forKey: "valueType") }
+    var updateStrategy: UInt64?
+    var useRawIoValues: Bool?
+    var updateRate: UInt64?
+    var externalRoute: BoundedEncodedText<128>?
+    public static let schema = ioMetadataSchema(IoSourceMetadata.self, objectType: "coaty.IoSource", coreType: .ioSource, actor: false)
+    public init(valueType: IoValueType) {
+        self.valueType = valueType; updateStrategy = nil; useRawIoValues = nil
+        updateRate = nil; externalRoute = nil
+    }
+    public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
+        valueType = try fields.decode("valueType", as: IoValueType.self)
+        updateStrategy = try fields.decodeIfPresent("updateStrategy", as: UInt64.self)
+        useRawIoValues = try fields.decodeIfPresent("useRawIoValues", as: Bool.self)
+        updateRate = try fields.decodeIfPresent("updateRate", as: UInt64.self)
+        externalRoute = try fields.decodeIfPresent("externalRoute", as: BoundedEncodedText<128>.self)
+    }
+    public borrowing func encodeFields<let capacity: Int>(to encoder: inout ObjectFieldEncoder<capacity>) throws(ObjectEncodingError) {
+        try encoder.encode(valueType, forKey: "valueType")
+        try encoder.encode(updateStrategy, forKey: "updateStrategy")
+        try encoder.encode(useRawIoValues, forKey: "useRawIoValues")
+        try encoder.encode(updateRate, forKey: "updateRate")
+        try encoder.encode(externalRoute, forKey: "externalRoute")
+    }
 }
 /// Portable actor metadata; policy fields are derived by the runtime builder.
 public struct IoActorMetadata: ObjectSchema, Sendable {
     public let valueType: IoValueType
-    public static let schema = ioMetadataSchema(IoActorMetadata.self, objectType: "coaty.IoActor", coreType: .ioActor)
-    public init(valueType: IoValueType) { self.valueType = valueType }
-    public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) { self.valueType = try fields.decode("valueType", as: IoValueType.self) }
-    public borrowing func encodeFields<let capacity: Int>(to encoder: inout ObjectFieldEncoder<capacity>) throws(ObjectEncodingError) { try encoder.encode(valueType, forKey: "valueType") }
+    var useRawIoValues: Bool?
+    var updateRate: UInt64?
+    var externalRoute: BoundedEncodedText<128>?
+    public static let schema = ioMetadataSchema(IoActorMetadata.self, objectType: "coaty.IoActor", coreType: .ioActor, actor: true)
+    public init(valueType: IoValueType) {
+        self.valueType = valueType; useRawIoValues = nil; updateRate = nil; externalRoute = nil
+    }
+    public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
+        valueType = try fields.decode("valueType", as: IoValueType.self)
+        useRawIoValues = try fields.decodeIfPresent("useRawIoValues", as: Bool.self)
+        updateRate = try fields.decodeIfPresent("updateRate", as: UInt64.self)
+        externalRoute = try fields.decodeIfPresent("externalRoute", as: BoundedEncodedText<128>.self)
+    }
+    public borrowing func encodeFields<let capacity: Int>(to encoder: inout ObjectFieldEncoder<capacity>) throws(ObjectEncodingError) {
+        try encoder.encode(valueType, forKey: "valueType")
+        try encoder.encode(useRawIoValues, forKey: "useRawIoValues")
+        try encoder.encode(updateRate, forKey: "updateRate")
+        try encoder.encode(externalRoute, forKey: "externalRoute")
+    }
 }
 
-private func ioMetadataSchema<Value: Sendable>(_ type: Value.Type, objectType: StaticString, coreType: ObjectCoreType) -> PortableObjectSchema<Value> {
+private func ioMetadataSchema<Value: Sendable>(_ type: Value.Type, objectType: StaticString, coreType: ObjectCoreType, actor: Bool) -> PortableObjectSchema<Value> {
     var fields = InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
     fields[0] = ObjectFieldDescriptor(key: ObjectFieldKey("valueType")!, index: 0, flags: .required)
-    return PortableObjectSchema(objectType: ObjectType(objectType)!, coreType: coreType, fieldCount: 1, fields: fields)
+    if actor {
+        fields[1] = ObjectFieldDescriptor(key: ObjectFieldKey("useRawIoValues")!, index: 1, flags: .optional)
+        fields[2] = ObjectFieldDescriptor(key: ObjectFieldKey("updateRate")!, index: 2, flags: .optional)
+        fields[3] = ObjectFieldDescriptor(key: ObjectFieldKey("externalRoute")!, index: 3, flags: .optional)
+        return PortableObjectSchema(objectType: ObjectType(objectType)!, coreType: coreType, fieldCount: 4, fields: fields)
+    }
+    fields[1] = ObjectFieldDescriptor(key: ObjectFieldKey("updateStrategy")!, index: 1, flags: .optional)
+    fields[2] = ObjectFieldDescriptor(key: ObjectFieldKey("useRawIoValues")!, index: 2, flags: .optional)
+    fields[3] = ObjectFieldDescriptor(key: ObjectFieldKey("updateRate")!, index: 3, flags: .optional)
+    fields[4] = ObjectFieldDescriptor(key: ObjectFieldKey("externalRoute")!, index: 4, flags: .optional)
+    return PortableObjectSchema(objectType: ObjectType(objectType)!, coreType: coreType, fieldCount: 5, fields: fields)
 }
 /// Portable IO context metadata.
 public struct IoContext: ObjectSchema, Sendable {

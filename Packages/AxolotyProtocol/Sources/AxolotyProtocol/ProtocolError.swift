@@ -24,6 +24,8 @@ public struct ProtocolError: Error, Sendable, Equatable {
         case externalRouteMismatch = 9
         /// The payload is syntactically valid JSON but not valid for its family.
         case malformedPayload = 10
+        /// A typed IO handle does not name the registered endpoint provenance.
+        case invalidEndpoint = 11
     }
 
     /// The stable failure category.
