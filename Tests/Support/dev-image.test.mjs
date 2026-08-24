@@ -24,6 +24,21 @@ const openImageLockPR = fs.readFileSync(".github/scripts/open-image-lock-pr.sh",
 const requiredCIJob = ciWorkflow.slice(ciWorkflow.indexOf("  required-checks:"), ciWorkflow.indexOf("\n  coverage:"));
 const coverageCIJob = ciWorkflow.slice(ciWorkflow.indexOf("  coverage:"), ciWorkflow.indexOf("\n  prune-build-caches:"));
 
+test("required workflows isolate PR concurrency by number and preserve push evidence", () => {
+  for (const workflow of [ciWorkflow, fs.readFileSync(".github/workflows/wire-compatibility.yml", "utf8")]) {
+    assert.match(
+      workflow,
+      /group: \$\{\{ github\.workflow \}\}-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}/,
+      "PR concurrency must use the PR number rather than a fork-colliding head ref",
+    );
+    assert.match(
+      workflow,
+      /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/,
+      "only superseded pull-request runs may be cancelled",
+    );
+  }
+});
+
 function workflowStepFrom(source, name) {
   const marker = `      - name: ${name}`;
   const start = source.indexOf(marker);

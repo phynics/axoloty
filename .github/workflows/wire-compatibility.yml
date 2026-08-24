@@ -21,7 +21,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  # Head refs are only branch names and can collide across forked PRs. Use
+  # the PR number for pull requests so one contributor cannot cancel or queue
+  # behind another contributor's identically named branch. Pushes retain the
+  # branch ref, and are never cancelled, preserving compatibility evidence.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # The live wire gate (issue #457) enforces recorded compatibility evidence for
