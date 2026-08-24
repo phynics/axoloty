@@ -289,6 +289,11 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
   if (!requiredArtifacts.has("manifest.json") || !requiredArtifacts.has("verifier.log")) errors.push("failure artifacts must include manifest.json and verifier.log");
 
   if (!Array.isArray(document.selfTests)) return [...errors, "selfTests must be an array"];
+  const canonicalGateNames = new Set([...(document.requiredGates ?? []), ...(document.ciRequiredGates ?? [])]);
+  const canonicalCommandText = (document.nodes ?? [])
+    .filter(node => canonicalGateNames.has(node?.id))
+    .map(node => JSON.stringify(node?.command ?? {}))
+    .join("\n");
   const owned = new Map();
   for (const entry of document.selfTests) {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) { errors.push("selfTests entries must be objects"); continue; }
@@ -301,6 +306,9 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
     if (entry.path && !exists(entry.path)) errors.push(`selfTest ${entry.path}: file does not exist`);
     if (entry.path && invokedSelfTests.has(entry.makeTarget) && !invokedSelfTests.get(entry.makeTarget).has(entry.path)) {
       errors.push(`selfTest ${entry.path}: makeTarget ${JSON.stringify(entry.makeTarget)} does not invoke it`);
+    }
+    if (entry.path && !canonicalCommandText.includes(entry.path)) {
+      errors.push(`selfTest ${entry.path}: canonical verify has no required gate invoking it`);
     }
     if (owned.has(entry.path)) errors.push(`selfTest ${entry.path}: duplicate ownership (also owned by ${JSON.stringify(owned.get(entry.path))})`);
     else owned.set(entry.path, entry.makeTarget);

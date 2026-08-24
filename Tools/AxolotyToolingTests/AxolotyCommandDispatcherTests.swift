@@ -112,6 +112,12 @@ func checkPlanPrintsStableJSON() {
         "support-wire-resolution", "support-wire-isolation", "support-benchmark-corpus",
         "support-benchmark-size", "support-benchmark-wire", "support-benchmark-bounds",
         "support-budget-manifest", "support-node-tests", "support-tier-contract",
+        "support-protocol-package-self-test", "support-object-model-package-self-test",
+        "support-object-model-evidence-self-test", "support-wire-state-self-test",
+        "support-object-boundary-self-test", "support-g4-package-boundary-self-test",
+        "support-g4-consumer-boundary-self-test", "support-wire-distribution-self-test",
+        "support-benchmark-allocation-self-test", "support-embedded-linker-self-test",
+        "support-embedded-runtime-identity-self-test", "support-package-layout-self-test",
     ]
     #if os(Linux)
     expectedNames += [
