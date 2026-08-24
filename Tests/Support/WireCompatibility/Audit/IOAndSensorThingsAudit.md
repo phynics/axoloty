@@ -1,11 +1,11 @@
 # IO routing and SensorThings wire-compatibility audit
 
-Status: evidence inventory for T-021. This document does not make the final
-keep/diverge/remove decisions; it defines the evidence required to make them.
-The controller and SensorThings implementation references below are historical
-G3 evidence. G4 does not ship those products; the retained SensorThings wire
-fixture is classified in Phase 4, and current support claims live in
-`docs/SUPPORT_MATRIX.md`.
+Status: historical evidence inventory for T-021. The controller and
+SensorThings implementation references below are G3-only and are not G4
+ownership claims. G4 retains generic Associate/IoValue protocol behavior in
+the current runtime; controller-based/rule-based IO routing and SensorThings
+models/controllers are absent and deferred to G5. Current support claims live
+in `docs/SUPPORT_MATRIX.md` and the Phase 4 decision record.
 
 ## Protocol inventory
 
@@ -84,8 +84,8 @@ the four top-level discriminators.
 
 | Area | Existing evidence | Missing compatibility evidence |
 |---|---|---|
-| IO routing | No IO-focused test exists under `Tests/` | No Associate/IOV capture, cross-language producer/consumer test, raw-value test, external-route test, or IoState behavior test |
-| SensorThings | Historical controller tests exercised the four object types and Channel between Swift containers; the retained wire fixture is deferred to Phase 4 | No golden reference payloads, JS/legacy Swift direction, Query/Retrieve capture, full field-boundary fixtures, unknown-field behavior, or semantic assertions for nested types |
+| IO routing | Current-runtime Associate/IoValue subjects and offline package tests | Forced live cross-language gate is still required; controller/rule-based routing and IoState publication are not G4 contracts |
+| SensorThings | G3 controller/fixture tests retired in Phase 4; portable JSON behavior belongs to ObjectModel/Wire packages | No G4 product schema, controller, or cross-language evidence; deferred to G5 |
 | Reference agents | CoatyJS 2.4.0 has a reproducible Linux image; legacy Swift 2.4.0 has an immutable source pin | CoatyJS runner supports only `advertise`; legacy Swift requires a macOS/Xcode runner or macOS-produced captures |
 | Capture tooling | Passive MQTT capture preserves topic, raw bytes, QoS, retain, duplicate flag, and order | No IO or SensorThings scenario currently invokes it; no approved fixtures exist for these capabilities |
 

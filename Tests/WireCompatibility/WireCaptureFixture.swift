@@ -55,7 +55,29 @@ struct WireCaptureFixture {
     let records: [Record]
 
     init(named name: String) throws {
-        guard let url = Bundle.module.url(forResource: name, withExtension: "jsonl") else {
+        let components = name.split(separator: "/").map(String.init)
+        let resourceName = components.last ?? name
+        let directory = components.dropLast().joined(separator: "/")
+        let subdirectories = [
+            directory,
+            directory.isEmpty ? "Fixtures" : "Fixtures/\(directory)",
+            directory.isEmpty ? "WireCompatibility/Fixtures" : "WireCompatibility/Fixtures/\(directory)"
+        ]
+        let relativePaths = [
+            name + ".jsonl",
+            "Fixtures/\(name).jsonl",
+            "WireCompatibility/Fixtures/\(name).jsonl"
+        ]
+        let fileURL = relativePaths.lazy.map {
+            Bundle.module.resourceURL?.appendingPathComponent($0)
+        }.compactMap { $0 }.first(where: { FileManager.default.fileExists(atPath: $0.path) })
+        let url = fileURL
+            ?? Bundle.module.url(forResource: resourceName, withExtension: "jsonl")
+            ?? Bundle.module.url(forResource: name, withExtension: "jsonl")
+            ?? subdirectories.lazy.compactMap {
+                Bundle.module.url(forResource: resourceName, withExtension: "jsonl", subdirectory: $0)
+            }.first
+        guard let url else {
             throw Error.resource(name)
         }
         try self.init(name: name, text: String(contentsOf: url, encoding: .utf8))

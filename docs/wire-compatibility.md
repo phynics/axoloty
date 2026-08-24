@@ -17,9 +17,9 @@ Reference versions must be pinned before captured fixtures become normative:
 | Call / Return | Compatible | Compatible with normalization | Not tested | Not tested (macOS runner responder mode added, requires macOS host) | PR |
 | Channel | Compatible | Compatible with normalization | Not tested | Not tested (macOS runner consumer mode added, requires macOS host) | PR |
 | Identity lifecycle / last will | Not tested | Not tested | Not tested | Not tested | Nightly |
-| Associate / IoState / IoValue | Compatible with normalization | Compatible with normalization | Not tested | Not tested | Nightly |
+| Associate / IoState / IoValue | Partial | Partial | Not tested | Not tested | Nightly |
 | Decentralized logging | Not tested | Not tested | Not tested | Not tested | Nightly |
-| SensorThings | Compatible with normalization | Compatible with normalization | Not tested | Not tested | Audit |
+| SensorThings | Unsupported | Unsupported | Not tested | Not tested | G5 |
 
 ### G4 embedded Advertise topic normalization
 
@@ -76,7 +76,7 @@ Query/Retrieve additionally exercises `objectFilter` (#119): the `query-retrieve
 
 Identity lifecycle / last will has nine executable live scenarios of eleven, evidenced by `Tests/Support/WireCompatibility/Lifecycle/Live/run-lifecycle-matrix.sh`. Three (`unexpected-disconnect-last-will`, `qos-0`, `graceful-deadvertise`) have both subject and observer as CoatyJS reference agents, so they are not cross-implementation evidence for either directional column. Six have **Axoloty as the genuine live subject**: `duplicate-reply` and `late-reply` (Axoloty as Call/Return initiator against pinned CoatyJS 2.4.0 as a deliberately misbehaving responder, via `run-lifecycle-call-return.sh`), and the four network-failure scenarios `offline-queueing`, `reconnect-resubscribe`, `broker-restart`, and `clean-session` (via `run-lifecycle-network.sh`, which severs and restores the subject's broker connectivity through a controllable TCP proxy — or really stops and restarts Mosquitto — and proves post-reconnect re-subscription by having Axoloty decode an Advertise probe published by pinned CoatyJS 2.4.0 only after the reconnect; `clean-session` additionally verifies proxy-decoded CONNACK `sessionPresent=false` handshakes). All were verified end-to-end via containerized runners, cross-referencing an independent MQTT capture against the timestamped Axoloty application log, not merely a process exit code. Getting `broker-restart` to pass exposed and fixed a real defect: `MQTTNIOClient`'s failed connect attempts never rescheduled auto-reconnect (only established-then-closed connections fire mqtt-nio's close listener), so one refused attempt against a not-yet-listening broker permanently ended reconnection. See `Tests/Support/WireCompatibility/Lifecycle/Live/README.md` for the full disposition of every catalog scenario. `qos-1`/`qos-2` remain `unsupported` for a separate, verified reason: pinned `@coaty/core@2.4.0` hardcodes QoS 0 for every publish regardless of configuration. Legacy CoatySwift 2.4.0 is descoped as a live lifecycle subject by recorded decision: see `Tests/Support/WireCompatibility/Audit/LegacySwiftLifecycleScopeDecision.md`.
 
-`Legacy → modern` for Advertise, Deadvertise, and Discover/Resolve is backed by real, provenance-bound CoatySwift 2.4.0 captures generated on a macOS host (`Tests/WireCompatibility/Fixtures/coatyswift-2.4.0/*.jsonl` plus their `*.manifest.json`) and decoded by `LegacyCaptureFixtureTests.swift`, which asserts the decoded Swift event's semantic fields, not only that the capture parses. Generating these captures required two fixes to the previously unexercised macOS runner (`Tests/Support/WireCompatibility/Legacy/macOS-runner/`), documented in that directory's README: pinned CoatySwift 2.4.0's CocoaMQTT client dispatches socket callbacks on the main queue, so the runner's blocking `Thread.sleep`/`DispatchSemaphore.wait` calls starved that queue and silently dropped every publication; and the Discover/Resolve requester and responder identities produced an identical truncated MQTT ClientID, so the broker repeatedly disconnected one side. `Modern → legacy` (Axoloty producing for a legacy CoatySwift consumer) is not implemented and remains `Not tested`; the macOS runner in this repository is a producer-only scenario driver, not a consumer.
+`Legacy → modern` for Advertise, Deadvertise, and Discover/Resolve is backed by real, provenance-bound CoatySwift 2.4.0 captures generated on a macOS host (`Tests/WireCompatibility/Fixtures/coatyswift-2.4.0/*.jsonl` plus their `*.manifest.json`) and decoded by `WireCaptureContractTests.swift`, which asserts the decoded Swift event's semantic fields, not only that the capture parses. Generating these captures required two fixes to the previously unexercised macOS runner (`Tests/Support/WireCompatibility/Legacy/macOS-runner/`), documented in that directory's README: pinned CoatySwift 2.4.0's CocoaMQTT client dispatches socket callbacks on the main queue, so the runner's blocking `Thread.sleep`/`DispatchSemaphore.wait` calls starved that queue and silently dropped every publication; and the Discover/Resolve requester and responder identities produced an identical truncated MQTT ClientID, so the broker repeatedly disconnected one side. `Modern → legacy` (Axoloty producing for a legacy CoatySwift consumer) is not implemented and remains `Not tested`; the macOS runner in this repository is a producer-only scenario driver, not a consumer.
 
 Reference-agent pins, build instructions, and the documented legacy Swift
 platform constraint live in `Tests/Support/WireCompatibility/ReferenceAgents/README.md`.
@@ -142,38 +142,22 @@ automatic reconnect and wildcard resubscription. All harnesses passed with
 reviewed physical evidence under `.testing/embedded/`.
 
 `Associate / IoState / IoValue` is backed by `Tests/WireCompatibility/IO/`
-(T-021). The generated IOV route and ASC topic, and the required Associate
-fields, are compatible in both directions; the rows are marked
-`Intentional divergence` because two defects were found and recorded rather
-than silently normalized. **JS → modern** is blocked by Axoloty's
-`handleAssociate` force-unwrapping the optional `isExternalRoute`
-(`CommunicationManager.swift:557`); pinned CoatyJS 2.4.0 never serializes
-that field, so an Axoloty actor traps on a CoatyJS Associate (the decode fact
-is locked in offline by `AxolotyIoAssociateTests`).
-**Modern → JS** runs live (`IO/Live/run-io-associate.sh`, PASS): the CoatyJS
-actor decodes the Associate and subscribes to the generated route, but
-receives Axoloty's IoValue as `{"payload":42}` rather than the bare value
-`42` — Axoloty wraps the value under `payload` (`IoValueEventData.encode`)
-while CoatyJS publishes the raw value. Both are recorded defects pending
-follow-up PRs; see
-`Audit/IOAndSensorThingsDecisions.md`. `IoState` is internal (not a wire
-contract) and kept. Legacy CoatySwift 2.4.0 IO directions are descoped by
+(T-021). Generic Associate and IoValue wire families remain owned by
+`AxolotyProtocol` and `AxolotyWire`; the current live subjects use
+`AxolotyRuntime` and bounded peer acknowledgements. The matrix stays `Partial`
+until the forced live gate is rerun in CI. The G4 runtime does not ship
+controller-based or rule-based IO routing, and `IoState` is an internal API,
+not a wire publication. Legacy CoatySwift IO directions remain descoped by
 `Audit/LegacySwiftIOScopeDecision.md` (no macOS/Xcode host). JS integer
 IoValues exceeding 2^53 lose precision through CoatyJS's float64
 (`Int64.max` round-trips as `9223372036854776000`); Axoloty preserves Int64
 exactly.
 
-`SensorThings` is `Not tested` cross-implementation this session. There is no
-`@coaty/sensor-things` npm package and `@coaty/core@2.4.0` exports no
-SensorThings types; per the audit its wire contract is ordinary Coaty object
-JSON with an `objectType` of `coaty.sensorThings.*` over standard
-Advertise/Channel topics, so its transport compatibility reduces to the
-already-proven Advertise/Channel rows. The field-schema fixtures
-(`Tests/SensorThings/` exists same-process) and cross-implementation captures
-remain to be run; see `Audit/IOAndSensorThingsDecisions.md`. Sensor payloads
-encode the canonical `phenomenonTime` field, while decoding accepts the legacy
-`phenomenonType` spelling as a fallback; when both are present, the canonical
-value wins, including an explicit canonical `null`.
+`SensorThings` is unsupported in G4 and deferred to G5. The product models,
+controllers, and wire fixture subjects were removed rather than retained as
+same-process mirrors. Portable object/JSON behavior belongs in the owning
+`AxolotyObjectModel` and `AxolotyWire` package tests; a future G5 product must
+add its own schema and interoperability evidence before this row changes.
 
 ## CI enforcement of live wire evidence
 

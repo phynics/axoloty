@@ -10,6 +10,7 @@ set -euo pipefail
 
 RUNTIME="${CONTAINER_RUNTIME:-podman}"
 runtime() { "$RUNTIME" "$@"; }
+runtime_bounded() { timeout "${WIRE_CONTAINER_WAIT_SECONDS:-120}s" "$RUNTIME" "$@"; }
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
 REVERSE_DIR="$ROOT_DIR/Tests/Support/WireCompatibility/Reverse"
@@ -77,7 +78,12 @@ runtime run --rm --network "$NETWORK" --entrypoint node \
     -e SCENARIO_SETTLE_MS=1500 \
     "$JS_IMAGE" /agent/coatyjs-advertise-runner.js
 
-runtime wait "$CONSUMER" >/dev/null
+if ! runtime_bounded wait "$CONSUMER" >/dev/null; then
+    runtime logs "$CONSUMER" >&2 || true
+    runtime stop -t 1 "$CONSUMER" >/dev/null 2>&1 || true
+    runtime kill "$CONSUMER" >/dev/null 2>&1 || true
+    exit 1
+fi
 runtime logs "$CONSUMER" >"$CONSUMER_LOG" 2>&1
 cat "$CONSUMER_LOG"
 grep -q '"state":"ack"' "$CONSUMER_LOG"

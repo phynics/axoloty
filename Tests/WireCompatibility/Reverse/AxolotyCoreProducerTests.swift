@@ -190,35 +190,23 @@ struct AxolotyCoreProducerTests {
     }
 
     private func requireResponse(_ stream: RuntimeEventStream?) async throws -> RuntimeEventValue {
-        var iterator = try #require(stream).makeAsyncIterator()
-        let box = CoreEventIteratorBox(iterator)
-        defer { iterator = box.iterator }
-        return try await withThrowingTaskGroup(of: RuntimeEventValue?.self) { group in
-            group.addTask { await box.iterator.next() }
-            group.addTask {
-                try await Task.sleep(for: .seconds(5))
-                return nil
-            }
-            defer { group.cancelAll() }
-            return try #require(try await group.next() ?? nil)
-        }
+        return try await ModernConsumerSupport.next(
+            from: try #require(stream),
+            timeout: .seconds(5),
+            scenario: "Axoloty core response"
+        )
     }
 
     private func expectNoResponse(_ stream: RuntimeEventStream?) async throws {
         var iterator = try #require(stream).makeAsyncIterator()
-        let box = CoreEventIteratorBox(iterator)
-        defer { iterator = box.iterator }
-        let value = await withTaskGroup(of: RuntimeEventValue?.self) { group in
-            group.addTask { await box.iterator.next() }
-            group.addTask {
-                try? await Task.sleep(for: .seconds(3))
-                return nil
-            }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
+        do {
+            let value = try await nextValue(&iterator, timeout: .seconds(3))
+            Issue.record("received unexpected response: \(value)")
+        } catch is AsyncWaitTimeoutError {
+            return
+        } catch {
+            throw error
         }
-        #expect(value == nil)
     }
 
     private func expectObject(_ payload: [UInt8], expectedName: String) throws {
@@ -245,13 +233,5 @@ struct AxolotyCoreProducerTests {
 
     private func jsonObject(_ payload: [UInt8]) throws -> Any {
         try JSONSerialization.jsonObject(with: Data(payload))
-    }
-}
-
-private final class CoreEventIteratorBox: @unchecked Sendable {
-    var iterator: AsyncStream<RuntimeEventValue>.Iterator
-
-    init(_ iterator: AsyncStream<RuntimeEventValue>.Iterator) {
-        self.iterator = iterator
     }
 }

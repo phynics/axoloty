@@ -22,6 +22,7 @@ esac
 
 RUNTIME="${CONTAINER_RUNTIME:-podman}"
 runtime() { "$RUNTIME" "$@"; }
+runtime_bounded() { timeout "${WIRE_CONTAINER_WAIT_SECONDS:-120}s" "$RUNTIME" "$@"; }
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)
 HERE="$ROOT/Tests/Support/WireCompatibility/Lifecycle/Live"
 REVERSE="$ROOT/Tests/Support/WireCompatibility/Reverse"
@@ -131,13 +132,19 @@ runtime run -d -t --name "$SUBJECT" --network "$NETWORK" \
     "${RUNTIME_LABELS[@]}" \
     -e "$ENV_FLAG=1" -e WIRE_BROKER_HOST="$BROKER" -e WIRE_BROKER_PORT=1883 -e WIRE_NAMESPACE="$NAMESPACE" \
     -e WIRE_RESPONSE_READY="/peer-acks/$RESPONSE_READY_BASENAME" \
+    -e WIRE_PEER_ACK_FILE="/peer-acks/$ACK_BASENAME" -e WIRE_PEER_ACK_TOKEN="$ACK_TOKEN" \
     -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
     "$DEV_IMAGE" swift test -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
     --skip-build --scratch-path /swift-build --cache-path /swiftpm-cache --disable-automatic-resolution \
     --filter "$TEST_NAME" >/dev/null
 
 # Wait for the Swift test to complete.
-runtime wait "$SUBJECT" >/dev/null
+if ! runtime_bounded wait "$SUBJECT" >/dev/null; then
+    runtime logs "$SUBJECT" >&2 || true
+    runtime stop -t 1 "$SUBJECT" >/dev/null 2>&1 || true
+    runtime kill "$SUBJECT" >/dev/null 2>&1 || true
+    exit 1
+fi
 runtime logs "$SUBJECT" >"$RAW_LOG" 2>&1
 grep -E '^\{"state":' "$RAW_LOG" >"$APPLICATION_LOG" || true
 

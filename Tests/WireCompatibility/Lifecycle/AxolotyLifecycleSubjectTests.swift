@@ -98,13 +98,12 @@ struct AxolotyLifecycleSubjectTests {
                 // published the late Return on the wire. A timed read may
                 // also cancel this iterator before the second read begins.
             }
-            // The responder intentionally waits four seconds before sending
-            // its Return.  A canceled AsyncStream iterator may finish
-            // immediately on the second read, so keep the runtime alive for
-            // a bounded grace window instead of relying on that read to sleep
-            // for the full interval.  This keeps the retained capture causal:
-            // the late publication must occur before the subject disconnects.
-            try await Task.sleep(for: .seconds(5))
+            try await ModernConsumerSupport.awaitPeerAcknowledgement(
+                environment: ProcessInfo.processInfo.environment,
+                scenario: "late-reply",
+                context: "correlationId=\(correlation)",
+                timeout: .seconds(15)
+            )
             report(state: "done", scenario: "late-reply")
             await runtime.stop()
         } catch {
@@ -150,7 +149,7 @@ struct AxolotyLifecycleSubjectTests {
                 }
                 report(state: "published-offline", scenario: scenario, extra: ["count": "2"])
             }
-            try await waitForReconnectMarker()
+            try await waitForReconnectMarker(scenario: scenario)
             await runtime.reconnect()
             try await waitForState(.running, runtime: runtime)
             report(state: "reconnected", scenario: scenario)
@@ -201,11 +200,18 @@ struct AxolotyLifecycleSubjectTests {
         }
     }
 
-    private func waitForReconnectMarker() async throws {
+    private func waitForReconnectMarker(scenario: String) async throws {
         let path = ProcessInfo.processInfo.environment["WIRE_RECONNECT_READY"]
         guard let path, !path.isEmpty else { throw LifecycleFailure.reconnectHandshakeMissing }
-        try await waitUntil("reconnect handshake marker", timeout: .seconds(300)) {
-            FileManager.default.fileExists(atPath: path)
+        do {
+            try await waitUntil("\(scenario) reconnect handshake marker", timeout: .seconds(60)) {
+                FileManager.default.fileExists(atPath: path)
+            }
+        } catch {
+            throw AxolotyError.runtime(
+                code: .timedOut,
+                reason: "Timed out waiting for \(scenario) reconnect marker at \(path); runtime state and diagnostics are emitted by the subject"
+            )
         }
     }
 
