@@ -107,16 +107,16 @@ jobs:
           restore-keys: |
             ${{ env.SWIFT_BUILD_CACHE_PREFIX }}
 
-        - name: Run canonical CI verification plan
-          env:
-            AXOLOTY_OUTPUT: human
-            # Rootless Podman may need longer than the default two minutes to
-            # create the first container after a locally rebuilt image.
-            CONTAINER_CREATE_TIMEOUT_SECONDS: "300"
-            AXOLOTY_RUNS_DIR: .testing/runs
-          run: |
+      - name: Run canonical CI verification plan
+        env:
+          AXOLOTY_OUTPUT: human
+          # Rootless Podman may need longer than the default two minutes to
+          # create the first container after a locally rebuilt image.
+          CONTAINER_CREATE_TIMEOUT_SECONDS: "300"
+          AXOLOTY_RUNS_DIR: .testing/runs
+        run: |
           set -o pipefail
-          make verify-ci CONTAINER_RUNTIME=podman BUILD_DIR=".build/ci" BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache AXOLOTY_TOOL_CONTAINER_ENV_VARS="AXOLOTY_OUTPUT AXOLOTY_RUNS_DIR" 2>&1 | tee .testing/required-checks.log
+          make verify-ci CONTAINER_RUNTIME=podman BUILD_DIR=".build/ci" BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache AXOLOTY_TOOL_CONTAINER_ENV_VARS="AXOLOTY_OUTPUT CONTAINER_CREATE_TIMEOUT_SECONDS AXOLOTY_RUNS_DIR" 2>&1 | tee .testing/required-checks.log
 
       - name: Report Swift build cache reuse
         if: always()
