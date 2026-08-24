@@ -1480,7 +1480,7 @@ private struct TestPhaseFailure: LocalizedError {
     }
 }
 
-private final class DeadlineResultBox<Value>: @unchecked Sendable {
+private final class DeadlineResultBox<Value: Sendable>: @unchecked Sendable {
     private enum State {
         case pending
         case resolved(Result<Value, Error>)
@@ -1523,7 +1523,7 @@ private final class DeadlineResultBox<Value>: @unchecked Sendable {
 /// Races an unstructured operation against a deadline without joining a child
 /// that ignores cancellation. Test operations remain responsible for cleaning
 /// up any resources they own after this function reports a timeout.
-private func withDeadline<Value>(
+private func withDeadline<Value: Sendable>(
     _ description: String,
     timeout: Duration = .seconds(5),
     recordTimeout: Bool = true,
