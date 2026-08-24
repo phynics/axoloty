@@ -63,7 +63,7 @@ enum ProtocolTraceCorpus {
     }
 
     private static func fixtureID(_ family: TraceEventFamily, _ variant: String) -> String {
-        "Tests/ProtocolTrace/Fixtures/family-seeds.json#\(family.rawValue).\(variant)"
+        "protocol-trace/family-seeds.json#\(family.rawValue).\(variant)"
     }
 
     private static func positiveTrace(for family: TraceEventFamily, seed: FixtureSeed) -> ProtocolTrace {

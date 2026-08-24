@@ -134,4 +134,5 @@ platform module belongs in Swift.
 - [Coaty communication-event specification](https://coatyio.github.io/coaty-js/man/communication-events/)
 - [Legacy CoatySwift developer guide](https://coatyio.github.io/coaty-swift/man/developer-guide/)
 - Axoloty source tree under `../Source/`, roadmap, container tests, and
-  `../Tests/WireCompatibility/` and `../Tests/Support/WireCompatibility/`
+  `../Tests/AxolotyLiveWireTests/`, `../Tests/AxolotyTests/WireCompatibility/`,
+  and `../Tests/Support/WireCompatibility/`

@@ -1,7 +1,7 @@
 # Lifecycle and failure compatibility
 
 The lifecycle catalog and live runner define the executable contract for
-interoperability. Swift subjects in `Tests/WireCompatibility/Lifecycle/`
+interoperability. Swift subjects in `Tests/AxolotyLiveWireTests/Lifecycle/`
 implement only current-runtime scenarios; the retired
 `LifecycleCompatibilityScenarioTests.swift` subject is no longer selected.
 The catalog itself is tested so that required scenarios cannot silently

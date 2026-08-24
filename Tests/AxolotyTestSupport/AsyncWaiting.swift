@@ -1,6 +1,5 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-import Axoloty
 import Foundation
 
 /// Thrown by ``waitUntil(_:timeout:pollInterval:condition:)`` and
@@ -9,8 +8,8 @@ import Foundation
 /// The message always names the condition that was being awaited, so a
 /// failing broker-backed test reads as "timed out waiting for X" rather than
 /// an unexplained hang or a bare assertion failure.
-struct AsyncWaitTimeoutError: Error, CustomStringConvertible {
-    let description: String
+package struct AsyncWaitTimeoutError: Error, CustomStringConvertible {
+    package let description: String
 }
 
 private enum AsyncWaitResolution<Value: Sendable>: Sendable {
@@ -89,7 +88,7 @@ private func timeoutError(
 ///   - condition: Returns `true` once the awaited state has been observed.
 /// - Throws: ``AsyncWaitTimeoutError`` if `condition` never returns `true`
 ///   before the deadline, or whatever `condition` itself throws.
-func waitUntil(
+package func waitUntil(
     _ description: String,
     timeout: Duration = .seconds(5),
     pollInterval: Duration = .milliseconds(20),
@@ -126,7 +125,7 @@ func waitUntil(
 /// iterator is deliberately left untouched; its owner must release the
 /// underlying stream/operation before attempting to use another iterator for
 /// the same stream.
-func nextValue<E: Sendable>(
+package func nextValue<E: Sendable>(
     _ iterator: inout AsyncStream<E>.Iterator,
     timeout: Duration = .seconds(5)
 ) async throws -> E {
@@ -186,7 +185,7 @@ func nextValue<E: Sendable>(
 ///
 /// - Throws: ``AsyncWaitTimeoutError`` if `operation` doesn't finish before
 ///   `timeout`, or whatever `operation` itself throws.
-func withTimeout<T: Sendable>(
+package func withTimeout<T: Sendable>(
     _ description: String,
     timeout: Duration = .seconds(10),
     operation: @escaping @Sendable () async throws -> T
@@ -239,9 +238,9 @@ func withTimeout<T: Sendable>(
 /// long-lived consumer tasks in `AxolotyLifecycleSubjectTests`, replacing the
 /// per-file `@unchecked
 /// Sendable` box copies those files used to carry.
-final class AsyncStreamBox<E: Sendable>: @unchecked Sendable {
-    var iterator: AsyncStream<E>.Iterator
-    init(_ iterator: AsyncStream<E>.Iterator) {
+package final class AsyncStreamBox<E: Sendable>: @unchecked Sendable {
+    package var iterator: AsyncStream<E>.Iterator
+    package init(_ iterator: AsyncStream<E>.Iterator) {
         self.iterator = iterator
     }
 }

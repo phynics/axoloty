@@ -35,23 +35,23 @@ test("nested live-wire Swift commands isolate their module cache", () => {
 test("live producer subjects require a run-scoped peer acknowledgement", () => {
   const contracts = [
     [
-      "Tests/WireCompatibility/Reverse/AxolotyAdvertiseProducerTests.swift",
+      "Tests/AxolotyLiveWireTests/Reverse/AxolotyAdvertiseProducerTests.swift",
       "Tests/Support/WireCompatibility/Reverse/run-axoloty-advertise.sh",
       "Tests/Support/WireCompatibility/Reverse/coatyjs-advertise-consumer.js",
     ],
     [
-      "Tests/WireCompatibility/Reverse/AxolotyCoreProducerTests.swift",
+      "Tests/AxolotyLiveWireTests/Reverse/AxolotyCoreProducerTests.swift",
       "Tests/Support/WireCompatibility/Reverse/run-axoloty-core.sh",
       "Tests/Support/WireCompatibility/Reverse/coatyjs-core-consumer.js",
     ],
     [
-      "Tests/WireCompatibility/IO/AxolotyIoAssociateTests.swift",
+      "Tests/AxolotyLiveWireTests/IO/AxolotyIoAssociateTests.swift",
       "Tests/Support/WireCompatibility/IO/Live/run-io-associate.sh",
       "Tests/Support/WireCompatibility/IO/coatyjs-io-runner.js",
     ],
   ];
   const support = readFileSync(
-    path.join(root, "Tests/WireCompatibility/Reverse/ModernConsumerSupport.swift"),
+    path.join(root, "Tests/AxolotyLiveWireTests/Reverse/ModernConsumerSupport.swift"),
     "utf8",
   );
   assert.match(support, /WIRE_PEER_ACK_FILE/);
@@ -99,7 +99,7 @@ test("call-return lifecycle responders receive a run-scoped acknowledgement", ()
 
 test("call-return lifecycle responders wait for subject response readiness", () => {
   const subject = readFileSync(
-    path.join(root, "Tests/WireCompatibility/Lifecycle/AxolotyLifecycleSubjectTests.swift"),
+    path.join(root, "Tests/AxolotyLiveWireTests/Lifecycle/AxolotyLifecycleSubjectTests.swift"),
     "utf8",
   );
   const runner = readFileSync(

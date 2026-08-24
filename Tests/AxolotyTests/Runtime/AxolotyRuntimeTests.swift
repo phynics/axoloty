@@ -3,6 +3,7 @@
 import Testing
 @testable import Axoloty
 import AxolotyProtocol
+import AxolotyTestSupport
 import AxolotyWire
 
 @Suite("Axoloty runtime")

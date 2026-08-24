@@ -2,6 +2,7 @@
 
 import Axoloty
 import AxolotyProtocol
+import AxolotyTestSupport
 import AxolotyWire
 import Foundation
 import Testing

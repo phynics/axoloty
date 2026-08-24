@@ -28,7 +28,7 @@ with SHA-256 and records the exact source commit, legacy version, Xcode, Swift,
 architecture, scenario, and generation time. Captures must never be manually
 authored or silently regenerated.
 
-`Tests/WireCompatibility/Fixtures/coatyswift-2.4.0/{advertise,deadvertise,discover-resolve}.jsonl`
+`Tests/AxolotyTests/WireCompatibility/Fixtures/coatyswift-2.4.0/{advertise,deadvertise,discover-resolve}.jsonl`
 and their manifests are real captures generated this way on a macOS 26 /
 Xcode 26.6 / Apple Swift 6.3.3 (arm64) host against a local Mosquitto broker,
 and decoded (not just parsed) by `WireCaptureContractTests.swift` in the
@@ -63,8 +63,8 @@ performed by the Swift Testing wire suites:
 
 ```sh
 node Tests/Support/WireCompatibility/tool/dist/index.js legacy-manifest \
-  Tests/WireCompatibility/Fixtures/coatyswift-2.4.0/advertise.jsonl \
-  Tests/WireCompatibility/Fixtures/coatyswift-2.4.0/advertise.manifest.json \
+  Tests/AxolotyTests/WireCompatibility/Fixtures/coatyswift-2.4.0/advertise.jsonl \
+  Tests/AxolotyTests/WireCompatibility/Fixtures/coatyswift-2.4.0/advertise.manifest.json \
   --version 2.4.0 --source-commit COMMIT --scenario advertise
 ```
 

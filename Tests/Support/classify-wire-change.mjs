@@ -11,7 +11,8 @@ import { fileURLToPath } from "node:url";
 export const PROTOCOL_AFFECTING = [
   { glob: "Packages/AxolotyWire/**", description: "AxolotyWire codec and routing" },
   { glob: "Source/**", description: "host wire codecs, events, core types, IO, SensorThings" },
-  { glob: "Tests/WireCompatibility/**", description: "wire Swift tests and fixtures" },
+  { glob: "Tests/AxolotyTests/WireCompatibility/**", description: "offline wire tests and fixtures" },
+  { glob: "Tests/AxolotyLiveWireTests/**", description: "live wire Swift subjects" },
   { glob: "Tests/Support/WireCompatibility/**", description: "wire scenarios, reference agents, and tooling" },
   { glob: "Tests/AxolotyWire/**", description: "wire codec tests" },
   { glob: "Package.swift", description: "package manifest" },
@@ -48,7 +49,8 @@ function isExcluded(normalized) {
   }
   // Documentation and decision records under the wire tree are not wire
   // evidence; executable fixtures and scenario code are.
-  if ((normalized.startsWith("Tests/WireCompatibility/")
+  if ((normalized.startsWith("Tests/AxolotyTests/WireCompatibility/")
+      || normalized.startsWith("Tests/AxolotyLiveWireTests/")
       || normalized.startsWith("Tests/Support/WireCompatibility/"))
       && /\.(md|rst)$/.test(normalized)) {
     return true;

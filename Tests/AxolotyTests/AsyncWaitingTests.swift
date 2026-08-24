@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
+import AxolotyTestSupport
 import Testing
 
 @Test("nextValue returns a delivered stream element")

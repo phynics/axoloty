@@ -44,7 +44,7 @@ New Axoloty primitives must not add proprietary event codes to `coaty/3`; they b
 and G4 runtime integration.**
 
 The fixture-backed corpus and JSON contract in
-[`Tests/ProtocolTrace/`](../../Tests/ProtocolTrace/) record deterministic prior
+[`Tests/AxolotyTests/ProtocolTrace/`](../../Tests/AxolotyTests/ProtocolTrace/) record deterministic prior
 state, capabilities, finite limits, inputs, normalized actions, and structured
 rejections for every Coaty Core family. The host and static replay adapters are
 test implementations over the same contract. Both invoke the shared
@@ -97,8 +97,8 @@ non-divergence and release proof.**
 
 - [`docs/wire-compatibility.md`](../wire-compatibility.md)
 - [`Tests/Support/WireCompatibility/ReferenceAgents/`](../../Tests/Support/WireCompatibility/ReferenceAgents/)
-- [`Tests/WireCompatibility/Fixtures/`](../../Tests/WireCompatibility/Fixtures/)
-- [`Tests/ProtocolTrace/ProtocolTraceTests.swift`](../../Tests/ProtocolTrace/ProtocolTraceTests.swift)
+- [`Tests/AxolotyTests/WireCompatibility/Fixtures/`](../../Tests/AxolotyTests/WireCompatibility/Fixtures/)
+- [`Tests/AxolotyTests/ProtocolTrace/ProtocolTraceTests.swift`](../../Tests/AxolotyTests/ProtocolTrace/ProtocolTraceTests.swift)
 - [`Packages/AxolotyProtocol/Tests/AxolotyProtocolTests/ProtocolProcessorTests.swift`](../../Packages/AxolotyProtocol/Tests/AxolotyProtocolTests/ProtocolProcessorTests.swift)
 - [`Packages/AxolotyObjectModel/Tests/AxolotyObjectModelTests/ObjectPredicateTests.swift`](../../Packages/AxolotyObjectModel/Tests/AxolotyObjectModelTests/ObjectPredicateTests.swift)
 - [`Spikes/BoundedObjectModelEvidence/EVIDENCE.md`](../../Spikes/BoundedObjectModelEvidence/EVIDENCE.md)

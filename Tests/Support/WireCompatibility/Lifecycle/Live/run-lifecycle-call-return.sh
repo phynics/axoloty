@@ -5,7 +5,7 @@
 # lifecycle scenarios. Axoloty (modern Swift) is the Call/Return initiator
 # against pinned CoatyJS 2.4.0 as a (deliberately misbehaving, for these
 # scenarios) Call responder. See
-# Tests/WireCompatibility/Lifecycle/AxolotyLifecycleSubjectTests.swift for the
+# Tests/AxolotyLiveWireTests/Lifecycle/AxolotyLifecycleSubjectTests.swift for the
 # Axoloty side and
 # Tests/Support/WireCompatibility/Reverse/coatyjs-core-consumer.js for the CoatyJS
 # responder side.

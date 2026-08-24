@@ -610,7 +610,7 @@ public struct AxolotyCommandDispatcher: Sendable {
 
     private func fixtureBundleResult() -> AxolotyCommandResult {
         do {
-            let source = environment["AXOLOTY_FIXTURE_BUNDLE_SOURCE"] ?? "Tests/WireCompatibility/Fixtures"
+            let source = environment["AXOLOTY_FIXTURE_BUNDLE_SOURCE"] ?? "Tests/AxolotyTests/WireCompatibility/Fixtures"
             let destination = environment["AXOLOTY_FIXTURE_BUNDLE_OUTPUT"] ?? ".testing/fixture-bundle"
             let forwardedEnvironment = [
                 "AXOLOTY_IMAGE_IDENTITY", "AXOLOTY_GIT_COMMIT", "AXOLOTY_GIT_CLEAN",
@@ -691,7 +691,7 @@ public struct AxolotyCommandDispatcher: Sendable {
             values[name] = environment[name]
         }
         let snapshotSource = environment["AXOLOTY_FIXTURE_BUNDLE_SOURCE"]
-            ?? "Tests/WireCompatibility/Fixtures"
+            ?? "Tests/AxolotyTests/WireCompatibility/Fixtures"
         let snapshotDestination = environment["AXOLOTY_FIXTURE_BUNDLE_OUTPUT"]
             ?? ".testing/fixture-bundle"
         let canonicalManifest: AxolotyCanonicalTestManifest
