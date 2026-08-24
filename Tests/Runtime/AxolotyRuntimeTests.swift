@@ -212,10 +212,10 @@ struct AxolotyRuntimeTests {
         let payload = Array(#"{"object":{"objectId":"77777777-7777-4777-8777-777777777777","coreType":"CoatyObject","objectType":"com.coaty.test.WireFixture","name":"wire-fixture"}}"#.utf8)
         #expect(await runtime.publish(.advertise(payload)) == .accepted)
         for _ in 0..<100 {
-            if await transport.sentCount() == 2 { break }
+            if await transport.sentCount() == 3 { break }
             try? await Task.sleep(for: .milliseconds(5))
         }
-        #expect(await transport.sentCount() == 2)
+        #expect(await transport.sentCount() == 3)
         #expect(await runtime.state() == .running)
         await runtime.stop()
     }
@@ -349,24 +349,37 @@ struct AxolotyRuntimeTests {
 
     @Test("runtime orders subscription and identity lifecycle around transport")
     func lifecycleOrdering() async throws {
-        let definition = try makeDefinition()
+        let identity = try RuntimeIdentity(id: .zero, name: "lifecycle-test")
+        let runtimeDefinition = try RuntimeDefinition(
+            namespace: "test",
+            sourceID: .zero,
+            identity: identity,
+            capacities: try RuntimeCapacities()
+        )
+        let definition = try runtimeDefinition.seal()
         let transport = TestTransport()
         let runtime = AxolotyRuntime(definition: definition, transport: transport)
         #expect(await runtime.state() == .initialized)
         try await runtime.start()
         #expect(await runtime.state() == .running)
-        #expect(await transport.lifecycle == ["start", "install", "advertise"])
+        #expect(await transport.lifecycle == ["start", "install"])
+        let advertisement = try #require(await transport.firstSent())
+        #expect(advertisement.routingKey.capability == .advertise)
+        #expect(String(decoding: advertisement.payload, as: UTF8.self).contains("coaty.Identity"))
 
         await runtime.reconnect()
         #expect(await runtime.state() == .running)
         #expect(await transport.lifecycle == [
-            "start", "install", "advertise", "remove", "stop", "start", "install", "advertise"
+            "start", "install", "remove", "stop", "start", "install"
         ])
 
         await runtime.stop()
         #expect(await runtime.state() == .stopped)
         let lifecycle = await transport.lifecycle
-        #expect(Array(lifecycle.suffix(3)) == ["deadvertise", "remove", "stop"])
+        #expect(Array(lifecycle.suffix(2)) == ["remove", "stop"])
+        let deadvertisement = try #require(await transport.lastSent())
+        #expect(deadvertisement.routingKey.capability == .deadvertise)
+        #expect(String(decoding: deadvertisement.payload, as: UTF8.self) == "{\"objectIds\":[\"00000000-0000-0000-0000-000000000000\"]}")
     }
 
     @Test("post-start transport failures enter recoverable reconnecting state")
@@ -481,10 +494,9 @@ private actor TestTransport: AxolotyRuntimeTransport {
 
     func installSubscriptions(namespace: String) async throws { lifecycle.append("install") }
     func removeSubscriptions(namespace: String) async throws { lifecycle.append("remove") }
-    func advertise(identity: RuntimeIdentity?, namespace: String) async throws { lifecycle.append("advertise") }
-    func deadvertise(identity: RuntimeIdentity?, namespace: String) async throws { lifecycle.append("deadvertise") }
 
     func sentCount() -> Int { sent.count }
+    func firstSent() -> OwnedProtocolPublication? { sent.first }
     func lastSent() -> OwnedProtocolPublication? { sent.last }
 
     func fail(_ error: Error) { failure?(error) }
@@ -510,8 +522,6 @@ private actor DrainingTransport: AxolotyRuntimeTransport {
     func stop() async { didStop = true }
     func installSubscriptions(namespace: String) async throws {}
     func removeSubscriptions(namespace: String) async throws {}
-    func advertise(identity: RuntimeIdentity?, namespace: String) async throws {}
-    func deadvertise(identity: RuntimeIdentity?, namespace: String) async throws {}
 
     func releaseSend() { released = true }
 }
