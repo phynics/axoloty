@@ -34,6 +34,31 @@ struct TopicLayoutConformanceTests {
         }
     }
 
+    @Test
+    func builderWritesDynamicNamespaceAndObjectTypeFilter() throws {
+        let source = try #require(UUID16(parsing: sourceId))
+        let namespace = Array("dynamic-ns".utf8)
+        let filter = Array("coaty.Identity".utf8)
+        var output = [UInt8](repeating: 0, count: 128)
+        let topic = output.withUnsafeMutableBufferPointer { destination in
+            namespace.withUnsafeBufferPointer { namespaceBytes in
+                filter.withUnsafeBufferPointer { filterBytes in
+                    var builder = TopicBuilder(buffer: destination.baseAddress!, capacity: destination.count)
+                    try! builder.writePrefix()
+                    try! builder.writeNamespace(ByteSlice(pointer: namespaceBytes.baseAddress!, length: namespaceBytes.count))
+                    try! builder.writeEventType(
+                        .advertise,
+                        filter: ByteSlice(pointer: filterBytes.baseAddress!, length: filterBytes.count),
+                        filterKind: .objectType
+                    )
+                    try! builder.writeSourceId(source)
+                    return String(decoding: destination.prefix(builder.position), as: UTF8.self)
+                }
+            }
+        }
+        #expect(topic == "coaty/3/dynamic-ns/ADV::coaty.Identity/\(sourceId)")
+    }
+
     // MARK: - Exact event codes
 
     @Test
