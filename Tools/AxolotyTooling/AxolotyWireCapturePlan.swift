@@ -23,10 +23,14 @@ extension AxolotyCheckPlan {
                     nodeEnvironment["WIRE_RUN_ID"] = runID
                 }
                 let arguments = node.command.arguments.map { argument in
-                    argument.replacingOccurrences(
-                        of: ".testing/wire/manifest.json",
-                        with: "\(outputDirectory)/manifest.json"
-                    )
+                    switch argument {
+                    case ".testing/wire":
+                        outputDirectory
+                    case ".testing/wire/manifest.json":
+                        "\(outputDirectory)/manifest.json"
+                    default:
+                        argument
+                    }
                 }
                 nodes.append(
                     AxolotyCheckNode(
