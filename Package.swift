@@ -161,9 +161,6 @@ let package = Package(
                 // These retained tests are intentionally outside the current
                 // target; some depend on host APIs no longer in the package.
                 // Keep each source explicit so a new test cannot become silent.
-                "Logging/DecentralizedLoggingTest.swift",
-                "Logging/LogManagerTests.swift",
-                "Smoke/AxolotyTests.swift",
                 "Testing/StandardErrorCapture.swift",
                 "WireCompatibility/CoatyJsAdvertiseCaptureTests.swift",
                 "WireCompatibility/CoatyJsCallReturnCaptureTests.swift",
