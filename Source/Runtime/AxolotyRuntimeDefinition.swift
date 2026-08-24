@@ -237,6 +237,8 @@ public enum RuntimeOneWayOperation: Sendable, Equatable {
     case deadvertise([UInt8])
     case channel(identifier: String, payload: [UInt8])
     case associate([UInt8])
+    /// Associates IO routes scoped to a context name.
+    case associateInContext(contextName: String, payload: [UInt8])
     case ioValue([UInt8])
 }
 
@@ -398,6 +400,12 @@ public struct RuntimeOperation: Sendable, Equatable {
             operationName: identifier
         )
         case let .associate(payload): self.init(capability: .associate, sourceID: sourceID, payload: payload)
+        case let .associateInContext(contextName, payload): self.init(
+            capability: .associate,
+            sourceID: sourceID,
+            payload: payload,
+            operationName: contextName
+        )
         case let .ioValue(payload): self.init(capability: .ioValue, sourceID: sourceID, payload: payload)
         }
     }
@@ -580,10 +588,6 @@ public protocol AxolotyRuntimeTransport: AnyObject, Sendable {
     func installSubscriptions(namespace: String) async throws
     /// Removes binding subscriptions during graceful shutdown.
     func removeSubscriptions(namespace: String) async throws
-    /// Publishes the binding-specific identity advertisement.
-    func advertise(identity: RuntimeIdentity?, namespace: String) async throws
-    /// Publishes the binding-specific deadvertisement.
-    func deadvertise(identity: RuntimeIdentity?, namespace: String) async throws
     /// Classifies an association route using binding-owned knowledge.
     ///
     /// The borrowed route is valid only for this synchronous call. The
@@ -595,8 +599,6 @@ public extension AxolotyRuntimeTransport {
     func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) async { _ = handler }
     func installSubscriptions(namespace: String) async throws {}
     func removeSubscriptions(namespace: String) async throws {}
-    func advertise(identity: RuntimeIdentity?, namespace: String) async throws {}
-    func deadvertise(identity: RuntimeIdentity?, namespace: String) async throws {}
     func classifyRoute(_ route: ByteSlice) -> ProtocolRouteClassification {
         route.length == 0 ? .unrelated : .coaty
     }

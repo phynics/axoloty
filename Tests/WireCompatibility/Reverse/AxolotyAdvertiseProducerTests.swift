@@ -17,7 +17,16 @@ struct AxolotyAdvertiseProducerTests {
         do {
             try await runtime.start()
             #expect(await runtime.publish(.advertise(fixturePayload)) == .accepted)
-            try await Task.sleep(for: .milliseconds(500))
+            let namespace = environment["WIRE_NAMESPACE"] ?? "wire-compat-v1"
+            ModernConsumerSupport.emit(
+                "{\"state\":\"awaiting-peer-ack\",\"phase\":\"peer-ack\",\"scenario\":\"axoloty-advertise\",\"namespace\":\"\(namespace)\",\"sourceId\":\"\(Self.sourceID)\"}"
+            )
+            try await ModernConsumerSupport.awaitPeerAcknowledgement(
+                environment: environment,
+                scenario: "axoloty-advertise",
+                context: "namespace=\(namespace) sourceId=\(Self.sourceID)",
+                timeout: .seconds(60)
+            )
             await runtime.stop()
         } catch {
             await runtime.stop()

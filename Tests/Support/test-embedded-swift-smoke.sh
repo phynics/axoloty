@@ -4,6 +4,8 @@
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+# shellcheck source=expected-failure.sh
+source "$ROOT_DIR/Tests/Support/expected-failure.sh"
 TEMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TEMP_DIR"' EXIT
 
@@ -135,10 +137,7 @@ assert_failure_result() {
     mode="$1"
     expected_stage="$2"
     expected_diagnostic="$3"
-    if run_smoke "$mode"; then
-        echo "expected $mode serial output to fail" >&2
-        exit 1
-    fi
+    run_expected_failure "embedded-swift-smoke/$mode" any run_smoke "$mode"
     node --input-type=module - "$out_dir/swift-smoke-result.json" "$expected_stage" "$expected_diagnostic" <<'JS'
 import fs from "node:fs";
 import assert from "node:assert/strict";
@@ -177,10 +176,7 @@ assert.equal(failureResult("execute", "x".repeat(1000)).diagnostic.length, 256);
 JS
 
 for mode in fatal missing duplicate nonmonotonic unknown; do
-    if run_smoke "$mode"; then
-        echo "expected $mode serial output to fail" >&2
-        exit 1
-    fi
+    run_expected_failure "embedded-swift-smoke/$mode" any run_smoke "$mode"
 done
 
 assert_failure_result failed execute "failed check: topicParse:ADV"
@@ -192,10 +188,7 @@ assert_failure_result no-summary summary "missing summary record"
 assert_failure_result no-completion completion "missing completion record"
 
 for mode in setup-failure build-failure flash-failure capture-failure; do
-    if run_smoke "$mode"; then
-        echo "expected $mode command to fail" >&2
-        exit 1
-    fi
+    run_expected_failure "embedded-swift-smoke/$mode" any run_smoke "$mode"
     node --input-type=module - "$out_dir/swift-smoke-result.json" "$mode" <<'JS'
 import fs from "node:fs";
 import assert from "node:assert/strict";
@@ -213,7 +206,20 @@ JS
 done
 
 rm "$build_dir/flash_args"
-if run_smoke success; then
-    echo "expected missing flash_args to fail" >&2
+run_expected_failure "embedded-swift-smoke/missing-flash-args" any run_smoke success
+
+# The wrapper must label fixture output, while an unwrapped failure remains a
+# normal actionable diagnostic for the surrounding self-test.
+expected_output="$TEMP_DIR/expected-output.log"
+run_expected_failure "embedded-swift-smoke/label-check" any run_smoke malformed >"$expected_output" 2>&1
+grep -q '^\[expected:embedded-swift-smoke/label-check\] SMOKE FAIL:' "$expected_output"
+unexpected_output="$TEMP_DIR/unexpected-output.log"
+if run_smoke malformed >"$unexpected_output" 2>&1; then
+    echo "malformed smoke fixture unexpectedly passed" >&2
+    exit 1
+fi
+grep -q '^SMOKE FAIL:' "$unexpected_output"
+if grep -q '^\[expected:' "$unexpected_output"; then
+    echo "unexpected fixture diagnostic was mislabeled" >&2
     exit 1
 fi

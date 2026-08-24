@@ -27,6 +27,10 @@ check "WireBoundsTests.swift exists" test -f "$SCRIPT_DIR/../AxolotyWire/WireBou
 
 check "WireBoundsTests.swift has copyright header" grep -q "Copyright (c) 2026 Atakan DULKER" "$SCRIPT_DIR/../AxolotyWire/WireBoundsTests.swift"
 
+check "WireBoundsTests.swift keeps parser-work assertion deterministic" grep -q "ParserWorkBoundsTests" "$SCRIPT_DIR/../AxolotyWire/WireBoundsTests.swift"
+
+check "WireBoundsTests.swift leaves wall-clock evidence to benchmarks" sh -c '! grep -qE "ContinuousClock|linearWorkScaling" "$1"' _ "$SCRIPT_DIR/../AxolotyWire/WireBoundsTests.swift"
+
 echo
 echo "SELF-TEST OK ($pass checks passed, $fail_count failed)"
 [ "$fail_count" -eq 0 ] || exit 1

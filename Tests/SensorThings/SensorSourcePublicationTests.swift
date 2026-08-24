@@ -12,16 +12,20 @@ struct SensorSourcePublicationTests {
         let gate = PublicationGate()
         let controller = try makeController(io: MockSensorIo(parameters: nil))
         defer { controller.container.shutdown() }
-        let transport = PublicationTransport { _ in await gate.wait() }
+        let transport = PublicationTransport { _ in try await gate.wait() }
         try await install(transport, on: controller)
 
         let publication = Task {
             try await controller.publishChanneledObservationAndWait(sensorId: controller.sensor.objectId)
         }
-        try await waitUntil("transport publication started") { await gate.started }
+        defer {
+            gate.release()
+            publication.cancel()
+        }
+        try await waitUntil("transport publication started") { gate.started }
         #expect(controller.lifecycle == [.will])
 
-        await gate.release()
+        gate.release()
         try await publication.value
         #expect(controller.lifecycle == [.will, .did])
         #expect(controller.lastObservationResult == "0")
@@ -205,20 +209,50 @@ private final class MultiReadSensorIo: SensorIo {
     }
 }
 
-private actor PublicationGate {
-    private(set) var started = false
-    private var continuation: CheckedContinuation<Void, Never>?
+private final class PublicationGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _started = false
+    private let releasePhase = OneShotPhase()
 
-    func wait() async {
-        started = true
-        await withCheckedContinuation { continuation in
-            self.continuation = continuation
+    var started: Bool { lock.withLock { _started } }
+
+    func wait() async throws {
+        lock.withLock { _started = true }
+        guard await releasePhase.wait() else {
+            throw CancellationError()
         }
     }
 
     func release() {
-        continuation?.resume()
-        continuation = nil
+        releasePhase.signal()
+    }
+}
+
+private final class OneShotPhase: @unchecked Sendable {
+    private let lock = NSLock()
+    private var signaled = false
+    private let continuation: AsyncStream<Void>.Continuation
+    let stream: AsyncStream<Void>
+
+    init() {
+        (stream, continuation) = AsyncStream.makeStream(of: Void.self)
+    }
+
+    func signal() {
+        let shouldSignal = lock.withLock {
+            guard !signaled else { return false }
+            signaled = true
+            return true
+        }
+        if shouldSignal {
+            continuation.yield(())
+            continuation.finish()
+        }
+    }
+
+    func wait() async -> Bool {
+        var iterator = stream.makeAsyncIterator()
+        return await iterator.next() != nil
     }
 }
 
@@ -227,9 +261,11 @@ private func waitUntil(
     _ description: String,
     condition: @escaping @MainActor () async -> Bool
 ) async throws {
-    for _ in 0 ..< 100 {
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: .seconds(2))
+    while clock.now < deadline {
         if await condition() { return }
-        try await Task.sleep(for: .milliseconds(10))
+        try await clock.sleep(until: min(deadline, clock.now.advanced(by: .milliseconds(10))))
     }
-    throw AxolotyError.runtime(code: .timedOut, reason: description)
+    throw AsyncWaitTimeoutError(description: "Timed out waiting for \(description)")
 }

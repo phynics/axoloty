@@ -18,6 +18,12 @@ LIVE="$ROOT/Tests/Support/WireCompatibility/Live"
 REF="$ROOT/Tests/Support/WireCompatibility/ReferenceAgents/coatyjs"
 TOOL=/tool/dist/index.js
 OUT="${WIRE_OUTPUT_DIR:-$ROOT/.testing/wire}"
+# CI invokes this runner with repository-relative artifact paths. Resolve that
+# boundary before deriving paths that are mounted into the subject container.
+case "$OUT" in
+    /*) ;;
+    *) OUT="$ROOT/$OUT" ;;
+esac
 RUN_ID="${WIRE_RUN_ID:-$$}"
 NETWORK="axoloty-lifecycle-$SCENARIO-$RUN_ID"
 BROKER="axoloty-lifecycle-broker-$RUN_ID"
@@ -37,6 +43,11 @@ RAW_LOG="$OUT/axoloty-$SCENARIO.subject.log"
 CONNACK_LOG="$OUT/axoloty-$SCENARIO.connack.jsonl"
 PROXY_READY="$OUT/axoloty-$SCENARIO.proxy-ready"
 RECONNECT_READY="$OUT/axoloty-$SCENARIO.reconnect-ready"
+RUNTIME_LABELS=(
+    --label "io.axoloty.managed-by=${WIRE_RUNTIME_MANAGED_BY:-axoloty-wire-lifecycle}"
+    --label "io.axoloty.run-id=${WIRE_RUNTIME_RUN_ID:-$RUN_ID}"
+    --label "io.axoloty.scenario=${WIRE_RUNTIME_SCENARIO:-$SCENARIO}"
+)
 case "$RECONNECT_READY" in
     "$ROOT"/*) RECONNECT_READY_REL="${RECONNECT_READY#"$ROOT/"}" ;;
     *) echo "WIRE_OUTPUT_DIR must be inside the repository so the subject can observe reconnect readiness" >&2; exit 64 ;;
@@ -56,9 +67,9 @@ rm -f "$CAPTURE" "$CAPTURE.post-restart" "$CAPTURE_READY" "$APPLICATION_LOG" "$R
 
 runtime build -t "$DEV_IMAGE" -f "$ROOT/.devcontainer/Dockerfile" "$ROOT"
 runtime build -t "$JS_IMAGE" "$REF"
-runtime network create "$NETWORK" >/dev/null
+runtime network create "$NETWORK" "${RUNTIME_LABELS[@]}" >/dev/null
 start_broker() {
-    runtime run -d --name "$BROKER" --network "$NETWORK" \
+    runtime run -d --name "$BROKER" --network "$NETWORK" "${RUNTIME_LABELS[@]}" \
         -v "$LIVE/mosquitto.conf:/etc/mosquitto/wire-compat.conf:ro" \
         "$DEV_IMAGE" mosquitto -c /etc/mosquitto/wire-compat.conf >/dev/null
 }
@@ -77,7 +88,7 @@ start_capture() {
     local output="$1"
     rm -f "$CAPTURE_READY"
     runtime run -d --name "$PROBE" --network "$NETWORK" -v "$ROOT/Tests/Support/WireCompatibility/tool:/tool:ro,Z" -v "$OUT:/artifacts" \
-        --entrypoint node --user 0 "$JS_IMAGE" "$TOOL" capture '#' "/artifacts/${output##*/}" \
+        --entrypoint node --user 0 "${RUNTIME_LABELS[@]}" "$JS_IMAGE" "$TOOL" capture '#' "/artifacts/${output##*/}" \
         --host "$BROKER" --producer coatyswift-modern --producer-version current --scenario "$SCENARIO" \
         --ready-file "/artifacts/${CAPTURE_READY##*/}" >/dev/null
     wait_for "capture subscription" "test -f '$CAPTURE_READY'"
@@ -87,7 +98,7 @@ start_capture "$CAPTURE"
 SUBJECT_HOST="$BROKER"
 if [ "$SCENARIO" != "broker-restart" ]; then
     runtime run -d --name "$PROXY" --network "$NETWORK" -v "$ROOT/Tests/Support/WireCompatibility/tool:/tool:ro,Z" -v "$OUT:/artifacts" \
-        --entrypoint node --user 0 "$JS_IMAGE" "$TOOL" proxy --listen-port 1883 --broker-host "$BROKER" --broker-port 1883 \
+        --entrypoint node --user 0 "${RUNTIME_LABELS[@]}" "$JS_IMAGE" "$TOOL" proxy --listen-port 1883 --broker-host "$BROKER" --broker-port 1883 \
         --control-port 18884 --connack-log "/artifacts/${CONNACK_LOG##*/}" --ready-file "/artifacts/${PROXY_READY##*/}" >/dev/null
     wait_for "TCP proxy readiness" "test -f '$PROXY_READY'"
     SUBJECT_HOST="$PROXY"
@@ -96,6 +107,7 @@ fi
 test_name="$(case "$SCENARIO" in offline-queueing) echo offlineQueueing ;; reconnect-resubscribe) echo reconnectResubscribe ;; broker-restart) echo brokerRestart ;; clean-session) echo cleanSession ;; esac)"
 env_flag="WIRE_LIFECYCLE_$(echo "$SCENARIO" | tr 'a-z-' 'A-Z_')_LIVE"
 runtime run -d -t --name "$SUBJECT" --network "$NETWORK" -v "$ROOT:/workspace" -v "$SPM_CACHE_DIR:/swiftpm-cache" -v "$BUILD_DIR:/swift-build" -w /workspace \
+    "${RUNTIME_LABELS[@]}" \
     -e "$env_flag=1" -e WIRE_BROKER_HOST="$SUBJECT_HOST" -e WIRE_BROKER_PORT=1883 -e WIRE_NAMESPACE="$NAMESPACE" \
     -e WIRE_RECONNECT_READY="/workspace/$RECONNECT_READY_REL" \
     -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
@@ -105,12 +117,12 @@ subject_reported() { runtime logs "$SUBJECT" 2>&1 >"$RAW_LOG"; grep -q "\"state\
 wait_for "subject readiness" "subject_reported ready"
 
 publish_probe() {
-    runtime run --rm --network "$NETWORK" --entrypoint node \
+    runtime run --rm --network "$NETWORK" "${RUNTIME_LABELS[@]}" --entrypoint node \
         -v "$LIVE/coatyjs-advertise-runner.js:/agent/coatyjs-advertise-runner.js:ro" \
         -e BROKER_URL="mqtt://$BROKER:1883" -e COATY_NAMESPACE="$NAMESPACE" "$JS_IMAGE" /agent/coatyjs-advertise-runner.js
 }
 proxy_control() {
-    runtime run --rm --network "$NETWORK" -v "$ROOT/Tests/Support/WireCompatibility/tool:/tool:ro,Z" --entrypoint node "$JS_IMAGE" "$TOOL" proxy-control --host "$PROXY" --port 18884 --command "$1"
+    runtime run --rm --network "$NETWORK" "${RUNTIME_LABELS[@]}" -v "$ROOT/Tests/Support/WireCompatibility/tool:/tool:ro,Z" --entrypoint node "$JS_IMAGE" "$TOOL" proxy-control --host "$PROXY" --port 18884 --command "$1"
 }
 if [ "$SCENARIO" = "broker-restart" ]; then
     runtime rm -f "$PROBE" >/dev/null || true

@@ -11,19 +11,21 @@ struct IngressDeliveryQueueTests {
     func shedsNewestJobsWhenDrainerFallsBehind() async throws {
         let queue = IngressDeliveryQueue(capacity: 2)
         let executed = LockedIntArray()
-        let (startedStream, startedContinuation) = AsyncStream<Void>.makeStream()
-        var startedIterator = startedStream.makeAsyncIterator()
+        let startedPhase = OneShotPhase()
+        let releasePhase = OneShotPhase()
+        defer { releasePhase.signal() }
 
         // Occupy the single drain task with a slow job, signalling exactly
         // when it has started so the bounded buffer below is guaranteed empty
         // and the drainer is guaranteed busy for the duration of the flood.
         queue.enqueue {
-            startedContinuation.yield()
-            try? await Task.sleep(for: .milliseconds(150))
+            startedPhase.signal()
+            guard await releasePhase.wait() else { return }
             executed.append(0)
         }
-        _ = await startedIterator.next()
-        startedContinuation.finish()
+        try await waitUntil("ingress drainer to start its blocking job", timeout: .seconds(2)) {
+            startedPhase.isSignaled
+        }
 
         // Burst far past the capacity while the drainer is still busy with
         // job 0. `.bufferingOldest(2)` retains the two oldest pending jobs and
@@ -41,8 +43,15 @@ struct IngressDeliveryQueueTests {
 
         // After the slow job finishes, the retained jobs drain in submission
         // order — shedding never reorders what survives.
-        try await waitUntil("retained jobs to finish") {
-            executed.values.count == 3
+        do {
+            try await waitUntil("retained ingress jobs to finish", timeout: .seconds(2)) {
+                executed.values.count == 3
+            }
+        } catch {
+            Issue.record(
+                "Ingress drain phase timed out; executed: \(executed.values), dropped: \(queue.droppedCount)"
+            )
+            throw error
         }
         #expect(executed.values == [0, 1, 2])
     }
@@ -97,5 +106,37 @@ private final class LockedIntArray: @unchecked Sendable {
         lock.lock()
         storage.append(value)
         lock.unlock()
+    }
+}
+
+private final class OneShotPhase: @unchecked Sendable {
+    private let lock = NSLock()
+    private var signaled = false
+    private let continuation: AsyncStream<Void>.Continuation
+    let stream: AsyncStream<Void>
+
+    init() {
+        (stream, continuation) = AsyncStream.makeStream(of: Void.self)
+    }
+
+    var isSignaled: Bool {
+        lock.withLock { signaled }
+    }
+
+    func signal() {
+        let shouldSignal = lock.withLock {
+            guard !signaled else { return false }
+            signaled = true
+            return true
+        }
+        if shouldSignal {
+            continuation.yield(())
+            continuation.finish()
+        }
+    }
+
+    func wait() async -> Bool {
+        var iterator = stream.makeAsyncIterator()
+        return await iterator.next() != nil
     }
 }

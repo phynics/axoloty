@@ -5,11 +5,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const expectedTiers = new Set(["smoke", "unit", "module", "property", "integration", "wire-offline", "wire-live", "nightly", "manual-macos", "g3-object-model", "g4-runtime"]);
+const expectedTiers = new Set(["smoke", "unit", "module", "property", "wire-offline", "wire-live", "nightly", "manual-macos", "g3-object-model", "g4-runtime"]);
 const networkModes = new Set(["none", "isolated", "isolated-broker", "isolated-containers"]);
 const brokerModes = new Set(["none", "local", "isolated"]);
 const hardwareModes = new Set(["forbidden", "optional", "required"]);
 const isolationModes = new Set(["parallel", "separate-process", "exclusive"]);
+const retiredCanonicalNodes = new Set(["integration-tests", "logging-global"]);
+const retiredCanonicalFilters = new Set(["MQTTNIOClientTests", "DecentralizedLoggingTest", "LogManagerTests"]);
 
 export function parseMakeTargets(makefilePath) {
   if (!fs.existsSync(makefilePath)) return new Set();
@@ -163,6 +165,9 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
   for (const node of document.nodes ?? []) {
     if (!node || typeof node !== "object" || Array.isArray(node)) { errors.push("every node must be an object"); continue; }
     if (typeof node.id !== "string" || !node.id) errors.push("node id must be a nonempty string");
+    if (retiredCanonicalNodes.has(node.id)) errors.push(`${node.id}: retired canonical node must not be declared`);
+    const filters = typeof node.filter === "string" ? node.filter.split("|") : [];
+    for (const filter of filters) if (retiredCanonicalFilters.has(filter)) errors.push(`${node.id}: retired test filter ${JSON.stringify(filter)} must not be declared`);
     if (nodeIds.has(node.id)) errors.push(`duplicate node id ${JSON.stringify(node.id)}`);
     nodeIds.add(node.id);
     for (const dependency of node.dependencies ?? []) if (!nodeIds.has(dependency) && !(document.nodes ?? []).some(candidate => candidate?.id === dependency)) errors.push(`${node.id}: unknown dependency ${JSON.stringify(dependency)}`);
@@ -184,6 +189,11 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
   }
   for (const [name, plan] of Object.entries(document.plans ?? {})) {
     if (!Array.isArray(plan?.nodes)) { errors.push(`plan ${name}: nodes must be an array`); continue; }
+    if (!Number.isInteger(plan.timeoutSeconds) || plan.timeoutSeconds <= 0) {
+      errors.push(`plan ${name}: timeoutSeconds must be a positive integer`);
+    } else if (name === "verify" && plan.timeoutSeconds !== 4800) {
+      errors.push("plan verify: timeoutSeconds must be 4800 seconds (80 minutes), below the 90-minute CI job deadline");
+    }
     for (const node of [...plan.nodes, ...(plan.ciNodes ?? [])]) if (!nodeIds.has(node)) errors.push(`plan ${name}: unknown node ${JSON.stringify(node)}`);
   }
   const makeAliases = {
@@ -191,7 +201,6 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
     "test-unit": "unit",
     "test-module": "module",
     "test-fuzz": "property",
-    test: "integration",
   };
   for (const [target, planName] of Object.entries(makeAliases)) {
     const tier = document.tiers.find(candidate => candidate.makeTarget === target);
@@ -209,6 +218,10 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
   for (const gate of document.ciRequiredGates ?? []) {
     const node = document.nodes.find(candidate => candidate.id === gate);
     if (!node?.required || !node.ci) errors.push(`CI required gate ${JSON.stringify(gate)} must be required and CI-available`);
+  }
+  const toolingNode = (document.nodes ?? []).find(node => node?.id === "test-tooling");
+  if (!toolingNode?.filter?.split("|").includes("RepositoryAuthorityTests")) {
+    errors.push("test-tooling must select RepositoryAuthorityTests");
   }
   const checkpointRoots = new Set([...(document.plans?.checkpoint?.nodes ?? []), ...(document.plans?.["checkpoint-hardware"]?.nodes ?? [])]);
   for (const gate of document.releaseGates ?? []) {
@@ -280,6 +293,11 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
   if (!requiredArtifacts.has("manifest.json") || !requiredArtifacts.has("verifier.log")) errors.push("failure artifacts must include manifest.json and verifier.log");
 
   if (!Array.isArray(document.selfTests)) return [...errors, "selfTests must be an array"];
+  const canonicalGateNames = new Set([...(document.requiredGates ?? []), ...(document.ciRequiredGates ?? [])]);
+  const canonicalCommandText = (document.nodes ?? [])
+    .filter(node => canonicalGateNames.has(node?.id))
+    .map(node => JSON.stringify(node?.command ?? {}))
+    .join("\n");
   const owned = new Map();
   for (const entry of document.selfTests) {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) { errors.push("selfTests entries must be objects"); continue; }
@@ -292,6 +310,9 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
     if (entry.path && !exists(entry.path)) errors.push(`selfTest ${entry.path}: file does not exist`);
     if (entry.path && invokedSelfTests.has(entry.makeTarget) && !invokedSelfTests.get(entry.makeTarget).has(entry.path)) {
       errors.push(`selfTest ${entry.path}: makeTarget ${JSON.stringify(entry.makeTarget)} does not invoke it`);
+    }
+    if (entry.path && !canonicalCommandText.includes(entry.path)) {
+      errors.push(`selfTest ${entry.path}: canonical verify has no required gate invoking it`);
     }
     if (owned.has(entry.path)) errors.push(`selfTest ${entry.path}: duplicate ownership (also owned by ${JSON.stringify(owned.get(entry.path))})`);
     else owned.set(entry.path, entry.makeTarget);

@@ -15,6 +15,21 @@ CACHE_NAMESPACE ?= swift-6.3-linux
 REPOSITORY_NAME ?= $(shell git rev-parse --git-common-dir 2>/dev/null | sed 's|/.git$$||' | xargs basename 2>/dev/null || basename "$(CURDIR)")
 BUILD_CACHE_ROOT ?= /tmp/coaty-swift-build/$(REPOSITORY_NAME)/$(CACHE_NAMESPACE)
 WORKTREE_NAME ?= $(notdir $(CURDIR))
+# Every top-level make invocation owns a distinct mutable-output namespace.
+# AXOLOTY_RUN_ID is inherited by recursive make calls and may be supplied by
+# CI when a workflow needs a stable, externally named run.
+RUN_ID ?= $(AXOLOTY_RUN_ID)
+ifeq ($(strip $(RUN_ID)),)
+RUN_ID := $(shell printf '%s-%s' "$$(date +%s)" "$$$$")
+endif
+AXOLOTY_RUN_ID ?= $(RUN_ID)
+AXOLOTY_RUNS_DIR ?= .testing/runs
+WIRE_OUTPUT_DIR ?= $(AXOLOTY_RUNS_DIR)/$(RUN_ID)/wire
+# This is deliberately container-visible. The path is relative to the
+# mounted worktree, while .swiftpm-cache is the shared cache mount.
+AXOLOTY_RESOURCE_LEASE_ROOT ?= .swiftpm-cache/.axoloty-resource-leases
+AXOLOTY_RUN_CONTAINER_ENV_VARS := AXOLOTY_RUN_ID AXOLOTY_RUNS_DIR WIRE_OUTPUT_DIR AXOLOTY_RESOURCE_LEASE_ROOT
+export AXOLOTY_RUN_ID AXOLOTY_RUNS_DIR WIRE_OUTPUT_DIR AXOLOTY_RESOURCE_LEASE_ROOT
 BUILD_LOCK ?= 1
 export BUILD_LOCK
 ifeq ($(AXOLOTY_DEVCONTAINER),1)
@@ -28,6 +43,7 @@ SPM_CACHE_DIR ?= $(HOME)/.cache/coaty-swift/swiftpm/$(CACHE_NAMESPACE)
 AXOLOTY_ESP_IDF_CCACHE_DIR ?= $(HOME)/.cache/axoloty/esp-idf-ccache
 AXOLOTY_DEVICE_LEASE_ROOT ?= $(BUILD_CACHE_ROOT)/device-leases
 endif
+PACKAGE_PATH ?= .
 COVERAGE_BUILD_DIR ?= $(BUILD_DIR)-coverage
 TSAN_BUILD_DIR ?= $(BUILD_DIR)-tsan
 CONTAINER_MOUNTS := -v "$(CURDIR):$(WORKDIR)$(CONTAINER_MOUNT_SUFFIX)" -v "$(BUILD_DIR):$(WORKDIR)/.build$(CONTAINER_MOUNT_SUFFIX)" -v "$(SPM_CACHE_DIR):$(WORKDIR)/.swiftpm-cache$(CONTAINER_MOUNT_SUFFIX)"
@@ -87,7 +103,7 @@ shell_quote = $(SINGLE_QUOTE)$(subst $(SINGLE_QUOTE),$(SINGLE_QUOTE)$(DOUBLE_QUO
 help:
 	@printf '%s\n' \
 		'make image         Build the dev container image (includes ESP32-C6 toolchain)' \
-		'make resolve       Resolve Package.resolved using the shared SwiftPM cache' \
+		'make resolve PACKAGE_PATH=.  Resolve one package lockfile using the shared SwiftPM cache' \
 		'make worktree-bootstrap  Prepare dependency cache and validate Package.resolved' \
 		'make worktree-warm  Bootstrap and compile the current worktree' \
 		'make axoloty-tool AXOLOTY_TOOL_ARGS="--help"  Run the Swift tooling CLI in-container' \
@@ -109,17 +125,17 @@ help:
 		'make serve-dev     Run the MQTT + MCP development stack' \
 		'make wire-codec-test  Run the Foundation-free wire codec unit tests' \
 		'make test-communication  Run communication transport and subscription tests' \
-		'make test-broker-regressions  Run broker-backed regression tests' \
+		'make test-broker-regressions  Deprecated: former broker regression filters are retired' \
 		'make test-decoder-context-sendable  Fail if the former decoder-context Sendable diagnostic returns' \
 		'make test-no-anycodable  Fail if AnyCodable is used in production source' \
 		'make test-no-foundation-types  Fail if forbidden Foundation types are used in production source' \
 		'make test-axoloty-wire-distribution  Validate root and standalone AxolotyWire consumers' \
 		'make test-axoloty-semver-consumer  Build clean semver consumers for both products' \
-		'make test          Run the full test suite (starts Mosquitto)' \
-		'make test-tsan     Run broker-backed transport/lifecycle tests under Thread Sanitizer' \
-		'make test-unit     Run ObjectMatcherTests' \
-		'make test-module   Run targeted infrastructure module tests' \
-		'make test-fuzz     Run deterministic property/fuzz tests' \
+		'make test          Deprecated: no canonical broker-backed tier is declared' \
+		'make test-tsan     Deprecated: former TSAN filters are retired until a real target returns' \
+		'make test-unit     Run portable object-model and wire value tests' \
+		'make test-module   Run portable topic, wire, protocol, and model module tests' \
+		'make test-fuzz     Run bounded wire parser property/fuzz tests' \
 		'make fuzz-long     Run an auditable multi-seed fuzz campaign' \
 		'make test-fast     Run unit, module, fuzz, offline wire, and support self-tests' \
 		'make test-wire     Run offline wire fixtures and capture tests' \
@@ -182,8 +198,8 @@ image:
 
 resolve: image
 	@mkdir -p "$(SPM_CACHE_DIR)"
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh .devcontainer/resolve.sh
-	@git diff --exit-code -- Package.resolved
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" CONTAINER_ENV_VARS=AXOLOTY_RESOLVE_PACKAGE_PATH AXOLOTY_RESOLVE_PACKAGE_PATH=$(call shell_quote,$(PACKAGE_PATH)) .devcontainer/run.sh .devcontainer/resolve.sh
+	@git diff --exit-code -- "$(PACKAGE_PATH)/Package.resolved"
 
 worktree-bootstrap: resolve
 	@mkdir -p "$(BUILD_DIR)"
@@ -202,7 +218,7 @@ axoloty-tool: image
 	AXOLOTY_DEVICE="$(AXOLOTY_DEVICE)" \
 	AXOLOTY_DEVICE_LEASE_ROOT="$(AXOLOTY_DEVICE_LEASE_ROOT)" \
 	CONTAINER_OPTIONAL_DEVICES="$(AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES)" \
-	CONTAINER_ENV_VARS="$(AXOLOTY_TOOL_CONTAINER_ENV_VARS) AXOLOTY_DEVICE_LEASE_ROOT AXOLOTY_EMBEDDED_LINKER_CLEAN" \
+	CONTAINER_ENV_VARS="$(AXOLOTY_TOOL_CONTAINER_ENV_VARS) AXOLOTY_DEVICE_LEASE_ROOT AXOLOTY_EMBEDDED_LINKER_CLEAN AXOLOTY_RUN_ID AXOLOTY_RUNS_DIR WIRE_OUTPUT_DIR AXOLOTY_RESOURCE_LEASE_ROOT" \
 	.devcontainer/run.sh /opt/axoloty/bin/axoloty-tool $(AXOLOTY_TOOL_ARGS)
 
 serve-mqtt: image
@@ -233,12 +249,14 @@ test-one: image
 	@filter=$(call shell_quote,$(FILTER)); \
 		test -n "$$filter" || { echo 'FILTER is required' >&2; exit 2; }; \
 		CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+		CONTAINER_ENV_VARS="$(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
 		.devcontainer/run.sh /opt/axoloty/bin/axoloty-tool test-one --filter "$$filter"
 
 test-tier: image
 	@tier=$(call shell_quote,$(TIER)); \
 		test -n "$$tier" || { echo 'TIER is required' >&2; exit 2; }; \
 		CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+		CONTAINER_ENV_VARS="$(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
 		.devcontainer/run.sh /opt/axoloty/bin/axoloty-tool test-tier "$$tier"
 
 explain: image
@@ -297,9 +315,9 @@ checkpoint-hardware:
 			AXOLOTY_GIT_COMMIT="$$AXOLOTY_GIT_COMMIT" AXOLOTY_GIT_CLEAN="$$AXOLOTY_GIT_CLEAN" \
 			AXOLOTY_DEVICE="$${AXOLOTY_DEVICE:-/dev/ttyACM0}"
 
-test-broker-regressions: image
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \
-		sh -c 'pgrep mosquitto >/dev/null 2>&1 || mosquitto -d; swift test $(SWIFT_LOCKED_ARGS) --filter "UnaryCallBrokerIntegrationTests|DecentralizedLoggingTest|ObjectLifecycleControllerTests"'
+test-broker-regressions:
+	@printf '%s\n' 'error: broker regression filters are retired; use make test-wire-live for maintained broker evidence' >&2
+	@exit 69
 
 define run_test_tier
 	@$(MAKE) --no-print-directory test-tier TIER="$(TIER)"
@@ -310,8 +328,8 @@ build:
 build: TIER=smoke
 
 test:
-	$(run_test_tier)
-test: TIER=integration
+	@printf '%s\n' 'error: make test is retired; use make test-tier TIER=unit/module/property or make test-wire-live for broker evidence' >&2
+	@exit 69
 
 test-unit:
 	$(run_test_tier)
@@ -361,17 +379,18 @@ tsan-resolve: image
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(TSAN_BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh .devcontainer/resolve.sh
 	@git diff --exit-code -- Package.resolved
 
-test-tsan: tsan-resolve
-	CONTAINER_SECURITY_OPTS="--security-opt seccomp=unconfined" \
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(TSAN_BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \
-		bash -o pipefail -c 'set -e; pgrep mosquitto >/dev/null 2>&1 || mosquitto -d; swift test $(SWIFT_LOCKED_ARGS) --no-parallel --sanitize=thread --filter "CommunicationSubscriptionCoordinatorTests|BroadcastTransportTests|ObjectLifecycleControllerTests|DecentralizedLoggingTest"'
+test-tsan:
+	@printf '%s\n' 'error: the former TSAN filters are retired; add a real maintained target before restoring this gate' >&2
+	@exit 69
 
 fuzz-long:
 	AXOLOTY_FUZZ_ITERATIONS="$(or $(AXOLOTY_FUZZ_ITERATIONS),100000)" \
 	AXOLOTY_FUZZ_SEEDS="$(if $(AXOLOTY_FUZZ_SEEDS),$(AXOLOTY_FUZZ_SEEDS),1$(COMMA)2$(COMMA)3$(COMMA)4)" \
 	AXOLOTY_FUZZ_REPETITIONS="$(or $(AXOLOTY_FUZZ_REPETITIONS),1)" \
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
-		Tests/Support/Fuzzing/run-fuzz.sh
+	AXOLOTY_FUZZ_JOBS="$(or $(AXOLOTY_FUZZ_JOBS),2)" \
+	AXOLOTY_TOOL_CONTAINER_ENV_VARS='AXOLOTY_FUZZ_ITERATIONS AXOLOTY_FUZZ_SEEDS AXOLOTY_FUZZ_REPETITIONS AXOLOTY_FUZZ_JOBS AXOLOTY_FUZZ_BUILD_TIMEOUT_SECONDS AXOLOTY_FUZZ_CASE_TIMEOUT_SECONDS AXOLOTY_FUZZ_TERM_GRACE_SECONDS AXOLOTY_FUZZ_KILL_GRACE_SECONDS' \
+	AXOLOTY_TOOL_ARGS='test-tier nightly' \
+		$(MAKE) --no-print-directory axoloty-tool
 
 # Harness self-tests are host-side Shell/JavaScript checks, apart from the
 # Embedded Swift compiler check, which uses the pinned toolchain.
@@ -411,6 +430,8 @@ test-support: resolve
 	Tests/Support/test-embedded-coatyjs.sh
 	Tests/Support/test-run-container.sh
 	Tests/Support/Fuzzing/test-run-fuzz.sh
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+		.devcontainer/run.sh /workspace/Tests/Support/check-swift-test-filter-contract.sh
 	cd Tests/Support/WireCompatibility/tool && npm ci && npm test
 	node --test Tests/Support/*.test.mjs
 	node Tests/Support/validate-test-tiers.mjs Tests/Support/test-tiers.json

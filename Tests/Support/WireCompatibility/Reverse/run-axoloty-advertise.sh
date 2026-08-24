@@ -19,6 +19,10 @@ DEV_IMAGE="${DEV_IMAGE:-localhost/axoloty-dev:latest}"
 JS_IMAGE="${JS_IMAGE:-localhost/coatyswift-wire-coatyjs:2.4.0}"
 CONSUMER_LOG=$(mktemp)
 OUTPUT_DIR="${WIRE_OUTPUT_DIR:-$ROOT_DIR/.testing/wire}"
+ACK_BASENAME="axoloty-advertise-$RUN_ID.peer-ack.json"
+ACK_DIR="$OUTPUT_DIR/peer-acks"
+ACK_FILE="$ACK_DIR/$ACK_BASENAME"
+ACK_TOKEN="${RUN_ID}-axoloty-advertise"
 CACHE_NAMESPACE="${CACHE_NAMESPACE:-swift-6.3-linux}"
 REPOSITORY_NAME="${REPOSITORY_NAME:-$(git -C "$ROOT_DIR" rev-parse --git-common-dir | sed 's|/.git$||' | xargs basename)}"
 BUILD_DIR="${BUILD_DIR:-/tmp/coaty-swift-build/$REPOSITORY_NAME/$CACHE_NAMESPACE/debug}"
@@ -31,8 +35,9 @@ cleanup() {
     rm -f "$CONSUMER_LOG"
 }
 trap cleanup EXIT INT TERM
-mkdir -p "$OUTPUT_DIR" "$BUILD_DIR" "$SPM_CACHE_DIR"
-rm -f "$OUTPUT_DIR/axoloty-advertise.jsonl"
+mkdir -p "$OUTPUT_DIR" "$ACK_DIR" "$BUILD_DIR" "$SPM_CACHE_DIR"
+chmod 0777 "$ACK_DIR"
+rm -f "$OUTPUT_DIR/axoloty-advertise.jsonl" "$ACK_FILE"
 
 runtime build -t "$DEV_IMAGE" -f "$ROOT_DIR/.devcontainer/Dockerfile" "$ROOT_DIR"
 runtime build -t "$JS_IMAGE" "$REFERENCE_DIR/coatyjs"
@@ -55,7 +60,9 @@ sleep 0.5
 
 runtime run -d --name "$CONSUMER" --network "$NETWORK" --entrypoint node \
     -v "$REVERSE_DIR/coatyjs-advertise-consumer.js:/agent/reverse-consumer.js:ro,Z" \
+    -v "$ACK_DIR:/peer-acks" \
     -e BROKER_URL="mqtt://$BROKER:1883" -e COATY_NAMESPACE=wire-compat-v1 \
+    -e WIRE_PEER_ACK_FILE="/peer-acks/$ACK_BASENAME" -e WIRE_PEER_ACK_TOKEN="$ACK_TOKEN" \
     -e SCENARIO_TIMEOUT_MS=60000 \
     "$JS_IMAGE" /agent/reverse-consumer.js >/dev/null
 
@@ -66,9 +73,10 @@ for _ in $(seq 1 30); do
 done
 grep -q '"state":"ready"' "$CONSUMER_LOG" || { cat "$CONSUMER_LOG" >&2; exit 1; }
 
-runtime run --rm --network "$NETWORK" -v "$ROOT_DIR:/workspace" -v "$BUILD_DIR:/workspace/.build" -v "$SPM_CACHE_DIR:/swiftpm-cache" -w /workspace \
+runtime run --rm --network "$NETWORK" -v "$ROOT_DIR:/workspace" -v "$OUTPUT_DIR:/artifacts" -v "$BUILD_DIR:/workspace/.build" -v "$SPM_CACHE_DIR:/swiftpm-cache" -w /workspace \
     -e WIRE_REVERSE_LIVE=1 -e WIRE_BROKER_HOST="$BROKER" \
     -e WIRE_BROKER_PORT=1883 -e WIRE_NAMESPACE=wire-compat-v1 \
+    -e WIRE_PEER_ACK_FILE="/artifacts/peer-acks/$ACK_BASENAME" -e WIRE_PEER_ACK_TOKEN="$ACK_TOKEN" \
     -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
     "$DEV_IMAGE" swift test -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
     --skip-build --cache-path /swiftpm-cache --disable-automatic-resolution --filter AxolotyAdvertiseProducerTests
@@ -80,4 +88,5 @@ runtime wait "$CONSUMER" >/dev/null
 runtime logs "$CONSUMER" >"$CONSUMER_LOG" 2>&1
 cat "$CONSUMER_LOG"
 grep -q '"state":"ack"' "$CONSUMER_LOG"
+test -s "$ACK_FILE"
 echo "PASS: Axoloty Advertise decoded by CoatyJS 2.4.0"

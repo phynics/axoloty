@@ -40,7 +40,7 @@ jobs:
       # export it for later steps.
       - name: Compute cache key
         run: |
-          echo "SWIFT_CACHE_KEY=swiftpm-6.3-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile') }}" >> "$GITHUB_ENV"
+          echo "SWIFT_CACHE_KEY=swiftpm-v2-6.3-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile', '.devcontainer/image-lock.json') }}" >> "$GITHUB_ENV"
 
       - name: Setup container image
         uses: ./.github/actions/setup-container
@@ -58,8 +58,6 @@ jobs:
         with:
           path: .swiftpm-cache
           key: ${{ env.SWIFT_CACHE_KEY }}
-          restore-keys: |
-            swiftpm-6.3-linux-
 
       - name: Generate documentation
         run: make docs CONTAINER_RUNTIME=podman BUILD_DIR=.build BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache DOC_HOSTING_BASE_PATH="${{ steps.pages.outputs.base_path }}"

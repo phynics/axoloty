@@ -549,13 +549,23 @@ struct BroadcastTransportTests {
             sensorId: sensorId,
             channelId: "observations"
         )
+        let consumerStarted = OneShotPhase()
+        let received = SnapshotBox<ChannelEventSnapshot>()
+        let receivedPhase = OneShotPhase()
         let next = Task { () -> ChannelEventSnapshot? in
+            consumerStarted.signal()
             for await snapshot in stream {
+                await received.set(snapshot)
+                receivedPhase.signal()
                 return snapshot
             }
             return nil
         }
-        await Task.yield()
+        defer {
+            next.cancel()
+            container.shutdown()
+        }
+        try await waitForPhase(consumerStarted, phase: "channeled observation consumer start")
 
         let unrelated = ChannelEventSnapshot(
             sourceId: "source",
@@ -584,8 +594,10 @@ struct BroadcastTransportTests {
         await fakeClient.emitChannel(unrelated, channelId: "observations")
         await fakeClient.emitChannel(matching, channelId: "observations")
 
-        #expect(await next.value == matching)
-        container.shutdown()
+        try await waitForPhase(receivedPhase, phase: "matching channeled observation delivery")
+        let delivered = try #require(await received.value)
+        #expect(delivered == matching)
+        _ = await next.value
     }
 
     @Test
@@ -604,7 +616,7 @@ struct BroadcastTransportTests {
     }
 
     @Test
-    func managerReadinessWaitsForSubscriptionAcknowledgements() async {
+    func managerReadinessWaitsForSubscriptionAcknowledgements() async throws {
         let gate = SubscriptionAckGate()
         let client = FakeCommunicationClient(delegate: FakeStartable(), subscriptionGate: gate)
         let manager = makeManager(client: client)
@@ -615,13 +627,18 @@ struct BroadcastTransportTests {
             try? await manager.startAndWaitUntilReady()
             await ready.mark()
         }
+        defer {
+            gate.open()
+            startup.cancel()
+        }
 
         await client.simulateState(.online)
-        await gate.waitUntilStarted()
-        await Task.yield()
+        try await waitUntil("manager readiness subscription acknowledgement", timeout: .seconds(2)) {
+            gate.isStarted
+        }
         #expect(await ready.value == false)
 
-        await gate.open()
+        gate.open()
         await startup.value
         #expect(await ready.value)
     }
@@ -979,8 +996,11 @@ struct BroadcastTransportTests {
             ),
             operation: "provide"
         )
-        try await Task.sleep(for: .milliseconds(50))
-        #expect(returnPublications(on: client).count == 1)
+        try await waitForNoAdditionalReturnPublications(
+            on: client,
+            expectedCount: 1,
+            phase: "nonmatching call filter"
+        )
         #expect(invocations.value == 1)
     }
 
@@ -1037,8 +1057,11 @@ struct BroadcastTransportTests {
         #expect(malformedParametersEvent.data.error?.message == "Malformed Call parameters")
 
         await client.emitCall(CallEventSnapshot(operation: "fail"), operation: "fail")
-        try await Task.sleep(for: .milliseconds(50))
-        #expect(returnPublications(on: client).count == 4)
+        try await waitForNoAdditionalReturnPublications(
+            on: client,
+            expectedCount: 4,
+            phase: "call without correlation id"
+        )
     }
 
     @Test
@@ -1047,35 +1070,59 @@ struct BroadcastTransportTests {
         let manager = makeManager(client: client)
         try await bringOnline(manager, client: client)
         let cancellations = LockedCounter()
+        let slowStarted = OneShotPhase()
+        let slowCancelled = OneShotPhase()
+        let slowRelease = OneShotPhase()
         let registration = try await manager.registerCallHandler(operation: "slow") { _ in
+            slowStarted.signal()
             do {
-                try await Task.sleep(for: .seconds(5))
+                guard await slowRelease.wait() else { throw CancellationError() }
+                try Task.checkCancellation()
             } catch {
                 cancellations.increment()
+                slowCancelled.signal()
                 throw error
             }
             return .success(result: "true")
+        }
+        defer {
+            registration.cancel()
+            slowRelease.signal()
         }
         await client.emitCall(
             CallEventSnapshot(correlationId: "cancelled", operation: "slow"),
             operation: "slow"
         )
-        try await Task.sleep(for: .milliseconds(25))
+        try await waitForPhase(slowStarted, phase: "slow call handler start")
         registration.cancel()
-        try await Task.sleep(for: .milliseconds(25))
-        #expect(cancellations.value == 1)
+        try await waitForPhase(slowCancelled, phase: "slow call handler cancellation")
+        #expect(cancellations.value == 1, "slow handler cancellation count")
         #expect(returnPublications(on: client).isEmpty)
 
+        let offlineStarted = OneShotPhase()
+        let offlineRelease = OneShotPhase()
+        let offlineFinished = OneShotPhase()
         let offlineRegistration = try await manager.registerCallHandler(operation: "offline") { _ in
-            try await Task.sleep(for: .milliseconds(30))
+            offlineStarted.signal()
+            guard await offlineRelease.wait() else {
+                offlineFinished.signal()
+                throw CancellationError()
+            }
+            offlineFinished.signal()
             return .success(result: "true")
+        }
+        defer {
+            offlineRegistration.cancel()
+            offlineRelease.signal()
         }
         await client.emitCall(
             CallEventSnapshot(correlationId: "offline", operation: "offline"),
             operation: "offline"
         )
+        try await waitForPhase(offlineStarted, phase: "offline call handler start")
         await client.simulateState(.offline)
-        try await Task.sleep(for: .milliseconds(75))
+        offlineRelease.signal()
+        try await waitForPhase(offlineFinished, phase: "offline call handler completion")
         #expect(returnPublications(on: client).isEmpty)
 
         manager.stop()
@@ -1133,23 +1180,34 @@ func waitForCommands(
     on client: FakeCommunicationClient,
     expecting expected: [SubscriptionCommand]
 ) async throws {
-    for _ in 0 ..< 20 {
-        if client.commands == expected {
-            return
+    do {
+        try await waitUntil(
+            "\(expected.count) subscription commands to reach expected phase",
+            timeout: .seconds(2)
+        ) {
+            client.commands == expected
         }
-        try await Task.sleep(for: .milliseconds(25))
+    } catch {
+        throw AsyncWaitTimeoutError(
+            description: "subscription command phase; expected: \(expected), "
+                + "observed: \(client.commands), actions: \(client.actions)"
+        )
     }
-    #expect(client.commands == expected)
 }
 
 @MainActor
 func bringOnline(_ manager: CommunicationManager, client: FakeCommunicationClient) async throws {
     await client.simulateState(.online)
-    for _ in 0 ..< 40 {
-        if manager.communicationState == .online { return }
-        try await Task.sleep(for: .milliseconds(10))
+    do {
+        try await waitUntil("communication manager to become online", timeout: .seconds(2)) {
+            manager.communicationState == .online
+        }
+    } catch {
+        throw AsyncWaitTimeoutError(
+            description: "communication-online phase; state: \(manager.communicationState), "
+                + "actions: \(client.actions), commands: \(client.commands)"
+        )
     }
-    throw AxolotyError.runtime(code: .timedOut, reason: "Test manager did not become online")
 }
 
 @MainActor
@@ -1157,30 +1215,46 @@ func waitForPublishedCorrelation(
     on client: FakeCommunicationClient,
     publicationCount: Int = 1
 ) async throws -> String {
-    for _ in 0 ..< 40 {
-        let calls = client.publishedMessages.filter {
-            $0.topic.split(separator: "/").dropFirst(3).first?.hasPrefix("CLL") == true
+    do {
+        try await waitUntil(
+            "\(publicationCount) Call publication(s) to be recorded",
+            timeout: .seconds(2)
+        ) {
+            client.publishedMessages.filter {
+                $0.topic.split(separator: "/").dropFirst(3).first?.hasPrefix("CLL") == true
+            }.count >= publicationCount
         }
-        if calls.count >= publicationCount,
-           let topic = calls.last?.topic,
-           let correlationId = topic.split(separator: "/").last {
-            return String(correlationId)
-        }
-        try await Task.sleep(for: .milliseconds(10))
+    } catch {
+        throw AsyncWaitTimeoutError(
+            description: "Call publication phase; expected count: \(publicationCount), "
+                + "observed topics: \(client.publishedTopics), actions: \(client.actions)"
+        )
     }
-    throw AxolotyError.runtime(
-        code: .timedOut,
-        reason: "Test Call publication was not observed; topics: \(client.publishedTopics)"
-    )
+    let calls = client.publishedMessages.filter {
+        $0.topic.split(separator: "/").dropFirst(3).first?.hasPrefix("CLL") == true
+    }
+    guard let topic = calls.last?.topic,
+          let correlationId = topic.split(separator: "/").last else {
+        throw AsyncWaitTimeoutError(
+            description: "Call publication phase reached count but had no correlation topic; "
+                + "actions: \(client.actions)"
+        )
+    }
+    return String(correlationId)
 }
 
 @MainActor
 func waitForCommandCount(on client: FakeCommunicationClient, count: Int) async throws {
-    for _ in 0 ..< 40 {
-        if client.commands.count >= count { return }
-        try await Task.sleep(for: .milliseconds(10))
+    do {
+        try await waitUntil("at least \(count) subscription commands", timeout: .seconds(2)) {
+            client.commands.count >= count
+        }
+    } catch {
+        throw AsyncWaitTimeoutError(
+            description: "subscription command-count phase; expected at least: \(count), "
+                + "observed: \(client.commands.count), actions: \(client.actions)"
+        )
     }
-    throw AxolotyError.runtime(code: .timedOut, reason: "Test subscription command was not observed")
 }
 
 func returnPublications(on client: FakeCommunicationClient) -> [(topic: String, message: String)] {
@@ -1194,14 +1268,50 @@ func waitForReturnPublication(
     on client: FakeCommunicationClient,
     count: Int = 1
 ) async throws -> (topic: String, message: String) {
-    for _ in 0 ..< 40 {
-        let publications = returnPublications(on: client)
-        if publications.count >= count, let publication = publications.last {
-            return publication
+    do {
+        try await waitUntil("at least \(count) Return publication(s)", timeout: .seconds(2)) {
+            returnPublications(on: client).count >= count
         }
-        try await Task.sleep(for: .milliseconds(10))
+    } catch {
+        throw AsyncWaitTimeoutError(
+            description: "Return publication phase; expected at least: \(count), "
+                + "observed: \(returnPublications(on: client).count), "
+                + "actions: \(client.actions), topics: \(client.publishedTopics)"
+        )
     }
-    throw AxolotyError.runtime(code: .timedOut, reason: "Test Return publication was not observed")
+    guard let publication = returnPublications(on: client).last else {
+        throw AsyncWaitTimeoutError(
+            description: "Return publication phase reached count but had no latest message; "
+                + "actions: \(client.actions)"
+        )
+    }
+    return publication
+}
+
+@MainActor
+private func waitForNoAdditionalReturnPublications(
+    on client: FakeCommunicationClient,
+    expectedCount: Int,
+    phase: String
+) async throws {
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: .milliseconds(100))
+    try await clock.sleep(until: deadline)
+    let publications = returnPublications(on: client)
+    guard publications.count == expectedCount else {
+        throw AsyncWaitTimeoutError(
+            description: "\(phase) produced an unexpected Return publication; "
+                + "expected count: \(expectedCount), observed: \(publications.count), "
+                + "actions: \(client.actions)"
+        )
+    }
+}
+
+@MainActor
+private func waitForPhase(_ phase: OneShotPhase, phase description: String) async throws {
+    try await waitUntil("\(description) phase signal", timeout: .seconds(2)) {
+        phase.isSignaled
+    }
 }
 
 func responseTopic(_ correlationId: String) -> String {
@@ -1326,8 +1436,10 @@ final class FakeCommunicationClient: CommunicationClient {
             _actions.append("subscribe:\(topic)")
         }
         if let subscriptionGate {
-            await subscriptionGate.markStarted()
-            await subscriptionGate.waitUntilOpen()
+            subscriptionGate.markStarted()
+            guard await subscriptionGate.waitUntilOpen() else {
+                throw CancellationError()
+            }
         }
     }
 
@@ -1361,40 +1473,70 @@ private func makeTestStreams() -> CommunicationStreams {
     )
 }
 
-actor SubscriptionAckGate {
+private final class SubscriptionAckGate: @unchecked Sendable {
+    private let lock = NSLock()
     private var started = false
     private var released = false
-    private var startWaiters: [CheckedContinuation<Void, Never>] = []
-    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+    private let startedPhase = OneShotPhase()
+    private let releasedPhase = OneShotPhase()
+
+    var isStarted: Bool { lock.withLock { started } }
 
     func markStarted() {
-        started = true
-        startWaiters.forEach { $0.resume() }
-        startWaiters.removeAll()
+        let shouldSignal = lock.withLock {
+            guard !started else { return false }
+            started = true
+            return true
+        }
+        if shouldSignal { startedPhase.signal() }
     }
 
-    func waitUntilStarted() async {
-        if started {
-            return
+    func waitUntilOpen() async -> Bool {
+        if lock.withLock({ released }) {
+            return true
         }
-        await withCheckedContinuation { continuation in
-            startWaiters.append(continuation)
-        }
-    }
-
-    func waitUntilOpen() async {
-        if released {
-            return
-        }
-        await withCheckedContinuation { continuation in
-            releaseWaiters.append(continuation)
-        }
+        return await releasedPhase.wait()
     }
 
     func open() {
-        released = true
-        releaseWaiters.forEach { $0.resume() }
-        releaseWaiters.removeAll()
+        let shouldSignal = lock.withLock {
+            guard !released else { return false }
+            released = true
+            return true
+        }
+        if shouldSignal { releasedPhase.signal() }
+    }
+}
+
+private final class OneShotPhase: @unchecked Sendable {
+    private let lock = NSLock()
+    private var signaled = false
+    private let continuation: AsyncStream<Void>.Continuation
+    let stream: AsyncStream<Void>
+
+    init() {
+        (stream, continuation) = AsyncStream.makeStream(of: Void.self)
+    }
+
+    var isSignaled: Bool {
+        lock.withLock { signaled }
+    }
+
+    func signal() {
+        let shouldSignal = lock.withLock {
+            guard !signaled else { return false }
+            signaled = true
+            return true
+        }
+        if shouldSignal {
+            continuation.yield(())
+            continuation.finish()
+        }
+    }
+
+    func wait() async -> Bool {
+        var iterator = stream.makeAsyncIterator()
+        return await iterator.next() != nil
     }
 }
 
@@ -1403,6 +1545,14 @@ private actor CompletionFlag {
 
     func mark() {
         value = true
+    }
+}
+
+private actor SnapshotBox<Value: Sendable> {
+    private(set) var value: Value?
+
+    func set(_ value: Value) {
+        self.value = value
     }
 }
 

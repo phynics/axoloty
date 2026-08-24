@@ -49,7 +49,10 @@ make explain TIER=unit
 ```
 
 `make verify` runs the ordinary pre-PR plan from the manifest. `make verify-ci`
-runs the same mandatory plan plus CI-only coverage and support gates. Use
+runs the mandatory CI plan and support gates. GitHub Actions runs source
+coverage in the separate, clearly named `Source coverage` job with
+`make coverage-check`; coverage artifacts are not part of the required test
+orchestration. Use
 `AXOLOTY_OUTPUT=json` for parseable manifests or `AXOLOTY_OUTPUT=human` for
 streaming progress and summaries. `FILTER` is passed as one argv element, never
 through a shell command string. `make explain` never executes a command and
@@ -68,8 +71,9 @@ remains opt-in through checkpoint-hardware or hardware-require.
 
 On macOS, `axoloty-tool check` selects the same host and offline-wire checks but omits the
 Linux-only ESP-IDF nodes. This is an explicit platform capability difference,
-not a silent skip. MQTT-backed integration remains a separate tier; wire parser
-correctness never requires a broker.
+not a silent skip. Ordinary verification has no broker-backed integration tier;
+wire parser correctness never requires a broker. Fresh broker evidence is
+collected only by the explicit live-wire workflow.
 
 The G3 object-model foundation is a required canonical tier. Run
 `axoloty-tool test-tier g3-object-model` (or invoke the standalone package
@@ -95,8 +99,12 @@ pass is a migration-state report, not evidence that G4 runtime replacement is
 complete. The existing inspector/MCP roots are explicitly listed as historical
 consumers until the host transport adapter and typed event projection land;
 new examples or consumer roots are not covered by that allowlist and fail the
-boundary immediately. The tier becomes a strict migration gate as those
-historical roots are removed from the allowlist.
+boundary immediately. The tier also runs disjoint named slices of the host
+runtime tests, then runs the protocol and static-runtime tests through their
+own package manifests; a successful filtered process must therefore exercise a
+real test target rather than a root-package zero-test selection. The tier
+becomes a strict migration gate as those historical roots are removed from the
+allowlist.
 
 ## Command-to-tier map
 
@@ -107,13 +115,12 @@ separate from protocol-scenario execution.
 | Tier | Make target | Runs Swift? | Notes |
 |---|---|:---:|---|
 | Smoke | `make build` | yes | Proves the package compiles and links |
-| Unit | `make test-unit` | yes | `ObjectMatcherTests` |
-| Module | `make test-module` | yes | Topic, payload, registry, and configuration module tests |
+| Unit | `make test-unit` | yes | Portable object-model predicates and wire value semantics |
+| Module | `make test-module` | yes | Portable topic, wire, protocol, and Coaty model module tests |
 | G3 boundary | `axoloty-tool` manifest node `g3-object-boundary` | no | Portable object-model dependency and Embedded Swift source-inclusion authority check |
-| G4 migration | `make test-tier TIER=g4-runtime` | no | Deferred replacement-runtime package and first-party consumer boundary checks; strict once G4 roots exist |
-| Property | `make test-fuzz` | yes | Seeded `DeterministicFuzzTests` |
-| Integration | `make test` | yes | Full suite against a fresh Mosquitto |
-| Wire offline | `make test-wire` | yes | `WireFixtureTests` and lifecycle scenarios |
+| G4 migration | `make test-tier TIER=g4-runtime` | yes | Replacement-runtime boundaries plus disjoint host, protocol-package, and static-runtime test slices; strict once G4 roots exist |
+| Property | `make test-fuzz` | yes | Deterministic wire parser bounds and corruption tests |
+| Wire offline | `make test-wire` | yes | Maintained lifecycle compatibility scenario contracts; no broker |
 | Wire live | `make test-wire-live` | yes | Live CoatyJS interop (host-run containers) |
 | Nightly | `make fuzz-long` | yes | Multi-seed fuzz campaign |
 | Harness self-tests | `make test-support` | no | Fuzz runner, capture/verifier tools, tier validation |
@@ -150,7 +157,6 @@ coverage level.
 | Unit | Pure functions and value semantics at one type boundary | None beyond test process | 2 min | Every PR |
 | Module | A subsystem through its public/internal module boundary | In-process fakes; broker only when intrinsic | 5 min | Every PR |
 | Property | Generated-input invariants, round trips, and parser robustness | Seeded generator | 10 min | Every PR with a bounded corpus |
-| Integration | Axoloty components collaborating through a real Mosquitto broker | Isolated broker | 10 min | Every PR |
 | Wire offline | Golden topics/payloads and capture-tool correctness | Versioned fixtures | 5 min | Every PR |
 | Wire live | Representative Axoloty/CoatyJS interoperability plus CoatyJS reference-wire protocol coverage | Containers, broker, CoatyJS image | 20 min | Protocol-facing PRs (enforced by the `Live CoatyJS compatibility gate`); full run before merge |
 | Nightly | Large generated corpora, repeat runs, reconnect/failure scenarios, sanitizers when available | Full container stack | 60 min | Nightly and release candidates |
@@ -232,13 +238,15 @@ case log, after preparing the test products with the same containerized build
 command. `make fuzz-long` runs a default 100,000-iteration, four-seed
 campaign.
 
-### Integration
+### Broker-backed transport evidence
 
-Integration tests use a fresh Mosquitto instance or an isolated namespace and
-verify Axoloty behavior through public APIs. Cover startup/shutdown, routing,
-request/response correlation, lifecycle, reconnect, cancellation, duplicate or
-late responses, and broker failure. Readiness must be observed through a health
-probe or protocol acknowledgement; fixed sleeps are not readiness checks.
+The repository currently has no maintained canonical broker-backed integration
+tier. The former `integration-tests` and `logging-global` nodes selected test
+files whose production APIs were removed, so they are retired rather than
+replaced with duplicate or zero-test filters. Use `make test-wire-live` for
+fresh broker/reference-agent evidence; it owns the broker lifecycle and records
+the required captures and logs. A new broker-backed product contract must add a
+real test target and evidence plan before it becomes a required tier.
 
 ### Wire compatibility
 
@@ -281,6 +289,10 @@ for a recorded, expiring reviewed exemption.
   every live-test artifact bundle.
 - Give each scenario a unique MQTT namespace, client IDs, broker network, and
   output directory. Tests must be safe to run concurrently.
+- Root-level Make invocations provide a unique `AXOLOTY_RUN_ID`; wire outputs
+  inherit that run namespace. Collision-prone external resources such as the
+  fixed MQTT port use named cross-process leases with bounded contention
+  diagnostics, while independent named resources remain concurrent.
 - Inject or record clocks, UUIDs, random seeds, and retry schedules.
 - Never depend on test execution order or artifacts from an earlier test.
 - Poll an observable condition with a deadline instead of sleeping for an

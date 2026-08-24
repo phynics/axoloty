@@ -21,7 +21,7 @@ struct CommunicationSubscriptionCoordinatorTests {
     }
 
     @Test
-    func dispatcherWaitsForSubscriptionAcknowledgement() async {
+    func dispatcherWaitsForSubscriptionAcknowledgement() async throws {
         let gate = SubscriptionGate()
         let completed = CompletionFlag()
         let client = RecordingCommunicationClient(gate: gate)
@@ -31,12 +31,17 @@ struct CommunicationSubscriptionCoordinatorTests {
             try? await dispatcher.deliver(.subscribe("first"))
             await completed.mark()
         }
+        defer {
+            gate.open()
+            delivery.cancel()
+        }
 
-        await gate.waitUntilStarted()
-        await Task.yield()
+        try await waitUntil("subscribe command to enter acknowledgement gate", timeout: .seconds(2)) {
+            gate.isStarted
+        }
         #expect(await completed.value == false)
 
-        await gate.open()
+        gate.open()
         await delivery.value
         #expect(await completed.value)
     }
@@ -49,19 +54,24 @@ struct CommunicationSubscriptionCoordinatorTests {
 
         // A subscribe that blocks on the gate occupies the single drain slot.
         let subscribeTask = Task { try? await dispatcher.deliver(.subscribe("first")) }
-        await gate.waitUntilStarted()
-        await Task.yield()
+        defer {
+            gate.open()
+            subscribeTask.cancel()
+        }
+        try await waitUntil("FIFO subscribe command to enter acknowledgement gate", timeout: .seconds(2)) {
+            gate.isStarted
+        }
 
         // A rapid unsubscribe arrives while the subscribe is still in flight. It
         // must not begin (and must not append its command) until the subscribe
         // completes, so subscribe/unsubscribe finish in arrival order rather
         // than racing through the actor's reentrant suspension.
         let unsubscribeTask = Task { try? await dispatcher.deliver(.unsubscribe("first")) }
-        await Task.yield()
+        defer { unsubscribeTask.cancel() }
         #expect(client.commands == [.subscribe("first")])
 
         // Releasing the subscribe lets the unsubscribe run, strictly after it.
-        await gate.open()
+        gate.open()
         _ = await subscribeTask.value
         _ = await unsubscribeTask.value
         #expect(client.commands == [.subscribe("first"), .unsubscribe("first")])
@@ -239,8 +249,8 @@ struct CommunicationSubscriptionCoordinatorTests {
         let coordinator = CommunicationSubscriptionCoordinator(commandSink: { command in
             await log.append(command)
             if case .unsubscribe = command {
-                await gate.markStarted()
-                await gate.waitUntilOpen()
+                gate.markStarted()
+                guard await gate.waitUntilOpen() else { return }
             }
         })
 
@@ -251,13 +261,19 @@ struct CommunicationSubscriptionCoordinatorTests {
         let resetTask = Task {
             await coordinator.reset()
         }
-        await gate.waitUntilStarted()
+        defer {
+            gate.open()
+            resetTask.cancel()
+        }
+        try await waitUntil("reset unsubscribe to enter acknowledgement gate", timeout: .seconds(2)) {
+            gate.isStarted
+        }
 
         // Reset has committed its offline state, but transport cleanup is still
         // blocked. The acquisition must be retained as an offline desired topic
         // and must not emit a subscribe command during reset.
         await coordinator.acquire(topic: "t2")
-        await gate.open()
+        gate.open()
         await resetTask.value
 
         #expect(await log.commands == [.unsubscribe("t1")])
@@ -280,14 +296,20 @@ struct CommunicationSubscriptionCoordinatorTests {
         let resetTask = Task {
             await coordinator.reset()
         }
-        await gate.waitUntilStarted()
+        defer {
+            gate.open()
+            resetTask.cancel()
+        }
+        try await waitUntil("same-topic reset unsubscribe to enter acknowledgement gate", timeout: .seconds(2)) {
+            gate.isStarted
+        }
 
         await coordinator.acquire(topic: "t1")
         // This must record the new online state without starting a subscribe
         // against the old subscription while reset is still unsubscribing it.
         await coordinator.setOnline(true)
 
-        await gate.open()
+        gate.open()
         await resetTask.value
 
         #expect(await broker.commands == [.unsubscribe("t1"), .subscribe("t1")])
@@ -365,8 +387,8 @@ private actor SubscriptionRaceBroker {
             isSubscribed = true
         case .unsubscribe:
             unsubscribeCompleted = false
-            await gate.markStarted()
-            await gate.waitUntilOpen()
+            gate.markStarted()
+            guard await gate.waitUntilOpen() else { return }
             isSubscribed = false
             unsubscribeCompleted = true
         }
@@ -401,8 +423,10 @@ private final class RecordingCommunicationClient: CommunicationClient {
     @MainActor func subscribe(_ topic: String) async throws {
         commands.append(.subscribe(topic))
         if let gate {
-            await gate.markStarted()
-            await gate.waitUntilOpen()
+            gate.markStarted()
+            guard await gate.waitUntilOpen() else {
+                throw CancellationError()
+            }
         }
     }
 
@@ -411,40 +435,70 @@ private final class RecordingCommunicationClient: CommunicationClient {
     }
 }
 
-private actor SubscriptionGate {
+private final class SubscriptionGate: @unchecked Sendable {
+    private let lock = NSLock()
     private var started = false
     private var released = false
-    private var startWaiters: [CheckedContinuation<Void, Never>] = []
-    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+    private let startedPhase = OneShotPhase()
+    private let releasedPhase = OneShotPhase()
+
+    var isStarted: Bool { lock.withLock { started } }
 
     func markStarted() {
-        started = true
-        startWaiters.forEach { $0.resume() }
-        startWaiters.removeAll()
+        let shouldSignal = lock.withLock {
+            guard !started else { return false }
+            started = true
+            return true
+        }
+        if shouldSignal { startedPhase.signal() }
     }
 
-    func waitUntilStarted() async {
-        if started {
-            return
+    func waitUntilOpen() async -> Bool {
+        if lock.withLock({ released }) {
+            return true
         }
-        await withCheckedContinuation { continuation in
-            startWaiters.append(continuation)
-        }
-    }
-
-    func waitUntilOpen() async {
-        if released {
-            return
-        }
-        await withCheckedContinuation { continuation in
-            releaseWaiters.append(continuation)
-        }
+        return await releasedPhase.wait()
     }
 
     func open() {
-        released = true
-        releaseWaiters.forEach { $0.resume() }
-        releaseWaiters.removeAll()
+        let shouldSignal = lock.withLock {
+            guard !released else { return false }
+            released = true
+            return true
+        }
+        if shouldSignal { releasedPhase.signal() }
+    }
+}
+
+private final class OneShotPhase: @unchecked Sendable {
+    private let lock = NSLock()
+    private var signaled = false
+    private let continuation: AsyncStream<Void>.Continuation
+    let stream: AsyncStream<Void>
+
+    init() {
+        (stream, continuation) = AsyncStream.makeStream(of: Void.self)
+    }
+
+    var isSignaled: Bool {
+        lock.withLock { signaled }
+    }
+
+    func signal() {
+        let shouldSignal = lock.withLock {
+            guard !signaled else { return false }
+            signaled = true
+            return true
+        }
+        if shouldSignal {
+            continuation.yield(())
+            continuation.finish()
+        }
+    }
+
+    func wait() async -> Bool {
+        var iterator = stream.makeAsyncIterator()
+        return await iterator.next() != nil
     }
 }
 

@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import test from "node:test";
 
@@ -21,7 +22,6 @@ test("principal Make workflows use the canonical tooling entry points", () => {
   const makefile = fs.readFileSync("Makefile", "utf8");
   const tierTargets = [
     "build",
-    "test",
     "test-unit",
     "test-module",
     "test-fuzz",
@@ -29,7 +29,6 @@ test("principal Make workflows use the canonical tooling entry points", () => {
   ];
   const tierMappings = {
     build: "smoke",
-    test: "integration",
     "test-unit": "unit",
     "test-module": "module",
     "test-fuzz": "property",
@@ -70,6 +69,44 @@ test("principal Make workflows use the canonical tooling entry points", () => {
   ]) {
     assert.doesNotMatch(makefile, new RegExp(`^${target}:`, "m"), `${target} should not remain a Make target`);
   }
+});
+
+test("retired broker wrapper reports an explicit expected-negative result", () => {
+  const result = spawnSync("make", ["test"], { encoding: "utf8" });
+  // GNU Make maps the recipe's deliberate exit 69 to its own status 2.
+  assert.equal(result.status, 2, `expected retired make test to fail: ${result.stderr}`);
+  assert.match(result.stderr, /make test is retired/);
+});
+
+test("direct test wrappers preserve the invocation resource namespace", () => {
+  const makefile = fs.readFileSync("Makefile", "utf8");
+  assert.match(
+    makefile,
+    /AXOLOTY_RUN_CONTAINER_ENV_VARS := AXOLOTY_RUN_ID AXOLOTY_RUNS_DIR WIRE_OUTPUT_DIR AXOLOTY_RESOURCE_LEASE_ROOT/,
+  );
+  for (const target of ["test-one", "test-tier"]) {
+    assert.match(
+      recipe(makefile, target),
+      /CONTAINER_ENV_VARS="\$\(AXOLOTY_RUN_CONTAINER_ENV_VARS\)"/,
+      `${target} must forward run-scoped values into the project container`,
+    );
+  }
+});
+
+test("long fuzz campaign delegates to the canonical nightly tier", () => {
+  const makefile = fs.readFileSync("Makefile", "utf8");
+  const target = recipe(makefile, "fuzz-long");
+  assert.match(target, /\$\(MAKE\).*axoloty-tool/);
+  assert.match(target, /AXOLOTY_TOOL_ARGS='test-tier nightly'/);
+  for (const name of [
+    "AXOLOTY_FUZZ_ITERATIONS",
+    "AXOLOTY_FUZZ_SEEDS",
+    "AXOLOTY_FUZZ_REPETITIONS",
+    "AXOLOTY_FUZZ_JOBS",
+  ]) {
+    assert.match(target, new RegExp(`AXOLOTY_TOOL_CONTAINER_ENV_VARS=[^\n]*${name}`));
+  }
+  assert.doesNotMatch(target, /run-fuzz\.sh/);
 });
 
 test("G1 device wrapper delegates policy and device access to axoloty-tool", () => {

@@ -64,6 +64,39 @@ func repositoryAuthorityIgnoresHistoricalVersionClaims() throws {
 }
 
 @Test
+func repositoryAuthorityIgnoresGeneratedDependencyDocumentation() throws {
+    let fixture = try makeAuthorityFixture()
+    defer { try? FileManager.default.removeItem(at: fixture) }
+    let dependencyReadme = fixture.appendingPathComponent(
+        "Tests/ReferenceAgent/node_modules/example/README.md"
+    )
+    try FileManager.default.createDirectory(
+        at: dependencyReadme.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+    )
+    try "[missing](not-present.md)\n".write(
+        to: dependencyReadme,
+        atomically: true,
+        encoding: .utf8
+    )
+    let worktreeReadme = fixture.appendingPathComponent(
+        ".worktree/other-checkout/README.md"
+    )
+    try FileManager.default.createDirectory(
+        at: worktreeReadme.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+    )
+    try "[missing](not-present.md)\n".write(
+        to: worktreeReadme,
+        atomically: true,
+        encoding: .utf8
+    )
+
+    let report = AxolotyRepositoryAuthorityValidator(root: fixture).validate()
+    #expect(report.status == "passed", "\(report.findings)")
+}
+
+@Test
 func repositoryAuthorityCountsOnlyInvariantDeclarations() throws {
     let fixture = try makeAuthorityFixture()
     defer { try? FileManager.default.removeItem(at: fixture) }

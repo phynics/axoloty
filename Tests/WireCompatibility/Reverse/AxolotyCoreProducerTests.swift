@@ -29,7 +29,15 @@ struct AxolotyCoreProducerTests {
                 responseStream: responseStream,
                 runtime: runtime
             )
-            try await Task.sleep(for: .milliseconds(250))
+            ModernConsumerSupport.emit(
+                "{\"state\":\"awaiting-peer-ack\",\"phase\":\"peer-ack\",\"scenario\":\"\(scenario)\",\"correlationId\":\"\(correlation)\"}"
+            )
+            try await ModernConsumerSupport.awaitPeerAcknowledgement(
+                environment: environment,
+                scenario: scenario,
+                context: "correlationId=\(correlation)",
+                timeout: .seconds(60)
+            )
             await runtime.stop()
         } catch {
             await runtime.stop()

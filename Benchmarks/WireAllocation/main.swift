@@ -38,7 +38,7 @@ func hotPath(
         // Shared fixed-inline protocol processing.
         var actionSink = InlineProtocolActionSink<1>()
         if let frame = try? BorrowedProtocolFrame(topic: message.topic, payload: message.payload) {
-            if processor.processInbound(frame, nowMS: 1, sink: &actionSink) == .accepted { sink &+= 1 }
+            if processor.processInbound(.profile(frame), nowMS: 1, sink: &actionSink) == .accepted { sink &+= 1 }
         }
     }
     return sink

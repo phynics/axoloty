@@ -193,7 +193,7 @@ public struct AxolotyCommandDispatcher: Sendable {
         case ["wire", "verify"]:
             checkResult(requested: ["test-wire"])
         case ["wire", "capture"]:
-            execute(plan: AxolotyCheckPlan.wireCapture)
+            execute(plan: AxolotyCheckPlan.wireCapture(environment: environment))
         case ["embedded", "build"]:
             checkResult(requested: ["embedded-build"])
         case ["embedded", "doctor"]:
@@ -244,7 +244,7 @@ public struct AxolotyCommandDispatcher: Sendable {
       build                Build the host package and its prerequisites.
       test offline         Run the same offline plan as check.
       test tooling         Run offline developer-tool tests and prerequisites.
-      test integration     Run transport tests against local Mosquitto.
+      test integration     Deprecated; no canonical broker-backed tier is declared.
       wire verify [BUNDLE] Verify fixtures and an optional bundle without MQTT.
       wire capture         Run live MQTT captures with pinned reference agents.
       embedded build       Cross-compile the ESP32-C6 firmware on Linux.
@@ -492,7 +492,11 @@ public struct AxolotyCommandDispatcher: Sendable {
                     exitCode: 69
                 )
             }
-            let plan = try AxolotyCheckPlanner().plan(availablePlan.nodes, requested: requested)
+            let plan = try AxolotyCheckPlanner().plan(
+                availablePlan.nodes,
+                requested: requested,
+                deadlineSeconds: availablePlan.deadlineSeconds
+            )
             let results = executor.execute(plan)
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
             return manifestResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
@@ -616,12 +620,14 @@ public struct AxolotyCommandDispatcher: Sendable {
                 .reduce(into: [String: String]()) { values, name in
                     values[name] = environment[name]
                 }
+            let sourcePlan = AxolotyCheckPlan.releaseSnapshots(
+                source: source,
+                destination: destination,
+                environment: forwardedEnvironment
+            )
             let plan = try AxolotyCheckPlanner().plan(
-                AxolotyCheckPlan.releaseSnapshots(
-                    source: source,
-                    destination: destination,
-                    environment: forwardedEnvironment
-                ).nodes
+                sourcePlan.nodes,
+                deadlineSeconds: sourcePlan.deadlineSeconds
             )
             let results = executor.execute(plan)
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
@@ -654,7 +660,8 @@ public struct AxolotyCommandDispatcher: Sendable {
                             timeoutSeconds: node.command.timeoutSeconds
                         )
                     )
-                }
+                },
+                deadlineSeconds: canonicalPlan.deadlineSeconds
             )
             let results = executor.execute(plan)
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
@@ -668,20 +675,9 @@ public struct AxolotyCommandDispatcher: Sendable {
     }
 
     private func integrationResult() -> AxolotyCommandResult {
-        if let failure = contextValidator.failureResult(
-            validating: FoundationIntegrationRunner.commandPlans
-        ) {
-            return Self.commandResult(failure)
-        }
-        let command = integrationRunner.run()
-        let result = AxolotyCheckResult(
-            name: "integration-tests",
-            status: command.exitCode == 0 ? .passed : .failed,
-            command: command
-        )
-        return manifestResult(
-            AxolotyCheckManifest(results: [result]),
-            exitCode: command.exitCode == 0 ? 0 : 1
+        AxolotyCommandResult(
+            standardError: "error: broker-backed integration tier is retired; use a declared test tier or wire capture for broker evidence\n",
+            exitCode: 69
         )
     }
 
@@ -752,7 +748,10 @@ public struct AxolotyCommandDispatcher: Sendable {
         }
 
         do {
-            let planned = try AxolotyCheckPlanner().plan(plan.nodes)
+            let planned = try AxolotyCheckPlanner().plan(
+                plan.nodes,
+                deadlineSeconds: plan.deadlineSeconds
+            )
             let results = executor.execute(planned)
             let gitCommit = environment["AXOLOTY_GIT_COMMIT"]
                 ?? commandRunner.run(gitCommitCommand).standardOutput
@@ -796,7 +795,10 @@ public struct AxolotyCommandDispatcher: Sendable {
 
     private func execute(plan availablePlan: AxolotyCheckPlan) -> AxolotyCommandResult {
         do {
-            let plan = try AxolotyCheckPlanner().plan(availablePlan.nodes)
+            let plan = try AxolotyCheckPlanner().plan(
+                availablePlan.nodes,
+                deadlineSeconds: availablePlan.deadlineSeconds
+            )
             let results = executor.execute(plan)
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
             return manifestResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
@@ -806,8 +808,9 @@ public struct AxolotyCommandDispatcher: Sendable {
     }
 
     private func humanExplanation(_ explanation: AxolotyCanonicalTestExplanation) -> String {
+        let deadline = explanation.timeoutSeconds.map { String($0) } ?? "none"
         var lines = [
-            "PLAN \(explanation.name) schema=\(explanation.schemaVersion) ci=\(explanation.ci)",
+            "PLAN \(explanation.name) schema=\(explanation.schemaVersion) ci=\(explanation.ci) deadline=\(deadline)",
         ]
         lines += explanation.nodes.map { node in
             let dependencies = node.dependencies.isEmpty ? "-" : node.dependencies.joined(separator: ",")
@@ -1004,6 +1007,9 @@ private struct CanonicalTierCommandRunner: AxolotyLifecycleCommandRunning {
         context: AxolotyCommandRunContext
     ) -> AxolotyCheckCommandResult {
         if context.node == "integration-tests" {
+            if let boundedRunner = integrationRunner as? any AxolotyBoundedIntegrationRunning {
+                return boundedRunner.run(timeoutSeconds: command.timeoutSeconds)
+            }
             return integrationRunner.run()
         }
         if let lifecycleRunner = commandRunner as? any AxolotyLifecycleCommandRunning {

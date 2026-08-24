@@ -246,7 +246,7 @@ Phase 4 progress until the regression is resolved.
 
 ```text
 make build
-make test
+make verify
 make benchmark-wire
 make benchmark-wire-allocation
 make benchmark-size

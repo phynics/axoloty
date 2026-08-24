@@ -137,17 +137,18 @@ public final class AxolotyRuntime: Sendable {
 // supervision in one serialized owner. Keep this suppression scoped to the
 // owner rather than weakening the repository-wide type-size rule.
 // swiftlint:disable:next type_body_length
-private actor ProtocolExecutor {
-    private let definition: SealedRuntimeDefinition
-    private let transport: AxolotyRuntimeTransport
-    private var processor = ProtocolProcessor<64>()
-    private var actionSink = ReusableProtocolActionSink(capacity: 64)
+actor ProtocolExecutor {
+    let definition: SealedRuntimeDefinition
+    let transport: AxolotyRuntimeTransport
+    var processor = ProtocolProcessor<64>()
+    var actionSink = ReusableProtocolActionSink(capacity: 64)
     /// One-way operations accepted while the transport is reconnecting.
     /// This queue is bounded by the dispatch capacity and is replayed in
     /// publication order after a successful reconnect.
     private var offlineOperations: [RuntimeOperation] = []
     private var state: RuntimeLifecycleState = .stopped
     private var hasStarted = false
+    var lifecycleAdvertisementActive = false
     private var ingress: [RuntimeInboundFrame] = []
     private var activeHandlers = 0
     private var handlerInFlight: [Int: Int] = [:]
@@ -244,7 +245,7 @@ private actor ProtocolExecutor {
                 await transport.stop()
                 return (.notStarted, "runtime start was superseded while installing subscriptions")
             }
-            try await transport.advertise(identity: definition.identity, namespace: definition.namespace)
+            try await publishLifecycleAdvertisement(nowMS: monotonicNowMS())
             guard state == .starting, transportEpoch == epoch else {
                 await transport.stop()
                 return (.notStarted, "runtime start was superseded during advertisement")
@@ -276,7 +277,7 @@ private actor ProtocolExecutor {
         let stoppingEpoch = transportEpoch
         await cancelAndDrainHandlers()
         do {
-            try await transport.deadvertise(identity: definition.identity, namespace: definition.namespace)
+            try await publishLifecycleDeadvertisement(nowMS: monotonicNowMS())
             try await transport.removeSubscriptions(namespace: definition.namespace)
         } catch {
             emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
@@ -346,7 +347,7 @@ private actor ProtocolExecutor {
             guard state == .reconnecting, transportEpoch == epoch else { return }
             try await transport.installSubscriptions(namespace: definition.namespace)
             guard state == .reconnecting, transportEpoch == epoch else { return }
-            try await transport.advertise(identity: definition.identity, namespace: definition.namespace)
+            try await publishLifecycleAdvertisement(nowMS: monotonicNowMS())
             guard state == .reconnecting, transportEpoch == epoch else { return }
             state = .running
             flushOfflineOperations(nowMS: monotonicNowMS())
@@ -482,39 +483,12 @@ private actor ProtocolExecutor {
             diagnosticsSnapshotValue.dispatchSaturation += 1
             return .rejected(.capacityExceeded)
         }
-        let operationNameBytes: [UInt8] = operation.operationName.map { Array($0.utf8) } ?? []
-        let outcome: ProtocolProcessOutcome = operation.payload.withUnsafeBufferPointer { buffer in
-            guard let base = buffer.baseAddress else { return .rejected(.malformedPayload) }
-            let payload = ByteSlice(bytes: base, length: buffer.count)
-            return operationNameBytes.withUnsafeBufferPointer { operationBuffer in
-                let operationName = operationBuffer.baseAddress.map {
-                    ByteSlice(bytes: $0, length: operationBuffer.count)
-                }
-                guard let local = try? ProtocolLocalOperation(
-                    capability: operation.capability,
-                    sourceID: operation.sourceID,
-                    correlationID: operation.correlationID,
-                    payload: payload,
-                    requestTimeoutMS: operation.requestTimeoutMS,
-                    operationName: operationName
-                ) else {
-                    return .rejected(.invalidCorrelation)
-                }
-                actionSink.prepare(maximumActionCount: definition.capacities.dispatch - outboundQueued)
-                let outcome = processor.processOutbound(
-                    local,
-                    nowMS: nowMS,
-                    classifier: TransportRouteClassifier(transport: transport),
-                    sink: &actionSink
-                )
-                // The processor emits borrowed action views into `operation.payload`.
-                // Drain them before this buffer borrow ends; only owned values may
-                // escape the closure into runtime queues or application streams.
-                if case .accepted = outcome {
-                    dispatchActions(nowMS: nowMS)
-                }
-                return outcome
-            }
+        let outcome = processOutboundOperation(
+            operation,
+            nowMS: nowMS,
+            maximumActionCount: definition.capacities.dispatch - outboundQueued
+        ) {
+            dispatchActions(nowMS: nowMS)
         }
         let receipt = receipt(for: outcome)
         eventContinuation.yield(.transition(receipt))
@@ -569,7 +543,7 @@ private actor ProtocolExecutor {
                     )
                     actionSink.removeAll()
                     let outcome = processor.processInbound(
-                        borrowed,
+                        .profile(borrowed),
                         nowMS: frame.nowMS,
                         classifier: TransportRouteClassifier(transport: transport),
                         sink: &actionSink

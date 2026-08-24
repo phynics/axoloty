@@ -316,11 +316,21 @@ public struct BorrowedExternalRouteTransition {
     public let sourceID: UUID16
     /// The actor endpoint identity.
     public let actorID: UUID16
-    /// The exact external route.
-    public let route: ByteSlice
+    /// The exact external route retained in bounded borrowed storage.
+    public let route: BorrowedProtocolRouteSnapshot
 
     /// Creates a borrowed external-route transition.
     public init(sourceID: UUID16, actorID: UUID16, route: ByteSlice) {
+        self.sourceID = sourceID
+        self.actorID = actorID
+        guard let route = BorrowedProtocolRouteSnapshot(slice: route) else {
+            preconditionFailure("external route must be a non-empty bounded route")
+        }
+        self.route = route
+    }
+
+    /// Creates a lifecycle transition from a processor-owned route snapshot.
+    public init(sourceID: UUID16, actorID: UUID16, route: BorrowedProtocolRouteSnapshot) {
         self.sourceID = sourceID
         self.actorID = actorID
         self.route = route
@@ -328,7 +338,7 @@ public struct BorrowedExternalRouteTransition {
 
     /// Copies the transition before crossing an ownership boundary.
     public borrowing func owned() -> OwnedExternalRouteTransition {
-        OwnedExternalRouteTransition(sourceID: sourceID, actorID: actorID, route: route.ownedBytes())
+        OwnedExternalRouteTransition(sourceID: sourceID, actorID: actorID, route: route.owned())
     }
 }
 

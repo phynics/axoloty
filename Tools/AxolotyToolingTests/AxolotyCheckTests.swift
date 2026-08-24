@@ -25,6 +25,47 @@ private struct StubCommandRunner: AxolotyCheckCommandRunning {
     }
 }
 
+private final class CheckTestClock: AxolotyTimingClock, @unchecked Sendable {
+    private(set) var value: TimeInterval
+
+    init(_ value: TimeInterval = 0) {
+        self.value = value
+    }
+
+    func now() -> TimeInterval {
+        value
+    }
+
+    func advance(by seconds: TimeInterval) {
+        value += seconds
+    }
+}
+
+private final class DeadlineRecordingRunner: AxolotyCheckCommandRunning, @unchecked Sendable {
+    let clock: CheckTestClock
+    let failedCommands: Set<String>
+    let advancePerCommand: TimeInterval
+    private(set) var commands: [AxolotyCommandPlan] = []
+
+    init(
+        clock: CheckTestClock,
+        failedCommands: Set<String> = [],
+        advancePerCommand: TimeInterval = 0
+    ) {
+        self.clock = clock
+        self.failedCommands = failedCommands
+        self.advancePerCommand = advancePerCommand
+    }
+
+    func run(_ command: AxolotyCommandPlan) -> AxolotyCheckCommandResult {
+        commands.append(command)
+        clock.advance(by: advancePerCommand)
+        return AxolotyCheckCommandResult(
+            exitCode: failedCommands.contains(command.executable) ? 1 : 0
+        )
+    }
+}
+
 private final class OutputEvents: @unchecked Sendable {
     private let lock = NSLock()
     private var events: [(AxolotyCommandOutputStream, String)] = []
@@ -306,6 +347,73 @@ func executorRunsIndependentNodesAfterFailure() throws {
 }
 
 @Test
+func executorPassesRemainingPlanBudgetAndContinuesIndependentNodesAfterFailure() throws {
+    let clock = CheckTestClock()
+    let runner = DeadlineRecordingRunner(
+        clock: clock,
+        failedCommands: ["failed"],
+        advancePerCommand: 3
+    )
+    let plan = try AxolotyCheckPlanner().plan(
+        [
+            node("blocked", dependencies: ["failed"]),
+            node("independent"),
+            AxolotyCheckNode(
+                name: "failed",
+                command: AxolotyCommandPlan(executable: "failed", timeoutSeconds: 2)
+            ),
+        ],
+        deadlineSeconds: 10
+    )
+    let validator = AxolotyExecutionContextValidator(
+        environment: ["AXOLOTY_DEVCONTAINER": "1"],
+        platform: .linux
+    )
+
+    let results = AxolotyCheckExecutor(
+        commandRunner: runner,
+        contextValidator: validator,
+        clock: clock
+    ).execute(plan)
+
+    #expect(results.map(\.status) == [.failed, .skipped, .passed])
+    #expect(runner.commands.map(\.executable) == ["failed", "independent"])
+    #expect(runner.commands.map(\.timeoutSeconds) == [2, 7])
+}
+
+@Test
+func executorMarksAllPendingNodesExpiredWhenACommandExceedsPlanDeadline() throws {
+    let clock = CheckTestClock()
+    let runner = DeadlineRecordingRunner(clock: clock, advancePerCommand: 6)
+    let plan = try AxolotyCheckPlanner().plan(
+        [
+            node("dependent", dependencies: ["first"]),
+            node("independent"),
+            node("first"),
+        ],
+        deadlineSeconds: 5
+    )
+    let validator = AxolotyExecutionContextValidator(
+        environment: ["AXOLOTY_DEVCONTAINER": "1"],
+        platform: .linux
+    )
+
+    let results = AxolotyCheckExecutor(
+        commandRunner: runner,
+        contextValidator: validator,
+        clock: clock
+    ).execute(plan)
+
+    #expect(results.map(\.status) == [.failed, .expired, .expired])
+    #expect(runner.commands.map(\.executable) == ["first"])
+    #expect(results[0].command?.exitCode == 124)
+    #expect(results[0].command?.standardError ==
+        "check plan deadline exceeded after node completed: node=first elapsed=6.000s budget=5.000s\n")
+    #expect(results[1].command?.standardError ==
+        "check plan deadline exceeded before node started: node=dependent elapsed=6.000s budget=5.000s dependencies=first\n")
+}
+
+@Test
 func executorCapturesCommandResult() throws {
     let plan = try AxolotyCheckPlanner().plan([node("success")])
 
@@ -398,6 +506,84 @@ func commandRunnerKeepsJSONStdoutReservedForTheFinalResult() {
 }
 
 @Test
+func commandRunnerRejectsSwiftTestSuccessWhenNoTestsMatched() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: "axoloty-tool-empty-test-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let fakeSwift = root.appending(path: "swift")
+    try """
+    #!/bin/sh
+    printf 'warning: No matching test cases were run\\n' >&2
+    printf 'Test run with 0 tests in 0 suites passed after 0.001 seconds.\\n'
+    exit 0
+    """.write(to: fakeSwift, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeSwift.path)
+
+    let validator = AxolotyExecutionContextValidator(
+        environment: ["AXOLOTY_DEVCONTAINER": "1"],
+        platform: .linux
+    )
+    let runner = FoundationCommandRunner(
+        contextValidator: validator,
+        environment: validator.environment,
+        configuration: AxolotyCommandRunnerConfiguration(
+            commandTimeout: 2,
+            artifactRoot: root,
+            runID: "empty-test",
+            installSignalHandler: false
+        )
+    )
+
+    let result = runner.run(AxolotyCommandPlan(
+        executable: fakeSwift.path,
+        arguments: ["test", "--filter", "MissingSuite"]
+    ))
+
+    #expect(result.exitCode == 65)
+    #expect(result.standardError.contains("executed zero non-skipped tests"))
+}
+
+@Test
+func commandRunnerRejectsSwiftTestSuccessWhenEverySelectedTestWasSkipped() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: "axoloty-tool-skipped-tests-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let fakeSwift = root.appending(path: "swift")
+    try """
+    #!/bin/sh
+    printf '➜ Test brokerScenario() skipped.\\n'
+    printf '✔ Test run with 1 test in 1 suite passed after 0.001 seconds.\\n'
+    exit 0
+    """.write(to: fakeSwift, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeSwift.path)
+
+    let validator = AxolotyExecutionContextValidator(
+        environment: ["AXOLOTY_DEVCONTAINER": "1"],
+        platform: .linux
+    )
+    let runner = FoundationCommandRunner(
+        contextValidator: validator,
+        environment: validator.environment,
+        configuration: AxolotyCommandRunnerConfiguration(
+            commandTimeout: 2,
+            artifactRoot: root,
+            runID: "skipped-tests",
+            installSignalHandler: false
+        )
+    )
+
+    let result = runner.run(AxolotyCommandPlan(
+        executable: fakeSwift.path,
+        arguments: ["test", "--filter", "BrokerScenario"]
+    ))
+
+    #expect(result.exitCode == 65)
+    #expect(result.standardError.contains("executed zero non-skipped tests"))
+}
+
+@Test
 func commandRunnerEscalatesTimeoutTracksLastTestAndPersistsSafeArtifacts() throws {
     let root = FileManager.default.temporaryDirectory
         .appending(path: "axoloty-tool-timeout-\(UUID().uuidString)")
@@ -441,10 +627,13 @@ func commandRunnerEscalatesTimeoutTracksLastTestAndPersistsSafeArtifacts() throw
     #expect(lifecycle.escalatedToKill)
     #expect(events.text(for: .standardOutput).isEmpty)
     #expect(events.text(for: .standardError).contains("heartbeat node=test-tooling stage=check"))
+    #expect(events.text(for: .standardError).contains("output-bytes="))
 
     let artifact = try #require(lifecycle.artifactPath)
     let artifactDirectory = URL(fileURLWithPath: artifact)
     #expect(FileManager.default.fileExists(atPath: artifactDirectory.appending(path: "metadata.json").path))
+    #expect(FileManager.default.fileExists(atPath: artifactDirectory.appending(path: "manifest.json").path))
+    #expect(FileManager.default.fileExists(atPath: artifactDirectory.appending(path: "verifier.log").path))
     #expect(FileManager.default.fileExists(atPath: artifactDirectory.appending(path: "stdout.txt").path))
     #expect(FileManager.default.fileExists(atPath: artifactDirectory.appending(path: "stderr.txt").path))
     #expect(FileManager.default.fileExists(atPath: artifactDirectory.appending(path: "result.json").path))
@@ -455,6 +644,66 @@ func commandRunnerEscalatesTimeoutTracksLastTestAndPersistsSafeArtifacts() throw
     ) as? [String: Any]
     #expect(metadata?["environmentKeys"] as? [String] == ["AXOLOTY_DEVCONTAINER", "AXOLOTY_SECRET"])
     #expect(metadata?["exitCode"] as? Int == 124)
+    let manifest = try JSONSerialization.jsonObject(
+        with: Data(contentsOf: artifactDirectory.appending(path: "manifest.json"))
+    ) as? [String: Any]
+    #expect(manifest?["status"] as? String == "failed")
+    #expect(manifest?["outcome"] as? String == "timedOut")
+    let verifier = try String(
+        contentsOf: artifactDirectory.appending(path: "verifier.log"),
+        encoding: .utf8
+    )
+    #expect(verifier.contains("[progress]"))
+    #expect(verifier.contains("[stderr]"))
+    #expect(verifier.contains("heartbeat node=test-tooling"))
+    #expect(verifier.contains("command timed out"))
+    #expect(!verifier.contains("timeout-secret"))
+}
+
+@Test
+func commandRunnerDrainsTermTrapTailBeforeCancellingReaders() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: "axoloty-tool-term-tail-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let validator = AxolotyExecutionContextValidator(
+        environment: ["AXOLOTY_DEVCONTAINER": "1"],
+        platform: .linux
+    )
+    let runner = FoundationCommandRunner(
+        contextValidator: validator,
+        environment: validator.environment,
+        configuration: AxolotyCommandRunnerConfiguration(
+            commandTimeout: 0.15,
+            terminationGracePeriod: 0.05,
+            heartbeatInterval: 1,
+            artifactRoot: root,
+            runID: "term-tail",
+            installSignalHandler: false
+        )
+    )
+    let result = runner.run(AxolotyCommandPlan(
+        executable: "/bin/sh",
+        arguments: [
+            "-c",
+            "trap 'printf \"TERM-TRAP-TAIL\\n\" >&2; trap - TERM; sleep 10' TERM; while :; do sleep 1; done",
+        ]
+    ))
+
+    let lifecycle = try #require(result.lifecycle)
+    #expect(lifecycle.outcome == .timedOut)
+    #expect(result.standardError.contains("TERM-TRAP-TAIL"))
+    let artifact = try #require(lifecycle.artifactPath)
+    let artifactDirectory = URL(fileURLWithPath: artifact)
+    let durableError = try String(
+        contentsOf: artifactDirectory.appending(path: "stderr.txt"),
+        encoding: .utf8
+    )
+    let verifier = try String(
+        contentsOf: artifactDirectory.appending(path: "verifier.log"),
+        encoding: .utf8
+    )
+    #expect(durableError.contains("TERM-TRAP-TAIL"))
+    #expect(verifier.contains("TERM-TRAP-TAIL"))
 }
 
 @Test

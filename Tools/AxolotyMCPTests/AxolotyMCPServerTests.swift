@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+// swiftlint:disable file_length
+
 @testable import AxolotyMCP
 import Axoloty
 import AxolotyInspectorCore
@@ -12,6 +14,12 @@ import Testing
 
 #if canImport(FoundationNetworking)
 import FoundationNetworking
+#endif
+
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Darwin)
+import Darwin
 #endif
 
 @MainActor
@@ -121,6 +129,23 @@ private actor StreamTerminationProbe {
 
     func markTerminated() {
         terminated = true
+    }
+}
+
+private actor CancellationResistantGate {
+    private(set) var entered = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        entered = true
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func release() {
+        continuation?.resume()
+        continuation = nil
     }
 }
 
@@ -513,19 +538,68 @@ func discoverCancellationCleansUpResponseAndTimerTasks() async {
         }
     }
 
-    while !(await probe.created) {
-        await Task.yield()
+    do {
+        try await waitForCondition("discover response stream creation") {
+            await probe.created
+        }
+    } catch {
+        operation.cancel()
+        Issue.record("discover cancellation setup failed: \(error)")
+        return
     }
     operation.cancel()
-    _ = await operation.value
 
-    for _ in 0..<100 {
-        if await probe.terminated {
-            break
+    do {
+        try await withDeadline("discover cancellation operation") {
+            _ = await operation.value
         }
-        await Task.yield()
+        try await waitForCondition("discover response stream termination") {
+            await probe.terminated
+        }
+    } catch {
+        Issue.record("discover cancellation cleanup failed: \(error)")
     }
-    #expect(await probe.terminated)
+}
+
+@Test("Test deadlines do not join cancellation-resistant operations")
+func deadlineDoesNotJoinCancellationResistantOperation() async throws {
+    let gate = CancellationResistantGate()
+    let operation = Task {
+        do {
+            try await withDeadline(
+                "hostile cancellation-resistant operation",
+                timeout: .milliseconds(20),
+                recordTimeout: false
+            ) {
+                await gate.wait()
+            }
+            return false
+        } catch is TestDeadlineExceeded {
+            return true
+        }
+    }
+
+    try await waitForCondition("hostile operation entry") {
+        await gate.entered
+    }
+    #expect(try await operation.value)
+    await gate.release()
+}
+
+@Test("Deadline result boxes accept only their first resolution")
+func deadlineResultBoxAcceptsOnlyFirstResolution() async {
+    let box = DeadlineResultBox<String>()
+    let first = await withCheckedContinuation { (continuation: CheckedContinuation<Result<String, Error>, Never>) in
+        box.install(continuation)
+        box.resolve(.success("first"))
+        box.resolve(.success("second"))
+    }
+    let second = await withCheckedContinuation { (continuation: CheckedContinuation<Result<String, Error>, Never>) in
+        box.install(continuation)
+    }
+
+    #expect((try? first.get()) == "first")
+    #expect((try? second.get()) == "first")
 }
 
 @Test("MCP server forwards broker readiness timeout to inspector runtime")
@@ -544,13 +618,16 @@ func brokerConnectionTimeoutIsApplied() {
 func httpServerRepeatedStartStop() async throws {
     let server = makeHTTPServer(port: 0)
 
-    for _ in 0..<3 {
-        let startTask = Task { try await server.start() }
-        await server.waitUntilListening()
-        try await withDeadline("HTTP server stop") {
-            await server.stop()
-            try await startTask.value
-        }
+    for iteration in 0..<3 {
+        let startTask = try await startHTTPServer(
+            server,
+            phase: "HTTP server start iteration \(iteration + 1)"
+        )
+        try await stopHTTPServer(
+            server,
+            startTask: startTask,
+            phase: "HTTP server stop iteration \(iteration + 1)"
+        )
     }
 }
 
@@ -581,8 +658,7 @@ func httpTransportReportsEncodingFailure() async throws {
             return server
         }
     )
-    let startTask = Task { try await httpServer.start() }
-    await httpServer.waitUntilListening()
+    let startTask = try await startHTTPServer(httpServer, phase: "HTTP encoding server start")
     let port = try #require(await httpServer.listeningPort())
 
     do {
@@ -624,54 +700,58 @@ func httpTransportReportsEncodingFailure() async throws {
         let content = try #require(result["content"] as? [[String: Any]])
         #expect(content.first?["text"] as? String == "Unable to encode MCP response; please retry the request.")
     } catch {
-        await httpServer.stop()
-        _ = try? await startTask.value
+        try? await stopHTTPServer(
+            httpServer,
+            startTask: startTask,
+            phase: "HTTP encoding failure cleanup"
+        )
         throw error
     }
 
-    try await withDeadline("HTTP encoding failure shutdown") {
-        await httpServer.stop()
-        try await startTask.value
-    }
+    try await stopHTTPServer(
+        httpServer,
+        startTask: startTask,
+        phase: "HTTP encoding failure shutdown"
+    )
 }
 
 @Test("HTTP server releases its port for immediate rebinding")
 func httpServerReleasesPortForRebinding() async throws {
     let firstServer = makeHTTPServer(port: 0)
-    let firstStartTask = Task { try await firstServer.start() }
-    await firstServer.waitUntilListening()
+    let firstStartTask = try await startHTTPServer(firstServer, phase: "first HTTP server start")
     let port = try #require(await firstServer.listeningPort())
 
-    try await withDeadline("first HTTP server stop") {
-        await firstServer.stop()
-        try await firstStartTask.value
-    }
+    try await stopHTTPServer(
+        firstServer,
+        startTask: firstStartTask,
+        phase: "first HTTP server stop"
+    )
 
     let reboundServer = makeHTTPServer(port: UInt16(port))
-    let reboundStartTask = Task { try await reboundServer.start() }
-    await reboundServer.waitUntilListening()
+    let reboundStartTask = try await startHTTPServer(reboundServer, phase: "rebound HTTP server start")
     #expect(await reboundServer.listeningPort() == port)
 
-    try await withDeadline("rebound HTTP server stop") {
-        await reboundServer.stop()
-        try await reboundStartTask.value
-    }
+    try await stopHTTPServer(
+        reboundServer,
+        startTask: reboundStartTask,
+        phase: "rebound HTTP server stop"
+    )
 }
 
 @Test("HTTP shutdown stops every active session")
 func httpShutdownStopsActiveSessions() async throws {
     let server = makeHTTPServer(port: 0)
-    let startTask = Task { try await server.start() }
-    await server.waitUntilListening()
+    let startTask = try await startHTTPServer(server, phase: "active-session HTTP server start")
 
     let response = await server.handleHTTPRequest(try makeInitializeRequest())
     #expect(response.statusCode == 200)
     #expect(await server.activeSessionCount() == 1)
 
-    try await withDeadline("HTTP shutdown with an active session") {
-        await server.stop()
-        try await startTask.value
-    }
+    try await stopHTTPServer(
+        server,
+        startTask: startTask,
+        phase: "HTTP shutdown with an active session"
+    )
     #expect(await server.activeSessionCount() == 0)
 }
 
@@ -680,8 +760,7 @@ func httpBodyCapAcceptsConfiguredBoundary() async throws {
     let initializeRequest = try makeInitializeRequest()
     let body = try #require(initializeRequest.body)
     let server = makeHTTPServer(port: 0, maxRequestBodyBytes: body.count)
-    let startTask = Task { try await server.start() }
-    await server.waitUntilListening()
+    let startTask = try await startHTTPServer(server, phase: "HTTP boundary server start")
     let port = try #require(await server.listeningPort())
 
     do {
@@ -689,22 +768,25 @@ func httpBodyCapAcceptsConfiguredBoundary() async throws {
         #expect(response.statusCode == 200)
         #expect(await server.activeSessionCount() == 1)
     } catch {
-        await server.stop()
-        _ = try? await startTask.value
+        try? await stopHTTPServer(
+            server,
+            startTask: startTask,
+            phase: "HTTP boundary request cleanup"
+        )
         throw error
     }
 
-    try await withDeadline("HTTP boundary request shutdown") {
-        await server.stop()
-        try await startTask.value
-    }
+    try await stopHTTPServer(
+        server,
+        startTask: startTask,
+        phase: "HTTP boundary request shutdown"
+    )
 }
 
 @Test("HTTP server rejects oversized Content-Length before buffering")
 func httpBodyCapRejectsOversizedContentLength() async throws {
     let server = makeHTTPServer(port: 0, maxRequestBodyBytes: 8)
-    let startTask = Task { try await server.start() }
-    await server.waitUntilListening()
+    let startTask = try await startHTTPServer(server, phase: "HTTP Content-Length cap server start")
     let port = try #require(await server.listeningPort())
 
     do {
@@ -715,22 +797,25 @@ func httpBodyCapRejectsOversizedContentLength() async throws {
         #expect(response.statusCode == 413)
         #expect(await server.activeSessionCount() == 0)
     } catch {
-        await server.stop()
-        _ = try? await startTask.value
+        try? await stopHTTPServer(
+            server,
+            startTask: startTask,
+            phase: "HTTP Content-Length cap cleanup"
+        )
         throw error
     }
 
-    try await withDeadline("HTTP oversized Content-Length request shutdown") {
-        await server.stop()
-        try await startTask.value
-    }
+    try await stopHTTPServer(
+        server,
+        startTask: startTask,
+        phase: "HTTP oversized Content-Length request shutdown"
+    )
 }
 
 @Test("HTTP server rejects oversized streamed body incrementally")
 func httpBodyCapRejectsOversizedStreamedBody() async throws {
     let server = makeHTTPServer(port: 0, maxRequestBodyBytes: 8)
-    let startTask = Task { try await server.start() }
-    await server.waitUntilListening()
+    let startTask = try await startHTTPServer(server, phase: "HTTP streamed cap server start")
     let port = try #require(await server.listeningPort())
 
     do {
@@ -742,15 +827,19 @@ func httpBodyCapRejectsOversizedStreamedBody() async throws {
         #expect(response.statusCode == 413)
         #expect(await server.activeSessionCount() == 0)
     } catch {
-        await server.stop()
-        _ = try? await startTask.value
+        try? await stopHTTPServer(
+            server,
+            startTask: startTask,
+            phase: "HTTP streamed cap cleanup"
+        )
         throw error
     }
 
-    try await withDeadline("HTTP streamed request shutdown") {
-        await server.stop()
-        try await startTask.value
-    }
+    try await stopHTTPServer(
+        server,
+        startTask: startTask,
+        phase: "HTTP streamed request shutdown"
+    )
 }
 
 @Test("MCP executable rejects invalid broker port")
@@ -890,23 +979,21 @@ private func runMCPExecutableForPathValidation(
     arguments: [String]
 ) throws -> MCPExecutablePathValidationResult {
     let invocation = try makeMCPExecutableProcess(arguments: arguments)
-    try invocation.process.run()
+    try invocation.start()
 
-    let deadline = Date().addingTimeInterval(0.5)
-    while invocation.process.isRunning, Date() < deadline {
-        Thread.sleep(forTimeInterval: 0.01)
-    }
-
-    if invocation.process.isRunning {
-        invocation.process.terminate()
-        invocation.process.waitUntilExit()
+    guard let exitCode = waitForProcessExit(
+        invocation.process,
+        until: MonotonicDeadline(timeout: .milliseconds(500))
+    ) else {
+        _ = terminateAndReap(invocation, phase: "MCP executable path validation")
+        _ = invocation.drain()
         return .accepted
     }
 
-    let errorData = invocation.standardError.fileHandleForReading.readDataToEndOfFile()
+    let output = invocation.drain()
     return .rejected(
-        exitCode: invocation.process.terminationStatus,
-        standardError: String(decoding: errorData, as: UTF8.self)
+        exitCode: exitCode,
+        standardError: output.standardError
     )
 }
 
@@ -915,38 +1002,384 @@ private func runMCPExecutable(
     environment overrides: [String: String] = [:]
 ) throws -> (exitCode: Int32, standardError: String) {
     let invocation = try makeMCPExecutableProcess(arguments: arguments, environment: overrides)
-    try invocation.process.run()
-    invocation.process.waitUntilExit()
-    let errorData = invocation.standardError.fileHandleForReading.readDataToEndOfFile()
+    try invocation.start()
+    let termination: MCPProcessTermination
+    if let exitCode = waitForProcessExit(
+        invocation.process,
+        until: MonotonicDeadline(timeout: .seconds(5))
+    ) {
+        termination = MCPProcessTermination(
+            exitCode: exitCode,
+            outcome: "normal reap",
+            escalated: false
+        )
+    } else {
+        termination = terminateAndReap(invocation, phase: "MCP executable completion")
+    }
+    let output = invocation.drain()
+    if termination.escalated {
+        recordMCPProcessDiagnostic(
+            phase: "MCP executable completion",
+            processIdentifier: invocation.process.processIdentifier,
+            termination: termination,
+            output: output
+        )
+    }
     return (
-        invocation.process.terminationStatus,
-        String(decoding: errorData, as: UTF8.self)
+        termination.exitCode,
+        output.standardError
     )
 }
 
 private func makeMCPExecutableProcess(
     arguments: [String],
     environment overrides: [String: String] = [:]
-) throws -> (process: Process, standardError: Pipe) {
+) throws -> MCPExecutableInvocation {
     let productsDirectory = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
     let executable = productsDirectory.appendingPathComponent("axoloty-mcp")
     try #require(FileManager.default.isExecutableFile(atPath: executable.path))
 
     let process = Process()
+    let standardOutput = Pipe()
     let standardError = Pipe()
     process.executableURL = executable
     process.arguments = arguments
     process.standardError = standardError
-    process.standardOutput = Pipe()
+    process.standardOutput = standardOutput
     var environment = ProcessInfo.processInfo.environment
     environment["AXOLOTY_MQTT_PORT"] = "1883"
-    environment["AXOLOTY_MCP_PORT"] = "8765"
+    environment["AXOLOTY_MCP_PORT"] = String(try freeLoopbackPort())
     for (name, value) in overrides {
         environment[name] = value
     }
     process.environment = environment
 
-    return (process, standardError)
+    return MCPExecutableInvocation(
+        process: process,
+        standardOutput: standardOutput,
+        standardError: standardError
+    )
+}
+
+private struct MonotonicDeadline: Sendable {
+    private let uptimeNanoseconds: UInt64
+
+    init(timeout: Duration) {
+        let components = timeout.components
+        let seconds = components.seconds > 0 ? UInt64(components.seconds) : 0
+        let attoseconds = components.attoseconds > 0 ? UInt64(components.attoseconds) : 0
+        let durationNanoseconds = seconds.multipliedReportingOverflow(by: 1_000_000_000)
+        let extraNanoseconds = attoseconds / 1_000_000_000
+        let totalNanoseconds: UInt64
+        if durationNanoseconds.overflow {
+            totalNanoseconds = UInt64.max
+        } else {
+            totalNanoseconds = durationNanoseconds.partialValue.addingReportingOverflow(extraNanoseconds).overflow
+                ? UInt64.max
+                : durationNanoseconds.partialValue + extraNanoseconds
+        }
+        let now = DispatchTime.now().uptimeNanoseconds
+        uptimeNanoseconds = now.addingReportingOverflow(totalNanoseconds).overflow
+            ? UInt64.max
+            : now + totalNanoseconds
+    }
+
+    var isExpired: Bool {
+        DispatchTime.now().uptimeNanoseconds >= uptimeNanoseconds
+    }
+
+    var dispatchTime: DispatchTime {
+        DispatchTime(uptimeNanoseconds: uptimeNanoseconds)
+    }
+}
+
+private struct MCPExecutableOutput {
+    let standardOutput: String
+    let standardError: String
+}
+
+private struct MCPProcessTermination {
+    let exitCode: Int32
+    let outcome: String
+    let escalated: Bool
+}
+
+private final class MCPExecutableOutputDrain: @unchecked Sendable {
+    private let standardOutput: Pipe
+    private let standardError: Pipe
+    private let lock = NSLock()
+    private let group = DispatchGroup()
+    private var outputData = Data()
+    private var errorData = Data()
+
+    init(standardOutput: Pipe, standardError: Pipe) {
+        self.standardOutput = standardOutput
+        self.standardError = standardError
+
+        group.enter()
+        DispatchQueue.global(qos: .utility).async { [self] in
+            read(standardOutput.fileHandleForReading, isError: false)
+        }
+        group.enter()
+        DispatchQueue.global(qos: .utility).async { [self] in
+            read(standardError.fileHandleForReading, isError: true)
+        }
+    }
+
+    private func read(_ handle: FileHandle, isError: Bool) {
+        defer { group.leave() }
+        while true {
+            let data = handle.readData(ofLength: 16 * 1024)
+            guard !data.isEmpty else { return }
+            lock.lock()
+            if isError {
+                errorData.append(data)
+            } else {
+                outputData.append(data)
+            }
+            lock.unlock()
+        }
+    }
+
+    func wait(until deadline: MonotonicDeadline) -> Bool {
+        group.wait(timeout: deadline.dispatchTime) == .success
+    }
+
+    func close() {
+        standardOutput.fileHandleForReading.closeFile()
+        standardError.fileHandleForReading.closeFile()
+    }
+
+    func output() -> MCPExecutableOutput {
+        lock.lock()
+        defer { lock.unlock() }
+        return MCPExecutableOutput(
+            standardOutput: String(bytes: outputData, encoding: .utf8) ?? "",
+            standardError: String(bytes: errorData, encoding: .utf8) ?? ""
+        )
+    }
+}
+
+private struct MCPExecutableInvocation {
+    let process: Process
+    let standardOutput: Pipe
+    let standardError: Pipe
+    private let outputDrain: MCPExecutableOutputDrain
+
+    init(process: Process, standardOutput: Pipe, standardError: Pipe) {
+        self.process = process
+        self.standardOutput = standardOutput
+        self.standardError = standardError
+        outputDrain = MCPExecutableOutputDrain(
+            standardOutput: standardOutput,
+            standardError: standardError
+        )
+    }
+
+    func start() throws {
+        do {
+            try process.run()
+        } catch {
+            outputDrain.close()
+            throw error
+        }
+    }
+
+    func drain() -> MCPExecutableOutput {
+        let deadline = MonotonicDeadline(timeout: .seconds(1))
+        if !outputDrain.wait(until: deadline) {
+            outputDrain.close()
+            _ = outputDrain.wait(until: MonotonicDeadline(timeout: .milliseconds(100)))
+        }
+        return outputDrain.output()
+    }
+
+    func stopOutputDrain() {
+        outputDrain.close()
+    }
+}
+
+private func waitForProcessExit(
+    _ process: Process,
+    until deadline: MonotonicDeadline
+) -> Int32? {
+    let processIdentifier = process.processIdentifier
+    while !deadline.isExpired {
+        var status: Int32 = 0
+        let result = waitpid(processIdentifier, &status, WNOHANG)
+        if result == processIdentifier {
+            return processExitCode(from: status)
+        }
+        if result < 0 {
+            #if canImport(Glibc)
+            if Glibc.errno == ECHILD { return process.terminationStatus }
+            #elseif canImport(Darwin)
+            if Darwin.errno == ECHILD { return process.terminationStatus }
+            #endif
+        }
+        Thread.sleep(forTimeInterval: 0.01)
+    }
+    return nil
+}
+
+private func terminateAndReap(
+    _ invocation: MCPExecutableInvocation,
+    phase: String
+) -> MCPProcessTermination {
+    let processIdentifier = invocation.process.processIdentifier
+    if let exitCode = waitForProcessExit(
+        invocation.process,
+        until: MonotonicDeadline(timeout: .milliseconds(100))
+    ) {
+        return MCPProcessTermination(
+            exitCode: exitCode,
+            outcome: "already exited before termination",
+            escalated: false
+        )
+    }
+
+    invocation.process.terminate()
+    if let exitCode = waitForProcessExit(
+        invocation.process,
+        until: MonotonicDeadline(timeout: .seconds(1))
+    ) {
+        return MCPProcessTermination(
+            exitCode: exitCode,
+            outcome: "TERM and reap succeeded",
+            escalated: true
+        )
+    }
+
+    _ = kill(processIdentifier, SIGKILL)
+    if let exitCode = waitForProcessExit(
+        invocation.process,
+        until: MonotonicDeadline(timeout: .seconds(1))
+    ) {
+        return MCPProcessTermination(
+            exitCode: exitCode,
+            outcome: "KILL and reap succeeded",
+            escalated: true
+        )
+    }
+
+    invocation.stopOutputDrain()
+    return MCPProcessTermination(
+        exitCode: 137,
+        outcome: "TERM → KILL → reap deadline exceeded",
+        escalated: true
+    )
+}
+
+private func recordMCPProcessDiagnostic(
+    phase: String,
+    processIdentifier: Int32,
+    termination: MCPProcessTermination,
+    output: MCPExecutableOutput
+) {
+    let standardOutputTail = boundedOutputTail(output.standardOutput)
+    let standardErrorTail = boundedOutputTail(output.standardError)
+    Issue.record(
+        "MCP process phase='\(phase)' pid=\(processIdentifier) exit=\(termination.exitCode) outcome='\(termination.outcome)' stdout_tail=\(standardOutputTail) stderr_tail=\(standardErrorTail)"
+    )
+}
+
+private func boundedOutputTail(_ output: String, maximumBytes: Int = 512) -> String {
+    let bytes = Data(output.utf8)
+    return String(bytes: bytes.suffix(maximumBytes), encoding: .utf8) ?? ""
+}
+
+private func processExitCode(from status: Int32) -> Int32 {
+    if status & 0x7f == 0 {
+        return (status >> 8) & 0xff
+    }
+    return 128 + (status & 0x7f)
+}
+
+private func freeLoopbackPort() throws -> UInt16 {
+    let descriptor = socket(AF_INET, 1, 0) // SOCK_STREAM
+    guard descriptor >= 0 else { throw CocoaError(.fileReadNoSuchFile) }
+    defer { close(descriptor) }
+
+    var address = sockaddr_in()
+    address.sin_family = sa_family_t(AF_INET)
+    address.sin_port = 0
+    guard inet_pton(AF_INET, "127.0.0.1", &address.sin_addr) == 1 else {
+        throw CocoaError(.fileReadUnknown)
+    }
+    let bindResult = withUnsafePointer(to: &address) { pointer in
+        pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketAddress in
+            bind(descriptor, socketAddress, socklen_t(MemoryLayout<sockaddr_in>.size))
+        }
+    }
+    guard bindResult == 0 else { throw CocoaError(.fileWriteUnknown) }
+
+    var boundAddress = sockaddr_in()
+    var addressLength = socklen_t(MemoryLayout<sockaddr_in>.size)
+    let nameResult = withUnsafeMutablePointer(to: &boundAddress) { pointer in
+        pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketAddress in
+            getsockname(descriptor, socketAddress, &addressLength)
+        }
+    }
+    guard nameResult == 0 else { throw CocoaError(.fileReadUnknown) }
+    return UInt16(bigEndian: boundAddress.sin_port)
+}
+
+private actor HTTPServerStartState {
+    private var failureMessage: String?
+
+    func recordFailure(_ message: String) {
+        failureMessage = message
+    }
+
+    func failure() -> String? {
+        failureMessage
+    }
+}
+
+private func startHTTPServer(
+    _ server: MCPHTTPServer,
+    phase: String,
+    timeout: Duration = .seconds(5)
+) async throws -> Task<Void, Error> {
+    let state = HTTPServerStartState()
+    let startTask = Task {
+        do {
+            try await server.start()
+        } catch {
+            await state.recordFailure(String(reflecting: error))
+            throw error
+        }
+    }
+
+    do {
+        try await withDeadline("\(phase) readiness", timeout: timeout) {
+            while await server.listeningPort() == nil {
+                if let failure = await state.failure() {
+                    throw TestPhaseFailure(phase: phase, reason: failure)
+                }
+                try Task.checkCancellation()
+                try await Task.sleep(for: .milliseconds(5))
+            }
+        }
+        return startTask
+    } catch {
+        startTask.cancel()
+        try? await withDeadline("\(phase) failure cleanup", timeout: .seconds(1)) {
+            await server.stop()
+        }
+        throw error
+    }
+}
+
+private func stopHTTPServer(
+    _ server: MCPHTTPServer,
+    startTask: Task<Void, Error>,
+    phase: String
+) async throws {
+    try await withDeadline(phase) {
+        await server.stop()
+        try await startTask.value
+    }
 }
 
 private func makeHTTPServer(
@@ -1018,37 +1451,131 @@ private func makeInitializeRequest() throws -> HTTPRequest {
 }
 
 private func receiveMCPMessage(from transport: InMemoryTransport) async throws -> Data {
-    try await withThrowingTaskGroup(of: Data.self) { group in
-        group.addTask {
-            for try await message in await transport.receive() {
-                return message
-            }
-            throw TestDeadlineExceeded()
+    try await withDeadline("MCP in-memory response") {
+        for try await message in await transport.receive() {
+            return message
         }
-        group.addTask {
-            try await Task.sleep(for: .seconds(5))
-            throw TestDeadlineExceeded()
-        }
-        defer { group.cancelAll() }
-        return try await group.next()!
+        throw TestDeadlineExceeded(description: "MCP in-memory response stream ended")
     }
 }
 
-private struct TestDeadlineExceeded: Error {}
+private struct TestDeadlineExceeded: LocalizedError {
+    let description: String
 
-private func withDeadline(
+    init(description: String = "test phase") {
+        self.description = description
+    }
+
+    var errorDescription: String? {
+        "timed out waiting for \(description)"
+    }
+}
+
+private struct TestPhaseFailure: LocalizedError {
+    let phase: String
+    let reason: String
+
+    var errorDescription: String? {
+        "MCP test phase '\(phase)' failed: \(reason)"
+    }
+}
+
+private final class DeadlineResultBox<Value: Sendable>: @unchecked Sendable {
+    private enum State {
+        case pending
+        case resolved(Result<Value, Error>)
+    }
+
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Result<Value, Error>, Never>?
+    private var state: State = .pending
+
+    func install(
+        _ continuation: CheckedContinuation<Result<Value, Error>, Never>
+    ) {
+        lock.lock()
+        if case let .resolved(result) = state {
+            lock.unlock()
+            continuation.resume(returning: result)
+            return
+        }
+        self.continuation = continuation
+        lock.unlock()
+    }
+
+    func resolve(_ result: Result<Value, Error>) {
+        lock.lock()
+        guard case .pending = state else {
+            lock.unlock()
+            return
+        }
+        state = .resolved(result)
+        if let continuation {
+            self.continuation = nil
+            lock.unlock()
+            continuation.resume(returning: result)
+        } else {
+            lock.unlock()
+        }
+    }
+}
+
+/// Races an unstructured operation against a deadline without joining a child
+/// that ignores cancellation. Test operations remain responsible for cleaning
+/// up any resources they own after this function reports a timeout.
+private func withDeadline<Value: Sendable>(
     _ description: String,
     timeout: Duration = .seconds(5),
-    operation: @escaping @Sendable () async throws -> Void
-) async throws {
-    try await withThrowingTaskGroup(of: Void.self) { group in
-        group.addTask { try await operation() }
-        group.addTask {
-            try await Task.sleep(for: timeout)
-            Issue.record("Timed out waiting for \(description)")
-            throw TestDeadlineExceeded()
+    recordTimeout: Bool = true,
+    operation: @escaping @Sendable () async throws -> Value
+) async throws -> Value {
+    let resultBox = DeadlineResultBox<Value>()
+    let operationTask = Task {
+        do {
+            resultBox.resolve(.success(try await operation()))
+        } catch {
+            resultBox.resolve(.failure(error))
         }
-        _ = try await group.next()
-        group.cancelAll()
+    }
+    let timeoutTask = Task {
+        do {
+            try await Task.sleep(for: timeout)
+            resultBox.resolve(.failure(TestDeadlineExceeded(description: description)))
+        } catch {
+            // The operation won the race or the parent task was cancelled.
+        }
+    }
+
+    let result: Result<Value, Error> = await withTaskCancellationHandler {
+        await withCheckedContinuation { continuation in
+            resultBox.install(continuation)
+        }
+    } onCancel: {
+        operationTask.cancel()
+        timeoutTask.cancel()
+        resultBox.resolve(.failure(CancellationError()))
+    }
+
+    timeoutTask.cancel()
+    if case .failure(let error) = result,
+       error is TestDeadlineExceeded {
+        operationTask.cancel()
+        if recordTimeout {
+            Issue.record("Timed out waiting for \(description)")
+        }
+    }
+    return try result.get()
+}
+
+private func waitForCondition(
+    _ description: String,
+    timeout: Duration = .seconds(5),
+    condition: @escaping @Sendable () async -> Bool
+) async throws {
+    try await withDeadline(description, timeout: timeout) {
+        while !(await condition()) {
+            try Task.checkCancellation()
+            try await Task.sleep(for: .milliseconds(5))
+        }
     }
 }

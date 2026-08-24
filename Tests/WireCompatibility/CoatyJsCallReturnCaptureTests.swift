@@ -14,20 +14,7 @@ import Testing
 /// and its Return (RTN, responder). The capture is committed under
 /// `Tests/WireCompatibility/Fixtures/coatyjs-2.4.0/coatyjs-call-return.jsonl`.
 struct CoatyJsCallReturnCaptureTests {
-    private struct CaptureRecord: Decodable {
-        struct MQTT: Decodable {
-            let topic: String
-            let qos: Int
-            let retain: Bool
-        }
-
-        struct Payload: Decodable {
-            let bytes: String
-        }
-
-        let mqtt: MQTT
-        let payload: Payload
-    }
+    private typealias CaptureRecord = WireCaptureFixture.Record
 
     private struct CallPayload: Decodable {
         struct Parameters: Decodable {
@@ -56,26 +43,20 @@ struct CoatyJsCallReturnCaptureTests {
     private let operationId = "wire-fixture-operation"
 
     private func records(named name: String) throws -> [CaptureRecord] {
-        let url = try #require(Bundle.module.url(forResource: name, withExtension: "jsonl"))
-        let text = try String(contentsOf: url, encoding: .utf8)
-        return try text
-            .split(separator: "\n")
-            .map { try JSONDecoder().decode(CaptureRecord.self, from: Data($0.utf8)) }
+        try WireCaptureFixture.records(named: name)
     }
 
     private func decoded<E: Decodable>(_ record: CaptureRecord, as type: E.Type) throws -> E {
-        let bytes = try #require(Data(base64Encoded: record.payload.bytes))
-        return try JSONDecoder().decode(E.self, from: bytes)
+        try WireCaptureFixture.decode(record, fixtureName: "coatyjs-call-return", as: type)
     }
 
     /// Splits a correlated topic (`coaty/3/<ns>/<EVENT>/<sourceId>/<correlationId>`)
     /// into (sourceId, correlationId), or nil if the shape doesn't match.
     private func correlatedSourceAndId(_ topic: String, eventLevel: String) -> (sourceId: String, correlationId: String)? {
-        let levels = topic.split(separator: "/").map(String.init)
-        guard levels.count == 6,
-              levels[0] == "coaty", levels[1] == "3",
-              levels[2] == namespace, levels[3] == eventLevel else { return nil }
-        return (levels[4], levels[5])
+        guard let parsed = try? WireCaptureFixture.correlatedTopic(
+            topic, fixtureName: "coatyjs-call-return", recordNumber: 0, namespace: namespace, eventLevel: eventLevel
+        ) else { return nil }
+        return (parsed.sourceID, parsed.correlationID)
     }
 
     @Test

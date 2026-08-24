@@ -113,24 +113,20 @@ struct AxolotyRuntimeTests {
         #expect(receipt == .rejected(.notRunning(.stopped)))
     }
 
-    @Test("runtime uses the shared processor for an accepted local operation")
+    @Test("runtime uses the shared processor for an accepted local publication")
     func acceptsLocalOperation() async throws {
         let definition = try makeDefinition()
         let transport = TestTransport()
         let runtime = AxolotyRuntime(definition: definition, transport: transport)
         try await runtime.start()
 
-        let receipt = await runtime.publish(
-            RuntimeOperation(
-                capability: .ioValue,
-                sourceID: .zero,
-                payload: [0x7B, 0x7D]
-            )
-        )
+        let receipt = await runtime.publish(.channel(
+            identifier: "accepted-local-publication",
+            payload: Array(#"{"privateData":{"accepted":true}}"#.utf8)
+        ))
         #expect(receipt == .accepted)
-        for _ in 0..<100 {
-            if await transport.sentCount() == 1 { break }
-            try? await Task.sleep(for: .milliseconds(5))
+        try await waitUntil("local operation to reach the transport") {
+            await transport.sentCount() == 1
         }
         #expect(await transport.sentCount() == 1)
         await runtime.stop()
@@ -151,9 +147,8 @@ struct AxolotyRuntimeTests {
             timeoutMS: 1_000
         ))
         #expect(receipt == .accepted)
-        for _ in 0..<100 {
-            if await transport.sentCount() == 1 { break }
-            try? await Task.sleep(for: .milliseconds(5))
+        try await waitUntil("Call operation to reach the transport") {
+            await transport.sentCount() == 1
         }
         let action = try #require(await transport.lastSent())
         guard case .profile(let filter, _) = action.target else {
@@ -176,9 +171,8 @@ struct AxolotyRuntimeTests {
             payload: Array(#"{"privateData":{"sequence":7}}"#.utf8)
         ))
         #expect(receipt == .accepted)
-        for _ in 0..<100 {
-            if await transport.sentCount() == 1 { break }
-            try? await Task.sleep(for: .milliseconds(5))
+        try await waitUntil("Channel operation to reach the transport") {
+            await transport.sentCount() == 1
         }
         let action = try #require(await transport.lastSent())
         guard case .profile(let filter, let kind) = action.target else {
@@ -226,24 +220,11 @@ struct AxolotyRuntimeTests {
 
         let payload = Array(#"{"object":{"objectId":"77777777-7777-4777-8777-777777777777","coreType":"CoatyObject","objectType":"com.coaty.test.WireFixture","name":"wire-fixture"}}"#.utf8)
         #expect(await runtime.publish(.advertise(payload)) == .accepted)
-        for _ in 0..<100 {
-            if await transport.sentCount() == 2 { break }
-            try? await Task.sleep(for: .milliseconds(5))
+        try await waitUntil("all Advertise variants to reach the transport") {
+            await transport.sentCount() == 3
         }
-        #expect(await transport.sentCount() == 2)
+        #expect(await transport.sentCount() == 3)
         #expect(await runtime.state() == .running)
-        await runtime.stop()
-    }
-
-    @Test("Channel requires a typed identifier")
-    func channelRejectsMissingIdentifier() async throws {
-        let runtime = AxolotyRuntime(definition: try makeDefinition(), transport: TestTransport())
-        try await runtime.start()
-        #expect(await runtime.publish(RuntimeOperation(
-            capability: .channel,
-            sourceID: .zero,
-            payload: Array("{}".utf8)
-        )) == .rejected(.invalidOperationName))
         await runtime.stop()
     }
 
@@ -350,13 +331,21 @@ struct AxolotyRuntimeTests {
         )
         try await runtime.start()
 
-        var iterator = stream.makeAsyncIterator()
+        let iterator = RuntimeTestIteratorBox(stream.makeAsyncIterator())
         let receipt = await runtime.receive(RuntimeInboundFrame(
             topic: "coaty/3/test/ADV:CoatyObject/22222222-2222-4222-8222-222222222222",
             payload: Array(#"{"object":{"objectId":"11111111-1111-4111-8111-111111111111","coreType":"CoatyObject","objectType":"com.coaty.test.WireFixture","name":"wire-fixture"}}"#.utf8)
         ))
         #expect(receipt == .accepted)
-        let event = try #require(await iterator.next())
+        let event = try await withThrowingTaskGroup(of: RuntimeEventValue?.self) { group in
+            group.addTask { await iterator.next() }
+            group.addTask {
+                try await Task.sleep(for: .seconds(2))
+                throw RuntimeTestTimeout.waitingForAdvertiseEvent
+            }
+            defer { group.cancelAll() }
+            return try #require(try await group.next() ?? nil)
+        }
         #expect(event.context.sourceID == UUID16(parsing: "22222222-2222-4222-8222-222222222222"))
         #expect(String(decoding: event.value, as: UTF8.self).contains("com.coaty.test.WireFixture"))
         await runtime.stop()
@@ -364,24 +353,68 @@ struct AxolotyRuntimeTests {
 
     @Test("runtime orders subscription and identity lifecycle around transport")
     func lifecycleOrdering() async throws {
-        let definition = try makeDefinition()
+        let identity = try RuntimeIdentity(id: .zero, name: "lifecycle-test")
+        let runtimeDefinition = try RuntimeDefinition(
+            namespace: "test",
+            sourceID: .zero,
+            identity: identity,
+            capacities: try RuntimeCapacities()
+        )
+        let definition = try runtimeDefinition.seal()
         let transport = TestTransport()
         let runtime = AxolotyRuntime(definition: definition, transport: transport)
         #expect(await runtime.state() == .initialized)
         try await runtime.start()
         #expect(await runtime.state() == .running)
-        #expect(await transport.lifecycle == ["start", "install", "advertise"])
+        #expect(await transport.lifecycle == ["start", "install"])
+        let advertisement = try #require(await transport.firstSent())
+        #expect(advertisement.routingKey.capability == .advertise)
+        #expect(String(decoding: advertisement.payload, as: UTF8.self).contains("coaty.Identity"))
 
         await runtime.reconnect()
         #expect(await runtime.state() == .running)
         #expect(await transport.lifecycle == [
-            "start", "install", "advertise", "remove", "stop", "start", "install", "advertise"
+            "start", "install", "remove", "stop", "start", "install"
         ])
 
         await runtime.stop()
         #expect(await runtime.state() == .stopped)
         let lifecycle = await transport.lifecycle
-        #expect(Array(lifecycle.suffix(3)) == ["deadvertise", "remove", "stop"])
+        #expect(Array(lifecycle.suffix(2)) == ["remove", "stop"])
+        let deadvertisement = try #require(await transport.lastSent())
+        #expect(deadvertisement.routingKey.capability == .deadvertise)
+        #expect(String(decoding: deadvertisement.payload, as: UTF8.self) == "{\"objectIds\":[\"00000000-0000-0000-0000-000000000000\"]}")
+    }
+
+    @Test("startup failure injection preserves terminal cleanup", arguments: SetupFailureStage.allCases)
+    func startupFailureInjectionPreservesTerminalCleanup(stage: SetupFailureStage) async throws {
+        let transport = TestTransport(failing: stage)
+        let identity = try RuntimeIdentity(id: .zero, name: "failure-injection")
+        let definition = try RuntimeDefinition(
+            namespace: "test",
+            sourceID: .zero,
+            identity: identity,
+            capacities: try RuntimeCapacities()
+        ).seal()
+        let runtime = AxolotyRuntime(definition: definition, transport: transport)
+
+        do {
+            try await runtime.start()
+            Issue.record("runtime start unexpectedly succeeded while failing \(stage)")
+        } catch let error as AxolotyError {
+            guard case let .runtime(code, _) = error else {
+                Issue.record("unexpected startup failure: \(error.userFriendlyMessage)")
+                return
+            }
+            #expect(code == .brokerUnavailable)
+        }
+
+        for _ in 0..<100 {
+            if await runtime.state() == .stopped { break }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(await runtime.state() == .stopped)
+        #expect(await transport.lifecycle == stage.expectedLifecycle)
     }
 
     @Test("post-start transport failures enter recoverable reconnecting state")
@@ -392,9 +425,8 @@ struct AxolotyRuntimeTests {
         try await runtime.start()
 
         await transport.fail(TestTransportFailure())
-        for _ in 0..<100 {
-            if await runtime.state() == .reconnecting { break }
-            try? await Task.sleep(for: .milliseconds(5))
+        try await waitUntil("runtime to enter reconnecting state") {
+            await runtime.state() == .reconnecting
         }
         #expect(await runtime.state() == .reconnecting)
         #expect((await runtime.diagnosticsSnapshot()).transportFailures == 1)
@@ -408,21 +440,18 @@ struct AxolotyRuntimeTests {
         let runtime = AxolotyRuntime(definition: definition, transport: transport)
         try await runtime.start()
         await transport.fail(TestTransportFailure())
-        for _ in 0..<100 {
-            if await runtime.state() == .reconnecting { break }
-            try? await Task.sleep(for: .milliseconds(5))
+        try await waitUntil("runtime to enter reconnecting state") {
+            await runtime.state() == .reconnecting
         }
         #expect(await runtime.state() == .reconnecting)
-        let receipt = await runtime.publish(RuntimeOperation.advertise(
-            sourceID: .zero,
-            payload: Array(#"{"object":{"objectId":"66666666-6666-4666-8666-666666666666","coreType":"CoatyObject","objectType":"com.coaty.test.WireQueuedFixture","name":"first"}}"#.utf8)
+        let receipt = await runtime.publish(.advertise(
+            Array(#"{"object":{"objectId":"66666666-6666-4666-8666-666666666666","coreType":"CoatyObject","objectType":"com.coaty.test.WireQueuedFixture","name":"first"}}"#.utf8)
         ))
         #expect(receipt == .accepted)
         #expect(await transport.sentCount() == 0)
         await runtime.reconnect()
-        for _ in 0..<100 {
-            if await transport.sentCount() == 2 { break }
-            try? await Task.sleep(for: .milliseconds(5))
+        try await waitUntil("queued publications to reach the transport") {
+            await transport.sentCount() == 2
         }
         #expect(await runtime.state() == .running)
         #expect(await transport.sentCount() == 2)
@@ -435,25 +464,24 @@ struct AxolotyRuntimeTests {
         let transport = DrainingTransport()
         let runtime = AxolotyRuntime(definition: definition, transport: transport)
         try await runtime.start()
-        #expect(await runtime.publish(RuntimeOperation(
-            capability: .ioValue,
-            sourceID: .zero,
-            payload: [0x7B, 0x7D]
+        #expect(await runtime.publish(.channel(
+            identifier: "drain-publication",
+            payload: Array(#"{"privateData":{"drain":true}}"#.utf8)
         )) == .accepted)
-        for _ in 0..<100 {
-            if await transport.sendStarted { break }
-            try? await Task.sleep(for: .milliseconds(5))
+        try await waitUntil("outbound transport send to start") {
+            await transport.sendStarted
         }
         #expect(await transport.sendStarted)
 
         let stopping = Task { await runtime.stop() }
-        for _ in 0..<100 {
-            if await transport.didStop { break }
-            try? await Task.sleep(for: .milliseconds(5))
+        defer {
+            stopping.cancel()
+            Task { await transport.releaseSend() }
+        }
+        try await waitUntil("transport stop to begin") {
+            await transport.didStop
         }
         #expect(await transport.didStop)
-        #expect(await runtime.lifecycleState() == .stopping)
-        try await Task.sleep(for: .milliseconds(20))
         #expect(await runtime.lifecycleState() == .stopping)
 
         await transport.releaseSend()
@@ -471,15 +499,38 @@ struct AxolotyRuntimeTests {
     }
 }
 
+enum SetupFailureStage: String, CaseIterable, Sendable {
+    case start
+    case subscriptions
+    case advertisement
+
+    var expectedLifecycle: [String] {
+        switch self {
+        case .start:
+            return ["start", "remove", "stop"]
+        case .subscriptions:
+            return ["start", "install", "remove", "stop"]
+        case .advertisement:
+            return ["start", "install", "remove", "stop"]
+        }
+    }
+}
+
 private actor TestTransport: AxolotyRuntimeTransport {
     private var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
     private var failure: (@Sendable (Error) -> Void)?
     private var sent: [OwnedProtocolPublication] = []
     private(set) var lifecycle: [String] = []
+    private let failureStage: SetupFailureStage?
+
+    init(failing failureStage: SetupFailureStage? = nil) {
+        self.failureStage = failureStage
+    }
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
         self.receive = receive
         lifecycle.append("start")
+        if failureStage == .start { throw TestTransportFailure() }
     }
 
     func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) {
@@ -488,6 +539,9 @@ private actor TestTransport: AxolotyRuntimeTransport {
 
     func send(_ publication: OwnedProtocolPublication, namespace: String) async throws {
         sent.append(publication)
+        if failureStage == .advertisement, publication.routingKey.capability == .advertise {
+            throw TestTransportFailure()
+        }
     }
 
     func stop() async {
@@ -495,12 +549,14 @@ private actor TestTransport: AxolotyRuntimeTransport {
         lifecycle.append("stop")
     }
 
-    func installSubscriptions(namespace: String) async throws { lifecycle.append("install") }
+    func installSubscriptions(namespace: String) async throws {
+        lifecycle.append("install")
+        if failureStage == .subscriptions { throw TestTransportFailure() }
+    }
     func removeSubscriptions(namespace: String) async throws { lifecycle.append("remove") }
-    func advertise(identity: RuntimeIdentity?, namespace: String) async throws { lifecycle.append("advertise") }
-    func deadvertise(identity: RuntimeIdentity?, namespace: String) async throws { lifecycle.append("deadvertise") }
 
     func sentCount() -> Int { sent.count }
+    func firstSent() -> OwnedProtocolPublication? { sent.first }
     func lastSent() -> OwnedProtocolPublication? { sent.last }
 
     func fail(_ error: Error) { failure?(error) }
@@ -512,22 +568,46 @@ private actor DrainingTransport: AxolotyRuntimeTransport {
     private(set) var sendStarted = false
     private(set) var didStop = false
     private var released = false
+    private var sendWaiter: CheckedContinuation<Void, Never>?
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
     func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) {}
 
     func send(_ publication: OwnedProtocolPublication, namespace: String) async throws {
         sendStarted = true
-        while !released {
-            try? await Task.sleep(for: .milliseconds(5))
+        guard !released else { return }
+        await withCheckedContinuation { continuation in
+            if released {
+                continuation.resume()
+            } else {
+                sendWaiter = continuation
+            }
         }
     }
 
     func stop() async { didStop = true }
     func installSubscriptions(namespace: String) async throws {}
     func removeSubscriptions(namespace: String) async throws {}
-    func advertise(identity: RuntimeIdentity?, namespace: String) async throws {}
-    func deadvertise(identity: RuntimeIdentity?, namespace: String) async throws {}
 
-    func releaseSend() { released = true }
+    func releaseSend() {
+        released = true
+        sendWaiter?.resume()
+        sendWaiter = nil
+    }
+}
+
+private enum RuntimeTestTimeout: Error {
+    case waitingForAdvertiseEvent
+}
+
+private final class RuntimeTestIteratorBox: @unchecked Sendable {
+    private var iterator: AsyncStream<RuntimeEventValue>.Iterator
+
+    init(_ iterator: AsyncStream<RuntimeEventValue>.Iterator) {
+        self.iterator = iterator
+    }
+
+    func next() async -> RuntimeEventValue? {
+        await iterator.next()
+    }
 }

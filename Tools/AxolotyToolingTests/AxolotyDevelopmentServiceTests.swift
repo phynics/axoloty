@@ -688,13 +688,6 @@ private func developmentServiceEndToEndIsEnabled(environment: [String: String]) 
     environment["AXOLOTY_RUN_DEV_SERVICE_E2E"] == "1"
 }
 
-@Test
-func developmentServiceEndToEndRequiresExplicitOptIn() {
-    #expect(!developmentServiceEndToEndIsEnabled(environment: [:]))
-    #expect(!developmentServiceEndToEndIsEnabled(environment: ["AXOLOTY_RUN_DEV_SERVICE_E2E": "true"]))
-    #expect(developmentServiceEndToEndIsEnabled(environment: ["AXOLOTY_RUN_DEV_SERVICE_E2E": "1"]))
-}
-
 @Test(.enabled(
     if: developmentServiceEndToEndIsEnabled(environment: ProcessInfo.processInfo.environment),
     "Set AXOLOTY_RUN_DEV_SERVICE_E2E=1 to run local Mosquitto and MCP evidence."

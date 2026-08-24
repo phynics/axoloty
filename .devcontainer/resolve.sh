@@ -8,6 +8,7 @@ lock_file="$cache_dir/.resolve.flock"
 legacy_lock_dir="$cache_dir/.resolve.lock"
 legacy_marker="$legacy_lock_dir/.flock-v2"
 legacy_stale_seconds=${AXOLOTY_RESOLVE_LEGACY_STALE_SECONDS:-3600}
+package_path=${AXOLOTY_RESOLVE_PACKAGE_PATH:-.}
 
 mkdir -p "$cache_dir"
 command -v flock >/dev/null 2>&1 || {
@@ -44,4 +45,8 @@ mkdir "$legacy_lock_dir"
 mkdir "$legacy_marker"
 trap 'rmdir "$legacy_marker" "$legacy_lock_dir"' EXIT INT TERM
 
-swift package resolve --cache-path "$cache_dir"
+if [ "$package_path" = . ]; then
+    swift package resolve --cache-path "$cache_dir"
+else
+    swift package --package-path "$package_path" resolve --cache-path "$cache_dir"
+fi
