@@ -102,22 +102,26 @@ touch -d '2 hours ago' "$resolve_cache/.resolve.lock"
 cat > "$resolve_bin/swift" <<'SH'
 #!/bin/sh
 set -eu
-cache_dir=$4
+for argument do
+    cache_dir=$argument
+done
 if ! mkdir "$cache_dir/.resolve-active" 2>/dev/null; then
     : > "$AXOLOTY_RESOLVE_OVERLAP"
     exit 1
 fi
 trap 'rmdir "$cache_dir/.resolve-active"' EXIT INT TERM
 printf 'resolve\n' >> "$AXOLOTY_RESOLVE_CALLS"
+printf '%s\n' "$*" >> "$AXOLOTY_RESOLVE_ARGUMENTS"
 sleep 0.2
 SH
 chmod +x "$resolve_bin/swift"
+resolve_arguments="$TEMP_DIR/resolve-arguments"
 AXOLOTY_RESOLVE_CACHE_DIR="$resolve_cache" AXOLOTY_RESOLVE_CALLS="$resolve_calls" \
-AXOLOTY_RESOLVE_OVERLAP="$resolve_overlap" PATH="$resolve_bin:$PATH" \
+AXOLOTY_RESOLVE_ARGUMENTS="$resolve_arguments" AXOLOTY_RESOLVE_OVERLAP="$resolve_overlap" PATH="$resolve_bin:$PATH" \
     "$ROOT_DIR/.devcontainer/resolve.sh" &
 resolve_first=$!
 AXOLOTY_RESOLVE_CACHE_DIR="$resolve_cache" AXOLOTY_RESOLVE_CALLS="$resolve_calls" \
-AXOLOTY_RESOLVE_OVERLAP="$resolve_overlap" PATH="$resolve_bin:$PATH" \
+AXOLOTY_RESOLVE_ARGUMENTS="$resolve_arguments" AXOLOTY_RESOLVE_OVERLAP="$resolve_overlap" PATH="$resolve_bin:$PATH" \
     "$ROOT_DIR/.devcontainer/resolve.sh" &
 resolve_second=$!
 wait_bounded "$resolve_first" resolve-first 5
@@ -125,6 +129,12 @@ wait_bounded "$resolve_second" resolve-second 5
 [[ "$(wc -l < "$resolve_calls")" -eq 2 ]]
 [[ ! -e "$resolve_overlap" ]]
 [[ ! -d "$resolve_cache/.resolve.lock" ]]
+AXOLOTY_RESOLVE_CACHE_DIR="$resolve_cache" AXOLOTY_RESOLVE_CALLS="$resolve_calls" \
+AXOLOTY_RESOLVE_ARGUMENTS="$resolve_arguments" AXOLOTY_RESOLVE_OVERLAP="$resolve_overlap" \
+AXOLOTY_RESOLVE_PACKAGE_PATH="Packages/AxolotyStaticRuntime" PATH="$resolve_bin:$PATH" \
+    "$ROOT_DIR/.devcontainer/resolve.sh"
+grep -Fqx "package --package-path Packages/AxolotyStaticRuntime resolve --cache-path $resolve_cache" \
+    "$resolve_arguments"
 
 # The lock must be released after a direct devcontainer command exits.
 AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" "$ROOT_DIR/.devcontainer/run.sh" true

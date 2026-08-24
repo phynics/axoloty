@@ -43,6 +43,7 @@ SPM_CACHE_DIR ?= $(HOME)/.cache/coaty-swift/swiftpm/$(CACHE_NAMESPACE)
 AXOLOTY_ESP_IDF_CCACHE_DIR ?= $(HOME)/.cache/axoloty/esp-idf-ccache
 AXOLOTY_DEVICE_LEASE_ROOT ?= $(BUILD_CACHE_ROOT)/device-leases
 endif
+PACKAGE_PATH ?= .
 COVERAGE_BUILD_DIR ?= $(BUILD_DIR)-coverage
 TSAN_BUILD_DIR ?= $(BUILD_DIR)-tsan
 CONTAINER_MOUNTS := -v "$(CURDIR):$(WORKDIR)$(CONTAINER_MOUNT_SUFFIX)" -v "$(BUILD_DIR):$(WORKDIR)/.build$(CONTAINER_MOUNT_SUFFIX)" -v "$(SPM_CACHE_DIR):$(WORKDIR)/.swiftpm-cache$(CONTAINER_MOUNT_SUFFIX)"
@@ -102,7 +103,7 @@ shell_quote = $(SINGLE_QUOTE)$(subst $(SINGLE_QUOTE),$(SINGLE_QUOTE)$(DOUBLE_QUO
 help:
 	@printf '%s\n' \
 		'make image         Build the dev container image (includes ESP32-C6 toolchain)' \
-		'make resolve       Resolve Package.resolved using the shared SwiftPM cache' \
+		'make resolve PACKAGE_PATH=.  Resolve one package lockfile using the shared SwiftPM cache' \
 		'make worktree-bootstrap  Prepare dependency cache and validate Package.resolved' \
 		'make worktree-warm  Bootstrap and compile the current worktree' \
 		'make axoloty-tool AXOLOTY_TOOL_ARGS="--help"  Run the Swift tooling CLI in-container' \
@@ -197,8 +198,8 @@ image:
 
 resolve: image
 	@mkdir -p "$(SPM_CACHE_DIR)"
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh .devcontainer/resolve.sh
-	@git diff --exit-code -- Package.resolved
+	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" CONTAINER_ENV_VARS=AXOLOTY_RESOLVE_PACKAGE_PATH AXOLOTY_RESOLVE_PACKAGE_PATH=$(call shell_quote,$(PACKAGE_PATH)) .devcontainer/run.sh .devcontainer/resolve.sh
+	@git diff --exit-code -- "$(PACKAGE_PATH)/Package.resolved"
 
 worktree-bootstrap: resolve
 	@mkdir -p "$(BUILD_DIR)"
