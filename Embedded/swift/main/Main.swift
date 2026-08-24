@@ -351,7 +351,7 @@ func app_main() -> Int32 {
             )
             let outcome: ProtocolProcessOutcome
             if let frame = try? BorrowedProtocolFrame(topic: discoverMessage.topic, payload: discoverMessage.payload) {
-                outcome = processor.processInbound(frame, nowMS: 1, sink: &sink)
+                outcome = processor.processInbound(.profile(frame), nowMS: 1, sink: &sink)
             } else {
                 outcome = .rejected(.malformedFrame)
             }

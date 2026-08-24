@@ -191,7 +191,7 @@ private struct SharedProtocolTraceReplay<let capacity: Int>: ~Copyable {
         // trace without the object it claims to remove.
         let payload = "{\"object\":{\"objectId\":\"\(Self.uuidText(object))\",\"coreType\":\"CoatyObject\",\"objectType\":\"trace.Object\",\"name\":\"\(name)\"}}"
         try Self.withBorrowed(topic: topic, payload: payload) { frame in
-            _ = processor.processInbound(frame, nowMS: UInt32(time), sink: &sink)
+            _ = processor.processInbound(.profile(frame), nowMS: UInt32(time), sink: &sink)
         }
     }
 
@@ -219,7 +219,7 @@ private struct SharedProtocolTraceReplay<let capacity: Int>: ~Copyable {
         }
         return try Self.withBorrowed(topic: topic, payload: input.fixturePayload) { frame in
             let classifier = TraceClassifier(classification: input.routeClassification == .external ? .external : (input.routeClassification == .coaty ? .coaty : .coaty))
-            return processor.processInbound(frame, nowMS: UInt32(step.timeMilliseconds), classifier: classifier, sink: &sink)
+            return processor.processInbound(.profile(frame), nowMS: UInt32(step.timeMilliseconds), classifier: classifier, sink: &sink)
         }
     }
 
