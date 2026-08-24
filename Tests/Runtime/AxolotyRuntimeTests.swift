@@ -24,6 +24,18 @@ struct AxolotyRuntimeTests {
         ) == "coaty/3/test/ADV:Identity/44444444-4444-4444-8444-444444444444")
     }
 
+    @Test("MQTT topics preserve object-type filter separators")
+    func objectTypeFilterUsesDoubleColon() throws {
+        let id = try #require(UUID16(parsing: "44444444-4444-4444-8444-444444444444"))
+        let key = try ProtocolRoutingKey(capability: .advertise, sourceID: id)
+        #expect(MQTTBinding.topic(
+            for: key,
+            namespace: "test",
+            eventTypeFilter: Array("coaty.Identity".utf8),
+            eventTypeFilterKind: .objectType
+        ) == "coaty/3/test/ADV::coaty.Identity/44444444-4444-4444-8444-444444444444")
+    }
+
     @Test("builder seals typed event streams and responders")
     func builderSealsModernContracts() throws {
         let identity = try RuntimeIdentity(id: .zero, name: "inspector")

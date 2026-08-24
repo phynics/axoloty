@@ -9,6 +9,14 @@
 ///
 /// Topic format: `coaty/<version>/<namespace>/<eventType>[filter]/<sourceId>[/<correlationId>]`
 public struct TopicBuilder {
+    /// The separator used between an event type and its filter.
+    public enum EventTypeFilterKind: Sendable, Equatable {
+        /// A single-colon filter such as a core type, channel, or Call operation.
+        case direct
+        /// A double-colon filter for an object type.
+        case objectType
+    }
+
     private let buffer: UnsafeMutablePointer<UInt8>
     /// The total capacity of the buffer in bytes.
     public let capacity: Int
@@ -69,6 +77,15 @@ public struct TopicBuilder {
         try writeSeparator()
     }
 
+    /// Writes a dynamically supplied namespace level.
+    ///
+    /// - Parameter namespace: The borrowed UTF-8 namespace bytes.
+    /// - Throws: ``WireEncodeError`` if the destination buffer is too small.
+    public mutating func writeNamespace(_ namespace: ByteSlice) throws(WireEncodeError) {
+        try writeBytes(namespace)
+        try writeSeparator()
+    }
+
     /// Writes the event type level, with optional filter suffix.
     /// Produces e.g. `ADV:sensors` or `DSC`.
     ///
@@ -79,9 +96,27 @@ public struct TopicBuilder {
     public mutating func writeEventType(
         _ type: WireEventType, filter: ByteSlice? = nil
     ) throws(WireEncodeError) {
+        try writeEventType(type, filter: filter, filterKind: .direct)
+    }
+
+    /// Writes the event type level with an optional typed filter suffix.
+    ///
+    /// Produces e.g. `ADV:Identity` or `ADV::coaty.Identity`.
+    ///
+    /// - Parameters:
+    ///   - type: The Coaty event type to write.
+    ///   - filter: An optional borrowed event-type filter suffix.
+    ///   - filterKind: The separator required by the filter's wire meaning.
+    /// - Throws: ``WireEncodeError`` if the destination buffer is too small.
+    public mutating func writeEventType(
+        _ type: WireEventType,
+        filter: ByteSlice? = nil,
+        filterKind: EventTypeFilterKind
+    ) throws(WireEncodeError) {
         try writeBytes(type.wireCode)
         if let filter {
             try writeByte(0x3A) // ':'
+            if filterKind == .objectType { try writeByte(0x3A) }
             for i in 0..<filter.length {
                 if let b = filter.byte(at: i) { try writeByte(b) }
             }
@@ -138,6 +173,13 @@ public struct TopicBuilder {
         buffer[p + 32] = Self.hexChar(b.14 >> 4); buffer[p + 33] = Self.hexChar(b.14 & 0xF)
         buffer[p + 34] = Self.hexChar(b.15 >> 4); buffer[p + 35] = Self.hexChar(b.15 & 0xF)
         position += 36
+    }
+
+    @inline(__always)
+    private mutating func writeBytes(_ bytes: ByteSlice) throws(WireEncodeError) {
+        for index in 0..<bytes.length {
+            if let byte = bytes.byte(at: index) { try writeByte(byte) }
+        }
     }
 
     @inline(__always)
