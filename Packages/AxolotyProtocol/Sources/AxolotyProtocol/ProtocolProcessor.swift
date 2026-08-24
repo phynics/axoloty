@@ -303,6 +303,13 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         case remove(Int)
     }
 
+    /// The shared fixed-inline object transition prepared before sink
+    /// preflight. Both wire directions use this exact plan and commit path.
+    private enum ObjectTransitionResult {
+        case accepted(ObjectPlan, InlineArray<capacity, Bool>)
+        case rejected(ProtocolError.Code)
+    }
+
     private var associations: InlineArray<capacity, Association>
     private var objects: InlineArray<capacity, ObjectRecord>
     private var pending: InlineArray<capacity, PendingRecord>
@@ -506,34 +513,19 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         } else {
             plan = .none
         }
+        let objectTransition = planObjectTransition(
+            capability: frame.routingKey.capability,
+            payload: frame.payload,
+            sourceID: frame.routingKey.sourceID,
+            local: false
+        )
         let objectPlan: ObjectPlan
-        switch frame.routingKey.capability {
-        case .advertise:
-            let objectID = Self.advertisedObjectID(frame.payload) ?? frame.routingKey.sourceID
-            var existing = false
-            var activeCount = 0
-            var freeIndex: Int?
-            for index in 0..<capacity {
-                if objects[index].active {
-                    activeCount += 1
-                    if objects[index].sourceID == frame.routingKey.sourceID && objects[index].id == objectID { existing = true }
-                } else if freeIndex == nil {
-                    freeIndex = index
-                }
-            }
-            guard !existing else { return .rejected(.duplicate) }
-            guard activeCount < maximumObjects, let freeIndex else { return .rejected(.capacityExceeded) }
-            objectPlan = .insert(freeIndex, frame.routingKey.sourceID, objectID, false)
-        case .deadvertise:
-            let result = markDeadvertisedObjects(
-                frame.payload,
-                sourceID: frame.routingKey.sourceID,
-                into: &deadvertiseMask
-            )
-            guard result.valid, result.matched > 0 else { return .rejected(.malformedFrame) }
-            objectPlan = .none
-        default:
-            objectPlan = .none
+        switch objectTransition {
+        case .accepted(let value, let mask):
+            objectPlan = value
+            deadvertiseMask = mask
+        case .rejected(let code):
+            return .rejected(code)
         }
         // Classification and all rejection-only validation precede sink
         // capacity so unrelated routes and contradictory flags retain their
@@ -600,15 +592,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 pending[responsePlan.index].state = .resolved
             }
         }
-        apply(plan)
-        if frame.routingKey.capability == .deadvertise {
-            for index in 0..<capacity where deadvertiseMask[index] {
-                objects[index] = ObjectRecord()
-            }
-        } else {
-            apply(objectPlan)
-        }
-        generation &+= 1
+        commitTransition(associationPlan: plan, objectPlan: objectPlan, deadvertiseMask: deadvertiseMask)
         return .accepted
     }
 
@@ -656,43 +640,20 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         default:
             break
         }
+        let objectTransition = planObjectTransition(
+            capability: operation.capability,
+            payload: operation.payload,
+            sourceID: operation.sourceID,
+            local: true
+        )
         let objectPlan: ObjectPlan
         var deadvertiseMask = InlineArray<capacity, Bool>(repeating: false)
-        switch operation.capability {
-        case .advertise:
-            let objectID = Self.advertisedObjectID(operation.payload) ?? operation.sourceID
-            var existing = false
-            var activeCount = 0
-            var freeIndex: Int?
-            var replayIndex: Int?
-            for index in 0..<capacity {
-                if objects[index].active {
-                    activeCount += 1
-                    if objects[index].sourceID == operation.sourceID && objects[index].id == objectID {
-                        existing = true
-                        if objects[index].local && !objects[index].announced { replayIndex = index }
-                    }
-                } else if freeIndex == nil {
-                    freeIndex = index
-                }
-            }
-            if existing {
-                guard let replayIndex else { return .rejected(.duplicate) }
-                objectPlan = .replay(replayIndex)
-            } else {
-                guard activeCount < maximumObjects, let freeIndex else { return .rejected(.capacityExceeded) }
-                objectPlan = .insert(freeIndex, operation.sourceID, objectID, true)
-            }
-        case .deadvertise:
-            let result = markDeadvertisedObjects(
-                operation.payload,
-                sourceID: operation.sourceID,
-                into: &deadvertiseMask
-            )
-            guard result.valid, result.matched > 0 else { return .rejected(.malformedFrame) }
-            objectPlan = .none
-        default:
-            objectPlan = .none
+        switch objectTransition {
+        case .accepted(let value, let mask):
+            objectPlan = value
+            deadvertiseMask = mask
+        case .rejected(let code):
+            return .rejected(code)
         }
         let plan: AssociationPlan
         var routeClassification: ProtocolRouteClassification = .coaty
@@ -744,15 +705,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 state: .active(Self.requestKind(for: operation.capability))
             )
         }
-        apply(plan)
-        if operation.capability == .deadvertise {
-            for index in 0..<capacity where deadvertiseMask[index] {
-                objects[index] = ObjectRecord()
-            }
-        } else {
-            apply(objectPlan)
-        }
-        generation &+= 1
+        commitTransition(associationPlan: plan, objectPlan: objectPlan, deadvertiseMask: deadvertiseMask)
         return .accepted
     }
 
@@ -882,6 +835,63 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             return .accepted(.upsert(index, association), classification)
         }
         return .rejected(.capacityExceeded)
+    }
+
+    private func planObjectTransition(
+        capability: ProtocolCapability,
+        payload: ByteSlice,
+        sourceID: UUID16,
+        local: Bool
+    ) -> ObjectTransitionResult {
+        var deadvertiseMask = InlineArray<capacity, Bool>(repeating: false)
+        switch capability {
+        case .advertise:
+            let objectID = Self.advertisedObjectID(payload) ?? sourceID
+            var activeCount = 0
+            var freeIndex: Int?
+            var replayIndex: Int?
+            for index in 0..<capacity {
+                if objects[index].active {
+                    activeCount += 1
+                    guard objects[index].sourceID == sourceID, objects[index].id == objectID else { continue }
+                    if local && objects[index].local && !objects[index].announced {
+                        replayIndex = index
+                    } else {
+                        return .rejected(.duplicate)
+                    }
+                } else if freeIndex == nil {
+                    freeIndex = index
+                }
+            }
+            if let replayIndex {
+                return .accepted(.replay(replayIndex), deadvertiseMask)
+            }
+            guard activeCount < maximumObjects, let freeIndex else {
+                return .rejected(.capacityExceeded)
+            }
+            return .accepted(.insert(freeIndex, sourceID, objectID, local), deadvertiseMask)
+        case .deadvertise:
+            let result = markDeadvertisedObjects(payload, sourceID: sourceID, into: &deadvertiseMask)
+            guard result.valid, result.matched > 0 else {
+                return .rejected(.malformedFrame)
+            }
+            return .accepted(.none, deadvertiseMask)
+        default:
+            return .accepted(.none, deadvertiseMask)
+        }
+    }
+
+    private mutating func commitTransition(
+        associationPlan: AssociationPlan,
+        objectPlan: ObjectPlan,
+        deadvertiseMask: InlineArray<capacity, Bool>
+    ) {
+        apply(associationPlan)
+        for index in 0..<capacity where deadvertiseMask[index] {
+            objects[index] = ObjectRecord()
+        }
+        apply(objectPlan)
+        generation &+= 1
     }
 
     private mutating func apply(_ plan: AssociationPlan) {

@@ -164,6 +164,81 @@ struct ProtocolProcessorTests {
         #expect(processor.state.activeObjects == 0)
     }
 
+    @Test("Advertise, Deadvertise, and Associate retain paired atomic transitions")
+    func pairedTransitionPlanning() throws {
+        let sourceText = "00000000-0000-4000-8000-000000000001"
+        let source = try #require(UUID16(parsing: sourceText))
+        let objectID = "11111111-1111-4111-8111-111111111111"
+        let advertise = "{\"object\":{\"objectId\":\"\(objectID)\"}}"
+        let deadvertise = "{\"objectIds\":[\"\(objectID)\"]}"
+        let associate = "{\"ioSourceId\":\"\(sourceText)\",\"ioActorId\":\"00000000-0000-4000-8000-000000000002\",\"associatingRoute\":\"coaty/paired\"}"
+        var inbound = ProtocolProcessor<2>()
+        var outbound = ProtocolProcessor<2>()
+
+        let inboundAdvertise = try withBorrowedFrame(
+            topic: "coaty/3/test/ADV/\(sourceText)", payload: advertise
+        ) { frame in
+            var sink = InlineProtocolActionSink<1>()
+            return inbound.processInbound(frame, nowMS: 1, sink: &sink)
+        }
+        let outboundAdvertise = try advertise.withUTF8 { bytes in
+            var sink = InlineProtocolActionSink<2>()
+            let operation = try ProtocolLocalOperation(
+                capability: .advertise,
+                sourceID: source,
+                payload: ByteSlice(bytes: bytes.baseAddress!, length: bytes.count)
+            )
+            return outbound.processOutbound(
+                operation, sink: &sink
+            )
+        }
+        #expect(inboundAdvertise == .accepted)
+        #expect(outboundAdvertise == .accepted)
+        #expect(inbound.state.activeObjects == outbound.state.activeObjects)
+
+        let inboundDeadvertise = try withBorrowedFrame(
+            topic: "coaty/3/test/DAD/\(sourceText)", payload: deadvertise
+        ) { frame in
+            var sink = InlineProtocolActionSink<1>()
+            return inbound.processInbound(frame, nowMS: 2, sink: &sink)
+        }
+        let outboundDeadvertise = try deadvertise.withUTF8 { bytes in
+            var sink = InlineProtocolActionSink<1>()
+            let operation = try ProtocolLocalOperation(
+                capability: .deadvertise,
+                sourceID: source,
+                payload: ByteSlice(bytes: bytes.baseAddress!, length: bytes.count)
+            )
+            return outbound.processOutbound(
+                operation, sink: &sink
+            )
+        }
+        #expect(inboundDeadvertise == .accepted)
+        #expect(outboundDeadvertise == .accepted)
+        #expect(inbound.state.activeObjects == outbound.state.activeObjects)
+
+        let inboundAssociate = try withBorrowedFrame(
+            topic: "coaty/3/test/ASC/\(sourceText)", payload: associate
+        ) { frame in
+            var sink = InlineProtocolActionSink<1>()
+            return inbound.processInbound(frame, nowMS: 3, sink: &sink)
+        }
+        let outboundAssociate = try associate.withUTF8 { bytes in
+            var sink = InlineProtocolActionSink<1>()
+            let operation = try ProtocolLocalOperation(
+                capability: .associate,
+                sourceID: source,
+                payload: ByteSlice(bytes: bytes.baseAddress!, length: bytes.count)
+            )
+            return outbound.processOutbound(
+                operation, sink: &sink
+            )
+        }
+        #expect(inboundAssociate == .accepted)
+        #expect(outboundAssociate == .accepted)
+        #expect(inbound.state.activeAssociations == outbound.state.activeAssociations)
+    }
+
     @Test("subscription tokens reject stale generations and inactive entries")
     func subscriptionGenerationAndActivity() throws {
         let callback: ProtocolHandlerFunction = { _, _, _, _, _ in }
