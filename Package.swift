@@ -137,7 +137,6 @@ let package = Package(
                 "ProtocolTrace/ProtocolTraceCorpus.swift",
                 "ProtocolTrace/ProtocolTraceTests.swift",
                 "Infrastructure/TopicBuilderTests.swift",
-                "Logging/LogManagerTests.swift",
                 "Testing/AsyncWaiting.swift",
                 "Testing/AsyncWaitingTests.swift",
                 // Offline wire compatibility subjects are explicit here because
