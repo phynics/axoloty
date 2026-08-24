@@ -360,7 +360,7 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
     /// integrity and byte-exact offline reproduction; it is not live evidence
     /// of current release wire behavior.
     public static func releaseSnapshots(
-        source: String = "Tests/WireCompatibility/Fixtures",
+        source: String = "Tests/AxolotyTests/WireCompatibility/Fixtures",
         destination: String = ".testing/fixture-bundle",
         environment: [String: String] = [:]
     ) -> AxolotyCheckPlan {
@@ -453,7 +453,7 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
     ///   - destination: The generated fixture-bundle directory.
     ///   - consumerEnvironment: Settings forwarded to the semantic-version consumer gate.
     public static func checkpoint(
-        source: String = "Tests/WireCompatibility/Fixtures",
+        source: String = "Tests/AxolotyTests/WireCompatibility/Fixtures",
         destination: String = ".testing/fixture-bundle",
         consumerEnvironment: [String: String]
     ) -> AxolotyCheckPlan {
@@ -502,7 +502,7 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
     ///   - consumerEnvironment: Settings forwarded to the semantic-version consumer gate.
     public static func checkpointHardware(
         device: String = "/dev/ttyACM0",
-        source: String = "Tests/WireCompatibility/Fixtures",
+        source: String = "Tests/AxolotyTests/WireCompatibility/Fixtures",
         destination: String = ".testing/fixture-bundle",
         consumerEnvironment: [String: String] = [:]
     ) -> AxolotyCheckPlan {

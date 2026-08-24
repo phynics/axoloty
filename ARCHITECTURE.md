@@ -43,7 +43,7 @@ handler table; no router or endpoint compatibility state remains in
 `AxolotyWire`.
 
 The fixture-backed trace contract and host/static replay adapters under
-`Tests/ProtocolTrace` remain test-only. Both use the same production processor
+`Tests/AxolotyTests/ProtocolTrace` remain test-only. Both use the same production processor
 and fixed action sink seam, without promoting a second processor. Issue
 [#637](https://github.com/phynics/axoloty/issues/637) records that contract;
 [#639](https://github.com/phynics/axoloty/issues/639) is closed by the state

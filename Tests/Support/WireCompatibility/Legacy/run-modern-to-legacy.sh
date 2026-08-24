@@ -119,7 +119,7 @@ wait_for "legacy consumer readiness" "grep -q '\"state\":\"ready\"' '$CONSUMER_L
 
 # Run Axoloty producer (Swift test).
 env "$AXOLOTY_ENV=1" WIRE_BROKER_HOST=127.0.0.1 WIRE_BROKER_PORT=1883 WIRE_NAMESPACE="$NAMESPACE" \
-    swift test --filter "$AXOLOTY_TEST" 2>&1 | tee "$APPLICATION_LOG.raw"
+    swift test --target AxolotyLiveWireTests --filter "$AXOLOTY_TEST" 2>&1 | tee "$APPLICATION_LOG.raw"
 grep -E '^\{"state":' "$APPLICATION_LOG.raw" >"$APPLICATION_LOG" || true
 rm -f "$APPLICATION_LOG.raw"
 

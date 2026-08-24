@@ -143,60 +143,36 @@ let package = Package(
                 "Runtime/RuntimeMQTTClient.swift",
             ]
         ),
+        .target(
+            name: "AxolotyTestSupport",
+            path: "Tests/AxolotyTestSupport"
+        ),
         .testTarget(
             name: "AxolotyTests",
             dependencies: [
                 "Axoloty",
                 "AxolotyWire",
                 "AxolotyProtocol",
+                "AxolotyTestSupport",
                 .product(name: "ErrorKit", package: "ErrorKit"),
                 .product(name: "IkigaJSON", package: "swift-json"),
             ],
-            path: "Tests",
-            exclude: [
-                "AGENTS.md",
-                "AxolotyWire",
-                "ProtocolTrace/README.md",
-                "Support",
-                // These retained tests are intentionally outside the current
-                // target; some depend on host APIs no longer in the package.
-                // Keep each source explicit so a new test cannot become silent.
-                "Testing/StandardErrorCapture.swift",
-            ],
-            sources: [
-                "ProtocolTrace/ProtocolTrace.swift",
-                "ProtocolTrace/ProtocolTraceCorpus.swift",
-                "ProtocolTrace/ProtocolTraceTests.swift",
-                "Infrastructure/TopicBuilderTests.swift",
-                "Infrastructure/ErrorKitPolicyTests.swift",
-                "Testing/AsyncWaiting.swift",
-                "Testing/AsyncWaitingTests.swift",
-                // Offline wire compatibility subjects are explicit here because
-                // the target uses a source allow-list to keep broker and live
-                // producer tests out of ordinary verification.
-                "WireCompatibility/WireCaptureFixture.swift",
-                "WireCompatibility/WireCaptureFixtureTests.swift",
-                "WireCompatibility/WireCaptureContractTests.swift",
-                "WireCompatibility/EmbeddedHostInteroperabilityTests.swift",
-                // Live subjects remain available only to the explicit wire
-                // capture plan, where the broker and peer controls exist.
-                "WireCompatibility/IO/AxolotyIoAssociateTests.swift",
-                "WireCompatibility/Lifecycle/AxolotyLifecycleSubjectTests.swift",
-                "WireCompatibility/Reverse/AxolotyAdvertiseProducerTests.swift",
-                "WireCompatibility/Reverse/AxolotyAdvertiseConsumerTests.swift",
-                "WireCompatibility/Reverse/AxolotyCoreProducerTests.swift",
-                "WireCompatibility/Reverse/AxolotyCoreConsumerTests.swift",
-                "WireCompatibility/Reverse/AxolotyCoreRequestConsumerTests.swift",
-                "WireCompatibility/Reverse/AxolotyUpdateCompleteConsumerTests.swift",
-                "WireCompatibility/Reverse/AxolotyCallReturnConsumerTests.swift",
-                "WireCompatibility/Reverse/ModernConsumerSupport.swift",
-                "Runtime/AxolotyRuntimeTests.swift",
-            ],
+            path: "Tests/AxolotyTests",
             resources: [
                 .copy("ProtocolTrace/trace.schema.json"),
                 .copy("ProtocolTrace/Fixtures/family-seeds.json"),
-                .process("WireCompatibility/Fixtures"),
+                .copy("WireCompatibility/Fixtures"),
             ]
+        ),
+        .testTarget(
+            name: "AxolotyLiveWireTests",
+            dependencies: [
+                "Axoloty",
+                "AxolotyWire",
+                "AxolotyProtocol",
+                "AxolotyTestSupport",
+            ],
+            path: "Tests/AxolotyLiveWireTests"
         ),
         .testTarget(
             name: "AxolotyWireTests",

@@ -23,7 +23,7 @@ test("protocol-affecting globs cover wire codec and core types", () => {
     ["Source/IORouting/IoRouter.swift", true],
     ["Source/SensorThings/Sensor.swift", true],
     ["Source/Communication/Client/MQTTNIOClient.swift", true],
-    ["Tests/WireCompatibility/Fixtures/advertise.jsonl", true],
+    ["Tests/AxolotyTests/WireCompatibility/Fixtures/advertise.jsonl", true],
     ["Tests/Support/WireCompatibility/tool/src/capture.ts", true],
     ["Tests/Support/WireCompatibility/Live/run-coatyjs-core.sh", true],
     ["Tests/AxolotyWire/WireCodecTests.swift", true],

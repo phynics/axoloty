@@ -6,6 +6,18 @@ cannot be established in-process. CoatyJS 2.4.x is the wire-compatibility
 oracle. Legacy CoatySwift is useful historical evidence, but is not a required
 interop target.
 
+## Test target ownership
+
+Ordinary Swift tests live under `Tests/AxolotyTests` and are safe for the
+hardware-free verification path. Live interoperability subjects live under
+`Tests/AxolotyLiveWireTests`; every test there is environment-gated and the
+live runners select that target explicitly. Shared deadline and confirmation
+helpers live in the non-product `AxolotyTestSupport` target. `Tests/AxolotyWire`
+remains an independent package-boundary test target, while `Tests/Support`
+contains orchestration scripts and fixtures outside SwiftPM test discovery.
+Test targets use recursive directory ownership; individual Swift test files
+must not be added to a manifest source allowlist or exclusion list.
+
 The versioned, typed execution manifest is the sole source of truth for
 commands, filters, deadlines, expected duration, cadence, required local/CI
 gates, network/broker/hardware policy, resource ownership, isolation lanes,

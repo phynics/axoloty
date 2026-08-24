@@ -430,7 +430,7 @@ func checkpointContextMismatchPrecedesPlanAndMetadataCommands() throws {
 @Test
 func checkpointPlanIncludesRequiredCompatibilityNodes() throws {
     let plan = AxolotyCheckPlan.checkpoint(
-        source: "Tests/WireCompatibility/Fixtures",
+        source: "Tests/AxolotyTests/WireCompatibility/Fixtures",
         destination: ".testing/fixture-bundle",
         consumerEnvironment: [:]
     )
@@ -442,7 +442,7 @@ func checkpointPlanIncludesRequiredCompatibilityNodes() throws {
     #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-embedded" })
 
     let hardwarePlan = AxolotyCheckPlan.checkpointHardware(
-        source: "Tests/WireCompatibility/Fixtures",
+        source: "Tests/AxolotyTests/WireCompatibility/Fixtures",
         destination: ".testing/fixture-bundle"
     )
     #expect(!hardwarePlan.nodes.contains { $0.name == "integration-tests" })

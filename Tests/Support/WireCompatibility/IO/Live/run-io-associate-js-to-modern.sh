@@ -70,7 +70,7 @@ runtime run -d -t --name "$CONSUMER" --network "$NETWORK" \
     -e WIRE_BROKER_PORT=1883 -e WIRE_NAMESPACE=wire-compat-v1 \
     -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
     "$DEV_IMAGE" swift test -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
-    --cache-path /swiftpm-cache --disable-automatic-resolution --filter AxolotyIoAssociateTests >/dev/null
+    --cache-path /swiftpm-cache --disable-automatic-resolution --target AxolotyLiveWireTests --filter AxolotyIoAssociateTests >/dev/null
 
 for _ in $(seq 1 240); do
     runtime logs "$CONSUMER" >"$CONSUMER_LOG" 2>&1

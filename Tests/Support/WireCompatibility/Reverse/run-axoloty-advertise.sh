@@ -80,7 +80,7 @@ runtime run --rm --network "$NETWORK" -v "$ROOT_DIR:/workspace" -v "$OUTPUT_DIR:
     -e WIRE_PEER_ACK_FILE="/artifacts/peer-acks/$ACK_BASENAME" -e WIRE_PEER_ACK_TOKEN="$ACK_TOKEN" \
     -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
     "$DEV_IMAGE" swift test -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
-    --skip-build --cache-path /swiftpm-cache --disable-automatic-resolution --filter AxolotyAdvertiseProducerTests
+    --skip-build --cache-path /swiftpm-cache --disable-automatic-resolution --target AxolotyLiveWireTests --filter AxolotyAdvertiseProducerTests
 
 sleep 0.5
 runtime stop -t 1 "$PROBE" >/dev/null || true

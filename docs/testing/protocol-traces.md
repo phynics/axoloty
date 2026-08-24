@@ -3,7 +3,8 @@
 This directory owns the versioned, test-only trace contract for G2. A trace
 records prior state, capabilities, finite limits, logical time, fixture input,
 the local operation boundary, normalized actions, structured rejection, and
-next state. The JSON schema is [`trace.schema.json`](trace.schema.json).
+next state. The JSON schema is
+[`trace.schema.json`](../../Tests/AxolotyTests/ProtocolTrace/trace.schema.json).
 
 The corpus has fixture-backed accepted and genuinely malformed cases for each
 of the thirteen Coaty Core wire families, plus bounded saturation, duplicate,

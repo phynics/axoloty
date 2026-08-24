@@ -46,7 +46,7 @@ harness to fall back to.
 
 **Axoloty (modern Swift) is the live subject** for two scenarios —
 `run-lifecycle-call-return.sh` (via `AxolotyLifecycleSubjectTests.swift` in
-`Tests/WireCompatibility/Lifecycle/`, and CoatyJS's
+`Tests/AxolotyLiveWireTests/Lifecycle/`, and CoatyJS's
 `Tests/Support/WireCompatibility/Reverse/coatyjs-core-consumer.js` acting as a
 deliberately misbehaving Call responder):
 

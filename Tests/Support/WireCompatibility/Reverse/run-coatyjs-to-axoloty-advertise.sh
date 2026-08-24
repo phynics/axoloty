@@ -63,7 +63,7 @@ runtime run -d --name "$CONSUMER" --network "$NETWORK" \
     -e WIRE_BROKER_PORT=1883 -e WIRE_NAMESPACE=wire-compat-v1 -e WIRE_READY_FILE=/signals/ready \
     -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
     "$DEV_IMAGE" swift test -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
-    --cache-path /workspace/.swiftpm-cache --disable-automatic-resolution --filter AxolotyAdvertiseConsumerTests >/dev/null
+    --cache-path /workspace/.swiftpm-cache --disable-automatic-resolution --target AxolotyLiveWireTests --filter AxolotyAdvertiseConsumerTests >/dev/null
 
 for _ in $(seq 1 "$CONSUMER_READY_TIMEOUT_SECONDS"); do
     test -s "$SIGNAL_DIR/ready" && break

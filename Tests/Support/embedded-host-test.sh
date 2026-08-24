@@ -40,7 +40,7 @@ const { captureSerial } = await import(process.env.SERIAL_TOOLS);
 const { createEmbeddedAgentValidator } = await import(process.env.AGENT_VALIDATOR);
 const [device, role, direction, output, host, port, readyFile] = process.argv.slice(2);
 const validator = createEmbeddedAgentValidator();
-const child = spawn("swift", ["test", "--scratch-path", process.env.SWIFT_BUILD, "--filter", "EmbeddedHostInteroperabilityTests"], {
+const child = spawn("swift", ["test", "--target", "AxolotyLiveWireTests", "--scratch-path", process.env.SWIFT_BUILD, "--filter", "EmbeddedHostInteroperabilityTests"], {
   cwd: process.env.ROOT,
   env: { ...process.env, WIRE_EMBEDDED_HOST_LIVE: "1", WIRE_EMBEDDED_HOST_DIRECTION: direction,
     WIRE_BROKER_HOST: host, WIRE_BROKER_PORT: port, WIRE_READY_FILE: readyFile },

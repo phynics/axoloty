@@ -5,7 +5,7 @@
 # lifecycle scenarios. Axoloty (modern Swift) is the Call/Return initiator
 # against pinned CoatyJS 2.4.0 as a (deliberately misbehaving, for these
 # scenarios) Call responder. See
-# Tests/WireCompatibility/Lifecycle/AxolotyLifecycleSubjectTests.swift for the
+# Tests/AxolotyLiveWireTests/Lifecycle/AxolotyLifecycleSubjectTests.swift for the
 # Axoloty side and
 # Tests/Support/WireCompatibility/Reverse/coatyjs-core-consumer.js for the CoatyJS
 # responder side.
@@ -136,7 +136,7 @@ runtime run -d -t --name "$SUBJECT" --network "$NETWORK" \
     -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
     "$DEV_IMAGE" swift test -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
     --skip-build --scratch-path /swift-build --cache-path /swiftpm-cache --disable-automatic-resolution \
-    --filter "$TEST_NAME" >/dev/null
+    --target AxolotyLiveWireTests --filter "$TEST_NAME" >/dev/null
 
 # Wait for the Swift test to complete.
 if ! runtime_bounded wait "$SUBJECT" >/dev/null; then
