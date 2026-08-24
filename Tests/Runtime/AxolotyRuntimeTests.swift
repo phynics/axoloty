@@ -338,13 +338,21 @@ struct AxolotyRuntimeTests {
         )
         try await runtime.start()
 
-        var iterator = stream.makeAsyncIterator()
+        let iterator = RuntimeTestIteratorBox(stream.makeAsyncIterator())
         let receipt = await runtime.receive(RuntimeInboundFrame(
             topic: "coaty/3/test/ADV:CoatyObject/22222222-2222-4222-8222-222222222222",
             payload: Array(#"{"object":{"objectId":"11111111-1111-4111-8111-111111111111","coreType":"CoatyObject","objectType":"com.coaty.test.WireFixture","name":"wire-fixture"}}"#.utf8)
         ))
         #expect(receipt == .accepted)
-        let event = try #require(await iterator.next())
+        let event = try await withThrowingTaskGroup(of: RuntimeEventValue?.self) { group in
+            group.addTask { await iterator.next() }
+            group.addTask {
+                try await Task.sleep(for: .seconds(2))
+                throw RuntimeTestTimeout.waitingForAdvertiseEvent
+            }
+            defer { group.cancelAll() }
+            return try #require(try await group.next() ?? nil)
+        }
         #expect(event.context.sourceID == UUID16(parsing: "22222222-2222-4222-8222-222222222222"))
         #expect(String(decoding: event.value, as: UTF8.self).contains("com.coaty.test.WireFixture"))
         await runtime.stop()
@@ -507,7 +515,8 @@ private actor DrainingTransport: AxolotyRuntimeTransport {
     func send(_ publication: OwnedProtocolPublication, namespace: String) async throws {
         sendStarted = true
         while !released {
-            try? await Task.sleep(for: .milliseconds(5))
+            try Task.checkCancellation()
+            try await Task.sleep(for: .milliseconds(5))
         }
     }
 
@@ -518,4 +527,20 @@ private actor DrainingTransport: AxolotyRuntimeTransport {
     func deadvertise(identity: RuntimeIdentity?, namespace: String) async throws {}
 
     func releaseSend() { released = true }
+}
+
+private enum RuntimeTestTimeout: Error {
+    case waitingForAdvertiseEvent
+}
+
+private final class RuntimeTestIteratorBox: @unchecked Sendable {
+    private var iterator: AsyncStream<RuntimeEventValue>.Iterator
+
+    init(_ iterator: AsyncStream<RuntimeEventValue>.Iterator) {
+        self.iterator = iterator
+    }
+
+    func next() async -> RuntimeEventValue? {
+        await iterator.next()
+    }
 }
