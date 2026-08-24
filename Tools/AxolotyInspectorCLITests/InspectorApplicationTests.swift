@@ -209,7 +209,7 @@ final class FakeInspectorSession: InspectorSession {
         deadvertiseContinuation?.finish()
     }
 
-    func discoverStartedSignal() -> OneShotPhase {
+    fileprivate func discoverStartedSignal() -> OneShotPhase {
         discoverStartedPhase
     }
 
