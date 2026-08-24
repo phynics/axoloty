@@ -6,12 +6,17 @@ Run the live lifecycle matrix from the repository root:
 Tests/Support/WireCompatibility/Lifecycle/Live/run-lifecycle-matrix.sh
 ```
 
-Every scenario gets a retained `manifest.json` and `verifier.log` under
-`.testing/wire/lifecycle/<scenario>/`. An executed result must contain both a
-JSONL application log and a lossless MQTT capture. The harness has explicit
-deadlines for broker subscription, application readiness, identity advertisement,
-and last-will observation; polling is only a transport mechanism, never the
-assertion.
+Every invocation gets a run-scoped directory under
+`.testing/wire/lifecycle/<run-id>/<scenario>/`. It retains `manifest.json`, a
+lossless `verifier.log`, streamed phase/PID/progress diagnostics, and before,
+after, and final process/container inventories. An executed result must contain
+both a JSONL application log and a lossless MQTT capture. Each scenario runs in
+an owned process group with a monotonic 600-second wall bound and a
+120-second no-progress bound (override with `WIRE_LIFECYCLE_WALL_SECONDS`,
+`WIRE_LIFECYCLE_NO_PROGRESS_SECONDS`, and the grace/reap timing variables for
+offline tests). A timed-out group receives TERM, then KILL, and is boundedly
+reaped; labeled runtime objects are removed only when their run and scenario
+labels match.
 
 Nine of the eleven catalog scenarios are executable, all verified end-to-end
 (not merely syntax-checked). All runners are now containerized — broker,

@@ -112,6 +112,12 @@ func checkPlanPrintsStableJSON() {
         "support-wire-resolution", "support-wire-isolation", "support-benchmark-corpus",
         "support-benchmark-size", "support-benchmark-wire", "support-benchmark-bounds",
         "support-budget-manifest", "support-node-tests", "support-tier-contract",
+        "support-protocol-package-self-test", "support-object-model-package-self-test",
+        "support-object-model-evidence-self-test", "support-wire-state-self-test",
+        "support-object-boundary-self-test", "support-g4-package-boundary-self-test",
+        "support-g4-consumer-boundary-self-test", "support-wire-distribution-self-test",
+        "support-benchmark-allocation-self-test", "support-embedded-linker-self-test",
+        "support-embedded-runtime-identity-self-test", "support-package-layout-self-test",
     ]
     #if os(Linux)
     expectedNames += [
@@ -130,7 +136,7 @@ func checkPlanPrintsStableJSON() {
     #expect(plan?.nodes.first(where: { $0.name == "test-tooling" })?.command.arguments == [
         "test", "-Xswiftc", "-warnings-as-errors", "--cache-path", ".swiftpm-cache",
         "--disable-automatic-resolution", "--filter",
-        "AxolotyCommandDispatcherTests|AxolotyTimingTests|AxolotyDeviceLeaseTests|AxolotyDevelopmentServiceTests|AxolotyMQTTServiceTests|AxolotyServeParserTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyMCPTests",
+        "AxolotyCommandDispatcherTests|AxolotyTimingTests|AxolotyDeviceLeaseTests|AxolotyResourceLeaseTests|AxolotyDevelopmentServiceTests|AxolotyMQTTServiceTests|AxolotyServeParserTests|RepositoryAuthorityTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyMCPTests",
     ])
     #expect(plan?.nodes.allSatisfy { timeout in
         guard let seconds = timeout.command.timeoutSeconds else { return false }
@@ -177,6 +183,8 @@ func canonicalManifestDefinesVerifyRootsAndBoundedTestOne() throws {
     #expect(manifest.ciRequiredGates.allSatisfy { gate in manifest.nodes.contains { $0.id == gate } })
     #expect(manifest.testOneCommand(filter: "suite;touch /tmp/injected").arguments.last == "suite;touch /tmp/injected")
     #expect(manifest.testOne.timeoutSeconds > 0)
+    #expect(try manifest.plan(tier: "unit").deadlineSeconds == 1_800)
+    #expect(try manifest.plan(named: "verify", ci: true).deadlineSeconds == 4_800)
 }
 
 @Test
@@ -235,7 +243,8 @@ func verifyPlanIncludesStaticSupportWithoutRecursiveCoverageGate() throws {
     let ci = try manifest.plan(named: "verify", ci: true)
     #expect(ordinary.nodes.contains { $0.name == "support-tier-contract" })
     #expect(ordinary.nodes.contains { $0.name == "no-anycodable" })
-    #expect(ordinary.nodes.contains { $0.name == "logging-global" })
+    #expect(!ordinary.nodes.contains { $0.name == "integration-tests" })
+    #expect(!ordinary.nodes.contains { $0.name == "logging-global" })
     #expect(!ordinary.nodes.contains { $0.name == "coverage-check" })
     #expect(!ci.nodes.contains { $0.name == "coverage-check" })
 }
@@ -419,15 +428,15 @@ func checkpointContextMismatchPrecedesPlanAndMetadataCommands() throws {
 }
 
 @Test
-func checkpointPlanIncludesRequiredIntegrationAndCompatibilityNodes() throws {
+func checkpointPlanIncludesRequiredCompatibilityNodes() throws {
     let plan = AxolotyCheckPlan.checkpoint(
         source: "Tests/WireCompatibility/Fixtures",
         destination: ".testing/fixture-bundle",
         consumerEnvironment: [:]
     )
 
-    #expect(plan.nodes.contains { $0.name == "integration-tests" })
-    #expect(plan.nodes.contains { $0.name == "logging-global" })
+    #expect(!plan.nodes.contains { $0.name == "integration-tests" })
+    #expect(!plan.nodes.contains { $0.name == "logging-global" })
     #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-host" })
     #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-sanitized" })
     #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-embedded" })
@@ -436,8 +445,8 @@ func checkpointPlanIncludesRequiredIntegrationAndCompatibilityNodes() throws {
         source: "Tests/WireCompatibility/Fixtures",
         destination: ".testing/fixture-bundle"
     )
-    #expect(hardwarePlan.nodes.contains { $0.name == "integration-tests" })
-    #expect(hardwarePlan.nodes.contains { $0.name == "logging-global" })
+    #expect(!hardwarePlan.nodes.contains { $0.name == "integration-tests" })
+    #expect(!hardwarePlan.nodes.contains { $0.name == "logging-global" })
     #expect(hardwarePlan.nodes.contains { $0.name == "g3-object-model-evidence-host" })
     #expect(hardwarePlan.nodes.contains { $0.name == "g3-object-model-evidence-sanitized" })
     #expect(hardwarePlan.nodes.contains { $0.name == "g3-object-model-evidence-embedded" })
@@ -497,9 +506,9 @@ func checkpointManifestRecordsAllRequiredReleaseGatesInOrder() throws {
 
     #expect(manifest.schemaVersion == 2)
     #expect(manifest.releaseGates.map(\.id) == [
-        "smoke", "unit", "module", "property", "integration", "wire-offline", "wire-live", "g3-object-model", "g4-runtime",
+        "smoke", "unit", "module", "property", "wire-offline", "wire-live", "g3-object-model", "g4-runtime",
     ])
-    #expect(manifest.releaseGates.first { $0.id == "integration" }?.result == .executed)
+    #expect(manifest.releaseGates.first { $0.id == "integration" } == nil)
 }
 
 @Test
@@ -562,6 +571,33 @@ func wireCaptureRunsEveryNodeThroughSupportedBridge() throws {
 }
 
 @Test
+func wireCaptureForwardsInvocationScopedOutputToEveryNode() throws {
+    let bridge = try BridgeCapabilityFixture()
+    let runner = RecordingSequenceRunner()
+    let outputDirectory = ".testing/runs/concurrent-wire/wire"
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: runner,
+        fileSystem: StubFileSystem(paths: []),
+        environment: bridge.environment.merging([
+            "AXOLOTY_RUN_ID": "concurrent-wire",
+            "WIRE_OUTPUT_DIR": outputDirectory,
+        ]) { _, value in value }
+    )
+
+    let result = dispatcher.run(arguments: ["wire", "capture"])
+
+    #expect(result.exitCode == 0)
+    #expect(runner.commands.allSatisfy { $0.environment["WIRE_OUTPUT_DIR"] == outputDirectory })
+    #expect(runner.commands.allSatisfy { $0.environment["WIRE_RUN_ID"] == "concurrent-wire" })
+    #expect(runner.commands.last?.arguments == [
+        "Tests/Support/WireCompatibility/tool/dist/index.js",
+        "manifest",
+        outputDirectory,
+        "\(outputDirectory)/manifest.json",
+    ])
+}
+
+@Test
 func wireCaptureRejectsHostNodesWithoutBridgeBeforeStartingCommands() throws {
     let runner = RecordingSequenceRunner()
     let dispatcher = AxolotyCommandDispatcher(
@@ -618,12 +654,12 @@ func testToolingUsesOnlyItsCheckPlanDependencyClosure() throws {
     #expect(runner.commands.last?.arguments == [
         "test", "-Xswiftc", "-warnings-as-errors", "--cache-path", ".swiftpm-cache",
         "--disable-automatic-resolution", "--filter",
-        "AxolotyCommandDispatcherTests|AxolotyTimingTests|AxolotyDeviceLeaseTests|AxolotyDevelopmentServiceTests|AxolotyMQTTServiceTests|AxolotyServeParserTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyMCPTests",
+        "AxolotyCommandDispatcherTests|AxolotyTimingTests|AxolotyDeviceLeaseTests|AxolotyResourceLeaseTests|AxolotyDevelopmentServiceTests|AxolotyMQTTServiceTests|AxolotyServeParserTests|RepositoryAuthorityTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyMCPTests",
     ])
 }
 
 @Test
-func integrationTestStartsBrokerBeforeTransportTests() throws {
+func integrationCommandReportsRetirementWithoutRunningAProcess() {
     let runner = StubIntegrationRunner(result: AxolotyCheckCommandResult(exitCode: 0, standardOutput: "passed"))
     let dispatcher = AxolotyCommandDispatcher(
         integrationRunner: runner,
@@ -632,15 +668,14 @@ func integrationTestStartsBrokerBeforeTransportTests() throws {
     )
 
     let result = dispatcher.run(arguments: ["test", "integration"])
-    let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
 
-    #expect(result.exitCode == 0)
-    #expect(manifest.results.map(\.name) == ["integration-tests"])
-    #expect(manifest.results.first?.command?.standardOutput == "passed")
+    #expect(result.exitCode == 69)
+    #expect(result.standardOutput.isEmpty)
+    #expect(result.standardError.contains("broker-backed integration tier is retired"))
 }
 
 @Test
-func integrationContextMismatchPrecedesIntegrationRunnerEffects() throws {
+func retiredIntegrationCommandDoesNotRunTheInjectedRunner() {
     let integrationRunner = RecordingIntegrationRunner()
     let dispatcher = AxolotyCommandDispatcher(
         commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
@@ -650,13 +685,9 @@ func integrationContextMismatchPrecedesIntegrationRunnerEffects() throws {
 
     let result = dispatcher.run(arguments: ["test", "integration"])
 
-    #expect(result.exitCode == 64)
+    #expect(result.exitCode == 69)
     #expect(integrationRunner.runCount == 0)
-    #expect(try decodeDiagnostic(result) == AxolotyExecutionContextDiagnostic(
-        executable: "node",
-        declaredContext: .project,
-        detectedContext: .host
-    ))
+    #expect(result.standardError.contains("broker-backed integration tier is retired"))
 }
 
 private struct StubIntegrationRunner: AxolotyIntegrationRunning {

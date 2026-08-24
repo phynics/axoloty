@@ -8,45 +8,62 @@ import Foundation
 struct BroadcastTests {
 
     @Test
-    func testStreamCreatedButNotIterated() async {
-        let broadcast = Broadcast<Int>(mode: .event)
+    func testStreamCreatedButNotIteratedRegistersSubscriber() async throws {
+        let counter = SendableCounter()
+        let broadcast = Broadcast<Int>(mode: .event, onFirst: {
+            await counter.incFirst()
+        }, onLast: {
+            await counter.incLast()
+        })
         let stream = await broadcast.subscribe()
+
+        let countsAfterSubscribe = await counter.snapshot()
+        #expect(countsAfterSubscribe.firstCount == 1,
+                "creating a stream must register a subscriber before iteration")
+
+        await broadcast.finish()
+        let countsAfterFinish = await counter.snapshot()
+        #expect(countsAfterFinish.lastCount == 1,
+                "finishing an uniterated stream must release its subscriber")
         _ = stream
     }
 
     @Test
     func testDroppingUniteratedStreamFiresOnLast() async throws {
         let counter = SendableCounter()
-        let broadcast = Broadcast<Int>(mode: .event, onLast: { counter.incLast() })
+        let broadcast = Broadcast<Int>(mode: .event, onLast: {
+            await counter.incLast()
+        })
 
         var stream: AsyncStream<Int>? = await broadcast.subscribe()
         _ = stream
         stream = nil
 
-        try? await Task.sleep(for: .milliseconds(200))
+        try await withTimeout("uniterated stream termination") {
+            guard await counter.waitForLastCount(1) else { throw CancellationError() }
+        }
 
-        #expect(counter.lastCount == 1, "onLast should fire when an uniterated stream is dropped")
+        let counts = await counter.snapshot()
+        #expect(counts.lastCount == 1, "onLast should fire when an uniterated stream is dropped")
     }
 
     @Test
     func testOnLastFiresOnceWhenLastSubscriberLeaves() async throws {
         let counter = SendableCounter()
-        let broadcast = Broadcast<Int>(mode: .event, onLast: { counter.incLast() })
+        let broadcast = Broadcast<Int>(mode: .event, onLast: {
+            await counter.incLast()
+        })
 
         let stream = await broadcast.subscribe()
 
         let it = stream.makeAsyncIterator()
-        try? await Task.sleep(for: .milliseconds(100))
-
         let it2 = stream.makeAsyncIterator()
-        try? await Task.sleep(for: .milliseconds(100))
 
         await broadcast.finish()
-        try? await Task.sleep(for: .milliseconds(100))
 
-        withExtendedLifetime((it, it2)) {
-            #expect(counter.lastCount == 1, "onLast should fire once")
-        }
+        _ = (it, it2)
+        let counts = await counter.snapshot()
+        #expect(counts.lastCount == 1, "onLast should fire once")
     }
 
     @Test
@@ -57,7 +74,6 @@ struct BroadcastTests {
         await broadcast.send(42)
 
         var it = stream.makeAsyncIterator()
-
         await broadcast.send(99)
         await broadcast.finish()
 
@@ -77,7 +93,6 @@ struct BroadcastTests {
         await broadcast.send(42)
 
         var it = stream.makeAsyncIterator()
-        try? await Task.sleep(for: .milliseconds(150))
 
         await broadcast.finish()
 
@@ -125,7 +140,6 @@ struct BroadcastTests {
 
         await broadcast.send(42)
         await broadcast.finish()
-        try? await Task.sleep(for: .milliseconds(50))
 
         // After finish, the replay state is gone.
         let stream2 = await broadcast.subscribe()
@@ -155,8 +169,14 @@ struct BroadcastTests {
         await broadcast.send(30)
         await broadcast.finish()
 
-        let collected1 = await collectValues(&it1, timeout: .milliseconds(300))
-        let collected2 = await collectValues(&it2, timeout: .milliseconds(300))
+        var collected1: [Int] = []
+        while let value = await it1.next() {
+            collected1.append(value)
+        }
+        var collected2: [Int] = []
+        while let value = await it2.next() {
+            collected2.append(value)
+        }
 
         #expect(collected1 == [10, 20, 30])
         #expect(collected2 == [10, 20, 30])
@@ -168,7 +188,6 @@ struct BroadcastTests {
         let stream = await broadcast.subscribe()
 
         var it = stream.makeAsyncIterator()
-        try? await Task.sleep(for: .milliseconds(100))
 
         await broadcast.send(100)
         await broadcast.finish()
@@ -187,7 +206,6 @@ struct BroadcastTests {
         let stream = await broadcast.subscribe()
 
         var it1 = stream.makeAsyncIterator()
-        try? await Task.sleep(for: .milliseconds(100))
 
         await broadcast.send(1)
         await broadcast.finish()
@@ -201,7 +219,6 @@ struct BroadcastTests {
         // After finish, a new subscribe works.
         let stream2 = await broadcast.subscribe()
         var it2 = stream2.makeAsyncIterator()
-        try? await Task.sleep(for: .milliseconds(100))
 
         await broadcast.send(2)
         await broadcast.finish()
@@ -219,26 +236,37 @@ struct BroadcastTests {
         let stream = await broadcast.subscribe()
 
         let it = stream.makeAsyncIterator()
-        try? await Task.sleep(for: .milliseconds(100))
-
         let holder = AsyncStreamBox(it)
+        let started = CountGate()
+        let consumed = CountGate()
         let task = Task {
             var count = 0
-            while let _ = await holder.iterator.next() {
+            await started.mark()
+            while await holder.iterator.next() != nil {
                 count += 1
+                if count == 2 {
+                    await consumed.mark()
+                }
             }
             return count
         }
 
-        try? await Task.sleep(for: .milliseconds(50))
+        try await withTimeout("cancellable iterator start") {
+            guard await started.waitForCount(1) else { throw CancellationError() }
+        }
 
         await broadcast.send(1)
         await broadcast.send(2)
+        try await withTimeout("cancellable iterator consumes two values") {
+            guard await consumed.waitForCount(1) else { throw CancellationError() }
+        }
 
         task.cancel()
 
-        let count = await task.value
-        #expect(count >= 0)
+        let count = try await withTimeout("iterator cancellation completion") {
+            await task.value
+        }
+        #expect(count == 2, "cancellation should stop the iterator after the two delivered values")
     }
 
     /// Characterization: task cancellation mid-iteration fires `onLast` when
@@ -246,24 +274,32 @@ struct BroadcastTests {
     @Test
     func testCancellationFiresOnLastWhenLastIterator() async throws {
         let counter = SendableCounter()
-        let broadcast = Broadcast<Int>(mode: .event, onLast: { counter.incLast() })
+        let broadcast = Broadcast<Int>(mode: .event, onLast: {
+            await counter.incLast()
+        })
         let stream = await broadcast.subscribe()
 
         let it = stream.makeAsyncIterator()
-        try? await Task.sleep(for: .milliseconds(100))
-
         let holder = AsyncStreamBox(it)
+        let started = CountGate()
         let task = Task {
-            while let _ = await holder.iterator.next() {}
+            await started.mark()
+            while await holder.iterator.next() != nil {}
         }
 
-        try? await Task.sleep(for: .milliseconds(50))
+        try await withTimeout("cancellable last iterator start") {
+            guard await started.waitForCount(1) else { throw CancellationError() }
+        }
         task.cancel()
-        _ = await task.value
+        _ = try await withTimeout("cancelled last iterator completion") {
+            await task.value
+        }
 
-        try? await Task.sleep(for: .milliseconds(200))
-
-        #expect(counter.lastCount == 1, "onLast should fire when the last iterator is cancelled")
+        try await withTimeout("last iterator termination") {
+            guard await counter.waitForLastCount(1) else { throw CancellationError() }
+        }
+        let counts = await counter.snapshot()
+        #expect(counts.lastCount == 1, "onLast should fire when the last iterator is cancelled")
     }
 
     /// Characterization: `sendState` stores the value even before any
@@ -276,7 +312,6 @@ struct BroadcastTests {
 
         let stream = await broadcast.subscribe()
         var it = stream.makeAsyncIterator()
-        try? await Task.sleep(for: .milliseconds(100))
         await broadcast.finish()
 
         var values: [Int] = []
@@ -301,7 +336,6 @@ struct BroadcastTests {
 
         let stream = await broadcast.subscribe()
         var it = stream.makeAsyncIterator()
-        try? await Task.sleep(for: .milliseconds(50))
         await broadcast.finish()
 
         let value = await it.next()
@@ -311,15 +345,17 @@ struct BroadcastTests {
     @Test
     func testOnFirstFiresOnFirstSubscriber() async throws {
         let counter = SendableCounter()
-        let broadcast = Broadcast<Int>(mode: .event, onFirst: { counter.incFirst() })
+        let broadcast = Broadcast<Int>(mode: .event, onFirst: {
+            await counter.incFirst()
+        })
 
         let stream1 = await broadcast.subscribe()
-        try? await Task.sleep(for: .milliseconds(50))
-        #expect(counter.firstCount == 1, "onFirst should fire on first subscriber")
+        var counts = await counter.snapshot()
+        #expect(counts.firstCount == 1, "onFirst should fire on first subscriber")
 
         let stream2 = await broadcast.subscribe()
-        try? await Task.sleep(for: .milliseconds(50))
-        #expect(counter.firstCount == 1, "onFirst should NOT fire again for second subscriber")
+        counts = await counter.snapshot()
+        #expect(counts.firstCount == 1, "onFirst should NOT fire again for second subscriber")
 
         _ = stream1
         _ = stream2
@@ -328,54 +364,112 @@ struct BroadcastTests {
     @Test
     func testOnFirstRefiresAfterAllSubscribersLeave() async throws {
         let counter = SendableCounter()
-        let broadcast = Broadcast<Int>(mode: .event, onFirst: { counter.incFirst() })
+        let broadcast = Broadcast<Int>(mode: .event, onFirst: {
+            await counter.incFirst()
+        }, onLast: {
+            await counter.incLast()
+        })
 
         // First subscriber attaches → onFirst fires.
         var stream1: AsyncStream<Int>? = await broadcast.subscribe()
-        try? await Task.sleep(for: .milliseconds(50))
-        #expect(counter.firstCount == 1)
+        var counts = await counter.snapshot()
+        #expect(counts.firstCount == 1)
 
         // Drop the stream → onLast fires (nil), started resets.
         _ = stream1
         stream1 = nil
-        try? await Task.sleep(for: .milliseconds(200))
+        try await withTimeout("first subscriber termination") {
+            guard await counter.waitForLastCount(1) else { throw CancellationError() }
+        }
 
         // New subscriber → onFirst fires again.
         let stream2 = await broadcast.subscribe()
-        try? await Task.sleep(for: .milliseconds(50))
-        #expect(counter.firstCount == 2, "onFirst should fire again after all subscribers left")
+        counts = await counter.snapshot()
+        #expect(counts.firstCount == 2, "onFirst should fire again after all subscribers left")
 
         _ = stream2
     }
 
     @Test
     func testConcurrentYieldSubscribeTerminateUnderLoad() async throws {
-        let broadcast = Broadcast<Int>(mode: .event)
+        let subscriberCount = 10
+        let values = Array(0..<50)
+        let lifecycle = SendableCounter()
+        let subscribersReady = CountGate()
+        let finishGate = CountGate()
+        let received = LoadResults()
+        let broadcast = Broadcast<Int>(mode: .event, onFirst: {
+            await lifecycle.incFirst()
+        }, onLast: {
+            await lifecycle.incLast()
+        })
 
         await withTaskGroup(of: Void.self) { group in
-            // Subscribers come and go.
-            for _ in 0..<10 {
+            for subscriberID in 0..<subscriberCount {
                 group.addTask {
                     let stream = await broadcast.subscribe()
-                    var it = stream.makeAsyncIterator()
-                    try? await Task.sleep(for: .milliseconds(10))
-                    _ = await it.next()
+                    var iterator = stream.makeAsyncIterator()
+                    await subscribersReady.mark()
+
+                    var receivedValues: [Int] = []
+                    for _ in values {
+                        if let value = try? await nextValue(&iterator, timeout: .seconds(1)) {
+                            receivedValues.append(value)
+                        } else {
+                            break
+                        }
+                    }
+                    await finishGate.waitForCount(1)
+                    await received.record(subscriberID, values: receivedValues)
                 }
             }
-            // Yielders.
-            for i in 0..<50 {
-                group.addTask {
-                    await broadcast.send(i)
+
+            // Every subscriber must be registered before any producer starts.
+            let allSubscribersRegistered = (try? await withTimeout("all load-test subscribers register") {
+                guard await subscribersReady.waitForCount(subscriberCount) else {
+                    throw CancellationError()
+                }
+            }) != nil
+            #expect(allSubscribersRegistered, "all load-test subscribers must register before yielding")
+
+            let firstHookCompleted = (try? await withTimeout("load-test first-subscriber hook") {
+                guard await lifecycle.waitForFirstCount(1) else { throw CancellationError() }
+            }) != nil
+            #expect(firstHookCompleted, "the first-subscriber hook must complete during setup")
+
+            // Yield concurrently after registration. The event buffer is large
+            // enough for this bounded batch, so every subscriber has an exact
+            // delivery invariant to assert below.
+            await withTaskGroup(of: Void.self) { senders in
+                for value in values {
+                    senders.addTask {
+                        await broadcast.send(value)
+                    }
                 }
             }
-            // A finisher.
-            group.addTask {
-                try? await Task.sleep(for: .milliseconds(50))
-                await broadcast.finish()
-            }
+
+            // Finish only after every producer has returned. This makes the
+            // completion count and per-subscriber delivery set deterministic.
+            await broadcast.finish()
+            await finishGate.mark()
         }
 
-        // The test passes if it completes without deadlock or data-race trap.
+        let lifecycleCounts = await lifecycle.snapshot()
+        #expect(lifecycleCounts.firstCount == 1,
+                "concurrent registration must acquire one shared subscription")
+        #expect(lifecycleCounts.lastCount == 1,
+                "finish must release the shared subscription exactly once")
+
+        let snapshots = await received.snapshot()
+        #expect(snapshots.count == subscriberCount,
+                "every load-test subscriber must observe termination")
+        let expectedValues = Set(values)
+        for snapshot in snapshots {
+            #expect(snapshot.count == values.count,
+                    "each subscriber must receive every bounded load value")
+            #expect(Set(snapshot) == expectedValues,
+                    "each subscriber must receive the same value set")
+        }
     }
 }
 
@@ -436,7 +530,6 @@ struct BroadcastFamilyTests {
 
         let stream = await family.subscribe(for: "state-key")
         var it = stream.makeAsyncIterator()
-        try? await Task.sleep(for: .milliseconds(50))
         await family.finishAll()
 
         let value = await it.next()
@@ -448,18 +541,21 @@ struct BroadcastFamilyTests {
         let counter = SendableCounter()
         let family = BroadcastFamily<String, String>(
             mode: .event,
-            onFirst: { _ in counter.incFirst() },
-            onLast: { _ in counter.incLast() }
+            onFirst: { _ in await counter.incFirst() },
+            onLast: { _ in await counter.incLast() }
         )
 
         var stream: AsyncStream<String>? = await family.subscribe(for: "key1")
         _ = stream
-        try? await Task.sleep(for: .milliseconds(50))
-        #expect(counter.firstCount == 1, "onFirst should fire for key1")
+        var counts = await counter.snapshot()
+        #expect(counts.firstCount == 1, "onFirst should fire for key1")
 
         stream = nil
-        try? await Task.sleep(for: .milliseconds(200))
-        #expect(counter.lastCount == 1, "onLast should fire for key1")
+        try await withTimeout("family subscriber termination") {
+            guard await counter.waitForLastCount(1) else { throw CancellationError() }
+        }
+        counts = await counter.snapshot()
+        #expect(counts.lastCount == 1, "onLast should fire for key1")
     }
 
     @Test
@@ -500,14 +596,14 @@ struct BroadcastFamilyTests {
         let recorder = OrderRecorder()
 
         let broadcast = Broadcast<Int>(mode: .event, onFirst: {
-            recorder.record("onFirst")
+            await recorder.record("onFirst")
         })
 
         let stream = await broadcast.subscribe()
-        recorder.record("subscribeReturned")
+        await recorder.record("subscribeReturned")
 
         #expect(
-            recorder.events == ["onFirst", "subscribeReturned"],
+            await recorder.events == ["onFirst", "subscribeReturned"],
             "onFirst must complete before subscribe() returns"
         )
 
@@ -525,27 +621,34 @@ struct BroadcastFamilyEvictionTests {
     /// per-correlation-id families like `responseFamily`.
     @Test
     func testEvictOnLastRemovesBroadcastAfterLastSubscriberLeaves() async throws {
-        let family = BroadcastFamily<String, String>(mode: .event, evictOnLast: true)
+        let counter = SendableCounter()
+        let family = BroadcastFamily<String, String>(
+            mode: .state,
+            evictOnLast: true,
+            onLast: { _ in await counter.incLast() }
+        )
 
-        // Subscribe and drop the stream.
-        var stream: AsyncStream<String>? = await family.subscribe(for: "key1")
-        _ = stream
-        stream = nil
+        // State replay makes retained broadcasts observable: a non-evicting
+        // family would replay this retired value to the replacement below.
+        do {
+            let stream = await family.subscribe(for: "key1")
+            var iterator = stream.makeAsyncIterator()
+            await family.send("stale", for: "key1")
+            #expect(await iterator.next() == "stale")
+        }
 
-        // Wait for onLast to fire and evict.
-        try? await Task.sleep(for: .milliseconds(200))
+        try await withTimeout("eviction after last subscriber leaves") {
+            guard await counter.waitForLastCount(1) else { throw CancellationError() }
+        }
 
-        // Send to the evicted key — should be dropped (no Broadcast exists).
-        await family.send("dropped", for: "key1")
-
-        // Subscribe again — should create a new Broadcast.
+        // A replacement state broadcast must not replay the retired value.
         let stream2 = await family.subscribe(for: "key1")
         var it = stream2.makeAsyncIterator()
         await family.send("value2", for: "key1")
-        await family.finishAll()
 
         let value = await it.next()
-        #expect(value == "value2", "New subscriber after eviction should receive new values, not evicted ones")
+        #expect(value == "value2", "new subscriber after eviction should not receive a retired value")
+        await family.finishAll()
     }
 
     /// Simulates the response path: many unique correlation IDs are used
@@ -554,78 +657,145 @@ struct BroadcastFamilyEvictionTests {
     /// retain dead `Broadcast` instances.
     @Test
     func testResponseFamilyDoesNotRetainBroadcastsAcrossManyCorrelationIds() async throws {
-        let family = BroadcastFamily<String, String>(mode: .event, evictOnLast: true)
+        let counter = SendableCounter()
+        let family = BroadcastFamily<String, String>(
+            // State mode is intentional: replay turns a retained broadcast
+            // into an externally observable stale response while exercising
+            // the same family eviction dictionary.
+            mode: .state,
+            evictOnLast: true,
+            onLast: { _ in await counter.incLast() }
+        )
 
         for i in 0..<100 {
             let key = "corr-\(i)"
-            let stream = await family.subscribe(for: key)
-            var it = stream.makeAsyncIterator()
+            do {
+                let stream = await family.subscribe(for: key)
+                var iterator = stream.makeAsyncIterator()
 
-            await family.send("response-\(i)", for: key)
+                await family.send("response-\(i)", for: key)
 
-            let value = await it.next()
-            #expect(value == "response-\(i)")
-            // Iterator goes out of scope → onTermination → onLast → evict.
+                let value = await iterator.next()
+                #expect(value == "response-\(i)")
+                // Iterator goes out of scope → onTermination → onLast → evict.
+            }
         }
 
-        // Give eviction tasks time to run.
-        try? await Task.sleep(for: .milliseconds(300))
+        try await withTimeout("all correlation broadcasts evict") {
+            guard await counter.waitForLastCount(100) else { throw CancellationError() }
+        }
 
-        // The family should have zero retained Broadcasts (all evicted).
-        // We verify indirectly: sending to any old key should be a no-op.
-        await family.send("should-be-dropped", for: "corr-0")
-        await family.send("should-be-dropped", for: "corr-50")
-        await family.send("should-be-dropped", for: "corr-99")
-
-        // A fresh subscribe should still work.
-        let freshStream = await family.subscribe(for: "corr-fresh")
-        var freshIt = freshStream.makeAsyncIterator()
-        await family.send("fresh-value", for: "corr-fresh")
+        // If any old Broadcast remains in the family, this subscribe replays
+        // its stale response before the fresh value is sent.
+        let freshStream = await family.subscribe(for: "corr-0")
+        var freshIterator = freshStream.makeAsyncIterator()
+        await family.send("fresh-value", for: "corr-0")
+        let freshValue = await freshIterator.next()
+        #expect(freshValue == "fresh-value",
+                "evicted response broadcasts must not replay stale values")
         await family.finishAll()
-
-        let freshValue = await freshIt.next()
-        #expect(freshValue == "fresh-value")
     }
 }
 
 // MARK: - Helpers
 
-private final class SendableCounter: @unchecked Sendable {
+private actor SendableCounter {
+    struct Snapshot: Sendable {
+        let firstCount: Int
+        let lastCount: Int
+    }
+
     private(set) var firstCount = 0
     private(set) var lastCount = 0
-    func incFirst() { firstCount += 1 }
-    func incLast() { lastCount += 1 }
+    private let firstEvents: AsyncStream<Void>
+    private let lastEvents: AsyncStream<Void>
+    private let firstContinuation: AsyncStream<Void>.Continuation
+    private let lastContinuation: AsyncStream<Void>.Continuation
+
+    init() {
+        let first = AsyncStream<Void>.makeStream()
+        let last = AsyncStream<Void>.makeStream()
+        firstEvents = first.stream
+        firstContinuation = first.continuation
+        lastEvents = last.stream
+        lastContinuation = last.continuation
+    }
+
+    func incFirst() {
+        firstCount += 1
+        firstContinuation.yield()
+    }
+
+    func incLast() {
+        lastCount += 1
+        lastContinuation.yield()
+    }
+
+    func waitForFirstCount(_ expected: Int) async -> Bool {
+        guard firstCount < expected else { return true }
+        var iterator = firstEvents.makeAsyncIterator()
+        while firstCount < expected {
+            guard await iterator.next() != nil else { return false }
+        }
+        return true
+    }
+
+    func waitForLastCount(_ expected: Int) async -> Bool {
+        guard lastCount < expected else { return true }
+        var iterator = lastEvents.makeAsyncIterator()
+        while lastCount < expected {
+            guard await iterator.next() != nil else { return false }
+        }
+        return true
+    }
+
+    func snapshot() -> Snapshot {
+        Snapshot(firstCount: firstCount, lastCount: lastCount)
+    }
 }
 
-private final class OrderRecorder: @unchecked Sendable {
-    private var _events: [String] = []
-    private let lock = NSLock()
+private actor CountGate {
+    private var count = 0
+    private let events: AsyncStream<Void>
+    private let continuation: AsyncStream<Void>.Continuation
+
+    init() {
+        let stream = AsyncStream<Void>.makeStream()
+        events = stream.stream
+        continuation = stream.continuation
+    }
+
+    func mark() {
+        count += 1
+        continuation.yield()
+    }
+
+    func waitForCount(_ expected: Int) async -> Bool {
+        guard count < expected else { return true }
+        var iterator = events.makeAsyncIterator()
+        while count < expected {
+            guard await iterator.next() != nil else { return false }
+        }
+        return true
+    }
+}
+
+private actor LoadResults {
+    private var valuesBySubscriber: [Int: [Int]] = [:]
+
+    func record(_ subscriberID: Int, values: [Int]) {
+        valuesBySubscriber[subscriberID] = values
+    }
+
+    func snapshot() -> [[Int]] {
+        valuesBySubscriber.keys.sorted().compactMap { valuesBySubscriber[$0] }
+    }
+}
+
+private actor OrderRecorder {
+    private(set) var events: [String] = []
 
     func record(_ event: String) {
-        lock.lock()
-        _events.append(event)
-        lock.unlock()
+        events.append(event)
     }
-
-    var events: [String] {
-        lock.lock()
-        defer { lock.unlock() }
-        return _events
-    }
-}
-
-private func collectValues<T: Sendable>(
-    _ iterator: inout AsyncStream<T>.Iterator,
-    timeout: Duration
-) async -> [T] {
-    var values: [T] = []
-    let deadline = ContinuousClock.now.advanced(by: timeout)
-    while ContinuousClock.now < deadline {
-        if let v = await iterator.next() {
-            values.append(v)
-        } else {
-            break
-        }
-    }
-    return values
 }

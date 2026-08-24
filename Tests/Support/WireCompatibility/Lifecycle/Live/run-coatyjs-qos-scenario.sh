@@ -23,6 +23,11 @@ CAPTURE_READY="$OUT/coatyjs-$SCENARIO.capture-ready"
 DEADLINE_SECONDS="${WIRE_LIFECYCLE_DEADLINE_SECONDS:-30}"
 IDENTITY_ID="44444444-4444-4444-8444-000000000000"
 OBJECT_ID="55555555-5555-4555-8555-000000000000"
+RUNTIME_LABELS=(
+    --label "io.axoloty.managed-by=${WIRE_RUNTIME_MANAGED_BY:-axoloty-wire-lifecycle}"
+    --label "io.axoloty.run-id=${WIRE_RUNTIME_RUN_ID:-$ID}"
+    --label "io.axoloty.scenario=${WIRE_RUNTIME_SCENARIO:-$SCENARIO}"
+)
 
 deadline() { date +%s; }
 wait_for() {
@@ -44,18 +49,18 @@ trap cleanup EXIT INT TERM
 mkdir -p "$OUT"; rm -f "$CAPTURE" "$APPLICATION_LOG" "$CAPTURE_READY"
 podman build -t "$DEV" -f "$ROOT/.devcontainer/Dockerfile" "$ROOT"
 podman build -t "$JS" "$REF/coatyjs"
-podman network create "$NET" >/dev/null
-podman run -d --name "$BROKER" --network "$NET" \
+podman network create "$NET" "${RUNTIME_LABELS[@]}" >/dev/null
+podman run -d --name "$BROKER" --network "$NET" "${RUNTIME_LABELS[@]}" \
     -v "$LIVE/mosquitto.conf:/etc/mosquitto/wire.conf:ro" \
     "$DEV" mosquitto -c /etc/mosquitto/wire.conf >/dev/null
 wait_for "Mosquitto broker readiness" "podman exec '$BROKER' node -e 'const s=require(\"node:net\").createConnection({host:\"127.0.0.1\",port:1883},()=>s.end()); s.on(\"error\",()=>process.exit(1))' >/dev/null 2>&1"
 podman run -d --name "$PROBE" --network "$NET" -v "$ROOT:/workspace:ro" -v "$OUT:/artifacts" \
-    --entrypoint node --user 0 "$JS" /workspace/Tests/Support/WireCompatibility/tool/dist/index.js capture '#' "/artifacts/coatyjs-$SCENARIO.jsonl" \
+    --entrypoint node --user 0 "${RUNTIME_LABELS[@]}" "$JS" /workspace/Tests/Support/WireCompatibility/tool/dist/index.js capture '#' "/artifacts/coatyjs-$SCENARIO.jsonl" \
     --host "$BROKER" --producer coatyjs --producer-version 2.4.0 \
     --scenario "$SCENARIO" \
     --ready-file "/artifacts/${CAPTURE_READY##*/}" >/dev/null
 wait_for "capture probe subscription" "test -f '$CAPTURE_READY'"
-podman run --name "$SUBJECT" --network "$NET" --entrypoint node \
+podman run --name "$SUBJECT" --network "$NET" --entrypoint node "${RUNTIME_LABELS[@]}" \
     -v "$HERE/coatyjs-qos-runner.js:/agent/qos-runner.js:ro" \
     -e BROKER_URL="mqtt://$BROKER:1883" -e COATY_NAMESPACE="wire-lifecycle-$SCENARIO" \
     -e SCENARIO="$SCENARIO" -e IDENTITY_ID="$IDENTITY_ID" -e OBJECT_ID="$OBJECT_ID" \

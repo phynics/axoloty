@@ -13,6 +13,64 @@ struct AsyncWaitTimeoutError: Error, CustomStringConvertible {
     let description: String
 }
 
+private enum AsyncWaitResolution<Value: Sendable>: Sendable {
+    case operation(Result<Value, Error>)
+    case timeout(AsyncWaitTimeoutError)
+    case cancelled
+}
+
+/// Stores exactly one result for an unstructured async wait race.
+///
+/// The continuation is deliberately resumed outside the lock. A late
+/// operation or timer can still call ``resolve(_:)`` after the caller has
+/// returned, but it is ignored once another phase has won the race.
+private final class AsyncWaitResultBox<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<AsyncWaitResolution<Value>, Never>?
+    private var resolution: AsyncWaitResolution<Value>?
+
+    func install(
+        _ continuation: CheckedContinuation<AsyncWaitResolution<Value>, Never>
+    ) {
+        lock.lock()
+        if let resolution {
+            lock.unlock()
+            continuation.resume(returning: resolution)
+            return
+        }
+        self.continuation = continuation
+        lock.unlock()
+    }
+
+    func resolve(_ resolution: AsyncWaitResolution<Value>) {
+        lock.lock()
+        guard self.resolution == nil else {
+            lock.unlock()
+            return
+        }
+        self.resolution = resolution
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(returning: resolution)
+    }
+
+    func wait() async -> AsyncWaitResolution<Value> {
+        await withCheckedContinuation { continuation in
+            install(continuation)
+        }
+    }
+}
+
+private func timeoutError(
+    _ phase: String,
+    timeout: Duration
+) -> AsyncWaitTimeoutError {
+    AsyncWaitTimeoutError(
+        description: "Timed out after \(timeout) waiting for: \(phase)"
+    )
+}
+
 /// Polls `condition` until it returns `true`, or throws once `timeout` has
 /// elapsed since the call started.
 ///
@@ -44,9 +102,7 @@ func waitUntil(
             return
         }
         if clock.now >= deadline {
-            throw AsyncWaitTimeoutError(
-                description: "Timed out after \(timeout) waiting for: \(description)"
-            )
+            throw timeoutError(description, timeout: timeout)
         }
         try await Task.sleep(for: pollInterval)
     }
@@ -57,40 +113,69 @@ func waitUntil(
 /// delivers.
 ///
 /// The box is generic over `Element: Sendable` (not over the iterator type),
-/// so the `@Sendable` task-group closure captures `Element.Type` — which is
+/// so the `@Sendable` operation closure captures `Element.Type` — which is
 /// `Sendable` — rather than the non-`Sendable` iterator metatype that a
 /// generic `I: AsyncIteratorProtocol` parameter would introduce.
 ///
 /// - Throws: ``AsyncWaitTimeoutError`` if no value arrives before `timeout`,
 ///   or `CancellationError` if the stream finishes first.
+///
+/// If timeout or parent cancellation wins, the operation task is cancelled
+/// but is not awaited. This is required to keep a cancellation-resistant
+/// iterator from holding the caller's task open. In that case the passed
+/// iterator is deliberately left untouched; its owner must release the
+/// underlying stream/operation before attempting to use another iterator for
+/// the same stream.
 func nextValue<E: Sendable>(
     _ iterator: inout AsyncStream<E>.Iterator,
     timeout: Duration = .seconds(5)
 ) async throws -> E {
+    try Task.checkCancellation()
     let box = AsyncStreamBox(iterator)
-    defer { iterator = box.iterator }
-
-    return try await withThrowingTaskGroup(of: E.self) { group in
-        group.addTask {
-            guard let value = await box.iterator.next() else {
-                throw CancellationError()
-            }
-            return value
+    let resultBox = AsyncWaitResultBox<E>()
+    let operationTask = Task {
+        guard let value = await box.iterator.next() else {
+            resultBox.resolve(.operation(.failure(CancellationError())))
+            return
         }
-        group.addTask {
-            try await Task.sleep(for: timeout)
-            throw AsyncWaitTimeoutError(
-                description: "Timed out after \(timeout) waiting for the next stream value"
+        resultBox.resolve(.operation(.success(value)))
+    }
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: timeout)
+    let timeoutTask = Task {
+        do {
+            try await clock.sleep(until: deadline)
+            resultBox.resolve(
+                .timeout(timeoutError("the next stream value", timeout: timeout))
             )
+        } catch {
+            // The operation won the race or the parent task was cancelled.
         }
+    }
 
-        guard let value = try await group.next() else {
-            throw AsyncWaitTimeoutError(
-                description: "Timed out after \(timeout) waiting for the next stream value"
-            )
-        }
-        group.cancelAll()
-        return value
+    let resolution = await withTaskCancellationHandler(operation: {
+        await resultBox.wait()
+    }, onCancel: {
+        operationTask.cancel()
+        timeoutTask.cancel()
+        resultBox.resolve(.cancelled)
+    })
+
+    timeoutTask.cancel()
+    switch resolution {
+    case let .operation(result):
+        operationTask.cancel()
+        // An operation resolution is emitted as the final operation-task
+        // action. Awaiting it here makes copying the iterator back safe.
+        await operationTask.value
+        iterator = box.iterator
+        return try result.get()
+    case let .timeout(error):
+        operationTask.cancel()
+        throw error
+    case .cancelled:
+        operationTask.cancel()
+        throw CancellationError()
     }
 }
 
@@ -106,21 +191,44 @@ func withTimeout<T: Sendable>(
     timeout: Duration = .seconds(10),
     operation: @escaping @Sendable () async throws -> T
 ) async throws -> T {
-    try await withThrowingTaskGroup(of: T.self) { group in
-        group.addTask { try await operation() }
-        group.addTask {
-            try await Task.sleep(for: timeout)
-            throw AsyncWaitTimeoutError(
-                description: "Timed out after \(timeout) waiting for: \(description)"
-            )
+    try Task.checkCancellation()
+    let resultBox = AsyncWaitResultBox<T>()
+    let operationTask = Task {
+        do {
+            resultBox.resolve(.operation(.success(try await operation())))
+        } catch {
+            resultBox.resolve(.operation(.failure(error)))
         }
-        guard let value = try await group.next() else {
-            throw AsyncWaitTimeoutError(
-                description: "Timed out after \(timeout) waiting for: \(description)"
-            )
+    }
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: timeout)
+    let timeoutTask = Task {
+        do {
+            try await clock.sleep(until: deadline)
+            resultBox.resolve(.timeout(timeoutError(description, timeout: timeout)))
+        } catch {
+            // The operation won the race or the parent task was cancelled.
         }
-        group.cancelAll()
-        return value
+    }
+
+    let resolution = await withTaskCancellationHandler(operation: {
+        await resultBox.wait()
+    }, onCancel: {
+        operationTask.cancel()
+        timeoutTask.cancel()
+        resultBox.resolve(.cancelled)
+    })
+
+    timeoutTask.cancel()
+    operationTask.cancel()
+    switch resolution {
+    case let .operation(result):
+        await operationTask.value
+        return try result.get()
+    case let .timeout(error):
+        throw error
+    case .cancelled:
+        throw CancellationError()
     }
 }
 

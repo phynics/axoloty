@@ -411,16 +411,24 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
 
     private func markdownPaths() -> [String] {
         guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isDirectoryKey]) else { return [] }
-        return enumerator.compactMap { item -> String? in
-            guard let url = item as? URL else { return nil }
+        let generatedDirectories: Set<String> = [
+            ".build", ".git", ".swiftpm-cache", ".testing", ".worktree", "build", "node_modules"
+        ]
+        var paths: [String] = []
+        for case let url as URL in enumerator {
+            if generatedDirectories.contains(url.lastPathComponent) {
+                enumerator.skipDescendants()
+                continue
+            }
             let relative = url.path.replacingOccurrences(of: root.path + "/", with: "")
             let components = relative.split(separator: "/").map(String.init)
             guard url.pathExtension.lowercased() == "md",
-                  !components.contains(where: { [".git", ".build", "build", ".testing"].contains($0) }),
+                  !components.contains(where: generatedDirectories.contains),
                   !relative.hasPrefix("docs/releases/"),
-                  !relative.hasPrefix("docs/migration/") else { return nil }
-            return relative
-        }.sorted()
+                  !relative.hasPrefix("docs/migration/") else { continue }
+            paths.append(relative)
+        }
+        return paths.sorted()
     }
 
     private func markdownTargets(in content: String) -> [String] {

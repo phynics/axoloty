@@ -37,6 +37,65 @@ enum ModernConsumerSupport {
         FileHandle.standardError.write(Data((line + "\n").utf8))
     }
 
+    /// Waits for the peer process to confirm that it decoded the subject's
+    /// publication. Live producer subjects are orchestration participants,
+    /// not standalone wire assertions: local queue acceptance is insufficient
+    /// evidence when the broker or peer can silently drop traffic.
+    ///
+    /// The live runner supplies a run-scoped marker path and token. The peer
+    /// writes an atomic JSON marker only after its field-level assertion has
+    /// passed. Missing, stale, malformed, or mismatched markers remain a
+    /// bounded failure with enough context to identify the scenario and route
+    /// being exercised.
+    static func awaitPeerAcknowledgement(
+        environment: [String: String],
+        scenario: String,
+        context: String,
+        timeout: Duration = .seconds(30)
+    ) async throws {
+        guard let path = environment["WIRE_PEER_ACK_FILE"], !path.isEmpty else {
+            throw PeerAcknowledgementFailure(
+                reason: "missing WIRE_PEER_ACK_FILE",
+                scenario: scenario,
+                context: context
+            )
+        }
+        guard let token = environment["WIRE_PEER_ACK_TOKEN"], !token.isEmpty else {
+            throw PeerAcknowledgementFailure(
+                reason: "missing WIRE_PEER_ACK_TOKEN",
+                scenario: scenario,
+                context: context
+            )
+        }
+
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        var lastDiagnostic = "marker missing"
+        while clock.now < deadline {
+            if let data = try? Data(contentsOf: URL(fileURLWithPath: path)) {
+                do {
+                    let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                    let phase = object?["phase"] as? String
+                    let markerScenario = object?["scenario"] as? String
+                    let markerToken = object?["token"] as? String
+                    if phase == "peer-ack", markerScenario == scenario, markerToken == token {
+                        return
+                    }
+                    lastDiagnostic = "marker mismatch phase=\(phase ?? "nil") scenario=\(markerScenario ?? "nil")"
+                } catch {
+                    lastDiagnostic = "marker is not valid JSON"
+                }
+            }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+
+        throw PeerAcknowledgementFailure(
+            reason: "timed out waiting for peer acknowledgement (\(lastDiagnostic), file=\(path))",
+            scenario: scenario,
+            context: context
+        )
+    }
+
     static func next(
         from stream: RuntimeEventStream,
         timeout: Duration,
@@ -51,7 +110,7 @@ enum ModernConsumerSupport {
             }
             defer { group.cancelAll() }
             guard let value = try await group.next() ?? nil else {
-                throw AxolotyError.runtime(code: .timedOut, reason: "Timed out waiting for CoatyJS \\(scenario)")
+                throw AxolotyError.runtime(code: .timedOut, reason: "Timed out waiting for CoatyJS \(scenario)")
             }
             return value
         }
@@ -74,6 +133,16 @@ enum ModernConsumerSupport {
         var root: [String: Any] = ["object": object]
         if let privateData { root["privateData"] = privateData }
         return Array(try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys]))
+    }
+}
+
+private struct PeerAcknowledgementFailure: Error, CustomStringConvertible {
+    let reason: String
+    let scenario: String
+    let context: String
+
+    var description: String {
+        "Peer acknowledgement failure: \(reason); phase=peer-ack scenario=\(scenario) context=\(context)"
     }
 }
 

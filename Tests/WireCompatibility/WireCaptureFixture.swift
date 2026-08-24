@@ -4,7 +4,7 @@ import Foundation
 
 /// Loads provenance-bound offline wire captures without conflating them with
 /// live-wire artifacts.
-enum WireCaptureFixture {
+struct WireCaptureFixture {
     struct Record: Decodable {
         struct MQTT: Decodable {
             let topic: String

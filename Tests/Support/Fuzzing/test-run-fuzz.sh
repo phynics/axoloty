@@ -23,13 +23,61 @@ printf '%s\n' "$log_line" >> "${FAKE_RUNTIME_LOG}"
 if [[ "$*" == *'swift test'* && -n "${FAKE_RUNTIME_SLEEP_SECONDS:-}" ]]; then
     sleep "${FAKE_RUNTIME_SLEEP_SECONDS}"
 fi
+if [[ "$*" == *'swift test'* && "${FAKE_RUNTIME_HOSTILE_CHILD:-0}" == 1 ]]; then
+    (trap '' TERM INT; while :; do sleep 1; done) &
+    hostile_pid=$!
+    printf '%s\n' "$hostile_pid" > "${FAKE_RUNTIME_HOSTILE_PID_FILE}"
+    trap '' TERM INT
+    while :; do sleep 1; done
+fi
+if [[ "$*" == *'swift build'* && "${FAKE_RUNTIME_HOSTILE_BUILD:-0}" == 1 ]]; then
+    (trap '' TERM INT; while :; do sleep 1; done) &
+    hostile_pid=$!
+    printf '%s\n' "$hostile_pid" > "${FAKE_RUNTIME_HOSTILE_PID_FILE}"
+    trap '' TERM INT
+    while :; do sleep 1; done
+fi
+if [[ "$*" == *'swift test'* && "${FAKE_RUNTIME_ORPHAN_CHILD:-0}" == 1 ]]; then
+    (trap '' TERM INT; while :; do sleep 1; done) &
+    orphan_pid=$!
+    printf '%s\n' "$orphan_pid" > "${FAKE_RUNTIME_HOSTILE_PID_FILE}"
+fi
 if [[ "$*" == *'swift test'* ]]; then
+    if [[ "${FAKE_RUNTIME_EMPTY:-0}" == 1 ]]; then
+        printf 'warning: No matching test cases were run\n' >&2
+        printf '✔ Test run with 0 tests in 0 suites passed after 0.001 seconds.\n'
+        exit "${FAKE_RUNTIME_EXIT_CODE:-0}"
+    fi
+    if [[ "${FAKE_RUNTIME_XCTEST_ZERO_LINE:-0}" == 1 ]]; then
+        printf 'Test run with 0 tests in 0 suites passed after 0.001 seconds.\n'
+    fi
+    if [[ "${FAKE_RUNTIME_SKIPPED:-0}" == 1 ]]; then
+        printf '➜ Test fuzzCase() skipped.\n'
+    fi
+    printf '✔ Test run with 1 test in 1 suite passed after 0.001 seconds.\n'
     exit "${FAKE_RUNTIME_EXIT_CODE:-0}"
 else
     exit 0
 fi
 EOF
 chmod +x "$fake_runtime"
+
+# Used only by the ownership-failure regression below: every normal ps query is
+# delegated to the host tool, while the leader PGID query returns an invalid
+# value. The runner must then use bounded leader-only cleanup and never signal
+# the unvalidated group.
+fake_ps_dir="$TEMP_DIR/fake-ps-bin"
+mkdir -p "$fake_ps_dir"
+real_ps=$(command -v ps)
+cat > "$fake_ps_dir/ps" <<EOF
+#!/usr/bin/env bash
+if [[ "\$*" == *"-o pgid="* ]]; then
+    printf '999999\\n'
+else
+    exec "$real_ps" "\$@"
+fi
+EOF
+chmod +x "$fake_ps_dir/ps"
 
 manifest_path() {
     local dir="$1"
@@ -79,6 +127,64 @@ grep -qF -- '--cache-path .swiftpm-cache --disable-automatic-resolution' "$runti
 grep -qF -- '-v '"$ROOT_DIR/.swiftpm-cache"':/workspace/.swiftpm-cache' "$runtime_log"
 [[ "$(sha256sum "$ROOT_DIR/Package.resolved")" == "$resolved_hash" ]]
 
+# The XCTest compatibility line is allowed when the Swift Testing summary proves
+# that a real nonzero Swift Testing run executed.
+rm -f "$runtime_log"
+FAKE_RUNTIME_LOG="$runtime_log" \
+FAKE_RUNTIME_EXIT_CODE=0 \
+FAKE_RUNTIME_XCTEST_ZERO_LINE=1 \
+  "$ROOT_DIR/Tests/Support/Fuzzing/run-fuzz.sh" \
+    --runtime "$fake_runtime" \
+    --container \
+    --iterations 1 \
+    --seeds 1 \
+    --repetitions 1 \
+    --output "$TEMP_DIR/output-compatibility" \
+    --quiet
+manifest_c=$(manifest_path "$TEMP_DIR/output-compatibility")
+grep -qF '"status": "passed"' "$manifest_c"
+
+# A successful process that only reports an empty selection is a failed fuzz
+# case, even though Swift itself returned zero.
+rm -f "$runtime_log"
+set +e
+FAKE_RUNTIME_LOG="$runtime_log" \
+FAKE_RUNTIME_EMPTY=1 \
+FAKE_RUNTIME_EXIT_CODE=0 \
+  "$ROOT_DIR/Tests/Support/Fuzzing/run-fuzz.sh" \
+    --runtime "$fake_runtime" \
+    --container \
+    --iterations 1 \
+    --seeds 3 \
+    --repetitions 1 \
+    --output "$TEMP_DIR/output-empty" \
+    --quiet
+empty_status=$?
+set -e
+[[ "$empty_status" -ne 0 ]]
+manifest_e=$(manifest_path "$TEMP_DIR/output-empty")
+grep -qF '"status": "failed"' "$manifest_e"
+grep -qF $'\t65\t' "$TEMP_DIR/output-empty"/*/summary.tsv
+
+# A positive summary containing only skipped tests is not real fuzz execution.
+rm -f "$runtime_log"
+set +e
+FAKE_RUNTIME_LOG="$runtime_log" \
+FAKE_RUNTIME_SKIPPED=1 \
+FAKE_RUNTIME_EXIT_CODE=0 \
+  "$ROOT_DIR/Tests/Support/Fuzzing/run-fuzz.sh" \
+    --runtime "$fake_runtime" \
+    --container \
+    --iterations 1 \
+    --seeds 4 \
+    --repetitions 1 \
+    --output "$TEMP_DIR/output-skipped" \
+    --quiet
+skipped_status=$?
+set -e
+[[ "$skipped_status" -ne 0 ]]
+grep -qF $'\t65\t' "$TEMP_DIR/output-skipped"/*/summary.tsv
+
 # Failure path: a deliberately failing campaign finalizes the manifest with a failed status
 # and preserves per-case data consistent with the summary.tsv rows.
 rm -f "$runtime_log"
@@ -109,6 +215,134 @@ if grep -qF '"cases": []' "$manifest_f"; then
 fi
 summary_f="$TEMP_DIR/output-failure"/*/summary.tsv
 [[ "$(grep -c 'case-' $summary_f)" -eq 4 ]]
+
+# A TERM-resistant command and child must be contained by the case deadline and
+# process-group cleanup. The marker lets this self-test prove the hostile child
+# did not survive the campaign.
+hostile_pid_file="$TEMP_DIR/hostile-child.pid"
+rm -f "$runtime_log" "$hostile_pid_file"
+set +e
+FAKE_RUNTIME_LOG="$runtime_log" \
+FAKE_RUNTIME_EXIT_CODE=0 \
+FAKE_RUNTIME_HOSTILE_CHILD=1 \
+FAKE_RUNTIME_HOSTILE_PID_FILE="$hostile_pid_file" \
+AXOLOTY_FUZZ_PROGRESS_INTERVAL_SECONDS=1 \
+  "$ROOT_DIR/Tests/Support/Fuzzing/run-fuzz.sh" \
+    --runtime "$fake_runtime" \
+    --container \
+    --iterations 1 \
+    --seeds 7 \
+    --repetitions 1 \
+    --jobs 1 \
+    --case-timeout 2 \
+    --term-grace 1 \
+    --kill-grace 1 \
+    --output "$TEMP_DIR/output-hostile" \
+    --quiet
+hostile_status=$?
+set -e
+[[ "$hostile_status" -ne 0 ]]
+manifest_h=$(manifest_path "$TEMP_DIR/output-hostile")
+grep -qF '"status": "failed"' "$manifest_h"
+grep -qF $'\t124\t' "$TEMP_DIR/output-hostile"/*/summary.tsv
+grep -qF 'still running elapsed=' "$TEMP_DIR/output-hostile"/*/campaign.log
+if [[ -s "$hostile_pid_file" ]]; then
+    hostile_pid=$(cat "$hostile_pid_file")
+    if kill -0 "$hostile_pid" 2>/dev/null && [[ "$(ps -o stat= -p "$hostile_pid" 2>/dev/null | tr -d ' ')" != Z* ]]; then
+        echo "hostile fuzz child survived bounded cleanup: pid=$hostile_pid" >&2
+        exit 1
+    fi
+fi
+
+# The same containment applies to a worker's build before any seed is run.
+hostile_build_pid_file="$TEMP_DIR/hostile-build-child.pid"
+rm -f "$runtime_log" "$hostile_build_pid_file"
+set +e
+FAKE_RUNTIME_LOG="$runtime_log" \
+FAKE_RUNTIME_HOSTILE_BUILD=1 \
+FAKE_RUNTIME_HOSTILE_PID_FILE="$hostile_build_pid_file" \
+  "$ROOT_DIR/Tests/Support/Fuzzing/run-fuzz.sh" \
+    --runtime "$fake_runtime" \
+    --container \
+    --iterations 1 \
+    --seeds 8 \
+    --repetitions 1 \
+    --jobs 1 \
+    --build-timeout 1 \
+    --term-grace 1 \
+    --kill-grace 1 \
+    --output "$TEMP_DIR/output-hostile-build" \
+    --quiet
+hostile_build_status=$?
+set -e
+[[ "$hostile_build_status" -ne 0 ]]
+manifest_b=$(manifest_path "$TEMP_DIR/output-hostile-build")
+grep -qF '"status": "failed"' "$manifest_b"
+grep -qF 'worker=1 build' "$TEMP_DIR/output-hostile-build"/*/campaign.log
+if [[ -s "$hostile_build_pid_file" ]]; then
+    hostile_build_pid=$(cat "$hostile_build_pid_file")
+    if kill -0 "$hostile_build_pid" 2>/dev/null && [[ "$(ps -o stat= -p "$hostile_build_pid" 2>/dev/null | tr -d ' ')" != Z* ]]; then
+        echo "hostile build child survived bounded cleanup: pid=$hostile_build_pid" >&2
+        exit 1
+    fi
+fi
+
+# An invalid PGID must fail closed without an unbounded TERM-resistant leader
+# wait or group signal. The child is cleaned directly by this self-test because
+# the runner intentionally refuses to signal a group whose ownership it cannot
+# prove.
+invalid_pgid_pid_file="$TEMP_DIR/invalid-pgid-child.pid"
+rm -f "$runtime_log" "$invalid_pgid_pid_file"
+set +e
+FAKE_RUNTIME_LOG="$runtime_log" \
+FAKE_RUNTIME_HOSTILE_CHILD=1 \
+FAKE_RUNTIME_HOSTILE_PID_FILE="$invalid_pgid_pid_file" \
+  PATH="$fake_ps_dir:$PATH" \
+  timeout 10s "$ROOT_DIR/Tests/Support/Fuzzing/run-fuzz.sh" \
+    --runtime "$fake_runtime" \
+    --container \
+    --iterations 1 \
+    --seeds 10 \
+    --repetitions 1 \
+    --jobs 1 \
+    --case-timeout 1 \
+    --term-grace 1 \
+    --kill-grace 1 \
+    --output "$TEMP_DIR/output-invalid-pgid" \
+    --quiet
+invalid_pgid_status=$?
+set -e
+[[ "$invalid_pgid_status" -ne 0 ]]
+grep -qF 'refusing to signal unowned process group' "$TEMP_DIR/output-invalid-pgid"/*/campaign.log
+grep -qF $'\t125\t' "$TEMP_DIR/output-invalid-pgid"/*/summary.tsv
+if [[ -s "$invalid_pgid_pid_file" ]]; then
+    invalid_pgid_child=$(cat "$invalid_pgid_pid_file")
+    kill -KILL "$invalid_pgid_child" 2>/dev/null || true
+fi
+
+# A command that exits cleanly must still have its owned descendant group reaped.
+orphan_pid_file="$TEMP_DIR/orphan-child.pid"
+rm -f "$runtime_log" "$orphan_pid_file"
+FAKE_RUNTIME_LOG="$runtime_log" \
+FAKE_RUNTIME_ORPHAN_CHILD=1 \
+FAKE_RUNTIME_HOSTILE_PID_FILE="$orphan_pid_file" \
+  "$ROOT_DIR/Tests/Support/Fuzzing/run-fuzz.sh" \
+    --runtime "$fake_runtime" \
+    --container \
+    --iterations 1 \
+    --seeds 9 \
+    --repetitions 1 \
+    --output "$TEMP_DIR/output-orphan" \
+    --quiet
+manifest_o=$(manifest_path "$TEMP_DIR/output-orphan")
+grep -qF '"status": "passed"' "$manifest_o"
+if [[ -s "$orphan_pid_file" ]]; then
+    orphan_pid=$(cat "$orphan_pid_file")
+    if kill -0 "$orphan_pid" 2>/dev/null && [[ "$(ps -o stat= -p "$orphan_pid" 2>/dev/null | tr -d ' ')" != Z* ]]; then
+        echo "orphan fuzz child survived post-exit cleanup: pid=$orphan_pid" >&2
+        exit 1
+    fi
+fi
 
 # Interruption path: a controlled signal terminates the campaign and the manifest is
 # still finalized with an explicit interrupted status and whatever case data was recorded.

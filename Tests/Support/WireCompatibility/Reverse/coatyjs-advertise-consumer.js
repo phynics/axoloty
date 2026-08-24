@@ -2,9 +2,12 @@
 "use strict";
 
 const { ChannelEvent, Container } = require("@coaty/core");
+const fs = require("node:fs");
 
 const brokerUrl = process.env.BROKER_URL;
 const namespace = process.env.COATY_NAMESPACE || "wire-compat-v1";
+const peerAckFile = process.env.WIRE_PEER_ACK_FILE;
+const peerAckToken = process.env.WIRE_PEER_ACK_TOKEN;
 const expected = {
     coreType: "CoatyObject",
     objectType: "com.coaty.test.WireFixture",
@@ -23,6 +26,22 @@ const timeout = setTimeout(() => {
     process.exit(1);
 }, Number(process.env.SCENARIO_TIMEOUT_MS || "10000"));
 
+function writePeerAcknowledgement(details = {}) {
+    if (!peerAckFile || !peerAckToken) {
+        throw new Error("WIRE_PEER_ACK_FILE and WIRE_PEER_ACK_TOKEN are required");
+    }
+    const marker = {
+        version: 1,
+        phase: "peer-ack",
+        scenario: "axoloty-advertise",
+        token: peerAckToken,
+        ...details,
+    };
+    const temporary = `${peerAckFile}.tmp-${process.pid}`;
+    fs.writeFileSync(temporary, `${JSON.stringify(marker)}\n`, "utf8");
+    fs.renameSync(temporary, peerAckFile);
+}
+
 let readySubscription;
 
 async function run() {
@@ -39,6 +58,7 @@ async function run() {
                 throw new Error(`Advertise ${key}: expected ${value}, got ${object[key]}`);
             }
         }
+        writePeerAcknowledgement({ objectId: object.objectId });
         clearTimeout(timeout);
         subscription.unsubscribe();
         if (readySubscription) readySubscription.unsubscribe();

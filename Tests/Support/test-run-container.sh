@@ -10,6 +10,8 @@ set -euo pipefail
 unset BUILD_LOCK BUILD_LOCK_FORCE_DIRECTORY
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+# shellcheck source=expected-failure.sh
+source "$ROOT_DIR/Tests/Support/expected-failure.sh"
 TEMP_DIR=$(mktemp -d)
 socket_server=""
 export AXOLOTY_ESP_IDF_CCACHE_DIR="$TEMP_DIR/esp-idf-ccache"
@@ -100,22 +102,26 @@ touch -d '2 hours ago' "$resolve_cache/.resolve.lock"
 cat > "$resolve_bin/swift" <<'SH'
 #!/bin/sh
 set -eu
-cache_dir=$4
+for argument do
+    cache_dir=$argument
+done
 if ! mkdir "$cache_dir/.resolve-active" 2>/dev/null; then
     : > "$AXOLOTY_RESOLVE_OVERLAP"
     exit 1
 fi
 trap 'rmdir "$cache_dir/.resolve-active"' EXIT INT TERM
 printf 'resolve\n' >> "$AXOLOTY_RESOLVE_CALLS"
+printf '%s\n' "$*" >> "$AXOLOTY_RESOLVE_ARGUMENTS"
 sleep 0.2
 SH
 chmod +x "$resolve_bin/swift"
+resolve_arguments="$TEMP_DIR/resolve-arguments"
 AXOLOTY_RESOLVE_CACHE_DIR="$resolve_cache" AXOLOTY_RESOLVE_CALLS="$resolve_calls" \
-AXOLOTY_RESOLVE_OVERLAP="$resolve_overlap" PATH="$resolve_bin:$PATH" \
+AXOLOTY_RESOLVE_ARGUMENTS="$resolve_arguments" AXOLOTY_RESOLVE_OVERLAP="$resolve_overlap" PATH="$resolve_bin:$PATH" \
     "$ROOT_DIR/.devcontainer/resolve.sh" &
 resolve_first=$!
 AXOLOTY_RESOLVE_CACHE_DIR="$resolve_cache" AXOLOTY_RESOLVE_CALLS="$resolve_calls" \
-AXOLOTY_RESOLVE_OVERLAP="$resolve_overlap" PATH="$resolve_bin:$PATH" \
+AXOLOTY_RESOLVE_ARGUMENTS="$resolve_arguments" AXOLOTY_RESOLVE_OVERLAP="$resolve_overlap" PATH="$resolve_bin:$PATH" \
     "$ROOT_DIR/.devcontainer/resolve.sh" &
 resolve_second=$!
 wait_bounded "$resolve_first" resolve-first 5
@@ -123,6 +129,12 @@ wait_bounded "$resolve_second" resolve-second 5
 [[ "$(wc -l < "$resolve_calls")" -eq 2 ]]
 [[ ! -e "$resolve_overlap" ]]
 [[ ! -d "$resolve_cache/.resolve.lock" ]]
+AXOLOTY_RESOLVE_CACHE_DIR="$resolve_cache" AXOLOTY_RESOLVE_CALLS="$resolve_calls" \
+AXOLOTY_RESOLVE_ARGUMENTS="$resolve_arguments" AXOLOTY_RESOLVE_OVERLAP="$resolve_overlap" \
+AXOLOTY_RESOLVE_PACKAGE_PATH="Packages/AxolotyStaticRuntime" PATH="$resolve_bin:$PATH" \
+    "$ROOT_DIR/.devcontainer/resolve.sh"
+grep -Fqx "package --package-path Packages/AxolotyStaticRuntime resolve --cache-path $resolve_cache" \
+    "$resolve_arguments"
 
 # The lock must be released after a direct devcontainer command exits.
 AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" "$ROOT_DIR/.devcontainer/run.sh" true
@@ -262,6 +274,7 @@ BUILD_LOCK_TIMEOUT=0 AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" \
 status=$?
 set -e
 [[ "$status" -eq 75 ]]
+grep -Fxq "Waiting up to 0s for build lock: $lock_file" "$flock_timeout_output"
 grep -Fxq "Timed out waiting for build lock: $lock_file" "$flock_timeout_output"
 
 set +e
@@ -270,6 +283,7 @@ BUILD_LOCK_TIMEOUT=1 AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" \
 status=$?
 set -e
 [[ "$status" -eq 75 ]]
+grep -Fxq "Waiting up to 1s for build lock: $lock_file" "$flock_timeout_output"
 grep -Fxq "Timed out waiting for build lock: $lock_file" "$flock_timeout_output"
 kill "$holder" 2>/dev/null || true
 wait_bounded "$holder" flock-timeout-holder 5 || true
@@ -287,7 +301,8 @@ rmdir "$fallback_lock_dir"
 # A directory lock with no live owner can be reclaimed once its configured
 # stale age is reached.
 mkdir "$fallback_lock_dir"
-BUILD_LOCK_FORCE_DIRECTORY=1 BUILD_LOCK_STALE_SECONDS=0 AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" \
+run_labeled_command "container/stale-lock-reclaimed" env \
+    BUILD_LOCK_FORCE_DIRECTORY=1 BUILD_LOCK_STALE_SECONDS=0 AXOLOTY_DEVCONTAINER=1 BUILD_DIR="$build_dir" \
     "$ROOT_DIR/.devcontainer/run.sh" true
 [[ ! -e "$fallback_lock_dir" ]]
 
@@ -746,12 +761,11 @@ grep -Fqx -- "--attach" <<< "$start_args"
 grep -Fqx -- "fake-container-id" <<< "$start_args"
 
 : > "$capture_sequence"
-set +e
-FAKE_CREATE_FAILURE=1 FAKE_CREATE_EXIT_CODE=126 CONTAINER_RUNTIME="$fake_bin/fake-podman" \
+run_expected_failure "container/create-failure" 126 env \
+    FAKE_CREATE_FAILURE=1 FAKE_CREATE_EXIT_CODE=126 CONTAINER_RUNTIME="$fake_bin/fake-podman" \
     BUILD_DIR="$build_dir" BUILD_LOCK=0 \
     "$ROOT_DIR/.devcontainer/run.sh" true
-create_failure_status=$?
-set -e
+create_failure_status=$RUN_EXPECTED_FAILURE_STATUS
 [[ "$create_failure_status" -eq 126 ]]
 grep -Fxq create "$capture_sequence"
 if grep -Eq '^(start|stop|kill|rm)$' "$capture_sequence"; then
@@ -760,12 +774,11 @@ if grep -Eq '^(start|stop|kill|rm)$' "$capture_sequence"; then
 fi
 
 : > "$capture_sequence"
-set +e
-FAKE_CREATE_COLLISION=1 CONTAINER_NAME=occupied-container \
-CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+run_expected_failure "container/name-collision" any env \
+    FAKE_CREATE_COLLISION=1 CONTAINER_NAME=occupied-container \
+    CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
     "$ROOT_DIR/.devcontainer/run.sh" true
-collision_status=$?
-set -e
+collision_status=$RUN_EXPECTED_FAILURE_STATUS
 [[ "$collision_status" -ne 0 ]]
 grep -Fxq create "$capture_sequence"
 if grep -Eq '^(start|stop|kill|rm)$' "$capture_sequence"; then
@@ -777,13 +790,12 @@ fi
 # match this invocation's private instance label.
 : > "$capture_sequence"
 : > "$capture_state"
-set +e
-FAKE_CREATE_COLLISION=1 FAKE_COLLISION_MATCHING_LABELS=1 \
-CONTAINER_NAME=occupied-container AXOLOTY_RUN_ID=reused-run AXOLOTY_OWNER_ID=reused-owner \
-CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+run_expected_failure "container/matching-collision" 125 env \
+    FAKE_CREATE_COLLISION=1 FAKE_COLLISION_MATCHING_LABELS=1 \
+    CONTAINER_NAME=occupied-container AXOLOTY_RUN_ID=reused-run AXOLOTY_OWNER_ID=reused-owner \
+    CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
     "$ROOT_DIR/.devcontainer/run.sh" true
-matching_collision_status=$?
-set -e
+matching_collision_status=$RUN_EXPECTED_FAILURE_STATUS
 [[ "$matching_collision_status" -eq 125 ]]
 if grep -Eq '^(start|stop|kill|rm)$' "$capture_sequence"; then
     echo "matching-label name collision touched a foreign instance" >&2
@@ -859,12 +871,11 @@ fi
 : > "$capture_sequence"
 : > "$capture_state"
 : > "$capture"
-set +e
-FAKE_CREATE_COMMIT_THEN_FAIL=1 FAKE_CREATE_EXIT_CODE=125 \
-CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+run_expected_failure "container/reconciled-create-failure" 125 env \
+    FAKE_CREATE_COMMIT_THEN_FAIL=1 FAKE_CREATE_EXIT_CODE=125 \
+    CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
     "$ROOT_DIR/.devcontainer/run.sh" true
-reconciled_create_status=$?
-set -e
+reconciled_create_status=$RUN_EXPECTED_FAILURE_STATUS
 [[ "$reconciled_create_status" -eq 125 ]]
 grep -q -- '^rm -f fake-container-id$' "$capture"
 if grep -q -- '^start ' "$capture"; then
@@ -878,11 +889,10 @@ fi
 : > "$capture_state"
 : > "$capture"
 : > "$capture_inspect_count"
-set +e
-FAKE_INSPECT_FAILURE_ONCE=1 CONTAINER_RUNTIME="$fake_bin/fake-podman" \
+run_expected_failure "container/inspect-failure" 125 env \
+    FAKE_INSPECT_FAILURE_ONCE=1 CONTAINER_RUNTIME="$fake_bin/fake-podman" \
     BUILD_DIR="$build_dir" BUILD_LOCK=0 "$ROOT_DIR/.devcontainer/run.sh" true
-inspect_failure_status=$?
-set -e
+inspect_failure_status=$RUN_EXPECTED_FAILURE_STATUS
 [[ "$inspect_failure_status" -eq 125 ]]
 grep -q -- '^rm -f fake-container-id$' "$capture"
 
@@ -890,12 +900,11 @@ grep -q -- '^rm -f fake-container-id$' "$capture"
 : > "$capture_sequence"
 : > "$capture_state"
 : > "$capture"
-set +e
-FAKE_START_FAILURE=1 FAKE_START_EXIT_CODE=127 \
-CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+run_expected_failure "container/start-failure" 127 env \
+    FAKE_START_FAILURE=1 FAKE_START_EXIT_CODE=127 \
+    CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
     "$ROOT_DIR/.devcontainer/run.sh" true
-start_failure_status=$?
-set -e
+start_failure_status=$RUN_EXPECTED_FAILURE_STATUS
 [[ "$start_failure_status" -eq 127 ]]
 grep -q -- '^start --attach fake-container-id$' "$capture"
 grep -q -- '^rm -f fake-container-id$' "$capture"
@@ -1039,13 +1048,12 @@ fi
 : > "$capture_state"
 : > "$capture"
 cleanup_started=$(date +%s)
-set +e
-FAKE_CLEANUP_BLOCK=1 CONTAINER_RUNTIME="$fake_bin/fake-podman" \
+run_expected_failure "container/blocked-cleanup" 125 env \
+    FAKE_CLEANUP_BLOCK=1 CONTAINER_RUNTIME="$fake_bin/fake-podman" \
     BUILD_DIR="$build_dir" BUILD_LOCK=0 CONTAINER_API_TIMEOUT_SECONDS=1 \
     CONTAINER_TERM_GRACE_SECONDS=1 CONTAINER_KILL_GRACE_SECONDS=1 \
     "$ROOT_DIR/.devcontainer/run.sh" true
-blocked_cleanup_status=$?
-set -e
+blocked_cleanup_status=$RUN_EXPECTED_FAILURE_STATUS
 cleanup_elapsed=$(( $(date +%s) - cleanup_started ))
 [[ "$blocked_cleanup_status" -eq 125 ]]
 [[ "$cleanup_elapsed" -le 8 ]]
@@ -1056,12 +1064,11 @@ grep -q -- '^rm -f fake-container-id$' "$capture"
 # cleanup failure; it must never preserve a successful command status.
 : > "$capture_state"
 : > "$capture"
-set +e
-FAKE_RM_FAILURE=1 FAKE_EXISTS_FAILURE=1 CONTAINER_RUNTIME="$fake_bin/fake-podman" \
+run_expected_failure "container/inconclusive-cleanup" 125 env \
+    FAKE_RM_FAILURE=1 FAKE_EXISTS_FAILURE=1 CONTAINER_RUNTIME="$fake_bin/fake-podman" \
     BUILD_DIR="$build_dir" BUILD_LOCK=0 CONTAINER_API_TIMEOUT_SECONDS=1 \
     "$ROOT_DIR/.devcontainer/run.sh" true
-inconclusive_cleanup_status=$?
-set -e
+inconclusive_cleanup_status=$RUN_EXPECTED_FAILURE_STATUS
 [[ "$inconclusive_cleanup_status" -eq 125 ]]
 
 # Signals received while an inspect helper is active must terminate and reap

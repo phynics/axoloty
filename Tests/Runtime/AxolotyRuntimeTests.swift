@@ -319,13 +319,21 @@ struct AxolotyRuntimeTests {
         )
         try await runtime.start()
 
-        var iterator = stream.makeAsyncIterator()
+        let iterator = RuntimeTestIteratorBox(stream.makeAsyncIterator())
         let receipt = await runtime.receive(RuntimeInboundFrame(
             topic: "coaty/3/test/ADV:CoatyObject/22222222-2222-4222-8222-222222222222",
             payload: Array(#"{"object":{"objectId":"11111111-1111-4111-8111-111111111111","coreType":"CoatyObject","objectType":"com.coaty.test.WireFixture","name":"wire-fixture"}}"#.utf8)
         ))
         #expect(receipt == .accepted)
-        let event = try #require(await iterator.next())
+        let event = try await withThrowingTaskGroup(of: RuntimeEventValue?.self) { group in
+            group.addTask { await iterator.next() }
+            group.addTask {
+                try await Task.sleep(for: .seconds(2))
+                throw RuntimeTestTimeout.waitingForAdvertiseEvent
+            }
+            defer { group.cancelAll() }
+            return try #require(try await group.next() ?? nil)
+        }
         #expect(event.context.sourceID == UUID16(parsing: "22222222-2222-4222-8222-222222222222"))
         #expect(String(decoding: event.value, as: UTF8.self).contains("com.coaty.test.WireFixture"))
         await runtime.stop()
@@ -454,12 +462,14 @@ struct AxolotyRuntimeTests {
         #expect(await transport.sendStarted)
 
         let stopping = Task { await runtime.stop() }
+        defer {
+            stopping.cancel()
+            Task { await transport.releaseSend() }
+        }
         try await waitUntil("transport stop to begin") {
             await transport.didStop
         }
         #expect(await transport.didStop)
-        #expect(await runtime.lifecycleState() == .stopping)
-        try await Task.sleep(for: .milliseconds(20))
         #expect(await runtime.lifecycleState() == .stopping)
 
         await transport.releaseSend()
@@ -546,16 +556,19 @@ private actor DrainingTransport: AxolotyRuntimeTransport {
     private(set) var sendStarted = false
     private(set) var didStop = false
     private var released = false
-    private var releaseContinuation: CheckedContinuation<Void, Never>?
+    private var sendWaiter: CheckedContinuation<Void, Never>?
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
     func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) {}
 
     func send(_ publication: OwnedProtocolPublication, namespace: String) async throws {
         sendStarted = true
-        if !released {
-            await withCheckedContinuation { continuation in
-                releaseContinuation = continuation
+        guard !released else { return }
+        await withCheckedContinuation { continuation in
+            if released {
+                continuation.resume()
+            } else {
+                sendWaiter = continuation
             }
         }
     }
@@ -566,7 +579,23 @@ private actor DrainingTransport: AxolotyRuntimeTransport {
 
     func releaseSend() {
         released = true
-        releaseContinuation?.resume()
-        releaseContinuation = nil
+        sendWaiter?.resume()
+        sendWaiter = nil
+    }
+}
+
+private enum RuntimeTestTimeout: Error {
+    case waitingForAdvertiseEvent
+}
+
+private final class RuntimeTestIteratorBox: @unchecked Sendable {
+    private var iterator: AsyncStream<RuntimeEventValue>.Iterator
+
+    init(_ iterator: AsyncStream<RuntimeEventValue>.Iterator) {
+        self.iterator = iterator
+    }
+
+    func next() async -> RuntimeEventValue? {
+        await iterator.next()
     }
 }

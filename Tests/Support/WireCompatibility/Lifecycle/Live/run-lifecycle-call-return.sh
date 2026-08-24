@@ -45,7 +45,16 @@ CAPTURE_READY="$OUT/axoloty-$SCENARIO.capture-ready"
 CONSUMER_LOG="$OUT/coatyjs-$SCENARIO.consumer.log"
 APPLICATION_LOG="$OUT/axoloty-$SCENARIO.application.jsonl"
 RAW_LOG="$OUT/axoloty-$SCENARIO.subject.log"
+ACK_BASENAME="axoloty-$SCENARIO-$RUN_ID.peer-ack.json"
+ACK_DIR="$OUT/peer-acks"
+ACK_FILE="$ACK_DIR/$ACK_BASENAME"
+ACK_TOKEN="${RUN_ID}-lifecycle-$SCENARIO"
 DEADLINE_SECONDS="${WIRE_LIFECYCLE_DEADLINE_SECONDS:-600}"
+RUNTIME_LABELS=(
+    --label "io.axoloty.managed-by=${WIRE_RUNTIME_MANAGED_BY:-axoloty-wire-lifecycle}"
+    --label "io.axoloty.run-id=${WIRE_RUNTIME_RUN_ID:-$RUN_ID}"
+    --label "io.axoloty.scenario=${WIRE_RUNTIME_SCENARIO:-$SCENARIO}"
+)
 
 cleanup() {
     runtime logs "$SUBJECT" >"$OUT/subject-container-$SCENARIO.log" 2>&1 || true
@@ -56,15 +65,16 @@ cleanup() {
     runtime network rm "$NETWORK" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT INT TERM
-mkdir -p "$OUT"
-rm -f "$CAPTURE" "$CAPTURE_READY" "$CONSUMER_LOG" "$APPLICATION_LOG" "$RAW_LOG"
+mkdir -p "$OUT" "$ACK_DIR"
+chmod 0777 "$ACK_DIR"
+rm -f "$CAPTURE" "$CAPTURE_READY" "$CONSUMER_LOG" "$APPLICATION_LOG" "$RAW_LOG" "$ACK_FILE"
 
 runtime build -t "$DEV_IMAGE" -f "$ROOT/.devcontainer/Dockerfile" "$ROOT"
 runtime build -t "$JS_IMAGE" "$REF"
-runtime network create "$NETWORK" >/dev/null
+runtime network create "$NETWORK" "${RUNTIME_LABELS[@]}" >/dev/null
 
 start_broker() {
-    runtime run -d --name "$BROKER" --network "$NETWORK" \
+    runtime run -d --name "$BROKER" --network "$NETWORK" "${RUNTIME_LABELS[@]}" \
         -v "$HERE/../../Live/mosquitto.conf:/etc/mosquitto/wire-compat.conf:ro" \
         "$DEV_IMAGE" mosquitto -c /etc/mosquitto/wire-compat.conf >/dev/null
 }
@@ -82,18 +92,20 @@ wait_for "Mosquitto broker readiness" broker_ready
 # Start capture probe.
 rm -f "$CAPTURE_READY"
 runtime run -d --name "$PROBE" --network "$NETWORK" -v "$ROOT/Tests/Support/WireCompatibility/tool:/tool:ro,Z" -v "$OUT:/artifacts" \
-    --entrypoint node --user 0 "$JS_IMAGE" "$TOOL" capture '#' "/artifacts/${CAPTURE##*/}" \
+    --entrypoint node --user 0 "${RUNTIME_LABELS[@]}" "$JS_IMAGE" "$TOOL" capture '#' "/artifacts/${CAPTURE##*/}" \
     --host "$BROKER" --producer coatyswift-modern --producer-version current --scenario "$SCENARIO" \
     --ready-file "/artifacts/${CAPTURE_READY##*/}" >/dev/null
 wait_for "capture subscription" "test -f '$CAPTURE_READY'"
 
 # Start CoatyJS Call responder.
 runtime run -d --name "$RESPONDER" --network "$NETWORK" \
-    --entrypoint node \
+    --entrypoint node "${RUNTIME_LABELS[@]}" \
     -v "$REVERSE/coatyjs-core-consumer.js:/agent/coatyjs-core-consumer.js:ro" \
+    -v "$ACK_DIR:/artifacts" \
     -e BROKER_URL="mqtt://$BROKER:1883" -e COATY_NAMESPACE="$NAMESPACE" \
     -e SCENARIO="$SCENARIO" -e SCENARIO_TIMEOUT_MS=30000 \
     -e LIFECYCLE_LATE_REPLY_DELAY_MS="${LIFECYCLE_LATE_REPLY_DELAY_MS:-4000}" \
+    -e WIRE_PEER_ACK_FILE="/artifacts/$ACK_BASENAME" -e WIRE_PEER_ACK_TOKEN="$ACK_TOKEN" \
     "$JS_IMAGE" /agent/coatyjs-core-consumer.js >/dev/null
 responder_ready() { runtime logs "$RESPONDER" 2>&1 >"$CONSUMER_LOG"; grep -q '"state":"ready"' "$CONSUMER_LOG"; }
 wait_for "CoatyJS Call responder readiness" responder_ready
@@ -113,6 +125,7 @@ ENV_FLAG="$(
 )"
 runtime run -d -t --name "$SUBJECT" --network "$NETWORK" \
     -v "$ROOT:/workspace" -v "$SPM_CACHE_DIR:/swiftpm-cache" -v "$BUILD_DIR:/swift-build" -w /workspace \
+    "${RUNTIME_LABELS[@]}" \
     -e "$ENV_FLAG=1" -e WIRE_BROKER_HOST="$BROKER" -e WIRE_BROKER_PORT=1883 -e WIRE_NAMESPACE="$NAMESPACE" \
     -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
     "$DEV_IMAGE" swift test -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
@@ -127,6 +140,7 @@ grep -E '^\{"state":' "$RAW_LOG" >"$APPLICATION_LOG" || true
 # Verify responder ack.
 runtime logs "$RESPONDER" 2>&1 >"$CONSUMER_LOG"
 grep -q '"state":"ack"' "$CONSUMER_LOG" || { echo "CoatyJS responder did not ack; see $CONSUMER_LOG" >&2; exit 1; }
+test -s "$ACK_FILE" || { echo "CoatyJS responder acknowledgement marker is missing: $ACK_FILE" >&2; exit 1; }
 
 # Verify capture.
 runtime rm -f "$PROBE" >/dev/null 2>&1 || true

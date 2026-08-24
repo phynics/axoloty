@@ -363,21 +363,33 @@ struct MQTTNIOClientTests {
         // so overload accounting is deterministic: with capacity 2 and the
         // drainer stalled, the first two jobs are retained and the rest shed.
         let (client, _) = try makeHostIngressClient(ingressDeliveryCapacity: 2)
-        let (startedStream, startedContinuation) = AsyncStream<Void>.makeStream()
-        var startedIterator = startedStream.makeAsyncIterator()
+        let startedPhase = OneShotPhase()
+        let releasePhase = OneShotPhase()
+        let finishedPhase = OneShotPhase()
+        defer { releasePhase.signal() }
 
         client.deliveryQueue.enqueue {
-            startedContinuation.yield()
-            try? await Task.sleep(for: .milliseconds(150))
+            startedPhase.signal()
+            _ = await releasePhase.wait()
+            finishedPhase.signal()
         }
-        _ = await startedIterator.next()
-        startedContinuation.finish()
+        try await waitUntil("raw ingress drainer to start its blocking job", timeout: .seconds(2)) {
+            startedPhase.isSignaled
+        }
 
         for _ in 0 ..< 20 {
             client.handlePublish(.success(publishInfo(payload: [0x01], topic: "test/raw/ingress")))
         }
 
-        #expect(client.deliveryQueue.droppedCount == 18)
+        #expect(
+            client.deliveryQueue.droppedCount == 18,
+            "raw ingress overload accounting; dropped: \(client.deliveryQueue.droppedCount), "
+                + "accepted jobs: 2"
+        )
+        releasePhase.signal()
+        try await waitUntil("raw ingress overload gate job to finish", timeout: .seconds(2)) {
+            finishedPhase.isSignaled
+        }
     }
 }
 
@@ -511,5 +523,37 @@ private final class HostIngressDelegate: CommunicationClientDelegate {
 private actor ParsedMessageActor {
     func echo(_ message: ParsedMQTTMessage) -> ParsedMQTTMessage {
         message
+    }
+}
+
+private final class OneShotPhase: @unchecked Sendable {
+    private let lock = NSLock()
+    private var signaled = false
+    private let continuation: AsyncStream<Void>.Continuation
+    let stream: AsyncStream<Void>
+
+    init() {
+        (stream, continuation) = AsyncStream.makeStream(of: Void.self)
+    }
+
+    var isSignaled: Bool {
+        lock.withLock { signaled }
+    }
+
+    func signal() {
+        let shouldSignal = lock.withLock {
+            guard !signaled else { return false }
+            signaled = true
+            return true
+        }
+        if shouldSignal {
+            continuation.yield(())
+            continuation.finish()
+        }
+    }
+
+    func wait() async -> Bool {
+        var iterator = stream.makeAsyncIterator()
+        return await iterator.next() != nil
     }
 }
