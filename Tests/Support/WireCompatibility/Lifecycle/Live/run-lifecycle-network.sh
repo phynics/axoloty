@@ -18,6 +18,12 @@ LIVE="$ROOT/Tests/Support/WireCompatibility/Live"
 REF="$ROOT/Tests/Support/WireCompatibility/ReferenceAgents/coatyjs"
 TOOL=/tool/dist/index.js
 OUT="${WIRE_OUTPUT_DIR:-$ROOT/.testing/wire}"
+# CI invokes this runner with repository-relative artifact paths. Resolve that
+# boundary before deriving paths that are mounted into the subject container.
+case "$OUT" in
+    /*) ;;
+    *) OUT="$ROOT/$OUT" ;;
+esac
 RUN_ID="${WIRE_RUN_ID:-$$}"
 NETWORK="axoloty-lifecycle-$SCENARIO-$RUN_ID"
 BROKER="axoloty-lifecycle-broker-$RUN_ID"

@@ -326,7 +326,7 @@ run_scenario() {
     local scenario="$1" artifact_dir="$2" verifier_log="$3" fifo
     local start_ms now elapsed idle bytes last_bytes last_progress report_at
     local timed_out=0 timeout_phase="" scenario_status=0
-    local scenario_pid group
+    local scenario_pid group group_probe_deadline
 
     : >"$verifier_log"
     scenario_command "$scenario" || return $?
@@ -356,6 +356,15 @@ run_scenario() {
     scenario_pid=$!
     ACTIVE_PID="$scenario_pid"
     group="$(group_id_for "$scenario_pid" || true)"
+    # setsid may need a scheduling turn to replace itself with the runner. Do
+    # not mistake that short hand-off window for an ownership violation.
+    group_probe_deadline=$(( $(monotonic_ms) + 1000 ))
+    while ! valid_owned_group "$scenario_pid" "$group" && \
+        kill -0 "$scenario_pid" 2>/dev/null && \
+        [ "$(monotonic_ms)" -lt "$group_probe_deadline" ]; do
+        sleep 0.01
+        group="$(group_id_for "$scenario_pid" || true)"
+    done
     if [ -n "${WIRE_LIFECYCLE_TEST_FORCE_PGID:-}" ]; then
         group="$WIRE_LIFECYCLE_TEST_FORCE_PGID"
     fi

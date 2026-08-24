@@ -8,6 +8,32 @@ import test from "node:test";
 
 const runScript = fs.readFileSync(".devcontainer/run.sh", "utf8");
 
+function assertProcessTerminated(pid) {
+  try {
+    process.kill(pid, 0);
+  } catch (error) {
+    assert.match(String(error), /ESRCH/);
+    return;
+  }
+
+  // A killed orphan can remain as a zombie when the pinned container has no
+  // init reaper. It cannot execute or retain the runaway work this test is
+  // guarding against, so distinguish that state from a live process.
+  if (process.platform === "linux") {
+    let stat;
+    try {
+      stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+    } catch (error) {
+      assert.match(String(error), /ENOENT/);
+      return;
+    }
+    const state = stat.slice(stat.lastIndexOf(")") + 2).trimStart()[0];
+    assert.equal(state, "Z", `process ${pid} remains live`);
+    return;
+  }
+  assert.fail(`process ${pid} remains live`);
+}
+
 test("run.sh builds an owned, run-scoped container command", () => {
   assert.match(runScript, /container_run_id=\$\{AXOLOTY_RUN_ID/);
   assert.match(runScript, /container_name=\$\{CONTAINER_NAME/);
@@ -167,7 +193,7 @@ exit 0
   assert.throws(() => process.kill(pid, 0), /ESRCH/);
   const descendant = Number(fs.readFileSync(path.join(artifactDirectory, "hostile-descendant.pid"), "utf8"));
   assert.ok(Number.isInteger(descendant) && descendant > 1);
-  assert.throws(() => process.kill(descendant, 0), /ESRCH/);
+  assertProcessTerminated(descendant);
 
   const leaderExitOutput = path.join(temporary, "leader-exit-run");
   const leaderExitResult = spawnSync("bash", [matrixScript], {
@@ -187,7 +213,7 @@ exit 0
   const leaderExitArtifact = path.join(leaderExitOutput, "qos-2");
   const leaderExitDescendant = Number(fs.readFileSync(path.join(leaderExitArtifact, "hostile-descendant.pid"), "utf8"));
   assert.ok(Number.isInteger(leaderExitDescendant) && leaderExitDescendant > 1);
-  assert.throws(() => process.kill(leaderExitDescendant, 0), /ESRCH/);
+  assertProcessTerminated(leaderExitDescendant);
 
   const ownershipOutput = path.join(temporary, "ownership-failure-run");
   const ownershipResult = spawnSync("bash", [matrixScript], {
@@ -210,4 +236,55 @@ exit 0
   assert.match(runtimeCalls, /label=io\.axoloty\.managed-by=axoloty-wire-lifecycle/);
   assert.match(runtimeCalls, /label=io\.axoloty\.run-id=hostile-self-test/);
   assert.match(runtimeCalls, /label=io\.axoloty\.scenario=qos-1/);
+});
+
+test("live lifecycle runner accepts repository-relative artifact paths", () => {
+  const root = path.resolve(".");
+  const runner = path.join(
+    root,
+    "Tests/Support/WireCompatibility/Lifecycle/Live/run-lifecycle-network.sh",
+  );
+  const testingRoot = path.join(root, ".testing");
+  fs.mkdirSync(testingRoot, { recursive: true });
+  const temporary = fs.mkdtempSync(path.join(testingRoot, "wire-relative-"));
+  const runtime = path.join(temporary, "fake-runtime");
+  const runtimeLog = path.join(temporary, "runtime.log");
+  const relativeOutput = path.relative(root, path.join(temporary, "artifacts"));
+
+  try {
+    fs.writeFileSync(runtime, `#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "\${FAKE_RUNTIME_LOG}"
+exit 17
+`);
+    fs.chmodSync(runtime, 0o755);
+    fs.mkdirSync(path.join(root, relativeOutput), { recursive: true });
+
+    const result = spawnSync("bash", [runner, "offline-queueing"], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        CONTAINER_RUNTIME: runtime,
+        FAKE_RUNTIME_LOG: runtimeLog,
+        WIRE_OUTPUT_DIR: relativeOutput,
+        WIRE_RUN_ID: "relative-output-self-test",
+      },
+    });
+
+    // The fake runtime stops after the boundary check. A status of 64 would
+    // mean the relative path was rejected before any runtime call.
+    assert.equal(result.status, 17, `${result.stdout ?? ""}\n${result.stderr ?? ""}`);
+    assert.doesNotMatch(
+      result.stderr ?? "",
+      /WIRE_OUTPUT_DIR must be inside the repository/,
+    );
+    assert.match(fs.readFileSync(runtimeLog, "utf8"), /build/);
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+    try {
+      fs.rmdirSync(testingRoot);
+    } catch {
+      // Keep a pre-existing test-output directory intact.
+    }
+  }
 });
