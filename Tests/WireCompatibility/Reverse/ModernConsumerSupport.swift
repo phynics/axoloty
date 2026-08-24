@@ -51,7 +51,7 @@ enum ModernConsumerSupport {
             }
             defer { group.cancelAll() }
             guard let value = try await group.next() ?? nil else {
-                throw AxolotyError.runtime(code: .timedOut, reason: "Timed out waiting for CoatyJS \\(scenario)")
+                throw AxolotyError.runtime(code: .timedOut, reason: "Timed out waiting for CoatyJS \(scenario)")
             }
             return value
         }
