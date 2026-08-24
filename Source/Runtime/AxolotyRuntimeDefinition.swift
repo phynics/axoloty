@@ -1,7 +1,9 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-import AxolotyProtocol
+@_spi(AxolotyRuntimeAdapter) import AxolotyProtocol
+import AxolotyObjectModel
 import AxolotyWire
+import Foundation
 
 /// Fixed limits used by one host runtime instance.
 public struct RuntimeCapacities: Sendable, Equatable {
@@ -17,6 +19,14 @@ public struct RuntimeCapacities: Sendable, Equatable {
     public let stream: Int
     /// Maximum event streams registered before startup.
     public let eventStreams: Int
+    /// Maximum registered typed IO endpoints.
+    public let ioEndpoints: Int
+    /// Maximum retained latest IO values per source.
+    public let ioPendingLatest: Int
+    /// Maximum typed IO association observers.
+    public let ioObservers: Int
+    /// Maximum optional endpoint catalogue entries.
+    public let ioCatalogue: Int
 
     /// Creates finite runtime limits.
     public init(
@@ -25,17 +35,25 @@ public struct RuntimeCapacities: Sendable, Equatable {
         handlers: Int = 64,
         handlersInFlight: Int = 16,
         stream: Int = 64,
-        eventStreams: Int = 64
+        eventStreams: Int = 64,
+        ioEndpoints: Int = 64,
+        ioPendingLatest: Int = 64,
+        ioObservers: Int = 64,
+        ioCatalogue: Int = 64
     ) throws {
         guard ingress > 0, dispatch > 0, handlers > 0,
-              handlersInFlight > 0, stream > 0, eventStreams > 0 else {
+              handlersInFlight > 0, stream > 0, eventStreams > 0,
+              ioEndpoints > 0, ioPendingLatest > 0, ioObservers > 0,
+              ioCatalogue > 0 else {
             throw AxolotyError.invalidArgument(
                 argument: "capacities",
                 reason: "all runtime capacities must be greater than zero"
             )
         }
         guard ingress <= 64, dispatch <= 64, handlers <= 64,
-              handlersInFlight <= 64, stream <= 64, eventStreams <= 64 else {
+              handlersInFlight <= 64, stream <= 64, eventStreams <= 64,
+              ioEndpoints <= 64, ioPendingLatest <= 64, ioObservers <= 64,
+              ioCatalogue <= 64 else {
             throw AxolotyError.invalidArgument(
                 argument: "capacities",
                 reason: "host runtime capacities cannot exceed 64"
@@ -47,6 +65,10 @@ public struct RuntimeCapacities: Sendable, Equatable {
         self.handlersInFlight = handlersInFlight
         self.stream = stream
         self.eventStreams = eventStreams
+        self.ioEndpoints = ioEndpoints
+        self.ioPendingLatest = ioPendingLatest
+        self.ioObservers = ioObservers
+        self.ioCatalogue = ioCatalogue
     }
 }
 
@@ -304,6 +326,49 @@ public struct RuntimeInboundFrame: Sendable, Equatable {
         self.payload = payload
         self.nowMS = nowMS
     }
+}
+
+enum RuntimeIoEndpointRole: Sendable, Equatable {
+    case source
+    case actor
+}
+
+struct RuntimeIoEndpointRegistration: Sendable {
+    let id: ObjectID
+    let role: RuntimeIoEndpointRole
+    let representation: IoValueRepresentation
+    let objectBytes: BoundedIoBytes<512>
+    let publication: IoPublicationPolicy
+    let recommendedUpdateRateMS: UInt32?
+    let handler: (@Sendable ([UInt8], IoDeliveryContext) async throws -> Void)?
+}
+
+private func runtimeRegistryNonce() -> ObjectID {
+    let uuid = UUID().uuid
+    return ObjectID(uuid: UUID16(bytes: (
+        uuid.0, uuid.1, uuid.2, uuid.3,
+        uuid.4, uuid.5, uuid.6, uuid.7,
+        uuid.8, uuid.9, uuid.10, uuid.11,
+        uuid.12, uuid.13, uuid.14, uuid.15
+    )))
+}
+
+private func runtimeObjectBytes(
+    source definition: borrowing IoSourceEndpointDefinition
+) throws(ProtocolError) -> BoundedIoBytes<512> {
+    var result: BoundedIoBytes<512>?
+    definition.withObjectBytes { bytes in result = try? BoundedIoBytes(copying: bytes) }
+    guard let result else { throw ProtocolError(.capacityExceeded) }
+    return result
+}
+
+private func runtimeObjectBytes(
+    actor definition: borrowing IoActorEndpointDefinition
+) throws(ProtocolError) -> BoundedIoBytes<512> {
+    var result: BoundedIoBytes<512>?
+    definition.withObjectBytes { bytes in result = try? BoundedIoBytes(copying: bytes) }
+    guard let result else { throw ProtocolError(.capacityExceeded) }
+    return result
 }
 
 /// Coalesced supervision counters for a runtime instance.
@@ -642,9 +707,11 @@ public struct RuntimeDefinition: Sendable {
     public let identity: RuntimeIdentity?
     /// The fixed limits for this runtime.
     public let capacities: RuntimeCapacities
+    let registryID: ObjectID
 
     private var registrations: [RuntimeHandlerRegistration] = []
     private var eventRegistrations: [RuntimeEventRegistration] = []
+    private var ioEndpointRegistrations: [RuntimeIoEndpointRegistration] = []
     private var sealed = false
 
     /// Creates an empty runtime definition.
@@ -660,7 +727,9 @@ public struct RuntimeDefinition: Sendable {
         self.sourceID = sourceID
         self.identity = identity
         self.capacities = capacities
+        self.registryID = runtimeRegistryNonce()
         self.registrations.reserveCapacity(capacities.handlers)
+        self.ioEndpointRegistrations.reserveCapacity(capacities.ioEndpoints)
     }
 
     /// Registers one bounded application handler.
@@ -749,7 +818,9 @@ public struct RuntimeDefinition: Sendable {
             identity: copy.identity,
             capacities: copy.capacities,
             registrations: copy.registrations,
-            eventRegistrations: copy.eventRegistrations
+            eventRegistrations: copy.eventRegistrations,
+            registryID: copy.registryID,
+            ioEndpointRegistrations: copy.ioEndpointRegistrations
         )
     }
 }
@@ -764,19 +835,25 @@ public struct SealedRuntimeDefinition: Sendable {
     public let identity: RuntimeIdentity?
     /// The fixed limits for this runtime.
     public let capacities: RuntimeCapacities
+    let registryID: ObjectID
     let registrations: [RuntimeHandlerRegistration]
     let eventRegistrations: [RuntimeEventRegistration]
+    let ioEndpointRegistrations: [RuntimeIoEndpointRegistration]
 
     /// The number of registered handlers.
     public var handlerCount: Int { registrations.count }
+    /// The number of registered typed IO endpoints.
+    public var ioEndpointCount: Int { ioEndpointRegistrations.count }
 
-    init(namespace: String, sourceID: UUID16, identity: RuntimeIdentity? = nil, capacities: RuntimeCapacities, registrations: [RuntimeHandlerRegistration], eventRegistrations: [RuntimeEventRegistration] = []) {
+    init(namespace: String, sourceID: UUID16, identity: RuntimeIdentity? = nil, capacities: RuntimeCapacities, registrations: [RuntimeHandlerRegistration], eventRegistrations: [RuntimeEventRegistration] = [], registryID: ObjectID, ioEndpointRegistrations: [RuntimeIoEndpointRegistration] = []) {
         self.namespace = namespace
         self.sourceID = sourceID
         self.identity = identity
         self.capacities = capacities
+        self.registryID = registryID
         self.registrations = registrations
         self.eventRegistrations = eventRegistrations
+        self.ioEndpointRegistrations = ioEndpointRegistrations
     }
 }
 
@@ -830,6 +907,156 @@ public extension RuntimeDefinition {
             buffering policy: RuntimeBufferingPolicy = .failAfterDrop(capacity: 64)
         ) throws -> RuntimeEventStream {
             try definition.registerEvents(matching: selector, buffering: policy)
+        }
+
+        /// Registers a typed, fixed-representation IO source before startup.
+        public mutating func ioSource<Value: IoValue>(
+            metadata: consuming Object<IoSourceMetadata>,
+            as valueType: Value.Type,
+            publication: IoPublicationPolicy = .immediate
+        ) throws(ProtocolError) -> IoSource<Value> {
+            _ = valueType
+            let normalized = try IoSourceEndpointDefinition(
+                metadata: metadata,
+                representation: Value.representation,
+                publication: publication
+            )
+            return try appendIoSource(normalized, representation: Value.representation, publication: publication)
+        }
+
+        /// Registers a dynamic IO source whose representation is fixed at registration.
+        public mutating func dynamicIoSource(
+            metadata: consuming Object<IoSourceMetadata>,
+            representation: IoValueRepresentation,
+            publication: IoPublicationPolicy = .immediate
+        ) throws(ProtocolError) -> IoSource<DynamicIoValue> {
+            let normalized = try IoSourceEndpointDefinition(
+                metadata: metadata,
+                representation: representation,
+                publication: publication
+            )
+            return try appendIoSource(normalized, representation: representation, publication: publication)
+        }
+
+        /// Registers a typed host IO actor with an asynchronous application handler.
+        public mutating func ioActor<Value: IoValue>(
+            metadata: consuming Object<IoActorMetadata>,
+            as valueType: Value.Type,
+            recommendedUpdateRateMS: UInt32? = nil,
+            handler: @escaping @Sendable (Value, IoDeliveryContext) async throws -> Void
+        ) throws(ProtocolError) -> IoActor<Value> {
+            _ = valueType
+            let normalized = try IoActorEndpointDefinition(
+                metadata: metadata,
+                representation: Value.representation,
+                recommendedUpdateRateMS: recommendedUpdateRateMS
+            )
+            let wrapped: @Sendable ([UInt8], IoDeliveryContext) async throws -> Void = { bytes, context in
+                let value: Value? = bytes.withUnsafeBufferPointer { buffer in
+                    guard let base = buffer.baseAddress else { return nil }
+                    return try? Value.decodeIoPayload(
+                        ByteSlice(bytes: base, length: buffer.count),
+                        representation: Value.representation
+                    )
+                }
+                guard let value else { throw IoValueError.invalidValue }
+                try await handler(value, context)
+            }
+            return try appendIoActor(
+                normalized,
+                representation: Value.representation,
+                handler: wrapped
+            )
+        }
+
+        /// Registers a dynamic host IO actor with a fixed accepted representation.
+        public mutating func dynamicIoActor(
+            metadata: consuming Object<IoActorMetadata>,
+            representation: IoValueRepresentation,
+            recommendedUpdateRateMS: UInt32? = nil,
+            handler: @escaping @Sendable (DynamicIoValue, IoDeliveryContext) async throws -> Void
+        ) throws(ProtocolError) -> IoActor<DynamicIoValue> {
+            let normalized = try IoActorEndpointDefinition(
+                metadata: metadata,
+                representation: representation,
+                recommendedUpdateRateMS: recommendedUpdateRateMS
+            )
+            let wrapped: @Sendable ([UInt8], IoDeliveryContext) async throws -> Void = { bytes, context in
+                let value: DynamicIoValue? = bytes.withUnsafeBufferPointer { buffer in
+                    guard let base = buffer.baseAddress else { return nil }
+                    return try? DynamicIoValue.decodeIoPayload(
+                        ByteSlice(bytes: base, length: buffer.count),
+                        representation: representation
+                    )
+                }
+                guard let value else { throw IoValueError.invalidValue }
+                try await handler(value, context)
+            }
+            return try appendIoActor(normalized, representation: representation, handler: wrapped)
+        }
+
+        private mutating func appendIoSource<Value: IoEndpointValue>(
+            _ normalized: consuming IoSourceEndpointDefinition,
+            representation: IoValueRepresentation,
+            publication: IoPublicationPolicy
+        ) throws(ProtocolError) -> IoSource<Value> {
+            guard !definition.sealed,
+                  definition.ioEndpointRegistrations.count < definition.capacities.ioEndpoints else {
+                throw ProtocolError(.capacityExceeded)
+            }
+            guard !definition.ioEndpointRegistrations.contains(where: { $0.id == normalized.id }) else {
+                throw ProtocolError(.invalidEndpoint)
+            }
+            let bytes = try runtimeObjectBytes(source: normalized)
+            let slot = definition.ioEndpointRegistrations.count
+            definition.ioEndpointRegistrations.append(RuntimeIoEndpointRegistration(
+                id: normalized.id,
+                role: .source,
+                representation: representation,
+                objectBytes: bytes,
+                publication: publication,
+                recommendedUpdateRateMS: nil,
+                handler: nil
+            ))
+            return IoSource(
+                registryID: definition.registryID,
+                slot: UInt16(slot),
+                generation: 1,
+                id: normalized.id,
+                representation: representation
+            )
+        }
+
+        private mutating func appendIoActor<Value: IoEndpointValue>(
+            _ normalized: consuming IoActorEndpointDefinition,
+            representation: IoValueRepresentation,
+            handler: @escaping @Sendable ([UInt8], IoDeliveryContext) async throws -> Void
+        ) throws(ProtocolError) -> IoActor<Value> {
+            guard !definition.sealed,
+                  definition.ioEndpointRegistrations.count < definition.capacities.ioEndpoints else {
+                throw ProtocolError(.capacityExceeded)
+            }
+            guard !definition.ioEndpointRegistrations.contains(where: { $0.id == normalized.id }) else {
+                throw ProtocolError(.invalidEndpoint)
+            }
+            let bytes = try runtimeObjectBytes(actor: normalized)
+            let slot = definition.ioEndpointRegistrations.count
+            definition.ioEndpointRegistrations.append(RuntimeIoEndpointRegistration(
+                id: normalized.id,
+                role: .actor,
+                representation: representation,
+                objectBytes: bytes,
+                publication: .immediate,
+                recommendedUpdateRateMS: normalized.recommendedUpdateRateMS,
+                handler: handler
+            ))
+            return IoActor(
+                registryID: definition.registryID,
+                slot: UInt16(slot),
+                generation: 1,
+                id: normalized.id,
+                representation: representation
+            )
         }
 
         /// Registers a bounded responder for a request family.
