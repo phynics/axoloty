@@ -483,7 +483,7 @@ struct AxolotyRuntimeTests {
     }
 }
 
-private enum SetupFailureStage: String, CaseIterable, Sendable {
+enum SetupFailureStage: String, CaseIterable, Sendable {
     case start
     case subscriptions
     case advertisement
