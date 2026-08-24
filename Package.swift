@@ -180,7 +180,6 @@ let package = Package(
                 "Communication/RequestResponseEventWireRoundTripTests.swift",
                 "Communication/ReturnEventWireRoundTripTests.swift",
                 "Communication/UnaryCallBrokerIntegrationTests.swift",
-                "Concurrency/BroadcastTests.swift",
                 "Controller/ObjectLifecycleControllerTests.swift",
                 "Controller/ObjectLifecyclePublicationFailureTests.swift",
                 "IORouting/IoActorIoValueRoutingTests.swift",
