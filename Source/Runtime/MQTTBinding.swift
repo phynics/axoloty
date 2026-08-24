@@ -181,13 +181,31 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         eventTypeFilter: [UInt8]? = nil,
         eventTypeFilterKind: ProtocolEventTypeFilterKind = .direct
     ) -> String {
-        let separator = eventTypeFilterKind == .objectType ? "::" : ":"
-        let filter = eventTypeFilter.map { "\(separator)\(String(bytes: $0, encoding: .utf8) ?? "")" } ?? ""
-        var topic = "coaty/3/\(namespace)/\(key.capability.wireEventType.rawValue)\(filter)/\(uuidString(key.sourceID))"
-        if let correlationID = key.correlationID {
-            topic += "/\(uuidString(correlationID))"
+        let namespaceBytes = Array(namespace.utf8)
+        let namespaceStorage = namespaceBytes.isEmpty ? [UInt8(0)] : namespaceBytes
+        let filterBytes = eventTypeFilter ?? []
+        let filterStorage = filterBytes.isEmpty ? [UInt8(0)] : filterBytes
+        let filterLength = eventTypeFilter.map { $0.count + (eventTypeFilterKind == .objectType ? 2 : 1) } ?? 0
+        let capacity = 8 + namespaceBytes.count + 1 + 3 + filterLength + 1 + 36 + (key.correlationID == nil ? 0 : 37)
+        var bytes = [UInt8](repeating: 0, count: capacity)
+        bytes.withUnsafeMutableBufferPointer { output in
+            namespaceStorage.withUnsafeBufferPointer { namespace in
+                filterStorage.withUnsafeBufferPointer { filter in
+                    var builder = TopicBuilder(buffer: output.baseAddress!, capacity: output.count)
+                    try! builder.writePrefix()
+                    try! builder.writeNamespace(ByteSlice(bytes: namespace.baseAddress!, length: namespaceBytes.count))
+                    let filterSlice = eventTypeFilter == nil ? nil : ByteSlice(bytes: filter.baseAddress!, length: filterBytes.count)
+                    try! builder.writeEventType(
+                        key.capability.wireEventType,
+                        filter: filterSlice,
+                        filterKind: eventTypeFilterKind == .objectType ? .objectType : .direct
+                    )
+                    try! builder.writeSourceId(key.sourceID)
+                    if let correlationID = key.correlationID { try! builder.writeCorrelationId(correlationID) }
+                }
+            }
         }
-        return topic
+        return String(decoding: bytes, as: UTF8.self)
     }
 
     private static func identityPayload(_ identity: RuntimeIdentity) throws -> [UInt8] {
@@ -201,10 +219,12 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     }
 
     static func uuidString(_ value: UUID16) -> String {
-        let bytes = value.bytes
-        let raw: [UInt8] = [bytes.0, bytes.1, bytes.2, bytes.3, bytes.4, bytes.5, bytes.6, bytes.7, bytes.8, bytes.9, bytes.10, bytes.11, bytes.12, bytes.13, bytes.14, bytes.15]
-        let hex = raw.map { String(format: "%02x", $0) }
-        return "\(hex[0...3].joined())-\(hex[4...5].joined())-\(hex[6...7].joined())-\(hex[8...9].joined())-\(hex[10...15].joined())"
+        var bytes = [UInt8](repeating: 0, count: 36)
+        bytes.withUnsafeMutableBufferPointer { output in
+            var builder = TopicBuilder(buffer: output.baseAddress!, capacity: output.count)
+            try! builder.writeSourceId(value)
+        }
+        return String(decoding: bytes, as: UTF8.self)
     }
 }
 
