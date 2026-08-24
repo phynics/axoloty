@@ -66,9 +66,14 @@ public struct BoundedIoBytes<let capacity: Int>: Sendable, Equatable {
         for index in 0..<length { storage[index] = bytes.byte(at: index)! }
     }
     /// Borrows the retained bytes.
-    public borrowing func withBytes<R>(_ body: (borrowing ByteSlice) -> R) -> R {
+    public borrowing func withBytes<R>(_ body: (borrowing ByteSlice) throws -> R) rethrows -> R {
         let localLength = length
-        return withUnsafeBytes(of: storage) { buffer in body(ByteSlice(bytes: buffer.baseAddress!.assumingMemoryBound(to: UInt8.self), length: localLength)) }
+        return try withUnsafeBytes(of: storage) { buffer in
+            try body(ByteSlice(
+                bytes: buffer.baseAddress!.assumingMemoryBound(to: UInt8.self),
+                length: localLength
+            ))
+        }
     }
     public static func == (lhs: Self, rhs: Self) -> Bool {
         guard lhs.length == rhs.length else { return false }
@@ -83,8 +88,42 @@ public typealias BoundedJSONValue<let capacity: Int> = BoundedIoBytes<capacity>
 /// Structured IO value failures.
 public enum IoValueError: UInt8, Error, Sendable, Equatable { case invalidValue, capacityExceeded }
 
-/// Common portable IO value contract.
-public protocol IoValue: Sendable { static var representation: IoValueRepresentation { get } }
+/// A value that can be decoded and encoded at a registered IO endpoint.
+public protocol IoEndpointValue: Sendable {
+    /// The representation fixed by the value type, or `nil` when registration
+    /// fixes it for a dynamic value.
+    static var fixedRepresentation: IoValueRepresentation? { get }
+
+    /// Decodes one complete endpoint payload.
+    ///
+    /// - Parameters:
+    ///   - payload: Complete borrowed payload bytes.
+    ///   - representation: Representation fixed by endpoint registration.
+    /// - Returns: The decoded application value.
+    /// - Throws: ``IoValueError`` when the representation or payload is invalid.
+    static func decodeIoPayload(
+        _ payload: borrowing ByteSlice,
+        representation: IoValueRepresentation
+    ) throws(IoValueError) -> Self
+
+    /// Encodes one complete endpoint payload for a synchronous visitor.
+    ///
+    /// - Parameters:
+    ///   - representation: Representation fixed by endpoint registration.
+    ///   - body: Nonescaping visitor for the encoded bytes.
+    /// - Returns: The visitor result.
+    /// - Throws: ``IoValueError`` or an error thrown by `body`.
+    borrowing func withEncodedIoPayload<R>(
+        representation: IoValueRepresentation,
+        _ body: (borrowing ByteSlice) throws -> R
+    ) throws -> R
+}
+
+/// Common portable IO value contract with a type-fixed representation.
+public protocol IoValue: IoEndpointValue {
+    /// Representation fixed by the application value type.
+    static var representation: IoValueRepresentation { get }
+}
 
 /// JSON IO value contract.
 public protocol JSONIoValue: IoValue {
@@ -96,8 +135,65 @@ public protocol BinaryIoValue: IoValue {
     init(ioBytes: borrowing ByteSlice) throws(IoValueError)
     borrowing func encodeIoBytes(into output: inout IoByteOutput) throws(IoValueError)
 }
-extension JSONIoValue { public static var representation: IoValueRepresentation { .json } }
-extension BinaryIoValue { public static var representation: IoValueRepresentation { .binary } }
+extension IoValue {
+    public static var fixedRepresentation: IoValueRepresentation? { representation }
+}
+
+extension JSONIoValue {
+    public static var representation: IoValueRepresentation { .json }
+
+    public static func decodeIoPayload(
+        _ payload: borrowing ByteSlice,
+        representation: IoValueRepresentation
+    ) throws(IoValueError) -> Self {
+        guard representation == .json else { throw .invalidValue }
+        var decoded: Self?
+        var failure: IoValueError?
+        do throws(ObjectError) {
+            try JSONValueView.withValidatedRaw(payload) { view in
+                do throws(IoValueError) { decoded = try Self(ioJSON: view) }
+                catch { failure = error }
+            }
+        } catch {
+            throw .invalidValue
+        }
+        if let failure { throw failure }
+        guard let decoded else { throw .invalidValue }
+        return decoded
+    }
+
+    public borrowing func withEncodedIoPayload<R>(
+        representation: IoValueRepresentation,
+        _ body: (borrowing ByteSlice) throws -> R
+    ) throws -> R {
+        guard representation == .json else { throw IoValueError.invalidValue }
+        var output = IoJSONOutput()
+        try encodeIoJSON(into: &output)
+        return try output.withBytes(body)
+    }
+}
+
+extension BinaryIoValue {
+    public static var representation: IoValueRepresentation { .binary }
+
+    public static func decodeIoPayload(
+        _ payload: borrowing ByteSlice,
+        representation: IoValueRepresentation
+    ) throws(IoValueError) -> Self {
+        guard representation == .binary else { throw .invalidValue }
+        return try Self(ioBytes: payload)
+    }
+
+    public borrowing func withEncodedIoPayload<R>(
+        representation: IoValueRepresentation,
+        _ body: (borrowing ByteSlice) throws -> R
+    ) throws -> R {
+        guard representation == .binary else { throw IoValueError.invalidValue }
+        var output = IoByteOutput()
+        try encodeIoBytes(into: &output)
+        return try output.withBytes(body)
+    }
+}
 
 /// A fixed-capacity JSON writer.
 public struct IoJSONOutput: ~Copyable, Sendable {
@@ -111,7 +207,7 @@ public struct IoJSONOutput: ~Copyable, Sendable {
     /// Writes a static JSON literal.
     public mutating func write(_ literal: StaticString) throws(IoValueError) { try writeRaw(ByteSlice(bytes: literal.utf8Start, length: literal.utf8CodeUnitCount)) }
     /// Borrows the encoded value.
-    public borrowing func withBytes<R>(_ body: (borrowing ByteSlice) -> R) -> R { value.withBytes(body) }
+    public borrowing func withBytes<R>(_ body: (borrowing ByteSlice) throws -> R) rethrows -> R { try value.withBytes(body) }
     /// Finishes the output.
     public consuming func finish() -> BoundedJSONValue<512> { value }
 }
@@ -126,17 +222,117 @@ public struct IoByteOutput: ~Copyable, Sendable {
         catch { throw error.code == .capacityExceeded ? .capacityExceeded : .invalidValue }
     }
     /// Borrows the encoded value.
-    public borrowing func withBytes<R>(_ body: (borrowing ByteSlice) -> R) -> R { value.withBytes(body) }
+    public borrowing func withBytes<R>(_ body: (borrowing ByteSlice) throws -> R) rethrows -> R { try value.withBytes(body) }
     /// Finishes the output.
     public consuming func finish() -> BoundedIoBytes<512> { value }
 }
 
 /// A dynamic endpoint value with a fixed registration-time representation.
-public enum DynamicIoValue: Sendable, Equatable {
+public enum DynamicIoValue: IoEndpointValue, Equatable {
     case json(BoundedJSONValue<512>)
     case binary(BoundedIoBytes<512>)
     /// Returns the carried representation.
     public var representation: IoValueRepresentation { switch self { case .json: return .json; case .binary: return .binary } }
+
+    /// Dynamic values fix their accepted representation during registration.
+    public static var fixedRepresentation: IoValueRepresentation? { nil }
+
+    /// Copies a complete payload into the selected bounded dynamic case.
+    public static func decodeIoPayload(
+        _ payload: borrowing ByteSlice,
+        representation: IoValueRepresentation
+    ) throws(IoValueError) -> Self {
+        do throws(ProtocolError) {
+            switch representation {
+            case .json:
+                guard WireReader.isValidJSONValue(payload) else {
+                    throw ProtocolError(.malformedPayload)
+                }
+                return .json(try BoundedJSONValue(copying: payload))
+            case .binary:
+                return .binary(try BoundedIoBytes(copying: payload))
+            }
+        } catch {
+            throw error.code == .capacityExceeded ? .capacityExceeded : .invalidValue
+        }
+    }
+
+    /// Borrows the selected dynamic case after representation validation.
+    public borrowing func withEncodedIoPayload<R>(
+        representation: IoValueRepresentation,
+        _ body: (borrowing ByteSlice) throws -> R
+    ) throws -> R {
+        switch (copy self, representation) {
+        case (.json(let value), .json), (.binary(let value), .binary):
+            return try value.withBytes(body)
+        default:
+            throw IoValueError.invalidValue
+        }
+    }
+}
+
+/// Public route classification used by typed IO delivery handlers.
+public enum IoRouteKind: UInt8, Sendable, Equatable {
+    /// A generated Coaty IO value route.
+    case coaty
+    /// A validated exact transport-binding route.
+    case external
+}
+
+/// Complete typed IO actor delivery context.
+public struct IoDeliveryContext: Sendable, Equatable {
+    /// Source endpoint identity.
+    public let sourceID: ObjectID
+    /// Actor endpoint identity.
+    public let actorID: ObjectID
+    /// Caller-supplied monotonic receive time.
+    public let receivedAtMS: UInt32
+    /// Processor association generation observed for delivery.
+    public let associationGeneration: UInt32
+    /// Public classification without exposing route bytes.
+    public let routeKind: IoRouteKind
+
+    /// Creates a complete typed delivery context.
+    public init(
+        sourceID: ObjectID,
+        actorID: ObjectID,
+        receivedAtMS: UInt32,
+        associationGeneration: UInt32,
+        routeKind: IoRouteKind
+    ) {
+        self.sourceID = sourceID
+        self.actorID = actorID
+        self.receivedAtMS = receivedAtMS
+        self.associationGeneration = associationGeneration
+        self.routeKind = routeKind
+    }
+
+    /// Creates delivery context from portable protocol UUIDs.
+    ///
+    /// This initializer is intended for runtime adapters that already hold
+    /// normalized protocol endpoint identities.
+    ///
+    /// - Parameters:
+    ///   - sourceUUID: Source endpoint UUID.
+    ///   - actorUUID: Actor endpoint UUID.
+    ///   - receivedAtMS: Caller-supplied monotonic receive time.
+    ///   - associationGeneration: Processor association generation.
+    ///   - routeKind: Public route classification.
+    public init(
+        sourceUUID: UUID16,
+        actorUUID: UUID16,
+        receivedAtMS: UInt32,
+        associationGeneration: UInt32,
+        routeKind: IoRouteKind
+    ) {
+        self.init(
+            sourceID: ObjectID(uuid: sourceUUID),
+            actorID: ObjectID(uuid: actorUUID),
+            receivedAtMS: receivedAtMS,
+            associationGeneration: associationGeneration,
+            routeKind: routeKind
+        )
+    }
 }
 
 /// Source publication policy.

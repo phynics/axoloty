@@ -166,6 +166,26 @@ public struct JSONValueView: ~Copyable {
         }
     }
 
+    /// Validates one complete borrowed JSON value and visits its view.
+    ///
+    /// The view and its bytes are valid only during `body`; callers must
+    /// materialize owned state before returning from the visitor.
+    ///
+    /// - Parameters:
+    ///   - raw: Complete borrowed JSON bytes.
+    ///   - body: Nonescaping synchronous visitor.
+    /// - Returns: The visitor result.
+    /// - Throws: ``ObjectError`` when `raw` is not one valid JSON value.
+    public static func withValidatedRaw<R>(
+        _ raw: borrowing ByteSlice,
+        _ body: (borrowing JSONValueView) -> R
+    ) throws(ObjectError) -> R {
+        guard WireReader.isValidJSONValue(raw) else {
+            throw ObjectError(.invalidField)
+        }
+        return body(JSONValueView(raw: raw))
+    }
+
     /// Returns the number view when this value is numeric.
     /// Borrows the number view only for the duration of `body`.
     public borrowing func withNumber(_ body: (borrowing JSONNumberView) -> Void) -> Bool {

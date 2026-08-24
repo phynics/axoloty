@@ -66,6 +66,9 @@ public struct BorrowedProtocolFrame {
     /// - Throws: ``ProtocolError`` for malformed topics, unsupported families,
     ///   invalid UUIDs, or invalid correlation layout.
     public init(topic: TopicView, payload: ByteSlice) throws(ProtocolError) {
+        guard topic.rawBytes.length <= 128 else {
+            throw ProtocolError(.malformedFrame)
+        }
         do {
             try topic.validate()
         } catch {

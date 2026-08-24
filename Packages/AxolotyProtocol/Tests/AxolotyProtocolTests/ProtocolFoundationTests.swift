@@ -202,6 +202,143 @@ struct ProtocolFoundationTests {
         #expect(correlationID == .zero)
     }
 
+    @Test("fixed owning sink preserves every action byte after source mutation")
+    func inlineOwnedSinkCopiesEveryActionByte() throws {
+        var selectorBytes = Array("selector".utf8)
+        var topicBytes = Array("coaty/3/test/CHN/fixture".utf8)
+        var payloadBytes = Array("payload".utf8)
+        var routeBytes = Array("external/fixture".utf8)
+        var sink = InlineOwnedProtocolActionSink<10>()
+        var expected: [OwnedProtocolAction] = []
+
+        selectorBytes.withUnsafeBufferPointer { selectorBuffer in
+            topicBytes.withUnsafeBufferPointer { topicBuffer in
+                payloadBytes.withUnsafeBufferPointer { payloadBuffer in
+                    routeBytes.withUnsafeBufferPointer { routeBuffer in
+                        let selector = ByteSlice(bytes: selectorBuffer.baseAddress!, length: selectorBuffer.count)
+                        let topic = ByteSlice(bytes: topicBuffer.baseAddress!, length: topicBuffer.count)
+                        let payload = ByteSlice(bytes: payloadBuffer.baseAddress!, length: payloadBuffer.count)
+                        let route = ByteSlice(bytes: routeBuffer.baseAddress!, length: routeBuffer.count)
+                        let routingKey = try! ProtocolRoutingKey(capability: .channel, sourceID: .zero)
+                        let delivery = BorrowedProtocolDelivery(
+                            routingKey: routingKey,
+                            deliveryKey: .channel(selector),
+                            routeClassification: .external,
+                            topic: topic,
+                            payload: payload
+                        )
+                        let profile = BorrowedProtocolPublication(
+                            routingKey: routingKey,
+                            target: .profile(eventTypeFilter: selector, filterKind: .direct),
+                            payload: payload,
+                            isApplicationDelivery: false
+                        )
+                        let associationPublication = BorrowedProtocolPublication(
+                            routingKey: routingKey,
+                            target: .associationRoute(route: route, kind: .external),
+                            payload: payload
+                        )
+                        let association = BorrowedIoAssociationTransition(
+                            delivery: delivery,
+                            sourceID: .zero,
+                            actorID: .zero,
+                            change: .removed,
+                            route: BorrowedProtocolRouteSnapshot(slice: route),
+                            routeClassification: .external
+                        )
+                        let external = BorrowedExternalRouteTransition(
+                            sourceID: .zero,
+                            actorID: .zero,
+                            route: route
+                        )
+                        let actions: [BorrowedProtocolAction] = [
+                            .deliver(delivery),
+                            .publish(profile),
+                            .associationChanged(association),
+                            .externalRouteActivated(external),
+                            .externalRouteDeactivated(external),
+                            .publish(associationPublication),
+                            .deliver(BorrowedProtocolDelivery(
+                                routingKey: routingKey,
+                                deliveryKey: .capability(.channel),
+                                payload: payload
+                            )),
+                            .deliver(BorrowedProtocolDelivery(
+                                routingKey: routingKey,
+                                deliveryKey: .advertiseFilter(selector),
+                                payload: payload
+                            )),
+                            .deliver(BorrowedProtocolDelivery(
+                                routingKey: routingKey,
+                                deliveryKey: .ioActor(.zero),
+                                payload: payload
+                            )),
+                            .deliver(BorrowedProtocolDelivery(
+                                routingKey: routingKey,
+                                deliveryKey: .correlated(.discover, .zero),
+                                payload: payload
+                            )),
+                        ]
+                        expected = actions.map { $0.owned() }
+                        let preflighted = sink.preflight(actionCount: actions.count)
+                        #expect(preflighted)
+                        for action in actions {
+                            let appended = sink.append(action)
+                            #expect(appended)
+                        }
+                    }
+                }
+            }
+        }
+
+        selectorBytes[0] = Character("X").asciiValue!
+        topicBytes[0] = Character("X").asciiValue!
+        payloadBytes[0] = Character("X").asciiValue!
+        routeBytes[0] = Character("X").asciiValue!
+
+        var actual: [OwnedProtocolAction] = []
+        for index in 0..<sink.count {
+            #expect(sink.visit(at: index) { actual.append($0.owned()) })
+        }
+        #expect(actual == expected)
+    }
+
+    @Test("fixed owning sink preflight and byte bounds are atomic")
+    func inlineOwnedSinkSaturationIsAtomic() throws {
+        var sink = InlineOwnedProtocolActionSink<1>()
+        let saturated = sink.preflight(actionCount: 2)
+        #expect(!saturated)
+        #expect(sink.count == 0)
+        #expect(sink.remainingCapacity == 1)
+
+        var oversized = Array(repeating: UInt8(1), count: 513)
+        oversized.withUnsafeBufferPointer { buffer in
+            let action = BorrowedProtocolAction.deliver(BorrowedProtocolDelivery(
+                routingKey: try! ProtocolRoutingKey(capability: .channel, sourceID: .zero),
+                payload: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+            ))
+            let preflighted = sink.preflight(actionCount: 1)
+            #expect(preflighted)
+            let appended = sink.append(action)
+            #expect(!appended)
+        }
+        oversized[0] = 2
+        #expect(sink.count == 0)
+        sink.removeAll()
+        #expect(sink.remainingCapacity == 1)
+    }
+
+    @Test("fixed owning sink layouts stay within the static memory gate")
+    func inlineOwnedSinkLayouts() {
+        let tiny = MemoryLayout<InlineOwnedProtocolActionSink<1>>.size
+        let staticDefault = MemoryLayout<InlineOwnedProtocolActionSink<16>>.size
+        let hostTest = MemoryLayout<InlineOwnedProtocolActionSink<64>>.size
+        print("owning-sink-layout tiny=\(tiny) static=\(staticDefault) host=\(hostTest)")
+        #expect(tiny > 0)
+        #expect(staticDefault <= 20 * 1024)
+        #expect(hostTest > staticDefault)
+    }
+
     @Test("Coaty Core Profile 3 is closed")
     func profileIsClosed() {
         #expect(CoatyCore3Profile.namespace == "coaty")
@@ -273,6 +410,26 @@ struct ProtocolFoundationTests {
                 try payload.withUnsafeBufferPointer { payloadBuffer in
                     let view = TopicView(topicBytes: topicBuffer.baseAddress!, length: topicBuffer.count)
                     let bytes = ByteSlice(bytes: payloadBuffer.baseAddress ?? UnsafePointer<UInt8>(bitPattern: 1)!, length: 0)
+                    _ = try BorrowedProtocolFrame(topic: view, payload: bytes)
+                }
+            }
+        }
+    }
+
+    @Test("borrowed frames reject topics beyond the owning action bound")
+    func oversizedTopicRejects() throws {
+        let namespace = String(repeating: "n", count: 80)
+        let topic = Array("coaty/3/\(namespace)/CHN:fixture/00000000-0000-0000-0000-000000000000".utf8)
+        #expect(topic.count > 128)
+        let payload = [UInt8]()
+        #expect(throws: ProtocolError.self) {
+            try topic.withUnsafeBufferPointer { topicBuffer in
+                try payload.withUnsafeBufferPointer { payloadBuffer in
+                    let view = TopicView(topicBytes: topicBuffer.baseAddress!, length: topicBuffer.count)
+                    let bytes = ByteSlice(
+                        bytes: payloadBuffer.baseAddress ?? UnsafePointer<UInt8>(bitPattern: 1)!,
+                        length: 0
+                    )
                     _ = try BorrowedProtocolFrame(topic: view, payload: bytes)
                 }
             }

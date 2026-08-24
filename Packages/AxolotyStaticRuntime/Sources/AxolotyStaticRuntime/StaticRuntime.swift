@@ -23,14 +23,15 @@ public struct StaticRuntimeDefinition: ~Copyable {
 /// A synchronous, fixed-storage runtime for Embedded Swift.
 ///
 /// One runtime owns exactly one ``ProtocolProcessor`` and one inline action
-/// sink. Callers process a frame or local operation synchronously, drain its
-/// actions before borrowed buffers leave scope, and then return to their
-/// transport loop. No task, actor, Foundation value, or heap-backed registry
-/// is part of this runtime.
+/// owning action sink. Callers may return from frame or local-operation
+/// processing before draining because the sink deep-copies every borrowed
+/// byte. Drained views remain valid only during the synchronous visitor. No
+/// task, actor, Foundation value, or heap-backed registry is part of this
+/// runtime.
 public struct StaticRuntime<let capacity: Int>: ~Copyable {
     private var processor: ProtocolProcessor<capacity>
     private var subscriptions: ProtocolSubscriptionRegistry<capacity>
-    private var sink: InlineProtocolActionSink<capacity>
+    private var sink: InlineOwnedProtocolActionSink<capacity>
     private let routeClassifier: ExactProtocolRouteClassifier
 
     /// Creates a runtime with a sealed capability profile and fixed limits.
@@ -46,7 +47,7 @@ public struct StaticRuntime<let capacity: Int>: ~Copyable {
             maximumPayloadBytes: maximumPayloadBytes
         )
         self.subscriptions = ProtocolSubscriptionRegistry<capacity>()
-        self.sink = InlineProtocolActionSink<capacity>()
+        self.sink = InlineOwnedProtocolActionSink<capacity>()
     }
 
     /// Consumes fixed configuration and binds one exact route classifier.
@@ -60,7 +61,7 @@ public struct StaticRuntime<let capacity: Int>: ~Copyable {
             maximumPayloadBytes: definition.maximumPayloadBytes
         )
         self.subscriptions = ProtocolSubscriptionRegistry<capacity>()
-        self.sink = InlineProtocolActionSink<capacity>()
+        self.sink = InlineOwnedProtocolActionSink<capacity>()
     }
 
     /// The processor's fixed-storage state observation.
@@ -176,7 +177,7 @@ public struct StaticRuntime<let capacity: Int>: ~Copyable {
     /// Number of actions waiting for synchronous delivery.
     public var actionCount: Int { sink.count }
 
-    /// Delivers and removes all retained actions before borrowed buffers leave scope.
+    /// Delivers and removes all retained actions through call-scoped borrows.
     ///
     /// Registered handlers are invoked synchronously in slot order. The body
     /// is never retained by the runtime.
@@ -184,13 +185,14 @@ public struct StaticRuntime<let capacity: Int>: ~Copyable {
     public mutating func drain(_ body: (BorrowedProtocolAction) -> Void) -> Int {
         let count = sink.count
         for index in 0..<count {
-            guard let action = sink[index] else { continue }
-            body(action)
-            switch action {
-            case .deliver, .associationChanged:
-                _ = subscriptions.dispatch(action)
-            case .publish, .externalRouteActivated, .externalRouteDeactivated:
-                break
+            _ = sink.visit(at: index) { action in
+                body(action)
+                switch action {
+                case .deliver, .associationChanged:
+                    _ = subscriptions.dispatch(action)
+                case .publish, .externalRouteActivated, .externalRouteDeactivated:
+                    break
+                }
             }
         }
         sink.removeAll()
