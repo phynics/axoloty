@@ -101,20 +101,17 @@ struct AxolotyRuntimeTests {
         #expect(receipt == .rejected(.notRunning(.stopped)))
     }
 
-    @Test("runtime uses the shared processor for an accepted local operation")
+    @Test("runtime uses the shared processor for an accepted local publication")
     func acceptsLocalOperation() async throws {
         let definition = try makeDefinition()
         let transport = TestTransport()
         let runtime = AxolotyRuntime(definition: definition, transport: transport)
         try await runtime.start()
 
-        let receipt = await runtime.publish(
-            RuntimeOperation(
-                capability: .ioValue,
-                sourceID: .zero,
-                payload: [0x7B, 0x7D]
-            )
-        )
+        let receipt = await runtime.publish(.channel(
+            identifier: "accepted-local-publication",
+            payload: Array(#"{"privateData":{"accepted":true}}"#.utf8)
+        ))
         #expect(receipt == .accepted)
         for _ in 0..<100 {
             if await transport.sentCount() == 1 { break }
@@ -423,10 +420,9 @@ struct AxolotyRuntimeTests {
         let transport = DrainingTransport()
         let runtime = AxolotyRuntime(definition: definition, transport: transport)
         try await runtime.start()
-        #expect(await runtime.publish(RuntimeOperation(
-            capability: .ioValue,
-            sourceID: .zero,
-            payload: [0x7B, 0x7D]
+        #expect(await runtime.publish(.channel(
+            identifier: "drain-publication",
+            payload: Array(#"{"privateData":{"drain":true}}"#.utf8)
         )) == .accepted)
         for _ in 0..<100 {
             if await transport.sendStarted { break }
