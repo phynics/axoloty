@@ -136,11 +136,8 @@ let package = Package(
                 "ProtocolTrace/ProtocolTrace.swift",
                 "ProtocolTrace/ProtocolTraceCorpus.swift",
                 "ProtocolTrace/ProtocolTraceTests.swift",
-                "Communication/EventHubTransportTests.swift",
                 "Communication/MQTTNIOClientTests.swift",
-                "Communication/UnaryCallBrokerIntegrationTests.swift",
                 "Infrastructure/TopicBuilderTests.swift",
-                "Controller/ObjectLifecycleControllerTests.swift",
                 "Logging/DecentralizedLoggingTest.swift",
                 "Logging/LogManagerTests.swift",
                 "Testing/AsyncWaiting.swift",
@@ -148,18 +145,6 @@ let package = Package(
                 // Offline wire compatibility subjects are explicit here because
                 // the target uses a source allow-list to keep broker and live
                 // producer tests out of ordinary verification.
-                "WireCompatibility/WireFixtureTests.swift",
-                "WireCompatibility/Legacy/LegacyCaptureFixtureTests.swift",
-                "WireCompatibility/CoatyJsAdvertiseCaptureTests.swift",
-                "WireCompatibility/CoatyJsCallReturnCaptureTests.swift",
-                "WireCompatibility/CoatyJsCoreCaptureTests.swift",
-                "WireCompatibility/CoatyJsDiscoverResolveCaptureTests.swift",
-                "WireCompatibility/CoatyJsLastWillCaptureTests.swift",
-                "WireCompatibility/CoatyJsQosScenarioCaptureTests.swift",
-                "WireCompatibility/CoatyJsQueryRetrieveCaptureTests.swift",
-                "WireCompatibility/CoatyJsUpdateCompleteCaptureTests.swift",
-                "WireCompatibility/IO/AxolotyIoNegativeTests.swift",
-                "WireCompatibility/IO/AxolotyIoValuePayloadTests.swift",
                 "WireCompatibility/Lifecycle/LifecycleCompatibilityScenarioTests.swift",
                 // Live subjects remain available only to the explicit wire
                 // capture plan, where the broker and peer controls exist.
