@@ -8,11 +8,10 @@ import Testing
 /// macOS host by `Tests/Support/WireCompatibility/Legacy/run_capture_on_macos.sh` and
 /// committed under `Tests/WireCompatibility/Fixtures/coatyswift-2.4.0/`.
 ///
-/// Unlike `WireFixtureTests`, which only exercises the harness against a
-/// hand-authored `contract-seed` payload, these tests assert that Axoloty
-/// decodes the exact bytes an unmodified legacy CoatySwift 2.4.0 process put
-/// on the wire, checking the decoded Swift object's semantic fields rather
-/// than merely that a payload parses.
+/// These tests assert that Axoloty decodes the exact bytes an unmodified
+/// legacy CoatySwift 2.4.0 process put on the wire. They check the decoded
+/// Swift object's semantic fields rather than only checking that the payload
+/// parses.
 struct LegacyCaptureFixtureTests {
     private struct CaptureRecord: Decodable {
         struct MQTT: Decodable {

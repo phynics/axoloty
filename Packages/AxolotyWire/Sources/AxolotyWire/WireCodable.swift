@@ -7,9 +7,9 @@
 /// trees. The reader provides typed field access by static string key;
 /// string values are returned as borrowed `ByteSlice` (no String allocation).
 ///
-/// On the host runtime, differential tests compare `WireDecodable` output
-/// against the existing `Codable` path (`PayloadCoder.decode`) to prove
-/// semantic equivalence before production cutover.
+/// Host and static runtime paths consume this same protocol. Package tests
+/// exercise DTO round trips, malformed input, and bounded-buffer failures
+/// directly at this portable boundary.
 public protocol WireDecodable {
     /// Creates an instance by decoding fields from `reader`.
     ///

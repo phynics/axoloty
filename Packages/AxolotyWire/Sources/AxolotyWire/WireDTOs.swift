@@ -2,13 +2,10 @@
 
 // Foundation-free wire DTOs for Coaty communication event data.
 //
-// These mirror the Codable `*EventData` types but use `UUID16` and
-// `ByteSlice` instead of `CoatyUUID` and `String`. On the host runtime,
-// they are populated from the same JSON bytes via `WireReader` and
-// compared against the Codable path to prove semantic equivalence.
-//
-// The embedded target will consume these DTOs directly — no Foundation
-// dependency, no class hierarchy, no Codable reflection.
+// These are the shared host and static event-data boundary. They use `UUID16`
+// and `ByteSlice`, with no Foundation dependency, class hierarchy, or Codable
+// reflection. Package tests exercise their exact raw-value preservation and
+// structured boundary failures through `WireReader` and `WireWriter`.
 
 // MARK: - AssociateEventData
 

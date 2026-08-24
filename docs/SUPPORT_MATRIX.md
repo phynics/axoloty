@@ -23,7 +23,7 @@ consistent vocabulary:
 
 | Capability | Support level | Evidence |
 |---|---|---|
-| Advertise / Deadvertise | Validated | Offline fixtures (CoatyJS, legacy CoatySwift, contract-seed); live both directions; embedded physical evidence (10/10). Failure/boundary: invalid-object-type rejection, malformed-input rejection. |
+| Advertise / Deadvertise | Validated | Offline fixtures (CoatyJS and legacy CoatySwift); live both directions; embedded physical evidence (10/10). Failure/boundary: invalid-object-type rejection, malformed-input rejection. |
 | Discover / Resolve | Validated | Offline fixtures (CoatyJS, legacy); live both directions; embedded physical evidence. Failure/boundary: correlation matching, bounded outstanding Discover, 5s timeout, wrong-correlation rejection, duplicate rejection. |
 | Query / Retrieve | Validated | Offline fixtures (CoatyJS); live both directions with filter coverage. Failure/boundary: negative filter scenarios, unknown-operator rejection, unknown-sorting-order rejection. Legacy CoatySwift direction: Compatibility-unverified. |
 | Update / Complete | Validated | Offline fixtures (CoatyJS); live both directions. Failure/boundary: omitted-optional-field decoding. Legacy directions: Compatibility-unverified. |
@@ -51,7 +51,7 @@ consistent vocabulary:
 |---|---|---|
 | Object lifecycle controller | Supported | Async snapshot API with actor-isolated registry. One broker-backed integration test. No cross-implementation evidence. |
 | Dynamic object-type registration | Validated | Concurrent registration test (1000 iterations). Unregistered-type reporting test. |
-| Unknown/custom object decoding | Validated | Fuzz tests (unknown fields, malformed input, truncated payloads). Fixture tests (unknown nested fields, reordered keys, duplicate fields). `RawJSONValue` round-trip preservation. |
+| Unknown/custom object decoding | Validated | Fuzz tests cover unknown fields, malformed input, and truncated payloads. Borrowed and owned raw JSON boundary tests cover nested values, exact-number lexemes, and bounded-capacity failures. |
 | Dynamic controller registration | Supported | Public API implemented (post-bootstrap registration, already-started-manager join). No test exercises the dynamic registration path. |
 
 ## Transport and connectivity

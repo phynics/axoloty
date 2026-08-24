@@ -78,8 +78,6 @@ Identity lifecycle / last will has nine executable live scenarios of eleven, evi
 
 `Legacy → modern` for Advertise, Deadvertise, and Discover/Resolve is backed by real, provenance-bound CoatySwift 2.4.0 captures generated on a macOS host (`Tests/WireCompatibility/Fixtures/coatyswift-2.4.0/*.jsonl` plus their `*.manifest.json`) and decoded by `LegacyCaptureFixtureTests.swift`, which asserts the decoded Swift event's semantic fields, not only that the capture parses. Generating these captures required two fixes to the previously unexercised macOS runner (`Tests/Support/WireCompatibility/Legacy/macOS-runner/`), documented in that directory's README: pinned CoatySwift 2.4.0's CocoaMQTT client dispatches socket callbacks on the main queue, so the runner's blocking `Thread.sleep`/`DispatchSemaphore.wait` calls starved that queue and silently dropped every publication; and the Discover/Resolve requester and responder identities produced an identical truncated MQTT ClientID, so the broker repeatedly disconnected one side. `Modern → legacy` (Axoloty producing for a legacy CoatySwift consumer) is not implemented and remains `Not tested`; the macOS runner in this repository is a producer-only scenario driver, not a consumer.
 
-The `contract-seed` fixtures exercise the harness only. They are supplemented, for Advertise/Deadvertise/Discover-Resolve, by the provenance-bearing legacy Swift captures described above; the remaining capabilities still need equivalent legacy and CoatyJS captures.
-
 Reference-agent pins, build instructions, and the documented legacy Swift
 platform constraint live in `Tests/Support/WireCompatibility/ReferenceAgents/README.md`.
 
