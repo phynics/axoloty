@@ -539,30 +539,59 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         // capacity so unrelated routes and contradictory flags retain their
         // semantic outcomes even when the caller's sink is full.
         guard sink.preflight(actionCount: actionCount) else { return .rejected(.capacityExceeded) }
-        let actionKind: ProtocolActionKind = plan.isRemoval ? .disassociate : (frame.routingKey.capability == .associate ? .associate : .deliver)
         if ioActorActionCount > 0 {
             for index in 0..<capacity where associations[index].active && associations[index].sourceID == frame.routingKey.sourceID {
-                let action = BorrowedProtocolAction(
-                    kind: actionKind,
+                let delivery = BorrowedProtocolDelivery(
                     routingKey: frame.routingKey,
-                    payload: frame.payload,
                     deliveryKey: .ioActor(associations[index].actorID),
                     topic: frame.topic,
-                    routeClassification: frame.routingKey.capability == .ioValue && associations[index].external
-                        ? .external
-                        : routeClassification
+                    payload: frame.payload
                 )
+                let action = BorrowedProtocolAction.deliver(delivery)
                 guard sink.append(action) else { return .rejected(.capacityExceeded) }
             }
-        } else {
-            let action = BorrowedProtocolAction(
-                kind: actionKind,
+        } else if frame.routingKey.capability == .associate {
+            let reader = frame.payload.withBytes { pointer, length in
+                WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
+            }
+            guard let event = try? AssociateWireData(from: reader) else { return .rejected(.malformedPayload) }
+            let change: ProtocolIoAssociationChange
+            switch plan {
+            case .remove: change = .removed
+            case .upsert(let index, _): change = associations[index].active ? .updated : .established
+            case .none: change = .established
+            }
+            let delivery = BorrowedProtocolDelivery(
                 routingKey: frame.routingKey,
-                payload: frame.payload,
                 deliveryKey: deliveryKey(for: frame),
+                routeClassification: routeClassification,
                 topic: frame.topic,
+                payload: frame.payload
+            )
+            let transitionRoute: BorrowedProtocolRouteSnapshot?
+            switch plan {
+            case .remove(let index):
+                transitionRoute = associationRouteSnapshot(at: index)
+            default:
+                transitionRoute = event.associatingRoute.flatMap(BorrowedProtocolRouteSnapshot.init(slice:))
+            }
+            let transition = BorrowedIoAssociationTransition(
+                delivery: delivery,
+                sourceID: event.ioSourceId,
+                actorID: event.ioActorId,
+                change: change,
+                route: transitionRoute,
                 routeClassification: routeClassification
             )
+            guard sink.append(.associationChanged(transition)) else { return .rejected(.capacityExceeded) }
+        } else {
+            let action = BorrowedProtocolAction.deliver(BorrowedProtocolDelivery(
+                routingKey: frame.routingKey,
+                deliveryKey: deliveryKey(for: frame),
+                routeClassification: routeClassification,
+                topic: frame.topic,
+                payload: frame.payload
+            ))
             guard sink.append(action) else { return .rejected(.capacityExceeded) }
         }
         if let responsePlan {
@@ -683,29 +712,29 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         } else {
             plan = .none
         }
+        _ = routeClassification
         let filters = outboundEventTypeFilters(for: operation)
         let actionCount = filters.secondary == nil ? 1 : 2
         guard sink.preflight(actionCount: actionCount) else { return .rejected(.capacityExceeded) }
-        guard sink.append(BorrowedProtocolAction(
-            kind: .publish,
+        guard sink.append(.publish(BorrowedProtocolPublication(
             routingKey: key,
+            target: .profile(
+                eventTypeFilter: filters.primary?.value,
+                filterKind: filters.primary?.kind ?? .direct
+            ),
             payload: operation.payload,
-            deliveryKey: deliveryKey(for: operation),
-            routeClassification: routeClassification,
-            eventTypeFilter: filters.primary?.value,
-            eventTypeFilterKind: filters.primary?.kind ?? .direct
-        )) else { return .rejected(.capacityExceeded) }
+            isApplicationDelivery: true
+        ))) else { return .rejected(.capacityExceeded) }
         if let secondary = filters.secondary {
-            guard sink.append(BorrowedProtocolAction(
-                kind: .publish,
+            guard sink.append(.publish(BorrowedProtocolPublication(
                 routingKey: key,
+                target: .profile(
+                    eventTypeFilter: secondary.value,
+                    filterKind: secondary.kind
+                ),
                 payload: operation.payload,
-                deliveryKey: deliveryKey(for: operation),
-                routeClassification: routeClassification,
-                eventTypeFilter: secondary.value,
-                eventTypeFilterKind: secondary.kind,
                 isApplicationDelivery: false
-            )) else { return .rejected(.capacityExceeded) }
+            ))) else { return .rejected(.capacityExceeded) }
         }
         if let requestPlan {
             pending[requestPlan.index] = PendingRecord(
@@ -726,7 +755,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         return .accepted
     }
 
-    private func deliveryKey(for frame: BorrowedProtocolFrame) -> ProtocolDeliveryKey {
+    private func deliveryKey(for frame: BorrowedProtocolFrame) -> BorrowedProtocolDeliveryKey {
         switch frame.routingKey.capability {
         case .advertise:
             if let objectType = Self.advertisedObjectType(frame.payload) {
@@ -755,7 +784,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         return .capability(frame.routingKey.capability)
     }
 
-    private func deliveryKey(for operation: ProtocolLocalOperation) -> ProtocolDeliveryKey {
+    private func deliveryKey(for operation: ProtocolLocalOperation) -> BorrowedProtocolDeliveryKey {
         switch operation {
         case .advertise:
             if let objectType = Self.advertisedObjectType(operation.payload) {
@@ -830,7 +859,9 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         guard let event = try? AssociateWireData(from: reader) else { return .rejected(.malformedPayload) }
         guard let route = event.associatingRoute else {
             if event.isExternalRoute == true { return .rejected(.externalRouteMismatch) }
-            for index in 0..<capacity where associations[index].active && associations[index].sourceID == event.ioSourceId && associations[index].actorID == event.ioActorId { return .accepted(.remove(index), .coaty) }
+            for index in 0..<capacity where associations[index].active && associations[index].sourceID == event.ioSourceId && associations[index].actorID == event.ioActorId {
+                return .accepted(.remove(index), associations[index].external ? .external : .coaty)
+            }
             return .ignored
         }
         guard route.length > 0, route.length <= 128 else { return .rejected(.capacityExceeded) }
@@ -858,6 +889,17 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         case .remove(let index): associations[index].active = false; associations[index].routeLength = 0
         case .upsert(let index, let association): associations[index] = association
         }
+    }
+
+    /// Borrows the route snapshot retained by an association before a removal
+    /// plan clears its active flag. The inline bytes remain stable until the
+    /// next processor operation, which is the lifetime of a borrowed action.
+    private func associationRouteSnapshot(at index: Int) -> BorrowedProtocolRouteSnapshot? {
+        let length = associations[index].routeLength
+        guard length > 0 else { return nil }
+        var storage = InlineArray<128, UInt8>(repeating: 0)
+        for offset in 0..<length { storage[offset] = associations[index].route[offset] }
+        return BorrowedProtocolRouteSnapshot(length: length, storage: storage)
     }
 
     private mutating func apply(_ plan: ObjectPlan) {

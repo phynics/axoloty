@@ -24,7 +24,7 @@ struct ProtocolProcessorTests {
         let occupiedBytes: StaticString = "{}"
         let occupied = ByteSlice(bytes: occupiedBytes.utf8Start, length: occupiedBytes.utf8CodeUnitCount)
         let occupiedKey = try ProtocolRoutingKey(capability: .channel, sourceID: Self.source)
-        let occupiedAppend = sink.append(BorrowedProtocolAction(kind: .deliver, routingKey: occupiedKey, payload: occupied))
+        let occupiedAppend = sink.append(.deliver(BorrowedProtocolDelivery(routingKey: occupiedKey, payload: occupied)))
         #expect(occupiedAppend)
         let payload = Array("{\"object\":{}}".utf8)
         let outcome = try payload.withUnsafeBufferPointer { buffer in
@@ -59,10 +59,17 @@ struct ProtocolProcessorTests {
             #expect(processor.processOutbound(operation, sink: &sink) == .accepted)
             let coreAction = try #require(sink[0]).owned()
             let objectAction = try #require(sink[1]).owned()
-            #expect(coreAction.eventTypeFilter == Array("CoatyObject".utf8))
-            #expect(coreAction.eventTypeFilterKind == .direct)
-            #expect(objectAction.eventTypeFilter == Array("com.coaty.test.WireFixture".utf8))
-            #expect(objectAction.eventTypeFilterKind == .objectType)
+            guard case .publish(let corePublication) = coreAction,
+                  case .profile(let coreFilter, let coreKind) = corePublication.target,
+                  case .publish(let objectPublication) = objectAction,
+                  case .profile(let objectFilter, let objectKind) = objectPublication.target else {
+                Issue.record("Advertise did not emit profile publications")
+                return
+            }
+            #expect(coreFilter == Array("CoatyObject".utf8))
+            #expect(coreKind == .direct)
+            #expect(objectFilter == Array("com.coaty.test.WireFixture".utf8))
+            #expect(objectKind == .objectType)
             #expect(processor.state.activeObjects == 1)
         }
     }
@@ -83,8 +90,13 @@ struct ProtocolProcessorTests {
             #expect(processor.processOutbound(operation, sink: &sink) == .accepted)
             #expect(sink.count == 1)
             let action = try #require(sink[0]).owned()
-            #expect(action.eventTypeFilter == Array("CoatyObject".utf8))
-            #expect(action.eventTypeFilterKind == .direct)
+            guard case .publish(let publication) = action,
+                  case .profile(let filter, let kind) = publication.target else {
+                Issue.record("Update did not emit a profile publication")
+                return
+            }
+            #expect(filter == Array("CoatyObject".utf8))
+            #expect(kind == .direct)
         }
     }
 
@@ -182,12 +194,11 @@ struct ProtocolProcessorTests {
         let payloadText: StaticString = "{}"
         let payload = ByteSlice(bytes: payloadText.utf8Start, length: payloadText.utf8CodeUnitCount)
         let routingKey = try ProtocolRoutingKey(capability: .advertise, sourceID: Self.source)
-        let action = BorrowedProtocolAction(
-            kind: .deliver,
+        let action = BorrowedProtocolAction.deliver(BorrowedProtocolDelivery(
             routingKey: routingKey,
-            payload: payload,
-            deliveryKey: .advertiseFilter(filterSlice)
-        )
+            deliveryKey: .advertiseFilter(filterSlice),
+            payload: payload
+        ))
         var registry = ProtocolSubscriptionRegistry<2>()
         _ = try registry.register(
             selector: .advertise,
@@ -202,7 +213,7 @@ struct ProtocolProcessorTests {
         #expect(delivered == .delivered)
 
         let otherKey = try ProtocolRoutingKey(capability: .channel, sourceID: Self.source)
-        let otherAction = BorrowedProtocolAction(kind: .deliver, routingKey: otherKey, payload: payload)
+        let otherAction = BorrowedProtocolAction.deliver(BorrowedProtocolDelivery(routingKey: otherKey, payload: payload))
         let mismatch = registry.dispatch(otherAction)
         #expect(mismatch == .mismatch)
     }
@@ -324,6 +335,43 @@ struct ProtocolProcessorTests {
         #expect(processor.state.activeAssociations == 0)
     }
 
+    @Test("association removal snapshots the route before clearing state")
+    func associationRemovalPreservesRoute() throws {
+        let source = "00000000-0000-4000-8000-000000000001"
+        let actor = "00000000-0000-4000-8000-000000000002"
+        let route = "coaty/source-preserved"
+        let classifier = ExactProtocolRouteClassifier(externalRoute: "external/unused")
+        var processor = ProtocolProcessor<1>()
+        var sink = InlineProtocolActionSink<1>()
+
+        let established = try withBorrowedFrame(
+            topic: "coaty/3/test/ASC/\(source)",
+            payload: "{\"ioSourceId\":\"\(source)\",\"ioActorId\":\"\(actor)\",\"associatingRoute\":\"\(route)\"}"
+        ) { frame in
+            processor.processInbound(frame, nowMS: 1, classifier: classifier, sink: &sink)
+        }
+        #expect(established == .accepted)
+        sink.removeAll()
+
+        let removedAction: OwnedProtocolAction = try withBorrowedFrame(
+            topic: "coaty/3/test/ASC/\(source)",
+            payload: "{\"ioSourceId\":\"\(source)\",\"ioActorId\":\"\(actor)\"}"
+        ) { frame in
+            let result = processor.processInbound(frame, nowMS: 2, classifier: classifier, sink: &sink)
+            #expect(result == .accepted)
+            return try #require(sink[0]).owned()
+        }
+        guard case .associationChanged(let transition) = removedAction else {
+            Issue.record("Disassociation did not emit an association transition")
+            return
+        }
+        #expect(transition.change == .removed)
+        #expect(transition.sourceID == UUID16(parsing: source))
+        #expect(transition.actorID == UUID16(parsing: actor))
+        #expect(transition.route == Array(route.utf8))
+        #expect(transition.routeClassification == .coaty)
+    }
+
     @Test("unrelated associations are classified before a full sink")
     func unrelatedRouteDoesNotMaskCapacity() throws {
         var processor = ProtocolProcessor<1>()
@@ -331,7 +379,7 @@ struct ProtocolProcessorTests {
         let payloadText: StaticString = "{}"
         let payload = ByteSlice(bytes: payloadText.utf8Start, length: payloadText.utf8CodeUnitCount)
         let key = try ProtocolRoutingKey(capability: .channel, sourceID: Self.source)
-        let appended = sink.append(BorrowedProtocolAction(kind: .deliver, routingKey: key, payload: payload))
+        let appended = sink.append(.deliver(BorrowedProtocolDelivery(routingKey: key, payload: payload)))
         #expect(appended)
 
         let result = try withBorrowedFrame(
