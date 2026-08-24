@@ -51,7 +51,7 @@ consistent vocabulary:
 |---|---|---|
 | Object lifecycle controller | Supported | Async snapshot API with actor-isolated registry. One broker-backed integration test. No cross-implementation evidence. |
 | Dynamic object-type registration | Validated | Concurrent registration test (1000 iterations). Unregistered-type reporting test. |
-| Unknown/custom object decoding | Validated | Fuzz tests (unknown fields, malformed input, truncated payloads). Fixture tests (unknown nested fields, reordered keys, duplicate fields). `RawJSONValue` round-trip preservation. |
+| Unknown/custom object decoding | Validated | Fuzz tests cover unknown fields, malformed input, and truncated payloads. Borrowed and owned raw JSON boundary tests cover nested values, exact-number lexemes, and bounded-capacity failures. |
 | Dynamic controller registration | Supported | Public API implemented (post-bootstrap registration, already-started-manager join). No test exercises the dynamic registration path. |
 
 ## Transport and connectivity

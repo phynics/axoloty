@@ -42,16 +42,16 @@ struct WireDTOBoundaryTests {
     @Test("raw payload fields preserve their complete JSON value")
     func rawPayloadFieldsRoundTrip() throws {
         let inputs = [
-            #"{"payload":[0,1,2,255]}"#,
-            #"{"payload":42}"#,
-            #"{"payload":null}"#,
+            (#"{"payload":[0,1,2,255]}"#, "[0,1,2,255]"),
+            (#"{"payload":42}"#, "42"),
+            (#"{"payload":null}"#, "null"),
         ]
 
-        for input in inputs {
+        for (input, expectedPayload) in inputs {
             let encoded = try roundTrip(input, as: IoValueWireData.self)
             try withReader(encoded) { reader in
                 let value = try IoValueWireData(from: reader)
-                #expect(value.payload.wireValueKind != .invalid)
+                #expect(value.payload.asString() == expectedPayload)
             }
         }
     }
@@ -63,9 +63,9 @@ struct WireDTOBoundaryTests {
 
         try withReader(encoded) { reader in
             let value = try ChannelWireData(from: reader)
-            #expect(value.object?.wireValueKind == .object)
-            #expect(value.objects?.wireValueKind == .array)
-            #expect(value.privateData?.wireValueKind == .object)
+            #expect(value.object?.asString() == #"{"objectType":"example.Thing","objectId":"11111111-1111-4111-8111-111111111111"}"#)
+            #expect(value.objects?.asString() == #"[{"objectType":"example.Other"}]"#)
+            #expect(value.privateData?.asString() == #"{"enabled":true}"#)
         }
     }
 

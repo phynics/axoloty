@@ -82,6 +82,15 @@ struct DeterministicFuzzTests {
                 #expect(view.eventType != nil, "iteration=\(iteration)")
                 #expect(view.level(3)?.equals(eventType.wireCode) == true, "iteration=\(iteration)")
                 #expect(view.levelCount == (eventType.isOneWay ? 5 : 6), "iteration=\(iteration)")
+                #expect(view.level(4).flatMap(UUID16.init(parsing:)) == source, "iteration=\(iteration) source")
+                if eventType.isOneWay {
+                    #expect(view.level(5) == nil, "iteration=\(iteration) unexpected correlation")
+                } else {
+                    #expect(
+                        view.level(5).flatMap(UUID16.init(parsing:)) == correlation,
+                        "iteration=\(iteration) correlation"
+                    )
+                }
                 do {
                     try view.validate()
                 } catch {
