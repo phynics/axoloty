@@ -13,11 +13,12 @@ const inputs = fs.readFileSync(".devcontainer/image-inputs.sh", "utf8");
 const makefile = fs.readFileSync("Makefile", "utf8");
 const setupAction = fs.readFileSync(".github/actions/setup-container/action.yml", "utf8");
 const ciWorkflow = fs.readFileSync(".github/workflows/ci.yml", "utf8");
+const wireWorkflow = fs.readFileSync(".github/workflows/wire-compatibility.yml", "utf8");
 const swiftPMWorkflows = [
   ciWorkflow,
   fs.readFileSync(".github/workflows/docs.yml", "utf8"),
   fs.readFileSync(".github/workflows/fuzz.yml", "utf8"),
-  fs.readFileSync(".github/workflows/wire-compatibility.yml", "utf8"),
+  wireWorkflow,
 ];
 const imageWorkflow = fs.readFileSync(".github/workflows/container-image.yml", "utf8");
 const openImageLockPR = fs.readFileSync(".github/scripts/open-image-lock-pr.sh", "utf8");
@@ -564,6 +565,10 @@ test("required CI preserves the plan budget and uploads durable run evidence", (
   assert.match(requiredCIJob, /Summarize verification evidence[\s\S]*manifest\.json[\s\S]*verifier\.log/);
   assert.doesNotMatch(requiredCIJob, /COVERAGE_BUILD_DIR|\.testing\/coverage|Upload coverage/);
   assert.match(requiredCIJob, /Save Swift compiler cache[\s\S]*if: success\(\)/);
+});
+
+test("live wire allows bounded container creation on busy runners", () => {
+  assert.match(wireWorkflow, /CONTAINER_CREATE_TIMEOUT_SECONDS: "300"/);
 });
 
 test("coverage is an explicit job with a truthful missing-report failure", () => {

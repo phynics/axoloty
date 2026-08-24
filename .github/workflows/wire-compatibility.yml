@@ -40,6 +40,9 @@ concurrency:
 # with a comment/description citing the recorded decision (issue/PR/link) and
 # its expiry. See docs/wire-compatibility.md.
 env:
+  # Rootless Podman may need longer than the default two minutes to create the
+  # first container after image setup on a busy hosted runner.
+  CONTAINER_CREATE_TIMEOUT_SECONDS: "300"
   WIRE_EXEMPTION_LABEL: live-wire-exemption
   WIRE_OUTPUT_DIR: .testing/runs/wire-${{ github.run_id }}-${{ github.run_attempt }}/wire
   WIRE_CI_EVIDENCE_ROOT: .testing/runs/wire-${{ github.run_id }}-${{ github.run_attempt }}/ci
