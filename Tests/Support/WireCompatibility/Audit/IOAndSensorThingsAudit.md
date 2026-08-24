@@ -2,6 +2,10 @@
 
 Status: evidence inventory for T-021. This document does not make the final
 keep/diverge/remove decisions; it defines the evidence required to make them.
+The controller and SensorThings implementation references below are historical
+G3 evidence. G4 does not ship those products; the retained SensorThings wire
+fixture is classified in Phase 4, and current support claims live in
+`docs/SUPPORT_MATRIX.md`.
 
 ## Protocol inventory
 
@@ -81,7 +85,7 @@ the four top-level discriminators.
 | Area | Existing evidence | Missing compatibility evidence |
 |---|---|---|
 | IO routing | No IO-focused test exists under `Tests/` | No Associate/IOV capture, cross-language producer/consumer test, raw-value test, external-route test, or IoState behavior test |
-| SensorThings | `SensorThingsTests.advertise` exercises the four object types between two current Swift containers; `channel` exercises Channel; mocks also use Discover/Resolve | No golden reference payloads, JS/legacy Swift direction, Query/Retrieve capture, full field-boundary fixtures, unknown-field behavior, or semantic assertions for nested types |
+| SensorThings | Historical controller tests exercised the four object types and Channel between Swift containers; the retained wire fixture is deferred to Phase 4 | No golden reference payloads, JS/legacy Swift direction, Query/Retrieve capture, full field-boundary fixtures, unknown-field behavior, or semantic assertions for nested types |
 | Reference agents | CoatyJS 2.4.0 has a reproducible Linux image; legacy Swift 2.4.0 has an immutable source pin | CoatyJS runner supports only `advertise`; legacy Swift requires a macOS/Xcode runner or macOS-produced captures |
 | Capture tooling | Passive MQTT capture preserves topic, raw bytes, QoS, retain, duplicate flag, and order | No IO or SensorThings scenario currently invokes it; no approved fixtures exist for these capabilities |
 

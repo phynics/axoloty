@@ -10,8 +10,8 @@ version](https://img.shields.io/badge/swift-6.3-%23F05138?logo=swift)](https://d
 MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 > **Development checkpoint.** [`VERSION`](./VERSION) identifies the current
-> published release (`0.5.1`). Axoloty is not API-stable; the source-breaking
-> 0.6 architecture is implemented through G4 in [epic #627](https://github.com/phynics/axoloty/issues/627).
+> published release (`0.5.1`). Axoloty is not API-stable. The source-breaking
+> 0.6 architecture has completed the G4 runtime cutover in [PR #649](https://github.com/phynics/axoloty/pull/649); G5 owns typed IO and optional products.
 
 ## About Axoloty
 
@@ -36,7 +36,8 @@ collaborative, and ad-hoc fashion. Its key properties include:
   query, and persist hierarchically typed data,
 * structured error handling through [ErrorKit](https://github.com/FlineDev/ErrorKit),
   with `AxolotyError` as the package's `Throwable` base error type,
-* a structured logging facade backed by [swift-log](https://github.com/apple/swift-log),
+* bounded runtime diagnostics that applications can forward to their own
+  logger,
 * a Foundation-free `AxolotyWire` module with a separately resolvable
   standalone package boundary for embedded targets,
 * a Foundation-free `AxolotyProtocol` foundation package with the shared
@@ -230,9 +231,10 @@ commands, workflow, coding conventions, git identity rules), see
 - **Testing:** Use Swift Testing (`@Test`, `#expect`, `#require`, and
   `Issue.record`), with explicit timeouts or synchronization for asynchronous
   work; do not add XCTest.
-- **Logging:** Use `LogManager.logger(.subsystem)` and structured `metadata:`
-  for dynamic values; see [AGENTS.md](./AGENTS.md) for levels, error chains,
-  and correlation IDs.
+- **Diagnostics:** Use `RuntimeDiagnostics` for bounded runtime counters and
+  streams. Applications choose their own [swift-log](https://github.com/apple/swift-log)
+  bootstrap and filtering policy; see [AGENTS.md](./AGENTS.md) for error
+  chains and correlation IDs.
 
 ## License
 
