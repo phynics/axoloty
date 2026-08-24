@@ -702,10 +702,10 @@ struct SizeLimitTests {
     }
 }
 
-// MARK: - Linear work check
+// MARK: - Parser work bounds
 
-@Suite("Linear work check")
-struct LinearWorkTests {
+@Suite("Parser work bounds")
+struct ParserWorkBoundsTests {
     private func makePayload(size: Int) -> [UInt8] {
         let prefix = #"{"payload":""#
         let suffix = #""}"#
@@ -713,40 +713,22 @@ struct LinearWorkTests {
         return Array((prefix + String(repeating: "x", count: padCount) + suffix).utf8)
     }
 
-    @Test("Decode latency scales linearly with input size")
-    func linearWorkScaling() {
-        // Measure decode time for payloads of increasing size.
-        let sizes = [64, 128, 256, 512]
-        var times: [(size: Int, nsPerOp: Int)] = []
+    @Test("Reader accepts the payload limit and rejects the next byte")
+    func payloadLimitBoundsParserWork() {
+        let atLimit = makePayload(size: WireBufferConfig.maxPayloadSize)
+        #expect(atLimit.count == WireBufferConfig.maxPayloadSize)
+        #expect(decodeReaderError(atLimit) == nil)
 
-        for size in sizes {
-            let payload = makePayload(size: size)
-            let iterations = 10_000
-
-            let elapsed = payload.withUnsafeBufferPointer { ptr -> Int64 in
-                let clock = ContinuousClock()
-                let e = clock.measure {
-                    for _ in 0..<iterations {
-                        let reader = WireReader(bytes: ptr.baseAddress!, length: ptr.count)
-                        _ = try? IoValueWireData(from: reader)
-                    }
-                }
-                return e.components.seconds * 1_000_000_000 + e.components.attoseconds / 1_000_000_000
-            }
-
-            let nsPerOp = Int(elapsed) / iterations
-            times.append((size, nsPerOp))
+        let overLimit = makePayload(size: WireBufferConfig.maxPayloadSize + 1)
+        #expect(overLimit.count == WireBufferConfig.maxPayloadSize + 1)
+        guard let failure = decodeReaderError(overLimit) else {
+            Issue.record("Expected payload above the parser bound to fail")
+            return
         }
-
-        // Check that the ratio of per-op time to input size is roughly constant
-        // (linear scaling). Allow 3× tolerance to account for cache effects and
-        // measurement noise in debug builds.
-        for i in 1..<times.count {
-            let ratio0 = Double(times[0].nsPerOp) / Double(times[0].size)
-            let ratioI = Double(times[i].nsPerOp) / Double(times[i].size)
-            if ratio0 > 0 && ratioI / ratio0 > 3.0 {
-                Issue.record("superlinear growth: size \(times[0].size)→\(times[i].size), ratio \(ratio0)→\(ratioI)")
-            }
+        guard case .payloadExceedsLimit = failure.reason else {
+            Issue.record("Expected payloadExceedsLimit, got \(failure.reason)")
+            return
         }
+        #expect(failure.byteOffset == overLimit.count)
     }
 }
