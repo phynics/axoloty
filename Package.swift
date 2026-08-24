@@ -161,11 +161,6 @@ let package = Package(
                 // These retained tests are intentionally outside the current
                 // target; some depend on host APIs no longer in the package.
                 // Keep each source explicit so a new test cannot become silent.
-                "Controller/ObjectLifecycleControllerTests.swift",
-                "Controller/ObjectLifecyclePublicationFailureTests.swift",
-                "IORouting/IoActorIoValueRoutingTests.swift",
-                "IORouting/IoPublicationFailureTests.swift",
-                "IORouting/IoRoutingTests.swift",
                 "Logging/DecentralizedLoggingTest.swift",
                 "Logging/LogManagerTests.swift",
                 "SensorThings/CoatyTimeIntervalTests.swift",
