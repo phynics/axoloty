@@ -150,6 +150,14 @@ public enum ProtocolProcessOutcome: Sendable, Equatable {
     case rejected(ProtocolError.Code)
 }
 
+/// A closed borrowed input accepted by the protocol processor.
+public enum BorrowedProtocolInput {
+    /// A Coaty profile frame with a parsed routing key and borrowed payload.
+    case profile(BorrowedProtocolFrame)
+    /// An exact external IO route and its borrowed payload.
+    case externalIo(route: ByteSlice, payload: ByteSlice)
+}
+
 /// A compact, fixed-storage state observation.
 public struct ProtocolStateSnapshot: Sendable, Equatable {
     /// Number of active association records.
@@ -241,13 +249,32 @@ public struct ProtocolFixedStateSnapshot<let capacity: Int>: ~Copyable {
 
 /// Shared fixed-inline protocol processor for host and Embedded bindings.
 public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
+    private enum StoredAssociationRouteKind: Equatable {
+        case coaty
+        case external
+
+        var classification: ProtocolRouteClassification {
+            switch self {
+            case .coaty: return .coaty
+            case .external: return .external
+            }
+        }
+    }
+
+    private enum ObjectRole {
+        case other
+        case ioSource
+        case ioActor
+    }
+
     private struct Association {
         var sourceID = UUID16.zero
         var actorID = UUID16.zero
         var active = false
         var routeLength = 0
         var route = InlineArray<128, UInt8>(repeating: 0)
-        var external = false
+        var routeKind: StoredAssociationRouteKind = .coaty
+        var updateRateMS: UInt32?
     }
 
     private struct ObjectRecord {
@@ -257,6 +284,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         var active = false
         var local = false
         var announced = false
+        var role: ObjectRole = .other
     }
 
     private struct PendingRecord {
@@ -298,7 +326,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
 
     private enum ObjectPlan {
         case none
-        case insert(Int, UUID16, UUID16, Bool)
+        case insert(Int, UUID16, UUID16, Bool, ObjectRole)
         case replay(Int)
         case remove(Int)
     }
@@ -358,6 +386,16 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             activeObjects: objectCount,
             pendingCorrelations: pendingCount
         )
+    }
+
+    /// Returns the complete association projection for a local or remote source.
+    public borrowing func ioAssociationState(forSource id: UUID16) -> IoAssociationState {
+        associationState(matchingSource: id, actor: nil)
+    }
+
+    /// Returns the complete association projection for a local or remote actor.
+    public borrowing func ioAssociationState(forActor id: UUID16) -> IoAssociationState {
+        associationState(matchingSource: nil, actor: id)
     }
 
     /// Copies identities into a caller-owned fixed-inline projection.
@@ -435,26 +473,35 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         generation &+= 1
     }
 
-    /// Processes a validated borrowed inbound frame.
+    /// Processes a closed borrowed inbound input.
     ///
     /// - Parameters:
-    ///   - frame: Borrowed topic and payload views valid for this call.
+    ///   - input: Profile frame or exact external IO input valid for this call.
     ///   - nowMS: Caller-supplied monotonic time in milliseconds.
     ///   - sink: Caller-owned action destination.
     /// - Returns: The atomic transition result.
-    public mutating func processInbound<S: ~Copyable & ProtocolActionSink>(_ frame: BorrowedProtocolFrame, nowMS: UInt32, sink: inout S) -> ProtocolProcessOutcome {
-        processInbound(frame, nowMS: nowMS, classifier: AnyProtocolRouteClassifier(), sink: &sink)
+    public mutating func processInbound<S: ~Copyable & ProtocolActionSink>(_ input: BorrowedProtocolInput, nowMS: UInt32, sink: inout S) -> ProtocolProcessOutcome {
+        processInbound(input, nowMS: nowMS, classifier: AnyProtocolRouteClassifier(), sink: &sink)
     }
 
-    /// Processes a validated inbound frame with a binding-owned route classifier.
+    /// Processes a closed inbound input with a binding-owned route classifier.
     ///
     /// - Parameters:
-    ///   - frame: Borrowed topic and payload views valid for this call.
+    ///   - input: Profile frame or exact external IO input valid for this call.
     ///   - nowMS: Caller-supplied monotonic time in milliseconds.
     ///   - classifier: Binding-owned association-route classifier.
     ///   - sink: Caller-owned action destination.
     /// - Returns: The atomic transition result.
-    public mutating func processInbound<Classifier: ProtocolRouteClassifier, S: ~Copyable & ProtocolActionSink>(_ frame: BorrowedProtocolFrame, nowMS: UInt32, classifier: Classifier, sink: inout S) -> ProtocolProcessOutcome {
+    public mutating func processInbound<Classifier: ProtocolRouteClassifier, S: ~Copyable & ProtocolActionSink>(_ input: BorrowedProtocolInput, nowMS: UInt32, classifier: Classifier, sink: inout S) -> ProtocolProcessOutcome {
+        switch input {
+        case .profile(let frame):
+            return processProfileInbound(frame, nowMS: nowMS, classifier: classifier, sink: &sink)
+        case .externalIo(let route, let payload):
+            return processExternalInbound(route: route, payload: payload, nowMS: nowMS, classifier: classifier, sink: &sink)
+        }
+    }
+
+    private mutating func processProfileInbound<Classifier: ProtocolRouteClassifier, S: ~Copyable & ProtocolActionSink>(_ frame: BorrowedProtocolFrame, nowMS: UInt32, classifier: Classifier, sink: inout S) -> ProtocolProcessOutcome {
         guard capabilities.contains(frame.routingKey.capability) else { return .rejected(.unsupportedCapability) }
         guard frame.payload.length <= maximumPayloadBytes else { return .rejected(.capacityExceeded) }
         let valid = validatePayload(frame.payload, for: frame.routingKey.capability)
@@ -465,7 +512,6 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 ioActorActionCount += 1
             }
         }
-        let actionCount = max(1, ioActorActionCount)
         var deadvertiseMask = InlineArray<capacity, Bool>(repeating: false)
 
         var responsePlan: (index: Int, correlationID: UUID16)?
@@ -527,6 +573,15 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         case .rejected(let code):
             return .rejected(code)
         }
+        let associationLifecycleCount: Int
+        if frame.routingKey.capability == .associate {
+            associationLifecycleCount = lifecycleEffectCount(for: plan)
+        } else {
+            associationLifecycleCount = 0
+        }
+        let actionCount = frame.routingKey.capability == .associate
+            ? 1 + associationLifecycleCount
+            : max(1, ioActorActionCount)
         // Classification and all rejection-only validation precede sink
         // capacity so unrelated routes and contradictory flags retain their
         // semantic outcomes even when the caller's sink is full.
@@ -536,7 +591,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 let delivery = BorrowedProtocolDelivery(
                     routingKey: frame.routingKey,
                     deliveryKey: .ioActor(associations[index].actorID),
-                    routeClassification: associations[index].external ? .external : .coaty,
+                    routeClassification: associations[index].routeKind.classification,
                     topic: frame.topic,
                     payload: frame.payload
                 )
@@ -548,25 +603,55 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
             }
             guard let event = try? AssociateWireData(from: reader) else { return .rejected(.malformedPayload) }
+            let oldAssociation: Association?
+            let proposedAssociation: Association?
+            switch plan {
+            case .remove(let index):
+                oldAssociation = associations[index]
+                proposedAssociation = nil
+            case .upsert(let index, let association):
+                oldAssociation = associations[index].active ? associations[index] : nil
+                proposedAssociation = association
+            case .none:
+                oldAssociation = nil
+                proposedAssociation = nil
+            }
             let change: ProtocolIoAssociationChange
             switch plan {
             case .remove: change = .removed
             case .upsert(let index, _): change = associations[index].active ? .updated : .established
             case .none: change = .established
             }
+            let transitionClassification = proposedAssociation?.routeKind.classification
+                ?? oldAssociation?.routeKind.classification
+                ?? routeClassification
             let delivery = BorrowedProtocolDelivery(
                 routingKey: frame.routingKey,
                 deliveryKey: deliveryKey(for: frame),
-                routeClassification: routeClassification,
+                routeClassification: transitionClassification,
                 topic: frame.topic,
                 payload: frame.payload
             )
             let transitionRoute: BorrowedProtocolRouteSnapshot?
-            switch plan {
-            case .remove(let index):
-                transitionRoute = associationRouteSnapshot(at: index)
-            default:
-                transitionRoute = event.associatingRoute.flatMap(BorrowedProtocolRouteSnapshot.init(slice:))
+            if let proposedAssociation {
+                transitionRoute = associationRouteSnapshot(proposedAssociation)
+            } else if let oldAssociation {
+                transitionRoute = associationRouteSnapshot(oldAssociation)
+            } else {
+                transitionRoute = nil
+            }
+
+            let localActor = isLocalIoActor(event.ioActorId)
+            if localActor,
+               let oldAssociation,
+               oldAssociation.routeKind == .external,
+               (proposedAssociation == nil || proposedAssociation!.routeKind != .external || !Self.routeEquals(oldAssociation, proposedAssociation!)),
+               let route = associationRouteSnapshot(oldAssociation) {
+                guard sink.append(.externalRouteDeactivated(BorrowedExternalRouteTransition(
+                    sourceID: oldAssociation.sourceID,
+                    actorID: oldAssociation.actorID,
+                    route: route
+                ))) else { return .rejected(.capacityExceeded) }
             }
             let transition = BorrowedIoAssociationTransition(
                 delivery: delivery,
@@ -574,9 +659,21 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 actorID: event.ioActorId,
                 change: change,
                 route: transitionRoute,
-                routeClassification: routeClassification
+                routeClassification: transitionClassification
             )
             guard sink.append(.associationChanged(transition)) else { return .rejected(.capacityExceeded) }
+
+            if localActor,
+               let proposedAssociation,
+               proposedAssociation.routeKind == .external,
+               (oldAssociation == nil || oldAssociation!.routeKind != .external || !Self.routeEquals(oldAssociation!, proposedAssociation)),
+               let route = associationRouteSnapshot(proposedAssociation) {
+                guard sink.append(.externalRouteActivated(BorrowedExternalRouteTransition(
+                    sourceID: proposedAssociation.sourceID,
+                    actorID: proposedAssociation.actorID,
+                    route: route
+                ))) else { return .rejected(.capacityExceeded) }
+            }
         } else {
             let action = BorrowedProtocolAction.deliver(BorrowedProtocolDelivery(
                 routingKey: frame.routingKey,
@@ -593,6 +690,52 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             }
         }
         commitTransition(associationPlan: plan, objectPlan: objectPlan, deadvertiseMask: deadvertiseMask)
+        return .accepted
+    }
+
+    private mutating func processExternalInbound<Classifier: ProtocolRouteClassifier, S: ~Copyable & ProtocolActionSink>(
+        route: ByteSlice,
+        payload: ByteSlice,
+        nowMS: UInt32,
+        classifier: Classifier,
+        sink: inout S
+    ) -> ProtocolProcessOutcome {
+        guard route.length > 0, route.length <= 128,
+              classifier.classify(route) == .external else { return .ignored }
+        guard payload.length <= maximumPayloadBytes,
+              validatePayload(payload, for: .ioValue) else { return .rejected(.malformedPayload) }
+
+        var matching = 0
+        for index in 0..<capacity {
+            let association = associations[index]
+            guard association.active,
+                  association.routeKind == .external,
+                  Self.routeEquals(association, route, kind: .external),
+                  isLocalIoActor(association.actorID) else { continue }
+            matching += 1
+        }
+        guard matching > 0 else { return .ignored }
+        guard sink.preflight(actionCount: matching) else { return .rejected(.capacityExceeded) }
+
+        for index in 0..<capacity {
+            let association = associations[index]
+            guard association.active,
+                  association.routeKind == .external,
+                  Self.routeEquals(association, route, kind: .external),
+                  isLocalIoActor(association.actorID) else { continue }
+            guard let routingKey = try? ProtocolRoutingKey(capability: .ioValue, sourceID: association.sourceID, correlationID: nil) else {
+                return .rejected(.invalidCorrelation)
+            }
+            let delivery = BorrowedProtocolDelivery(
+                routingKey: routingKey,
+                deliveryKey: .ioActor(association.actorID),
+                routeClassification: .external,
+                topic: route,
+                payload: payload
+            )
+            guard sink.append(.deliver(delivery)) else { return .rejected(.capacityExceeded) }
+        }
+        generation &+= 1
         return .accepted
     }
 
@@ -656,7 +799,6 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             return .rejected(code)
         }
         let plan: AssociationPlan
-        var routeClassification: ProtocolRouteClassification = .coaty
         if operation.capability == .associate {
             let associateReader = operation.payload.withBytes { pointer, length in
                 WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
@@ -665,38 +807,76 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 return .rejected(.externalRouteMismatch)
             }
             switch planAssociation(operation.payload, classifier: classifier) {
-            case .accepted(let value, let classification):
+            case .accepted(let value, _):
                 plan = value
-                routeClassification = classification
             case .ignored: return .ignored
             case .rejected(let code): return .rejected(code)
             }
         } else {
             plan = .none
         }
-        _ = routeClassification
-        let filters = outboundEventTypeFilters(for: operation)
-        let actionCount = filters.secondary == nil ? 1 : 2
-        guard sink.preflight(actionCount: actionCount) else { return .rejected(.capacityExceeded) }
-        guard sink.append(.publish(BorrowedProtocolPublication(
-            routingKey: key,
-            target: .profile(
-                eventTypeFilter: filters.primary?.value,
-                filterKind: filters.primary?.kind ?? .direct
-            ),
-            payload: operation.payload,
-            isApplicationDelivery: true
-        ))) else { return .rejected(.capacityExceeded) }
-        if let secondary = filters.secondary {
+        if operation.capability == .ioValue {
+            var routeIndices = InlineArray<capacity, Int>(repeating: -1)
+            var routeCount = 0
+            for index in 0..<capacity {
+                let association = associations[index]
+                guard association.active,
+                      association.sourceID == operation.sourceID,
+                      association.routeLength > 0 else { continue }
+                var duplicate = false
+                for routeIndex in 0..<routeCount {
+                    if Self.routeEquals(association, associations[routeIndices[routeIndex]]) {
+                        duplicate = true
+                        break
+                    }
+                }
+                guard !duplicate else { continue }
+                routeIndices[routeCount] = index
+                routeCount += 1
+            }
+            guard routeCount > 0 else { return .ignored }
+            guard sink.preflight(actionCount: routeCount) else { return .rejected(.capacityExceeded) }
+            for routeIndex in 0..<routeCount {
+                let associationIndex = routeIndices[routeIndex]
+                let association = associations[associationIndex]
+                let appended = withUnsafeBytes(of: associations[associationIndex].route) { buffer in
+                    let route = ByteSlice(
+                        bytes: buffer.baseAddress!.assumingMemoryBound(to: UInt8.self),
+                        length: association.routeLength
+                    )
+                    return sink.append(.publish(BorrowedProtocolPublication(
+                        routingKey: key,
+                        target: .associationRoute(route: route, kind: association.routeKind.classification),
+                        payload: operation.payload,
+                        isApplicationDelivery: routeIndex == 0
+                    )))
+                }
+                guard appended else { return .rejected(.capacityExceeded) }
+            }
+        } else {
+            let filters = outboundEventTypeFilters(for: operation)
+            let actionCount = filters.secondary == nil ? 1 : 2
+            guard sink.preflight(actionCount: actionCount) else { return .rejected(.capacityExceeded) }
             guard sink.append(.publish(BorrowedProtocolPublication(
                 routingKey: key,
                 target: .profile(
-                    eventTypeFilter: secondary.value,
-                    filterKind: secondary.kind
+                    eventTypeFilter: filters.primary?.value,
+                    filterKind: filters.primary?.kind ?? .direct
                 ),
                 payload: operation.payload,
-                isApplicationDelivery: false
+                isApplicationDelivery: true
             ))) else { return .rejected(.capacityExceeded) }
+            if let secondary = filters.secondary {
+                guard sink.append(.publish(BorrowedProtocolPublication(
+                    routingKey: key,
+                    target: .profile(
+                        eventTypeFilter: secondary.value,
+                        filterKind: secondary.kind
+                    ),
+                    payload: operation.payload,
+                    isApplicationDelivery: false
+                ))) else { return .rejected(.capacityExceeded) }
+            }
         }
         if let requestPlan {
             pending[requestPlan.index] = PendingRecord(
@@ -758,6 +938,13 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         advertisedObjectField("objectType", payload: payload)
     }
 
+    private static func advertisedObjectRole(_ payload: ByteSlice) -> ObjectRole {
+        guard let coreType = advertisedObjectField("coreType", payload: payload) else { return .other }
+        if coreType.equals("IoSource") { return .ioSource }
+        if coreType.equals("IoActor") { return .ioActor }
+        return .other
+    }
+
     private static func advertisedObjectField(_ field: StaticString, payload: ByteSlice) -> ByteSlice? {
         payload.withBytes { pointer, length in
             let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
@@ -811,10 +998,17 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     private func planAssociation<Classifier: ProtocolRouteClassifier>(_ payload: ByteSlice, classifier: Classifier) -> AssociationResult {
         let reader = payload.withBytes { pointer, length in WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length) }
         guard let event = try? AssociateWireData(from: reader) else { return .rejected(.malformedPayload) }
+        let updateRateMS: UInt32?
+        if let rawRate = event.updateRate {
+            guard rawRate >= 0, UInt64(rawRate) <= UInt64(UInt32.max) else { return .rejected(.malformedPayload) }
+            updateRateMS = UInt32(rawRate)
+        } else {
+            updateRateMS = nil
+        }
         guard let route = event.associatingRoute else {
             if event.isExternalRoute == true { return .rejected(.externalRouteMismatch) }
             for index in 0..<capacity where associations[index].active && associations[index].sourceID == event.ioSourceId && associations[index].actorID == event.ioActorId {
-                return .accepted(.remove(index), associations[index].external ? .external : .coaty)
+                return .accepted(.remove(index), associations[index].routeKind.classification)
             }
             return .ignored
         }
@@ -822,15 +1016,28 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         let classification = classifier.classify(route)
         if let explicit = event.isExternalRoute, explicit != (classification == .external) { return .rejected(.externalRouteMismatch) }
         if classification == .unrelated { return .ignored }
+        let routeKind: StoredAssociationRouteKind = classification == .external ? .external : .coaty
         for index in 0..<capacity where associations[index].active && associations[index].sourceID == event.ioSourceId && associations[index].actorID == event.ioActorId {
             var association = associations[index]
             association.routeLength = route.length
             for offset in 0..<route.length { association.route[offset] = route.byte(at: offset) ?? 0 }
-            association.external = classification == .external
+            association.routeKind = routeKind
+            association.updateRateMS = updateRateMS
+            guard !Self.routeEquals(associations[index], association) || associations[index].updateRateMS != updateRateMS else {
+                return .ignored
+            }
             return .accepted(.upsert(index, association), classification)
         }
         for index in 0..<capacity where !associations[index].active {
-            var association = Association(sourceID: event.ioSourceId, actorID: event.ioActorId, active: true, routeLength: route.length, route: InlineArray(repeating: 0), external: classification == .external)
+            var association = Association(
+                sourceID: event.ioSourceId,
+                actorID: event.ioActorId,
+                active: true,
+                routeLength: route.length,
+                route: InlineArray(repeating: 0),
+                routeKind: routeKind,
+                updateRateMS: updateRateMS
+            )
             for offset in 0..<route.length { association.route[offset] = route.byte(at: offset) ?? 0 }
             return .accepted(.upsert(index, association), classification)
         }
@@ -847,6 +1054,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         switch capability {
         case .advertise:
             let objectID = Self.advertisedObjectID(payload) ?? sourceID
+            let role = Self.advertisedObjectRole(payload)
             var activeCount = 0
             var freeIndex: Int?
             var replayIndex: Int?
@@ -869,7 +1077,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             guard activeCount < maximumObjects, let freeIndex else {
                 return .rejected(.capacityExceeded)
             }
-            return .accepted(.insert(freeIndex, sourceID, objectID, local), deadvertiseMask)
+            return .accepted(.insert(freeIndex, sourceID, objectID, local, role), deadvertiseMask)
         case .deadvertise:
             let result = markDeadvertisedObjects(payload, sourceID: sourceID, into: &deadvertiseMask)
             guard result.valid, result.matched > 0 else {
@@ -902,22 +1110,19 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         }
     }
 
-    /// Borrows the route snapshot retained by an association before a removal
-    /// plan clears its active flag. The inline bytes remain stable until the
-    /// next processor operation, which is the lifetime of a borrowed action.
-    private func associationRouteSnapshot(at index: Int) -> BorrowedProtocolRouteSnapshot? {
-        let length = associations[index].routeLength
+    private func associationRouteSnapshot(_ association: Association) -> BorrowedProtocolRouteSnapshot? {
+        let length = association.routeLength
         guard length > 0 else { return nil }
         var storage = InlineArray<128, UInt8>(repeating: 0)
-        for offset in 0..<length { storage[offset] = associations[index].route[offset] }
+        for offset in 0..<length { storage[offset] = association.route[offset] }
         return BorrowedProtocolRouteSnapshot(length: length, storage: storage)
     }
 
     private mutating func apply(_ plan: ObjectPlan) {
         switch plan {
         case .none: return
-        case .insert(let index, let sourceID, let objectID, let local):
-            objects[index] = ObjectRecord(id: objectID, sourceID: sourceID, active: true, local: local, announced: true)
+        case .insert(let index, let sourceID, let objectID, let local, let role):
+            objects[index] = ObjectRecord(id: objectID, sourceID: sourceID, active: true, local: local, announced: true, role: role)
         case .replay(let index):
             objects[index].announced = true
         case .remove(let index):
@@ -937,6 +1142,76 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 return objectReader.readUUID("objectId")
             }
         }
+    }
+
+    private borrowing func associationState(matchingSource source: UUID16?, actor: UUID16?) -> IoAssociationState {
+        var count = 0
+        var recommended: UInt32?
+        for index in 0..<capacity {
+            let association = associations[index]
+            guard association.active else { continue }
+            if let source, association.sourceID != source { continue }
+            if let actor, association.actorID != actor { continue }
+            count += 1
+            if let rate = association.updateRateMS {
+                recommended = max(recommended ?? 0, rate)
+            }
+        }
+        return IoAssociationState(
+            generation: generation,
+            hasAssociations: count > 0,
+            associationCount: count,
+            recommendedUpdateRateMS: recommended
+        )
+    }
+
+    private borrowing func isLocalIoActor(_ id: UUID16) -> Bool {
+        for index in 0..<capacity {
+            guard objects[index].active, objects[index].local,
+                  objects[index].id == id else { continue }
+            return objects[index].role == .ioActor
+        }
+        return false
+    }
+
+    private borrowing func lifecycleEffectCount(for plan: AssociationPlan) -> Int {
+        switch plan {
+        case .none:
+            return 0
+        case .remove(let index):
+            guard associations[index].routeKind == .external,
+                  isLocalIoActor(associations[index].actorID) else { return 0 }
+            return 1
+        case .upsert(let index, let proposed):
+            guard isLocalIoActor(proposed.actorID) else { return 0 }
+            let old = associations[index].active ? associations[index] : nil
+            let oldExternal = old?.routeKind == .external
+            let newExternal = proposed.routeKind == .external
+            let routeChanged = old.map { !Self.routeEquals($0, proposed) } ?? true
+            return (oldExternal && (!newExternal || routeChanged) ? 1 : 0)
+                + (newExternal && (!oldExternal || routeChanged) ? 1 : 0)
+        }
+    }
+
+    private static func routeEquals(
+        _ association: Association,
+        _ route: ByteSlice,
+        kind: StoredAssociationRouteKind
+    ) -> Bool {
+        guard association.routeKind == kind, association.routeLength == route.length else { return false }
+        for index in 0..<route.length {
+            guard let byte = route.byte(at: index), association.route[index] == byte else { return false }
+        }
+        return true
+    }
+
+    private static func routeEquals(
+        _ lhs: Association,
+        _ rhs: Association
+    ) -> Bool {
+        guard lhs.routeKind == rhs.routeKind, lhs.routeLength == rhs.routeLength else { return false }
+        for index in 0..<lhs.routeLength where lhs.route[index] != rhs.route[index] { return false }
+        return true
     }
 
     private func markDeadvertisedObjects(

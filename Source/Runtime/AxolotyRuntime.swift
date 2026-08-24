@@ -569,7 +569,7 @@ private actor ProtocolExecutor {
                     )
                     actionSink.removeAll()
                     let outcome = processor.processInbound(
-                        borrowed,
+                        .profile(borrowed),
                         nowMS: frame.nowMS,
                         classifier: TransportRouteClassifier(transport: transport),
                         sink: &actionSink
