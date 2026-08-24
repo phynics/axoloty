@@ -582,7 +582,7 @@ func deadlineDoesNotJoinCancellationResistantOperation() async throws {
     try await waitForCondition("hostile operation entry") {
         await gate.entered
     }
-    #expect(await operation.value)
+    #expect(try await operation.value)
     await gate.release()
 }
 
@@ -598,8 +598,8 @@ func deadlineResultBoxAcceptsOnlyFirstResolution() async {
         box.install(continuation)
     }
 
-    #expect(try? first.get() == "first")
-    #expect(try? second.get() == "first")
+    #expect((try? first.get()) == "first")
+    #expect((try? second.get()) == "first")
 }
 
 @Test("MCP server forwards broker readiness timeout to inspector runtime")
@@ -1279,9 +1279,7 @@ private func recordMCPProcessDiagnostic(
     let standardOutputTail = boundedOutputTail(output.standardOutput)
     let standardErrorTail = boundedOutputTail(output.standardError)
     Issue.record(
-        "MCP process phase='\(phase)' pid=\(processIdentifier) "
-            + "exit=\(termination.exitCode) outcome='\(termination.outcome)' "
-            + "stdout_tail=\(standardOutputTail) stderr_tail=\(standardErrorTail)"
+        "MCP process phase='\(phase)' pid=\(processIdentifier) exit=\(termination.exitCode) outcome='\(termination.outcome)' stdout_tail=\(standardOutputTail) stderr_tail=\(standardErrorTail)"
     )
 }
 
