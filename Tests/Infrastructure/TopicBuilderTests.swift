@@ -78,7 +78,7 @@ struct PortableTopicBuilderTests {
     @Test
     func rejectsBufferOverflowWithoutAdvancingPastCapacity() throws {
         var bytes = [UInt8](repeating: 0, count: 5)
-        try bytes.withUnsafeMutableBufferPointer { buffer in
+        bytes.withUnsafeMutableBufferPointer { buffer in
             var builder = TopicBuilder(buffer: buffer.baseAddress!, capacity: buffer.count)
 
             #expect(throws: WireEncodeError.self) { try builder.writePrefix() }
@@ -88,7 +88,7 @@ struct PortableTopicBuilderTests {
 
     @Test
     func parsesRawTopicsWithoutInventingCoatyStructure() throws {
-        try withTopicView("application/device/temperature") { view in
+        withTopicView("application/device/temperature") { view in
             #expect(view.isRawTopic)
             #expect(view.eventType == nil)
             #expect(view.namespaceLevel?.asString() == "temperature")
