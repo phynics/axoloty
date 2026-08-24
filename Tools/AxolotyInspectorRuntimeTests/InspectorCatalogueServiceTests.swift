@@ -75,8 +75,7 @@ private func waitForStableStoreCount(
                 actual = await store.count
                 if actual != expected {
                     Issue.record(
-                        "Inspector phase \(description) changed catalogue count: "
-                            + "expected \(expected), got \(actual)"
+                        "Inspector phase \(description) changed catalogue count: expected \(expected), got \(actual)"
                     )
                     return false
                 }
@@ -88,8 +87,7 @@ private func waitForStableStoreCount(
     }
 
     Issue.record(
-        "Timed out waiting for inspector phase \(description): "
-            + "expected catalogue count \(expected), got \(actual)"
+        "Timed out waiting for inspector phase \(description): expected catalogue count \(expected), got \(actual)"
     )
     return false
 }
