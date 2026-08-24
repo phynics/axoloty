@@ -159,6 +159,57 @@ struct AxolotyRuntimeTests {
         await runtime.stop()
     }
 
+    @Test("correlated replies accept generated profile topics beyond static wire storage")
+    func correlatedReplyAcceptsLongGeneratedProfileTopic() async throws {
+        let namespace = "wire-lifecycle-duplicate-reply-wire-32734211309-2"
+        let correlation = try #require(UUID16(parsing: "55555555-5555-4555-8555-555555555555"))
+        let identity = try RuntimeIdentity(
+            id: try #require(UUID16(parsing: "44444444-4444-4444-8444-444444444444")),
+            name: "axoloty-lifecycle-subject"
+        )
+        var builder = try RuntimeDefinition.Builder(identity: identity, namespace: namespace)
+        let stream = try builder.events(
+            matching: .correlatedResponse(capability: .returnEvent, correlationID: correlation),
+            buffering: .dropOldest(capacity: 2)
+        )
+        let runtime = AxolotyRuntime(
+            definition: try builder.finish(),
+            transport: TestTransport()
+        )
+        try await runtime.start()
+
+        #expect(await runtime.request(.call(
+            correlationID: correlation,
+            operation: "wire-fixture-operation",
+            payload: Array(#"{"parameters":{"operand":7}}"#.utf8),
+            timeoutMS: 10_000
+        ), nowMS: 1) == .accepted)
+
+        let topic = "coaty/3/\(namespace)/RTN/"
+            + "33333333-3333-4333-8333-333333333333/"
+            + "55555555-5555-4555-8555-555555555555"
+        #expect(topic.utf8.count == 135)
+        let payload = Array(#"{"result":{"answer":49,"variant":"original"},"executionInfo":{"responder":"coatyjs-2.4.0"}}"#.utf8)
+        let receipt = await runtime.receive(RuntimeInboundFrame(topic: topic, payload: payload, nowMS: 2))
+        try #require(receipt == .accepted)
+
+        var iterator = stream.makeAsyncIterator()
+        let event = try #require(await iterator.next())
+        #expect(event.context.correlationID == correlation)
+        #expect(event.value == payload)
+
+        let duplicatePayload = Array(
+            #"{"result":{"answer":49,"variant":"duplicate"},"executionInfo":{"responder":"coatyjs-2.4.0"}}"#.utf8
+        )
+        #expect(await runtime.receive(RuntimeInboundFrame(
+            topic: topic,
+            payload: duplicatePayload,
+            nowMS: 3
+        )) == .rejected(.protocol(.duplicate)))
+
+        await runtime.stop()
+    }
+
     @Test("Channel identifiers remain typed topic filters on outbound actions")
     func channelIdentifierReachesTransportAction() async throws {
         let definition = try makeDefinition()

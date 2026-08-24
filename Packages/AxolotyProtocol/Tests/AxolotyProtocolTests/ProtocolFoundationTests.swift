@@ -326,6 +326,23 @@ struct ProtocolFoundationTests {
         #expect(sink.count == 0)
         sink.removeAll()
         #expect(sink.remainingCapacity == 1)
+
+        var oversizedTopic = Array(repeating: UInt8(0x74), count: WireBufferConfig.maxTopicLength + 1)
+        oversizedTopic.withUnsafeBufferPointer { buffer in
+            let action = BorrowedProtocolAction.deliver(BorrowedProtocolDelivery(
+                routingKey: try! ProtocolRoutingKey(capability: .channel, sourceID: .zero),
+                topic: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count),
+                payload: protocolSlice("{}")
+            ))
+            let preflighted = sink.preflight(actionCount: 1)
+            #expect(preflighted)
+            let appended = sink.append(action)
+            #expect(!appended)
+        }
+        oversizedTopic[0] = 0x78
+        #expect(sink.count == 0)
+        sink.removeAll()
+        #expect(sink.remainingCapacity == 1)
     }
 
     @Test("fixed owning sink layouts stay within the static memory gate")
@@ -416,24 +433,27 @@ struct ProtocolFoundationTests {
         }
     }
 
-    @Test("borrowed frames reject topics beyond the owning action bound")
-    func oversizedTopicRejects() throws {
-        let namespace = String(repeating: "n", count: 80)
-        let topic = Array("coaty/3/\(namespace)/CHN:fixture/00000000-0000-0000-0000-000000000000".utf8)
-        #expect(topic.count > 128)
+    @Test("borrowed frames accept valid profile topics beyond static owning storage")
+    func longProfileTopicAccepted() throws {
+        let topic = Array((
+            "coaty/3/wire-lifecycle-duplicate-reply-wire-32734211309-2/RTN/"
+                + "33333333-3333-4333-8333-333333333333/"
+                + "55555555-5555-4555-8555-555555555555"
+        ).utf8)
+        #expect(topic.count == 135)
         let payload = [UInt8]()
-        #expect(throws: ProtocolError.self) {
-            try topic.withUnsafeBufferPointer { topicBuffer in
-                try payload.withUnsafeBufferPointer { payloadBuffer in
-                    let view = TopicView(topicBytes: topicBuffer.baseAddress!, length: topicBuffer.count)
-                    let bytes = ByteSlice(
-                        bytes: payloadBuffer.baseAddress ?? UnsafePointer<UInt8>(bitPattern: 1)!,
-                        length: 0
-                    )
-                    _ = try BorrowedProtocolFrame(topic: view, payload: bytes)
-                }
+        let frame = try topic.withUnsafeBufferPointer { topicBuffer in
+            try payload.withUnsafeBufferPointer { payloadBuffer in
+                let view = TopicView(topicBytes: topicBuffer.baseAddress!, length: topicBuffer.count)
+                let bytes = ByteSlice(
+                    bytes: payloadBuffer.baseAddress ?? UnsafePointer<UInt8>(bitPattern: 1)!,
+                    length: 0
+                )
+                return try BorrowedProtocolFrame(topic: view, payload: bytes)
             }
         }
+        #expect(frame.routingKey.capability == .returnEvent)
+        #expect(frame.routingKey.correlationID == UUID16(parsing: "55555555-5555-4555-8555-555555555555"))
     }
 
     @Test("protocol owns Coaty object-filter adaptation")

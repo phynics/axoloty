@@ -39,10 +39,3 @@ final class InspectorSignalHandler: InspectorSignalHandling, @unchecked Sendable
         lock.withLock { _interrupted = true }
     }
 }
-
-/// A fake signal handler for testing. Set ``wasInterrupted`` to simulate
-/// operator interruption.
-final class FakeSignalHandler: InspectorSignalHandling {
-    var wasInterrupted = false
-    func install() {}
-}
