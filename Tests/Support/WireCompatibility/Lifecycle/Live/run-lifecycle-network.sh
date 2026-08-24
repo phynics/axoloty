@@ -13,6 +13,7 @@ esac
 
 RUNTIME="${CONTAINER_RUNTIME:-podman}"
 runtime() { "$RUNTIME" "$@"; }
+runtime_bounded() { timeout "${WIRE_CONTAINER_WAIT_SECONDS:-120}s" "$RUNTIME" "$@"; }
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)
 LIVE="$ROOT/Tests/Support/WireCompatibility/Live"
 REF="$ROOT/Tests/Support/WireCompatibility/ReferenceAgents/coatyjs"
@@ -143,7 +144,7 @@ else
     if [ "$SCENARIO" != "offline-queueing" ]; then publish_probe; fi
 fi
 
-runtime wait "$SUBJECT" >/dev/null
+runtime_bounded wait "$SUBJECT" >/dev/null
 runtime logs "$SUBJECT" 2>&1 >"$RAW_LOG"
 grep -E '^\{"state":' "$RAW_LOG" >"$APPLICATION_LOG" || true
 runtime rm -f "$PROBE" >/dev/null || true

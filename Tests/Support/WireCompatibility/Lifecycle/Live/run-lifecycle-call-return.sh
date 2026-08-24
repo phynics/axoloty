@@ -22,6 +22,7 @@ esac
 
 RUNTIME="${CONTAINER_RUNTIME:-podman}"
 runtime() { "$RUNTIME" "$@"; }
+runtime_bounded() { timeout "${WIRE_CONTAINER_WAIT_SECONDS:-120}s" "$RUNTIME" "$@"; }
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)
 HERE="$ROOT/Tests/Support/WireCompatibility/Lifecycle/Live"
 REVERSE="$ROOT/Tests/Support/WireCompatibility/Reverse"
@@ -138,7 +139,7 @@ runtime run -d -t --name "$SUBJECT" --network "$NETWORK" \
     --filter "$TEST_NAME" >/dev/null
 
 # Wait for the Swift test to complete.
-if ! timeout "${WIRE_CONTAINER_WAIT_SECONDS:-120}s" runtime wait "$SUBJECT" >/dev/null; then
+if ! runtime_bounded wait "$SUBJECT" >/dev/null; then
     runtime logs "$SUBJECT" >&2 || true
     runtime stop -t 1 "$SUBJECT" >/dev/null 2>&1 || true
     runtime kill "$SUBJECT" >/dev/null 2>&1 || true

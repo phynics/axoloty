@@ -18,6 +18,7 @@ set -euo pipefail
 
 RUNTIME="${CONTAINER_RUNTIME:-podman}"
 runtime() { "$RUNTIME" "$@"; }
+runtime_bounded() { timeout "${WIRE_CONTAINER_WAIT_SECONDS:-120}s" "$RUNTIME" "$@"; }
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)
 IO_DIR="$ROOT_DIR/Tests/Support/WireCompatibility/IO"
@@ -101,7 +102,7 @@ runtime run --rm --network "$NETWORK" -v "$ROOT_DIR:/workspace" -v "$OUTPUT_DIR:
 sleep 0.5
 runtime stop -t 1 "$PROBE" >/dev/null || true
 
-if ! timeout "${WIRE_CONTAINER_WAIT_SECONDS:-120}s" runtime wait "$ACTOR" >/dev/null; then
+if ! runtime_bounded wait "$ACTOR" >/dev/null; then
     runtime logs "$ACTOR" >&2 || true
     runtime stop -t 1 "$ACTOR" >/dev/null 2>&1 || true
     runtime kill "$ACTOR" >/dev/null 2>&1 || true
