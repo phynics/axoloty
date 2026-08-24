@@ -6,7 +6,7 @@ import AxolotyInspectorRuntime
 import Foundation
 import Testing
 
-private final class FakeSignalHandler: InspectorSignalHandling {
+private final class FakeSignalHandler: InspectorSignalHandling, @unchecked Sendable {
     var wasInterrupted = false
 
     func install() {}
