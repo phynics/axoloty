@@ -133,6 +133,34 @@ public final class AxolotyRuntime: Sendable {
     }
 }
 
+private enum RuntimeLifecyclePayload {
+    static func advertise(_ identity: RuntimeIdentity) throws -> [UInt8] {
+        let object: [String: Any] = [
+            "objectId": uuidString(identity.id),
+            "coreType": "Identity",
+            "objectType": "coaty.Identity",
+            "name": identity.name
+        ]
+        return try JSONSerialization.data(withJSONObject: ["object": object], options: [.sortedKeys]).map { $0 }
+    }
+
+    static func deadvertise(_ identity: RuntimeIdentity) -> [UInt8] {
+        Array("{\"objectIds\":[\"\(uuidString(identity.id))\"]}".utf8)
+    }
+
+    private static func uuidString(_ value: UUID16) -> String {
+        let bytes = value.bytes
+        let raw: [UInt8] = [
+            bytes.0, bytes.1, bytes.2, bytes.3,
+            bytes.4, bytes.5, bytes.6, bytes.7,
+            bytes.8, bytes.9, bytes.10, bytes.11,
+            bytes.12, bytes.13, bytes.14, bytes.15
+        ]
+        let hex = raw.map { String(format: "%02x", $0) }
+        return "\(hex[0...3].joined())-\(hex[4...5].joined())-\(hex[6...7].joined())-\(hex[8...9].joined())-\(hex[10...15].joined())"
+    }
+}
+
 // The executor deliberately keeps lifecycle, ingress, dispatch, and handler
 // supervision in one serialized owner. Keep this suppression scoped to the
 // owner rather than weakening the repository-wide type-size rule.
@@ -148,6 +176,7 @@ private actor ProtocolExecutor {
     private var offlineOperations: [RuntimeOperation] = []
     private var state: RuntimeLifecycleState = .stopped
     private var hasStarted = false
+    private var lifecycleAdvertisementActive = false
     private var ingress: [RuntimeInboundFrame] = []
     private var activeHandlers = 0
     private var handlerInFlight: [Int: Int] = [:]
@@ -244,7 +273,7 @@ private actor ProtocolExecutor {
                 await transport.stop()
                 return (.notStarted, "runtime start was superseded while installing subscriptions")
             }
-            try await transport.advertise(identity: definition.identity, namespace: definition.namespace)
+            try await publishLifecycleAdvertisement(nowMS: monotonicNowMS())
             guard state == .starting, transportEpoch == epoch else {
                 await transport.stop()
                 return (.notStarted, "runtime start was superseded during advertisement")
@@ -276,7 +305,7 @@ private actor ProtocolExecutor {
         let stoppingEpoch = transportEpoch
         await cancelAndDrainHandlers()
         do {
-            try await transport.deadvertise(identity: definition.identity, namespace: definition.namespace)
+            try await publishLifecycleDeadvertisement(nowMS: monotonicNowMS())
             try await transport.removeSubscriptions(namespace: definition.namespace)
         } catch {
             emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
@@ -346,7 +375,7 @@ private actor ProtocolExecutor {
             guard state == .reconnecting, transportEpoch == epoch else { return }
             try await transport.installSubscriptions(namespace: definition.namespace)
             guard state == .reconnecting, transportEpoch == epoch else { return }
-            try await transport.advertise(identity: definition.identity, namespace: definition.namespace)
+            try await publishLifecycleAdvertisement(nowMS: monotonicNowMS())
             guard state == .reconnecting, transportEpoch == epoch else { return }
             state = .running
             flushOfflineOperations(nowMS: monotonicNowMS())
@@ -482,8 +511,80 @@ private actor ProtocolExecutor {
             diagnosticsSnapshotValue.dispatchSaturation += 1
             return .rejected(.capacityExceeded)
         }
+        let outcome = processOutboundOperation(
+            operation,
+            nowMS: nowMS,
+            maximumActionCount: definition.capacities.dispatch - outboundQueued
+        ) {
+            dispatchActions(nowMS: nowMS)
+        }
+        let receipt = receipt(for: outcome)
+        eventContinuation.yield(.transition(receipt))
+        guard case .accepted = receipt else { return receipt }
+        return receipt
+    }
+
+    /// Processes a lifecycle operation through the portable processor and
+    /// sends the resulting owned publications synchronously. Lifecycle sends
+    /// must complete before startup/reconnect becomes ready or shutdown removes
+    /// subscriptions, while ordinary publications continue through the
+    /// bounded outbound pump.
+    private func publishLifecycle(_ operation: RuntimeOperation, nowMS: UInt32) async throws {
+        var publications: [OwnedProtocolPublication] = []
+        let outcome = processOutboundOperation(
+            operation,
+            nowMS: nowMS,
+            maximumActionCount: definition.capacities.dispatch
+        ) {
+            publications.reserveCapacity(actionSink.count)
+            for index in 0..<actionSink.count {
+                guard let action = actionSink[index] else { continue }
+                if case .publish(let publication) = action {
+                    publications.append(publication.owned())
+                }
+            }
+            actionSink.removeAll()
+        }
+        guard case .accepted = outcome else {
+            throw AxolotyError.runtime(
+                code: .brokerUnavailable,
+                reason: "lifecycle operation rejected by protocol: \(outcome)"
+            )
+        }
+
+        for publication in publications {
+            try await transport.send(publication, namespace: definition.namespace)
+        }
+    }
+
+    private func publishLifecycleAdvertisement(nowMS: UInt32) async throws {
+        guard let identity = definition.identity else { return }
+        let operation = RuntimeOperation.advertise(
+            sourceID: identity.id,
+            payload: try RuntimeLifecyclePayload.advertise(identity)
+        )
+        try await publishLifecycle(operation, nowMS: nowMS)
+        lifecycleAdvertisementActive = true
+    }
+
+    private func publishLifecycleDeadvertisement(nowMS: UInt32) async throws {
+        guard lifecycleAdvertisementActive, let identity = definition.identity else { return }
+        let operation = RuntimeOperation.deadvertise(
+            sourceID: identity.id,
+            payload: RuntimeLifecyclePayload.deadvertise(identity)
+        )
+        try await publishLifecycle(operation, nowMS: nowMS)
+        lifecycleAdvertisementActive = false
+    }
+
+    private func processOutboundOperation(
+        _ operation: RuntimeOperation,
+        nowMS: UInt32,
+        maximumActionCount: Int,
+        consumeAcceptedActions: () -> Void
+    ) -> ProtocolProcessOutcome {
         let operationNameBytes: [UInt8] = operation.operationName.map { Array($0.utf8) } ?? []
-        let outcome: ProtocolProcessOutcome = operation.payload.withUnsafeBufferPointer { buffer in
+        return operation.payload.withUnsafeBufferPointer { buffer in
             guard let base = buffer.baseAddress else { return .rejected(.malformedPayload) }
             let payload = ByteSlice(bytes: base, length: buffer.count)
             return operationNameBytes.withUnsafeBufferPointer { operationBuffer in
@@ -500,7 +601,7 @@ private actor ProtocolExecutor {
                 ) else {
                     return .rejected(.invalidCorrelation)
                 }
-                actionSink.prepare(maximumActionCount: definition.capacities.dispatch - outboundQueued)
+                actionSink.prepare(maximumActionCount: maximumActionCount)
                 let outcome = processor.processOutbound(
                     local,
                     nowMS: nowMS,
@@ -508,18 +609,13 @@ private actor ProtocolExecutor {
                     sink: &actionSink
                 )
                 // The processor emits borrowed action views into `operation.payload`.
-                // Drain them before this buffer borrow ends; only owned values may
-                // escape the closure into runtime queues or application streams.
+                // The caller must consume or own them before this buffer borrow ends.
                 if case .accepted = outcome {
-                    dispatchActions(nowMS: nowMS)
+                    consumeAcceptedActions()
                 }
                 return outcome
             }
         }
-        let receipt = receipt(for: outcome)
-        eventContinuation.yield(.transition(receipt))
-        guard case .accepted = receipt else { return receipt }
-        return receipt
     }
 
     private func flushOfflineOperations(nowMS: UInt32) {
