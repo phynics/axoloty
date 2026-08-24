@@ -37,6 +37,39 @@ test("cold semver consumer bounds SwiftPM build parallelism", () => {
   assert.match(script, /swift build --jobs "\$jobs" --configuration "\$configuration" --target AxolotyConsumer/);
 });
 
+test("G4 runtime filters are disjoint and use their owning Swift packages", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const node = id => document.nodes.find(candidate => candidate.id === id);
+  const hostNodes = [node("g4-runtime-definition"), node("g4-host-runtime"), node("g4-runtime-concurrency")];
+  const hostTests = [
+    "mqttUUIDFormattingPreservesAllBytes", "identityStartupTopicIsFiltered", "builderSealsModernContracts",
+    "definitionSealsHandlers", "rejectsInvalidNamespaceBytes", "definitionBoundsEventStreams", "rejectsBeforeStart",
+    "acceptsLocalOperation", "callOperationNameReachesTransportAction", "channelIdentifierReachesTransportAction",
+    "multiActionDispatchReservationIsAtomic", "advertiseVariantsDoNotDuplicateRuntimeEvents", "channelRejectsMissingIdentifier",
+    "defaultRequestUsesMonotonicClock", "unlimitedDiscoverCanBeCanceled", "rejectsInvalidCallOperationNames",
+    "rejectsInvalidResponderOperationNames", "rejectsNonCallOperationFilters", "advertiseSelectorMatchesPayloadObjectType",
+    "lifecycleOrdering", "postStartTransportFailureEntersReconnect", "queuesOfflineOneWayPublication", "stopDrainsOutboundPump",
+  ];
+
+  for (const testName of hostTests) {
+    assert.equal(hostNodes.filter(candidate => candidate.filter.includes(testName)).length, 1, `${testName} must have one G4 owner`);
+  }
+  assert.equal(new Set(hostNodes.map(candidate => candidate.filter)).size, hostNodes.length);
+  assert.equal(hostNodes.some(candidate => candidate.filter.includes("AxolotyStaticRuntimeTests")), false);
+
+  const packageAssertions = [
+    ["g4-protocol-lifecycle", "Packages/AxolotyProtocol", "ProtocolFoundationTests|ProtocolProcessorTests"],
+    ["g4-static-runtime", "Packages/AxolotyStaticRuntime", "StaticRuntimeTests"],
+  ];
+  for (const [id, packagePath, filter] of packageAssertions) {
+    const candidate = node(id);
+    const args = candidate.command.arguments;
+    assert.equal(args[args.indexOf("--package-path") + 1], packagePath, `${id} must invoke its owning package`);
+    assert.equal(candidate.filter, filter);
+    assert.equal(args.includes("--product"), false, `${id} must run tests, not request a product`);
+  }
+});
+
 test("make parser ignores assignments and special targets", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-tool-tiers-"));
   const makefile = path.join(directory, "Makefile");
