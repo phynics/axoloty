@@ -82,11 +82,29 @@ function imageInputHash() {
   return crypto.createHash("sha256").update(result.stdout).digest("hex");
 }
 
+function installJQFixture(tempRoot) {
+  const jq = path.join(tempRoot, "jq");
+  fs.writeFileSync(jq, `#!/usr/bin/env node
+const fs = require("node:fs");
+
+const args = process.argv.slice(2);
+const expression = args.find((argument) => argument.startsWith("."));
+const file = args.at(-1);
+if (!expression || !file) process.exit(2);
+
+const value = JSON.parse(fs.readFileSync(file, "utf8"))[expression.slice(1)];
+if (value === undefined || value === null) process.exit(1);
+process.stdout.write(String(value) + "\\n");
+`);
+  fs.chmodSync(jq, 0o755);
+}
+
 function runSetupActionScenario({ availableTag = "", publisherInProgress = "false", candidateBackoffSeconds = "0", availableAfterFirstCandidate = false, candidateTagPrefix = "swift-6.3-pr-42" } = {}) {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-setup-image-"));
   const lockFile = path.join(tempRoot, "image-lock.json");
   const runtimeLog = path.join(tempRoot, "runtime.log");
   const actualHash = imageInputHash();
+  installJQFixture(tempRoot);
   const fakeRuntime = path.join(tempRoot, "fake-runtime");
   const image = "ghcr.io/test/axoloty-dev";
   fs.writeFileSync(lockFile, JSON.stringify({
@@ -136,6 +154,7 @@ esac
     timeout: 4_000,
     env: {
       ...process.env,
+      PATH: `${tempRoot}${path.delimiter}${process.env.PATH ?? ""}`,
       RUNTIME: fakeRuntime,
       LOCK_FILE: lockFile,
       ALLOW_BUILD_FALLBACK: "true",

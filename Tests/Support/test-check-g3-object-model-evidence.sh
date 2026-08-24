@@ -30,7 +30,10 @@ if (!propagated.test(source)) {
 NODE
 node --check "$validator"
 node --check "$embedded_assembler"
-jq empty "$schema"
+node - "$schema" <<'NODE'
+const fs = require("node:fs");
+JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+NODE
 grep -Fq '.package(path: "../../Packages/AxolotyObjectModel")' "$probe/Package.swift"
 grep -Fq '.package(path: "../../Packages/AxolotyCoatyModels")' "$probe/Package.swift"
 grep -Fq '.package(path: "../../Packages/AxolotyWire")' "$probe/Package.swift"
