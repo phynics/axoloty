@@ -30,6 +30,15 @@ vector in `Embedded/swift/main/StaticDeviceAgent.swift` locks this output;
 the correction is intentional and keeps the topic aligned with the pinned
 Coaty Core 3 grammar.
 
+### Host lifecycle publications through the shared processor
+
+Host startup, reconnect, and graceful shutdown now construct Identity
+Advertise and Deadvertise operations at the runtime boundary and route them
+through `ProtocolProcessor.processOutbound`. The MQTT binding only selects the
+normalized topic and publishes the owned action. This preserves the canonical
+Coaty/3 Deadvertise envelope (`{"objectIds":["..."]}`) and keeps lifecycle
+state updates on the same bounded processor path as application publications.
+
 ### G2 external-route semantics
 
 The binding-owned external-route fixture is exactly

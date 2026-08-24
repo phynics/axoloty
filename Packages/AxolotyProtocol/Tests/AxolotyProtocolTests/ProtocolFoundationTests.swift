@@ -356,17 +356,17 @@ struct ProtocolFoundationTests {
 
         let wrong = try withResponseFrame(correlation: "00000000-0000-0000-0000-000000000001") { frame in
             var sink = InlineProtocolActionSink<1>()
-            return processor.processInbound(frame, nowMS: 110, sink: &sink)
+            return processor.processInbound(.profile(frame), nowMS: 110, sink: &sink)
         }
         #expect(wrong == .rejected(.correlationMismatch))
         let accepted = try withResponseFrame(correlation: "00000000-0000-0000-0000-000000000000") { frame in
             var sink = InlineProtocolActionSink<1>()
-            return processor.processInbound(frame, nowMS: 149, sink: &sink)
+            return processor.processInbound(.profile(frame), nowMS: 149, sink: &sink)
         }
         #expect(accepted == .accepted)
         let duplicate = try withResponseFrame(correlation: "00000000-0000-0000-0000-000000000000") { frame in
             var sink = InlineProtocolActionSink<1>()
-            return processor.processInbound(frame, nowMS: 149, sink: &sink)
+            return processor.processInbound(.profile(frame), nowMS: 149, sink: &sink)
         }
         // Discover is a multi-response correlation; another valid Resolve is
         // accepted until its deadline expires.
@@ -404,11 +404,11 @@ struct ProtocolFoundationTests {
         outbound.removeAll()
         let first = try withResponseFrame(correlation: "00000000-0000-0000-0000-000000000000", event: "RSV") { frame in
             var sink = InlineProtocolActionSink<2>()
-            return processor.processInbound(frame, nowMS: 20, sink: &sink)
+            return processor.processInbound(.profile(frame), nowMS: 20, sink: &sink)
         }
         let second = try withResponseFrame(correlation: "00000000-0000-0000-0000-000000000000", event: "RSV") { frame in
             var sink = InlineProtocolActionSink<2>()
-            return processor.processInbound(frame, nowMS: 30, sink: &sink)
+            return processor.processInbound(.profile(frame), nowMS: 30, sink: &sink)
         }
         #expect(first == .accepted)
         #expect(second == .accepted)
@@ -426,11 +426,11 @@ struct ProtocolFoundationTests {
         outbound.removeAll()
         let retrieve = try withResponseFrame(correlation: "00000000-0000-0000-0000-000000000000", event: "RTV") { frame in
             var sink = InlineProtocolActionSink<2>()
-            return processor.processInbound(frame, nowMS: 50, sink: &sink)
+            return processor.processInbound(.profile(frame), nowMS: 50, sink: &sink)
         }
         let complete = try withResponseFrame(correlation: "00000000-0000-0000-0000-000000000000", event: "CPL") { frame in
             var sink = InlineProtocolActionSink<2>()
-            return processor.processInbound(frame, nowMS: 60, sink: &sink)
+            return processor.processInbound(.profile(frame), nowMS: 60, sink: &sink)
         }
         #expect(retrieve == .accepted)
         #expect(complete == .accepted)
@@ -453,7 +453,7 @@ struct ProtocolFoundationTests {
         sink.removeAll()
         let wrong = try withResponseFrame(correlation: "00000000-0000-0000-0000-000000000000", event: "RSV") { frame in
             var responseSink = InlineProtocolActionSink<1>()
-            return processor.processInbound(frame, nowMS: 20, sink: &responseSink)
+            return processor.processInbound(.profile(frame), nowMS: 20, sink: &responseSink)
         }
         #expect(wrong == .rejected(.correlationMismatch))
         #expect(processor.state.pendingCorrelations == 1)
@@ -479,7 +479,7 @@ struct ProtocolFoundationTests {
             payload: "{}"
         ) { frame in
             var responseSink = InlineProtocolActionSink<1>()
-            return processor.processInbound(frame, nowMS: 20, sink: &responseSink)
+            return processor.processInbound(.profile(frame), nowMS: 20, sink: &responseSink)
         }
         #expect(malformed == .rejected(.malformedPayload))
         #expect(processor.state.pendingCorrelations == 1)
@@ -504,7 +504,7 @@ struct ProtocolFoundationTests {
         #expect(cancelled)
         let late = try withResponseFrame(correlation: "00000000-0000-0000-0000-000000000000", event: "RSV") { frame in
             var responseSink = InlineProtocolActionSink<1>()
-            return processor.processInbound(frame, nowMS: 20, sink: &responseSink)
+            return processor.processInbound(.profile(frame), nowMS: 20, sink: &responseSink)
         }
         #expect(late == .rejected(.duplicate))
         let next = try ProtocolLocalOperation(

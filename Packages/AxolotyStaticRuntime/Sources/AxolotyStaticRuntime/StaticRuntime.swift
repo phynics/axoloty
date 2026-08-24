@@ -97,7 +97,7 @@ public struct StaticRuntime<let capacity: Int>: ~Copyable {
     ) -> ProtocolProcessOutcome {
         guard sink.count == 0 else { return .rejected(.capacityExceeded) }
         sink.removeAll()
-        return processor.processInbound(frame, nowMS: nowMS, classifier: routeClassifier, sink: &sink)
+        return processor.processInbound(.profile(frame), nowMS: nowMS, classifier: routeClassifier, sink: &sink)
     }
 
     /// Parses one caller-owned topic and payload synchronously, then routes
@@ -134,7 +134,7 @@ public struct StaticRuntime<let capacity: Int>: ~Copyable {
     ) -> ProtocolProcessOutcome {
         guard sink.count == 0 else { return .rejected(.capacityExceeded) }
         sink.removeAll()
-        return processor.processInbound(frame, nowMS: nowMS, classifier: classifier, sink: &sink)
+        return processor.processInbound(.profile(frame), nowMS: nowMS, classifier: classifier, sink: &sink)
     }
 
     /// Processes one local operation with a binding-owned route classifier.

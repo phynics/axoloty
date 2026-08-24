@@ -110,6 +110,8 @@ let package = Package(
                 "Common/AxolotyError.swift",
                 "Runtime/AxolotyRuntimeDefinition.swift",
                 "Runtime/AxolotyRuntime.swift",
+                "Runtime/RuntimeLifecyclePayload.swift",
+                "Runtime/ProtocolExecutor+Outbound.swift",
                 "Runtime/RuntimeSupport.swift",
                 "Runtime/MQTTBinding.swift",
                 "Runtime/RuntimeMQTTClient.swift",
@@ -215,6 +217,8 @@ let package = Package(
                 // the target uses a source allow-list to keep broker and live
                 // producer tests out of ordinary verification.
                 "WireCompatibility/Lifecycle/LifecycleCompatibilityScenarioTests.swift",
+                "WireCompatibility/WireCaptureFixture.swift",
+                "WireCompatibility/WireCaptureFixtureTests.swift",
                 // Live subjects remain available only to the explicit wire
                 // capture plan, where the broker and peer controls exist.
                 "WireCompatibility/IO/AxolotyIoAssociateTests.swift",

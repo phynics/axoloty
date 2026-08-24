@@ -127,14 +127,8 @@ struct AxolotyLifecycleSubjectTests {
             try await waitForState(.reconnecting, runtime: runtime)
             report(state: "offline", scenario: scenario)
             if publishAfterReconnect {
-                let first = await runtime.publish(RuntimeOperation.advertise(
-                    sourceID: Self.identityID,
-                    payload: queuedPayload(name: "first")
-                ))
-                let second = await runtime.publish(RuntimeOperation.advertise(
-                    sourceID: Self.identityID,
-                    payload: queuedPayload(name: "second")
-                ))
+                let first = await runtime.publish(.advertise(queuedPayload(name: "first")))
+                let second = await runtime.publish(.advertise(queuedPayload(name: "second")))
                 guard first == .accepted, second == .accepted else {
                     throw LifecycleFailure.offlinePublicationRejected
                 }
