@@ -169,9 +169,9 @@ struct ProtocolProcessorTests {
         let sourceText = "00000000-0000-4000-8000-000000000001"
         let source = try #require(UUID16(parsing: sourceText))
         let objectID = "11111111-1111-4111-8111-111111111111"
-        let advertise = "{\"object\":{\"objectId\":\"\(objectID)\"}}"
-        let deadvertise = "{\"objectIds\":[\"\(objectID)\"]}"
-        let associate = "{\"ioSourceId\":\"\(sourceText)\",\"ioActorId\":\"00000000-0000-4000-8000-000000000002\",\"associatingRoute\":\"coaty/paired\"}"
+        var advertise = "{\"object\":{\"objectId\":\"\(objectID)\"}}"
+        var deadvertise = "{\"objectIds\":[\"\(objectID)\"]}"
+        var associate = "{\"ioSourceId\":\"\(sourceText)\",\"ioActorId\":\"00000000-0000-4000-8000-000000000002\",\"associatingRoute\":\"coaty/paired\"}"
         var inbound = ProtocolProcessor<2>()
         var outbound = ProtocolProcessor<2>()
 
