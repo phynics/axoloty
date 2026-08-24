@@ -243,7 +243,8 @@ func verifyPlanIncludesStaticSupportWithoutRecursiveCoverageGate() throws {
     let ci = try manifest.plan(named: "verify", ci: true)
     #expect(ordinary.nodes.contains { $0.name == "support-tier-contract" })
     #expect(ordinary.nodes.contains { $0.name == "no-anycodable" })
-    #expect(ordinary.nodes.contains { $0.name == "logging-global" })
+    #expect(!ordinary.nodes.contains { $0.name == "integration-tests" })
+    #expect(!ordinary.nodes.contains { $0.name == "logging-global" })
     #expect(!ordinary.nodes.contains { $0.name == "coverage-check" })
     #expect(!ci.nodes.contains { $0.name == "coverage-check" })
 }
@@ -427,15 +428,15 @@ func checkpointContextMismatchPrecedesPlanAndMetadataCommands() throws {
 }
 
 @Test
-func checkpointPlanIncludesRequiredIntegrationAndCompatibilityNodes() throws {
+func checkpointPlanIncludesRequiredCompatibilityNodes() throws {
     let plan = AxolotyCheckPlan.checkpoint(
         source: "Tests/WireCompatibility/Fixtures",
         destination: ".testing/fixture-bundle",
         consumerEnvironment: [:]
     )
 
-    #expect(plan.nodes.contains { $0.name == "integration-tests" })
-    #expect(plan.nodes.contains { $0.name == "logging-global" })
+    #expect(!plan.nodes.contains { $0.name == "integration-tests" })
+    #expect(!plan.nodes.contains { $0.name == "logging-global" })
     #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-host" })
     #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-sanitized" })
     #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-embedded" })
@@ -444,8 +445,8 @@ func checkpointPlanIncludesRequiredIntegrationAndCompatibilityNodes() throws {
         source: "Tests/WireCompatibility/Fixtures",
         destination: ".testing/fixture-bundle"
     )
-    #expect(hardwarePlan.nodes.contains { $0.name == "integration-tests" })
-    #expect(hardwarePlan.nodes.contains { $0.name == "logging-global" })
+    #expect(!hardwarePlan.nodes.contains { $0.name == "integration-tests" })
+    #expect(!hardwarePlan.nodes.contains { $0.name == "logging-global" })
     #expect(hardwarePlan.nodes.contains { $0.name == "g3-object-model-evidence-host" })
     #expect(hardwarePlan.nodes.contains { $0.name == "g3-object-model-evidence-sanitized" })
     #expect(hardwarePlan.nodes.contains { $0.name == "g3-object-model-evidence-embedded" })
@@ -505,9 +506,9 @@ func checkpointManifestRecordsAllRequiredReleaseGatesInOrder() throws {
 
     #expect(manifest.schemaVersion == 2)
     #expect(manifest.releaseGates.map(\.id) == [
-        "smoke", "unit", "module", "property", "integration", "wire-offline", "wire-live", "g3-object-model", "g4-runtime",
+        "smoke", "unit", "module", "property", "wire-offline", "wire-live", "g3-object-model", "g4-runtime",
     ])
-    #expect(manifest.releaseGates.first { $0.id == "integration" }?.result == .executed)
+    #expect(manifest.releaseGates.first { $0.id == "integration" } == nil)
 }
 
 @Test
@@ -631,7 +632,7 @@ func testToolingUsesOnlyItsCheckPlanDependencyClosure() throws {
 }
 
 @Test
-func integrationTestStartsBrokerBeforeTransportTests() throws {
+func integrationCommandReportsRetirementWithoutRunningAProcess() {
     let runner = StubIntegrationRunner(result: AxolotyCheckCommandResult(exitCode: 0, standardOutput: "passed"))
     let dispatcher = AxolotyCommandDispatcher(
         integrationRunner: runner,
@@ -640,15 +641,14 @@ func integrationTestStartsBrokerBeforeTransportTests() throws {
     )
 
     let result = dispatcher.run(arguments: ["test", "integration"])
-    let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
 
-    #expect(result.exitCode == 0)
-    #expect(manifest.results.map(\.name) == ["integration-tests"])
-    #expect(manifest.results.first?.command?.standardOutput == "passed")
+    #expect(result.exitCode == 69)
+    #expect(result.standardOutput.isEmpty)
+    #expect(result.standardError.contains("broker-backed integration tier is retired"))
 }
 
 @Test
-func integrationContextMismatchPrecedesIntegrationRunnerEffects() throws {
+func retiredIntegrationCommandDoesNotRunTheInjectedRunner() {
     let integrationRunner = RecordingIntegrationRunner()
     let dispatcher = AxolotyCommandDispatcher(
         commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
@@ -658,49 +658,14 @@ func integrationContextMismatchPrecedesIntegrationRunnerEffects() throws {
 
     let result = dispatcher.run(arguments: ["test", "integration"])
 
-    #expect(result.exitCode == 64)
+    #expect(result.exitCode == 69)
     #expect(integrationRunner.runCount == 0)
-    #expect(try decodeDiagnostic(result) == AxolotyExecutionContextDiagnostic(
-        executable: "node",
-        declaredContext: .project,
-        detectedContext: .host
-    ))
+    #expect(result.standardError.contains("broker-backed integration tier is retired"))
 }
 
 private struct StubIntegrationRunner: AxolotyIntegrationRunning {
     let result: AxolotyCheckCommandResult
     func run() -> AxolotyCheckCommandResult { result }
-}
-
-private final class RecordingBoundedIntegrationRunner: AxolotyBoundedIntegrationRunning, @unchecked Sendable {
-    private(set) var receivedTimeout: TimeInterval?
-
-    func run() -> AxolotyCheckCommandResult {
-        AxolotyCheckCommandResult(exitCode: 0)
-    }
-
-    func run(timeoutSeconds: TimeInterval?) -> AxolotyCheckCommandResult {
-        receivedTimeout = timeoutSeconds
-        return AxolotyCheckCommandResult(exitCode: 0)
-    }
-}
-
-@Test
-func integrationTierPassesRemainingTierBudgetToBoundedRunner() throws {
-    let commandRunner = RecordingSequenceRunner()
-    let integrationRunner = RecordingBoundedIntegrationRunner()
-    let dispatcher = AxolotyCommandDispatcher(
-        commandRunner: commandRunner,
-        integrationRunner: integrationRunner,
-        fileSystem: StubFileSystem(paths: []),
-        environment: projectEnvironment
-    )
-
-    let result = dispatcher.run(arguments: ["test-tier", "integration"])
-
-    #expect(result.exitCode == 0)
-    #expect(commandRunner.commands.map(\.executable) == ["swift"])
-    #expect(integrationRunner.receivedTimeout.map { $0 > 0 && $0 <= 3_600 } == true)
 }
 
 @Test

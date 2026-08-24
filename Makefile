@@ -109,14 +109,14 @@ help:
 		'make serve-dev     Run the MQTT + MCP development stack' \
 		'make wire-codec-test  Run the Foundation-free wire codec unit tests' \
 		'make test-communication  Run communication transport and subscription tests' \
-		'make test-broker-regressions  Run broker-backed regression tests' \
+		'make test-broker-regressions  Deprecated: former broker regression filters are retired' \
 		'make test-decoder-context-sendable  Fail if the former decoder-context Sendable diagnostic returns' \
 		'make test-no-anycodable  Fail if AnyCodable is used in production source' \
 		'make test-no-foundation-types  Fail if forbidden Foundation types are used in production source' \
 		'make test-axoloty-wire-distribution  Validate root and standalone AxolotyWire consumers' \
 		'make test-axoloty-semver-consumer  Build clean semver consumers for both products' \
-		'make test          Run the full test suite (starts Mosquitto)' \
-		'make test-tsan     Run broker-backed transport/lifecycle tests under Thread Sanitizer' \
+		'make test          Deprecated: no canonical broker-backed tier is declared' \
+		'make test-tsan     Deprecated: former TSAN filters are retired until a real target returns' \
 		'make test-unit     Run portable object-model and wire value tests' \
 		'make test-module   Run portable topic, wire, protocol, and model module tests' \
 		'make test-fuzz     Run bounded wire parser property/fuzz tests' \
@@ -297,9 +297,9 @@ checkpoint-hardware:
 			AXOLOTY_GIT_COMMIT="$$AXOLOTY_GIT_COMMIT" AXOLOTY_GIT_CLEAN="$$AXOLOTY_GIT_CLEAN" \
 			AXOLOTY_DEVICE="$${AXOLOTY_DEVICE:-/dev/ttyACM0}"
 
-test-broker-regressions: image
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \
-		sh -c 'pgrep mosquitto >/dev/null 2>&1 || mosquitto -d; swift test $(SWIFT_LOCKED_ARGS) --filter "UnaryCallBrokerIntegrationTests|DecentralizedLoggingTest|ObjectLifecycleControllerTests"'
+test-broker-regressions:
+	@printf '%s\n' 'error: broker regression filters are retired; use make test-wire-live for maintained broker evidence' >&2
+	@exit 69
 
 define run_test_tier
 	@$(MAKE) --no-print-directory test-tier TIER="$(TIER)"
@@ -310,8 +310,8 @@ build:
 build: TIER=smoke
 
 test:
-	$(run_test_tier)
-test: TIER=integration
+	@printf '%s\n' 'error: make test is retired; use make test-tier TIER=unit/module/property or make test-wire-live for broker evidence' >&2
+	@exit 69
 
 test-unit:
 	$(run_test_tier)
@@ -361,10 +361,9 @@ tsan-resolve: image
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(TSAN_BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh .devcontainer/resolve.sh
 	@git diff --exit-code -- Package.resolved
 
-test-tsan: tsan-resolve
-	CONTAINER_SECURITY_OPTS="--security-opt seccomp=unconfined" \
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(TSAN_BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \
-		bash -o pipefail -c 'set -e; pgrep mosquitto >/dev/null 2>&1 || mosquitto -d; swift test $(SWIFT_LOCKED_ARGS) --no-parallel --sanitize=thread --filter "CommunicationSubscriptionCoordinatorTests|BroadcastTransportTests|ObjectLifecycleControllerTests|DecentralizedLoggingTest"'
+test-tsan:
+	@printf '%s\n' 'error: the former TSAN filters are retired; add a real maintained target before restoring this gate' >&2
+	@exit 69
 
 fuzz-long:
 	AXOLOTY_FUZZ_ITERATIONS="$(or $(AXOLOTY_FUZZ_ITERATIONS),100000)" \

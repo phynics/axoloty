@@ -21,6 +21,49 @@ test("checked-in contract covers discovered self-tests", () => {
   assert.deepEqual(errors, []);
 });
 
+test("canonical contract contains no retired zero-test gates", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const retired = new Set(["integration-tests", "logging-global"]);
+  assert.deepEqual(document.nodes.filter(node => retired.has(node.id)), []);
+  assert.equal(document.tiers.some(tier => tier.id === "integration"), false);
+  assert.equal(document.requiredGates.some(gate => retired.has(gate)), false);
+  assert.equal(document.releaseGates.includes("integration"), false);
+  for (const plan of ["checkpoint", "checkpoint-hardware"]) {
+    assert.equal(document.plans[plan].nodes.some(node => retired.has(node)), false, plan);
+  }
+});
+
+test("validator rejects retired canonical nodes and filters if reintroduced", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const template = document.nodes.find(node => node.id === "build");
+  for (const [id, filter] of [["integration-tests", "MQTTNIOClientTests"], ["logging-global", "LogManagerTests"]]) {
+    document.nodes.push({
+      ...template,
+      id,
+      filter,
+      command: { ...template.command, arguments: [...template.command.arguments, "--filter", filter] },
+    });
+  }
+  const errors = validate(document, {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  });
+  assert.ok(errors.includes("integration-tests: retired canonical node must not be declared"));
+  assert.ok(errors.includes("logging-global: retired canonical node must not be declared"));
+  assert.ok(errors.includes('integration-tests: retired test filter "MQTTNIOClientTests" must not be declared'));
+  assert.ok(errors.includes('logging-global: retired test filter "LogManagerTests" must not be declared'));
+});
+
+test("retired make test alias cannot dispatch a stale integration tier", () => {
+  const makefile = fs.readFileSync(path.join(root, "Makefile"), "utf8");
+  assert.doesNotMatch(makefile, /^test:\s*TIER=integration\s*$/m);
+  assert.match(makefile, /make test is retired; use make test-tier TIER=unit\/module\/property/);
+  for (const filter of ["MQTTNIOClientTests", "DecentralizedLoggingTest", "LogManagerTests"]) {
+    assert.doesNotMatch(makefile, new RegExp(`(?:--filter|\\|)\\s*[^"]*${filter}`), filter);
+  }
+});
+
 test("cold semver consumer gates allow a full dual-configuration build", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
   for (const id of ["checkpoint-semver-consumer", "release-semver-consumer"]) {
@@ -254,9 +297,10 @@ test("validator rejects required release tier absent from releaseGates", () => {
 
 test("validator rejects mandatory release tier omitted from the checkpoint plan", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const objectModelNodes = new Set(document.tiers.find(tier => tier.id === "g3-object-model").nodes);
   for (const plan of ["checkpoint", "checkpoint-hardware"]) {
     document.plans[plan].nodes = document.plans[plan].nodes.filter(
-      node => node !== "integration-tests" && node !== "logging-global"
+      node => !objectModelNodes.has(node)
     );
   }
   const errors = validate(document, {
@@ -264,7 +308,7 @@ test("validator rejects mandatory release tier omitted from the checkpoint plan"
     discoveredSelfTests: [],
     exists: () => true,
   });
-  assert.ok(errors.some(error => error.includes('required release tier "integration" is not covered by the checkpoint plan')));
+  assert.ok(errors.some(error => error.includes('required release tier "g3-object-model" is not covered by the checkpoint plan')));
 });
 
 test("validator accepts an intentionally attestable wire-live gate", () => {

@@ -5,11 +5,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const expectedTiers = new Set(["smoke", "unit", "module", "property", "integration", "wire-offline", "wire-live", "nightly", "manual-macos", "g3-object-model", "g4-runtime"]);
+const expectedTiers = new Set(["smoke", "unit", "module", "property", "wire-offline", "wire-live", "nightly", "manual-macos", "g3-object-model", "g4-runtime"]);
 const networkModes = new Set(["none", "isolated", "isolated-broker", "isolated-containers"]);
 const brokerModes = new Set(["none", "local", "isolated"]);
 const hardwareModes = new Set(["forbidden", "optional", "required"]);
 const isolationModes = new Set(["parallel", "separate-process", "exclusive"]);
+const retiredCanonicalNodes = new Set(["integration-tests", "logging-global"]);
+const retiredCanonicalFilters = new Set(["MQTTNIOClientTests", "DecentralizedLoggingTest", "LogManagerTests"]);
 
 export function parseMakeTargets(makefilePath) {
   if (!fs.existsSync(makefilePath)) return new Set();
@@ -163,6 +165,9 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
   for (const node of document.nodes ?? []) {
     if (!node || typeof node !== "object" || Array.isArray(node)) { errors.push("every node must be an object"); continue; }
     if (typeof node.id !== "string" || !node.id) errors.push("node id must be a nonempty string");
+    if (retiredCanonicalNodes.has(node.id)) errors.push(`${node.id}: retired canonical node must not be declared`);
+    const filters = typeof node.filter === "string" ? node.filter.split("|") : [];
+    for (const filter of filters) if (retiredCanonicalFilters.has(filter)) errors.push(`${node.id}: retired test filter ${JSON.stringify(filter)} must not be declared`);
     if (nodeIds.has(node.id)) errors.push(`duplicate node id ${JSON.stringify(node.id)}`);
     nodeIds.add(node.id);
     for (const dependency of node.dependencies ?? []) if (!nodeIds.has(dependency) && !(document.nodes ?? []).some(candidate => candidate?.id === dependency)) errors.push(`${node.id}: unknown dependency ${JSON.stringify(dependency)}`);
@@ -196,7 +201,6 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
     "test-unit": "unit",
     "test-module": "module",
     "test-fuzz": "property",
-    test: "integration",
   };
   for (const [target, planName] of Object.entries(makeAliases)) {
     const tier = document.tiers.find(candidate => candidate.makeTarget === target);

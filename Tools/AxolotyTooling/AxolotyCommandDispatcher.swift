@@ -244,7 +244,7 @@ public struct AxolotyCommandDispatcher: Sendable {
       build                Build the host package and its prerequisites.
       test offline         Run the same offline plan as check.
       test tooling         Run offline developer-tool tests and prerequisites.
-      test integration     Run transport tests against local Mosquitto.
+      test integration     Deprecated; no canonical broker-backed tier is declared.
       wire verify [BUNDLE] Verify fixtures and an optional bundle without MQTT.
       wire capture         Run live MQTT captures with pinned reference agents.
       embedded build       Cross-compile the ESP32-C6 firmware on Linux.
@@ -675,20 +675,9 @@ public struct AxolotyCommandDispatcher: Sendable {
     }
 
     private func integrationResult() -> AxolotyCommandResult {
-        if let failure = contextValidator.failureResult(
-            validating: FoundationIntegrationRunner.commandPlans
-        ) {
-            return Self.commandResult(failure)
-        }
-        let command = integrationRunner.run()
-        let result = AxolotyCheckResult(
-            name: "integration-tests",
-            status: command.exitCode == 0 ? .passed : .failed,
-            command: command
-        )
-        return manifestResult(
-            AxolotyCheckManifest(results: [result]),
-            exitCode: command.exitCode == 0 ? 0 : 1
+        AxolotyCommandResult(
+            standardError: "error: broker-backed integration tier is retired; use a declared test tier or wire capture for broker evidence\n",
+            exitCode: 69
         )
     }
 

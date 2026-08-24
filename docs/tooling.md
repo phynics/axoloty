@@ -52,7 +52,6 @@ plan starts MQTT or accesses hardware.
 | Command | MQTT | Hardware | Purpose |
 |---|:---:|:---:|---|
 | `axoloty-tool check` / `axoloty-tool test offline` | no | no | Deterministic platform plan |
-| `axoloty-tool test integration` | local | no | Broker-backed transport behavior |
 | `axoloty-tool wire verify` | no | no | Direct fixture and snapshot verification |
 | `axoloty-tool wire capture` | local | no | Live reference-agent capture (host-side orchestration) |
 | `axoloty-tool embedded build` | no | no | ESP32-C6 cross-compilation on Linux |
@@ -62,10 +61,12 @@ plan starts MQTT or accesses hardware.
 | `axoloty-tool hardware require` | no | required | Explicit device/release gate |
 | `axoloty-tool release fixture-bundle` | no | no | Bundle committed wire fixtures offline (not fresh wire evidence) |
 
-Broker-backed transport, live CoatyJS capture, coverage, and long fuzz campaigns
-retain focused Make targets while their existing evidence contracts remain in
-place. Wire parsing correctness belongs to the offline tier; MQTT tests only
-transport behavior.
+Live CoatyJS capture, coverage, and long fuzz campaigns retain focused Make
+targets while their existing evidence contracts remain in place. The former
+`axoloty-tool test integration` command is retained only as a deprecation
+diagnostic because its canonical broker-backed test nodes depended on removed
+production APIs. Wire parsing correctness belongs to the offline tier; fresh
+broker evidence belongs to the live-wire capture workflow.
 
 The tooling test suite preserves an end-to-end development-service test as
 opt-in evidence. Ordinary `test tooling` runs skip it before looking up or
@@ -171,11 +172,11 @@ bundle is never presented as this evidence.
 ## Release checkpoint
 
 `make checkpoint` (or `axoloty-tool release checkpoint`) is the release
-certification gate. It runs every ordinary offline check plus the broker-backed
-integration tier, binary-size benchmarks, and release snapshot verification.
+certification gate. It runs every ordinary offline check, binary-size
+benchmarks, and release snapshot verification.
 The canonical release-gate list (`releaseGates` in the test-tier manifest)
 names every mandatory release tier — `smoke`, `unit`, `module`, `property`,
-`integration`, `wire-offline`, and `wire-live`. The checkpoint manifest records
+`wire-offline`, and `wire-live`. The checkpoint manifest records
 a disposition for each gate:
 
 - **executed** — a covering node ran and passed inside the checkpoint;

@@ -71,8 +71,9 @@ remains opt-in through checkpoint-hardware or hardware-require.
 
 On macOS, `axoloty-tool check` selects the same host and offline-wire checks but omits the
 Linux-only ESP-IDF nodes. This is an explicit platform capability difference,
-not a silent skip. MQTT-backed integration remains a separate tier; wire parser
-correctness never requires a broker.
+not a silent skip. Ordinary verification has no broker-backed integration tier;
+wire parser correctness never requires a broker. Fresh broker evidence is
+collected only by the explicit live-wire workflow.
 
 The G3 object-model foundation is a required canonical tier. Run
 `axoloty-tool test-tier g3-object-model` (or invoke the standalone package
@@ -119,7 +120,6 @@ separate from protocol-scenario execution.
 | G3 boundary | `axoloty-tool` manifest node `g3-object-boundary` | no | Portable object-model dependency and Embedded Swift source-inclusion authority check |
 | G4 migration | `make test-tier TIER=g4-runtime` | yes | Replacement-runtime boundaries plus disjoint host, protocol-package, and static-runtime test slices; strict once G4 roots exist |
 | Property | `make test-fuzz` | yes | Deterministic wire parser bounds and corruption tests |
-| Integration | `make test` | yes | Full suite against a fresh Mosquitto |
 | Wire offline | `make test-wire` | yes | Maintained lifecycle compatibility scenario contracts; no broker |
 | Wire live | `make test-wire-live` | yes | Live CoatyJS interop (host-run containers) |
 | Nightly | `make fuzz-long` | yes | Multi-seed fuzz campaign |
@@ -157,7 +157,6 @@ coverage level.
 | Unit | Pure functions and value semantics at one type boundary | None beyond test process | 2 min | Every PR |
 | Module | A subsystem through its public/internal module boundary | In-process fakes; broker only when intrinsic | 5 min | Every PR |
 | Property | Generated-input invariants, round trips, and parser robustness | Seeded generator | 10 min | Every PR with a bounded corpus |
-| Integration | Axoloty components collaborating through a real Mosquitto broker | Isolated broker | 10 min | Every PR |
 | Wire offline | Golden topics/payloads and capture-tool correctness | Versioned fixtures | 5 min | Every PR |
 | Wire live | Representative Axoloty/CoatyJS interoperability plus CoatyJS reference-wire protocol coverage | Containers, broker, CoatyJS image | 20 min | Protocol-facing PRs (enforced by the `Live CoatyJS compatibility gate`); full run before merge |
 | Nightly | Large generated corpora, repeat runs, reconnect/failure scenarios, sanitizers when available | Full container stack | 60 min | Nightly and release candidates |
@@ -239,13 +238,15 @@ case log, after preparing the test products with the same containerized build
 command. `make fuzz-long` runs a default 100,000-iteration, four-seed
 campaign.
 
-### Integration
+### Broker-backed transport evidence
 
-Integration tests use a fresh Mosquitto instance or an isolated namespace and
-verify Axoloty behavior through public APIs. Cover startup/shutdown, routing,
-request/response correlation, lifecycle, reconnect, cancellation, duplicate or
-late responses, and broker failure. Readiness must be observed through a health
-probe or protocol acknowledgement; fixed sleeps are not readiness checks.
+The repository currently has no maintained canonical broker-backed integration
+tier. The former `integration-tests` and `logging-global` nodes selected test
+files whose production APIs were removed, so they are retired rather than
+replaced with duplicate or zero-test filters. Use `make test-wire-live` for
+fresh broker/reference-agent evidence; it owns the broker lifecycle and records
+the required captures and logs. A new broker-backed product contract must add a
+real test target and evidence plan before it becomes a required tier.
 
 ### Wire compatibility
 
