@@ -135,6 +135,7 @@ let package = Package(
                 "Support",
             ],
             sources: [
+                "Testing/AsyncWaiting.swift",
                 "ProtocolTrace/ProtocolTrace.swift",
                 "ProtocolTrace/ProtocolTraceCorpus.swift",
                 "ProtocolTrace/ProtocolTraceTests.swift",
