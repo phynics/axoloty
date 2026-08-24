@@ -144,7 +144,11 @@ struct AxolotyRuntimeTests {
             try? await Task.sleep(for: .milliseconds(5))
         }
         let action = try #require(await transport.lastSent())
-        #expect(action.eventTypeFilter == Array("wire-fixture-operation".utf8))
+        guard case .profile(let filter, _) = action.target else {
+            Issue.record("Call publication did not use the profile target")
+            return
+        }
+        #expect(filter == Array("wire-fixture-operation".utf8))
         await runtime.stop()
     }
 
@@ -165,8 +169,12 @@ struct AxolotyRuntimeTests {
             try? await Task.sleep(for: .milliseconds(5))
         }
         let action = try #require(await transport.lastSent())
-        #expect(action.eventTypeFilter == Array("wire-fixture-channel".utf8))
-        #expect(action.eventTypeFilterKind == .direct)
+        guard case .profile(let filter, let kind) = action.target else {
+            Issue.record("Channel publication did not use the profile target")
+            return
+        }
+        #expect(filter == Array("wire-fixture-channel".utf8))
+        #expect(kind == .direct)
         await runtime.stop()
     }
 
@@ -454,7 +462,7 @@ struct AxolotyRuntimeTests {
 private actor TestTransport: AxolotyRuntimeTransport {
     private var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
     private var failure: (@Sendable (Error) -> Void)?
-    private var sent: [OwnedProtocolAction] = []
+    private var sent: [OwnedProtocolPublication] = []
     private(set) var lifecycle: [String] = []
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
@@ -466,8 +474,8 @@ private actor TestTransport: AxolotyRuntimeTransport {
         failure = handler
     }
 
-    func send(_ action: OwnedProtocolAction, namespace: String) async throws {
-        sent.append(action)
+    func send(_ publication: OwnedProtocolPublication, namespace: String) async throws {
+        sent.append(publication)
     }
 
     func stop() async {
@@ -481,7 +489,7 @@ private actor TestTransport: AxolotyRuntimeTransport {
     func deadvertise(identity: RuntimeIdentity?, namespace: String) async throws { lifecycle.append("deadvertise") }
 
     func sentCount() -> Int { sent.count }
-    func lastSent() -> OwnedProtocolAction? { sent.last }
+    func lastSent() -> OwnedProtocolPublication? { sent.last }
 
     func fail(_ error: Error) { failure?(error) }
 }
@@ -496,7 +504,7 @@ private actor DrainingTransport: AxolotyRuntimeTransport {
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
     func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) {}
 
-    func send(_ action: OwnedProtocolAction, namespace: String) async throws {
+    func send(_ publication: OwnedProtocolPublication, namespace: String) async throws {
         sendStarted = true
         while !released {
             try? await Task.sleep(for: .milliseconds(5))

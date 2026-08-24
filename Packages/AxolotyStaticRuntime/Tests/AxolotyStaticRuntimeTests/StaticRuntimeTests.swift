@@ -26,7 +26,7 @@ struct StaticRuntimeTests {
         #expect(runtime.actionCount == 1)
         var drained = 0
         let count = runtime.drain { action in
-            drained += action.kind == .publish ? 1 : 0
+            if case .publish = action { drained += 1 }
         }
         #expect(count == 1)
         #expect(drained == 1)
@@ -48,8 +48,9 @@ struct StaticRuntimeTests {
         var publications = 0
         var semanticDeliveries = 0
         #expect(runtime.drain { action in
-            publications += action.kind == .publish ? 1 : 0
-            semanticDeliveries += action.isApplicationDelivery ? 1 : 0
+            guard case .publish(let publication) = action else { return }
+            publications += 1
+            semanticDeliveries += publication.isApplicationDelivery ? 1 : 0
         } == 2)
         #expect(publications == 2)
         #expect(semanticDeliveries == 1)
@@ -81,8 +82,10 @@ struct StaticRuntimeTests {
         var copiedFilter: [UInt8]?
         var copiedKind: ProtocolEventTypeFilterKind?
         _ = runtime.drain { action in
-            copiedFilter = action.owned().eventTypeFilter
-            copiedKind = action.eventTypeFilterKind
+            guard case .publish(let publication) = action.owned(),
+                  case .profile(let filter, let kind) = publication.target else { return }
+            copiedFilter = filter
+            copiedKind = kind
         }
         #expect(copiedFilter == Array("wire-fixture-channel".utf8))
         #expect(copiedKind == .direct)

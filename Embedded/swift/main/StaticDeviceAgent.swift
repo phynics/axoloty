@@ -26,7 +26,7 @@ enum StaticDeviceDispatchResult: Equatable {
     case ioValueDelivered
 }
 
-private extension ProtocolDeliveryKey {
+private extension BorrowedProtocolDeliveryKey {
     func isActor(actorId: UUID16) -> Bool {
         if case .ioActor(let candidate) = self { return candidate == actorId }
         return false
@@ -170,15 +170,26 @@ struct StaticDeviceAgent: ~Copyable {
         var actorDelivery = false
         for index in 0..<actionSink.count {
             if let deliveredAction = actionSink[index] {
-                _ = subscriptions.dispatch(deliveredAction)
-                actorDelivery = actorDelivery || deliveredAction.deliveryKey.isActor(actorId: actorId)
+                switch deliveredAction {
+                case .deliver(let delivery):
+                    _ = subscriptions.dispatch(deliveredAction)
+                    actorDelivery = actorDelivery || delivery.deliveryKey.isActor(actorId: actorId)
+                case .associationChanged(let transition):
+                    _ = subscriptions.dispatch(deliveredAction)
+                    actorDelivery = actorDelivery || transition.delivery.deliveryKey.isActor(actorId: actorId)
+                case .publish, .externalRouteActivated, .externalRouteDeactivated:
+                    break
+                }
             }
         }
         actionSink.removeAll()
-        switch action.kind {
-        case .associate: return actorDelivery ? .ioActorAssociated : .ioSourceAssociated
-        case .disassociate: return actorDelivery ? .ioActorDisassociated : .ioSourceDisassociated
-        default: break
+        if case .associationChanged(let transition) = action {
+            switch transition.change {
+            case .established, .updated:
+                return actorDelivery ? .ioActorAssociated : .ioSourceAssociated
+            case .removed:
+                return actorDelivery ? .ioActorDisassociated : .ioSourceDisassociated
+            }
         }
         switch message.eventType {
         case .advertise:

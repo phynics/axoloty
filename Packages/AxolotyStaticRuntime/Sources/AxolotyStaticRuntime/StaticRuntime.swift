@@ -186,8 +186,11 @@ public struct StaticRuntime<let capacity: Int>: ~Copyable {
         for index in 0..<count {
             guard let action = sink[index] else { continue }
             body(action)
-            if action.isApplicationDelivery {
+            switch action {
+            case .deliver, .associationChanged:
                 _ = subscriptions.dispatch(action)
+            case .publish, .externalRouteActivated, .externalRouteDeactivated:
+                break
             }
         }
         sink.removeAll()

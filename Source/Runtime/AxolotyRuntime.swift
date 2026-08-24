@@ -159,7 +159,7 @@ private actor ProtocolExecutor {
     private var transportEpoch: UInt64 = 0
     private var transportIngressContinuation: AsyncStream<RuntimeInboundFrame>.Continuation?
     private var transportIngressTask: Task<Void, Never>?
-    private var outboundContinuation: AsyncStream<OwnedProtocolAction>.Continuation?
+    private var outboundContinuation: AsyncStream<OwnedProtocolPublication>.Continuation?
     private var outboundTask: Task<Void, Never>?
     private var outboundQueued = 0
     private var diagnosticsSnapshotValue = RuntimeDiagnostics()
@@ -410,7 +410,7 @@ private actor ProtocolExecutor {
     }
 
     private func installOutboundPump() {
-        let outboundPipe = AsyncStream<OwnedProtocolAction>.makeStream(
+        let outboundPipe = AsyncStream<OwnedProtocolPublication>.makeStream(
             bufferingPolicy: .bufferingOldest(definition.capacities.dispatch)
         )
         outboundContinuation = outboundPipe.continuation
@@ -606,33 +606,49 @@ private actor ProtocolExecutor {
         for index in 0..<actionSink.count {
             guard let borrowed = actionSink[index] else { continue }
             let action = borrowed.owned()
-            if borrowed.isApplicationDelivery {
-                emitRegisteredEvents(for: borrowed, owned: action, nowMS: nowMS)
-            }
-            switch action.kind {
-            case .publish:
-                enqueueOutbound(action)
-            case .deliver, .associate, .disassociate:
-                dispatchToHandler(action, operation: operationName(for: borrowed))
+            switch borrowed {
+            case .deliver(let delivery):
+                emitRegisteredEvents(for: delivery, owned: action, nowMS: nowMS)
+                dispatchToHandler(action, operation: operationName(for: delivery))
+            case .associationChanged(let transition):
+                emitRegisteredEvents(for: transition.delivery, owned: action, nowMS: nowMS)
+                dispatchToHandler(action, operation: operationName(for: transition.delivery))
+            case .publish(let publication):
+                if publication.isApplicationDelivery,
+                   let delivery = syntheticDelivery(for: publication) {
+                    emitRegisteredEvents(for: delivery, owned: action, nowMS: nowMS)
+                }
+                if case .publish(let ownedPublication) = action {
+                    enqueueOutbound(ownedPublication)
+                }
+            case .externalRouteActivated, .externalRouteDeactivated:
+                break
             }
         }
         actionSink.removeAll()
     }
 
-    private func emitRegisteredEvents(for borrowed: BorrowedProtocolAction, owned: OwnedProtocolAction, nowMS: UInt32) {
+    private func emitRegisteredEvents(for delivery: BorrowedProtocolDelivery, owned: OwnedProtocolAction, nowMS: UInt32) {
+        let payload: [UInt8]
+        switch owned {
+        case .deliver(let value): payload = value.payload
+        case .publish(let value): payload = value.payload
+        case .associationChanged(let value): payload = value.delivery.payload
+        case .externalRouteActivated, .externalRouteDeactivated: return
+        }
         for registration in eventRegistrations {
-            guard matches(registration.selector, action: borrowed) else { continue }
+            guard matches(registration.selector, delivery: delivery) else { continue }
             let value = RuntimeEventValue(
-                family: eventFamily(for: borrowed.routingKey.capability),
+                family: eventFamily(for: delivery.routingKey.capability),
                 context: RuntimeEventContext(
-                    sourceID: borrowed.routingKey.sourceID,
-                    correlationID: borrowed.routingKey.correlationID,
+                    sourceID: delivery.routingKey.sourceID,
+                    correlationID: delivery.routingKey.correlationID,
                     namespace: definition.namespace,
-                    route: borrowed.routeClassification,
+                    route: delivery.routeClassification,
                     receiptTimeMS: nowMS,
-                    provenance: borrowed.kind == .publish ? .local : .transport
+                    provenance: owned.isPublication ? .local : .transport
                 ),
-                value: owned.payload
+                value: payload
             )
             let result = registration.continuation.yield(value)
             if case .dropped = result {
@@ -652,27 +668,45 @@ private actor ProtocolExecutor {
         }
     }
 
-    private func matches(_ selector: RuntimeEventSelector, action: BorrowedProtocolAction) -> Bool {
+    private func matches(_ selector: RuntimeEventSelector, delivery: BorrowedProtocolDelivery) -> Bool {
         switch selector {
         case let .family(family):
-            return eventFamily(for: action.routingKey.capability) == family
+            return eventFamily(for: delivery.routingKey.capability) == family
         case let .advertise(objectType):
-            guard action.routingKey.capability == .advertise else { return false }
+            guard delivery.routingKey.capability == .advertise else { return false }
             guard let objectType else { return true }
-            guard case let .advertiseFilter(filter) = action.deliveryKey else { return false }
+            guard case let .advertiseFilter(filter) = delivery.deliveryKey else { return false }
             return filter.utf8Equals(objectType)
         case let .channel(identifier):
-            guard action.routingKey.capability == .channel,
-                  case let .channel(channel) = action.deliveryKey else { return false }
+            guard delivery.routingKey.capability == .channel,
+                  case let .channel(channel) = delivery.deliveryKey else { return false }
             return channel.utf8Equals(identifier)
         case let .ioActor(actorID):
-            guard case let .ioActor(value) = action.deliveryKey else { return false }
+            guard case let .ioActor(value) = delivery.deliveryKey else { return false }
             return value == actorID
         case let .correlatedResponse(capability, correlationID):
-            return action.routingKey.capability == capability && action.routingKey.correlationID == correlationID
+            return delivery.routingKey.capability == capability && delivery.routingKey.correlationID == correlationID
         }
     }
-
+    private func syntheticDelivery(for publication: BorrowedProtocolPublication) -> BorrowedProtocolDelivery? {
+        let deliveryKey: BorrowedProtocolDeliveryKey
+        switch publication.target {
+        case .profile(let filter, _):
+            switch publication.routingKey.capability {
+            case .advertise: deliveryKey = filter.map { .advertiseFilter($0) } ?? .capability(.advertise)
+            case .channel: deliveryKey = filter.map { .channel($0) } ?? .capability(.channel)
+            default: deliveryKey = .capability(publication.routingKey.capability)
+            }
+        case .associationRoute:
+            deliveryKey = .capability(publication.routingKey.capability)
+        }
+        return BorrowedProtocolDelivery(
+            routingKey: publication.routingKey,
+            deliveryKey: deliveryKey,
+            topic: nil,
+            payload: publication.payload
+        )
+    }
     private func eventFamily(for capability: ProtocolCapability) -> RuntimeEventFamily {
         switch capability {
         case .advertise: return .advertise
@@ -690,7 +724,6 @@ private actor ProtocolExecutor {
         case .returnEvent: return .returnEvent
         }
     }
-
     private func receiveTransport(_ frame: RuntimeInboundFrame, epoch: UInt64) {
         guard epoch == transportEpoch else {
             emit(.init(kind: .capacityExceeded, detail: "stale transport frame ignored"))
@@ -698,10 +731,9 @@ private actor ProtocolExecutor {
         }
         _ = receive(frame)
     }
-
     private func dispatchToHandler(_ action: OwnedProtocolAction, operation: String?) {
         guard let match = definition.registrations.enumerated().first(where: {
-            guard $0.element.capability == action.kindCapability else { return false }
+            guard $0.element.capability == action.capability else { return false }
             return $0.element.operation == nil || $0.element.operation == operation
         }) else {
             return
@@ -749,13 +781,19 @@ private actor ProtocolExecutor {
         }
         handlerTasks[handlerID] = task
     }
-
     private func complete(invocation: RuntimeInvocation, result: RuntimeHandlerResult) {
         activeHandlers = max(0, activeHandlers - 1)
         decrementHandler(registrationIndex: invocation.registrationIndex)
-        guard let correlation = invocation.action.routingKey.correlationID else { return }
+        let routingKey: ProtocolRoutingKey
+        switch invocation.action {
+        case .deliver(let value): routingKey = value.routingKey
+        case .publish(let value): routingKey = value.routingKey
+        case .associationChanged(let value): routingKey = value.delivery.routingKey
+        case .externalRouteActivated, .externalRouteDeactivated: return
+        }
+        guard let correlation = routingKey.correlationID else { return }
         let responseCapability: ProtocolCapability
-        switch invocation.action.routingKey.capability {
+        switch routingKey.capability {
         case .discover: responseCapability = .resolve
         case .query: responseCapability = .retrieve
         case .update: responseCapability = .complete
@@ -796,13 +834,11 @@ private actor ProtocolExecutor {
             nowMS: 0
         )
     }
-
     private func handlerFailed(_ detail: String, registrationIndex: Int = -1) {
         activeHandlers = max(0, activeHandlers - 1)
         decrementHandler(registrationIndex: registrationIndex)
         emit(.init(kind: .handlerFailed, detail: detail))
     }
-
     private func handlerCancelled(_ invocation: RuntimeInvocation) {
         activeHandlers = max(0, activeHandlers - 1)
         decrementHandler(registrationIndex: invocation.registrationIndex)
@@ -831,11 +867,8 @@ private actor ProtocolExecutor {
         }
     }
 
-    /// Extracts a binding-owned Call operation while the action still borrows
-    /// the transport topic. The resulting string is copied before the handler
-    /// task crosses the actor boundary.
-    private func operationName(for action: BorrowedProtocolAction) -> String? {
-        guard action.routingKey.capability == .call, let topic = action.topic else { return nil }
+    private func operationName(for delivery: BorrowedProtocolDelivery) -> String? {
+        guard delivery.routingKey.capability == .call, let topic = delivery.topic else { return nil }
         return topic.withBytes { pointer, length in
             let view = TopicView(topicBytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
             guard let filter = view.eventTypeFilter else { return nil }
@@ -848,10 +881,6 @@ private actor ProtocolExecutor {
         }
     }
 
-    /// Encodes a structured handler failure through the response family codec.
-    /// The Core profile has no common error envelope, so request families use
-    /// their optional private-data field while Return uses its canonical error
-    /// field. This keeps the response wire shape valid for every family.
     private func makeErrorResponsePayload(
         capability: ProtocolCapability,
         code: UInt16,
@@ -888,9 +917,9 @@ private actor ProtocolExecutor {
         return output
     }
 
-    private func enqueueOutbound(_ action: OwnedProtocolAction) {
+    private func enqueueOutbound(_ publication: OwnedProtocolPublication) {
         outboundQueued += 1
-        let result = outboundContinuation?.yield(action)
+        let result = outboundContinuation?.yield(publication)
         if case .dropped = result {
             outboundQueued = max(0, outboundQueued - 1)
             diagnosticsSnapshotValue.dispatchSaturation += 1
