@@ -1,4 +1,4 @@
-# Axoloty 0.6 G4 support matrix
+# Axoloty 0.5.1 support matrix (G4)
 
 This matrix records the support level for the current G4 implementation,
 backed by behavioral test evidence. [`VERSION`](../VERSION) remains `0.5.1`
