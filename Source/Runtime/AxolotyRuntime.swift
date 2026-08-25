@@ -170,7 +170,7 @@ actor ProtocolExecutor {
     var ioStates: [RuntimeIoState] = []
     var ioObservers: [UInt64: RuntimeIoObserver] = [:]
     var nextIoObserverID: UInt64 = 1
-    var ioFlushTask: Task<Void, Never>?
+    var ioFlushTasks: [Int: Task<Void, Never>] = [:]
     private let eventRegistrations: [RuntimeEventRegistration]
 
     private let eventStream: AsyncStream<RuntimeEvent>
@@ -285,8 +285,8 @@ actor ProtocolExecutor {
         transportEpoch &+= 1
         let stoppingEpoch = transportEpoch
         await cancelAndDrainHandlers()
-        ioFlushTask?.cancel()
-        ioFlushTask = nil
+        for task in ioFlushTasks.values { task.cancel() }
+        ioFlushTasks.removeAll(keepingCapacity: true)
         do {
             try await publishIoDeadvertisements(nowMS: monotonicNowMS())
             try await publishLifecycleDeadvertisement(nowMS: monotonicNowMS())

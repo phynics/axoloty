@@ -25,7 +25,7 @@ public struct RuntimeCapacities: Sendable, Equatable {
     public let ioPendingLatest: Int
     /// Maximum typed IO association observers.
     public let ioObservers: Int
-    /// Maximum optional endpoint catalogue entries.
+    /// Maximum endpoint catalogue entries retained by the host definition.
     public let ioCatalogue: Int
 
     /// Creates finite runtime limits.
@@ -714,6 +714,11 @@ public struct RuntimeDefinition: Sendable {
     private var ioEndpointRegistrations: [RuntimeIoEndpointRegistration] = []
     private var sealed = false
 
+    /// Keeps one ProtocolProcessor object slot available for runtime identity.
+    var endpointRegistrationLimit: Int {
+        min(capacities.ioEndpoints, capacities.ioCatalogue, 63)
+    }
+
     /// Creates an empty runtime definition.
     public init(namespace: String, sourceID: UUID16, identity: RuntimeIdentity? = nil, capacities: RuntimeCapacities) throws {
         guard !namespace.isEmpty,
@@ -729,7 +734,9 @@ public struct RuntimeDefinition: Sendable {
         self.capacities = capacities
         self.registryID = runtimeRegistryNonce()
         self.registrations.reserveCapacity(capacities.handlers)
-        self.ioEndpointRegistrations.reserveCapacity(capacities.ioEndpoints)
+        self.ioEndpointRegistrations.reserveCapacity(
+            min(capacities.ioEndpoints, capacities.ioCatalogue, 63)
+        )
     }
 
     /// Registers one bounded application handler.
@@ -1047,7 +1054,7 @@ public extension RuntimeDefinition {
             publication: IoPublicationPolicy
         ) throws(ProtocolError) -> IoSource<Value> {
             guard !definition.sealed,
-                  definition.ioEndpointRegistrations.count < definition.capacities.ioEndpoints else {
+                  definition.ioEndpointRegistrations.count < definition.endpointRegistrationLimit else {
                 throw ProtocolError(.capacityExceeded)
             }
             guard !definition.ioEndpointRegistrations.contains(where: { $0.id == normalized.id }) else {
@@ -1079,7 +1086,7 @@ public extension RuntimeDefinition {
             handler: @escaping @Sendable ([UInt8], IoDeliveryContext) async throws -> Void
         ) throws(ProtocolError) -> IoActor<Value> {
             guard !definition.sealed,
-                  definition.ioEndpointRegistrations.count < definition.capacities.ioEndpoints else {
+                  definition.ioEndpointRegistrations.count < definition.endpointRegistrationLimit else {
                 throw ProtocolError(.capacityExceeded)
             }
             guard !definition.ioEndpointRegistrations.contains(where: { $0.id == normalized.id }) else {

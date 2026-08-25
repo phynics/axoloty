@@ -150,7 +150,7 @@ extension ProtocolExecutor {
             )
             guard case .emitCurrent = decision else {
                 if case .replaceLatest = decision {
-                    scheduleIoFlush(for: registration, association: association)
+                    scheduleIoFlush(for: index, registration: registration, association: association)
                 }
                 continue
             }
@@ -170,34 +170,35 @@ extension ProtocolExecutor {
     }
 
     private func scheduleIoFlush(
-        for registration: RuntimeIoEndpointRegistration,
+        for index: Int,
+        registration: RuntimeIoEndpointRegistration,
         association: IoAssociationState
     ) {
-        guard ioFlushTask == nil else { return }
+        guard ioFlushTasks[index] == nil else { return }
         let localInterval: UInt32
         switch registration.publication {
         case .immediate: localInterval = 0
         case .latest(let interval), .throttle(let interval): localInterval = interval
         }
         let delay = max(1, max(localInterval, association.recommendedUpdateRateMS ?? 0))
-        ioFlushTask = Task { [weak self] in
+        ioFlushTasks[index] = Task { [weak self] in
             do {
                 try await Task.sleep(for: .milliseconds(Int(delay)))
             } catch {
                 return
             }
-            await self?.runScheduledIoFlush()
+            await self?.runScheduledIoFlush(for: index)
         }
     }
 
-    func runScheduledIoFlush() {
-        ioFlushTask = nil
+    func runScheduledIoFlush(for index: Int) {
+        ioFlushTasks.removeValue(forKey: index)
         flushPendingIo(nowMS: monotonicNowMS())
     }
 
     func clearIoTransportState() {
-        ioFlushTask?.cancel()
-        ioFlushTask = nil
+        for task in ioFlushTasks.values { task.cancel() }
+        ioFlushTasks.removeAll(keepingCapacity: true)
         for index in ioStates.indices {
             ioStates[index].machine.clear()
             ioStates[index].pending = nil
@@ -262,14 +263,14 @@ extension ProtocolExecutor {
         case .replaceLatest:
             guard canQueueLatest(at: index) else { return .rejected(.capacityExceeded) }
             ioStates[index].pending = encoded
-            scheduleIoFlush(for: registration, association: association)
+            scheduleIoFlush(for: index, registration: registration, association: association)
             return .queuedLatest
         case .emitCurrent:
             if ioStates[index].inFlight || outboundQueued >= definition.capacities.dispatch {
                 if case .latest = registration.publication {
                     guard canQueueLatest(at: index) else { return .rejected(.capacityExceeded) }
                     ioStates[index].pending = encoded
-                    scheduleIoFlush(for: registration, association: association)
+                    scheduleIoFlush(for: index, registration: registration, association: association)
                     return .queuedLatest
                 }
                 return .rejected(.capacityExceeded)
@@ -291,7 +292,7 @@ extension ProtocolExecutor {
                 if case .latest = registration.publication {
                     guard canQueueLatest(at: index) else { return .rejected(.capacityExceeded) }
                     ioStates[index].pending = encoded
-                    scheduleIoFlush(for: registration, association: association)
+                    scheduleIoFlush(for: index, registration: registration, association: association)
                     return .queuedLatest
                 }
                 return .rejected(.capacityExceeded)
@@ -389,7 +390,7 @@ extension ProtocolExecutor {
     }
 
     func notifyIoObservers() {
-        for id in ioObservers.keys {
+        for id in Array(ioObservers.keys) {
             guard var observer = ioObservers[id] else { continue }
             let state: IoAssociationState
             if let sourceID = observer.sourceID {

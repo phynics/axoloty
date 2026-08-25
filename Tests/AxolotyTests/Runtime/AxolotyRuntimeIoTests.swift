@@ -35,4 +35,34 @@ struct AxolotyRuntimeIoTests {
         #expect(sealed.ioEndpointCount == 2)
         #expect(source.id != actor.id)
     }
+
+    @Test("catalogue capacity bounds endpoint registration")
+    func catalogueCapacity() throws {
+        let identity = try RuntimeIdentity(
+            id: ObjectID(bytes: ByteSlice(bytes: "00000000-0000-4000-8000-0000000000a1", length: 36))!.uuid,
+            name: "catalogue-limit"
+        )
+        let capacities = try RuntimeCapacities(ioEndpoints: 64, ioCatalogue: 1)
+        var builder = try RuntimeDefinition.Builder(
+            identity: identity,
+            namespace: "catalogue-limit",
+            capacities: capacities
+        )
+        func metadata(_ id: StaticString) throws -> Object<IoSourceMetadata> {
+            try Object<IoSourceMetadata>(decoding: ByteSlice(bytes: id.utf8Start, length: id.utf8CodeUnitCount))
+        }
+        _ = try builder.ioSource(
+            metadata: metadata("{\"objectId\":\"00000000-0000-4000-8000-0000000000a2\",\"objectType\":\"coaty.IoSource\",\"coreType\":\"IoSource\",\"valueType\":\"com.example.Bool\"}"),
+            as: Bool.self
+        )
+        do {
+            _ = try builder.ioSource(
+                metadata: metadata("{\"objectId\":\"00000000-0000-4000-8000-0000000000a3\",\"objectType\":\"coaty.IoSource\",\"coreType\":\"IoSource\",\"valueType\":\"com.example.Bool\"}"),
+                as: Bool.self
+            )
+            Issue.record("second endpoint exceeded the configured catalogue capacity")
+        } catch {
+            // The host boundary wraps the protocol capacity error.
+        }
+    }
 }
