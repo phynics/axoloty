@@ -70,4 +70,59 @@ struct AxolotyRuntimeIoTests {
             #expect(protocolError.code == .capacityExceeded)
         }
     }
+
+    @Test("host IO lifecycle publishes endpoint advertisements and deadvertisements")
+    func endpointLifecycleWirePublications() async throws {
+        let identity = try RuntimeIdentity(
+            id: ObjectID(bytes: ByteSlice(bytes: "00000000-0000-4000-8000-0000000000b1", length: 36))!.uuid,
+            name: "host-io-wire"
+        )
+        var builder = try RuntimeDefinition.Builder(identity: identity, namespace: "host-io-wire")
+        let sourceID = "00000000-0000-4000-8000-0000000000b2"
+        let actorID = "00000000-0000-4000-8000-0000000000b3"
+        let sourceJSON: StaticString = "{\"objectId\":\"00000000-0000-4000-8000-0000000000b2\",\"objectType\":\"coaty.IoSource\",\"coreType\":\"IoSource\",\"valueType\":\"com.example.Bool\"}"
+        let actorJSON: StaticString = "{\"objectId\":\"00000000-0000-4000-8000-0000000000b3\",\"objectType\":\"coaty.IoActor\",\"coreType\":\"IoActor\",\"valueType\":\"com.example.Bool\"}"
+        let sourceHandle = try builder.ioSource(
+            metadata: try Object<IoSourceMetadata>(decoding: ByteSlice(
+                bytes: sourceJSON.utf8Start,
+                length: sourceJSON.utf8CodeUnitCount
+            )),
+            as: Bool.self
+        )
+        let actorHandle = try builder.ioActor(
+            metadata: try Object<IoActorMetadata>(decoding: ByteSlice(
+                bytes: actorJSON.utf8Start,
+                length: actorJSON.utf8CodeUnitCount
+            )),
+            as: Bool.self
+        ) { _, _ in }
+        let transport = IoWireRecordingTransport()
+        let runtime = AxolotyRuntime(definition: try builder.finish(), transport: transport)
+
+        try await runtime.start()
+        let startup = await transport.publications()
+        #expect(startup.contains { $0.routingKey.capability == .advertise })
+        #expect(startup.contains { String(decoding: $0.payload, as: UTF8.self).contains(sourceID) })
+        #expect(startup.contains { String(decoding: $0.payload, as: UTF8.self).contains(actorID) })
+
+        await runtime.stop()
+        let shutdown = await transport.publications()
+        #expect(shutdown.count > startup.count)
+        #expect(shutdown.contains { $0.routingKey.capability == .deadvertise })
+        #expect(sourceHandle.id != actorHandle.id)
+    }
+}
+
+private actor IoWireRecordingTransport: AxolotyRuntimeTransport {
+    private var sent: [OwnedProtocolPublication] = []
+
+    func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
+    func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) async {}
+    func send(_ publication: OwnedProtocolPublication, namespace: String) async throws {
+        sent.append(publication)
+    }
+    func stop() async {}
+    func installSubscriptions(namespace: String) async throws {}
+    func removeSubscriptions(namespace: String) async throws {}
+    func publications() -> [OwnedProtocolPublication] { sent }
 }
