@@ -18,6 +18,15 @@ public struct ByteSlice: Equatable, Hashable {
     /// The number of bytes in this slice.
     public let length: Int
 
+    /// An empty slice with a non-dereferenceable sentinel pointer.
+    ///
+    /// Operations on an empty slice never read the pointer. This value lets
+    /// bounded protocol adapters represent a valid zero-length binary
+    /// payload without allocating temporary storage.
+    public static var empty: Self {
+        Self(pointer: UnsafeRawPointer(bitPattern: 1)!, length: 0)
+    }
+
     /// Creates a slice borrowing the given pointer and length.
     ///
     /// - Parameters:
@@ -68,6 +77,74 @@ public struct ByteSlice: Equatable, Hashable {
                 return wireSemanticKeysEqual(&first, &second)
             }
         }
+    }
+
+    /// Copies JSON string-content bytes after interpreting escapes into a
+    /// caller-owned fixed buffer.
+    ///
+    /// The slice must contain string content without the surrounding quote
+    /// characters. This is the boundary used by wire DTO readers, which
+    /// retain encoded content so field matching can remain allocation-free.
+    /// The returned bytes are the semantic UTF-8 spelling, not the encoded
+    /// JSON spelling.
+    ///
+    /// - Parameters:
+    ///   - output: Fixed storage receiving the decoded UTF-8 bytes.
+    /// - Returns: The number of decoded bytes written.
+    /// - Throws: ``WireDecodeError`` for malformed escapes or capacity
+    ///   exhaustion.
+    public borrowing func copyDecodedJSONString<let capacity: Int>(
+        into output: inout InlineArray<capacity, UInt8>
+    ) throws(WireDecodeError) -> Int {
+        var count = 0
+        var overflow = false
+        var decodingFailure: WireDecodeError?
+        withBytes { pointer, length in
+            let view = WireValueView(
+                bytes: pointer.assumingMemoryBound(to: UInt8.self),
+                length: length
+            )
+            do {
+                try view.withDecodedScalars(in: 0..<length) { scalar in
+                guard !overflow else { return }
+                let width: Int
+                if scalar <= 0x7F { width = 1 }
+                else if scalar <= 0x7FF { width = 2 }
+                else if scalar <= 0xFFFF { width = 3 }
+                else { width = 4 }
+                guard count <= capacity - width else {
+                    overflow = true
+                    return
+                }
+                switch width {
+                case 1:
+                    output[count] = UInt8(scalar)
+                case 2:
+                    output[count] = UInt8(0xC0 | (scalar >> 6))
+                    output[count + 1] = UInt8(0x80 | (scalar & 0x3F))
+                case 3:
+                    output[count] = UInt8(0xE0 | (scalar >> 12))
+                    output[count + 1] = UInt8(0x80 | ((scalar >> 6) & 0x3F))
+                    output[count + 2] = UInt8(0x80 | (scalar & 0x3F))
+                default:
+                    output[count] = UInt8(0xF0 | (scalar >> 18))
+                    output[count + 1] = UInt8(0x80 | ((scalar >> 12) & 0x3F))
+                    output[count + 2] = UInt8(0x80 | ((scalar >> 6) & 0x3F))
+                    output[count + 3] = UInt8(0x80 | (scalar & 0x3F))
+                }
+                count += width
+            }
+            } catch let error as WireDecodeError {
+                decodingFailure = error
+            } catch {
+                decodingFailure = WireDecodeError(.invalidEscape)
+            }
+        }
+        if let decodingFailure { throw decodingFailure }
+        guard !overflow else {
+            throw WireDecodeError(.payloadExceedsLimit, byteOffset: count)
+        }
+        return count
     }
 
     /// Returns the index of the first occurrence of `target`, or nil if absent.

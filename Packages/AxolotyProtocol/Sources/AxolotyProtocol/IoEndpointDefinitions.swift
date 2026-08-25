@@ -25,11 +25,44 @@ public struct IoSourceEndpointDefinition: ~Copyable, Sendable {
         representation: IoValueRepresentation,
         publication: IoPublicationPolicy
     ) throws(ProtocolError) {
+        try self.init(
+            metadata: metadata,
+            representation: representation,
+            publication: publication,
+            externalRoute: nil
+        )
+    }
+
+    /// Runtime adapter initializer that preserves one validated external
+    /// route in the consumed canonical object.
+    ///
+    /// - Parameters:
+    ///   - metadata: Validated typed source object to consume.
+    ///   - representation: Representation fixed for the endpoint.
+    ///   - publication: Local source publication policy.
+    ///   - externalRoute: Optional validated route to preserve in the object.
+    /// - Throws: ``ProtocolError`` when normalization or bounded copying fails.
+    @_spi(AxolotyRuntimeAdapter)
+    public init(
+        metadata: consuming Object<IoSourceMetadata>,
+        representation: IoValueRepresentation,
+        publication: IoPublicationPolicy,
+        externalRoute: BoundedEncodedText<128>?
+    ) throws(ProtocolError) {
         var object = metadata
         do throws(ObjectError) {
             try object.edit { fields in
                 fields.useRawIoValues = representation == .binary ? true : nil
-                fields.externalRoute = nil
+                if let externalRoute {
+                    var bounded: BoundedEncodedText<128>?
+                    externalRoute.withBytes { bytes in
+                        bounded = BoundedEncodedText<128>(bytes: bytes)
+                    }
+                    guard let bounded else { throw ObjectError(.capacityExceeded) }
+                    fields.externalRoute = bounded
+                } else {
+                    fields.externalRoute = nil
+                }
                 switch publication {
                 case .immediate:
                     fields.updateStrategy = 1
