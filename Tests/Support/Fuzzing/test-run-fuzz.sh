@@ -424,10 +424,13 @@ run_fuzz_pid=$!
 found=0
 for _ in $(seq 1 100); do
     for f in "$TEMP_DIR"/output-interrupt/fuzz-*/results/worker-*.tsv; do
-        if [[ -f "$f" ]] && grep -q '^case-' "$f"; then
-            found=1
-            break 2
-        fi
+        [[ -f "$f" ]] && grep -q '^case-' "$f" || continue
+        for marker in "$TEMP_DIR"/output-interrupt/fuzz-*/active-processes/*; do
+            if [[ -f "$marker" ]]; then
+                found=1
+                break 3
+            fi
+        done
     done
     sleep 0.1
 done
@@ -437,7 +440,7 @@ if (( ! found )); then
     set +e
     wait_for_process_bounded "$run_fuzz_pid" "interrupt readiness self-test" 5 2
     set -e
-    echo 'fuzz campaign did not record a case before the interruption deadline' >&2
+    echo 'fuzz campaign did not record a case and start its next command before the interruption deadline' >&2
     exit 1
 fi
 
@@ -447,13 +450,21 @@ wait_for_process_bounded "$run_fuzz_pid" "interrupt self-test" 5 2
 interrupt_status=$?
 set -e
 
-[[ "$interrupt_status" -ne 0 ]]
+if [[ "$interrupt_status" -eq 0 ]]; then
+    echo 'interrupted fuzz campaign exited successfully' >&2
+    exit 1
+fi
 manifest_i=$(manifest_path "$TEMP_DIR/output-interrupt")
-[[ -f "$manifest_i" ]]
-grep -qF '"status": "interrupted"' "$manifest_i"
-grep -qF '"finishedAt"' "$manifest_i"
-grep -qF '"durationSeconds"' "$manifest_i"
-grep -qF '"caseCount"' "$manifest_i"
+if [[ ! -f "$manifest_i" ]]; then
+    echo 'interrupted fuzz campaign did not produce a manifest' >&2
+    exit 1
+fi
+for field in '"status": "interrupted"' '"finishedAt"' '"durationSeconds"' '"caseCount"'; do
+    if ! grep -qF "$field" "$manifest_i"; then
+        echo "interrupted fuzz campaign manifest omitted expected field: $field" >&2
+        exit 1
+    fi
+done
 if grep -qF '"cases": []' "$manifest_i"; then
     echo 'interrupted manifest has an empty cases array' >&2
     exit 1
