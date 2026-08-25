@@ -91,6 +91,36 @@ manifest_path() {
     printf '%s' "$path"
 }
 
+wait_for_process_bounded() {
+    local pid="$1" label="$2" term_grace="${3:-5}" kill_grace="${4:-2}"
+    local deadline state
+
+    process_live() {
+        state=$(ps -o stat= -p "$1" 2>/dev/null | tr -d ' ' || true)
+        [[ -n "$state" && "$state" != Z* ]]
+    }
+
+    deadline=$((SECONDS + term_grace))
+    while process_live "$pid" && (( SECONDS < deadline )); do
+        sleep 0.1
+    done
+    if process_live "$pid"; then
+        echo "[$label] TERM grace expired; sending SIGKILL to pid=$pid" >&2
+        kill -KILL "$pid" 2>/dev/null || true
+        deadline=$((SECONDS + kill_grace))
+        while process_live "$pid" && (( SECONDS < deadline )); do
+            sleep 0.1
+        done
+    fi
+    if process_live "$pid"; then
+        echo "[$label] cleanup failed: pid=$pid remained alive after SIGKILL" >&2
+        return 125
+    fi
+    local wait_status=0
+    wait "$pid" 2>/dev/null || wait_status=$?
+    return "$wait_status"
+}
+
 # Success path: a complete bounded campaign finalizes the manifest with a passed status.
 rm -f "$runtime_log"
 FAKE_RUNTIME_LOG="$runtime_log" \
@@ -382,7 +412,7 @@ done
 
 kill -TERM "$run_fuzz_pid" || true
 set +e
-wait "$run_fuzz_pid"
+wait_for_process_bounded "$run_fuzz_pid" "interrupt self-test" 5 2
 interrupt_status=$?
 set -e
 
