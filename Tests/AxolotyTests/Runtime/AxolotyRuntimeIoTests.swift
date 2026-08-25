@@ -46,7 +46,7 @@ struct AxolotyRuntimeIoTests {
         var builder = try RuntimeDefinition.Builder(
             identity: identity,
             namespace: "catalogue-limit",
-            capacities: capacities
+            limits: capacities
         )
         func metadata(_ id: StaticString) throws -> Object<IoSourceMetadata> {
             try Object<IoSourceMetadata>(decoding: ByteSlice(bytes: id.utf8Start, length: id.utf8CodeUnitCount))
