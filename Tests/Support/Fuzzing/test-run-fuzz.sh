@@ -165,6 +165,7 @@ grep -qF -- '-v '"$TEMP_DIR/external-swiftpm-cache"':/workspace/.swiftpm-cache' 
 # The XCTest compatibility line is allowed when the Swift Testing summary proves
 # that a real nonzero Swift Testing run executed.
 rm -f "$runtime_log"
+env -u BUILD_DIR -u SPM_CACHE_DIR \
 FAKE_RUNTIME_LOG="$runtime_log" \
 FAKE_RUNTIME_EXIT_CODE=0 \
 FAKE_RUNTIME_XCTEST_ZERO_LINE=1 \
