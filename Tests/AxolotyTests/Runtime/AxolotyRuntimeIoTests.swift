@@ -62,7 +62,12 @@ struct AxolotyRuntimeIoTests {
             )
             Issue.record("second endpoint exceeded the configured catalogue capacity")
         } catch {
-            // The host boundary wraps the protocol capacity error.
+            guard case let AxolotyError.caught(underlying) = error,
+                  let protocolError = underlying as? ProtocolError else {
+                Issue.record("catalogue saturation did not preserve ProtocolError")
+                return
+            }
+            #expect(protocolError.code == .capacityExceeded)
         }
     }
 }

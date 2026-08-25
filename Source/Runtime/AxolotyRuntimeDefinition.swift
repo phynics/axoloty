@@ -716,7 +716,8 @@ public struct RuntimeDefinition: Sendable {
 
     /// Keeps one ProtocolProcessor object slot available for runtime identity.
     var endpointRegistrationLimit: Int {
-        min(capacities.ioEndpoints, capacities.ioCatalogue, 63)
+        let reservedIdentitySlot = identity == nil ? 0 : 1
+        return min(capacities.ioEndpoints, capacities.ioCatalogue, 64 - reservedIdentitySlot)
     }
 
     /// Creates an empty runtime definition.
@@ -734,9 +735,7 @@ public struct RuntimeDefinition: Sendable {
         self.capacities = capacities
         self.registryID = runtimeRegistryNonce()
         self.registrations.reserveCapacity(capacities.handlers)
-        self.ioEndpointRegistrations.reserveCapacity(
-            min(capacities.ioEndpoints, capacities.ioCatalogue, 63)
-        )
+        self.ioEndpointRegistrations.reserveCapacity(endpointRegistrationLimit)
     }
 
     /// Registers one bounded application handler.
