@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import test from "node:test";
+import { parseMakeTargets } from "./validate-test-tiers.mjs";
 
 function recipe(makefile, target) {
   const match = new RegExp(`^${target}:[^\\n]*\\n((?:\\t[^\\n]*\\n)+)`, "m").exec(makefile);
@@ -17,6 +18,31 @@ function swiftCodeBlockAfter(document, marker) {
   assert.ok(match, `missing Swift code block after: ${marker}`);
   return match[1];
 }
+
+function advertisedHelpEntries(output) {
+  return output.split(/\r?\n/).filter(line => line.startsWith("make ")).map(line => {
+    const separator = line.search(/\s{2,}/);
+    assert.ok(separator > 0, `help entry has no description: ${line}`);
+    const invocation = line.slice("make ".length, separator).trim();
+    const description = line.slice(separator).trim();
+    return { target: invocation.split(/\s+/, 1)[0], description };
+  });
+}
+
+test("make help advertises only declared, documented targets", () => {
+  const result = spawnSync("make", ["--no-print-directory", "help"], { encoding: "utf8" });
+  assert.equal(result.status, 0, `make help failed: ${result.stderr}`);
+  const entries = advertisedHelpEntries(result.stdout);
+  const targets = parseMakeTargets("Makefile");
+  const names = new Set();
+  for (const entry of entries) {
+    assert.ok(!names.has(entry.target), `make help documents ${entry.target} more than once`);
+    names.add(entry.target);
+    assert.ok(targets.has(entry.target), `make help advertises undeclared target: ${entry.target}`);
+    assert.match(entry.description, /\S/, `make help has no documentation for ${entry.target}`);
+  }
+  assert.ok(entries.length > 0, "make help must document at least one target");
+});
 
 test("principal Make workflows use the canonical tooling entry points", () => {
   const makefile = fs.readFileSync("Makefile", "utf8");
