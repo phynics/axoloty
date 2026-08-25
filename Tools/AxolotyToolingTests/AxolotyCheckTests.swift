@@ -849,8 +849,11 @@ func commandRunnerDrainsTermTrapTailBeforeCancellingReaders() throws {
         contextValidator: validator,
         environment: validator.environment,
         configuration: AxolotyCommandRunnerConfiguration(
-            commandTimeout: 0.15,
-            terminationGracePeriod: 0.05,
+            // Coverage instrumentation and a loaded CI runner can delay the
+            // child shell before it installs its TERM trap. Keep enough
+            // margin for setup so this test measures reader draining.
+            commandTimeout: 1,
+            terminationGracePeriod: 1,
             heartbeatInterval: 1,
             artifactRoot: root,
             runID: "term-tail",
