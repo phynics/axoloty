@@ -108,7 +108,6 @@ help:
 		'make worktree-bootstrap  Prepare dependency cache and validate Package.resolved' \
 		'make worktree-warm  Bootstrap and compile the current worktree' \
 		'make axoloty-tool AXOLOTY_TOOL_ARGS="--help"  Run the Swift tooling CLI in-container' \
-		'make check         Run the initial broker-free axoloty-tool check plan' \
 		'make verify        Run the canonical ordinary pre-PR verification plan' \
 		'make test-one FILTER=...  Run one bounded suite or test filter' \
 		'make test-tier TIER=...  Run one canonical test tier' \
@@ -119,13 +118,10 @@ help:
 		'make release-fixture-bundle  Bundle committed wire fixtures offline (not fresh wire evidence)' \
 		'make checkpoint     Run the release checkpoint validation (no hardware)' \
 		'make checkpoint-hardware  Run checkpoint with ESP32-C6 smoke test' \
-		'make test-tooling  Run the Swift tooling CLI tests' \
 		'make build         Build Axoloty in the Linux container' \
 		'make serve-mqtt    Run the local MQTT broker in the container' \
 		'make serve-mcp     Run the MCP service in the container' \
 		'make serve-dev     Run the MQTT + MCP development stack' \
-		'make wire-codec-test  Run the Foundation-free wire codec unit tests' \
-		'make test-communication  Run communication transport and subscription tests' \
 		'make test-broker-regressions  Deprecated: former broker regression filters are retired' \
 		'make test-decoder-context-sendable  Fail if the former decoder-context Sendable diagnostic returns' \
 		'make test-no-anycodable  Fail if AnyCodable is used in production source' \
@@ -138,19 +134,15 @@ help:
 		'make test-module   Run portable topic, wire, protocol, and model module tests' \
 		'make test-fuzz     Run bounded wire parser property/fuzz tests' \
 		'make fuzz-long     Run an auditable multi-seed fuzz campaign' \
-		'make test-fast     Run unit, module, fuzz, offline wire, and support self-tests' \
 		'make test-wire     Run offline wire fixtures and capture tests' \
 		'make test-support  Run support harness self-tests and tier validation' \
-		'make test-observation-linux  Run Observation and Broadcast tests on Linux' \
 		'make coverage      Run tests with code coverage and report Source/ coverage' \
 		'make coverage-check  Run coverage and fail if it regresses the baseline' \
 		'make test-wire-live  Run live CoatyJS compatibility scenarios' \
-		'make test-wire-all  Run offline and live compatibility suites' \
 		'make wire-tool   Build the npx-runnable wire-compatibility CLI' \
 		'make embedded-toolchain-doctor  Verify the device-independent ESP-IDF environment' \
 		'make embedded-device-info  Query the board and record a device manifest' \
 		'make embedded-device-smoke  Build, flash, and capture the smoke marker' \
-		'make embedded-mqtt-test  Run the Swift MQTT overlay acceptance gate' \
 		'make embedded-coatyjs-test  Run one Phase 4 direction (EMBEDDED_COATY_ROLE=A|B)' \
 		'make embedded-host-test  Run one Phase 4 host direction (EMBEDDED_HOST_ROLE=A|B)' \
 		'make embedded-last-will-test  Force-reset A and verify its broker-issued will on B' \
@@ -170,10 +162,7 @@ help:
 		'make embedded-swift-build  Build the ESP32-C6 Embedded Swift firmware' \
 		'make embedded-swift-flash  Build, flash, and capture the Swift smoke marker' \
 		'make embedded-swift-reproducible-build  Verify firmware is bit-for-bit reproducible' \
-		'make ci-fast       Run the build and fast test suite' \
 		'make ci            Run the consolidated pull-request checks' \
-		'make broker        Start Mosquitto on localhost:1883' \
-		'make broker-stop   Stop the background Mosquitto container' \
 		'make shell         Open a shell in the Linux container' \
 		'make docs          Generate DocC API documentation into the active build cache' \
 		'make clean         Remove normal and coverage build artifacts' \
