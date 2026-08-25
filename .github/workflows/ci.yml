@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -214,11 +215,50 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Classify source coverage scope
+        id: coverage_scope
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before || '' }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$RUNNER_TEMP/coverage-changed-paths.txt"
+          : > "$changed"
+          force=""
+          if [ "${{ github.event_name }}" = workflow_dispatch ]; then
+            force=--force
+          elif [ -n "$BASE_SHA" ] && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            # Treat renames as delete/add pairs so moving covered source into
+            # a fast-path directory cannot hide the source-side change.
+            git diff --no-renames --name-only "$BASE_SHA" "$HEAD_SHA" > "$changed"
+          else
+            echo "::warning::Coverage base commit is unavailable; running full coverage."
+            force=--force
+          fi
+          classification=$(node Tests/Support/classify-coverage-change.mjs --changed-file-list "$changed" $force)
+          printf '%s\n' "$classification"
+          marker=$(printf '%s\n' "$classification" | sed -n '1p')
+          if [ "$marker" = coverage=required ]; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+          elif [ "$marker" = coverage=fastpath ]; then
+            echo "required=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Coverage classifier returned an invalid marker: $marker"
+            exit 1
+          fi
+          {
+            echo "### Source coverage scope"
+            printf '%s\n' "$classification" | sed 's/^/- /'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Compute cache key
+        if: steps.coverage_scope.outputs.required == 'true'
         run: |
           echo "SWIFT_CACHE_KEY=swiftpm-v2-6.3-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile', '.devcontainer/image-lock.json') }}" >> "$GITHUB_ENV"
 
       - name: Prepare coverage diagnostics
+        if: steps.coverage_scope.outputs.required == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -226,6 +266,7 @@ jobs:
           : > .testing/coverage/job.log
 
       - name: Setup container image
+        if: steps.coverage_scope.outputs.required == 'true'
         uses: ./.github/actions/setup-container
         with:
           runtime: podman
@@ -234,6 +275,7 @@ jobs:
           candidate-tag-prefix: ${{ github.event_name == 'pull_request' && format('swift-6.3-pr-{0}', github.event.pull_request.number) || 'swift-6.3' }}
 
       - name: Restore SwiftPM dependency cache
+        if: steps.coverage_scope.outputs.required == 'true'
         id: swiftpm_cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -241,6 +283,7 @@ jobs:
           key: ${{ env.SWIFT_CACHE_KEY }}
 
       - name: Run coverage plan
+        if: steps.coverage_scope.outputs.required == 'true'
         env:
           COVERAGE_DIFF_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
         shell: bash
@@ -249,7 +292,7 @@ jobs:
           make coverage-check CONTAINER_RUNTIME=podman BUILD_DIR=".build/coverage" COVERAGE_BUILD_DIR=".build/coverage" BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache 2>&1 | tee .testing/coverage/job.log
 
       - name: Require coverage report
-        if: always()
+        if: always() && steps.coverage_scope.outputs.required == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -263,7 +306,7 @@ jobs:
           fi
 
       - name: Upload coverage report
-        if: always()
+        if: always() && steps.coverage_scope.outputs.required == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-report-${{ github.run_id }}
@@ -274,7 +317,7 @@ jobs:
           retention-days: 7
 
       - name: Upload coverage diagnostics
-        if: always()
+        if: always() && steps.coverage_scope.outputs.required == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-diagnostics-${{ github.run_id }}
