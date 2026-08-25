@@ -260,12 +260,14 @@ extension ProtocolExecutor {
         case .throttled:
             return .throttled
         case .replaceLatest:
+            guard canQueueLatest(at: index) else { return .rejected(.capacityExceeded) }
             ioStates[index].pending = encoded
             scheduleIoFlush(for: registration, association: association)
             return .queuedLatest
         case .emitCurrent:
             if ioStates[index].inFlight || outboundQueued >= definition.capacities.dispatch {
                 if case .latest = registration.publication {
+                    guard canQueueLatest(at: index) else { return .rejected(.capacityExceeded) }
                     ioStates[index].pending = encoded
                     scheduleIoFlush(for: registration, association: association)
                     return .queuedLatest
@@ -287,6 +289,7 @@ extension ProtocolExecutor {
                 return .notAssociated
             case .rejected(.capacityExceeded):
                 if case .latest = registration.publication {
+                    guard canQueueLatest(at: index) else { return .rejected(.capacityExceeded) }
                     ioStates[index].pending = encoded
                     scheduleIoFlush(for: registration, association: association)
                     return .queuedLatest
@@ -496,6 +499,14 @@ extension ProtocolExecutor {
                   representation: state.registration.representation
               ) else { return nil }
         return slot
+    }
+
+    private func canQueueLatest(at index: Int) -> Bool {
+        if ioStates[index].pending != nil { return true }
+        let pendingCount = ioStates.reduce(into: 0) { count, state in
+            if state.pending != nil { count += 1 }
+        }
+        return pendingCount < definition.capacities.ioPendingLatest
     }
 
     func emitIoDiagnostic(_ detail: String) {
