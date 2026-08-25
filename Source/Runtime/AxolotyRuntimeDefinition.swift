@@ -910,6 +910,13 @@ public extension RuntimeDefinition {
         }
 
         /// Registers a typed, fixed-representation IO source before startup.
+        ///
+        /// - Parameters:
+        ///   - metadata: The consumed source object metadata.
+        ///   - valueType: The portable value type used by the source.
+        ///   - publication: The bounded publication policy.
+        /// - Returns: A sealed-definition source handle.
+        /// - Throws: ``AxolotyError`` when metadata or capacity validation fails.
         public mutating func ioSource<Value: IoValue>(
             metadata: consuming Object<IoSourceMetadata>,
             as valueType: Value.Type,
@@ -929,6 +936,13 @@ public extension RuntimeDefinition {
         }
 
         /// Registers a dynamic IO source whose representation is fixed at registration.
+        ///
+        /// - Parameters:
+        ///   - metadata: The consumed source object metadata.
+        ///   - representation: The representation accepted by the endpoint.
+        ///   - publication: The bounded publication policy.
+        /// - Returns: A dynamic source handle.
+        /// - Throws: ``AxolotyError`` when metadata or capacity validation fails.
         public mutating func dynamicIoSource(
             metadata: consuming Object<IoSourceMetadata>,
             representation: IoValueRepresentation,
@@ -947,6 +961,14 @@ public extension RuntimeDefinition {
         }
 
         /// Registers a typed host IO actor with an asynchronous application handler.
+        ///
+        /// - Parameters:
+        ///   - metadata: The consumed actor object metadata.
+        ///   - valueType: The portable value type delivered to the handler.
+        ///   - recommendedUpdateRateMS: Optional actor recommendation.
+        ///   - handler: The bounded asynchronous delivery callback.
+        /// - Returns: A sealed-definition actor handle.
+        /// - Throws: ``AxolotyError`` when metadata or capacity validation fails.
         public mutating func ioActor<Value: IoValue>(
             metadata: consuming Object<IoActorMetadata>,
             as valueType: Value.Type,
@@ -982,6 +1004,14 @@ public extension RuntimeDefinition {
         }
 
         /// Registers a dynamic host IO actor with a fixed accepted representation.
+        ///
+        /// - Parameters:
+        ///   - metadata: The consumed actor object metadata.
+        ///   - representation: The representation delivered to the handler.
+        ///   - recommendedUpdateRateMS: Optional actor recommendation.
+        ///   - handler: The bounded asynchronous delivery callback.
+        /// - Returns: A dynamic actor handle.
+        /// - Throws: ``AxolotyError`` when metadata or capacity validation fails.
         public mutating func dynamicIoActor(
             metadata: consuming Object<IoActorMetadata>,
             representation: IoValueRepresentation,

@@ -170,6 +170,7 @@ actor ProtocolExecutor {
     var ioStates: [RuntimeIoState] = []
     var ioObservers: [UInt64: RuntimeIoObserver] = [:]
     var nextIoObserverID: UInt64 = 1
+    var ioFlushTask: Task<Void, Never>?
     private let eventRegistrations: [RuntimeEventRegistration]
 
     private let eventStream: AsyncStream<RuntimeEvent>
@@ -284,6 +285,8 @@ actor ProtocolExecutor {
         transportEpoch &+= 1
         let stoppingEpoch = transportEpoch
         await cancelAndDrainHandlers()
+        ioFlushTask?.cancel()
+        ioFlushTask = nil
         do {
             try await publishIoDeadvertisements(nowMS: monotonicNowMS())
             try await publishLifecycleDeadvertisement(nowMS: monotonicNowMS())
@@ -957,7 +960,7 @@ actor ProtocolExecutor {
         outboundQueued = 0
     }
 
-    private func failRuntime(
+    func failRuntime(
         code: AxolotyError.RuntimeErrorCode,
         detail: String,
         diagnostic: RuntimeDiagnostic.Kind

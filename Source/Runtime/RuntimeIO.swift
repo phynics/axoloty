@@ -21,6 +21,7 @@ struct RuntimeIoObserver: Sendable {
     let actorID: ObjectID?
     let continuation: AsyncStream<IoAssociationState>.Continuation
     var lastGeneration: UInt32
+    let policy: RuntimeBufferingPolicy
 }
 
 /// Executor-backed typed IO operations for a running host runtime.
@@ -142,11 +143,17 @@ extension ProtocolExecutor {
             }
             guard !ioStates[index].inFlight,
                   outboundQueued < definition.capacities.dispatch else { return }
-            guard case .emitCurrent = ioStates[index].machine.decision(
+            let decision = ioStates[index].machine.decision(
                 policy: registration.publication,
                 association: association,
                 nowMS: nowMS
-            ) else { continue }
+            )
+            guard case .emitCurrent = decision else {
+                if case .replaceLatest = decision {
+                    scheduleIoFlush(for: registration, association: association)
+                }
+                continue
+            }
             switch publish(.ioValue(sourceID: registration.id.uuid, payload: pending), nowMS: nowMS) {
             case .accepted:
                 ioStates[index].pending = nil
@@ -162,7 +169,35 @@ extension ProtocolExecutor {
         }
     }
 
+    private func scheduleIoFlush(
+        for registration: RuntimeIoEndpointRegistration,
+        association: IoAssociationState
+    ) {
+        guard ioFlushTask == nil else { return }
+        let localInterval: UInt32
+        switch registration.publication {
+        case .immediate: localInterval = 0
+        case .latest(let interval), .throttle(let interval): localInterval = interval
+        }
+        let delay = max(1, max(localInterval, association.recommendedUpdateRateMS ?? 0))
+        ioFlushTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(Int(delay)))
+            } catch {
+                return
+            }
+            await self?.runScheduledIoFlush()
+        }
+    }
+
+    func runScheduledIoFlush() {
+        ioFlushTask = nil
+        flushPendingIo(nowMS: monotonicNowMS())
+    }
+
     func clearIoTransportState() {
+        ioFlushTask?.cancel()
+        ioFlushTask = nil
         for index in ioStates.indices {
             ioStates[index].machine.clear()
             ioStates[index].pending = nil
@@ -226,11 +261,13 @@ extension ProtocolExecutor {
             return .throttled
         case .replaceLatest:
             ioStates[index].pending = encoded
+            scheduleIoFlush(for: registration, association: association)
             return .queuedLatest
         case .emitCurrent:
             if ioStates[index].inFlight || outboundQueued >= definition.capacities.dispatch {
                 if case .latest = registration.publication {
                     ioStates[index].pending = encoded
+                    scheduleIoFlush(for: registration, association: association)
                     return .queuedLatest
                 }
                 return .rejected(.capacityExceeded)
@@ -251,6 +288,7 @@ extension ProtocolExecutor {
             case .rejected(.capacityExceeded):
                 if case .latest = registration.publication {
                     ioStates[index].pending = encoded
+                    scheduleIoFlush(for: registration, association: association)
                     return .queuedLatest
                 }
                 return .rejected(.capacityExceeded)
@@ -297,7 +335,8 @@ extension ProtocolExecutor {
             sourceID: ioStates[index].registration.id,
             actorID: nil,
             continuation: pair.continuation,
-            lastGeneration: snapshot.generation
+            lastGeneration: snapshot.generation,
+            policy: buffering
         )
         pair.continuation.yield(snapshot)
         pair.continuation.onTermination = { _ in
@@ -325,7 +364,8 @@ extension ProtocolExecutor {
             sourceID: nil,
             actorID: ioStates[index].registration.id,
             continuation: pair.continuation,
-            lastGeneration: snapshot.generation
+            lastGeneration: snapshot.generation,
+            policy: buffering
         )
         pair.continuation.yield(snapshot)
         pair.continuation.onTermination = { _ in
@@ -359,8 +399,27 @@ extension ProtocolExecutor {
             guard state.generation != observer.lastGeneration else { continue }
             observer.lastGeneration = state.generation
             ioObservers[id] = observer
-            _ = observer.continuation.yield(state)
+            let result = observer.continuation.yield(state)
+            if case .dropped = result {
+                switch observer.policy {
+                case .failAfterDrop, .fail:
+                    observer.continuation.finish()
+                    ioObservers.removeValue(forKey: id)
+                    failIoObserver(id)
+                case .dropOldest, .dropNewest, .coalesceLatest:
+                    break
+                }
+            }
         }
+    }
+
+    func failIoObserver(_ id: UInt64) {
+        emit(.init(kind: .capacityExceeded, detail: "typed IO association stream is full"))
+        failRuntime(
+            code: .capacityExceeded,
+            detail: "strict typed IO association stream is full",
+            diagnostic: .capacityExceeded
+        )
     }
 
     func dispatchIoActorIfRegistered(_ action: OwnedProtocolAction, nowMS: UInt32) {
