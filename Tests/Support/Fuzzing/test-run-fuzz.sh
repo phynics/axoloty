@@ -409,13 +409,13 @@ fi
 rm -f "$runtime_log"
 FAKE_RUNTIME_LOG="$runtime_log" \
 FAKE_RUNTIME_EXIT_CODE=0 \
-FAKE_RUNTIME_SLEEP_SECONDS=0.1 \
+FAKE_RUNTIME_SLEEP_SECONDS=5 \
   "$ROOT_DIR/Tests/Support/Fuzzing/run-fuzz.sh" \
     --runtime "$fake_runtime" \
     --container \
     --iterations 1 \
-    --seeds 1,2,3,4,5 \
-    --repetitions 2 \
+    --seeds 1,2 \
+    --repetitions 1 \
     --jobs 1 \
     --output "$TEMP_DIR/output-interrupt" \
     --quiet &
