@@ -64,6 +64,14 @@ function workflowRunScript(name) {
   return match[1].trimEnd().split("\n").map((line) => line.slice(10)).join("\n");
 }
 
+function isolatedMakeEnvironment() {
+  const environment = { ...process.env };
+  for (const variable of ["GNUMAKEFLAGS", "MAKEFLAGS", "MAKELEVEL", "MAKEOVERRIDES", "MFLAGS"]) {
+    delete environment[variable];
+  }
+  return environment;
+}
+
 function setupActionRunScript() {
   const marker = "      run: |\n";
   const start = setupAction.indexOf(marker);
@@ -154,7 +162,7 @@ esac
     encoding: "utf8",
     timeout: 4_000,
     env: {
-      ...process.env,
+      ...isolatedMakeEnvironment(),
       // The fallback invokes the host Make image target. Do not let a
       // development-container environment inherited by the support test turn
       // that real fallback into an intentional no-op.
@@ -281,7 +289,7 @@ test("image is a no-op when Make runs inside the development container", () => {
       cwd: ".",
       encoding: "utf8",
       env: {
-        ...process.env,
+        ...isolatedMakeEnvironment(),
         AXOLOTY_DEVCONTAINER: "1",
         BUILD_DIR: buildDir,
         CONTAINER_RUNTIME: fakeRuntime,
@@ -300,7 +308,7 @@ test("image is a no-op when Make runs inside the development container", () => {
 });
 
 test("nested container Make uses mounted build and SwiftPM cache paths", () => {
-  const environment = { ...process.env };
+  const environment = isolatedMakeEnvironment();
   delete environment.AXOLOTY_DEVICE_LEASE_ROOT;
   delete environment.AXOLOTY_ESP_IDF_CCACHE_DIR;
   delete environment.BUILD_DIR;
@@ -326,7 +334,7 @@ test("nested container Make uses mounted build and SwiftPM cache paths", () => {
 });
 
 test("nested container Make preserves explicit mounted path overrides", () => {
-  const environment = { ...process.env };
+  const environment = isolatedMakeEnvironment();
   delete environment.BUILD_DIR;
   delete environment.SPM_CACHE_DIR;
   delete environment.AXOLOTY_DEVICE_LEASE_ROOT;
@@ -361,7 +369,7 @@ test("nested container Make preserves explicit mounted path overrides", () => {
 });
 
 test("Make exports the command-line mount suffix override to run.sh", () => {
-  const environment = { ...process.env };
+  const environment = isolatedMakeEnvironment();
   delete environment.CONTAINER_MOUNT_SUFFIX;
 
   const result = spawnSync("make", [
