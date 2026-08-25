@@ -33,6 +33,32 @@ test("canonical contract contains no retired zero-test gates", () => {
   }
 });
 
+test("package CI checks use stable isolated scratch paths", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const expected = new Map([
+    ["repository-authority", ".build/tooling"],
+    ["g3-object-model-tests", ".build/packages/axoloty-object-model"],
+    ["g3-object-macros-tests", ".build/packages/axoloty-object-macros"],
+    ["g3-coaty-models-tests", ".build/packages/axoloty-coaty-models"],
+    ["g4-protocol-lifecycle", ".build/packages/axoloty-protocol"],
+    ["g4-static-runtime", ".build/packages/axoloty-static-runtime"],
+  ]);
+
+  for (const [id, scratchPath] of expected) {
+    const candidate = document.nodes.find(node => node.id === id);
+    assert.ok(candidate, `missing node: ${id}`);
+    const args = candidate.command.arguments;
+    assert.equal(args[args.indexOf("--scratch-path") + 1], scratchPath, id);
+  }
+  assert.equal(new Set(expected.values()).size, expected.size);
+
+  const protocolChecker = fs.readFileSync(path.join(root, "Tests/Support/check-axoloty-protocol-package.sh"), "utf8");
+  assert.match(protocolChecker, /--scratch-path "\$root\/\.build\/packages\/axoloty-protocol"/);
+  const objectChecker = fs.readFileSync(path.join(root, "Tests/Support/check-axoloty-object-model-package.sh"), "utf8");
+  assert.match(objectChecker, /--scratch-path "\$root\/\.build\/packages\/axoloty-object-model"/);
+  assert.match(objectChecker, /--scratch-path "\$root\/\.build\/packages\/axoloty-coaty-models"/);
+});
+
 test("validator rejects retired canonical nodes and filters if reintroduced", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
   const template = document.nodes.find(node => node.id === "build");
