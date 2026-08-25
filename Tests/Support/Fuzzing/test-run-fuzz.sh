@@ -406,8 +406,9 @@ fi
 
 # Interruption path: a controlled signal terminates the campaign and the manifest is
 # still finalized with an explicit interrupted status and whatever case data was recorded.
-rm -f "$runtime_log"
-setsid --wait env \
+campaign_pid_file="$TEMP_DIR/interrupt-campaign.pid"
+rm -f "$runtime_log" "$campaign_pid_file"
+setsid --wait bash -c 'printf "%s\n" "$$" > "$1"; shift; exec "$@"' bash "$campaign_pid_file" env \
   FAKE_RUNTIME_LOG="$runtime_log" \
   FAKE_RUNTIME_EXIT_CODE=0 \
   FAKE_RUNTIME_SLEEP_SECONDS=5 \
@@ -437,7 +438,12 @@ for _ in $(seq 1 100); do
 done
 
 if (( ! found )); then
-    kill -TERM "$run_fuzz_pid" 2>/dev/null || true
+    if [[ -s "$campaign_pid_file" ]]; then
+        campaign_pid=$(cat "$campaign_pid_file")
+        kill -TERM -- "-$campaign_pid" 2>/dev/null || true
+    else
+        kill -TERM "$run_fuzz_pid" 2>/dev/null || true
+    fi
     set +e
     wait_for_process_bounded "$run_fuzz_pid" "interrupt readiness self-test" 15 5
     set -e
@@ -445,13 +451,14 @@ if (( ! found )); then
     exit 1
 fi
 
-campaign_pgid=$(ps -o pgid= -p "$run_fuzz_pid" 2>/dev/null | tr -d ' ' || true)
-if [[ "$campaign_pgid" != "$run_fuzz_pid" ]]; then
+campaign_pid=$(cat "$campaign_pid_file")
+campaign_pgid=$(ps -o pgid= -p "$campaign_pid" 2>/dev/null | tr -d ' ' || true)
+if [[ "$campaign_pgid" != "$campaign_pid" ]]; then
     kill -TERM "$run_fuzz_pid" 2>/dev/null || true
-    echo "interruption campaign did not own its process group: pid=$run_fuzz_pid pgid=${campaign_pgid:-unknown}" >&2
+    echo "interruption campaign did not own its process group: pid=$campaign_pid pgid=${campaign_pgid:-unknown}" >&2
     exit 1
 fi
-kill -TERM -- "-$run_fuzz_pid" || true
+kill -TERM -- "-$campaign_pid" || true
 set +e
 wait_for_process_bounded "$run_fuzz_pid" "interrupt self-test" 15 5
 interrupt_status=$?
