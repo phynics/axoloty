@@ -711,8 +711,8 @@ public struct RuntimeDefinition: Sendable {
 
     private var registrations: [RuntimeHandlerRegistration] = []
     private var eventRegistrations: [RuntimeEventRegistration] = []
-    private var ioEndpointRegistrations: [RuntimeIoEndpointRegistration] = []
-    private var sealed = false
+    var ioEndpointRegistrations: [RuntimeIoEndpointRegistration] = []
+    var sealed = false
 
     /// Keeps one ProtocolProcessor object slot available for runtime identity.
     var endpointRegistrationLimit: Int {
