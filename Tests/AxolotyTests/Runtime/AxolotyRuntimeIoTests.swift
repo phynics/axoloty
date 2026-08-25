@@ -15,8 +15,8 @@ struct AxolotyRuntimeIoTests {
             name: "host-io"
         )
         var builder = try RuntimeDefinition.Builder(identity: identity, namespace: "host-io")
-        let sourceJSON: StaticString = "{\"objectId\":\"00000000-0000-4000-8000-000000000092\",\"objectType\":\"coaty.IoSource\",\"coreType\":\"IoSource\",\"valueType\":\"com.example.Bool\"}"
-        let actorJSON: StaticString = "{\"objectId\":\"00000000-0000-4000-8000-000000000093\",\"objectType\":\"coaty.IoActor\",\"coreType\":\"IoActor\",\"valueType\":\"com.example.Bool\"}"
+        let sourceJSON: StaticString = "{\"objectId\":\"00000000-0000-4000-8000-000000000092\",\"objectType\":\"coaty.IoSource\",\"name\":\"source\",\"coreType\":\"IoSource\",\"valueType\":\"com.example.Bool\"}"
+        let actorJSON: StaticString = "{\"objectId\":\"00000000-0000-4000-8000-000000000093\",\"objectType\":\"coaty.IoActor\",\"name\":\"actor\",\"coreType\":\"IoActor\",\"valueType\":\"com.example.Bool\"}"
         let source = try builder.ioSource(
             metadata: try Object<IoSourceMetadata>(decoding: ByteSlice(
                 bytes: sourceJSON.utf8Start,
@@ -52,12 +52,12 @@ struct AxolotyRuntimeIoTests {
             try Object<IoSourceMetadata>(decoding: ByteSlice(bytes: id.utf8Start, length: id.utf8CodeUnitCount))
         }
         _ = try builder.ioSource(
-            metadata: metadata("{\"objectId\":\"00000000-0000-4000-8000-0000000000a2\",\"objectType\":\"coaty.IoSource\",\"coreType\":\"IoSource\",\"valueType\":\"com.example.Bool\"}"),
+            metadata: metadata("{\"objectId\":\"00000000-0000-4000-8000-0000000000a2\",\"objectType\":\"coaty.IoSource\",\"name\":\"source\",\"coreType\":\"IoSource\",\"valueType\":\"com.example.Bool\"}"),
             as: Bool.self
         )
         do {
             _ = try builder.ioSource(
-                metadata: metadata("{\"objectId\":\"00000000-0000-4000-8000-0000000000a3\",\"objectType\":\"coaty.IoSource\",\"coreType\":\"IoSource\",\"valueType\":\"com.example.Bool\"}"),
+                metadata: metadata("{\"objectId\":\"00000000-0000-4000-8000-0000000000a3\",\"objectType\":\"coaty.IoSource\",\"name\":\"source\",\"coreType\":\"IoSource\",\"valueType\":\"com.example.Bool\"}"),
                 as: Bool.self
             )
             Issue.record("second endpoint exceeded the configured catalogue capacity")
@@ -80,8 +80,8 @@ struct AxolotyRuntimeIoTests {
         var builder = try RuntimeDefinition.Builder(identity: identity, namespace: "host-io-wire")
         let sourceID = "00000000-0000-4000-8000-0000000000b2"
         let actorID = "00000000-0000-4000-8000-0000000000b3"
-        let sourceJSON: StaticString = "{\"objectId\":\"00000000-0000-4000-8000-0000000000b2\",\"objectType\":\"coaty.IoSource\",\"coreType\":\"IoSource\",\"valueType\":\"com.example.Bool\"}"
-        let actorJSON: StaticString = "{\"objectId\":\"00000000-0000-4000-8000-0000000000b3\",\"objectType\":\"coaty.IoActor\",\"coreType\":\"IoActor\",\"valueType\":\"com.example.Bool\"}"
+        let sourceJSON: StaticString = "{\"objectId\":\"00000000-0000-4000-8000-0000000000b2\",\"objectType\":\"coaty.IoSource\",\"name\":\"source\",\"coreType\":\"IoSource\",\"valueType\":\"com.example.Bool\"}"
+        let actorJSON: StaticString = "{\"objectId\":\"00000000-0000-4000-8000-0000000000b3\",\"objectType\":\"coaty.IoActor\",\"name\":\"actor\",\"coreType\":\"IoActor\",\"valueType\":\"com.example.Bool\"}"
         let sourceHandle = try builder.ioSource(
             metadata: try Object<IoSourceMetadata>(decoding: ByteSlice(
                 bytes: sourceJSON.utf8Start,

@@ -136,6 +136,7 @@ let package = Package(
             sources: [
                 "Common/AxolotyError.swift",
                 "Runtime/AxolotyRuntimeDefinition.swift",
+                "Runtime/AxolotyRuntimeDefinition+IO.swift",
                 "Runtime/AxolotyRuntime.swift",
                 "Runtime/RuntimeIO.swift",
                 "Runtime/RuntimeLifecyclePayload.swift",
