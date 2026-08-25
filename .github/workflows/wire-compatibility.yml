@@ -298,6 +298,47 @@ jobs:
               echo "runtime unavailable: podman"
             fi
           } > "$inventory" 2>&1
+          cleanup_report="$root/owned-runtime-cleanup.txt"
+          cleanup_status=0
+          {
+            echo "run_id=$WIRE_RUN_ID"
+            echo "# label-scoped container cleanup"
+            if command -v podman >/dev/null 2>&1; then
+              owned_containers="$(timeout 10s podman ps -aq --filter "label=io.axoloty.run-id=$WIRE_RUN_ID" 2>/dev/null || true)"
+              if [ -n "$owned_containers" ]; then
+                while IFS= read -r container_id; do
+                  [ -n "$container_id" ] || continue
+                  echo "removing container=$container_id"
+                  if ! timeout 30s podman rm --force "$container_id"; then
+                    echo "cleanup failed for container=$container_id"
+                    cleanup_status=1
+                  fi
+                done <<< "$owned_containers"
+              else
+                echo "no owned containers remained before cleanup"
+              fi
+              for attempt in 1 2 3 4; do
+                remaining="$(timeout 10s podman ps -aq --filter "label=io.axoloty.run-id=$WIRE_RUN_ID" 2>/dev/null || true)"
+                [ -z "$remaining" ] && break
+                echo "waiting for owned runtime reap attempt=$attempt containers=$remaining"
+                sleep 1
+              done
+              remaining="$(timeout 10s podman ps -aq --filter "label=io.axoloty.run-id=$WIRE_RUN_ID" 2>/dev/null || true)"
+              if [ -n "$remaining" ]; then
+                echo "owned containers remained after bounded cleanup: $remaining"
+                cleanup_status=1
+              else
+                echo "owned containers reaped"
+              fi
+            else
+              echo "runtime unavailable: podman"
+            fi
+            echo "cleanup_status=$cleanup_status"
+          } > "$cleanup_report" 2>&1
+          cat "$cleanup_report" >> "$inventory"
+          if [ "$cleanup_status" -ne 0 ]; then
+            echo "::warning::owned live-wire runtime cleanup did not fully reap its labeled containers"
+          fi
           node Tests/Support/WireCompatibility/Live/record-ci-run.mjs \
             --file "$root/run-status.json" --phase diagnostics \
             --job-status "${JOB_STATUS:-unknown}" --inventory-path "$inventory" || \
