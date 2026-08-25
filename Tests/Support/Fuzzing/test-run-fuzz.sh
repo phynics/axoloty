@@ -373,6 +373,7 @@ fi
 # A command that exits cleanly must still have its owned descendant group reaped.
 orphan_pid_file="$TEMP_DIR/orphan-child.pid"
 rm -f "$runtime_log" "$orphan_pid_file"
+set +e
 FAKE_RUNTIME_LOG="$runtime_log" \
 FAKE_RUNTIME_ORPHAN_CHILD=1 \
 FAKE_RUNTIME_HOSTILE_PID_FILE="$orphan_pid_file" \
@@ -384,8 +385,17 @@ FAKE_RUNTIME_HOSTILE_PID_FILE="$orphan_pid_file" \
     --repetitions 1 \
     --output "$TEMP_DIR/output-orphan" \
     --quiet
+orphan_status=$?
+set -e
+if [[ "$orphan_status" -ne 0 ]]; then
+    echo "orphan cleanup campaign failed unexpectedly: status=$orphan_status" >&2
+    exit 1
+fi
 manifest_o=$(manifest_path "$TEMP_DIR/output-orphan")
-grep -qF '"status": "passed"' "$manifest_o"
+if [[ ! -f "$manifest_o" ]] || ! grep -qF '"status": "passed"' "$manifest_o"; then
+    echo "orphan cleanup campaign did not produce a passed manifest: ${manifest_o:-missing}" >&2
+    exit 1
+fi
 if [[ -s "$orphan_pid_file" ]]; then
     orphan_pid=$(cat "$orphan_pid_file")
     if kill -0 "$orphan_pid" 2>/dev/null && [[ "$(ps -o stat= -p "$orphan_pid" 2>/dev/null | tr -d ' ')" != Z* ]]; then

@@ -483,7 +483,7 @@ func concurrentCommandsDoNotKeepSiblingOutputPipesOpen() throws {
         contextValidator: validator,
         environment: ["PATH": "/usr/bin:/bin", "AXOLOTY_DEVCONTAINER": "1"],
         configuration: AxolotyCommandRunnerConfiguration(
-            commandTimeout: 2,
+            commandTimeout: 5,
             terminationGracePeriod: 0.1,
             heartbeatInterval: 10,
             outputMode: .json,
@@ -497,15 +497,15 @@ func concurrentCommandsDoNotKeepSiblingOutputPipesOpen() throws {
             command: AxolotyCommandPlan(
                 executable: "sh",
                 arguments: ["-c", "sleep 0.1; printf short"],
-                timeoutSeconds: 0.5
+                timeoutSeconds: 2
             )
         ),
         AxolotyCheckNode(
             name: "long",
             command: AxolotyCommandPlan(
                 executable: "sh",
-                arguments: ["-c", "sleep 1; printf long"],
-                timeoutSeconds: 2
+                arguments: ["-c", "sleep 4; printf long"],
+                timeoutSeconds: 5
             )
         ),
     ])
