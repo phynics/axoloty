@@ -76,7 +76,7 @@ func interruptionDuringInitialConnectionReturnsPromptlyAndStopsSession() async {
     }
     let connectionStarted = await withTaskGroup(of: Bool.self) { group in
         group.addTask {
-            while !session.connectStarted {
+            while !(await session.connectStarted) {
                 if Task.isCancelled { return false }
                 try? await Task.sleep(for: .milliseconds(5))
             }
