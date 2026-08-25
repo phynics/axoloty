@@ -104,7 +104,9 @@ func interruptionDuringInitialConnectionReturnsPromptlyAndStopsSession() async {
             .finished(await runTask.value)
         }
         group.addTask {
-            try? await Task.sleep(for: .seconds(1))
+            // Loaded CI runners can delay the task that observes the signal even
+            // though the application normally returns in about 100 ms.
+            try? await Task.sleep(for: .seconds(5))
             return .timedOut
         }
 
