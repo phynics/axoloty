@@ -62,20 +62,31 @@ fi
 EOF
 chmod +x "$fake_runtime"
 
-# Used only by the ownership-failure regression below: every normal ps query is
-# delegated to the host tool, while the leader PGID query returns an invalid
-# value. The runner must then use bounded leader-only cleanup and never signal
-# the unvalidated group.
+# Used only by the ownership-failure regression below: every normal ps query
+# and every build-process query is delegated to the host tool, while the Swift
+# test leader's PGID query returns an invalid value. The runner must then use
+# bounded leader-only cleanup and never signal the unvalidated group.
 fake_ps_dir="$TEMP_DIR/fake-ps-bin"
 mkdir -p "$fake_ps_dir"
 real_ps=$(command -v ps)
 cat > "$fake_ps_dir/ps" <<EOF
 #!/usr/bin/env bash
 if [[ "\$*" == *"-o pgid="* ]]; then
-    printf '999999\\n'
-else
-    exec "$real_ps" "\$@"
+    target_pid=""
+    for ((index = 1; index <= \$#; index++)); do
+        if [[ "\${!index}" == -p ]]; then
+            next_index=\$((index + 1))
+            target_pid="\${!next_index:-}"
+            break
+        fi
+    done
+    target_command=\$("$real_ps" -o args= -p "\$target_pid" 2>/dev/null || true)
+    if [[ "\$target_command" == *"swift test"* ]]; then
+        printf '999999\\n'
+        exit 0
+    fi
 fi
+exec "$real_ps" "\$@"
 EOF
 chmod +x "$fake_ps_dir/ps"
 
