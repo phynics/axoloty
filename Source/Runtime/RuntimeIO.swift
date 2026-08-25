@@ -218,7 +218,7 @@ extension ProtocolExecutor {
 
     func publishIoDeadvertisements(nowMS: UInt32) async throws {
         for endpoint in definition.ioEndpointRegistrations {
-            let payload = try runtimeAdvertisePayload(objectBytes: endpoint.objectBytes)
+            let payload = RuntimeLifecyclePayload.deadvertise(objectID: endpoint.id)
             try await publishLifecycle(
                 .deadvertise(sourceID: endpoint.id.uuid, payload: payload),
                 nowMS: nowMS

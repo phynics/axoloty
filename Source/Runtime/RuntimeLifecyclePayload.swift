@@ -19,6 +19,10 @@ enum RuntimeLifecyclePayload {
         Array("{\"objectIds\":[\"\(uuidString(identity.id))\"]}".utf8)
     }
 
+    static func deadvertise(objectID: ObjectID) -> [UInt8] {
+        Array("{\"objectIds\":[\"\(uuidString(objectID.uuid))\"]}".utf8)
+    }
+
     private static func uuidString(_ value: UUID16) -> String {
         let bytes = value.bytes
         let raw: [UInt8] = [
