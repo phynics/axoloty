@@ -69,6 +69,7 @@ if ! grep -Fq 'axoloty_object_model' "$component" || \
 fi
 
 swift build --package-path "$package_dir" \
+    --scratch-path "$root/.build/packages/axoloty-protocol" \
     --disable-automatic-resolution \
     --cache-path "$root/.swiftpm-cache" \
     --product AxolotyProtocol

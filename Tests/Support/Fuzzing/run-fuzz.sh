@@ -394,7 +394,7 @@ validate_swift_test_output() {
 run_bounded_command() {
     local output="$1" label="$2" timeout="$3"
     shift 3
-    local pid status=0 timed_out=0 orphaned=0 marker leader_pgid last_progress
+    local pid status=0 timed_out=0 orphaned=0 marker leader_pgid last_progress ownership_deadline
     : > "$output"
     printf 'command:' >> "$output"
     printf ' %q' "$@" >> "$output"
@@ -404,14 +404,19 @@ run_bounded_command() {
     marker="$active_process_dir/$pid"
     : > "$marker"
     if process_is_live "$pid"; then
-        leader_pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ' || true)
-        if [[ -z "$leader_pgid" ]] && process_is_live "$pid"; then
-            echo "[$label] refusing to signal unowned process group: leader pid=$pid pgid=unknown" >> "$output"
-            terminate_leader_bounded "$pid" "$label ownership failure" || true
-            rm -f "$marker"
-            return 125
-        fi
-        if [[ -n "$leader_pgid" && "$leader_pgid" != "$pid" ]]; then
+        # `setsid` is a separate executable. The shell can publish its PID
+        # before it has completed the session transition, so allow that live
+        # child a short monotonic handshake instead of sampling its old PGID
+        # once and reporting a false ownership failure.
+        ownership_deadline=$((SECONDS + 1))
+        leader_pgid=""
+        while process_is_live "$pid"; do
+            leader_pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ' || true)
+            [[ "$leader_pgid" == "$pid" ]] && break
+            (( SECONDS >= ownership_deadline )) && break
+            sleep 0.05
+        done
+        if process_is_live "$pid" && [[ "$leader_pgid" != "$pid" ]]; then
             echo "[$label] refusing to signal unowned process group: leader pid=$pid pgid=${leader_pgid:-unknown}" >> "$output"
             terminate_leader_bounded "$pid" "$label ownership failure" || true
             rm -f "$marker"

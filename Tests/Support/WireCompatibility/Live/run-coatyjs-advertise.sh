@@ -8,7 +8,6 @@ podman() { command "$RUNTIME" "$@"; }
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
 LIVE_DIR="$ROOT_DIR/Tests/Support/WireCompatibility/Live"
-REFERENCE_DIR="$ROOT_DIR/Tests/Support/WireCompatibility/ReferenceAgents"
 RUN_ID="${WIRE_RUN_ID:-$$}"
 NETWORK="coatyswift-wire-$RUN_ID"
 BROKER="coatyswift-wire-broker-$RUN_ID"
@@ -27,8 +26,6 @@ trap cleanup EXIT INT TERM
 mkdir -p "$OUTPUT_DIR"
 rm -f "$CAPTURE_FILE"
 
-podman build -t "$DEV_IMAGE" -f "$ROOT_DIR/.devcontainer/Dockerfile" "$ROOT_DIR"
-podman build -t "$JS_IMAGE" "$REFERENCE_DIR/coatyjs"
 podman network create "$NETWORK" >/dev/null
 
 podman run -d --name "$BROKER" --network "$NETWORK" \

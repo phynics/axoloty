@@ -64,6 +64,14 @@ function workflowRunScript(name) {
   return match[1].trimEnd().split("\n").map((line) => line.slice(10)).join("\n");
 }
 
+function isolatedMakeEnvironment() {
+  const environment = { ...process.env };
+  for (const variable of ["GNUMAKEFLAGS", "MAKEFLAGS", "MAKELEVEL", "MAKEOVERRIDES", "MFLAGS"]) {
+    delete environment[variable];
+  }
+  return environment;
+}
+
 function setupActionRunScript() {
   const marker = "      run: |\n";
   const start = setupAction.indexOf(marker);
@@ -154,7 +162,7 @@ esac
     encoding: "utf8",
     timeout: 4_000,
     env: {
-      ...process.env,
+      ...isolatedMakeEnvironment(),
       // The fallback invokes the host Make image target. Do not let a
       // development-container environment inherited by the support test turn
       // that real fallback into an intentional no-op.
@@ -281,7 +289,7 @@ test("image is a no-op when Make runs inside the development container", () => {
       cwd: ".",
       encoding: "utf8",
       env: {
-        ...process.env,
+        ...isolatedMakeEnvironment(),
         AXOLOTY_DEVCONTAINER: "1",
         BUILD_DIR: buildDir,
         CONTAINER_RUNTIME: fakeRuntime,
@@ -300,7 +308,7 @@ test("image is a no-op when Make runs inside the development container", () => {
 });
 
 test("nested container Make uses mounted build and SwiftPM cache paths", () => {
-  const environment = { ...process.env };
+  const environment = isolatedMakeEnvironment();
   delete environment.AXOLOTY_DEVICE_LEASE_ROOT;
   delete environment.AXOLOTY_ESP_IDF_CCACHE_DIR;
   delete environment.BUILD_DIR;
@@ -326,7 +334,7 @@ test("nested container Make uses mounted build and SwiftPM cache paths", () => {
 });
 
 test("nested container Make preserves explicit mounted path overrides", () => {
-  const environment = { ...process.env };
+  const environment = isolatedMakeEnvironment();
   delete environment.BUILD_DIR;
   delete environment.SPM_CACHE_DIR;
   delete environment.AXOLOTY_DEVICE_LEASE_ROOT;
@@ -361,7 +369,7 @@ test("nested container Make preserves explicit mounted path overrides", () => {
 });
 
 test("Make exports the command-line mount suffix override to run.sh", () => {
-  const environment = { ...process.env };
+  const environment = isolatedMakeEnvironment();
   delete environment.CONTAINER_MOUNT_SUFFIX;
 
   const result = spawnSync("make", [
@@ -414,6 +422,23 @@ test("CI reuses stable, bounded Swift build cache namespaces", () => {
     ".build/ci/x86_64-unknown-linux-gnu/debug/index/store",
     ".build/ci/x86_64-unknown-linux-gnu/debug/Modules",
     ".build/ci/x86_64-unknown-linux-gnu/debug/ModuleCache",
+    ".build/ci/tooling/build.db",
+    ".build/ci/tooling/debug.yaml",
+    ".build/ci/tooling/workspace-state.json",
+    ".build/ci/tooling/x86_64-unknown-linux-gnu/debug/*.build",
+    ".build/ci/tooling/x86_64-unknown-linux-gnu/debug/description.json",
+    ".build/ci/tooling/x86_64-unknown-linux-gnu/debug/index/store",
+    ".build/ci/tooling/x86_64-unknown-linux-gnu/debug/Modules",
+    ".build/ci/packages/*/build.db",
+    ".build/ci/packages/*/debug.yaml",
+    ".build/ci/packages/*/plugin-tools.yaml",
+    ".build/ci/packages/*/workspace-state.json",
+    ".build/ci/packages/*/plugins",
+    ".build/ci/packages/*/x86_64-unknown-linux-gnu/debug/*.build",
+    ".build/ci/packages/*/x86_64-unknown-linux-gnu/debug/description.json",
+    ".build/ci/packages/*/x86_64-unknown-linux-gnu/debug/index/store",
+    ".build/ci/packages/*/x86_64-unknown-linux-gnu/debug/Modules",
+    ".build/ci/packages/*/x86_64-unknown-linux-gnu/debug/ModuleCache",
   ];
   assert.deepEqual(workflowPathList("Restore Swift compiler cache"), compilerCachePaths);
   assert.deepEqual(workflowPathList("Save Swift compiler cache"), compilerCachePaths);
@@ -578,8 +603,29 @@ test("live wire allows bounded container creation on busy runners", () => {
 test("coverage is an explicit job with a truthful missing-report failure", () => {
   assert.match(coverageCIJob, /name: Source coverage/);
   assert.match(coverageCIJob, /timeout-minutes: 90/);
+  assert.match(ciWorkflow, /workflow_dispatch:/);
+  assert.ok(
+    coverageCIJob.indexOf("name: Classify source coverage scope")
+      < coverageCIJob.indexOf("name: Setup container image"),
+    "coverage scope must be classified before image setup",
+  );
+  assert.match(coverageCIJob, /if \[ "\$\{\{ github\.event_name \}\}" = workflow_dispatch \]; then\n\s+force=--force/);
+  assert.match(coverageCIJob, /git diff --no-renames --name-only "\$BASE_SHA" "\$HEAD_SHA"/);
+  for (const step of [
+    "Compute cache key",
+    "Prepare coverage diagnostics",
+    "Setup container image",
+    "Restore SwiftPM dependency cache",
+    "Run coverage plan",
+  ]) {
+    assert.match(
+      workflowStepFrom(coverageCIJob, step),
+      /if: steps\.coverage_scope\.outputs\.required == 'true'/,
+      `${step} must stay off the coverage fast path`,
+    );
+  }
   assert.match(coverageCIJob, /make coverage-check CONTAINER_RUNTIME=podman BUILD_DIR="\.build\/coverage" COVERAGE_BUILD_DIR="\.build\/coverage"/);
-  assert.match(coverageCIJob, /Require coverage report[\s\S]*Coverage did not produce \.testing\/coverage\/report\.json/);
+  assert.match(coverageCIJob, /Require coverage report\n\s+if: always\(\) && steps\.coverage_scope\.outputs\.required == 'true'[\s\S]*Coverage did not produce \.testing\/coverage\/report\.json/);
   assert.match(coverageCIJob, /Upload coverage report[\s\S]*if-no-files-found: error/);
   assert.match(coverageCIJob, /Upload coverage diagnostics[\s\S]*if-no-files-found: warn/);
   assert.doesNotMatch(coverageCIJob, /actions\/cache\/save/);

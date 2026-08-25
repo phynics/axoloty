@@ -81,34 +81,6 @@ jobs:
               printf '%s\n' '{"format":"axoloty-wire-ci-run/v1","captureEvidence":"not-claimed","lastPhase":"init"}' > "$WIRE_CI_EVIDENCE_ROOT/run-status.json"
             }
 
-      # hashFiles() is only valid in step-level expressions, not
-      # workflow/job-level `env:`, so compute the cache key here and
-      # export it for later steps.
-      - name: Compute cache key
-        run: |
-          echo "SWIFT_CACHE_KEY=swiftpm-v2-6.3-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile', '.devcontainer/image-lock.json') }}" >> "$GITHUB_ENV"
-
-      - name: Setup container image
-        uses: ./.github/actions/setup-container
-        with:
-          runtime: podman
-
-      - name: Restore SwiftPM dependency cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .swiftpm-cache
-          key: ${{ env.SWIFT_CACHE_KEY }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: Tests/Support/WireCompatibility/tool/package-lock.json
-
-      - name: Build wire CLI
-        run: make wire-tool
-
       - name: Compute changed files
         id: changed
         shell: bash
@@ -218,6 +190,42 @@ jobs:
         run: |
           echo "A reviewed exemption is recorded for this protocol-affecting change; the live capture is waived."
           echo "The exemption reference and expiry must be documented on the PR and in the compatibility matrix."
+
+      # The hosted runner already provides Node for the classifier and run
+      # record. Defer every dependency and container setup cost until the
+      # change set is known to require fresh, unexempted wire evidence.
+      # hashFiles() is only valid in step-level expressions, not
+      # workflow/job-level `env:`, so compute the cache key here and
+      # export it for later steps.
+      - name: Compute cache key
+        if: steps.classify.outputs.protocol == '1' && steps.classify.outputs.exempt == '0'
+        run: |
+          echo "SWIFT_CACHE_KEY=swiftpm-v2-6.3-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile', '.devcontainer/image-lock.json') }}" >> "$GITHUB_ENV"
+
+      - name: Setup container image
+        if: steps.classify.outputs.protocol == '1' && steps.classify.outputs.exempt == '0'
+        uses: ./.github/actions/setup-container
+        with:
+          runtime: podman
+
+      - name: Restore SwiftPM dependency cache
+        if: steps.classify.outputs.protocol == '1' && steps.classify.outputs.exempt == '0'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .swiftpm-cache
+          key: ${{ env.SWIFT_CACHE_KEY }}
+
+      - name: Setup Node.js
+        if: steps.classify.outputs.protocol == '1' && steps.classify.outputs.exempt == '0'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Tests/Support/WireCompatibility/tool/package-lock.json
+
+      - name: Build wire CLI
+        if: steps.classify.outputs.protocol == '1' && steps.classify.outputs.exempt == '0'
+        run: make wire-tool
 
       - name: Run live wire capture and verifier
         if: steps.classify.outputs.protocol == '1' && steps.classify.outputs.exempt == '0'
