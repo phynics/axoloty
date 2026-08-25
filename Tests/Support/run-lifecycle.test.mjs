@@ -51,7 +51,8 @@ test("run.sh builds an owned, run-scoped container command", () => {
   assert.match(runScript, /io\.axoloty\.worktree/);
   assert.match(runScript, /io\.axoloty\.owner/);
   assert.match(runScript, /io\.axoloty\.instance/);
-  assert.match(runScript, /wait_for_process_completion "\$container_pid"/);
+  assert.match(runScript, /wait_for_process_completion "\$container_pid" "container command" "\$container_command_timeout"/);
+  assert.match(runScript, /CONTAINER_COMMAND_TIMEOUT_SECONDS/);
   assert.match(runScript, /terminate_process_tree_bounded/);
 });
 
@@ -86,6 +87,22 @@ test("run.sh gates Podman relabeling and applies the lease policy", () => {
   assert.match(runScript, /\/sys\/fs\/selinux\/enforce/);
   assert.match(runScript, /selinux_labeling_active=1/);
   assert.match(runScript, /device_lease_mount_suffix=:z/);
+});
+
+test("legacy lifecycle helper bounds a TERM-ignoring child on Linux", () => {
+  const helper = path.resolve("Tests/Support/WireCompatibility/Legacy/process-lifecycle.sh");
+  const script = `
+set -eu
+. "${helper}"
+LEGACY_TERM_GRACE_SECONDS=1 LEGACY_KILL_GRACE_SECONDS=1
+export LEGACY_TERM_GRACE_SECONDS LEGACY_KILL_GRACE_SECONDS
+sh -c 'trap "" TERM; while :; do sleep 0.1; done' &
+child=$!
+legacy_wait_for_exit "$child" 1 hostile-child
+`;
+  const result = spawnSync("sh", ["-c", script], { encoding: "utf8" });
+  assert.equal(result.status, 124, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stderr, /legacy timeout: label=hostile-child/);
 });
 
 test("live lifecycle matrix reaps a TERM-ignoring child and retains its final diagnostic", (t) => {

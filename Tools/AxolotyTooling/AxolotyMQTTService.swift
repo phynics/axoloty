@@ -194,7 +194,19 @@ public struct AxolotyMQTTServiceRunner: Sendable {
         }
 
         defer { tempDirProvider.removeDirectory(tempDir) }
-        defer { processSupervisor.terminateAndWait() }
+        defer {
+            let report = processSupervisor.terminateAndWait()
+            for failure in report.failures {
+                diagnostics.error(
+                    "managed MQTT process cleanup failed",
+                    metadata: [
+                        "pid": failure.processIdentifier.map(String.init) ?? "unknown",
+                        "process": failure.processDescription,
+                        "phase": failure.phase,
+                    ]
+                )
+            }
+        }
 
         let configPath = "\(tempDir)/mosquitto.conf"
         let configContent = configGenerator.generate(
@@ -260,7 +272,10 @@ public struct AxolotyMQTTServiceRunner: Sendable {
             }
 
             if !processRunner.isRunning {
-                let exit = processRunner.waitForExit()
+                guard let exit = processRunner.waitForExit(timeoutSeconds: 1) else {
+                    diagnostics.error("mosquitto exit state was not reaped", metadata: ["process": processRunner.processDescription])
+                    return 70
+                }
                 if exit.exitCode != 0 {
                     diagnostics.error(
                         "mosquitto exited with code \(exit.exitCode)",

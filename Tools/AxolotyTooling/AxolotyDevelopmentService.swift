@@ -125,7 +125,19 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
             return 70
         }
         defer { tempDirProvider.removeDirectory(tempDir) }
-        defer { processSupervisor.terminateAndWait() }
+        defer {
+            let report = processSupervisor.terminateAndWait()
+            for failure in report.failures {
+                diagnostics.error(
+                    "managed development process cleanup failed",
+                    metadata: [
+                        "pid": failure.processIdentifier.map(String.init) ?? "unknown",
+                        "process": failure.processDescription,
+                        "phase": failure.phase,
+                    ]
+                )
+            }
+        }
 
         let configPath = "\(tempDir)/mosquitto.conf"
         let configContent = MosquittoConfigGenerator().generate(
@@ -218,7 +230,11 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
             }
 
             if !mqttRunner.isRunning {
-                let exit = mqttRunner.waitForExit()
+                guard let exit = mqttRunner.waitForExit(timeoutSeconds: 1) else {
+                    diagnostics.error("mosquitto exit state was not reaped", metadata: ["process": mqttRunner.processDescription])
+                    processSupervisor.requestTermination()
+                    return 70
+                }
                 processSupervisor.requestTermination()
                 if exit.exitCode != 0 {
                     diagnostics.error("mosquitto exited with code \(exit.exitCode)", metadata: ["exitCode": String(exit.exitCode)])
@@ -227,7 +243,11 @@ public struct AxolotyDevelopmentServiceRunner: Sendable {
             }
 
             if !mcpRunner.isRunning {
-                let exit = mcpRunner.waitForExit()
+                guard let exit = mcpRunner.waitForExit(timeoutSeconds: 1) else {
+                    diagnostics.error("axoloty-mcp exit state was not reaped", metadata: ["process": mcpRunner.processDescription])
+                    processSupervisor.requestTermination()
+                    return 70
+                }
                 processSupervisor.requestTermination()
                 if exit.exitCode != 0 {
                     diagnostics.error("axoloty-mcp exited with code \(exit.exitCode)", metadata: ["exitCode": String(exit.exitCode)])

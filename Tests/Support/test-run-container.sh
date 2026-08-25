@@ -148,6 +148,17 @@ AXOLOTY_TOOLING_CAPTURE="$direct_tooling_capture" AXOLOTY_DEVCONTAINER=1 \
     sh -c 'printf "%s\n" "$TOOLING_BUILD_DIR" > "$AXOLOTY_TOOLING_CAPTURE"'
 [[ "$(cat "$direct_tooling_capture")" = "$build_dir/tooling" ]]
 
+# A direct command must honor its explicit command budget and escalate a
+# TERM-ignoring child without waiting for the outer test process to expire.
+set +e
+AXOLOTY_DEVCONTAINER=1 BUILD_LOCK=0 CONTAINER_COMMAND_TIMEOUT_SECONDS=1 \
+    "$ROOT_DIR/.devcontainer/run.sh" sh -c 'trap "" TERM; while :; do sleep 0.1; done' \
+    >"$TEMP_DIR/direct-command-timeout.log" 2>&1
+direct_timeout_status=$?
+set -e
+[[ "$direct_timeout_status" -eq 124 || "$direct_timeout_status" -eq 125 ]]
+grep -q 'command timeout: label=direct command pid=' "$TEMP_DIR/direct-command-timeout.log"
+
 # A second operation waits for the owner instead of touching the shared cache.
 # Synchronize on explicit markers: integer wall-clock sampling made this test
 # fail whenever a sub-second wait crossed neither side of a one-second tick.
@@ -993,6 +1004,19 @@ kill -TERM "$owned_runner" 2>/dev/null || true
 set +e
 wait_bounded "$owned_runner" owned-container-runner 5
 set -e
+
+# The same budget must apply after the command crosses the container runtime
+# boundary. The fake runtime executes the hostile command as the container
+# payload and records the bounded attach cleanup.
+set +e
+FAKE_RUNTIME_EXECUTE_COMMAND=1 CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    CONTAINER_COMMAND_TIMEOUT_SECONDS=1 CONTAINER_TERM_GRACE_SECONDS=1 CONTAINER_KILL_GRACE_SECONDS=1 \
+    "$ROOT_DIR/.devcontainer/run.sh" sh -c 'trap "" TERM; while :; do sleep 0.1; done' \
+    >"$TEMP_DIR/container-command-timeout.log" 2>&1
+container_timeout_status=$?
+set -e
+[[ "$container_timeout_status" -eq 124 || "$container_timeout_status" -eq 125 ]]
+grep -q 'command timeout: label=container command pid=' "$TEMP_DIR/container-command-timeout.log"
 expected_sequence=$'inspect\nstop\ninspect-status\nkill\nrm'
 grep -q -- '^stop --time 1 ' "$capture" || { cat "$capture" >&2; exit 1; }
 grep -q -- '^inspect --format {{.State.Status}} ' "$capture" || { cat "$capture" >&2; exit 1; }

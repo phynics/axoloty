@@ -26,7 +26,7 @@ private final class FakeProcessRunner: AxolotyManagedProcessRunning, @unchecked 
         onStart?()
     }
 
-    func waitForExit() -> ManagedProcessExit {
+    func waitForExit(timeoutSeconds: TimeInterval) -> ManagedProcessExit? {
         running = false
         return ManagedProcessExit(exitCode: exitCode, wasTerminated: wasTerminated)
     }
@@ -42,6 +42,7 @@ private final class FakeProcessRunner: AxolotyManagedProcessRunning, @unchecked 
     }
 
     var processIdentifier: Int32? { 12345 }
+    var processDescription: String { startSpec?.executable ?? "fake-mqtt-process" }
     var isRunning: Bool {
         guard running else { return false }
         if let pollsUntilExit {

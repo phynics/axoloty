@@ -2,6 +2,12 @@
 
 import Foundation
 
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Darwin)
+import Darwin
+#endif
+
 /// Runs the broker-backed integration contract with bounded broker lifecycle.
 public protocol AxolotyIntegrationRunning: Sendable {
     /// Starts a local broker, runs integration tests, and stops the broker.
@@ -147,7 +153,18 @@ public struct FoundationIntegrationRunner: AxolotyBoundedIntegrationRunning {
         }
         defer {
             if broker.isRunning { broker.terminate() }
-            broker.waitUntilExit()
+            let clock = ContinuousClock()
+            let reapDeadline = clock.now.advanced(by: .seconds(2))
+            while broker.isRunning && clock.now < reapDeadline {
+                Thread.sleep(forTimeInterval: 0.02)
+            }
+            if broker.isRunning {
+                _ = kill(broker.processIdentifier, SIGKILL)
+                let killDeadline = clock.now.advanced(by: .seconds(2))
+                while broker.isRunning && clock.now < killDeadline {
+                    Thread.sleep(forTimeInterval: 0.02)
+                }
+            }
             try? logHandle.close()
             try? FileManager.default.removeItem(at: artifacts)
         }

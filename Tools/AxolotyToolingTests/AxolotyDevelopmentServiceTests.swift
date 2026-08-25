@@ -19,6 +19,7 @@ private final class DevFakeProcessRunner: AxolotyManagedProcessRunning, @uncheck
     var forceKillCalled = false
     var running = false
     var terminateStopsProcess = true
+    var forceKillStopsProcess = true
     var waitForExitCalled = false
     /// Number of ``isRunning`` polls before the fake process "exits".
     var pollsUntilExit: Int?
@@ -31,8 +32,9 @@ private final class DevFakeProcessRunner: AxolotyManagedProcessRunning, @uncheck
         pollCount = 0
     }
 
-    func waitForExit() -> ManagedProcessExit {
+    func waitForExit(timeoutSeconds: TimeInterval) -> ManagedProcessExit? {
         waitForExitCalled = true
+        guard !running else { return nil }
         running = false
         return ManagedProcessExit(exitCode: exitCode, wasTerminated: wasTerminated)
     }
@@ -46,10 +48,13 @@ private final class DevFakeProcessRunner: AxolotyManagedProcessRunning, @uncheck
 
     func forceKill() {
         forceKillCalled = true
-        running = false
+        if forceKillStopsProcess {
+            running = false
+        }
     }
 
     var processIdentifier: Int32? { 12345 }
+    var processDescription: String { startSpec?.executable ?? "fake-development-process" }
     var isRunning: Bool {
         guard running else { return false }
         if let pollsUntilExit {
@@ -433,13 +438,29 @@ func managedProcessSupervisorEscalatesAfterGracePeriod() {
     processRunner.running = true
     processRunner.terminateStopsProcess = false
 
-    let supervisor = ManagedProcessSupervisor(shutdownTimeout: 0)
+    let supervisor = ManagedProcessSupervisor(shutdownTimeout: 0, reapTimeout: 0.01)
     supervisor.register(processRunner)
-    supervisor.terminateAndWait()
+    _ = supervisor.terminateAndWait()
 
     #expect(processRunner.terminateCalled)
     #expect(processRunner.forceKillCalled)
     #expect(processRunner.waitForExitCalled)
+}
+
+@Test
+func managedProcessSupervisorReportsUnreapedRunnerWithoutBlocking() {
+    let processRunner = DevFakeProcessRunner()
+    processRunner.running = true
+    processRunner.terminateStopsProcess = false
+    processRunner.forceKillStopsProcess = false
+
+    let supervisor = ManagedProcessSupervisor(shutdownTimeout: 0, reapTimeout: 0.01)
+    supervisor.register(processRunner)
+    let report = supervisor.terminateAndWait()
+
+    #expect(report.failures.count == 1)
+    #expect(report.failures.first?.processIdentifier == 12345)
+    #expect(report.failures.first?.phase == "reap-timeout")
 }
 
 struct DevelopmentServiceSignalLifecycleTests {

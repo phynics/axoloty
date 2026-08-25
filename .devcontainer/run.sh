@@ -40,6 +40,7 @@ container_term_grace="${CONTAINER_TERM_GRACE_SECONDS:-5}"
 container_kill_grace="${CONTAINER_KILL_GRACE_SECONDS:-2}"
 runtime_api_timeout="${CONTAINER_API_TIMEOUT_SECONDS:-5}"
 container_create_timeout="${CONTAINER_CREATE_TIMEOUT_SECONDS:-120}"
+container_command_timeout="${CONTAINER_COMMAND_TIMEOUT_SECONDS:-0}"
 sudo_prefix=""
 session_prefix=""
 session_wait=""
@@ -108,6 +109,14 @@ wait_for_process_tree() {
     return 0
 }
 
+monotonic_ms() {
+    timestamp=$(date +%s%3N 2>/dev/null || true)
+    case "$timestamp" in
+        ''|*[^0-9]*) timestamp=$(( $(date +%s) * 1000 )) ;;
+    esac
+    printf '%s\n' "$timestamp"
+}
+
 reap_process_if_stopped() {
     pid="$1"
     if process_tree_alive "$pid"; then
@@ -124,7 +133,27 @@ reap_process_if_stopped() {
 
 wait_for_process_completion() {
     pid="$1"
-    if wait "$pid"; then
+    label="$2"
+    timeout="$3"
+    if [ "$timeout" -gt 0 ]; then
+        deadline=$(( $(monotonic_ms) + timeout * 1000 ))
+        while process_is_alive "$pid"; do
+            if [ "$(monotonic_ms)" -ge "$deadline" ]; then
+                echo "command timeout: label=$label pid=$pid elapsed=${timeout}s" >&2
+                if ! terminate_process_tree_bounded "$pid" "$label timeout"; then
+                    return 125
+                fi
+                return 124
+            fi
+            sleep 0.1
+        done
+    else
+        while process_is_alive "$pid"; do
+            sleep 0.1
+        done
+    fi
+
+    if wait "$pid" 2>/dev/null; then
         status=0
     else
         status=$?
@@ -505,6 +534,12 @@ case "$container_create_timeout" in
         exit 2
         ;;
 esac
+case "$container_command_timeout" in
+    ''|*[!0-9]*)
+        echo "CONTAINER_COMMAND_TIMEOUT_SECONDS must be a non-negative integer" >&2
+        exit 2
+        ;;
+esac
 if [ "$container_term_grace" -gt 300 ] || [ "$container_kill_grace" -gt 300 ]; then
     echo "container termination grace periods must be <= 300 seconds" >&2
     exit 2
@@ -611,7 +646,7 @@ if [ "${AXOLOTY_DEVCONTAINER:-0}" = "1" ]; then
         "$@" &
     fi
     direct_pid=$!
-    wait_for_process_completion "$direct_pid" || status=$?
+    wait_for_process_completion "$direct_pid" "direct command" "$container_command_timeout" || status=$?
     status=${status:-0}
     direct_pid=""
     set -e
@@ -1077,7 +1112,7 @@ else
     container_pid=$!
     container_started=1
     status=0
-    wait_for_process_completion "$container_pid" || status=$?
+    wait_for_process_completion "$container_pid" "container command" "$container_command_timeout" || status=$?
     status=${status:-0}
 fi
 container_pid=""

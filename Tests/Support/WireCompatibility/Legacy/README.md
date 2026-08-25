@@ -73,3 +73,16 @@ Run the wire suites with:
 ```sh
 make test-wire
 ```
+
+## Process deadlines
+
+The macOS runners bound every scenario and child-process cleanup. Set
+`LEGACY_SCENARIO_TIMEOUT_SECONDS` for the capture runner, or
+`WIRE_LIFECYCLE_DEADLINE_SECONDS` for the Modern-to-Legacy runner. Cleanup
+uses `LEGACY_TERM_GRACE_SECONDS` and `LEGACY_KILL_GRACE_SECONDS` after the
+scenario deadline. A timeout records the child PID and phase, sends TERM,
+then sends KILL, and exits with the cleanup status if the child is not reaped.
+
+These scripts remain macOS-only because CoatySwift 2.4.0 requires Xcode and
+Apple frameworks. Linux validates the committed, provenance-bound captures
+and runs the hostile-child cleanup tests without starting a broker.
