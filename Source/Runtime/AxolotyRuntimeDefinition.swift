@@ -353,7 +353,7 @@ private func runtimeRegistryNonce() -> ObjectID {
     )))
 }
 
-fileprivate func runtimeObjectBytes(
+func runtimeObjectBytes(
     source definition: borrowing IoSourceEndpointDefinition
 ) throws(ProtocolError) -> BoundedIoBytes<512> {
     var result: BoundedIoBytes<512>?
@@ -362,7 +362,7 @@ fileprivate func runtimeObjectBytes(
     return result
 }
 
-fileprivate func runtimeObjectBytes(
+func runtimeObjectBytes(
     actor definition: borrowing IoActorEndpointDefinition
 ) throws(ProtocolError) -> BoundedIoBytes<512> {
     var result: BoundedIoBytes<512>?
@@ -867,7 +867,7 @@ public extension RuntimeDefinition {
     /// Mutable pre-start configuration builder. Calling ``finish()`` seals
     /// the definition and makes its registration graph immutable.
     struct Builder {
-        fileprivate var definition: RuntimeDefinition
+        var definition: RuntimeDefinition
         private var identity: RuntimeIdentity
 
         /// Creates a builder with the host defaults.

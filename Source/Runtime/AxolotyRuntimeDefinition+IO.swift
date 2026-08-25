@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import AxolotyObjectModel
-import AxolotyProtocol
+@_spi(AxolotyRuntimeAdapter) import AxolotyProtocol
 import AxolotyWire
 
 extension RuntimeDefinition.Builder {
