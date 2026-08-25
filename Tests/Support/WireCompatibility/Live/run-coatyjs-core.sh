@@ -8,7 +8,6 @@ podman() { command "$RUNTIME" "$@"; }
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
 LIVE_DIR="$ROOT_DIR/Tests/Support/WireCompatibility/Live"
-REFERENCE_DIR="$ROOT_DIR/Tests/Support/WireCompatibility/ReferenceAgents"
 RUN_ID="${WIRE_RUN_ID:-$$}"
 NETWORK="coatyswift-wire-core-$RUN_ID"
 BROKER="coatyswift-wire-core-broker-$RUN_ID"
@@ -24,8 +23,6 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 mkdir -p "$OUTPUT_DIR"
-podman build -t "$DEV_IMAGE" -f "$ROOT_DIR/.devcontainer/Dockerfile" "$ROOT_DIR"
-podman build -t "$JS_IMAGE" "$REFERENCE_DIR/coatyjs"
 podman network create "$NETWORK" >/dev/null
 podman run -d --name "$BROKER" --network "$NETWORK" \
     -v "$LIVE_DIR/mosquitto.conf:/etc/mosquitto/wire-compat.conf:ro" \

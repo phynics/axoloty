@@ -26,7 +26,6 @@ runtime_bounded() { timeout "${WIRE_CONTAINER_WAIT_SECONDS:-120}s" "$RUNTIME" "$
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)
 HERE="$ROOT/Tests/Support/WireCompatibility/Lifecycle/Live"
 REVERSE="$ROOT/Tests/Support/WireCompatibility/Reverse"
-REF="$ROOT/Tests/Support/WireCompatibility/ReferenceAgents/coatyjs"
 TOOL=/tool/dist/index.js
 OUT="${WIRE_OUTPUT_DIR:-$ROOT/.testing/wire}"
 RUN_ID="${WIRE_RUN_ID:-$$}"
@@ -72,8 +71,6 @@ mkdir -p "$OUT" "$ACK_DIR"
 chmod 0777 "$ACK_DIR"
 rm -f "$CAPTURE" "$CAPTURE_READY" "$CONSUMER_LOG" "$APPLICATION_LOG" "$RAW_LOG" "$ACK_FILE" "$RESPONSE_READY_FILE"
 
-runtime build -t "$DEV_IMAGE" -f "$ROOT/.devcontainer/Dockerfile" "$ROOT"
-runtime build -t "$JS_IMAGE" "$REF"
 runtime network create "$NETWORK" "${RUNTIME_LABELS[@]}" >/dev/null
 
 start_broker() {

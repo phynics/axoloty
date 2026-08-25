@@ -12,7 +12,6 @@ runtime_bounded() { timeout "${WIRE_CONTAINER_WAIT_SECONDS:-120}s" "$RUNTIME" "$
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
 REVERSE_DIR="$ROOT_DIR/Tests/Support/WireCompatibility/Reverse"
 LIVE_DIR="$ROOT_DIR/Tests/Support/WireCompatibility/Live"
-REFERENCE_DIR="$ROOT_DIR/Tests/Support/WireCompatibility/ReferenceAgents"
 RUN_ID="${WIRE_RUN_ID:-$$}"
 NETWORK="axoloty-wire-core-$RUN_ID"
 BROKER="axoloty-wire-core-broker-$RUN_ID"
@@ -38,15 +37,6 @@ trap cleanup EXIT INT TERM
 
 mkdir -p "$OUTPUT_DIR" "$ACK_DIR" "$BUILD_DIR" "$SPM_CACHE_DIR"
 chmod 0777 "$ACK_DIR"
-runtime build -t "$DEV_IMAGE" -f "$ROOT_DIR/.devcontainer/Dockerfile" "$ROOT_DIR"
-runtime build -t "$JS_IMAGE" "$REFERENCE_DIR/coatyjs"
-# Build before starting timeout-bound consumers. A clean test build can take
-# longer than their 60-second protocol deadline and must not consume it.
-runtime run --rm -v "$ROOT_DIR:/workspace" -v "$BUILD_DIR:/workspace/.build" \
-    -v "$SPM_CACHE_DIR:/swiftpm-cache" -w /workspace \
-    -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
-    "$DEV_IMAGE" swift build -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
-    --build-tests --cache-path /swiftpm-cache --disable-automatic-resolution
 runtime network create "$NETWORK" >/dev/null
 runtime run -d --name "$BROKER" --network "$NETWORK" \
     -v "$LIVE_DIR/mosquitto.conf:/etc/mosquitto/wire-compat.conf:ro" \
@@ -96,13 +86,13 @@ for scenario in $SCENARIOS; do
     done
     grep -q '"state":"ready"' "$CONSUMER_LOG" || { cat "$CONSUMER_LOG" >&2; exit 1; }
 
-    runtime run --rm --network "$NETWORK" -v "$ROOT_DIR:/workspace" -v "$OUTPUT_DIR:/artifacts" -v "$BUILD_DIR:/workspace/.build" -v "$SPM_CACHE_DIR:/swiftpm-cache" -w /workspace \
+    runtime run --rm --network "$NETWORK" -v "$ROOT_DIR:/workspace" -v "$OUTPUT_DIR:/artifacts" -v "$BUILD_DIR:/swift-build" -v "$SPM_CACHE_DIR:/swiftpm-cache" -w /workspace \
         -e WIRE_REVERSE_LIVE=1 -e WIRE_SCENARIO="$scenario" \
         -e WIRE_BROKER_HOST="$BROKER" -e WIRE_BROKER_PORT=1883 -e WIRE_NAMESPACE=wire-compat-v1 \
         -e WIRE_PEER_ACK_FILE="/artifacts/peer-acks/$ack_basename" -e WIRE_PEER_ACK_TOKEN="$ack_token" \
         -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
         "$DEV_IMAGE" swift test -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
-        --skip-build --cache-path /swiftpm-cache --disable-automatic-resolution --filter AxolotyCoreProducerTests
+        --skip-build --scratch-path /swift-build --cache-path /swiftpm-cache --disable-automatic-resolution --filter AxolotyCoreProducerTests
 
     if ! runtime_bounded wait "$CONSUMER" >/dev/null; then
         runtime logs "$CONSUMER" >&2 || true
