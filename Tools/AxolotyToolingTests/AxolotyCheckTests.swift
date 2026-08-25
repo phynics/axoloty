@@ -1009,7 +1009,22 @@ final class BridgeCapabilityFixture {
 
     private func stopSocketServer() {
         guard socketServer.isRunning else { return }
-        _ = kill(socketServer.processIdentifier, SIGKILL)
+        _ = kill(socketServer.processIdentifier, SIGTERM)
+        let termDeadline = Date().addingTimeInterval(1)
+        while socketServer.isRunning && Date() < termDeadline {
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        if socketServer.isRunning {
+            _ = kill(socketServer.processIdentifier, SIGKILL)
+            let killDeadline = Date().addingTimeInterval(1)
+            while socketServer.isRunning && Date() < killDeadline {
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+        }
+        guard !socketServer.isRunning else {
+            Issue.record("socket helper process \(socketServer.processIdentifier) did not exit after bounded TERM/KILL cleanup")
+            return
+        }
         socketServer.waitUntilExit()
     }
 

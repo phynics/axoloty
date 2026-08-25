@@ -135,6 +135,9 @@ test("live wire workflow persists early status, diagnoses owned runtime, and upl
   assert.match(wireWorkflow, /--phase classification/);
   assert.match(wireWorkflow, /name: Collect wire runner and owned-runtime diagnostics/);
   assert.match(wireWorkflow, /--filter "label=io\.axoloty\.run-id=\$WIRE_RUN_ID"/);
+  assert.match(wireWorkflow, /owned-runtime-cleanup\.txt/);
+  assert.match(wireWorkflow, /podman rm --force/);
+  assert.match(wireWorkflow, /owned containers reaped/);
   assert.match(wireWorkflow, /name: Upload live wire evidence\n\s+if: always\(\)/);
   assert.match(wireWorkflow, /WIRE_OUTPUT_DIR: \.testing\/runs\/wire-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}\/wire/);
   assert.match(wireWorkflow, /WIRE_CI_EVIDENCE_ROOT: \.testing\/runs\/wire-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}\/ci/);

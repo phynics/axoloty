@@ -16,12 +16,15 @@ PROGRESS_INTERVAL=${AXOLOTY_FUZZ_PROGRESS_INTERVAL_SECONDS:-30}
 OUTPUT_BASE=${AXOLOTY_FUZZ_OUTPUT_DIR:-"$ROOT_DIR/.testing/fuzz"}
 RUNTIME=${CONTAINER_RUNTIME:-}
 IMAGE=${IMAGE:-axoloty-dev}
-SPM_CACHE_DIR=${SPM_CACHE_DIR:-"$ROOT_DIR/.swiftpm-cache"}
+SPM_CACHE_DIR=${SPM_CACHE_DIR:-}
+FUZZ_BUILD_ROOT=${AXOLOTY_FUZZ_BUILD_DIR:-${BUILD_DIR:-}}
 MODE=auto
 FAIL_FAST=0
 QUIET=0
 manifest_finalized=0
 interrupted=0
+fuzz_build_root_temporary=0
+spm_cache_temporary=0
 
 declare -a worker_pids=()
 active_process_dir=""
@@ -118,8 +121,6 @@ done
 timestamp=$(date -u '+%Y%m%dT%H%M%SZ')
 campaign_dir="$OUTPUT_BASE/fuzz-$timestamp-$$"
 mkdir -p "$campaign_dir/logs" || die "cannot create $campaign_dir"
-mkdir -p "$SPM_CACHE_DIR" || die "cannot create $SPM_CACHE_DIR"
-SPM_CACHE_DIR=$(cd "$SPM_CACHE_DIR" && pwd)
 manifest="$campaign_dir/manifest.json"
 summary="$campaign_dir/summary.tsv"
 campaign_log="$campaign_dir/campaign.log"
@@ -295,11 +296,34 @@ trap_exit() {
             finalize_manifest "failed"
         fi
     fi
+    if (( fuzz_build_root_temporary )) && [[ -n "$FUZZ_BUILD_ROOT" ]]; then
+        rm -rf "$FUZZ_BUILD_ROOT"
+    fi
+    if (( spm_cache_temporary )) && [[ -n "$SPM_CACHE_DIR" ]]; then
+        rm -rf "$SPM_CACHE_DIR"
+    fi
     if (( interrupted )); then exit 143; fi
     exit "$exit_status"
 }
 trap trap_exit EXIT
 trap 'trap_signal' TERM INT
+
+if [[ -z "$FUZZ_BUILD_ROOT" ]]; then
+    FUZZ_BUILD_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/axoloty-fuzz-build.XXXXXX") \
+        || die "cannot create temporary fuzz build root"
+    fuzz_build_root_temporary=1
+else
+    mkdir -p "$FUZZ_BUILD_ROOT" || die "cannot create fuzz build root: $FUZZ_BUILD_ROOT"
+    FUZZ_BUILD_ROOT=$(cd "$FUZZ_BUILD_ROOT" && pwd)
+fi
+if [[ -z "$SPM_CACHE_DIR" ]]; then
+    SPM_CACHE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/axoloty-fuzz-swiftpm.XXXXXX") \
+        || die "cannot create temporary SwiftPM cache root"
+    spm_cache_temporary=1
+else
+    mkdir -p "$SPM_CACHE_DIR" || die "cannot create SwiftPM cache root: $SPM_CACHE_DIR"
+    SPM_CACHE_DIR=$(cd "$SPM_CACHE_DIR" && pwd)
+fi
 
 started_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 git_status_json=$(json_escape "$git_status")
@@ -314,6 +338,8 @@ cat > "$manifest" <<EOF
   "executionMode": "$(json_escape "$MODE")",
   "containerRuntime": "$(json_escape "${RUNTIME:-}")",
   "image": "$(json_escape "$IMAGE")",
+  "fuzzBuildRoot": "$(json_escape "$FUZZ_BUILD_ROOT")",
+  "swiftpmCacheRoot": "$(json_escape "$SPM_CACHE_DIR")",
   "iterations": $ITERATIONS,
   "seeds": ["$(printf '%s' "$SEEDS" | sed 's/,/","/g')"],
   "repetitions": $REPETITIONS,
@@ -340,7 +366,7 @@ if [[ "$MODE" == container ]]; then
     fi
 fi
 
-scratch_root="$ROOT_DIR/.build/fuzz/$(basename "$campaign_dir")"
+scratch_root="$FUZZ_BUILD_ROOT/$(basename "$campaign_dir")"
 mkdir -p "$scratch_root" "$campaign_dir/results"
 
 swift_testing_run_is_nonempty() {
@@ -443,7 +469,7 @@ run_worker() {
     if [[ "$MODE" == direct ]]; then
         build_command=(swift build --build-tests --cache-path .swiftpm-cache --disable-automatic-resolution --scratch-path "$scratch_path")
     else
-        build_command=("$RUNTIME" run --rm -v "$ROOT_DIR:/workspace" -v "$SPM_CACHE_DIR:/workspace/.swiftpm-cache" -w /workspace
+        build_command=("$RUNTIME" run --rm -v "$ROOT_DIR:/workspace" -v "$FUZZ_BUILD_ROOT:/workspace/.build/fuzz" -v "$SPM_CACHE_DIR:/workspace/.swiftpm-cache" -w /workspace
             "$IMAGE" swift build --build-tests --cache-path .swiftpm-cache --disable-automatic-resolution --scratch-path "$scratch_path")
     fi
     build_log="$campaign_dir/logs/worker-$worker-build.log"
@@ -472,7 +498,7 @@ run_worker() {
             if [[ "$MODE" == direct ]]; then
                 command=(env AXOLOTY_FUZZ_ITERATIONS="$ITERATIONS" AXOLOTY_FUZZ_SEED="$seed" swift test --skip-build --cache-path .swiftpm-cache --disable-automatic-resolution --scratch-path "$scratch_path" --filter DeterministicFuzzTests)
             else
-                command=("$RUNTIME" run --rm -v "$ROOT_DIR:/workspace" -v "$SPM_CACHE_DIR:/workspace/.swiftpm-cache" -w /workspace
+                command=("$RUNTIME" run --rm -v "$ROOT_DIR:/workspace" -v "$FUZZ_BUILD_ROOT:/workspace/.build/fuzz" -v "$SPM_CACHE_DIR:/workspace/.swiftpm-cache" -w /workspace
                     -e "AXOLOTY_FUZZ_ITERATIONS=$ITERATIONS" -e "AXOLOTY_FUZZ_SEED=$seed"
                     "$IMAGE" swift test --skip-build --cache-path .swiftpm-cache --disable-automatic-resolution --scratch-path "$scratch_path" --filter DeterministicFuzzTests)
             fi

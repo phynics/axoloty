@@ -91,10 +91,42 @@ manifest_path() {
     printf '%s' "$path"
 }
 
+wait_for_process_bounded() {
+    local pid="$1" label="$2" term_grace="${3:-5}" kill_grace="${4:-2}"
+    local deadline state
+
+    process_live() {
+        state=$(ps -o stat= -p "$1" 2>/dev/null | tr -d ' ' || true)
+        [[ -n "$state" && "$state" != Z* ]]
+    }
+
+    deadline=$((SECONDS + term_grace))
+    while process_live "$pid" && (( SECONDS < deadline )); do
+        sleep 0.1
+    done
+    if process_live "$pid"; then
+        echo "[$label] TERM grace expired; sending SIGKILL to pid=$pid" >&2
+        kill -KILL "$pid" 2>/dev/null || true
+        deadline=$((SECONDS + kill_grace))
+        while process_live "$pid" && (( SECONDS < deadline )); do
+            sleep 0.1
+        done
+    fi
+    if process_live "$pid"; then
+        echo "[$label] cleanup failed: pid=$pid remained alive after SIGKILL" >&2
+        return 125
+    fi
+    local wait_status=0
+    wait "$pid" 2>/dev/null || wait_status=$?
+    return "$wait_status"
+}
+
 # Success path: a complete bounded campaign finalizes the manifest with a passed status.
 rm -f "$runtime_log"
 FAKE_RUNTIME_LOG="$runtime_log" \
 FAKE_RUNTIME_EXIT_CODE=0 \
+AXOLOTY_FUZZ_BUILD_DIR="$TEMP_DIR/external-build" \
+SPM_CACHE_DIR="$TEMP_DIR/external-swiftpm-cache" \
   "$ROOT_DIR/Tests/Support/Fuzzing/run-fuzz.sh" \
     --runtime "$fake_runtime" \
     --container \
@@ -113,6 +145,9 @@ manifest_s=$(manifest_path "$TEMP_DIR/output-success")
 [[ -f "$manifest_s" ]]
 grep -qF '"jobs": 2' "$manifest_s"
 grep -qF '"status": "passed"' "$manifest_s"
+grep -qF '"fuzzBuildRoot": "'"$TEMP_DIR"'/external-build"' "$manifest_s"
+grep -qF '"swiftpmCacheRoot": "'"$TEMP_DIR"'/external-swiftpm-cache"' "$manifest_s"
+grep -qF "$TEMP_DIR/external-build:/workspace/.build/fuzz" "$runtime_log"
 
 if grep -qF 'swift test --skip-build --filter DeterministicFuzzTests' "$runtime_log"; then
     echo 'fuzz test command omitted its isolated scratch path' >&2
@@ -124,7 +159,7 @@ if grep -qF 'swift test --filter DeterministicFuzzTests' "$runtime_log"; then
     exit 1
 fi
 grep -qF -- '--cache-path .swiftpm-cache --disable-automatic-resolution' "$runtime_log"
-grep -qF -- '-v '"$ROOT_DIR/.swiftpm-cache"':/workspace/.swiftpm-cache' "$runtime_log"
+grep -qF -- '-v '"$TEMP_DIR/external-swiftpm-cache"':/workspace/.swiftpm-cache' "$runtime_log"
 [[ "$(sha256sum "$ROOT_DIR/Package.resolved")" == "$resolved_hash" ]]
 
 # The XCTest compatibility line is allowed when the Swift Testing summary proves
@@ -133,6 +168,7 @@ rm -f "$runtime_log"
 FAKE_RUNTIME_LOG="$runtime_log" \
 FAKE_RUNTIME_EXIT_CODE=0 \
 FAKE_RUNTIME_XCTEST_ZERO_LINE=1 \
+TMPDIR="$TEMP_DIR" \
   "$ROOT_DIR/Tests/Support/Fuzzing/run-fuzz.sh" \
     --runtime "$fake_runtime" \
     --container \
@@ -143,6 +179,8 @@ FAKE_RUNTIME_XCTEST_ZERO_LINE=1 \
     --quiet
 manifest_c=$(manifest_path "$TEMP_DIR/output-compatibility")
 grep -qF '"status": "passed"' "$manifest_c"
+grep -Eq "$TEMP_DIR/axoloty-fuzz-build\.[^: ]*:/workspace/.build/fuzz" "$runtime_log"
+grep -Eq "$TEMP_DIR/axoloty-fuzz-swiftpm\.[^: ]*:/workspace/.swiftpm-cache" "$runtime_log"
 
 # A successful process that only reports an empty selection is a failed fuzz
 # case, even though Swift itself returned zero.
@@ -374,7 +412,7 @@ done
 
 kill -TERM "$run_fuzz_pid" || true
 set +e
-wait "$run_fuzz_pid"
+wait_for_process_bounded "$run_fuzz_pid" "interrupt self-test" 5 2
 interrupt_status=$?
 set -e
 

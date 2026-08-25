@@ -74,8 +74,28 @@ func interruptionDuringInitialConnectionReturnsPromptlyAndStopsSession() async {
     let runTask = Task { @MainActor in
         await application.run()
     }
-    while !session.connectStarted {
-        await Task.yield()
+    let connectionStarted = await withTaskGroup(of: Bool.self) { group in
+        group.addTask {
+            while !(await session.connectStarted) {
+                if Task.isCancelled { return false }
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+            return true
+        }
+        group.addTask {
+            try? await Task.sleep(for: .seconds(1))
+            return false
+        }
+        let result = await group.next() ?? false
+        group.cancelAll()
+        return result
+    }
+    guard connectionStarted else {
+        runTask.cancel()
+        session.stop()
+        _ = await runTask.value
+        Issue.record("Timed out waiting for inspector connect phase to start")
+        return
     }
     signalHandler.wasInterrupted = true
 
