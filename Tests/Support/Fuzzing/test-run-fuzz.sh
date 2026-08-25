@@ -407,9 +407,10 @@ fi
 # Interruption path: a controlled signal terminates the campaign and the manifest is
 # still finalized with an explicit interrupted status and whatever case data was recorded.
 rm -f "$runtime_log"
-FAKE_RUNTIME_LOG="$runtime_log" \
-FAKE_RUNTIME_EXIT_CODE=0 \
-FAKE_RUNTIME_SLEEP_SECONDS=5 \
+setsid --wait env \
+  FAKE_RUNTIME_LOG="$runtime_log" \
+  FAKE_RUNTIME_EXIT_CODE=0 \
+  FAKE_RUNTIME_SLEEP_SECONDS=5 \
   "$ROOT_DIR/Tests/Support/Fuzzing/run-fuzz.sh" \
     --runtime "$fake_runtime" \
     --container \
@@ -444,7 +445,13 @@ if (( ! found )); then
     exit 1
 fi
 
-kill -TERM "$run_fuzz_pid" || true
+campaign_pgid=$(ps -o pgid= -p "$run_fuzz_pid" 2>/dev/null | tr -d ' ' || true)
+if [[ "$campaign_pgid" != "$run_fuzz_pid" ]]; then
+    kill -TERM "$run_fuzz_pid" 2>/dev/null || true
+    echo "interruption campaign did not own its process group: pid=$run_fuzz_pid pgid=${campaign_pgid:-unknown}" >&2
+    exit 1
+fi
+kill -TERM -- "-$run_fuzz_pid" || true
 set +e
 wait_for_process_bounded "$run_fuzz_pid" "interrupt self-test" 15 5
 interrupt_status=$?
