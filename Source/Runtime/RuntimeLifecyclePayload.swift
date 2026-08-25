@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
+import AxolotyObjectModel
 import AxolotyWire
 
 /// Encodes the lifecycle payloads emitted by the host runtime.
@@ -17,6 +18,10 @@ enum RuntimeLifecyclePayload {
 
     static func deadvertise(_ identity: RuntimeIdentity) -> [UInt8] {
         Array("{\"objectIds\":[\"\(uuidString(identity.id))\"]}".utf8)
+    }
+
+    static func deadvertise(objectID: ObjectID) -> [UInt8] {
+        Array("{\"objectIds\":[\"\(uuidString(objectID.uuid))\"]}".utf8)
     }
 
     private static func uuidString(_ value: UUID16) -> String {

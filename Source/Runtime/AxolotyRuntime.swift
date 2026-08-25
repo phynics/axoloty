@@ -17,6 +17,9 @@ public final class AxolotyRuntime: Sendable {
         self.executor = ProtocolExecutor(definition: definition, transport: transport)
     }
 
+    /// The executor-backed typed IO capability.
+    public var io: RuntimeIO { RuntimeIO(executor: executor) }
+
     /// Starts the runtime transport and protocol executor.
     public func start() async throws {
         if let failure = await executor.start() {
@@ -146,14 +149,14 @@ actor ProtocolExecutor {
     /// This queue is bounded by the dispatch capacity and is replayed in
     /// publication order after a successful reconnect.
     private var offlineOperations: [RuntimeOperation] = []
-    private var state: RuntimeLifecycleState = .stopped
+    var state: RuntimeLifecycleState = .stopped
     private var hasStarted = false
     var lifecycleAdvertisementActive = false
     private var ingress: [RuntimeInboundFrame] = []
-    private var activeHandlers = 0
+    var activeHandlers = 0
     private var handlerInFlight: [Int: Int] = [:]
-    private var nextHandlerID: UInt64 = 1
-    private var handlerTasks: [UInt64: Task<Void, Never>] = [:]
+    var nextHandlerID: UInt64 = 1
+    var handlerTasks: [UInt64: Task<Void, Never>] = [:]
     private var terminalFailureValue: (AxolotyError.RuntimeErrorCode, String)?
     private var failureTeardownScheduled = false
     private let ingressOverflowGate = RuntimeOverflowGate()
@@ -162,8 +165,12 @@ actor ProtocolExecutor {
     private var transportIngressTask: Task<Void, Never>?
     private var outboundContinuation: AsyncStream<OwnedProtocolPublication>.Continuation?
     private var outboundTask: Task<Void, Never>?
-    private var outboundQueued = 0
+    var outboundQueued = 0
     private var diagnosticsSnapshotValue = RuntimeDiagnostics()
+    var ioStates: [RuntimeIoState] = []
+    var ioObservers: [UInt64: RuntimeIoObserver] = [:]
+    var nextIoObserverID: UInt64 = 1
+    var ioFlushTasks: [Int: Task<Void, Never>] = [:]
     private let eventRegistrations: [RuntimeEventRegistration]
 
     private let eventStream: AsyncStream<RuntimeEvent>
@@ -175,6 +182,7 @@ actor ProtocolExecutor {
         self.definition = definition
         self.transport = transport
         self.eventRegistrations = definition.eventRegistrations
+        self.ioStates = definition.ioEndpointRegistrations.map(RuntimeIoState.init)
         self.ingress.reserveCapacity(definition.capacities.ingress)
         self.actionSink = ReusableProtocolActionSink(capacity: definition.capacities.dispatch)
         let events = AsyncStream<RuntimeEvent>.makeStream(
@@ -246,6 +254,7 @@ actor ProtocolExecutor {
                 return (.notStarted, "runtime start was superseded while installing subscriptions")
             }
             try await publishLifecycleAdvertisement(nowMS: monotonicNowMS())
+            try await publishIoAdvertisements(nowMS: monotonicNowMS())
             guard state == .starting, transportEpoch == epoch else {
                 await transport.stop()
                 return (.notStarted, "runtime start was superseded during advertisement")
@@ -276,7 +285,10 @@ actor ProtocolExecutor {
         transportEpoch &+= 1
         let stoppingEpoch = transportEpoch
         await cancelAndDrainHandlers()
+        for task in ioFlushTasks.values { task.cancel() }
+        ioFlushTasks.removeAll(keepingCapacity: true)
         do {
+            try await publishIoDeadvertisements(nowMS: monotonicNowMS())
             try await publishLifecycleDeadvertisement(nowMS: monotonicNowMS())
             try await transport.removeSubscriptions(namespace: definition.namespace)
         } catch {
@@ -295,6 +307,7 @@ actor ProtocolExecutor {
             await stop()
         }
         state = .closed
+        finishIoObservers()
         for registration in eventRegistrations {
             registration.continuation.finish()
         }
@@ -308,6 +321,7 @@ actor ProtocolExecutor {
         transportEpoch &+= 1
         let epoch = transportEpoch
         processor.resetTransport()
+        clearIoTransportState()
         diagnosticsSnapshotValue.reconnects += 1
         transportIngressContinuation?.finish()
         transportIngressTask?.cancel()
@@ -348,6 +362,7 @@ actor ProtocolExecutor {
             try await transport.installSubscriptions(namespace: definition.namespace)
             guard state == .reconnecting, transportEpoch == epoch else { return }
             try await publishLifecycleAdvertisement(nowMS: monotonicNowMS())
+            try await publishIoAdvertisements(nowMS: monotonicNowMS())
             guard state == .reconnecting, transportEpoch == epoch else { return }
             state = .running
             flushOfflineOperations(nowMS: monotonicNowMS())
@@ -408,6 +423,10 @@ actor ProtocolExecutor {
 
     private func decrementOutbound() {
         outboundQueued = max(0, outboundQueued - 1)
+        if outboundQueued == 0 {
+            for index in ioStates.indices { ioStates[index].inFlight = false }
+            flushPendingIo(nowMS: monotonicNowMS())
+        }
     }
 
     private func installOutboundPump() {
@@ -418,10 +437,11 @@ actor ProtocolExecutor {
         outboundTask = Task { [weak self, stream = outboundPipe.stream, transport, namespace = definition.namespace] in
             for await action in stream {
                 guard !Task.isCancelled else { break }
-                await self?.decrementOutbound()
                 do {
                     try await transport.send(action, namespace: namespace)
+                    await self?.decrementOutbound()
                 } catch {
+                    await self?.decrementOutbound()
                     await self?.transportFailed(runtimeErrorDetail(error))
                 }
             }
@@ -584,6 +604,7 @@ actor ProtocolExecutor {
             case .deliver(let delivery):
                 emitRegisteredEvents(for: delivery, owned: action, nowMS: nowMS)
                 dispatchToHandler(action, operation: operationName(for: delivery))
+                dispatchIoActorIfRegistered(action, nowMS: nowMS)
             case .associationChanged(let transition):
                 emitRegisteredEvents(for: transition.delivery, owned: action, nowMS: nowMS)
                 dispatchToHandler(action, operation: operationName(for: transition.delivery))
@@ -600,6 +621,7 @@ actor ProtocolExecutor {
             }
         }
         actionSink.removeAll()
+        notifyIoObservers()
     }
 
     private func emitRegisteredEvents(for delivery: BorrowedProtocolDelivery, owned: OwnedProtocolAction, nowMS: UInt32) {
@@ -925,6 +947,7 @@ actor ProtocolExecutor {
         state = .reconnecting
         transportEpoch &+= 1
         processor.resetTransport()
+        clearIoTransportState()
         diagnosticsSnapshotValue.reconnects += 1
         transportIngressContinuation?.finish()
         transportIngressTask?.cancel()
@@ -937,7 +960,7 @@ actor ProtocolExecutor {
         outboundQueued = 0
     }
 
-    private func failRuntime(
+    func failRuntime(
         code: AxolotyError.RuntimeErrorCode,
         detail: String,
         diagnostic: RuntimeDiagnostic.Kind
@@ -958,7 +981,7 @@ actor ProtocolExecutor {
         }
     }
 
-    private func emit(_ diagnostic: RuntimeDiagnostic) {
+    func emit(_ diagnostic: RuntimeDiagnostic) {
         diagnosticContinuation.yield(diagnostic)
     }
 

@@ -1,7 +1,9 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-import AxolotyProtocol
+@_spi(AxolotyRuntimeAdapter) import AxolotyProtocol
+import AxolotyObjectModel
 import AxolotyWire
+import Foundation
 
 /// Fixed limits used by one host runtime instance.
 public struct RuntimeCapacities: Sendable, Equatable {
@@ -17,6 +19,14 @@ public struct RuntimeCapacities: Sendable, Equatable {
     public let stream: Int
     /// Maximum event streams registered before startup.
     public let eventStreams: Int
+    /// Maximum registered typed IO endpoints.
+    public let ioEndpoints: Int
+    /// Maximum retained latest IO values per source.
+    public let ioPendingLatest: Int
+    /// Maximum typed IO association observers.
+    public let ioObservers: Int
+    /// Maximum endpoint catalogue entries retained by the host definition.
+    public let ioCatalogue: Int
 
     /// Creates finite runtime limits.
     public init(
@@ -25,17 +35,25 @@ public struct RuntimeCapacities: Sendable, Equatable {
         handlers: Int = 64,
         handlersInFlight: Int = 16,
         stream: Int = 64,
-        eventStreams: Int = 64
+        eventStreams: Int = 64,
+        ioEndpoints: Int = 64,
+        ioPendingLatest: Int = 64,
+        ioObservers: Int = 64,
+        ioCatalogue: Int = 64
     ) throws {
         guard ingress > 0, dispatch > 0, handlers > 0,
-              handlersInFlight > 0, stream > 0, eventStreams > 0 else {
+              handlersInFlight > 0, stream > 0, eventStreams > 0,
+              ioEndpoints > 0, ioPendingLatest > 0, ioObservers > 0,
+              ioCatalogue > 0 else {
             throw AxolotyError.invalidArgument(
                 argument: "capacities",
                 reason: "all runtime capacities must be greater than zero"
             )
         }
         guard ingress <= 64, dispatch <= 64, handlers <= 64,
-              handlersInFlight <= 64, stream <= 64, eventStreams <= 64 else {
+              handlersInFlight <= 64, stream <= 64, eventStreams <= 64,
+              ioEndpoints <= 64, ioPendingLatest <= 64, ioObservers <= 64,
+              ioCatalogue <= 64 else {
             throw AxolotyError.invalidArgument(
                 argument: "capacities",
                 reason: "host runtime capacities cannot exceed 64"
@@ -47,6 +65,10 @@ public struct RuntimeCapacities: Sendable, Equatable {
         self.handlersInFlight = handlersInFlight
         self.stream = stream
         self.eventStreams = eventStreams
+        self.ioEndpoints = ioEndpoints
+        self.ioPendingLatest = ioPendingLatest
+        self.ioObservers = ioObservers
+        self.ioCatalogue = ioCatalogue
     }
 }
 
@@ -304,6 +326,49 @@ public struct RuntimeInboundFrame: Sendable, Equatable {
         self.payload = payload
         self.nowMS = nowMS
     }
+}
+
+enum RuntimeIoEndpointRole: Sendable, Equatable {
+    case source
+    case actor
+}
+
+struct RuntimeIoEndpointRegistration: Sendable {
+    let id: ObjectID
+    let role: RuntimeIoEndpointRole
+    let representation: IoValueRepresentation
+    let objectBytes: BoundedIoBytes<512>
+    let publication: IoPublicationPolicy
+    let recommendedUpdateRateMS: UInt32?
+    let handler: (@Sendable ([UInt8], IoDeliveryContext) async throws -> Void)?
+}
+
+private func runtimeRegistryNonce() -> ObjectID {
+    let uuid = UUID().uuid
+    return ObjectID(uuid: UUID16(bytes: (
+        uuid.0, uuid.1, uuid.2, uuid.3,
+        uuid.4, uuid.5, uuid.6, uuid.7,
+        uuid.8, uuid.9, uuid.10, uuid.11,
+        uuid.12, uuid.13, uuid.14, uuid.15
+    )))
+}
+
+func runtimeObjectBytes(
+    source definition: borrowing IoSourceEndpointDefinition
+) throws(ProtocolError) -> BoundedIoBytes<512> {
+    var result: BoundedIoBytes<512>?
+    definition.withObjectBytes { bytes in result = try? BoundedIoBytes(copying: bytes) }
+    guard let result else { throw ProtocolError(.capacityExceeded) }
+    return result
+}
+
+func runtimeObjectBytes(
+    actor definition: borrowing IoActorEndpointDefinition
+) throws(ProtocolError) -> BoundedIoBytes<512> {
+    var result: BoundedIoBytes<512>?
+    definition.withObjectBytes { bytes in result = try? BoundedIoBytes(copying: bytes) }
+    guard let result else { throw ProtocolError(.capacityExceeded) }
+    return result
 }
 
 /// Coalesced supervision counters for a runtime instance.
@@ -642,10 +707,18 @@ public struct RuntimeDefinition: Sendable {
     public let identity: RuntimeIdentity?
     /// The fixed limits for this runtime.
     public let capacities: RuntimeCapacities
+    let registryID: ObjectID
 
     private var registrations: [RuntimeHandlerRegistration] = []
     private var eventRegistrations: [RuntimeEventRegistration] = []
-    private var sealed = false
+    var ioEndpointRegistrations: [RuntimeIoEndpointRegistration] = []
+    var sealed = false
+
+    /// Keeps one ProtocolProcessor object slot available for runtime identity.
+    var endpointRegistrationLimit: Int {
+        let reservedIdentitySlot = identity == nil ? 0 : 1
+        return min(capacities.ioEndpoints, capacities.ioCatalogue, 64 - reservedIdentitySlot)
+    }
 
     /// Creates an empty runtime definition.
     public init(namespace: String, sourceID: UUID16, identity: RuntimeIdentity? = nil, capacities: RuntimeCapacities) throws {
@@ -660,7 +733,9 @@ public struct RuntimeDefinition: Sendable {
         self.sourceID = sourceID
         self.identity = identity
         self.capacities = capacities
+        self.registryID = runtimeRegistryNonce()
         self.registrations.reserveCapacity(capacities.handlers)
+        self.ioEndpointRegistrations.reserveCapacity(endpointRegistrationLimit)
     }
 
     /// Registers one bounded application handler.
@@ -749,7 +824,9 @@ public struct RuntimeDefinition: Sendable {
             identity: copy.identity,
             capacities: copy.capacities,
             registrations: copy.registrations,
-            eventRegistrations: copy.eventRegistrations
+            eventRegistrations: copy.eventRegistrations,
+            registryID: copy.registryID,
+            ioEndpointRegistrations: copy.ioEndpointRegistrations
         )
     }
 }
@@ -764,19 +841,25 @@ public struct SealedRuntimeDefinition: Sendable {
     public let identity: RuntimeIdentity?
     /// The fixed limits for this runtime.
     public let capacities: RuntimeCapacities
+    let registryID: ObjectID
     let registrations: [RuntimeHandlerRegistration]
     let eventRegistrations: [RuntimeEventRegistration]
+    let ioEndpointRegistrations: [RuntimeIoEndpointRegistration]
 
     /// The number of registered handlers.
     public var handlerCount: Int { registrations.count }
+    /// The number of registered typed IO endpoints.
+    public var ioEndpointCount: Int { ioEndpointRegistrations.count }
 
-    init(namespace: String, sourceID: UUID16, identity: RuntimeIdentity? = nil, capacities: RuntimeCapacities, registrations: [RuntimeHandlerRegistration], eventRegistrations: [RuntimeEventRegistration] = []) {
+    init(namespace: String, sourceID: UUID16, identity: RuntimeIdentity? = nil, capacities: RuntimeCapacities, registrations: [RuntimeHandlerRegistration], eventRegistrations: [RuntimeEventRegistration] = [], registryID: ObjectID, ioEndpointRegistrations: [RuntimeIoEndpointRegistration] = []) {
         self.namespace = namespace
         self.sourceID = sourceID
         self.identity = identity
         self.capacities = capacities
+        self.registryID = registryID
         self.registrations = registrations
         self.eventRegistrations = eventRegistrations
+        self.ioEndpointRegistrations = ioEndpointRegistrations
     }
 }
 
@@ -784,7 +867,7 @@ public extension RuntimeDefinition {
     /// Mutable pre-start configuration builder. Calling ``finish()`` seals
     /// the definition and makes its registration graph immutable.
     struct Builder {
-        private var definition: RuntimeDefinition
+        var definition: RuntimeDefinition
         private var identity: RuntimeIdentity
 
         /// Creates a builder with the host defaults.

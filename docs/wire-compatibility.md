@@ -21,6 +21,14 @@ Reference versions must be pinned before captured fixtures become normative:
 | Decentralized logging | Not tested | Not tested | Not tested | Not tested | Nightly |
 | SensorThings | Unsupported | Unsupported | Not tested | Not tested | G5 |
 
+### G5 host typed IO evidence
+
+Host typed IO uses the same bounded `ProtocolProcessor` path as static IO for
+endpoint Advertise, Deadvertise, and IoValue publications. The host regression
+suite covers endpoint normalization and catalogue-capacity rollback; the
+required live CoatyJS capture/verifier remains the merge gate for the new
+transport path. No wire-field divergence is introduced by this slice.
+
 ### G4 embedded Advertise topic normalization
 
 The shared static-runtime migration corrected the embedded Advertise topic

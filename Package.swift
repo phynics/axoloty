@@ -114,6 +114,7 @@ let package = Package(
             dependencies: [
                 "AxolotyWire",
                 "AxolotyProtocol",
+                "AxolotyObjectModel",
                 .product(name: "MQTTNIO", package: "mqtt-nio"),
                 .product(name: "NIO", package: "swift-nio"),
                 .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
@@ -135,7 +136,9 @@ let package = Package(
             sources: [
                 "Common/AxolotyError.swift",
                 "Runtime/AxolotyRuntimeDefinition.swift",
+                "Runtime/AxolotyRuntimeDefinition+IO.swift",
                 "Runtime/AxolotyRuntime.swift",
+                "Runtime/RuntimeIO.swift",
                 "Runtime/RuntimeLifecyclePayload.swift",
                 "Runtime/ProtocolExecutor+Outbound.swift",
                 "Runtime/RuntimeSupport.swift",
