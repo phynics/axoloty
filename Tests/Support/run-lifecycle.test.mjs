@@ -295,7 +295,7 @@ exit 17
       result.stderr ?? "",
       /WIRE_OUTPUT_DIR must be inside the repository/,
     );
-    assert.match(fs.readFileSync(runtimeLog, "utf8"), /build/);
+    assert.match(fs.readFileSync(runtimeLog, "utf8"), /network create/);
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
     try {

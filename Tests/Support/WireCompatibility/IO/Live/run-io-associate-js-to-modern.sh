@@ -16,7 +16,6 @@ runtime_bounded() { timeout "${WIRE_CONTAINER_WAIT_SECONDS:-120}s" "$RUNTIME" "$
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)
 IO_DIR="$ROOT_DIR/Tests/Support/WireCompatibility/IO"
 LIVE_DIR="$ROOT_DIR/Tests/Support/WireCompatibility/Live"
-REFERENCE_DIR="$ROOT_DIR/Tests/Support/WireCompatibility/ReferenceAgents"
 RUN_ID="${WIRE_RUN_ID:-$$}"
 NETWORK="axoloty-wire-io-j2m-$RUN_ID"
 BROKER="axoloty-wire-io-j2m-broker-$RUN_ID"
@@ -28,6 +27,7 @@ JS_IMAGE="${JS_IMAGE:-localhost/coatyswift-wire-coatyjs:2.4.0}"
 CONSUMER_LOG=$(mktemp)
 OUTPUT_DIR="${WIRE_OUTPUT_DIR:-$ROOT_DIR/.testing/wire/io/associate-js-to-modern}"
 SPM_CACHE_DIR="${SPM_CACHE_DIR:-$ROOT_DIR/.swiftpm-cache}"
+BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/.build}"
 SWIFTPM_MODULECACHE_OVERRIDE=/tmp/axoloty-wire-module-cache
 
 cleanup() {
@@ -36,11 +36,9 @@ cleanup() {
     rm -f "$CONSUMER_LOG"
 }
 trap cleanup EXIT INT TERM
-mkdir -p "$OUTPUT_DIR"
+mkdir -p "$OUTPUT_DIR" "$BUILD_DIR" "$SPM_CACHE_DIR"
 rm -f "$OUTPUT_DIR/io-associate-js-to-modern.jsonl"
 
-runtime build -t "$DEV_IMAGE" -f "$ROOT_DIR/.devcontainer/Dockerfile" "$ROOT_DIR"
-runtime build -t "$JS_IMAGE" "$REFERENCE_DIR/coatyjs"
 runtime network create "$NETWORK" >/dev/null
 runtime run -d --name "$BROKER" --network "$NETWORK" \
     -v "$LIVE_DIR/mosquitto.conf:/etc/mosquitto/wire-compat.conf:ro" \
@@ -60,17 +58,17 @@ sleep 0.5
 
 # Axoloty (actor/consumer) is the subject: start it detached so this script can
 # wait for its "ready" line before the CoatyJS producer publishes. The timeout
-# is generous because the in-container cold build can take several minutes.
+# is generous for broker and application diagnostics on a busy runner.
 # `-t` allocates a TTY: without it `swift test` block-buffers the child test
 # binary's stdout when it is a pipe, so the "ready" line never reaches the log
 # and the readiness handshake below would time out.
 runtime run -d -t --name "$CONSUMER" --network "$NETWORK" \
-    -v "$ROOT_DIR:/workspace" -v "$SPM_CACHE_DIR:/swiftpm-cache" -w /workspace \
+    -v "$ROOT_DIR:/workspace" -v "$BUILD_DIR:/swift-build" -v "$SPM_CACHE_DIR:/swiftpm-cache" -w /workspace \
     -e WIRE_IO_JS_TO_MODERN_LIVE=1 -e WIRE_BROKER_HOST="$BROKER" \
     -e WIRE_BROKER_PORT=1883 -e WIRE_NAMESPACE=wire-compat-v1 \
     -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
     "$DEV_IMAGE" swift test -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
-    --cache-path /swiftpm-cache --disable-automatic-resolution --filter AxolotyIoAssociateTests >/dev/null
+    --skip-build --scratch-path /swift-build --cache-path /swiftpm-cache --disable-automatic-resolution --filter AxolotyIoAssociateTests >/dev/null
 
 for _ in $(seq 1 240); do
     runtime logs "$CONSUMER" >"$CONSUMER_LOG" 2>&1
