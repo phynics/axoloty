@@ -104,6 +104,23 @@ jobs:
             .build/ci/x86_64-unknown-linux-gnu/debug/index/store
             .build/ci/x86_64-unknown-linux-gnu/debug/Modules
             .build/ci/x86_64-unknown-linux-gnu/debug/ModuleCache
+            .build/ci/tooling/build.db
+            .build/ci/tooling/debug.yaml
+            .build/ci/tooling/workspace-state.json
+            .build/ci/tooling/x86_64-unknown-linux-gnu/debug/*.build
+            .build/ci/tooling/x86_64-unknown-linux-gnu/debug/description.json
+            .build/ci/tooling/x86_64-unknown-linux-gnu/debug/index/store
+            .build/ci/tooling/x86_64-unknown-linux-gnu/debug/Modules
+            .build/ci/packages/*/build.db
+            .build/ci/packages/*/debug.yaml
+            .build/ci/packages/*/plugin-tools.yaml
+            .build/ci/packages/*/workspace-state.json
+            .build/ci/packages/*/plugins
+            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/*.build
+            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/description.json
+            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/index/store
+            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/Modules
+            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/ModuleCache
           key: ${{ env.SWIFT_BUILD_CACHE_KEY }}
           restore-keys: |
             ${{ env.SWIFT_BUILD_CACHE_PREFIX }}
@@ -191,6 +208,23 @@ jobs:
             .build/ci/x86_64-unknown-linux-gnu/debug/index/store
             .build/ci/x86_64-unknown-linux-gnu/debug/Modules
             .build/ci/x86_64-unknown-linux-gnu/debug/ModuleCache
+            .build/ci/tooling/build.db
+            .build/ci/tooling/debug.yaml
+            .build/ci/tooling/workspace-state.json
+            .build/ci/tooling/x86_64-unknown-linux-gnu/debug/*.build
+            .build/ci/tooling/x86_64-unknown-linux-gnu/debug/description.json
+            .build/ci/tooling/x86_64-unknown-linux-gnu/debug/index/store
+            .build/ci/tooling/x86_64-unknown-linux-gnu/debug/Modules
+            .build/ci/packages/*/build.db
+            .build/ci/packages/*/debug.yaml
+            .build/ci/packages/*/plugin-tools.yaml
+            .build/ci/packages/*/workspace-state.json
+            .build/ci/packages/*/plugins
+            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/*.build
+            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/description.json
+            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/index/store
+            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/Modules
+            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/ModuleCache
           key: ${{ env.SWIFT_BUILD_CACHE_KEY }}
 
       - name: Upload verification run diagnostics
