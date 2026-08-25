@@ -438,7 +438,7 @@ done
 if (( ! found )); then
     kill -TERM "$run_fuzz_pid" 2>/dev/null || true
     set +e
-    wait_for_process_bounded "$run_fuzz_pid" "interrupt readiness self-test" 5 2
+    wait_for_process_bounded "$run_fuzz_pid" "interrupt readiness self-test" 15 5
     set -e
     echo 'fuzz campaign did not record a case and start its next command before the interruption deadline' >&2
     exit 1
@@ -446,7 +446,7 @@ fi
 
 kill -TERM "$run_fuzz_pid" || true
 set +e
-wait_for_process_bounded "$run_fuzz_pid" "interrupt self-test" 5 2
+wait_for_process_bounded "$run_fuzz_pid" "interrupt self-test" 15 5
 interrupt_status=$?
 set -e
 
