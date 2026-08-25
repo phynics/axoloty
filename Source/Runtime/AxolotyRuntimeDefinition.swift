@@ -914,14 +914,18 @@ public extension RuntimeDefinition {
             metadata: consuming Object<IoSourceMetadata>,
             as valueType: Value.Type,
             publication: IoPublicationPolicy = .immediate
-        ) throws(ProtocolError) -> IoSource<Value> {
-            _ = valueType
-            let normalized = try IoSourceEndpointDefinition(
-                metadata: metadata,
-                representation: Value.representation,
-                publication: publication
-            )
-            return try appendIoSource(normalized, representation: Value.representation, publication: publication)
+        ) throws -> IoSource<Value> {
+            do {
+                _ = valueType
+                let normalized = try IoSourceEndpointDefinition(
+                    metadata: metadata,
+                    representation: Value.representation,
+                    publication: publication
+                )
+                return try appendIoSource(normalized, representation: Value.representation, publication: publication)
+            } catch {
+                throw AxolotyError.caught(error)
+            }
         }
 
         /// Registers a dynamic IO source whose representation is fixed at registration.
@@ -929,13 +933,17 @@ public extension RuntimeDefinition {
             metadata: consuming Object<IoSourceMetadata>,
             representation: IoValueRepresentation,
             publication: IoPublicationPolicy = .immediate
-        ) throws(ProtocolError) -> IoSource<DynamicIoValue> {
-            let normalized = try IoSourceEndpointDefinition(
-                metadata: metadata,
-                representation: representation,
-                publication: publication
-            )
-            return try appendIoSource(normalized, representation: representation, publication: publication)
+        ) throws -> IoSource<DynamicIoValue> {
+            do {
+                let normalized = try IoSourceEndpointDefinition(
+                    metadata: metadata,
+                    representation: representation,
+                    publication: publication
+                )
+                return try appendIoSource(normalized, representation: representation, publication: publication)
+            } catch {
+                throw AxolotyError.caught(error)
+            }
         }
 
         /// Registers a typed host IO actor with an asynchronous application handler.
@@ -944,29 +952,33 @@ public extension RuntimeDefinition {
             as valueType: Value.Type,
             recommendedUpdateRateMS: UInt32? = nil,
             handler: @escaping @Sendable (Value, IoDeliveryContext) async throws -> Void
-        ) throws(ProtocolError) -> IoActor<Value> {
-            _ = valueType
-            let normalized = try IoActorEndpointDefinition(
-                metadata: metadata,
-                representation: Value.representation,
-                recommendedUpdateRateMS: recommendedUpdateRateMS
-            )
-            let wrapped: @Sendable ([UInt8], IoDeliveryContext) async throws -> Void = { bytes, context in
-                let value: Value? = bytes.withUnsafeBufferPointer { buffer in
-                    guard let base = buffer.baseAddress else { return nil }
-                    return try? Value.decodeIoPayload(
-                        ByteSlice(bytes: base, length: buffer.count),
-                        representation: Value.representation
-                    )
+        ) throws -> IoActor<Value> {
+            do {
+                _ = valueType
+                let normalized = try IoActorEndpointDefinition(
+                    metadata: metadata,
+                    representation: Value.representation,
+                    recommendedUpdateRateMS: recommendedUpdateRateMS
+                )
+                let wrapped: @Sendable ([UInt8], IoDeliveryContext) async throws -> Void = { bytes, context in
+                    let value: Value? = bytes.withUnsafeBufferPointer { buffer in
+                        guard let base = buffer.baseAddress else { return nil }
+                        return try? Value.decodeIoPayload(
+                            ByteSlice(bytes: base, length: buffer.count),
+                            representation: Value.representation
+                        )
+                    }
+                    guard let value else { throw IoValueError.invalidValue }
+                    try await handler(value, context)
                 }
-                guard let value else { throw IoValueError.invalidValue }
-                try await handler(value, context)
+                return try appendIoActor(
+                    normalized,
+                    representation: Value.representation,
+                    handler: wrapped
+                )
+            } catch {
+                throw AxolotyError.caught(error)
             }
-            return try appendIoActor(
-                normalized,
-                representation: Value.representation,
-                handler: wrapped
-            )
         }
 
         /// Registers a dynamic host IO actor with a fixed accepted representation.
@@ -975,24 +987,28 @@ public extension RuntimeDefinition {
             representation: IoValueRepresentation,
             recommendedUpdateRateMS: UInt32? = nil,
             handler: @escaping @Sendable (DynamicIoValue, IoDeliveryContext) async throws -> Void
-        ) throws(ProtocolError) -> IoActor<DynamicIoValue> {
-            let normalized = try IoActorEndpointDefinition(
-                metadata: metadata,
-                representation: representation,
-                recommendedUpdateRateMS: recommendedUpdateRateMS
-            )
-            let wrapped: @Sendable ([UInt8], IoDeliveryContext) async throws -> Void = { bytes, context in
-                let value: DynamicIoValue? = bytes.withUnsafeBufferPointer { buffer in
-                    guard let base = buffer.baseAddress else { return nil }
-                    return try? DynamicIoValue.decodeIoPayload(
-                        ByteSlice(bytes: base, length: buffer.count),
-                        representation: representation
-                    )
+        ) throws -> IoActor<DynamicIoValue> {
+            do {
+                let normalized = try IoActorEndpointDefinition(
+                    metadata: metadata,
+                    representation: representation,
+                    recommendedUpdateRateMS: recommendedUpdateRateMS
+                )
+                let wrapped: @Sendable ([UInt8], IoDeliveryContext) async throws -> Void = { bytes, context in
+                    let value: DynamicIoValue? = bytes.withUnsafeBufferPointer { buffer in
+                        guard let base = buffer.baseAddress else { return nil }
+                        return try? DynamicIoValue.decodeIoPayload(
+                            ByteSlice(bytes: base, length: buffer.count),
+                            representation: representation
+                        )
+                    }
+                    guard let value else { throw IoValueError.invalidValue }
+                    try await handler(value, context)
                 }
-                guard let value else { throw IoValueError.invalidValue }
-                try await handler(value, context)
+                return try appendIoActor(normalized, representation: representation, handler: wrapped)
+            } catch {
+                throw AxolotyError.caught(error)
             }
-            return try appendIoActor(normalized, representation: representation, handler: wrapped)
         }
 
         private mutating func appendIoSource<Value: IoEndpointValue>(

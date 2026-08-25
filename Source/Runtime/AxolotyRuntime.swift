@@ -153,10 +153,10 @@ actor ProtocolExecutor {
     private var hasStarted = false
     var lifecycleAdvertisementActive = false
     private var ingress: [RuntimeInboundFrame] = []
-    private var activeHandlers = 0
+    var activeHandlers = 0
     private var handlerInFlight: [Int: Int] = [:]
-    private var nextHandlerID: UInt64 = 1
-    private var handlerTasks: [UInt64: Task<Void, Never>] = [:]
+    var nextHandlerID: UInt64 = 1
+    var handlerTasks: [UInt64: Task<Void, Never>] = [:]
     private var terminalFailureValue: (AxolotyError.RuntimeErrorCode, String)?
     private var failureTeardownScheduled = false
     private let ingressOverflowGate = RuntimeOverflowGate()
@@ -304,6 +304,7 @@ actor ProtocolExecutor {
             await stop()
         }
         state = .closed
+        finishIoObservers()
         for registration in eventRegistrations {
             registration.continuation.finish()
         }
@@ -421,6 +422,7 @@ actor ProtocolExecutor {
         outboundQueued = max(0, outboundQueued - 1)
         if outboundQueued == 0 {
             for index in ioStates.indices { ioStates[index].inFlight = false }
+            flushPendingIo(nowMS: monotonicNowMS())
         }
     }
 
@@ -432,10 +434,11 @@ actor ProtocolExecutor {
         outboundTask = Task { [weak self, stream = outboundPipe.stream, transport, namespace = definition.namespace] in
             for await action in stream {
                 guard !Task.isCancelled else { break }
-                await self?.decrementOutbound()
                 do {
                     try await transport.send(action, namespace: namespace)
+                    await self?.decrementOutbound()
                 } catch {
+                    await self?.decrementOutbound()
                     await self?.transportFailed(runtimeErrorDetail(error))
                 }
             }

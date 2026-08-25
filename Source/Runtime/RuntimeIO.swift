@@ -20,6 +20,7 @@ struct RuntimeIoObserver: Sendable {
     let sourceID: ObjectID?
     let actorID: ObjectID?
     let continuation: AsyncStream<IoAssociationState>.Continuation
+    var lastGeneration: UInt32
 }
 
 /// Executor-backed typed IO operations for a running host runtime.
@@ -31,6 +32,13 @@ public struct RuntimeIO: Sendable {
     }
 
     /// Publishes one typed value from a registered source.
+    ///
+    /// - Parameters:
+    ///   - value: The value to encode and publish.
+    ///   - source: The registered source handle.
+    ///   - nowMS: Optional wrapping monotonic time; the runtime clock is used when omitted.
+    /// - Returns: The bounded publication admission receipt.
+    /// - Throws: ``AxolotyError`` when encoding or handle validation fails.
     public func publish<Value: IoEndpointValue>(
         _ value: borrowing Value,
         from source: IoSource<Value>,
@@ -38,15 +46,19 @@ public struct RuntimeIO: Sendable {
     ) async throws -> IoPublicationReceipt {
         let representation: IoValueRepresentation
         let encoded: [UInt8]
-        if let fixed = Value.fixedRepresentation {
-            representation = fixed
-            encoded = try encodeRuntimeIoValue(value, representation: fixed)
-        } else if let json = try? encodeRuntimeIoValue(value, representation: .json) {
-            representation = .json
-            encoded = json
-        } else {
-            representation = .binary
-            encoded = try encodeRuntimeIoValue(value, representation: .binary)
+        do {
+            if let fixed = Value.fixedRepresentation {
+                representation = fixed
+                encoded = try encodeRuntimeIoValue(value, representation: fixed)
+            } else if let json = try? encodeRuntimeIoValue(value, representation: .json) {
+                representation = .json
+                encoded = json
+            } else {
+                representation = .binary
+                encoded = try encodeRuntimeIoValue(value, representation: .binary)
+            }
+        } catch {
+            throw AxolotyError.caught(error)
         }
         return await executor.publishIo(
             encoded,
@@ -57,37 +69,99 @@ public struct RuntimeIO: Sendable {
     }
 
     /// Returns the current association state for a source.
+    ///
+    /// - Parameter source: The registered source handle.
+    /// - Returns: The complete processor-owned association projection.
+    /// - Throws: ``AxolotyError`` for an invalid or foreign handle.
     public func state<Value: IoEndpointValue>(
         of source: IoSource<Value>
     ) async throws -> IoAssociationState {
-        try await executor.ioState(of: source)
+        do { return try await executor.ioState(of: source) }
+        catch { throw AxolotyError.caught(error) }
     }
 
     /// Returns the current association state for an actor.
+    ///
+    /// - Parameter actor: The registered actor handle.
+    /// - Returns: The complete processor-owned association projection.
+    /// - Throws: ``AxolotyError`` for an invalid or foreign handle.
     public func state<Value: IoEndpointValue>(
         of actor: IoActor<Value>
     ) async throws -> IoAssociationState {
-        try await executor.ioState(of: actor)
+        do { return try await executor.ioState(of: actor) }
+        catch { throw AxolotyError.caught(error) }
     }
 
     /// Creates a bounded association snapshot stream for a source.
+    ///
+    /// - Parameters:
+    ///   - source: The registered source handle.
+    ///   - buffering: The bounded stream buffering policy.
+    /// - Returns: A stream beginning with the current complete snapshot.
+    /// - Throws: ``AxolotyError`` when the handle or observer capacity is invalid.
     public func associations<Value: IoEndpointValue>(
         of source: IoSource<Value>,
         buffering: RuntimeBufferingPolicy = .coalesceLatest
     ) async throws -> AsyncStream<IoAssociationState> {
-        try await executor.ioAssociations(of: source, buffering: buffering)
+        do { return try await executor.ioAssociations(of: source, buffering: buffering) }
+        catch { throw AxolotyError.caught(error) }
     }
 
     /// Creates a bounded association snapshot stream for an actor.
+    ///
+    /// - Parameters:
+    ///   - actor: The registered actor handle.
+    ///   - buffering: The bounded stream buffering policy.
+    /// - Returns: A stream beginning with the current complete snapshot.
+    /// - Throws: ``AxolotyError`` when the handle or observer capacity is invalid.
     public func associations<Value: IoEndpointValue>(
         of actor: IoActor<Value>,
         buffering: RuntimeBufferingPolicy = .coalesceLatest
     ) async throws -> AsyncStream<IoAssociationState> {
-        try await executor.ioAssociations(of: actor, buffering: buffering)
+        do { return try await executor.ioAssociations(of: actor, buffering: buffering) }
+        catch { throw AxolotyError.caught(error) }
     }
 }
 
 extension ProtocolExecutor {
+    /// Attempts one pending latest value per source after the previous
+    /// publication batch has completed. The source scan is stable and stops
+    /// at the first bounded dispatch failure.
+    func flushPendingIo(nowMS: UInt32) {
+        guard state == .running else { return }
+        for index in ioStates.indices {
+            guard ioStates[index].registration.role == .source,
+                  let pending = ioStates[index].pending else { continue }
+            let registration = ioStates[index].registration
+            let association = processor.ioAssociationState(forSource: registration.id.uuid)
+            guard association.hasAssociations else {
+                ioStates[index].pending = nil
+                ioStates[index].machine.clear()
+                ioStates[index].inFlight = false
+                continue
+            }
+            guard !ioStates[index].inFlight,
+                  outboundQueued < definition.capacities.dispatch else { return }
+            guard case .emitCurrent = ioStates[index].machine.decision(
+                policy: registration.publication,
+                association: association,
+                nowMS: nowMS
+            ) else { continue }
+            switch publish(.ioValue(sourceID: registration.id.uuid, payload: pending), nowMS: nowMS) {
+            case .accepted:
+                ioStates[index].pending = nil
+                ioStates[index].machine.commitEmission(at: nowMS)
+                ioStates[index].inFlight = true
+            case .ignored:
+                ioStates[index].pending = nil
+                ioStates[index].machine.clear()
+                ioStates[index].inFlight = false
+            case .rejected:
+                return
+            }
+        }
+    }
+
     func clearIoTransportState() {
         for index in ioStates.indices {
             ioStates[index].machine.clear()
@@ -215,12 +289,17 @@ extension ProtocolExecutor {
         let pair = AsyncStream<IoAssociationState>.makeStream(bufferingPolicy: policy)
         let observerID = nextIoObserverID
         nextIoObserverID &+= 1
+        guard ioObservers.count < definition.capacities.ioObservers else {
+            throw ProtocolError(.capacityExceeded)
+        }
+        let snapshot = processor.ioAssociationState(forSource: ioStates[index].registration.id.uuid)
         ioObservers[observerID] = RuntimeIoObserver(
             sourceID: ioStates[index].registration.id,
             actorID: nil,
-            continuation: pair.continuation
+            continuation: pair.continuation,
+            lastGeneration: snapshot.generation
         )
-        pair.continuation.yield(processor.ioAssociationState(forSource: ioStates[index].registration.id.uuid))
+        pair.continuation.yield(snapshot)
         pair.continuation.onTermination = { _ in
             Task { await self.removeIoObserver(observerID) }
         }
@@ -238,12 +317,17 @@ extension ProtocolExecutor {
         let pair = AsyncStream<IoAssociationState>.makeStream(bufferingPolicy: policy)
         let observerID = nextIoObserverID
         nextIoObserverID &+= 1
+        guard ioObservers.count < definition.capacities.ioObservers else {
+            throw ProtocolError(.capacityExceeded)
+        }
+        let snapshot = processor.ioAssociationState(forActor: ioStates[index].registration.id.uuid)
         ioObservers[observerID] = RuntimeIoObserver(
             sourceID: nil,
             actorID: ioStates[index].registration.id,
-            continuation: pair.continuation
+            continuation: pair.continuation,
+            lastGeneration: snapshot.generation
         )
-        pair.continuation.yield(processor.ioAssociationState(forActor: ioStates[index].registration.id.uuid))
+        pair.continuation.yield(snapshot)
         pair.continuation.onTermination = { _ in
             Task { await self.removeIoObserver(observerID) }
         }
@@ -254,8 +338,16 @@ extension ProtocolExecutor {
         ioObservers.removeValue(forKey: id)
     }
 
-    func notifyIoObservers() {
+    func finishIoObservers() {
         for observer in ioObservers.values {
+            observer.continuation.finish()
+        }
+        ioObservers.removeAll(keepingCapacity: true)
+    }
+
+    func notifyIoObservers() {
+        for id in ioObservers.keys {
+            guard var observer = ioObservers[id] else { continue }
             let state: IoAssociationState
             if let sourceID = observer.sourceID {
                 state = processor.ioAssociationState(forSource: sourceID.uuid)
@@ -264,6 +356,9 @@ extension ProtocolExecutor {
             } else {
                 continue
             }
+            guard state.generation != observer.lastGeneration else { continue }
+            observer.lastGeneration = state.generation
+            ioObservers[id] = observer
             _ = observer.continuation.yield(state)
         }
     }
@@ -285,14 +380,33 @@ extension ProtocolExecutor {
             routeKind: routeKind
         )
         let payload = delivery.payload
-        let task = Task {
+        guard activeHandlers < definition.capacities.handlersInFlight else {
+            emitIoDiagnostic("IO actor delivery dropped: handler capacity is full")
+            return
+        }
+        activeHandlers += 1
+        let handlerID = nextHandlerID
+        nextHandlerID &+= 1
+        let task = Task { [weak self] in
             do {
                 try await handler(payload, context)
+            } catch is CancellationError {
+                // Cancellation is expected during stop and does not produce a diagnostic.
             } catch {
-                await self.emitIoDiagnostic("IO actor delivery dropped: (error)")
+                await self?.ioHandlerFailed(runtimeErrorDetail(error))
             }
+            await self?.ioHandlerFinished(handlerID)
         }
-        _ = task
+        handlerTasks[handlerID] = task
+    }
+
+    func ioHandlerFailed(_ detail: String) {
+        emitIoDiagnostic("IO actor delivery dropped: \(detail)")
+    }
+
+    func ioHandlerFinished(_ handlerID: UInt64) {
+        activeHandlers = max(0, activeHandlers - 1)
+        handlerTasks.removeValue(forKey: handlerID)
     }
 
     private func sourceIndex<Value: IoEndpointValue>(_ source: IoSource<Value>) -> Int? {
@@ -325,7 +439,7 @@ extension ProtocolExecutor {
         return slot
     }
 
-    private func emitIoDiagnostic(_ detail: String) {
+    func emitIoDiagnostic(_ detail: String) {
         emit(.init(kind: .handlerFailed, detail: detail))
     }
 }
