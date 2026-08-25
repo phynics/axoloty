@@ -497,9 +497,12 @@ public struct AxolotyCommandDispatcher: Sendable {
                 requested: requested,
                 deadlineSeconds: availablePlan.deadlineSeconds
             )
-            let results = executor.execute(plan)
-            let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
-            return manifestResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
+            let execution = executor.executeWithSummary(plan)
+            let exitCode: Int32 = execution.results.allSatisfy { $0.status == .passed } ? 0 : 1
+            return manifestResult(
+                AxolotyCheckManifest(results: execution.results, execution: execution.summary),
+                exitCode: exitCode
+            )
         } catch let error as AxolotyCanonicalTestManifestError {
             return AxolotyCommandResult(
                 standardError: "error: \(error.userFriendlyMessage)\n",
@@ -629,9 +632,12 @@ public struct AxolotyCommandDispatcher: Sendable {
                 sourcePlan.nodes,
                 deadlineSeconds: sourcePlan.deadlineSeconds
             )
-            let results = executor.execute(plan)
-            let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
-            return manifestResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
+            let execution = executor.executeWithSummary(plan)
+            let exitCode: Int32 = execution.results.allSatisfy { $0.status == .passed } ? 0 : 1
+            return manifestResult(
+                AxolotyCheckManifest(results: execution.results, execution: execution.summary),
+                exitCode: exitCode
+            )
         } catch {
             return AxolotyCommandResult(
                 standardError: "error: unable to generate fixture bundle\n",
@@ -658,7 +664,10 @@ public struct AxolotyCommandDispatcher: Sendable {
                             environment: node.command.environment,
                             executionContext: node.command.executionContext,
                             timeoutSeconds: node.command.timeoutSeconds
-                        )
+                        ),
+                        resources: node.resources,
+                        isolation: node.isolation,
+                        lane: node.lane
                     )
                 },
                 deadlineSeconds: canonicalPlan.deadlineSeconds
@@ -799,9 +808,12 @@ public struct AxolotyCommandDispatcher: Sendable {
                 availablePlan.nodes,
                 deadlineSeconds: availablePlan.deadlineSeconds
             )
-            let results = executor.execute(plan)
-            let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
-            return manifestResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
+            let execution = executor.executeWithSummary(plan)
+            let exitCode: Int32 = execution.results.allSatisfy { $0.status == .passed } ? 0 : 1
+            return manifestResult(
+                AxolotyCheckManifest(results: execution.results, execution: execution.summary),
+                exitCode: exitCode
+            )
         } catch {
             return AxolotyCommandResult(standardError: "error: unable to plan checks\n", exitCode: 70)
         }
@@ -970,8 +982,16 @@ public struct AxolotyCommandDispatcher: Sendable {
                 integrationRunner: integrationRunner
             ),
             contextValidator: contextValidator,
-            cancellation: cancellation
+            cancellation: cancellation,
+            maxConcurrentNodes: maxConcurrentChecks
         )
+    }
+
+    private var maxConcurrentChecks: Int {
+        if let value = environment["AXOLOTY_MAX_CONCURRENT_CHECKS"].flatMap(Int.init), value > 0 {
+            return value
+        }
+        return environment["CI"] == "true" ? 2 : 1
     }
 
     private static func commandResult(_ result: AxolotyCheckCommandResult) -> AxolotyCommandResult {

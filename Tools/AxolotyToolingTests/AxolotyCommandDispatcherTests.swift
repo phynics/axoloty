@@ -2,6 +2,7 @@
 
 @testable import AxolotyTooling
 import Foundation
+import Synchronization
 import Testing
 
 private let projectEnvironment = ["AXOLOTY_DEVCONTAINER": "1"]
@@ -262,6 +263,25 @@ func canonicalExecutorSerializesIndependentNodes() {
 
     #expect(result.exitCode == 0)
     #expect(runner.maxConcurrent == 1)
+}
+
+@Test
+func canonicalCIExecutorRecordsBoundedConcurrency() throws {
+    let runner = RecordingSequenceRunner()
+    let environment = projectEnvironment.merging(["CI": "true"]) { _, value in value }
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: runner,
+        fileSystem: StubFileSystem(paths: []),
+        environment: environment
+    )
+
+    let result = dispatcher.run(arguments: ["test", "offline"])
+    let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
+
+    #expect(result.exitCode == 0)
+    #expect(manifest.execution?.workerCount == 2)
+    #expect((manifest.execution?.peakConcurrency ?? 0) >= 1)
+    #expect((manifest.execution?.peakConcurrency ?? 0) <= 2)
 }
 
 @Test
@@ -729,16 +749,30 @@ func releaseSnapshotsGenerateThenVerifyConfiguredBundle() throws {
     #expect(runner.commands.last?.environment["AXOLOTY_CONSUMER_VERSION"] == "9.9.9")
 }
 
-private final class RecordingSequenceRunner: AxolotyCheckCommandRunning, @unchecked Sendable {
-    var commands: [AxolotyCommandPlan] = []
-    private(set) var maxConcurrent = 0
-    private var currentConcurrent = 0
+private final class RecordingSequenceRunner: AxolotyCheckCommandRunning {
+    private struct State: Sendable {
+        var commands: [AxolotyCommandPlan] = []
+        var maxConcurrent = 0
+        var currentConcurrent = 0
+    }
+
+    private let state = Mutex(State())
+
+    var commands: [AxolotyCommandPlan] {
+        state.withLock { $0.commands }
+    }
+
+    var maxConcurrent: Int {
+        state.withLock { $0.maxConcurrent }
+    }
 
     func run(_ command: AxolotyCommandPlan) -> AxolotyCheckCommandResult {
-        currentConcurrent += 1
-        maxConcurrent = max(maxConcurrent, currentConcurrent)
-        commands.append(command)
-        currentConcurrent -= 1
+        state.withLock { value in
+            value.currentConcurrent += 1
+            value.maxConcurrent = max(value.maxConcurrent, value.currentConcurrent)
+            value.commands.append(command)
+            value.currentConcurrent -= 1
+        }
         return AxolotyCheckCommandResult(exitCode: 0)
     }
 }

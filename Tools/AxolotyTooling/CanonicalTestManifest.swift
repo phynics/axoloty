@@ -132,15 +132,12 @@ public struct AxolotyCanonicalTestNode: Codable, Equatable, Sendable {
     public let broker: AxolotyTestBrokerPolicy
     /// The hardware access policy.
     public let hardware: AxolotyTestHardwarePolicy
-    /// Named resources owned by the node. Resource ownership is enforced by
-    /// the serial canonical graph executor, rather than by a parallel
-    /// scheduler.
+    /// Named resources owned by the node. Nodes sharing a resource do not
+    /// overlap in the canonical graph executor.
     public let resources: [String]
-    /// The process/resource isolation mode. Graph nodes never overlap; this
-    /// value describes the command's permitted internal parallelism and
-    /// process boundary.
+    /// The process/resource isolation mode enforced by the graph executor.
     public let isolation: AxolotyTestIsolation
-    /// The explicit scheduling lane, when one is required. Lanes are
+    /// The explicit scheduling lane, when one is required. Equal lanes are
     /// serialized by the canonical graph executor.
     public let lane: String?
     /// Artifact names emitted or retained by the node.
@@ -207,7 +204,9 @@ public struct AxolotyCanonicalTestNode: Codable, Equatable, Sendable {
                 filter: filterOverride ?? filter,
                 timeoutSeconds: timeoutSeconds
             ),
-            resources: resources
+            resources: resources,
+            isolation: isolation,
+            lane: lane
         )
     }
 }
@@ -238,11 +237,10 @@ public struct AxolotyCanonicalTestTier: Codable, Equatable, Sendable {
     public let broker: AxolotyTestBrokerPolicy
     /// The hardware access policy.
     public let hardware: AxolotyTestHardwarePolicy
-    /// Named resources owned by the tier. The serial canonical graph executor
+    /// Named resources owned by the tier. The canonical graph executor
     /// prevents overlapping graph nodes from sharing these resources.
     public let resources: [String]
-    /// The process/resource isolation mode at the graph boundary. Nodes are
-    /// serialized; this value describes their internal process/test policy.
+    /// The process/resource isolation mode at the graph boundary.
     public let isolation: AxolotyTestIsolation
     /// Artifact names retained for the tier.
     public let artifacts: [String]
@@ -322,11 +320,9 @@ public struct AxolotyCanonicalTestInterface: Codable, Equatable, Sendable {
     public let broker: AxolotyTestBrokerPolicy
     /// The hardware policy.
     public let hardware: AxolotyTestHardwarePolicy
-    /// Resources owned by the invocation. A canonical graph invocation is
-    /// serialized with other graph nodes.
+    /// Resources owned by the invocation. Equal resources do not overlap.
     public let resources: [String]
-    /// The required process isolation mode. The graph executor runs one node
-    /// at a time, while the command may control its own test parallelism.
+    /// The required process isolation mode at the graph boundary.
     public let isolation: AxolotyTestIsolation
     /// Artifact names retained by the invocation.
     public let artifacts: [String]
@@ -496,11 +492,10 @@ public enum AxolotyCanonicalTestManifestError: Error, Equatable, Sendable, Local
 
 /// The versioned, checked-in source of all canonical test execution plans.
 ///
-/// Resolved nodes are consumed by ``AxolotyCheckExecutor`` in dependency order
-/// and one node at a time. The enclosing plan deadline is carried into the
-/// resolved plan and enforced by the executor. Consequently, manifest lanes,
-/// resources, and process-isolation declarations describe and enforce
-/// non-overlap at the graph boundary without requiring a parallel scheduler.
+/// Resolved nodes are consumed by ``AxolotyCheckExecutor`` in dependency order.
+/// The enclosing plan deadline is carried into the resolved plan and enforced
+/// by the executor. Manifest lanes, resources, and process-isolation
+/// declarations determine which independent nodes may overlap.
 public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
     /// The current manifest schema version.
     public static let currentSchemaVersion = 2

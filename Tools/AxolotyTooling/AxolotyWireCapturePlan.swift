@@ -43,7 +43,9 @@ extension AxolotyCheckPlan {
                             executionContext: node.command.executionContext,
                             timeoutSeconds: node.command.timeoutSeconds
                         ),
-                        resources: node.resources
+                        resources: node.resources,
+                        isolation: node.isolation,
+                        lane: node.lane
                     )
                 )
             }

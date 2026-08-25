@@ -642,11 +642,23 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
                     throw ArtifactStoreError.unsafeRoot("artifact path component is not a directory")
                 }
             } else {
-                try FileManager.default.createDirectory(
-                    at: current,
-                    withIntermediateDirectories: false,
-                    attributes: [.posixPermissions: 0o700]
-                )
+                do {
+                    try FileManager.default.createDirectory(
+                        at: current,
+                        withIntermediateDirectories: false,
+                        attributes: [.posixPermissions: 0o700]
+                    )
+                } catch CocoaError.fileWriteFileExists {
+                    guard (try? FileManager.default.destinationOfSymbolicLink(atPath: current.path)) == nil else {
+                        throw ArtifactStoreError.unsafeRoot("artifact path contains a symbolic link")
+                    }
+                    var isDirectory = ObjCBool(false)
+                    guard FileManager.default.fileExists(atPath: current.path, isDirectory: &isDirectory),
+                          isDirectory.boolValue
+                    else {
+                        throw ArtifactStoreError.unsafeRoot("artifact path component is not a directory")
+                    }
+                }
             }
         }
     }

@@ -1,7 +1,9 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 @testable import AxolotyTooling
+import Dispatch
 import Foundation
+import Synchronization
 import Testing
 
 #if canImport(Glibc)
@@ -22,6 +24,49 @@ private struct StubCommandRunner: AxolotyCheckCommandRunning {
             exitCode: failedCommands.contains(command.executable) ? 1 : 0,
             standardOutput: command.executable
         )
+    }
+}
+
+private final class ConcurrencyProbeRunner: AxolotyCheckCommandRunning {
+    struct State: Sendable {
+        var active = 0
+        var peakConcurrency = 0
+        var events: [String] = []
+        var barrierReleased = false
+    }
+
+    let state = Mutex(State())
+    let delay: TimeInterval
+    let barrierCount: Int?
+    let barrier = DispatchSemaphore(value: 0)
+
+    init(delay: TimeInterval = 0.05, barrierCount: Int? = nil) {
+        self.delay = delay
+        self.barrierCount = barrierCount
+    }
+
+    func run(_ command: AxolotyCommandPlan) -> AxolotyCheckCommandResult {
+        let barrierAction = state.withLock { value in
+            value.active += 1
+            value.peakConcurrency = max(value.peakConcurrency, value.active)
+            value.events.append("start:\(command.executable)")
+            let shouldWait = barrierCount != nil && !value.barrierReleased
+            let shouldRelease = barrierCount.map { value.active == $0 } ?? false
+            if shouldRelease { value.barrierReleased = true }
+            return (shouldRelease, shouldWait)
+        }
+        if barrierAction.0, let barrierCount {
+            for _ in 0..<barrierCount { barrier.signal() }
+        }
+        if barrierAction.1 {
+            _ = barrier.wait(timeout: .now() + 2)
+        }
+        Thread.sleep(forTimeInterval: delay)
+        state.withLock { value in
+            value.events.append("finish:\(command.executable)")
+            value.active -= 1
+        }
+        return AxolotyCheckCommandResult(exitCode: 0)
     }
 }
 
@@ -344,6 +389,137 @@ func executorRunsIndependentNodesAfterFailure() throws {
     #expect(results.map(\.name) == ["failed", "blocked", "independent"])
     #expect(results.map(\.status) == [.failed, .skipped, .passed])
     #expect(results[1].command == nil)
+}
+
+@Test
+func executorOverlapsOnlyCompatibleDependencyReadyNodes() throws {
+    let runner = ConcurrencyProbeRunner(barrierCount: 2)
+    let plan = try AxolotyCheckPlanner().plan([
+        node("dependent", dependencies: ["first"]),
+        node("independent"),
+        node("first"),
+    ])
+
+    let execution = AxolotyCheckExecutor(
+        commandRunner: runner,
+        maxConcurrentNodes: 2
+    ).executeWithSummary(plan)
+    let state = runner.state.withLock { $0 }
+
+    #expect(execution.results.map(\.name) == ["first", "dependent", "independent"])
+    #expect(execution.summary == AxolotyCheckExecutionSummary(workerCount: 2, peakConcurrency: 2))
+    #expect(state.peakConcurrency == 2)
+    let firstFinished = try #require(state.events.firstIndex(of: "finish:first"))
+    let dependentStarted = try #require(state.events.firstIndex(of: "start:dependent"))
+    #expect(firstFinished < dependentStarted)
+}
+
+@Test
+func executorSerializesSharedResourcesLanesAndExclusiveIsolation() throws {
+    let plans = [
+        [
+            AxolotyCheckNode(name: "a", command: .init(executable: "a"), resources: ["shared"]),
+            AxolotyCheckNode(name: "b", command: .init(executable: "b"), resources: ["shared"]),
+        ],
+        [
+            AxolotyCheckNode(name: "a", command: .init(executable: "a"), lane: "swift"),
+            AxolotyCheckNode(name: "b", command: .init(executable: "b"), lane: "swift"),
+        ],
+        [
+            AxolotyCheckNode(name: "a", command: .init(executable: "a"), isolation: .exclusive),
+            AxolotyCheckNode(name: "b", command: .init(executable: "b")),
+        ],
+    ]
+
+    for nodes in plans {
+        let runner = ConcurrencyProbeRunner()
+        let execution = AxolotyCheckExecutor(
+            commandRunner: runner,
+            maxConcurrentNodes: 2
+        ).executeWithSummary(try AxolotyCheckPlanner().plan(nodes))
+
+        #expect(execution.summary.peakConcurrency == 1)
+        #expect(runner.state.withLock { $0.peakConcurrency } == 1)
+    }
+}
+
+@Test
+func executorOverlapsDifferentExclusiveLanes() throws {
+    let runner = ConcurrencyProbeRunner(barrierCount: 2)
+    let plan = try AxolotyCheckPlanner().plan([
+        AxolotyCheckNode(
+            name: "embedded",
+            command: .init(executable: "embedded"),
+            isolation: .exclusive,
+            lane: "embedded"
+        ),
+        AxolotyCheckNode(
+            name: "host",
+            command: .init(executable: "host"),
+            isolation: .exclusive,
+            lane: "swiftpm"
+        ),
+    ])
+
+    let execution = AxolotyCheckExecutor(
+        commandRunner: runner,
+        maxConcurrentNodes: 2
+    ).executeWithSummary(plan)
+
+    #expect(execution.summary.peakConcurrency == 2)
+    #expect(runner.state.withLock { $0.peakConcurrency } == 2)
+}
+
+@Test
+func concurrentCommandsDoNotKeepSiblingOutputPipesOpen() throws {
+    let artifactRoot = FileManager.default.temporaryDirectory
+        .appending(path: "axoloty-concurrent-command-\(UUID().uuidString)", directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: artifactRoot) }
+    let validator = AxolotyExecutionContextValidator(
+        environment: ["AXOLOTY_DEVCONTAINER": "1"],
+        platform: .linux
+    )
+    let runner = FoundationCommandRunner(
+        contextValidator: validator,
+        environment: ["PATH": "/usr/bin:/bin", "AXOLOTY_DEVCONTAINER": "1"],
+        configuration: AxolotyCommandRunnerConfiguration(
+            commandTimeout: 2,
+            terminationGracePeriod: 0.1,
+            heartbeatInterval: 10,
+            outputMode: .json,
+            artifactRoot: artifactRoot,
+            streamOutput: { _, _ in }
+        )
+    )
+    let plan = try AxolotyCheckPlanner().plan([
+        AxolotyCheckNode(
+            name: "short",
+            command: AxolotyCommandPlan(
+                executable: "sh",
+                arguments: ["-c", "sleep 0.1; printf short"],
+                timeoutSeconds: 0.5
+            )
+        ),
+        AxolotyCheckNode(
+            name: "long",
+            command: AxolotyCommandPlan(
+                executable: "sh",
+                arguments: ["-c", "sleep 1; printf long"],
+                timeoutSeconds: 2
+            )
+        ),
+    ])
+
+    let execution = AxolotyCheckExecutor(
+        commandRunner: runner,
+        contextValidator: validator,
+        maxConcurrentNodes: 2
+    ).executeWithSummary(plan)
+
+    #expect(execution.results.map(\.status) == [.passed, .passed])
+    #expect(execution.results.map { $0.command?.standardOutput } == ["short", "long"])
+    #expect(execution.results.map { $0.command?.standardError } == ["", ""])
+    #expect(execution.summary.peakConcurrency == 2)
 }
 
 @Test

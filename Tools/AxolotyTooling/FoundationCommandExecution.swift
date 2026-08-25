@@ -400,6 +400,10 @@ final class FoundationCommandExecution: @unchecked Sendable {
         _ = axoloty_enable_child_subreaper()
         let stdout = Pipe()
         let stderr = Pipe()
+        try Self.markCloseOnExec(stdout.fileHandleForReading)
+        try Self.markCloseOnExec(stdout.fileHandleForWriting)
+        try Self.markCloseOnExec(stderr.fileHandleForReading)
+        try Self.markCloseOnExec(stderr.fileHandleForWriting)
         let mergedEnvironment = environment.merging(command.environment) { _, value in value }
         let executable = resolveExecutable(command.executable, environment: mergedEnvironment)
         let arguments = [command.executable] + command.arguments
@@ -434,6 +438,14 @@ final class FoundationCommandExecution: @unchecked Sendable {
             stderr: stderr,
             processGroupID: pid
         )
+    }
+
+    private static func markCloseOnExec(_ handle: FileHandle) throws {
+        let descriptor = handle.fileDescriptor
+        let flags = fcntl(descriptor, F_GETFD)
+        guard flags >= 0, fcntl(descriptor, F_SETFD, flags | FD_CLOEXEC) == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
     }
 
     private func startReaders(
