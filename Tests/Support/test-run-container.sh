@@ -15,6 +15,11 @@ source "$ROOT_DIR/Tests/Support/expected-failure.sh"
 TEMP_DIR=$(mktemp -d)
 socket_server=""
 export AXOLOTY_ESP_IDF_CCACHE_DIR="$TEMP_DIR/esp-idf-ccache"
+# Keep the fake container scenarios independent from a caller-provided SwiftPM
+# cache. Aggregate verification deliberately supplies an external cache, while
+# these assertions need one private writable path whose mount can be observed.
+SPM_CACHE_DIR="$TEMP_DIR/swiftpm-cache"
+export SPM_CACHE_DIR
 
 cleanup() {
     if [ -n "$socket_server" ]; then
@@ -942,7 +947,7 @@ first_run_args=$(awk '/^---$/ { if (in_run) exit; first_seen = 0; in_run = 0; ne
 [[ $(printf '%s\n' "$first_run_args" | grep -Fxc -- "$ROOT_DIR:/workspace") -eq 1 ]]
 [[ $(printf '%s\n' "$first_run_args" | grep -Fxc -- "$common_git_dir:$common_git_dir") -eq 1 ]]
 [[ $(printf '%s\n' "$first_run_args" | grep -Fxc -- "$build_dir:/workspace/.build") -eq 1 ]]
-[[ $(printf '%s\n' "$first_run_args" | grep -Fxc -- "$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux:/workspace/.swiftpm-cache") -eq 1 ]]
+[[ $(printf '%s\n' "$first_run_args" | grep -Fxc -- "$SPM_CACHE_DIR:/workspace/.swiftpm-cache") -eq 1 ]]
 [[ $(printf '%s\n' "$first_run_args" | grep -Fxc -- "$AXOLOTY_ESP_IDF_CCACHE_DIR:/workspace/.ccache") -eq 1 ]]
 [[ $(printf '%s\n' "$first_run_args" | grep -Fxc -- "AXOLOTY_ESP_IDF_CCACHE_DIR=/workspace/.ccache") -eq 1 ]]
 [[ $(printf '%s\n' "$first_run_args" | grep -Fxc -- "TOOLING_BUILD_DIR=/workspace/.build/tooling") -eq 1 ]]
@@ -969,7 +974,7 @@ forced_run_args=$(awk '/^---$/ { if (in_run) exit; first_seen = 0; in_run = 0; n
 [[ $(printf '%s\n' "$forced_run_args" | grep -Fxc -- "$ROOT_DIR:/workspace:Z") -eq 1 ]]
 [[ $(printf '%s\n' "$forced_run_args" | grep -Fxc -- "$common_git_dir:$common_git_dir:Z") -eq 1 ]]
 [[ $(printf '%s\n' "$forced_run_args" | grep -Fxc -- "$build_dir:/workspace/.build:Z") -eq 1 ]]
-[[ $(printf '%s\n' "$forced_run_args" | grep -Fxc -- "$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux:/workspace/.swiftpm-cache:Z") -eq 1 ]]
+[[ $(printf '%s\n' "$forced_run_args" | grep -Fxc -- "$SPM_CACHE_DIR:/workspace/.swiftpm-cache:Z") -eq 1 ]]
 [[ $(printf '%s\n' "$forced_run_args" | grep -Fxc -- "$AXOLOTY_ESP_IDF_CCACHE_DIR:/workspace/.ccache:z") -eq 1 ]]
 [[ $(printf '%s\n' "$forced_run_args" | grep -Fxc -- "$lease_root:$lease_root:z") -eq 1 ]]
 
@@ -1207,13 +1212,13 @@ grep -q -- "AXOLOTY_HOST_RUNTIME_BRIDGE=1" "$capture"
 grep -q -- "DOCKER_HOST=unix://$host_socket" "$capture"
 grep -q -- "BUILD_DIR=$build_dir" "$capture"
 grep -q -- "TOOLING_BUILD_DIR=$build_dir/tooling" "$capture"
-grep -q -- "SPM_CACHE_DIR=$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux" "$capture"
+grep -q -- "SPM_CACHE_DIR=$SPM_CACHE_DIR" "$capture"
 grep -q -- "AXOLOTY_ESP_IDF_CCACHE_DIR=$AXOLOTY_ESP_IDF_CCACHE_DIR" "$capture"
 grep -q -- "REPOSITORY_NAME=$expected_repository_name" "$capture"
 grep -q -- "TMPDIR=$ROOT_DIR/.testing/tmp" "$capture"
 grep -Eq -- 'WIRE_RUN_ID=[0-9]+-[0-9]+' "$capture"
 grep -q -- "$build_dir:$build_dir" "$capture"
-grep -q -- "$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux:$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux" "$capture"
+grep -q -- "$SPM_CACHE_DIR:$SPM_CACHE_DIR" "$capture"
 grep -q -- "$AXOLOTY_ESP_IDF_CCACHE_DIR:$AXOLOTY_ESP_IDF_CCACHE_DIR" "$capture"
 grep -q -- '--security-opt label=disable' "$capture"
 [ -S "$host_socket" ]
