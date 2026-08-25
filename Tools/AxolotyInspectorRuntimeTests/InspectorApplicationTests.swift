@@ -83,7 +83,9 @@ func interruptionDuringInitialConnectionReturnsPromptlyAndStopsSession() async {
             return true
         }
         group.addTask {
-            try? await Task.sleep(for: .seconds(1))
+            // The main actor can remain busy while the surrounding test target
+            // starts hundreds of tests concurrently on a loaded CI runner.
+            try? await Task.sleep(for: .seconds(5))
             return false
         }
         let result = await group.next() ?? false

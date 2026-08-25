@@ -422,15 +422,24 @@ FAKE_RUNTIME_SLEEP_SECONDS=0.1 \
 run_fuzz_pid=$!
 
 found=0
-for _ in $(seq 1 50); do
+for _ in $(seq 1 100); do
     for f in "$TEMP_DIR"/output-interrupt/fuzz-*/results/worker-*.tsv; do
-        if [[ -f "$f" ]]; then
+        if [[ -f "$f" ]] && grep -q '^case-' "$f"; then
             found=1
             break 2
         fi
     done
     sleep 0.1
 done
+
+if (( ! found )); then
+    kill -TERM "$run_fuzz_pid" 2>/dev/null || true
+    set +e
+    wait_for_process_bounded "$run_fuzz_pid" "interrupt readiness self-test" 5 2
+    set -e
+    echo 'fuzz campaign did not record a case before the interruption deadline' >&2
+    exit 1
+fi
 
 kill -TERM "$run_fuzz_pid" || true
 set +e
