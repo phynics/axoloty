@@ -13,6 +13,14 @@ const script = path.join(path.dirname(fileURLToPath(import.meta.url)), "classify
 const runRecorder = path.join(path.dirname(fileURLToPath(import.meta.url)), "WireCompatibility/Live/record-ci-run.mjs");
 const wireWorkflow = fs.readFileSync(".github/workflows/wire-compatibility.yml", "utf8");
 
+function workflowStep(name) {
+  const marker = `      - name: ${name}`;
+  const start = wireWorkflow.indexOf(marker);
+  assert.notEqual(start, -1, `missing workflow step: ${name}`);
+  const end = wireWorkflow.indexOf("\n      - name:", start + marker.length);
+  return wireWorkflow.slice(start, end === -1 ? undefined : end);
+}
+
 test("protocol-affecting globs cover wire codec and core types", () => {
   const cases = [
     ["Source/Communication/Events/AdvertiseEvent.swift", true],
@@ -148,4 +156,23 @@ test("live wire workflow persists early status, diagnoses owned runtime, and upl
   assert.doesNotMatch(wireWorkflow, /if-no-files-found: ignore/);
   assert.match(wireWorkflow, /--capture-state "\$capture_state"/);
   assert.match(wireWorkflow, /captureEvidence.*not-claimed/);
+});
+
+test("live wire workflow classifies before expensive setup", () => {
+  const classification = wireWorkflow.indexOf("      - name: Classify the change set");
+  const liveCondition = /if: steps\.classify\.outputs\.protocol == '1' && steps\.classify\.outputs\.exempt == '0'/;
+  const expensiveSteps = [
+    "Compute cache key",
+    "Setup container image",
+    "Restore SwiftPM dependency cache",
+    "Setup Node.js",
+    "Build wire CLI",
+  ];
+
+  assert.notEqual(classification, -1);
+  for (const name of expensiveSteps) {
+    const step = workflowStep(name);
+    assert.ok(wireWorkflow.indexOf(`      - name: ${name}`) > classification, `${name} must follow classification`);
+    assert.match(step, liveCondition, `${name} must run only for an unexempted live gate`);
+  }
 });
