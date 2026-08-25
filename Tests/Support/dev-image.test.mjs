@@ -414,6 +414,23 @@ test("CI reuses stable, bounded Swift build cache namespaces", () => {
     ".build/ci/x86_64-unknown-linux-gnu/debug/index/store",
     ".build/ci/x86_64-unknown-linux-gnu/debug/Modules",
     ".build/ci/x86_64-unknown-linux-gnu/debug/ModuleCache",
+    ".build/ci/tooling/build.db",
+    ".build/ci/tooling/debug.yaml",
+    ".build/ci/tooling/workspace-state.json",
+    ".build/ci/tooling/x86_64-unknown-linux-gnu/debug/*.build",
+    ".build/ci/tooling/x86_64-unknown-linux-gnu/debug/description.json",
+    ".build/ci/tooling/x86_64-unknown-linux-gnu/debug/index/store",
+    ".build/ci/tooling/x86_64-unknown-linux-gnu/debug/Modules",
+    ".build/ci/packages/*/build.db",
+    ".build/ci/packages/*/debug.yaml",
+    ".build/ci/packages/*/plugin-tools.yaml",
+    ".build/ci/packages/*/workspace-state.json",
+    ".build/ci/packages/*/plugins",
+    ".build/ci/packages/*/x86_64-unknown-linux-gnu/debug/*.build",
+    ".build/ci/packages/*/x86_64-unknown-linux-gnu/debug/description.json",
+    ".build/ci/packages/*/x86_64-unknown-linux-gnu/debug/index/store",
+    ".build/ci/packages/*/x86_64-unknown-linux-gnu/debug/Modules",
+    ".build/ci/packages/*/x86_64-unknown-linux-gnu/debug/ModuleCache",
   ];
   assert.deepEqual(workflowPathList("Restore Swift compiler cache"), compilerCachePaths);
   assert.deepEqual(workflowPathList("Save Swift compiler cache"), compilerCachePaths);
