@@ -174,7 +174,7 @@ final class FoundationCommandExecution: @unchecked Sendable {
             return result
         }
 
-        process.waitUntilExit()
+        _ = process.waitUntilExit(timeoutSeconds: readerShutdownGrace)
         return completeProcess(CommandExecutionState(
             process: process,
             processGroupID: processGroupID,
@@ -313,7 +313,7 @@ final class FoundationCommandExecution: @unchecked Sendable {
         if needsKill {
             sendSignal(SIGKILL, to: process, processGroupID: processGroupID)
         }
-        process.waitUntilExit()
+        _ = process.waitUntilExit(timeoutSeconds: readerShutdownGrace)
         if !readersFinished {
             // Once the process group is dead, let pipe readers reach EOF so
             // TERM-trap output already in the kernel pipe is retained. Only
@@ -665,17 +665,27 @@ private final class FoundationProcessHandle: @unchecked Sendable {
         return result == 0
     }
 
-    func waitUntilExit() {
+    @discardableResult
+    func waitUntilExit(timeoutSeconds: TimeInterval) -> Bool {
         lock.lock()
-        defer { lock.unlock() }
-        guard status == nil else { return }
-        var childStatus: Int32 = 0
-        _ = waitpid(processIdentifier, &childStatus, 0)
-        status = childStatus
+        if status != nil {
+            lock.unlock()
+            return true
+        }
+        lock.unlock()
+
+        let deadline = DispatchTime.now().uptimeNanoseconds
+            + UInt64(max(0, timeoutSeconds) * 1_000_000_000)
+        while DispatchTime.now().uptimeNanoseconds < deadline {
+            if !isRunning {
+                return true
+            }
+            usleep(10_000)
+        }
+        return !isRunning
     }
 
     var terminationStatus: Int32 {
-        waitUntilExit()
         lock.lock()
         defer { lock.unlock() }
         guard let status else { return 70 }

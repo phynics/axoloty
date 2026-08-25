@@ -59,7 +59,19 @@ public struct AxolotyMCPServiceRunner: Sendable {
             : nil
         signalHandler?.install()
         defer { signalHandler?.uninstall() }
-        defer { processSupervisor.terminateAndWait() }
+        defer {
+            let report = processSupervisor.terminateAndWait()
+            for failure in report.failures {
+                diagnostics.error(
+                    "managed MCP process cleanup failed",
+                    metadata: [
+                        "pid": failure.processIdentifier.map(String.init) ?? "unknown",
+                        "process": failure.processDescription,
+                        "phase": failure.phase,
+                    ]
+                )
+            }
+        }
 
         if isInterrupted(signalHandler) {
             return 130
@@ -123,7 +135,10 @@ public struct AxolotyMCPServiceRunner: Sendable {
             }
 
             if !processRunner.isRunning {
-                let exit = processRunner.waitForExit()
+                guard let exit = processRunner.waitForExit(timeoutSeconds: 1) else {
+                    diagnostics.error("axoloty-mcp exit state was not reaped", metadata: ["process": processRunner.processDescription])
+                    return 70
+                }
                 if exit.exitCode != 0 {
                     diagnostics.error(
                         "axoloty-mcp exited with code \(exit.exitCode)",

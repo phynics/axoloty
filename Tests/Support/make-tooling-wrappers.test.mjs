@@ -2,6 +2,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { parseMakeTargets } from "./validate-test-tiers.mjs";
 
@@ -46,6 +48,10 @@ test("make help advertises only declared, documented targets", () => {
 
 test("principal Make workflows use the canonical tooling entry points", () => {
   const makefile = fs.readFileSync("Makefile", "utf8");
+  const advertisedTargets = [...makefile.matchAll(/'make ([A-Za-z0-9-]+)/g)].map((match) => match[1]);
+  for (const target of advertisedTargets) {
+    assert.match(makefile, new RegExp(`^${target}:[^\\n]*$`, "m"), `${target} is advertised but has no Make rule`);
+  }
   const tierTargets = [
     "build",
     "test-unit",
@@ -94,6 +100,51 @@ test("principal Make workflows use the canonical tooling entry points", () => {
     "embedded-mqtt-test",
   ]) {
     assert.doesNotMatch(makefile, new RegExp(`^${target}:`, "m"), `${target} should not remain a Make target`);
+  }
+
+  for (const target of [
+    "release-fixture-bundle",
+    "test-axoloty-wire-independent-resolution",
+    "test-axoloty-wire-distribution",
+    "check-static-io-macro-embedded",
+    "check-embedded-swift",
+    "embedded-device-info",
+    "embedded-device-smoke",
+    "embedded-reproducible-build",
+    "embedded-swift-reproducible-build",
+    "embedded-network-test",
+    "embedded-agent-test",
+    "embedded-coatyjs-test",
+    "embedded-host-test",
+    "embedded-last-will-test",
+    "embedded-broker-restart-test",
+  ]) {
+    assert.match(makefile, new RegExp(`^${target}:.*\\bimage\\b`, "m"), `${target} must establish the dev image`);
+  }
+});
+
+test("decoder-context diagnostic distinguishes matching, clean, and invalid input", () => {
+  const checker = "Tests/Support/check-decoder-context-diagnostic.sh";
+  const missing = spawnSync("sh", [checker, path.join(os.tmpdir(), `axoloty-missing-${process.pid}`)], { encoding: "utf8" });
+  assert.equal(missing.status, 2, missing.stderr);
+
+  const matchingPath = path.join(os.tmpdir(), `axoloty-matching-${process.pid}.log`);
+  const cleanPath = path.join(os.tmpdir(), `axoloty-clean-${process.pid}.log`);
+  const unreadablePath = path.join(os.tmpdir(), `axoloty-unreadable-${process.pid}`);
+  fs.writeFileSync(matchingPath, "Source/Common/Decoder+Context.swift:42: warning\n  type 'Any' does not conform to the 'Sendable' protocol\n");
+  fs.writeFileSync(cleanPath, "build completed without diagnostics\\n");
+  fs.mkdirSync(unreadablePath);
+  try {
+    const matching = spawnSync("sh", [checker, matchingPath], { encoding: "utf8" });
+    assert.equal(matching.status, 1, matching.stderr);
+    const clean = spawnSync("sh", [checker, cleanPath], { encoding: "utf8" });
+    assert.equal(clean.status, 0, clean.stderr);
+    const unreadable = spawnSync("sh", [checker, unreadablePath], { encoding: "utf8" });
+    assert.equal(unreadable.status, 2, unreadable.stderr);
+  } finally {
+    fs.rmSync(matchingPath, { force: true });
+    fs.rmSync(cleanPath, { force: true });
+    fs.rmSync(unreadablePath, { recursive: true, force: true });
   }
 });
 

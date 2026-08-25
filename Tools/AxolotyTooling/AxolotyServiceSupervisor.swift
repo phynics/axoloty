@@ -39,18 +39,52 @@ public struct ManagedProcessExit: Sendable, Equatable {
     }
 }
 
+/// Describes one process that did not complete the bounded shutdown policy.
+public struct ManagedProcessCleanupFailure: Sendable, Equatable {
+    /// The process identifier, when the runner supplied one.
+    public let processIdentifier: Int32?
+    /// A redacted executable and argument summary.
+    public let processDescription: String
+    /// The final cleanup phase.
+    public let phase: String
+
+    /// Creates a cleanup failure.
+    public init(processIdentifier: Int32?, processDescription: String, phase: String) {
+        self.processIdentifier = processIdentifier
+        self.processDescription = processDescription
+        self.phase = phase
+    }
+}
+
+/// The result of a supervisor shutdown attempt.
+public struct ManagedProcessCleanupReport: Sendable, Equatable {
+    /// Processes that remained unreaped after escalation.
+    public let failures: [ManagedProcessCleanupFailure]
+
+    /// Creates a cleanup report.
+    public init(failures: [ManagedProcessCleanupFailure] = []) {
+        self.failures = failures
+    }
+}
+
 /// Manages a single child process lifecycle.
 public protocol AxolotyManagedProcessRunning: Sendable {
     /// Starts the child process.
     func start(_ specification: ManagedProcessSpecification) throws
     /// Blocks until the child exits and returns its exit state.
-    func waitForExit() -> ManagedProcessExit
+    /// Waits for exit for at most the supplied number of seconds.
+    ///
+    /// - Parameter timeoutSeconds: The maximum blocking duration.
+    /// - Returns: The exit state, or `nil` when the process was not reaped.
+    func waitForExit(timeoutSeconds: TimeInterval) -> ManagedProcessExit?
     /// Sends SIGTERM to the child.
     func terminate()
     /// Sends SIGKILL to the child.
     func forceKill()
     /// Returns the child's PID, or nil if not started.
     var processIdentifier: Int32? { get }
+    /// A redacted description used in cleanup diagnostics.
+    var processDescription: String { get }
     /// Whether the child process is still running.
     var isRunning: Bool { get }
 }
@@ -63,9 +97,12 @@ final class ManagedProcessSupervisor: @unchecked Sendable {
     private var runners: [any AxolotyManagedProcessRunning] = []
     private var stopping = false
 
-    init(shutdownTimeout: TimeInterval = 5.0) {
+    init(shutdownTimeout: TimeInterval = 5.0, reapTimeout: TimeInterval = 2.0) {
         self.shutdownTimeout = shutdownTimeout
+        self.reapTimeout = reapTimeout
     }
+
+    private let reapTimeout: TimeInterval
 
     func register(_ runner: any AxolotyManagedProcessRunning) {
         lock.lock()
@@ -85,7 +122,7 @@ final class ManagedProcessSupervisor: @unchecked Sendable {
         }
     }
 
-    func terminateAndWait() {
+    func terminateAndWait() -> ManagedProcessCleanupReport {
         shutdownLock.lock()
         defer { shutdownLock.unlock() }
 
@@ -106,9 +143,26 @@ final class ManagedProcessSupervisor: @unchecked Sendable {
             runner.forceKill()
         }
 
+        var failures: [ManagedProcessCleanupFailure] = []
+        let reapDeadline = DispatchTime.now().uptimeNanoseconds
+            + UInt64(max(0, reapTimeout) * 1_000_000_000)
         for runner in activeRunners {
-            _ = runner.waitForExit()
+            let now = DispatchTime.now().uptimeNanoseconds
+            let remaining = now >= reapDeadline
+                ? 0
+                : Double(reapDeadline - now) / 1_000_000_000
+            guard runner.waitForExit(timeoutSeconds: remaining) != nil else {
+                failures.append(
+                    ManagedProcessCleanupFailure(
+                        processIdentifier: runner.processIdentifier,
+                        processDescription: runner.processDescription,
+                        phase: "reap-timeout"
+                    )
+                )
+                continue
+            }
         }
+        return ManagedProcessCleanupReport(failures: failures)
     }
 
     private func markStoppingAndSnapshot() -> [any AxolotyManagedProcessRunning] {
@@ -153,18 +207,32 @@ public final class FoundationProcessRunner: AxolotyManagedProcessRunning, @unche
         lock.unlock()
     }
 
-    public func waitForExit() -> ManagedProcessExit {
+    public func waitForExit(timeoutSeconds: TimeInterval) -> ManagedProcessExit? {
         lock.lock()
         let proc = process
         lock.unlock()
         guard let proc = proc else {
             return ManagedProcessExit(exitCode: -1)
         }
-        proc.waitUntilExit()
+        let deadline = DispatchTime.now().uptimeNanoseconds
+            + UInt64(max(0, timeoutSeconds) * 1_000_000_000)
+        while proc.isRunning {
+            if DispatchTime.now().uptimeNanoseconds >= deadline {
+                return nil
+            }
+            usleep(10_000)
+        }
         return ManagedProcessExit(
             exitCode: proc.terminationStatus,
             wasTerminated: proc.terminationReason == .uncaughtSignal
         )
+    }
+
+    public var processDescription: String {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let process else { return "unstarted process" }
+        return process.executableURL?.path ?? "managed process"
     }
 
     public func terminate() {

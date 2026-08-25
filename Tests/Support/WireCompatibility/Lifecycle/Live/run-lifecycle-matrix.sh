@@ -174,21 +174,48 @@ group_alive() {
     [ "$group" -gt 1 ] 2>/dev/null && kill -0 -- "-$group" 2>/dev/null
 }
 
+pid_live() {
+    local pid="$1" state
+    state="$(ps -o stat= -p "$pid" 2>/dev/null | tr -d ' ' || true)"
+    case "$state" in
+        ''|Z*) return 1 ;;
+        *) kill -0 "$pid" 2>/dev/null ;;
+    esac
+}
+
 terminate_leader_bounded() {
     local pid="$1" deadline
     kill -TERM "$pid" 2>/dev/null || true
     deadline=$(( $(monotonic_ms) + TERM_GRACE_SECONDS * 1000 ))
-    while kill -0 "$pid" 2>/dev/null && [ "$(monotonic_ms)" -lt "$deadline" ]; do
+    while pid_live "$pid" && [ "$(monotonic_ms)" -lt "$deadline" ]; do
         sleep 0.2
     done
-    if kill -0 "$pid" 2>/dev/null; then
+    if pid_live "$pid"; then
         kill -KILL "$pid" 2>/dev/null || true
         deadline=$(( $(monotonic_ms) + KILL_GRACE_SECONDS * 1000 ))
-        while kill -0 "$pid" 2>/dev/null && [ "$(monotonic_ms)" -lt "$deadline" ]; do
+        while pid_live "$pid" && [ "$(monotonic_ms)" -lt "$deadline" ]; do
             sleep 0.2
         done
     fi
+    if pid_live "$pid"; then
+        return 1
+    fi
     wait "$pid" >/dev/null 2>&1 || true
+    return 0
+}
+
+reap_process_if_stopped() {
+    local pid="$1" state
+    state="$(ps -o stat= -p "$pid" 2>/dev/null | tr -d ' ' || true)"
+    case "$state" in
+        ''|Z*)
+            wait "$pid" >/dev/null 2>&1 || true
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
 }
 
 valid_owned_group() {
@@ -239,17 +266,30 @@ terminate_group_bounded() {
 wait_for_stream_bounded() {
     local stream_pid="$1" deadline now
     deadline=$(( $(monotonic_ms) + REAP_SECONDS * 1000 ))
-    while kill -0 "$stream_pid" 2>/dev/null; do
+    while pid_live "$stream_pid"; do
         now="$(monotonic_ms)"
         [ "$now" -lt "$deadline" ] || break
         sleep 0.2
     done
-    if kill -0 "$stream_pid" 2>/dev/null; then
+    if pid_live "$stream_pid"; then
         kill -TERM "$stream_pid" 2>/dev/null || true
-        sleep 0.2
-        kill -KILL "$stream_pid" 2>/dev/null || true
+        deadline=$(( $(monotonic_ms) + KILL_GRACE_SECONDS * 1000 ))
+        while pid_live "$stream_pid" && [ "$(monotonic_ms)" -lt "$deadline" ]; do
+            sleep 0.2
+        done
+        if pid_live "$stream_pid"; then
+            kill -KILL "$stream_pid" 2>/dev/null || true
+            deadline=$(( $(monotonic_ms) + REAP_SECONDS * 1000 ))
+            while pid_live "$stream_pid" && [ "$(monotonic_ms)" -lt "$deadline" ]; do
+                sleep 0.2
+            done
+        fi
     fi
-    wait "$stream_pid" >/dev/null 2>&1
+    if pid_live "$stream_pid"; then
+        return 1
+    fi
+    wait "$stream_pid" >/dev/null 2>&1 || true
+    return 0
 }
 
 scenario_command() {
@@ -426,14 +466,17 @@ run_scenario() {
         bytes="$(wc -c <"$verifier_log" 2>/dev/null || printf '0')"
         idle=$(( (now - last_progress) / 1000 ))
         diagnostic "$scenario" "$timeout_phase" "$scenario_pid" "$elapsed" "$idle" "$bytes"
-        terminate_group_bounded "$scenario" "$scenario_pid" timeout "$group" "$elapsed" "$idle" "$bytes" || scenario_status=124
-        scenario_status=124
+        if terminate_group_bounded "$scenario" "$scenario_pid" timeout "$group" "$elapsed" "$idle" "$bytes"; then
+            scenario_status=124
+        else
+            scenario_status=125
+        fi
     fi
 
-    if wait "$scenario_pid" >/dev/null 2>&1; then
+    if reap_process_if_stopped "$scenario_pid"; then
         child_status=0
     else
-        child_status=$?
+        child_status=125
     fi
     if [ "$timed_out" -eq 0 ]; then
         scenario_status="$child_status"
