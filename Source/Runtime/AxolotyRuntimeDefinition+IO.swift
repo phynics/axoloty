@@ -11,19 +11,22 @@ extension RuntimeDefinition.Builder {
     ///   - metadata: The consumed source object metadata.
     ///   - valueType: The portable value type used by the source.
     ///   - publication: The bounded publication policy.
+    ///   - externalRoute: An optional validated exact MQTT route.
     /// - Returns: A sealed-definition source handle.
     /// - Throws: ``AxolotyError`` when metadata or capacity validation fails.
     public mutating func ioSource<Value: IoValue>(
         metadata: consuming Object<IoSourceMetadata>,
         as valueType: Value.Type,
-        publication: IoPublicationPolicy = .immediate
+        publication: IoPublicationPolicy = .immediate,
+        externalRoute: MQTTExternalIoRoute? = nil
     ) throws -> IoSource<Value> {
         do {
             _ = valueType
-            let normalized = try IoSourceEndpointDefinition(
+            let normalized = try normalizeSource(
                 metadata: metadata,
                 representation: Value.representation,
-                publication: publication
+                publication: publication,
+                externalRoute: externalRoute
             )
             return try appendIoSource(normalized, representation: Value.representation, publication: publication)
         } catch {
@@ -37,18 +40,21 @@ extension RuntimeDefinition.Builder {
     ///   - metadata: The consumed source object metadata.
     ///   - representation: The representation accepted by the endpoint.
     ///   - publication: The bounded publication policy.
+    ///   - externalRoute: An optional validated exact MQTT route.
     /// - Returns: A dynamic source handle.
     /// - Throws: ``AxolotyError`` when metadata or capacity validation fails.
     public mutating func dynamicIoSource(
         metadata: consuming Object<IoSourceMetadata>,
         representation: IoValueRepresentation,
-        publication: IoPublicationPolicy = .immediate
+        publication: IoPublicationPolicy = .immediate,
+        externalRoute: MQTTExternalIoRoute? = nil
     ) throws -> IoSource<DynamicIoValue> {
         do {
-            let normalized = try IoSourceEndpointDefinition(
+            let normalized = try normalizeSource(
                 metadata: metadata,
                 representation: representation,
-                publication: publication
+                publication: publication,
+                externalRoute: externalRoute
             )
             return try appendIoSource(normalized, representation: representation, publication: publication)
         } catch {
@@ -166,6 +172,30 @@ extension RuntimeDefinition.Builder {
             generation: 1,
             id: normalized.id,
             representation: representation
+        )
+    }
+
+    private func normalizeSource(
+        metadata: consuming Object<IoSourceMetadata>,
+        representation: IoValueRepresentation,
+        publication: IoPublicationPolicy,
+        externalRoute: MQTTExternalIoRoute?
+    ) throws(ProtocolError) -> IoSourceEndpointDefinition {
+        guard let externalRoute else {
+            return try IoSourceEndpointDefinition(
+                metadata: metadata,
+                representation: representation,
+                publication: publication
+            )
+        }
+        guard !externalRoute.topic.hasPrefix("coaty/3/") else {
+            throw ProtocolError(.externalRouteMismatch)
+        }
+        return try IoSourceEndpointDefinition(
+            metadata: metadata,
+            representation: representation,
+            publication: publication,
+            externalRoute: externalRoute.topicBytes
         )
     }
 

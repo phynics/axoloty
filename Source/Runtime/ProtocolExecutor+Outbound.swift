@@ -33,7 +33,7 @@ extension ProtocolExecutor {
         }
 
         for publication in publications {
-            try await transport.send(publication, namespace: definition.namespace)
+            try await transport.perform(.publish(publication), namespace: definition.namespace)
         }
     }
 

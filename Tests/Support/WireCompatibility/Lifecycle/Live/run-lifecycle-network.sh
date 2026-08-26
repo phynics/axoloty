@@ -16,7 +16,6 @@ runtime() { "$RUNTIME" "$@"; }
 runtime_bounded() { timeout "${WIRE_CONTAINER_WAIT_SECONDS:-120}s" "$RUNTIME" "$@"; }
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)
 LIVE="$ROOT/Tests/Support/WireCompatibility/Live"
-REF="$ROOT/Tests/Support/WireCompatibility/ReferenceAgents/coatyjs"
 TOOL=/tool/dist/index.js
 OUT="${WIRE_OUTPUT_DIR:-$ROOT/.testing/wire}"
 # CI invokes this runner with repository-relative artifact paths. Resolve that
@@ -66,8 +65,6 @@ trap cleanup EXIT INT TERM
 mkdir -p "$OUT"
 rm -f "$CAPTURE" "$CAPTURE.post-restart" "$CAPTURE_READY" "$APPLICATION_LOG" "$RAW_LOG" "$CONNACK_LOG" "$PROXY_READY" "$RECONNECT_READY"
 
-runtime build -t "$DEV_IMAGE" -f "$ROOT/.devcontainer/Dockerfile" "$ROOT"
-runtime build -t "$JS_IMAGE" "$REF"
 runtime network create "$NETWORK" "${RUNTIME_LABELS[@]}" >/dev/null
 start_broker() {
     runtime run -d --name "$BROKER" --network "$NETWORK" "${RUNTIME_LABELS[@]}" \

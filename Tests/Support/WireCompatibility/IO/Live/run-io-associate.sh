@@ -23,7 +23,6 @@ runtime_bounded() { timeout "${WIRE_CONTAINER_WAIT_SECONDS:-120}s" "$RUNTIME" "$
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)
 IO_DIR="$ROOT_DIR/Tests/Support/WireCompatibility/IO"
 LIVE_DIR="$ROOT_DIR/Tests/Support/WireCompatibility/Live"
-REFERENCE_DIR="$ROOT_DIR/Tests/Support/WireCompatibility/ReferenceAgents"
 RUN_ID="${WIRE_RUN_ID:-$$}"
 NETWORK="axoloty-wire-io-assoc-$RUN_ID"
 BROKER="axoloty-wire-io-assoc-broker-$RUN_ID"
@@ -38,6 +37,7 @@ ACK_DIR="$OUTPUT_DIR/peer-acks"
 ACK_FILE="$ACK_DIR/$ACK_BASENAME"
 ACK_TOKEN="${RUN_ID}-io-associate"
 SPM_CACHE_DIR="${SPM_CACHE_DIR:-$ROOT_DIR/.swiftpm-cache}"
+BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/.build}"
 SWIFTPM_MODULECACHE_OVERRIDE=/tmp/axoloty-wire-module-cache
 
 cleanup() {
@@ -46,12 +46,10 @@ cleanup() {
     rm -f "$ACTOR_LOG"
 }
 trap cleanup EXIT INT TERM
-mkdir -p "$OUTPUT_DIR" "$ACK_DIR"
+mkdir -p "$OUTPUT_DIR" "$ACK_DIR" "$BUILD_DIR" "$SPM_CACHE_DIR"
 chmod 0777 "$ACK_DIR"
 rm -f "$OUTPUT_DIR/io-associate.jsonl" "$ACK_FILE"
 
-runtime build -t "$DEV_IMAGE" -f "$ROOT_DIR/.devcontainer/Dockerfile" "$ROOT_DIR"
-runtime build -t "$JS_IMAGE" "$REFERENCE_DIR/coatyjs"
 runtime network create "$NETWORK" >/dev/null
 runtime run -d --name "$BROKER" --network "$NETWORK" \
     -v "$LIVE_DIR/mosquitto.conf:/etc/mosquitto/wire-compat.conf:ro" \
@@ -70,9 +68,8 @@ runtime run -d --name "$PROBE" --network "$NETWORK" \
 sleep 0.5
 
 # CoatyJS actor first: it subscribes to ASC-<context> on start, so it must be
-# ready before Axoloty publishes the Associate. SCENARIO_TIMEOUT_MS is generous
-# because the Axoloty producer's in-container cold build can take ~50s before
-# it publishes (see Task 0 baseline: ~54s to ready).
+# ready before Axoloty publishes the Associate. SCENARIO_TIMEOUT_MS remains
+# generous for broker and application diagnostics on a busy runner.
 runtime run -d --name "$ACTOR" --network "$NETWORK" --entrypoint node \
     -v "$IO_DIR/coatyjs-io-runner.js:/agent/coatyjs-io-runner.js:ro,Z" \
     -v "$ACK_DIR:/peer-acks" \
@@ -91,13 +88,13 @@ grep -q '"state":"ready"' "$ACTOR_LOG" || { cat "$ACTOR_LOG" >&2; exit 1; }
 
 # Axoloty is the producer: it associates source+actor on a generated route and
 # publishes one JSON IoValue. Disabled outside the live gate.
-runtime run --rm --network "$NETWORK" -v "$ROOT_DIR:/workspace" -v "$OUTPUT_DIR:/artifacts" -v "$SPM_CACHE_DIR:/swiftpm-cache" -w /workspace \
+runtime run --rm --network "$NETWORK" -v "$ROOT_DIR:/workspace" -v "$OUTPUT_DIR:/artifacts" -v "$BUILD_DIR:/swift-build" -v "$SPM_CACHE_DIR:/swiftpm-cache" -w /workspace \
     -e WIRE_IO_MODERN_TO_JS_LIVE=1 -e WIRE_BROKER_HOST="$BROKER" \
     -e WIRE_BROKER_PORT=1883 -e WIRE_NAMESPACE=wire-compat-v1 \
     -e WIRE_PEER_ACK_FILE="/artifacts/peer-acks/$ACK_BASENAME" -e WIRE_PEER_ACK_TOKEN="$ACK_TOKEN" \
     -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
     "$DEV_IMAGE" swift test -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
-    --cache-path /swiftpm-cache --disable-automatic-resolution --filter AxolotyIoAssociateTests
+    --skip-build --scratch-path /swift-build --cache-path /swiftpm-cache --disable-automatic-resolution --filter AxolotyIoAssociateTests
 
 sleep 0.5
 runtime stop -t 1 "$PROBE" >/dev/null || true

@@ -584,8 +584,8 @@ func wireCaptureRunsEveryNodeThroughSupportedBridge() throws {
     let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
     #expect(manifest.results.allSatisfy { $0.status == .passed })
     #expect(runner.commands.count == 11)
-    #expect(runner.commands.prefix(3).allSatisfy { $0.executionContext == .project })
-    #expect(runner.commands.dropFirst(3).dropLast().allSatisfy { $0.executionContext == .host })
+    #expect(runner.commands.prefix(2).allSatisfy { $0.executionContext == .project })
+    #expect(runner.commands.dropFirst(2).dropLast().allSatisfy { $0.executionContext == .host })
     #expect(runner.commands.last?.executionContext == .project)
     #expect(clock.now - startedAt < .seconds(5))
 }
@@ -636,7 +636,7 @@ func wireCaptureRejectsHostNodesWithoutBridgeBeforeStartingCommands() throws {
     )
     #expect(try JSONDecoder().decode(AxolotyExecutionContextDiagnostic.self, from: diagnosticData) ==
         AxolotyExecutionContextDiagnostic(
-            executable: "Tests/Support/WireCompatibility/Live/run-coatyjs-advertise.sh",
+            executable: "Tests/Support/WireCompatibility/Live/prepare-live-suite.sh",
             declaredContext: .host,
             detectedContext: .project
         ))

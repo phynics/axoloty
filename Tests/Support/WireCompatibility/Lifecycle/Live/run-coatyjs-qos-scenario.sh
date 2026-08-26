@@ -10,7 +10,6 @@ podman() { command "$RUNTIME" "$@"; }
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)
 LIVE="$ROOT/Tests/Support/WireCompatibility/Live"
 HERE="$ROOT/Tests/Support/WireCompatibility/Lifecycle/Live"
-REF="$ROOT/Tests/Support/WireCompatibility/ReferenceAgents"
 ID="${WIRE_RUN_ID:-$$}"
 NET="coaty-lifecycle-qos-$ID"; BROKER="coaty-lifecycle-qos-broker-$ID"
 PROBE="coaty-lifecycle-qos-probe-$ID"; SUBJECT="coaty-lifecycle-qos-subject-$ID"
@@ -47,8 +46,6 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 mkdir -p "$OUT"; rm -f "$CAPTURE" "$APPLICATION_LOG" "$CAPTURE_READY"
-podman build -t "$DEV" -f "$ROOT/.devcontainer/Dockerfile" "$ROOT"
-podman build -t "$JS" "$REF/coatyjs"
 podman network create "$NET" "${RUNTIME_LABELS[@]}" >/dev/null
 podman run -d --name "$BROKER" --network "$NET" "${RUNTIME_LABELS[@]}" \
     -v "$LIVE/mosquitto.conf:/etc/mosquitto/wire.conf:ro" \

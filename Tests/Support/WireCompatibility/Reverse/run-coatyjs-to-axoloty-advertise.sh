@@ -15,7 +15,6 @@ runtime_bounded() { timeout "${WIRE_CONTAINER_WAIT_SECONDS:-120}s" "$RUNTIME" "$
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
 REVERSE_DIR="$ROOT_DIR/Tests/Support/WireCompatibility/Reverse"
 LIVE_DIR="$ROOT_DIR/Tests/Support/WireCompatibility/Live"
-REFERENCE_DIR="$ROOT_DIR/Tests/Support/WireCompatibility/ReferenceAgents"
 RUN_ID="${WIRE_RUN_ID:-$$}"
 NETWORK="axoloty-wire-js-to-modern-$RUN_ID"
 BROKER="axoloty-wire-js-to-modern-broker-$RUN_ID"
@@ -40,8 +39,6 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 mkdir -p "$BUILD_DIR" "$SPM_CACHE_DIR"
-runtime build -t "$DEV_IMAGE" -f "$ROOT_DIR/.devcontainer/Dockerfile" "$ROOT_DIR"
-runtime build -t "$JS_IMAGE" "$REFERENCE_DIR/coatyjs"
 runtime network create "$NETWORK" >/dev/null
 runtime run -d --name "$BROKER" --network "$NETWORK" \
     -v "$LIVE_DIR/mosquitto.conf:/etc/mosquitto/wire-compat.conf:ro" \
@@ -57,13 +54,13 @@ runtime exec "$BROKER" node -e 'const s=require("node:net").createConnection({ho
 # report a subscription-acquired "ready" line before the CoatyJS producer
 # publishes, then run the CoatyJS producer synchronously to completion.
 runtime run -d --name "$CONSUMER" --network "$NETWORK" \
-    -v "$ROOT_DIR:/workspace" -v "$BUILD_DIR:/workspace/.build" \
-    -v "$SPM_CACHE_DIR:/workspace/.swiftpm-cache" -v "$SIGNAL_DIR:/signals" -w /workspace \
+    -v "$ROOT_DIR:/workspace" -v "$BUILD_DIR:/swift-build" \
+    -v "$SPM_CACHE_DIR:/swiftpm-cache" -v "$SIGNAL_DIR:/signals" -w /workspace \
     -e WIRE_JS_TO_MODERN_LIVE=1 -e WIRE_BROKER_HOST="$BROKER" \
     -e WIRE_BROKER_PORT=1883 -e WIRE_NAMESPACE=wire-compat-v1 -e WIRE_READY_FILE=/signals/ready \
     -e "SWIFTPM_MODULECACHE_OVERRIDE=$SWIFTPM_MODULECACHE_OVERRIDE" \
     "$DEV_IMAGE" swift test -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
-    --cache-path /workspace/.swiftpm-cache --disable-automatic-resolution --filter AxolotyAdvertiseConsumerTests >/dev/null
+    --skip-build --scratch-path /swift-build --cache-path /swiftpm-cache --disable-automatic-resolution --filter AxolotyAdvertiseConsumerTests >/dev/null
 
 for _ in $(seq 1 "$CONSUMER_READY_TIMEOUT_SECONDS"); do
     test -s "$SIGNAL_DIR/ready" && break

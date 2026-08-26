@@ -311,23 +311,6 @@ public struct RuntimeEventValue: Sendable, Equatable {
     }
 }
 
-/// An owned inbound frame copied at the transport boundary.
-public struct RuntimeInboundFrame: Sendable, Equatable {
-    /// The complete MQTT topic.
-    public let topic: String
-    /// The copied event payload.
-    public let payload: [UInt8]
-    /// Monotonic receipt time supplied by the transport binding.
-    public let nowMS: UInt32
-
-    /// Creates an owned inbound frame.
-    public init(topic: String, payload: [UInt8], nowMS: UInt32 = 0) {
-        self.topic = topic
-        self.payload = payload
-        self.nowMS = nowMS
-    }
-}
-
 enum RuntimeIoEndpointRole: Sendable, Equatable {
     case source
     case actor
@@ -644,8 +627,13 @@ public protocol AxolotyRuntimeTransport: AnyObject, Sendable {
     /// from a transport event-loop thread. Implementations must not retain
     /// borrowed protocol data in this callback.
     func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) async
-    /// Publishes an owned normalized protocol publication.
-    func send(_ publication: OwnedProtocolPublication, namespace: String) async throws
+    /// Applies one owned transport effect in protocol action order.
+    ///
+    /// - Parameters:
+    ///   - effect: The publication or exact external-route lifecycle effect.
+    ///   - namespace: The runtime namespace used for profile publications.
+    /// - Throws: A transport error when the effect cannot be applied.
+    func perform(_ effect: RuntimeTransportEffect, namespace: String) async throws
     /// Stops the transport and releases its callbacks.
     func stop() async
 

@@ -87,7 +87,8 @@ struct AxolotyRuntimeIoTests {
                 bytes: sourceJSON.utf8Start,
                 length: sourceJSON.utf8CodeUnitCount
             )),
-            as: Bool.self
+            as: Bool.self,
+            externalRoute: try MQTTExternalIoRoute("plant/line-7/temperature")
         )
         let actorHandle = try builder.ioActor(
             metadata: try Object<IoActorMetadata>(decoding: ByteSlice(
@@ -104,6 +105,10 @@ struct AxolotyRuntimeIoTests {
         #expect(startup.contains { $0.routingKey.capability == .advertise })
         #expect(startup.contains { String(decoding: $0.payload, as: UTF8.self).contains(sourceID) })
         #expect(startup.contains { String(decoding: $0.payload, as: UTF8.self).contains(actorID) })
+        #expect(startup.contains {
+            String(decoding: $0.payload, as: UTF8.self)
+                .contains(#""externalRoute":"plant/line-7/temperature""#)
+        })
 
         await runtime.stop()
         let shutdown = await transport.publications()
@@ -118,8 +123,8 @@ private actor IoWireRecordingTransport: AxolotyRuntimeTransport {
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
     func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) async {}
-    func send(_ publication: OwnedProtocolPublication, namespace: String) async throws {
-        sent.append(publication)
+    func perform(_ effect: RuntimeTransportEffect, namespace: String) async throws {
+        if case .publish(let publication) = effect { sent.append(publication) }
     }
     func stop() async {}
     func installSubscriptions(namespace: String) async throws {}

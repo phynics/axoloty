@@ -343,6 +343,29 @@ struct ProtocolProcessorTests {
         #expect(sink.count == 1)
     }
 
+    @Test("Associate routes are classified from decoded JSON string content")
+    func escapedExternalRouteClassification() throws {
+        let source = "00000000-0000-4000-8000-000000000001"
+        let actor = "00000000-0000-4000-8000-000000000002"
+        let classifier = ExactProtocolRouteClassifier(externalRoute: "external/wire-compat-v1/io-external-1")
+        try withBorrowedFrame(
+            topic: "coaty/3/test/ASC/\(source)",
+            payload: "{\"ioSourceId\":\"\(source)\",\"ioActorId\":\"\(actor)\",\"associatingRoute\":\"external\\/wire-compat-v1\\/io-external-1\"}"
+        ) { frame in
+            var processor = ProtocolProcessor<1>()
+            var sink = InlineProtocolActionSink<1>()
+            let result = processor.processInbound(.profile(frame), nowMS: 1, classifier: classifier, sink: &sink)
+            #expect(result == .accepted)
+            #expect(processor.state.activeAssociations == 1)
+            guard case .associationChanged(let transition) = sink[0] else {
+                Issue.record("escaped external route did not emit an association transition")
+                return
+            }
+            #expect(transition.route?.owned() == Array("external/wire-compat-v1/io-external-1".utf8))
+            #expect(transition.routeClassification == .external)
+        }
+    }
+
     @Test("external association fanout retains external route classification")
     func externalAssociationDeliveryClassification() throws {
         let source = "00000000-0000-4000-8000-000000000001"

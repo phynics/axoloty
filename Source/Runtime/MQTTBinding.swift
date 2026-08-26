@@ -56,10 +56,10 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     private let client: RuntimeMQTTClient
     private let delegate: RuntimeMQTTDelegate
     private let connectionTimeoutMS: UInt32
-    private let routeClassifier = ExactProtocolRouteClassifier(
-        externalRoute: "external/wire-compat-v1/io-external-1"
-    )
     private var started = false
+    private var activeNamespace: String?
+    private var transportEpoch: UInt64 = 0
+    private var externalRoutes: [ExternalRouteRecord] = []
 
     /// Creates a binding backed by the repository's MQTTNIO implementation.
     public init(configuration: MQTTBindingConfiguration) throws {
@@ -76,19 +76,29 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
                 let admitted = lock.withLock {
                     guard !started else { return false }
                     started = true
+                    transportEpoch &+= 1
+                    activeNamespace = nil
+                    externalRoutes.removeAll(keepingCapacity: true)
                     return true
                 }
                 guard admitted else {
                     continuation.resume(throwing: AxolotyError.runtime(code: .notStarted, reason: "MQTT binding is already started"))
                     return
                 }
-                delegate.setReceive(receive)
+                delegate.setReceive { [weak self] topic, payload, nowMS in
+                    self?.admitInbound(topic: topic, payload: payload, nowMS: nowMS, receive: receive)
+                }
                 delegate.setStartContinuation(continuation)
                 delegate.armStartTimeout(milliseconds: connectionTimeoutMS)
                 client.connect()
             }
         } catch {
-            lock.withLock { started = false }
+            lock.withLock {
+                started = false
+                transportEpoch &+= 1
+                activeNamespace = nil
+                externalRoutes.removeAll(keepingCapacity: true)
+            }
             await client.disconnect()
             delegate.clearReceive()
             throw error
@@ -100,29 +110,53 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         delegate.setFailureHandler(handler)
     }
 
-    /// Publishes one normalized publication using its typed target.
-    public func send(_ publication: OwnedProtocolPublication, namespace: String) async throws {
+    /// Applies one transport effect in the order produced by the protocol.
+    ///
+    /// - Parameters:
+    ///   - effect: The publication or exact external-route lifecycle effect.
+    ///   - namespace: The runtime namespace used for profile publications.
+    /// - Throws: A transport error when the effect cannot be applied.
+    public func perform(_ effect: RuntimeTransportEffect, namespace: String) async throws {
         guard lock.withLock({ started }) else {
             throw AxolotyError.runtime(code: .notStarted, reason: "MQTT binding is not started")
         }
-        let topic: String
-        switch publication.target {
-        case .profile(let eventTypeFilter, let eventTypeFilterKind):
-            topic = Self.topic(
-                for: publication.routingKey,
-                namespace: namespace,
-                eventTypeFilter: eventTypeFilter,
-                eventTypeFilterKind: eventTypeFilterKind
-            )
-        case .associationRoute(let route, _):
-            topic = String(decoding: route, as: UTF8.self)
+        switch effect {
+        case .publish(let publication):
+            let topic: String
+            switch publication.target {
+            case .profile(let eventTypeFilter, let eventTypeFilterKind):
+                topic = Self.topic(
+                    for: publication.routingKey,
+                    namespace: namespace,
+                    eventTypeFilter: eventTypeFilter,
+                    eventTypeFilterKind: eventTypeFilterKind
+                )
+            case .associationRoute(let route, let kind):
+                guard kind != .unrelated else {
+                    throw AxolotyError.invalidArgument(argument: "route", reason: "unrelated routes cannot be published")
+                }
+                topic = String(decoding: route, as: UTF8.self)
+            }
+            do {
+                try await client.publish(topic: topic, payload: publication.payload)
+            } catch {
+                throw AxolotyError.network(error: error, reason: "MQTT publication failed")
+            }
+        case .externalRouteActivated(let transition):
+            try await activateExternalRoute(transition.route)
+        case .externalRouteDeactivated(let transition):
+            try await deactivateExternalRoute(transition.route)
         }
-        try await client.publish(topic: topic, payload: publication.payload)
     }
 
     /// Stops the MQTT connection and releases callback admission.
     public func stop() async {
-        lock.withLock { started = false }
+        lock.withLock {
+            started = false
+            transportEpoch &+= 1
+            activeNamespace = nil
+            externalRoutes.removeAll(keepingCapacity: true)
+        }
         delegate.failStart(AxolotyError.runtime(code: .cancelled, reason: "MQTT binding stopped while connecting"))
         await client.disconnect()
         delegate.clearReceive()
@@ -130,6 +164,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
 
     /// Installs bounded wildcard subscriptions for the closed profile.
     public func installSubscriptions(namespace: String) async throws {
+        lock.withLock { activeNamespace = namespace }
         try await client.subscribe(RuntimeTopicBuilder.subscribeAllOneWayTopics(namespace: namespace))
         // Request/reply filters (for example `UPD::com.example.Type` and
         // `CLL:operation`) are encoded in the event-type topic segment. MQTT
@@ -143,13 +178,168 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
 
     /// Removes the same profile subscriptions during shutdown/reconnect.
     public func removeSubscriptions(namespace: String) async throws {
-        try await client.unsubscribe(RuntimeTopicBuilder.subscribeAllOneWayTopics(namespace: namespace))
-        try await client.unsubscribe(RuntimeTopicBuilder.subscribeAllCorrelatedTopics(namespace: namespace))
+        let routes = lock.withLock { () -> [String] in
+            transportEpoch &+= 1
+            activeNamespace = nil
+            let routes = externalRoutes.map(\.topic)
+            externalRoutes.removeAll(keepingCapacity: true)
+            return routes
+        }
+        var firstError: Error?
+        for route in routes {
+            do { try await client.unsubscribe(route) }
+            catch { if firstError == nil { firstError = error } }
+        }
+        do { try await client.unsubscribe(RuntimeTopicBuilder.subscribeAllOneWayTopics(namespace: namespace)) }
+        catch { if firstError == nil { firstError = error } }
+        do { try await client.unsubscribe(RuntimeTopicBuilder.subscribeAllCorrelatedTopics(namespace: namespace)) }
+        catch { if firstError == nil { firstError = error } }
+        if let firstError { throw firstError }
     }
 
     /// Classifies the binding's exact external compatibility route.
     public func classifyRoute(_ route: ByteSlice) -> ProtocolRouteClassification {
-        routeClassifier.classify(route)
+        let namespace = lock.withLock { activeNamespace }
+        return Self.classify(route, activeNamespace: namespace)
+    }
+
+    private func activateExternalRoute(_ route: [UInt8]) async throws {
+        let topic = String(decoding: route, as: UTF8.self)
+        let action = lock.withLock { () -> (epoch: UInt64, shouldSubscribe: Bool)? in
+            guard started else { return nil }
+            if let index = externalRoutes.firstIndex(where: { $0.topic == topic }) {
+                guard externalRoutes[index].state == .subscribed else { return nil }
+                externalRoutes[index].referenceCount += 1
+                return (externalRoutes[index].epoch, false)
+            }
+            guard externalRoutes.count < 64 else { return nil }
+            let epoch = transportEpoch
+            externalRoutes.append(ExternalRouteRecord(
+                topic: topic,
+                referenceCount: 1,
+                state: .subscribing,
+                epoch: epoch
+            ))
+            return (epoch, true)
+        }
+        guard let action else {
+            if lock.withLock({ externalRoutes.count >= 64 }) {
+                throw AxolotyError.runtime(code: .capacityExceeded, reason: "MQTT external route table is full")
+            }
+            return
+        }
+        guard action.shouldSubscribe else { return }
+        do {
+            try await client.subscribe(topic)
+            lock.withLock {
+                guard action.epoch == transportEpoch,
+                      let index = externalRoutes.firstIndex(where: { $0.topic == topic && $0.epoch == action.epoch }) else { return }
+                externalRoutes[index].state = .subscribed
+            }
+        } catch {
+            lock.withLock {
+                externalRoutes.removeAll { $0.topic == topic && $0.epoch == action.epoch }
+            }
+            throw AxolotyError.network(error: error, reason: "MQTT external route subscription failed")
+        }
+    }
+
+    private func deactivateExternalRoute(_ route: [UInt8]) async throws {
+        let topic = String(decoding: route, as: UTF8.self)
+        let action = lock.withLock { () -> (epoch: UInt64, shouldUnsubscribe: Bool)? in
+            guard let index = externalRoutes.firstIndex(where: { $0.topic == topic }) else { return nil }
+            guard externalRoutes[index].state == .subscribed else { return nil }
+            if externalRoutes[index].referenceCount > 1 {
+                externalRoutes[index].referenceCount -= 1
+                return (externalRoutes[index].epoch, false)
+            }
+            externalRoutes[index].state = .unsubscribing
+            return (externalRoutes[index].epoch, true)
+        }
+        guard let action, action.shouldUnsubscribe else { return }
+        do {
+            try await client.unsubscribe(topic)
+            lock.withLock {
+                guard action.epoch == transportEpoch else { return }
+                externalRoutes.removeAll { $0.topic == topic && $0.epoch == action.epoch }
+            }
+        } catch {
+            lock.withLock {
+                guard action.epoch == transportEpoch,
+                      let index = externalRoutes.firstIndex(where: { $0.topic == topic && $0.epoch == action.epoch }) else { return }
+                externalRoutes[index].state = .subscribed
+                externalRoutes[index].referenceCount = 1
+            }
+            throw AxolotyError.network(error: error, reason: "MQTT external route unsubscription failed")
+        }
+    }
+
+    private func admitInbound(
+        topic: String,
+        payload: [UInt8],
+        nowMS: UInt32,
+        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void
+    ) {
+        let frame = lock.withLock { () -> RuntimeInboundFrame? in
+            guard started else { return nil }
+            let bytes = Array(topic.utf8)
+            if Self.isActiveProfile(bytes, namespace: activeNamespace) {
+                return .profile(topic: topic, payload: payload, nowMS: nowMS)
+            }
+            guard externalRoutes.contains(where: {
+                $0.state == .subscribed && $0.epoch == transportEpoch && $0.topic == topic
+            }) else { return nil }
+            return .externalIo(route: topic, payload: payload, nowMS: nowMS)
+        }
+        if let frame { receive(frame) }
+    }
+
+    private static func isActiveProfile(_ bytes: [UInt8], namespace: String?) -> Bool {
+        guard let namespace else { return false }
+        return bytes.withUnsafeBufferPointer { buffer in
+            guard let base = buffer.baseAddress else { return false }
+            let view = TopicView(topicBytes: base, length: buffer.count)
+            guard (try? view.validate()) != nil,
+                  let actualNamespace = view.namespaceLevel else { return false }
+            return actualNamespace.utf8Equals(namespace)
+        }
+    }
+
+    private static func classify(_ route: ByteSlice, activeNamespace: String?) -> ProtocolRouteClassification {
+        guard route.length > 0, route.length <= 128 else { return .unrelated }
+        for index in 0..<route.length {
+            guard let byte = route.byte(at: index), byte != 0, byte != 0x23, byte != 0x2B else { return .unrelated }
+            if byte == 0x2F {
+                guard index > 0, route.byte(at: index - 1) != 0x2F,
+                      index + 1 < route.length, route.byte(at: index + 1) != 0x2F else { return .unrelated }
+            }
+        }
+        var bytes = [UInt8](repeating: 0, count: route.length)
+        for index in 0..<route.length { bytes[index] = route.byte(at: index)! }
+        return bytes.withUnsafeBufferPointer { buffer in
+            guard let base = buffer.baseAddress else { return .unrelated }
+            let view = TopicView(topicBytes: base, length: buffer.count)
+            let coatyPrefix = Array("coaty/3/".utf8)
+            let startsWithCoatyProfile = bytes.starts(with: coatyPrefix)
+            if startsWithCoatyProfile {
+                guard (try? view.validate()) != nil,
+                      let namespace = activeNamespace,
+                      view.namespaceLevel?.utf8Equals(namespace) == true else {
+                    return .unrelated
+                }
+                guard let eventType = view.eventType else { return .unrelated }
+                return Self.staticStringEquals(eventType.wireCode, "IOV") ? .coaty : .unrelated
+            }
+            return .external
+        }
+    }
+
+    private static func staticStringEquals(_ value: StaticString, _ literal: StaticString) -> Bool {
+        guard value.utf8CodeUnitCount == literal.utf8CodeUnitCount else { return false }
+        for index in 0..<value.utf8CodeUnitCount where value.utf8Start[index] != literal.utf8Start[index] {
+            return false
+        }
+        return true
     }
 
     static func topic(
@@ -206,13 +396,24 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     }
 }
 
+private enum ExternalRouteSubscriptionState: Sendable {
+    case subscribing, subscribed, unsubscribing
+}
+
+private struct ExternalRouteRecord: Sendable {
+    let topic: String
+    var referenceCount: Int
+    var state: ExternalRouteSubscriptionState
+    let epoch: UInt64
+}
+
 private final class RuntimeMQTTDelegate: RuntimeMQTTClientDelegate, @unchecked Sendable {
     private let lock = NIOLock()
-    private var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
+    private var receive: (@Sendable (String, [UInt8], UInt32) -> Void)?
     private var startContinuation: CheckedContinuation<Void, Error>?
     private var startTimeoutTask: Task<Void, Never>?
 
-    func setReceive(_ receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) {
+    func setReceive(_ receive: @escaping @Sendable (String, [UInt8], UInt32) -> Void) {
         lock.withLock { self.receive = receive }
     }
 
@@ -295,11 +496,11 @@ private final class RuntimeMQTTDelegate: RuntimeMQTTClientDelegate, @unchecked S
 
     func runtimeMQTTClientDidReceive(topic: String, payload: [UInt8]) {
         let callback = lock.withLock { receive }
-        callback?(RuntimeInboundFrame(
-            topic: topic,
-            payload: payload,
-            nowMS: UInt32(truncatingIfNeeded: DispatchTime.now().uptimeNanoseconds / 1_000_000)
-        ))
+        callback?(
+            topic,
+            payload,
+            UInt32(truncatingIfNeeded: DispatchTime.now().uptimeNanoseconds / 1_000_000)
+        )
     }
 }
 
