@@ -1,8 +1,8 @@
 # Axoloty 0.5.1 API documentation
 
 Axoloty 0.5.1 is the published package version. The repository is preparing
-the 0.6 runtime at the G4 checkpoint. The APIs below describe the current
-runtime cutover; typed IO and SensorThings products remain later work.
+the 0.6 runtime at the G5 checkpoint. The APIs below describe the current
+runtime cutover; SensorThings is available as an optional product.
 
 ## Package boundaries
 
@@ -13,6 +13,7 @@ runtime cutover; typed IO and SensorThings products remain later work.
 | `AxolotyProtocol` | The shared fixed-inline processor, correlations, association state, route classification, and normalized actions. |
 | `Axoloty` | The host lifecycle, bounded ingress, scheduling, handler supervision, and `MQTTBinding`. |
 | `AxolotyStaticRuntime` | Synchronous fixed-storage composition for Embedded Swift. |
+| `AxolotySensorThings` | Optional bounded SensorThings schemas and runtime-owned source/observer workflows. |
 
 Every host and static protocol transition enters `AxolotyProtocol`. The host
 runtime owns transport and concurrency policy; the static runtime owns only a

@@ -259,6 +259,13 @@ public struct ObjectFieldDecoder: ~Copyable {
         self.length = length
     }
 
+    /// Borrows the complete encoded field object for the duration of `body`.
+    public borrowing func withEncodedBytes<R>(
+        _ body: (borrowing ByteSlice) throws -> R
+    ) rethrows -> R {
+        try body(ByteSlice(bytes: bytes.assumingMemoryBound(to: UInt8.self), length: length))
+    }
+
     /// Decodes one required field.
     ///
     /// - Parameters:
