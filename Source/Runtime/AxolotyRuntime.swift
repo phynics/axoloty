@@ -4,138 +4,6 @@ import AxolotyProtocol
 import AxolotyWire
 import Foundation
 
-/// Host runtime facade backed by one private protocol executor.
-///
-/// The executor owns the only mutable ``ProtocolProcessor`` instance. Inbound
-/// transport data is copied before it enters the actor, and normalized actions
-/// are copied before they are dispatched to application handlers.
-public final class AxolotyRuntime: Sendable {
-    private let executor: ProtocolExecutor
-
-    /// Creates a stopped runtime from an immutable definition.
-    public init(definition: SealedRuntimeDefinition, transport: AxolotyRuntimeTransport) {
-        self.executor = ProtocolExecutor(definition: definition, transport: transport)
-    }
-
-    /// The executor-backed typed IO capability.
-    public var io: RuntimeIO { RuntimeIO(executor: executor) }
-
-    /// Starts the runtime transport and protocol executor.
-    public func start() async throws {
-        if let failure = await executor.start() {
-            throw AxolotyError.runtime(code: failure.0, reason: failure.1)
-        }
-    }
-
-    /// Runs the runtime until a caller invokes ``stop()``. The transport
-    /// remains owned by the runtime for the duration of this call.
-    public func run() async throws {
-        try await start()
-        do {
-            while true {
-                switch await lifecycleState() {
-                case .running, .starting, .reconnecting, .stopping:
-                    try await Task.sleep(for: .milliseconds(25))
-                case .failed:
-                    let failure = await executor.terminalFailure()
-                    await stop()
-                    if let failure {
-                        throw AxolotyError.runtime(code: failure.0, reason: failure.1)
-                    }
-                    return
-                case .stopped, .closed:
-                    if let failure = await executor.terminalFailure() {
-                        throw AxolotyError.runtime(code: failure.0, reason: failure.1)
-                    }
-                    return
-                }
-            }
-        } catch is CancellationError {
-            await stop()
-        } catch {
-            await stop()
-            throw error
-        }
-    }
-
-    /// Stops the runtime. Stopping is idempotent.
-    public func stop() async {
-        await executor.stop()
-    }
-
-    /// Permanently closes the runtime and finishes its streams.
-    public func close() async {
-        await executor.close()
-    }
-
-    /// Advances the transport epoch and clears transport-scoped pending work.
-    public func reconnect() async {
-        await executor.reconnect()
-    }
-
-    /// Returns the current lifecycle state.
-    public func lifecycleState() async -> RuntimeLifecycleState {
-        await executor.lifecycleState()
-    }
-
-    /// Returns the modern lifecycle spelling used by G4 callers.
-    public func state() async -> RuntimeState {
-        await executor.runtimeState()
-    }
-
-    /// Submits one owned inbound frame to the bounded ingress queue.
-    public func receive(_ frame: RuntimeInboundFrame) async -> RuntimeReceipt {
-        await executor.receive(frame)
-    }
-
-    /// Submits one owned local operation to ``ProtocolProcessor``.
-    public func publish(_ operation: RuntimeOperation, nowMS: UInt32? = nil) async -> RuntimeReceipt {
-        await executor.publish(operation, nowMS: nowMS ?? monotonicNowMS())
-    }
-
-    /// Publishes a closed one-way operation through the shared processor.
-    public func publish(_ operation: RuntimeOneWayOperation, nowMS: UInt32? = nil) async -> RuntimeReceipt {
-        await publish(RuntimeOperation(oneWay: operation, sourceID: await executor.sourceID()), nowMS: nowMS)
-    }
-
-    /// Starts a bounded request correlation through the shared processor.
-    public func request(_ request: RuntimeRequest, nowMS: UInt32? = nil) async -> RuntimeReceipt {
-        await publish(RuntimeOperation(request: request, sourceID: await executor.sourceID()), nowMS: nowMS)
-    }
-
-    /// Publishes a responder response through the shared processor.
-    public func respond(_ response: RuntimeResponse, nowMS: UInt32? = nil) async -> RuntimeReceipt {
-        await publish(RuntimeOperation(response: response, sourceID: await executor.sourceID()), nowMS: nowMS)
-    }
-
-    /// Expires request correlations using caller-supplied monotonic time.
-    @discardableResult
-    public func expire(nowMS: UInt32) async -> Bool {
-        await executor.expire(nowMS: nowMS)
-    }
-
-    /// Cancels one request correlation before it reaches the wire.
-    @discardableResult
-    public func cancel(correlationID: UUID16) async -> Bool {
-        await executor.cancel(correlationID: correlationID)
-    }
-
-    /// Returns the bounded runtime event stream.
-    public func events() async -> AsyncStream<RuntimeEvent> {
-        await executor.events()
-    }
-
-    /// Returns the bounded supervision diagnostic stream.
-    public func diagnostics() async -> AsyncStream<RuntimeDiagnostic> {
-        await executor.diagnostics()
-    }
-
-    /// Returns coalesced supervision counters without exposing transport state.
-    public func diagnosticsSnapshot() async -> RuntimeDiagnostics {
-        await executor.diagnosticsSnapshot()
-    }
-}
-
 // The executor deliberately keeps lifecycle, ingress, dispatch, and handler
 // supervision in one serialized owner. Keep this suppression scoped to the
 // owner rather than weakening the repository-wide type-size rule.
@@ -163,9 +31,10 @@ actor ProtocolExecutor {
     private var transportEpoch: UInt64 = 0
     private var transportIngressContinuation: AsyncStream<RuntimeInboundFrame>.Continuation?
     private var transportIngressTask: Task<Void, Never>?
-    private var outboundContinuation: AsyncStream<OwnedProtocolPublication>.Continuation?
+    private var outboundContinuation: AsyncStream<RuntimeTransportEffectBatch>.Continuation?
     private var outboundTask: Task<Void, Never>?
     var outboundQueued = 0
+    private var queuedTransportEffects = 0
     private var diagnosticsSnapshotValue = RuntimeDiagnostics()
     var ioStates: [RuntimeIoState] = []
     var ioObservers: [UInt64: RuntimeIoObserver] = [:]
@@ -233,6 +102,7 @@ actor ProtocolExecutor {
         outboundContinuation = nil
         outboundTask = nil
         outboundQueued = 0
+        queuedTransportEffects = 0
         installOutboundPump()
         do {
             await transport.setFailureHandler { [weak self] error in
@@ -287,17 +157,27 @@ actor ProtocolExecutor {
         await cancelAndDrainHandlers()
         for task in ioFlushTasks.values { task.cancel() }
         ioFlushTasks.removeAll(keepingCapacity: true)
+        cancelIngressPump()
+        let hasLifecycleEffects = lifecycleAdvertisementActive || !definition.ioEndpointRegistrations.isEmpty
         do {
-            try await publishIoDeadvertisements(nowMS: monotonicNowMS())
-            try await publishLifecycleDeadvertisement(nowMS: monotonicNowMS())
+            try enqueueIoDeadvertisements(nowMS: monotonicNowMS())
+            try enqueueLifecycleDeadvertisement(nowMS: monotonicNowMS())
+        } catch {
+            emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
+        }
+        if hasLifecycleEffects {
+            await drainOutboundPump()
+        }
+        do {
             try await transport.removeSubscriptions(namespace: definition.namespace)
         } catch {
             emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
         }
         await transport.stop()
+        if !hasLifecycleEffects {
+            await drainOutboundPump()
+        }
         guard state == .stopping, transportEpoch == stoppingEpoch else { return }
-        cancelIngressPump()
-        await stopOutboundPump()
         state = .stopped
     }
 
@@ -337,17 +217,13 @@ actor ProtocolExecutor {
             }
         }
         do {
+            await stopOutboundPump()
             // A broker-side close can race this explicit reconnect.  The
             // binding may therefore already have lost its subscription
             // session; removal is best-effort in that path and a fresh
             // subscription installation below is authoritative.
             try? await transport.removeSubscriptions(namespace: definition.namespace)
             await transport.stop()
-            // Stop the socket before awaiting the old pump. A transport send
-            // is allowed to suspend until the socket closes; draining first
-            // would make reconnect dependent on an unbounded cancellation
-            // guarantee that the transport protocol does not provide.
-            await stopOutboundPump()
             installOutboundPump()
             await transport.setFailureHandler { [weak self] error in
                 Task { await self?.transportFailed(runtimeErrorDetail(error)) }
@@ -429,20 +305,29 @@ actor ProtocolExecutor {
         }
     }
 
+    private func transportEffectCompleted(_ effect: RuntimeTransportEffect) {
+        queuedTransportEffects = max(0, queuedTransportEffects - 1)
+        if case .publish = effect { decrementOutbound() }
+    }
+
     private func installOutboundPump() {
-        let outboundPipe = AsyncStream<OwnedProtocolPublication>.makeStream(
+        let outboundPipe = AsyncStream<RuntimeTransportEffectBatch>.makeStream(
             bufferingPolicy: .bufferingOldest(definition.capacities.dispatch)
         )
         outboundContinuation = outboundPipe.continuation
         outboundTask = Task { [weak self, stream = outboundPipe.stream, transport, namespace = definition.namespace] in
-            for await action in stream {
+            for await batch in stream {
                 guard !Task.isCancelled else { break }
-                do {
-                    try await transport.send(action, namespace: namespace)
-                    await self?.decrementOutbound()
-                } catch {
-                    await self?.decrementOutbound()
-                    await self?.transportFailed(runtimeErrorDetail(error))
+                for effect in batch.effects {
+                    guard !Task.isCancelled else { break }
+                    do {
+                        try await transport.perform(effect, namespace: namespace)
+                        await self?.transportEffectCompleted(effect)
+                    } catch {
+                        await self?.transportEffectCompleted(effect)
+                        await self?.transportFailed(runtimeErrorDetail(error))
+                        break
+                    }
                 }
             }
         }
@@ -454,8 +339,19 @@ actor ProtocolExecutor {
         outboundTask?.cancel()
         outboundContinuation = nil
         outboundTask = nil
-        outboundQueued = 0
         await task?.value
+        outboundQueued = 0
+        queuedTransportEffects = 0
+    }
+
+    private func drainOutboundPump() async {
+        let task = outboundTask
+        outboundContinuation?.finish()
+        outboundContinuation = nil
+        outboundTask = nil
+        await task?.value
+        outboundQueued = 0
+        queuedTransportEffects = 0
     }
 
     func receive(_ frame: RuntimeInboundFrame) -> RuntimeReceipt {
@@ -499,14 +395,18 @@ actor ProtocolExecutor {
         guard state == .running else {
             return .rejected(.notRunning(state))
         }
-        guard outboundQueued < definition.capacities.dispatch else {
+        guard queuedTransportEffects < definition.capacities.dispatch else {
             diagnosticsSnapshotValue.dispatchSaturation += 1
             return .rejected(.capacityExceeded)
         }
+        let remainingTransportCapacity = definition.capacities.dispatch - queuedTransportEffects
+        let maximumActionCount = operation.capability == .associate
+            ? min(definition.capacities.dispatch, remainingTransportCapacity + 1)
+            : remainingTransportCapacity
         let outcome = processOutboundOperation(
             operation,
             nowMS: nowMS,
-            maximumActionCount: definition.capacities.dispatch - outboundQueued
+            maximumActionCount: maximumActionCount
         ) {
             dispatchActions(nowMS: nowMS)
         }
@@ -534,50 +434,81 @@ actor ProtocolExecutor {
     }
 
     private func processInbound(_ frame: RuntimeInboundFrame) -> RuntimeReceipt {
-        guard !frame.topic.isEmpty else { return .rejected(.malformedFrame(.malformedFrame)) }
-        guard !frame.payload.isEmpty else { return .rejected(.malformedPayload) }
-
+        let outcome: ProtocolProcessOutcome
         var parseFailure: String?
-        var topic = frame.topic
-        let outcome: ProtocolProcessOutcome = topic.withUTF8 { topicBuffer in
-            guard let topicBase = topicBuffer.baseAddress else {
-                parseFailure = "topic is empty"
-                return .rejected(.malformedFrame)
-            }
-            let topicView = TopicView(topicBytes: topicBase, length: topicBuffer.count)
-            do throws(WireDecodeError) {
-                try topicView.validate()
-            } catch {
-                parseFailure = runtimeErrorDetail(error)
-                return .rejected(.malformedFrame)
-            }
-            return frame.payload.withUnsafeBufferPointer { payloadBuffer in
-                guard let payloadBase = payloadBuffer.baseAddress else {
-                    parseFailure = "payload is empty"
-                    return .rejected(.malformedPayload)
+        switch frame {
+        case .profile(var topic, let payload, let nowMS):
+            guard !topic.isEmpty else { return .rejected(.malformedFrame(.malformedFrame)) }
+            guard !payload.isEmpty else { return .rejected(.malformedPayload) }
+            outcome = topic.withUTF8 { topicBuffer in
+                guard let topicBase = topicBuffer.baseAddress else {
+                    parseFailure = "topic is empty"
+                    return .rejected(.malformedFrame)
                 }
-                do throws(ProtocolError) {
-                    let borrowed = try BorrowedProtocolFrame(
-                        topic: topicView,
-                        payload: ByteSlice(bytes: payloadBase, length: payloadBuffer.count)
-                    )
-                    actionSink.removeAll()
-                    let outcome = processor.processInbound(
-                        .profile(borrowed),
-                        nowMS: frame.nowMS,
-                        classifier: TransportRouteClassifier(transport: transport),
-                        sink: &actionSink
-                    )
-                    // The processor's delivery key, topic, and payload are
-                    // borrowed from this frame. Dispatch synchronously while
-                    // both topic and payload buffers remain valid.
-                    if case .accepted = outcome {
-                        dispatchActions(nowMS: frame.nowMS)
-                    }
-                    return outcome
+                let topicView = TopicView(topicBytes: topicBase, length: topicBuffer.count)
+                do throws(WireDecodeError) {
+                    try topicView.validate()
                 } catch {
                     parseFailure = runtimeErrorDetail(error)
                     return .rejected(.malformedFrame)
+                }
+                return payload.withUnsafeBufferPointer { payloadBuffer in
+                    guard let payloadBase = payloadBuffer.baseAddress else {
+                        parseFailure = "payload is empty"
+                        return .rejected(.malformedPayload)
+                    }
+                    do throws(ProtocolError) {
+                        let borrowed = try BorrowedProtocolFrame(
+                            topic: topicView,
+                            payload: ByteSlice(bytes: payloadBase, length: payloadBuffer.count)
+                        )
+                        actionSink.removeAll()
+                        let remainingTransportCapacity = definition.capacities.dispatch - queuedTransportEffects
+                        let maximumActionCount = borrowed.routingKey.capability == .associate
+                            ? min(definition.capacities.dispatch, remainingTransportCapacity + 1)
+                            : remainingTransportCapacity
+                        actionSink.prepare(maximumActionCount: maximumActionCount)
+                        let outcome = processor.processInbound(
+                            .profile(borrowed),
+                            nowMS: nowMS,
+                            classifier: TransportRouteClassifier(transport: transport),
+                            sink: &actionSink
+                        )
+                        if case .accepted = outcome {
+                            dispatchActions(nowMS: nowMS)
+                        }
+                        return outcome
+                    } catch {
+                        parseFailure = runtimeErrorDetail(error)
+                        return .rejected(.malformedFrame)
+                    }
+                }
+            }
+        case .externalIo(var route, let payload, let nowMS):
+            guard !route.isEmpty, route.utf8.count <= 128, payload.count <= 512 else {
+                return .rejected(.malformedPayload)
+            }
+            outcome = route.withUTF8 { routeBuffer in
+                guard let routeBase = routeBuffer.baseAddress else {
+                    return .rejected(.malformedPayload)
+                }
+                return payload.withUnsafeBufferPointer { payloadBuffer in
+                    let payloadSlice = payloadBuffer.baseAddress.map {
+                        ByteSlice(bytes: $0, length: payloadBuffer.count)
+                    } ?? .empty
+                    let routeSlice = ByteSlice(bytes: routeBase, length: routeBuffer.count)
+                    actionSink.removeAll()
+                    actionSink.prepare(maximumActionCount: definition.capacities.dispatch)
+                    let outcome = processor.processInbound(
+                        .externalIo(route: routeSlice, payload: payloadSlice),
+                        nowMS: nowMS,
+                        classifier: TransportRouteClassifier(transport: transport),
+                        sink: &actionSink
+                    )
+                    if case .accepted = outcome {
+                        dispatchActions(nowMS: nowMS)
+                    }
+                    return outcome
                 }
             }
         }
@@ -597,6 +528,8 @@ actor ProtocolExecutor {
             actionSink.removeAll()
             return
         }
+        var effects: [RuntimeTransportEffect] = []
+        effects.reserveCapacity(actionSink.count)
         for index in 0..<actionSink.count {
             guard let borrowed = actionSink[index] else { continue }
             let action = borrowed.owned()
@@ -614,13 +547,16 @@ actor ProtocolExecutor {
                     emitRegisteredEvents(for: delivery, owned: action, nowMS: nowMS)
                 }
                 if case .publish(let ownedPublication) = action {
-                    enqueueOutbound(ownedPublication)
+                    effects.append(.publish(ownedPublication))
                 }
-            case .externalRouteActivated, .externalRouteDeactivated:
-                break
+            case .externalRouteActivated(let transition):
+                effects.append(.externalRouteActivated(transition.owned()))
+            case .externalRouteDeactivated(let transition):
+                effects.append(.externalRouteDeactivated(transition.owned()))
             }
         }
         actionSink.removeAll()
+        enqueueTransportEffects(effects)
         notifyIoObservers()
     }
 
@@ -686,19 +622,23 @@ actor ProtocolExecutor {
     }
     private func syntheticDelivery(for publication: BorrowedProtocolPublication) -> BorrowedProtocolDelivery? {
         let deliveryKey: BorrowedProtocolDeliveryKey
+        let routeClassification: ProtocolRouteClassification
         switch publication.target {
         case .profile(let filter, _):
+            routeClassification = .coaty
             switch publication.routingKey.capability {
             case .advertise: deliveryKey = filter.map { .advertiseFilter($0) } ?? .capability(.advertise)
             case .channel: deliveryKey = filter.map { .channel($0) } ?? .capability(.channel)
             default: deliveryKey = .capability(publication.routingKey.capability)
             }
-        case .associationRoute:
+        case .associationRoute(_, let kind):
+            routeClassification = kind
             deliveryKey = .capability(publication.routingKey.capability)
         }
         return BorrowedProtocolDelivery(
             routingKey: publication.routingKey,
             deliveryKey: deliveryKey,
+            routeClassification: routeClassification,
             topic: nil,
             payload: publication.payload
         )
@@ -913,11 +853,18 @@ actor ProtocolExecutor {
         return output
     }
 
-    private func enqueueOutbound(_ publication: OwnedProtocolPublication) {
-        outboundQueued += 1
-        let result = outboundContinuation?.yield(publication)
+    private func enqueueTransportEffects(_ effects: [RuntimeTransportEffect]) {
+        guard !effects.isEmpty else { return }
+        queuedTransportEffects += effects.count
+        outboundQueued += effects.reduce(into: 0) { count, effect in
+            if case .publish = effect { count += 1 }
+        }
+        let result = outboundContinuation?.yield(RuntimeTransportEffectBatch(effects: effects))
         if case .dropped = result {
-            outboundQueued = max(0, outboundQueued - 1)
+            queuedTransportEffects = max(0, queuedTransportEffects - effects.count)
+            outboundQueued = max(0, outboundQueued - effects.reduce(into: 0) { count, effect in
+                if case .publish = effect { count += 1 }
+            })
             diagnosticsSnapshotValue.dispatchSaturation += 1
             emit(.init(kind: .capacityExceeded, detail: "outbound dispatch queue is full"))
             failRuntime(
@@ -926,6 +873,59 @@ actor ProtocolExecutor {
                 diagnostic: .capacityExceeded
             )
         }
+    }
+
+    private func enqueueLifecycleOperation(_ operation: RuntimeOperation, nowMS: UInt32) throws {
+        let availableCapacity = max(0, definition.capacities.dispatch - queuedTransportEffects)
+        var effects: [RuntimeTransportEffect] = []
+        let outcome = processOutboundOperation(
+            operation,
+            nowMS: nowMS,
+            maximumActionCount: availableCapacity
+        ) {
+            effects.reserveCapacity(actionSink.count)
+            for index in 0..<actionSink.count {
+                guard let action = actionSink[index] else { continue }
+                switch action {
+                case .publish(let publication):
+                    effects.append(.publish(publication.owned()))
+                case .externalRouteActivated(let transition):
+                    effects.append(.externalRouteActivated(transition.owned()))
+                case .externalRouteDeactivated(let transition):
+                    effects.append(.externalRouteDeactivated(transition.owned()))
+                case .deliver, .associationChanged:
+                    break
+                }
+            }
+            actionSink.removeAll()
+        }
+        guard case .accepted = outcome else {
+            throw AxolotyError.runtime(
+                code: .brokerUnavailable,
+                reason: "lifecycle operation rejected by protocol: \(outcome)"
+            )
+        }
+        enqueueTransportEffects(effects)
+    }
+
+    private func enqueueIoDeadvertisements(nowMS: UInt32) throws {
+        for endpoint in definition.ioEndpointRegistrations {
+            let payload = RuntimeLifecyclePayload.deadvertise(objectID: endpoint.id)
+            try enqueueLifecycleOperation(
+                .deadvertise(sourceID: endpoint.id.uuid, payload: payload),
+                nowMS: nowMS
+            )
+        }
+    }
+
+    private func enqueueLifecycleDeadvertisement(nowMS: UInt32) throws {
+        guard lifecycleAdvertisementActive, let identity = definition.identity else { return }
+        let operation = RuntimeOperation.deadvertise(
+            sourceID: identity.id,
+            payload: RuntimeLifecyclePayload.deadvertise(identity)
+        )
+        try enqueueLifecycleOperation(operation, nowMS: nowMS)
+        lifecycleAdvertisementActive = false
     }
 
     private func cancelIngressPump() {
@@ -958,6 +958,7 @@ actor ProtocolExecutor {
         outboundContinuation = nil
         outboundTask = nil
         outboundQueued = 0
+        queuedTransportEffects = 0
     }
 
     func failRuntime(

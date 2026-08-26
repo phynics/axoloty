@@ -1012,36 +1012,51 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             }
             return .ignored
         }
-        guard route.length > 0, route.length <= 128 else { return .rejected(.capacityExceeded) }
-        let classification = classifier.classify(route)
-        if let explicit = event.isExternalRoute, explicit != (classification == .external) { return .rejected(.externalRouteMismatch) }
-        if classification == .unrelated { return .ignored }
-        let routeKind: StoredAssociationRouteKind = classification == .external ? .external : .coaty
-        for index in 0..<capacity where associations[index].active && associations[index].sourceID == event.ioSourceId && associations[index].actorID == event.ioActorId {
-            var association = associations[index]
-            association.routeLength = route.length
-            for offset in 0..<route.length { association.route[offset] = route.byte(at: offset) ?? 0 }
-            association.routeKind = routeKind
-            association.updateRateMS = updateRateMS
-            guard !Self.routeEquals(associations[index], association) || associations[index].updateRateMS != updateRateMS else {
-                return .ignored
-            }
-            return .accepted(.upsert(index, association), classification)
+        var semanticStorage = InlineArray<128, UInt8>(repeating: 0)
+        let semanticLength: Int
+        do {
+            semanticLength = try route.copyDecodedJSONString(into: &semanticStorage)
+        } catch {
+            return .rejected(.malformedPayload)
         }
-        for index in 0..<capacity where !associations[index].active {
-            var association = Association(
-                sourceID: event.ioSourceId,
-                actorID: event.ioActorId,
-                active: true,
-                routeLength: route.length,
-                route: InlineArray(repeating: 0),
-                routeKind: routeKind,
-                updateRateMS: updateRateMS
+        guard semanticLength > 0, semanticLength <= 128 else { return .rejected(.capacityExceeded) }
+        return withUnsafeBytes(of: semanticStorage) { buffer in
+            let semanticRoute = ByteSlice(
+                bytes: buffer.baseAddress!.assumingMemoryBound(to: UInt8.self),
+                length: semanticLength
             )
-            for offset in 0..<route.length { association.route[offset] = route.byte(at: offset) ?? 0 }
-            return .accepted(.upsert(index, association), classification)
+            let classification = classifier.classify(semanticRoute)
+            if let explicit = event.isExternalRoute, explicit != (classification == .external) {
+                return .rejected(.externalRouteMismatch)
+            }
+            if classification == .unrelated { return .ignored }
+            let routeKind: StoredAssociationRouteKind = classification == .external ? .external : .coaty
+            for index in 0..<capacity where associations[index].active && associations[index].sourceID == event.ioSourceId && associations[index].actorID == event.ioActorId {
+                var association = associations[index]
+                association.routeLength = semanticLength
+                for offset in 0..<semanticLength { association.route[offset] = semanticRoute.byte(at: offset) ?? 0 }
+                association.routeKind = routeKind
+                association.updateRateMS = updateRateMS
+                guard !Self.routeEquals(associations[index], association) || associations[index].updateRateMS != updateRateMS else {
+                    return .ignored
+                }
+                return .accepted(.upsert(index, association), classification)
+            }
+            for index in 0..<capacity where !associations[index].active {
+                var association = Association(
+                    sourceID: event.ioSourceId,
+                    actorID: event.ioActorId,
+                    active: true,
+                    routeLength: semanticLength,
+                    route: InlineArray(repeating: 0),
+                    routeKind: routeKind,
+                    updateRateMS: updateRateMS
+                )
+                for offset in 0..<semanticLength { association.route[offset] = semanticRoute.byte(at: offset) ?? 0 }
+                return .accepted(.upsert(index, association), classification)
+            }
+            return .rejected(.capacityExceeded)
         }
-        return .rejected(.capacityExceeded)
     }
 
     private func planObjectTransition(

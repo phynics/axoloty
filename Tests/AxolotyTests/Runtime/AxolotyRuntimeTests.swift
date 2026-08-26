@@ -2,12 +2,57 @@
 
 import Testing
 @testable import Axoloty
+import AxolotyObjectModel
 import AxolotyProtocol
 import AxolotyTestSupport
 import AxolotyWire
 
 @Suite("Axoloty runtime")
 struct AxolotyRuntimeTests {
+    @Test("external MQTT routes accept bounded exact topics")
+    func externalRouteValidationAcceptsExactTopic() throws {
+        let route = try MQTTExternalIoRoute("plant/line-7/temperature")
+        let sameRoute = try MQTTExternalIoRoute("plant/line-7/temperature")
+        #expect(route == sameRoute)
+    }
+
+    @Test("external MQTT routes retain canonical JSON string content")
+    func externalRouteCanonicalEscapes() throws {
+        let route = try MQTTExternalIoRoute(#"plant/line"7\temperature"#)
+        route.topicBytes.withBytes { bytes in
+            #expect(bytes.equals(#"plant/line\"7\\temperature"#))
+        }
+    }
+
+    @Test("external MQTT routes reject wildcards, empty levels, NUL, and overflow")
+    func externalRouteValidationRejectsInvalidTopics() {
+        for topic in ["", "/leading", "trailing/", "double//slash", "wild/+", "wild/#", "nul\0topic"] {
+            #expect(throws: AxolotyError.self) { _ = try MQTTExternalIoRoute(topic) }
+        }
+        #expect(throws: AxolotyError.self) {
+            _ = try MQTTExternalIoRoute(String(repeating: "x", count: 129))
+        }
+    }
+
+    @Test("active profile namespace cannot be reused as an external route")
+    func externalRouteValidationRejectsActiveProfile() throws {
+        let identity = try RuntimeIdentity(id: .zero, name: "route-profile")
+        var builder = try RuntimeDefinition.Builder(identity: identity, namespace: "route-profile")
+        let metadataJSON: StaticString = "{\"objectId\":\"00000000-0000-4000-8000-0000000000d1\",\"objectType\":\"coaty.IoSource\",\"name\":\"source\",\"coreType\":\"IoSource\",\"valueType\":\"com.example.Bool\"}"
+        let metadata = try Object<IoSourceMetadata>(decoding: ByteSlice(
+            bytes: metadataJSON.utf8Start,
+            length: metadataJSON.utf8CodeUnitCount
+        ))
+        let route = try MQTTExternalIoRoute("coaty/3/route-profile/IOV/00000000-0000-4000-8000-0000000000d2")
+        var rejected = false
+        do {
+            _ = try builder.ioSource(metadata: metadata, as: Bool.self, externalRoute: route)
+        } catch {
+            rejected = true
+        }
+        #expect(rejected)
+    }
+
     @Test("MQTT topics preserve the complete UUID")
     func mqttUUIDFormattingPreservesAllBytes() throws {
         let id = try #require(UUID16(parsing: "44444444-4444-4444-8444-444444444444"))
@@ -76,6 +121,17 @@ struct AxolotyRuntimeTests {
         }
     }
 
+    @Test("binding keeps every Coaty profile route out of external classification")
+    func foreignCoatyProfileIsNotExternal() throws {
+        let binding = try MQTTBinding(configuration: .init(host: "localhost", port: 1883))
+        let route = Array("coaty/3/other-namespace/IOV/00000000-0000-4000-8000-000000000001".utf8)
+        let classification = route.withUnsafeBufferPointer { buffer in
+            let slice = ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+            return binding.classifyRoute(slice)
+        }
+        #expect(classification == .unrelated)
+    }
+
     @Test("definition bounds event-stream registration")
     func definitionBoundsEventStreams() throws {
         let capacities = try RuntimeCapacities(eventStreams: 1)
@@ -110,7 +166,7 @@ struct AxolotyRuntimeTests {
     func rejectsBeforeStart() async throws {
         let definition = try makeDefinition()
         let runtime = AxolotyRuntime(definition: definition, transport: TestTransport())
-        let receipt = await runtime.receive(RuntimeInboundFrame(topic: "coaty/3/test/IOV/00000000-0000-0000-0000-000000000000", payload: [0x7B, 0x7D]))
+        let receipt = await runtime.receive(.profile(topic: "coaty/3/test/IOV/00000000-0000-0000-0000-000000000000", payload: [0x7B, 0x7D], nowMS: 0))
         #expect(receipt == .rejected(.notRunning(.stopped)))
     }
 
@@ -191,7 +247,7 @@ struct AxolotyRuntimeTests {
             + "55555555-5555-4555-8555-555555555555"
         #expect(topic.utf8.count == 135)
         let payload = Array(#"{"result":{"answer":49,"variant":"original"},"executionInfo":{"responder":"coatyjs-2.4.0"}}"#.utf8)
-        let receipt = await runtime.receive(RuntimeInboundFrame(topic: topic, payload: payload, nowMS: 2))
+        let receipt = await runtime.receive(.profile(topic: topic, payload: payload, nowMS: 2))
         try #require(receipt == .accepted)
 
         var iterator = stream.makeAsyncIterator()
@@ -202,7 +258,7 @@ struct AxolotyRuntimeTests {
         let duplicatePayload = Array(
             #"{"result":{"answer":49,"variant":"duplicate"},"executionInfo":{"responder":"coatyjs-2.4.0"}}"#.utf8
         )
-        #expect(await runtime.receive(RuntimeInboundFrame(
+        #expect(await runtime.receive(.profile(
             topic: topic,
             payload: duplicatePayload,
             nowMS: 3
@@ -384,9 +440,10 @@ struct AxolotyRuntimeTests {
         try await runtime.start()
 
         let iterator = RuntimeTestIteratorBox(stream.makeAsyncIterator())
-        let receipt = await runtime.receive(RuntimeInboundFrame(
+        let receipt = await runtime.receive(.profile(
             topic: "coaty/3/test/ADV:CoatyObject/22222222-2222-4222-8222-222222222222",
-            payload: Array(#"{"object":{"objectId":"11111111-1111-4111-8111-111111111111","coreType":"CoatyObject","objectType":"com.coaty.test.WireFixture","name":"wire-fixture"}}"#.utf8)
+            payload: Array(#"{"object":{"objectId":"11111111-1111-4111-8111-111111111111","coreType":"CoatyObject","objectType":"com.coaty.test.WireFixture","name":"wire-fixture"}}"#.utf8),
+            nowMS: 0
         ))
         #expect(receipt == .accepted)
         let event = try await withThrowingTaskGroup(of: RuntimeEventValue?.self) { group in
@@ -589,7 +646,8 @@ private actor TestTransport: AxolotyRuntimeTransport {
         failure = handler
     }
 
-    func send(_ publication: OwnedProtocolPublication, namespace: String) async throws {
+    func perform(_ effect: RuntimeTransportEffect, namespace: String) async throws {
+        guard case .publish(let publication) = effect else { return }
         sent.append(publication)
         if failureStage == .advertisement, publication.routingKey.capability == .advertise {
             throw TestTransportFailure()
@@ -625,7 +683,8 @@ private actor DrainingTransport: AxolotyRuntimeTransport {
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
     func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) {}
 
-    func send(_ publication: OwnedProtocolPublication, namespace: String) async throws {
+    func perform(_ effect: RuntimeTransportEffect, namespace: String) async throws {
+        guard case .publish = effect else { return }
         sendStarted = true
         guard !released else { return }
         await withCheckedContinuation { continuation in

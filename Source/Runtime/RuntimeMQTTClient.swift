@@ -98,7 +98,11 @@ final class RuntimeMQTTClient: @unchecked Sendable {
         // its drain-before-stop guarantee. Returning after merely scheduling
         // the MQTT publish lets an immediate reconnect/shutdown disconnect
         // the socket before queued lifecycle publications reach the broker.
-        try await client.publish(to: topic, payload: buffer, qos: qos, retain: false).get()
+        do {
+            try await client.publish(to: topic, payload: buffer, qos: qos, retain: false).get()
+        } catch {
+            throw AxolotyError.network(error: error, reason: "MQTT publication failed")
+        }
     }
 
     @MainActor
