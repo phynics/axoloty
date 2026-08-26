@@ -7,18 +7,19 @@ import test from "node:test";
 const root = path.resolve(new URL("../..", import.meta.url).pathname);
 const testsRoot = path.join(root, "Tests");
 const manifest = fs.readFileSync(path.join(root, "Package.swift"), "utf8");
+const wireManifest = fs.readFileSync(path.join(root, "Packages/AxolotyWire/Package.swift"), "utf8");
 
-function targetBlock(kind, name) {
+function targetBlock(kind, name, source = manifest) {
   const expression = new RegExp(
-    `\\n        \\.${kind}\\(\\n            name: "${name}"[\\s\\S]*?(?=\\n        \\.(?:target|testTarget|executableTarget|plugin|binaryTarget)\\()`,
+    `\\n        \\.${kind}\\(\\n            name: "${name}"[\\s\\S]*?(?=\\n        \\.(?:target|testTarget|executableTarget|plugin|binaryTarget)\\(|\\n    \\],)`,
   );
-  const match = expression.exec(`\n${manifest}`);
+  const match = expression.exec(`\n${source}`);
   assert.ok(match, `Package.swift must declare ${kind} ${name}`);
   return match[0];
 }
 
-function targetPath(kind, name) {
-  const block = targetBlock(kind, name);
+function targetPath(kind, name, source = manifest) {
+  const block = targetBlock(kind, name, source);
   const match = /path: "([^"]+)"/.exec(block);
   assert.ok(match, `${name} must declare an owning path`);
   return match[1];
@@ -43,6 +44,11 @@ test("test targets have explicit ownership and no per-file root selection", () =
 
   assert.equal(targetPath("target", "AxolotyTestSupport"), "Tests/AxolotyTestSupport");
   assert.equal(targetPath("testTarget", "AxolotyLiveWireTests"), "Tests/AxolotyLiveWireTests");
+  assert.equal(
+    targetPath("testTarget", "AxolotyWireTests"),
+    "Packages/AxolotyWire/Tests/AxolotyWireTests",
+  );
+  assert.equal(targetPath("testTarget", "AxolotyWireTests", wireManifest), "Tests/AxolotyWireTests");
   assert.doesNotMatch(targetBlock("testTarget", "AxolotyLiveWireTests"), /\b(?:sources|exclude):\s*\[/);
 });
 
@@ -51,7 +57,6 @@ test("Swift files outside orchestration support belong to one declared test targ
     "AxolotyTests",
     "AxolotyLiveWireTests",
     "AxolotyTestSupport",
-    "AxolotyWire",
   ];
   const unowned = walk(testsRoot)
     .filter(relative => relative.endsWith(".swift"))

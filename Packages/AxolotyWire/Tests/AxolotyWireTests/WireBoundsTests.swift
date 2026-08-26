@@ -104,7 +104,7 @@ struct WireReaderImplementationTests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("Packages/AxolotyWire/Sources/AxolotyWire/WireReader.swift")
+            .appendingPathComponent("Sources/AxolotyWire/WireReader.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
         for forbiddenPath in [
