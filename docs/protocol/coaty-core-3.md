@@ -100,6 +100,6 @@ non-divergence and release proof.**
 - [`Tests/AxolotyTests/WireCompatibility/Fixtures/`](../../Tests/AxolotyTests/WireCompatibility/Fixtures/)
 - [`Tests/AxolotyTests/ProtocolTrace/ProtocolTraceTests.swift`](../../Tests/AxolotyTests/ProtocolTrace/ProtocolTraceTests.swift)
 - [`Packages/AxolotyProtocol/Tests/AxolotyProtocolTests/ProtocolProcessorTests.swift`](../../Packages/AxolotyProtocol/Tests/AxolotyProtocolTests/ProtocolProcessorTests.swift)
-- [`Packages/AxolotyObjectModel/Tests/AxolotyObjectModelTests/ObjectPredicateTests.swift`](../../Packages/AxolotyObjectModel/Tests/AxolotyObjectModelTests/ObjectPredicateTests.swift)
+- [`Packages/AxolotyObjectModel/Tests/AxolotyObjectModelTests/` directory](../../Packages/AxolotyObjectModel/Tests/AxolotyObjectModelTests/)
 - [`Spikes/BoundedObjectModelEvidence/EVIDENCE.md`](../../Spikes/BoundedObjectModelEvidence/EVIDENCE.md)
 - [`Tests/Support/check-axoloty-wire-state-boundary.sh`](../../Tests/Support/check-axoloty-wire-state-boundary.sh)
