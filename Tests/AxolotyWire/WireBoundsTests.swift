@@ -1,7 +1,6 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import AxolotyWire
-import AxolotyProtocol
 import Foundation
 import Testing
 
