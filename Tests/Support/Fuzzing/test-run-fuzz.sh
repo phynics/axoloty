@@ -20,7 +20,14 @@ set -euo pipefail
 # and tests ~1 run in 10).
 log_line=$(printf '%q ' "$@")
 printf '%s\n' "$log_line" >> "${FAKE_RUNTIME_LOG}"
-if [[ "$*" == *'swift test'* && -n "${FAKE_RUNTIME_SLEEP_SECONDS:-}" ]]; then
+if [[ "$*" == *'swift test'* && -n "${FAKE_RUNTIME_SLEEP_SEQUENCE_FILE:-}" ]]; then
+    if [[ -e "${FAKE_RUNTIME_SLEEP_SEQUENCE_FILE}" ]]; then
+        sleep "${FAKE_RUNTIME_SLEEP_SECONDS}"
+    else
+        : > "${FAKE_RUNTIME_SLEEP_SEQUENCE_FILE}"
+        sleep "${FAKE_RUNTIME_FIRST_SLEEP_SECONDS}"
+    fi
+elif [[ "$*" == *'swift test'* && -n "${FAKE_RUNTIME_SLEEP_SECONDS:-}" ]]; then
     sleep "${FAKE_RUNTIME_SLEEP_SECONDS}"
 fi
 if [[ "$*" == *'swift test'* && "${FAKE_RUNTIME_HOSTILE_CHILD:-0}" == 1 ]]; then
@@ -407,11 +414,14 @@ fi
 # Interruption path: a controlled signal terminates the campaign and the manifest is
 # still finalized with an explicit interrupted status and whatever case data was recorded.
 campaign_pid_file="$TEMP_DIR/interrupt-campaign.pid"
-rm -f "$runtime_log" "$campaign_pid_file"
+sleep_sequence_file="$TEMP_DIR/interrupt-sleep-sequence"
+rm -f "$runtime_log" "$campaign_pid_file" "$sleep_sequence_file"
 setsid --wait bash -c 'printf "%s\n" "$$" > "$1"; shift; exec "$@"' bash "$campaign_pid_file" env \
   FAKE_RUNTIME_LOG="$runtime_log" \
   FAKE_RUNTIME_EXIT_CODE=0 \
-  FAKE_RUNTIME_SLEEP_SECONDS=5 \
+  FAKE_RUNTIME_SLEEP_SEQUENCE_FILE="$sleep_sequence_file" \
+  FAKE_RUNTIME_FIRST_SLEEP_SECONDS=0.1 \
+  FAKE_RUNTIME_SLEEP_SECONDS=30 \
   "$ROOT_DIR/Tests/Support/Fuzzing/run-fuzz.sh" \
     --runtime "$fake_runtime" \
     --container \
@@ -427,12 +437,13 @@ signaled=0
 for _ in $(seq 1 100); do
     for f in "$TEMP_DIR"/output-interrupt/fuzz-*/results/worker-*.tsv; do
         [[ -f "$f" ]] && grep -q '^case-' "$f" || continue
+        campaign_dir=$(dirname "$(dirname "$f")")
+        compgen -G "$campaign_dir/active-processes/*" >/dev/null || continue
         [[ -s "$campaign_pid_file" ]] || continue
         campaign_pid=$(cat "$campaign_pid_file")
         campaign_pgid=$(ps -o pgid= -p "$campaign_pid" 2>/dev/null | tr -d ' ' || true)
         [[ "$campaign_pgid" == "$campaign_pid" ]] || continue
-        if kill -TERM "$campaign_pid" 2>/dev/null; then
-            kill -TERM -- "-$campaign_pid" 2>/dev/null || true
+        if kill -TERM -- "-$campaign_pid" 2>/dev/null; then
             signaled=1
             break 2
         fi
