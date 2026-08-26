@@ -40,7 +40,7 @@ actor ProtocolExecutor {
     var ioObservers: [UInt64: RuntimeIoObserver] = [:]
     var nextIoObserverID: UInt64 = 1
     var ioFlushTasks: [Int: Task<Void, Never>] = [:]
-    private var runtimeComponentTasks: [Task<Void, Never>] = []
+    var runtimeComponentTasks: [Task<Void, Never>] = []
     private let eventRegistrations: [RuntimeEventRegistration]
 
     private let eventStream: AsyncStream<RuntimeEvent>
@@ -281,50 +281,9 @@ actor ProtocolExecutor {
 
     func sourceID() -> UUID16 { definition.sourceID }
 
-    private func runtimeComponentContext() -> RuntimeComponentContext {
-        RuntimeComponentContext(
-            namespace: definition.namespace,
-            sourceID: definition.sourceID,
-            publish: { [weak self] operation in
-                guard let self else {
-                    return .rejected(.notRunning(.closed))
-                }
-                return await self.publish(
-                    RuntimeOperation(oneWay: operation, sourceID: self.definition.sourceID),
-                    nowMS: monotonicNowMS()
-                )
-            }
-        )
-    }
-
-    private func startRuntimeComponents(restarting: Bool = false) async {
-        let context = runtimeComponentContext()
-        if !restarting {
-            runtimeComponentTasks.reserveCapacity(definition.runtimeComponents.count)
-        }
-        for registration in definition.runtimeComponents {
-            await registration.start(context)
-            guard !restarting else { continue }
-            let task = Task { await registration.run(context) }
-            runtimeComponentTasks.append(task)
-        }
-    }
-
-    private func stopRuntimeComponents() async {
-        let context = runtimeComponentContext()
-        let tasks = runtimeComponentTasks
-        for task in tasks { task.cancel() }
-        runtimeComponentTasks.removeAll(keepingCapacity: true)
-        for task in tasks { await task.value }
-        for registration in definition.runtimeComponents {
-            await registration.stop(context)
-        }
-    }
-
     func events() -> AsyncStream<RuntimeEvent> { eventStream }
 
     func diagnostics() -> AsyncStream<RuntimeDiagnostic> { diagnosticStream }
-
     func diagnosticsSnapshot() -> RuntimeDiagnostics { diagnosticsSnapshotValue }
 
     func terminalFailure() -> (AxolotyError.RuntimeErrorCode, String)? { terminalFailureValue }
@@ -604,7 +563,7 @@ actor ProtocolExecutor {
         notifyIoObservers()
     }
 
-    fileprivate func emitRegisteredEvents(for delivery: BorrowedProtocolDelivery, owned: OwnedProtocolAction, nowMS: UInt32) {
+    func emitRegisteredEvents(for delivery: BorrowedProtocolDelivery, owned: OwnedProtocolAction, nowMS: UInt32) {
         let payload: [UInt8]
         switch owned {
         case .deliver(let value): payload = value.payload
@@ -640,46 +599,6 @@ actor ProtocolExecutor {
                 case .dropOldest, .dropNewest, .coalesceLatest:
                     break
                 }
-            }
-        }
-    }
-
-    /// Emits locally generated lifecycle publications through the same
-    /// bounded event registrations used for transport deliveries. Lifecycle
-    /// publications are owned for the duration of this synchronous call, so
-    /// the borrowed delivery never escapes the executor.
-    func emitRegisteredEvents(for publication: OwnedProtocolPublication, nowMS: UInt32) {
-        guard case .profile(let filter, _) = publication.target else { return }
-        publication.payload.withUnsafeBufferPointer { payloadBuffer in
-            guard let payloadBase = payloadBuffer.baseAddress else { return }
-            let payload = ByteSlice(bytes: payloadBase, length: payloadBuffer.count)
-            let deliver = { (filterBytes: ByteSlice?) in
-                let key: BorrowedProtocolDeliveryKey
-                switch publication.routingKey.capability {
-                case .advertise:
-                    key = filterBytes.map { .advertiseFilter($0) } ?? .capability(.advertise)
-                case .channel:
-                    key = filterBytes.map { .channel($0) } ?? .capability(.channel)
-                default:
-                    key = .capability(publication.routingKey.capability)
-                }
-                let delivery = BorrowedProtocolDelivery(
-                    routingKey: publication.routingKey,
-                    deliveryKey: key,
-                    routeClassification: .coaty,
-                    payload: payload
-                )
-                self.emitRegisteredEvents(for: delivery, owned: .publish(publication), nowMS: nowMS)
-            }
-            if let filter {
-                filter.withUnsafeBufferPointer { buffer in
-                    let bytes = buffer.baseAddress.map {
-                        ByteSlice(bytes: $0, length: buffer.count)
-                    }
-                    deliver(bytes)
-                }
-            } else {
-                deliver(nil)
             }
         }
     }

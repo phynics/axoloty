@@ -83,7 +83,10 @@ func interruptionDuringInitialConnectionReturnsPromptlyAndStopsSession() async {
             return true
         }
         group.addTask {
-            try? await Task.sleep(for: .seconds(1))
+            // The tooling tier starts many suites concurrently on CI; allow
+            // the main-actor connection task to be scheduled before declaring
+            // the startup observation missing.
+            try? await Task.sleep(for: .seconds(5))
             return false
         }
         let result = await group.next() ?? false
