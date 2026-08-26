@@ -14,8 +14,9 @@ failed edits. Capacity `1` records minimum-object rejection as a measurement
 fact; the edit-capacity/no-mutation assertion applies to `16` and `64`.
 
 The probe also measures the fixed-inline `ObjectSchemaRegistry` at the same
-registry capacities and runs first-party `IoSource` typed-object decoding with
-an explicit 512-byte arena and field capacities `1`, `16`, and `64`. Capacity
+registry capacities and runs first-party `IoSourceMetadata` typed-object
+decoding from `AxolotyProtocol` with an explicit 512-byte arena and field
+capacities `1`, `16`, and `64`. Capacity
 one exercises registry saturation and typed-object field rejection; capacities
 16 and 64 verify successful model decoding and value preservation. These are
 measurement points, not product presets. It measures `ObjectPredicate` with

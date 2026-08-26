@@ -2,6 +2,7 @@
 
 import AxolotyObjectModel
 import AxolotyCoatyModels
+import AxolotyProtocol
 import AxolotyWire
 import Foundation
 
@@ -171,8 +172,8 @@ private func schemaRegistryOperation<let capacity: Int>(_: ObjectSchemaRegistry<
     var registry = ObjectSchemaRegistry<capacity>()
     var registration = "accepted"
     do throws(ObjectSchemaRegistryError) {
-        try registry.use(IoSource.self)
-        try registry.use(IoActor.self)
+        try registry.use(IoSourceMetadata.self)
+        try registry.use(IoActorMetadata.self)
         try registry.use(CoatyObject.self)
         try registry.use(IoContext.self)
     } catch {
@@ -182,13 +183,13 @@ private func schemaRegistryOperation<let capacity: Int>(_: ObjectSchemaRegistry<
     let expectedCountAfterRegistration = capacity == 1 ? 1 : 4
     do throws(ObjectSchemaRegistryError) {
         if capacity == 1 {
-            // IoActor was not admitted after IoSource filled the one-slot
+            // IoActorMetadata was not admitted after IoSourceMetadata filled the one-slot
             // registry, so this probes capacity rather than idempotency.
-            try registry.use(IoActor.self)
+            try registry.use(IoActorMetadata.self)
         } else {
             // Larger points intentionally exercise idempotent registration;
             // they are not expected to be saturated.
-            try registry.use(IoSource.self)
+            try registry.use(IoSourceMetadata.self)
         }
     } catch .capacityExceeded {
         saturated = true
@@ -199,10 +200,10 @@ private func schemaRegistryOperation<let capacity: Int>(_: ObjectSchemaRegistry<
     return (registration, sealed.count, saturated, saturated && sealed.count == expectedCountAfterRegistration)
 }
 
-private func typedObjectOperation<let fieldCapacity: Int>(_: BoundedObject<IoSource, 512, fieldCapacity>.Type) -> (initialization: String, valueTypePreserved: Bool) {
+private func typedObjectOperation<let fieldCapacity: Int>(_: BoundedObject<IoSourceMetadata, 512, fieldCapacity>.Type) -> (initialization: String, valueTypePreserved: Bool) {
     do throws(ObjectError) {
-        let object = try BoundedObject<IoSource, 512, fieldCapacity>(decoding: slice(ioSourceBytes))
-        return ("accepted", object.value.valueType.encodedEquals("T"))
+        let object = try BoundedObject<IoSourceMetadata, 512, fieldCapacity>(decoding: slice(ioSourceBytes))
+        return ("accepted", object.value.valueType.equals("T"))
     } catch {
         return ("rejected-\(error.reason)", false)
     }
@@ -271,7 +272,7 @@ private func operationRecord<let capacity: Int>(_: BoundedDynamicObject<capacity
     }
     let saturationResult = saturation(BoundedDynamicObject<capacity, capacity>.self)
     let schema = schemaRegistryOperation(ObjectSchemaRegistry<capacity>.self)
-    let typed = typedObjectOperation(BoundedObject<IoSource, 512, capacity>.self)
+    let typed = typedObjectOperation(BoundedObject<IoSourceMetadata, 512, capacity>.self)
     let predicate = predicateOperation(ObjectPredicate<capacity, capacity, capacity, capacity>.self)
     return OperationRecord(
         measurementPoint: capacity,
@@ -384,18 +385,18 @@ private func allocationRun<let capacity: Int>(_: BoundedDynamicObject<capacity, 
         var registry = ObjectSchemaRegistry<capacity>()
         for _ in 0..<iterations {
             registry = ObjectSchemaRegistry<capacity>()
-            try? registry.use(IoSource.self)
+            try? registry.use(IoSourceMetadata.self)
             allocationSink &+= UInt64(registry.sealed().count)
         }
     case .typedObjectInitialization:
         for _ in 0..<iterations {
-            if let object = try? BoundedObject<IoSource, 512, capacity>(decoding: slice(ioSourceBytes)) {
-                allocationSink &+= object.value.valueType.length > 0 ? 1 : 0
+            if let object = try? BoundedObject<IoSourceMetadata, 512, capacity>(decoding: slice(ioSourceBytes)) {
+                allocationSink &+= object.value.valueType.equals("T") ? 1 : 0
             }
         }
     case .typedObjectWarmed:
-        guard let object = try? BoundedObject<IoSource, 512, capacity>(decoding: slice(ioSourceBytes)) else { return }
-        for _ in 0..<iterations { allocationSink &+= object.value.valueType.length > 0 ? 1 : 0 }
+        guard let object = try? BoundedObject<IoSourceMetadata, 512, capacity>(decoding: slice(ioSourceBytes)) else { return }
+        for _ in 0..<iterations { allocationSink &+= object.value.valueType.equals("T") ? 1 : 0 }
     case .predicateInitialization:
         for _ in 0..<iterations {
             do throws(ObjectError) {

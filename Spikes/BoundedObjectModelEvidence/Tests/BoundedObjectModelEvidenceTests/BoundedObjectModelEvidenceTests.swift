@@ -2,6 +2,7 @@
 
 import AxolotyObjectModel
 import AxolotyCoatyModels
+import AxolotyProtocol
 import AxolotyWire
 import Testing
 
@@ -11,12 +12,12 @@ private func slice(_ value: StaticString) -> ByteSlice {
 
 @Test("schema registry and first-party typed object remain bounded")
 func schemaAndTypedObjectEvidence() throws {
-    try IoSource.schema.validate()
+    try IoSourceMetadata.schema.validate()
     var registry = ObjectSchemaRegistry<1>()
-    try registry.use(IoSource.self)
+    try registry.use(IoSourceMetadata.self)
     var registryRejected = false
     do throws(ObjectSchemaRegistryError) {
-        try registry.use(IoActor.self)
+        try registry.use(IoActorMetadata.self)
     } catch {
         registryRejected = error == .capacityExceeded
     }
@@ -24,8 +25,8 @@ func schemaAndTypedObjectEvidence() throws {
     let registryCount = registry.sealed().count
     #expect(registryCount == 1)
     let bytes = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"coaty.IoSource\",\"name\":\"source\",\"coreType\":\"IoSource\",\"valueType\":\"T\"}")
-    let typed = try BoundedObject<IoSource, 512, 16>(decoding: bytes)
-    let typedValueTypeMatches = typed.value.valueType.encodedEquals("T")
+    let typed = try BoundedObject<IoSourceMetadata, 512, 16>(decoding: bytes)
+    let typedValueTypeMatches = typed.value.valueType.equals("T")
     #expect(typedValueTypeMatches)
 }
 

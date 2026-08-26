@@ -40,7 +40,7 @@ test("test targets have explicit ownership and no per-file root selection", () =
   assert.doesNotMatch(ordinary, /\b(?:sources|exclude):\s*\[/);
   assert.match(ordinary, /\.copy\("ProtocolTrace\/trace\.schema\.json"\)/);
   assert.match(ordinary, /\.copy\("ProtocolTrace\/Fixtures\/family-seeds\.json"\)/);
-  assert.match(ordinary, /\.copy\("WireCompatibility\/Fixtures"\)/);
+  assert.match(ordinary, /\.process\("WireCompatibility\/Fixtures"\)/);
 
   assert.equal(targetPath("target", "AxolotyTestSupport"), "Tests/AxolotyTestSupport");
   assert.equal(targetPath("testTarget", "AxolotyLiveWireTests"), "Tests/AxolotyLiveWireTests");
