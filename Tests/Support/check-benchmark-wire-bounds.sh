@@ -16,6 +16,30 @@ fail() {
     exit 1
 }
 
+root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+wire_reader="$root/Packages/AxolotyWire/Sources/AxolotyWire/WireReader.swift"
+
+for forbidden_path in \
+    'preflight(' \
+    'scanString(' \
+    'scanNumber(' \
+    'literal(' \
+    'hex4(' \
+    'capacity: buffer.count + 8' \
+    'capacity: buffer.count'
+do
+    if grep -Fq "$forbidden_path" "$wire_reader"; then
+        fail "found unbounded tokenizer workspace: $forbidden_path"
+    fi
+done
+
+grep -Fq 'capacity: WireBufferConfig.maxPayloadSize + 8' "$wire_reader" \
+    || fail "fixed tokenizer workspace is missing"
+[ "$(grep -Fo 'JSONTokenizer(bytes:' "$wire_reader" | wc -l)" -eq 1 ] \
+    || fail "WireReader must construct one tokenizer"
+[ "$(grep -Fo '.scanValue()' "$wire_reader" | wc -l)" -eq 1 ] \
+    || fail "WireReader must perform one tokenizer scan"
+
 echo "== Running wire bounds tests (release mode) =="
 CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-podman}" \
 IMAGE="${IMAGE:-axoloty-dev}" \
