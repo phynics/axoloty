@@ -295,12 +295,38 @@ public struct ObjectEditor<let byteCapacity: Int> {
         for index in 0..<bytes.length { source[index] = bytes.byte(at: index)! }
     }
 
-    @usableFromInline init(empty: Void = ()) {
+    /// Creates an empty object editor containing `{}`.
+    ///
+    /// The editor is transactional: callers may stage fields and commit them
+    /// into a bounded object only after all operations succeed.
+    public init(empty: Void = ()) {
         source = InlineArray(repeating: 0); sourceLength = 2
         source[0] = 123; source[1] = 125
         values = InlineArray(repeating: 0); valueLength = 0
         operations = InlineArray(repeating: EditOperation()); operationCount = 0
         output = InlineArray(repeating: 0); outputLength = 0
+    }
+
+    /// Finalizes the staged object and borrows its complete encoded bytes.
+    ///
+    /// This is useful for bounded nested object fields. The editor remains
+    /// caller-owned and no borrowed bytes may escape the synchronous body.
+    public mutating func withEncodedBytes<R>(
+        _ body: (borrowing ByteSlice) throws(ObjectError) -> R
+    ) throws(ObjectError) -> R {
+        try buildOutput()
+        var result: R?
+        var failure: ObjectError?
+        withUnsafeBytes(of: output) { buffer in
+            do throws(ObjectError) {
+                result = try body(ByteSlice(
+                    bytes: buffer.baseAddress!.assumingMemoryBound(to: UInt8.self),
+                    length: outputLength
+                ))
+            } catch { failure = error }
+        }
+        if let failure { throw failure }
+        return result!
     }
 
     /// Sets a field to a borrowed raw JSON value or a small literal.

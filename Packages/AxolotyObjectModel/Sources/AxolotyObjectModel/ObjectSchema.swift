@@ -259,6 +259,13 @@ public struct ObjectFieldDecoder: ~Copyable {
         self.length = length
     }
 
+    /// Borrows the complete encoded field object for the duration of `body`.
+    public borrowing func withEncodedBytes<R>(
+        _ body: (borrowing ByteSlice) throws -> R
+    ) rethrows -> R {
+        try body(ByteSlice(bytes: bytes.assumingMemoryBound(to: UInt8.self), length: length))
+    }
+
     /// Decodes one required field.
     ///
     /// - Parameters:
@@ -426,6 +433,34 @@ extension Optional: ObjectFieldEncodable where Wrapped: ObjectFieldEncodable {
         case .none:
             do { try editor.remove(key) }
             catch { throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
+        }
+    }
+}
+
+extension OwnedJSONValue: ObjectFieldDecodable {
+    /// Copies one complete JSON value into the bounded owned representation.
+    public static func decode(from value: borrowing JSONValueView) throws(ObjectDecodingError) -> Self {
+        var decoded: Self?
+        value.withRaw { raw in decoded = try? Self(copying: raw) }
+        guard let decoded else { throw .invalidField }
+        return decoded
+    }
+}
+
+extension OwnedJSONValue: ObjectFieldEncodable {
+    /// Encodes the retained JSON value without stringifying or changing its
+    /// original number lexeme.
+    public borrowing func encode<let editorCapacity: Int>(
+        to editor: inout ObjectFieldEncoder<editorCapacity>,
+        forKey key: StaticString
+    ) throws(ObjectEncodingError) {
+        var failure: ObjectError?
+        withEncodedBytes { raw in
+            do throws(ObjectError) { try editor.setRaw(key, value: raw) }
+            catch { failure = error }
+        }
+        if let failure {
+            throw failure.reason == .capacityExceeded ? .capacityExceeded : .invalidField
         }
     }
 }

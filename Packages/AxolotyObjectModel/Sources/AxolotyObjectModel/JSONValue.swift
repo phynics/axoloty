@@ -205,10 +205,35 @@ public struct JSONValueView: ~Copyable {
 
     /// Borrows the complete encoded value for the duration of `body`.
     public borrowing func withRaw(_ body: (ByteSlice) -> Void) { body(raw) }
+
+    /// Decodes a nested bounded object schema from this JSON object value.
+    ///
+    /// The nested schema is decoded synchronously while the borrowed value is
+    /// valid. Callers receive an owned, copyable schema value.
+    public borrowing func decode<Schema: ObjectSchema>(
+        _ type: Schema.Type
+    ) throws(ObjectDecodingError) -> Schema {
+        guard kind == .object else { throw .invalidField }
+        var result: Schema?
+        var failure: ObjectDecodingError?
+        raw.withBytes { pointer, length in
+            do throws(ObjectDecodingError) {
+                result = try Schema(decoding: ObjectFieldDecoder(
+                    bytes: pointer,
+                    length: length
+                ))
+            } catch {
+                failure = error
+            }
+        }
+        if let failure { throw failure }
+        guard let result else { throw .invalidField }
+        return result
+    }
 }
 
 /// An owned, bounded JSON value snapshot that can safely outlive its source object.
-public struct OwnedJSONValue<let byteCapacity: Int> {
+public struct OwnedJSONValue<let byteCapacity: Int>: Sendable, Equatable {
     private var storage: InlineArray<byteCapacity, UInt8>
     private var length: Int
 
@@ -234,6 +259,24 @@ public struct OwnedJSONValue<let byteCapacity: Int> {
         }
     }
 
+    /// Borrows the complete retained JSON value for the duration of `body`.
+    ///
+    /// The returned bytes remain owned by this value and must not escape the
+    /// synchronous borrow. Callers that cross an async or isolation boundary
+    /// must copy them into their own bounded storage first.
+    public borrowing func withEncodedBytes<R>(
+        _ body: (borrowing ByteSlice) throws -> R
+    ) rethrows -> R {
+        let localLength = length
+        let localStorage = storage
+        return try withUnsafeBytes(of: localStorage) { bytes in
+            try body(ByteSlice(
+                bytes: bytes.baseAddress!.assumingMemoryBound(to: UInt8.self),
+                length: localLength
+            ))
+        }
+    }
+
     /// Borrows this snapshot's view for the duration of `body`.
     public borrowing func withView(_ body: (borrowing JSONValueView) -> Void) {
         let localLength = length
@@ -241,6 +284,16 @@ public struct OwnedJSONValue<let byteCapacity: Int> {
         withUnsafeBytes(of: localStorage) { bytes in
             body(JSONValueView(raw: ByteSlice(bytes: bytes.baseAddress!.assumingMemoryBound(to: UInt8.self), length: localLength)))
         }
+    }
+
+    /// Compares two owned values byte-for-byte, preserving their source
+    /// number lexemes and JSON formatting.
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        guard lhs.length == rhs.length else { return false }
+        for index in 0..<lhs.length where lhs.storage[index] != rhs.storage[index] {
+            return false
+        }
+        return true
     }
 }
 

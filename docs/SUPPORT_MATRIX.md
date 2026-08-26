@@ -42,8 +42,8 @@ optional SensorThings products. Support levels use a consistent vocabulary:
 
 | Capability | Support level | Evidence |
 |---|---|---|
-| SensorThings models | Planned | G5 owns the optional SensorThings product. Historical fixtures remain outside the current G4 target. |
-| SensorThings controllers | Planned | G5 owns optional SensorThings controllers. The inherited controller hierarchy is not part of G4. |
+| SensorThings models | Supported (optional) | `AxolotySensorThings` provides bounded Foundation-free schemas backed by retained portable fixtures. |
+| SensorThings workflows | Supported (optional) | Source and observer workflows use standard runtime operations; no controller hierarchy is exposed. |
 
 ## Object model and lifecycle
 

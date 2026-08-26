@@ -600,6 +600,8 @@ public struct RuntimeDiagnostic: Sendable, Equatable {
         case transportFailed
         /// An inbound frame could not be parsed or validated.
         case malformedFrame
+        /// A component payload was malformed or had the wrong type.
+        case malformedPayload
     }
 
     /// The diagnostic category.
@@ -701,6 +703,7 @@ public struct RuntimeDefinition: Sendable {
     private var eventRegistrations: [RuntimeEventRegistration] = []
     var ioEndpointRegistrations: [RuntimeIoEndpointRegistration] = []
     var runtimeComponents: [RuntimeComponentRegistration] = []
+    var runtimeComponentCorrelationOrdinal: UInt32 = 0
     var sealed = false
 
     /// Keeps one ProtocolProcessor object slot available for runtime identity.

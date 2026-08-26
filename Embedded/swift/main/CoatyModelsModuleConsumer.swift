@@ -7,7 +7,7 @@ import AxolotyWire
 
 @inline(never)
 func axoloty_coaty_models_embedded_link_probe() -> Bool {
-    guard IoSource.schema.fieldCount == 5 else { return false }
+    guard IoSourceMetadata.schema.fieldCount == 5 else { return false }
 
     let filter: StaticString = "{\"conditions\":[\"value\",[7,1]]}"
     let filterBytes = ByteSlice(bytes: filter.utf8Start, length: filter.utf8CodeUnitCount)

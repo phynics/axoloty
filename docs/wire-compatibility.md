@@ -19,7 +19,7 @@ Reference versions must be pinned before captured fixtures become normative:
 | Identity lifecycle / last will | Not tested | Not tested | Not tested | Not tested | Nightly |
 | Associate / IoState / IoValue | Partial | Partial | Not tested | Not tested | Nightly |
 | Decentralized logging | Not tested | Not tested | Not tested | Not tested | Nightly |
-| SensorThings | Unsupported | Unsupported | Not tested | Not tested | G5 |
+| SensorThings | Fixture-backed | Fixture-backed | Not tested | Not tested | G5 |
 
 ### G5 host typed IO evidence
 
@@ -164,11 +164,12 @@ IoValues exceeding 2^53 lose precision through CoatyJS's float64
 (`Int64.max` round-trips as `9223372036854776000`); Axoloty preserves Int64
 exactly.
 
-`SensorThings` is unsupported in G4 and deferred to G5. The product models,
-controllers, and wire fixture subjects were removed rather than retained as
-same-process mirrors. Portable object/JSON behavior belongs in the owning
-`AxolotyObjectModel` and `AxolotyWire` package tests; a future G5 product must
-add its own schema and interoperability evidence before this row changes.
+`SensorThings` is an optional G5 product. Its bounded schema models and source/
+observer workflows are covered by retained portable fixtures and the already-
+proven standard Coaty Advertise, Discover/Resolve, Query/Retrieve, and Channel
+event paths. No compatible CoatyJS SensorThings package is available, so this
+row intentionally records fixture evidence rather than fabricating live
+SensorThings interoperability claims.
 
 ## CI enforcement of live wire evidence
 
