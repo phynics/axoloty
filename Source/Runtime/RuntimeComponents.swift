@@ -20,12 +20,6 @@ public struct RuntimeComponentContext: Sendable {
     public let cancelRequest: @Sendable (UUID16) async -> Bool
     /// Emits a structured diagnostic from an optional component.
     public let diagnose: @Sendable (RuntimeDiagnostic) async -> Void
-    /// Submits one closed response through the shared protocol processor.
-    ///
-    /// This remains SPI-only: optional first-party products can emit several
-    /// correlated Resolve or Retrieve responses without adding a new protocol
-    /// family or exposing the processor itself.
-    public let respond: @Sendable (RuntimeResponse) async -> RuntimeReceipt
 
     /// Creates a package-only component context.
     ///
@@ -36,17 +30,13 @@ public struct RuntimeComponentContext: Sendable {
     ///   - request: The closed request submission function.
     ///   - cancelRequest: The correlation cancellation function.
     ///   - diagnose: The structured diagnostic sink.
-    ///   - respond: The closed response submission function.
     public init(
         namespace: String,
         sourceID: UUID16,
         publish: @escaping @Sendable (RuntimeOneWayOperation) async -> RuntimeReceipt,
         request: @escaping @Sendable (RuntimeRequest) async -> RuntimeReceipt = { _ in .rejected(.notRunning(.closed)) },
         cancelRequest: @escaping @Sendable (UUID16) async -> Bool = { _ in false },
-        diagnose: @escaping @Sendable (RuntimeDiagnostic) async -> Void = { _ in },
-        respond: @escaping @Sendable (RuntimeResponse) async -> RuntimeReceipt = { _ in
-            .rejected(.notRunning(.closed))
-        }
+        diagnose: @escaping @Sendable (RuntimeDiagnostic) async -> Void = { _ in }
     ) {
         self.namespace = namespace
         self.sourceID = sourceID
@@ -54,7 +44,6 @@ public struct RuntimeComponentContext: Sendable {
         self.request = request
         self.cancelRequest = cancelRequest
         self.diagnose = diagnose
-        self.respond = respond
     }
 }
 
@@ -167,15 +156,6 @@ extension ProtocolExecutor {
             diagnose: { [weak self] diagnostic in
                 guard let self else { return }
                 await self.emit(diagnostic)
-            },
-            respond: { [weak self] response in
-                guard let self else {
-                    return .rejected(.notRunning(.closed))
-                }
-                return await self.publish(
-                    RuntimeOperation(response: response, sourceID: self.definition.sourceID),
-                    nowMS: monotonicNowMS()
-                )
             }
         )
     }
