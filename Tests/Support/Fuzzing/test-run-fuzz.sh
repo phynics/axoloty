@@ -431,7 +431,8 @@ for _ in $(seq 1 100); do
         campaign_pid=$(cat "$campaign_pid_file")
         campaign_pgid=$(ps -o pgid= -p "$campaign_pid" 2>/dev/null | tr -d ' ' || true)
         [[ "$campaign_pgid" == "$campaign_pid" ]] || continue
-        if kill -TERM -- "-$campaign_pid" 2>/dev/null; then
+        if kill -TERM "$campaign_pid" 2>/dev/null; then
+            kill -TERM -- "-$campaign_pid" 2>/dev/null || true
             signaled=1
             break 2
         fi
