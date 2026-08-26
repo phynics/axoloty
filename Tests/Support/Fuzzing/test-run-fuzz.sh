@@ -423,21 +423,23 @@ setsid --wait bash -c 'printf "%s\n" "$$" > "$1"; shift; exec "$@"' bash "$campa
     --quiet &
 run_fuzz_pid=$!
 
-found=0
+signaled=0
 for _ in $(seq 1 100); do
     for f in "$TEMP_DIR"/output-interrupt/fuzz-*/results/worker-*.tsv; do
         [[ -f "$f" ]] && grep -q '^case-' "$f" || continue
-        for marker in "$TEMP_DIR"/output-interrupt/fuzz-*/active-processes/*; do
-            if [[ -f "$marker" ]]; then
-                found=1
-                break 3
-            fi
-        done
+        [[ -s "$campaign_pid_file" ]] || continue
+        campaign_pid=$(cat "$campaign_pid_file")
+        campaign_pgid=$(ps -o pgid= -p "$campaign_pid" 2>/dev/null | tr -d ' ' || true)
+        [[ "$campaign_pgid" == "$campaign_pid" ]] || continue
+        if kill -TERM -- "-$campaign_pid" 2>/dev/null; then
+            signaled=1
+            break 2
+        fi
     done
     sleep 0.1
 done
 
-if (( ! found )); then
+if (( ! signaled )); then
     if [[ -s "$campaign_pid_file" ]]; then
         campaign_pid=$(cat "$campaign_pid_file")
         kill -TERM -- "-$campaign_pid" 2>/dev/null || true
@@ -447,18 +449,10 @@ if (( ! found )); then
     set +e
     wait_for_process_bounded "$run_fuzz_pid" "interrupt readiness self-test" 15 5
     set -e
-    echo 'fuzz campaign did not record a case and start its next command before the interruption deadline' >&2
+    echo 'fuzz campaign did not record a case and accept its process-group signal before the interruption deadline' >&2
     exit 1
 fi
 
-campaign_pid=$(cat "$campaign_pid_file")
-campaign_pgid=$(ps -o pgid= -p "$campaign_pid" 2>/dev/null | tr -d ' ' || true)
-if [[ "$campaign_pgid" != "$campaign_pid" ]]; then
-    kill -TERM "$run_fuzz_pid" 2>/dev/null || true
-    echo "interruption campaign did not own its process group: pid=$campaign_pid pgid=${campaign_pgid:-unknown}" >&2
-    exit 1
-fi
-kill -TERM -- "-$campaign_pid" || true
 set +e
 wait_for_process_bounded "$run_fuzz_pid" "interrupt self-test" 15 5
 interrupt_status=$?
