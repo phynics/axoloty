@@ -243,20 +243,34 @@ public enum CoatyTimeInterval: ObjectFieldDecodable, ObjectFieldEncodable, Senda
         var start: SensorThingsNumber?
         var end: SensorThingsNumber?
         var duration: UInt64?
+        var malformed = false
         var valid = false
         value.withRaw { raw in
             raw.withBytes { pointer, length in
                 let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
                 do throws(WireDecodeError) { try reader.validate(); valid = true }
                 catch { return }
-                if let bytes = reader.readField("_start") { start = try? SensorThingsNumber(copying: bytes) }
-                if let bytes = reader.readField("_end") { end = try? SensorThingsNumber(copying: bytes) }
+                if let bytes = reader.readField("_start") {
+                    do { start = try SensorThingsNumber(copying: bytes) }
+                    catch { malformed = true }
+                }
+                if let bytes = reader.readField("_end") {
+                    do { end = try SensorThingsNumber(copying: bytes) }
+                    catch { malformed = true }
+                }
                 if let bytes = reader.readField("_duration") {
-                    try? JSONValueView.withValidatedRaw(bytes) { view in _ = view.withNumber { duration = $0.uintValue } }
+                    do {
+                        _ = try JSONValueView.withValidatedRaw(bytes) { view in
+                            view.withNumber { number in
+                                guard let integer = number.intValue, integer >= 0 else { malformed = true; return }
+                                duration = UInt64(integer)
+                            }
+                        }
+                    } catch { malformed = true }
                 }
             }
         }
-        guard valid else { throw .invalidField }
+        guard valid, !malformed else { throw .invalidField }
         switch (start, end, duration) {
         case let (.some(start), .some(end), nil): return .startEnd(start, end)
         case let (.some(start), nil, .some(duration)): return .startDuration(start, duration)

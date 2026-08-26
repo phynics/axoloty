@@ -2,16 +2,16 @@
 
 This document records the accepted architecture for the 0.6 alignment tracked by [epic #627](https://github.com/phynics/axoloty/issues/627). The repository has completed the G4 runtime cutover in PR [#649](https://github.com/phynics/axoloty/pull/649); the published version remains `0.5.1` until the 0.6 gates finish.
 
-## Current implementation (0.6 G4 checkpoint)
+## Current implementation (0.6 G5 checkpoint)
 
 The released implementation now consists of the root `Axoloty` host product,
 the Foundation-free `AxolotyWire`, `AxolotyObjectModel`, and
 `AxolotyProtocol` products, the separate `AxolotyCoatyModels` convenience
-product, the inspector/MCP tools, and the existing Embedded Swift integration.
+product and optional `AxolotySensorThings` product, the inspector/MCP tools, and the existing Embedded Swift integration.
 The host runtime contains the G4 ``AxolotyRuntime`` lifecycle and
 ``MQTTBinding``. The inherited class-object, controller, manager, and
 SensorThings runtime hierarchy has been removed from active production
-targets; G5 will reintroduce only modern optional products. `AxolotyWire` supplies
+targets; G5 introduces only modern optional products. `AxolotyWire` supplies
 profile-neutral wire syntax, borrowed values, and caller-owned parser
 workspaces; `AxolotyObjectModel` supplies bounded semantic objects, schemas,
 predicates, and runtime-local registration; `AxolotyProtocol` supplies the
@@ -88,8 +88,9 @@ object-model, host-runtime, and static-runtime products.
 
 The strict G4 package and consumer boundaries are required gates. They reject
 legacy runtime symbols, raw MQTT APIs outside the binding, parallel encoders,
-and implicit SwiftPM source discovery. Controller-based IO and SensorThings
-remain intentionally absent until G5.
+and implicit SwiftPM source discovery. Controller-based IO remains outside the
+G4 core. G5 now provides the optional AxolotySensorThings product with bounded
+Foundation-free schemas and runtime-owned source/observer workflows.
 
 ### Transport-session transition investigation
 
@@ -196,10 +197,10 @@ lifecycle, or global mutable registry. `AxolotyObjectMacros` is a build-time
 schema-generation package and is not part of the portable runtime graph.
 
 `AxolotyCoatyModels` is a separate first-party convenience product containing
-portable protocol-required Coaty and IO schemas. It depends on
-`AxolotyObjectModel` and is compiled from the same sources for host and
-ESP-IDF. The G4 host runtime does not expose typed IO; G5 owns that optional
-product boundary.
+the portable Coaty schema. It depends on `AxolotyObjectModel` and is compiled
+from the same sources for host and ESP-IDF. G5 IO contracts and SensorThings
+schemas are owned by their respective optional products, not by this
+convenience package.
 
 `AxolotyProtocol` owns the closed built-in profile inventory, capabilities,
 routing keys, portable frames, structured protocol errors, fixed-inline

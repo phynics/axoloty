@@ -243,6 +243,7 @@ public extension RuntimeDefinition.Builder {
         configuration: consuming SensorThingsSourceConfiguration,
         run: @escaping @Sendable (SensorThingsPublisher) async throws -> Void
     ) throws {
+        var draft = self
         let sensor = configuration.sensor
         let thing = configuration.thing
         let sensorBytes = sensor.withEncodedBytes(copyBytes)
@@ -267,7 +268,7 @@ public extension RuntimeDefinition.Builder {
         // requests; unsupported selectors receive no response. Query applies
         // the supported object/core-type selectors and Coaty object filter,
         // then returns matching objects in stable object-ID order.
-        try respond(to: .discover) { invocation in
+        try draft.respond(to: .discover) { invocation in
             let payload = invocationPayload(invocation)
             if discoverMatches(payload, objectID: thingID, objectType: "coaty.sensorThings.Thing") {
                 return .response(thingResolve)
@@ -277,7 +278,7 @@ public extension RuntimeDefinition.Builder {
             }
             return .noResponse
         }
-        try respond(to: .query) { invocation in
+        try draft.respond(to: .query) { invocation in
             let payload = invocationPayload(invocation)
             if queryHasUnsupportedJoin(payload) { return .noResponse }
             let sensorMatches = queryMatches(payload, objectType: "coaty.sensorThings.Sensor", object: sensorBytes)
@@ -287,7 +288,7 @@ public extension RuntimeDefinition.Builder {
             return .response(sensorMatches ? sensorRetrieve : thingRetrieve)
         }
 
-        try registerRuntimeComponent(RuntimeComponentRegistration(
+        try draft.registerRuntimeComponent(RuntimeComponentRegistration(
             start: { runtime in
                 _ = await runtime.publish(.advertise(thingAdvertise))
                 _ = await runtime.publish(.advertise(sensorAdvertise))
@@ -305,6 +306,7 @@ public extension RuntimeDefinition.Builder {
                 _ = await runtime.publish(.deadvertise(thingDeadvertise))
             }
         ))
+        self = draft
     }
 
     /// Installs one bounded observer for Channel observations.
@@ -312,49 +314,50 @@ public extension RuntimeDefinition.Builder {
         configuration: SensorThingsObserverConfiguration,
         receive: @escaping @Sendable (SensorThingsObservationDelivery) async -> Void
     ) throws {
-        let stream = try events(
+        var draft = self
+        let stream = try draft.events(
             matching: .channel(identifier: configuration.observationChannel),
             buffering: .fail(capacity: configuration.limits.eventBufferCapacity)
         )
-        let sensorAdvertisements = try events(
+        let sensorAdvertisements = try draft.events(
             matching: .advertise(objectType: "coaty.sensorThings.Sensor"),
             buffering: .coalesceLatest
         )
-        let thingAdvertisements = try events(
+        let thingAdvertisements = try draft.events(
             matching: .advertise(objectType: "coaty.sensorThings.Thing"),
             buffering: .coalesceLatest
         )
         let sensorID = configuration.sensorID
         let thingID = configuration.thingID
-        let sensorResolveID = try reserveRuntimeComponentCorrelationID()
-        let sensorQueryID = try reserveRuntimeComponentCorrelationID()
-        let thingResolveID = thingID == nil ? nil : try reserveRuntimeComponentCorrelationID()
-        let thingQueryID = thingID == nil ? nil : try reserveRuntimeComponentCorrelationID()
+        let sensorResolveID = try draft.reserveRuntimeComponentCorrelationID()
+        let sensorQueryID = try draft.reserveRuntimeComponentCorrelationID()
+        let thingResolveID = thingID == nil ? nil : try draft.reserveRuntimeComponentCorrelationID()
+        let thingQueryID = thingID == nil ? nil : try draft.reserveRuntimeComponentCorrelationID()
         let sensorDiscover = try encodeDiscover(objectID: sensorID, objectType: "coaty.sensorThings.Sensor")
         let sensorQuery = try encodeQuery(objectType: "coaty.sensorThings.Sensor")
         let thingDiscover = try thingID.map { try encodeDiscover(objectID: $0, objectType: "coaty.sensorThings.Thing") }
         let thingQuery = thingID == nil ? nil : try encodeQuery(objectType: "coaty.sensorThings.Thing")
-        let sensorResolveStream = try events(
+        let sensorResolveStream = try draft.events(
             matching: .correlatedResponse(capability: .resolve, correlationID: sensorResolveID),
             buffering: .coalesceLatest
         )
-        let sensorRetrieveStream = try events(
+        let sensorRetrieveStream = try draft.events(
             matching: .correlatedResponse(capability: .retrieve, correlationID: sensorQueryID),
             buffering: .coalesceLatest
         )
         let thingResolveStream: RuntimeEventStream? = try thingResolveID.map {
-            try events(matching: .correlatedResponse(capability: .resolve, correlationID: $0), buffering: .coalesceLatest)
+            try draft.events(matching: .correlatedResponse(capability: .resolve, correlationID: $0), buffering: .coalesceLatest)
         }
         let thingRetrieveStream: RuntimeEventStream? = try thingQueryID.map {
-            try events(matching: .correlatedResponse(capability: .retrieve, correlationID: $0), buffering: .coalesceLatest)
+            try draft.events(matching: .correlatedResponse(capability: .retrieve, correlationID: $0), buffering: .coalesceLatest)
         }
-        try registerRuntimeComponent(RuntimeComponentRegistration(
+        try draft.registerRuntimeComponent(RuntimeComponentRegistration(
             start: { runtime in
-                _ = await runtime.request(.discover(correlationID: sensorResolveID, payload: sensorDiscover, timeoutMS: nil))
+                _ = await runtime.request(.discover(correlationID: sensorResolveID, payload: sensorDiscover, timeoutMS: configuration.requestTimeoutMS))
                 _ = await runtime.request(.query(correlationID: sensorQueryID, payload: sensorQuery, timeoutMS: configuration.requestTimeoutMS))
                 if let id = thingID, let correlation = thingResolveID, let payload = thingDiscover {
                     _ = id
-                    _ = await runtime.request(.discover(correlationID: correlation, payload: payload, timeoutMS: nil))
+                    _ = await runtime.request(.discover(correlationID: correlation, payload: payload, timeoutMS: configuration.requestTimeoutMS))
                 }
                 if let correlation = thingQueryID, let payload = thingQuery {
                     _ = await runtime.request(.query(correlationID: correlation, payload: payload, timeoutMS: configuration.requestTimeoutMS))
@@ -395,6 +398,7 @@ public extension RuntimeDefinition.Builder {
                 if let correlation = thingQueryID { _ = await runtime.cancelRequest(correlation) }
             }
         ))
+        self = draft
     }
 }
 
