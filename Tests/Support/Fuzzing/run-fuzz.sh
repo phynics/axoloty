@@ -271,6 +271,7 @@ trap_signal() {
     if (( ${#worker_pids[@]} > 0 )); then
         kill -TERM "${worker_pids[@]}" 2>/dev/null || true
     fi
+    exit 143
 }
 
 trap_exit() {
