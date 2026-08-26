@@ -185,7 +185,6 @@ let package = Package(
             resources: [
                 .copy("ProtocolTrace/trace.schema.json"),
                 .copy("ProtocolTrace/Fixtures/family-seeds.json"),
-                .copy("WireCompatibility/Fixtures"),
             ]
         ),
         .testTarget(
