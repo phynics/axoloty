@@ -33,6 +33,10 @@ let package = Package(
             targets: ["AxolotyCoatyModels"]
         ),
         .library(
+            name: "AxolotyIoRouting",
+            targets: ["AxolotyIoRouting"]
+        ),
+        .library(
             name: "AxolotyStaticRuntime",
             targets: ["AxolotyStaticRuntime"]
         ),
@@ -98,6 +102,11 @@ let package = Package(
             name: "AxolotyCoatyModels",
             dependencies: ["AxolotyObjectModel"],
             path: "Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels"
+        ),
+        .target(
+            name: "AxolotyIoRouting",
+            dependencies: ["Axoloty", "AxolotyProtocol", "AxolotyObjectModel", "AxolotyWire"],
+            path: "Packages/AxolotyIoRouting/Sources/AxolotyIoRouting"
         ),
         .target(
             name: "AxolotyStaticRuntime",
@@ -201,6 +210,11 @@ let package = Package(
             name: "AxolotyCoatyModelsTests",
             dependencies: ["AxolotyCoatyModels", "AxolotyObjectModel", "AxolotyWire"],
             path: "Packages/AxolotyCoatyModels/Tests/AxolotyCoatyModelsTests"
+        ),
+        .testTarget(
+            name: "AxolotyIoRoutingTests",
+            dependencies: ["AxolotyIoRouting", "Axoloty", "AxolotyProtocol", "AxolotyObjectModel", "AxolotyWire"],
+            path: "Packages/AxolotyIoRouting/Tests/AxolotyIoRoutingTests"
         ),
         .testTarget(
             name: "AxolotyStaticRuntimeTests",
@@ -338,7 +352,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "IoRoutingConsumer",
-            dependencies: ["Axoloty"],
+            dependencies: ["AxolotyIoRouting"],
             path: "Benchmarks/Consumers/IoRoutingConsumer"
         ),
         .executableTarget(
