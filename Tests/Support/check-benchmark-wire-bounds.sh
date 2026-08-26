@@ -40,6 +40,11 @@ grep -Fq 'capacity: WireBufferConfig.maxPayloadSize + 8' "$wire_reader" \
 [ "$(grep -Fo '.scanValue()' "$wire_reader" | wc -l)" -eq 1 ] \
     || fail "WireReader must perform one tokenizer scan"
 
+if [ "${AXOLOTY_WIRE_BOUNDS_SOURCE_ONLY:-0}" = 1 ]; then
+    echo "WIRE READER SOURCE BOUNDS OK"
+    exit 0
+fi
+
 echo "== Running wire bounds tests (release mode) =="
 CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-podman}" \
 IMAGE="${IMAGE:-axoloty-dev}" \

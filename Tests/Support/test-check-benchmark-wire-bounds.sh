@@ -23,8 +23,8 @@ check() {
 
 check "check-benchmark-wire-bounds.sh passes sh -n" sh -n "$SCRIPT_DIR/check-benchmark-wire-bounds.sh"
 
-check "benchmark keeps the single-tokenizer implementation guard" \
-    grep -q "WireReader must construct one tokenizer" "$SCRIPT_DIR/check-benchmark-wire-bounds.sh"
+check "benchmark enforces the single-tokenizer implementation guard" \
+    env AXOLOTY_WIRE_BOUNDS_SOURCE_ONLY=1 sh "$SCRIPT_DIR/check-benchmark-wire-bounds.sh"
 
 wire_bounds="$SCRIPT_DIR/../../Packages/AxolotyWire/Tests/AxolotyWireTests/WireBoundsTests.swift"
 
