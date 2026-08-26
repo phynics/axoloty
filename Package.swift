@@ -185,6 +185,22 @@ let package = Package(
             resources: [
                 .copy("ProtocolTrace/trace.schema.json"),
                 .copy("ProtocolTrace/Fixtures/family-seeds.json"),
+                .copy("WireCompatibility/Fixtures/coatyjs-2.4.0/coatyjs-advertise.jsonl"),
+                .copy("WireCompatibility/Fixtures/coatyjs-2.4.0/coatyjs-call-return.jsonl"),
+                .copy("WireCompatibility/Fixtures/coatyjs-2.4.0/coatyjs-channel.jsonl"),
+                .copy("WireCompatibility/Fixtures/coatyjs-2.4.0/coatyjs-deadvertise.jsonl"),
+                .copy("WireCompatibility/Fixtures/coatyjs-2.4.0/coatyjs-discover-resolve.jsonl"),
+                .copy("WireCompatibility/Fixtures/coatyjs-2.4.0/coatyjs-graceful-deadvertise.jsonl"),
+                .copy("WireCompatibility/Fixtures/coatyjs-2.4.0/coatyjs-last-will.jsonl"),
+                .copy("WireCompatibility/Fixtures/coatyjs-2.4.0/coatyjs-qos-0.jsonl"),
+                .copy("WireCompatibility/Fixtures/coatyjs-2.4.0/coatyjs-query-retrieve.jsonl"),
+                .copy("WireCompatibility/Fixtures/coatyjs-2.4.0/coatyjs-update-complete.jsonl"),
+                .copy("WireCompatibility/Fixtures/coatyswift-2.4.0/advertise.jsonl"),
+                .copy("WireCompatibility/Fixtures/coatyswift-2.4.0/advertise.manifest.json"),
+                .copy("WireCompatibility/Fixtures/coatyswift-2.4.0/deadvertise.jsonl"),
+                .copy("WireCompatibility/Fixtures/coatyswift-2.4.0/deadvertise.manifest.json"),
+                .copy("WireCompatibility/Fixtures/coatyswift-2.4.0/discover-resolve.jsonl"),
+                .copy("WireCompatibility/Fixtures/coatyswift-2.4.0/discover-resolve.manifest.json"),
             ]
         ),
         .testTarget(
