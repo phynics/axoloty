@@ -179,14 +179,13 @@ required `Live CoatyJS compatibility gate` check (issue #457).
 **Protocol-affecting paths** (authoritative list in
 `Tests/Support/classify-wire-change.mjs`, `PROTOCOL_AFFECTING`):
 
-- `Packages/AxolotyWire/**` — AxolotyWire codec and routing.
+- `Packages/AxolotyWire/**` — AxolotyWire codec, routing, and package-owned tests.
 - `Source/**` — host wire codecs, events, core types, IO routing, SensorThings.
 - `Tests/AxolotyTests/WireCompatibility/**` — offline Swift wire tests and committed fixtures.
 - `Tests/AxolotyLiveWireTests/**` — live Swift subjects, compiled separately and gated by the live environment.
 - `Tests/Support/WireCompatibility/**` — live scenarios, reference agents,
   capture/verifier tooling, and other wire test infrastructure (Markdown,
   decision records, and the `Audit/` tree stay on the fast path).
-- `Tests/AxolotyWire/**` — wire codec tests.
 - `Package.swift` and `Package.resolved` — package manifest and resolved
   dependency graph.
 
