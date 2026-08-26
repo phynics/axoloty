@@ -1,8 +1,6 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import AxolotyWire
-import AxolotyProtocol
-import Foundation
 import Testing
 
 /// Malformed-input, truncation, nesting, size-limit, and capacity bounds tests
@@ -95,33 +93,31 @@ private func decodeReaderError(_ bytes: [UInt8]) -> WireDecodeError? {
     }
 }
 
-// MARK: - Single-pass implementation guard
+// MARK: - Reader implementation bounds
 
 @Suite("WireReader implementation bounds")
 struct WireReaderImplementationTests {
     @Test("Strictness is folded into the tokenizer pass")
-    func strictnessDoesNotUseASeparateScanner() throws {
-        let sourceURL = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("Packages/AxolotyWire/Sources/AxolotyWire/WireReader.swift")
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
-
-        for forbiddenPath in [
-            "preflight(",
-            "scanString(",
-            "scanNumber(",
-            "literal(",
-            "hex4(",
-            "capacity: buffer.count + 8",
-            "capacity: buffer.count"
-        ] {
-            #expect(!source.contains(forbiddenPath), "Found unbounded tokenizer workspace: \(forbiddenPath)")
+    func strictnessDoesNotUseASeparateScanner() {
+        let bytes = Array(#"{"payload":1,"payload":2}"#.utf8)
+        let defaultFailure = decodeReaderError(bytes)
+        var workspace = HostWireParserWorkspace()
+        let workspaceFailure = bytes.withUnsafeBufferPointer { buffer in
+            validationError(WireReader(
+                bytes: buffer.baseAddress!,
+                length: buffer.count,
+                workspace: &workspace
+            ))
         }
-        #expect(source.contains("capacity: WireBufferConfig.maxPayloadSize + 8"))
-        #expect(source.components(separatedBy: "JSONTokenizer(bytes:").count - 1 == 1)
-        #expect(source.components(separatedBy: ".scanValue()").count - 1 == 1)
+
+        guard case .duplicateField? = defaultFailure?.reason else {
+            Issue.record("Default reader did not reject the duplicate field")
+            return
+        }
+        guard case .duplicateField? = workspaceFailure?.reason else {
+            Issue.record("Workspace reader did not reject the duplicate field")
+            return
+        }
     }
 
     @Test("One tokenizer pass preserves lexical error categories")

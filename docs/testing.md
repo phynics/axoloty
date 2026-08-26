@@ -12,8 +12,9 @@ Ordinary Swift tests live under `Tests/AxolotyTests` and are safe for the
 hardware-free verification path. Live interoperability subjects live under
 `Tests/AxolotyLiveWireTests`; every test there is environment-gated and the
 live runners select the corresponding suite filters. Shared deadline and confirmation
-helpers live in the non-product `AxolotyTestSupport` target. `Tests/AxolotyWire`
-remains an independent package-boundary test target, while `Tests/Support`
+helpers live in the non-product `AxolotyTestSupport` target. Portable wire tests
+live under `Packages/AxolotyWire/Tests/AxolotyWireTests`; both the standalone
+package and root package expose that package-owned test target. `Tests/Support`
 contains orchestration scripts and fixtures outside SwiftPM test discovery.
 Test targets use recursive directory ownership; individual Swift test files
 must not be added to a manifest source allowlist or exclusion list.

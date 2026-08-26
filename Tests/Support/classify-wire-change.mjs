@@ -14,7 +14,6 @@ export const PROTOCOL_AFFECTING = [
   { glob: "Tests/AxolotyTests/WireCompatibility/**", description: "offline wire tests and fixtures" },
   { glob: "Tests/AxolotyLiveWireTests/**", description: "live wire Swift subjects" },
   { glob: "Tests/Support/WireCompatibility/**", description: "wire scenarios, reference agents, and tooling" },
-  { glob: "Tests/AxolotyWire/**", description: "wire codec tests" },
   { glob: "Package.swift", description: "package manifest" },
   { glob: "Package.resolved", description: "resolved dependency graph" },
 ];

@@ -191,11 +191,8 @@ let package = Package(
         ),
         .testTarget(
             name: "AxolotyWireTests",
-            dependencies: [
-                "AxolotyWire",
-                "AxolotyProtocol",
-            ],
-            path: "Tests/AxolotyWire"
+            dependencies: ["AxolotyWire"],
+            path: "Packages/AxolotyWire/Tests/AxolotyWireTests"
         ),
         .testTarget(
             name: "AxolotyProtocolTests",

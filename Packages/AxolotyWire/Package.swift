@@ -37,6 +37,11 @@ let package = Package(
             ],
             path: "Sources/AxolotyWire"
         ),
+        .testTarget(
+            name: "AxolotyWireTests",
+            dependencies: ["AxolotyWire"],
+            path: "Tests/AxolotyWireTests"
+        ),
     ],
     swiftLanguageModes: [.v6]
 )
