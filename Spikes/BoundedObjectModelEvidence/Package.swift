@@ -11,6 +11,7 @@ let package = Package(
     dependencies: [
         .package(path: "../../Packages/AxolotyObjectModel"),
         .package(path: "../../Packages/AxolotyCoatyModels"),
+        .package(path: "../../Packages/AxolotyProtocol"),
         .package(path: "../../Packages/AxolotyWire"),
     ],
     targets: [
@@ -19,6 +20,7 @@ let package = Package(
             dependencies: [
                 .product(name: "AxolotyObjectModel", package: "AxolotyObjectModel"),
                 .product(name: "AxolotyCoatyModels", package: "AxolotyCoatyModels"),
+                .product(name: "AxolotyProtocol", package: "AxolotyProtocol"),
                 .product(name: "AxolotyWire", package: "AxolotyWire"),
             ],
             path: "Sources/BoundedObjectModelProbe"
@@ -28,6 +30,7 @@ let package = Package(
             dependencies: [
                 .product(name: "AxolotyObjectModel", package: "AxolotyObjectModel"),
                 .product(name: "AxolotyCoatyModels", package: "AxolotyCoatyModels"),
+                .product(name: "AxolotyProtocol", package: "AxolotyProtocol"),
                 .product(name: "AxolotyWire", package: "AxolotyWire"),
             ],
             path: "Tests/BoundedObjectModelEvidenceTests"
