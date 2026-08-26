@@ -40,6 +40,7 @@ actor ProtocolExecutor {
     var ioObservers: [UInt64: RuntimeIoObserver] = [:]
     var nextIoObserverID: UInt64 = 1
     var ioFlushTasks: [Int: Task<Void, Never>] = [:]
+    var runtimeComponentTasks: [Task<Void, Never>] = []
     private let eventRegistrations: [RuntimeEventRegistration]
 
     private let eventStream: AsyncStream<RuntimeEvent>
@@ -130,6 +131,7 @@ actor ProtocolExecutor {
                 return (.notStarted, "runtime start was superseded during advertisement")
             }
             state = .running
+            await startRuntimeComponents()
             return nil
         } catch {
             cancelIngressPump()
@@ -150,6 +152,7 @@ actor ProtocolExecutor {
 
     func stop() async {
         guard state == .running || state == .starting || state == .reconnecting || state == .failed else { return }
+        await stopRuntimeComponents()
         state = .stopping
         offlineOperations.removeAll(keepingCapacity: true)
         transportEpoch &+= 1
@@ -241,6 +244,7 @@ actor ProtocolExecutor {
             try await publishIoAdvertisements(nowMS: monotonicNowMS())
             guard state == .reconnecting, transportEpoch == epoch else { return }
             state = .running
+            await startRuntimeComponents(restarting: true)
             flushOfflineOperations(nowMS: monotonicNowMS())
         } catch {
             guard state == .reconnecting, transportEpoch == epoch else { return }
@@ -280,7 +284,6 @@ actor ProtocolExecutor {
     func events() -> AsyncStream<RuntimeEvent> { eventStream }
 
     func diagnostics() -> AsyncStream<RuntimeDiagnostic> { diagnosticStream }
-
     func diagnosticsSnapshot() -> RuntimeDiagnostics { diagnosticsSnapshotValue }
 
     func terminalFailure() -> (AxolotyError.RuntimeErrorCode, String)? { terminalFailureValue }
@@ -560,7 +563,7 @@ actor ProtocolExecutor {
         notifyIoObservers()
     }
 
-    private func emitRegisteredEvents(for delivery: BorrowedProtocolDelivery, owned: OwnedProtocolAction, nowMS: UInt32) {
+    func emitRegisteredEvents(for delivery: BorrowedProtocolDelivery, owned: OwnedProtocolAction, nowMS: UInt32) {
         let payload: [UInt8]
         switch owned {
         case .deliver(let value): payload = value.payload

@@ -33,6 +33,10 @@ let package = Package(
             targets: ["AxolotyCoatyModels"]
         ),
         .library(
+            name: "AxolotyIoRouting",
+            targets: ["AxolotyIoRouting"]
+        ),
+        .library(
             name: "AxolotyStaticRuntime",
             targets: ["AxolotyStaticRuntime"]
         ),
@@ -100,6 +104,11 @@ let package = Package(
             path: "Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels"
         ),
         .target(
+            name: "AxolotyIoRouting",
+            dependencies: ["Axoloty", "AxolotyProtocol", "AxolotyObjectModel", "AxolotyWire"],
+            path: "Packages/AxolotyIoRouting/Sources/AxolotyIoRouting"
+        ),
+        .target(
             name: "AxolotyStaticRuntime",
             dependencies: [
                 "AxolotyProtocol",
@@ -143,6 +152,7 @@ let package = Package(
                 "Runtime/RuntimeIO.swift",
                 "Runtime/RuntimeLifecyclePayload.swift",
                 "Runtime/ProtocolExecutor+Outbound.swift",
+                "Runtime/RuntimeComponents.swift",
                 "Runtime/RuntimeSupport.swift",
                 "Runtime/MQTTBinding.swift",
                 "Runtime/RuntimeMQTTClient.swift",
@@ -201,6 +211,11 @@ let package = Package(
             name: "AxolotyCoatyModelsTests",
             dependencies: ["AxolotyCoatyModels", "AxolotyObjectModel", "AxolotyWire"],
             path: "Packages/AxolotyCoatyModels/Tests/AxolotyCoatyModelsTests"
+        ),
+        .testTarget(
+            name: "AxolotyIoRoutingTests",
+            dependencies: ["AxolotyIoRouting", "Axoloty", "AxolotyProtocol", "AxolotyObjectModel", "AxolotyWire"],
+            path: "Packages/AxolotyIoRouting/Tests/AxolotyIoRoutingTests"
         ),
         .testTarget(
             name: "AxolotyStaticRuntimeTests",
@@ -338,7 +353,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "IoRoutingConsumer",
-            dependencies: ["Axoloty"],
+            dependencies: ["AxolotyIoRouting"],
             path: "Benchmarks/Consumers/IoRoutingConsumer"
         ),
         .executableTarget(

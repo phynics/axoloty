@@ -7,7 +7,7 @@
 // the incremental cost of the router, source/actor controllers, and
 // association registry beyond the communication event baseline.
 
-import AxolotyObjectModel
+import AxolotyIoRouting
 
-let coreType = ObjectCoreType.coatyObject
-print("IO_ROUTING_CONSUMER_OK: \(coreType)")
+let limits = IoRoutingLimits()
+print("IO_ROUTING_CONSUMER_OK: \(limits.maximumEndpoints):\(limits.maximumAssociations)")

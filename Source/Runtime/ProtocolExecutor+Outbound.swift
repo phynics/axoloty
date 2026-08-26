@@ -4,6 +4,44 @@ import AxolotyProtocol
 import AxolotyWire
 
 extension ProtocolExecutor {
+    /// Emits one locally generated lifecycle publication through the bounded
+    /// event registrations before it is handed to transport.
+    func emitRegisteredEvents(for publication: OwnedProtocolPublication, nowMS: UInt32) {
+        guard case .profile(let filter, _) = publication.target else { return }
+        publication.payload.withUnsafeBufferPointer { payloadBuffer in
+            guard let payloadBase = payloadBuffer.baseAddress else { return }
+            let payload = ByteSlice(bytes: payloadBase, length: payloadBuffer.count)
+            let deliver = { (filterBytes: ByteSlice?) in
+                let key: BorrowedProtocolDeliveryKey
+                switch publication.routingKey.capability {
+                case .advertise:
+                    key = filterBytes.map { .advertiseFilter($0) } ?? .capability(.advertise)
+                case .channel:
+                    key = filterBytes.map { .channel($0) } ?? .capability(.channel)
+                default:
+                    key = .capability(publication.routingKey.capability)
+                }
+                let delivery = BorrowedProtocolDelivery(
+                    routingKey: publication.routingKey,
+                    deliveryKey: key,
+                    routeClassification: .coaty,
+                    payload: payload
+                )
+                self.emitRegisteredEvents(for: delivery, owned: .publish(publication), nowMS: nowMS)
+            }
+            if let filter {
+                filter.withUnsafeBufferPointer { buffer in
+                    let bytes = buffer.baseAddress.map {
+                        ByteSlice(bytes: $0, length: buffer.count)
+                    }
+                    deliver(bytes)
+                }
+            } else {
+                deliver(nil)
+            }
+        }
+    }
+
     /// Processes a lifecycle operation through the portable processor and
     /// sends the resulting owned publications synchronously. Lifecycle sends
     /// must complete before startup/reconnect becomes ready or shutdown removes
@@ -33,6 +71,7 @@ extension ProtocolExecutor {
         }
 
         for publication in publications {
+            emitRegisteredEvents(for: publication, nowMS: nowMS)
             try await transport.perform(.publish(publication), namespace: definition.namespace)
         }
     }

@@ -144,8 +144,10 @@ public struct WireValueReader: ~Copyable {
     /// The number of bytes in the value.
     public let length: Int
 
-    /// Creates a reader over a borrowed complete JSON value.
-    init(_ value: ByteSlice) {
+    /// Creates a reader over one borrowed complete JSON value.
+    ///
+    /// - Parameter value: The complete borrowed JSON value to inspect.
+    public init(_ value: ByteSlice) {
         self.bytes = value.withBytes { pointer, _ in pointer }
         self.length = value.length
     }

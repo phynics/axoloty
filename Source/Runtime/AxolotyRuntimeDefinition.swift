@@ -700,6 +700,7 @@ public struct RuntimeDefinition: Sendable {
     private var registrations: [RuntimeHandlerRegistration] = []
     private var eventRegistrations: [RuntimeEventRegistration] = []
     var ioEndpointRegistrations: [RuntimeIoEndpointRegistration] = []
+    var runtimeComponents: [RuntimeComponentRegistration] = []
     var sealed = false
 
     /// Keeps one ProtocolProcessor object slot available for runtime identity.
@@ -724,6 +725,7 @@ public struct RuntimeDefinition: Sendable {
         self.registryID = runtimeRegistryNonce()
         self.registrations.reserveCapacity(capacities.handlers)
         self.ioEndpointRegistrations.reserveCapacity(endpointRegistrationLimit)
+        self.runtimeComponents.reserveCapacity(4)
     }
 
     /// Registers one bounded application handler.
@@ -814,7 +816,8 @@ public struct RuntimeDefinition: Sendable {
             registrations: copy.registrations,
             eventRegistrations: copy.eventRegistrations,
             registryID: copy.registryID,
-            ioEndpointRegistrations: copy.ioEndpointRegistrations
+            ioEndpointRegistrations: copy.ioEndpointRegistrations,
+            runtimeComponents: copy.runtimeComponents
         )
     }
 }
@@ -833,13 +836,14 @@ public struct SealedRuntimeDefinition: Sendable {
     let registrations: [RuntimeHandlerRegistration]
     let eventRegistrations: [RuntimeEventRegistration]
     let ioEndpointRegistrations: [RuntimeIoEndpointRegistration]
+    let runtimeComponents: [RuntimeComponentRegistration]
 
     /// The number of registered handlers.
     public var handlerCount: Int { registrations.count }
     /// The number of registered typed IO endpoints.
     public var ioEndpointCount: Int { ioEndpointRegistrations.count }
 
-    init(namespace: String, sourceID: UUID16, identity: RuntimeIdentity? = nil, capacities: RuntimeCapacities, registrations: [RuntimeHandlerRegistration], eventRegistrations: [RuntimeEventRegistration] = [], registryID: ObjectID, ioEndpointRegistrations: [RuntimeIoEndpointRegistration] = []) {
+    init(namespace: String, sourceID: UUID16, identity: RuntimeIdentity? = nil, capacities: RuntimeCapacities, registrations: [RuntimeHandlerRegistration], eventRegistrations: [RuntimeEventRegistration] = [], registryID: ObjectID, ioEndpointRegistrations: [RuntimeIoEndpointRegistration] = [], runtimeComponents: [RuntimeComponentRegistration] = []) {
         self.namespace = namespace
         self.sourceID = sourceID
         self.identity = identity
@@ -848,6 +852,7 @@ public struct SealedRuntimeDefinition: Sendable {
         self.registrations = registrations
         self.eventRegistrations = eventRegistrations
         self.ioEndpointRegistrations = ioEndpointRegistrations
+        self.runtimeComponents = runtimeComponents
     }
 }
 
