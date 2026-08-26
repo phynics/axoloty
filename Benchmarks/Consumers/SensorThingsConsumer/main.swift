@@ -8,6 +8,9 @@
 // of the SensorThings subsystem beyond the communication event baseline.
 
 import AxolotyObjectModel
+import AxolotySensorThings
 
 let coreType = ObjectCoreType.coatyObject
-print("SENSORTHINGS_CONSUMER_OK: \(coreType)")
+let metadata = try! SensorThingsJSONValue("{\"manufacturer\":\"axoloty\"}")
+let observationType = ObservationType.measurement
+print("SENSORTHINGS_CONSUMER_OK: \(coreType) \(metadata.kind) \(observationType.rawValue)")

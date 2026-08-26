@@ -82,8 +82,8 @@ wire-evidence section and `../docs/wire-compatibility.md`.
 | In-memory database adapter | Yes | No | No | JS specialized module. |
 | PostgreSQL adapter | Yes | No | No | JS/Node specialized module. |
 | SQLite Node/Cordova adapters | Yes | No | No | JS platform-specific modules. |
-| SensorThings object model | Yes | Yes | Yes | Swift includes Sensor, Thing, Observation, and FeatureOfInterest. |
-| SensorThings controllers/workflows | Yes | Yes | Yes | Supported: source/observer controllers with broker-backed tests. Full parity with JS is unproven. |
+| SensorThings object model | Yes | Yes | Yes (optional) | `AxolotySensorThings` provides bounded Sensor, Thing, Observation, and FeatureOfInterest schemas. |
+| SensorThings workflows | Yes | Yes | Yes (optional) | Source/observer compositions use standard runtime operations; no controller hierarchy or fabricated JS parity claim. |
 | Sensor hardware IO helpers | Yes | Partial | Partial | Both expose SensorThings IO concepts, but JS has broader platform-specific modules. |
 | Object lifecycle controller | Yes | Yes | Yes | Swift implementation and tests exist. |
 | Decentralized structured logging | Yes | Yes | Yes | Axoloty migrated its local logging backend to swift-log. |

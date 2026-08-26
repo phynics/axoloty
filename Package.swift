@@ -37,6 +37,10 @@ let package = Package(
             targets: ["AxolotyIoRouting"]
         ),
         .library(
+            name: "AxolotySensorThings",
+            targets: ["AxolotySensorThings"]
+        ),
+        .library(
             name: "AxolotyStaticRuntime",
             targets: ["AxolotyStaticRuntime"]
         ),
@@ -107,6 +111,11 @@ let package = Package(
             name: "AxolotyIoRouting",
             dependencies: ["Axoloty", "AxolotyProtocol", "AxolotyObjectModel", "AxolotyWire"],
             path: "Packages/AxolotyIoRouting/Sources/AxolotyIoRouting"
+        ),
+        .target(
+            name: "AxolotySensorThings",
+            dependencies: ["Axoloty", "AxolotyObjectModel", "AxolotyProtocol", "AxolotyWire"],
+            path: "Packages/AxolotySensorThings/Sources/AxolotySensorThings"
         ),
         .target(
             name: "AxolotyStaticRuntime",
@@ -216,6 +225,11 @@ let package = Package(
             name: "AxolotyIoRoutingTests",
             dependencies: ["AxolotyIoRouting", "Axoloty", "AxolotyProtocol", "AxolotyObjectModel", "AxolotyWire"],
             path: "Packages/AxolotyIoRouting/Tests/AxolotyIoRoutingTests"
+        ),
+        .testTarget(
+            name: "AxolotySensorThingsTests",
+            dependencies: ["AxolotySensorThings", "AxolotyObjectModel", "AxolotyProtocol", "AxolotyWire"],
+            path: "Packages/AxolotySensorThings/Tests/AxolotySensorThingsTests"
         ),
         .testTarget(
             name: "AxolotyStaticRuntimeTests",
@@ -358,7 +372,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "SensorThingsConsumer",
-            dependencies: ["Axoloty"],
+            dependencies: ["AxolotySensorThings"],
             path: "Benchmarks/Consumers/SensorThingsConsumer"
         ),
         // Release-only wire benchmark executable (issue #300). Measures

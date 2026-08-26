@@ -430,6 +430,34 @@ extension Optional: ObjectFieldEncodable where Wrapped: ObjectFieldEncodable {
     }
 }
 
+extension OwnedJSONValue: ObjectFieldDecodable {
+    /// Copies one complete JSON value into the bounded owned representation.
+    public static func decode(from value: borrowing JSONValueView) throws(ObjectDecodingError) -> Self {
+        var decoded: Self?
+        value.withRaw { raw in decoded = try? Self(copying: raw) }
+        guard let decoded else { throw .invalidField }
+        return decoded
+    }
+}
+
+extension OwnedJSONValue: ObjectFieldEncodable {
+    /// Encodes the retained JSON value without stringifying or changing its
+    /// original number lexeme.
+    public borrowing func encode<let editorCapacity: Int>(
+        to editor: inout ObjectFieldEncoder<editorCapacity>,
+        forKey key: StaticString
+    ) throws(ObjectEncodingError) {
+        var failure: ObjectError?
+        withEncodedBytes { raw in
+            do throws(ObjectError) { try editor.setRaw(key, value: raw) }
+            catch { failure = error }
+        }
+        if let failure {
+            throw failure.reason == .capacityExceeded ? .capacityExceeded : .invalidField
+        }
+    }
+}
+
 extension Presence: ObjectFieldEncodable where Value: ObjectFieldEncodable {
     /// Encodes the missing, null, or value state without collapsing it.
     ///
