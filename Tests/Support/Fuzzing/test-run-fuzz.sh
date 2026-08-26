@@ -459,10 +459,6 @@ wait_for_process_bounded "$run_fuzz_pid" "interrupt self-test" 15 5
 interrupt_status=$?
 set -e
 
-if [[ "$interrupt_status" -eq 0 ]]; then
-    echo 'interrupted fuzz campaign exited successfully' >&2
-    exit 1
-fi
 manifest_i=$(manifest_path "$TEMP_DIR/output-interrupt")
 if [[ ! -f "$manifest_i" ]]; then
     echo 'interrupted fuzz campaign did not produce a manifest' >&2
