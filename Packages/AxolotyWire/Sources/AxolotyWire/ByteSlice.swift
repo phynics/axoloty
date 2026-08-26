@@ -104,7 +104,7 @@ public struct ByteSlice: Equatable, Hashable {
                 bytes: pointer.assumingMemoryBound(to: UInt8.self),
                 length: length
             )
-            do {
+            do throws(WireDecodeError) {
                 try view.withDecodedScalars(in: 0..<length) { scalar in
                 guard !overflow else { return }
                 let width: Int
@@ -134,10 +134,8 @@ public struct ByteSlice: Equatable, Hashable {
                 }
                 count += width
             }
-            } catch let error as WireDecodeError {
-                decodingFailure = error
             } catch {
-                decodingFailure = WireDecodeError(.invalidEscape)
+                decodingFailure = error
             }
         }
         if let decodingFailure { throw decodingFailure }

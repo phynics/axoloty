@@ -50,19 +50,19 @@ public struct IoSourceEndpointDefinition: ~Copyable, Sendable {
         externalRoute: BoundedEncodedText<128>?
     ) throws(ProtocolError) {
         var object = metadata
+        var boundedExternalRoute: BoundedEncodedText<128>?
+        if let externalRoute {
+            externalRoute.withBytes { bytes in
+                boundedExternalRoute = BoundedEncodedText<128>(bytes: bytes)
+            }
+            guard boundedExternalRoute != nil else {
+                throw ProtocolError(.capacityExceeded)
+            }
+        }
         do throws(ObjectError) {
             try object.edit { fields in
                 fields.useRawIoValues = representation == .binary ? true : nil
-                if let externalRoute {
-                    var bounded: BoundedEncodedText<128>?
-                    externalRoute.withBytes { bytes in
-                        bounded = BoundedEncodedText<128>(bytes: bytes)
-                    }
-                    guard let bounded else { throw ObjectError(.capacityExceeded) }
-                    fields.externalRoute = bounded
-                } else {
-                    fields.externalRoute = nil
-                }
+                fields.externalRoute = boundedExternalRoute
                 switch publication {
                 case .immediate:
                     fields.updateStrategy = 1
