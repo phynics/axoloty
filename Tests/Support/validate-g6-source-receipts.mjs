@@ -20,10 +20,30 @@ function digest(file) {
 function canonicalSources(root, sourceRoot) {
   const directory = path.join(root, sourceRoot);
   if (!fs.statSync(directory).isDirectory()) fail(`missing source root: ${sourceRoot}`);
-  return fs.readdirSync(directory, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".swift"))
-    .map((entry) => path.posix.join(sourceRoot, entry.name))
-    .sort();
+  const result = [];
+  const visit = (current, relative) => {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const absolute = path.join(current, entry.name);
+      const child = path.posix.join(relative, entry.name);
+      if (entry.isDirectory()) visit(absolute, child);
+      else if (entry.isFile() && entry.name.endsWith(".swift")) result.push(child);
+      else if (entry.isSymbolicLink()) fail(`source root contains a symlink: ${child}`);
+    }
+  };
+  visit(directory, sourceRoot);
+  return result.sort();
+}
+
+function requireReceiptMetadata(receipt, file) {
+  if (!["swiftpm", "esp-idf-cmake"].includes(receipt.buildSystem)) {
+    fail(`${file} must identify swiftpm or esp-idf-cmake as its buildSystem`);
+  }
+  for (const key of ["targetTriple", "compilerIdentity"]) {
+    if (typeof receipt[key] !== "string" || receipt[key].trim() === "") fail(`${file} requires ${key}`);
+  }
+  if (typeof receipt.compilerArgumentsDigest !== "string" || !/^[0-9a-f]{64}$/.test(receipt.compilerArgumentsDigest)) {
+    fail(`${file} requires a SHA-256 compilerArgumentsDigest`);
+  }
 }
 
 function loadReceipt(file) {
@@ -35,6 +55,7 @@ function loadReceipt(file) {
   }
   if (receipt.schemaVersion !== 1) fail(`unsupported source receipt schema in ${file}`);
   if (!Array.isArray(receipt.modules)) fail(`source receipt modules must be an array: ${file}`);
+  requireReceiptMetadata(receipt, file);
   return receipt;
 }
 
@@ -75,7 +96,16 @@ export function validate({ root, host, embedded }) {
     }
     summaries.push({ module: name, sourceCount: expected.length, sourceRoot });
   }
-  return { schemaVersion: 1, status: "passed", sourceIdentity: "compiler-input-receipts", modules: summaries };
+  return {
+    schemaVersion: 1,
+    status: "passed",
+    sourceIdentity: "compiler-input-receipts",
+    receipts: {
+      host: { buildSystem: hostReceipt.buildSystem, targetTriple: hostReceipt.targetTriple, compilerIdentity: hostReceipt.compilerIdentity },
+      embedded: { buildSystem: embeddedReceipt.buildSystem, targetTriple: embeddedReceipt.targetTriple, compilerIdentity: embeddedReceipt.compilerIdentity },
+    },
+    modules: summaries,
+  };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

@@ -53,6 +53,7 @@ actor ProtocolExecutor {
         self.definition = definition
         self.transport = transport
         self.processor = ProtocolProcessor<64>(
+            capabilities: definition.capacities.protocolCapabilities,
             maximumPayloadBytes: definition.capacities.protocolMaximumPayloadBytes,
             maximumObjects: definition.capacities.protocolMaximumObjects,
             maximumPendingCorrelations: definition.capacities.protocolMaximumPendingCorrelations

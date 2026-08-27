@@ -36,6 +36,8 @@ public struct RuntimeCapacities: Sendable, Equatable {
     public let protocolMaximumObjects: Int
     /// Maximum pending protocol correlations accepted by the shared processor.
     public let protocolMaximumPendingCorrelations: Int
+    /// Coaty Core capabilities accepted by the shared processor.
+    public let protocolCapabilities: ProtocolCapabilities
 
     /// Creates finite runtime limits.
     public init(
@@ -51,7 +53,8 @@ public struct RuntimeCapacities: Sendable, Equatable {
         ioCatalogue: Int = 64,
         protocolMaximumPayloadBytes: Int = 512,
         protocolMaximumObjects: Int = 64,
-        protocolMaximumPendingCorrelations: Int = 64
+        protocolMaximumPendingCorrelations: Int = 64,
+        protocolCapabilities: ProtocolCapabilities = .coatyCore3
     ) throws {
         guard ingress > 0, dispatch > 0, handlers > 0,
               handlersInFlight > 0, stream > 0, eventStreams > 0,
@@ -86,6 +89,7 @@ public struct RuntimeCapacities: Sendable, Equatable {
         self.protocolMaximumPayloadBytes = protocolMaximumPayloadBytes
         self.protocolMaximumObjects = protocolMaximumObjects
         self.protocolMaximumPendingCorrelations = protocolMaximumPendingCorrelations
+        self.protocolCapabilities = protocolCapabilities
     }
 }
 

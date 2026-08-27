@@ -94,8 +94,11 @@ struct ProtocolTraceTests {
             steps: [brokenStep]
         )
 
-        #expect(throws: TraceReplayError.stateMismatch(traceID: original.id, sequence: 1)) {
+        do {
             _ = try await HostTraceReplayAdapter().replay(broken)
+            Issue.record("broken state chain unexpectedly replayed")
+        } catch let error as TraceReplayError {
+            #expect(error == .stateMismatch(traceID: original.id, sequence: 1))
         }
     }
 
@@ -105,7 +108,7 @@ struct ProtocolTraceTests {
         let schema = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: schemaURL)) as? [String: Any])
         #expect(schema["$schema"] as? String == "https://json-schema.org/draft/2020-12/schema")
         #expect(schema["title"] as? String == "Axoloty G6 Profile Protocol Trace")
-        #expect((schema["required"] as? [String]) == ["schemaVersion", "id", "description", "initialState", "steps"])
+        #expect((schema["required"] as? [String]) == ["schemaVersion", "id", "description", "initialState", "setup", "steps"])
     }
 
     private func replayAll(adapter: any TraceReplayAdapter, corpus: [ProtocolTrace]) async throws -> [TraceRun] {

@@ -2,7 +2,7 @@
 
 This document records the accepted architecture for the 0.6 alignment tracked by [epic #627](https://github.com/phynics/axoloty/issues/627). The repository has completed the G4 runtime cutover in PR [#649](https://github.com/phynics/axoloty/pull/649); the published version remains `0.5.1` until the 0.6 gates finish.
 
-## Current implementation (0.6 G5 checkpoint)
+## Current implementation (0.6 G6 certification checkpoint)
 
 The released implementation now consists of the root `Axoloty` host product,
 the Foundation-free `AxolotyWire`, `AxolotyObjectModel`, and
@@ -25,12 +25,20 @@ concerns.
 
 This section is the source of truth for what exists today. It must be updated whenever a gate changes the implemented package graph or removes a legacy path.
 
+G6 now includes a release-evidence boundary in `AxolotyTooling`: typed,
+exact-subject envelopes rehash their declared artifacts, and checkpoint plans
+resolve hardware inheritance before execution. This is certification
+infrastructure, not a claim that live broker, macOS, or physical-device
+evidence has already been collected. A 0.6 release remains uncertified until
+the final exact-SHA checkpoint validates every required domain.
+
 ### G2 status: shared fixed-inline processor
 
 Issue [#638](https://github.com/phynics/axoloty/issues/638) now lands the
 standalone [`Packages/AxolotyProtocol`](./Packages/AxolotyProtocol) package
 and the matching root product. Its host and ESP-IDF source-inclusion checks
-compile the same Foundation-free sources. Issue
+compile the same Foundation-free sources; release mode additionally records
+actual compiler-input receipts and compares exact path/hash sets. Issue
 [#640](https://github.com/phynics/axoloty/issues/640) now owns the
 fixed-inline processor seam, bounded action sink, handler table, and
 binding-supplied route classifier. The state-owning sources are under

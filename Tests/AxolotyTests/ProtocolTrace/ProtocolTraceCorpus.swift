@@ -96,7 +96,9 @@ enum ProtocolTraceCorpus {
                 actions: [TraceAction(
                     kind: operation == .publishOutbound ? "publish" : "deliver",
                     family: family,
-                    correlationID: correlationID
+                    correlationID: correlationID,
+                    route: expectedRoute(for: input),
+                    payload: Array((family == .associate ? seed.externalRoute : seed.valid).utf8)
                 )],
                 rejection: nil,
                 nextState: nextState
@@ -108,6 +110,10 @@ enum ProtocolTraceCorpus {
             initialState: priorState,
             steps: [step]
         )
+    }
+
+    private static func expectedRoute(for input: TraceInput) -> String {
+        input.routeClassification == .external ? "external" : "profile"
     }
 
     private static func malformedTrace(for family: TraceEventFamily, seed: FixtureSeed) -> ProtocolTrace {
@@ -300,7 +306,12 @@ enum ProtocolTraceCorpus {
             state: state,
             input: input,
             expected: TraceObservation(
-                actions: [TraceAction(kind: "deliver", family: .associate)],
+                actions: [TraceAction(
+                    kind: "deliver",
+                    family: .associate,
+                    route: "external",
+                    payload: Array(seed.externalRoute.utf8)
+                )],
                 rejection: nil,
                 nextState: TraceState(associationIDs: ["external-route-001"], generation: 1)
             )
@@ -344,7 +355,12 @@ enum ProtocolTraceCorpus {
             ),
             localOperation: .processInbound,
             expected: TraceObservation(
-                actions: [TraceAction(kind: "deliver", family: .advertise)],
+                actions: [TraceAction(
+                    kind: "deliver",
+                    family: .advertise,
+                    route: "profile",
+                    payload: Array(seed.valid.utf8)
+                )],
                 rejection: nil,
                 nextState: TraceState(activeObjectIDs: ["object-001"], generation: 1)
             )

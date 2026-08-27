@@ -74,6 +74,10 @@ let package = Package(
         .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "603.0.0"),
     ],
     targets: [
+        .target(
+            name: "AxolotyVersion",
+            path: "Tools/AxolotyVersion"
+        ),
         .macro(
             name: "AxolotyStaticRuntimeMacrosImplementation",
             dependencies: [
@@ -261,7 +265,7 @@ let package = Package(
         ),
         .target(
             name: "AxolotyTooling",
-            dependencies: ["AxolotyProcessLauncher"],
+            dependencies: ["AxolotyProcessLauncher", "AxolotyVersion"],
             path: "Tools/AxolotyTooling",
             resources: [.copy("Resources/test-tiers.json")]
         ),
@@ -286,6 +290,7 @@ let package = Package(
         // application logic; the CLI target adds the entry point.
         .target(
             name: "AxolotyInspectorCore",
+            dependencies: ["AxolotyVersion"],
             path: "Tools/AxolotyInspectorCore"
         ),
         .target(

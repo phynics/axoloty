@@ -106,6 +106,9 @@ independent wire-only package resolution, use the standalone package at
 
 ### Minimal host example
 
+The checked-in, compilable version is [`Examples/Sources/HostRuntimeExample/main.swift`](./Examples/Sources/HostRuntimeExample/main.swift); run it with
+`swift run --package-path Examples HostRuntimeExample`.
+
 ```swift
 import Axoloty
 
@@ -130,6 +133,9 @@ available. Startup is explicit: `run()` is the operation that starts and owns
 the runtime lifecycle.
 
 ### Minimal AxolotyWire example
+
+The corresponding checked-in source is [`Examples/Sources/WireExample/main.swift`](./Examples/Sources/WireExample/main.swift); run it with
+`swift run --package-path Examples WireExample`.
 
 ```swift
 import AxolotyWire

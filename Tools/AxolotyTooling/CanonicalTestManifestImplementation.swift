@@ -245,6 +245,32 @@ public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
         } else {
             roots = declaredRoots
         }
+        if name == "checkpoint-hardware" {
+            guard definition.inherits == "checkpoint" else {
+                throw AxolotyCanonicalTestManifestError.invalidPlan(
+                    name: name,
+                    reason: "checkpoint-hardware must inherit checkpoint"
+                )
+            }
+            let ordinary = Set(try inheritedRoots(for: "checkpoint", ci: ci, stack: []))
+            let hardware = Set(roots)
+            guard ordinary.isSubset(of: hardware), hardware.count > ordinary.count else {
+                throw AxolotyCanonicalTestManifestError.invalidPlan(
+                    name: name,
+                    reason: "checkpoint-hardware must be a strict superset of checkpoint"
+                )
+            }
+        }
+        if name == "verify" || name == "offline" {
+            for root in roots {
+                if let node = nodes.first(where: { $0.id == root }), node.hardware != .forbidden {
+                    throw AxolotyCanonicalTestManifestError.invalidPlan(
+                        name: name,
+                        reason: "hardware node \(root) is forbidden in ordinary/offline plans"
+                    )
+                }
+            }
+        }
         return try resolvedPlan(
             roots: roots,
             platform: platform,

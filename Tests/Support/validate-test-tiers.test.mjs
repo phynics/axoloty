@@ -350,6 +350,40 @@ test("validator accepts an intentionally attestable wire-live gate", () => {
   assert.equal(errors.some(error => error.includes("wire-live")), false);
 });
 
+test("validator resolves checkpoint-hardware inheritance", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  document.plans["checkpoint-hardware"].nodes = ["checkpoint-hardware-smoke"];
+  const errors = validate(document, {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  });
+  assert.equal(errors.some(error => error.includes("omits inherited node")), false);
+});
+
+test("validator rejects a hardware plan that stops inheriting checkpoint", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  document.plans["checkpoint-hardware"].inherits = "offline";
+  const errors = validate(document, {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  });
+  assert.ok(errors.some(error => error.includes("must inherit checkpoint")));
+});
+
+test("validator rejects checkpoint plan inheritance cycles", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  document.plans.offline.inherits = "checkpoint";
+  document.plans.checkpoint.inherits = "offline";
+  const errors = validate(document, {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  });
+  assert.ok(errors.some(error => error.includes("plan inheritance cycle")));
+});
+
 test("validator CLI reports stable selfTests schema errors", t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-tool-tiers-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));

@@ -10,7 +10,11 @@ unset GIT_DIR GIT_WORK_TREE
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 url=${AXOLOTY_CONSUMER_REPOSITORY_URL:-https://github.com/phynics/axoloty.git}
-version=${AXOLOTY_CONSUMER_VERSION:-0.5.1}
+version=${AXOLOTY_CONSUMER_VERSION:-}
+if [ -z "$version" ]; then
+    [ -f "$root/VERSION" ] || { echo "error: VERSION is missing" >&2; exit 1; }
+    version=$(tr -d '[:space:]' < "$root/VERSION")
+fi
 local_version=${AXOLOTY_CONSUMER_LOCAL_VERSION:-9.9.9}
 jobs=${AXOLOTY_CONSUMER_JOBS:-2}
 work=$(mktemp -d)

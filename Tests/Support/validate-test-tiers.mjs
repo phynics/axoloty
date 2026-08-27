@@ -161,6 +161,47 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
   if (!Array.isArray(document.requiredGates) || !Array.isArray(document.ciRequiredGates)) errors.push("requiredGates and ciRequiredGates must be arrays");
   if (!Array.isArray(document.releaseGates)) errors.push("releaseGates must be an array");
 
+  // Resolve named-plan inheritance before checking coverage. Keeping this
+  // here (and in the Swift planner) makes the checked-in JSON independently
+  // auditable by CI and catches omissions before any command executes.
+  const resolving = new Set();
+  const resolvedPlans = new Map();
+  const resolvePlan = name => {
+    if (resolvedPlans.has(name)) return resolvedPlans.get(name);
+    const plan = document.plans?.[name];
+    if (!plan || typeof plan !== "object") {
+      errors.push(`plan ${name}: unknown plan`);
+      return [];
+    }
+    if (resolving.has(name)) {
+      errors.push(`plan inheritance cycle at ${JSON.stringify(name)}`);
+      return [];
+    }
+    resolving.add(name);
+    const parent = plan.inherits ? resolvePlan(plan.inherits) : [];
+    const nodes = [...new Set([...parent, ...(Array.isArray(plan.nodes) ? plan.nodes : [])])];
+    resolving.delete(name);
+    resolvedPlans.set(name, nodes);
+    return nodes;
+  };
+  for (const name of Object.keys(document.plans ?? {})) resolvePlan(name);
+  const ordinaryPlanNames = ["verify", "offline"];
+  for (const name of ordinaryPlanNames) {
+    for (const node of resolvedPlans.get(name) ?? []) {
+      const declaration = (document.nodes ?? []).find(candidate => candidate?.id === node);
+      if (declaration?.hardware !== "forbidden") {
+        errors.push(`plan ${name}: hardware node ${JSON.stringify(node)} is forbidden in ordinary/offline plans`);
+      }
+    }
+  }
+  const ordinary = new Set(resolvedPlans.get("checkpoint") ?? []);
+  const hardware = new Set(resolvedPlans.get("checkpoint-hardware") ?? []);
+  if (document.plans?.["checkpoint-hardware"]?.inherits !== "checkpoint") {
+    errors.push("plan checkpoint-hardware must inherit checkpoint");
+  }
+  for (const node of ordinary) if (!hardware.has(node)) errors.push(`plan checkpoint-hardware omits inherited node ${JSON.stringify(node)}`);
+  if (hardware.size <= ordinary.size) errors.push("plan checkpoint-hardware must be a strict superset of checkpoint");
+
   const nodeIds = new Set();
   for (const node of document.nodes ?? []) {
     if (!node || typeof node !== "object" || Array.isArray(node)) { errors.push("every node must be an object"); continue; }
@@ -223,7 +264,7 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
   if (!toolingNode?.filter?.split("|").includes("RepositoryAuthorityTests")) {
     errors.push("test-tooling must select RepositoryAuthorityTests");
   }
-  const checkpointRoots = new Set([...(document.plans?.checkpoint?.nodes ?? []), ...(document.plans?.["checkpoint-hardware"]?.nodes ?? [])]);
+  const checkpointRoots = new Set([...ordinary, ...hardware]);
   for (const gate of document.releaseGates ?? []) {
     const tier = (document.tiers ?? []).find(candidate => candidate?.id === gate);
     if (!tier) errors.push(`release gate ${JSON.stringify(gate)} is not a declared tier`);

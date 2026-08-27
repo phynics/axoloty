@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
+import AxolotyVersion
 
 /// Parses the stable command surface of the ``axoloty-tool`` executable.
 // swiftlint:disable type_body_length
@@ -20,6 +21,7 @@ public struct AxolotyCommandDispatcher: Sendable {
     private let installSignalHandler: Bool
     private let cancellation: AxolotyCommandCancellation
     private let outputMode: AxolotyCommandOutputMode
+    private let version: String
 
     /// Creates a command dispatcher.
     ///
@@ -81,6 +83,7 @@ public struct AxolotyCommandDispatcher: Sendable {
             environment: environment
         )
         self.repositoryRoot = (repositoryRoot ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)).standardizedFileURL
+        self.version = AxolotyVersion.current(environment: environment)
         self.installSignalHandler = installSignalHandler && runnerConfiguration.installSignalHandler
         self.cancellation = invocationCancellation
         outputMode = runnerConfiguration.outputMode
@@ -129,7 +132,7 @@ public struct AxolotyCommandDispatcher: Sendable {
         case [], ["help"], ["--help"], ["-h"]:
             AxolotyCommandResult(standardOutput: AxolotyCommandHelp.usage(executableName: executableName))
         case ["version"], ["--version"]:
-            AxolotyCommandResult(standardOutput: "\(executableName) \(Self.version)")
+            AxolotyCommandResult(standardOutput: "\(executableName) \(version)")
         case ["check", "--plan"]:
             planResult(environment: environment)
         case ["check"]:
@@ -179,8 +182,6 @@ public struct AxolotyCommandDispatcher: Sendable {
             )
         }
     }
-
-    private static let version = "0.5.1"
 
     private static func manifestDiagnostic(_ error: Error) -> String {
         if let manifestError = error as? AxolotyCanonicalTestManifestError {
@@ -622,6 +623,15 @@ public struct AxolotyCommandDispatcher: Sendable {
             let timestamp = ISO8601DateFormatter().string(from: Date())
             let releaseVersion = Self.releaseVersion(at: repositoryRoot, fileSystem: fileSystem)
             let gitClean = gitStatus.isEmpty
+            // Hardware inclusion is evidence-derived. A caller selecting the
+            // hardware command is not proof that a device node actually ran;
+            // every required hardware node present in this resolved plan must
+            // have a passing result before the certificate advertises hardware.
+            let hardwareResults = results.filter { result in
+                canonicalManifest.nodes.first(where: { $0.id == result.name })?.hardware == .required
+            }
+            let validatedHardwareIncluded = !hardwareResults.isEmpty
+                && hardwareResults.allSatisfy { $0.status == .passed }
             let releaseGates = Self.releaseGateDispositions(
                 manifest: canonicalManifest,
                 results: results,
@@ -641,7 +651,7 @@ public struct AxolotyCommandDispatcher: Sendable {
                 gitClean: gitClean,
                 gitBranch: gitBranch,
                 swiftVersion: swiftVersion,
-                hardwareIncluded: hardware,
+                hardwareIncluded: validatedHardwareIncluded,
                 results: results,
                 releaseGates: releaseGates,
                 timestamp: timestamp
@@ -666,7 +676,7 @@ public struct AxolotyCommandDispatcher: Sendable {
     private static func releaseVersion(at root: URL, fileSystem: any AxolotyFileSystem) -> String {
         guard let value = fileSystem.contents(atPath: root.appendingPathComponent("VERSION").path),
               !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return Self.version
+            return "unavailable"
         }
         return value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -833,14 +843,7 @@ public struct AxolotyCommandDispatcher: Sendable {
                 ),
                 let commit = try? AxolotyGitCommitSHA(gitCommit),
                 let tree = try? AxolotyGitTreeSHA(gitTree),
-                let version = try? AxolotySemanticVersion(releaseVersion),
-                let subject = AxolotyReleaseSubject(
-                    repository: repository,
-                    commit: commit,
-                    tree: tree,
-                    version: version,
-                    clean: gitClean
-                ) else {
+                let version = try? AxolotySemanticVersion(releaseVersion) else {
                     return AxolotyCheckpointGate(
                         id: gate,
                         result: .failed,
@@ -849,6 +852,13 @@ public struct AxolotyCommandDispatcher: Sendable {
                         note: "evidence requires full commit/tree and semantic version metadata"
                     )
                 }
+                let subject = AxolotyReleaseSubject(
+                    repository: repository,
+                    commit: commit,
+                    tree: tree,
+                    version: version,
+                    clean: gitClean
+                )
                 let bundleURL = URL(fileURLWithPath: evidenceBundle, relativeTo: repositoryRoot)
                     .standardizedFileURL
                 do {

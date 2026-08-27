@@ -179,14 +179,30 @@ public struct AxolotyEvidenceProvenance: Codable, Equatable, Sendable {
     public let issuer: String
     /// Workflow, job, run, or device collection identifier.
     public let runID: String
+    /// The workflow or pipeline that owns the run.
+    public let workflow: String?
+    /// The job within the workflow that produced the evidence.
+    public let job: String?
+    /// The external artifact identity assigned by the producer.
+    public let artifact: String?
     /// The source commit recorded by the external producer.
     public let commit: AxolotyGitCommitSHA
 
     /// Creates external provenance.
-    public init(issuer: String, runID: String, commit: AxolotyGitCommitSHA) {
+    public init(
+        issuer: String,
+        runID: String,
+        commit: AxolotyGitCommitSHA,
+        workflow: String? = nil,
+        job: String? = nil,
+        artifact: String? = nil
+    ) {
         self.issuer = issuer
         self.runID = runID
         self.commit = commit
+        self.workflow = workflow
+        self.job = job
+        self.artifact = artifact
     }
 }
 
@@ -215,6 +231,14 @@ public struct AxolotyEvidenceProducerIdentity: Codable, Equatable, Sendable {
         if disposition == .imported, provenance == nil {
             throw AxolotyReleaseEvidenceError.missingProvenance
         }
+        if disposition == .imported,
+           let provenance,
+           [provenance.issuer, provenance.runID, provenance.workflow, provenance.job, provenance.artifact]
+            .contains(where: { $0?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true }) {
+            throw AxolotyReleaseEvidenceError.invalidProducer(
+                "imported evidence provenance requires issuer, workflow, run, job, and artifact"
+            )
+        }
         if disposition == .currentRun, provenance != nil {
             throw AxolotyReleaseEvidenceError.invalidProducer("current-run evidence cannot carry external provenance")
         }
@@ -222,6 +246,37 @@ public struct AxolotyEvidenceProducerIdentity: Codable, Equatable, Sendable {
         self.version = version
         self.disposition = disposition
         self.provenance = provenance
+    }
+
+    /// Validates a decoded producer identity and binds imported provenance to
+    /// the same exact commit as the envelope subject. `Codable` decoding does
+    /// not call the throwing initializer, so bundle loaders must invoke this
+    /// boundary check explicitly.
+    public func validate(expectedCommit: AxolotyGitCommitSHA) throws {
+        guard !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !version.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw AxolotyReleaseEvidenceError.invalidProducer("producer id and version must be non-empty")
+        }
+        switch disposition {
+        case .currentRun:
+            guard provenance == nil else {
+                throw AxolotyReleaseEvidenceError.invalidProducer("current-run evidence cannot carry external provenance")
+            }
+        case .imported:
+            guard let provenance else { throw AxolotyReleaseEvidenceError.missingProvenance }
+            guard !provenance.issuer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !provenance.runID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  provenance.workflow?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
+                  provenance.job?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
+                  provenance.artifact?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
+                throw AxolotyReleaseEvidenceError.invalidProducer(
+                    "imported evidence provenance requires issuer, workflow, run, job, and artifact"
+                )
+            }
+            guard provenance.commit == expectedCommit else {
+                throw AxolotyReleaseEvidenceError.subjectMismatch("producer provenance commit differs")
+            }
+        }
     }
 }
 
@@ -240,10 +295,16 @@ public struct AxolotyEvidenceArtifact: Codable, Equatable, Sendable {
 
     /// Creates an artifact declaration.
     public init(role: String, relativePath: String, sha256: String, byteCount: Int, mediaType: String) throws {
+        let pathComponents = relativePath.split(whereSeparator: { $0 == "/" || $0 == "\\" })
+        let windowsAbsolute = relativePath.count >= 3
+            && relativePath[relativePath.index(relativePath.startIndex, offsetBy: 1)] == ":"
+            && relativePath.dropFirst(2).first.map { $0 == "/" || $0 == "\\" } == true
         guard !role.isEmpty, !mediaType.isEmpty, byteCount >= 0,
               !relativePath.isEmpty,
-              !relativePath.hasPrefix("/"),
-              !relativePath.split(separator: "/").contains(".."),
+              !relativePath.hasPrefix("/"), !relativePath.hasPrefix("\\"),
+              !windowsAbsolute, !relativePath.contains("\0"),
+              !relativePath.contains("//"), !relativePath.contains("\\\\"),
+              !pathComponents.contains("."), !pathComponents.contains(".."),
               sha256.count == 64,
               sha256.allSatisfy({ $0.isHexDigit }) else {
             throw AxolotyReleaseEvidenceError.invalidArtifact(relativePath)
@@ -256,6 +317,90 @@ public struct AxolotyEvidenceArtifact: Codable, Equatable, Sendable {
     }
 }
 
+/// Build system that emitted a compiler-input receipt.
+public enum AxolotyBuildSystem: String, Codable, Equatable, Sendable {
+    /// Swift Package Manager's actual compile command graph.
+    case swiftPM = "swiftpm"
+    /// ESP-IDF/CMake's compile command graph.
+    case espIDFCMake = "esp-idf-cmake"
+}
+
+/// A canonical repository-relative production source digest.
+public struct AxolotySourceFileDigest: Codable, Equatable, Sendable {
+    /// Repository-relative source path.
+    public let path: String
+    /// SHA-256 of the source bytes.
+    public let sha256: String
+
+    /// Creates a source digest after validating its shape.
+    public init(path: String, sha256: String) throws {
+        let pathComponents = path.split(whereSeparator: { $0 == "/" || $0 == "\\" })
+        let windowsAbsolute = path.count >= 3
+            && path[path.index(path.startIndex, offsetBy: 1)] == ":"
+            && path.dropFirst(2).first.map { $0 == "/" || $0 == "\\" } == true
+        guard !path.isEmpty, !path.hasPrefix("/"), !path.hasPrefix("\\"), !windowsAbsolute,
+              !path.contains("\0"), !path.contains("//"), !path.contains("\\\\"),
+              !pathComponents.contains("."), !pathComponents.contains(".."),
+              sha256.count == 64, sha256.allSatisfy({ $0.isHexDigit }) else {
+            throw AxolotyReleaseEvidenceError.invalidArtifact(path)
+        }
+        self.path = path
+        self.sha256 = sha256.lowercased()
+    }
+}
+
+/// The exact compiler inputs for one production module.
+public struct AxolotyCompileSourceReceipt: Codable, Equatable, Sendable {
+    /// Current receipt schema.
+    public static var currentSchemaVersion: Int { 1 }
+    /// Receipt schema version.
+    public let schemaVersion: Int
+    /// Build system that produced the command graph.
+    public let buildSystem: AxolotyBuildSystem
+    /// Module name.
+    public let module: String
+    /// Target triple used by the compiler.
+    public let targetTriple: String
+    /// Compiler identity/version string.
+    public let compilerIdentity: String
+    /// Digest of the exact compiler argument vector.
+    public let compilerArgumentsDigest: String
+    /// Compiled production source files.
+    public let sources: [AxolotySourceFileDigest]
+
+    /// Creates a compiler-input receipt.
+    public init(
+        schemaVersion: Int = Self.currentSchemaVersion,
+        buildSystem: AxolotyBuildSystem,
+        module: String,
+        targetTriple: String,
+        compilerIdentity: String,
+        compilerArgumentsDigest: String,
+        sources: [AxolotySourceFileDigest]
+    ) throws {
+        guard schemaVersion == Self.currentSchemaVersion, !module.isEmpty, !targetTriple.isEmpty,
+              !compilerIdentity.isEmpty, compilerArgumentsDigest.count == 64,
+              compilerArgumentsDigest.allSatisfy({ $0.isHexDigit }), !sources.isEmpty else {
+            throw AxolotyReleaseEvidenceError.invalidSubject("compiler source receipt is incomplete")
+        }
+        guard Set(sources.map(\.path)).count == sources.count else {
+            throw AxolotyReleaseEvidenceError.invalidSubject("compiler source receipt contains duplicate paths")
+        }
+        self.schemaVersion = schemaVersion
+        self.buildSystem = buildSystem
+        self.module = module
+        self.targetTriple = targetTriple
+        self.compilerIdentity = compilerIdentity
+        self.compilerArgumentsDigest = compilerArgumentsDigest.lowercased()
+        self.sources = sources
+    }
+}
+
+/// Short names matching the release-plan vocabulary for portable producers.
+public typealias CompileSourceReceipt = AxolotyCompileSourceReceipt
+public typealias SourceFileDigest = AxolotySourceFileDigest
+public typealias SHA256Digest = String
+
 /// The result declared by an evidence producer.
 public enum AxolotyEvidenceResult: String, Codable, Equatable, Sendable {
     /// Evidence passed its producer-local checks.
@@ -267,7 +412,7 @@ public enum AxolotyEvidenceResult: String, Codable, Equatable, Sendable {
 /// A typed, versioned evidence document.
 public struct AxolotyEvidenceEnvelope<Payload: Codable & Sendable>: Codable, Sendable {
     /// Current universal envelope schema.
-    public static let currentSchemaVersion = 1
+    public static var currentSchemaVersion: Int { 1 }
 
     /// Universal envelope schema version.
     public let envelopeSchema: Int
@@ -307,6 +452,14 @@ public struct AxolotyEvidenceEnvelope<Payload: Codable & Sendable>: Codable, Sen
         self.payload = payload
     }
 }
+
+/// Short names matching the release-plan evidence vocabulary.
+public typealias ReleaseSubject = AxolotyReleaseSubject
+public typealias EvidenceArtifact = AxolotyEvidenceArtifact
+public typealias EvidenceProducerIdentity = AxolotyEvidenceProducerIdentity
+public typealias EvidenceValidationContext = AxolotyEvidenceValidationContext
+public typealias ValidatedGateEvidence = AxolotyValidatedGateEvidence
+public typealias EvidenceEnvelope<Payload: Codable & Sendable> = AxolotyEvidenceEnvelope<Payload>
 
 /// A JSON value used when the checkpoint only needs to validate universal envelope fields.
 public enum AxolotyJSONValue: Codable, Equatable, Sendable {
@@ -396,11 +549,33 @@ public struct AxolotyEvidenceValidationContext: Sendable {
     public let expectedSubject: AxolotyReleaseSubject
     /// The bundle root containing `evidence.json` and its artifacts.
     public let bundleRoot: URL
+    /// Optional producer identity required by a gate-specific caller.
+    public let expectedProducerID: String?
     /// Creates a validation context.
-    public init(expectedSubject: AxolotyReleaseSubject, bundleRoot: URL) {
+    public init(
+        expectedSubject: AxolotyReleaseSubject,
+        bundleRoot: URL,
+        expectedProducerID: String? = nil
+    ) {
         self.expectedSubject = expectedSubject
         self.bundleRoot = bundleRoot.standardizedFileURL
+        self.expectedProducerID = expectedProducerID
     }
+}
+
+/// A gate-specific semantic validator consumed by the checkpoint aggregator.
+///
+/// Implementations decode their payload schema and then return only validated
+/// evidence. The aggregator never interprets gate-specific payload fields.
+public protocol GateEvidenceValidator: Sendable {
+    /// Gate covered by this validator.
+    var gate: AxolotyReleaseGateID { get }
+
+    /// Validates one encoded evidence envelope against an exact subject.
+    func validate(
+        envelope: Data,
+        context: AxolotyEvidenceValidationContext
+    ) throws -> AxolotyValidatedGateEvidence
 }
 
 /// A validated gate result consumed by the checkpoint aggregator.
@@ -556,11 +731,33 @@ public struct AxolotyEvidenceBundleLoader: Sendable {
         guard envelope.result == .passed else {
             throw AxolotyReleaseEvidenceError.failedEvidence
         }
+        try envelope.producer.validate(expectedCommit: envelope.subject.commit)
+        guard envelope.gateSchema == 1 else {
+            throw AxolotyReleaseEvidenceError.unsupportedSchema("gate=\(envelope.gate.rawValue), schema=\(envelope.gateSchema)")
+        }
+        if let expectedProducerID = context.expectedProducerID,
+           envelope.producer.id != expectedProducerID {
+            throw AxolotyReleaseEvidenceError.invalidProducer(
+                "expected \(expectedProducerID), got \(envelope.producer.id)"
+            )
+        }
         if envelope.producer.disposition == .imported, envelope.producer.provenance == nil {
             throw AxolotyReleaseEvidenceError.missingProvenance
         }
+        guard !envelope.artifacts.isEmpty else {
+            throw AxolotyReleaseEvidenceError.artifactMismatch("evidence bundle declares no artifacts")
+        }
         var paths = Set<String>()
         for artifact in envelope.artifacts {
+            guard (try? AxolotyEvidenceArtifact(
+                role: artifact.role,
+                relativePath: artifact.relativePath,
+                sha256: artifact.sha256,
+                byteCount: artifact.byteCount,
+                mediaType: artifact.mediaType
+            )) != nil else {
+                throw AxolotyReleaseEvidenceError.invalidArtifact(artifact.relativePath)
+            }
             guard paths.insert(artifact.relativePath).inserted else {
                 throw AxolotyReleaseEvidenceError.artifactMismatch(artifact.relativePath)
             }
@@ -591,5 +788,54 @@ public struct AxolotyEvidenceBundleLoader: Sendable {
             bundleDigest: digest,
             producer: envelope.producer
         )
+    }
+}
+
+/// Adapts the universal bundle loader to the gate-specific validator seam.
+///
+/// A validator receives the bytes that the producer handed to the caller and
+/// also verifies that those bytes are the on-disk `evidence.json`; this keeps
+/// a caller from validating one envelope while the bundle references another.
+public struct AxolotyEnvelopeGateEvidenceValidator: GateEvidenceValidator {
+    /// Gate covered by this validator.
+    public let gate: AxolotyReleaseGateID
+
+    /// Creates a validator for one gate.
+    public init(gate: AxolotyReleaseGateID) {
+        self.gate = gate
+    }
+
+    /// Validates the encoded envelope and its referenced bundle artifacts.
+    public func validate(
+        envelope: Data,
+        context: AxolotyEvidenceValidationContext
+    ) throws -> AxolotyValidatedGateEvidence {
+        let evidenceURL = context.bundleRoot.appendingPathComponent("evidence.json")
+        guard let onDisk = try? Data(contentsOf: evidenceURL), onDisk == envelope else {
+            throw AxolotyReleaseEvidenceError.unreadable(evidenceURL.path)
+        }
+        return try AxolotyEvidenceBundleLoader().validate(
+            bundle: context.bundleRoot,
+            expectedGate: gate,
+            context: context
+        )
+    }
+}
+
+/// A small registry that keeps gate-specific validation at the boundary while
+/// allowing the checkpoint aggregator to ask only for a validator by gate.
+public struct AxolotyGateEvidenceValidatorCatalog: Sendable {
+    private let validators: [AxolotyReleaseGateID: AxolotyEnvelopeGateEvidenceValidator]
+
+    /// Creates a catalog for the supplied gate identifiers.
+    public init(gates: some Sequence<AxolotyReleaseGateID>) {
+        self.validators = Dictionary(uniqueKeysWithValues: gates.map { gate in
+            (gate, AxolotyEnvelopeGateEvidenceValidator(gate: gate))
+        })
+    }
+
+    /// Returns the registered validator, if the gate accepts envelope evidence.
+    public func validator(for gate: AxolotyReleaseGateID) -> (any GateEvidenceValidator)? {
+        validators[gate]
     }
 }
