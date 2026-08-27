@@ -2,9 +2,10 @@
 # Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 # Derive the public product inventory from SwiftPM. Building is opt-in for
-# ordinary source checks and enabled by the release checkpoint through
-# AXOLOTY_G6_PRODUCT_BUILD=1. This keeps inventory validation cheap while
-# retaining an explicit, reproducible build matrix for release evidence.
+# ordinary source checks. The release checkpoint opts into the complete
+# debug/release build matrix through AXOLOTY_G6_PRODUCT_BUILD=1. This keeps
+# CI inventory validation cheap while retaining an explicit, reproducible
+# build matrix for offline release evidence.
 
 set -eu
 
