@@ -30,6 +30,12 @@ public struct RuntimeCapacities: Sendable, Equatable {
     public let ioObservers: Int
     /// Maximum endpoint catalogue entries retained by the host definition.
     public let ioCatalogue: Int
+    /// Largest protocol payload accepted by the shared processor.
+    public let protocolMaximumPayloadBytes: Int
+    /// Maximum active protocol objects accepted by the shared processor.
+    public let protocolMaximumObjects: Int
+    /// Maximum pending protocol correlations accepted by the shared processor.
+    public let protocolMaximumPendingCorrelations: Int
 
     /// Creates finite runtime limits.
     public init(
@@ -42,12 +48,16 @@ public struct RuntimeCapacities: Sendable, Equatable {
         ioEndpoints: Int = 64,
         ioPendingLatest: Int = 64,
         ioObservers: Int = 64,
-        ioCatalogue: Int = 64
+        ioCatalogue: Int = 64,
+        protocolMaximumPayloadBytes: Int = 512,
+        protocolMaximumObjects: Int = 64,
+        protocolMaximumPendingCorrelations: Int = 64
     ) throws {
         guard ingress > 0, dispatch > 0, handlers > 0,
               handlersInFlight > 0, stream > 0, eventStreams > 0,
               ioEndpoints > 0, ioPendingLatest > 0, ioObservers > 0,
-              ioCatalogue > 0 else {
+              ioCatalogue > 0, protocolMaximumPayloadBytes > 0,
+              protocolMaximumObjects > 0, protocolMaximumPendingCorrelations > 0 else {
             throw AxolotyError.invalidArgument(
                 argument: "capacities",
                 reason: "all runtime capacities must be greater than zero"
@@ -56,7 +66,8 @@ public struct RuntimeCapacities: Sendable, Equatable {
         guard ingress <= 64, dispatch <= 64, handlers <= 64,
               handlersInFlight <= 64, stream <= 64, eventStreams <= 64,
               ioEndpoints <= 64, ioPendingLatest <= 64, ioObservers <= 64,
-              ioCatalogue <= 64 else {
+              ioCatalogue <= 64, protocolMaximumPayloadBytes <= 65_536,
+              protocolMaximumObjects <= 64, protocolMaximumPendingCorrelations <= 64 else {
             throw AxolotyError.invalidArgument(
                 argument: "capacities",
                 reason: "host runtime capacities cannot exceed 64"
@@ -72,6 +83,9 @@ public struct RuntimeCapacities: Sendable, Equatable {
         self.ioPendingLatest = ioPendingLatest
         self.ioObservers = ioObservers
         self.ioCatalogue = ioCatalogue
+        self.protocolMaximumPayloadBytes = protocolMaximumPayloadBytes
+        self.protocolMaximumObjects = protocolMaximumObjects
+        self.protocolMaximumPendingCorrelations = protocolMaximumPendingCorrelations
     }
 }
 

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://axoloty.dev/schemas/g2-protocol-trace-v1.json",
-  "title": "Axoloty G2 Protocol Trace",
+  "title": "Axoloty G6 Profile Protocol Trace",
   "type": "object",
   "required": ["schemaVersion", "id", "description", "initialState", "steps"],
   "properties": {

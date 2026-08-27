@@ -23,6 +23,8 @@ enum ProtocolTraceCorpus {
             externalRouteTrace(seed: associateSeed),
             incompatibleExternalRouteTrace(seed: associateSeed),
         ])
+        let lifecycleSeed = try fixtureSeed(for: .advertise, in: seeds)
+        traces.append(multiStepDuplicateTrace(seed: lifecycleSeed))
         return traces
     }
 
@@ -323,6 +325,56 @@ enum ProtocolTraceCorpus {
             state: state,
             input: input,
             expected: rejected(.externalRouteMismatch, "external route flag does not match the binding route", state: state)
+        )
+    }
+
+    private static func multiStepDuplicateTrace(seed: FixtureSeed) -> ProtocolTrace {
+        let first = TraceStep(
+            sequence: 1,
+            timeMilliseconds: 100,
+            priorState: TraceState(),
+            capabilities: TraceCapabilities(),
+            limits: .default,
+            input: TraceInput(
+                family: .advertise,
+                direction: .inbound,
+                fixtureID: fixtureID(.advertise, "valid"),
+                fixturePayload: seed.valid,
+                objectID: "object-001"
+            ),
+            localOperation: .processInbound,
+            expected: TraceObservation(
+                actions: [TraceAction(kind: "deliver", family: .advertise)],
+                rejection: nil,
+                nextState: TraceState(activeObjectIDs: ["object-001"], generation: 1)
+            )
+        )
+        let second = TraceStep(
+            sequence: 2,
+            timeMilliseconds: 200,
+            priorState: first.expected.nextState,
+            capabilities: first.capabilities,
+            limits: first.limits,
+            input: TraceInput(
+                family: .advertise,
+                direction: .inbound,
+                fixtureID: fixtureID(.advertise, "valid"),
+                fixturePayload: seed.valid,
+                objectID: "object-001",
+                duplicate: true
+            ),
+            localOperation: .processInbound,
+            expected: TraceObservation(
+                actions: [],
+                rejection: TraceRejection(code: .duplicate, reason: "object is already active"),
+                nextState: first.expected.nextState
+            )
+        )
+        return ProtocolTrace(
+            id: "multi-step-duplicate",
+            description: "A duplicate operation is rejected after a prior accepted transition",
+            initialState: TraceState(),
+            steps: [first, second]
         )
     }
 

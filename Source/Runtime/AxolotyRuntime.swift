@@ -11,8 +11,9 @@ import Foundation
 actor ProtocolExecutor {
     let definition: SealedRuntimeDefinition
     let transport: AxolotyRuntimeTransport
-    var processor = ProtocolProcessor<64>()
+    var processor: ProtocolProcessor<64>
     var actionSink = ReusableProtocolActionSink(capacity: 64)
+    private var conformanceActions: [OwnedProtocolAction] = []
     /// One-way operations accepted while the transport is reconnecting.
     /// This queue is bounded by the dispatch capacity and is replayed in
     /// publication order after a successful reconnect.
@@ -51,6 +52,11 @@ actor ProtocolExecutor {
     init(definition: SealedRuntimeDefinition, transport: AxolotyRuntimeTransport) {
         self.definition = definition
         self.transport = transport
+        self.processor = ProtocolProcessor<64>(
+            maximumPayloadBytes: definition.capacities.protocolMaximumPayloadBytes,
+            maximumObjects: definition.capacities.protocolMaximumObjects,
+            maximumPendingCorrelations: definition.capacities.protocolMaximumPendingCorrelations
+        )
         self.eventRegistrations = definition.eventRegistrations
         self.ioStates = definition.ioEndpointRegistrations.map(RuntimeIoState.init)
         self.ingress.reserveCapacity(definition.capacities.ingress)
@@ -536,6 +542,7 @@ actor ProtocolExecutor {
         for index in 0..<actionSink.count {
             guard let borrowed = actionSink[index] else { continue }
             let action = borrowed.owned()
+            conformanceActions.append(action)
             switch borrowed {
             case .deliver(let delivery):
                 emitRegisteredEvents(for: delivery, owned: action, nowMS: nowMS)
@@ -996,5 +1003,31 @@ actor ProtocolExecutor {
         case .rejected(.capacityExceeded): return .rejected(.capacityExceeded)
         case let .rejected(code): return .rejected(.protocol(code))
         }
+    }
+
+    func conformanceObservation() -> RuntimeConformanceObservation {
+        var projection = ProtocolFixedStateSnapshot<64>()
+        processor.copyState(into: &projection)
+        var objects: [UUID16] = []
+        var correlations: [UUID16] = []
+        var associations: [UUID16] = []
+        for index in 0..<projection.activeObjectCount {
+            if let value = projection.activeObjectIDs[index] { objects.append(value) }
+        }
+        for index in 0..<projection.pendingCorrelationCount {
+            if let value = projection.pendingCorrelationIDs[index] { correlations.append(value) }
+        }
+        for index in 0..<projection.associationCount {
+            if let value = projection.associationSourceIDs[index] { associations.append(value) }
+        }
+        let state = RuntimeConformanceState(
+            activeObjectIDs: objects,
+            pendingCorrelationIDs: correlations,
+            associationSourceIDs: associations,
+            generation: processor.state.generation
+        )
+        let result = RuntimeConformanceObservation(actions: conformanceActions, state: state)
+        conformanceActions.removeAll(keepingCapacity: true)
+        return result
     }
 }

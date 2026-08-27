@@ -3,7 +3,7 @@
 import Foundation
 import Testing
 
-@Suite("G2 protocol trace corpus")
+@Suite("G6 profile trace corpus")
 struct ProtocolTraceTests {
     @Test("the corpus covers every Coaty Core family with positive and malformed traces")
     func corpusCoverage() throws {
@@ -14,7 +14,7 @@ struct ProtocolTraceTests {
         #expect(TraceEventFamily.allCases.count == 13)
         #expect(positiveFamilies == ProtocolTraceCorpus.eventFamilies)
         #expect(malformedFamilies == ProtocolTraceCorpus.eventFamilies)
-        #expect(corpus.count == 34)
+        #expect(corpus.count == 35)
         #expect(corpus.allSatisfy { $0.steps.first?.input.fixtureID.hasPrefix("protocol-trace/family-seeds.json#") == true })
         #expect(corpus.filter { $0.id.hasPrefix("malformed-") }.allSatisfy { $0.steps.first?.input.malformed == true })
         #expect(corpus.contains { trace in
@@ -40,19 +40,20 @@ struct ProtocolTraceTests {
     }
 
     @Test("host and static replay adapters produce identical observations")
-    func hostAndStaticReplayEquality() throws {
+    func hostAndStaticReplayEquality() async throws {
         let corpus = try ProtocolTraceCorpus.load()
-        let host = try replayAll(adapter: HostTraceReplayAdapter(), corpus: corpus)
-        let `static` = try replayAll(adapter: StaticTraceReplayAdapter(), corpus: corpus)
+        let host = try await replayAll(adapter: HostTraceReplayAdapter(), corpus: corpus)
+        let `static` = try await replayAll(adapter: StaticTraceReplayAdapter(), corpus: corpus)
         #expect(host == `static`)
         #expect(host.count == corpus.count)
-        #expect(host.allSatisfy { $0.observations.count == 1 })
+        #expect(host.allSatisfy { !$0.observations.isEmpty })
+        #expect(host.first { $0.traceID == "multi-step-duplicate" }?.observations.count == 2)
     }
 
     @Test("bounded failures are explicit and state preserving")
-    func boundedFailures() throws {
+    func boundedFailures() async throws {
         let corpus = try ProtocolTraceCorpus.load()
-        let runs = try replayAll(adapter: HostTraceReplayAdapter(), corpus: corpus)
+        let runs = try await replayAll(adapter: HostTraceReplayAdapter(), corpus: corpus)
         let byID = Dictionary(uniqueKeysWithValues: runs.map { ($0.traceID, $0) })
         let expected: [String: TraceRejectionCode] = [
             "negative-saturation": .saturated,
@@ -74,7 +75,7 @@ struct ProtocolTraceTests {
     }
 
     @Test("replay rejects a broken state chain")
-    func brokenStateChainIsRejected() throws {
+    func brokenStateChainIsRejected() async throws {
         let original = try #require(try ProtocolTraceCorpus.load().first { $0.id == "positive-ADV" })
         let brokenStep = TraceStep(
             sequence: original.steps[0].sequence,
@@ -94,7 +95,7 @@ struct ProtocolTraceTests {
         )
 
         #expect(throws: TraceReplayError.stateMismatch(traceID: original.id, sequence: 1)) {
-            _ = try HostTraceReplayAdapter().replay(broken)
+            _ = try await HostTraceReplayAdapter().replay(broken)
         }
     }
 
@@ -103,11 +104,13 @@ struct ProtocolTraceTests {
         let schemaURL = try #require(Bundle.module.url(forResource: "trace.schema", withExtension: "json"))
         let schema = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: schemaURL)) as? [String: Any])
         #expect(schema["$schema"] as? String == "https://json-schema.org/draft/2020-12/schema")
-        #expect(schema["title"] as? String == "Axoloty G2 Protocol Trace")
+        #expect(schema["title"] as? String == "Axoloty G6 Profile Protocol Trace")
         #expect((schema["required"] as? [String]) == ["schemaVersion", "id", "description", "initialState", "steps"])
     }
 
-    private func replayAll(adapter: any TraceReplayAdapter, corpus: [ProtocolTrace]) throws -> [TraceRun] {
-        try corpus.map { try adapter.replay($0) }
+    private func replayAll(adapter: any TraceReplayAdapter, corpus: [ProtocolTrace]) async throws -> [TraceRun] {
+        var runs: [TraceRun] = []
+        for trace in corpus { runs.append(try await adapter.replay(trace)) }
+        return runs
     }
 }
