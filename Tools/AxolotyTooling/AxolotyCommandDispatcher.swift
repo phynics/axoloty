@@ -574,6 +574,9 @@ public struct AxolotyCommandDispatcher: Sendable {
         let gitCommitCommand = AxolotyCommandPlan(
             executable: "git", arguments: ["rev-parse", "HEAD"], timeoutSeconds: 60
         )
+        let gitTreeCommand = AxolotyCommandPlan(
+            executable: "git", arguments: ["rev-parse", "HEAD^{tree}"], timeoutSeconds: 60
+        )
         let gitStatusCommand = AxolotyCommandPlan(
             executable: "git", arguments: ["status", "--porcelain"], timeoutSeconds: 60
         )
@@ -584,6 +587,7 @@ public struct AxolotyCommandDispatcher: Sendable {
             executable: "swift", arguments: ["--version"], timeoutSeconds: 60
         )
         let metadataCommands = (environment["AXOLOTY_GIT_COMMIT"] == nil ? [gitCommitCommand] : [])
+            + (environment["AXOLOTY_GIT_TREE"] == nil ? [gitTreeCommand] : [])
             + [gitStatusCommand, gitBranchCommand, swiftVersionCommand]
         if let failure = contextValidator.failureResult(
             validating: plan.nodes.map(\.command) + metadataCommands
@@ -606,6 +610,9 @@ public struct AxolotyCommandDispatcher: Sendable {
             let gitCommit = environment["AXOLOTY_GIT_COMMIT"]
                 ?? commandRunner.run(gitCommitCommand).standardOutput
                     .trimmingCharacters(in: .whitespacesAndNewlines)
+            let gitTree = environment["AXOLOTY_GIT_TREE"]
+                ?? commandRunner.run(gitTreeCommand).standardOutput
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
             let gitStatus = commandRunner.run(gitStatusCommand).standardOutput
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let gitBranch = commandRunner.run(gitBranchCommand).standardOutput
@@ -613,17 +620,24 @@ public struct AxolotyCommandDispatcher: Sendable {
             let swiftVersion = commandRunner.run(swiftVersionCommand).standardOutput
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let timestamp = ISO8601DateFormatter().string(from: Date())
+            let releaseVersion = Self.releaseVersion(at: repositoryRoot, fileSystem: fileSystem)
+            let gitClean = gitStatus.isEmpty
             let releaseGates = Self.releaseGateDispositions(
                 manifest: canonicalManifest,
                 results: results,
                 environment: environment,
-                fileSystem: fileSystem
+                fileSystem: fileSystem,
+                repositoryRoot: repositoryRoot,
+                releaseVersion: releaseVersion,
+                gitCommit: gitCommit,
+                gitTree: gitTree,
+                gitClean: gitClean
             )
-            let releaseVersion = Self.releaseVersion(at: repositoryRoot, fileSystem: fileSystem)
-            let gitClean = gitStatus.isEmpty
             let manifest = AxolotyCheckpointManifest(
                 releaseVersion: releaseVersion,
                 gitCommit: gitCommit,
+                gitTree: gitTree.isEmpty ? nil : gitTree,
+                repository: environment["AXOLOTY_REPOSITORY"] ?? "github.com/phynics/axoloty",
                 gitClean: gitClean,
                 gitBranch: gitBranch,
                 swiftVersion: swiftVersion,
@@ -778,16 +792,21 @@ public struct AxolotyCommandDispatcher: Sendable {
     ///
     /// A gate is ``AxolotyCheckpointGateResult/executed`` when every covering node
     /// passed, ``failed`` when any covering node failed, ``attested`` when an
-    /// existing valid JSON manifest is supplied by
-    /// `AXOLOTY_ATTESTATION_<GATE>_PATH`, and ``skipped`` when no covering node
-    /// ran and no attestation exists. An invalid attestation is failed. The
+    /// exact-subject evidence bundle is supplied by `AXOLOTY_EVIDENCE_DIR`, and
+    /// ``skipped`` when no covering node ran and no evidence exists. An invalid
+    /// evidence bundle is failed. The
     /// checkpoint fails on any skipped gate so a release cannot be certified with
     /// missing mandatory-tier evidence.
     private static func releaseGateDispositions(
         manifest: AxolotyCanonicalTestManifest,
         results: [AxolotyCheckResult],
         environment: [String: String],
-        fileSystem: any AxolotyFileSystem
+        fileSystem: any AxolotyFileSystem,
+        repositoryRoot: URL,
+        releaseVersion: String,
+        gitCommit: String,
+        gitTree: String,
+        gitClean: Bool
     ) -> [AxolotyCheckpointGate] {
         let resultByName = Dictionary(
             uniqueKeysWithValues: results.map { ($0.name, $0) }
@@ -796,29 +815,100 @@ public struct AxolotyCommandDispatcher: Sendable {
             let coveringNodes = manifest.tiers.first { $0.id == gate }?.nodes ?? []
             let coveringResults = coveringNodes.compactMap { resultByName[$0] }
             let normalizedGate = gate.uppercased().replacingOccurrences(of: "-", with: "_")
-            let attestationKey = "AXOLOTY_ATTESTATION_\(normalizedGate)_PATH"
-            if let evidence = environment[attestationKey],
-               !evidence.isEmpty,
-               fileSystem.exists(atPath: evidence),
-               Self.validAttestation(at: evidence, fileSystem: fileSystem) {
-                return AxolotyCheckpointGate(
-                    id: gate,
-                    result: .attested,
-                    nodes: coveringResults,
-                    evidence: evidence,
-                    note: "externally attested release gate"
-                )
+            let legacyKey = "AXOLOTY_ATTESTATION_\(normalizedGate)_PATH"
+            let evidenceRoot = environment["AXOLOTY_EVIDENCE_DIR"]
+            let evidenceBundle: String? = if let root = environment["AXOLOTY_EVIDENCE_DIR"], !root.isEmpty {
+                URL(fileURLWithPath: root, relativeTo: repositoryRoot)
+                    .appendingPathComponent(gate)
+                    .path
+            } else if let path = environment[legacyKey], !path.isEmpty {
+                path
+            } else {
+                nil
             }
-            if let evidence = environment[attestationKey], !evidence.isEmpty {
+            if let evidenceBundle,
+               fileSystem.exists(atPath: evidenceBundle) {
+                guard let repository = try? AxolotyRepositoryIdentity(
+                    environment["AXOLOTY_REPOSITORY"] ?? "github.com/phynics/axoloty"
+                ),
+                let commit = try? AxolotyGitCommitSHA(gitCommit),
+                let tree = try? AxolotyGitTreeSHA(gitTree),
+                let version = try? AxolotySemanticVersion(releaseVersion),
+                let subject = AxolotyReleaseSubject(
+                    repository: repository,
+                    commit: commit,
+                    tree: tree,
+                    version: version,
+                    clean: gitClean
+                ) else {
+                    return AxolotyCheckpointGate(
+                        id: gate,
+                        result: .failed,
+                        nodes: coveringResults,
+                        evidence: evidenceBundle,
+                        note: "evidence requires full commit/tree and semantic version metadata"
+                    )
+                }
+                let bundleURL = URL(fileURLWithPath: evidenceBundle, relativeTo: repositoryRoot)
+                    .standardizedFileURL
+                do {
+                    let validated = try AxolotyEvidenceBundleLoader().validate(
+                        bundle: bundleURL,
+                        expectedGate: AxolotyReleaseGateID(rawValue: gate),
+                        context: AxolotyEvidenceValidationContext(
+                            expectedSubject: subject,
+                            bundleRoot: bundleURL
+                        )
+                    )
+                    return AxolotyCheckpointGate(
+                        id: gate,
+                        result: .attested,
+                        nodes: coveringResults,
+                        evidence: evidenceBundle,
+                        evidenceDigest: validated.bundleDigest,
+                        note: "exact-subject evidence bundle validated"
+                    )
+                } catch let error as AxolotyReleaseEvidenceError {
+                    return AxolotyCheckpointGate(
+                        id: gate,
+                        result: .failed,
+                        nodes: coveringResults,
+                        evidence: evidenceBundle,
+                        note: error.localizedDescription
+                    )
+                } catch {
+                    return AxolotyCheckpointGate(
+                        id: gate,
+                        result: .failed,
+                        nodes: coveringResults,
+                        evidence: evidenceBundle,
+                        note: "evidence validation failed: \(error.localizedDescription)"
+                    )
+                }
+            }
+            let explicitlyRequestedLegacyEvidence = environment[legacyKey]?.isEmpty == false
+            if let evidenceBundle,
+               !evidenceBundle.isEmpty,
+               explicitlyRequestedLegacyEvidence,
+               evidenceRoot == nil {
                 return AxolotyCheckpointGate(
                     id: gate,
                     result: .failed,
                     nodes: coveringResults,
-                    evidence: evidence,
-                    note: "attestation path is missing or not valid JSON evidence"
+                    evidence: evidenceBundle,
+                    note: "evidence bundle path is missing"
                 )
             }
             if coveringResults.isEmpty {
+                if let evidenceRoot, !evidenceRoot.isEmpty {
+                    return AxolotyCheckpointGate(
+                        id: gate,
+                        result: .failed,
+                        nodes: [],
+                        evidence: evidenceBundle,
+                        note: "required evidence bundle is missing"
+                    )
+                }
                 return AxolotyCheckpointGate(
                     id: gate,
                     result: .skipped,
@@ -839,29 +929,6 @@ public struct AxolotyCommandDispatcher: Sendable {
                 note: "covering node was skipped"
             )
         }
-    }
-
-    private static func validAttestation(
-        at path: String,
-        fileSystem: any AxolotyFileSystem
-    ) -> Bool {
-        guard let contents = fileSystem.contents(atPath: path),
-              !contents.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              let data = contents.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data),
-              let dictionary = object as? [String: Any] else {
-            return false
-        }
-        guard let schema = dictionary["schemaVersion"] as? Int, schema > 0 else {
-            return false
-        }
-        if let status = dictionary["status"] as? String {
-            return status == "passed" || status == "success"
-        }
-        if let results = dictionary["results"] as? [[String: Any]], !results.isEmpty {
-            return results.allSatisfy { ($0["status"] as? String) == "passed" }
-        }
-        return false
     }
 
     private var executor: AxolotyCheckExecutor {

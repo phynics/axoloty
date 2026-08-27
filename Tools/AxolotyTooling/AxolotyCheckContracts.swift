@@ -296,8 +296,10 @@ public struct AxolotyCheckpointGate: Codable, Equatable, Sendable {
     public let result: AxolotyCheckpointGateResult
     /// Checkpoint node results that cover this gate.
     public let nodes: [AxolotyCheckResult]
-    /// The attestation evidence path when the gate was externally attested.
+    /// The evidence bundle path when the gate was externally evidenced.
     public let evidence: String?
+    /// The SHA-256 digest of the validated evidence envelope.
+    public let evidenceDigest: String?
     /// A human-readable note explaining the disposition.
     public let note: String?
 
@@ -307,12 +309,14 @@ public struct AxolotyCheckpointGate: Codable, Equatable, Sendable {
         result: AxolotyCheckpointGateResult,
         nodes: [AxolotyCheckResult] = [],
         evidence: String? = nil,
+        evidenceDigest: String? = nil,
         note: String? = nil
     ) {
         self.id = id
         self.result = result
         self.nodes = nodes
         self.evidence = evidence
+        self.evidenceDigest = evidenceDigest
         self.note = note
     }
 }
@@ -325,6 +329,10 @@ public struct AxolotyCheckpointManifest: Codable, Equatable, Sendable {
     public let releaseVersion: String
     /// The git commit hash.
     public let gitCommit: String
+    /// The git tree hash, when the runner could resolve it.
+    public let gitTree: String?
+    /// The canonical repository identity used for external evidence.
+    public let repository: String?
     /// Whether the working tree was clean.
     public let gitClean: Bool
     /// The git branch name.
@@ -347,6 +355,8 @@ public struct AxolotyCheckpointManifest: Codable, Equatable, Sendable {
         schemaVersion: Int = 3,
         releaseVersion: String,
         gitCommit: String,
+        gitTree: String? = nil,
+        repository: String? = nil,
         gitClean: Bool,
         gitBranch: String,
         swiftVersion: String,
@@ -359,6 +369,8 @@ public struct AxolotyCheckpointManifest: Codable, Equatable, Sendable {
         self.schemaVersion = schemaVersion
         self.releaseVersion = releaseVersion
         self.gitCommit = gitCommit
+        self.gitTree = gitTree
+        self.repository = repository
         self.gitClean = gitClean
         self.gitBranch = gitBranch
         self.swiftVersion = swiftVersion

@@ -497,7 +497,7 @@ func checkpointFailsWhenReleaseCheckoutIsDirty() throws {
 }
 
 @Test
-func checkpointAcceptsExternallyAttestedReleaseGate() throws {
+func checkpointRejectsLegacyGenericExternallyAttestedReleaseGate() throws {
     let dispatcher = AxolotyCommandDispatcher(
         commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
         integrationRunner: StubIntegrationRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
@@ -515,11 +515,10 @@ func checkpointAcceptsExternallyAttestedReleaseGate() throws {
     let result = dispatcher.run(arguments: ["release", "checkpoint"])
     let manifest = try JSONDecoder().decode(AxolotyCheckpointManifest.self, from: Data(result.standardOutput.utf8))
 
-    #expect(result.exitCode == 0)
+    #expect(result.exitCode == 1)
     let wireLive = try #require(manifest.releaseGates.first { $0.id == "wire-live" })
-    #expect(wireLive.result == .attested)
+    #expect(wireLive.result == .failed)
     #expect(wireLive.evidence == ".testing/wire/manifest.json")
-    #expect(!manifest.releaseGates.contains { $0.result == .skipped })
 }
 
 @Test
