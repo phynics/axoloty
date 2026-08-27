@@ -78,17 +78,9 @@ private func validateLargeOwnedJSONSyntax(
             bytes: buffer,
             destination: JSONValidationDestination()
         )
-        #if hasFeature(Embedded)
         if tokenizer.scanValueResult() != nil {
             return (false, tokenizer.currentOffset)
         }
-        #else
-        do {
-            try tokenizer.scanValue()
-        } catch {
-            return (false, tokenizer.currentOffset)
-        }
-        #endif
 
         var offset = tokenizer.currentOffset
         while offset < bytes.count && isJSONWhitespace(bytes[offset]) {

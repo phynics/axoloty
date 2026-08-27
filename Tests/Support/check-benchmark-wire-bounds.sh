@@ -37,8 +37,11 @@ grep -Fq 'capacity: WireBufferConfig.maxPayloadSize + 8' "$wire_reader" \
     || fail "fixed tokenizer workspace is missing"
 [ "$(grep -Fo 'JSONTokenizer(bytes:' "$wire_reader" | wc -l)" -eq 1 ] \
     || fail "WireReader must construct one tokenizer"
-[ "$(grep -Fo '.scanValue()' "$wire_reader" | wc -l)" -eq 1 ] \
+grep -Fq '.scanValueResult()' "$wire_reader" \
     || fail "WireReader must perform one tokenizer scan"
+tokenizer_result="$root/Packages/AxolotyWire/Sources/AxolotyWire/JSONTokenizerResult.swift"
+grep -Fq 'try scanValue()' "$tokenizer_result" \
+    || fail "shared tokenizer result must perform one tokenizer scan"
 
 if [ "${AXOLOTY_WIRE_BOUNDS_SOURCE_ONLY:-0}" = 1 ]; then
     echo "WIRE READER SOURCE BOUNDS OK"

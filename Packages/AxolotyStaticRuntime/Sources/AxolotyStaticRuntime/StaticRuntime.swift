@@ -44,18 +44,30 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
     var receiveContext: StaticIoReceiveContext?
 
     /// Creates a runtime with a sealed capability profile and fixed limits.
+    ///
+    /// - Parameters:
+    ///   - registryID: Opaque identity used to reject foreign object handles.
+    ///   - capabilities: Families accepted by this binding.
+    ///   - maximumObjects: Maximum simultaneous advertised objects.
+    ///   - maximumPendingCorrelations: Maximum outstanding request correlations.
     public init(
         registryID: ObjectID,
         capabilities: ProtocolCapabilities = .coatyCore3,
+        maximumObjects: Int = capacity,
+        maximumPendingCorrelations: Int = capacity,
     ) {
         precondition(payloadCapacity >= 0 && payloadCapacity <= WireBufferConfig.maxPayloadSize)
+        precondition(maximumObjects >= 0 && maximumObjects <= capacity)
+        precondition(maximumPendingCorrelations >= 0 && maximumPendingCorrelations <= capacity)
         self.registryID = registryID
         self.routeClassifier = ExactProtocolRouteClassifier(
             externalRoute: "external/wire-compat-v1/io-external-1"
         )
         self.processor = ProtocolProcessor<capacity>(
             capabilities: capabilities,
-            maximumPayloadBytes: payloadCapacity
+            maximumPayloadBytes: payloadCapacity,
+            maximumObjects: maximumObjects,
+            maximumPendingCorrelations: maximumPendingCorrelations
         )
         self.subscriptions = ProtocolSubscriptionRegistry<capacity>()
         self.sink = InlineOwnedProtocolActionSink<capacity, payloadCapacity>()
@@ -82,6 +94,15 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
 
     /// The processor's fixed-storage state observation.
     public var state: ProtocolStateSnapshot { processor.state }
+
+    /// Copies the identity-bearing processor state into caller-owned storage.
+    ///
+    /// This projection is intended for bounded diagnostics and conformance
+    /// traces. It does not expose the processor or retain any borrowed value.
+    public func copyState(into projection: inout ProtocolFixedStateSnapshot<capacity>) {
+        processor.copyState(into: &projection)
+    }
+
     /// Maximum payload accepted by this runtime's fixed storage.
     public var maximumPayloadBytes: Int { payloadCapacity }
     /// Maximum payload accepted by this runtime specialization.

@@ -572,7 +572,7 @@ public struct AxolotyCommandDispatcher: Sendable {
         }
 
         let gitCommitCommand = AxolotyCommandPlan(
-            executable: "git", arguments: ["rev-parse", "--short", "HEAD"], timeoutSeconds: 60
+            executable: "git", arguments: ["rev-parse", "HEAD"], timeoutSeconds: 60
         )
         let gitStatusCommand = AxolotyCommandPlan(
             executable: "git", arguments: ["status", "--porcelain"], timeoutSeconds: 60
@@ -616,12 +616,15 @@ public struct AxolotyCommandDispatcher: Sendable {
             let releaseGates = Self.releaseGateDispositions(
                 manifest: canonicalManifest,
                 results: results,
-                environment: environment
+                environment: environment,
+                fileSystem: fileSystem
             )
+            let releaseVersion = Self.releaseVersion(at: repositoryRoot, fileSystem: fileSystem)
+            let gitClean = gitStatus.isEmpty
             let manifest = AxolotyCheckpointManifest(
-                releaseVersion: Self.version,
+                releaseVersion: releaseVersion,
                 gitCommit: gitCommit,
-                gitClean: gitStatus.isEmpty,
+                gitClean: gitClean,
                 gitBranch: gitBranch,
                 swiftVersion: swiftVersion,
                 hardwareIncluded: hardware,
@@ -630,10 +633,13 @@ public struct AxolotyCommandDispatcher: Sendable {
                 timestamp: timestamp
             )
             let releaseGateMissingEvidence = releaseGates.contains { $0.result == .skipped }
-            // A release gate that the checkpoint could not execute or attest is a missing
-            // mandatory release tier, so the checkpoint must not certify the release.
+            let releaseGateFailed = releaseGates.contains { $0.result == .failed }
+            // A release gate that failed, could not execute, or lacked valid attestation
+            // is mandatory evidence, so the checkpoint must not certify the release.
             let exitCode: Int32 = (results.allSatisfy { $0.status == .passed }
-                && !releaseGateMissingEvidence) ? 0 : 1
+                && !releaseGateMissingEvidence
+                && !releaseGateFailed
+                && gitClean) ? 0 : 1
             return checkpointManifestResult(manifest, exitCode: exitCode)
         } catch {
             return AxolotyCommandResult(
@@ -641,6 +647,14 @@ public struct AxolotyCommandDispatcher: Sendable {
                 exitCode: 70
             )
         }
+    }
+
+    private static func releaseVersion(at root: URL, fileSystem: any AxolotyFileSystem) -> String {
+        guard let value = fileSystem.contents(atPath: root.appendingPathComponent("VERSION").path),
+              !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return Self.version
+        }
+        return value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func execute(plan availablePlan: AxolotyCheckPlan) -> AxolotyCommandResult {
@@ -764,14 +778,16 @@ public struct AxolotyCommandDispatcher: Sendable {
     ///
     /// A gate is ``AxolotyCheckpointGateResult/executed`` when every covering node
     /// passed, ``failed`` when any covering node failed, ``attested`` when an
-    /// `AXOLOTY_ATTESTATION_<GATE>_PATH` environment value supplies external evidence,
-    /// and ``skipped`` when no covering node ran and no attestation exists. The
+    /// existing valid JSON manifest is supplied by
+    /// `AXOLOTY_ATTESTATION_<GATE>_PATH`, and ``skipped`` when no covering node
+    /// ran and no attestation exists. An invalid attestation is failed. The
     /// checkpoint fails on any skipped gate so a release cannot be certified with
     /// missing mandatory-tier evidence.
     private static func releaseGateDispositions(
         manifest: AxolotyCanonicalTestManifest,
         results: [AxolotyCheckResult],
-        environment: [String: String]
+        environment: [String: String],
+        fileSystem: any AxolotyFileSystem
     ) -> [AxolotyCheckpointGate] {
         let resultByName = Dictionary(
             uniqueKeysWithValues: results.map { ($0.name, $0) }
@@ -781,13 +797,25 @@ public struct AxolotyCommandDispatcher: Sendable {
             let coveringResults = coveringNodes.compactMap { resultByName[$0] }
             let normalizedGate = gate.uppercased().replacingOccurrences(of: "-", with: "_")
             let attestationKey = "AXOLOTY_ATTESTATION_\(normalizedGate)_PATH"
-            if let evidence = environment[attestationKey], !evidence.isEmpty {
+            if let evidence = environment[attestationKey],
+               !evidence.isEmpty,
+               fileSystem.exists(atPath: evidence),
+               Self.validAttestation(at: evidence, fileSystem: fileSystem) {
                 return AxolotyCheckpointGate(
                     id: gate,
                     result: .attested,
                     nodes: coveringResults,
                     evidence: evidence,
                     note: "externally attested release gate"
+                )
+            }
+            if let evidence = environment[attestationKey], !evidence.isEmpty {
+                return AxolotyCheckpointGate(
+                    id: gate,
+                    result: .failed,
+                    nodes: coveringResults,
+                    evidence: evidence,
+                    note: "attestation path is missing or not valid JSON evidence"
                 )
             }
             if coveringResults.isEmpty {
@@ -811,6 +839,29 @@ public struct AxolotyCommandDispatcher: Sendable {
                 note: "covering node was skipped"
             )
         }
+    }
+
+    private static func validAttestation(
+        at path: String,
+        fileSystem: any AxolotyFileSystem
+    ) -> Bool {
+        guard let contents = fileSystem.contents(atPath: path),
+              !contents.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let data = contents.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data),
+              let dictionary = object as? [String: Any] else {
+            return false
+        }
+        guard let schema = dictionary["schemaVersion"] as? Int, schema > 0 else {
+            return false
+        }
+        if let status = dictionary["status"] as? String {
+            return status == "passed" || status == "success"
+        }
+        if let results = dictionary["results"] as? [[String: Any]], !results.isEmpty {
+            return results.allSatisfy { ($0["status"] as? String) == "passed" }
+        }
+        return false
     }
 
     private var executor: AxolotyCheckExecutor {

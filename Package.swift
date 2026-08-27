@@ -183,6 +183,7 @@ let package = Package(
                 "Axoloty",
                 "AxolotyWire",
                 "AxolotyProtocol",
+                "AxolotyStaticRuntime",
                 "AxolotyTestSupport",
                 .product(name: "ErrorKit", package: "ErrorKit"),
                 .product(name: "IkigaJSON", package: "swift-json"),
