@@ -45,13 +45,12 @@ workdir=$(mktemp -d)
 trap 'rm -rf "$workdir"' EXIT
 
 jsoncore_dir="$root/.build/checkouts/swift-json/Sources/_JSONCore"
-jsoncore_bridge="$root/Embedded/swift/components/json_core/EmbeddedJSONTokenizerResult.swift"
 if [ ! -d "$jsoncore_dir" ]; then
     echo "FAIL: pinned swift-json checkout not available at $jsoncore_dir" >&2
     exit 1
 fi
 jsoncore_files="$jsoncore_dir"/*.swift
-jsoncore_files="$jsoncore_files $jsoncore_dir/Parser/*.swift $jsoncore_dir/SIMD/*.swift $jsoncore_bridge"
+jsoncore_files="$jsoncore_files $jsoncore_dir/Parser/*.swift $jsoncore_dir/SIMD/*.swift"
 
 echo "Compiling _JSONCore as Embedded Swift module..."
 if ! swiftc \

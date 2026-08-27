@@ -344,7 +344,7 @@ public struct AxolotyCheckpointManifest: Codable, Equatable, Sendable {
 
     /// Creates a checkpoint manifest.
     public init(
-        schemaVersion: Int = 2,
+        schemaVersion: Int = 3,
         releaseVersion: String,
         gitCommit: String,
         gitClean: Bool,

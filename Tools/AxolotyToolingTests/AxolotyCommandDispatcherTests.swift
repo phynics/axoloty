@@ -7,7 +7,15 @@ import Testing
 private let projectEnvironment = ["AXOLOTY_DEVCONTAINER": "1"]
 struct StubFileSystem: AxolotyFileSystem {
     let paths: Set<String>
+    let fileContents: [String: String]
+
+    init(paths: Set<String>, fileContents: [String: String] = [:]) {
+        self.paths = paths
+        self.fileContents = fileContents
+    }
+
     func exists(atPath path: String) -> Bool { paths.contains(path) }
+    func contents(atPath path: String) -> String? { fileContents[path] }
 }
 
 private struct StubRunner: AxolotyCheckCommandRunning {
@@ -471,11 +479,34 @@ func checkpointFailsWhenRequiredReleaseGateHasNoEvidence() throws {
 }
 
 @Test
+func checkpointFailsWhenReleaseCheckoutIsDirty() throws {
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: DirtyCheckoutRunner(),
+        fileSystem: StubFileSystem(paths: []),
+        environment: projectEnvironment
+    )
+
+    let result = dispatcher.run(arguments: ["release", "checkpoint"])
+    let manifest = try JSONDecoder().decode(
+        AxolotyCheckpointManifest.self,
+        from: Data(result.standardOutput.utf8)
+    )
+
+    #expect(result.exitCode == 1)
+    #expect(!manifest.gitClean)
+}
+
+@Test
 func checkpointAcceptsExternallyAttestedReleaseGate() throws {
     let dispatcher = AxolotyCommandDispatcher(
         commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
         integrationRunner: StubIntegrationRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
-        fileSystem: StubFileSystem(paths: []),
+        fileSystem: StubFileSystem(
+            paths: [".testing/wire/manifest.json"],
+            fileContents: [
+                ".testing/wire/manifest.json": "{\"schemaVersion\":1,\"status\":\"passed\"}",
+            ]
+        ),
         environment: projectEnvironment.merging([
             "AXOLOTY_ATTESTATION_WIRE_LIVE_PATH": ".testing/wire/manifest.json",
         ]) { _, value in value }
@@ -492,6 +523,30 @@ func checkpointAcceptsExternallyAttestedReleaseGate() throws {
 }
 
 @Test
+func checkpointRejectsInvalidExternallyAttestedReleaseGate() throws {
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
+        integrationRunner: StubIntegrationRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
+        fileSystem: StubFileSystem(
+            paths: [".testing/wire/manifest.json"],
+            fileContents: [
+                ".testing/wire/manifest.json": "{\"schemaVersion\":1,\"status\":\"failed\"}",
+            ]
+        ),
+        environment: projectEnvironment.merging([
+            "AXOLOTY_ATTESTATION_WIRE_LIVE_PATH": ".testing/wire/manifest.json",
+        ]) { _, value in value }
+    )
+
+    let result = dispatcher.run(arguments: ["release", "checkpoint"])
+    let manifest = try JSONDecoder().decode(AxolotyCheckpointManifest.self, from: Data(result.standardOutput.utf8))
+
+    #expect(result.exitCode == 1)
+    let wireLive = try #require(manifest.releaseGates.first { $0.id == "wire-live" })
+    #expect(wireLive.result == .failed)
+}
+
+@Test
 func checkpointManifestRecordsAllRequiredReleaseGatesInOrder() throws {
     let dispatcher = AxolotyCommandDispatcher(
         commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
@@ -504,9 +559,10 @@ func checkpointManifestRecordsAllRequiredReleaseGatesInOrder() throws {
     let result = dispatcher.run(arguments: ["release", "checkpoint"])
     let manifest = try JSONDecoder().decode(AxolotyCheckpointManifest.self, from: Data(result.standardOutput.utf8))
 
-    #expect(manifest.schemaVersion == 2)
+    #expect(manifest.schemaVersion == 3)
     #expect(manifest.releaseGates.map(\.id) == [
         "smoke", "unit", "module", "property", "wire-offline", "wire-live", "g3-object-model", "g4-runtime",
+        "g6-non-divergence",
     ])
     #expect(manifest.releaseGates.first { $0.id == "integration" } == nil)
 }
@@ -563,7 +619,7 @@ func wireCaptureRunsEveryNodeThroughSupportedBridge() throws {
     #expect(result.exitCode == 0)
     let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
     #expect(manifest.results.allSatisfy { $0.status == .passed })
-    #expect(runner.commands.count == 11)
+    #expect(runner.commands.count == 13)
     #expect(runner.commands.prefix(2).allSatisfy { $0.executionContext == .project })
     #expect(runner.commands.dropFirst(2).dropLast().allSatisfy { $0.executionContext == .host })
     #expect(runner.commands.last?.executionContext == .project)
@@ -739,6 +795,21 @@ private final class RecordingSequenceRunner: AxolotyCheckCommandRunning, @unchec
         maxConcurrent = max(maxConcurrent, currentConcurrent)
         commands.append(command)
         currentConcurrent -= 1
+        return AxolotyCheckCommandResult(exitCode: 0)
+    }
+}
+
+private struct DirtyCheckoutRunner: AxolotyCheckCommandRunning {
+    func run(_ command: AxolotyCommandPlan) -> AxolotyCheckCommandResult {
+        if command.arguments == ["status", "--porcelain"] {
+            return AxolotyCheckCommandResult(exitCode: 0, standardOutput: " M VERSION\n")
+        }
+        if command.arguments == ["rev-parse", "HEAD"] {
+            return AxolotyCheckCommandResult(
+                exitCode: 0,
+                standardOutput: "0123456789012345678901234567890123456789\n"
+            )
+        }
         return AxolotyCheckCommandResult(exitCode: 0)
     }
 }

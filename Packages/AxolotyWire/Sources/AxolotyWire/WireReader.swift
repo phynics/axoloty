@@ -369,7 +369,6 @@ public struct WireReader {
     ) -> WireFieldIndex {
         let destination = WireFieldDestination(bytes: buffer)
         var tokenizer = JSONTokenizer(bytes: padded, destination: destination)
-        #if hasFeature(Embedded)
         if let parserError = tokenizer.scanValueResult() {
             let missingData: Bool
             if case .missingData = parserError { missingData = true } else { missingData = false }
@@ -380,24 +379,6 @@ public struct WireReader {
                 parserErrorIsMissingData: missingData
             )
         }
-        #else
-        do {
-            try tokenizer.scanValue()
-        } catch {
-            let missingData: Bool
-            if case .missingData = error {
-                missingData = true
-            } else {
-                missingData = false
-            }
-            tokenizer.destination.failure = Self.parserFailure(
-                buffer,
-                offset: tokenizer.currentOffset,
-                destination: tokenizer.destination,
-                parserErrorIsMissingData: missingData
-            )
-        }
-        #endif
         return Self.finalizedIndex(
             tokenizer.destination,
             bytes: buffer,

@@ -33,11 +33,25 @@ public struct AxolotyHardwareOutcome: Codable, Equatable, Sendable {
 public protocol AxolotyFileSystem: Sendable {
     /// Returns whether a path exists.
     func exists(atPath path: String) -> Bool
+
+    /// Reads a UTF-8 text file when the path is available.
+    ///
+    /// Implementations used by command tests may omit file contents; the
+    /// default returns `nil` so existence-only callers remain source
+    /// compatible.
+    func contents(atPath path: String) -> String?
+}
+
+public extension AxolotyFileSystem {
+    func contents(atPath path: String) -> String? { nil }
 }
 
 struct FoundationFileSystem: AxolotyFileSystem {
     init() {}
     func exists(atPath path: String) -> Bool { FileManager.default.fileExists(atPath: path) }
+    func contents(atPath path: String) -> String? {
+        try? String(contentsOfFile: path, encoding: .utf8)
+    }
 }
 
 /// The standard streams and status produced by an ``AxolotyCommandDispatcher``.

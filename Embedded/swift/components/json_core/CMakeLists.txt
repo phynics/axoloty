@@ -23,9 +23,6 @@ file(GLOB JSON_CORE_SOURCES
     "${JSON_CORE_ROOT}/Parser/*.swift"
     "${JSON_CORE_ROOT}/SIMD/*.swift"
 )
-list(APPEND JSON_CORE_SOURCES
-    "${CMAKE_CURRENT_LIST_DIR}/EmbeddedJSONTokenizerResult.swift"
-)
 
 if(NOT JSON_CORE_SOURCES)
     message(FATAL_ERROR "Pinned swift-json _JSONCore sources not found at ${JSON_CORE_ROOT}")

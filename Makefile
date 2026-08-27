@@ -298,7 +298,7 @@ release-fixture-bundle: image
 			AXOLOTY_CONSUMER_LOCAL_VERSION="$(AXOLOTY_CONSUMER_LOCAL_VERSION)"
 
 checkpoint:
-	@AXOLOTY_GIT_COMMIT="$$(git rev-parse --short HEAD)"; \
+	@AXOLOTY_GIT_COMMIT="$$(git rev-parse HEAD)"; \
 		if test -z "$$(git status --porcelain)"; then AXOLOTY_GIT_CLEAN=true; else AXOLOTY_GIT_CLEAN=false; fi; \
 		export AXOLOTY_GIT_COMMIT AXOLOTY_GIT_CLEAN; \
 		$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='release checkpoint' AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS=$(AXOLOTY_RELEASE_TIMEOUT_SECONDS) \
@@ -308,7 +308,7 @@ checkpoint:
 			AXOLOTY_CONSUMER_LOCAL="$(AXOLOTY_CONSUMER_LOCAL)" AXOLOTY_CONSUMER_LOCAL_VERSION="$(AXOLOTY_CONSUMER_LOCAL_VERSION)"
 
 checkpoint-hardware:
-	@AXOLOTY_GIT_COMMIT="$$(git rev-parse --short HEAD)"; \
+	@AXOLOTY_GIT_COMMIT="$$(git rev-parse HEAD)"; \
 		if test -z "$$(git status --porcelain)"; then AXOLOTY_GIT_CLEAN=true; else AXOLOTY_GIT_CLEAN=false; fi; \
 		export AXOLOTY_GIT_COMMIT AXOLOTY_GIT_CLEAN; \
 		$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='release checkpoint-hardware' AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS=$(AXOLOTY_RELEASE_TIMEOUT_SECONDS) \
@@ -405,6 +405,8 @@ test-support: resolve
 	Tests/Support/test-check-axoloty-object-boundary.sh
 	Tests/Support/test-check-g4-runtime-package-boundary.sh
 	Tests/Support/test-check-g4-runtime-consumer-boundary.sh
+	Tests/Support/test-check-g6-architecture.sh
+	Tests/Support/test-check-g6-product-boundary.sh
 	Tests/Support/test-check-axoloty-wire-independent-resolution.sh
 	Tests/Support/test-check-axoloty-wire-distribution.sh
 	Tests/Support/test-check-axoloty-wire-test-isolation.sh

@@ -205,11 +205,7 @@ public struct WireValueReader: ~Copyable {
                 bytes: UnsafeBufferPointer(start: padded.baseAddress!, count: length + 8),
                 destination: destination
             )
-            #if hasFeature(Embedded)
             _ = tokenizer.scanValueResult()
-            #else
-            try? tokenizer.scanValue()
-            #endif
             destination = tokenizer.destination
         }
         guard destination.rootArray, destination.failure == nil else {
@@ -239,11 +235,7 @@ public struct WireValueReader: ~Copyable {
                 bytes: UnsafeBufferPointer(start: padded.baseAddress!, count: length + 8),
                 destination: destination
             )
-            #if hasFeature(Embedded)
             _ = tokenizer.scanValueResult()
-            #else
-            try? tokenizer.scanValue()
-            #endif
             destination = tokenizer.destination
         }
         guard destination.rootArray, destination.failure == nil else {
