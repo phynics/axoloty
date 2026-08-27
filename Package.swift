@@ -153,6 +153,12 @@ let package = Package(
             exclude: ["Runtime/AGENTS.md"],
             sources: [
                 "Common/AxolotyError.swift",
+                "Runtime/AxolotyRuntimeConfiguration.swift",
+                "Runtime/AxolotyRuntimeEvents.swift",
+                "Runtime/AxolotyRuntimeOperations.swift",
+                "Runtime/AxolotyRuntimeDiagnostics.swift",
+                "Runtime/AxolotyRuntimeTransport.swift",
+                "Runtime/AxolotyRuntimeHandlers.swift",
                 "Runtime/AxolotyRuntimeDefinition.swift",
                 "Runtime/AxolotyRuntimeDefinition+IO.swift",
                 "Runtime/AxolotyRuntime.swift",
