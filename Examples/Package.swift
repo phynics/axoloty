@@ -11,11 +11,11 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "HostRuntimeExample",
-            dependencies: [.product(name: "Axoloty", package: "Axoloty")]
+            dependencies: [.product(name: "Axoloty", package: "workspace")]
         ),
         .executableTarget(
             name: "WireExample",
-            dependencies: [.product(name: "AxolotyWire", package: "Axoloty")]
+            dependencies: [.product(name: "AxolotyWire", package: "workspace")]
         ),
     ]
 )
