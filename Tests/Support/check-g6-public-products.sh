@@ -42,7 +42,7 @@ done
 
 for executable in axoloty-tool ax axoloty-inspect axoloty-mcp; do
     log="${TMPDIR:-/tmp}/axoloty-g6-product-smoke-${executable}.log"
-    if ! (cd "$root" && swift run --disable-automatic-resolution --skip-build --product "$executable" --help) >"$log" 2>&1; then
+    if ! (cd "$root" && swift run --disable-automatic-resolution --skip-build "$executable" --help) >"$log" 2>&1; then
         cat "$log" >&2
         exit 1
     fi
@@ -58,7 +58,7 @@ if [ -d "$root/Examples" ]; then
     done
     for example in HostRuntimeExample WireExample; do
         log="${TMPDIR:-/tmp}/axoloty-g6-example-smoke-${example}.log"
-        if ! (cd "$root" && swift run --disable-automatic-resolution --package-path Examples --skip-build --product "$example" --help) >"$log" 2>&1; then
+        if ! (cd "$root" && swift run --disable-automatic-resolution --package-path Examples --skip-build "$example" --help) >"$log" 2>&1; then
             cat "$log" >&2
             exit 1
         fi
