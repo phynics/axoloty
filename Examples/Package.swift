@@ -5,12 +5,12 @@ import PackageDescription
 
 let package = Package(
     name: "AxolotyExamples",
-    dependencies: [
-        .package(path: ".."),
-    ],
     products: [
         .executable(name: "HostRuntimeExample", targets: ["HostRuntimeExample"]),
         .executable(name: "WireExample", targets: ["WireExample"]),
+    ],
+    dependencies: [
+        .package(path: ".."),
     ],
     targets: [
         .executableTarget(
