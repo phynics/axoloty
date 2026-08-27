@@ -53,8 +53,8 @@ struct AxolotyIoAssociateTests {
                 timeout: .seconds(30),
                 scenario: "io-associate IoValue"
             )
-            let valueObject = try ModernConsumerSupport.jsonObject(value.value)
-            #expect(valueObject["payload"] as? Int == 42)
+            let valuePayload = try ModernConsumerSupport.jsonValue(value.value)
+            #expect(valuePayload as? Int == 42)
             ModernConsumerSupport.emit("{\"state\":\"ack\",\"scenario\":\"io-associate-js-to-modern\"}")
             await runtime.stop()
         } catch {

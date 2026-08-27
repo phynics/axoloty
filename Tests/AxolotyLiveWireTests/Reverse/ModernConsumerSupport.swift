@@ -120,6 +120,10 @@ enum ModernConsumerSupport {
         return object
     }
 
+    static func jsonValue(_ payload: [UInt8]) throws -> Any {
+        try JSONSerialization.jsonObject(with: Data(payload), options: [.fragmentsAllowed])
+    }
+
     static func fixturePayload(name: String = "wire-fixture", privateData: [String: Any]? = nil) throws -> [UInt8] {
         let object: [String: Any] = [
             "coreType": "CoatyObject",
