@@ -470,7 +470,8 @@ actor ProtocolExecutor {
                     do throws(ProtocolError) {
                         let borrowed = try BorrowedProtocolFrame(
                             topic: topicView,
-                            payload: ByteSlice(bytes: payloadBase, length: payloadBuffer.count)
+                            payload: ByteSlice(bytes: payloadBase, length: payloadBuffer.count),
+                            maximumTopicLength: definition.capacities.protocolMaximumTopicBytes
                         )
                         actionSink.removeAll()
                         let remainingTransportCapacity = definition.capacities.dispatch - queuedTransportEffects
@@ -482,6 +483,7 @@ actor ProtocolExecutor {
                             .profile(borrowed),
                             nowMS: nowMS,
                             classifier: TransportRouteClassifier(transport: transport),
+                            maximumTopicLength: definition.capacities.protocolMaximumTopicBytes,
                             sink: &actionSink
                         )
                         if case .accepted = outcome {

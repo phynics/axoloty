@@ -32,6 +32,8 @@ public struct RuntimeCapacities: Sendable, Equatable {
     public let ioCatalogue: Int
     /// Largest protocol payload accepted by the shared processor.
     public let protocolMaximumPayloadBytes: Int
+    /// Largest host profile topic accepted by the shared processor.
+    public let protocolMaximumTopicBytes: Int
     /// Maximum active protocol objects accepted by the shared processor.
     public let protocolMaximumObjects: Int
     /// Maximum pending protocol correlations accepted by the shared processor.
@@ -52,6 +54,7 @@ public struct RuntimeCapacities: Sendable, Equatable {
         ioObservers: Int = 64,
         ioCatalogue: Int = 64,
         protocolMaximumPayloadBytes: Int = 512,
+        protocolMaximumTopicBytes: Int = 512,
         protocolMaximumObjects: Int = 64,
         protocolMaximumPendingCorrelations: Int = 64,
         protocolCapabilities: ProtocolCapabilities = .coatyCore3
@@ -60,6 +63,7 @@ public struct RuntimeCapacities: Sendable, Equatable {
               handlersInFlight > 0, stream > 0, eventStreams > 0,
               ioEndpoints > 0, ioPendingLatest > 0, ioObservers > 0,
               ioCatalogue > 0, protocolMaximumPayloadBytes > 0,
+              protocolMaximumTopicBytes > 0,
               protocolMaximumObjects > 0, protocolMaximumPendingCorrelations > 0 else {
             throw AxolotyError.invalidArgument(
                 argument: "capacities",
@@ -70,6 +74,7 @@ public struct RuntimeCapacities: Sendable, Equatable {
               handlersInFlight <= 64, stream <= 64, eventStreams <= 64,
               ioEndpoints <= 64, ioPendingLatest <= 64, ioObservers <= 64,
               ioCatalogue <= 64, protocolMaximumPayloadBytes <= 65_536,
+              protocolMaximumTopicBytes <= 65_536,
               protocolMaximumObjects <= 64, protocolMaximumPendingCorrelations <= 64 else {
             throw AxolotyError.invalidArgument(
                 argument: "capacities",
@@ -87,6 +92,7 @@ public struct RuntimeCapacities: Sendable, Equatable {
         self.ioObservers = ioObservers
         self.ioCatalogue = ioCatalogue
         self.protocolMaximumPayloadBytes = protocolMaximumPayloadBytes
+        self.protocolMaximumTopicBytes = protocolMaximumTopicBytes
         self.protocolMaximumObjects = protocolMaximumObjects
         self.protocolMaximumPendingCorrelations = protocolMaximumPendingCorrelations
         self.protocolCapabilities = protocolCapabilities

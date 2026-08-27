@@ -233,10 +233,23 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     /// - Parameters:
     ///   - input: Profile frame or exact external IO input valid for this call.
     ///   - nowMS: Caller-supplied monotonic time in milliseconds.
+    ///   - maximumTopicLength: Maximum profile topic length accepted by this
+    ///     binding. The default is the bounded wire limit.
     ///   - sink: Caller-owned action destination.
     /// - Returns: The atomic transition result.
-    public mutating func processInbound<S: ~Copyable & ProtocolActionSink>(_ input: BorrowedProtocolInput, nowMS: UInt32, sink: inout S) -> ProtocolProcessOutcome {
-        processInbound(input, nowMS: nowMS, classifier: AnyProtocolRouteClassifier(), sink: &sink)
+    public mutating func processInbound<S: ~Copyable & ProtocolActionSink>(
+        _ input: BorrowedProtocolInput,
+        nowMS: UInt32,
+        maximumTopicLength: Int = WireBufferConfig.maxTopicLength,
+        sink: inout S
+    ) -> ProtocolProcessOutcome {
+        processInbound(
+            input,
+            nowMS: nowMS,
+            classifier: AnyProtocolRouteClassifier(),
+            maximumTopicLength: maximumTopicLength,
+            sink: &sink
+        )
     }
 
     /// Processes a closed inbound input with a binding-owned route classifier.
@@ -245,20 +258,41 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     ///   - input: Profile frame or exact external IO input valid for this call.
     ///   - nowMS: Caller-supplied monotonic time in milliseconds.
     ///   - classifier: Binding-owned association-route classifier.
+    ///   - maximumTopicLength: Maximum profile topic length accepted by this
+    ///     binding. The default is the bounded wire limit.
     ///   - sink: Caller-owned action destination.
     /// - Returns: The atomic transition result.
-    public mutating func processInbound<Classifier: ProtocolRouteClassifier, S: ~Copyable & ProtocolActionSink>(_ input: BorrowedProtocolInput, nowMS: UInt32, classifier: Classifier, sink: inout S) -> ProtocolProcessOutcome {
+    public mutating func processInbound<Classifier: ProtocolRouteClassifier, S: ~Copyable & ProtocolActionSink>(
+        _ input: BorrowedProtocolInput,
+        nowMS: UInt32,
+        classifier: Classifier,
+        maximumTopicLength: Int = WireBufferConfig.maxTopicLength,
+        sink: inout S
+    ) -> ProtocolProcessOutcome {
         switch input {
         case .profile(let frame):
-            return processProfileInbound(frame, nowMS: nowMS, classifier: classifier, sink: &sink)
+            return processProfileInbound(
+                frame,
+                nowMS: nowMS,
+                classifier: classifier,
+                maximumTopicLength: maximumTopicLength,
+                sink: &sink
+            )
         case .externalIo(let route, let payload):
             return processExternalInbound(route: route, payload: payload, nowMS: nowMS, classifier: classifier, sink: &sink)
         }
     }
 
-    private mutating func processProfileInbound<Classifier: ProtocolRouteClassifier, S: ~Copyable & ProtocolActionSink>(_ frame: BorrowedProtocolFrame, nowMS: UInt32, classifier: Classifier, sink: inout S) -> ProtocolProcessOutcome {
+    private mutating func processProfileInbound<Classifier: ProtocolRouteClassifier, S: ~Copyable & ProtocolActionSink>(
+        _ frame: BorrowedProtocolFrame,
+        nowMS: UInt32,
+        classifier: Classifier,
+        maximumTopicLength: Int,
+        sink: inout S
+    ) -> ProtocolProcessOutcome {
         guard capabilities.contains(frame.routingKey.capability) else { return .rejected(.unsupportedCapability) }
-        guard frame.topic.length <= WireBufferConfig.maxTopicLength,
+        guard maximumTopicLength >= 0,
+              frame.topic.length <= maximumTopicLength,
               frame.payload.length <= maximumPayloadBytes,
               frame.payload.length <= sink.maximumPayloadBytes else {
             return .rejected(.capacityExceeded)
