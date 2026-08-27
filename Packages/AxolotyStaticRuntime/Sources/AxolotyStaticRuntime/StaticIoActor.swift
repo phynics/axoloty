@@ -85,7 +85,7 @@ public struct StaticIoHandlerEntry: Sendable {
     /// - Parameters:
     ///   - type: Concrete portable endpoint value type.
     ///   - payload: Borrowed payload pointer, or `nil` only for an empty value.
-    ///   - payloadLength: Payload length bounded to 512 bytes.
+    ///   - payloadLength: Payload length bounded to the wire payload limit.
     ///   - representationRawValue: ``IoValueRepresentation`` raw value.
     /// - Returns: A decoded value, or `nil` for malformed inputs.
     public static func decode<Value: IoEndpointValue>(
@@ -94,7 +94,7 @@ public struct StaticIoHandlerEntry: Sendable {
         payloadLength: Int32,
         representationRawValue: UInt8
     ) -> Value? {
-        guard payloadLength >= 0, payloadLength <= 512,
+        guard payloadLength >= 0, payloadLength <= WireBufferConfig.maxPayloadSize,
               let representation = IoValueRepresentation(rawValue: representationRawValue),
               payload != nil || payloadLength == 0 else {
             return nil
@@ -169,7 +169,7 @@ public struct StaticIoHandlerEntry: Sendable {
         withUnsafeBytes(of: sourceBytes) { sourceBuffer in
             withUnsafeBytes(of: actorBytes) { actorBuffer in
                 localPayload.withBytes { payloadPointer, payloadLength in
-                    guard payloadLength <= 512 else { return }
+                    guard payloadLength <= WireBufferConfig.maxPayloadSize else { return }
                     callback(
                         context,
                         payloadPointer.assumingMemoryBound(to: UInt8.self),

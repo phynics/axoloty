@@ -126,7 +126,10 @@ presets of 1/16/64 for runtime state. Those measurements do not select G3
 object byte/field capacities: G3 owns the object model and its own evidence;
 host evidence covers bounded operations and specialization growth at the
 1/16/64 measurement points, while the 512-byte/24-field convenience aliases
-remain wire-authority bounds rather than resource presets. The ESP32-C6 node
+remain wire-authority bounds rather than resource presets. Static runtime
+specializations now spell both dimensions (`StaticRuntime<capacity,
+payloadCapacity>`); the payload dimension may be reduced below 512 bytes but
+cannot exceed the sealed Coaty Core 3 wire maximum. The ESP32-C6 node
 proves same-source compilation and linkage. G4 owns runtime replacement;
 G5 owns IO and optional-product boundaries; G6 owns non-divergence and release
 proof.

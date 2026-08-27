@@ -208,7 +208,7 @@ struct ProtocolFoundationTests {
         var topicBytes = Array("coaty/3/test/CHN/fixture".utf8)
         var payloadBytes = Array("payload".utf8)
         var routeBytes = Array("external/fixture".utf8)
-        var sink = InlineOwnedProtocolActionSink<10>()
+        var sink = InlineOwnedProtocolActionSink<10, 512>()
         var expected: [OwnedProtocolAction] = []
 
         selectorBytes.withUnsafeBufferPointer { selectorBuffer in
@@ -305,7 +305,7 @@ struct ProtocolFoundationTests {
 
     @Test("fixed owning sink preflight and byte bounds are atomic")
     func inlineOwnedSinkSaturationIsAtomic() throws {
-        var sink = InlineOwnedProtocolActionSink<1>()
+        var sink = InlineOwnedProtocolActionSink<1, 512>()
         let saturated = sink.preflight(actionCount: 2)
         #expect(!saturated)
         #expect(sink.count == 0)
@@ -345,11 +345,51 @@ struct ProtocolFoundationTests {
         #expect(sink.remainingCapacity == 1)
     }
 
+    @Test("processor rejects a payload larger than the owning sink before mutation")
+    func processorAndSinkCapacityMismatchIsAtomic() throws {
+        let topicBytes = Array("coaty/3/test/IOV/00000000-0000-4000-8000-000000000001".utf8)
+        var payloadBytes = [UInt8](repeating: 0x01, count: 65)
+        var processor = ProtocolProcessor<1>(maximumPayloadBytes: 512)
+        var sink = InlineOwnedProtocolActionSink<1, 64>()
+
+        topicBytes.withUnsafeBufferPointer { topicBuffer in
+            payloadBytes.withUnsafeBufferPointer { payloadBuffer in
+                let view = TopicView(topicBytes: topicBuffer.baseAddress!, length: topicBuffer.count)
+                let frame = try! BorrowedProtocolFrame(
+                    topic: view,
+                    payload: ByteSlice(bytes: payloadBuffer.baseAddress!, length: payloadBuffer.count)
+                )
+                let outcome = processor.processInbound(.profile(frame), nowMS: 0, sink: &sink)
+                #expect(outcome == .rejected(.capacityExceeded))
+                #expect(sink.count == 0)
+                #expect(processor.state.generation == 0)
+            }
+        }
+        payloadBytes[0] = 0x02
+        #expect(sink.remainingCapacity == 1)
+    }
+
+    @Test("association route snapshots retain the complete bounded route")
+    func routeSnapshotBounds() throws {
+        let routeBytes = [UInt8](repeating: 0x72, count: ProtocolBufferConfig.maxRouteBytes)
+        let snapshot = routeBytes.withUnsafeBufferPointer { buffer in
+            BorrowedProtocolRouteSnapshot(slice: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count))
+        }
+        #expect(snapshot?.length == ProtocolBufferConfig.maxRouteBytes)
+        #expect(snapshot?.owned() == routeBytes)
+
+        let oversized = routeBytes + [0x73]
+        let rejected = oversized.withUnsafeBufferPointer { buffer in
+            BorrowedProtocolRouteSnapshot(slice: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count))
+        }
+        #expect(rejected == nil)
+    }
+
     @Test("fixed owning sink layouts stay within the static memory gate")
     func inlineOwnedSinkLayouts() {
-        let tiny = MemoryLayout<InlineOwnedProtocolActionSink<1>>.size
-        let staticDefault = MemoryLayout<InlineOwnedProtocolActionSink<16>>.size
-        let hostTest = MemoryLayout<InlineOwnedProtocolActionSink<64>>.size
+        let tiny = MemoryLayout<InlineOwnedProtocolActionSink<1, 512>>.size
+        let staticDefault = MemoryLayout<InlineOwnedProtocolActionSink<16, 512>>.size
+        let hostTest = MemoryLayout<InlineOwnedProtocolActionSink<64, 512>>.size
         print("owning-sink-layout tiny=\(tiny) static=\(staticDefault) host=\(hostTest)")
         #expect(tiny > 0)
         #expect(staticDefault <= 20 * 1024)
@@ -433,8 +473,8 @@ struct ProtocolFoundationTests {
         }
     }
 
-    @Test("borrowed frames accept valid profile topics beyond static owning storage")
-    func longProfileTopicAccepted() throws {
+    @Test("borrowed frames reject topics beyond the owning storage limit")
+    func longProfileTopicRejected() throws {
         let topic = Array((
             "coaty/3/wire-lifecycle-duplicate-reply-wire-32734211309-2/RTN/"
                 + "33333333-3333-4333-8333-333333333333/"
@@ -442,18 +482,18 @@ struct ProtocolFoundationTests {
         ).utf8)
         #expect(topic.count == 135)
         let payload = [UInt8]()
-        let frame = try topic.withUnsafeBufferPointer { topicBuffer in
-            try payload.withUnsafeBufferPointer { payloadBuffer in
-                let view = TopicView(topicBytes: topicBuffer.baseAddress!, length: topicBuffer.count)
-                let bytes = ByteSlice(
-                    bytes: payloadBuffer.baseAddress ?? UnsafePointer<UInt8>(bitPattern: 1)!,
-                    length: 0
-                )
-                return try BorrowedProtocolFrame(topic: view, payload: bytes)
+        #expect(throws: ProtocolError.self) {
+            try topic.withUnsafeBufferPointer { topicBuffer in
+                try payload.withUnsafeBufferPointer { payloadBuffer in
+                    let view = TopicView(topicBytes: topicBuffer.baseAddress!, length: topicBuffer.count)
+                    let bytes = ByteSlice(
+                        bytes: payloadBuffer.baseAddress ?? UnsafePointer<UInt8>(bitPattern: 1)!,
+                        length: 0
+                    )
+                    _ = try BorrowedProtocolFrame(topic: view, payload: bytes)
+                }
             }
         }
-        #expect(frame.routingKey.capability == .returnEvent)
-        #expect(frame.routingKey.correlationID == UUID16(parsing: "55555555-5555-4555-8555-555555555555"))
     }
 
     @Test("protocol owns Coaty object-filter adaptation")

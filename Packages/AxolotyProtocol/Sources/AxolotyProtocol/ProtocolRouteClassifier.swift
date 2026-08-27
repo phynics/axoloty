@@ -23,7 +23,7 @@ public protocol ProtocolRouteClassifier {
 
 /// A small exact-match classifier useful for a binding-owned route table.
 public struct ExactProtocolRouteClassifier: ProtocolRouteClassifier, Sendable {
-    private let externalRoute: InlineArray<128, UInt8>
+    private let externalRoute: ProtocolRouteStorage
     private let externalLength: Int
 
     /// Creates a classifier from a fixed route literal.
@@ -32,8 +32,8 @@ public struct ExactProtocolRouteClassifier: ProtocolRouteClassifier, Sendable {
     public init(externalRoute: StaticString) {
         let bytes = externalRoute.utf8Start
         let length = externalRoute.utf8CodeUnitCount
-        var fixed = InlineArray<128, UInt8>(repeating: 0)
-        for index in 0..<min(length, 128) {
+        var fixed = ProtocolRouteStorage(repeating: 0)
+        for index in 0..<min(length, ProtocolBufferConfig.maxRouteBytes) {
             let byte = bytes[index]
             fixed[index] = byte
         }
@@ -44,7 +44,8 @@ public struct ExactProtocolRouteClassifier: ProtocolRouteClassifier, Sendable {
     /// Classifies the configured external route, treating other non-empty
     /// routes as Coaty and empty routes as unrelated.
     public func classify(_ route: ByteSlice) -> ProtocolRouteClassification {
-        guard route.length == externalLength, route.length <= 128 else { return .coaty }
+        guard route.length == externalLength,
+              route.length <= ProtocolBufferConfig.maxRouteBytes else { return .coaty }
         for index in 0..<route.length {
             guard route.byte(at: index) == externalRoute[index] else { return .coaty }
         }

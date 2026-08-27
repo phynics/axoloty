@@ -272,7 +272,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         var actorID = UUID16.zero
         var active = false
         var routeLength = 0
-        var route = InlineArray<128, UInt8>(repeating: 0)
+        var route = ProtocolRouteStorage(repeating: 0)
         var routeKind: StoredAssociationRouteKind = .coaty
         var updateRateMS: UInt32?
     }
@@ -503,7 +503,11 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
 
     private mutating func processProfileInbound<Classifier: ProtocolRouteClassifier, S: ~Copyable & ProtocolActionSink>(_ frame: BorrowedProtocolFrame, nowMS: UInt32, classifier: Classifier, sink: inout S) -> ProtocolProcessOutcome {
         guard capabilities.contains(frame.routingKey.capability) else { return .rejected(.unsupportedCapability) }
-        guard frame.payload.length <= maximumPayloadBytes else { return .rejected(.capacityExceeded) }
+        guard frame.topic.length <= WireBufferConfig.maxTopicLength,
+              frame.payload.length <= maximumPayloadBytes,
+              frame.payload.length <= sink.maximumPayloadBytes else {
+            return .rejected(.capacityExceeded)
+        }
         let valid = validatePayload(frame.payload, for: frame.routingKey.capability)
         guard valid else { return .rejected(.malformedPayload) }
         var ioActorActionCount = 0
@@ -582,6 +586,8 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         let actionCount = frame.routingKey.capability == .associate
             ? 1 + associationLifecycleCount
             : max(1, ioActorActionCount)
+        let frameDeliveryKey = deliveryKey(for: frame)
+        guard Self.deliveryKeyFits(frameDeliveryKey) else { return .rejected(.capacityExceeded) }
         // Classification and all rejection-only validation precede sink
         // capacity so unrelated routes and contradictory flags retain their
         // semantic outcomes even when the caller's sink is full.
@@ -627,7 +633,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 ?? routeClassification
             let delivery = BorrowedProtocolDelivery(
                 routingKey: frame.routingKey,
-                deliveryKey: deliveryKey(for: frame),
+                deliveryKey: frameDeliveryKey,
                 routeClassification: transitionClassification,
                 topic: frame.topic,
                 payload: frame.payload
@@ -677,7 +683,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         } else {
             let action = BorrowedProtocolAction.deliver(BorrowedProtocolDelivery(
                 routingKey: frame.routingKey,
-                deliveryKey: deliveryKey(for: frame),
+                deliveryKey: frameDeliveryKey,
                 routeClassification: routeClassification,
                 topic: frame.topic,
                 payload: frame.payload
@@ -700,10 +706,13 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         classifier: Classifier,
         sink: inout S
     ) -> ProtocolProcessOutcome {
-        guard route.length > 0, route.length <= 128,
+        guard route.length > 0, route.length <= ProtocolBufferConfig.maxRouteBytes,
               classifier.classify(route) == .external else { return .ignored }
         guard payload.length <= maximumPayloadBytes,
-              validatePayload(payload, for: .ioValue) else { return .rejected(.malformedPayload) }
+              payload.length <= sink.maximumPayloadBytes else {
+            return .rejected(.capacityExceeded)
+        }
+        guard validatePayload(payload, for: .ioValue) else { return .rejected(.malformedPayload) }
 
         var matching = 0
         for index in 0..<capacity {
@@ -761,7 +770,10 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     public mutating func processOutbound<Classifier: ProtocolRouteClassifier, S: ~Copyable & ProtocolActionSink>(_ operation: ProtocolLocalOperation, nowMS: UInt32 = 0, classifier: Classifier, sink: inout S) -> ProtocolProcessOutcome {
         guard capabilities.contains(operation.capability) else { return .rejected(.unsupportedCapability) }
         guard operation.hasValidTopicFilter else { return .rejected(.malformedFrame) }
-        guard operation.payload.length <= maximumPayloadBytes else { return .rejected(.capacityExceeded) }
+        guard operation.payload.length <= maximumPayloadBytes,
+              operation.payload.length <= sink.maximumPayloadBytes else {
+            return .rejected(.capacityExceeded)
+        }
         let valid = validatePayload(operation.payload, for: operation.capability)
         guard valid else { return .rejected(.malformedPayload) }
         guard let key = try? ProtocolRoutingKey(capability: operation.capability, sourceID: operation.sourceID, correlationID: operation.correlationID) else { return .rejected(.invalidCorrelation) }
@@ -855,6 +867,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             }
         } else {
             let filters = outboundEventTypeFilters(for: operation)
+            guard Self.eventTypeFiltersFit(filters) else { return .rejected(.capacityExceeded) }
             let actionCount = filters.secondary == nil ? 1 : 2
             guard sink.preflight(actionCount: actionCount) else { return .rejected(.capacityExceeded) }
             guard sink.append(.publish(BorrowedProtocolPublication(
@@ -932,6 +945,26 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             break
         }
         return .capability(operation.capability)
+    }
+
+    private static func deliveryKeyFits(_ key: BorrowedProtocolDeliveryKey) -> Bool {
+        switch key {
+        case .advertiseFilter(let value), .channel(let value):
+            return value.length <= 128
+        default:
+            return true
+        }
+    }
+
+    private static func eventTypeFiltersFit(
+        _ filters: (
+            primary: (value: ByteSlice, kind: ProtocolEventTypeFilterKind)?,
+            secondary: (value: ByteSlice, kind: ProtocolEventTypeFilterKind)?
+        )
+    ) -> Bool {
+        if let primary = filters.primary, primary.value.length > 128 { return false }
+        if let secondary = filters.secondary, secondary.value.length > 128 { return false }
+        return true
     }
 
     private static func advertisedObjectType(_ payload: ByteSlice) -> ByteSlice? {
@@ -1012,14 +1045,17 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             }
             return .ignored
         }
-        var semanticStorage = InlineArray<128, UInt8>(repeating: 0)
+        var semanticStorage = ProtocolRouteStorage(repeating: 0)
         let semanticLength: Int
         do {
             semanticLength = try route.copyDecodedJSONString(into: &semanticStorage)
         } catch {
             return .rejected(.malformedPayload)
         }
-        guard semanticLength > 0, semanticLength <= 128 else { return .rejected(.capacityExceeded) }
+        guard semanticLength > 0,
+              semanticLength <= ProtocolBufferConfig.maxRouteBytes else {
+            return .rejected(.capacityExceeded)
+        }
         return withUnsafeBytes(of: semanticStorage) { buffer in
             let semanticRoute = ByteSlice(
                 bytes: buffer.baseAddress!.assumingMemoryBound(to: UInt8.self),
@@ -1128,7 +1164,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     private func associationRouteSnapshot(_ association: Association) -> BorrowedProtocolRouteSnapshot? {
         let length = association.routeLength
         guard length > 0 else { return nil }
-        var storage = InlineArray<128, UInt8>(repeating: 0)
+        var storage = ProtocolRouteStorage(repeating: 0)
         for offset in 0..<length { storage[offset] = association.route[offset] }
         return BorrowedProtocolRouteSnapshot(length: length, storage: storage)
     }

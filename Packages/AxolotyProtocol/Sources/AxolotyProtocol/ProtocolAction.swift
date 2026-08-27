@@ -188,21 +188,21 @@ public struct OwnedProtocolPublication: Sendable, Equatable {
 /// Association removal frames omit the route being removed. The processor
 /// snapshots that route in fixed inline storage before committing removal.
 public struct BorrowedProtocolRouteSnapshot {
-    private var bytes: InlineArray<128, UInt8>
+    private var bytes: ProtocolRouteStorage
     /// Number of meaningful route bytes.
     public let length: Int
 
     /// Creates a bounded snapshot from borrowed route bytes.
     public init?(slice: ByteSlice) {
-        guard slice.length > 0, slice.length <= 128 else { return nil }
-        var storage = InlineArray<128, UInt8>(repeating: 0)
+        guard slice.length > 0, slice.length <= ProtocolBufferConfig.maxRouteBytes else { return nil }
+        var storage = ProtocolRouteStorage(repeating: 0)
         for index in 0..<slice.length { storage[index] = slice.byte(at: index) ?? 0 }
         self.bytes = storage
         self.length = slice.length
     }
 
     /// Creates a snapshot from already-filled fixed storage.
-    init(length: Int, storage: InlineArray<128, UInt8>) {
+    init(length: Int, storage: ProtocolRouteStorage) {
         self.bytes = storage
         self.length = length
     }

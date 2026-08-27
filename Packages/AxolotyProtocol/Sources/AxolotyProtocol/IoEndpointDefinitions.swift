@@ -4,14 +4,14 @@ import AxolotyObjectModel
 import AxolotyWire
 
 /// A consumed and normalized source endpoint definition.
-public struct IoSourceEndpointDefinition: ~Copyable, Sendable {
+public struct BoundedIoSourceEndpointDefinition<let payloadCapacity: Int>: ~Copyable, Sendable {
     /// Endpoint object identity.
     public let id: ObjectID
     /// Payload representation fixed during registration.
     public let representation: IoValueRepresentation
     /// Publication policy encoded into the canonical object.
     public let publication: IoPublicationPolicy
-    private let objectBytes: BoundedIoBytes<512>
+    private let objectBytes: BoundedIoBytes<payloadCapacity>
 
     /// Consumes source metadata and derives its runtime-owned wire fields.
     ///
@@ -79,7 +79,7 @@ public struct IoSourceEndpointDefinition: ~Copyable, Sendable {
             throw protocolError(error)
         }
 
-        let snapshot = try endpointSnapshot(of: object)
+        let snapshot: (id: ObjectID, bytes: BoundedIoBytes<payloadCapacity>) = try endpointSnapshot(of: object)
         id = snapshot.id
         objectBytes = snapshot.bytes
         self.representation = representation
@@ -99,14 +99,14 @@ public struct IoSourceEndpointDefinition: ~Copyable, Sendable {
 }
 
 /// A consumed and normalized actor endpoint definition.
-public struct IoActorEndpointDefinition: ~Copyable, Sendable {
+public struct BoundedIoActorEndpointDefinition<let payloadCapacity: Int>: ~Copyable, Sendable {
     /// Endpoint object identity.
     public let id: ObjectID
     /// Payload representation fixed during registration.
     public let representation: IoValueRepresentation
     /// Recommendation encoded into the canonical object, including zero.
     public let recommendedUpdateRateMS: UInt32?
-    private let objectBytes: BoundedIoBytes<512>
+    private let objectBytes: BoundedIoBytes<payloadCapacity>
 
     /// Consumes actor metadata and derives its runtime-owned wire fields.
     ///
@@ -131,7 +131,7 @@ public struct IoActorEndpointDefinition: ~Copyable, Sendable {
             throw protocolError(error)
         }
 
-        let snapshot = try endpointSnapshot(of: object)
+        let snapshot: (id: ObjectID, bytes: BoundedIoBytes<payloadCapacity>) = try endpointSnapshot(of: object)
         id = snapshot.id
         objectBytes = snapshot.bytes
         self.representation = representation
@@ -150,13 +150,13 @@ public struct IoActorEndpointDefinition: ~Copyable, Sendable {
     }
 }
 
-private func endpointSnapshot<Schema: ObjectSchema>(
+private func endpointSnapshot<Schema: ObjectSchema, let payloadCapacity: Int>(
     of object: borrowing Object<Schema>
-) throws(ProtocolError) -> (id: ObjectID, bytes: BoundedIoBytes<512>) {
+) throws(ProtocolError) -> (id: ObjectID, bytes: BoundedIoBytes<payloadCapacity>) {
     var identifier: ObjectID?
-    var snapshot: BoundedIoBytes<512>?
+    var snapshot: BoundedIoBytes<payloadCapacity>?
     object.withEncodedBytes { bytes in
-        snapshot = try? BoundedIoBytes(copying: bytes)
+        snapshot = try? BoundedIoBytes<payloadCapacity>(copying: bytes)
         identifier = bytes.withBytes { pointer, length in
             let reader = WireReader(
                 bytes: pointer.assumingMemoryBound(to: UInt8.self),
@@ -168,6 +168,12 @@ private func endpointSnapshot<Schema: ObjectSchema>(
     guard let identifier, let snapshot else { throw ProtocolError(.malformedPayload) }
     return (identifier, snapshot)
 }
+
+/// The default 512-byte source endpoint definition.
+public typealias IoSourceEndpointDefinition = BoundedIoSourceEndpointDefinition<512>
+
+/// The default 512-byte actor endpoint definition.
+public typealias IoActorEndpointDefinition = BoundedIoActorEndpointDefinition<512>
 
 private func protocolError(_ error: ObjectError) -> ProtocolError {
     switch error.reason {

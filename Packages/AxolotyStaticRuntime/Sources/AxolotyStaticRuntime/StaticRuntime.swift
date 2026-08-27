@@ -5,23 +5,24 @@ import AxolotyObjectModel
 import AxolotyWire
 
 /// Fixed configuration consumed exactly once by a static runtime.
-public struct StaticRuntimeDefinition: ~Copyable {
+public struct StaticRuntimeDefinition<let payloadCapacity: Int>: ~Copyable {
     /// Opaque identity used to reject handles from another runtime registry.
     public let registryID: ObjectID
     /// Families enabled for this firmware image.
     public let capabilities: ProtocolCapabilities
-    /// Maximum accepted wire payload size.
-    public let maximumPayloadBytes: Int
+    /// Maximum accepted wire payload size, fixed by the type specialization.
+    public var maximumPayloadBytes: Int { payloadCapacity }
+    /// Maximum accepted wire payload size for this definition specialization.
+    public static var maximumPayloadBytes: Int { payloadCapacity }
 
     /// Creates a bounded static definition.
     public init(
         registryID: ObjectID,
         capabilities: ProtocolCapabilities = .coatyCore3,
-        maximumPayloadBytes: Int = 512
     ) {
+        precondition(payloadCapacity >= 0 && payloadCapacity <= WireBufferConfig.maxPayloadSize)
         self.registryID = registryID
         self.capabilities = capabilities
-        self.maximumPayloadBytes = maximumPayloadBytes
     }
 }
 
@@ -33,54 +34,58 @@ public struct StaticRuntimeDefinition: ~Copyable {
 /// byte. Drained views remain valid only during the synchronous visitor. No
 /// task, actor, Foundation value, or heap-backed registry is part of this
 /// runtime.
-public struct StaticRuntime<let capacity: Int>: ~Copyable {
+public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copyable {
     let registryID: ObjectID
     var processor: ProtocolProcessor<capacity>
     var subscriptions: ProtocolSubscriptionRegistry<capacity>
-    var sink: InlineOwnedProtocolActionSink<capacity>
+    var sink: InlineOwnedProtocolActionSink<capacity, payloadCapacity>
     let routeClassifier: ExactProtocolRouteClassifier
-    var ioRegistry: StaticIoEndpointRegistry<capacity>
+    var ioRegistry: StaticIoEndpointRegistry<capacity, payloadCapacity>
     var receiveContext: StaticIoReceiveContext?
 
     /// Creates a runtime with a sealed capability profile and fixed limits.
     public init(
         registryID: ObjectID,
         capabilities: ProtocolCapabilities = .coatyCore3,
-        maximumPayloadBytes: Int = 512
     ) {
+        precondition(payloadCapacity >= 0 && payloadCapacity <= WireBufferConfig.maxPayloadSize)
         self.registryID = registryID
         self.routeClassifier = ExactProtocolRouteClassifier(
             externalRoute: "external/wire-compat-v1/io-external-1"
         )
         self.processor = ProtocolProcessor<capacity>(
             capabilities: capabilities,
-            maximumPayloadBytes: maximumPayloadBytes
+            maximumPayloadBytes: payloadCapacity
         )
         self.subscriptions = ProtocolSubscriptionRegistry<capacity>()
-        self.sink = InlineOwnedProtocolActionSink<capacity>()
+        self.sink = InlineOwnedProtocolActionSink<capacity, payloadCapacity>()
         self.ioRegistry = StaticIoEndpointRegistry()
         self.receiveContext = nil
     }
 
     /// Consumes fixed configuration and binds one exact route classifier.
     public init(
-        definition: consuming StaticRuntimeDefinition,
+        definition: consuming StaticRuntimeDefinition<payloadCapacity>,
         routeClassifier: ExactProtocolRouteClassifier
     ) {
         self.registryID = definition.registryID
         self.routeClassifier = routeClassifier
         self.processor = ProtocolProcessor<capacity>(
             capabilities: definition.capabilities,
-            maximumPayloadBytes: definition.maximumPayloadBytes
+            maximumPayloadBytes: payloadCapacity
         )
         self.subscriptions = ProtocolSubscriptionRegistry<capacity>()
-        self.sink = InlineOwnedProtocolActionSink<capacity>()
+        self.sink = InlineOwnedProtocolActionSink<capacity, payloadCapacity>()
         self.ioRegistry = StaticIoEndpointRegistry()
         self.receiveContext = nil
     }
 
     /// The processor's fixed-storage state observation.
     public var state: ProtocolStateSnapshot { processor.state }
+    /// Maximum payload accepted by this runtime's fixed storage.
+    public var maximumPayloadBytes: Int { payloadCapacity }
+    /// Maximum payload accepted by this runtime specialization.
+    public static var maximumPayloadBytes: Int { payloadCapacity }
 
     /// Registers a synchronous numeric-context handler.
     public mutating func register(
@@ -260,13 +265,13 @@ public struct StaticRuntime<let capacity: Int>: ~Copyable {
 
 /// The fixed profile used by the static device agent.
 /// A one-slot saturation and atomicity preset.
-public typealias StaticRuntimeTiny = StaticRuntime<1>
+public typealias StaticRuntimeTiny = StaticRuntime<1, 512>
 
 /// The fixed ESP32-C6 runtime preset.
-public typealias StaticRuntimeESP32C6 = StaticRuntime<16>
+public typealias StaticRuntimeESP32C6 = StaticRuntime<16, 512>
 
 /// A larger host-only static runtime test preset.
-public typealias StaticRuntimeHostTest = StaticRuntime<64>
+public typealias StaticRuntimeHostTest = StaticRuntime<64, 512>
 
 /// The default static device runtime.
 public typealias AxolotyStaticRuntime = StaticRuntimeESP32C6

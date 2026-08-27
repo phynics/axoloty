@@ -181,7 +181,7 @@ also equal `0`.
 
 | Input | Limit | Behavior |
 |-------|-------|----------|
-| Payload | 512 bytes | Accepted at limit, rejected at 513 |
+| Payload | 512 bytes (static runtimes may select a smaller capacity) | Accepted at the selected limit, rejected above it; values above 512 are never accepted |
 | Topic | 128 bytes | Accepted at limit, rejected at 129 |
 | maxSubscribers | 8 | 9th rejected |
 | maxFamilyEntries | 16 | 17th rejected |

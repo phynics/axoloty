@@ -9,13 +9,13 @@ enum StaticIoEndpointRole: UInt8 {
     case actor
 }
 
-struct StaticIoEndpointRecord {
+struct StaticIoEndpointRecord<let payloadCapacity: Int> {
     var active: Bool
     var id: ObjectID
     var generation: UInt32
     var role: StaticIoEndpointRole
     var representation: IoValueRepresentation
-    var objectBytes: BoundedIoBytes<512>
+    var objectBytes: BoundedIoBytes<payloadCapacity>
     var publication: IoPublicationPolicy
     var machine: IoPublicationStateMachine
     var inFlight: Bool
@@ -45,19 +45,19 @@ struct StaticIoActorSlot {
     }
 }
 
-struct StaticIoPendingSlot {
+struct StaticIoPendingSlot<let payloadCapacity: Int> {
     var present: Bool
-    var bytes: BoundedIoBytes<512>
+    var bytes: BoundedIoBytes<payloadCapacity>
 
     static var empty: Self {
         Self(present: false, bytes: BoundedIoBytes())
     }
 }
 
-struct StaticIoEndpointRegistry<let capacity: Int>: ~Copyable {
-    private var endpoints: InlineArray<capacity, StaticIoEndpointRecord>
+struct StaticIoEndpointRegistry<let capacity: Int, let payloadCapacity: Int>: ~Copyable {
+    private var endpoints: InlineArray<capacity, StaticIoEndpointRecord<payloadCapacity>>
     private var actorSlots: InlineArray<capacity, StaticIoActorSlot>
-    private var pendingSlots: InlineArray<capacity, StaticIoPendingSlot>
+    private var pendingSlots: InlineArray<capacity, StaticIoPendingSlot<payloadCapacity>>
 
     init() {
         endpoints = InlineArray(repeating: .empty)
@@ -142,12 +142,12 @@ struct StaticIoEndpointRegistry<let capacity: Int>: ~Copyable {
         return slot
     }
 
-    borrowing func endpoint(at slot: Int) -> StaticIoEndpointRecord? {
+    borrowing func endpoint(at slot: Int) -> StaticIoEndpointRecord<payloadCapacity>? {
         guard slot >= 0, slot < capacity, endpoints[slot].active else { return nil }
         return endpoints[slot]
     }
 
-    borrowing func pending(at slot: Int) -> BoundedIoBytes<512>? {
+    borrowing func pending(at slot: Int) -> BoundedIoBytes<payloadCapacity>? {
         guard slot >= 0, slot < capacity, pendingSlots[slot].present else { return nil }
         return pendingSlots[slot].bytes
     }
@@ -162,7 +162,7 @@ struct StaticIoEndpointRegistry<let capacity: Int>: ~Copyable {
         id: ObjectID,
         generation: UInt32,
         representation: IoValueRepresentation,
-        objectBytes: BoundedIoBytes<512>,
+        objectBytes: BoundedIoBytes<payloadCapacity>,
         publication: IoPublicationPolicy
     ) {
         endpoints[slot] = StaticIoEndpointRecord(
@@ -185,7 +185,7 @@ struct StaticIoEndpointRegistry<let capacity: Int>: ~Copyable {
         id: ObjectID,
         generation: UInt32,
         representation: IoValueRepresentation,
-        objectBytes: BoundedIoBytes<512>,
+        objectBytes: BoundedIoBytes<payloadCapacity>,
         entry: StaticIoHandlerEntry,
         context: UInt32
     ) {
@@ -204,7 +204,7 @@ struct StaticIoEndpointRegistry<let capacity: Int>: ~Copyable {
         pendingSlots[slot] = .empty
     }
 
-    mutating func replacePending(at slot: Int, with bytes: BoundedIoBytes<512>) {
+    mutating func replacePending(at slot: Int, with bytes: BoundedIoBytes<payloadCapacity>) {
         pendingSlots[slot] = StaticIoPendingSlot(present: true, bytes: bytes)
     }
 

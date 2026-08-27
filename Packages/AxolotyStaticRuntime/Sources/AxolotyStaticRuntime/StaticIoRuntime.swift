@@ -26,7 +26,7 @@ extension StaticRuntime {
               let record = ioRegistry.endpoint(at: slot) else {
             return .rejected(.invalidEndpoint)
         }
-        let encoded: BoundedIoBytes<512>
+        let encoded: BoundedIoBytes<payloadCapacity>
         do throws(ProtocolError) {
             encoded = try encodeIoValue(value, representation: record.representation)
         } catch {
@@ -208,7 +208,7 @@ extension StaticRuntime {
         publication: IoPublicationPolicy = .immediate
     ) throws(ProtocolError) -> IoSource<Value> {
         _ = valueType
-        let definition = try IoSourceEndpointDefinition(
+        let definition = try BoundedIoSourceEndpointDefinition<payloadCapacity>(
             metadata: metadata,
             representation: Value.representation,
             publication: publication
@@ -236,7 +236,7 @@ extension StaticRuntime {
         representation: IoValueRepresentation,
         publication: IoPublicationPolicy = .immediate
     ) throws(ProtocolError) -> IoSource<DynamicIoValue> {
-        let definition = try IoSourceEndpointDefinition(
+        let definition = try BoundedIoSourceEndpointDefinition<payloadCapacity>(
             metadata: metadata,
             representation: representation,
             publication: publication
@@ -267,7 +267,7 @@ extension StaticRuntime {
         guard let representation = Handler.Value.fixedRepresentation else {
             throw ProtocolError(.invalidEndpoint)
         }
-        let definition = try IoActorEndpointDefinition(
+        let definition = try BoundedIoActorEndpointDefinition<payloadCapacity>(
             metadata: metadata,
             representation: representation,
             recommendedUpdateRateMS: recommendedUpdateRateMS
@@ -297,7 +297,7 @@ extension StaticRuntime {
         handler: StaticIoHandler<Handler>,
         recommendedUpdateRateMS: UInt32? = nil
     ) throws(ProtocolError) -> IoActor<DynamicIoValue> where Handler.Value == DynamicIoValue {
-        let definition = try IoActorEndpointDefinition(
+        let definition = try BoundedIoActorEndpointDefinition<payloadCapacity>(
             metadata: metadata,
             representation: representation,
             recommendedUpdateRateMS: recommendedUpdateRateMS
@@ -313,7 +313,7 @@ extension StaticRuntime {
     }
 
     private mutating func registerSource(
-        _ definition: consuming IoSourceEndpointDefinition
+        _ definition: consuming BoundedIoSourceEndpointDefinition<payloadCapacity>
     ) throws(ProtocolError) -> (slot: Int, generation: UInt32, id: ObjectID, representation: IoValueRepresentation) {
         guard sink.count == 0, receiveContext == nil else {
             throw ProtocolError(.capacityExceeded)
@@ -343,7 +343,7 @@ extension StaticRuntime {
     }
 
     private mutating func registerActor<Handler: StaticIoActorHandler>(
-        _ definition: consuming IoActorEndpointDefinition,
+        _ definition: consuming BoundedIoActorEndpointDefinition<payloadCapacity>,
         handler: StaticIoHandler<Handler>
     ) throws(ProtocolError) -> (slot: Int, generation: UInt32, id: ObjectID, representation: IoValueRepresentation) {
         guard sink.count == 0, receiveContext == nil else {
@@ -377,7 +377,7 @@ extension StaticRuntime {
 
     private mutating func submitAdvertise(
         endpointID: ObjectID,
-        payload: BoundedIoBytes<512>
+        payload: BoundedIoBytes<payloadCapacity>
     ) throws(ProtocolError) {
         let outcome = payload.withBytes { bytes in
             send(
@@ -422,9 +422,9 @@ extension StaticRuntime {
     }
 }
 
-func dispatchStaticIoDelivery<let capacity: Int>(
+func dispatchStaticIoDelivery<let capacity: Int, let payloadCapacity: Int>(
     _ delivery: borrowing BorrowedProtocolDelivery,
-    registry: borrowing StaticIoEndpointRegistry<capacity>,
+    registry: borrowing StaticIoEndpointRegistry<capacity, payloadCapacity>,
     receiveContext: StaticIoReceiveContext?
 ) {
         guard case .ioActor(let actorUUID) = delivery.deliveryKey,
@@ -454,10 +454,10 @@ func dispatchStaticIoDelivery<let capacity: Int>(
         )
 }
 
-private func makeAdvertisePayload(
-    copying objectBytes: borrowing BoundedIoBytes<512>
-) throws(ProtocolError) -> BoundedIoBytes<512> {
-    var objectStorage = InlineArray<512, UInt8>(repeating: 0)
+private func makeAdvertisePayload<let payloadCapacity: Int>(
+    copying objectBytes: borrowing BoundedIoBytes<payloadCapacity>
+) throws(ProtocolError) -> BoundedIoBytes<payloadCapacity> {
+    var objectStorage = InlineArray<payloadCapacity, UInt8>(repeating: 0)
     var objectLength = 0
     objectBytes.withBytes { bytes in
         objectLength = bytes.length
@@ -465,7 +465,7 @@ private func makeAdvertisePayload(
             objectStorage[index] = bytes.byte(at: index) ?? 0
         }
     }
-    var storage = InlineArray<512, UInt8>(repeating: 0)
+    var storage = InlineArray<payloadCapacity, UInt8>(repeating: 0)
     var length = 0
     var failed = false
     withUnsafeMutableBytes(of: &storage) { rawBuffer in
@@ -496,9 +496,9 @@ private func makeAdvertisePayload(
         }
     }
     guard !failed else { throw ProtocolError(.capacityExceeded) }
-    var result: BoundedIoBytes<512>?
+    var result: BoundedIoBytes<payloadCapacity>?
     withUnsafeBytes(of: storage) { rawBuffer in
-        result = try? BoundedIoBytes<512>(copying: ByteSlice(
+        result = try? BoundedIoBytes<payloadCapacity>(copying: ByteSlice(
             bytes: rawBuffer.baseAddress!.assumingMemoryBound(to: UInt8.self),
             length: length
         ))
@@ -507,36 +507,36 @@ private func makeAdvertisePayload(
     return result
 }
 
-private func copyEndpointBytes(
-    from definition: borrowing IoSourceEndpointDefinition
-) throws(ProtocolError) -> BoundedIoBytes<512> {
-    var result: BoundedIoBytes<512>?
+private func copyEndpointBytes<let payloadCapacity: Int>(
+    from definition: borrowing BoundedIoSourceEndpointDefinition<payloadCapacity>
+) throws(ProtocolError) -> BoundedIoBytes<payloadCapacity> {
+    var result: BoundedIoBytes<payloadCapacity>?
     definition.withObjectBytes { bytes in
-        result = try? BoundedIoBytes<512>(copying: bytes)
+        result = try? BoundedIoBytes<payloadCapacity>(copying: bytes)
     }
     guard let result else { throw ProtocolError(.capacityExceeded) }
     return result
 }
 
-private func copyEndpointBytes(
-    from definition: borrowing IoActorEndpointDefinition
-) throws(ProtocolError) -> BoundedIoBytes<512> {
-    var result: BoundedIoBytes<512>?
+private func copyEndpointBytes<let payloadCapacity: Int>(
+    from definition: borrowing BoundedIoActorEndpointDefinition<payloadCapacity>
+) throws(ProtocolError) -> BoundedIoBytes<payloadCapacity> {
+    var result: BoundedIoBytes<payloadCapacity>?
     definition.withObjectBytes { bytes in
-        result = try? BoundedIoBytes<512>(copying: bytes)
+        result = try? BoundedIoBytes<payloadCapacity>(copying: bytes)
     }
     guard let result else { throw ProtocolError(.capacityExceeded) }
     return result
 }
 
-private func encodeIoValue<Value: IoEndpointValue>(
+private func encodeIoValue<Value: IoEndpointValue, let payloadCapacity: Int>(
     _ value: borrowing Value,
     representation: IoValueRepresentation
-) throws(ProtocolError) -> BoundedIoBytes<512> {
-    var result: BoundedIoBytes<512>?
+) throws(ProtocolError) -> BoundedIoBytes<payloadCapacity> {
+    var result: BoundedIoBytes<payloadCapacity>?
     do {
         try value.withEncodedIoPayload(representation: representation) { bytes in
-            result = try? BoundedIoBytes<512>(copying: bytes)
+            result = try? BoundedIoBytes<payloadCapacity>(copying: bytes)
         }
     } catch {
         throw ProtocolError(.malformedPayload)

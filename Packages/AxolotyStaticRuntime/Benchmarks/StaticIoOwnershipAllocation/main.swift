@@ -70,7 +70,7 @@ private func copyAndVisit(
     iterations: Int
 ) {
     for _ in 0..<iterations {
-        var sink = InlineOwnedProtocolActionSink<1>()
+        var sink = InlineOwnedProtocolActionSink<1, 512>()
         guard sink.preflight(actionCount: 1), sink.append(action) else {
             fatalError("protocol-valid owning sink operation was rejected")
         }

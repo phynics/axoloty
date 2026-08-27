@@ -4,6 +4,8 @@
 public protocol ProtocolActionSink: ~Copyable {
     /// Remaining action slots available to the processor.
     var remainingCapacity: Int { get }
+    /// Largest payload that the sink can retain in one action.
+    var maximumPayloadBytes: Int { get }
     /// Admits all slots needed for one atomic processor operation.
     /// - Parameter actionCount: Number of actions the processor will append.
     /// - Returns: `true` when the complete operation fits. A sink may reserve
@@ -27,6 +29,8 @@ public struct InlineProtocolActionSink<let capacity: Int>: ~Copyable, ProtocolAc
 
     /// Number of actions currently stored.
     public var count: Int { used }
+    /// This borrowed sink does not copy payload bytes.
+    public var maximumPayloadBytes: Int { Int.max }
     /// Remaining capacity before the next atomic operation.
     public var remainingCapacity: Int { capacity - used }
 
@@ -74,6 +78,8 @@ public struct ReusableProtocolActionSink: ProtocolActionSink {
 
     /// Number of actions currently stored.
     public var count: Int { storage.count }
+    /// This borrowed sink does not copy payload bytes.
+    public var maximumPayloadBytes: Int { Int.max }
     /// Remaining action slots available to the next operation.
     public var remainingCapacity: Int { operationCapacity - storage.count }
 

@@ -77,6 +77,42 @@ struct WireCodecTests {
         #expect(try #require(view.eventTypeFilter).equals("io-context-1"))
     }
 
+    @Test
+    func topicViewBoundsIndexesAndRetainsOverflow() throws {
+        let topic = "a/b/c/d/e/f/g"
+        let bytes = Array(topic.utf8)
+        let view = bytes.withUnsafeBufferPointer { buffer in
+            TopicView(topicBytes: buffer.baseAddress!, length: buffer.count)
+        }
+        #expect(view.levelCount == 7)
+        #expect(try #require(view.level(0)).equals("a"))
+        #expect(try #require(view.level(6)).equals("g"))
+        #expect(view.level(-1) == nil)
+        #expect(view.level(7) == nil)
+
+        let overflowing = Array("a/b/c/d/e/f/g/h".utf8)
+        let overflowingView = overflowing.withUnsafeBufferPointer { buffer in
+            TopicView(topicBytes: buffer.baseAddress!, length: buffer.count)
+        }
+        #expect(overflowingView.levelCount > WireBufferConfig.maxTopicLevels)
+        #expect(overflowingView.level(7) == nil)
+        #expect(throws: WireDecodeError.self) {
+            try overflowingView.validate()
+        }
+    }
+
+    @Test
+    func topicViewRejectsTotalLengthAboveLimit() throws {
+        let bytes = Array(("coaty/3/ns/ADV/" + String(repeating: "A", count: 120)).utf8)
+        #expect(bytes.count > WireBufferConfig.maxTopicLength)
+        let view = bytes.withUnsafeBufferPointer { buffer in
+            TopicView(topicBytes: buffer.baseAddress!, length: buffer.count)
+        }
+        #expect(throws: WireDecodeError.self) {
+            try view.validate()
+        }
+    }
+
     // MARK: - UUID16
 
     @Test

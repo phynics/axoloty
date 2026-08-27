@@ -16,6 +16,65 @@ private func staticRegistryID(_ literal: StaticString = "00000000-0000-4000-8000
 
 @Suite("Axoloty static runtime")
 struct StaticRuntimeTests {
+    @Test("selected payload capacity is enforced before sink mutation")
+    func selectedPayloadCapacity() {
+        let topicBytes = Array("coaty/3/ns/IOV/00000000-0000-4000-8000-000000000001".utf8)
+        let acceptedPayload = [UInt8](repeating: 0x01, count: 64)
+        let rejectedPayload = [UInt8](repeating: 0x01, count: 65)
+        var runtime = StaticRuntime<1, 64>(registryID: staticRegistryID())
+
+        topicBytes.withUnsafeBufferPointer { topic in
+            acceptedPayload.withUnsafeBufferPointer { payload in
+                let outcome = runtime.receive(
+                    topic: ByteSlice(bytes: topic.baseAddress!, length: topic.count),
+                    payload: ByteSlice(bytes: payload.baseAddress!, length: payload.count),
+                    nowMS: 1
+                )
+                #expect(outcome == .accepted)
+                #expect(runtime.actionCount == 1)
+            }
+        }
+        runtime.drain { _ in }
+
+        topicBytes.withUnsafeBufferPointer { topic in
+            rejectedPayload.withUnsafeBufferPointer { payload in
+                let outcome = runtime.receive(
+                    topic: ByteSlice(bytes: topic.baseAddress!, length: topic.count),
+                    payload: ByteSlice(bytes: payload.baseAddress!, length: payload.count),
+                    nowMS: 2
+                )
+                #expect(outcome == .rejected(.capacityExceeded))
+                #expect(runtime.actionCount == 0)
+            }
+        }
+    }
+
+    @Test("payload capacity changes inline runtime layout")
+    func payloadCapacityChangesLayout() {
+        #expect(MemoryLayout<StaticRuntime<16, 128>>.size < MemoryLayout<StaticRuntime<16, 512>>.size)
+    }
+
+    @Test("payload layout measurements cover supported static capacities")
+    func payloadLayoutMeasurements() {
+        print("static-runtime-layout " + [
+            "1x64=\(MemoryLayout<StaticRuntime<1, 64>>.size)",
+            "1x128=\(MemoryLayout<StaticRuntime<1, 128>>.size)",
+            "1x256=\(MemoryLayout<StaticRuntime<1, 256>>.size)",
+            "1x512=\(MemoryLayout<StaticRuntime<1, 512>>.size)",
+            "16x64=\(MemoryLayout<StaticRuntime<16, 64>>.size)",
+            "16x128=\(MemoryLayout<StaticRuntime<16, 128>>.size)",
+            "16x256=\(MemoryLayout<StaticRuntime<16, 256>>.size)",
+            "16x512=\(MemoryLayout<StaticRuntime<16, 512>>.size)",
+            "64x64=\(MemoryLayout<StaticRuntime<64, 64>>.size)",
+            "64x128=\(MemoryLayout<StaticRuntime<64, 128>>.size)",
+            "64x256=\(MemoryLayout<StaticRuntime<64, 256>>.size)",
+            "64x512=\(MemoryLayout<StaticRuntime<64, 512>>.size)"
+        ].joined(separator: " "))
+        #expect(MemoryLayout<StaticRuntime<1, 64>>.size < MemoryLayout<StaticRuntime<1, 512>>.size)
+        #expect(MemoryLayout<StaticRuntime<16, 64>>.size < MemoryLayout<StaticRuntime<16, 512>>.size)
+        #expect(MemoryLayout<StaticRuntime<64, 64>>.size < MemoryLayout<StaticRuntime<64, 512>>.size)
+    }
+
     @Test("one shared fixed processor sends and drains synchronously")
     func sendAndDrain() throws {
         let source = UUID16.zero

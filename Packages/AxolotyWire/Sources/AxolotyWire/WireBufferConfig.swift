@@ -5,6 +5,9 @@
 /// All sizes are compile-time constants so an embedded target can tune
 /// them for their memory budget. The embedded path uses these static maximums
 /// and rejects overflow with a structured error.
+@usableFromInline
+internal typealias TopicLevelStorage = InlineArray<7, Int>
+
 public enum WireBufferConfig {
     /// Maximum topic string length (bytes).
     public static let maxTopicLength: Int = 128
@@ -17,7 +20,7 @@ public enum WireBufferConfig {
 
     /// Maximum topic levels in a Coaty topic (protocol, version, namespace,
     /// event, sourceId, correlationId, postfix = 7).
-    public static let maxTopicLevels: Int = 7
+    public static let maxTopicLevels: Int = TopicLevelStorage.count
 
     /// Maximum concurrent subscribers per event type.
     public static let maxSubscribers: Int = 8

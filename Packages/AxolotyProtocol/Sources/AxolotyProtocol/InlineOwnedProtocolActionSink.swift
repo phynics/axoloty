@@ -8,8 +8,8 @@ import AxolotyWire
 /// materializes borrowed views only for the duration of its nonescaping body.
 /// This makes the sink suitable for runtimes that return to their caller
 /// between protocol processing and action delivery.
-public struct InlineOwnedProtocolActionSink<let capacity: Int>: ~Copyable, ProtocolActionSink {
-    private var slots: InlineArray<capacity, InlineOwnedProtocolActionSlot?>
+public struct InlineOwnedProtocolActionSink<let capacity: Int, let payloadCapacity: Int>: ~Copyable, ProtocolActionSink {
+    private var slots: InlineArray<capacity, InlineOwnedProtocolActionSlot<payloadCapacity>?>
     private var used: Int
     private var reserved: Int
 
@@ -22,6 +22,8 @@ public struct InlineOwnedProtocolActionSink<let capacity: Int>: ~Copyable, Proto
 
     /// Number of actions currently retained by the sink.
     public var count: Int { used }
+    /// Largest payload retained by each owning action slot.
+    public var maximumPayloadBytes: Int { payloadCapacity }
 
     /// Number of unreserved action slots.
     public var remainingCapacity: Int { capacity - used - reserved }
@@ -47,7 +49,7 @@ public struct InlineOwnedProtocolActionSink<let capacity: Int>: ~Copyable, Proto
     ///   bounds or a missing reservation leave retained slots unchanged.
     public mutating func append(_ action: BorrowedProtocolAction) -> Bool {
         guard reserved > 0, used < capacity,
-              let slot = InlineOwnedProtocolActionSlot(copying: action) else {
+              let slot = InlineOwnedProtocolActionSlot<payloadCapacity>(copying: action) else {
             return false
         }
         slots[used] = slot
@@ -103,7 +105,7 @@ private enum InlineOwnedPublishTargetKind: UInt8 {
     case associationRoute
 }
 
-private struct InlineOwnedProtocolActionSlot {
+private struct InlineOwnedProtocolActionSlot<let payloadCapacity: Int> {
     private var kind: InlineOwnedProtocolActionKind
     private var routingKey: ProtocolRoutingKey?
     private var deliveryKeyKind: InlineOwnedDeliveryKeyKind
@@ -122,7 +124,7 @@ private struct InlineOwnedProtocolActionSlot {
     private var secondaryLength: Int
     private var tertiaryLength: Int
     private var quaternaryLength: Int
-    private var primary: InlineArray<512, UInt8>
+    private var primary: InlineArray<payloadCapacity, UInt8>
     private var secondary: InlineArray<128, UInt8>
     private var tertiary: InlineArray<128, UInt8>
     private var quaternary: InlineArray<128, UInt8>

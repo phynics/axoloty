@@ -153,6 +153,8 @@ registration) with bounded capacities:
 
 - Max topic length: 128 bytes
 - Max payload size: 512 bytes
+- Static runtimes may select a smaller compile-time payload capacity (for
+  example, `StaticRuntime<16, 128>`); 512 bytes remains the sealed maximum.
 - Max subscribers: 8
 - Max family entries: 16
 - QoS: 0 only

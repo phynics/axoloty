@@ -90,10 +90,17 @@ discarding protocol input.
 
 ## Static runtime
 
-`AxolotyStaticRuntime.StaticRuntime<capacity>` composes one
+`AxolotyStaticRuntime.StaticRuntime<capacity, payloadCapacity>` composes one
 `ProtocolProcessor`, one `ProtocolSubscriptionRegistry`, and one inline action
 sink. `receive`, `send`, `expire`, `cancel`, and `drain` are synchronous. The
 caller drains actions before borrowed topic or payload bytes leave scope.
+
+`payloadCapacity` is a compile-time value between 0 and the sealed 512-byte
+Coaty Core 3 payload limit. The established presets use 512 bytes; smaller
+deployments can select, for example, `StaticRuntime<16, 128>` to reduce inline
+storage. The former `StaticRuntime<capacity>` spelling migrates to
+`StaticRuntime<capacity, 512>`, and `StaticRuntimeDefinition` is spelled
+`StaticRuntimeDefinition<512>`.
 
 The accepted storage profiles are `tiny = 1`, `esp32C6Static = 16`, and
 `hostDefault = 64`. Static handlers are noncapturing thin functions with
