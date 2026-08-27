@@ -8,6 +8,10 @@ let package = Package(
     dependencies: [
         .package(path: ".."),
     ],
+    products: [
+        .executable(name: "HostRuntimeExample", targets: ["HostRuntimeExample"]),
+        .executable(name: "WireExample", targets: ["WireExample"]),
+    ],
     targets: [
         .executableTarget(
             name: "HostRuntimeExample",
