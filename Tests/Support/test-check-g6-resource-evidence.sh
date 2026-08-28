@@ -16,11 +16,12 @@ commit=$(git -C "$repository" rev-parse HEAD)
 tree=$(git -C "$repository" rev-parse HEAD^{tree})
 version=$(tr -d '[:space:]' < "$repository/VERSION")
 digest=$(sha256sum "$fixture/artifacts/run.log" | awk '{print $1}')
+repository_identity=${AXOLOTY_REPOSITORY:-github.com/phynics/axoloty}
 cat > "$fixture/evidence.json" <<EOF
 {
   "schemaVersion": 1,
   "gate": "g6-resource-evidence",
-  "subject": {"repository":"github.com/phynics/axoloty","commit":"$commit","tree":"$tree","version":"$version","clean":true},
+  "subject": {"repository":"$repository_identity","commit":"$commit","tree":"$tree","version":"$version","clean":true},
   "approval": {"status":"approved","policyDigest":"policy-1"},
   "environments": {
     "host": {"runs":[{"runID":"host-1","sourceCommit":"$commit","compiler":"Swift 6.3","optimization":"release","policyDigest":"policy-1","board":"linux-host","container":"axoloty-build@sha256:host","corpusDigest":"corpus-host","sourceSetDigest":"sources-host","measurements":{"binaryBytes":1},"artifacts":[{"path":"artifacts/run.log","byteCount":18,"sha256":"$digest"}]},{"runID":"host-2","sourceCommit":"$commit","compiler":"Swift 6.3","optimization":"release","policyDigest":"policy-1","board":"linux-host","container":"axoloty-build@sha256:host","corpusDigest":"corpus-host","sourceSetDigest":"sources-host","measurements":{"binaryBytes":1},"artifacts":[{"path":"artifacts/run.log","byteCount":18,"sha256":"$digest"}]}]},
