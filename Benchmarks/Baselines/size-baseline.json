@@ -1,17 +1,17 @@
 {
-  "commit": "c14c82c",
+  "commit": "c352fdc2",
   "swiftVersion": "Swift version 6.3.3 (swift-6.3.3-RELEASE)\nTarget: x86_64-unknown-linux-gnu",
   "buildMode": "release",
   "buildFlags": "-c release -Xswiftc -O -Xswiftc -wmo",
   "consumers": {
     "AxolotyWireConsumer": {
-      "unstrippedBytes": 1245120,
-      "strippedBytes": 303016,
+      "unstrippedBytes": 1130080,
+      "strippedBytes": 277656,
       "sections": {
-        "text": 161354,
-        "rodata": 15026,
-        "data": 824,
-        "bss": 11664
+        "text": 145066,
+        "rodata": 14866,
+        "data": 352,
+        "bss": 11184
       },
       "dynamicLibraries": [
         "libswiftCore.so",
@@ -20,20 +20,20 @@
         "libswift_RegexParser.so",
         "libc.so.6"
       ],
-      "sha256": "2c427794ea67ee485c82d9fe77d55ec031f35ddfc5c14bc2819de0e5a4d58358",
+      "sha256": "81429a5267169cc6814b716f4d52eac855d717171eb516c7cb49565027f42d79",
       "dependencyClosure": [
         "AxolotyWire"
       ],
       "hostDependencyCheck": "passed"
     },
     "AxolotyConsumer": {
-      "unstrippedBytes": 53506992,
-      "strippedBytes": 12047104,
+      "unstrippedBytes": 50246512,
+      "strippedBytes": 10973952,
       "sections": {
-        "text": 6969089,
-        "rodata": 987890,
-        "data": 98416,
-        "bss": 281376
+        "text": 6355905,
+        "rodata": 938738,
+        "data": 49488,
+        "bss": 230592
       },
       "dynamicLibraries": [
         "libswiftCore.so",
@@ -55,7 +55,7 @@
         "libc.so.6",
         "ld-linux-x86-64.so.2"
       ],
-      "sha256": "6efa6ad2e322f3fe10453c8b372ae513eba1537fd540dedf5ba6f99c9a8842ba",
+      "sha256": "e5cce2c15fef58a884bc85d946dedcc8d8befa950b5c5342cebead99f8668af8",
       "dependencyClosure": [
         "Axoloty",
         "errorkit",
@@ -73,18 +73,19 @@
         "swift-nio-ssl",
         "swift-nio-transport-services",
         "swift-sdk",
+        "swift-syntax",
         "swift-system"
       ],
       "hostDependencyCheck": "n/a"
     },
     "CommunicationConsumer": {
-      "unstrippedBytes": 53507200,
-      "strippedBytes": 12047104,
+      "unstrippedBytes": 50246400,
+      "strippedBytes": 10973952,
       "sections": {
-        "text": 6969249,
-        "rodata": 987890,
-        "data": 98416,
-        "bss": 281328
+        "text": 6355985,
+        "rodata": 938738,
+        "data": 49488,
+        "bss": 230576
       },
       "dynamicLibraries": [
         "libswiftCore.so",
@@ -106,7 +107,7 @@
         "libc.so.6",
         "ld-linux-x86-64.so.2"
       ],
-      "sha256": "223e7498637277cd9288138720e18aca1dded2bfd3512cbc7430d2f58bbad16e",
+      "sha256": "8304f855e858fc91b0c2f16b0dac9f36c13c22d239287271371316cb15f81739",
       "dependencyClosure": [
         "Axoloty",
         "errorkit",
@@ -124,18 +125,19 @@
         "swift-nio-ssl",
         "swift-nio-transport-services",
         "swift-sdk",
+        "swift-syntax",
         "swift-system"
       ],
       "hostDependencyCheck": "n/a"
     },
     "IoRoutingConsumer": {
-      "unstrippedBytes": 53507200,
-      "strippedBytes": 12047104,
+      "unstrippedBytes": 50620576,
+      "strippedBytes": 11080448,
       "sections": {
-        "text": 6969105,
-        "rodata": 987890,
-        "data": 98416,
-        "bss": 281360
+        "text": 6442305,
+        "rodata": 942834,
+        "data": 50120,
+        "bss": 231760
       },
       "dynamicLibraries": [
         "libswiftCore.so",
@@ -157,9 +159,9 @@
         "libc.so.6",
         "ld-linux-x86-64.so.2"
       ],
-      "sha256": "1449e663404aae9b63835cac1adb161d8adeeacd5d2fc7d7d5d3fd3d84038f5f",
+      "sha256": "e72f9f70ee1dfbfb0545357c56a1f92a7b8efb88c3dfcd7aa6f261fc8b3df04d",
       "dependencyClosure": [
-        "Axoloty",
+        "AxolotyIoRouting",
         "errorkit",
         "eventsource",
         "mqtt-nio",
@@ -175,18 +177,19 @@
         "swift-nio-ssl",
         "swift-nio-transport-services",
         "swift-sdk",
+        "swift-syntax",
         "swift-system"
       ],
       "hostDependencyCheck": "n/a"
     },
     "SensorThingsConsumer": {
-      "unstrippedBytes": 53507720,
-      "strippedBytes": 12047104,
+      "unstrippedBytes": 50803736,
+      "strippedBytes": 11133696,
       "sections": {
-        "text": 6969313,
-        "rodata": 987890,
-        "data": 98416,
-        "bss": 281328
+        "text": 6467297,
+        "rodata": 942834,
+        "data": 50216,
+        "bss": 239072
       },
       "dynamicLibraries": [
         "libswiftCore.so",
@@ -208,9 +211,9 @@
         "libc.so.6",
         "ld-linux-x86-64.so.2"
       ],
-      "sha256": "4ec0acdf9b794faa8c96ed0ef7f53fecd4bee41df0933be0c0b3130bc9c2d460",
+      "sha256": "913080582e9f480262e57e351e3643a6367ed905c0a1fc60d3a02e8b9979b993",
       "dependencyClosure": [
-        "Axoloty",
+        "AxolotySensorThings",
         "errorkit",
         "eventsource",
         "mqtt-nio",
@@ -226,6 +229,7 @@
         "swift-nio-ssl",
         "swift-nio-transport-services",
         "swift-sdk",
+        "swift-syntax",
         "swift-system"
       ],
       "hostDependencyCheck": "n/a"
