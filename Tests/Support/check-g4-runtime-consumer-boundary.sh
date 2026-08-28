@@ -34,7 +34,13 @@ fi
 
 for consumer in $consumer_roots; do
     [ -d "$consumer" ] || continue
-    sources=$(find "$consumer" -type f \( -name '*.swift' -o -name 'Package.swift' \) -print)
+    # Generated build/dependency checkouts are not first-party consumers. They
+    # can contain unrelated legacy symbols and must never affect this source
+    # boundary scan.
+    sources=$(find "$consumer" -type f \
+        ! -path '*/.build/*' \
+        ! -path '*/.swiftpm/*' \
+        \( -name '*.swift' -o -name 'Package.swift' \) -print)
     for source in $sources; do
         if grep -Eq '\b(Container|Controller|CommunicationManager|MQTTNIO|MQTTClient|PayloadCoder|HostWireEventEncoder|CommunicationEvent|EventSnapshot)\b' "$source"; then
             fail "legacy runtime or raw transport dependency in migrated consumer: $source"
