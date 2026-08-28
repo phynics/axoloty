@@ -165,7 +165,7 @@ private func runAgentVectors(_ record: (StaticString, Bool) -> Void) {
     func receiveAgentMessage(topic: StaticString, payload: StaticString) -> Int32 {
         var result: Int32 = -1
         withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 128) { outputTopic in
-            withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 512) { outputPayload in
+            withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 2_048) { outputPayload in
                 withUnsafeTemporaryAllocation(of: Int32.self, capacity: 1) { outputTopicLength in
                     withUnsafeTemporaryAllocation(of: Int32.self, capacity: 1) { outputPayloadLength in
                         result = axolotyStaticAgentReceive(
@@ -207,7 +207,7 @@ private func runAgentVectors(_ record: (StaticString, Bool) -> Void) {
         bytes: advertisePayload.utf8Start, length: advertisePayload.utf8CodeUnitCount
     ))
     withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 128) { topicBuffer in
-        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 512) { payloadBuffer in
+        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 2_048) { payloadBuffer in
             guard let advertiseData,
                   let encoded = try? encodeAgent.encode(
                     advertiseData, eventType: .advertise, correlationId: nil, nowMS: phase4NowMS(),
@@ -241,7 +241,7 @@ private func runAgentVectors(_ record: (StaticString, Bool) -> Void) {
     ) -> Bool {
         var matches = false
         withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 128) { topicBuffer in
-            withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 512) { payloadBuffer in
+            withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 2_048) { payloadBuffer in
                 guard let encoded = try? encodeAgent.encode(
                     data, eventType: eventType, correlationId: correlationId, nowMS: phase4NowMS(),
                     topicBuffer: topicBuffer.baseAddress!, topicCapacity: topicBuffer.count,
@@ -426,7 +426,7 @@ private func runSmoke() -> Int32 {
 
     @inline(__always)
     func boundedVector(_ id: StaticString, _ topicLength: Int, _ payloadLength: Int, _ shouldFit: Bool) {
-        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 513) { payload in
+        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 2_049) { payload in
             withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 130) { topic in
                 let ok = (try? BorrowedMessage.validated(
                     topicBytes: topic.baseAddress!, topicLength: topicLength,
@@ -525,7 +525,7 @@ private func runSmoke() -> Int32 {
 
     // === Config tests ===
 
-    record("config:payloadMax512", WireBufferConfig.maxPayloadSize == 512)
+    record("config:payloadMax2048", WireBufferConfig.maxPayloadSize == 2_048)
     record("config:topicMax128", WireBufferConfig.maxTopicLength == 128)
     record("config:maxSubscribers8", WireBufferConfig.maxSubscribers == 8)
     record("config:maxFamilyEntries16", WireBufferConfig.maxFamilyEntries == 16)
@@ -544,9 +544,10 @@ private func runSmoke() -> Int32 {
     topicVector("topic:overflow", 51, "corr", false)
     boundedVector("capacity:payload0", 0, 0, true)
     boundedVector("capacity:payload1", 0, 1, true)
-    boundedVector("capacity:payload511", 0, 511, true)
     boundedVector("capacity:payload512", 0, 512, true)
-    boundedVector("capacity:payload513", 0, 513, false)
+    boundedVector("capacity:payload2047", 0, 2_047, true)
+    boundedVector("capacity:payload2048", 0, 2_048, true)
+    boundedVector("capacity:payload2049", 0, 2_049, false)
     boundedVector("capacity:topic0", 0, 0, true)
     boundedVector("capacity:topic1", 1, 0, true)
     boundedVector("capacity:topic128", 128, 0, true)
@@ -604,7 +605,7 @@ private func runSmoke() -> Int32 {
                 var received = false
                 if connected {
                     withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 129) { topic in
-                        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 513) { payload in
+                        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 2_049) { payload in
                             let topicLength = axoloty_network_copy_topic(topic.baseAddress!, Int32(topic.count))
                             let payloadLength = axoloty_network_copy_payload(payload.baseAddress!, Int32(payload.count))
                             if topicLength > 0 && payloadLength >= 0 {

@@ -111,7 +111,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     ///   - maximumPendingCorrelations: Maximum outstanding requests.
     public init(
         capabilities: ProtocolCapabilities = .coatyCore3,
-        maximumPayloadBytes: Int = 512,
+        maximumPayloadBytes: Int = WireBufferConfig.maxPayloadSize,
         maximumObjects: Int = capacity,
         maximumPendingCorrelations: Int = capacity
     ) {

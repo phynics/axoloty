@@ -10,9 +10,9 @@ version](https://img.shields.io/badge/swift-6.3-%23F05138?logo=swift)](https://d
 MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 > **Development checkpoint.** [`VERSION`](./VERSION) identifies the current
-> published release (`0.6.0`). Axoloty is not API-stable. This source-breaking
-> release aligns the host and Embedded Swift runtimes around the shared wire and
-> protocol path, with typed IO and optional products from G5.
+> published release (`0.6.1`). Axoloty is not API-stable. The 0.6 line aligns
+> the host and Embedded Swift runtimes around the shared wire and protocol path,
+> with typed IO and optional products from G5.
 
 ## About Axoloty
 
@@ -71,7 +71,7 @@ Add Axoloty to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.6.0"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.6.1"),
 ],
 targets: [
     .executableTarget(
@@ -87,7 +87,7 @@ For a wire target in a consumer that already resolves the root package:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.6.0"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.6.1"),
 ],
 targets: [
     .executableTarget(
@@ -159,9 +159,10 @@ Discover/Resolve. It uses a static composition model (no dynamic
 registration) with bounded capacities:
 
 - Max topic length: 128 bytes
-- Max payload size: 512 bytes
+- Axoloty max payload size: 2,048 bytes. Coaty itself does not impose this
+  limit, so messages above 2 KiB are an intentional compatibility divergence.
 - Static runtimes may select a smaller compile-time payload capacity (for
-  example, `StaticRuntime<16, 128>`); 512 bytes remains the sealed maximum.
+  example, `StaticRuntime<16, 128>`); 2,048 bytes remains the sealed maximum.
 - Max subscribers: 8
 - Max family entries: 16
 - QoS: 0 only
@@ -216,7 +217,7 @@ swift run --package-path Tools axoloty-inspect discover --core-type Identity
 See [docs/inspector.md](./docs/inspector.md) for the full reference.
 
 For the current release's changes, see
-[0.6.0 release notes](./docs/releases/0.6.0.md). For migrating from legacy
+[0.6.1 release notes](./docs/releases/0.6.1.md). For migrating from legacy
 CoatySwift, see [the 0.2 migration guide](./docs/migration/from-coatyswift-to-0.2.md).
 
 ## Contributing

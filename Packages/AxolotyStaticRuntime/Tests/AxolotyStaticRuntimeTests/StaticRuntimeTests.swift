@@ -61,18 +61,22 @@ struct StaticRuntimeTests {
             "1x128=\(MemoryLayout<StaticRuntime<1, 128>>.size)",
             "1x256=\(MemoryLayout<StaticRuntime<1, 256>>.size)",
             "1x512=\(MemoryLayout<StaticRuntime<1, 512>>.size)",
+            "1x2048=\(MemoryLayout<StaticRuntime<1, 2048>>.size)",
             "16x64=\(MemoryLayout<StaticRuntime<16, 64>>.size)",
             "16x128=\(MemoryLayout<StaticRuntime<16, 128>>.size)",
             "16x256=\(MemoryLayout<StaticRuntime<16, 256>>.size)",
             "16x512=\(MemoryLayout<StaticRuntime<16, 512>>.size)",
+            "16x2048=\(MemoryLayout<StaticRuntime<16, 2048>>.size)",
             "64x64=\(MemoryLayout<StaticRuntime<64, 64>>.size)",
             "64x128=\(MemoryLayout<StaticRuntime<64, 128>>.size)",
             "64x256=\(MemoryLayout<StaticRuntime<64, 256>>.size)",
-            "64x512=\(MemoryLayout<StaticRuntime<64, 512>>.size)"
+            "64x512=\(MemoryLayout<StaticRuntime<64, 512>>.size)",
+            "64x2048=\(MemoryLayout<StaticRuntime<64, 2048>>.size)"
         ].joined(separator: " "))
         #expect(MemoryLayout<StaticRuntime<1, 64>>.size < MemoryLayout<StaticRuntime<1, 512>>.size)
         #expect(MemoryLayout<StaticRuntime<16, 64>>.size < MemoryLayout<StaticRuntime<16, 512>>.size)
         #expect(MemoryLayout<StaticRuntime<64, 64>>.size < MemoryLayout<StaticRuntime<64, 512>>.size)
+        #expect(MemoryLayout<StaticRuntime<16, 512>>.size < MemoryLayout<StaticRuntime<16, 2048>>.size)
     }
 
     @Test("one shared fixed processor sends and drains synchronously")

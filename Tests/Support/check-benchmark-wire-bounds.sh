@@ -24,17 +24,17 @@ for forbidden_path in \
     'scanString(' \
     'scanNumber(' \
     'literal(' \
-    'hex4(' \
-    'capacity: buffer.count + 8' \
-    'capacity: buffer.count'
+    'hex4('
 do
     if grep -Fq "$forbidden_path" "$wire_reader"; then
         fail "found unbounded tokenizer workspace: $forbidden_path"
     fi
 done
 
-grep -Fq 'capacity: WireBufferConfig.maxPayloadSize + 8' "$wire_reader" \
-    || fail "fixed tokenizer workspace is missing"
+grep -Fq 'guard buffer.count <= WireBufferConfig.maxPayloadSize else' "$wire_reader" \
+    || fail "payload bound must precede tokenizer workspace allocation"
+grep -Fq 'capacity: buffer.count + 8' "$wire_reader" \
+    || fail "input-sized bounded tokenizer workspace is missing"
 [ "$(grep -Fo 'JSONTokenizer(bytes:' "$wire_reader" | wc -l)" -eq 1 ] \
     || fail "WireReader must construct one tokenizer"
 grep -Fq '.scanValueResult()' "$wire_reader" \

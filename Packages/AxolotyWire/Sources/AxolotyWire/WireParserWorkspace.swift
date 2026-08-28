@@ -43,8 +43,8 @@ public struct InlineWireParserWorkspace<let capacity: Int>: ~Copyable, WireParse
     }
 }
 
-/// The measured 520-byte embedded workspace for a 512-byte accepted payload.
-public typealias EmbeddedWireParserWorkspace = InlineWireParserWorkspace<520>
+/// The measured 2,056-byte embedded workspace for a 2,048-byte accepted payload.
+public typealias EmbeddedWireParserWorkspace = InlineWireParserWorkspace<2056>
 
 /// Reusable contiguous host tokenizer storage.
 public struct HostWireParserWorkspace: ~Copyable, WireParserWorkspace {
@@ -53,7 +53,7 @@ public struct HostWireParserWorkspace: ~Copyable, WireParserWorkspace {
     /// Creates reusable host storage.
     ///
     /// - Parameter capacity: Physical workspace capacity. This is independent
-    ///   from the 512-byte accepted wire payload limit.
+    ///   from the 2,048-byte accepted wire payload limit.
     public init(capacity: Int = 4096) {
         bytes = UnsafeMutableBufferPointer.allocate(capacity: max(0, capacity))
         bytes.initialize(repeating: 0)

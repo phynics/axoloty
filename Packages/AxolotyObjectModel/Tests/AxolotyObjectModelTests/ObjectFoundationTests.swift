@@ -243,6 +243,29 @@ private struct TrailingManualSchema: ObjectSchema {
     }
 }
 
+@Test func defaultDynamicObjectAcceptsPayloadBeyondLegacyLimit() throws {
+    let padding = String(repeating: "a", count: 700)
+    let encoded = Array((
+        "{\"objectId\":\"33333333-3333-4333-8333-333333333333\"," +
+        "\"objectType\":\"me.atkn.gnostic.Workspace\"," +
+        "\"description\":\"\(padding)\"}"
+    ).utf8)
+    #expect(encoded.count > 512)
+    #expect(encoded.count <= WireBufferConfig.maxPayloadSize)
+
+    try encoded.withUnsafeBufferPointer { buffer in
+        let bytes = ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+        let object = try DynamicObject(decoding: bytes)
+        object.withFields { fields in
+            var found = false
+            _ = fields.withValue(for: "description") { _ in
+                found = true
+            }
+            #expect(found)
+        }
+    }
+}
+
 @Test func numberViewConvertsWithoutChangingLexeme() throws {
     let bytes = slice("{\"n\":-12.50}")
     let object = try BoundedDynamicObject<128, 4>(decoding: bytes)

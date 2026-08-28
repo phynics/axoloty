@@ -499,7 +499,9 @@ actor ProtocolExecutor {
                 }
             }
         case .externalIo(var route, let payload, let nowMS):
-            guard !route.isEmpty, route.utf8.count <= 128, payload.count <= 512 else {
+            guard !route.isEmpty,
+                  route.utf8.count <= WireBufferConfig.maxTopicLength,
+                  payload.count <= WireBufferConfig.maxPayloadSize else {
                 return .rejected(.malformedPayload)
             }
             outcome = route.withUTF8 { routeBuffer in

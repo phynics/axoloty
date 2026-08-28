@@ -21,7 +21,7 @@ struct EmbeddedMQTTClient {
         payload: UnsafePointer<UInt8>, payloadLength: Int32
     ) -> Bool {
         guard state == .idle, topicLength > 0, topicLength <= 128,
-              payloadLength >= 0, payloadLength <= 512 else { return false }
+              payloadLength >= 0, payloadLength <= 2_048 else { return false }
         return axoloty_mqtt_configure_last_will(topic, topicLength, payload, payloadLength) != 0
     }
 
@@ -46,7 +46,7 @@ struct EmbeddedMQTTClient {
         payload: UnsafePointer<UInt8>, payloadLength: Int32
     ) -> Bool {
         guard state == .subscribed, topicLength > 0, topicLength <= 128,
-              payloadLength >= 0, payloadLength <= 512 else { return false }
+              payloadLength >= 0, payloadLength <= 2_048 else { return false }
         return axoloty_mqtt_publish(topic, topicLength, payload, payloadLength) != 0
     }
 

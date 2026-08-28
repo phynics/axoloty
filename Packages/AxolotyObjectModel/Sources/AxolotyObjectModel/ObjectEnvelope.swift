@@ -61,6 +61,37 @@ public struct ObjectEnvelope<let nameCapacity: Int, let externalIDCapacity: Int>
     /// - Throws: ``ObjectError/invalidEnvelope`` when a required member is
     ///   missing, empty, malformed, or exceeds the selected capacity.
     public init(decoding bytes: ByteSlice) throws(ObjectError) {
+        let reader = bytes.withBytes { pointer, count in
+            WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: count)
+        }
+        try self.init(decoding: reader)
+    }
+
+    /// Decodes standard envelope members with reusable tokenizer storage.
+    ///
+    /// Use this initializer in repeated decode loops to retain tokenizer
+    /// storage separately from each envelope value.
+    ///
+    /// - Parameters:
+    ///   - bytes: The complete JSON object to decode.
+    ///   - workspace: Caller-owned tokenizer scratch storage.
+    /// - Throws: ``ObjectError/invalidEnvelope`` when a required member is
+    ///   missing, empty, malformed, or exceeds the selected capacity.
+    public init<Workspace: WireParserWorkspace & ~Copyable>(
+        decoding bytes: ByteSlice,
+        workspace: inout Workspace
+    ) throws(ObjectError) {
+        let reader = bytes.withBytes { pointer, count in
+            WireReader(
+                bytes: pointer.assumingMemoryBound(to: UInt8.self),
+                length: count,
+                workspace: &workspace
+            )
+        }
+        try self.init(decoding: reader)
+    }
+
+    private init(decoding reader: WireReader) throws(ObjectError) {
         var decodedID: ObjectID?
         var decodedType: ObjectType?
         var decodedName: BoundedEncodedText<nameCapacity>?
@@ -70,33 +101,32 @@ public struct ObjectEnvelope<let nameCapacity: Int, let externalIDCapacity: Int>
         var decodedLocation: ObjectID?
         var decodedDeactivated: Presence<Bool> = .missing
         var failure = false
-        bytes.withBytes { pointer, count in
-            let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: count)
-            do throws(WireDecodeError) { try reader.validate() } catch { failure = true; return }
+        do throws(WireDecodeError) { try reader.validate() } catch { failure = true }
+        if !failure {
             guard let idSlice = reader.readString("objectId"), let objectID = ObjectID(bytes: idSlice),
                   let typeSlice = reader.readString("objectType"), typeSlice.length > 0,
                   let objectType = ObjectType(bytes: typeSlice),
                   let nameSlice = reader.readString("name"), nameSlice.length > 0,
                   let name = BoundedEncodedText<nameCapacity>(bytes: nameSlice),
                   let coreSlice = reader.readString("coreType"), let core = ObjectCoreType(bytes: coreSlice)
-            else { failure = true; return }
+            else { throw ObjectError(.invalidEnvelope) }
             decodedID = objectID; decodedType = objectType; decodedName = name; decodedCore = core
             if let field = reader.readField("externalId"), !isJSONNull(field) {
-                guard let value = reader.readString("externalId"), let bounded = BoundedEncodedText<externalIDCapacity>(bytes: value) else { failure = true; return }
+                guard let value = reader.readString("externalId"), let bounded = BoundedEncodedText<externalIDCapacity>(bytes: value) else { throw ObjectError(.invalidEnvelope) }
                 decodedExternal = bounded
             }
             if let field = reader.readField("parentObjectId"), !isJSONNull(field) {
-                guard let value = reader.readString("parentObjectId"), let bounded = ObjectID(bytes: value) else { failure = true; return }
+                guard let value = reader.readString("parentObjectId"), let bounded = ObjectID(bytes: value) else { throw ObjectError(.invalidEnvelope) }
                 decodedParent = bounded
             }
             if let field = reader.readField("locationId"), !isJSONNull(field) {
-                guard let value = reader.readString("locationId"), let bounded = ObjectID(bytes: value) else { failure = true; return }
+                guard let value = reader.readString("locationId"), let bounded = ObjectID(bytes: value) else { throw ObjectError(.invalidEnvelope) }
                 decodedLocation = bounded
             }
             if let field = reader.readField("isDeactivated") {
                 if isJSONNull(field) { decodedDeactivated = .null }
                 else {
-                    guard let value = reader.readBool("isDeactivated") else { failure = true; return }
+                    guard let value = reader.readBool("isDeactivated") else { throw ObjectError(.invalidEnvelope) }
                     decodedDeactivated = .value(value)
                 }
             }

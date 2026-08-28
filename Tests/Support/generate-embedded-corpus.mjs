@@ -66,18 +66,18 @@ const topicBenchmarkStatements = manifest.cases.map((corpusCase, index) =>
   `    if TopicView(topicBytes: corpusTopic${index}.utf8Start, length: corpusTopic${index}.utf8CodeUnitCount).eventType == .${eventByFamily[corpusCase.family]} { result &+= 1 }`,
 ).join("\n");
 const decodeBenchmarkStatements = manifest.cases.map((corpusCase, index) => {
-  return `    if (try? ${dtoByFamily[corpusCase.family]}(from: WireReader(bytes: corpusPayload${index}.utf8Start, length: corpusPayload${index}.utf8CodeUnitCount))) != nil { result &+= 1 }`;
+  return `    if (try? ${dtoByFamily[corpusCase.family]}(from: corpusReader(corpusPayload${index}))) != nil { result &+= 1 }`;
 }).join("\n");
 const encodeBenchmarkStatements = manifest.cases.map((corpusCase, index) => {
-  return `    if let decoded = try? ${dtoByFamily[corpusCase.family]}(from: WireReader(bytes: corpusPayload${index}.utf8Start, length: corpusPayload${index}.utf8CodeUnitCount)) {
-        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 512) { output in
+  return `    if let decoded = try? ${dtoByFamily[corpusCase.family]}(from: corpusReader(corpusPayload${index})) {
+        withCorpusEncodeBuffer { output in
             var writer = WireWriter(buffer: output.baseAddress!, capacity: output.count)
             if (try? decoded.encode(to: &writer)) != nil { result &+= 1 }
         }
     }`;
 }).join("\n");
 const combinedBenchmarkStatements = manifest.cases.map((corpusCase, index) => {
-  return `    if TopicView(topicBytes: corpusTopic${index}.utf8Start, length: corpusTopic${index}.utf8CodeUnitCount).eventType == .${eventByFamily[corpusCase.family]} && (try? ${dtoByFamily[corpusCase.family]}(from: WireReader(bytes: corpusPayload${index}.utf8Start, length: corpusPayload${index}.utf8CodeUnitCount))) != nil { result &+= 1 }`;
+  return `    if TopicView(topicBytes: corpusTopic${index}.utf8Start, length: corpusTopic${index}.utf8CodeUnitCount).eventType == .${eventByFamily[corpusCase.family]} && (try? ${dtoByFamily[corpusCase.family]}(from: corpusReader(corpusPayload${index}))) != nil { result &+= 1 }`;
 }).join("\n");
 const borrowedBenchmarkStatements = manifest.cases.map((corpusCase, index) => {
   return `    if (try? BorrowedMessage.validated(topicBytes: corpusTopic${index}.utf8Start, topicLength: corpusTopic${index}.utf8CodeUnitCount, payloadBytes: corpusPayload${index}.utf8Start, payloadLength: corpusPayload${index}.utf8CodeUnitCount)) != nil { result &+= 1 }`;
@@ -104,6 +104,29 @@ struct EmbeddedBenchmarkMetrics {
 }
 
 private var embeddedBenchmarkSink: UInt32 = 0
+private var embeddedCorpusParserWorkspace = EmbeddedWireParserWorkspace()
+private var embeddedCorpusEncodeBuffer = InlineArray<2_048, UInt8>(repeating: 0)
+
+@inline(__always)
+private func corpusReader(_ payload: StaticString) -> WireReader {
+    WireReader(
+        bytes: payload.utf8Start,
+        length: payload.utf8CodeUnitCount,
+        workspace: &embeddedCorpusParserWorkspace
+    )
+}
+
+@inline(__always)
+private func withCorpusEncodeBuffer<R>(
+    _ body: (UnsafeMutableBufferPointer<UInt8>) -> R
+) -> R {
+    withUnsafeMutableBytes(of: &embeddedCorpusEncodeBuffer) { raw in
+        body(UnsafeMutableBufferPointer(
+            start: raw.baseAddress?.assumingMemoryBound(to: UInt8.self),
+            count: raw.count
+        ))
+    }
+}
 
 @inline(never)
 private func topicBenchmarkPass() -> UInt32 {
@@ -218,7 +241,7 @@ private func runCorpusCase<T: WireDecodable & WireEncodable>(
     let topicView = TopicView(topicBytes: topic.utf8Start, length: topic.utf8CodeUnitCount)
     record(topicParseId, topicView.eventType == eventType)
 
-    let reader = WireReader(bytes: payload.utf8Start, length: payload.utf8CodeUnitCount)
+    let reader = corpusReader(payload)
     guard let decoded = try? T(from: reader) else {
         record(decodeId, false); record(encodeId, false); record(combinedId, false)
         record(borrowedId, false); record(topicBuildId, false)
@@ -226,9 +249,9 @@ private func runCorpusCase<T: WireDecodable & WireEncodable>(
     }
     record(decodeId, true)
 
-    withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 512) { output in
+    withCorpusEncodeBuffer { output in
         var writer = WireWriter(buffer: output.baseAddress!, capacity: output.count)
-        record(encodeId, (try? decoded.encode(to: &writer)) != nil && writer.position <= 512)
+        record(encodeId, (try? decoded.encode(to: &writer)) != nil && writer.position <= 2_048)
     }
 
     let combined = topicView.eventType == eventType && (try? T(from: reader)) != nil
@@ -238,7 +261,11 @@ private func runCorpusCase<T: WireDecodable & WireEncodable>(
         topicBytes: topic.utf8Start, topicLength: topic.utf8CodeUnitCount,
         payloadBytes: payload.utf8Start, payloadLength: payload.utf8CodeUnitCount
     )
-    record(borrowedId, borrowed?.eventType == eventType && borrowed?.reader().length == payload.utf8CodeUnitCount)
+    record(
+        borrowedId,
+        borrowed?.eventType == eventType &&
+            borrowed?.reader(workspace: &embeddedCorpusParserWorkspace).length == payload.utf8CodeUnitCount
+    )
 
     var built = false
     if let source = topicView.sourceIdLevel.flatMap(UUID16.init(parsing:)),

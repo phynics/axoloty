@@ -292,7 +292,7 @@ func runBenchmark() throws {
     print(#""clean":\#(clean)},"#)
     print(#""cases":["#)
 
-    let encodeBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 512)
+    let encodeBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: WireBufferConfig.maxPayloadSize)
     defer { encodeBuffer.deallocate() }
 
     for (caseIndex, corpusCase) in corpus.enumerated() {
@@ -358,7 +358,7 @@ func runBenchmark() throws {
             }
 
             return try measureOperation(caseID: corpusCase.id, "dtoEncode", batchSize: &encodeBatch) {
-                var writer = WireWriter(buffer: encodeBuffer, capacity: 512)
+                var writer = WireWriter(buffer: encodeBuffer, capacity: WireBufferConfig.maxPayloadSize)
                 try dto.encode(to: &writer)
             }
         }

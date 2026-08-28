@@ -105,7 +105,10 @@ struct StaticDeviceAgent: ~Copyable {
         self.routeClassifier = ExactProtocolRouteClassifier(
             externalRoute: "external/wire-compat-v1/io-external-1"
         )
-        self.processor = ProtocolProcessor<16>(capabilities: .coatyCore3, maximumPayloadBytes: 512)
+        self.processor = ProtocolProcessor<16>(
+            capabilities: .coatyCore3,
+            maximumPayloadBytes: WireBufferConfig.maxPayloadSize
+        )
         let isA = agentId == Self.agentAId
         self.subscriptions = ProtocolSubscriptionRegistry<16>()
         self.actionSink = InlineProtocolActionSink<16>()

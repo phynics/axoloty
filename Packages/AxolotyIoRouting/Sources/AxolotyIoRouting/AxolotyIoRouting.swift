@@ -475,7 +475,7 @@ private func encodeAdvertise(objectBytes: [UInt8]) -> [UInt8] {
     guard let fields = try? OwnedAdvertiseWireData(object: objectBytes, privateData: nil) else {
         return []
     }
-    var output = [UInt8](repeating: 0, count: 512)
+    var output = [UInt8](repeating: 0, count: WireBufferConfig.maxPayloadSize)
     var length = 0
     output.withUnsafeMutableBufferPointer { buffer in
         guard let base = buffer.baseAddress else { return }
@@ -500,7 +500,7 @@ private func encodeAssociate(source: ObjectID, actor: ObjectID, intent: RoutingI
         updateRate: intent.updateRate.map(Int.init)
     )
     guard let fields else { return [] }
-    var output = [UInt8](repeating: 0, count: 512)
+    var output = [UInt8](repeating: 0, count: WireBufferConfig.maxPayloadSize)
     var length = 0
     output.withUnsafeMutableBufferPointer { buffer in
         guard let base = buffer.baseAddress else { return }

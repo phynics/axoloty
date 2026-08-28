@@ -20,6 +20,7 @@ Reference versions must be pinned before captured fixtures become normative:
 | Associate / IoState / IoValue | Partial | Partial | Not tested | Not tested | Nightly |
 | Decentralized logging | Not tested | Not tested | Not tested | Not tested | Nightly |
 | SensorThings | Fixture-backed | Fixture-backed | Not tested | Not tested | G5 |
+| Payloads above 2,048 bytes | Intentional divergence: rejected by Axoloty | Intentional divergence: Axoloty does not emit | Intentional divergence: rejected by Axoloty | Intentional divergence: Axoloty does not emit | Boundary fixtures and ESP32 vectors |
 
 ### G5 host typed IO evidence
 
@@ -69,6 +70,27 @@ coverage for these semantics. Live cross-implementation IO evidence remains
 governed by the existing IO runners and is a separate transport/runtime gate.
 
 Allowed results are `Compatible`, `Compatible with normalization`, `Intentional divergence`, `Unsupported`, and `Not tested`. Any intentional divergence requires a linked decision and fixture update.
+
+### Decision: Axoloty 2 KiB payload ceiling
+
+Coaty and the pinned CoatyJS reference implementation do not define Axoloty's
+2,048-byte event-payload limit. Axoloty deliberately adds this limit across its
+host and embedded profiles to keep parser, protocol-state, retained-action, and
+transport storage finite and measurable on ESP32-class devices. It is an
+Axoloty platform constraint, not part of the Coaty Core 3 wire grammar.
+
+Axoloty accepts payloads of at most 2,048 bytes. Axoloty rejects larger inbound
+payloads before parsing or protocol-state mutation. It rejects larger outbound
+payloads before publication. Axoloty does not fragment or reassemble oversized
+Coaty messages. A Coaty peer that relies on payloads above 2 KiB is not
+wire-compatible with Axoloty for those messages.
+
+This decision is locked by the exact-limit and one-over-limit fixtures in
+[WireBoundsTests.swift](../Packages/AxolotyWire/Tests/AxolotyWireTests/WireBoundsTests.swift),
+the shared protocol action-sink tests, and the physical ESP32 vectors in
+[Main.swift](../Embedded/swift/main/Main.swift). Static runtimes may choose a
+smaller compile-time capacity, which narrows compatibility further for that
+firmware.
 
 As of issue #397, both shipping host directions use AxolotyWire event codecs:
 ingress owns `BorrowedWireEvent` before async delivery, and publication uses

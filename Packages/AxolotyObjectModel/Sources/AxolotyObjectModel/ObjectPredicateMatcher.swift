@@ -3,15 +3,15 @@
 import AxolotyWire
 
 private enum PredicateScratchLimits {
-    // Predicate string operations use the same measured maximum as one wire
-    // value. Overflow is a deterministic non-match, never truncation.
+    // Predicate string comparison has a separate measured scalar bound.
+    // Overflow is a deterministic non-match, never truncation.
     static let scalarCapacity = 512
 }
 
 /// Internal, bounded JSON matching operations used by ``ObjectPredicate``.
 enum ObjectPredicateMatcher {
     static func compareStrings(_ lhs: ByteSlice, _ rhs: ByteSlice) -> Int? {
-        // WireReader's measured maximum payload is 512 bytes. Overflow is a
+        // Predicate comparison retains at most 512 decoded scalars. Overflow is a
         // deterministic non-match, never silent truncation.
         var left = InlineArray<512, UInt32>(repeating: 0)
         var right = InlineArray<512, UInt32>(repeating: 0)
@@ -113,7 +113,7 @@ enum ObjectPredicateMatcher {
     }
 
     private static func scalarEqual(_ lhs: ByteSlice, _ rhs: ByteSlice) -> Bool {
-        // The same 512-byte wire bound is the scalar scratch bound.
+        // Predicate strings have an independent 512-scalar scratch bound.
         var left = InlineArray<512, UInt32>(repeating: 0); var right = InlineArray<512, UInt32>(repeating: 0); var lc = 0; var rc = 0; var overflow = false
         try? lhs.withStringScalars { if lc < PredicateScratchLimits.scalarCapacity { left[lc] = $0; lc += 1 } else { overflow = true } }; try? rhs.withStringScalars { if rc < PredicateScratchLimits.scalarCapacity { right[rc] = $0; rc += 1 }
             else { overflow = true }

@@ -19,8 +19,8 @@ const corpusOperations = [
 export const expectedVectorTests = new Set([
   "writer:zero", "writer:one", "writer:minusOne", "writer:max", "writer:min",
   "topic:exact", "topic:underCapacity", "topic:overflow",
-  "capacity:payload0", "capacity:payload1", "capacity:payload511",
-  "capacity:payload512", "capacity:payload513", "capacity:topic0",
+  "capacity:payload0", "capacity:payload1", "capacity:payload512",
+  "capacity:payload2047", "capacity:payload2048", "capacity:payload2049", "capacity:topic0",
   "capacity:topic1", "capacity:topic128", "capacity:topic129",
   "malformed:truncation", "malformed:corruption", "malformed:utf8",
   "malformed:escape", "malformed:literal", "malformed:number",
