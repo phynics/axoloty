@@ -12,6 +12,26 @@ fork, through CoatySwift 2.4.0, remain documented in the
 Development toward Axoloty 1.0 is in progress and tracked by the
 [v1 release epic](https://github.com/phynics/axoloty/issues/272).
 
+## [0.6.1] - 2026-08-28
+
+Axoloty 0.6.1 is a wire-capacity hotfix for larger application objects.
+
+### Changed
+
+- Raise the Axoloty wire payload ceiling from 512 bytes to 2,048 bytes on the
+  host and Embedded Swift profiles.
+- Store retained static-runtime action payloads in one bounded arena instead
+  of duplicating a 2 KiB buffer in every action slot.
+- Record the 2 KiB ceiling as an intentional divergence from Coaty, which does
+  not define the same payload limit.
+
+### Validation boundary
+
+The ordinary verification suite and focused boundary tests pass. A production
+Embedded Swift run on ESP32-C6 passed all 314 records with zero hot-path
+allocations. The run accepted a 2,048-byte payload and rejected a 2,049-byte
+payload.
+
 ## [0.6.0] - 2026-08-28
 
 Axoloty 0.6.0 is a source-breaking architecture-alignment release. It is
@@ -190,7 +210,8 @@ and reproducible compatibility and resource evidence.
 Initial Axoloty prerelease as an independently maintained, modernized fork of
 CoatySwift.
 
-[Unreleased]: https://github.com/phynics/axoloty/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/phynics/axoloty/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/phynics/axoloty/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/phynics/axoloty/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/phynics/axoloty/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/phynics/axoloty/compare/v0.4.0...v0.5.0

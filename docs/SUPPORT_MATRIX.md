@@ -1,7 +1,7 @@
-# Axoloty 0.6.0 support matrix (G6)
+# Axoloty 0.6.1 support matrix (G6)
 
 This matrix records the support level for the current G6 implementation,
-backed by behavioral test evidence. [`VERSION`](../VERSION) is `0.6.0`.
+backed by behavioral test evidence. [`VERSION`](../VERSION) is `0.6.1`.
 G5's typed IO endpoint ergonomics and optional SensorThings products are part
 of the 0.6 product surface. Support levels use a consistent vocabulary:
 

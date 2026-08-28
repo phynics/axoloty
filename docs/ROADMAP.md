@@ -4,7 +4,7 @@ Axoloty is a Swift runtime and protocol suite for collaborative distributed agen
 
 ## Current checkpoint
 
-[`VERSION`](../VERSION) identifies the current released version (`0.6.0`). Axoloty remains pre-1.0 and its public API may change. The active development checkpoint is 0.6.
+[`VERSION`](../VERSION) identifies the current released version (`0.6.1`). Axoloty remains pre-1.0 and its public API may change. The active development checkpoint is 0.6.
 
 Historical release outcomes are preserved in [`docs/releases/`](./releases/) and [`CHANGELOG.md`](../CHANGELOG.md). They do not define current strategy.
 
@@ -27,7 +27,7 @@ The accepted boundaries and invariants are in [`ARCHITECTURE.md`](../ARCHITECTUR
 G2 through G6 are complete on `origin/main`. G5 / #633 delivers typed IO,
 binding-specific external routes, and the optional `AxolotyIoRouting` and
 `AxolotySensorThings` products. G6 / #634 delivered the 0.6 release gate. The
-published 0.6.0 API remains pre-1.0 and may continue to evolve.
+published 0.6.1 API remains pre-1.0 and may continue to evolve.
 
 ## Sequential gates
 
