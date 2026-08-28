@@ -140,4 +140,55 @@ public final class AxolotyRuntime: Sendable {
     public func diagnosticsSnapshot() async -> RuntimeDiagnostics {
         await executor.diagnosticsSnapshot()
     }
+
+    /// Returns an owned conformance observation from the production executor.
+    ///
+    /// This SPI is restricted to first-party profile conformance tests. It
+    /// exposes copied actions and bounded state, never borrowed wire values or
+    /// a mutation handle.
+    @_spi(AxolotyRuntimeAdapter)
+    public func conformanceObservation() async -> RuntimeConformanceObservation {
+        await executor.conformanceObservation()
+    }
+}
+
+/// A copied protocol state used by first-party profile conformance tests.
+@_spi(AxolotyRuntimeAdapter)
+public struct RuntimeConformanceState: Sendable, Equatable {
+    /// Active advertised object identities.
+    public let activeObjectIDs: [UUID16]
+    /// Outstanding request correlations.
+    public let pendingCorrelationIDs: [UUID16]
+    /// Active association source identities.
+    public let associationSourceIDs: [UUID16]
+    /// Current protocol generation.
+    public let generation: UInt32
+
+    /// Creates a copied state projection.
+    public init(
+        activeObjectIDs: [UUID16],
+        pendingCorrelationIDs: [UUID16],
+        associationSourceIDs: [UUID16],
+        generation: UInt32
+    ) {
+        self.activeObjectIDs = activeObjectIDs
+        self.pendingCorrelationIDs = pendingCorrelationIDs
+        self.associationSourceIDs = associationSourceIDs
+        self.generation = generation
+    }
+}
+
+/// Owned actions and state captured from one production runtime operation.
+@_spi(AxolotyRuntimeAdapter)
+public struct RuntimeConformanceObservation: Sendable, Equatable {
+    /// Actions emitted by the operation in order.
+    public let actions: [OwnedProtocolAction]
+    /// State after the operation.
+    public let state: RuntimeConformanceState
+
+    /// Creates a conformance observation.
+    public init(actions: [OwnedProtocolAction], state: RuntimeConformanceState) {
+        self.actions = actions
+        self.state = state
+    }
 }

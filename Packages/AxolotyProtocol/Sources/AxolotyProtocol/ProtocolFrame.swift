@@ -63,11 +63,18 @@ public struct BorrowedProtocolFrame {
 
     /// Parses a validated Coaty topic and borrows its payload.
     ///
+    /// - Parameter maximumTopicLength: Maximum topic length accepted by the
+    ///   binding. The default preserves the bounded Embedded wire contract;
+    ///   host runtimes may supply their own finite topic budget.
     /// - Throws: ``ProtocolError`` for malformed topics, unsupported families,
     ///   invalid UUIDs, or invalid correlation layout.
-    public init(topic: TopicView, payload: ByteSlice) throws(ProtocolError) {
+    public init(
+        topic: TopicView,
+        payload: ByteSlice,
+        maximumTopicLength: Int = WireBufferConfig.maxTopicLength
+    ) throws(ProtocolError) {
         do {
-            try topic.validate()
+            try topic.validate(maximumTopicLength: maximumTopicLength)
         } catch {
             throw ProtocolError(.malformedFrame)
         }

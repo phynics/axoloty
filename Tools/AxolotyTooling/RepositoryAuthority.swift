@@ -116,9 +116,18 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
             ("docs/ROADMAP.md", "current released version \\(`" + semanticVersion + "`\\)", false),
             ("docs/FEATURE_MATRIX.md", "full " + semanticVersion + " support", false),
         ]
+        let repositoryDerivedClaims: [String: String] = [
+            "Makefile": "AXOLOTY_CONSUMER_VERSION ?= $(shell tr -d '[:space:]' < VERSION)",
+            "Tests/Support/check-axoloty-semver-consumer.sh": "version=${AXOLOTY_CONSUMER_VERSION:-}",
+            "Tools/AxolotyTooling/AxolotyCommandDispatcher.swift": "private let version: String",
+            "Tools/AxolotyInspectorCore/InspectorArgumentParser.swift": "public static var version: String { AxolotyVersion.current() }",
+        ]
         for (path, pattern, allMatches) in claims {
             guard let content = read(path) else {
                 findings.append(.init(rule: "version.claim.present", path: path, message: "current-version consumer is missing"))
+                continue
+            }
+            if let derived = repositoryDerivedClaims[path], content.contains(derived) {
                 continue
             }
             let values = regexCaptures(pattern, in: content)

@@ -11,8 +11,9 @@ import Foundation
 actor ProtocolExecutor {
     let definition: SealedRuntimeDefinition
     let transport: AxolotyRuntimeTransport
-    var processor = ProtocolProcessor<64>()
+    var processor: ProtocolProcessor<64>
     var actionSink = ReusableProtocolActionSink(capacity: 64)
+    var conformanceActions: [OwnedProtocolAction] = []
     /// One-way operations accepted while the transport is reconnecting.
     /// This queue is bounded by the dispatch capacity and is replayed in
     /// publication order after a successful reconnect.
@@ -51,6 +52,12 @@ actor ProtocolExecutor {
     init(definition: SealedRuntimeDefinition, transport: AxolotyRuntimeTransport) {
         self.definition = definition
         self.transport = transport
+        self.processor = ProtocolProcessor<64>(
+            capabilities: definition.capacities.protocolCapabilities,
+            maximumPayloadBytes: definition.capacities.protocolMaximumPayloadBytes,
+            maximumObjects: definition.capacities.protocolMaximumObjects,
+            maximumPendingCorrelations: definition.capacities.protocolMaximumPendingCorrelations
+        )
         self.eventRegistrations = definition.eventRegistrations
         self.ioStates = definition.ioEndpointRegistrations.map(RuntimeIoState.init)
         self.ingress.reserveCapacity(definition.capacities.ingress)
@@ -450,7 +457,9 @@ actor ProtocolExecutor {
                 }
                 let topicView = TopicView(topicBytes: topicBase, length: topicBuffer.count)
                 do throws(WireDecodeError) {
-                    try topicView.validate()
+                    try topicView.validate(
+                        maximumTopicLength: definition.capacities.protocolMaximumTopicBytes
+                    )
                 } catch {
                     parseFailure = runtimeErrorDetail(error)
                     return .rejected(.malformedFrame)
@@ -463,7 +472,8 @@ actor ProtocolExecutor {
                     do throws(ProtocolError) {
                         let borrowed = try BorrowedProtocolFrame(
                             topic: topicView,
-                            payload: ByteSlice(bytes: payloadBase, length: payloadBuffer.count)
+                            payload: ByteSlice(bytes: payloadBase, length: payloadBuffer.count),
+                            maximumTopicLength: definition.capacities.protocolMaximumTopicBytes
                         )
                         actionSink.removeAll()
                         let remainingTransportCapacity = definition.capacities.dispatch - queuedTransportEffects
@@ -475,6 +485,7 @@ actor ProtocolExecutor {
                             .profile(borrowed),
                             nowMS: nowMS,
                             classifier: TransportRouteClassifier(transport: transport),
+                            maximumTopicLength: definition.capacities.protocolMaximumTopicBytes,
                             sink: &actionSink
                         )
                         if case .accepted = outcome {
@@ -536,6 +547,7 @@ actor ProtocolExecutor {
         for index in 0..<actionSink.count {
             guard let borrowed = actionSink[index] else { continue }
             let action = borrowed.owned()
+            conformanceActions.append(action)
             switch borrowed {
             case .deliver(let delivery):
                 emitRegisteredEvents(for: delivery, owned: action, nowMS: nowMS)
@@ -820,42 +832,6 @@ actor ProtocolExecutor {
         }
     }
 
-    private func makeErrorResponsePayload(
-        capability: ProtocolCapability,
-        code: UInt16,
-        message: String
-    ) -> [UInt8]? {
-        guard let error = try? JSONSerialization.data(
-            withJSONObject: ["code": code, "message": message],
-            options: [.sortedKeys]
-        ) else { return nil }
-        let errorBytes = Array(error)
-        let event: OwnedWireEvent?
-        switch capability {
-        case .resolve:
-            event = try? .resolve(OwnedResolveWireData(object: Array("{}".utf8), relatedObjects: nil, privateData: errorBytes))
-        case .retrieve:
-            event = try? .retrieve(OwnedRetrieveWireData(objects: Array("[]".utf8), privateData: errorBytes))
-        case .complete:
-            event = try? .complete(OwnedCompleteWireData(object: nil, privateData: errorBytes))
-        case .returnEvent:
-            event = try? .returnEvent(OwnedReturnWireData(result: nil, executionInfo: nil, error: errorBytes))
-        default:
-            event = nil
-        }
-        guard let event else { return nil }
-
-        var output = [UInt8](repeating: 0, count: 1024)
-        guard let length = output.withUnsafeMutableBufferPointer({ buffer -> Int? in
-            guard let baseAddress = buffer.baseAddress else { return nil }
-            var writer = WireWriter(buffer: baseAddress, capacity: buffer.count)
-            guard (try? event.encode(to: &writer)) != nil else { return nil }
-            return writer.position
-        }) else { return nil }
-        output.removeSubrange(length..<output.count)
-        return output
-    }
-
     private func enqueueTransportEffects(_ effects: [RuntimeTransportEffect]) {
         guard !effects.isEmpty else { return }
         queuedTransportEffects += effects.count
@@ -989,12 +965,4 @@ actor ProtocolExecutor {
         diagnosticContinuation.yield(diagnostic)
     }
 
-    private func receipt(for outcome: ProtocolProcessOutcome) -> RuntimeReceipt {
-        switch outcome {
-        case .accepted: return .accepted
-        case .ignored: return .ignored
-        case .rejected(.capacityExceeded): return .rejected(.capacityExceeded)
-        case let .rejected(code): return .rejected(.protocol(code))
-        }
-    }
 }

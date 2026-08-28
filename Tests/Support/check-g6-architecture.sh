@@ -52,8 +52,10 @@ protocol_sources=$(find "$protocol_dir" -maxdepth 1 -type f -name '*.swift' -pri
 [ -n "$wire_sources" ] || fail "AxolotyWire has no production Swift sources"
 [ -n "$protocol_sources" ] || fail "AxolotyProtocol has no production Swift sources"
 
-# Emit deterministic fingerprints so a checkpoint artifact can prove which
-# production source set was compiled, rather than merely recording a path.
+# Emit deterministic fingerprints for the configured source roots. A release
+# checkpoint may additionally require actual compiler-input receipts through
+# AXOLOTY_G6_REQUIRE_SOURCE_RECEIPTS=1; the receipt validator then proves the
+# compiler consumed these exact paths and hashes.
 source_fingerprint() {
     directory=$1
     find "$directory" -maxdepth 1 -type f -name '*.swift' -print0 \
@@ -64,6 +66,19 @@ source_fingerprint() {
 }
 wire_fingerprint=$(source_fingerprint "$wire_dir")
 protocol_fingerprint=$(source_fingerprint "$protocol_dir")
+
+source_identity="configured-source-roots"
+if [ "${AXOLOTY_G6_REQUIRE_SOURCE_RECEIPTS:-0}" = "1" ]; then
+    host_receipt=${AXOLOTY_G6_HOST_RECEIPT:-}
+    embedded_receipt=${AXOLOTY_G6_EMBEDDED_RECEIPT:-}
+    [ -n "$host_receipt" ] || fail "host compiler-input receipt is required"
+    [ -n "$embedded_receipt" ] || fail "Embedded compiler-input receipt is required"
+    [ -f "$host_receipt" ] || fail "host compiler-input receipt is missing: $host_receipt"
+    [ -f "$embedded_receipt" ] || fail "Embedded compiler-input receipt is missing: $embedded_receipt"
+    node "$root/Tests/Support/validate-g6-source-receipts.mjs" \
+        "$root" "$host_receipt" "$embedded_receipt" >/dev/null
+    source_identity="compiler-input-receipts"
+fi
 
 # The processor critical path may not be reimplemented under Embedded.
 embedded_copies=$(find "$root/Embedded" -type f -name '*.swift' \
@@ -77,7 +92,8 @@ semantic_conditionals=$(rg -n '#if[[:space:]]+(!)?hasFeature\(Embedded\)' \
     | grep -Ev 'ByteSlice\.swift|TopicView\.swift|UUID16\.swift' || true)
 [ -z "$semantic_conditionals" ] || fail "semantic Embedded conditional remains:\n$semantic_conditionals"
 
-printf '{"schemaVersion":1,"status":"passed","wireSources":%s,"protocolSources":%s,"wireSourceFingerprint":"%s","protocolSourceFingerprint":"%s"}\n' \
+printf '{"schemaVersion":2,"status":"passed","sourceIdentity":"%s","wireSources":%s,"protocolSources":%s,"wireSourceFingerprint":"%s","protocolSourceFingerprint":"%s"}\n' \
+    "$source_identity" \
     "$(printf '%s\n' "$wire_sources" | awk 'BEGIN{printf "["} {gsub(/\\/,"\\\\");gsub(/"/,"\\\""); if (n++) printf ","; printf "\"%s\"",$0} END{printf "]"}')" \
     "$(printf '%s\n' "$protocol_sources" | awk 'BEGIN{printf "["} {gsub(/\\/,"\\\\");gsub(/"/,"\\\""); if (n++) printf ","; printf "\"%s\"",$0} END{printf "]"}')" \
     "$wire_fingerprint" "$protocol_fingerprint"

@@ -1,14 +1,18 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://axoloty.dev/schemas/g2-protocol-trace-v1.json",
-  "title": "Axoloty G2 Protocol Trace",
+  "title": "Axoloty G6 Profile Protocol Trace",
   "type": "object",
-  "required": ["schemaVersion", "id", "description", "initialState", "steps"],
+  "required": ["schemaVersion", "id", "description", "initialState", "setup", "steps"],
   "properties": {
     "schemaVersion": { "const": 1 },
     "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
     "description": { "type": "string", "minLength": 1 },
     "initialState": { "$ref": "#/$defs/state" },
+    "setup": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/step" }
+    },
     "steps": {
       "type": "array",
       "minItems": 1,
@@ -89,11 +93,13 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["kind", "family", "correlationID"],
+            "required": ["kind", "family", "correlationID", "route", "payload"],
             "properties": {
               "kind": { "enum": ["publish", "deliver"] },
               "family": { "$ref": "#/$defs/family" },
-              "correlationID": { "type": ["string", "null"] }
+              "correlationID": { "type": ["string", "null"] },
+              "route": { "type": ["string", "null"] },
+              "payload": { "type": ["array", "null"], "items": { "type": "integer", "minimum": 0, "maximum": 255 } }
             },
             "additionalProperties": false
           }

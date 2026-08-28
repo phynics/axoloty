@@ -107,17 +107,25 @@ extension ProtocolExecutor {
             guard let base = buffer.baseAddress else { return .rejected(.malformedPayload) }
             let payload = ByteSlice(bytes: base, length: buffer.count)
             return operationNameBytes.withUnsafeBufferPointer { operationBuffer in
-                let operationName = operationBuffer.baseAddress.map {
-                    ByteSlice(bytes: $0, length: operationBuffer.count)
-                }
-                guard let local = try? ProtocolLocalOperation(
-                    capability: operation.capability,
-                    sourceID: operation.sourceID,
-                    correlationID: operation.correlationID,
-                    payload: payload,
-                    requestTimeoutMS: operation.requestTimeoutMS,
-                    operationName: operationName
-                ) else {
+                // An absent optional filter is represented by an empty
+                // temporary buffer here; do not turn that buffer into a
+                // present zero-length topic level.
+                let operationName: ByteSlice? = operationBuffer.count == 0
+                    ? nil
+                    : operationBuffer.baseAddress.map {
+                        ByteSlice(bytes: $0, length: operationBuffer.count)
+                    }
+                let local: ProtocolLocalOperation
+                do {
+                    local = try ProtocolLocalOperation(
+                        capability: operation.capability,
+                        sourceID: operation.sourceID,
+                        correlationID: operation.correlationID,
+                        payload: payload,
+                        requestTimeoutMS: operation.requestTimeoutMS,
+                        operationName: operationName
+                    )
+                } catch {
                     return .rejected(.invalidCorrelation)
                 }
                 actionSink.prepare(maximumActionCount: maximumActionCount)

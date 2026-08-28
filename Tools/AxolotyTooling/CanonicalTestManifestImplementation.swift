@@ -18,6 +18,10 @@ public enum AxolotyCanonicalTestManifestError: Error, Equatable, Sendable, Local
     case unknownEntry(String)
     /// A requested node is unavailable on the selected platform.
     case unavailableNode(String)
+    /// A named plan inherits from a plan that is not declared.
+    case missingPlanInheritance(plan: String, parent: String)
+    /// Named plan inheritance contains a cycle.
+    case planInheritanceCycle([String])
 
     /// A human-readable explanation suitable for a command diagnostic.
     public var userFriendlyMessage: String {
@@ -36,6 +40,10 @@ public enum AxolotyCanonicalTestManifestError: Error, Equatable, Sendable, Local
             return "canonical test manifest entry not found: \(name)"
         case .unavailableNode(let name):
             return "canonical test node is unavailable on this platform: \(name)"
+        case .missingPlanInheritance(let plan, let parent):
+            return "canonical test plan \(plan) inherits from unknown plan \(parent)"
+        case .planInheritanceCycle(let plans):
+            return "canonical test plan inheritance cycle: \(plans.joined(separator: " -> "))"
         }
     }
 
@@ -220,7 +228,11 @@ public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
         guard let definition = plans[name] else {
             throw AxolotyCanonicalTestManifestError.unknownEntry(name)
         }
-        let declaredRoots = ci ? (definition.ciNodes ?? definition.nodes) : definition.nodes
+        let declaredRoots = try inheritedRoots(
+            for: name,
+            ci: ci,
+            stack: []
+        )
         let roots: [String]
         if name == "verify" {
             roots = requiredGates + (ci ? ciRequiredGates : [])
@@ -232,6 +244,32 @@ public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
             }
         } else {
             roots = declaredRoots
+        }
+        if name == "checkpoint-hardware" {
+            guard definition.inherits == "checkpoint" else {
+                throw AxolotyCanonicalTestManifestError.invalidPlan(
+                    name: name,
+                    reason: "checkpoint-hardware must inherit checkpoint"
+                )
+            }
+            let ordinary = Set(try inheritedRoots(for: "checkpoint", ci: ci, stack: []))
+            let hardware = Set(roots)
+            guard ordinary.isSubset(of: hardware), hardware.count > ordinary.count else {
+                throw AxolotyCanonicalTestManifestError.invalidPlan(
+                    name: name,
+                    reason: "checkpoint-hardware must be a strict superset of checkpoint"
+                )
+            }
+        }
+        if name == "verify" || name == "offline" {
+            for root in roots {
+                if let node = nodes.first(where: { $0.id == root }), node.hardware != .forbidden {
+                    throw AxolotyCanonicalTestManifestError.invalidPlan(
+                        name: name,
+                        reason: "hardware node \(root) is forbidden in ordinary/offline plans"
+                    )
+                }
+            }
         }
         return try resolvedPlan(
             roots: roots,
@@ -271,6 +309,25 @@ public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
             requested: availableRoots,
             deadlineSeconds: deadlineSeconds
         )
+    }
+
+    private func inheritedRoots(
+        for name: String,
+        ci: Bool,
+        stack: [String]
+    ) throws -> [String] {
+        guard let definition = plans[name] else {
+            throw AxolotyCanonicalTestManifestError.unknownEntry(name)
+        }
+        guard !stack.contains(name) else {
+            throw AxolotyCanonicalTestManifestError.planInheritanceCycle(stack + [name])
+        }
+        let localRoots = ci ? (definition.ciNodes ?? definition.nodes) : definition.nodes
+        guard let parent = definition.inherits else { return localRoots }
+        guard plans[parent] != nil else {
+            throw AxolotyCanonicalTestManifestError.missingPlanInheritance(plan: name, parent: parent)
+        }
+        return try inheritedRoots(for: parent, ci: ci, stack: stack + [name]) + localRoots
     }
 
 }

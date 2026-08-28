@@ -7,6 +7,28 @@ import Foundation
 
 let args = Array(CommandLine.arguments.dropFirst())
 
+let helpText = """
+Usage: axoloty-mcp [options]
+
+Start an Axoloty MCP server using stdio or loopback HTTP.
+
+Options:
+  --transport MODE        Use stdio or http (default: stdio).
+  --listen-host HOST      HTTP bind address (default: 127.0.0.1).
+  --listen-port PORT      HTTP listen port (default: 8765).
+  --path PATH             HTTP endpoint path (default: /mcp).
+  --broker-host HOST      MQTT broker host (default: localhost).
+  --broker-port PORT      MQTT broker port (default: 1883).
+  --namespace NAMESPACE   Coaty namespace (default: -).
+  --connect-timeout TIME  Broker readiness timeout (default: 10s).
+  --help                  Show this help.
+"""
+
+if args.contains("--help") || args.contains("-h") {
+    print(helpText)
+    Foundation.exit(0)
+}
+
 var brokerHost = ProcessInfo.processInfo.environment["AXOLOTY_MQTT_HOST"] ?? "localhost"
 var brokerPortRaw = ProcessInfo.processInfo.environment["AXOLOTY_MQTT_PORT"] ?? "1883"
 var namespace = ProcessInfo.processInfo.environment["AXOLOTY_NAMESPACE"] ?? "-"

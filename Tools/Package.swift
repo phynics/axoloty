@@ -11,10 +11,11 @@ let package = Package(
         .executable(name: "ax", targets: ["AxolotyCLI"]),
     ],
     targets: [
+        .target(name: "AxolotyVersion", path: "AxolotyVersion"),
         .target(name: "AxolotyProcessLauncher", path: "AxolotyProcessLauncher", publicHeadersPath: "include"),
         .target(
             name: "AxolotyTooling",
-            dependencies: ["AxolotyProcessLauncher"],
+            dependencies: ["AxolotyProcessLauncher", "AxolotyVersion"],
             path: "AxolotyTooling",
             resources: [.copy("Resources/test-tiers.json")]
         ),

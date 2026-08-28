@@ -290,6 +290,8 @@ public struct AxolotyCanonicalTestTier: Codable, Equatable, Sendable {
 public struct AxolotyCanonicalTestPlanDefinition: Codable, Equatable, Sendable {
     /// Roots for ordinary local execution.
     public let nodes: [String]
+    /// An optional plan whose roots are included before these roots.
+    public let inherits: String?
     /// Roots for CI execution. Missing means the ordinary roots.
     public let ciNodes: [String]?
     /// The absolute wall-clock budget for this plan, in seconds.
@@ -298,10 +300,12 @@ public struct AxolotyCanonicalTestPlanDefinition: Codable, Equatable, Sendable {
     /// Creates a plan definition.
     public init(
         nodes: [String],
+        inherits: String? = nil,
         ciNodes: [String]? = nil,
         timeoutSeconds: TimeInterval? = nil
     ) {
         self.nodes = nodes
+        self.inherits = inherits
         self.ciNodes = ciNodes
         self.timeoutSeconds = timeoutSeconds
     }

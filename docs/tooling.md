@@ -187,7 +187,8 @@ certification gate. It runs every ordinary offline check, binary-size
 benchmarks, and release snapshot verification.
 The canonical release-gate list (`releaseGates` in the test-tier manifest)
 names every mandatory release tier — `smoke`, `unit`, `module`, `property`,
-`wire-offline`, and `wire-live`. The checkpoint manifest records
+`wire-offline`, `wire-live`, `g3-object-model`, `g4-runtime`, and
+`g6-non-divergence`. The checkpoint manifest records
 a disposition for each gate:
 
 - **executed** — a covering node ran and passed inside the checkpoint;
@@ -196,15 +197,43 @@ a disposition for each gate:
   supplied for the gate;
 - **skipped** — no covering node ran and no attestation was supplied.
 
-The command fails if any required gate is skipped, so a release cannot be
-certified with missing mandatory-tier evidence. Tiers that are not normally run
-inside the checkpoint (for example the live `wire-live` capture and the
-hardware smoke tier) must therefore be attested externally. Supply a path to
-produced evidence for a gate as `AXOLOTY_ATTESTATION_<GATE>_PATH`, where `<GATE>`
-is the uppercased tier id with hyphens replaced by underscores (for example
-`AXOLOTY_ATTESTATION_WIRE_LIVE_PATH=.testing/wire/manifest.json`). The manifest
-lists executed, skipped, and externally attested gates so a release reviewer
-can confirm the full evidence set before certifying.
+The command fails if any required gate is skipped or has invalid evidence, so a
+release cannot be certified with missing mandatory-tier proof. Tiers that are
+not normally run inside the checkpoint (for example the live `wire-live`
+capture and the hardware resource tier) must supply typed evidence bundles.
+Point the checkpoint at one evidence root with `AXOLOTY_EVIDENCE_DIR`; each
+gate is loaded from `<root>/<gate>/evidence.json` and its declared artifacts
+are rehashed. Every bundle must identify the repository, full commit SHA, Git
+tree, semantic version, clean checkout, producer, and schema version. Imported
+CI or device evidence must also carry external provenance. A legacy
+`AXOLOTY_ATTESTATION_<GATE>_PATH` path is accepted only when it points to the
+same typed bundle format; status-only JSON is rejected. The checkpoint manifest
+records the validated bundle digest alongside executed and failed gates.
+
+`checkpoint-hardware` is structurally an extension of `checkpoint`, so it
+cannot omit an ordinary node when the base plan changes. Hardware remains
+forbidden in `make verify` and ordinary offline tiers.
+
+### G6 evidence producers
+
+The architecture checker can require compiler-input receipts with
+`AXOLOTY_G6_REQUIRE_SOURCE_RECEIPTS=1`, naming one SwiftPM receipt and one
+ESP-IDF/CMake receipt through `AXOLOTY_G6_HOST_RECEIPT` and
+`AXOLOTY_G6_EMBEDDED_RECEIPT`. `Tests/Support/emit-g6-source-receipt.mjs`
+derives a receipt from an actual `compile_commands.json`; the validator then
+compares canonical repository-relative path/hash sets for `AxolotyWire` and
+`AxolotyProtocol`. Configured globs are retained only as a development
+preflight and are not release evidence.
+
+The public-product gate derives its inventory from `swift package dump-package`
+and builds every expected library and executable in both configurations before
+running side-effect-free `--help` smoke commands. The wire matrix validator
+requires exact set equality with `g6-scenario-matrix.json`, normalized capture
+artifacts, broker/Axoloty/CoatyJS logs, and exact commit, executable,
+CoatyJS-lockfile, broker, and matrix identities. Resource evidence requires
+approved policy, two independent host runs, two physical ESP32-C6 power-cycle
+runs, production Embedded Swift, and the sustained workload thresholds; a C
+surrogate can never satisfy the gate.
 
 ## Timing evidence
 

@@ -59,6 +59,24 @@ test("package CI checks use stable isolated scratch paths", () => {
   assert.match(objectChecker, /--scratch-path "\$root\/\.build\/packages\/axoloty-coaty-models"/);
 });
 
+test("G6 public product builds are offline-only", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const inventory = document.nodes.find(node => node.id === "g6-public-products");
+  const build = document.nodes.find(node => node.id === "g6-public-products-build");
+
+  assert.ok(inventory);
+  assert.equal(inventory.ci, true);
+  assert.equal(inventory.command.environment.AXOLOTY_G6_PRODUCT_BUILD, "0");
+
+  assert.ok(build);
+  assert.equal(build.local, true);
+  assert.equal(build.ci, false);
+  assert.equal(build.command.environment.AXOLOTY_G6_PRODUCT_BUILD, "1");
+  assert.ok(document.tiers.find(tier => tier.id === "g6-non-divergence").nodes.includes(build.id));
+  assert.ok(document.plans.checkpoint.nodes.includes(build.id));
+  assert.equal(document.plans["checkpoint-hardware"].inherits, "checkpoint");
+});
+
 test("validator rejects retired canonical nodes and filters if reintroduced", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
   const template = document.nodes.find(node => node.id === "build");
@@ -348,6 +366,40 @@ test("validator accepts an intentionally attestable wire-live gate", () => {
     exists: () => true,
   });
   assert.equal(errors.some(error => error.includes("wire-live")), false);
+});
+
+test("validator resolves checkpoint-hardware inheritance", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  document.plans["checkpoint-hardware"].nodes = ["checkpoint-hardware-smoke"];
+  const errors = validate(document, {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  });
+  assert.equal(errors.some(error => error.includes("omits inherited node")), false);
+});
+
+test("validator rejects a hardware plan that stops inheriting checkpoint", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  document.plans["checkpoint-hardware"].inherits = "offline";
+  const errors = validate(document, {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  });
+  assert.ok(errors.some(error => error.includes("must inherit checkpoint")));
+});
+
+test("validator rejects checkpoint plan inheritance cycles", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  document.plans.offline.inherits = "checkpoint";
+  document.plans.checkpoint.inherits = "offline";
+  const errors = validate(document, {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  });
+  assert.ok(errors.some(error => error.includes("plan inheritance cycle")));
 });
 
 test("validator CLI reports stable selfTests schema errors", t => {

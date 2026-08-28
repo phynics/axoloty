@@ -19,6 +19,8 @@ public struct MQTTBindingConfiguration: Sendable, Equatable {
     public let password: String?
     /// Maximum time to wait for the broker to report an online state.
     public let connectionTimeoutMS: UInt32
+    /// Largest Coaty profile topic admitted before runtime validation.
+    public let maximumProfileTopicBytes: Int
 
     /// Creates a bounded MQTT binding configuration.
     public init(
@@ -27,7 +29,8 @@ public struct MQTTBindingConfiguration: Sendable, Equatable {
         usesTLS: Bool = false,
         username: String? = nil,
         password: String? = nil,
-        connectionTimeoutMS: UInt32 = 10_000
+        connectionTimeoutMS: UInt32 = 10_000,
+        maximumProfileTopicBytes: Int = 512
     ) throws {
         guard !host.isEmpty, port > 0 else {
             throw AxolotyError.invalidArgument(argument: "broker", reason: "host and port are required")
@@ -38,12 +41,19 @@ public struct MQTTBindingConfiguration: Sendable, Equatable {
                 reason: "must be in 1...120000"
             )
         }
+        guard maximumProfileTopicBytes > 0, maximumProfileTopicBytes <= 65_536 else {
+            throw AxolotyError.invalidArgument(
+                argument: "maximumProfileTopicBytes",
+                reason: "must be in 1...65536"
+            )
+        }
         self.host = host
         self.port = port
         self.usesTLS = usesTLS
         self.username = username
         self.password = password
         self.connectionTimeoutMS = connectionTimeoutMS
+        self.maximumProfileTopicBytes = maximumProfileTopicBytes
     }
 }
 
@@ -56,6 +66,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     private let client: RuntimeMQTTClient
     private let delegate: RuntimeMQTTDelegate
     private let connectionTimeoutMS: UInt32
+    private let maximumProfileTopicBytes: Int
     private var started = false
     private var activeNamespace: String?
     private var transportEpoch: UInt64 = 0
@@ -66,6 +77,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         let delegate = RuntimeMQTTDelegate()
         self.delegate = delegate
         self.connectionTimeoutMS = configuration.connectionTimeoutMS
+        self.maximumProfileTopicBytes = configuration.maximumProfileTopicBytes
         self.client = try RuntimeMQTTClient(configuration: configuration, delegate: delegate)
     }
 
@@ -200,7 +212,11 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     /// Classifies the binding's exact external compatibility route.
     public func classifyRoute(_ route: ByteSlice) -> ProtocolRouteClassification {
         let namespace = lock.withLock { activeNamespace }
-        return Self.classify(route, activeNamespace: namespace)
+        return Self.classify(
+            route,
+            activeNamespace: namespace,
+            maximumProfileTopicLength: maximumProfileTopicBytes
+        )
     }
 
     private func activateExternalRoute(_ route: [UInt8]) async throws {
@@ -283,7 +299,11 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         let frame = lock.withLock { () -> RuntimeInboundFrame? in
             guard started else { return nil }
             let bytes = Array(topic.utf8)
-            if Self.isActiveProfile(bytes, namespace: activeNamespace) {
+            if Self.isActiveProfile(
+                bytes,
+                namespace: activeNamespace,
+                maximumTopicLength: maximumProfileTopicBytes
+            ) {
                 return .profile(topic: topic, payload: payload, nowMS: nowMS)
             }
             guard externalRoutes.contains(where: {
@@ -294,19 +314,27 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         if let frame { receive(frame) }
     }
 
-    private static func isActiveProfile(_ bytes: [UInt8], namespace: String?) -> Bool {
+    private static func isActiveProfile(
+        _ bytes: [UInt8],
+        namespace: String?,
+        maximumTopicLength: Int
+    ) -> Bool {
         guard let namespace else { return false }
         return bytes.withUnsafeBufferPointer { buffer in
             guard let base = buffer.baseAddress else { return false }
             let view = TopicView(topicBytes: base, length: buffer.count)
-            guard (try? view.validate()) != nil,
+            guard (try? view.validate(maximumTopicLength: maximumTopicLength)) != nil,
                   let actualNamespace = view.namespaceLevel else { return false }
             return actualNamespace.utf8Equals(namespace)
         }
     }
 
-    private static func classify(_ route: ByteSlice, activeNamespace: String?) -> ProtocolRouteClassification {
-        guard route.length > 0, route.length <= 128 else { return .unrelated }
+    private static func classify(
+        _ route: ByteSlice,
+        activeNamespace: String?,
+        maximumProfileTopicLength: Int
+    ) -> ProtocolRouteClassification {
+        guard route.length > 0 else { return .unrelated }
         for index in 0..<route.length {
             guard let byte = route.byte(at: index), byte != 0, byte != 0x23, byte != 0x2B else { return .unrelated }
             if byte == 0x2F {
@@ -322,7 +350,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
             let coatyPrefix = Array("coaty/3/".utf8)
             let startsWithCoatyProfile = bytes.starts(with: coatyPrefix)
             if startsWithCoatyProfile {
-                guard (try? view.validate()) != nil,
+                guard (try? view.validate(maximumTopicLength: maximumProfileTopicLength)) != nil,
                       let namespace = activeNamespace,
                       view.namespaceLevel?.utf8Equals(namespace) == true else {
                     return .unrelated
@@ -330,6 +358,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
                 guard let eventType = view.eventType else { return .unrelated }
                 return Self.staticStringEquals(eventType.wireCode, "IOV") ? .coaty : .unrelated
             }
+            guard route.length <= 128 else { return .unrelated }
             return .external
         }
     }

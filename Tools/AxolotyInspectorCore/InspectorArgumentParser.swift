@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
+import AxolotyVersion
 
 /// The outcome of parsing inspector command-line arguments.
 public enum InspectorParseOutcome: Equatable, Sendable {
@@ -17,7 +18,7 @@ public enum InspectorParseOutcome: Equatable, Sendable {
 /// A bounded, pure parser for the inspector command surface.
 public struct InspectorArgumentParser: Sendable {
     /// The inspector version string.
-    public static let version = "0.5.1"
+    public static var version: String { AxolotyVersion.current() }
 
     /// The help text printed for `--help` or unknown commands.
     public static let helpText = """

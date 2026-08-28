@@ -160,10 +160,16 @@ public struct TopicView {
     /// the slicing accessors otherwise tolerate. Any topic that fails here
     /// must not be routed.
     ///
+    /// - Parameter maximumTopicLength: Maximum accepted topic length for this
+    ///   binding. The Embedded wire uses ``WireBufferConfig.maxTopicLength``;
+    ///   a host runtime may select a larger bounded budget for generated
+    ///   profile topics.
     /// - Throws: ``WireDecodeError`` with reason ``WireDecodeError/Reason/malformedTopic``
     ///   when the layout or event code is not the exact Coaty form.
-    public func validate() throws(WireDecodeError) {
-        guard byteCount <= WireBufferConfig.maxTopicLength else {
+    public func validate(
+        maximumTopicLength: Int = WireBufferConfig.maxTopicLength
+    ) throws(WireDecodeError) {
+        guard maximumTopicLength >= 0, byteCount <= maximumTopicLength else {
             throw WireDecodeError(.malformedTopic)
         }
         guard levelCount >= 4 else { throw WireDecodeError(.malformedTopic) }

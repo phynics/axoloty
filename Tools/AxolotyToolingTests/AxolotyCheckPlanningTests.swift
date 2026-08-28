@@ -37,6 +37,17 @@ func checkpointPlansResolveReleaseSnapshotPlaceholders() throws {
 }
 
 @Test
+func hardwareCheckpointInheritsEveryOrdinaryCheckpointNode() throws {
+    let manifest = try AxolotyCanonicalTestManifest.loadDefault()
+    let checkpoint = try manifest.plan(named: "checkpoint")
+    let hardware = try manifest.plan(named: "checkpoint-hardware")
+    let hardwareNames = Set(hardware.nodes.map(\.name))
+
+    #expect(Set(checkpoint.nodes.map(\.name)).isSubset(of: hardwareNames))
+    #expect(hardwareNames.contains("checkpoint-hardware-smoke"))
+}
+
+@Test
 func plannerOrdersDependenciesBeforeDependants() throws {
     let plan = try AxolotyCheckPlanner().plan([node("app", dependencies: ["core"]), node("core")])
     #expect(plan.nodes.map(\.name) == ["core", "app"])
