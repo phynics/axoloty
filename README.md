@@ -10,7 +10,7 @@ version](https://img.shields.io/badge/swift-6.3-%23F05138?logo=swift)](https://d
 MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 > **Development checkpoint.** [`VERSION`](./VERSION) identifies the current
-> published release (`0.6.1`). Axoloty is not API-stable. The 0.6 line aligns
+> published release (`0.6.2`). Axoloty is not API-stable. The 0.6 line aligns
 > the host and Embedded Swift runtimes around the shared wire and protocol path,
 > with typed IO and optional products from G5.
 
@@ -71,7 +71,7 @@ Add Axoloty to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.6.1"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.6.2"),
 ],
 targets: [
     .executableTarget(
@@ -87,7 +87,7 @@ For a wire target in a consumer that already resolves the root package:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.6.1"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.6.2"),
 ],
 targets: [
     .executableTarget(
@@ -158,7 +158,10 @@ The ESP32-C6 embedded target supports only Advertise/Deadvertise and
 Discover/Resolve. It uses a static composition model (no dynamic
 registration) with bounded capacities:
 
-- Max topic length: 128 bytes
+- Axoloty max topic length: 256 bytes. MQTT and Coaty do not impose this
+  limit, so longer topics are an intentional compatibility divergence.
+- Advertised external IO routes also reject control characters, quotation
+  marks, and backslashes to keep their encoded metadata statically bounded.
 - Axoloty max payload size: 2,048 bytes. Coaty itself does not impose this
   limit, so messages above 2 KiB are an intentional compatibility divergence.
 - Static runtimes may select a smaller compile-time payload capacity (for
@@ -217,7 +220,7 @@ swift run --package-path Tools axoloty-inspect discover --core-type Identity
 See [docs/inspector.md](./docs/inspector.md) for the full reference.
 
 For the current release's changes, see
-[0.6.1 release notes](./docs/releases/0.6.1.md). For migrating from legacy
+[0.6.2 release notes](./docs/releases/0.6.2.md). For migrating from legacy
 CoatySwift, see [the 0.2 migration guide](./docs/migration/from-coatyswift-to-0.2.md).
 
 ## Contributing

@@ -12,6 +12,29 @@ fork, through CoatySwift 2.4.0, remain documented in the
 Development toward Axoloty 1.0 is in progress and tracked by the
 [v1 release epic](https://github.com/phynics/axoloty/issues/272).
 
+## [0.6.2] - 2026-08-28
+
+Axoloty 0.6.2 is a wire-topic capacity hotfix for application routes that
+contain several UUIDs.
+
+### Changed
+
+- Raise the host and Embedded Swift MQTT topic ceiling from 128 bytes to 256
+  bytes. Topics of 257 bytes remain a structured boundary failure.
+- Allow runtime namespaces of up to 64 UTF-8 bytes. The largest generated
+  filtered Coaty Core 3 topic occupies 243 bytes.
+- Store retained static-runtime routes in one deduplicating 2 KiB arena rather
+  than reserving one maximum-size route for every action slot.
+- Keep the 2,048-byte payload ceiling introduced in 0.6.1 and document both
+  finite wire limits as intentional Axoloty constraints.
+
+### Validation boundary
+
+The ordinary verification suite and focused 256/257-byte topic tests pass.
+Live external-IO flows pass in both Axoloty-to-CoatyJS and CoatyJS-to-Axoloty
+directions. A production Embedded Swift run on ESP32-C6 passed all 315 records,
+including the 256/257-byte topic and 2,048/2,049-byte payload boundaries.
+
 ## [0.6.1] - 2026-08-28
 
 Axoloty 0.6.1 is a wire-capacity hotfix for larger application objects.

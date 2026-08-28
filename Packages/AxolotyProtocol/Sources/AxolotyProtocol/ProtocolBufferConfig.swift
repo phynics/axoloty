@@ -6,7 +6,10 @@
 /// syntax limits belong to ``AxolotyWire``, while subscriber, family, and
 /// endpoint capacities are protocol-state policy owned by this package.
 @usableFromInline
-internal typealias ProtocolRouteStorage = InlineArray<128, UInt8>
+internal typealias ProtocolRouteStorage = InlineArray<256, UInt8>
+
+@usableFromInline
+internal typealias ProtocolRetainedRouteStorage = InlineArray<2_048, UInt8>
 
 public enum ProtocolBufferConfig {
     /// Accepted capacity presets selected from G1 measurements.
@@ -21,4 +24,7 @@ public enum ProtocolBufferConfig {
 
     /// Maximum association-route bytes retained by processor state.
     public static let maxRouteBytes: Int = ProtocolRouteStorage.count
+
+    /// Maximum unique route bytes retained by one static action batch.
+    public static let maxRetainedRouteBytes: Int = ProtocolRetainedRouteStorage.count
 }

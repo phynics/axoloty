@@ -20,6 +20,7 @@ Reference versions must be pinned before captured fixtures become normative:
 | Associate / IoState / IoValue | Partial | Partial | Not tested | Not tested | Nightly |
 | Decentralized logging | Not tested | Not tested | Not tested | Not tested | Nightly |
 | SensorThings | Fixture-backed | Fixture-backed | Not tested | Not tested | G5 |
+| Topics above 256 bytes | Intentional divergence: rejected by Axoloty | Intentional divergence: Axoloty does not emit | Intentional divergence: rejected by Axoloty | Intentional divergence: Axoloty does not emit | Boundary fixtures and ESP32 vectors |
 | Payloads above 2,048 bytes | Intentional divergence: rejected by Axoloty | Intentional divergence: Axoloty does not emit | Intentional divergence: rejected by Axoloty | Intentional divergence: Axoloty does not emit | Boundary fixtures and ESP32 vectors |
 
 ### G5 host typed IO evidence
@@ -70,6 +71,30 @@ coverage for these semantics. Live cross-implementation IO evidence remains
 governed by the existing IO runners and is a separate transport/runtime gate.
 
 Allowed results are `Compatible`, `Compatible with normalization`, `Intentional divergence`, `Unsupported`, and `Not tested`. Any intentional divergence requires a linked decision and fixture update.
+
+### Decision: Axoloty 256-byte topic ceiling
+
+MQTT and Coaty do not define Axoloty's 256-byte topic limit. Axoloty adds the
+limit so host and embedded routing use the same finite storage. The limit fits
+an application route with three UUIDs and routing labels. It also fits the
+largest generated Coaty Core 3 topic when the runtime namespace contains at
+most 64 UTF-8 bytes. A generated topic with the 64-byte namespace, the
+128-byte object-type filter, and a source UUID occupies 243 bytes.
+
+Axoloty accepts topics of at most 256 bytes and rejects longer inbound topics
+before protocol-state mutation. Axoloty does not emit longer topics. A peer
+that requires a topic above 256 bytes is not wire-compatible with Axoloty for
+that route. Coaty Core 3 retains its sealed topic grammar. Application routes
+that carry three UUIDs remain external MQTT routes, not Coaty Core 3 topics.
+Advertised external IO routes must also be directly representable as bounded
+JSON string content: control characters, quotation marks, and backslashes are
+rejected instead of consuming a larger escaped metadata buffer. This is a
+narrower contract than MQTT's complete topic character set.
+
+The exact-limit and one-over-limit tests cover 256-byte acceptance and
+257-byte rejection on the host and physical ESP32 path. Static action batches
+retain unique topic and route bytes in one shared 2 KiB arena. Repeated fan-out
+routes occupy the arena once instead of once per action slot.
 
 ### Decision: Axoloty 2 KiB payload ceiling
 

@@ -10,7 +10,7 @@ internal typealias TopicLevelStorage = InlineArray<7, Int>
 
 public enum WireBufferConfig {
     /// Maximum topic string length (bytes).
-    public static let maxTopicLength: Int = 128
+    public static let maxTopicLength: Int = 256
 
     /// Maximum payload size (bytes) for a single MQTT PUBLISH.
     public static let maxPayloadSize: Int = 2_048

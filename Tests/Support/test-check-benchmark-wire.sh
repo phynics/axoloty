@@ -6,7 +6,7 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 root=$(CDPATH= cd -- "$script_dir/../.." && pwd)
 cd "$root"
 
-known_fingerprint="41cc29dab95b393622ec814152aa13f265d28a9a69b37433de20cdefd6ff84db"
+known_fingerprint="04dd2e9dfecb529ee523d0f3478608ab8c7b8db1812e64a0b675b5020eae4943"
 oracle_fingerprint=$(node "$root/Tests/Support/corpus-fingerprint.mjs" "$root/Benchmarks/Corpus")
 [ "$oracle_fingerprint" = "$known_fingerprint" ] || {
     echo "Node corpus oracle does not match known digest" >&2

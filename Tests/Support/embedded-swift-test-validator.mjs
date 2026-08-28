@@ -21,7 +21,7 @@ export const expectedVectorTests = new Set([
   "topic:exact", "topic:underCapacity", "topic:overflow",
   "capacity:payload0", "capacity:payload1", "capacity:payload512",
   "capacity:payload2047", "capacity:payload2048", "capacity:payload2049", "capacity:topic0",
-  "capacity:topic1", "capacity:topic128", "capacity:topic129",
+  "capacity:topic1", "capacity:topic256", "capacity:topic257",
   "malformed:truncation", "malformed:corruption", "malformed:utf8",
   "malformed:escape", "malformed:literal", "malformed:number",
   "malformed:missing", "malformed:unknown", "malformed:duplicate",

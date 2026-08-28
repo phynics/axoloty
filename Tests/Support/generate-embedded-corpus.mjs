@@ -270,7 +270,7 @@ private func runCorpusCase<T: WireDecodable & WireEncodable>(
     var built = false
     if let source = topicView.sourceIdLevel.flatMap(UUID16.init(parsing:)),
        let parsedType = topicView.eventType {
-        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 128) { output in
+        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: WireBufferConfig.maxTopicLength) { output in
             var builder = TopicBuilder(buffer: output.baseAddress!, capacity: output.count)
             var valid = (try? builder.writePrefix()) != nil
             if valid { valid = (try? builder.writeNamespace("bench")) != nil }

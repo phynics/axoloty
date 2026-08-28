@@ -293,24 +293,24 @@ static void test_size_limits(void) {
     // Payload over limit (2049) — rejected before dispatch.
     ESP_LOGI(TAG, "{\"case\":\"payload-2049\",\"rejected\":true}");
 
-    // Topic at limit (128) — accepted.
-    // Build a valid Coaty topic of exactly 128 bytes.
-    static char big_topic[129];
+    // Topic at limit (256) — accepted.
+    // Build a valid Coaty topic of exactly 256 bytes.
+    static char big_topic[257];
     const char *topic_prefix = "coaty/3/bench/ADV:";
     const char *topic_suffix = "/00000000-0000-4000-8000-000000000001";
     size_t plen = strlen(topic_prefix);
     size_t slen = strlen(topic_suffix);
-    size_t padlen = 128 - plen - slen;
+    size_t padlen = 256 - plen - slen;
     memcpy(big_topic, topic_prefix, plen);
     memset(big_topic + plen, 'A', padlen);
     memcpy(big_topic + plen + padlen, topic_suffix, slen);
-    big_topic[128] = '\0';
-    const char *evt = topic_event_type((const uint8_t *)big_topic, 128);
-    ESP_LOGI(TAG, "{\"case\":\"topic-128\",\"accepted\":%s}",
+    big_topic[256] = '\0';
+    const char *evt = topic_event_type((const uint8_t *)big_topic, 256);
+    ESP_LOGI(TAG, "{\"case\":\"topic-256\",\"accepted\":%s}",
              evt ? "true" : "false");
 
-    // Topic over limit (129) — rejected.
-    ESP_LOGI(TAG, "{\"case\":\"topic-129\",\"rejected\":true}");
+    // Topic over limit (257) — rejected.
+    ESP_LOGI(TAG, "{\"case\":\"topic-257\",\"rejected\":true}");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -67,9 +67,9 @@ func exerciseTopicView() -> WireEventType? {
 
 @inline(__always)
 func exerciseTopicBuilder() -> Bool {
-    let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: 128)
+    let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: WireBufferConfig.maxTopicLength)
     defer { buf.deallocate() }
-    var builder = TopicBuilder(buffer: buf, capacity: 128)
+    var builder = TopicBuilder(buffer: buf, capacity: WireBufferConfig.maxTopicLength)
     var ok = false
     do throws(WireEncodeError) {
         try builder.writePrefix()
@@ -131,7 +131,7 @@ func exerciseWireWriter() -> Bool {
 @inline(__always)
 func exerciseConfig() -> Bool {
     return WireBufferConfig.maxPayloadSize == 2_048
-        && WireBufferConfig.maxTopicLength == 128
+        && WireBufferConfig.maxTopicLength == 256
 }
 
 @inline(__always)

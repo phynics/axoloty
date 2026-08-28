@@ -47,13 +47,13 @@ public struct BoundedIoSourceEndpointDefinition<let payloadCapacity: Int>: ~Copy
         metadata: consuming Object<IoSourceMetadata>,
         representation: IoValueRepresentation,
         publication: IoPublicationPolicy,
-        externalRoute: BoundedEncodedText<128>?
+        externalRoute: BoundedEncodedText<256>?
     ) throws(ProtocolError) {
         var object = metadata
-        var boundedExternalRoute: BoundedEncodedText<128>?
+        var boundedExternalRoute: BoundedEncodedText<256>?
         if let externalRoute {
             externalRoute.withBytes { bytes in
-                boundedExternalRoute = BoundedEncodedText<128>(bytes: bytes)
+                boundedExternalRoute = BoundedEncodedText<256>(bytes: bytes)
             }
             guard boundedExternalRoute != nil else {
                 throw ProtocolError(.capacityExceeded)

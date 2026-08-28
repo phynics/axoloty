@@ -437,15 +437,17 @@ private func generatedRoute(namespace: String, sourceID: ObjectID) -> [UInt8]? {
     result.append(contentsOf: namespace.utf8)
     result.append(contentsOf: "/IOV/".utf8)
     result.append(contentsOf: uuidBytes(sourceID.uuid))
-    return result.count <= 128 ? result : nil
+    return result.count <= WireBufferConfig.maxTopicLength ? result : nil
 }
 
 private func validatedExternalRoute(_ route: [UInt8], namespace: String) -> [UInt8]? {
-    guard !route.isEmpty, route.count <= 128,
+    guard !route.isEmpty, route.count <= WireBufferConfig.maxTopicLength,
           route.first != 0x2F, route.last != 0x2F else { return nil }
     var previousWasSeparator = false
     for byte in route {
-        guard byte != 0, byte != 0x23, byte != 0x2B else { return nil }
+        guard byte >= 0x20, byte != 0x22, byte != 0x23, byte != 0x2B, byte != 0x5C else {
+            return nil
+        }
         if byte == 0x2F {
             guard !previousWasSeparator else { return nil }
             previousWasSeparator = true
@@ -557,9 +559,13 @@ private func decodeAdvertisedEndpoint(_ bytes: [UInt8]) -> RoutingEndpoint? {
             var externalRoute: [UInt8]?
             var updateRate: UInt32?
             dynamic.withFields { fields in
-                _ = fields.withValue(for: "valueType") { value in valueType = decodedString(value) }
+                _ = fields.withValue(for: "valueType") { value in
+                    valueType = decodedString(value, into: InlineArray<128, UInt8>.self)
+                }
                 _ = fields.withValue(for: "useRawIoValues") { value in binary = value.rawEquals("true") }
-                _ = fields.withValue(for: "externalRoute") { value in externalRoute = decodedString(value) }
+                _ = fields.withValue(for: "externalRoute") { value in
+                    externalRoute = decodedString(value, into: InlineArray<256, UInt8>.self)
+                }
                 _ = fields.withValue(for: "updateRate") { value in
                     _ = value.withNumber { number in
                         guard let raw = number.uintValue, raw <= UInt64(UInt32.max) else { return }
@@ -597,10 +603,13 @@ private func decodeDeadvertisedIDs(_ bytes: [UInt8]) -> [ObjectID] {
     }
 }
 
-private func decodedString(_ value: borrowing JSONValueView) -> [UInt8]? {
+private func decodedString<let capacity: Int>(
+    _ value: borrowing JSONValueView,
+    into _: InlineArray<capacity, UInt8>.Type
+) -> [UInt8]? {
     var result: [UInt8]?
     _ = value.withString { encoded in
-        var storage = InlineArray<128, UInt8>(repeating: 0)
+        var storage = InlineArray<capacity, UInt8>(repeating: 0)
         var length = 0
         do throws(WireDecodeError) {
             length = try encoded.copyDecodedJSONString(into: &storage)

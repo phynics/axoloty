@@ -103,7 +103,9 @@ struct WireCodecTests {
 
     @Test
     func topicViewRejectsTotalLengthAboveLimit() throws {
-        let bytes = Array(("coaty/3/ns/ADV/" + String(repeating: "A", count: 120)).utf8)
+        let bytes = Array((
+            "coaty/3/ns/ADV/" + String(repeating: "A", count: WireBufferConfig.maxTopicLength)
+        ).utf8)
         #expect(bytes.count > WireBufferConfig.maxTopicLength)
         let view = bytes.withUnsafeBufferPointer { buffer in
             TopicView(topicBytes: buffer.baseAddress!, length: buffer.count)

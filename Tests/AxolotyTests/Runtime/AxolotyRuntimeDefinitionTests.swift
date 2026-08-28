@@ -30,6 +30,21 @@ extension AxolotyRuntimeTests {
         }
     }
 
+    @Test("definition namespace leaves room for the largest generated profile topic")
+    func definitionBoundsNamespaceForGeneratedTopics() throws {
+        let identity = try RuntimeIdentity(id: .zero, name: "namespace-test")
+        _ = try RuntimeDefinition.Builder(
+            identity: identity,
+            namespace: String(repeating: "n", count: 64)
+        )
+        #expect(throws: AxolotyError.self) {
+            _ = try RuntimeDefinition.Builder(
+                identity: identity,
+                namespace: String(repeating: "n", count: 65)
+            )
+        }
+    }
+
     @Test("definition bounds event-stream registration")
     func definitionBoundsEventStreams() throws {
         let capacities = try RuntimeCapacities(eventStreams: 1)
@@ -60,4 +75,3 @@ extension AxolotyRuntimeTests {
         }
     }
 }
-

@@ -1,6 +1,6 @@
-# Axoloty 0.6.1 API documentation
+# Axoloty 0.6.2 API documentation
 
-Axoloty 0.6.1 is the published package version. The APIs below describe the
+Axoloty 0.6.2 is the published package version. The APIs below describe the
 shared host and static runtime architecture; SensorThings is available as an
 optional product.
 

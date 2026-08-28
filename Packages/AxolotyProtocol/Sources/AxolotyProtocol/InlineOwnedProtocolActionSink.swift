@@ -4,15 +4,18 @@ import AxolotyWire
 
 /// A fixed inline action sink that owns every byte until synchronous drain.
 ///
-/// Action metadata is copied per slot. Primary payload bytes are retained once
-/// in a bounded arena and reused when a fan-out batch references equal bytes.
+/// Action metadata and short selectors are copied per slot. Payload and route
+/// bytes are retained in separate bounded arenas and reused when a fan-out
+/// batch references equal bytes.
 /// ``visit(at:_:)`` materializes borrowed views only for the duration of its nonescaping body.
 /// This makes the sink suitable for runtimes that return to their caller
 /// between protocol processing and action delivery.
 public struct InlineOwnedProtocolActionSink<let capacity: Int, let payloadCapacity: Int>: ~Copyable, ProtocolActionSink {
     private var slots: InlineArray<capacity, InlineOwnedProtocolActionSlot?>
     private var payloads: InlineArray<payloadCapacity, UInt8>
+    private var routes: ProtocolRetainedRouteStorage
     private var payloadBytesUsed: Int
+    private var routeBytesUsed: Int
     private var used: Int
     private var reserved: Int
 
@@ -20,7 +23,9 @@ public struct InlineOwnedProtocolActionSink<let capacity: Int, let payloadCapaci
     public init() {
         slots = InlineArray(repeating: nil)
         payloads = InlineArray(repeating: 0)
+        routes = ProtocolRetainedRouteStorage(repeating: 0)
         payloadBytesUsed = 0
+        routeBytesUsed = 0
         used = 0
         reserved = 0
     }
@@ -29,6 +34,8 @@ public struct InlineOwnedProtocolActionSink<let capacity: Int, let payloadCapaci
     public var count: Int { used }
     /// Maximum unique primary-payload bytes retained between drains.
     public var maximumPayloadBytes: Int { payloadCapacity }
+    /// Maximum unique topic and route bytes retained between drains.
+    public var maximumRouteBytes: Int { ProtocolBufferConfig.maxRetainedRouteBytes }
 
     /// Number of unreserved action slots.
     public var remainingCapacity: Int { capacity - used - reserved }
@@ -57,9 +64,44 @@ public struct InlineOwnedProtocolActionSink<let capacity: Int, let payloadCapaci
               var slot = InlineOwnedProtocolActionSlot(copying: action) else {
             return false
         }
+        let payloadCheckpoint = payloadBytesUsed
+        let routeCheckpoint = routeBytesUsed
         if let payload = Self.payload(of: action) {
-            guard let retained = retain(payload) else { return false }
+            guard let retained = retainPayload(payload) else { return false }
             slot.setPrimary(offset: retained.offset, length: retained.length)
+        }
+        if let secondary = Self.secondaryBytes(of: action) {
+            guard let retained = retainRoute(secondary) else {
+                payloadBytesUsed = payloadCheckpoint
+                routeBytesUsed = routeCheckpoint
+                return false
+            }
+            slot.setSecondary(offset: retained.offset, length: retained.length)
+        }
+        switch action {
+        case .externalRouteActivated(let transition), .externalRouteDeactivated(let transition):
+            guard let retained = retainRoute(transition.route) else {
+                payloadBytesUsed = payloadCheckpoint
+                routeBytesUsed = routeCheckpoint
+                return false
+            }
+            slot.setSecondary(offset: retained.offset, length: retained.length)
+        case .deliver, .publish, .associationChanged:
+            break
+        }
+        if case .associationChanged(let transition) = action, let route = transition.route {
+            let retained: (offset: Int, length: Int)?
+            if let secondary = Self.secondaryBytes(of: action), Self.equal(secondary, route) {
+                retained = (slot.secondaryOffset, slot.secondaryLength)
+            } else {
+                retained = retainRoute(route)
+            }
+            guard let retained else {
+                payloadBytesUsed = payloadCheckpoint
+                routeBytesUsed = routeCheckpoint
+                return false
+            }
+            slot.setQuaternary(offset: retained.offset, length: retained.length)
         }
         slots[used] = slot
         used += 1
@@ -82,7 +124,9 @@ public struct InlineOwnedProtocolActionSink<let capacity: Int, let payloadCapaci
             return false
         }
         withUnsafeBytes(of: payloads) { payloadBytes in
-            slot.visit(primaryBytes: payloadBytes, body)
+            withUnsafeBytes(of: routes) { routeBytes in
+                slot.visit(primaryBytes: payloadBytes, routeBytes: routeBytes, body)
+            }
         }
         return true
     }
@@ -93,9 +137,10 @@ public struct InlineOwnedProtocolActionSink<let capacity: Int, let payloadCapaci
         used = 0
         reserved = 0
         payloadBytesUsed = 0
+        routeBytesUsed = 0
     }
 
-    private mutating func retain(_ bytes: ByteSlice) -> (offset: Int, length: Int)? {
+    private mutating func retainPayload(_ bytes: ByteSlice) -> (offset: Int, length: Int)? {
         guard bytes.length >= 0, bytes.length <= payloadCapacity else { return nil }
         if bytes.length == 0 { return (0, 0) }
 
@@ -120,6 +165,80 @@ public struct InlineOwnedProtocolActionSink<let capacity: Int, let payloadCapaci
         return (offset, bytes.length)
     }
 
+    private mutating func retainRoute(_ bytes: ByteSlice) -> (offset: Int, length: Int)? {
+        guard bytes.length > 0,
+              bytes.length <= ProtocolBufferConfig.maxRouteBytes else { return nil }
+
+        for index in 0..<used {
+            guard let slot = slots[index] else { continue }
+            if routeEquals(bytes, offset: slot.secondaryOffset, length: slot.secondaryLength) {
+                return (slot.secondaryOffset, slot.secondaryLength)
+            }
+            if routeEquals(bytes, offset: slot.quaternaryOffset, length: slot.quaternaryLength) {
+                return (slot.quaternaryOffset, slot.quaternaryLength)
+            }
+        }
+
+        guard bytes.length <= ProtocolBufferConfig.maxRetainedRouteBytes - routeBytesUsed else {
+            return nil
+        }
+        let offset = routeBytesUsed
+        for index in 0..<bytes.length {
+            routes[offset + index] = bytes.byte(at: index) ?? 0
+        }
+        routeBytesUsed += bytes.length
+        return (offset, bytes.length)
+    }
+
+    private mutating func retainRoute(
+        _ snapshot: BorrowedProtocolRouteSnapshot
+    ) -> (offset: Int, length: Int)? {
+        guard snapshot.length > 0,
+              snapshot.length <= ProtocolBufferConfig.maxRouteBytes else { return nil }
+        for index in 0..<used {
+            guard let slot = slots[index] else { continue }
+            if routeEquals(snapshot, offset: slot.secondaryOffset, length: slot.secondaryLength) {
+                return (slot.secondaryOffset, slot.secondaryLength)
+            }
+            if routeEquals(snapshot, offset: slot.quaternaryOffset, length: slot.quaternaryLength) {
+                return (slot.quaternaryOffset, slot.quaternaryLength)
+            }
+        }
+        guard snapshot.length <= ProtocolBufferConfig.maxRetainedRouteBytes - routeBytesUsed else {
+            return nil
+        }
+        let offset = routeBytesUsed
+        for index in 0..<snapshot.length {
+            routes[offset + index] = snapshot.byte(at: index) ?? 0
+        }
+        routeBytesUsed += snapshot.length
+        return (offset, snapshot.length)
+    }
+
+    private borrowing func routeEquals(
+        _ bytes: ByteSlice,
+        offset: Int,
+        length: Int
+    ) -> Bool {
+        guard length == bytes.length else { return false }
+        for index in 0..<length where routes[offset + index] != bytes.byte(at: index) {
+            return false
+        }
+        return true
+    }
+
+    private borrowing func routeEquals(
+        _ snapshot: BorrowedProtocolRouteSnapshot,
+        offset: Int,
+        length: Int
+    ) -> Bool {
+        guard length == snapshot.length else { return false }
+        for index in 0..<length where routes[offset + index] != snapshot.byte(at: index) {
+            return false
+        }
+        return true
+    }
+
     private static func payload(of action: BorrowedProtocolAction) -> ByteSlice? {
         switch action {
         case .deliver(let delivery): delivery.payload
@@ -127,6 +246,27 @@ public struct InlineOwnedProtocolActionSink<let capacity: Int, let payloadCapaci
         case .associationChanged(let transition): transition.delivery.payload
         case .externalRouteActivated, .externalRouteDeactivated: nil
         }
+    }
+
+    private static func secondaryBytes(of action: BorrowedProtocolAction) -> ByteSlice? {
+        switch action {
+        case .deliver(let delivery): return delivery.topic
+        case .publish(let publication):
+            switch publication.target {
+            case .profile(let filter, _): return filter
+            case .associationRoute(let route, _): return route
+            }
+        case .associationChanged(let transition): return transition.delivery.topic
+        case .externalRouteActivated, .externalRouteDeactivated: return nil
+        }
+    }
+
+    private static func equal(_ lhs: ByteSlice, _ rhs: BorrowedProtocolRouteSnapshot) -> Bool {
+        guard lhs.length == rhs.length else { return false }
+        for index in 0..<lhs.length where lhs.byte(at: index) != rhs.byte(at: index) {
+            return false
+        }
+        return true
     }
 }
 
@@ -168,12 +308,12 @@ private struct InlineOwnedProtocolActionSlot {
     private var associationRoutePresent: Bool
     private(set) var primaryOffset: Int
     private(set) var primaryLength: Int
-    private var secondaryLength: Int
+    private(set) var secondaryOffset: Int
+    private(set) var secondaryLength: Int
     private var tertiaryLength: Int
-    private var quaternaryLength: Int
-    private var secondary: InlineArray<128, UInt8>
+    private(set) var quaternaryOffset: Int
+    private(set) var quaternaryLength: Int
     private var tertiary: InlineArray<128, UInt8>
-    private var quaternary: InlineArray<128, UInt8>
 
     init?(copying action: BorrowedProtocolAction) {
         kind = .deliver
@@ -192,12 +332,12 @@ private struct InlineOwnedProtocolActionSlot {
         associationRoutePresent = false
         primaryOffset = 0
         primaryLength = 0
+        secondaryOffset = 0
         secondaryLength = 0
         tertiaryLength = 0
+        quaternaryOffset = 0
         quaternaryLength = 0
-        secondary = InlineArray(repeating: 0)
         tertiary = InlineArray(repeating: 0)
-        quaternary = InlineArray(repeating: 0)
 
         switch action {
         case .deliver(let delivery):
@@ -211,19 +351,12 @@ private struct InlineOwnedProtocolActionSlot {
             case .profile(let filter, let kind):
                 publishTargetKind = .profile
                 filterKind = kind
-                if let filter {
-                    guard Self.copy(filter, into: &secondary, length: &secondaryLength) else {
-                        return nil
-                    }
-                    topicPresent = true
-                }
+                topicPresent = filter != nil
             case .associationRoute(let route, let classification):
                 publishTargetKind = .associationRoute
                 routeClassification = classification
                 guard route.length > 0,
-                      Self.copy(route, into: &secondary, length: &secondaryLength) else {
-                    return nil
-                }
+                      route.length <= ProtocolBufferConfig.maxRouteBytes else { return nil }
             }
         case .associationChanged(let transition):
             kind = .associationChanged
@@ -233,25 +366,21 @@ private struct InlineOwnedProtocolActionSlot {
             routeClassification = transition.routeClassification
             guard copy(delivery: transition.delivery) else { return nil }
             if let route = transition.route {
-                guard Self.copy(route, into: &quaternary, length: &quaternaryLength) else {
-                    return nil
-                }
+                guard route.length <= ProtocolBufferConfig.maxRouteBytes else { return nil }
                 associationRoutePresent = true
             }
         case .externalRouteActivated(let transition):
             kind = .externalRouteActivated
             sourceID = transition.sourceID
             actorID = transition.actorID
-            guard Self.copy(transition.route, into: &secondary, length: &secondaryLength) else {
-                return nil
-            }
+            guard transition.route.length > 0,
+                  transition.route.length <= ProtocolBufferConfig.maxRouteBytes else { return nil }
         case .externalRouteDeactivated(let transition):
             kind = .externalRouteDeactivated
             sourceID = transition.sourceID
             actorID = transition.actorID
-            guard Self.copy(transition.route, into: &secondary, length: &secondaryLength) else {
-                return nil
-            }
+            guard transition.route.length > 0,
+                  transition.route.length <= ProtocolBufferConfig.maxRouteBytes else { return nil }
         }
     }
 
@@ -260,30 +389,45 @@ private struct InlineOwnedProtocolActionSlot {
         primaryLength = length
     }
 
+    mutating func setSecondary(offset: Int, length: Int) {
+        secondaryOffset = offset
+        secondaryLength = length
+    }
+
+    mutating func setQuaternary(offset: Int, length: Int) {
+        quaternaryOffset = offset
+        quaternaryLength = length
+    }
+
     borrowing func visit(
         primaryBytes: UnsafeRawBufferPointer,
+        routeBytes: UnsafeRawBufferPointer,
         _ body: (BorrowedProtocolAction) -> Void
     ) {
         let snapshot = copy self
-        withUnsafeBytes(of: snapshot.secondary) { secondaryBytes in
-            withUnsafeBytes(of: snapshot.tertiary) { tertiaryBytes in
-                withUnsafeBytes(of: snapshot.quaternary) { quaternaryBytes in
-                    let primarySlice = Self.slice(
-                        primaryBytes,
-                        offset: snapshot.primaryOffset,
-                        length: snapshot.primaryLength
-                    )
-                    let secondarySlice = Self.slice(secondaryBytes, length: snapshot.secondaryLength)
-                    let tertiarySlice = Self.slice(tertiaryBytes, length: snapshot.tertiaryLength)
-                    let quaternarySlice = Self.slice(quaternaryBytes, length: snapshot.quaternaryLength)
-                    body(snapshot.materialize(
-                        primary: primarySlice,
-                        secondary: secondarySlice,
-                        tertiary: tertiarySlice,
-                        quaternary: quaternarySlice
-                    ))
-                }
-            }
+        withUnsafeBytes(of: snapshot.tertiary) { tertiaryBytes in
+            let primarySlice = Self.slice(
+                primaryBytes,
+                offset: snapshot.primaryOffset,
+                length: snapshot.primaryLength
+            )
+            let secondarySlice = Self.slice(
+                routeBytes,
+                offset: snapshot.secondaryOffset,
+                length: snapshot.secondaryLength
+            )
+            let tertiarySlice = Self.slice(tertiaryBytes, length: snapshot.tertiaryLength)
+            let quaternarySlice = Self.slice(
+                routeBytes,
+                offset: snapshot.quaternaryOffset,
+                length: snapshot.quaternaryLength
+            )
+            body(snapshot.materialize(
+                primary: primarySlice,
+                secondary: secondarySlice,
+                tertiary: tertiarySlice,
+                quaternary: quaternarySlice
+            ))
         }
     }
 
@@ -291,9 +435,7 @@ private struct InlineOwnedProtocolActionSlot {
         routingKey = delivery.routingKey
         routeClassification = delivery.routeClassification
         if let topic = delivery.topic {
-            guard Self.copy(topic, into: &secondary, length: &secondaryLength) else {
-                return false
-            }
+            guard topic.length <= ProtocolBufferConfig.maxRouteBytes else { return false }
             topicPresent = true
         }
         switch delivery.deliveryKey {
@@ -417,17 +559,6 @@ private struct InlineOwnedProtocolActionSlot {
         guard bytes.length >= 0, bytes.length <= byteCapacity else { return false }
         for index in 0..<bytes.length { storage[index] = bytes.byte(at: index) ?? 0 }
         length = bytes.length
-        return true
-    }
-
-    private static func copy<let byteCapacity: Int>(
-        _ snapshot: BorrowedProtocolRouteSnapshot,
-        into storage: inout InlineArray<byteCapacity, UInt8>,
-        length: inout Int
-    ) -> Bool {
-        guard snapshot.length > 0, snapshot.length <= byteCapacity else { return false }
-        for index in 0..<snapshot.length { storage[index] = snapshot.byte(at: index) ?? 0 }
-        length = snapshot.length
         return true
     }
 

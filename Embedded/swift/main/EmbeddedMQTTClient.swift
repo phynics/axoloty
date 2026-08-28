@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+import AxolotyWire
+
 /// Bounded, synchronous MQTT operations for the single-device embedded gate.
 ///
 /// ESP-MQTT owns the client handle and callback in C. Every byte buffer passed
@@ -20,7 +22,8 @@ struct EmbeddedMQTTClient {
         topic: UnsafePointer<UInt8>, topicLength: Int32,
         payload: UnsafePointer<UInt8>, payloadLength: Int32
     ) -> Bool {
-        guard state == .idle, topicLength > 0, topicLength <= 128,
+        guard state == .idle, topicLength > 0,
+              topicLength <= Int32(WireBufferConfig.maxTopicLength),
               payloadLength >= 0, payloadLength <= 2_048 else { return false }
         return axoloty_mqtt_configure_last_will(topic, topicLength, payload, payloadLength) != 0
     }
@@ -35,7 +38,8 @@ struct EmbeddedMQTTClient {
         topic: UnsafePointer<UInt8>, topicLength: Int32,
         deadlineMS: UInt32
     ) -> Bool {
-        guard state == .connected, topicLength > 0, topicLength <= 128,
+        guard state == .connected, topicLength > 0,
+              topicLength <= Int32(WireBufferConfig.maxTopicLength),
               axoloty_mqtt_subscribe_wait(topic, topicLength, deadlineMS) != 0 else { return false }
         state = .subscribed
         return true
@@ -45,7 +49,8 @@ struct EmbeddedMQTTClient {
         topic: UnsafePointer<UInt8>, topicLength: Int32,
         payload: UnsafePointer<UInt8>, payloadLength: Int32
     ) -> Bool {
-        guard state == .subscribed, topicLength > 0, topicLength <= 128,
+        guard state == .subscribed, topicLength > 0,
+              topicLength <= Int32(WireBufferConfig.maxTopicLength),
               payloadLength >= 0, payloadLength <= 2_048 else { return false }
         return axoloty_mqtt_publish(topic, topicLength, payload, payloadLength) != 0
     }

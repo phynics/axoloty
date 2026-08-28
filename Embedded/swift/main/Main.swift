@@ -123,21 +123,28 @@ private func runAgentVectors(_ record: (StaticString, Bool) -> Void) {
         expected: .unsupported
     )
     record("agent:beginDiscover", staticAgent.beginDiscover(correlationId: expectedCorrelation, nowMS: 100))
-    var saturationAgent = StaticDeviceAgent()
-    var filledOutstanding = true
-    for offset in 0..<16 {
-        let correlation = UUID16(bytes: (
+    @inline(never)
+    func runSaturationVector() {
+        var saturationAgent = StaticDeviceAgent()
+        var filledOutstanding = true
+        for offset in 0..<16 {
+            let correlation = UUID16(bytes: (
+                0x32, 0x40, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00,
+                0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, UInt8(offset + 0x40)
+            ))
+            filledOutstanding = saturationAgent.beginDiscover(
+                correlationId: correlation,
+                nowMS: 100
+            ) && filledOutstanding
+        }
+        let overCapacityCorrelation = UUID16(bytes: (
             0x32, 0x40, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00,
-            0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, UInt8(offset + 0x40)
+            0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7f
         ))
-        filledOutstanding = saturationAgent.beginDiscover(correlationId: correlation, nowMS: 100) && filledOutstanding
+        record("agent:boundedOutstanding", filledOutstanding &&
+               !saturationAgent.beginDiscover(correlationId: overCapacityCorrelation, nowMS: 100))
     }
-    let overCapacityCorrelation = UUID16(bytes: (
-        0x32, 0x40, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00,
-        0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7f
-    ))
-    record("agent:boundedOutstanding", filledOutstanding &&
-           !saturationAgent.beginDiscover(correlationId: overCapacityCorrelation, nowMS: 100))
+    runSaturationVector()
     agentVector(
         "agent:wrongCorrelation",
         topic: "coaty/3/axoloty-embedded/RSV/32400000-0000-4000-8000-000000000003/32400000-0000-4000-8000-000000000005",
@@ -164,7 +171,7 @@ private func runAgentVectors(_ record: (StaticString, Bool) -> Void) {
     @inline(__always)
     func receiveAgentMessage(topic: StaticString, payload: StaticString) -> Int32 {
         var result: Int32 = -1
-        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 128) { outputTopic in
+        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: WireBufferConfig.maxTopicLength) { outputTopic in
             withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 2_048) { outputPayload in
                 withUnsafeTemporaryAllocation(of: Int32.self, capacity: 1) { outputTopicLength in
                     withUnsafeTemporaryAllocation(of: Int32.self, capacity: 1) { outputPayloadLength in
@@ -199,14 +206,17 @@ private func runAgentVectors(_ record: (StaticString, Bool) -> Void) {
         topic: callbackResolveTopic, payload: callbackPayload
     ) == 2)
 
-    // Keep wire-encoding checks independent of the request-ledger vectors
-    // above; a fresh production agent makes the correlation boundary explicit.
+    // Keep wire-encoding checks in a separate stack frame from the request
+    // ledger. A fresh production agent also makes the correlation boundary
+    // explicit.
+    @inline(never)
+    func runEncodingVectors() {
     var encodeAgent = StaticDeviceAgent()
     let advertisePayload: StaticString = "{\"object\":{\"objectId\":\"32400000-0000-4000-8000-000000000003\"}}"
     let advertiseData = try? AdvertiseWireData(from: WireReader(
         bytes: advertisePayload.utf8Start, length: advertisePayload.utf8CodeUnitCount
     ))
-    withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 128) { topicBuffer in
+    withUnsafeTemporaryAllocation(of: UInt8.self, capacity: WireBufferConfig.maxTopicLength) { topicBuffer in
         withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 2_048) { payloadBuffer in
             guard let advertiseData,
                   let encoded = try? encodeAgent.encode(
@@ -240,7 +250,7 @@ private func runAgentVectors(_ record: (StaticString, Bool) -> Void) {
         payload expectedPayload: StaticString
     ) -> Bool {
         var matches = false
-        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 128) { topicBuffer in
+        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: WireBufferConfig.maxTopicLength) { topicBuffer in
             withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 2_048) { payloadBuffer in
                 guard let encoded = try? encodeAgent.encode(
                     data, eventType: eventType, correlationId: correlationId, nowMS: phase4NowMS(),
@@ -277,6 +287,8 @@ private func runAgentVectors(_ record: (StaticString, Bool) -> Void) {
                          topic: "coaty/3/axoloty-embedded/RSV/32400000-0000-4000-8000-000000000001/32400000-0000-4000-8000-000000000004",
                          payload: resolvePayload)
     } ?? false)
+    }
+    runEncodingVectors()
 }
 
 private func runSmoke() -> Int32 {
@@ -526,7 +538,7 @@ private func runSmoke() -> Int32 {
     // === Config tests ===
 
     record("config:payloadMax2048", WireBufferConfig.maxPayloadSize == 2_048)
-    record("config:topicMax128", WireBufferConfig.maxTopicLength == 128)
+    record("config:topicMax256", WireBufferConfig.maxTopicLength == 256)
     record("config:maxSubscribers8", WireBufferConfig.maxSubscribers == 8)
     record("config:maxFamilyEntries16", WireBufferConfig.maxFamilyEntries == 16)
 
@@ -550,8 +562,8 @@ private func runSmoke() -> Int32 {
     boundedVector("capacity:payload2049", 0, 2_049, false)
     boundedVector("capacity:topic0", 0, 0, true)
     boundedVector("capacity:topic1", 1, 0, true)
-    boundedVector("capacity:topic128", 128, 0, true)
-    boundedVector("capacity:topic129", 129, 0, false)
+    boundedVector("capacity:topic256", 256, 0, true)
+    boundedVector("capacity:topic257", 257, 0, false)
 
     record("malformed:truncation", reader(#"{"objectId":"33333333"#).readUUID("objectId") == nil)
     record("malformed:corruption", reader(#"{"objectId":@}"#).readUUID("objectId") == nil)
@@ -604,7 +616,7 @@ private func runSmoke() -> Int32 {
                 var published = false
                 var received = false
                 if connected {
-                    withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 129) { topic in
+                    withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 257) { topic in
                         withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 2_049) { payload in
                             let topicLength = axoloty_network_copy_topic(topic.baseAddress!, Int32(topic.count))
                             let payloadLength = axoloty_network_copy_payload(payload.baseAddress!, Int32(payload.count))
@@ -615,7 +627,7 @@ private func runSmoke() -> Int32 {
                                 )
                                 reconnected = subscribed && client.waitForReconnect(deadlineMS: 20_000)
                                 rejectedOversize = reconnected && !client.publish(
-                                    topic: topic.baseAddress!, topicLength: 129,
+                                    topic: topic.baseAddress!, topicLength: 257,
                                     payload: payload.baseAddress!, payloadLength: 0
                                 )
                                 published = reconnected && client.publish(

@@ -335,6 +335,40 @@ struct ProtocolFoundationTests {
         }
     }
 
+    @Test("fixed owning sink retains one 256-byte topic across 16 fan-out actions")
+    func inlineOwnedSinkDeduplicatesFanOutTopic() throws {
+        var topicBytes = [UInt8](repeating: 0x74, count: 256)
+        var sink = InlineOwnedProtocolActionSink<16, 2048>()
+
+        topicBytes.withUnsafeBufferPointer { buffer in
+            let topic = ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+            let action = BorrowedProtocolAction.deliver(BorrowedProtocolDelivery(
+                routingKey: try! ProtocolRoutingKey(capability: .channel, sourceID: .zero),
+                topic: topic,
+                payload: protocolSlice("{}")
+            ))
+            let preflighted = sink.preflight(actionCount: 16)
+            #expect(preflighted)
+            for _ in 0..<16 {
+                let appended = sink.append(action)
+                #expect(appended)
+            }
+        }
+
+        topicBytes[0] = 0x78
+        #expect(sink.count == 16)
+        for index in 0..<sink.count {
+            var matches = false
+            #expect(sink.visit(at: index) { action in
+                guard case .deliver(let delivery) = action else { return }
+                matches = delivery.topic?.length == 256 &&
+                    delivery.topic?.byte(at: 0) == 0x74 &&
+                    delivery.topic?.byte(at: 255) == 0x74
+            })
+            #expect(matches)
+        }
+    }
+
     @Test("fixed owning sink preflight and byte bounds are atomic")
     func inlineOwnedSinkSaturationIsAtomic() throws {
         var sink = InlineOwnedProtocolActionSink<1, 512>()
@@ -426,6 +460,7 @@ struct ProtocolFoundationTests {
         print("owning-sink-layout tiny=\(tiny) static=\(staticDefault) static2KiB=\(static2KiB) host=\(hostTest)")
         #expect(tiny > 0)
         #expect(staticDefault <= 20 * 1024)
+        #expect(static2KiB <= 9 * 1024)
         #expect(static2KiB - staticDefault <= 4 * 1024)
         #expect(hostTest > staticDefault)
     }
@@ -509,12 +544,12 @@ struct ProtocolFoundationTests {
 
     @Test("borrowed frames reject topics beyond the owning storage limit")
     func longProfileTopicRejected() throws {
-        let topic = Array((
-            "coaty/3/wire-lifecycle-duplicate-reply-wire-32734211309-2/RTN/"
-                + "33333333-3333-4333-8333-333333333333/"
-                + "55555555-5555-4555-8555-555555555555"
-        ).utf8)
-        #expect(topic.count == 135)
+        let prefix = "coaty/3/"
+        let suffix = "/RTN/33333333-3333-4333-8333-333333333333/55555555-5555-4555-8555-555555555555"
+        let namespaceLength = WireBufferConfig.maxTopicLength + 1
+            - prefix.utf8.count - suffix.utf8.count
+        let topic = Array((prefix + String(repeating: "n", count: namespaceLength) + suffix).utf8)
+        #expect(topic.count == WireBufferConfig.maxTopicLength + 1)
         let payload = [UInt8]()
         #expect(throws: ProtocolError.self) {
             try topic.withUnsafeBufferPointer { topicBuffer in
