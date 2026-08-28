@@ -58,6 +58,29 @@ struct PortableTopicBuilderTests {
     }
 
     @Test
+    func largestFilteredTopicFitsWithSixtyFourByteNamespace() throws {
+        let namespace = Array(repeating: UInt8(ascii: "n"), count: 64)
+        let filter = Array(repeating: UInt8(ascii: "f"), count: 128)
+        let topic = try makeTopic { builder in
+            try builder.writePrefix()
+            try namespace.withUnsafeBufferPointer { bytes in
+                try builder.writeNamespace(ByteSlice(bytes: bytes.baseAddress!, length: bytes.count))
+            }
+            try filter.withUnsafeBufferPointer { bytes in
+                try builder.writeEventType(
+                    .advertise,
+                    filter: ByteSlice(bytes: bytes.baseAddress!, length: bytes.count),
+                    filterKind: .objectType
+                )
+            }
+            try builder.writeSourceId(sourceID)
+        }
+
+        #expect(topic.utf8.count == 243)
+        try withTopicView(topic) { view in try view.validate() }
+    }
+
+    @Test
     func rejectsStructurallyInvalidTopics() {
         let invalidTopics = [
             "coaty/3/factory/ADV/01234567-89ab-4cde-8fab-0123456789ab/extra",

@@ -8,9 +8,9 @@ import AxolotyTestSupport
 import AxolotyWire
 
 extension AxolotyRuntimeTests {
-    @Test("correlated replies accept generated profile topics beyond static wire storage")
+    @Test("correlated replies accept the largest namespace allowed for generated topics")
     func correlatedReplyAcceptsLongGeneratedProfileTopic() async throws {
-        let namespace = "wire-lifecycle-duplicate-reply-wire-32734211309-2"
+        let namespace = String(repeating: "n", count: 64)
         let correlation = try #require(UUID16(parsing: "55555555-5555-4555-8555-555555555555"))
         let identity = try RuntimeIdentity(
             id: try #require(UUID16(parsing: "44444444-4444-4444-8444-444444444444")),
@@ -37,7 +37,7 @@ extension AxolotyRuntimeTests {
         let topic = "coaty/3/\(namespace)/RTN/"
             + "33333333-3333-4333-8333-333333333333/"
             + "55555555-5555-4555-8555-555555555555"
-        #expect(topic.utf8.count == 135)
+        #expect(topic.utf8.count == 150)
         let payload = Array(#"{"result":{"answer":49,"variant":"original"},"executionInfo":{"responder":"coatyjs-2.4.0"}}"#.utf8)
         let receipt = await runtime.receive(.profile(topic: topic, payload: payload, nowMS: 2))
         try #require(receipt == .accepted)
@@ -120,4 +120,3 @@ extension AxolotyRuntimeTests {
         await runtime.stop()
     }
 }
-

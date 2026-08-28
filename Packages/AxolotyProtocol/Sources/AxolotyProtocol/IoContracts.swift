@@ -593,7 +593,7 @@ public struct IoSourceMetadata: ObjectSchema, Sendable {
     var updateStrategy: UInt64?
     var useRawIoValues: Bool?
     var updateRate: UInt64?
-    var externalRoute: BoundedEncodedText<128>?
+    var externalRoute: BoundedEncodedText<256>?
     /// Schema descriptor for a source endpoint.
     public static let schema = ioMetadataSchema(IoSourceMetadata.self, objectType: "coaty.IoSource", coreType: .ioSource, actor: false)
     /// Creates source metadata with no runtime-derived fields.
@@ -607,7 +607,7 @@ public struct IoSourceMetadata: ObjectSchema, Sendable {
         updateStrategy = try fields.decodeIfPresent("updateStrategy", as: UInt64.self)
         useRawIoValues = try fields.decodeIfPresent("useRawIoValues", as: Bool.self)
         updateRate = try fields.decodeIfPresent("updateRate", as: UInt64.self)
-        externalRoute = try fields.decodeIfPresent("externalRoute", as: BoundedEncodedText<128>.self)
+        externalRoute = try fields.decodeIfPresent("externalRoute", as: BoundedEncodedText<256>.self)
     }
     /// Encodes source metadata fields.
     public borrowing func encodeFields<let capacity: Int>(to encoder: inout ObjectFieldEncoder<capacity>) throws(ObjectEncodingError) {
@@ -624,7 +624,7 @@ public struct IoActorMetadata: ObjectSchema, Sendable {
     public let valueType: IoValueType
     var useRawIoValues: Bool?
     var updateRate: UInt64?
-    var externalRoute: BoundedEncodedText<128>?
+    var externalRoute: BoundedEncodedText<256>?
     /// Schema descriptor for an actor endpoint.
     public static let schema = ioMetadataSchema(IoActorMetadata.self, objectType: "coaty.IoActor", coreType: .ioActor, actor: true)
     /// Creates actor metadata with no runtime-derived fields.
@@ -636,7 +636,7 @@ public struct IoActorMetadata: ObjectSchema, Sendable {
         valueType = try fields.decode("valueType", as: IoValueType.self)
         useRawIoValues = try fields.decodeIfPresent("useRawIoValues", as: Bool.self)
         updateRate = try fields.decodeIfPresent("updateRate", as: UInt64.self)
-        externalRoute = try fields.decodeIfPresent("externalRoute", as: BoundedEncodedText<128>.self)
+        externalRoute = try fields.decodeIfPresent("externalRoute", as: BoundedEncodedText<256>.self)
     }
     /// Encodes actor metadata fields.
     public borrowing func encodeFields<let capacity: Int>(to encoder: inout ObjectFieldEncoder<capacity>) throws(ObjectEncodingError) {

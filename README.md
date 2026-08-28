@@ -158,7 +158,10 @@ The ESP32-C6 embedded target supports only Advertise/Deadvertise and
 Discover/Resolve. It uses a static composition model (no dynamic
 registration) with bounded capacities:
 
-- Max topic length: 128 bytes
+- Axoloty max topic length: 256 bytes. MQTT and Coaty do not impose this
+  limit, so longer topics are an intentional compatibility divergence.
+- Advertised external IO routes also reject control characters, quotation
+  marks, and backslashes to keep their encoded metadata statically bounded.
 - Axoloty max payload size: 2,048 bytes. Coaty itself does not impose this
   limit, so messages above 2 KiB are an intentional compatibility divergence.
 - Static runtimes may select a smaller compile-time payload capacity (for

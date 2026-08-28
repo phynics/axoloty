@@ -15,21 +15,40 @@ extension AxolotyRuntimeTests {
         #expect(route == sameRoute)
     }
 
-    @Test("external MQTT routes retain canonical JSON string content")
-    func externalRouteCanonicalEscapes() throws {
-        let route = try MQTTExternalIoRoute(#"plant/line"7\temperature"#)
+    @Test("external MQTT routes fit three UUIDs plus application routing")
+    func externalRouteValidationAcceptsThreeUUIDs() throws {
+        let first = "11111111-1111-4111-8111-111111111111"
+        let second = "22222222-2222-4222-8222-222222222222"
+        let third = "33333333-3333-4333-8333-333333333333"
+        let topic = "gnostic/1/workspaces/\(first)/agents/\(second)/tools/\(third)/requests"
+
+        #expect(topic.utf8.count > 128)
+        #expect(topic.utf8.count <= WireBufferConfig.maxTopicLength)
+        _ = try MQTTExternalIoRoute(topic)
+    }
+
+    @Test("external MQTT routes retain metadata without encoded-size inflation")
+    func externalRouteMetadataUsesExactBytes() throws {
+        let route = try MQTTExternalIoRoute("plant/line-7/temperature")
         route.topicBytes.withBytes { bytes in
-            #expect(bytes.equals(#"plant/line\"7\\temperature"#))
+            #expect(bytes.equals("plant/line-7/temperature"))
         }
     }
 
-    @Test("external MQTT routes reject wildcards, empty levels, NUL, and overflow")
+    @Test("external MQTT routes reject unsafe metadata characters, invalid levels, and overflow")
     func externalRouteValidationRejectsInvalidTopics() {
-        for topic in ["", "/leading", "trailing/", "double//slash", "wild/+", "wild/#", "nul\0topic"] {
+        for topic in [
+            "", "/leading", "trailing/", "double//slash", "wild/+", "wild/#",
+            "nul\0topic", "quoted/\"topic", #"backslash/\topic"#, "control/\ntopic",
+        ] {
             #expect(throws: AxolotyError.self) { _ = try MQTTExternalIoRoute(topic) }
         }
+        let bounded = try? MQTTExternalIoRoute(
+            String(repeating: "x", count: WireBufferConfig.maxTopicLength)
+        )
+        #expect(bounded != nil)
         #expect(throws: AxolotyError.self) {
-            _ = try MQTTExternalIoRoute(String(repeating: "x", count: 129))
+            _ = try MQTTExternalIoRoute(String(repeating: "x", count: WireBufferConfig.maxTopicLength + 1))
         }
     }
 
@@ -92,4 +111,3 @@ extension AxolotyRuntimeTests {
         #expect(classification == .unrelated)
     }
 }
-

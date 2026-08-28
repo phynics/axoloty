@@ -161,17 +161,17 @@ stored under `.testing/embedded/`.
 
 The MQTT callback accepts a message only when the first fragment is also the
 complete payload (`current_data_offset == 0` and `data_len == total_data_len`).
-The configured 129-byte topic and 2,049-byte payload buffers cover the approved
-128/2,048-byte wire limits; fragmented or oversized messages are rejected before
+The configured 257-byte topic and 2,049-byte payload buffers cover the approved
+256-byte topic and 2,048-byte payload limits. The firmware rejects fragmented or oversized messages before
 constructing a `BorrowedMessage`. The synchronous Swift protocol processor returns before
 ESP-IDF invalidates the callback buffers.
 
 `EmbeddedMQTTClient` is the firmware-local Swift overlay for bounded QoS 0
 last-will configuration, connect, subscribe, publish, reconnect/resubscribe,
 loopback receipt, and disconnect operations. It enforces operation order and
-the 128/2,048-byte limits before entering its narrow C bridge. ESP-MQTT handles
-and callbacks remain C-owned; input bytes are copied synchronously into fixed
-storage, and callback pointers never enter Swift or survive callback return.
+the 256-byte topic and 2,048-byte payload limits before entering its narrow C
+bridge. ESP-MQTT handles and callbacks remain C-owned. The bridge copies input bytes synchronously into fixed
+storage. Callback pointers never enter Swift or survive callback return.
 `make embedded-network-test` exercises this API on a selected physical device and
 records each operation, rejected out-of-order call, and rejected oversize
 publish in the checksummed serial stream.

@@ -182,7 +182,7 @@ also equal `0`.
 | Input | Limit | Behavior |
 |-------|-------|----------|
 | Payload | Axoloty limit: 2,048 bytes (static runtimes may select a smaller capacity) | Accepted at the selected limit, rejected above it; values above 2,048 are never accepted. Coaty does not impose this ceiling, so this is an intentional divergence. |
-| Topic | 128 bytes | Accepted at limit, rejected at 129 |
+| Topic | Axoloty limit: 256 bytes | Accepted at 256 bytes and rejected at 257 bytes. MQTT and Coaty do not impose this ceiling, so this is an intentional compatibility divergence. |
 | maxSubscribers | 8 | 9th rejected |
 | maxFamilyEntries | 16 | 17th rejected |
 | maxFamilySubscribers | 4 | 5th rejected |

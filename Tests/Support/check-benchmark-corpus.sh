@@ -5,7 +5,7 @@
 #
 # Loads the corpus manifest and verifies that every payload file exists,
 # matches its recorded SHA-256 and byte count, respects the wire buffer
-# limits (topic <= 128 bytes, payload <= 2,048 bytes), and that all 13 wire
+# limits (topic <= 256 bytes, payload <= 2,048 bytes), and that all 13 wire
 # families are covered at each of the three size classes (small, typical,
 # maximum = 39 cases). Reference and generated provenance are checked too.
 #
@@ -58,7 +58,7 @@ for (const item of cases) {
   if (item.payloadBytes === undefined) errors.push(`${id}: missing payloadBytes`);
   else if (item.payloadBytes !== payload.length) errors.push(`${id}: byte count mismatch (expected ${item.payloadBytes}, got ${payload.length})`);
   const topicLength = Buffer.byteLength(item.topic ?? "", "utf8");
-  if (topicLength > 128) errors.push(`${id}: topic ${topicLength} bytes exceeds 128: ${item.topic ?? ""}`);
+  if (topicLength > 256) errors.push(`${id}: topic ${topicLength} bytes exceeds 256: ${item.topic ?? ""}`);
   const source = item.source ?? {};
   if (source.type === "reference" && !source.provenance) errors.push(`${id}: reference source missing provenance`);
   else if (source.type === "generated" && !("seed" in source)) errors.push(`${id}: generated source missing seed`);

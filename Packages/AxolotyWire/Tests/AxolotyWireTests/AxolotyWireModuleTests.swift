@@ -12,6 +12,7 @@ struct AxolotyWireModuleTests {
 
         #expect(identifier != .zero)
         #expect(WireEventType.advertise.rawValue == "ADV")
+        #expect(WireBufferConfig.maxTopicLength == 256)
         #expect(WireBufferConfig.maxPayloadSize == 2 * 1024)
 
         let workspace = EmbeddedWireParserWorkspace()

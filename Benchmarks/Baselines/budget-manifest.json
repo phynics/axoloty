@@ -249,7 +249,7 @@
       },
       "sizeLimits": {
         "maxPayloadSize": { "limit": 2048, "overLimitRejected": true },
-        "maxTopicLength": { "limit": 128, "overLimitRejected": true },
+        "maxTopicLength": { "limit": 256, "overLimitRejected": true },
         "maxSubscribers": { "limit": 8, "overLimitRejected": true },
         "maxFamilyEntries": { "limit": 16, "overLimitRejected": true },
         "maxFamilySubscribers": { "limit": 4, "overLimitRejected": true }

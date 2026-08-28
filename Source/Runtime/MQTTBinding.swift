@@ -358,7 +358,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
                 guard let eventType = view.eventType else { return .unrelated }
                 return Self.staticStringEquals(eventType.wireCode, "IOV") ? .coaty : .unrelated
             }
-            guard route.length <= 128 else { return .unrelated }
+            guard route.length <= WireBufferConfig.maxTopicLength else { return .unrelated }
             return .external
         }
     }
