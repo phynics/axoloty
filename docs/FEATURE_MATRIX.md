@@ -104,7 +104,7 @@ wire-evidence section and `../docs/wire-compatibility.md`.
 
 ## Current wire-compatibility evidence
 
-See [SUPPORT_MATRIX.md](SUPPORT_MATRIX.md) for the full 0.5.1 support
+See [SUPPORT_MATRIX.md](SUPPORT_MATRIX.md) for the full 0.6.0 support
 classification and [docs/wire-compatibility.md](../docs/wire-compatibility.md)
 for per-direction wire evidence.
 

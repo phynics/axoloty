@@ -10,8 +10,9 @@ version](https://img.shields.io/badge/swift-6.3-%23F05138?logo=swift)](https://d
 MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 > **Development checkpoint.** [`VERSION`](./VERSION) identifies the current
-> published release (`0.5.1`). Axoloty is not API-stable. The source-breaking
-> 0.6 architecture has completed the G4 runtime cutover in [PR #649](https://github.com/phynics/axoloty/pull/649); G5 owns typed IO and optional products.
+> published release (`0.6.0`). Axoloty is not API-stable. This source-breaking
+> release aligns the host and Embedded Swift runtimes around the shared wire and
+> protocol path, with typed IO and optional products from G5.
 
 ## About Axoloty
 
@@ -70,7 +71,7 @@ Add Axoloty to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.5.1"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.6.0"),
 ],
 targets: [
     .executableTarget(
@@ -86,7 +87,7 @@ For a wire target in a consumer that already resolves the root package:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.5.1"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.6.0"),
 ],
 targets: [
     .executableTarget(
@@ -214,8 +215,8 @@ swift run --package-path Tools axoloty-inspect discover --core-type Identity
 
 See [docs/inspector.md](./docs/inspector.md) for the full reference.
 
-For the current checkpoint's changes, see
-[0.5.1 release notes](./docs/releases/0.5.1.md). For migrating from legacy
+For the current release's changes, see
+[0.6.0 release notes](./docs/releases/0.6.0.md). For migrating from legacy
 CoatySwift, see [the 0.2 migration guide](./docs/migration/from-coatyswift-to-0.2.md).
 
 ## Contributing

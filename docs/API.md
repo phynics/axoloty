@@ -1,8 +1,8 @@
-# Axoloty 0.5.1 API documentation
+# Axoloty 0.6.0 API documentation
 
-Axoloty 0.5.1 is the published package version. The repository is preparing
-the 0.6 runtime at the G5 checkpoint. The APIs below describe the current
-runtime cutover; SensorThings is available as an optional product.
+Axoloty 0.6.0 is the published package version. The APIs below describe the
+shared host and static runtime architecture; SensorThings is available as an
+optional product.
 
 ## Package boundaries
 

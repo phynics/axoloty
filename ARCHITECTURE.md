@@ -1,6 +1,6 @@
 # Axoloty architecture
 
-This document records the accepted architecture for the 0.6 alignment tracked by [epic #627](https://github.com/phynics/axoloty/issues/627). The repository has completed the G4 runtime cutover in PR [#649](https://github.com/phynics/axoloty/pull/649); the published version remains `0.5.1` until the 0.6 gates finish.
+This document records the accepted architecture for the 0.6 alignment tracked by [epic #627](https://github.com/phynics/axoloty/issues/627). The repository completed the G4 runtime cutover in PR [#649](https://github.com/phynics/axoloty/pull/649) and released the aligned 0.6 architecture as `0.6.0`.
 
 ## Current implementation (0.6 G6 certification checkpoint)
 

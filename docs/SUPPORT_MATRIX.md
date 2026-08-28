@@ -1,9 +1,9 @@
-# Axoloty 0.5.1 support matrix (G4)
+# Axoloty 0.6.0 support matrix (G6)
 
-This matrix records the support level for the current G4 implementation,
-backed by behavioral test evidence. [`VERSION`](../VERSION) remains `0.5.1`
-until the 0.6 release gates finish. G5 owns typed IO endpoint ergonomics and
-optional SensorThings products. Support levels use a consistent vocabulary:
+This matrix records the support level for the current G6 implementation,
+backed by behavioral test evidence. [`VERSION`](../VERSION) is `0.6.0`.
+G5's typed IO endpoint ergonomics and optional SensorThings products are part
+of the 0.6 product surface. Support levels use a consistent vocabulary:
 
 - **Validated** — implementation with behavioral tests, failure/boundary
   tests where applicable, and cross-implementation fixture or live-wire

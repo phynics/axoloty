@@ -897,6 +897,7 @@ fi
 privileged_opt=""
 user_opt=""
 userns_opt=""
+group_opt=""
 home_opt=""
 if [ -n "$sudo_prefix" ]; then
     privileged_opt="--privileged"
@@ -904,7 +905,15 @@ else
     user_opt="--user $(id -u):$(id -g)"
     home_opt="--env HOME=/tmp"
     case "$runtime" in
-        *podman*) userns_opt="--userns=keep-id" ;;
+        *podman*)
+            userns_opt="--userns=keep-id"
+            # Rootless Podman otherwise drops the host supplementary groups
+            # from device access checks. Preserve them only for explicit
+            # device runs; ordinary containers remain unchanged.
+            if [ -n "$container_devices" ]; then
+                group_opt="--group-add keep-groups"
+            fi
+            ;;
     esac
 fi
 
@@ -963,7 +972,7 @@ create_container() {
         if [ -n "$device_lease_mount" ]; then
             run_command_bounded "$runtime_output_file" "container create" "$container_create_timeout" \
                 $sudo_prefix "$runtime" create \
-                $security_opts $device_opts $privileged_opt $userns_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
+                $security_opts $device_opts $privileged_opt $userns_opt $group_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
                 --security-opt label=disable \
                 -e AXOLOTY_DEVCONTAINER=1 \
                 -e AXOLOTY_HOST_RUNTIME_BRIDGE=1 \
@@ -998,7 +1007,7 @@ create_container() {
         else
             run_command_bounded "$runtime_output_file" "container create" "$container_create_timeout" \
                 $sudo_prefix "$runtime" create \
-                $security_opts $device_opts $privileged_opt $userns_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
+                $security_opts $device_opts $privileged_opt $userns_opt $group_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
                 --security-opt label=disable \
                 -e AXOLOTY_DEVCONTAINER=1 \
                 -e AXOLOTY_HOST_RUNTIME_BRIDGE=1 \
@@ -1032,7 +1041,7 @@ create_container() {
     elif [ -n "$device_lease_mount" ]; then
         run_command_bounded "$runtime_output_file" "container create" "$container_create_timeout" \
             $sudo_prefix "$runtime" create \
-            $security_opts $device_opts $privileged_opt $userns_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
+            $security_opts $device_opts $privileged_opt $userns_opt $group_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
             -e AXOLOTY_DEVCONTAINER=1 \
             -e "AXOLOTY_RUN_ID=$container_run_id" \
             -e "TOOLING_BUILD_DIR=$tooling_build_dir" \
@@ -1056,7 +1065,7 @@ create_container() {
     else
         run_command_bounded "$runtime_output_file" "container create" "$container_create_timeout" \
             $sudo_prefix "$runtime" create \
-            $security_opts $device_opts $privileged_opt $userns_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
+            $security_opts $device_opts $privileged_opt $userns_opt $group_opt $user_opt $home_opt $env_opts $port_opts $stdin_opt $network_opt \
             -e AXOLOTY_DEVCONTAINER=1 \
             -e "AXOLOTY_RUN_ID=$container_run_id" \
             -e "TOOLING_BUILD_DIR=$tooling_build_dir" \

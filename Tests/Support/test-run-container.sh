@@ -487,7 +487,7 @@ if [ "\$1" = "create" ]; then
                 printf '%s\n' "\$2" >> "$capture_command_env"
                 shift 2
                 ;;
-            -v|-w|--security-opt|--user|--device|-p|--network)
+            -v|-w|--security-opt|--user|--device|-p|--network|--group-add)
                 shift 2
                 ;;
             --env-file)
@@ -621,7 +621,7 @@ if [ "\${FAKE_RUNTIME_EXECUTE_COMMAND:-0}" = "1" ] && [ "\$1" = "run" ]; then
                 done < "\$2"
                 shift 2
                 ;;
-            -v|-w|--security-opt|--user|--device|-p|--network)
+            -v|-w|--security-opt|--user|--device|-p|--network|--group-add)
                 shift 2
                 ;;
             --rm|--privileged|-i|--userns=*)
@@ -699,7 +699,7 @@ if [ "\$1" = "run" ]; then
                 fake_cidfile="\$2"
                 shift 2
                 ;;
-            -e|--env|-v|-w|--security-opt|--user|--device|-p|--network)
+            -e|--env|-v|-w|--security-opt|--user|--device|-p|--network|--group-add)
                 shift 2
                 ;;
             axoloty-dev)
