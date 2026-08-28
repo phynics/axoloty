@@ -276,8 +276,8 @@ enum ProtocolTraceCorpus {
         let input = TraceInput(
             family: .channel,
             direction: .inbound,
-            fixtureID: fixtureID(.channel, "valid+padding-513"),
-            fixturePayload: seed.valid + String(repeating: " ", count: 513)
+            fixtureID: fixtureID(.channel, "valid+padding-2049"),
+            fixturePayload: seed.valid + String(repeating: " ", count: 2_049)
         )
         return singleStep(
             id: "negative-payload-limit",

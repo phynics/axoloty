@@ -50,7 +50,7 @@ struct TraceLimits: Codable, Equatable, Sendable {
     let maximumPayloadBytes: Int
     let maximumObjects: Int
     let maximumPendingCorrelations: Int
-    static let `default` = TraceLimits(maximumPayloadBytes: 512, maximumObjects: 4, maximumPendingCorrelations: 4)
+    static let `default` = TraceLimits(maximumPayloadBytes: 2_048, maximumObjects: 4, maximumPendingCorrelations: 4)
 }
 struct TraceInput: Codable, Equatable, Sendable {
     let family: TraceEventFamily

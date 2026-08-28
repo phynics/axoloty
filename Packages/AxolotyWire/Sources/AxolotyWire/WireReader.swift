@@ -239,17 +239,15 @@ public struct WireReader {
     ///
     /// Inputs larger than ``WireBufferConfig.maxPayloadSize`` are rejected
     /// before tokenizer workspace is initialized. Accepted inputs use a
-    /// fixed-size tokenizer workspace with eight guard bytes; indexed values
-    /// continue to borrow from the caller's original buffer.
+    /// bounded tokenizer workspace sized to the accepted input plus eight
+    /// guard bytes; indexed values continue to borrow from the caller's
+    /// original buffer.
     ///
-    /// - Note: The tokenizer workspace is an inline/temporary allocation sized
-    ///   to a constant ``WireBufferConfig.maxPayloadSize`` + 8 bytes and is
-    ///   not a function of the input length. On Swift 6.3 host builds it is
-    ///   stack-resident (no heap allocation in the steady state); on Embedded
-    ///   Swift the allocation class is measured by the device `hotPathAllocations`
-    ///   gate rather than assumed. This initializer performs a bounded memcpy of
-    ///   the payload into the workspace but never allocates `String`, `Array`,
-    ///   or an intermediate JSON value tree.
+    /// - Note: The input limit is checked before the temporary allocation, so
+    ///   caller-controlled storage remains capped at 2,056 bytes. Smaller
+    ///   messages no longer reserve the sealed maximum on every decode.
+    ///   Embedded callers that require exact-zero allocation at the 2 KiB
+    ///   boundary should reuse ``EmbeddedWireParserWorkspace``.
     public init(bytes: UnsafePointer<UInt8>, length: Int) {
         self.bytes = UnsafeRawPointer(bytes); self.length = max(0, length)
         let buffer = UnsafeBufferPointer(start: bytes, count: max(0, length))
@@ -259,7 +257,7 @@ public struct WireReader {
             self.index = index
             return
         }
-        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: WireBufferConfig.maxPayloadSize + 8) { padded in
+        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: buffer.count + 8) { padded in
             if buffer.count > 0 {
                 padded.baseAddress!.initialize(from: buffer.baseAddress!, count: buffer.count)
             }

@@ -159,9 +159,10 @@ Discover/Resolve. It uses a static composition model (no dynamic
 registration) with bounded capacities:
 
 - Max topic length: 128 bytes
-- Max payload size: 512 bytes
+- Axoloty max payload size: 2,048 bytes. Coaty itself does not impose this
+  limit, so messages above 2 KiB are an intentional compatibility divergence.
 - Static runtimes may select a smaller compile-time payload capacity (for
-  example, `StaticRuntime<16, 128>`); 512 bytes remains the sealed maximum.
+  example, `StaticRuntime<16, 128>`); 2,048 bytes remains the sealed maximum.
 - Max subscribers: 8
 - Max family entries: 16
 - QoS: 0 only

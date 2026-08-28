@@ -259,7 +259,7 @@ extension BinaryIoValue {
 
 /// A fixed-capacity JSON writer.
 public struct IoJSONOutput: ~Copyable, Sendable {
-    private var value: BoundedJSONValue<512> = BoundedJSONValue()
+    private var value: BoundedJSONValue<2048> = BoundedJSONValue()
 
     /// Creates an empty bounded JSON output.
     public init() {}
@@ -286,12 +286,12 @@ public struct IoJSONOutput: ~Copyable, Sendable {
     /// Finishes the output.
     ///
     /// - Returns: The complete bounded JSON value.
-    public consuming func finish() -> BoundedJSONValue<512> { value }
+    public consuming func finish() -> BoundedJSONValue<2048> { value }
 }
 
 /// A fixed-capacity binary writer.
 public struct IoByteOutput: ~Copyable, Sendable {
-    private var value: BoundedIoBytes<512> = BoundedIoBytes()
+    private var value: BoundedIoBytes<2048> = BoundedIoBytes()
 
     /// Creates an empty bounded binary output.
     public init() {}
@@ -313,15 +313,15 @@ public struct IoByteOutput: ~Copyable, Sendable {
     /// Finishes the output.
     ///
     /// - Returns: The complete bounded binary payload.
-    public consuming func finish() -> BoundedIoBytes<512> { value }
+    public consuming func finish() -> BoundedIoBytes<2048> { value }
 }
 
 /// A dynamic endpoint value with a fixed registration-time representation.
 public enum DynamicIoValue: IoEndpointValue, Equatable {
     /// A bounded JSON payload.
-    case json(BoundedJSONValue<512>)
+    case json(BoundedJSONValue<2048>)
     /// A bounded binary payload.
-    case binary(BoundedIoBytes<512>)
+    case binary(BoundedIoBytes<2048>)
     /// Returns the carried representation.
     public var representation: IoValueRepresentation { switch self { case .json: return .json; case .binary: return .binary } }
 

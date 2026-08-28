@@ -142,13 +142,13 @@ public struct BoundedObject<
 
 /// The protocol-sized dynamic object convenience form.
 ///
-/// The 512-byte and 24-field values are wire-authority bounds, not host or
+/// The 2,048-byte and 24-field values are wire-authority bounds, not host or
 /// embedded memory measurements. Use ``BoundedDynamicObject`` when a caller
 /// has a different measured arena or descriptor capacity.
-public typealias DynamicObject = BoundedDynamicObject<512, 24>
+public typealias DynamicObject = BoundedDynamicObject<2048, 24>
 
 /// The protocol-sized typed object convenience form.
 ///
-/// The 512-byte and 24-field values are wire-authority bounds, not host or
+/// The 2,048-byte and 24-field values are wire-authority bounds, not host or
 /// embedded memory measurements. Use ``BoundedObject`` for explicit capacities.
-public typealias Object<Schema: ObjectSchema> = BoundedObject<Schema, 512, 24>
+public typealias Object<Schema: ObjectSchema> = BoundedObject<Schema, 2048, 24>

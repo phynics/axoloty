@@ -53,8 +53,8 @@ public struct RuntimeCapacities: Sendable, Equatable {
         ioPendingLatest: Int = 64,
         ioObservers: Int = 64,
         ioCatalogue: Int = 64,
-        protocolMaximumPayloadBytes: Int = 512,
-        protocolMaximumTopicBytes: Int = 512,
+        protocolMaximumPayloadBytes: Int = WireBufferConfig.maxPayloadSize,
+        protocolMaximumTopicBytes: Int = WireBufferConfig.maxTopicLength,
         protocolMaximumObjects: Int = 64,
         protocolMaximumPendingCorrelations: Int = 64,
         protocolCapabilities: ProtocolCapabilities = .coatyCore3
@@ -73,12 +73,13 @@ public struct RuntimeCapacities: Sendable, Equatable {
         guard ingress <= 64, dispatch <= 64, handlers <= 64,
               handlersInFlight <= 64, stream <= 64, eventStreams <= 64,
               ioEndpoints <= 64, ioPendingLatest <= 64, ioObservers <= 64,
-              ioCatalogue <= 64, protocolMaximumPayloadBytes <= 65_536,
-              protocolMaximumTopicBytes <= 65_536,
+              ioCatalogue <= 64,
+              protocolMaximumPayloadBytes <= WireBufferConfig.maxPayloadSize,
+              protocolMaximumTopicBytes <= WireBufferConfig.maxTopicLength,
               protocolMaximumObjects <= 64, protocolMaximumPendingCorrelations <= 64 else {
             throw AxolotyError.invalidArgument(
                 argument: "capacities",
-                reason: "host runtime capacities cannot exceed 64"
+                reason: "runtime state or sealed wire capacity exceeded"
             )
         }
         self.ingress = ingress
@@ -143,7 +144,7 @@ struct RuntimeIoEndpointRegistration: Sendable {
     let id: ObjectID
     let role: RuntimeIoEndpointRole
     let representation: IoValueRepresentation
-    let objectBytes: BoundedIoBytes<512>
+    let objectBytes: BoundedIoBytes<2048>
     let publication: IoPublicationPolicy
     let recommendedUpdateRateMS: UInt32?
     let handler: (@Sendable ([UInt8], IoDeliveryContext) async throws -> Void)?
@@ -161,8 +162,8 @@ func runtimeRegistryNonce() -> ObjectID {
 
 func runtimeObjectBytes(
     source definition: borrowing IoSourceEndpointDefinition
-) throws(ProtocolError) -> BoundedIoBytes<512> {
-    var result: BoundedIoBytes<512>?
+) throws(ProtocolError) -> BoundedIoBytes<2048> {
+    var result: BoundedIoBytes<2048>?
     definition.withObjectBytes { bytes in result = try? BoundedIoBytes(copying: bytes) }
     guard let result else { throw ProtocolError(.capacityExceeded) }
     return result
@@ -170,8 +171,8 @@ func runtimeObjectBytes(
 
 func runtimeObjectBytes(
     actor definition: borrowing IoActorEndpointDefinition
-) throws(ProtocolError) -> BoundedIoBytes<512> {
-    var result: BoundedIoBytes<512>?
+) throws(ProtocolError) -> BoundedIoBytes<2048> {
+    var result: BoundedIoBytes<2048>?
     definition.withObjectBytes { bytes in result = try? BoundedIoBytes(copying: bytes) }
     guard let result else { throw ProtocolError(.capacityExceeded) }
     return result

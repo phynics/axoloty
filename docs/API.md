@@ -95,12 +95,19 @@ discarding protocol input.
 sink. `receive`, `send`, `expire`, `cancel`, and `drain` are synchronous. The
 caller drains actions before borrowed topic or payload bytes leave scope.
 
-`payloadCapacity` is a compile-time value between 0 and the sealed 512-byte
-Coaty Core 3 payload limit. The established presets use 512 bytes; smaller
+`payloadCapacity` is a compile-time value between 0 and Axoloty's sealed
+2,048-byte payload limit. This is a bounded-platform constraint and an
+intentional divergence from Coaty, which does not impose this limit. The
+established presets use 2,048 bytes; smaller
 deployments can select, for example, `StaticRuntime<16, 128>` to reduce inline
 storage. The former `StaticRuntime<capacity>` spelling migrates to
-`StaticRuntime<capacity, 512>`, and `StaticRuntimeDefinition` is spelled
-`StaticRuntimeDefinition<512>`.
+`StaticRuntime<capacity, 2048>`, and `StaticRuntimeDefinition` is spelled
+`StaticRuntimeDefinition<2048>`.
+
+The payload limit does not multiply every semantic scratch structure. Direct
+JSON array indexing and decoded predicate comparisons retain their separately
+measured 512-element and 512-byte bounds. Oversized values fail with a
+structured capacity error instead of expanding the ESP32 stack.
 
 The accepted storage profiles are `tiny = 1`, `esp32C6Static = 16`, and
 `hostDefault = 64`. Static handlers are noncapturing thin functions with

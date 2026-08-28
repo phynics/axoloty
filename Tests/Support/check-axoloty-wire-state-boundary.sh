@@ -38,7 +38,7 @@ if find "$wire/Sources/AxolotyWire" -maxdepth 1 -type f \( \
 fi
 
 grep -Fq 'WireParserWorkspace' "$wire/Sources/AxolotyWire/WireParserWorkspace.swift"
-grep -Fq 'InlineWireParserWorkspace<520>' "$wire/Sources/AxolotyWire/WireParserWorkspace.swift"
+grep -Fq 'InlineWireParserWorkspace<2056>' "$wire/Sources/AxolotyWire/WireParserWorkspace.swift"
 grep -Fq 'HostWireParserWorkspace' "$wire/Sources/AxolotyWire/WireParserWorkspace.swift"
 
 echo "AxolotyWire/AxolotyProtocol state boundary passed"

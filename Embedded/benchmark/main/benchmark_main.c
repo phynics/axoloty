@@ -278,20 +278,20 @@ static void bench_combined(void *ctx) {
 static void test_size_limits(void) {
     ESP_LOGI(TAG, "{\"test\":\"size-limits\"}");
 
-    // Payload at limit (512) — should be accepted.
-    static uint8_t big_payload[512];
-    memset(big_payload, 'x', 512);
+    // Payload at limit (2048) — should be accepted.
+    static uint8_t big_payload[2048];
+    memset(big_payload, 'x', 2048);
     // Wrap in JSON.
     big_payload[0] = '{'; big_payload[1] = '"'; big_payload[2] = 'p';
     big_payload[3] = '"'; big_payload[4] = ':'; big_payload[5] = '"';
-    big_payload[509] = '"'; big_payload[510] = '}'; big_payload[511] = 0;
-    WireReader r = {big_payload, 512};
+    big_payload[2045] = '"'; big_payload[2046] = '}'; big_payload[2047] = 0;
+    WireReader r = {big_payload, 2048};
     ByteSlice val = reader_read_field(&r, "p");
-    ESP_LOGI(TAG, "{\"case\":\"payload-512\",\"accepted\":%s}",
+    ESP_LOGI(TAG, "{\"case\":\"payload-2048\",\"accepted\":%s}",
              val.length > 0 ? "true" : "false");
 
-    // Payload over limit (513) — rejected before dispatch.
-    ESP_LOGI(TAG, "{\"case\":\"payload-513\",\"rejected\":true}");
+    // Payload over limit (2049) — rejected before dispatch.
+    ESP_LOGI(TAG, "{\"case\":\"payload-2049\",\"rejected\":true}");
 
     // Topic at limit (128) — accepted.
     // Build a valid Coaty topic of exactly 128 bytes.

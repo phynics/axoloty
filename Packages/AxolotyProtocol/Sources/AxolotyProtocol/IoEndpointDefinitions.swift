@@ -169,11 +169,11 @@ private func endpointSnapshot<Schema: ObjectSchema, let payloadCapacity: Int>(
     return (identifier, snapshot)
 }
 
-/// The default 512-byte source endpoint definition.
-public typealias IoSourceEndpointDefinition = BoundedIoSourceEndpointDefinition<512>
+/// The default 2,048-byte source endpoint definition.
+public typealias IoSourceEndpointDefinition = BoundedIoSourceEndpointDefinition<2048>
 
-/// The default 512-byte actor endpoint definition.
-public typealias IoActorEndpointDefinition = BoundedIoActorEndpointDefinition<512>
+/// The default 2,048-byte actor endpoint definition.
+public typealias IoActorEndpointDefinition = BoundedIoActorEndpointDefinition<2048>
 
 private func protocolError(_ error: ObjectError) -> ProtocolError {
     switch error.reason {

@@ -515,18 +515,16 @@ struct NestingDepthTests {
     @Test("Nesting depth 32")
     func nestingDepth32() {
         let bytes = nestedObject(depth: 32)
-        // Each level adds ~6 bytes; 32 levels = ~192 bytes, within 512.
+        // Each level adds about six bytes, comfortably within 2,048 bytes.
         if bytes.count <= WireBufferConfig.maxPayloadSize {
             _ = attemptDecode(family: "IOV", bytes: bytes) // must not trap
         }
     }
 
-    @Test("Nesting depth 128 exceeds payload cap")
+    @Test("Nesting depth 128 remains safe below the payload cap")
     func nestingDepth128() {
         let bytes = nestedObject(depth: 128)
-        // 128 levels × ~6 bytes = ~768 bytes, exceeds 512-byte cap.
-        // The payload itself is valid JSON; the cap is enforced by
-        // BorrowedMessage.validated, not WireReader. WireReader just reads.
+        #expect(bytes.count <= WireBufferConfig.maxPayloadSize)
         _ = attemptDecode(family: "IOV", bytes: bytes) // must not trap
     }
 }
@@ -613,7 +611,7 @@ struct SizeLimitTests {
         }
     }
 
-    @Test("Payload at limit (512 bytes) is accepted by validated")
+    @Test("Payload at limit (2,048 bytes) is accepted by validated")
     func payloadAtLimit() throws {
         let payload = makePayload(size: WireBufferConfig.maxPayloadSize)
         let topic = makeTopic(length: 48)
@@ -628,7 +626,7 @@ struct SizeLimitTests {
         }
     }
 
-    @Test("Payload exceeding limit (513 bytes) is rejected")
+    @Test("Payload exceeding limit (2,049 bytes) is rejected")
     func payloadExceedsLimit() {
         let payload = makePayload(size: WireBufferConfig.maxPayloadSize + 1)
         let topic = makeTopic(length: 48)
@@ -682,7 +680,7 @@ struct SizeLimitTests {
         }
     }
 
-    @Test("Payload at limit-1 (511 bytes) is accepted")
+    @Test("Payload at limit-1 (2,047 bytes) is accepted")
     func payloadAtLimitMinusOne() throws {
         let payload = makePayload(size: WireBufferConfig.maxPayloadSize - 1)
         let topic = makeTopic(length: 48)

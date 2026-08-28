@@ -516,9 +516,9 @@ extension ProtocolExecutor {
 }
 
 private func runtimeAdvertisePayload(
-    objectBytes: BoundedIoBytes<512>
+    objectBytes: BoundedIoBytes<2048>
 ) throws(ProtocolError) -> [UInt8] {
-    var output = [UInt8](repeating: 0, count: 512)
+    var output = [UInt8](repeating: 0, count: WireBufferConfig.maxPayloadSize)
     var length = 0
     var failed = false
     output.withUnsafeMutableBufferPointer { buffer in
@@ -568,7 +568,7 @@ private func encodeRuntimeIoValue<Value: IoEndpointValue>(
     } catch {
         throw .invalidValue
     }
-    guard result.count <= 512 else { throw .capacityExceeded }
+    guard result.count <= WireBufferConfig.maxPayloadSize else { throw .capacityExceeded }
     return result
 }
 

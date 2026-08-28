@@ -286,13 +286,13 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
 
 /// The fixed profile used by the static device agent.
 /// A one-slot saturation and atomicity preset.
-public typealias StaticRuntimeTiny = StaticRuntime<1, 512>
+public typealias StaticRuntimeTiny = StaticRuntime<1, 2048>
 
 /// The fixed ESP32-C6 runtime preset.
-public typealias StaticRuntimeESP32C6 = StaticRuntime<16, 512>
+public typealias StaticRuntimeESP32C6 = StaticRuntime<16, 2048>
 
 /// A larger host-only static runtime test preset.
-public typealias StaticRuntimeHostTest = StaticRuntime<64, 512>
+public typealias StaticRuntimeHostTest = StaticRuntime<64, 2048>
 
 /// The default static device runtime.
 public typealias AxolotyStaticRuntime = StaticRuntimeESP32C6

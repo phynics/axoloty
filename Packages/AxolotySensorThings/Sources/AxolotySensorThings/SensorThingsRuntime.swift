@@ -439,11 +439,11 @@ private func queryMatches(_ payload: [UInt8], objectType: StaticString, object: 
         guard let query = try? QueryWireData(from: reader) else { return }
         if let types = query.objectTypes, !rawArrayContains(types, objectType) { return }
         if let cores = query.coreTypes, !rawArrayContains(cores, "CoatyObject") { return }
-        guard let predicate = try? CoatyFilterAdapter<16, 16, 16, 512>(query: query) else { return }
-        var dynamic: BoundedDynamicObject<512, 24>?
+        guard let predicate = try? CoatyFilterAdapter<16, 16, 16, 2048>(query: query) else { return }
+        var dynamic: BoundedDynamicObject<2048, 24>?
         object.withUnsafeBufferPointer { bytes in
             guard let base = bytes.baseAddress else { return }
-            dynamic = try? BoundedDynamicObject<512, 24>(decoding: base, length: bytes.count)
+            dynamic = try? BoundedDynamicObject<2048, 24>(decoding: base, length: bytes.count)
         }
         guard let dynamic else { return }
         match = predicate.matches(object: dynamic)

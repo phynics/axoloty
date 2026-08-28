@@ -3,7 +3,7 @@
   "description": "AxolotyWire benchmark corpus - 13 wire families x 3 size classes",
   "limits": {
     "maxTopicLength": 128,
-    "maxPayloadSize": 512
+    "maxPayloadSize": 2048
   },
   "cases": [
     {

@@ -5,7 +5,7 @@
 #
 # Loads the corpus manifest and verifies that every payload file exists,
 # matches its recorded SHA-256 and byte count, respects the wire buffer
-# limits (topic <= 128 bytes, payload <= 512 bytes), and that all 13 wire
+# limits (topic <= 128 bytes, payload <= 2,048 bytes), and that all 13 wire
 # families are covered at each of the three size classes (small, typical,
 # maximum = 39 cases). Reference and generated provenance are checked too.
 #
@@ -51,7 +51,7 @@ for (const item of cases) {
   const payloadPath = path.join(corpus, item.payloadFile);
   if (!fs.existsSync(payloadPath)) { errors.push(`${id}: payload file not found: ${item.payloadFile}`); continue; }
   const payload = fs.readFileSync(payloadPath);
-  if (payload.length > 512) errors.push(`${id}: payload ${payload.length} bytes exceeds 512`);
+  if (payload.length > 2048) errors.push(`${id}: payload ${payload.length} bytes exceeds 2048`);
   const digest = crypto.createHash("sha256").update(payload).digest("hex");
   if (item.payloadSha256 === undefined) errors.push(`${id}: missing payloadSha256`);
   else if (item.payloadSha256 !== digest) errors.push(`${id}: SHA-256 mismatch (expected ${item.payloadSha256}, got ${digest})`);

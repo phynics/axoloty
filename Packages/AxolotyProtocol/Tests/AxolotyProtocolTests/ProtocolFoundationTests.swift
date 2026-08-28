@@ -299,6 +299,42 @@ struct ProtocolFoundationTests {
         #expect(actual == expected)
     }
 
+    @Test("fixed owning sink retains one full payload across 16 fan-out actions")
+    func inlineOwnedSinkDeduplicatesFanOutPayload() throws {
+        var payloadBytes = [UInt8](repeating: 0x61, count: WireBufferConfig.maxPayloadSize)
+        var sink = InlineOwnedProtocolActionSink<16, 2048>()
+
+        payloadBytes.withUnsafeBufferPointer { buffer in
+            let payload = ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+            let action = BorrowedProtocolAction.deliver(BorrowedProtocolDelivery(
+                routingKey: try! ProtocolRoutingKey(capability: .channel, sourceID: .zero),
+                payload: payload
+            ))
+            let preflighted = sink.preflight(actionCount: 16)
+            #expect(preflighted)
+            for _ in 0..<16 {
+                let appended = sink.append(action)
+                #expect(appended)
+            }
+        }
+
+        payloadBytes[0] = 0x62
+        #expect(sink.count == 16)
+        for index in 0..<sink.count {
+            var matches = false
+            let visited = sink.visit(at: index) { action in
+                guard case .deliver(let delivery) = action else {
+                    return
+                }
+                matches = delivery.payload.length == WireBufferConfig.maxPayloadSize &&
+                    delivery.payload.byte(at: 0) == 0x61 &&
+                    delivery.payload.byte(at: WireBufferConfig.maxPayloadSize - 1) == 0x61
+            }
+            #expect(visited)
+            #expect(matches)
+        }
+    }
+
     @Test("fixed owning sink preflight and byte bounds are atomic")
     func inlineOwnedSinkSaturationIsAtomic() throws {
         var sink = InlineOwnedProtocolActionSink<1, 512>()
@@ -385,10 +421,12 @@ struct ProtocolFoundationTests {
     func inlineOwnedSinkLayouts() {
         let tiny = MemoryLayout<InlineOwnedProtocolActionSink<1, 512>>.size
         let staticDefault = MemoryLayout<InlineOwnedProtocolActionSink<16, 512>>.size
+        let static2KiB = MemoryLayout<InlineOwnedProtocolActionSink<16, 2048>>.size
         let hostTest = MemoryLayout<InlineOwnedProtocolActionSink<64, 512>>.size
-        print("owning-sink-layout tiny=\(tiny) static=\(staticDefault) host=\(hostTest)")
+        print("owning-sink-layout tiny=\(tiny) static=\(staticDefault) static2KiB=\(static2KiB) host=\(hostTest)")
         #expect(tiny > 0)
         #expect(staticDefault <= 20 * 1024)
+        #expect(static2KiB - staticDefault <= 4 * 1024)
         #expect(hostTest > staticDefault)
     }
 

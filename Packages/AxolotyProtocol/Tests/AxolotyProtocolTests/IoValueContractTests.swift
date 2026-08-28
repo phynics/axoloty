@@ -18,7 +18,7 @@ struct IoValueContractTests {
     func dynamicRepresentation() throws {
         let literal: StaticString = "{}"
         let bytes = ByteSlice(bytes: literal.utf8Start, length: literal.utf8CodeUnitCount)
-        let json = try BoundedJSONValue<512>(copying: bytes)
+        let json = try BoundedJSONValue<2048>(copying: bytes)
         let value = DynamicIoValue.json(json)
         #expect(value.representation == .json)
     }

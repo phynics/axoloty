@@ -4,25 +4,30 @@ import AxolotyWire
 
 /// A fixed inline action sink that owns every byte until synchronous drain.
 ///
-/// Each accepted action is copied into literal-inline storage. ``visit(at:_:)``
-/// materializes borrowed views only for the duration of its nonescaping body.
+/// Action metadata is copied per slot. Primary payload bytes are retained once
+/// in a bounded arena and reused when a fan-out batch references equal bytes.
+/// ``visit(at:_:)`` materializes borrowed views only for the duration of its nonescaping body.
 /// This makes the sink suitable for runtimes that return to their caller
 /// between protocol processing and action delivery.
 public struct InlineOwnedProtocolActionSink<let capacity: Int, let payloadCapacity: Int>: ~Copyable, ProtocolActionSink {
-    private var slots: InlineArray<capacity, InlineOwnedProtocolActionSlot<payloadCapacity>?>
+    private var slots: InlineArray<capacity, InlineOwnedProtocolActionSlot?>
+    private var payloads: InlineArray<payloadCapacity, UInt8>
+    private var payloadBytesUsed: Int
     private var used: Int
     private var reserved: Int
 
     /// Creates an empty owning action sink.
     public init() {
         slots = InlineArray(repeating: nil)
+        payloads = InlineArray(repeating: 0)
+        payloadBytesUsed = 0
         used = 0
         reserved = 0
     }
 
     /// Number of actions currently retained by the sink.
     public var count: Int { used }
-    /// Largest payload retained by each owning action slot.
+    /// Maximum unique primary-payload bytes retained between drains.
     public var maximumPayloadBytes: Int { payloadCapacity }
 
     /// Number of unreserved action slots.
@@ -49,8 +54,12 @@ public struct InlineOwnedProtocolActionSink<let capacity: Int, let payloadCapaci
     ///   bounds or a missing reservation leave retained slots unchanged.
     public mutating func append(_ action: BorrowedProtocolAction) -> Bool {
         guard reserved > 0, used < capacity,
-              let slot = InlineOwnedProtocolActionSlot<payloadCapacity>(copying: action) else {
+              var slot = InlineOwnedProtocolActionSlot(copying: action) else {
             return false
+        }
+        if let payload = Self.payload(of: action) {
+            guard let retained = retain(payload) else { return false }
+            slot.setPrimary(offset: retained.offset, length: retained.length)
         }
         slots[used] = slot
         used += 1
@@ -72,7 +81,9 @@ public struct InlineOwnedProtocolActionSink<let capacity: Int, let payloadCapaci
         guard index >= 0, index < used, let slot = slots[index] else {
             return false
         }
-        slot.visit(body)
+        withUnsafeBytes(of: payloads) { payloadBytes in
+            slot.visit(primaryBytes: payloadBytes, body)
+        }
         return true
     }
 
@@ -81,6 +92,41 @@ public struct InlineOwnedProtocolActionSink<let capacity: Int, let payloadCapaci
         for index in 0..<used { slots[index] = nil }
         used = 0
         reserved = 0
+        payloadBytesUsed = 0
+    }
+
+    private mutating func retain(_ bytes: ByteSlice) -> (offset: Int, length: Int)? {
+        guard bytes.length >= 0, bytes.length <= payloadCapacity else { return nil }
+        if bytes.length == 0 { return (0, 0) }
+
+        for index in 0..<used {
+            guard let slot = slots[index], slot.primaryLength == bytes.length else { continue }
+            var equal = true
+            for byteIndex in 0..<bytes.length where
+                payloads[slot.primaryOffset + byteIndex] != bytes.byte(at: byteIndex)
+            {
+                equal = false
+                break
+            }
+            if equal { return (slot.primaryOffset, slot.primaryLength) }
+        }
+
+        guard bytes.length <= payloadCapacity - payloadBytesUsed else { return nil }
+        let offset = payloadBytesUsed
+        for index in 0..<bytes.length {
+            payloads[offset + index] = bytes.byte(at: index) ?? 0
+        }
+        payloadBytesUsed += bytes.length
+        return (offset, bytes.length)
+    }
+
+    private static func payload(of action: BorrowedProtocolAction) -> ByteSlice? {
+        switch action {
+        case .deliver(let delivery): delivery.payload
+        case .publish(let publication): publication.payload
+        case .associationChanged(let transition): transition.delivery.payload
+        case .externalRouteActivated, .externalRouteDeactivated: nil
+        }
     }
 }
 
@@ -105,7 +151,7 @@ private enum InlineOwnedPublishTargetKind: UInt8 {
     case associationRoute
 }
 
-private struct InlineOwnedProtocolActionSlot<let payloadCapacity: Int> {
+private struct InlineOwnedProtocolActionSlot {
     private var kind: InlineOwnedProtocolActionKind
     private var routingKey: ProtocolRoutingKey?
     private var deliveryKeyKind: InlineOwnedDeliveryKeyKind
@@ -120,11 +166,11 @@ private struct InlineOwnedProtocolActionSlot<let payloadCapacity: Int> {
     private var actorID: UUID16
     private var associationChange: ProtocolIoAssociationChange
     private var associationRoutePresent: Bool
-    private var primaryLength: Int
+    private(set) var primaryOffset: Int
+    private(set) var primaryLength: Int
     private var secondaryLength: Int
     private var tertiaryLength: Int
     private var quaternaryLength: Int
-    private var primary: InlineArray<payloadCapacity, UInt8>
     private var secondary: InlineArray<128, UInt8>
     private var tertiary: InlineArray<128, UInt8>
     private var quaternary: InlineArray<128, UInt8>
@@ -144,11 +190,11 @@ private struct InlineOwnedProtocolActionSlot<let payloadCapacity: Int> {
         actorID = .zero
         associationChange = .established
         associationRoutePresent = false
+        primaryOffset = 0
         primaryLength = 0
         secondaryLength = 0
         tertiaryLength = 0
         quaternaryLength = 0
-        primary = InlineArray(repeating: 0)
         secondary = InlineArray(repeating: 0)
         tertiary = InlineArray(repeating: 0)
         quaternary = InlineArray(repeating: 0)
@@ -161,9 +207,6 @@ private struct InlineOwnedProtocolActionSlot<let payloadCapacity: Int> {
             kind = .publish
             routingKey = publication.routingKey
             applicationDelivery = publication.isApplicationDelivery
-            guard Self.copy(publication.payload, into: &primary, length: &primaryLength) else {
-                return nil
-            }
             switch publication.target {
             case .profile(let filter, let kind):
                 publishTargetKind = .profile
@@ -212,23 +255,33 @@ private struct InlineOwnedProtocolActionSlot<let payloadCapacity: Int> {
         }
     }
 
-    borrowing func visit(_ body: (BorrowedProtocolAction) -> Void) {
+    mutating func setPrimary(offset: Int, length: Int) {
+        primaryOffset = offset
+        primaryLength = length
+    }
+
+    borrowing func visit(
+        primaryBytes: UnsafeRawBufferPointer,
+        _ body: (BorrowedProtocolAction) -> Void
+    ) {
         let snapshot = copy self
-        withUnsafeBytes(of: snapshot.primary) { primaryBytes in
-            withUnsafeBytes(of: snapshot.secondary) { secondaryBytes in
-                withUnsafeBytes(of: snapshot.tertiary) { tertiaryBytes in
-                    withUnsafeBytes(of: snapshot.quaternary) { quaternaryBytes in
-                        let primarySlice = Self.slice(primaryBytes, length: snapshot.primaryLength)
-                        let secondarySlice = Self.slice(secondaryBytes, length: snapshot.secondaryLength)
-                        let tertiarySlice = Self.slice(tertiaryBytes, length: snapshot.tertiaryLength)
-                        let quaternarySlice = Self.slice(quaternaryBytes, length: snapshot.quaternaryLength)
-                        body(snapshot.materialize(
-                            primary: primarySlice,
-                            secondary: secondarySlice,
-                            tertiary: tertiarySlice,
-                            quaternary: quaternarySlice
-                        ))
-                    }
+        withUnsafeBytes(of: snapshot.secondary) { secondaryBytes in
+            withUnsafeBytes(of: snapshot.tertiary) { tertiaryBytes in
+                withUnsafeBytes(of: snapshot.quaternary) { quaternaryBytes in
+                    let primarySlice = Self.slice(
+                        primaryBytes,
+                        offset: snapshot.primaryOffset,
+                        length: snapshot.primaryLength
+                    )
+                    let secondarySlice = Self.slice(secondaryBytes, length: snapshot.secondaryLength)
+                    let tertiarySlice = Self.slice(tertiaryBytes, length: snapshot.tertiaryLength)
+                    let quaternarySlice = Self.slice(quaternaryBytes, length: snapshot.quaternaryLength)
+                    body(snapshot.materialize(
+                        primary: primarySlice,
+                        secondary: secondarySlice,
+                        tertiary: tertiarySlice,
+                        quaternary: quaternarySlice
+                    ))
                 }
             }
         }
@@ -237,9 +290,6 @@ private struct InlineOwnedProtocolActionSlot<let payloadCapacity: Int> {
     private mutating func copy(delivery: BorrowedProtocolDelivery) -> Bool {
         routingKey = delivery.routingKey
         routeClassification = delivery.routeClassification
-        guard Self.copy(delivery.payload, into: &primary, length: &primaryLength) else {
-            return false
-        }
         if let topic = delivery.topic {
             guard Self.copy(topic, into: &secondary, length: &secondaryLength) else {
                 return false
@@ -382,8 +432,16 @@ private struct InlineOwnedProtocolActionSlot<let payloadCapacity: Int> {
     }
 
     private static func slice(_ bytes: UnsafeRawBufferPointer, length: Int) -> ByteSlice {
+        slice(bytes, offset: 0, length: length)
+    }
+
+    private static func slice(
+        _ bytes: UnsafeRawBufferPointer,
+        offset: Int,
+        length: Int
+    ) -> ByteSlice {
         ByteSlice(
-            bytes: bytes.baseAddress!.assumingMemoryBound(to: UInt8.self),
+            bytes: bytes.baseAddress!.assumingMemoryBound(to: UInt8.self).advanced(by: offset),
             length: length
         )
     }

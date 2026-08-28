@@ -10,7 +10,7 @@ import AxolotyWire
 /// numbers are not converted through `Double`, and the value is never wrapped
 /// in a JSON string when it is placed in an object field.
 public struct SensorThingsJSONValue: Sendable, Equatable, ObjectFieldDecodable, ObjectFieldEncodable {
-    private let value: OwnedJSONValue<512>
+    private let value: OwnedJSONValue<2048>
 
     /// Copies one complete JSON value into bounded storage.
     ///
@@ -18,7 +18,7 @@ public struct SensorThingsJSONValue: Sendable, Equatable, ObjectFieldDecodable, 
     /// - Throws: ``ObjectError`` when the value is malformed or exceeds the
     ///   SensorThings field bound.
     public init(copying value: ByteSlice) throws(ObjectError) {
-        self.value = try OwnedJSONValue<512>(copying: value)
+        self.value = try OwnedJSONValue<2048>(copying: value)
     }
 
     /// Creates a value from a static JSON literal.

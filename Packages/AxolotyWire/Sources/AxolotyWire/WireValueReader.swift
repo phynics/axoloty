@@ -25,9 +25,9 @@ public enum WireValueKind: UInt8, Sendable, Equatable {
 }
 
 enum WireValueReaderLimits {
-    // One direct array element needs at least one payload byte. Therefore the
-    // wire's measured 512-byte payload bound is also the exact direct-element
-    // index bound; a 513th direct element is rejected deterministically.
+    // Direct-element indexing has its own measured semantic bound. It is not
+    // multiplied with the payload limit because the destination is copied by
+    // value by the embedded tokenizer.
     static let directArrayElementCapacity = 512
 }
 
@@ -198,7 +198,7 @@ public struct WireValueReader: ~Copyable {
         }
 
         var destination = WireArrayElementDestination(bytes: UnsafeBufferPointer(start: bytes.assumingMemoryBound(to: UInt8.self), count: length))
-        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: WireBufferConfig.maxPayloadSize + 8) { padded in
+        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: length + 8) { padded in
             padded.baseAddress!.initialize(from: bytes.assumingMemoryBound(to: UInt8.self), count: length)
             for offset in length..<(length + 8) { padded[offset] = 0x5D }
             var tokenizer = JSONTokenizer(
@@ -228,7 +228,7 @@ public struct WireValueReader: ~Copyable {
             throw WireDecodeError(.unexpectedToken(expected: "valid JSON array", actual: byte(at: 0)))
         }
         var destination = WireArrayElementDestination(bytes: UnsafeBufferPointer(start: bytes.assumingMemoryBound(to: UInt8.self), count: length))
-        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: WireBufferConfig.maxPayloadSize + 8) { padded in
+        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: length + 8) { padded in
             padded.baseAddress!.initialize(from: bytes.assumingMemoryBound(to: UInt8.self), count: length)
             for offset in length..<(length + 8) { padded[offset] = 0x5D }
             var tokenizer = JSONTokenizer(

@@ -130,7 +130,7 @@ func exerciseWireWriter() -> Bool {
 
 @inline(__always)
 func exerciseConfig() -> Bool {
-    return WireBufferConfig.maxPayloadSize == 512
+    return WireBufferConfig.maxPayloadSize == 2_048
         && WireBufferConfig.maxTopicLength == 128
 }
 

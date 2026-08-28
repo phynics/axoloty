@@ -370,9 +370,13 @@ private func allocationRun<let capacity: Int>(_: BoundedDynamicObject<capacity, 
             try? object.edit { try $0.set("a", to: .number("1")) }
         }
     case .envelopeInitialization:
+        var workspace = HostWireParserWorkspace()
         for index in 0..<iterations {
             do {
-                let envelope = try ObjectEnvelope<capacity, capacity>(decoding: slice(envelopeBytes))
+                let envelope = try ObjectEnvelope<capacity, capacity>(
+                    decoding: slice(envelopeBytes),
+                    workspace: &workspace
+                )
                 allocationSink &+= UInt64(index) + UInt64(envelope.name.length)
             } catch {
                 allocationSink &+= UInt64(index)

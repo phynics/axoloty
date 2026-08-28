@@ -269,7 +269,7 @@ struct StaticTypedIoTests {
             handler: StaticIoHandler(TypedDynamicHandler.self, context: 1)
         )
         _ = runtime.drain { _ in }
-        let binaryBytes = try BoundedIoBytes<512>(copying: typedPayload("AB"))
+        let binaryBytes = try BoundedIoBytes<2048>(copying: typedPayload("AB"))
         #expect(
             runtime.publishIoValue(
                 .binary(binaryBytes),
@@ -277,7 +277,7 @@ struct StaticTypedIoTests {
                 nowMS: 1
             ) == .rejected(.malformedPayload)
         )
-        let jsonBytes = try BoundedJSONValue<512>(copying: typedPayload("true"))
+        let jsonBytes = try BoundedJSONValue<2048>(copying: typedPayload("true"))
         #expect(
             runtime.publishIoValue(
                 .json(jsonBytes),
@@ -315,5 +315,6 @@ struct StaticTypedIoTests {
         #expect(tiny > 0)
         #expect(tiny < embedded)
         #expect(embedded < host)
+        #expect(StaticRuntimeESP32C6.maximumPayloadBytes == 2 * 1024)
     }
 }
