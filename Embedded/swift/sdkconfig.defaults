@@ -8,9 +8,10 @@ CONFIG_APP_REPRODUCIBLE_BUILD=y
 # workspace per non-inlined function frame, and the smoke/agent entry point
 # nests several (app_main plus the generated-corpus runner). The original
 # 12 KB main-task stack tripped the hardware stack guard before app_main ran
-# its first check; 24 KB and 32 KB still overflowed deeper in the wire/agent
-# corpus. 64 KB leaves headroom for the summary/benchmark phases.
-CONFIG_ESP_MAIN_TASK_STACK_SIZE=65536
+# its first check; 24 KB, 32 KB, 64 KB, and 96 KB overflowed deeper in the
+# wire/agent corpus. 128 KB leaves headroom for the summary/benchmark phases
+# while keeping the fixed storage budgets explicit.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=131072
 CONFIG_FREERTOS_HZ=1000
 CONFIG_HEAP_TRACING_STANDALONE=y
 

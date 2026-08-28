@@ -10,7 +10,7 @@ func repositoryAuthorityPassesForCheckout() {
     let report = AxolotyRepositoryAuthorityValidator(root: root).validate()
 
     #expect(report.status == "passed", "\(report.findings)")
-    #expect(report.version == "0.5.1")
+    #expect(report.version == "0.6.0")
 }
 
 @Test

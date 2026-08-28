@@ -12,6 +12,37 @@ fork, through CoatySwift 2.4.0, remain documented in the
 Development toward Axoloty 1.0 is in progress and tracked by the
 [v1 release epic](https://github.com/phynics/axoloty/issues/272).
 
+## [0.6.0] - 2026-08-28
+
+Axoloty 0.6.0 is a source-breaking architecture-alignment release. It is
+still pre-1.0 and its public API may change.
+
+### Added
+
+- A shared `AxolotyWire` and `AxolotyProtocol` critical path for host and
+  Embedded Swift profiles, with bounded state and structured saturation.
+- The `AxolotyRuntime` lifecycle and static runtime integration used by the
+  release checkpoint.
+- Typed IO routing and optional `AxolotyIoRouting`, `AxolotySensorThings`, and
+  Coaty model products.
+- Exact-commit release evidence tooling, live CoatyJS capture validation, and
+  production ESP32-C6 smoke validation.
+
+### Changed
+
+- **Breaking:** the 0.6 runtime and package boundaries replace the inherited
+  controller-oriented architecture. See the migration documentation and
+  `ARCHITECTURE.md` for the supported transition.
+- Public package examples now build from checked-in source targets.
+- Host and embedded verification use deterministic, bounded release records.
+
+### Validation boundary
+
+The release candidate was validated locally with the canonical ordinary
+checks, live CoatyJS 2.4.0 interoperability, and two independent production
+Embedded Swift ESP32-C6 runs. The raw run artifacts are retained with the
+release worktree; CI and external provenance remain separate evidence paths.
+
 ## [0.5.1] - 2026-08-16
 
 Axoloty 0.5.1 is a patch release.
@@ -159,7 +190,8 @@ and reproducible compatibility and resource evidence.
 Initial Axoloty prerelease as an independently maintained, modernized fork of
 CoatySwift.
 
-[Unreleased]: https://github.com/phynics/axoloty/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/phynics/axoloty/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/phynics/axoloty/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/phynics/axoloty/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/phynics/axoloty/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/phynics/axoloty/compare/v0.3.0...v0.4.0

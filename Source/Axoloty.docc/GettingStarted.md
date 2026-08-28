@@ -9,7 +9,7 @@ Add the package dependency and link the ``Axoloty`` product:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.5.1"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.6.0"),
 ]
 
 .target(
@@ -69,4 +69,5 @@ and device callbacks; protocol transitions remain in ``AxolotyProtocol``.
 ## Next steps
 
 Read the project README for build and verification instructions. Typed IO
-endpoint and SensorThings APIs are intentionally deferred to G5.
+endpoint and SensorThings APIs are available through their optional 0.6
+products.

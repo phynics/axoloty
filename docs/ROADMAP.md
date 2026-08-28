@@ -4,7 +4,7 @@ Axoloty is a Swift runtime and protocol suite for collaborative distributed agen
 
 ## Current checkpoint
 
-[`VERSION`](../VERSION) identifies the current released version (`0.5.1`). Axoloty remains pre-1.0 and its public API may change. The active development checkpoint is 0.6.
+[`VERSION`](../VERSION) identifies the current released version (`0.6.0`). Axoloty remains pre-1.0 and its public API may change. The active development checkpoint is 0.6.
 
 Historical release outcomes are preserved in [`docs/releases/`](./releases/) and [`CHANGELOG.md`](../CHANGELOG.md). They do not define current strategy.
 
@@ -24,10 +24,10 @@ The target outcomes are:
 
 The accepted boundaries and invariants are in [`ARCHITECTURE.md`](../ARCHITECTURE.md). Canonical terms are in [`CONTEXT.md`](../CONTEXT.md).
 
-G2 through G5 are complete on `origin/main`. G5 / #633 delivers typed IO,
+G2 through G6 are complete on `origin/main`. G5 / #633 delivers typed IO,
 binding-specific external routes, and the optional `AxolotyIoRouting` and
-`AxolotySensorThings` products. G6 / #634 is the active release gate. The
-published 0.5.1 API remains unchanged until that gate completes.
+`AxolotySensorThings` products. G6 / #634 delivered the 0.6 release gate. The
+published 0.6.0 API remains pre-1.0 and may continue to evolve.
 
 ## Sequential gates
 
@@ -39,7 +39,7 @@ published 0.5.1 API remains unchanged until that gate completes.
 | [G3 #631](https://github.com/phynics/axoloty/issues/631) | Ship the modern object model. | Complete |
 | [G4 #632](https://github.com/phynics/axoloty/issues/632) | Replace the runtime and unify execution. | Complete |
 | [G5 #633](https://github.com/phynics/axoloty/issues/633) | Modernize IO and optional product boundaries. | Complete |
-| [G6 #634](https://github.com/phynics/axoloty/issues/634) | Prove non-divergence and release 0.6. | Active |
+| [G6 #634](https://github.com/phynics/axoloty/issues/634) | Prove non-divergence and release 0.6. | Complete |
 
 Implementation tickets are created lazily as each gate opens. [AT Protocol research #522](https://github.com/phynics/axoloty/issues/522) may continue only as peripheral host-side exploration and must not reshape the portable 0.6 core.
 

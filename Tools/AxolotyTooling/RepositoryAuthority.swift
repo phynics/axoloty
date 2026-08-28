@@ -90,7 +90,7 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
             return nil
         }
         guard isSemver(text) else {
-            findings.append(.init(rule: "version.semver", path: path, message: "VERSION must contain a release semantic version such as 0.5.1"))
+            findings.append(.init(rule: "version.semver", path: path, message: "VERSION must contain a release semantic version such as 0.6.0"))
             return nil
         }
         return text
