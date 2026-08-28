@@ -15,7 +15,7 @@ function expectedSubject(root) {
   };
   const version = fs.readFileSync(path.join(root, "VERSION"), "utf8").trim();
   return {
-    repository: process.env.AXOLOTY_REPOSITORY ?? "github.com/phynics/axoloty",
+    repository: process.env.AXOLOTY_REPOSITORY?.trim() || "github.com/phynics/axoloty",
     commit: run(["rev-parse", "HEAD"]),
     tree: run(["rev-parse", "HEAD^{tree}"]),
     version,
