@@ -22,6 +22,7 @@ public struct AxolotyCommandDispatcher: Sendable {
     private let cancellation: AxolotyCommandCancellation
     private let outputMode: AxolotyCommandOutputMode
     private let version: String
+    private let planResolver: Result<AxolotyCanonicalTestPlanResolver, AxolotyCanonicalTestManifestError>
 
     /// Creates a command dispatcher.
     ///
@@ -65,22 +66,36 @@ public struct AxolotyCommandDispatcher: Sendable {
                 cancellation: invocationCancellation
             )
             : commandRunner
+        let planResolution: Result<AxolotyCanonicalTestPlanResolver, AxolotyCanonicalTestManifestError>
+        do {
+            planResolution = .success(try AxolotyCanonicalTestPlanResolver(environment: environment))
+        } catch let error as AxolotyCanonicalTestManifestError {
+            planResolution = .failure(error)
+        } catch {
+            planResolution = .failure(.decodingFailure(
+                path: environment["AXOLOTY_TEST_MANIFEST"] ?? "canonical test manifest",
+                reason: error.localizedDescription
+            ))
+        }
         self.executableName = executableName
         self.commandRunner = commandRunner
         self.contextValidator = contextValidator
         self.integrationRunner = integrationRunner ?? FoundationIntegrationRunner(
             commandRunner: commandRunner,
-            contextValidator: contextValidator
+            contextValidator: contextValidator,
+            planResolver: try? planResolution.get()
         )
         self.deviceLeaseManager = deviceLeaseManager
         self.fileSystem = fileSystem ?? FoundationFileSystem()
         self.environment = environment
+        planResolver = planResolution
         self.processRunnerFactory = processRunnerFactory ?? { FoundationProcessRunner() }
         self.portProbe = portProbe ?? FoundationServiceProbe()
         self.tempDirProvider = tempDirProvider ?? FoundationTempDirectoryProvider()
         self.timingRunner = timingRunner ?? AxolotyTimingRunner(
             commandRunner: commandRunner,
-            environment: environment
+            environment: environment,
+            planResolver: planResolution
         )
         self.repositoryRoot = (repositoryRoot ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)).standardizedFileURL
         self.version = AxolotyVersion.current(environment: environment)
@@ -134,7 +149,7 @@ public struct AxolotyCommandDispatcher: Sendable {
         case ["version"], ["--version"]:
             AxolotyCommandResult(standardOutput: "\(executableName) \(version)")
         case ["check", "--plan"]:
-            planResult(environment: environment)
+            planResult()
         case ["check"]:
             checkResult()
         case ["verify"]:
@@ -158,7 +173,7 @@ public struct AxolotyCommandDispatcher: Sendable {
         case ["wire", "verify"]:
             checkResult(requested: ["test-wire"])
         case ["wire", "capture"]:
-            execute(plan: AxolotyCheckPlan.wireCapture(environment: environment))
+            wireCaptureResult()
         case ["embedded", "build"]:
             checkResult(requested: ["embedded-build"])
         case ["embedded", "doctor"]:
@@ -313,16 +328,16 @@ public struct AxolotyCommandDispatcher: Sendable {
         }
     }
 
-    private func planResult(environment: [String: String]) -> AxolotyCommandResult {
+    private func planResult() -> AxolotyCommandResult {
         do {
-            let manifest = try AxolotyCanonicalTestManifest.loadDefault(environment: environment)
-            let plan = try manifest.plan(named: "offline")
+            let resolver = try planResolver.get()
+            let plan = try resolver.resolve(.named(
+                .offline,
+                ci: false,
+                platform: AxolotyCheckPlan.currentPlatform,
+                requested: nil
+            ))
             return try Self.jsonResult(plan)
-        } catch let error as AxolotyCanonicalTestManifestError {
-            return AxolotyCommandResult(
-                standardError: "error: \(error.userFriendlyMessage)\n",
-                exitCode: 70
-            )
         } catch {
             return AxolotyCommandResult(
                 standardError: "error: \(Self.manifestDiagnostic(error))\n",
@@ -333,28 +348,20 @@ public struct AxolotyCommandDispatcher: Sendable {
 
     private func checkResult(requested: [String]? = nil) -> AxolotyCommandResult {
         do {
-            let manifest = try AxolotyCanonicalTestManifest.loadDefault(environment: environment)
-            let availablePlan = try manifest.plan(named: "offline")
-            guard requested?.allSatisfy({ requestedName in
-                availablePlan.nodes.contains { $0.name == requestedName }
-            }) != false else {
-                return AxolotyCommandResult(
-                    standardError: "error: requested check is unavailable on this platform\n",
-                    exitCode: 69
-                )
-            }
-            let plan = try AxolotyCheckPlanner().plan(
-                availablePlan.nodes,
-                requested: requested,
-                deadlineSeconds: availablePlan.deadlineSeconds
-            )
+            let resolver = try planResolver.get()
+            let plan = try resolver.resolve(.named(
+                .offline,
+                ci: false,
+                platform: AxolotyCheckPlan.currentPlatform,
+                requested: requested
+            ))
             let results = executor.execute(plan)
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
             return manifestResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
-        } catch let error as AxolotyCanonicalTestManifestError {
+        } catch AxolotyCanonicalTestManifestError.unavailableNode(_) {
             return AxolotyCommandResult(
-                standardError: "error: \(error.userFriendlyMessage)\n",
-                exitCode: 70
+                standardError: "error: requested check is unavailable on this platform\n",
+                exitCode: 69
             )
         } catch {
             return AxolotyCommandResult(
@@ -366,8 +373,13 @@ public struct AxolotyCommandDispatcher: Sendable {
 
     private func verifyResult(ci: Bool) -> AxolotyCommandResult {
         do {
-            let manifest = try AxolotyCanonicalTestManifest.loadDefault(environment: environment)
-            let plan = try manifest.plan(named: "verify", ci: ci)
+            let resolver = try planResolver.get()
+            let plan = try resolver.resolve(.named(
+                .verify,
+                ci: ci,
+                platform: AxolotyCheckPlan.currentPlatform,
+                requested: nil
+            ))
             return execute(plan: plan)
         } catch {
             return AxolotyCommandResult(
@@ -385,16 +397,11 @@ public struct AxolotyCommandDispatcher: Sendable {
             )
         }
         do {
-            let manifest = try AxolotyCanonicalTestManifest.loadDefault(environment: environment)
-            let command: AxolotyCommandPlan
-            if let node = try? manifest.node(named: filter),
-               node.filter == nil,
-               node.local,
-               node.isAvailable(on: AxolotyCheckPlan.currentPlatform) {
-                command = node.checkNode().command
-            } else {
-                command = manifest.testOneCommand(filter: filter)
-            }
+            let resolver = try planResolver.get()
+            let command = try resolver.command(.testOneOrNode(
+                value: filter,
+                platform: AxolotyCheckPlan.currentPlatform
+            ))
             if let failure = contextValidator.failureResult(validating: [command]) {
                 return Self.commandResult(failure)
             }
@@ -421,8 +428,12 @@ public struct AxolotyCommandDispatcher: Sendable {
             )
         }
         do {
-            let manifest = try AxolotyCanonicalTestManifest.loadDefault(environment: environment)
-            let plan = try manifest.plan(tier: tier, ci: ci)
+            let resolver = try planResolver.get()
+            let plan = try resolver.resolve(.tier(
+                name: tier,
+                ci: ci,
+                platform: AxolotyCheckPlan.currentPlatform
+            ))
             return execute(plan: plan)
         } catch {
             return AxolotyCommandResult(
@@ -440,17 +451,16 @@ public struct AxolotyCommandDispatcher: Sendable {
             )
         }
         do {
-            let manifest = try AxolotyCanonicalTestManifest.loadDefault(environment: environment)
-            let explanation = try manifest.explanation(tier: tier, ci: ci)
+            let resolver = try planResolver.get()
+            let explanation = try resolver.explanation(for: .tier(
+                name: tier,
+                ci: ci,
+                platform: AxolotyCheckPlan.currentPlatform
+            ))
             if outputMode == .json {
                 return try Self.jsonResult(explanation)
             }
             return AxolotyCommandResult(standardOutput: humanExplanation(explanation))
-        } catch let error as AxolotyCanonicalTestManifestError {
-            return AxolotyCommandResult(
-                standardError: "error: \(error.userFriendlyMessage)\n",
-                exitCode: 69
-            )
         } catch {
             return AxolotyCommandResult(
                 standardError: "error: \(Self.manifestDiagnostic(error))\n",
@@ -471,15 +481,13 @@ public struct AxolotyCommandDispatcher: Sendable {
                 .reduce(into: [String: String]()) { values, name in
                     values[name] = environment[name]
                 }
-            let sourcePlan = AxolotyCheckPlan.releaseSnapshots(
+            let resolver = try planResolver.get()
+            let plan = try resolver.resolve(.fixtureBundle(
                 source: source,
                 destination: destination,
-                environment: forwardedEnvironment
-            )
-            let plan = try AxolotyCheckPlanner().plan(
-                sourcePlan.nodes,
-                deadlineSeconds: sourcePlan.deadlineSeconds
-            )
+                environment: forwardedEnvironment,
+                platform: AxolotyCheckPlan.currentPlatform
+            ))
             let results = executor.execute(plan)
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
             return manifestResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
@@ -493,27 +501,11 @@ public struct AxolotyCommandDispatcher: Sendable {
 
     private func wireBundleResult(path: String) -> AxolotyCommandResult {
         do {
-            let manifest = try AxolotyCanonicalTestManifest.loadDefault(environment: environment)
-            let canonicalPlan = try manifest.plan(named: "wire-bundle")
-            let plan = AxolotyCheckPlan(
-                schemaVersion: canonicalPlan.schemaVersion,
-                nodes: canonicalPlan.nodes.map { node in
-                    AxolotyCheckNode(
-                        name: node.name,
-                        dependencies: node.dependencies,
-                        command: AxolotyCommandPlan(
-                            executable: node.command.executable,
-                            arguments: node.command.arguments.map { argument in
-                                argument == "${BUNDLE}" ? path : argument
-                            },
-                            environment: node.command.environment,
-                            executionContext: node.command.executionContext,
-                            timeoutSeconds: node.command.timeoutSeconds
-                        )
-                    )
-                },
-                deadlineSeconds: canonicalPlan.deadlineSeconds
-            )
+            let resolver = try planResolver.get()
+            let plan = try resolver.resolve(.downloadedWireBundle(
+                path: path,
+                platform: AxolotyCheckPlan.currentPlatform
+            ))
             let results = executor.execute(plan)
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
             return manifestResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
@@ -532,6 +524,22 @@ public struct AxolotyCommandDispatcher: Sendable {
         )
     }
 
+    private func wireCaptureResult() -> AxolotyCommandResult {
+        do {
+            let resolver = try planResolver.get()
+            let plan = try resolver.resolve(.wireCapture(
+                environment: environment,
+                platform: AxolotyCheckPlan.currentPlatform
+            ))
+            return execute(plan: plan)
+        } catch {
+            return AxolotyCommandResult(
+                standardError: "error: \(Self.manifestDiagnostic(error))\n",
+                exitCode: 70
+            )
+        }
+    }
+
     private func checkpointResult(hardware: Bool) -> AxolotyCommandResult {
         let plan: AxolotyCheckPlan
         let device: String?
@@ -545,9 +553,9 @@ public struct AxolotyCommandDispatcher: Sendable {
             ?? "Tests/AxolotyTests/WireCompatibility/Fixtures"
         let snapshotDestination = environment["AXOLOTY_FIXTURE_BUNDLE_OUTPUT"]
             ?? ".testing/fixture-bundle"
-        let canonicalManifest: AxolotyCanonicalTestManifest
+        let resolver: AxolotyCanonicalTestPlanResolver
         do {
-            canonicalManifest = try AxolotyCanonicalTestManifest.loadDefault(environment: environment)
+            resolver = try planResolver.get()
         } catch {
             return AxolotyCommandResult(
                 standardError: "error: \(Self.manifestDiagnostic(error))\n",
@@ -557,19 +565,36 @@ public struct AxolotyCommandDispatcher: Sendable {
         if hardware {
             let selectedDevice = environment["AXOLOTY_DEVICE"] ?? "/dev/ttyACM0"
             device = selectedDevice
-            plan = AxolotyCheckPlan.checkpointHardware(
-                device: selectedDevice,
-                source: snapshotSource,
-                destination: snapshotDestination,
-                consumerEnvironment: consumerEnvironment
-            )
+            do {
+                plan = try resolver.resolve(.checkpoint(
+                    hardwareDevice: selectedDevice,
+                    source: snapshotSource,
+                    destination: snapshotDestination,
+                    consumerEnvironment: consumerEnvironment,
+                    platform: AxolotyCheckPlan.currentPlatform
+                ))
+            } catch {
+                return AxolotyCommandResult(
+                    standardError: "error: \(Self.manifestDiagnostic(error))\n",
+                    exitCode: 69
+                )
+            }
         } else {
             device = nil
-            plan = AxolotyCheckPlan.checkpoint(
-                source: snapshotSource,
-                destination: snapshotDestination,
-                consumerEnvironment: consumerEnvironment
-            )
+            do {
+                plan = try resolver.resolve(.checkpoint(
+                    hardwareDevice: nil,
+                    source: snapshotSource,
+                    destination: snapshotDestination,
+                    consumerEnvironment: consumerEnvironment,
+                    platform: AxolotyCheckPlan.currentPlatform
+                ))
+            } catch {
+                return AxolotyCommandResult(
+                    standardError: "error: \(Self.manifestDiagnostic(error))\n",
+                    exitCode: 69
+                )
+            }
         }
 
         let gitCommitCommand = AxolotyCommandPlan(
@@ -602,75 +627,64 @@ public struct AxolotyCommandDispatcher: Sendable {
             )
         }
 
-        do {
-            let planned = try AxolotyCheckPlanner().plan(
-                plan.nodes,
-                deadlineSeconds: plan.deadlineSeconds
-            )
-            let results = executor.execute(planned)
-            let gitCommit = environment["AXOLOTY_GIT_COMMIT"]
-                ?? commandRunner.run(gitCommitCommand).standardOutput
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-            let gitTree = environment["AXOLOTY_GIT_TREE"]
-                ?? commandRunner.run(gitTreeCommand).standardOutput
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-            let gitStatus = commandRunner.run(gitStatusCommand).standardOutput
+        let results = executor.execute(plan)
+        let gitCommit = environment["AXOLOTY_GIT_COMMIT"]
+            ?? commandRunner.run(gitCommitCommand).standardOutput
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            let gitBranch = commandRunner.run(gitBranchCommand).standardOutput
+        let gitTree = environment["AXOLOTY_GIT_TREE"]
+            ?? commandRunner.run(gitTreeCommand).standardOutput
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            let swiftVersion = commandRunner.run(swiftVersionCommand).standardOutput
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            let timestamp = ISO8601DateFormatter().string(from: Date())
-            let releaseVersion = Self.releaseVersion(at: repositoryRoot, fileSystem: fileSystem)
-            let gitClean = gitStatus.isEmpty
-            // Hardware inclusion is evidence-derived. A caller selecting the
-            // hardware command is not proof that a device node actually ran;
-            // every required hardware node present in this resolved plan must
-            // have a passing result before the certificate advertises hardware.
-            let hardwareResults = results.filter { result in
-                canonicalManifest.nodes.first(where: { $0.id == result.name })?.hardware == .required
-            }
-            let validatedHardwareIncluded = !hardwareResults.isEmpty
-                && hardwareResults.allSatisfy { $0.status == .passed }
-            let releaseGates = Self.releaseGateDispositions(
-                manifest: canonicalManifest,
-                results: results,
-                environment: environment,
-                fileSystem: fileSystem,
-                repositoryRoot: repositoryRoot,
-                releaseVersion: releaseVersion,
-                gitCommit: gitCommit,
-                gitTree: gitTree,
-                gitClean: gitClean
-            )
-            let manifest = AxolotyCheckpointManifest(
-                releaseVersion: releaseVersion,
-                gitCommit: gitCommit,
-                gitTree: gitTree.isEmpty ? nil : gitTree,
-                repository: environment["AXOLOTY_REPOSITORY"] ?? "github.com/phynics/axoloty",
-                gitClean: gitClean,
-                gitBranch: gitBranch,
-                swiftVersion: swiftVersion,
-                hardwareIncluded: validatedHardwareIncluded,
-                results: results,
-                releaseGates: releaseGates,
-                timestamp: timestamp
-            )
-            let releaseGateMissingEvidence = releaseGates.contains { $0.result == .skipped }
-            let releaseGateFailed = releaseGates.contains { $0.result == .failed }
-            // A release gate that failed, could not execute, or lacked valid attestation
-            // is mandatory evidence, so the checkpoint must not certify the release.
-            let exitCode: Int32 = (results.allSatisfy { $0.status == .passed }
-                && !releaseGateMissingEvidence
-                && !releaseGateFailed
-                && gitClean) ? 0 : 1
-            return checkpointManifestResult(manifest, exitCode: exitCode)
-        } catch {
-            return AxolotyCommandResult(
-                standardError: "error: unable to plan checkpoint\n",
-                exitCode: 70
-            )
+        let gitStatus = commandRunner.run(gitStatusCommand).standardOutput
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let gitBranch = commandRunner.run(gitBranchCommand).standardOutput
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let swiftVersion = commandRunner.run(swiftVersionCommand).standardOutput
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let releaseVersion = Self.releaseVersion(at: repositoryRoot, fileSystem: fileSystem)
+        let gitClean = gitStatus.isEmpty
+        // Hardware inclusion is evidence-derived. A caller selecting the
+        // hardware command is not proof that a device node actually ran;
+        // every required hardware node present in this resolved plan must
+        // have a passing result before the certificate advertises hardware.
+        let hardwareResults = results.filter { result in
+            resolver.manifest.nodes.first(where: { $0.id == result.name })?.hardware == .required
         }
+        let validatedHardwareIncluded = !hardwareResults.isEmpty
+            && hardwareResults.allSatisfy { $0.status == .passed }
+        let releaseGates = Self.releaseGateDispositions(
+            manifest: resolver.manifest,
+            results: results,
+            environment: environment,
+            fileSystem: fileSystem,
+            repositoryRoot: repositoryRoot,
+            releaseVersion: releaseVersion,
+            gitCommit: gitCommit,
+            gitTree: gitTree,
+            gitClean: gitClean
+        )
+        let manifest = AxolotyCheckpointManifest(
+            releaseVersion: releaseVersion,
+            gitCommit: gitCommit,
+            gitTree: gitTree.isEmpty ? nil : gitTree,
+            repository: environment["AXOLOTY_REPOSITORY"] ?? "github.com/phynics/axoloty",
+            gitClean: gitClean,
+            gitBranch: gitBranch,
+            swiftVersion: swiftVersion,
+            hardwareIncluded: validatedHardwareIncluded,
+            results: results,
+            releaseGates: releaseGates,
+            timestamp: timestamp
+        )
+        let releaseGateMissingEvidence = releaseGates.contains { $0.result == .skipped }
+        let releaseGateFailed = releaseGates.contains { $0.result == .failed }
+        // A release gate that failed, could not execute, or lacked valid attestation
+        // is mandatory evidence, so the checkpoint must not certify the release.
+        let exitCode: Int32 = (results.allSatisfy { $0.status == .passed }
+            && !releaseGateMissingEvidence
+            && !releaseGateFailed
+            && gitClean) ? 0 : 1
+        return checkpointManifestResult(manifest, exitCode: exitCode)
     }
 
     private static func releaseVersion(at root: URL, fileSystem: any AxolotyFileSystem) -> String {
@@ -682,17 +696,9 @@ public struct AxolotyCommandDispatcher: Sendable {
     }
 
     private func execute(plan availablePlan: AxolotyCheckPlan) -> AxolotyCommandResult {
-        do {
-            let plan = try AxolotyCheckPlanner().plan(
-                availablePlan.nodes,
-                deadlineSeconds: availablePlan.deadlineSeconds
-            )
-            let results = executor.execute(plan)
-            let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
-            return manifestResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
-        } catch {
-            return AxolotyCommandResult(standardError: "error: unable to plan checks\n", exitCode: 70)
-        }
+        let results = executor.execute(availablePlan)
+        let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
+        return manifestResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
     }
 
     private func humanExplanation(_ explanation: AxolotyCanonicalTestExplanation) -> String {

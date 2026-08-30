@@ -7,6 +7,7 @@ import test from "node:test";
 const root = path.resolve(new URL("../..", import.meta.url).pathname);
 const testsRoot = path.join(root, "Tests");
 const manifest = fs.readFileSync(path.join(root, "Package.swift"), "utf8");
+const toolsManifest = fs.readFileSync(path.join(root, "Tools/Package.swift"), "utf8");
 const wireManifest = fs.readFileSync(path.join(root, "Packages/AxolotyWire/Package.swift"), "utf8");
 
 function targetBlock(kind, name, source = manifest) {
@@ -50,6 +51,16 @@ test("test targets have explicit ownership and no per-file root selection", () =
   );
   assert.equal(targetPath("testTarget", "AxolotyWireTests", wireManifest), "Tests/AxolotyWireTests");
   assert.doesNotMatch(targetBlock("testTarget", "AxolotyLiveWireTests"), /\b(?:sources|exclude):\s*\[/);
+});
+
+test("both packages compile the shared canonical plan resolver", () => {
+  const rootTarget = targetBlock("target", "AxolotyTooling");
+  const toolsTarget = targetBlock("target", "AxolotyTooling", toolsManifest);
+  assert.match(rootTarget, /path: "Tools\/AxolotyTooling"/);
+  assert.match(toolsTarget, /path: "AxolotyTooling"/);
+  assert.doesNotMatch(rootTarget, /\b(?:sources|exclude):\s*\[/);
+  assert.doesNotMatch(toolsTarget, /\b(?:sources|exclude):\s*\[/);
+  assert.ok(fs.existsSync(path.join(root, "Tools/AxolotyTooling/CanonicalTestPlanResolver.swift")));
 });
 
 test("Swift files outside orchestration support belong to one declared test target", () => {

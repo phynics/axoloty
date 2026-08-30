@@ -8,18 +8,24 @@ extension AxolotyCheckTests {
 
 @Test
 func checkpointPlansResolveReleaseSnapshotPlaceholders() throws {
+    let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
     let source = "Tests/Fixtures/custom"
     let destination = ".testing/custom-release"
     let plans = [
-        AxolotyCheckPlan.checkpoint(
+        try resolver.resolve(.checkpoint(
+            hardwareDevice: nil,
             source: source,
             destination: destination,
-            consumerEnvironment: [:]
-        ),
-        AxolotyCheckPlan.checkpointHardware(
+            consumerEnvironment: [:],
+            platform: AxolotyCheckPlan.currentPlatform
+        )),
+        try resolver.resolve(.checkpoint(
+            hardwareDevice: "/dev/ttyACM0",
             source: source,
-            destination: destination
-        ),
+            destination: destination,
+            consumerEnvironment: [:],
+            platform: AxolotyCheckPlan.currentPlatform
+        )),
     ]
 
     for plan in plans {
@@ -37,10 +43,71 @@ func checkpointPlansResolveReleaseSnapshotPlaceholders() throws {
 }
 
 @Test
+func canonicalManifestAndExecutablePlansUseIndependentSchemaVersions() throws {
+    let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
+    var plans = try CanonicalNamedPlan.allCases.map { name in
+        try resolver.resolve(.named(
+            name,
+            ci: false,
+            platform: AxolotyCheckPlan.currentPlatform,
+            requested: nil
+        ))
+    }
+    plans += try resolver.manifest.tiers.map { tier in
+        try resolver.resolve(.tier(
+            name: tier.id,
+            ci: false,
+            platform: AxolotyCheckPlan.currentPlatform
+        ))
+    }
+
+    #expect(resolver.manifest.schemaVersion == 2)
+    #expect(plans.allSatisfy { $0.schemaVersion == 1 })
+}
+
+@Test
+func injectedManifestSchemaIsValidatedBeforeResolution() throws {
+    let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
+    let invalid = AxolotyCanonicalTestManifest(
+        schemaVersion: 1,
+        manifestID: resolver.manifest.manifestID,
+        nodes: resolver.manifest.nodes,
+        tiers: resolver.manifest.tiers,
+        plans: resolver.manifest.plans,
+        requiredGates: resolver.manifest.requiredGates,
+        ciRequiredGates: resolver.manifest.ciRequiredGates,
+        releaseGates: resolver.manifest.releaseGates,
+        testOne: resolver.manifest.testOne,
+        selfTests: resolver.manifest.selfTests,
+        artifactContract: resolver.manifest.artifactContract,
+        flakePolicy: resolver.manifest.flakePolicy
+    )
+
+    #expect(throws: AxolotyCanonicalTestManifestError.unsupportedSchema(1)) {
+        _ = try AxolotyCanonicalTestPlanResolver(manifest: invalid).resolve(.named(
+            .offline,
+            ci: false,
+            platform: AxolotyCheckPlan.currentPlatform,
+            requested: nil
+        ))
+    }
+}
+
+@Test
 func hardwareCheckpointInheritsEveryOrdinaryCheckpointNode() throws {
-    let manifest = try AxolotyCanonicalTestManifest.loadDefault()
-    let checkpoint = try manifest.plan(named: "checkpoint")
-    let hardware = try manifest.plan(named: "checkpoint-hardware")
+    let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
+    let checkpoint = try resolver.resolve(.named(
+        .checkpoint,
+        ci: false,
+        platform: AxolotyCheckPlan.currentPlatform,
+        requested: nil
+    ))
+    let hardware = try resolver.resolve(.named(
+        .checkpointHardware,
+        ci: false,
+        platform: AxolotyCheckPlan.currentPlatform,
+        requested: nil
+    ))
     let hardwareNames = Set(hardware.nodes.map(\.name))
 
     #expect(Set(checkpoint.nodes.map(\.name)).isSubset(of: hardwareNames))
@@ -90,7 +157,13 @@ func plannerReportsCycles() {
 
 @Test
 func modelsEncodeAndDecode() throws {
-    let plan = try AxolotyCheckPlanner().plan(AxolotyCheckPlan.initialOffline.nodes)
+    let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
+    let plan = try resolver.resolve(.named(
+        .offline,
+        ci: false,
+        platform: AxolotyCheckPlan.currentPlatform,
+        requested: nil
+    ))
     let data = try JSONEncoder().encode(plan)
     #expect(try JSONDecoder().decode(AxolotyCheckPlan.self, from: data) == plan)
 }
@@ -117,15 +190,36 @@ func legacySchemaV1PlanDefaultsMissingExecutionContextAndReencodesItExplicitly()
 }
 
 @Test
-func offlinePlanOmitsEmbeddedChecksOnMacOS() {
-    let plan = AxolotyCheckPlan.initialOffline(for: .macOS)
+func schemaV2CheckPlanIsRejected() throws {
+    let fixture = try #require(Bundle.module.url(
+        forResource: "legacy-check-plan-v1",
+        withExtension: "json"
+    ))
+    var document = try #require(
+        JSONSerialization.jsonObject(with: Data(contentsOf: fixture)) as? [String: Any]
+    )
+    document["schemaVersion"] = 2
+
+    #expect(throws: DecodingError.self) {
+        _ = try JSONDecoder().decode(
+            AxolotyCheckPlan.self,
+            from: JSONSerialization.data(withJSONObject: document)
+        )
+    }
+}
+
+@Test
+func offlinePlanOmitsEmbeddedChecksOnMacOS() throws {
+    let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
+    let plan = try resolver.resolve(.named(.offline, ci: false, platform: .macOS, requested: nil))
     #expect(!plan.nodes.contains { $0.name.hasPrefix("embedded-") })
     #expect(!plan.nodes.contains { ["support-container", "support-fuzz-runner"].contains($0.name) })
 }
 
 @Test
-func offlinePlanIncludesEmbeddedChecksOnLinux() {
-    let plan = AxolotyCheckPlan.initialOffline(for: .linux)
+func offlinePlanIncludesEmbeddedChecksOnLinux() throws {
+    let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
+    let plan = try resolver.resolve(.named(.offline, ci: false, platform: .linux, requested: nil))
     let names = plan.nodes.map(\.name)
     let embeddedBuild = names.firstIndex(of: "embedded-build")
     let embeddedLinker = names.firstIndex(of: "embedded-linker")
@@ -169,6 +263,24 @@ func offlinePlanIncludesEmbeddedChecksOnLinux() {
         #expect(coatyModels < objectHost)
         #expect(objectHost < objectSanitized)
         #expect(objectSanitized < objectEmbedded)
+    }
+}
+
+@Test
+func namedPlanRejectsRequestedNodesOutsideItsResolvedClosure() throws {
+    let resolver = try AxolotyCanonicalTestPlanResolver(
+        environment: ProcessInfo.processInfo.environment
+    )
+
+    #expect(throws: AxolotyCanonicalTestManifestError.unavailableNode(
+        "checkpoint-hardware-smoke"
+    )) {
+        _ = try resolver.resolve(.named(
+            .offline,
+            ci: false,
+            platform: .linux,
+            requested: ["checkpoint-hardware-smoke"]
+        ))
     }
 }
 
