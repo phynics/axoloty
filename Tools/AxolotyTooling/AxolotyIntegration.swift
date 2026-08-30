@@ -41,39 +41,39 @@ public struct FoundationIntegrationRunner: AxolotyBoundedIntegrationRunning {
         """],
         timeoutSeconds: 5
     )
-    static var testCommand: AxolotyCommandPlan? {
-        try? AxolotyCanonicalTestManifest.loadDefault()
-            .node(named: "integration-tests")
-            .checkNode()
-            .command
-    }
-
-    static var commandPlans: [AxolotyCommandPlan] {
-        [brokerProbeCommand, testCommand].compactMap { $0 }
-    }
-
     private let commandRunner: any AxolotyCheckCommandRunning
     private let contextValidator: AxolotyExecutionContextValidator
     private let clock: any AxolotyTimingClock
+    private let testCommand: AxolotyCommandPlan?
+
+    private var commandPlans: [AxolotyCommandPlan] {
+        [Self.brokerProbeCommand, testCommand].compactMap { $0 }
+    }
 
     /// Creates an integration runner.
     ///
     /// - Parameter commandRunner: Runner used for readiness and Swift tests.
     public init(commandRunner: any AxolotyCheckCommandRunning = FoundationCommandRunner()) {
+        let planResolver = try? AxolotyCanonicalTestPlanResolver(
+            environment: ProcessInfo.processInfo.environment
+        )
         self.init(
             commandRunner: commandRunner,
-            contextValidator: AxolotyExecutionContextValidator()
+            contextValidator: AxolotyExecutionContextValidator(),
+            planResolver: planResolver
         )
     }
 
     init(
         commandRunner: any AxolotyCheckCommandRunning,
         contextValidator: AxolotyExecutionContextValidator,
-        clock: any AxolotyTimingClock = AxolotyContinuousTimingClock()
+        clock: any AxolotyTimingClock = AxolotyContinuousTimingClock(),
+        planResolver: AxolotyCanonicalTestPlanResolver? = nil
     ) {
         self.commandRunner = commandRunner
         self.contextValidator = contextValidator
         self.clock = clock
+        testCommand = try? planResolver?.command(.node(name: "integration-tests"))
     }
 
     /// Starts Mosquitto, waits for bounded readiness, runs tests, and stops it.
@@ -97,13 +97,13 @@ public struct FoundationIntegrationRunner: AxolotyBoundedIntegrationRunning {
         }
         let startedAt = clock.now()
         let deadline = timeoutSeconds.map { startedAt + $0 }
-        guard let testCommand = Self.testCommand else {
+        guard let testCommand else {
             return AxolotyCheckCommandResult(
                 exitCode: 70,
                 standardError: "canonical integration test node is unavailable"
             )
         }
-        if let failure = contextValidator.failureResult(validating: Self.commandPlans) {
+        if let failure = contextValidator.failureResult(validating: commandPlans) {
             return failure
         }
         guard !isExpired(deadline), !probeBroker(deadline: deadline) else {

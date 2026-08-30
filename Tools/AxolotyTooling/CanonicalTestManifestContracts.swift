@@ -78,30 +78,6 @@ public struct AxolotyCanonicalTestCommand: Codable, Equatable, Sendable {
         self.filterFlag = filterFlag
     }
 
-    /// Materializes the command without invoking a shell.
-    ///
-    /// - Parameters:
-    ///   - filter: The manifest filter, or an invocation-specific replacement.
-    ///   - timeoutSeconds: The manifest deadline for the owning entry.
-    /// - Returns: A process-safe ``AxolotyCommandPlan``.
-    public func commandPlan(filter: String? = nil, timeoutSeconds: TimeInterval? = nil) -> AxolotyCommandPlan {
-        var commandArguments = arguments
-        if let filterFlag, let filterValue = filter {
-            if let flagIndex = commandArguments.firstIndex(of: filterFlag),
-               commandArguments.index(after: flagIndex) < commandArguments.endIndex {
-                commandArguments[commandArguments.index(after: flagIndex)] = filterValue
-            } else {
-                commandArguments.append(contentsOf: [filterFlag, filterValue])
-            }
-        }
-        return AxolotyCommandPlan(
-            executable: executable,
-            arguments: commandArguments,
-            environment: environment,
-            executionContext: executionContext,
-            timeoutSeconds: timeoutSeconds
-        )
-    }
 }
 /// A typed node in the canonical test execution manifest.
 public struct AxolotyCanonicalTestNode: Codable, Equatable, Sendable {
@@ -193,22 +169,6 @@ public struct AxolotyCanonicalTestNode: Codable, Equatable, Sendable {
         platforms?.contains(platform) ?? true
     }
 
-    /// Materializes this node as an executable check node.
-    ///
-    /// - Parameter filterOverride: An optional filter replacement passed as a
-    ///   single process argument.
-    /// - Returns: The executable check node.
-    public func checkNode(filterOverride: String? = nil) -> AxolotyCheckNode {
-        AxolotyCheckNode(
-            name: id,
-            dependencies: dependencies,
-            command: command.commandPlan(
-                filter: filterOverride ?? filter,
-                timeoutSeconds: timeoutSeconds
-            ),
-            resources: resources
-        )
-    }
 }
 
 /// A canonical test tier and its root nodes.
@@ -357,11 +317,4 @@ public struct AxolotyCanonicalTestInterface: Codable, Equatable, Sendable {
         self.artifacts = artifacts
     }
 
-    /// Creates a command for one caller-provided test filter.
-    ///
-    /// - Parameter filter: The filter passed as one argv element.
-    /// - Returns: A bounded command plan.
-    public func commandPlan(filter: String) -> AxolotyCommandPlan {
-        command.commandPlan(filter: filter, timeoutSeconds: timeoutSeconds)
-    }
 }

@@ -185,19 +185,31 @@ func g3ObjectModelTierSelectsTheFullAggregate() throws {
 
 @Test
 func canonicalManifestDefinesVerifyRootsAndBoundedTestOne() throws {
-    let manifest = try AxolotyCanonicalTestManifest.loadDefault()
+    let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
+    let manifest = resolver.manifest
     #expect(manifest.schemaVersion == 2)
     #expect(manifest.requiredGates.allSatisfy { gate in manifest.nodes.contains { $0.id == gate } })
     #expect(manifest.ciRequiredGates.allSatisfy { gate in manifest.nodes.contains { $0.id == gate } })
-    #expect(manifest.testOneCommand(filter: "suite;touch /tmp/injected").arguments.last == "suite;touch /tmp/injected")
+    #expect(try resolver.command(.testOne(filter: "suite;touch /tmp/injected")).arguments.last == "suite;touch /tmp/injected")
     #expect(manifest.testOne.timeoutSeconds > 0)
-    #expect(try manifest.plan(tier: "unit").deadlineSeconds == 1_800)
-    #expect(try manifest.plan(named: "verify", ci: true).deadlineSeconds == 4_800)
+    #expect(try resolver.resolve(.tier(
+        name: "unit",
+        ci: false,
+        platform: AxolotyCheckPlan.currentPlatform
+    )).deadlineSeconds == 1_800)
+    #expect(try resolver.resolve(.named(
+        .verify,
+        ci: true,
+        platform: AxolotyCheckPlan.currentPlatform,
+        requested: nil
+    )).deadlineSeconds == 4_800)
 }
 
 @Test
 func canonicalSwiftBuildsTreatWarningsAsErrors() throws {
-    let manifest = try AxolotyCanonicalTestManifest.loadDefault()
+    let manifest = try AxolotyCanonicalTestPlanResolver(
+        environment: ProcessInfo.processInfo.environment
+    ).manifest
     let compilingCommands = manifest.nodes
         .map(\.command)
         .filter { command in
@@ -227,7 +239,9 @@ func canonicalManifestErrorsHaveStableLocalizedDiagnostics() {
 
 @Test
 func canonicalManifestUsesOverrideBeforeBundledOrRepositoryManifest() throws {
-    let data = try JSONEncoder().encode(AxolotyCanonicalTestManifest.loadDefault())
+    let data = try JSONEncoder().encode(AxolotyCanonicalTestPlanResolver(
+        environment: ProcessInfo.processInfo.environment
+    ).manifest)
     var document = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
     document["manifestID"] = "axoloty-test-override"
     let directory = FileManager.default.temporaryDirectory
@@ -237,18 +251,70 @@ func canonicalManifestUsesOverrideBeforeBundledOrRepositoryManifest() throws {
     defer { try? FileManager.default.removeItem(at: directory) }
     try JSONSerialization.data(withJSONObject: document, options: [.sortedKeys]).write(to: override)
 
-    let manifest = try AxolotyCanonicalTestManifest.loadDefault(environment: [
+    let resolver = try AxolotyCanonicalTestPlanResolver(environment: [
         "AXOLOTY_TEST_MANIFEST": override.path,
     ])
 
-    #expect(manifest.manifestID == "axoloty-test-override")
+    #expect(resolver.manifest.manifestID == "axoloty-test-override")
+}
+
+@Test
+func checkpointPlanningAndCertificationUseOneManifestSnapshot() throws {
+    let baseline = try AxolotyCanonicalTestPlanResolver(
+        environment: ProcessInfo.processInfo.environment
+    ).manifest
+    var document = try #require(
+        JSONSerialization.jsonObject(with: JSONEncoder().encode(baseline)) as? [String: Any]
+    )
+    document["releaseGates"] = ["smoke"]
+    let directory = FileManager.default.temporaryDirectory
+        .appending(path: "axoloty-manifest-snapshot-\(UUID().uuidString)", directoryHint: .isDirectory)
+    let override = directory.appending(path: "manifest.json")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try JSONSerialization.data(withJSONObject: document, options: [.sortedKeys]).write(to: override)
+
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
+        fileSystem: StubFileSystem(paths: []),
+        environment: projectEnvironment.merging([
+            "AXOLOTY_TEST_MANIFEST": override.path,
+        ]) { _, value in value }
+    )
+
+    document["releaseGates"] = ["unit"]
+    var plans = try #require(document["plans"] as? [String: Any])
+    var checkpoint = try #require(plans["checkpoint"] as? [String: Any])
+    checkpoint["nodes"] = []
+    plans["checkpoint"] = checkpoint
+    document["plans"] = plans
+    try JSONSerialization.data(withJSONObject: document, options: [.sortedKeys]).write(to: override)
+
+    let result = dispatcher.run(arguments: ["release", "checkpoint"])
+    let certificate = try JSONDecoder().decode(
+        AxolotyCheckpointManifest.self,
+        from: Data(result.standardOutput.utf8)
+    )
+
+    #expect(!certificate.results.isEmpty)
+    #expect(certificate.releaseGates.map(\.id) == ["smoke"])
 }
 
 @Test
 func verifyPlanIncludesStaticSupportWithoutRecursiveCoverageGate() throws {
-    let manifest = try AxolotyCanonicalTestManifest.loadDefault()
-    let ordinary = try manifest.plan(named: "verify")
-    let ci = try manifest.plan(named: "verify", ci: true)
+    let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
+    let ordinary = try resolver.resolve(.named(
+        .verify,
+        ci: false,
+        platform: AxolotyCheckPlan.currentPlatform,
+        requested: nil
+    ))
+    let ci = try resolver.resolve(.named(
+        .verify,
+        ci: true,
+        platform: AxolotyCheckPlan.currentPlatform,
+        requested: nil
+    ))
     #expect(ordinary.nodes.contains { $0.name == "support-tier-contract" })
     #expect(ordinary.nodes.contains { $0.name == "no-anycodable" })
     #expect(!ordinary.nodes.contains { $0.name == "integration-tests" })
@@ -311,7 +377,8 @@ func embeddedDoctorRunsDeviceIndependentEnvironmentCheck() {
 
 @Test
 func checkPlanDisablesSwiftLintCache() throws {
-    let plan = AxolotyCheckPlan.initialOffline(for: .linux)
+    let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
+    let plan = try resolver.resolve(.named(.offline, ci: false, platform: .linux, requested: nil))
     let lint = try #require(plan.nodes.first { $0.name == "lint" })
 
     #expect(lint.command.arguments == ["lint", "--no-cache", "--config", ".swiftlint.yml"])
@@ -437,11 +504,14 @@ func checkpointContextMismatchPrecedesPlanAndMetadataCommands() throws {
 
 @Test
 func checkpointPlanIncludesRequiredCompatibilityNodes() throws {
-    let plan = AxolotyCheckPlan.checkpoint(
+    let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
+    let plan = try resolver.resolve(.checkpoint(
+        hardwareDevice: nil,
         source: "Tests/AxolotyTests/WireCompatibility/Fixtures",
         destination: ".testing/fixture-bundle",
-        consumerEnvironment: [:]
-    )
+        consumerEnvironment: [:],
+        platform: AxolotyCheckPlan.currentPlatform
+    ))
 
     #expect(!plan.nodes.contains { $0.name == "integration-tests" })
     #expect(!plan.nodes.contains { $0.name == "logging-global" })
@@ -449,10 +519,13 @@ func checkpointPlanIncludesRequiredCompatibilityNodes() throws {
     #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-sanitized" })
     #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-embedded" })
 
-    let hardwarePlan = AxolotyCheckPlan.checkpointHardware(
+    let hardwarePlan = try resolver.resolve(.checkpoint(
+        hardwareDevice: "/dev/ttyACM0",
         source: "Tests/AxolotyTests/WireCompatibility/Fixtures",
-        destination: ".testing/fixture-bundle"
-    )
+        destination: ".testing/fixture-bundle",
+        consumerEnvironment: [:],
+        platform: AxolotyCheckPlan.currentPlatform
+    ))
     #expect(!hardwarePlan.nodes.contains { $0.name == "integration-tests" })
     #expect(!hardwarePlan.nodes.contains { $0.name == "logging-global" })
     #expect(hardwarePlan.nodes.contains { $0.name == "g3-object-model-evidence-host" })
@@ -689,7 +762,14 @@ func testOfflineUsesTheCheckPlan() throws {
     let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
 
     #expect(result.exitCode == 0)
-    #expect(manifest.results.map(\.name) == AxolotyCheckPlan.initialOffline.nodes.map(\.name))
+    let resolver = try AxolotyCanonicalTestPlanResolver(environment: projectEnvironment)
+    let plan = try resolver.resolve(.named(
+        .offline,
+        ci: false,
+        platform: AxolotyCheckPlan.currentPlatform,
+        requested: nil
+    ))
+    #expect(manifest.results.map(\.name) == plan.nodes.map(\.name))
 }
 
 @Test

@@ -11,6 +11,7 @@ public struct AxolotyTimingRunner: Sendable {
     private let clock: any AxolotyTimingClock
     private let cacheReader: any AxolotyTimingCacheStatsReading
     private let identity: AxolotyTimingToolchainIdentity
+    private let planResolver: Result<AxolotyCanonicalTestPlanResolver, AxolotyCanonicalTestManifestError>
 
     /// Creates a timing runner with injectable process, clock, workspace, and cache seams.
     ///
@@ -31,6 +32,39 @@ public struct AxolotyTimingRunner: Sendable {
         cacheReader: (any AxolotyTimingCacheStatsReading)? = nil,
         identity: AxolotyTimingToolchainIdentity? = nil
     ) {
+        let planResolver: Result<AxolotyCanonicalTestPlanResolver, AxolotyCanonicalTestManifestError>
+        do {
+            planResolver = .success(try AxolotyCanonicalTestPlanResolver(environment: environment))
+        } catch let error as AxolotyCanonicalTestManifestError {
+            planResolver = .failure(error)
+        } catch {
+            planResolver = .failure(.decodingFailure(
+                path: environment["AXOLOTY_TEST_MANIFEST"] ?? "canonical test manifest",
+                reason: error.localizedDescription
+            ))
+        }
+        self.init(
+            commandRunner: commandRunner,
+            environment: environment,
+            platform: platform,
+            workspace: workspace,
+            clock: clock,
+            cacheReader: cacheReader,
+            identity: identity,
+            planResolver: planResolver
+        )
+    }
+
+    init(
+        commandRunner: any AxolotyCheckCommandRunning,
+        environment: [String: String],
+        platform: AxolotyCheckPlan.Platform = AxolotyCheckPlan.currentPlatform,
+        workspace: any AxolotyTimingWorkspaceManaging = FoundationTimingWorkspaceManager(),
+        clock: any AxolotyTimingClock = AxolotyContinuousTimingClock(),
+        cacheReader: (any AxolotyTimingCacheStatsReading)? = nil,
+        identity: AxolotyTimingToolchainIdentity? = nil,
+        planResolver: Result<AxolotyCanonicalTestPlanResolver, AxolotyCanonicalTestManifestError>
+    ) {
         self.commandRunner = commandRunner
         self.environment = environment
         self.platform = platform
@@ -38,6 +72,7 @@ public struct AxolotyTimingRunner: Sendable {
         self.clock = clock
         self.cacheReader = cacheReader ?? UnavailableTimingCacheReader()
         self.identity = identity ?? AxolotyTimingToolchainIdentity.current(environment: environment)
+        self.planResolver = planResolver
     }
 
     /// Runs cold and warm measurements for each supported scenario in stable order.
@@ -60,19 +95,9 @@ public struct AxolotyTimingRunner: Sendable {
                 diagnostic: "measure timing is supported only on Linux"
             )
         }
-        let manifest: AxolotyCanonicalTestManifest
+        let resolver: AxolotyCanonicalTestPlanResolver
         do {
-            manifest = try AxolotyCanonicalTestManifest.loadDefault(environment: environment)
-        } catch let error as AxolotyCanonicalTestManifestError {
-            return AxolotyTimingReport(
-                platform: platform,
-                toolchain: identity,
-                scratchRoot: root,
-                keepScratch: options.keepScratch,
-                measurements: [],
-                exitCode: 70,
-                diagnostic: AxolotyTimingOutputParser.boundedDiagnostic(error.userFriendlyMessage)
-            )
+            resolver = try planResolver.get()
         } catch {
             return AxolotyTimingReport(
                 platform: platform,
@@ -81,9 +106,7 @@ public struct AxolotyTimingRunner: Sendable {
                 keepScratch: options.keepScratch,
                 measurements: [],
                 exitCode: 70,
-                diagnostic: AxolotyTimingOutputParser.boundedDiagnostic(
-                    "unable to load the canonical test manifest: \(String(reflecting: error))"
-                )
+                diagnostic: AxolotyTimingOutputParser.boundedDiagnostic(error.userFriendlyMessage)
             )
         }
 
@@ -96,7 +119,7 @@ public struct AxolotyTimingRunner: Sendable {
                     scenario: scenario,
                     mode: mode,
                     workspace: prepared,
-                    manifest: manifest,
+                    resolver: resolver,
                     filter: options.filter
                 )
                 measurements.append(measurement)
@@ -131,13 +154,13 @@ public struct AxolotyTimingRunner: Sendable {
         scenario: AxolotyTimingScenario,
         mode: AxolotyTimingMode,
         workspace: AxolotyTimingWorkspace,
-        manifest: AxolotyCanonicalTestManifest,
+        resolver: AxolotyCanonicalTestPlanResolver,
         filter: String
     ) -> AxolotyTimingMeasurement {
         let commandResult = commandPlan(
             scenario: scenario,
             workspace: workspace.path,
-            manifest: manifest,
+            resolver: resolver,
             filter: filter,
             mode: mode
         )
@@ -192,64 +215,22 @@ public struct AxolotyTimingRunner: Sendable {
     private func commandPlan(
         scenario: AxolotyTimingScenario,
         workspace: String,
-        manifest: AxolotyCanonicalTestManifest,
+        resolver: AxolotyCanonicalTestPlanResolver,
         filter: String,
         mode: AxolotyTimingMode
     ) -> Result<AxolotyCommandPlan, AxolotyCanonicalTestManifestError> {
-        let baseResult: Result<AxolotyCommandPlan, AxolotyCanonicalTestManifestError>
-        switch scenario {
-        case .hostBuild:
-            baseResult = canonicalCommand(named: "build", in: manifest)
-        case .focusedTestBuild:
-            baseResult = .success(manifest.testOneCommand(filter: filter))
-        case .embeddedBuild:
-            baseResult = canonicalCommand(named: "embedded-build", in: manifest)
-        case .linkerValidation:
-            baseResult = canonicalCommand(named: "embedded-linker", in: manifest)
-        }
-        let base: AxolotyCommandPlan
-        switch baseResult {
-        case .success(let plan): base = plan
-        case .failure(let error): return .failure(error)
-        }
-        var arguments = base.arguments
-        var commandEnvironment = base.environment
-        commandEnvironment["AXOLOTY_TIMING_SCENARIO"] = scenario.rawValue
-        commandEnvironment["AXOLOTY_TIMING_MODE"] = mode.rawValue
-        commandEnvironment["AXOLOTY_TIMING_SCRATCH"] = workspace
-        switch scenario {
-        case .hostBuild, .focusedTestBuild:
-            if !arguments.contains("--scratch-path") {
-                arguments += ["--scratch-path", workspace]
-            }
-        case .embeddedBuild:
-            commandEnvironment["EMBEDDED_BUILD_DIR"] = workspace
-            commandEnvironment["AXOLOTY_TIMING_EVIDENCE"] = "1"
-        case .linkerValidation:
-            commandEnvironment["AXOLOTY_EMBEDDED_LINKER_BUILD_DIR"] = workspace
-            commandEnvironment["AXOLOTY_TIMING_EVIDENCE"] = "1"
-        }
-        return .success(AxolotyCommandPlan(
-            executable: base.executable,
-            arguments: arguments,
-            environment: commandEnvironment,
-            executionContext: base.executionContext,
-            timeoutSeconds: base.timeoutSeconds
-        ))
-    }
-
-    private func canonicalCommand(
-        named name: String,
-        in manifest: AxolotyCanonicalTestManifest
-    ) -> Result<AxolotyCommandPlan, AxolotyCanonicalTestManifestError> {
         do {
-            let node = try manifest.node(named: name)
-            return .success(node.command.commandPlan(timeoutSeconds: node.timeoutSeconds))
+            return .success(try resolver.command(.timing(
+                scenario: scenario,
+                mode: mode,
+                workspace: workspace,
+                filter: filter
+            )))
         } catch let error as AxolotyCanonicalTestManifestError {
             return .failure(error)
         } catch {
             return .failure(.invalidPlan(
-                name: name,
+                name: scenario.rawValue,
                 reason: "unexpected canonical manifest error: \(String(reflecting: error))"
             ))
         }

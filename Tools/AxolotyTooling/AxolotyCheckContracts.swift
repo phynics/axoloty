@@ -212,6 +212,15 @@ public struct AxolotyCheckResult: Codable, Equatable, Sendable {
 
 /// A deterministic collection of check nodes in execution order.
 public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case nodes
+        case deadlineSeconds
+    }
+
+    /// The only schema version accepted and emitted by executable check plans.
+    public static let currentSchemaVersion = 1
+
     /// The plan schema version.
     public let schemaVersion: Int
     /// Nodes ordered so every prerequisite precedes its dependants.
@@ -224,14 +233,51 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
     public let deadlineSeconds: TimeInterval?
 
     /// Creates a check plan.
+    ///
+    /// - Parameters:
+    ///   - nodes: Dependency-ordered checks to execute.
+    ///   - deadlineSeconds: Optional wall-clock budget for the entire plan.
     public init(
-        schemaVersion: Int = 1,
         nodes: [AxolotyCheckNode],
         deadlineSeconds: TimeInterval? = nil
     ) {
-        self.schemaVersion = schemaVersion
+        schemaVersion = Self.currentSchemaVersion
         self.nodes = nodes
         self.deadlineSeconds = deadlineSeconds
+    }
+
+    /// Decodes a schema-versioned executable check plan.
+    ///
+    /// Schema version 2 belongs to the canonical test manifest and is not a
+    /// compatible check-plan representation.
+    ///
+    /// - Parameter decoder: The decoder supplying the check plan.
+    /// - Throws: ``DecodingError`` when the schema version is unsupported or
+    ///   the payload does not match the schema-1 check-plan contract.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        guard schemaVersion == Self.currentSchemaVersion else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .schemaVersion,
+                in: container,
+                debugDescription: "unsupported AxolotyCheckPlan schema version \(schemaVersion)"
+            )
+        }
+        self.schemaVersion = schemaVersion
+        nodes = try container.decode([AxolotyCheckNode].self, forKey: .nodes)
+        deadlineSeconds = try container.decodeIfPresent(TimeInterval.self, forKey: .deadlineSeconds)
+    }
+
+    /// Encodes an executable check plan as schema version 1.
+    ///
+    /// - Parameter encoder: The encoder receiving the check plan.
+    /// - Throws: An encoding error reported by `encoder`.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(Self.currentSchemaVersion, forKey: .schemaVersion)
+        try container.encode(nodes, forKey: .nodes)
+        try container.encodeIfPresent(deadlineSeconds, forKey: .deadlineSeconds)
     }
 
     /// The platform used when selecting platform-specific checks.
@@ -251,8 +297,6 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
         #endif
     }()
 
-    /// The initial offline checks for the current host platform.
-    public static let initialOffline = initialOffline(for: currentPlatform)
 }
 
 /// A versioned machine-readable result from an ``axoloty-tool`` check plan.
