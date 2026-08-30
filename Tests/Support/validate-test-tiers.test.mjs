@@ -54,9 +54,14 @@ test("package CI checks use stable isolated scratch paths", () => {
 
   const protocolChecker = fs.readFileSync(path.join(root, "Tests/Support/check-axoloty-protocol-package.sh"), "utf8");
   assert.match(protocolChecker, /--scratch-path "\$root\/\.build\/packages\/axoloty-protocol"/);
+  assert.match(protocolChecker, /--target AxolotyProtocol/);
+  assert.doesNotMatch(protocolChecker, /--product AxolotyProtocol/);
   const objectChecker = fs.readFileSync(path.join(root, "Tests/Support/check-axoloty-object-model-package.sh"), "utf8");
   assert.match(objectChecker, /--scratch-path "\$root\/\.build\/packages\/axoloty-object-model"/);
   assert.match(objectChecker, /--scratch-path "\$root\/\.build\/packages\/axoloty-coaty-models"/);
+  assert.match(objectChecker, /--target AxolotyObjectModel/);
+  assert.match(objectChecker, /--target AxolotyCoatyModels/);
+  assert.doesNotMatch(objectChecker, /--product (?:AxolotyObjectModel|AxolotyCoatyModels)/);
 });
 
 test("G6 public product builds are offline-only", () => {

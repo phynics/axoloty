@@ -12,9 +12,14 @@ trap 'rm -rf "$tmp"' EXIT
 # covered because its absence fails nondeterministically under parallel Ninja.
 wire_cmake="$root/Embedded/swift/components/axoloty_wire/CMakeLists.txt"
 json_core_cmake="$root/Embedded/swift/components/json_core/CMakeLists.txt"
+static_runtime_cmake="$root/Embedded/swift/components/axoloty_static_runtime/CMakeLists.txt"
 grep -Fq 'add_custom_target(json_core_module_alias' "$json_core_cmake"
 grep -Fq 'idf_component_get_property(JSON_CORE_COMPONENT_LIB json_core COMPONENT_LIB)' "$wire_cmake"
 grep -Fq 'add_dependencies(${COMPONENT_LIB} json_core_module_alias)' "$wire_cmake"
+grep -Fq '.build/*/debug/AxolotyStaticRuntimeMacrosImplementation-tool' "$static_runtime_cmake"
+grep -Fq '$<$<COMPILE_LANGUAGE:Swift>:-warnings-as-errors>' "$static_runtime_cmake"
+grep -Fq '$<$<COMPILE_LANGUAGE:Swift>:-load-plugin-executable>' "$static_runtime_cmake"
+grep -Fq '\#AxolotyStaticRuntimeMacrosImplementation' "$static_runtime_cmake"
 
 project_dir="$tmp/project"
 build_dir="$tmp/build"
