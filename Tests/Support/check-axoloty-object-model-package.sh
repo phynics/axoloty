@@ -195,14 +195,14 @@ if [ "${AXOLOTY_OBJECT_MODEL_SKIP_BUILD:-0}" != "1" ]; then
         --scratch-path "$root/.build/packages/axoloty-object-model" \
         --disable-automatic-resolution \
         --cache-path "$root/.swiftpm-cache" \
-        --product AxolotyObjectModel
+        --target AxolotyObjectModel
 fi
 if [ "${AXOLOTY_COATY_MODELS_SKIP_BUILD:-${AXOLOTY_OBJECT_MODEL_SKIP_BUILD:-0}}" != "1" ]; then
     swift build --package-path "$coaty_package_dir" \
         --scratch-path "$root/.build/packages/axoloty-coaty-models" \
         --disable-automatic-resolution \
         --cache-path "$root/.swiftpm-cache" \
-        --product AxolotyCoatyModels
+        --target AxolotyCoatyModels
 fi
 
 echo "AxolotyObjectModel host source inclusion and dependency policy passed"

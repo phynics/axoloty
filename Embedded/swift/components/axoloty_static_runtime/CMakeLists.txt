@@ -22,6 +22,19 @@ endforeach()
 
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/empty_bridging_header.h "")
 
+file(GLOB AXOLOTY_STATIC_RUNTIME_MACRO_TOOLS
+    LIST_DIRECTORIES FALSE
+    "${AXOLOTY_ROOT}/.build/debug/AxolotyStaticRuntimeMacrosImplementation-tool"
+    "${AXOLOTY_ROOT}/.build/*/debug/AxolotyStaticRuntimeMacrosImplementation-tool"
+)
+list(LENGTH AXOLOTY_STATIC_RUNTIME_MACRO_TOOLS AXOLOTY_STATIC_RUNTIME_MACRO_TOOL_COUNT)
+if(AXOLOTY_STATIC_RUNTIME_MACRO_TOOL_COUNT EQUAL 0)
+    message(FATAL_ERROR
+        "AxolotyStaticRuntime macro tool is missing; run the root build first"
+    )
+endif()
+list(GET AXOLOTY_STATIC_RUNTIME_MACRO_TOOLS 0 AXOLOTY_STATIC_RUNTIME_MACRO_TOOL)
+
 idf_component_register(
     SRCS "component_anchor.c"
     PRIV_REQUIRES idf_swift axoloty_protocol axoloty_object_model axoloty_wire json_core
@@ -76,12 +89,15 @@ set_source_files_properties(${AXOLOTY_STATIC_RUNTIME_SOURCES}
 
 set_property(TARGET ${COMPONENT_LIB} PROPERTY INTERFACE_COMPILE_OPTIONS "")
 target_compile_options(${COMPONENT_LIB} PRIVATE
+    "$<$<COMPILE_LANGUAGE:Swift>:-warnings-as-errors>"
     "$<$<COMPILE_LANGUAGE:Swift>:-swift-version>"
     "$<$<COMPILE_LANGUAGE:Swift>:6>"
     "$<$<COMPILE_LANGUAGE:Swift>:-enable-experimental-feature>"
     "$<$<COMPILE_LANGUAGE:Swift>:Lifetimes>"
     "$<$<COMPILE_LANGUAGE:Swift>:-module-name>"
     "$<$<COMPILE_LANGUAGE:Swift>:AxolotyStaticRuntime>"
+    "$<$<COMPILE_LANGUAGE:Swift>:-load-plugin-executable>"
+    "$<$<COMPILE_LANGUAGE:Swift>:${AXOLOTY_STATIC_RUNTIME_MACRO_TOOL}\#AxolotyStaticRuntimeMacrosImplementation>"
 )
 
 target_include_directories(${COMPONENT_LIB} PUBLIC
