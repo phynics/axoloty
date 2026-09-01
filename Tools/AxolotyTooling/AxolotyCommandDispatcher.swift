@@ -3,8 +3,8 @@
 import Foundation
 import AxolotyVersion
 
+// swiftlint:disable type_body_length file_length cyclomatic_complexity function_body_length
 /// Parses the stable command surface of the ``axoloty-tool`` executable.
-// swiftlint:disable type_body_length
 public struct AxolotyCommandDispatcher: Sendable {
     private let executableName: String
     private let commandRunner: any AxolotyCheckCommandRunning
@@ -23,25 +23,37 @@ public struct AxolotyCommandDispatcher: Sendable {
     private let outputMode: AxolotyCommandOutputMode
     private let version: String
     private let planResolver: Result<AxolotyCanonicalTestPlanResolver, AxolotyCanonicalTestManifestError>
+    private let executor: AxolotyCheckExecutor
+    private let releaseCommands: AxolotyReleaseCommands
 
-    /// Creates a command dispatcher.
+    /// Creates a dispatcher from live executable configuration.
     ///
     /// - Parameters:
-    ///   - executableName: The name used in version output and help text (default: `axoloty-tool`).
-    ///   - commandRunner: The process runner for executing check commands. The default runner uses
-    ///     the supplied `environment` snapshot for execution-context validation.
-    ///   - integrationRunner: The integration test runner for broker-backed tests.
-    ///   - deviceLeaseManager: The device lease manager for hardware checks.
-    ///   - fileSystem: The filesystem boundary for existence checks.
-    ///   - environment: The environment variable map used by command parsing and context validation.
-    ///   - processRunnerFactory: A factory for process runners used by managed service commands.
-    ///   - portProbe: The TCP probe for service readiness checks.
-    ///   - tempDirProvider: The temporary directory provider for service configs.
-    ///   - timingRunner: The runner for explicit hardware-free timing evidence.
-    ///   - repositoryRoot: The repository checkout used by authority validation; defaults to the current directory.
-    ///   - installSignalHandler: Whether the dispatcher installs signal handling.
-    ///   - cancellation: Optional shared cancellation state for this invocation.
+    ///   - executableName: The executable name used in help and version output.
+    ///   - environment: Environment variables used by command parsing and execution.
+    ///   - repositoryRoot: Repository checkout used by authority validation.
+    ///   - installSignalHandler: Whether this invocation owns process signals.
     public init(
+        executableName: String = "axoloty-tool",
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        repositoryRoot: URL? = nil,
+        installSignalHandler: Bool = true
+    ) {
+        self.init(
+            executableName: executableName,
+            commandRunner: FoundationCommandRunner(),
+            environment: environment,
+            repositoryRoot: repositoryRoot,
+            installSignalHandler: installSignalHandler
+        )
+    }
+
+    /// Creates a dispatcher with injected process and service boundaries.
+    ///
+    /// This initializer is internal so command tests and first-party tooling
+    /// can exercise boundaries without expanding the executable's public
+    /// configuration surface.
+    init(
         executableName: String = "axoloty-tool",
         commandRunner: any AxolotyCheckCommandRunning = FoundationCommandRunner(),
         integrationRunner: (any AxolotyIntegrationRunning)? = nil,
@@ -54,7 +66,11 @@ public struct AxolotyCommandDispatcher: Sendable {
         timingRunner: AxolotyTimingRunner? = nil,
         repositoryRoot: URL? = nil,
         installSignalHandler: Bool = true,
-        cancellation: AxolotyCommandCancellation? = nil
+        cancellation: AxolotyCommandCancellation? = nil,
+        eventSink: (@Sendable (AxolotyCheckExecutionEvent) -> Void)? = nil,
+        timestampProvider: (@Sendable () -> String)? = nil,
+        clock: any AxolotyTimingClock = AxolotyContinuousTimingClock(),
+        overrunScheduler: any AxolotyOverrunScheduling = DispatchOverrunScheduler()
     ) {
         let contextValidator = AxolotyExecutionContextValidator(environment: environment)
         let runnerConfiguration = AxolotyCommandRunnerConfiguration.from(environment: environment)
@@ -80,13 +96,15 @@ public struct AxolotyCommandDispatcher: Sendable {
         self.executableName = executableName
         self.commandRunner = commandRunner
         self.contextValidator = contextValidator
-        self.integrationRunner = integrationRunner ?? FoundationIntegrationRunner(
+        let integrationRunner = integrationRunner ?? FoundationIntegrationRunner(
             commandRunner: commandRunner,
             contextValidator: contextValidator,
             planResolver: try? planResolution.get()
         )
+        let fileSystem = fileSystem ?? FoundationFileSystem()
+        let normalizedRepositoryRoot = (repositoryRoot ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)).standardizedFileURL
         self.deviceLeaseManager = deviceLeaseManager
-        self.fileSystem = fileSystem ?? FoundationFileSystem()
+        self.fileSystem = fileSystem
         self.environment = environment
         planResolver = planResolution
         self.processRunnerFactory = processRunnerFactory ?? { FoundationProcessRunner() }
@@ -97,11 +115,39 @@ public struct AxolotyCommandDispatcher: Sendable {
             environment: environment,
             planResolver: planResolution
         )
-        self.repositoryRoot = (repositoryRoot ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)).standardizedFileURL
+        self.repositoryRoot = normalizedRepositoryRoot
         self.version = AxolotyVersion.current(environment: environment)
         self.installSignalHandler = installSignalHandler && runnerConfiguration.installSignalHandler
         self.cancellation = invocationCancellation
         outputMode = runnerConfiguration.outputMode
+        let executor = AxolotyCheckExecutor(
+            commandRunner: CanonicalTierCommandRunner(
+                commandRunner: commandRunner,
+                integrationRunner: integrationRunner
+            ),
+            contextValidator: contextValidator,
+            cancellation: invocationCancellation,
+            clock: clock,
+            overrunScheduler: overrunScheduler,
+            eventSink: eventSink ?? { event in
+                try? FileHandle.standardError.write(contentsOf: Data(event.diagnosticLine().utf8))
+            }
+        )
+        self.integrationRunner = integrationRunner
+        self.executor = executor
+        self.releaseCommands = AxolotyReleaseCommands(
+            commandRunner: commandRunner,
+            contextValidator: contextValidator,
+            fileSystem: fileSystem,
+            environment: environment,
+            repositoryRoot: normalizedRepositoryRoot,
+            outputMode: runnerConfiguration.outputMode,
+            resolver: planResolution,
+            executor: executor,
+            timestampProvider: timestampProvider ?? {
+                ISO8601DateFormatter().string(from: Date())
+            }
+        )
     }
 
     /// Resolves command-line arguments to their externally visible result.
@@ -113,88 +159,38 @@ public struct AxolotyCommandDispatcher: Sendable {
             ? AxolotySignalMultiplexer.shared.acquire { [cancellation] in cancellation.cancel() }
             : nil
         defer { signalLease?.cancel() }
-        if arguments.first == "serve" {
-            return serveResult(arguments: Array(arguments.dropFirst()))
-        }
-        if arguments.count >= 2, arguments[0] == "measure", arguments[1] == "timing" {
-            return timingResult(arguments: Array(arguments.dropFirst(2)))
-        }
-        if arguments.first == "repository", arguments.dropFirst().first == "validate" {
-            return repositoryAuthorityResult(arguments: Array(arguments.dropFirst(2)))
-        }
-        if arguments.count == 4, arguments[0] == "hardware", ["check", "require"].contains(arguments[1]), arguments[2] == "--device" {
-            return hardwareResult(required: arguments[1] == "require", device: arguments[3])
-        }
-        if arguments.count == 3, arguments[0] == "wire", arguments[1] == "verify" {
-            return wireBundleResult(path: arguments[2])
-        }
-        if arguments.count == 3, arguments[0] == "test-one", arguments[1] == "--filter" {
-            return testOneResult(filter: arguments[2])
-        }
-        if arguments.count == 2, arguments[0] == "test-tier" {
-            return testTierResult(tier: arguments[1], ci: false)
-        }
-        if arguments.count == 3, arguments[0] == "test-tier", arguments[1] == "--ci" {
-            return testTierResult(tier: arguments[2], ci: true)
-        }
-        if arguments.count == 2, arguments[0] == "explain" {
-            return explainResult(tier: arguments[1], ci: false)
-        }
-        if arguments.count == 3, arguments[0] == "explain", arguments[1] == "--ci" {
-            return explainResult(tier: arguments[2], ci: true)
-        }
-        return switch arguments {
-        case [], ["help"], ["--help"], ["-h"]:
-            AxolotyCommandResult(standardOutput: AxolotyCommandHelp.usage(executableName: executableName))
-        case ["version"], ["--version"]:
-            AxolotyCommandResult(standardOutput: "\(executableName) \(version)")
-        case ["check", "--plan"]:
-            planResult()
-        case ["check"]:
-            checkResult()
-        case ["verify"]:
-            verifyResult(ci: false)
-        case ["verify", "--ci"]:
-            verifyResult(ci: true)
-        case ["test-one"]:
-            testOneResult(filter: environment["FILTER"] ?? "")
-        case ["test-tier"]:
-            testTierResult(tier: environment["TIER"] ?? "", ci: false)
-        case ["explain"]:
-            explainResult(tier: environment["TIER"] ?? "", ci: false)
-        case ["build"]:
-            checkResult(requested: ["build"])
-        case ["test", "offline"]:
-            checkResult()
-        case ["test", "tooling"]:
-            checkResult(requested: ["test-tooling"])
-        case ["test", "integration"]:
-            integrationResult()
-        case ["wire", "verify"]:
-            checkResult(requested: ["test-wire"])
-        case ["wire", "capture"]:
-            wireCaptureResult()
-        case ["embedded", "build"]:
-            checkResult(requested: ["embedded-build"])
-        case ["embedded", "doctor"]:
-            checkResult(requested: ["embedded-toolchain"])
-        case ["embedded", "verify"]:
-            checkResult(requested: ["embedded-linker"])
-        case ["release", "fixture-bundle"]:
-            fixtureBundleResult()
-        case ["release", "checkpoint"]:
-            checkpointResult(hardware: false)
-        case ["release", "checkpoint-hardware"]:
-            checkpointResult(hardware: true)
-        case ["hardware", "check"]:
-            hardwareResult(required: false, device: nil)
-        case ["hardware", "require"]:
-            hardwareResult(required: true, device: nil)
-        default:
-            AxolotyCommandResult(
+        let invocation = AxolotyCommandParser(environment: environment).parse(arguments)
+        return route(invocation)
+    }
+
+    private func route(_ invocation: AxolotyCommandInvocation) -> AxolotyCommandResult {
+        switch invocation {
+        case .help:
+            return AxolotyCommandResult(standardOutput: AxolotyCommandHelp.usage(executableName: executableName))
+        case .version:
+            return AxolotyCommandResult(standardOutput: "\(executableName) \(version)")
+        case .unsupported:
+            return AxolotyCommandResult(
                 standardError: "error: unsupported \(executableName) command\n\n\(AxolotyCommandHelp.usage(executableName: executableName))\n",
                 exitCode: 64
             )
+        case .serve(let arguments): return serveResult(arguments: arguments)
+        case .timing(let arguments): return timingResult(arguments: arguments)
+        case .repositoryValidation(let arguments): return repositoryAuthorityResult(arguments: arguments)
+        case .hardware(let required, let device): return hardwareResult(required: required, device: device)
+        case .wireBundle(let path): return wireBundleResult(path: path)
+        case .testOne(let filter): return testOneResult(filter: filter)
+        case .testTier(let name, let ci): return testTierResult(tier: name, ci: ci)
+        case .explain(let name, let ci): return explainResult(tier: name, ci: ci)
+        case .checkPlan: return planResult()
+        case .check(let requested): return checkResult(requested: requested)
+        case .verify(let ci): return verifyResult(ci: ci)
+        case .integration: return integrationResult()
+        case .wireCapture: return wireCaptureResult()
+        case .embeddedBuild: return checkResult(requested: ["embedded-build"])
+        case .embeddedDoctor: return checkResult(requested: ["embedded-toolchain"])
+        case .embeddedVerify: return checkResult(requested: ["embedded-linker"])
+        case .release(let command): return releaseCommands.run(command)
         }
     }
 
@@ -469,36 +465,6 @@ public struct AxolotyCommandDispatcher: Sendable {
         }
     }
 
-    private func fixtureBundleResult() -> AxolotyCommandResult {
-        do {
-            let source = environment["AXOLOTY_FIXTURE_BUNDLE_SOURCE"] ?? "Tests/AxolotyTests/WireCompatibility/Fixtures"
-            let destination = environment["AXOLOTY_FIXTURE_BUNDLE_OUTPUT"] ?? ".testing/fixture-bundle"
-            let forwardedEnvironment = [
-                "AXOLOTY_IMAGE_IDENTITY", "AXOLOTY_GIT_COMMIT", "AXOLOTY_GIT_CLEAN",
-                "AXOLOTY_CONSUMER_REPOSITORY_URL", "AXOLOTY_CONSUMER_VERSION",
-                "AXOLOTY_CONSUMER_LOCAL", "AXOLOTY_CONSUMER_LOCAL_VERSION",
-            ]
-                .reduce(into: [String: String]()) { values, name in
-                    values[name] = environment[name]
-                }
-            let resolver = try planResolver.get()
-            let plan = try resolver.resolve(.fixtureBundle(
-                source: source,
-                destination: destination,
-                environment: forwardedEnvironment,
-                platform: AxolotyCheckPlan.currentPlatform
-            ))
-            let results = executor.execute(plan)
-            let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
-            return manifestResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
-        } catch {
-            return AxolotyCommandResult(
-                standardError: "error: unable to generate fixture bundle\n",
-                exitCode: 70
-            )
-        }
-    }
-
     private func wireBundleResult(path: String) -> AxolotyCommandResult {
         do {
             let resolver = try planResolver.get()
@@ -538,161 +504,6 @@ public struct AxolotyCommandDispatcher: Sendable {
                 exitCode: 70
             )
         }
-    }
-
-    private func checkpointResult(hardware: Bool) -> AxolotyCommandResult {
-        let plan: AxolotyCheckPlan
-        let device: String?
-        let consumerEnvironment = [
-            "AXOLOTY_CONSUMER_REPOSITORY_URL", "AXOLOTY_CONSUMER_VERSION",
-            "AXOLOTY_CONSUMER_LOCAL", "AXOLOTY_CONSUMER_LOCAL_VERSION",
-        ].reduce(into: [String: String]()) { values, name in
-            values[name] = environment[name]
-        }
-        let snapshotSource = environment["AXOLOTY_FIXTURE_BUNDLE_SOURCE"]
-            ?? "Tests/AxolotyTests/WireCompatibility/Fixtures"
-        let snapshotDestination = environment["AXOLOTY_FIXTURE_BUNDLE_OUTPUT"]
-            ?? ".testing/fixture-bundle"
-        let resolver: AxolotyCanonicalTestPlanResolver
-        do {
-            resolver = try planResolver.get()
-        } catch {
-            return AxolotyCommandResult(
-                standardError: "error: \(Self.manifestDiagnostic(error))\n",
-                exitCode: 69
-            )
-        }
-        if hardware {
-            let selectedDevice = environment["AXOLOTY_DEVICE"] ?? "/dev/ttyACM0"
-            device = selectedDevice
-            do {
-                plan = try resolver.resolve(.checkpoint(
-                    hardwareDevice: selectedDevice,
-                    source: snapshotSource,
-                    destination: snapshotDestination,
-                    consumerEnvironment: consumerEnvironment,
-                    platform: AxolotyCheckPlan.currentPlatform
-                ))
-            } catch {
-                return AxolotyCommandResult(
-                    standardError: "error: \(Self.manifestDiagnostic(error))\n",
-                    exitCode: 69
-                )
-            }
-        } else {
-            device = nil
-            do {
-                plan = try resolver.resolve(.checkpoint(
-                    hardwareDevice: nil,
-                    source: snapshotSource,
-                    destination: snapshotDestination,
-                    consumerEnvironment: consumerEnvironment,
-                    platform: AxolotyCheckPlan.currentPlatform
-                ))
-            } catch {
-                return AxolotyCommandResult(
-                    standardError: "error: \(Self.manifestDiagnostic(error))\n",
-                    exitCode: 69
-                )
-            }
-        }
-
-        let gitCommitCommand = AxolotyCommandPlan(
-            executable: "git", arguments: ["rev-parse", "HEAD"], timeoutSeconds: 60
-        )
-        let gitTreeCommand = AxolotyCommandPlan(
-            executable: "git", arguments: ["rev-parse", "HEAD^{tree}"], timeoutSeconds: 60
-        )
-        let gitStatusCommand = AxolotyCommandPlan(
-            executable: "git", arguments: ["status", "--porcelain"], timeoutSeconds: 60
-        )
-        let gitBranchCommand = AxolotyCommandPlan(
-            executable: "git", arguments: ["rev-parse", "--abbrev-ref", "HEAD"], timeoutSeconds: 60
-        )
-        let swiftVersionCommand = AxolotyCommandPlan(
-            executable: "swift", arguments: ["--version"], timeoutSeconds: 60
-        )
-        let metadataCommands = (environment["AXOLOTY_GIT_COMMIT"] == nil ? [gitCommitCommand] : [])
-            + (environment["AXOLOTY_GIT_TREE"] == nil ? [gitTreeCommand] : [])
-            + [gitStatusCommand, gitBranchCommand, swiftVersionCommand]
-        if let failure = contextValidator.failureResult(
-            validating: plan.nodes.map(\.command) + metadataCommands
-        ) {
-            return Self.commandResult(failure)
-        }
-        if let device, !fileSystem.exists(atPath: device) {
-            return AxolotyCommandResult(
-                standardError: "error: checkpoint-hardware requires a device at \(device)\n",
-                exitCode: 1
-            )
-        }
-
-        let results = executor.execute(plan)
-        let gitCommit = environment["AXOLOTY_GIT_COMMIT"]
-            ?? commandRunner.run(gitCommitCommand).standardOutput
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        let gitTree = environment["AXOLOTY_GIT_TREE"]
-            ?? commandRunner.run(gitTreeCommand).standardOutput
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        let gitStatus = commandRunner.run(gitStatusCommand).standardOutput
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let gitBranch = commandRunner.run(gitBranchCommand).standardOutput
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let swiftVersion = commandRunner.run(swiftVersionCommand).standardOutput
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let timestamp = ISO8601DateFormatter().string(from: Date())
-        let releaseVersion = Self.releaseVersion(at: repositoryRoot, fileSystem: fileSystem)
-        let gitClean = gitStatus.isEmpty
-        // Hardware inclusion is evidence-derived. A caller selecting the
-        // hardware command is not proof that a device node actually ran;
-        // every required hardware node present in this resolved plan must
-        // have a passing result before the certificate advertises hardware.
-        let hardwareResults = results.filter { result in
-            resolver.manifest.nodes.first(where: { $0.id == result.name })?.hardware == .required
-        }
-        let validatedHardwareIncluded = !hardwareResults.isEmpty
-            && hardwareResults.allSatisfy { $0.status == .passed }
-        let releaseGates = Self.releaseGateDispositions(
-            manifest: resolver.manifest,
-            results: results,
-            environment: environment,
-            fileSystem: fileSystem,
-            repositoryRoot: repositoryRoot,
-            releaseVersion: releaseVersion,
-            gitCommit: gitCommit,
-            gitTree: gitTree,
-            gitClean: gitClean
-        )
-        let manifest = AxolotyCheckpointManifest(
-            releaseVersion: releaseVersion,
-            gitCommit: gitCommit,
-            gitTree: gitTree.isEmpty ? nil : gitTree,
-            repository: environment["AXOLOTY_REPOSITORY"] ?? "github.com/phynics/axoloty",
-            gitClean: gitClean,
-            gitBranch: gitBranch,
-            swiftVersion: swiftVersion,
-            hardwareIncluded: validatedHardwareIncluded,
-            results: results,
-            releaseGates: releaseGates,
-            timestamp: timestamp
-        )
-        let releaseGateMissingEvidence = releaseGates.contains { $0.result == .skipped }
-        let releaseGateFailed = releaseGates.contains { $0.result == .failed }
-        // A release gate that failed, could not execute, or lacked valid attestation
-        // is mandatory evidence, so the checkpoint must not certify the release.
-        let exitCode: Int32 = (results.allSatisfy { $0.status == .passed }
-            && !releaseGateMissingEvidence
-            && !releaseGateFailed
-            && gitClean) ? 0 : 1
-        return checkpointManifestResult(manifest, exitCode: exitCode)
-    }
-
-    private static func releaseVersion(at root: URL, fileSystem: any AxolotyFileSystem) -> String {
-        guard let value = fileSystem.contents(atPath: root.appendingPathComponent("VERSION").path),
-              !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return "unavailable"
-        }
-        return value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func execute(
@@ -790,7 +601,7 @@ public struct AxolotyCommandDispatcher: Sendable {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(value)
         return AxolotyCommandResult(
-            standardOutput: String(decoding: data, as: UTF8.self),
+            standardOutput: String(bytes: data, encoding: .utf8) ?? "",
             exitCode: exitCode
         )
     }
@@ -809,179 +620,8 @@ public struct AxolotyCommandDispatcher: Sendable {
         )
     }
 
-    private func checkpointManifestResult(
-        _ manifest: AxolotyCheckpointManifest,
-        exitCode: Int32
-    ) -> AxolotyCommandResult {
-        guard outputMode == .human else {
-            return (try? Self.jsonResult(manifest, exitCode: exitCode))
-                ?? AxolotyCommandResult(exitCode: 70)
-        }
-        return AxolotyCommandResult(
-            standardOutput: humanSummary(manifest.results),
-            exitCode: exitCode
-        )
-    }
-
     private func humanSummary(_ results: [AxolotyCheckResult]) -> String {
         results.map { "\($0.status.rawValue.uppercased()) \($0.name)" }.joined(separator: "\n") + "\n"
-    }
-
-    /// Classifies each mandatory release gate based on covering node results.
-    ///
-    /// A gate is ``AxolotyCheckpointGateResult/executed`` when every covering node
-    /// passed, ``failed`` when any covering node failed, ``attested`` when an
-    /// exact-subject evidence bundle is supplied by `AXOLOTY_EVIDENCE_DIR`, and
-    /// ``skipped`` when no covering node ran and no evidence exists. An invalid
-    /// evidence bundle is failed. The
-    /// checkpoint fails on any skipped gate so a release cannot be certified with
-    /// missing mandatory-tier evidence.
-    private static func releaseGateDispositions(
-        manifest: AxolotyCanonicalTestManifest,
-        results: [AxolotyCheckResult],
-        environment: [String: String],
-        fileSystem: any AxolotyFileSystem,
-        repositoryRoot: URL,
-        releaseVersion: String,
-        gitCommit: String,
-        gitTree: String,
-        gitClean: Bool
-    ) -> [AxolotyCheckpointGate] {
-        let resultByName = Dictionary(
-            uniqueKeysWithValues: results.map { ($0.name, $0) }
-        )
-        return manifest.releaseGates.map { gate in
-            let coveringNodes = manifest.tiers.first { $0.id == gate }?.nodes ?? []
-            let coveringResults = coveringNodes.compactMap { resultByName[$0] }
-            let normalizedGate = gate.uppercased().replacingOccurrences(of: "-", with: "_")
-            let legacyKey = "AXOLOTY_ATTESTATION_\(normalizedGate)_PATH"
-            let evidenceRoot = environment["AXOLOTY_EVIDENCE_DIR"]
-            let evidenceBundle: String? = if let root = environment["AXOLOTY_EVIDENCE_DIR"], !root.isEmpty {
-                URL(fileURLWithPath: root, relativeTo: repositoryRoot)
-                    .appendingPathComponent(gate)
-                    .path
-            } else if let path = environment[legacyKey], !path.isEmpty {
-                path
-            } else {
-                nil
-            }
-            if let evidenceBundle,
-               fileSystem.exists(atPath: evidenceBundle) {
-                guard let repository = try? AxolotyRepositoryIdentity(
-                    environment["AXOLOTY_REPOSITORY"] ?? "github.com/phynics/axoloty"
-                ),
-                let commit = try? AxolotyGitCommitSHA(gitCommit),
-                let tree = try? AxolotyGitTreeSHA(gitTree),
-                let version = try? AxolotySemanticVersion(releaseVersion) else {
-                    return AxolotyCheckpointGate(
-                        id: gate,
-                        result: .failed,
-                        nodes: coveringResults,
-                        evidence: evidenceBundle,
-                        note: "evidence requires full commit/tree and semantic version metadata"
-                    )
-                }
-                let subject = AxolotyReleaseSubject(
-                    repository: repository,
-                    commit: commit,
-                    tree: tree,
-                    version: version,
-                    clean: gitClean
-                )
-                let bundleURL = URL(fileURLWithPath: evidenceBundle, relativeTo: repositoryRoot)
-                    .standardizedFileURL
-                do {
-                    let validated = try AxolotyEvidenceBundleLoader().validate(
-                        bundle: bundleURL,
-                        expectedGate: AxolotyReleaseGateID(rawValue: gate),
-                        context: AxolotyEvidenceValidationContext(
-                            expectedSubject: subject,
-                            bundleRoot: bundleURL
-                        )
-                    )
-                    return AxolotyCheckpointGate(
-                        id: gate,
-                        result: .attested,
-                        nodes: coveringResults,
-                        evidence: evidenceBundle,
-                        evidenceDigest: validated.bundleDigest,
-                        note: "exact-subject evidence bundle validated"
-                    )
-                } catch let error as AxolotyReleaseEvidenceError {
-                    return AxolotyCheckpointGate(
-                        id: gate,
-                        result: .failed,
-                        nodes: coveringResults,
-                        evidence: evidenceBundle,
-                        note: error.localizedDescription
-                    )
-                } catch {
-                    return AxolotyCheckpointGate(
-                        id: gate,
-                        result: .failed,
-                        nodes: coveringResults,
-                        evidence: evidenceBundle,
-                        note: "evidence validation failed: \(error.localizedDescription)"
-                    )
-                }
-            }
-            let explicitlyRequestedLegacyEvidence = environment[legacyKey]?.isEmpty == false
-            if let evidenceBundle,
-               !evidenceBundle.isEmpty,
-               explicitlyRequestedLegacyEvidence,
-               evidenceRoot == nil {
-                return AxolotyCheckpointGate(
-                    id: gate,
-                    result: .failed,
-                    nodes: coveringResults,
-                    evidence: evidenceBundle,
-                    note: "evidence bundle path is missing"
-                )
-            }
-            if coveringResults.isEmpty {
-                if let evidenceRoot, !evidenceRoot.isEmpty {
-                    return AxolotyCheckpointGate(
-                        id: gate,
-                        result: .failed,
-                        nodes: [],
-                        evidence: evidenceBundle,
-                        note: "required evidence bundle is missing"
-                    )
-                }
-                return AxolotyCheckpointGate(
-                    id: gate,
-                    result: .skipped,
-                    nodes: [],
-                    note: "no covering node ran in the checkpoint and no attestation was supplied"
-                )
-            }
-            if coveringResults.allSatisfy({ $0.status == .passed }) {
-                return AxolotyCheckpointGate(id: gate, result: .executed, nodes: coveringResults)
-            }
-            if coveringResults.contains(where: { $0.status == .failed }) {
-                return AxolotyCheckpointGate(id: gate, result: .failed, nodes: coveringResults)
-            }
-            return AxolotyCheckpointGate(
-                id: gate,
-                result: .skipped,
-                nodes: coveringResults,
-                note: "covering node was skipped"
-            )
-        }
-    }
-
-    private var executor: AxolotyCheckExecutor {
-        AxolotyCheckExecutor(
-            commandRunner: CanonicalTierCommandRunner(
-                commandRunner: commandRunner,
-                integrationRunner: integrationRunner
-            ),
-            contextValidator: contextValidator,
-            cancellation: cancellation,
-            eventSink: { event in
-                try? FileHandle.standardError.write(contentsOf: Data(event.diagnosticLine().utf8))
-            }
-        )
     }
 
     private static func commandResult(_ result: AxolotyCheckCommandResult) -> AxolotyCommandResult {
@@ -1002,8 +642,6 @@ public struct AxolotyCommandDispatcher: Sendable {
         return commandRunner.run(command)
     }
 }
-// swiftlint:enable type_body_length
-
 private struct CanonicalTierCommandRunner: AxolotyLifecycleCommandRunning {
     let commandRunner: any AxolotyCheckCommandRunning
     let integrationRunner: any AxolotyIntegrationRunning
@@ -1028,3 +666,5 @@ private struct CanonicalTierCommandRunner: AxolotyLifecycleCommandRunning {
         return commandRunner.run(command)
     }
 }
+
+// swiftlint:enable type_body_length file_length cyclomatic_complexity function_body_length
