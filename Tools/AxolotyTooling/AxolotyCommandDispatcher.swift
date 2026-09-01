@@ -380,7 +380,7 @@ public struct AxolotyCommandDispatcher: Sendable {
                 platform: AxolotyCheckPlan.currentPlatform,
                 requested: nil
             ))
-            return execute(plan: plan)
+            return execute(plan: plan, writeVerificationReport: ci)
         } catch {
             return AxolotyCommandResult(
                 standardError: "error: \(Self.manifestDiagnostic(error))\n",
@@ -695,9 +695,32 @@ public struct AxolotyCommandDispatcher: Sendable {
         return value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func execute(plan availablePlan: AxolotyCheckPlan) -> AxolotyCommandResult {
+    private func execute(
+        plan availablePlan: AxolotyCheckPlan,
+        writeVerificationReport: Bool = false
+    ) -> AxolotyCommandResult {
         let results = executor.execute(availablePlan)
         let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
+        if writeVerificationReport {
+            guard let invocation = (commandRunner as? any AxolotyArtifactInvocationIdentifying)?.artifactInvocation else {
+                return AxolotyCommandResult(
+                    standardError: "error: verify-ci command runner does not expose an artifact invocation\n",
+                    exitCode: 70
+                )
+            }
+            do {
+                _ = try AxolotyVerificationReportWriter().write(
+                    plan: availablePlan,
+                    results: results,
+                    invocation: invocation
+                )
+            } catch {
+                return AxolotyCommandResult(
+                    standardError: "error: unable to publish verify-ci report: \(error.localizedDescription)\n",
+                    exitCode: 70
+                )
+            }
+        }
         return manifestResult(AxolotyCheckManifest(results: results), exitCode: exitCode)
     }
 
@@ -954,7 +977,10 @@ public struct AxolotyCommandDispatcher: Sendable {
                 integrationRunner: integrationRunner
             ),
             contextValidator: contextValidator,
-            cancellation: cancellation
+            cancellation: cancellation,
+            eventSink: { event in
+                try? FileHandle.standardError.write(contentsOf: Data(event.diagnosticLine().utf8))
+            }
         )
     }
 

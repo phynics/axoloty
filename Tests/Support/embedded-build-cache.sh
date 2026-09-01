@@ -27,6 +27,7 @@ axoloty_enable_esp_idf_ccache() {
     export CCACHE_DIR="$ccache_dir"
     export CCACHE_BASEDIR="$project_dir"
     export CCACHE_NAMESPACE="esp-idf-$cache_key"
+    ccache --max-size "${AXOLOTY_ESP_IDF_CCACHE_MAX_SIZE:-512M}" >/dev/null
     export IDF_CCACHE_ENABLE=1
 }
 

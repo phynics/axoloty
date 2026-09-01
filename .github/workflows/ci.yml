@@ -48,6 +48,9 @@ jobs:
           SWIFT_BUILD_CACHE_PREFIX="swift-build-v3-compiler-6.3-linux-${image_identity}-${{ hashFiles('Package.resolved', '**/Package.swift', '.devcontainer/Dockerfile') }}-"
           echo "SWIFT_BUILD_CACHE_PREFIX=${SWIFT_BUILD_CACHE_PREFIX}" >> "$GITHUB_ENV"
           echo "SWIFT_BUILD_CACHE_KEY=${SWIFT_BUILD_CACHE_PREFIX}${GITHUB_SHA}" >> "$GITHUB_ENV"
+          ESP_IDF_CCACHE_PREFIX="esp-idf-ccache-v1-${image_identity}-"
+          echo "ESP_IDF_CCACHE_PREFIX=${ESP_IDF_CCACHE_PREFIX}" >> "$GITHUB_ENV"
+          echo "ESP_IDF_CCACHE_KEY=${ESP_IDF_CCACHE_PREFIX}${GITHUB_SHA}" >> "$GITHUB_ENV"
 
       - name: Prepare verification diagnostics
         shell: bash
@@ -125,6 +128,15 @@ jobs:
           restore-keys: |
             ${{ env.SWIFT_BUILD_CACHE_PREFIX }}
 
+      - name: Restore ESP-IDF compiler cache
+        id: esp_idf_ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/axoloty/esp-idf-ccache
+          key: ${{ env.ESP_IDF_CCACHE_KEY }}
+          restore-keys: |
+            ${{ env.ESP_IDF_CCACHE_PREFIX }}
+
       - name: Run canonical CI verification plan
         env:
           AXOLOTY_OUTPUT: human
@@ -132,9 +144,10 @@ jobs:
           # create the first container after a locally rebuilt image.
           CONTAINER_CREATE_TIMEOUT_SECONDS: "300"
           AXOLOTY_RUNS_DIR: .testing/runs
+          AXOLOTY_TIMING_EVIDENCE: "1"
         run: |
           set -o pipefail
-          make verify-ci CONTAINER_RUNTIME=podman BUILD_DIR=".build/ci" BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache AXOLOTY_TOOL_CONTAINER_ENV_VARS="AXOLOTY_OUTPUT CONTAINER_CREATE_TIMEOUT_SECONDS AXOLOTY_RUNS_DIR" 2>&1 | tee .testing/required-checks.log
+          make verify-ci CONTAINER_RUNTIME=podman BUILD_DIR=".build/ci" BUILD_LOCK=0 SPM_CACHE_DIR=.swiftpm-cache AXOLOTY_TOOL_CONTAINER_ENV_VARS="AXOLOTY_OUTPUT CONTAINER_CREATE_TIMEOUT_SECONDS AXOLOTY_RUNS_DIR AXOLOTY_TIMING_EVIDENCE" 2>&1 | tee .testing/required-checks.log
 
       - name: Report Swift build cache reuse
         if: always()
@@ -152,19 +165,50 @@ jobs:
 
       - name: Summarize verification evidence
         if: always()
+        env:
+          SWIFTPM_EXACT_HIT: ${{ steps.swiftpm_cache.outputs.cache-hit || 'false' }}
+          SWIFT_COMPILER_EXACT_HIT: ${{ steps.swift_build_cache.outputs.cache-hit || 'false' }}
+          SWIFT_COMPILER_MATCHED_KEY: ${{ steps.swift_build_cache.outputs.cache-matched-key || 'none' }}
+          ESP_IDF_EXACT_HIT: ${{ steps.esp_idf_ccache.outputs.cache-hit || 'false' }}
+          ESP_IDF_MATCHED_KEY: ${{ steps.esp_idf_ccache.outputs.cache-matched-key || 'none' }}
         shell: bash
         run: |
           set -euo pipefail
           manifests=$(find .testing/runs -type f -name manifest.json -print 2>/dev/null | wc -l)
           verifier_logs=$(find .testing/runs -type f -name verifier.log -print 2>/dev/null | wc -l)
+          primary_reports=()
+          while IFS= read -r -d '' report; do
+            if jq -e '.schemaVersion == 1 and .primary == true' "$report" >/dev/null; then
+              primary_reports+=("$report")
+            fi
+          done < <(find .testing/runs -type f -name '*-verify-ci.json' -print0 2>/dev/null)
           {
             echo "### Verification evidence"
             echo "- Run manifests: \`${manifests}\`"
             echo "- Verifier logs: \`${verifier_logs}\`"
+            echo "- Primary verify-ci reports: \`${#primary_reports[@]}\`"
             if [ "$manifests" -eq 0 ] || [ "$verifier_logs" -eq 0 ]; then
               echo "- Warning: the tooling did not leave a complete run artifact set."
             fi
+            echo
+            echo "### Cache state"
+            echo "- SwiftPM exact hit: \`${SWIFTPM_EXACT_HIT}\`"
+            echo "- Swift compiler exact hit: \`${SWIFT_COMPILER_EXACT_HIT}\`"
+            echo "- Swift compiler restored key: \`${SWIFT_COMPILER_MATCHED_KEY}\`"
+            echo "- ESP-IDF exact hit: \`${ESP_IDF_EXACT_HIT}\`"
+            echo "- ESP-IDF restored key: \`${ESP_IDF_MATCHED_KEY}\`"
+            du -sh .swiftpm-cache .build/ci "$HOME/.cache/axoloty/esp-idf-ccache" 2>/dev/null || true
           } >> "$GITHUB_STEP_SUMMARY"
+          if [ "${#primary_reports[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one primary verify-ci report, found ${#primary_reports[@]}."
+            exit 1
+          fi
+          markdown_report="${primary_reports[0]%.json}.md"
+          if [ ! -f "$markdown_report" ]; then
+            echo "::error::Primary verify-ci Markdown report is missing: $markdown_report"
+            exit 1
+          fi
+          cat "$markdown_report" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Validate SwiftPM dependency cache before failure-safe save
         id: swiftpm_cache_health
@@ -226,6 +270,13 @@ jobs:
             .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/Modules
             .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/ModuleCache
           key: ${{ env.SWIFT_BUILD_CACHE_KEY }}
+
+      - name: Save ESP-IDF compiler cache
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.esp_idf_ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/axoloty/esp-idf-ccache
+          key: ${{ env.ESP_IDF_CCACHE_KEY }}
 
       - name: Upload verification run diagnostics
         if: always()

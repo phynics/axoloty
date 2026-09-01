@@ -101,6 +101,7 @@ public struct AxolotyCheckCommandResult: Codable, Equatable, Sendable {
         case standardOutput
         case standardError
         case lifecycle
+        case observation
     }
 
     /// The process exit status.
@@ -111,18 +112,22 @@ public struct AxolotyCheckCommandResult: Codable, Equatable, Sendable {
     public let standardError: String
     /// Lifecycle diagnostics when the command timed out or was cancelled.
     public let lifecycle: AxolotyCommandLifecycle?
+    /// Diagnostics observed for a command that reached normal process completion.
+    public let observation: AxolotyCommandObservation?
 
     /// Creates a command result.
     public init(
         exitCode: Int32,
         standardOutput: String = "",
         standardError: String = "",
-        lifecycle: AxolotyCommandLifecycle? = nil
+        lifecycle: AxolotyCommandLifecycle? = nil,
+        observation: AxolotyCommandObservation? = nil
     ) {
         self.exitCode = exitCode
         self.standardOutput = standardOutput
         self.standardError = standardError
         self.lifecycle = lifecycle
+        self.observation = observation
     }
 
     /// Decodes a command result while accepting pre-lifecycle result payloads.
@@ -132,6 +137,7 @@ public struct AxolotyCheckCommandResult: Codable, Equatable, Sendable {
         standardOutput = try container.decode(String.self, forKey: .standardOutput)
         standardError = try container.decode(String.self, forKey: .standardError)
         lifecycle = try container.decodeIfPresent(AxolotyCommandLifecycle.self, forKey: .lifecycle)
+        observation = try container.decodeIfPresent(AxolotyCommandObservation.self, forKey: .observation)
     }
 
     /// Encodes the existing result fields and lifecycle diagnostics when present.
@@ -141,6 +147,27 @@ public struct AxolotyCheckCommandResult: Codable, Equatable, Sendable {
         try container.encode(standardOutput, forKey: .standardOutput)
         try container.encode(standardError, forKey: .standardError)
         try container.encodeIfPresent(lifecycle, forKey: .lifecycle)
+        try container.encodeIfPresent(observation, forKey: .observation)
+    }
+}
+
+/// Diagnostics captured when a subprocess completes without interruption.
+public struct AxolotyCommandObservation: Codable, Equatable, Sendable {
+    /// Subprocess elapsed wall-clock time in seconds.
+    public let elapsedSeconds: TimeInterval
+    /// The last Swift test observed in streamed output, when present.
+    public let lastTest: String?
+    /// Total bytes observed across standard output and standard error.
+    public let outputBytes: Int
+    /// Directory containing the command artifacts.
+    public let artifactPath: String
+
+    /// Creates a successful-lifecycle command observation.
+    public init(elapsedSeconds: TimeInterval, lastTest: String?, outputBytes: Int, artifactPath: String) {
+        self.elapsedSeconds = elapsedSeconds
+        self.lastTest = lastTest
+        self.outputBytes = outputBytes
+        self.artifactPath = artifactPath
     }
 }
 
@@ -152,6 +179,7 @@ public struct AxolotyCheckNode: Codable, Equatable, Sendable {
         case command
         case status
         case resources
+        case expectedDurationSeconds
     }
 
     /// The stable node identifier.
@@ -164,6 +192,8 @@ public struct AxolotyCheckNode: Codable, Equatable, Sendable {
     public let status: AxolotyCheckStatus
     /// Named external resources that must be held while this node runs.
     public let resources: [String]
+    /// Wall-clock duration after which the executor emits an overrun warning.
+    public let expectedDurationSeconds: TimeInterval?
 
     /// Creates a check node.
     public init(
@@ -171,13 +201,15 @@ public struct AxolotyCheckNode: Codable, Equatable, Sendable {
         dependencies: [String] = [],
         command: AxolotyCommandPlan,
         status: AxolotyCheckStatus = .planned,
-        resources: [String] = []
+        resources: [String] = [],
+        expectedDurationSeconds: TimeInterval? = nil
     ) {
         self.name = name
         self.dependencies = dependencies
         self.command = command
         self.status = status
         self.resources = resources
+        self.expectedDurationSeconds = expectedDurationSeconds
     }
 
     /// Decodes a node while accepting manifests written before resource
@@ -189,6 +221,31 @@ public struct AxolotyCheckNode: Codable, Equatable, Sendable {
         command = try container.decode(AxolotyCommandPlan.self, forKey: .command)
         status = try container.decode(AxolotyCheckStatus.self, forKey: .status)
         resources = try container.decodeIfPresent([String].self, forKey: .resources) ?? []
+        expectedDurationSeconds = try container.decodeIfPresent(TimeInterval.self, forKey: .expectedDurationSeconds)
+    }
+}
+
+/// Executor-owned timing for a check node.
+public struct AxolotyCheckTiming: Codable, Equatable, Sendable {
+    /// Total time from node start through completion, including lease acquisition.
+    public let elapsedSeconds: TimeInterval
+    /// Configured warning threshold, when present.
+    public let expectedDurationSeconds: TimeInterval?
+    /// Time spent waiting for resource leases.
+    public let resourceLeaseWaitSeconds: TimeInterval
+    /// Whether elapsed time exceeded the configured expectation.
+    public let exceededExpectation: Bool
+
+    /// Creates timing evidence for a completed node.
+    public init(
+        elapsedSeconds: TimeInterval,
+        expectedDurationSeconds: TimeInterval?,
+        resourceLeaseWaitSeconds: TimeInterval
+    ) {
+        self.elapsedSeconds = elapsedSeconds
+        self.expectedDurationSeconds = expectedDurationSeconds
+        self.resourceLeaseWaitSeconds = resourceLeaseWaitSeconds
+        exceededExpectation = expectedDurationSeconds.map { elapsedSeconds >= $0 } ?? false
     }
 }
 
@@ -201,12 +258,20 @@ public struct AxolotyCheckResult: Codable, Equatable, Sendable {
     /// The command result, when execution occurred or the executor emitted a
     /// lifecycle diagnostic such as an expired plan deadline.
     public let command: AxolotyCheckCommandResult?
+    /// Executor-owned timing, absent for nodes that never started.
+    public let timing: AxolotyCheckTiming?
 
     /// Creates a check result.
-    public init(name: String, status: AxolotyCheckStatus, command: AxolotyCheckCommandResult? = nil) {
+    public init(
+        name: String,
+        status: AxolotyCheckStatus,
+        command: AxolotyCheckCommandResult? = nil,
+        timing: AxolotyCheckTiming? = nil
+    ) {
         self.name = name
         self.status = status
         self.command = command
+        self.timing = timing
     }
 }
 
@@ -216,6 +281,7 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
         case schemaVersion
         case nodes
         case deadlineSeconds
+        case expectedDurationSeconds
     }
 
     /// The only schema version accepted and emitted by executable check plans.
@@ -231,6 +297,8 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
     /// remaining time to each command. A missing value means that this plan
     /// has no enclosing budget; individual command deadlines still apply.
     public let deadlineSeconds: TimeInterval?
+    /// Wall-clock duration after which the executor emits a plan overrun warning.
+    public let expectedDurationSeconds: TimeInterval?
 
     /// Creates a check plan.
     ///
@@ -239,11 +307,13 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
     ///   - deadlineSeconds: Optional wall-clock budget for the entire plan.
     public init(
         nodes: [AxolotyCheckNode],
-        deadlineSeconds: TimeInterval? = nil
+        deadlineSeconds: TimeInterval? = nil,
+        expectedDurationSeconds: TimeInterval? = nil
     ) {
         schemaVersion = Self.currentSchemaVersion
         self.nodes = nodes
         self.deadlineSeconds = deadlineSeconds
+        self.expectedDurationSeconds = expectedDurationSeconds
     }
 
     /// Decodes a schema-versioned executable check plan.
@@ -267,6 +337,7 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
         self.schemaVersion = schemaVersion
         nodes = try container.decode([AxolotyCheckNode].self, forKey: .nodes)
         deadlineSeconds = try container.decodeIfPresent(TimeInterval.self, forKey: .deadlineSeconds)
+        expectedDurationSeconds = try container.decodeIfPresent(TimeInterval.self, forKey: .expectedDurationSeconds)
     }
 
     /// Encodes an executable check plan as schema version 1.
@@ -278,6 +349,7 @@ public struct AxolotyCheckPlan: Codable, Equatable, Sendable {
         try container.encode(Self.currentSchemaVersion, forKey: .schemaVersion)
         try container.encode(nodes, forKey: .nodes)
         try container.encodeIfPresent(deadlineSeconds, forKey: .deadlineSeconds)
+        try container.encodeIfPresent(expectedDurationSeconds, forKey: .expectedDurationSeconds)
     }
 
     /// The platform used when selecting platform-specific checks.

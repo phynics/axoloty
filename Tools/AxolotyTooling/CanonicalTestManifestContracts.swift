@@ -256,18 +256,22 @@ public struct AxolotyCanonicalTestPlanDefinition: Codable, Equatable, Sendable {
     public let ciNodes: [String]?
     /// The absolute wall-clock budget for this plan, in seconds.
     public let timeoutSeconds: TimeInterval?
+    /// Expected plan duration used as a warning threshold.
+    public let expectedDurationSeconds: TimeInterval?
 
     /// Creates a plan definition.
     public init(
         nodes: [String],
         inherits: String? = nil,
         ciNodes: [String]? = nil,
-        timeoutSeconds: TimeInterval? = nil
+        timeoutSeconds: TimeInterval? = nil,
+        expectedDurationSeconds: TimeInterval? = nil
     ) {
         self.nodes = nodes
         self.inherits = inherits
         self.ciNodes = ciNodes
         self.timeoutSeconds = timeoutSeconds
+        self.expectedDurationSeconds = expectedDurationSeconds
     }
 }
 

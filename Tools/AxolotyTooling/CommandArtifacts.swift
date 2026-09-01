@@ -16,12 +16,14 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
 
     private let root: URL
     let runID: String
+    let invocationID: String
+    let parentInvocationID: String?
     private let environmentKeys: [String]
     private let environmentValues: [String]
     private let environment: [String: String]
     private let lock = NSLock()
     private var nextIndex = 0
-    private var wroteRunMetadata = false
+    private var preparedInvocation = false
 
     init(
         root: URL,
@@ -30,6 +32,8 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
     ) {
         self.root = root
         self.runID = runID ?? UUID().uuidString
+        invocationID = UUID().uuidString.lowercased()
+        parentInvocationID = environment["AXOLOTY_PARENT_INVOCATION_ID"]
         self.environment = environment
         self.environmentKeys = environment.keys.sorted()
         self.environmentValues = Self.secretValues(in: environment)
@@ -45,30 +49,21 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
             throw ArtifactStoreError.unsafeRoot("run ID must contain only letters, numbers, '.', '_' or '-' and must not be '.' or '..'")
         }
         try validateRoot()
-        try validateContainedPath(root.appending(path: runID, directoryHint: .isDirectory))
+        let runDirectory = root.appending(path: runID, directoryHint: .isDirectory)
+        try validateContainedPath(runDirectory)
         lock.lock()
+        defer { lock.unlock() }
+        if !preparedInvocation {
+            try prepareInvocation(startedAt: startedAt, runDirectory: runDirectory)
+            preparedInvocation = true
+        }
         let index = nextIndex
         nextIndex += 1
-        let shouldWriteRunMetadata = !wroteRunMetadata
-        wroteRunMetadata = true
-        lock.unlock()
-
-        let runDirectory = root.appending(path: runID, directoryHint: .isDirectory)
-        try createDirectorySafely(at: runDirectory)
-        if shouldWriteRunMetadata {
-            let runMetadata: [String: Any] = [
-                "artifactContract": [
-                    "manifest.json", "verifier.log", "metadata.json", "stdout.txt", "stderr.txt", "result.json",
-                ],
-                "environmentKeys": environmentKeys,
-                "runId": runID,
-                "startedAt": ISO8601DateFormatter().string(from: startedAt),
-            ]
-            try writeJSON(runMetadata, to: runDirectory.appending(path: "run.json"))
-        }
 
         let node = Self.sanitize(context.node ?? "command")
-        let directory = runDirectory.appending(path: String(format: "%03d-%@", index + 1, node), directoryHint: .isDirectory)
+        let directory = invocationDirectory(runDirectory: runDirectory)
+            .appending(path: "commands", directoryHint: .isDirectory)
+            .appending(path: String(format: "%03d-%@", index + 1, node), directoryHint: .isDirectory)
         try createDirectorySafely(at: directory)
         try validateContainedPath(directory)
         let commandEnvironment = environment.merging(command.environment) { _, value in value }
@@ -102,15 +97,59 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
             ],
             "deadline": deadline.map { ISO8601DateFormatter().string(from: $0) } ?? NSNull(),
             "node": context.node ?? NSNull(),
+            "invocationId": invocationID,
             "runId": runID,
             "stage": context.stage,
             "startedAt": ISO8601DateFormatter().string(from: startedAt),
             "status": "running",
         ], to: artifact.manifest)
         try Data([
-            "[axoloty] phase=started run-id=\(runID) node=\(context.node ?? "command") stage=\(context.stage)\n",
+            "[axoloty] phase=started run-id=\(runID) invocation-id=\(invocationID) node=\(context.node ?? "command") stage=\(context.stage)\n",
         ].joined().utf8).write(to: artifact.verifierLog, options: .atomic)
         return artifact
+    }
+
+    private func prepareInvocation(startedAt: Date, runDirectory: URL) throws {
+        let invocationsDirectory = runDirectory.appending(path: "invocations", directoryHint: .isDirectory)
+        try createDirectorySafely(at: invocationsDirectory)
+        let invocationDirectory = invocationDirectory(runDirectory: runDirectory)
+        try validateContainedPath(invocationDirectory)
+        guard !FileManager.default.fileExists(atPath: invocationDirectory.path) else {
+            throw ArtifactStoreError.unsafeRoot("artifact invocation already exists")
+        }
+        try FileManager.default.createDirectory(
+            at: invocationDirectory,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+        let commandsDirectory = invocationDirectory.appending(path: "commands", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(
+            at: commandsDirectory,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+        let invocationMetadata: [String: Any] = [
+            "artifactContract": [
+                "manifest.json", "verifier.log", "metadata.json", "stdout.txt", "stderr.txt", "result.json",
+            ],
+            "environmentKeys": environmentKeys,
+            "invocationId": invocationID,
+            "parentInvocationId": parentInvocationID ?? NSNull(),
+            "runId": runID,
+            "startedAt": ISO8601DateFormatter().string(from: startedAt),
+        ]
+        try writeJSON(invocationMetadata, to: invocationDirectory.appending(path: "invocation.json"))
+    }
+
+    private func invocationDirectory(runDirectory: URL) -> URL {
+        runDirectory
+            .appending(path: "invocations", directoryHint: .isDirectory)
+            .appending(path: invocationID, directoryHint: .isDirectory)
+    }
+
+    var reportDirectory: URL {
+        root.appending(path: runID, directoryHint: .isDirectory)
+            .appending(path: "reports", directoryHint: .isDirectory)
     }
 
     func finish(
@@ -156,9 +195,14 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
             metadata["artifactPath"] = lifecycle.artifactPath ?? NSNull()
             metadata["deadline"] = lifecycle.deadline ?? NSNull()
             metadata["lastTest"] = lifecycle.lastTest ?? NSNull()
+            metadata["outputBytes"] = lifecycle.outputBytes ?? NSNull()
             metadata["node"] = lifecycle.node ?? NSNull()
             metadata["stage"] = lifecycle.stage
             metadata["escalatedToKill"] = lifecycle.escalatedToKill
+        } else if let observation = result.observation {
+            metadata["artifactPath"] = observation.artifactPath
+            metadata["lastTest"] = observation.lastTest ?? NSNull()
+            metadata["outputBytes"] = observation.outputBytes
         }
         try? writeJSON(metadata, to: artifact.metadata, mergeWithExisting: true)
 
@@ -171,9 +215,14 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
         if let lifecycle = result.lifecycle {
             manifest["outcome"] = lifecycle.outcome.rawValue
             manifest["lastTest"] = lifecycle.lastTest ?? NSNull()
+            manifest["outputBytes"] = lifecycle.outputBytes ?? NSNull()
             manifest["escalatedToKill"] = lifecycle.escalatedToKill
         } else {
             manifest["outcome"] = result.exitCode == 0 ? "passed" : "failed"
+            if let observation = result.observation {
+                manifest["lastTest"] = observation.lastTest ?? NSNull()
+                manifest["outputBytes"] = observation.outputBytes
+            }
         }
         try? writeJSON(manifest, to: artifact.manifest, mergeWithExisting: true)
 
@@ -183,7 +232,8 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
             "exitCode": result.exitCode,
             "outcome": result.lifecycle?.outcome.rawValue ?? (result.exitCode == 0 ? "passed" : "failed"),
             "timedOut": result.lifecycle?.outcome == .timedOut,
-            "lastTest": result.lifecycle?.lastTest ?? NSNull(),
+            "lastTest": result.observation?.lastTest ?? result.lifecycle?.lastTest ?? NSNull(),
+            "outputBytes": result.observation?.outputBytes ?? result.lifecycle?.outputBytes ?? NSNull(),
             "escalatedToKill": result.lifecycle?.escalatedToKill ?? false,
         ]
         try? writeJSON(durableResult, to: artifact.result)
@@ -297,11 +347,22 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
                     throw ArtifactStoreError.unsafeRoot("artifact path component is not a directory")
                 }
             } else {
-                try FileManager.default.createDirectory(
-                    at: current,
-                    withIntermediateDirectories: false,
-                    attributes: [.posixPermissions: 0o700]
-                )
+                do {
+                    try FileManager.default.createDirectory(
+                        at: current,
+                        withIntermediateDirectories: false,
+                        attributes: [.posixPermissions: 0o700]
+                    )
+                } catch {
+                    guard (try? FileManager.default.destinationOfSymbolicLink(atPath: current.path)) == nil else {
+                        throw ArtifactStoreError.unsafeRoot("artifact path contains a symbolic link")
+                    }
+                    var isDirectory = ObjCBool(false)
+                    guard FileManager.default.fileExists(atPath: current.path, isDirectory: &isDirectory),
+                          isDirectory.boolValue else {
+                        throw error
+                    }
+                }
             }
         }
     }

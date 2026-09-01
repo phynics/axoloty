@@ -114,7 +114,8 @@ func projectCommandRunsInProjectContext() {
         markerCommand(marker, executionContext: .project)
     )
 
-    #expect(result == AxolotyCheckCommandResult(exitCode: 0))
+    #expect(result.exitCode == 0)
+    #expect(result.observation != nil)
     #expect(FileManager.default.fileExists(atPath: marker.path))
 }
 
@@ -233,7 +234,8 @@ func commandRunnerAllowsHostCommandInHostContext() {
         markerCommand(marker, executionContext: .host)
     )
 
-    #expect(result == AxolotyCheckCommandResult(exitCode: 0))
+    #expect(result.exitCode == 0)
+    #expect(result.observation != nil)
     #expect(FileManager.default.fileExists(atPath: marker.path))
 }
 
@@ -270,7 +272,8 @@ func projectCommandRunsInNativeMacOSContext() {
         markerCommand(marker, executionContext: .project)
     )
 
-    #expect(result == AxolotyCheckCommandResult(exitCode: 0))
+    #expect(result.exitCode == 0)
+    #expect(result.observation != nil)
     #expect(FileManager.default.fileExists(atPath: marker.path))
 }
 

@@ -27,6 +27,7 @@ export_dir="$tmp/export"
 idf_dir="$tmp/idf"
 bin_dir="$tmp/bin"
 log="$tmp/idf.log"
+export FAKE_CCACHE_LOG="$tmp/ccache.log"
 mkdir -p "$project_dir" "$build_dir" "$idf_dir" "$bin_dir"
 
 cat > "$idf_dir/export.sh" <<'SH'
@@ -70,6 +71,7 @@ chmod +x "$bin_dir/idf.py"
 
 cat > "$bin_dir/ccache" <<'SH'
 #!/bin/sh
+printf '%s\n' "$*" >> "${FAKE_CCACHE_LOG:-/dev/null}"
 if [ "${1:-}" = "--print-stats" ]; then
     printf 'cache_hit 17\ncache_miss 3\n'
 fi
@@ -90,6 +92,7 @@ grep -Fqx -- "-B $build_dir build" "$log"
 test -f "$export_dir/axoloty-swift.bin"
 grep -Fq "IDF_CCACHE_ENABLE=1 CCACHE_DIR=$tmp/ccache CCACHE_NAMESPACE=esp-idf-" "$tmp/idf-env.log"
 grep -Fqx 'CCACHE_ENABLE:UNINITIALIZED=1' "$build_dir/CMakeCache.txt"
+grep -Fqx -- '--max-size 512M' "$tmp/ccache.log"
 
 # A warm build preserves the configuration, but a cache that no longer has
 # ccache active must be reconfigured even when target and Python still match.

@@ -102,11 +102,12 @@ func commandRunnerStreamsHumanOutputWhileCapturingIt() {
         arguments: ["-c", "printf 'out-one\\n'; printf 'err-one\\n' >&2; printf 'out-two\\n'"]
     ))
 
-    #expect(result == AxolotyCheckCommandResult(
-        exitCode: 0,
-        standardOutput: "out-one\nout-two\n",
-        standardError: "err-one\n"
-    ))
+    #expect(result.exitCode == 0)
+    #expect(result.standardOutput == "out-one\nout-two\n")
+    #expect(result.standardError == "err-one\n")
+    #expect(result.lifecycle == nil)
+    #expect(result.observation?.outputBytes == 24)
+    #expect(result.observation?.artifactPath.contains("/invocations/") == true)
     #expect(events.text(for: .standardOutput) == "out-one\nout-two\n")
     #expect(events.text(for: .standardError).contains("err-one\n"))
     #expect(events.text(for: .standardError).contains("heartbeat node=command stage=command"))
@@ -465,7 +466,9 @@ func commandRunnerResolvesExecutableUsingCommandSpecificPath() throws {
         environment: ["PATH": root.path]
     ))
 
-    #expect(result == AxolotyCheckCommandResult(exitCode: 0, standardOutput: "path-command-ok"))
+    #expect(result.exitCode == 0)
+    #expect(result.standardOutput == "path-command-ok")
+    #expect(result.observation?.outputBytes == 15)
 }
 
 @Test

@@ -67,6 +67,8 @@ public struct AxolotyCommandLifecycle: Codable, Equatable, Sendable {
     public let lastTest: String?
     /// The durable command artifact directory.
     public let artifactPath: String?
+    /// Total bytes observed across standard output and standard error.
+    public let outputBytes: Int?
     /// Whether the bounded grace period required SIGKILL escalation.
     public let escalatedToKill: Bool
 
@@ -79,6 +81,7 @@ public struct AxolotyCommandLifecycle: Codable, Equatable, Sendable {
         deadline: String? = nil,
         lastTest: String? = nil,
         artifactPath: String? = nil,
+        outputBytes: Int? = nil,
         escalatedToKill: Bool = false
     ) {
         self.outcome = outcome
@@ -88,6 +91,7 @@ public struct AxolotyCommandLifecycle: Codable, Equatable, Sendable {
         self.deadline = deadline
         self.lastTest = lastTest
         self.artifactPath = artifactPath
+        self.outputBytes = outputBytes
         self.escalatedToKill = escalatedToKill
     }
 }

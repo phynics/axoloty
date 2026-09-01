@@ -23,7 +23,8 @@ public struct AxolotyCheckPlanner: Sendable {
     public func plan(
         _ nodes: [AxolotyCheckNode],
         requested: [String]? = nil,
-        deadlineSeconds: TimeInterval? = nil
+        deadlineSeconds: TimeInterval? = nil,
+        expectedDurationSeconds: TimeInterval? = nil
     ) throws -> AxolotyCheckPlan {
         var byName: [String: AxolotyCheckNode] = [:]
         for node in nodes {
@@ -55,6 +56,10 @@ public struct AxolotyCheckPlanner: Sendable {
         }
 
         for root in roots { try visit(root) }
-        return AxolotyCheckPlan(nodes: ordered, deadlineSeconds: deadlineSeconds)
+        return AxolotyCheckPlan(
+            nodes: ordered,
+            deadlineSeconds: deadlineSeconds,
+            expectedDurationSeconds: expectedDurationSeconds
+        )
     }
 }

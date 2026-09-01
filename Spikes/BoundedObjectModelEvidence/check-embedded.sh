@@ -60,6 +60,10 @@ printf "mapBytes\\t%s\\n" "$(stat -c %s "$map")"
 riscv32-esp-elf-size -A "$elf" | awk '"'"'NF >= 2 && $1 ~ /^\./ && $2 ~ /^[0-9]+$/ { print $1 "\t" $2 }'"'"' >"$export_dir/sections.tsv"
 ' >"$artifact/embedded-metadata.tsv" 2>"$artifact/embedded-build.log"
 
+if [ "${AXOLOTY_TIMING_EVIDENCE:-0}" = 1 ]; then
+    grep -E '^ccache_(before|after) ' "$artifact/embedded-build.log"
+fi
+
 node "$probe/Evidence/assemble-embedded-evidence.mjs" \
     "$artifact/embedded-metadata.tsv" "$artifact/embedded-export/sections.tsv" \
     "$candidate" "$artifact/embedded-evidence.json"

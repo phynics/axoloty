@@ -280,7 +280,8 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
             roots: definition.nodes,
             platform: platform,
             availability: { ci ? $0.ci : $0.local },
-            deadlineSeconds: definition.timeoutSeconds
+            deadlineSeconds: definition.timeoutSeconds,
+            expectedDurationSeconds: definition.expectedDurationSeconds
         )
     }
 
@@ -347,7 +348,8 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
             roots: roots,
             platform: platform,
             availability: { ci ? $0.ci : $0.local },
-            deadlineSeconds: definition.timeoutSeconds
+            deadlineSeconds: definition.timeoutSeconds,
+            expectedDurationSeconds: definition.expectedDurationSeconds
         )
         guard let requested else { return declaredPlan }
         let availableNodeNames = Set(declaredPlan.nodes.map(\.name))
@@ -360,7 +362,8 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
             roots: requested,
             platform: platform,
             availability: { ci ? $0.ci : $0.local },
-            deadlineSeconds: definition.timeoutSeconds
+            deadlineSeconds: definition.timeoutSeconds,
+            expectedDurationSeconds: definition.expectedDurationSeconds
         )
     }
 
@@ -368,7 +371,8 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
         roots: [String],
         platform: AxolotyCheckPlan.Platform,
         availability: (AxolotyCanonicalTestNode) -> Bool,
-        deadlineSeconds: TimeInterval?
+        deadlineSeconds: TimeInterval?,
+        expectedDurationSeconds: TimeInterval? = nil
     ) throws -> AxolotyCheckPlan {
         let available = manifest.nodes.filter { $0.isAvailable(on: platform) && availability($0) }
         for root in roots {
@@ -385,7 +389,8 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
         return try AxolotyCheckPlanner().plan(
             available.map { checkNode(from: $0) },
             requested: availableRoots,
-            deadlineSeconds: deadlineSeconds
+            deadlineSeconds: deadlineSeconds,
+            expectedDurationSeconds: expectedDurationSeconds
         )
     }
 
@@ -427,7 +432,8 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
                 filter: node.filter,
                 timeoutSeconds: node.timeoutSeconds
             ),
-            resources: node.resources
+            resources: node.resources,
+            expectedDurationSeconds: node.expectedDurationSeconds
         )
     }
 
@@ -479,10 +485,12 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
                         executionContext: node.command.executionContext,
                         timeoutSeconds: node.command.timeoutSeconds
                     ),
-                    resources: node.resources
+                    resources: node.resources,
+                    expectedDurationSeconds: node.expectedDurationSeconds
                 )
             },
-            deadlineSeconds: plan.deadlineSeconds
+            deadlineSeconds: plan.deadlineSeconds,
+            expectedDurationSeconds: plan.expectedDurationSeconds
         )
     }
 

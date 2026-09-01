@@ -224,14 +224,23 @@ final class FoundationCommandExecution: @unchecked Sendable {
         let emptyTestDiagnostic = emptyTestRun
             ? "test command executed zero non-skipped tests; refusing to treat an empty test run as success\n"
             : ""
+        let finishedAt = Date()
+        let snapshot = state.collector.diagnosticSnapshot()
         let result = AxolotyCheckCommandResult(
             exitCode: emptyTestRun ? 65 : processExitCode,
             standardOutput: String(decoding: standardOutput, as: UTF8.self),
-            standardError: String(decoding: standardError, as: UTF8.self) + emptyTestDiagnostic
+            standardError: String(decoding: standardError, as: UTF8.self) + emptyTestDiagnostic,
+            observation: AxolotyCommandObservation(
+                elapsedSeconds: finishedAt.timeIntervalSince(state.startedAt),
+                lastTest: snapshot.lastTest,
+                outputBytes: snapshot.outputBytes,
+                artifactPath: state.artifact.directory.path
+            )
         )
         finishArtifact(
             state,
             result: result,
+            finishedAt: finishedAt,
             standardOutput: standardOutput,
             standardError: standardError
         )
@@ -260,13 +269,14 @@ final class FoundationCommandExecution: @unchecked Sendable {
     private func finishArtifact(
         _ state: CommandExecutionState,
         result: AxolotyCheckCommandResult,
+        finishedAt: Date = Date(),
         standardOutput: Data? = nil,
         standardError: Data? = nil
     ) {
         artifactStore.finish(
             state.artifact,
             startedAt: state.startedAt,
-            finishedAt: Date(),
+            finishedAt: finishedAt,
             result: result,
             standardOutput: standardOutput ?? Data(result.standardOutput.utf8),
             standardError: standardError ?? Data(result.standardError.utf8),
@@ -370,14 +380,16 @@ final class FoundationCommandExecution: @unchecked Sendable {
         escalatedToKill: Bool
     ) -> AxolotyCheckCommandResult {
         let finishedAt = Date()
+        let snapshot = collector.diagnosticSnapshot()
         let lifecycle = AxolotyCommandLifecycle(
             outcome: outcome,
             node: context.node,
             stage: context.stage,
             elapsedSeconds: finishedAt.timeIntervalSince(startedAt),
             deadline: deadline.map { ISO8601DateFormatter().string(from: $0) },
-            lastTest: collector.latestTest,
+            lastTest: snapshot.lastTest,
             artifactPath: artifact.directory.path,
+            outputBytes: snapshot.outputBytes,
             escalatedToKill: escalatedToKill
         )
         let summary = switch outcome {
@@ -400,7 +412,8 @@ final class FoundationCommandExecution: @unchecked Sendable {
         _ = axoloty_enable_child_subreaper()
         let stdout = Pipe()
         let stderr = Pipe()
-        let mergedEnvironment = environment.merging(command.environment) { _, value in value }
+        var mergedEnvironment = environment.merging(command.environment) { _, value in value }
+        mergedEnvironment["AXOLOTY_PARENT_INVOCATION_ID"] = artifactStore.invocationID
         let executable = resolveExecutable(command.executable, environment: mergedEnvironment)
         let arguments = [command.executable] + command.arguments
         var argv: [UnsafeMutablePointer<CChar>?] = arguments.map { strdup($0) }

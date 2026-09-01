@@ -585,11 +585,26 @@ test("required CI preserves the plan budget and uploads durable run evidence", (
   assert.match(requiredCIJob, /timeout-minutes: 90/);
   assert.match(requiredCIJob, /AXOLOTY_RUNS_DIR: \.testing\/runs/);
   assert.match(requiredCIJob, /CONTAINER_CREATE_TIMEOUT_SECONDS: "300"/);
-  assert.match(requiredCIJob, /AXOLOTY_TOOL_CONTAINER_ENV_VARS="AXOLOTY_OUTPUT CONTAINER_CREATE_TIMEOUT_SECONDS AXOLOTY_RUNS_DIR"/);
+  assert.match(requiredCIJob, /AXOLOTY_TIMING_EVIDENCE: "1"/);
+  assert.match(requiredCIJob, /AXOLOTY_TOOL_CONTAINER_ENV_VARS="AXOLOTY_OUTPUT CONTAINER_CREATE_TIMEOUT_SECONDS AXOLOTY_RUNS_DIR AXOLOTY_TIMING_EVIDENCE"/);
   assert.match(requiredCIJob, /Upload verification run diagnostics[\s\S]*\.testing\/required-checks\.log[\s\S]*\.testing\/runs\/\*\*[\s\S]*if-no-files-found: warn/);
   assert.match(requiredCIJob, /Summarize verification evidence[\s\S]*manifest\.json[\s\S]*verifier\.log/);
+  assert.match(requiredCIJob, /\.primary == true[\s\S]*\*-verify-ci\.json/);
+  assert.match(requiredCIJob, /cat "\$markdown_report" >> "\$GITHUB_STEP_SUMMARY"/);
+  assert.match(requiredCIJob, /SwiftPM exact hit:[\s\S]*Swift compiler exact hit:[\s\S]*ESP-IDF exact hit:/);
   assert.doesNotMatch(requiredCIJob, /COVERAGE_BUILD_DIR|\.testing\/coverage|Upload coverage/);
   assert.match(requiredCIJob, /Save Swift compiler cache[\s\S]*if: success\(\)/);
+});
+
+test("required CI restores but only successful main pushes save the bounded ESP-IDF cache", () => {
+  const restore = workflowStep("Restore ESP-IDF compiler cache");
+  const save = workflowStep("Save ESP-IDF compiler cache");
+  assert.match(requiredCIJob, /ESP_IDF_CCACHE_PREFIX="esp-idf-ccache-v1-\$\{image_identity\}-"/);
+  assert.match(requiredCIJob, /ESP_IDF_CCACHE_KEY=\$\{ESP_IDF_CCACHE_PREFIX\}\$\{GITHUB_SHA\}/);
+  assert.match(restore, /path: ~\/\.cache\/axoloty\/esp-idf-ccache/);
+  assert.match(restore, /key: \$\{\{ env\.ESP_IDF_CCACHE_KEY \}\}[\s\S]*restore-keys: \|[\s\S]*\$\{\{ env\.ESP_IDF_CCACHE_PREFIX \}\}/);
+  assert.match(save, /if: success\(\)[^\n]*github\.event_name == 'push'[^\n]*github\.ref == 'refs\/heads\/main'[^\n]*steps\.esp_idf_ccache\.outputs\.cache-hit != 'true'/);
+  assert.match(save, /path: ~\/\.cache\/axoloty\/esp-idf-ccache[\s\S]*key: \$\{\{ env\.ESP_IDF_CCACHE_KEY \}\}/);
 });
 
 test("live wire allows bounded container creation on busy runners", () => {
