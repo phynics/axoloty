@@ -17,25 +17,11 @@ func channelRejectsSeparators() throws {
 
 @Test("limits enforce bounded component capacities")
 func limitsAreBounded() throws {
-    let limits = try SensorThingsLimits(eventBufferCapacity: 4, maximumTrackedSensors: 8)
-    #expect(limits.eventBufferCapacity == 4)
-    #expect(limits.maximumTrackedSensors == 8)
-    let id = ObjectID(uuid: UUID16(bytes: (1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)))
-    let channel = try SensorThingsChannel<Observation>("observations")
-    #expect(throws: Error.self) {
-        try SensorThingsObserverConfiguration(
-            sensorID: id,
-            observationChannel: channel,
-            limits: SensorThingsLimits(eventBufferCapacity: 0)
-        )
-    }
-    #expect(throws: Error.self) {
-        try SensorThingsObserverConfiguration(
-            sensorID: id,
-            observationChannel: channel,
-            limits: SensorThingsLimits(maximumTrackedSensors: 65)
-        )
-    }
+    let limits = try SensorThingsLimits(maximumSensors: 4, maximumObservationStreams: 8)
+    #expect(limits.maximumSensors == 4)
+    #expect(limits.maximumObservationStreams == 8)
+    #expect(throws: Error.self) { try SensorThingsLimits(maximumSensors: 0) }
+    #expect(throws: Error.self) { try SensorThingsLimits(maximumObservationStreams: 65) }
 }
 
 @Test("raw JSON and number lexemes remain exact")

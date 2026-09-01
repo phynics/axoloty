@@ -233,8 +233,23 @@ public struct RuntimeBuilder: Sendable {
             }
             let pair = AsyncStream<RuntimeEventValue>.makeStream(bufferingPolicy: buffering)
             draft.eventRegistrations.append(RuntimeEventRegistration(selector: selector, policy: policy, continuation: pair.continuation))
-            return RuntimeEventStream(stream: pair.stream)
+            return RuntimeEventStream(stream: pair.stream, continuation: pair.continuation)
         }
+    }
+
+    /// Returns the number of event streams currently registered in this
+    /// provisional builder.
+    @_spi(AxolotyRuntimeAdapter)
+    public var eventStreamCount: Int {
+        registrations.eventRegistrations.count
+    }
+
+    /// Finishes event streams provisionally registered after the supplied count.
+    ///
+    /// - Parameter count: The number of streams retained before the provisional draft.
+    @_spi(AxolotyRuntimeAdapter)
+    public mutating func finishNewRuntimeEventStreams(after count: Int) {
+        registrations.finishNewEventStreams(after: count)
     }
 
     /// Finishes registration and returns the immutable runtime definition.

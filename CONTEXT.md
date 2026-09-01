@@ -48,6 +48,16 @@ A bounded first-party lifecycle registration attached to a runtime under a
 stable internal key. Modules use ``RuntimeModuleContext`` and
 ``RuntimeModuleRegistration``; they do not own transport or protocol state.
 
+**SensorThings source**:
+A typed Sensor/Thing producer installed in the single optional
+`AxolotySensorThings` runtime module. Its Sensor envelope names the parent
+Thing, and its producer publishes through the existing runtime operations.
+
+**Direct SensorThings observation**:
+A fixed-Sensor observation stream that consumes one configured Channel and
+accepts only Observation envelopes parented by that Sensor. It performs no
+metadata discovery.
+
 **Object envelope**:
 The standard protocol-level identity and metadata shared by Coaty objects.
 

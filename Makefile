@@ -409,6 +409,7 @@ test-support: resolve
 	Tests/Support/test-check-axoloty-object-boundary.sh
 	Tests/Support/test-check-g4-runtime-package-boundary.sh
 	Tests/Support/test-check-g4-runtime-consumer-boundary.sh
+	Tests/Support/test-check-g5-optional-products.sh
 	Tests/Support/test-check-g6-architecture.sh
 	Tests/Support/test-check-g6-product-boundary.sh
 	Tests/Support/test-check-g6-public-products.sh

@@ -211,8 +211,9 @@ IoValues exceeding 2^53 lose precision through CoatyJS's float64
 (`Int64.max` round-trips as `9223372036854776000`); Axoloty preserves Int64
 exactly.
 
-`SensorThings` is an optional G5 product. Its bounded schema models and source/
-observer workflows are covered by retained portable fixtures and the already-
+`SensorThings` is an optional G5 product. Its bounded schema models and
+source/direct-observation workflows are covered by retained portable fixtures
+and the already-
 proven standard Coaty Advertise, Discover/Resolve, Query/Retrieve, and Channel
 event paths. No compatible CoatyJS SensorThings package is available, so this
 row intentionally records fixture evidence rather than fabricating live

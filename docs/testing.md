@@ -425,3 +425,17 @@ changing cadence, timeout, ownership, or artifact policy. Protocol-facing
 changes should add an offline regression fixture and, where an Axoloty endpoint
 exists, a live CoatyJS interoperability scenario whenever the behavior can
 cross the wire. CoatyJS-only scenarios remain useful reference-wire evidence.
+
+## G5 optional products
+
+The `g5-optional-products` tier proves the host-only SensorThings product
+boundary and its source/direct-observation workflows without a broker or
+hardware:
+
+```sh
+make test-tier TIER=g5-optional-products
+```
+
+This tier is also a checkpoint release gate. Its boundary checker and paired
+negative self-test verify the single atomic SensorThings module API and
+retired API removal.

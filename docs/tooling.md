@@ -64,6 +64,9 @@ plan starts MQTT or accesses hardware.
 | `axoloty-tool hardware require` | no | required | Explicit device/release gate |
 | `axoloty-tool release fixture-bundle` | no | no | Bundle committed wire fixtures offline (not fresh wire evidence) |
 
+The canonical `g5-optional-products` tier is a hardware-free release gate
+for the bounded host SensorThings source and direct-observation workflows.
+
 Live CoatyJS capture, coverage, and long fuzz campaigns retain focused Make
 targets while their existing evidence contracts remain in place. The former
 `axoloty-tool test integration` command is retained only as a deprecation
