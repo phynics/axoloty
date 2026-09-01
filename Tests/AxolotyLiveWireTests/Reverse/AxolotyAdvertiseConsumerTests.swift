@@ -11,7 +11,7 @@ struct AxolotyAdvertiseConsumerTests {
     func decodesAdvertiseFromCoatyJS() async throws {
         let environment = ModernConsumerSupport.environment()
         let identity = try ModernConsumerSupport.identity(name: "axoloty-advertise-consumer")
-        var builder = try RuntimeDefinition.Builder(
+        var builder = try RuntimeBuilder(
             identity: identity,
             namespace: ModernConsumerSupport.namespace(environment: environment)
         )

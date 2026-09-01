@@ -22,7 +22,7 @@ dependencies: [
 
 ## Define and start a runtime
 
-The builder is mutable only before ``RuntimeDefinition`` is sealed. Register
+The ``RuntimeBuilder`` is mutable only before ``finish()``. Register
 bounded event streams and responders before calling `finish()`:
 
 ```swift
@@ -30,7 +30,7 @@ import Axoloty
 
 func runAgent() async throws {
     let identity = try RuntimeIdentity(id: .zero, name: "my-agent")
-    var builder = try RuntimeDefinition.Builder(identity: identity, namespace: "my-app")
+    var builder = try RuntimeBuilder(identity: identity, namespace: "my-app")
     _ = try builder.events(
         matching: .family(.advertise),
         buffering: .fail(capacity: 64)
@@ -69,5 +69,5 @@ and device callbacks; protocol transitions remain in ``AxolotyProtocol``.
 ## Next steps
 
 Read the project README for build and verification instructions. Typed IO
-endpoint and SensorThings APIs are available through their optional 0.6
+endpoint and SensorThings APIs are available through their optional 0.7
 products.

@@ -34,6 +34,20 @@ A normalized consequence of protocol processing for a runtime adapter or applica
 **Capability**:
 A protocol behavior understood by Axoloty and enabled for a particular runtime profile.
 
+**Runtime builder**:
+The finite mutable ``RuntimeBuilder`` used to register handlers, event
+streams, typed IO endpoints, and first-party runtime modules before startup.
+
+**Runtime definition**:
+The immutable ``RuntimeDefinition`` produced by consuming a runtime builder.
+It contains configuration and sealed registration state, but no registration
+or sealing methods.
+
+**Runtime module**:
+A bounded first-party lifecycle registration attached to a runtime under a
+stable internal key. Modules use ``RuntimeModuleContext`` and
+``RuntimeModuleRegistration``; they do not own transport or protocol state.
+
 **Object envelope**:
 The standard protocol-level identity and metadata shared by Coaty objects.
 

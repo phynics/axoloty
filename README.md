@@ -115,7 +115,7 @@ import Axoloty
 
 func runAgent() async throws {
     let identity = try RuntimeIdentity(id: .zero, name: "my-agent")
-    var builder = try RuntimeDefinition.Builder(identity: identity, namespace: "my-app")
+    var builder = try RuntimeBuilder(identity: identity, namespace: "my-app")
     _ = try builder.events(
         matching: .family(.advertise),
         buffering: .fail(capacity: 64)
@@ -222,6 +222,8 @@ See [docs/inspector.md](./docs/inspector.md) for the full reference.
 For the current release's changes, see
 [0.6.2 release notes](./docs/releases/0.6.2.md). For migrating from legacy
 CoatySwift, see [the 0.2 migration guide](./docs/migration/from-coatyswift-to-0.2.md).
+For the 0.7 runtime-registration migration, see
+[the 0.6-to-0.7 guide](./docs/migration/from-0.6-to-0.7.md).
 
 ## Contributing
 

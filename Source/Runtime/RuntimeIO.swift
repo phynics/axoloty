@@ -207,7 +207,7 @@ extension ProtocolExecutor {
     }
 
     func publishIoAdvertisements(nowMS: UInt32) async throws {
-        for endpoint in definition.ioEndpointRegistrations {
+        for endpoint in definition.registrations.ioEndpointRegistrations {
             let payload = try runtimeAdvertisePayload(objectBytes: endpoint.objectBytes)
             try await publishLifecycle(
                 .advertise(sourceID: endpoint.id.uuid, payload: payload),
@@ -217,7 +217,7 @@ extension ProtocolExecutor {
     }
 
     func publishIoDeadvertisements(nowMS: UInt32) async throws {
-        for endpoint in definition.ioEndpointRegistrations {
+        for endpoint in definition.registrations.ioEndpointRegistrations {
             let payload = RuntimeLifecyclePayload.deadvertise(objectID: endpoint.id)
             try await publishLifecycle(
                 .deadvertise(sourceID: endpoint.id.uuid, payload: payload),
@@ -475,12 +475,13 @@ extension ProtocolExecutor {
     private func sourceIndex<Value: IoEndpointValue>(_ source: IoSource<Value>) -> Int? {
         let slot = Int(source.runtimeSlot)
         guard slot >= 0, slot < ioStates.count else { return nil }
+        guard slot < definition.registrations.endpointGenerations.count else { return nil }
         let state = ioStates[slot]
         guard state.registration.role == .source,
               source.matches(
-                  registryID: definition.registryID,
+                  registryID: definition.registrations.registryID,
                   slot: source.runtimeSlot,
-                  generation: 1,
+                  generation: definition.registrations.endpointGenerations[slot],
                   id: state.registration.id,
                   representation: state.registration.representation
               ) else { return nil }
@@ -490,12 +491,13 @@ extension ProtocolExecutor {
     private func actorIndex<Value: IoEndpointValue>(_ actor: IoActor<Value>) -> Int? {
         let slot = Int(actor.runtimeSlot)
         guard slot >= 0, slot < ioStates.count else { return nil }
+        guard slot < definition.registrations.endpointGenerations.count else { return nil }
         let state = ioStates[slot]
         guard state.registration.role == .actor,
               actor.matches(
-                  registryID: definition.registryID,
+                  registryID: definition.registrations.registryID,
                   slot: actor.runtimeSlot,
-                  generation: 1,
+                  generation: definition.registrations.endpointGenerations[slot],
                   id: state.registration.id,
                   representation: state.registration.representation
               ) else { return nil }

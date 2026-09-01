@@ -21,7 +21,7 @@ struct AxolotyIoAssociateTests {
             id: UUID16(parsing: Self.actorID)!,
             name: "axoloty-io-actor"
         )
-        var builder = try RuntimeDefinition.Builder(identity: identity, namespace: namespace)
+    var builder = try RuntimeBuilder(identity: identity, namespace: namespace)
         let associateStream = try builder.events(
             matching: .family(.associate),
             buffering: RuntimeBufferingPolicy.failAfterDrop(capacity: 4)
@@ -69,7 +69,7 @@ struct AxolotyIoAssociateTests {
         let namespace = environment["WIRE_NAMESPACE"] ?? "wire-compat-v1"
         let contextName = environment["IO_CONTEXT_NAME"] ?? "wire-compat-io-context-1"
         let identity = try RuntimeIdentity(id: Self.sourceID, name: "axoloty-io-source")
-        let builder = try RuntimeDefinition.Builder(identity: identity, namespace: namespace)
+    let builder = try RuntimeBuilder(identity: identity, namespace: namespace)
         let runtime = AxolotyRuntime(
             definition: try builder.finish(),
             transport: try ModernConsumerSupport.binding(environment: environment)

@@ -47,24 +47,24 @@ public final class AxolotyInspectorSession: InspectorSession {
             stream: 64,
             eventStreams: 8
         )
-        var definition = try RuntimeDefinition(
-            namespace: configuration.namespace,
+        var definition = try RuntimeBuilder(
             sourceID: .zero,
+            namespace: configuration.namespace,
             capacities: capacities
         )
-        self.advertiseStream = try definition.registerEvents(
+        self.advertiseStream = try definition.events(
             matching: .family(.advertise),
             buffering: .dropOldest(capacity: 64)
         )
-        self.deadvertiseStream = try definition.registerEvents(
+        self.deadvertiseStream = try definition.events(
             matching: .family(.deadvertise),
             buffering: .dropOldest(capacity: 64)
         )
-        self.resolveStream = try definition.registerEvents(
+        self.resolveStream = try definition.events(
             matching: .family(.resolve),
             buffering: .dropOldest(capacity: 64)
         )
-        let sealed = try definition.seal()
+        let sealed = try definition.finish()
         let binding = try MQTTBinding(configuration: MQTTBindingConfiguration(
             host: configuration.host,
             port: configuration.port,

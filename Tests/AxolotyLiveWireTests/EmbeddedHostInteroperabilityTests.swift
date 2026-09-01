@@ -128,7 +128,7 @@ struct EmbeddedHostInteroperabilityTests {
         let port = UInt16(environment["WIRE_BROKER_PORT"] ?? "1883") ?? 1883
         let namespace = environment["WIRE_NAMESPACE"] ?? "axoloty-embedded"
         let identity = try RuntimeIdentity(id: Self.hostID, name: "axoloty-embedded-host")
-        var builder = try RuntimeDefinition.Builder(identity: identity, namespace: namespace)
+        var builder = try RuntimeBuilder(identity: identity, namespace: namespace)
         var streams = [RuntimeEventStream]()
         for selector in selectors {
             streams.append(try builder.events(

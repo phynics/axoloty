@@ -16,7 +16,7 @@ extension AxolotyRuntimeTests {
             id: try #require(UUID16(parsing: "44444444-4444-4444-8444-444444444444")),
             name: "axoloty-lifecycle-subject"
         )
-        var builder = try RuntimeDefinition.Builder(identity: identity, namespace: namespace)
+        var builder = try RuntimeBuilder(identity: identity, namespace: namespace)
         let stream = try builder.events(
             matching: .correlatedResponse(capability: .returnEvent, correlationID: correlation),
             buffering: .dropOldest(capacity: 2)
@@ -62,10 +62,10 @@ extension AxolotyRuntimeTests {
     @Test("wire publication variants emit one logical runtime event")
     func advertiseVariantsDoNotDuplicateRuntimeEvents() async throws {
         let identity = try RuntimeIdentity(id: .zero, name: "semantic-event-test")
-        var builder = try RuntimeDefinition.Builder(
+        var builder = try RuntimeBuilder(
             identity: identity,
             namespace: "test",
-            limits: try RuntimeCapacities(dispatch: 2)
+            capacities: try RuntimeCapacities(dispatch: 2)
         )
         _ = try builder.events(
             matching: .family(.advertise),
@@ -88,7 +88,7 @@ extension AxolotyRuntimeTests {
     @Test("advertise selectors match the payload object type")
     func advertiseSelectorMatchesPayloadObjectType() async throws {
         let identity = try RuntimeIdentity(id: .zero, name: "selector-test")
-        var builder = try RuntimeDefinition.Builder(identity: identity, namespace: "test")
+        var builder = try RuntimeBuilder(identity: identity, namespace: "test")
         let stream = try builder.events(
             matching: .advertise(objectType: "com.coaty.test.WireFixture"),
             buffering: .dropOldest(capacity: 2)

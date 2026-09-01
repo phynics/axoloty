@@ -56,14 +56,14 @@ struct AxolotyCoreRequestConsumerTests {
         }
     }
 
-    private func makeBuilder(environment: [String: String]) throws -> RuntimeDefinition.Builder {
-        try RuntimeDefinition.Builder(
+    private func makeBuilder(environment: [String: String]) throws -> RuntimeBuilder {
+        try RuntimeBuilder(
             identity: ModernConsumerSupport.identity(name: "axoloty-core-request-consumer"),
             namespace: ModernConsumerSupport.namespace(environment: environment)
         )
     }
 
-    private func makeRuntime(builder: inout RuntimeDefinition.Builder, environment: [String: String]) throws -> AxolotyRuntime {
+    private func makeRuntime(builder: inout RuntimeBuilder, environment: [String: String]) throws -> AxolotyRuntime {
         AxolotyRuntime(
             definition: try builder.finish(),
             transport: try ModernConsumerSupport.binding(environment: environment)

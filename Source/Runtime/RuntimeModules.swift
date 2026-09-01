@@ -3,11 +3,11 @@
 @_spi(AxolotyRuntimeAdapter) import AxolotyProtocol
 import AxolotyWire
 
-/// Package-only runtime component context used by first-party optional
-/// products. The host remains the lifecycle owner; components may only submit
+/// Package-only runtime module context used by first-party optional
+/// products. The host remains the lifecycle owner; modules may only submit
 /// closed one-way operations through this context.
 @_spi(AxolotyRuntimeAdapter)
-public struct RuntimeComponentContext: Sendable {
+public struct RuntimeModuleContext: Sendable {
     /// The configured runtime namespace.
     public let namespace: String
     /// The runtime's stable source identity.
@@ -18,10 +18,10 @@ public struct RuntimeComponentContext: Sendable {
     public let request: @Sendable (RuntimeRequest) async -> RuntimeReceipt
     /// Cancels one outstanding request correlation.
     public let cancelRequest: @Sendable (UUID16) async -> Bool
-    /// Emits a structured diagnostic from an optional component.
+    /// Emits a structured diagnostic from an optional module.
     public let diagnose: @Sendable (RuntimeDiagnostic) async -> Void
 
-    /// Creates a package-only component context.
+    /// Creates a package-only module context.
     ///
     /// - Parameters:
     ///   - namespace: The configured runtime namespace.
@@ -47,26 +47,26 @@ public struct RuntimeComponentContext: Sendable {
     }
 }
 
-/// Package-only registration for one bounded first-party runtime component.
+/// Package-only registration for one bounded first-party runtime module.
 ///
 /// Optional products use this seam to attach tasks to the existing runtime
 /// lifecycle. It is intentionally SPI-only and is not a general plugin API.
 @_spi(AxolotyRuntimeAdapter)
-public struct RuntimeComponentRegistration: @unchecked Sendable {
-    let start: @Sendable (RuntimeComponentContext) async -> Void
-    let run: @Sendable (RuntimeComponentContext) async -> Void
-    let stop: @Sendable (RuntimeComponentContext) async -> Void
+public struct RuntimeModuleRegistration: @unchecked Sendable {
+    let start: @Sendable (RuntimeModuleContext) async -> Void
+    let run: @Sendable (RuntimeModuleContext) async -> Void
+    let stop: @Sendable (RuntimeModuleContext) async -> Void
 
-    /// Creates a bounded first-party component registration.
+    /// Creates a bounded first-party module registration.
     ///
     /// - Parameters:
-    ///   - start: Invoked before the component run task starts.
-    ///   - run: Invoked for the component's lifetime.
+    ///   - start: Invoked before the module run task starts.
+    ///   - run: Invoked for the module's lifetime.
     ///   - stop: Invoked while the runtime is stopping.
     public init(
-        start: @escaping @Sendable (RuntimeComponentContext) async -> Void = { _ in },
-        run: @escaping @Sendable (RuntimeComponentContext) async -> Void,
-        stop: @escaping @Sendable (RuntimeComponentContext) async -> Void = { _ in }
+        start: @escaping @Sendable (RuntimeModuleContext) async -> Void = { _ in },
+        run: @escaping @Sendable (RuntimeModuleContext) async -> Void,
+        stop: @escaping @Sendable (RuntimeModuleContext) async -> Void = { _ in }
     ) {
         self.start = start
         self.run = run
@@ -74,61 +74,56 @@ public struct RuntimeComponentRegistration: @unchecked Sendable {
     }
 }
 
-extension RuntimeDefinition {
-    /// Registers one bounded first-party component through the package-only
+extension RuntimeBuilder {
+    /// Registers one bounded first-party module through the package-only
     /// runtime adapter seam.
+    ///
+    /// - Parameters:
+    ///   - registration: The module lifecycle callbacks.
+    ///   - key: The stable internal module key.
+    /// - Throws: ``AxolotyError`` when the key is invalid, duplicated, or at capacity.
     @_spi(AxolotyRuntimeAdapter)
-    public mutating func registerRuntimeComponent(
-        _ registration: RuntimeComponentRegistration
+    public mutating func registerRuntimeModule(
+        _ registration: RuntimeModuleRegistration,
+        key: String
     ) throws {
-        guard !sealed else {
-            throw AxolotyError.runtime(code: .notStarted, reason: "the runtime definition is already sealed")
-        }
-        guard runtimeComponents.count < 4 else {
-            throw AxolotyError.runtime(code: .capacityExceeded, reason: "runtime component capacity is full")
-        }
-        runtimeComponents.append(registration)
+        try commitRuntimeModule(key: key, registration: registration)
     }
-}
 
-extension RuntimeDefinition.Builder {
-    /// Reserves a private correlation identity for an optional runtime component.
+    /// Reserves a private correlation identity for an optional runtime module.
     ///
     /// The identity is derived from the definition nonce and a monotonic ordinal;
     /// callers receive no public correlation registry or lifecycle handle.
+    ///
+    /// - Returns: A correlation identity reserved within the current builder draft.
+    /// - Throws: ``AxolotyError`` if the builder cannot commit the reservation.
     @_spi(AxolotyRuntimeAdapter)
-    public mutating func reserveRuntimeComponentCorrelationID() throws -> UUID16 {
-        guard !definition.sealed else {
-            throw AxolotyError.runtime(code: .notStarted, reason: "the runtime definition is already sealed")
-        }
-        definition.runtimeComponentCorrelationOrdinal &+= 1
-        let ordinal = definition.runtimeComponentCorrelationOrdinal
-        let base = definition.registryID.uuid.bytes
-        return UUID16(bytes: (
-            base.0, base.1, base.2, base.3, base.4, base.5, base.6, base.7,
-            base.8, base.9, base.10, base.11,
-            UInt8(truncatingIfNeeded: ordinal >> 24),
-            UInt8(truncatingIfNeeded: ordinal >> 16),
-            UInt8(truncatingIfNeeded: ordinal >> 8),
-            UInt8(truncatingIfNeeded: ordinal)
-        ))
+    public mutating func reserveRuntimeModuleCorrelationID() throws -> UUID16 {
+        return try commit { $0.reserveModuleCorrelationID() }
     }
 }
 
-public extension RuntimeDefinition.Builder {
-    /// Registers one bounded first-party component through the package-only
-    /// runtime adapter seam.
-    @_spi(AxolotyRuntimeAdapter)
-    mutating func registerRuntimeComponent(
-        _ registration: RuntimeComponentRegistration
-    ) throws {
-        try definition.registerRuntimeComponent(registration)
+private extension RuntimeBuilder {
+    mutating func commitRuntimeModule(key: String, registration: RuntimeModuleRegistration) throws {
+        guard !key.isEmpty, key.utf8.count <= 64 else {
+            throw AxolotyError.invalidArgument(argument: "key", reason: "runtime module key must contain 1...64 UTF-8 bytes")
+        }
+        try commit { draft in
+            guard !draft.moduleKeys.contains(key) else {
+                throw AxolotyError.runtime(code: .capacityExceeded, reason: "runtime module key is already registered")
+            }
+            guard draft.modules.count < 4 else {
+                throw AxolotyError.runtime(code: .capacityExceeded, reason: "runtime module capacity is full")
+            }
+            draft.moduleKeys.insert(key)
+            draft.modules.append(registration)
+        }
     }
 }
 
 extension ProtocolExecutor {
-    func runtimeComponentContext() -> RuntimeComponentContext {
-        RuntimeComponentContext(
+    func runtimeModuleContext() -> RuntimeModuleContext {
+        RuntimeModuleContext(
             namespace: definition.namespace,
             sourceID: definition.sourceID,
             publish: { [weak self] operation in
@@ -160,26 +155,26 @@ extension ProtocolExecutor {
         )
     }
 
-    func startRuntimeComponents(restarting: Bool = false) async {
-        let context = runtimeComponentContext()
+    func startRuntimeModules(restarting: Bool = false) async {
+        let context = runtimeModuleContext()
         if !restarting {
-            runtimeComponentTasks.reserveCapacity(definition.runtimeComponents.count)
+            runtimeModuleTasks.reserveCapacity(definition.registrations.modules.count)
         }
-        for registration in definition.runtimeComponents {
+        for registration in definition.registrations.modules {
             await registration.start(context)
             guard !restarting else { continue }
             let task = Task { await registration.run(context) }
-            runtimeComponentTasks.append(task)
+            runtimeModuleTasks.append(task)
         }
     }
 
-    func stopRuntimeComponents() async {
-        let context = runtimeComponentContext()
-        let tasks = runtimeComponentTasks
+    func stopRuntimeModules() async {
+        let context = runtimeModuleContext()
+        let tasks = runtimeModuleTasks
         for task in tasks { task.cancel() }
-        runtimeComponentTasks.removeAll(keepingCapacity: true)
+        runtimeModuleTasks.removeAll(keepingCapacity: true)
         for task in tasks { await task.value }
-        for registration in definition.runtimeComponents {
+        for registration in definition.registrations.modules {
             await registration.stop(context)
         }
     }

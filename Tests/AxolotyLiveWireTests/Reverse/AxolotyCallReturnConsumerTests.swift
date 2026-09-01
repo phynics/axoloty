@@ -10,7 +10,7 @@ struct AxolotyCallReturnConsumerTests {
     @Test(.enabled(if: scenarioIsEnabled))
     func decodesCallAndPublishesCorrelatedReturn() async throws {
         let environment = ModernConsumerSupport.environment()
-        var builder = try RuntimeDefinition.Builder(
+        var builder = try RuntimeBuilder(
             identity: ModernConsumerSupport.identity(name: "axoloty-modern-call-responder"),
             namespace: ModernConsumerSupport.namespace(environment: environment)
         )

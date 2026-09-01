@@ -4,9 +4,16 @@ Axoloty is a Swift runtime and protocol suite for collaborative distributed agen
 
 ## Current checkpoint
 
-[`VERSION`](../VERSION) identifies the current released version (`0.6.2`). Axoloty remains pre-1.0 and its public API may change. The active development checkpoint is 0.6.
+[`VERSION`](../VERSION) identifies the current released version (`0.6.2`). Axoloty remains pre-1.0 and its public API may change. The active development checkpoint is 0.7.
 
 Historical release outcomes are preserved in [`docs/releases/`](./releases/) and [`CHANGELOG.md`](../CHANGELOG.md). They do not define current strategy.
+
+## Active direction: 0.7 runtime registration
+
+The 0.7 line makes runtime composition explicit: ``RuntimeBuilder`` owns a
+finite transactional registration draft and ``RuntimeDefinition`` is an
+immutable value produced by ``finish()``. First-party runtime modules use
+stable keys and duplicate registration is rejected atomically.
 
 ## Active direction: 0.6 architecture alignment
 

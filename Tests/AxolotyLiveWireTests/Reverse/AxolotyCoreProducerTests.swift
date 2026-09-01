@@ -127,7 +127,7 @@ struct AxolotyCoreProducerTests {
         let port = UInt16(environment["WIRE_BROKER_PORT"] ?? "1883") ?? 1883
         let namespace = environment["WIRE_NAMESPACE"] ?? "wire-compat-v1"
         let identity = try RuntimeIdentity(id: Self.sourceID, name: "axoloty-core-producer")
-        var builder = try RuntimeDefinition.Builder(identity: identity, namespace: namespace)
+        var builder = try RuntimeBuilder(identity: identity, namespace: namespace)
         let stream = try responseSelector.map {
             try builder.events(
                 matching: $0,
