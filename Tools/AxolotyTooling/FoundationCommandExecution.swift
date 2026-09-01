@@ -400,7 +400,8 @@ final class FoundationCommandExecution: @unchecked Sendable {
         _ = axoloty_enable_child_subreaper()
         let stdout = Pipe()
         let stderr = Pipe()
-        let mergedEnvironment = environment.merging(command.environment) { _, value in value }
+        var mergedEnvironment = environment.merging(command.environment) { _, value in value }
+        mergedEnvironment["AXOLOTY_PARENT_INVOCATION_ID"] = artifactStore.invocationID
         let executable = resolveExecutable(command.executable, environment: mergedEnvironment)
         let arguments = [command.executable] + command.arguments
         var argv: [UnsafeMutablePointer<CChar>?] = arguments.map { strdup($0) }
