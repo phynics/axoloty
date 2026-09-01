@@ -1202,7 +1202,8 @@ for _ in 1 2 3 4 5; do
     sleep 0.1
 done
 : > "$capture"
-AXOLOTY_HOST_RUNTIME_BRIDGE=1 CONTAINER_HOST="unix://$host_socket" \
+# An unset run ID keeps the existing generated shape, including the bridge ID.
+AXOLOTY_RUN_ID= WIRE_RUN_ID= AXOLOTY_HOST_RUNTIME_BRIDGE=1 CONTAINER_HOST="unix://$host_socket" \
     CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
     "$ROOT_DIR/.devcontainer/run.sh" true
 grep -q -- "-w $ROOT_DIR" "$capture"
@@ -1221,6 +1222,25 @@ grep -q -- "$build_dir:$build_dir" "$capture"
 grep -q -- "$SPM_CACHE_DIR:$SPM_CACHE_DIR" "$capture"
 grep -q -- "$AXOLOTY_ESP_IDF_CCACHE_DIR:$AXOLOTY_ESP_IDF_CCACHE_DIR" "$capture"
 grep -q -- '--security-opt label=disable' "$capture"
+
+# A caller-provided safe run ID remains intact across the host-to-container
+# bridge, including the WIRE_RUN_ID forwarded to the nested runtime.
+: > "$capture"
+AXOLOTY_RUN_ID=orchestration-named-run WIRE_RUN_ID= \
+AXOLOTY_HOST_RUNTIME_BRIDGE=1 CONTAINER_HOST="unix://$host_socket" \
+    CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+grep -q -- '--label io.axoloty.run-id=orchestration-named-run' "$capture"
+grep -q -- 'WIRE_RUN_ID=orchestration-named-run' "$capture"
+
+# An explicit wire ID still takes precedence over the outer orchestration ID.
+: > "$capture"
+AXOLOTY_RUN_ID=orchestration-named-run WIRE_RUN_ID=bridge-explicit-run \
+AXOLOTY_HOST_RUNTIME_BRIDGE=1 CONTAINER_HOST="unix://$host_socket" \
+    CONTAINER_RUNTIME="$fake_bin/fake-podman" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+grep -q -- '--label io.axoloty.run-id=orchestration-named-run' "$capture"
+grep -q -- 'WIRE_RUN_ID=bridge-explicit-run' "$capture"
 [ -S "$host_socket" ]
 
 # Execute a local observer through the fake container boundary. This verifies
