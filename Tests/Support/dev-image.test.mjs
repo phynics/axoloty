@@ -391,17 +391,132 @@ test("Make exports the command-line mount suffix override to run.sh", () => {
   assert.match(makefile, /^export CONTAINER_MOUNT_SUFFIX$/m);
 });
 
-test("tool launchers use the isolated Tools package and scratch directory", () => {
+test("tool launchers share the isolated Tools bootstrap", () => {
+  const sharedLauncher = fs.readFileSync(".devcontainer/axoloty-cli", "utf8");
+  assert.match(dockerfile, /COPY \.devcontainer\/axoloty-cli \/opt\/axoloty\/bin\/axoloty-cli/);
+  assert.match(inputs, /\.devcontainer\/axoloty-cli/);
+  assert.match(sharedLauncher, /swift run/);
+  assert.match(sharedLauncher, /--package-path Tools/);
+  assert.match(sharedLauncher, /scratch_path=\$\{TOOLING_BUILD_DIR:-\/workspace\/\.build\/tooling\}/);
+  assert.match(sharedLauncher, /--scratch-path "\$scratch_path"/);
+  assert.match(sharedLauncher, /--cache-path/);
+  assert.match(sharedLauncher, /module_cache_path=.*axoloty-tooling-module-cache/);
+  assert.match(sharedLauncher, /-Xswiftc -module-cache-path -Xswiftc "\$module_cache_path"/);
   for (const executable of ["ax", "axoloty-tool"]) {
     const launcher = fs.readFileSync(`.devcontainer/${executable}`, "utf8");
-    assert.match(launcher, /swift run/);
-    assert.match(launcher, /--package-path Tools/);
-    assert.match(launcher, /scratch_path=\$\{TOOLING_BUILD_DIR:-\/workspace\/\.build\/tooling\}/);
-    assert.match(launcher, /--scratch-path "\$scratch_path"/);
-    assert.match(launcher, /--cache-path/);
-    assert.match(launcher, /module_cache_path=.*axoloty-tooling-module-cache/);
-    assert.match(launcher, /-Xswiftc -module-cache-path -Xswiftc "\$module_cache_path"/);
+    assert.match(launcher, /axoloty-cli/);
     assert.match(launcher, new RegExp(`\\b${executable}\\b`));
+  }
+});
+
+test("service launchers prepare MCP before tooling readiness starts", () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-service-launcher-"));
+  const fakeSwift = path.join(temporary, "swift");
+  const swiftLog = path.join(temporary, "swift.log");
+  const runEnvironment = path.join(temporary, "run-environment");
+  const binaryDirectory = path.join(temporary, "root build with spaces", "debug");
+  const rootPackagePath = path.join(temporary, "root package with spaces");
+  const rootBuildPath = path.join(temporary, "root scratch with spaces");
+  const rootCachePath = path.join(temporary, "root cache with spaces");
+  fs.mkdirSync(rootPackagePath, { recursive: true });
+  fs.writeFileSync(fakeSwift, [
+    "#!/bin/sh",
+    "set -eu",
+    "printf '%s\\n' \"$*\" >> \"$FAKE_SWIFT_LOG\"",
+    "show_bin_path=0",
+    "has_product=0",
+    "for argument do",
+    "  [ \"$argument\" = \"--show-bin-path\" ] && show_bin_path=1",
+    "  [ \"$argument\" = \"axoloty-mcp\" ] && has_product=1",
+    "done",
+    "case \"$1\" in",
+    "  build)",
+    "    if [ \"$show_bin_path\" -eq 1 ]; then",
+    "      printf '%s\\n' \"$FAKE_BIN_DIR\"",
+    "    else",
+    "      [ \"$FAKE_BUILD_STATUS\" -eq 0 ] || exit \"$FAKE_BUILD_STATUS\"",
+    "      if [ \"$has_product\" -eq 1 ] && [ \"$FAKE_SKIP_PRODUCT\" -eq 0 ]; then",
+    "        mkdir -p \"$FAKE_BIN_DIR\"",
+    "        printf '#!/bin/sh\\nexit 0\\n' > \"$FAKE_BIN_DIR/axoloty-mcp\"",
+    "        chmod 0755 \"$FAKE_BIN_DIR/axoloty-mcp\"",
+    "      fi",
+    "    fi",
+    "    ;;",
+    "  run)",
+    "    printf '%s\\n' \"$AXOLOTY_MCP_EXECUTABLE\" > \"$FAKE_RUN_ENV\"",
+    "    ;;",
+    "  *)",
+    "    echo \"unexpected Swift invocation: $*\" >&2",
+    "    exit 2",
+    "    ;;",
+    "esac",
+  ].join("\n") + "\n");
+  fs.chmodSync(fakeSwift, 0o755);
+
+  const baseEnvironment = {
+    ...isolatedMakeEnvironment(),
+    PATH: `${temporary}${path.delimiter}${process.env.PATH ?? ""}`,
+    FAKE_SWIFT_LOG: swiftLog,
+    FAKE_RUN_ENV: runEnvironment,
+    FAKE_BIN_DIR: binaryDirectory,
+    FAKE_BUILD_STATUS: "0",
+    FAKE_SKIP_PRODUCT: "0",
+    AXOLOTY_MCP_EXECUTABLE: "",
+    AXOLOTY_ROOT_PACKAGE_PATH: rootPackagePath,
+    AXOLOTY_ROOT_BUILD_DIR: rootBuildPath,
+    AXOLOTY_ROOT_CACHE_PATH: rootCachePath,
+    TOOLING_BUILD_DIR: path.join(temporary, "tooling scratch"),
+    SPM_CACHE_DIR: path.join(temporary, "tooling cache"),
+  };
+  const runLauncher = (args, overrides = {}) => spawnSync(
+    "sh",
+    [".devcontainer/axoloty-cli", "ax", ...args],
+    { cwd: ".", encoding: "utf8", env: { ...baseEnvironment, ...overrides } },
+  );
+  const readLog = () => fs.existsSync(swiftLog)
+    ? fs.readFileSync(swiftLog, "utf8").trim().split("\n").filter(Boolean)
+    : [];
+  const clearEvidence = () => {
+    fs.rmSync(swiftLog, { force: true });
+    fs.rmSync(runEnvironment, { force: true });
+  };
+
+  try {
+    const successful = runLauncher(["serve", "dev"]);
+    assert.equal(successful.status, 0, `${successful.stdout}\n${successful.stderr}`);
+    const successfulCalls = readLog();
+    assert.equal(successfulCalls.length, 3, successfulCalls.join("\n"));
+    assert.match(successfulCalls[0], /build .*--product axoloty-mcp/);
+    assert.match(successfulCalls[1], /build .*--show-bin-path/);
+    assert.match(successfulCalls[2], /run .* ax serve dev$/);
+    assert.equal(fs.readFileSync(runEnvironment, "utf8").trim(), `${binaryDirectory}/axoloty-mcp`);
+
+    clearEvidence();
+    const override = runLauncher(["serve", "dev"], { AXOLOTY_MCP_EXECUTABLE: "/custom/mcp" });
+    assert.equal(override.status, 0, `${override.stdout}\n${override.stderr}`);
+    assert.equal(readLog().length, 1);
+    assert.equal(fs.readFileSync(runEnvironment, "utf8").trim(), "/custom/mcp");
+
+    clearEvidence();
+    const mqttOnly = runLauncher(["serve", "mqtt"]);
+    assert.equal(mqttOnly.status, 0, `${mqttOnly.stdout}\n${mqttOnly.stderr}`);
+    assert.equal(readLog().length, 1);
+    assert.equal(fs.readFileSync(runEnvironment, "utf8").trim(), "");
+
+    clearEvidence();
+    const buildFailure = runLauncher(["serve", "mcp"], { FAKE_BUILD_STATUS: "17" });
+    assert.equal(buildFailure.status, 17, `${buildFailure.stdout}\n${buildFailure.stderr}`);
+    assert.equal(readLog().length, 1);
+    assert.ok(!fs.existsSync(runEnvironment));
+
+    clearEvidence();
+    fs.rmSync(binaryDirectory, { force: true, recursive: true });
+    const missingProduct = runLauncher(["serve", "mcp"], { FAKE_SKIP_PRODUCT: "1" });
+    assert.equal(missingProduct.status, 70, `${missingProduct.stdout}\n${missingProduct.stderr}`);
+    assert.equal(readLog().length, 2);
+    assert.ok(!fs.existsSync(runEnvironment));
+  } finally {
+    fs.rmSync(temporary, { force: true, recursive: true });
   }
 });
 

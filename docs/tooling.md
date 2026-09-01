@@ -42,6 +42,9 @@ The root package also publishes `ax` and `axoloty-mcp`. Linux images provide
 mounted-worktree launchers for all three products under `/opt/axoloty/bin`.
 Use `make serve-mqtt`, `make serve-mcp`, or `make serve-dev` for thin container
 entry points. Service policy remains in `AxolotyTooling`, not Make or shell.
+The Linux `ax` and `axoloty-tool` launchers build the mounted-worktree
+`axoloty-mcp` product before starting `serve mcp` or `serve dev`, unless
+`AXOLOTY_MCP_EXECUTABLE` supplies an executable path.
 
 The macOS plan runs host build, lint, tooling tests, and offline wire fixtures.
 The Linux plan adds ESP32-C6 cross-compilation and linker verification. Neither

@@ -15,6 +15,7 @@ paths=(
     .devcontainer/ax
     .devcontainer/axoloty-tool
     .devcontainer/axoloty-mcp
+    .devcontainer/axoloty-cli
     .dockerignore
 )
 

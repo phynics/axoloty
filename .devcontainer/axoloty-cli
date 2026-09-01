@@ -1,0 +1,53 @@
+#!/bin/sh
+# Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
+
+set -eu
+
+product=${1:?missing tooling product}
+shift
+
+scratch_path=${TOOLING_BUILD_DIR:-/workspace/.build/tooling}
+cache_path=${SPM_CACHE_DIR:-/workspace/.swiftpm-cache}
+module_cache_path=${SWIFTPM_MODULECACHE_OVERRIDE:-/tmp/axoloty-tooling-module-cache}
+
+# The image contains mounted-worktree launchers rather than compiled project
+# products. Prepare the MCP product before the tooling service runner starts so
+# its readiness deadline measures service startup, not SwiftPM compilation.
+if [ "${1:-}" = "serve" ] && { [ "${2:-}" = "mcp" ] || [ "${2:-}" = "dev" ]; } \
+    && [ -z "${AXOLOTY_MCP_EXECUTABLE:-}" ]; then
+    root_package_path=${AXOLOTY_ROOT_PACKAGE_PATH:-${WORKDIR:-/workspace}}
+    root_build_dir=${AXOLOTY_ROOT_BUILD_DIR:-${BUILD_DIR:-/workspace/.build}}
+    root_cache_path=${AXOLOTY_ROOT_CACHE_PATH:-${SPM_CACHE_DIR:-/workspace/.swiftpm-cache}}
+
+    swift build \
+        --package-path "$root_package_path" \
+        --scratch-path "$root_build_dir" \
+        --cache-path "$root_cache_path" \
+        --disable-automatic-resolution \
+        --product axoloty-mcp
+
+    mcp_bin_dir=$(swift build \
+        --package-path "$root_package_path" \
+        --scratch-path "$root_build_dir" \
+        --cache-path "$root_cache_path" \
+        --disable-automatic-resolution \
+        --show-bin-path)
+    if ! mcp_bin_dir=$(CDPATH= cd -- "$mcp_bin_dir" && pwd); then
+        echo "axoloty-mcp binary directory was not found at $mcp_bin_dir after build" >&2
+        exit 70
+    fi
+    mcp_executable="$mcp_bin_dir/axoloty-mcp"
+    if [ ! -x "$mcp_executable" ]; then
+        echo "axoloty-mcp product was not found at $mcp_executable after build" >&2
+        exit 70
+    fi
+    export AXOLOTY_MCP_EXECUTABLE="$mcp_executable"
+fi
+
+exec swift run \
+    --package-path Tools \
+    --scratch-path "$scratch_path" \
+    --cache-path "$cache_path" \
+    -Xswiftc -module-cache-path -Xswiftc "$module_cache_path" \
+    --disable-automatic-resolution \
+    "$product" "$@"

@@ -672,11 +672,7 @@ private func mcpExecutablePath() -> String? {
        FileManager.default.isExecutableFile(atPath: configured) {
         return configured
     }
-    var candidates = [
-        "/opt/axoloty/bin/axoloty-mcp",
-        ".build/debug/axoloty-mcp",
-        ".build/x86_64-unknown-linux-gnu/debug/axoloty-mcp",
-    ]
+    var candidates: [String] = []
     if let argvZero = CommandLine.arguments.first {
         candidates.append(
             URL(fileURLWithPath: argvZero)
@@ -685,6 +681,13 @@ private func mcpExecutablePath() -> String? {
                 .path
         )
     }
+    candidates.append(contentsOf: [
+        ".build/debug/axoloty-mcp",
+        ".build/x86_64-unknown-linux-gnu/debug/axoloty-mcp",
+    ])
+    // The image path is a swift-run launcher, not a compiled executable. Using
+    // it from this SwiftPM test would contend with the parent test process for
+    // the same build directory, so the test only selects a built product.
     return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
 }
 

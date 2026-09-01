@@ -20,10 +20,16 @@ exiting child returns 0.
 ## Installation and wrappers
 
 On Linux, `make image` installs non-interactive mounted-worktree launchers at
-`/opt/axoloty/bin/ax` and `/opt/axoloty/bin/axoloty-mcp`.
-`/opt/axoloty/bin/axoloty-tool` is the matching typed-control-plane launcher.
-All three run their product with `swift run` against the mounted worktree and
-cache. Use the thin in-container wrappers:
+`/opt/axoloty/bin/ax`, `/opt/axoloty/bin/axoloty-tool`, and
+`/opt/axoloty/bin/axoloty-mcp`. The `ax` and `axoloty-tool` launchers share a
+bootstrap at `/opt/axoloty/bin/axoloty-cli`.
+The shared bootstrap runs the tooling product with `swift run` against the
+mounted worktree and cache. For `serve mcp` and `serve dev`, it first builds the
+root `axoloty-mcp` product and passes its executable path to the service
+runner. This keeps MCP readiness timing separate from SwiftPM compilation. An
+explicit `AXOLOTY_MCP_EXECUTABLE` skips that preparation step.
+
+Use the thin in-container wrappers:
 
 ```sh
 make serve-mqtt
@@ -85,7 +91,8 @@ an authenticated, deliberately configured proxy.
 ## Development stack
 
 `ax serve dev` starts MQTT first, waits for it, starts MCP HTTP, then reports
-both endpoints. It defaults to MQTT port 1883 and MCP port 8765. Use
+both endpoints. The Linux launcher prepares `axoloty-mcp` before this sequence
+starts. It defaults to MQTT port 1883 and MCP port 8765. Use
 `--mqtt-port`, `--mcp-port`, `--namespace`, and `--output human|json` to change
 the ports, namespace, and readiness format. If either child exits, the runner
 terminates its sibling and returns the exiting child's status.
