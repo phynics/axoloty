@@ -74,6 +74,40 @@ private func decodeDiagnostic(_ result: AxolotyCommandResult) throws -> AxolotyE
     )
 }
 
+private func checkpointManifestFixture() throws -> URL {
+    let baseline = try AxolotyCanonicalTestPlanResolver(
+        environment: ProcessInfo.processInfo.environment
+    ).manifest
+    var document = try #require(
+        JSONSerialization.jsonObject(with: JSONEncoder().encode(baseline)) as? [String: Any]
+    )
+    document["releaseGates"] = []
+    var plans = try #require(document["plans"] as? [String: Any])
+    var checkpoint = try #require(plans["checkpoint"] as? [String: Any])
+    checkpoint["nodes"] = ["resolve"]
+    plans["checkpoint"] = checkpoint
+    document["plans"] = plans
+
+    let directory = FileManager.default.temporaryDirectory
+        .appending(path: "axoloty-checkpoint-fixture-\(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let override = directory.appending(path: "manifest.json")
+    try JSONSerialization.data(withJSONObject: document, options: [.sortedKeys]).write(to: override)
+    return override
+}
+
+@Test
+func typedInvocationParserClassifiesReleaseCommandsAndEnvironmentFallbacks() {
+    let parser = AxolotyCommandParser(environment: ["FILTER": "FallbackSuite", "TIER": "unit"])
+
+    #expect(parser.parse(["release", "fixture-bundle"]) == .release(.fixtureBundle))
+    #expect(parser.parse(["release", "checkpoint"]) == .release(.checkpoint(hardware: false)))
+    #expect(parser.parse(["release", "checkpoint-hardware"]) == .release(.checkpoint(hardware: true)))
+    #expect(parser.parse(["test-one"]) == .testOne(filter: "FallbackSuite"))
+    #expect(parser.parse(["test-tier"]) == .testTier(name: "unit", ci: false))
+    #expect(parser.parse(["explain"]) == .explain(tier: "unit", ci: false))
+}
+
 @Test
 func helpCommandPrintsUsage() {
     let result = AxolotyCommandDispatcher().run(arguments: ["help"])
@@ -640,6 +674,123 @@ func checkpointManifestRecordsAllRequiredReleaseGatesInOrder() throws {
 }
 
 @Test
+func releaseCheckpointUsesTheInjectedExecutorEventSink() {
+    let manifestURL = try! checkpointManifestFixture()
+    defer { try? FileManager.default.removeItem(at: manifestURL.deletingLastPathComponent()) }
+    let events = RecordingEventSink()
+    let dispatcher = AxolotyCommandDispatcher(
+        commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
+        fileSystem: StubFileSystem(paths: []),
+        environment: projectEnvironment.merging([
+            "AXOLOTY_TEST_MANIFEST": manifestURL.path,
+        ]) { _, value in value },
+        eventSink: { event in events.append(event.diagnosticLine()) },
+        clock: CheckTestClock(),
+        overrunScheduler: ManualOverrunScheduler()
+    )
+
+    let result = dispatcher.run(arguments: ["release", "checkpoint"])
+
+    #expect(result.standardError.isEmpty)
+    #expect(events.lines == [
+        "[axoloty] event=plan-start\n",
+        "[axoloty] event=node-start node=resolve expected=60.000s lease-wait=0.000s\n",
+        "[axoloty] event=node-completion node=resolve status=passed elapsed=0.000s expected=60.000s lease-wait=0.000s\n",
+        "[axoloty] event=plan-completion status=passed elapsed=0.000s lease-wait=0.000s output-bytes=0\n",
+    ])
+}
+
+@Test
+func releaseCheckpointHumanOutputIsExactlyTheCheckSummary() throws {
+    let override = try checkpointManifestFixture()
+    defer { try? FileManager.default.removeItem(at: override.deletingLastPathComponent()) }
+    let environment = projectEnvironment.merging([
+        "AXOLOTY_OUTPUT": "human",
+        "AXOLOTY_TEST_MANIFEST": override.path,
+    ]) { _, value in value }
+    let result = AxolotyCommandDispatcher(
+        commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
+        fileSystem: StubFileSystem(paths: []),
+        environment: environment,
+        timestampProvider: { "2026-09-01T00:00:00Z" },
+        clock: CheckTestClock(),
+        overrunScheduler: ManualOverrunScheduler()
+    ).run(arguments: ["release", "checkpoint"])
+
+    #expect(result.exitCode == 0)
+    #expect(result.standardOutput == "PASSED resolve\n")
+    #expect(result.standardError.isEmpty)
+}
+
+@Test
+func releaseCheckpointRendersCompleteDeterministicJSONBytes() throws {
+    let override = try checkpointManifestFixture()
+    defer { try? FileManager.default.removeItem(at: override.deletingLastPathComponent()) }
+    let environment = projectEnvironment.merging([
+        "AXOLOTY_TEST_MANIFEST": override.path,
+        "AXOLOTY_GIT_COMMIT": String(repeating: "a", count: 40),
+        "AXOLOTY_GIT_TREE": String(repeating: "b", count: 40),
+        "AXOLOTY_REPOSITORY": "github.com/phynics/axoloty",
+    ]) { _, value in value }
+    let result = AxolotyCommandDispatcher(
+        commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
+        fileSystem: StubFileSystem(
+            paths: [],
+            fileContents: [:]
+        ),
+        environment: environment,
+        timestampProvider: { "2026-09-01T00:00:00Z" },
+        clock: CheckTestClock(),
+        overrunScheduler: ManualOverrunScheduler()
+    ).run(arguments: ["release", "checkpoint"])
+    #if os(Linux)
+    let platform = "linux"
+    #else
+    let platform = "macOS"
+    #endif
+    let expectedLines = [
+        "{",
+        "  \"gitBranch\" : \"\",",
+        "  \"gitClean\" : true,",
+        "  \"gitCommit\" : \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",",
+        "  \"gitTree\" : \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",",
+        "  \"hardwareIncluded\" : false,",
+        "  \"platform\" : \"\(platform)\",",
+        "  \"releaseGates\" : [",
+        "",
+        "  ],",
+        "  \"releaseVersion\" : \"unavailable\",",
+        "  \"repository\" : \"github.com\\/phynics\\/axoloty\",",
+        "  \"results\" : [",
+        "    {",
+        "      \"command\" : {",
+        "        \"exitCode\" : 0,",
+        "        \"standardError\" : \"\",",
+        "        \"standardOutput\" : \"\"",
+        "      },",
+        "      \"name\" : \"resolve\",",
+        "      \"status\" : \"passed\",",
+        "      \"timing\" : {",
+        "        \"elapsedSeconds\" : 0,",
+        "        \"exceededExpectation\" : false,",
+        "        \"expectedDurationSeconds\" : 60,",
+        "        \"resourceLeaseWaitSeconds\" : 0",
+        "      }",
+        "    }",
+        "  ],",
+        "  \"schemaVersion\" : 3,",
+        "  \"swiftVersion\" : \"\",",
+        "  \"timestamp\" : \"2026-09-01T00:00:00Z\"",
+        "}"
+    ]
+    let expectedBytes = Data(expectedLines.joined(separator: "\n").utf8)
+
+    #expect(result.exitCode == 0)
+    #expect(Data(result.standardOutput.utf8) == expectedBytes)
+    #expect(result.standardError.isEmpty)
+}
+
+@Test
 func wireVerifyRunsOnlyItsDependencyClosure() throws {
     let dispatcher = AxolotyCommandDispatcher(
         commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
@@ -875,6 +1026,14 @@ private final class RecordingSequenceRunner: AxolotyCheckCommandRunning, @unchec
         commands.append(command)
         currentConcurrent -= 1
         return AxolotyCheckCommandResult(exitCode: 0)
+    }
+}
+
+private final class RecordingEventSink: @unchecked Sendable {
+    private(set) var lines: [String] = []
+
+    func append(_ line: String) {
+        lines.append(line)
     }
 }
 
