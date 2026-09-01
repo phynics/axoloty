@@ -110,6 +110,23 @@ private final class RecordingLeaseManager: AxolotyResourceLeasing, @unchecked Se
     }
 }
 
+private final class AdvancingLeaseManager: AxolotyResourceLeasing, @unchecked Sendable {
+    let clock: CheckTestClock
+
+    init(clock: CheckTestClock) {
+        self.clock = clock
+    }
+
+    func acquire(
+        resource _: String,
+        timeoutSeconds _: TimeInterval?,
+        owner _: String
+    ) throws -> any AxolotyResourceLease {
+        clock.advance(by: 3)
+        return RecordingLease()
+    }
+}
+
 private struct SuccessfulCheckRunner: AxolotyCheckCommandRunning {
     func run(_ command: AxolotyCommandPlan) -> AxolotyCheckCommandResult {
         AxolotyCheckCommandResult(exitCode: 0)
@@ -202,4 +219,26 @@ func executorLeasesOnlyCollisionProneDeclaredResources() {
     #expect(results.map(\.status) == [.passed])
     #expect(manager.acquiredResources == ["fixed-port-1883", "wire-containers"])
     #expect(manager.acquiredTimeouts == [30, 30])
+}
+
+@Test
+func executorAccountsForResourceLeaseWaitSeparately() {
+    let clock = CheckTestClock()
+    let node = AxolotyCheckNode(
+        name: "resource-owner",
+        command: AxolotyCommandPlan(executable: "resource-owner"),
+        resources: ["wire-containers"],
+        expectedDurationSeconds: 10
+    )
+    let validator = AxolotyExecutionContextValidator(environment: ["AXOLOTY_DEVCONTAINER": "1"])
+
+    let result = AxolotyCheckExecutor(
+        commandRunner: SuccessfulCheckRunner(),
+        contextValidator: validator,
+        clock: clock,
+        resourceLeaseManager: AdvancingLeaseManager(clock: clock)
+    ).execute(AxolotyCheckPlan(nodes: [node])).first
+
+    #expect(result?.timing?.elapsedSeconds == 3)
+    #expect(result?.timing?.resourceLeaseWaitSeconds == 3)
 }

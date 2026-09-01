@@ -29,6 +29,8 @@ public struct AxolotyCheckExecutor: Sendable {
     private let cancellation: AxolotyCommandCancellation?
     private let clock: any AxolotyTimingClock
     private let resourceLeaseManager: any AxolotyResourceLeasing
+    private let overrunScheduler: any AxolotyOverrunScheduling
+    private let eventSink: @Sendable (AxolotyCheckExecutionEvent) -> Void
 
     private static let crossProcessResources: Set<String> = [
         "fixed-port-1883",
@@ -42,13 +44,15 @@ public struct AxolotyCheckExecutor: Sendable {
     public init(
         commandRunner: any AxolotyCheckCommandRunning,
         cancellation: AxolotyCommandCancellation? = nil,
-        resourceLeaseManager: (any AxolotyResourceLeasing)? = nil
+        resourceLeaseManager: (any AxolotyResourceLeasing)? = nil,
+        eventSink: @escaping @Sendable (AxolotyCheckExecutionEvent) -> Void = { _ in }
     ) {
         self.init(
             commandRunner: commandRunner,
             contextValidator: AxolotyExecutionContextValidator(),
             cancellation: cancellation,
-            resourceLeaseManager: resourceLeaseManager
+            resourceLeaseManager: resourceLeaseManager,
+            eventSink: eventSink
         )
     }
 
@@ -57,12 +61,16 @@ public struct AxolotyCheckExecutor: Sendable {
         contextValidator: AxolotyExecutionContextValidator,
         cancellation: AxolotyCommandCancellation? = nil,
         clock: any AxolotyTimingClock = AxolotyContinuousTimingClock(),
-        resourceLeaseManager: (any AxolotyResourceLeasing)? = nil
+        resourceLeaseManager: (any AxolotyResourceLeasing)? = nil,
+        overrunScheduler: any AxolotyOverrunScheduling = DispatchOverrunScheduler(),
+        eventSink: @escaping @Sendable (AxolotyCheckExecutionEvent) -> Void = { _ in }
     ) {
         self.commandRunner = commandRunner
         self.contextValidator = contextValidator
         self.cancellation = cancellation
         self.clock = clock
+        self.overrunScheduler = overrunScheduler
+        self.eventSink = eventSink
         self.resourceLeaseManager = resourceLeaseManager
             ?? FoundationResourceLeaseManager(environment: contextValidator.environment)
     }
@@ -84,6 +92,19 @@ public struct AxolotyCheckExecutor: Sendable {
     public func execute(_ plan: AxolotyCheckPlan) -> [AxolotyCheckResult] {
         let planStartedAt = clock.now()
         let planDeadline = plan.deadlineSeconds.map { planStartedAt + $0 }
+        eventSink(AxolotyCheckExecutionEvent(
+            kind: .planStarted,
+            expectedDurationSeconds: plan.expectedDurationSeconds
+        ))
+        let planWarning = plan.expectedDurationSeconds.map { expectation in
+            overrunScheduler.schedule(after: expectation) { [clock, eventSink] in
+                eventSink(AxolotyCheckExecutionEvent(
+                    kind: .planOverrun,
+                    elapsedSeconds: max(0, clock.now() - planStartedAt),
+                    expectedDurationSeconds: expectation
+                ))
+            }
+        }
         let validator = contextValidator
         let diagnostics = plan.nodes.reduce(
             into: [String: AxolotyExecutionContextDiagnostic]()
@@ -93,7 +114,7 @@ public struct AxolotyCheckExecutor: Sendable {
             }
         }
         if !diagnostics.isEmpty {
-            return plan.nodes.map { node in
+            let results = plan.nodes.map { node in
                 if let diagnostic = diagnostics[node.name] {
                     return AxolotyCheckResult(
                         name: node.name,
@@ -106,6 +127,11 @@ public struct AxolotyCheckExecutor: Sendable {
                 }
                 return AxolotyCheckResult(name: node.name, status: .skipped)
             }
+            for (node, result) in zip(plan.nodes, results) {
+                emitNodeCompletion(node: node, status: result.status, timing: nil, command: result.command)
+            }
+            completePlan(results, plan: plan, startedAt: planStartedAt, warning: planWarning)
+            return results
         }
         var statuses: [String: AxolotyCheckStatus] = [:]
         var results: [AxolotyCheckResult] = []
@@ -113,32 +139,55 @@ public struct AxolotyCheckExecutor: Sendable {
         for node in plan.nodes {
             if cancellation?.isCancelled == true {
                 statuses[node.name] = .skipped
-                results.append(AxolotyCheckResult(name: node.name, status: .skipped))
+                let result = AxolotyCheckResult(name: node.name, status: .skipped)
+                results.append(result)
+                emitNodeCompletion(node: node, status: .skipped, timing: nil, command: nil)
                 continue
             }
             let nodeReadyAt = clock.now()
             if let planDeadline, nodeReadyAt >= planDeadline {
                 statuses[node.name] = .expired
-                results.append(Self.expiredResult(
+                let result = Self.expiredResult(
                     node: node,
                     planStartedAt: planStartedAt,
                     planDeadline: planDeadline,
                     now: nodeReadyAt
-                ))
+                )
+                results.append(result)
+                emitNodeCompletion(node: node, status: .expired, timing: nil, command: result.command)
                 continue
             }
             guard node.dependencies.allSatisfy({ statuses[$0] == .passed }) else {
                 statuses[node.name] = .skipped
                 results.append(AxolotyCheckResult(name: node.name, status: .skipped))
+                emitNodeCompletion(node: node, status: .skipped, timing: nil, command: nil)
                 continue
             }
 
+            let nodeStartedAt = clock.now()
+            eventSink(AxolotyCheckExecutionEvent(
+                kind: .nodeStarted,
+                node: node.name,
+                expectedDurationSeconds: node.expectedDurationSeconds,
+                resourceLeaseWaitSeconds: 0
+            ))
+            let nodeWarning = node.expectedDurationSeconds.map { expectation in
+                overrunScheduler.schedule(after: expectation) { [clock, eventSink] in
+                    eventSink(AxolotyCheckExecutionEvent(
+                        kind: .nodeOverrun,
+                        node: node.name,
+                        elapsedSeconds: max(0, clock.now() - nodeStartedAt),
+                        expectedDurationSeconds: expectation
+                    ))
+                }
+            }
             let command = Self.commandBoundedByPlanDeadline(
                 node.command,
                 planDeadline: planDeadline,
                 now: nodeReadyAt
             )
             let resourceLeases: [any AxolotyResourceLease]
+            let leasesStartedAt = clock.now()
             do {
                 resourceLeases = try acquireResourceLeases(
                     for: node,
@@ -146,6 +195,13 @@ public struct AxolotyCheckExecutor: Sendable {
                     command: command
                 )
             } catch {
+                nodeWarning?.cancel()
+                let finishedAt = clock.now()
+                let timing = AxolotyCheckTiming(
+                    elapsedSeconds: max(0, finishedAt - nodeStartedAt),
+                    expectedDurationSeconds: node.expectedDurationSeconds,
+                    resourceLeaseWaitSeconds: max(0, finishedAt - leasesStartedAt)
+                )
                 let commandResult = AxolotyCheckCommandResult(
                     exitCode: 75,
                     standardError: "unable to acquire resource lease: \(error.localizedDescription)\n"
@@ -154,10 +210,13 @@ public struct AxolotyCheckExecutor: Sendable {
                 results.append(AxolotyCheckResult(
                     name: node.name,
                     status: .failed,
-                    command: commandResult
+                    command: commandResult,
+                    timing: timing
                 ))
+                emitNodeCompletion(node: node, status: .failed, timing: timing, command: commandResult)
                 continue
             }
+            let leasesAcquiredAt = clock.now()
             let commandResult = withExtendedLifetime(resourceLeases) {
                 if let lifecycleRunner = commandRunner as? any AxolotyLifecycleCommandRunning {
                     return lifecycleRunner.run(
@@ -168,6 +227,7 @@ public struct AxolotyCheckExecutor: Sendable {
                 return commandRunner.run(command)
             }
             let finishedAt = clock.now()
+            nodeWarning?.cancel()
             let result = Self.resultAfterPlanDeadline(
                 commandResult,
                 node: node,
@@ -177,10 +237,68 @@ public struct AxolotyCheckExecutor: Sendable {
             )
             let status: AxolotyCheckStatus = result.exitCode == 0 ? .passed : .failed
             statuses[node.name] = status
-            results.append(AxolotyCheckResult(name: node.name, status: status, command: result))
+            let timing = AxolotyCheckTiming(
+                elapsedSeconds: max(0, finishedAt - nodeStartedAt),
+                expectedDurationSeconds: node.expectedDurationSeconds,
+                resourceLeaseWaitSeconds: max(0, leasesAcquiredAt - leasesStartedAt)
+            )
+            results.append(AxolotyCheckResult(
+                name: node.name,
+                status: status,
+                command: result,
+                timing: timing
+            ))
+            emitNodeCompletion(node: node, status: status, timing: timing, command: result)
         }
 
+        completePlan(results, plan: plan, startedAt: planStartedAt, warning: planWarning)
         return results
+    }
+
+    private func emitNodeCompletion(
+        node: AxolotyCheckNode,
+        status: AxolotyCheckStatus,
+        timing: AxolotyCheckTiming?,
+        command: AxolotyCheckCommandResult?
+    ) {
+        eventSink(AxolotyCheckExecutionEvent(
+            kind: .nodeCompleted,
+            node: node.name,
+            status: status,
+            elapsedSeconds: timing?.elapsedSeconds,
+            expectedDurationSeconds: timing?.expectedDurationSeconds ?? node.expectedDurationSeconds,
+            resourceLeaseWaitSeconds: timing?.resourceLeaseWaitSeconds,
+            lastTest: command?.observation?.lastTest ?? command?.lifecycle?.lastTest,
+            outputBytes: command?.observation?.outputBytes ?? command?.lifecycle?.outputBytes,
+            artifactPath: command?.observation?.artifactPath ?? command?.lifecycle?.artifactPath
+        ))
+    }
+
+    private func completePlan(
+        _ results: [AxolotyCheckResult],
+        plan: AxolotyCheckPlan,
+        startedAt: TimeInterval,
+        warning: (any AxolotyOverrunCancellation)?
+    ) {
+        warning?.cancel()
+        let commands = results.compactMap(\.command)
+        let lastTest = commands.compactMap { $0.observation?.lastTest ?? $0.lifecycle?.lastTest }.last
+        let artifactPath = commands.compactMap {
+            $0.observation?.artifactPath ?? $0.lifecycle?.artifactPath
+        }.last
+        let outputBytes = commands.compactMap {
+            $0.observation?.outputBytes ?? $0.lifecycle?.outputBytes
+        }.reduce(0, +)
+        eventSink(AxolotyCheckExecutionEvent(
+            kind: .planCompleted,
+            status: results.allSatisfy { $0.status == .passed } ? .passed : .failed,
+            elapsedSeconds: max(0, clock.now() - startedAt),
+            expectedDurationSeconds: plan.expectedDurationSeconds,
+            resourceLeaseWaitSeconds: results.compactMap(\.timing).reduce(0) { $0 + $1.resourceLeaseWaitSeconds },
+            lastTest: lastTest,
+            outputBytes: outputBytes,
+            artifactPath: artifactPath
+        ))
     }
 
     private func acquireResourceLeases(
@@ -274,7 +392,8 @@ public struct AxolotyCheckExecutor: Sendable {
             exitCode: result.exitCode == 0 ? 124 : result.exitCode,
             standardOutput: result.standardOutput,
             standardError: standardError,
-            lifecycle: result.lifecycle
+            lifecycle: result.lifecycle,
+            observation: result.observation
         )
     }
 }

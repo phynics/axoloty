@@ -43,6 +43,93 @@ final class CheckTestClock: AxolotyTimingClock, @unchecked Sendable {
     }
 }
 
+final class ManualOverrunTask: AxolotyOverrunCancellation, @unchecked Sendable {
+    private let lock = NSLock()
+    private var action: (@Sendable () -> Void)?
+
+    init(action: @escaping @Sendable () -> Void) {
+        self.action = action
+    }
+
+    func cancel() {
+        lock.lock()
+        action = nil
+        lock.unlock()
+    }
+
+    func fire() {
+        lock.lock()
+        let action = action
+        self.action = nil
+        lock.unlock()
+        action?()
+    }
+}
+
+final class ManualOverrunScheduler: AxolotyOverrunScheduling, @unchecked Sendable {
+    private let lock = NSLock()
+    private var tasks: [ManualOverrunTask] = []
+
+    func schedule(
+        after _: TimeInterval,
+        action: @escaping @Sendable () -> Void
+    ) -> any AxolotyOverrunCancellation {
+        let task = ManualOverrunTask(action: action)
+        lock.lock()
+        tasks.append(task)
+        lock.unlock()
+        return task
+    }
+
+    func fireAll() {
+        lock.lock()
+        let tasks = tasks
+        lock.unlock()
+        tasks.forEach { $0.fire() }
+    }
+}
+
+final class CheckEventRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [AxolotyCheckExecutionEvent] = []
+
+    func append(_ event: AxolotyCheckExecutionEvent) {
+        lock.lock()
+        stored.append(event)
+        lock.unlock()
+    }
+
+    var events: [AxolotyCheckExecutionEvent] {
+        lock.lock()
+        defer { lock.unlock() }
+        return stored
+    }
+}
+
+final class OverrunFiringRunner: AxolotyCheckCommandRunning, @unchecked Sendable {
+    private let clock: CheckTestClock
+    private let scheduler: ManualOverrunScheduler
+
+    init(clock: CheckTestClock, scheduler: ManualOverrunScheduler) {
+        self.clock = clock
+        self.scheduler = scheduler
+    }
+
+    func run(_: AxolotyCommandPlan) -> AxolotyCheckCommandResult {
+        clock.advance(by: 6)
+        scheduler.fireAll()
+        return AxolotyCheckCommandResult(
+            exitCode: 0,
+            observation: AxolotyCommandObservation(
+                elapsedSeconds: 4,
+                lastTest: "last-test",
+                outputBytes: 42,
+                artifactPath: "/artifacts/slow"
+            )
+        )
+    }
+}
+
 final class DeadlineRecordingRunner: AxolotyCheckCommandRunning, @unchecked Sendable {
     let clock: CheckTestClock
     let failedCommands: Set<String>

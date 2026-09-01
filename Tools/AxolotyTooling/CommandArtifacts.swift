@@ -17,7 +17,7 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
     private let root: URL
     let runID: String
     let invocationID: String
-    private let parentInvocationID: String?
+    let parentInvocationID: String?
     private let environmentKeys: [String]
     private let environmentValues: [String]
     private let environment: [String: String]
@@ -147,6 +147,11 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
             .appending(path: invocationID, directoryHint: .isDirectory)
     }
 
+    var reportDirectory: URL {
+        root.appending(path: runID, directoryHint: .isDirectory)
+            .appending(path: "reports", directoryHint: .isDirectory)
+    }
+
     func finish(
         _ artifact: Artifact,
         startedAt: Date,
@@ -190,9 +195,14 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
             metadata["artifactPath"] = lifecycle.artifactPath ?? NSNull()
             metadata["deadline"] = lifecycle.deadline ?? NSNull()
             metadata["lastTest"] = lifecycle.lastTest ?? NSNull()
+            metadata["outputBytes"] = lifecycle.outputBytes ?? NSNull()
             metadata["node"] = lifecycle.node ?? NSNull()
             metadata["stage"] = lifecycle.stage
             metadata["escalatedToKill"] = lifecycle.escalatedToKill
+        } else if let observation = result.observation {
+            metadata["artifactPath"] = observation.artifactPath
+            metadata["lastTest"] = observation.lastTest ?? NSNull()
+            metadata["outputBytes"] = observation.outputBytes
         }
         try? writeJSON(metadata, to: artifact.metadata, mergeWithExisting: true)
 
@@ -205,9 +215,14 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
         if let lifecycle = result.lifecycle {
             manifest["outcome"] = lifecycle.outcome.rawValue
             manifest["lastTest"] = lifecycle.lastTest ?? NSNull()
+            manifest["outputBytes"] = lifecycle.outputBytes ?? NSNull()
             manifest["escalatedToKill"] = lifecycle.escalatedToKill
         } else {
             manifest["outcome"] = result.exitCode == 0 ? "passed" : "failed"
+            if let observation = result.observation {
+                manifest["lastTest"] = observation.lastTest ?? NSNull()
+                manifest["outputBytes"] = observation.outputBytes
+            }
         }
         try? writeJSON(manifest, to: artifact.manifest, mergeWithExisting: true)
 
@@ -217,7 +232,8 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
             "exitCode": result.exitCode,
             "outcome": result.lifecycle?.outcome.rawValue ?? (result.exitCode == 0 ? "passed" : "failed"),
             "timedOut": result.lifecycle?.outcome == .timedOut,
-            "lastTest": result.lifecycle?.lastTest ?? NSNull(),
+            "lastTest": result.observation?.lastTest ?? result.lifecycle?.lastTest ?? NSNull(),
+            "outputBytes": result.observation?.outputBytes ?? result.lifecycle?.outputBytes ?? NSNull(),
             "escalatedToKill": result.lifecycle?.escalatedToKill ?? false,
         ]
         try? writeJSON(durableResult, to: artifact.result)

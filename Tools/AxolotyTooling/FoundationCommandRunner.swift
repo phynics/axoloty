@@ -3,12 +3,32 @@
 import Foundation
 
 /// A Foundation-backed runner for the repository's local tooling commands.
-public struct FoundationCommandRunner: AxolotyLifecycleCommandRunning {
+protocol AxolotyArtifactInvocationIdentifying: Sendable {
+    var artifactInvocation: AxolotyArtifactInvocation { get }
+}
+
+struct AxolotyArtifactInvocation: Sendable {
+    let runID: String
+    let invocationID: String
+    let parentInvocationID: String?
+    let reportDirectory: URL
+}
+
+public struct FoundationCommandRunner: AxolotyLifecycleCommandRunning, AxolotyArtifactInvocationIdentifying {
     private let contextValidator: AxolotyExecutionContextValidator
     private let environment: [String: String]
     private let configuration: AxolotyCommandRunnerConfiguration
     private let cancellation: AxolotyCommandCancellation
     private let artifactStore: AxolotyCommandArtifactStore
+
+    var artifactInvocation: AxolotyArtifactInvocation {
+        AxolotyArtifactInvocation(
+            runID: artifactStore.runID,
+            invocationID: artifactStore.invocationID,
+            parentInvocationID: artifactStore.parentInvocationID,
+            reportDirectory: artifactStore.reportDirectory
+        )
+    }
 
     /// Creates a Foundation-backed command runner.
     public init() {

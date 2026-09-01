@@ -181,12 +181,29 @@ func legacySchemaV1PlanDefaultsMissingExecutionContextAndReencodesItExplicitly()
 
     #expect(plan.schemaVersion == 1)
     #expect(plan.nodes.first?.command.executionContext == .project)
+    #expect(plan.expectedDurationSeconds == nil)
+    #expect(plan.nodes.first?.expectedDurationSeconds == nil)
 
     let encoded = try JSONEncoder().encode(plan)
     let object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
     let nodes = try #require(object["nodes"] as? [[String: Any]])
     let command = try #require(nodes.first?["command"] as? [String: Any])
     #expect(command["executionContext"] as? String == "project")
+}
+
+@Test
+func verifyPlanPropagatesCalibratedTimingExpectations() throws {
+    let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
+    let plan = try resolver.resolve(.named(.verify, ci: true, platform: .linux, requested: nil))
+    let expectations = Dictionary(uniqueKeysWithValues: plan.nodes.map { ($0.name, $0.expectedDurationSeconds) })
+
+    #expect(plan.schemaVersion == 1)
+    #expect(plan.expectedDurationSeconds == 1_200)
+    #expect(plan.deadlineSeconds == 4_800)
+    #expect(expectations["embedded-build"] == 180)
+    #expect(expectations["g4-static-runtime"] == 120)
+    #expect(expectations["g2-trace-corpus"] == 90)
+    #expect(expectations["wire-distribution"] == 60)
 }
 
 @Test
