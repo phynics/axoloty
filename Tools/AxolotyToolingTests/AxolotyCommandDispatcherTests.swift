@@ -109,6 +109,16 @@ func typedInvocationParserClassifiesReleaseCommandsAndEnvironmentFallbacks() {
 }
 
 @Test
+func typedInvocationParserPreservesSemanticCommandOwnership() {
+    let parser = AxolotyCommandParser(environment: [:])
+
+    #expect(parser.parse(["build"]) == .build)
+    #expect(parser.parse(["test", "offline"]) == .testOffline)
+    #expect(parser.parse(["test", "tooling"]) == .testTooling)
+    #expect(parser.parse(["wire", "verify"]) == .wireVerify)
+}
+
+@Test
 func helpCommandPrintsUsage() {
     let result = AxolotyCommandDispatcher().run(arguments: ["help"])
 
