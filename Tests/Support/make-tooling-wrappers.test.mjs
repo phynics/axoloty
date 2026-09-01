@@ -170,6 +170,17 @@ test("direct test wrappers preserve the invocation resource namespace", () => {
   }
 });
 
+test("service wrappers forward an explicit MCP executable override", () => {
+  const makefile = fs.readFileSync("Makefile", "utf8");
+  for (const target of ["serve-mcp", "serve-dev"]) {
+    assert.match(
+      recipe(makefile, target),
+      /CONTAINER_ENV_VARS=AXOLOTY_MCP_EXECUTABLE/,
+      `${target} must pass AXOLOTY_MCP_EXECUTABLE into the container`,
+    );
+  }
+});
+
 test("long fuzz campaign delegates to the canonical nightly tier", () => {
   const makefile = fs.readFileSync("Makefile", "utf8");
   const target = recipe(makefile, "fuzz-long");

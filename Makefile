@@ -233,13 +233,13 @@ serve-mcp: image
 	@args="$$SERVE_MCP_ARGS"; \
 	case "$$args" in *[!-[:space:]0-9A-Za-z._/:=+,]*) echo "Invalid SERVE_MCP_ARGS" >&2; exit 2;; esac; \
 	set -f; set -- $$args; \
-	CONTAINER_COMMAND_TIMEOUT_SECONDS=0 CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" CONTAINER_NETWORK=host CONTAINER_STDIN=1 .devcontainer/run.sh /opt/axoloty/bin/ax serve mcp "$$@"
+	CONTAINER_COMMAND_TIMEOUT_SECONDS=0 CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" CONTAINER_NETWORK=host CONTAINER_STDIN=1 CONTAINER_ENV_VARS=AXOLOTY_MCP_EXECUTABLE .devcontainer/run.sh /opt/axoloty/bin/ax serve mcp "$$@"
 
 serve-dev: image
 	@args="$$SERVE_DEV_ARGS"; \
 	case "$$args" in *[!-[:space:]0-9A-Za-z._/:=+,]*) echo "Invalid SERVE_DEV_ARGS" >&2; exit 2;; esac; \
 	set -f; set -- $$args; \
-	CONTAINER_COMMAND_TIMEOUT_SECONDS=0 CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" CONTAINER_NETWORK=host .devcontainer/run.sh /opt/axoloty/bin/ax serve dev "$$@"
+	CONTAINER_COMMAND_TIMEOUT_SECONDS=0 CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" CONTAINER_NETWORK=host CONTAINER_ENV_VARS=AXOLOTY_MCP_EXECUTABLE .devcontainer/run.sh /opt/axoloty/bin/ax serve dev "$$@"
 
 verify:
 	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS=verify AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS=$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)
