@@ -43,6 +43,7 @@ extension AxolotyRuntimeTests {
             capacities: capacities
         )
         _ = try builder.respond(to: .ioValue) { _ in .noResponse }
+        #expect(builder.capacities == capacities)
         let definition = try builder.finish()
         #expect(definition.capacities.handlers == 1)
         #expect(definition.handlerCount == 1)

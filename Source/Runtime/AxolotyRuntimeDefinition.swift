@@ -25,6 +25,7 @@ enum RuntimeOperationValidation {
 /// operation copies this value, validates the complete proposed state, and
 /// commits it only after the operation succeeds.
 struct RuntimeRegistrations: Sendable {
+    let capacities: RuntimeCapacities
     let registryID: ObjectID
     var handlers: [RuntimeHandlerRegistration]
     var eventRegistrations: [RuntimeEventRegistration]
@@ -35,6 +36,7 @@ struct RuntimeRegistrations: Sendable {
     var moduleCorrelationOrdinal: UInt32
 
     init(capacities: RuntimeCapacities, registryID: ObjectID = runtimeRegistryNonce()) {
+        self.capacities = capacities
         self.registryID = registryID
         self.handlers = []
         self.eventRegistrations = []
@@ -80,14 +82,9 @@ public struct RuntimeBuilder: Sendable {
     /// Optional modern identity metadata used by the binding advertisement.
     public let identity: RuntimeIdentity?
     /// The fixed limits for this runtime.
-    public let capacities: RuntimeCapacities
+    public var capacities: RuntimeCapacities { registrations.capacities }
 
     var registrations: RuntimeRegistrations
-
-    var endpointRegistrationLimit: Int {
-        let reservedIdentitySlot = identity == nil ? 0 : 1
-        return min(capacities.ioEndpoints, capacities.ioCatalogue, 64 - reservedIdentitySlot)
-    }
 
     /// Creates a builder from a complete runtime identity.
     ///
@@ -134,7 +131,6 @@ public struct RuntimeBuilder: Sendable {
         self.namespace = namespace
         self.sourceID = sourceID
         self.identity = identity
-        self.capacities = resolvedCapacities
         self.registrations = RuntimeRegistrations(capacities: resolvedCapacities)
     }
 
@@ -167,10 +163,8 @@ public struct RuntimeBuilder: Sendable {
         maximumConcurrentInvocations: Int = 1,
         handler: @escaping @Sendable (RuntimeInvocation) async throws -> RuntimeHandlerResult
     ) throws -> Int {
-        let handlerCapacity = capacities.handlers
-        let handlersInFlightCapacity = capacities.handlersInFlight
         return try commit { draft in
-            guard draft.handlers.count < handlerCapacity else {
+            guard draft.handlers.count < draft.capacities.handlers else {
                 throw AxolotyError.runtime(code: .subscriptionFailed, reason: "runtime handler capacity is full")
             }
             if let operation {
@@ -182,7 +176,7 @@ public struct RuntimeBuilder: Sendable {
                 }
             }
             guard maximumConcurrentInvocations > 0,
-                  maximumConcurrentInvocations <= handlersInFlightCapacity else {
+                  maximumConcurrentInvocations <= draft.capacities.handlersInFlight else {
                 throw AxolotyError.invalidArgument(argument: "maximumConcurrentInvocations", reason: "must fit the runtime handler limit")
             }
             draft.handlers.append(RuntimeHandlerRegistration(capability: capability, operation: operation, maximumConcurrentInvocations: maximumConcurrentInvocations, handler: handler))
@@ -218,13 +212,11 @@ public struct RuntimeBuilder: Sendable {
         matching selector: RuntimeEventSelector,
         buffering policy: RuntimeBufferingPolicy = .failAfterDrop(capacity: 64)
     ) throws -> RuntimeEventStream {
-        let streamCapacity = capacities.stream
-        let eventStreamsCapacity = capacities.eventStreams
         return try commit { draft in
             let capacity: Int
             switch policy {
             case let .failAfterDrop(value), let .fail(value), let .dropOldest(value), let .dropNewest(value):
-                guard value > 0, value <= streamCapacity else {
+                guard value > 0, value <= draft.capacities.stream else {
                     throw AxolotyError.invalidArgument(argument: "capacity", reason: "stream capacity must be in 1...runtime stream capacity")
                 }
                 capacity = value
@@ -236,7 +228,7 @@ public struct RuntimeBuilder: Sendable {
             case .fail, .dropOldest: buffering = .bufferingNewest(capacity)
             case .coalesceLatest: buffering = .bufferingNewest(1)
             }
-            guard draft.eventRegistrations.count < eventStreamsCapacity else {
+            guard draft.eventRegistrations.count < draft.capacities.eventStreams else {
                 throw AxolotyError.runtime(code: .capacityExceeded, reason: "runtime event-stream capacity is full")
             }
             let pair = AsyncStream<RuntimeEventValue>.makeStream(bufferingPolicy: buffering)
@@ -250,7 +242,7 @@ public struct RuntimeBuilder: Sendable {
     /// - Returns: The immutable definition containing the committed registration graph.
     /// - Throws: An error reserved for future final validation of the graph.
     public consuming func finish() throws -> RuntimeDefinition {
-        RuntimeDefinition(namespace: namespace, sourceID: sourceID, identity: identity, capacities: capacities, registrations: registrations)
+        RuntimeDefinition(namespace: namespace, sourceID: sourceID, identity: identity, registrations: registrations)
     }
 
     /// Performs one first-party module registration as an atomic draft.
@@ -315,15 +307,14 @@ public struct RuntimeDefinition: Sendable {
     /// Optional modern identity metadata used by the binding advertisement.
     public let identity: RuntimeIdentity?
     /// The fixed limits for this runtime.
-    public let capacities: RuntimeCapacities
+    public var capacities: RuntimeCapacities { registrations.capacities }
 
     let registrations: RuntimeRegistrations
 
-    init(namespace: String, sourceID: UUID16, identity: RuntimeIdentity?, capacities: RuntimeCapacities, registrations: RuntimeRegistrations) {
+    init(namespace: String, sourceID: UUID16, identity: RuntimeIdentity?, registrations: RuntimeRegistrations) {
         self.namespace = namespace
         self.sourceID = sourceID
         self.identity = identity
-        self.capacities = capacities
         self.registrations = registrations
     }
 

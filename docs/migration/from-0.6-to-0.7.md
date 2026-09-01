@@ -31,6 +31,8 @@ source changes:
 | `RuntimeComponentRegistration` | `RuntimeModuleRegistration` |
 | `registerRuntimeComponent(_:)` | `registerRuntimeModule(_:key:)` |
 | `reserveRuntimeComponentCorrelationID()` | `reserveRuntimeModuleCorrelationID()` |
+| `RuntimeDefinition(namespace:sourceID:identity:capacities:)` | `RuntimeBuilder(sourceID:namespace:identity:capacities:)`, then `finish()` |
+| `SealedRuntimeDefinition` | `RuntimeDefinition` |
 | `RuntimeDefinition.Builder` | `RuntimeBuilder` |
 | `RuntimeDefinition.register(...)` | `RuntimeBuilder.respond(...)` |
 | `RuntimeDefinition.registerEvents(...)` | `RuntimeBuilder.events(...)` |

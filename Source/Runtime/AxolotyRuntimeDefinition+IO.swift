@@ -148,8 +148,9 @@ extension RuntimeBuilder {
         representation: IoValueRepresentation,
         publication: IoPublicationPolicy
     ) throws -> IoSource<Value> {
-        let endpointLimit = endpointRegistrationLimit
+        let reservedIdentitySlot = identity == nil ? 0 : 1
         return try commit { registrations in
+            let endpointLimit = min(registrations.capacities.ioEndpoints, registrations.capacities.ioCatalogue, 64 - reservedIdentitySlot)
             guard registrations.ioEndpointRegistrations.count < endpointLimit else {
                 throw ProtocolError(.capacityExceeded)
             }
@@ -207,8 +208,9 @@ extension RuntimeBuilder {
         representation: IoValueRepresentation,
         handler: @escaping @Sendable ([UInt8], IoDeliveryContext) async throws -> Void
     ) throws -> IoActor<Value> {
-        let endpointLimit = endpointRegistrationLimit
+        let reservedIdentitySlot = identity == nil ? 0 : 1
         return try commit { registrations in
+            let endpointLimit = min(registrations.capacities.ioEndpoints, registrations.capacities.ioCatalogue, 64 - reservedIdentitySlot)
             guard registrations.ioEndpointRegistrations.count < endpointLimit else {
                 throw ProtocolError(.capacityExceeded)
             }
