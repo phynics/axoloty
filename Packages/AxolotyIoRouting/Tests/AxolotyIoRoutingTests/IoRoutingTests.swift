@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import AxolotyIoRouting
-import Axoloty
+@_spi(AxolotyRuntimeAdapter) import Axoloty
 import AxolotyObjectModel
 import AxolotyProtocol
 import AxolotyWire
@@ -20,6 +20,33 @@ func basicRoutingLimitsRetainValues() {
     #expect(limits == IoRoutingLimits(maximumEndpoints: 4, maximumAssociations: 7))
 }
 
+@Test("late routing registration failure rolls back all provisional streams")
+func basicRoutingLateFailureRollsBackRegistration() throws {
+    let identity = try RuntimeIdentity(id: objectID("00000000-0000-4000-8000-000000000121").uuid, name: "routing-atomic")
+    let capacities = try RuntimeCapacities(eventStreams: 5)
+    var builder = try RuntimeBuilder(identity: identity, namespace: "routing-atomic", capacities: capacities)
+    let module = RuntimeModuleRegistration(run: { _ in })
+    for index in 0..<4 {
+        try builder.withRuntimeModule(key: "occupied-\(index)", registration: module)
+    }
+    let contextJSON: StaticString = "{\"objectId\":\"00000000-0000-4000-8000-000000000122\",\"objectType\":\"coaty.IoContext\",\"name\":\"context\",\"coreType\":\"IoContext\"}"
+    let context = try Object<IoContext>(decoding: ByteSlice(bytes: contextJSON.utf8Start, length: contextJSON.utf8CodeUnitCount))
+
+    do {
+        try builder.basicIoRouting(context: context)
+        Issue.record("routing unexpectedly succeeded with a full module table")
+    } catch {
+        // The five provisional streams must be discarded with the module.
+    }
+
+    let sourceJSON: StaticString = "{\"objectId\":\"00000000-0000-4000-8000-000000000123\",\"objectType\":\"coaty.IoSource\",\"name\":\"source\",\"coreType\":\"IoSource\",\"valueType\":\"com.example.Bool\"}"
+    _ = try builder.ioSource(metadata: Object<IoSourceMetadata>(decoding: ByteSlice(bytes: sourceJSON.utf8Start, length: sourceJSON.utf8CodeUnitCount)), as: Bool.self)
+    let definition = try builder.finish()
+    #expect(definition.eventStreamCount == 0)
+    #expect(definition.moduleCount == 4)
+    #expect(definition.ioEndpointCount == 1)
+}
+
 @Test("Basic routing matches scoped endpoints and emits a stable association")
 func basicRoutingMatchesScopedEndpoints() async throws {
     let externalRoute = "gnostic/1/workspaces/11111111-1111-4111-8111-111111111111/agents/22222222-2222-4222-8222-222222222222/tools/33333333-3333-4333-8333-333333333333/requests"
@@ -29,7 +56,7 @@ func basicRoutingMatchesScopedEndpoints() async throws {
         id: objectID("00000000-0000-4000-8000-000000000101").uuid,
         name: "routing-test"
     )
-    var builder = try RuntimeDefinition.Builder(identity: identity, namespace: "routing-test")
+    var builder = try RuntimeBuilder(identity: identity, namespace: "routing-test")
     let contextJSON: StaticString = "{\"objectId\":\"00000000-0000-4000-8000-000000000102\",\"objectType\":\"coaty.IoContext\",\"name\":\"context\",\"coreType\":\"IoContext\"}"
     let sourceJSON: StaticString = "{\"objectId\":\"00000000-0000-4000-8000-000000000103\",\"objectType\":\"coaty.IoSource\",\"name\":\"source\",\"coreType\":\"IoSource\",\"parentObjectId\":\"00000000-0000-4000-8000-000000000102\",\"valueType\":\"com.example.Bool\",\"externalRoute\":\"gnostic/1/workspaces/11111111-1111-4111-8111-111111111111/agents/22222222-2222-4222-8222-222222222222/tools/33333333-3333-4333-8333-333333333333/requests\"}"
     let actorJSON: StaticString = "{\"objectId\":\"00000000-0000-4000-8000-000000000104\",\"objectType\":\"coaty.IoActor\",\"name\":\"actor\",\"coreType\":\"IoActor\",\"parentObjectId\":\"00000000-0000-4000-8000-000000000102\",\"valueType\":\"com.example.Bool\"}"

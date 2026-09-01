@@ -1,8 +1,7 @@
 # Axoloty 0.6.2 API documentation
 
-Axoloty 0.6.2 is the published package version. The APIs below describe the
-shared host and static runtime architecture; SensorThings is available as an
-optional product.
+The current released API is Axoloty 0.6.2. The body below describes the active
+0.7 development API and does not change the released version.
 
 ## Package boundaries
 
@@ -21,29 +20,29 @@ caller-supplied clock, transport loop, and fixed callbacks.
 
 ## Host runtime
 
-Configure a runtime before starting it, then seal the definition:
+Configure a runtime with ``RuntimeBuilder`` before starting it, then finish the definition:
 
 ```swift
 let identity = try RuntimeIdentity(id: agentID, name: "inspector")
-var definition = try RuntimeDefinition(
-    namespace: "building-a",
+var builder = try RuntimeBuilder(
     sourceID: agentID,
+    namespace: "building-a",
     identity: identity,
     capacities: try RuntimeCapacities()
 )
-let resolves = try definition.registerEvents(
+let resolves = try builder.events(
     matching: .family(.resolve),
     buffering: .dropOldest(capacity: 64)
 )
-let sealed = try definition.seal()
+let definition = try builder.finish()
 let runtime = AxolotyRuntime(
-    definition: sealed,
+    definition: definition,
     transport: try MQTTBinding(configuration: configuration)
 )
 try await runtime.start()
 ```
 
-`RuntimeDefinition` is mutable only during configuration. A sealed definition
+`RuntimeBuilder` is mutable only during configuration. `RuntimeDefinition`
 contains the bounded identity, capacities, event registrations, and responder
 registrations used by one `AxolotyRuntime` instance. A runtime is single-use:
 `start()` transitions it to `.running`, `stop()` drains bounded work and leaves

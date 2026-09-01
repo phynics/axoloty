@@ -9,7 +9,7 @@ import Foundation
 // owner rather than weakening the repository-wide type-size rule.
 // swiftlint:disable:next type_body_length
 actor ProtocolExecutor {
-    let definition: SealedRuntimeDefinition
+    let definition: RuntimeDefinition
     let transport: AxolotyRuntimeTransport
     var processor: ProtocolProcessor<64>
     var actionSink = ReusableProtocolActionSink(capacity: 64)
@@ -41,7 +41,7 @@ actor ProtocolExecutor {
     var ioObservers: [UInt64: RuntimeIoObserver] = [:]
     var nextIoObserverID: UInt64 = 1
     var ioFlushTasks: [Int: Task<Void, Never>] = [:]
-    var runtimeComponentTasks: [Task<Void, Never>] = []
+    var runtimeModuleTasks: [Task<Void, Never>] = []
     private let eventRegistrations: [RuntimeEventRegistration]
 
     private let eventStream: AsyncStream<RuntimeEvent>
@@ -49,7 +49,7 @@ actor ProtocolExecutor {
     private let diagnosticStream: AsyncStream<RuntimeDiagnostic>
     private let diagnosticContinuation: AsyncStream<RuntimeDiagnostic>.Continuation
 
-    init(definition: SealedRuntimeDefinition, transport: AxolotyRuntimeTransport) {
+    init(definition: RuntimeDefinition, transport: AxolotyRuntimeTransport) {
         self.definition = definition
         self.transport = transport
         self.processor = ProtocolProcessor<64>(
@@ -58,8 +58,8 @@ actor ProtocolExecutor {
             maximumObjects: definition.capacities.protocolMaximumObjects,
             maximumPendingCorrelations: definition.capacities.protocolMaximumPendingCorrelations
         )
-        self.eventRegistrations = definition.eventRegistrations
-        self.ioStates = definition.ioEndpointRegistrations.map(RuntimeIoState.init)
+        self.eventRegistrations = definition.registrations.eventRegistrations
+        self.ioStates = definition.registrations.ioEndpointRegistrations.map(RuntimeIoState.init)
         self.ingress.reserveCapacity(definition.capacities.ingress)
         self.actionSink = ReusableProtocolActionSink(capacity: definition.capacities.dispatch)
         let events = AsyncStream<RuntimeEvent>.makeStream(
@@ -138,7 +138,7 @@ actor ProtocolExecutor {
                 return (.notStarted, "runtime start was superseded during advertisement")
             }
             state = .running
-            await startRuntimeComponents()
+            await startRuntimeModules()
             return nil
         } catch {
             cancelIngressPump()
@@ -159,7 +159,7 @@ actor ProtocolExecutor {
 
     func stop() async {
         guard state == .running || state == .starting || state == .reconnecting || state == .failed else { return }
-        await stopRuntimeComponents()
+        await stopRuntimeModules()
         state = .stopping
         offlineOperations.removeAll(keepingCapacity: true)
         transportEpoch &+= 1
@@ -168,7 +168,7 @@ actor ProtocolExecutor {
         for task in ioFlushTasks.values { task.cancel() }
         ioFlushTasks.removeAll(keepingCapacity: true)
         cancelIngressPump()
-        let hasLifecycleEffects = lifecycleAdvertisementActive || !definition.ioEndpointRegistrations.isEmpty
+        let hasLifecycleEffects = lifecycleAdvertisementActive || !definition.registrations.ioEndpointRegistrations.isEmpty
         do {
             try enqueueIoDeadvertisements(nowMS: monotonicNowMS())
             try enqueueLifecycleDeadvertisement(nowMS: monotonicNowMS())
@@ -251,7 +251,7 @@ actor ProtocolExecutor {
             try await publishIoAdvertisements(nowMS: monotonicNowMS())
             guard state == .reconnecting, transportEpoch == epoch else { return }
             state = .running
-            await startRuntimeComponents(restarting: true)
+            await startRuntimeModules(restarting: true)
             flushOfflineOperations(nowMS: monotonicNowMS())
         } catch {
             guard state == .reconnecting, transportEpoch == epoch else { return }
@@ -685,7 +685,7 @@ actor ProtocolExecutor {
         _ = receive(frame)
     }
     private func dispatchToHandler(_ action: OwnedProtocolAction, operation: String?) {
-        guard let match = definition.registrations.enumerated().first(where: {
+        guard let match = definition.registrations.handlers.enumerated().first(where: {
             guard $0.element.capability == action.capability else { return false }
             return $0.element.operation == nil || $0.element.operation == operation
         }) else {
@@ -890,7 +890,7 @@ actor ProtocolExecutor {
     }
 
     private func enqueueIoDeadvertisements(nowMS: UInt32) throws {
-        for endpoint in definition.ioEndpointRegistrations {
+        for endpoint in definition.registrations.ioEndpointRegistrations {
             let payload = RuntimeLifecyclePayload.deadvertise(objectID: endpoint.id)
             try enqueueLifecycleOperation(
                 .deadvertise(sourceID: endpoint.id.uuid, payload: payload),

@@ -134,8 +134,9 @@ test("G4 runtime filters are disjoint and use their owning Swift packages", () =
   const node = id => document.nodes.find(candidate => candidate.id === id);
   const hostNodes = [node("g4-runtime-definition"), node("g4-host-runtime"), node("g4-runtime-concurrency")];
   const hostTests = [
-    "mqttUUIDFormattingPreservesAllBytes", "identityStartupTopicIsFiltered", "builderSealsModernContracts",
-    "definitionSealsHandlers", "rejectsInvalidNamespaceBytes", "definitionBoundsEventStreams", "rejectsBeforeStart",
+    "mqttUUIDFormattingPreservesAllBytes", "identityStartupTopicIsFiltered", "builderEndpointProvenance",
+    "builderFinishesHandlers", "rejectsInvalidNamespaceBytes", "definitionBoundsNamespaceForGeneratedTopics",
+    "definitionBoundsEventStreams", "failedModuleRegistrationIsAtomic", "nestedDuplicateModuleKeyIsAtomic", "duplicateModuleKeyIsAtomic", "rejectsBeforeStart",
     "acceptsLocalOperation", "callOperationNameReachesTransportAction", "channelIdentifierReachesTransportAction",
     "multiActionDispatchReservationIsAtomic", "advertiseVariantsDoNotDuplicateRuntimeEvents", "channelRejectsMissingIdentifier",
     "defaultRequestUsesMonotonicClock", "unlimitedDiscoverCanBeCanceled", "rejectsInvalidCallOperationNames",

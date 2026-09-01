@@ -28,7 +28,7 @@ public enum RuntimeResponderSelector: Sendable, Equatable {
     }
 }
 
-/// A handler retained by a sealed runtime definition.
+/// A handler retained by an immutable runtime definition.
 public struct RuntimeHandlerRegistration: Sendable {
     /// The capability family delivered to this handler.
     public let capability: ProtocolCapability
@@ -52,4 +52,3 @@ public struct RuntimeHandlerRegistration: Sendable {
         self.handler = handler
     }
 }
-

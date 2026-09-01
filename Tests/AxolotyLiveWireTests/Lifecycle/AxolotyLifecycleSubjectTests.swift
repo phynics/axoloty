@@ -180,7 +180,7 @@ struct AxolotyLifecycleSubjectTests {
         let port = UInt16(environment["WIRE_BROKER_PORT"] ?? "1883") ?? 1883
         let namespace = environment["WIRE_NAMESPACE"] ?? "wire-compat-v1"
         let identity = try RuntimeIdentity(id: Self.identityID, name: "axoloty-lifecycle-subject")
-        var builder = try RuntimeDefinition.Builder(identity: identity, namespace: namespace)
+        var builder = try RuntimeBuilder(identity: identity, namespace: namespace)
         let stream = try builder.events(matching: selector, buffering: .dropOldest(capacity: 16))
         let definition = try builder.finish()
         let binding = try MQTTBinding(configuration: try MQTTBindingConfiguration(host: host, port: port))

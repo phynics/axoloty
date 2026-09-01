@@ -19,7 +19,7 @@ public final class AxolotyRuntime: Sendable {
     private let executor: ProtocolExecutor
 
     /// Creates a stopped runtime from an immutable definition.
-    public init(definition: SealedRuntimeDefinition, transport: AxolotyRuntimeTransport) {
+    public init(definition: RuntimeDefinition, transport: AxolotyRuntimeTransport) {
         self.executor = ProtocolExecutor(definition: definition, transport: transport)
     }
 

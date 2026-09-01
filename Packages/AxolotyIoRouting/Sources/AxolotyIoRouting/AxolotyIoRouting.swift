@@ -23,11 +23,11 @@ public struct IoRoutingLimits: Sendable, Equatable {
     }
 }
 
-public extension RuntimeDefinition.Builder {
+public extension RuntimeBuilder {
     /// Installs the bounded, host-only Basic IO routing policy.
     ///
     /// The context scopes endpoint selection by `parentObjectId`. The
-    /// installed component observes ordinary Advertise and Deadvertise event
+    /// installed module observes ordinary Advertise and Deadvertise event
     /// streams and submits typed Associate intents through the existing
     /// runtime executor. It owns no transport or association state.
     ///
@@ -35,7 +35,7 @@ public extension RuntimeDefinition.Builder {
     ///   - context: The consumed IoContext object that scopes this policy.
     ///   - limits: Endpoint and intent bounds.
     /// - Throws: ``AxolotyError`` when the context or limits are invalid, or
-    ///   the host component capacity is exhausted.
+    ///   the host module capacity is exhausted.
     mutating func basicIoRouting(
         context: consuming Object<IoContext>,
         limits: IoRoutingLimits = .init()
@@ -67,50 +67,26 @@ public extension RuntimeDefinition.Builder {
             throw AxolotyError.invalidArgument(argument: "context", reason: "context object identity is invalid")
         }
 
-        let sourceAdvertise = try events(
-            matching: .advertise(objectType: "IoSource"),
-            buffering: .fail(capacity: limits.maximumEndpoints)
-        )
-        let sourceAdvertiseRemote = try events(
-            matching: .advertise(objectType: "coaty.IoSource"),
-            buffering: .fail(capacity: limits.maximumEndpoints)
-        )
-        let actorAdvertise = try events(
-            matching: .advertise(objectType: "IoActor"),
-            buffering: .fail(capacity: limits.maximumEndpoints)
-        )
-        let actorAdvertiseRemote = try events(
-            matching: .advertise(objectType: "coaty.IoActor"),
-            buffering: .fail(capacity: limits.maximumEndpoints)
-        )
-        let deadvertise = try events(
-            matching: .family(.deadvertise),
-            buffering: .fail(capacity: limits.maximumEndpoints)
-        )
         let engine = BasicIoRoutingEngine(
             contextID: contextID,
             contextName: contextName,
             contextBytes: contextBytes,
             limits: limits
         )
-        try registerRuntimeComponent(RuntimeComponentRegistration(
-            start: { runtime in
-                await engine.start(runtime)
-            },
-            run: { runtime in
-                await engine.run(
-                    runtime,
-                    sourceAdvertise: sourceAdvertise,
-                    sourceAdvertiseRemote: sourceAdvertiseRemote,
-                    actorAdvertise: actorAdvertise,
-                    actorAdvertiseRemote: actorAdvertiseRemote,
-                    deadvertise: deadvertise
-                )
-            },
-            stop: { runtime in
-                await engine.stop(runtime)
-            }
-        ))
+        try withRuntimeModule(key: "axoloty.io-routing") { draft in
+            let sourceAdvertise = try draft.events(matching: .advertise(objectType: "IoSource"), buffering: .fail(capacity: limits.maximumEndpoints))
+            let sourceAdvertiseRemote = try draft.events(matching: .advertise(objectType: "coaty.IoSource"), buffering: .fail(capacity: limits.maximumEndpoints))
+            let actorAdvertise = try draft.events(matching: .advertise(objectType: "IoActor"), buffering: .fail(capacity: limits.maximumEndpoints))
+            let actorAdvertiseRemote = try draft.events(matching: .advertise(objectType: "coaty.IoActor"), buffering: .fail(capacity: limits.maximumEndpoints))
+            let deadvertise = try draft.events(matching: .family(.deadvertise), buffering: .fail(capacity: limits.maximumEndpoints))
+            return (RuntimeModuleRegistration(
+                start: { runtime in await engine.start(runtime) },
+                run: { runtime in
+                    await engine.run(runtime, sourceAdvertise: sourceAdvertise, sourceAdvertiseRemote: sourceAdvertiseRemote, actorAdvertise: actorAdvertise, actorAdvertiseRemote: actorAdvertiseRemote, deadvertise: deadvertise)
+                },
+                stop: { runtime in await engine.stop(runtime) }
+            ), ())
+        }
     }
 }
 
@@ -161,7 +137,7 @@ private actor BasicIoRoutingEngine {
         self.limits = limits
     }
 
-    func start(_ runtime: RuntimeComponentContext) async {
+    func start(_ runtime: RuntimeModuleContext) async {
         clearIntents()
         _ = await runtime.publish(.advertise(encodeAdvertise(objectBytes: contextBytes)))
         let buckets = uniqueBuckets()
@@ -170,7 +146,7 @@ private actor BasicIoRoutingEngine {
         }
     }
 
-    func stop(_ runtime: RuntimeComponentContext) async {
+    func stop(_ runtime: RuntimeModuleContext) async {
         for intent in sortedIntents() {
             _ = await runtime.publish(.associateInContext(
                 contextName: contextName,
@@ -192,7 +168,7 @@ private actor BasicIoRoutingEngine {
     }
 
     func run(
-        _ runtime: RuntimeComponentContext,
+        _ runtime: RuntimeModuleContext,
         sourceAdvertise: RuntimeEventStream,
         sourceAdvertiseRemote: RuntimeEventStream,
         actorAdvertise: RuntimeEventStream,
@@ -235,7 +211,7 @@ private actor BasicIoRoutingEngine {
         }
     }
 
-    private func consumeAdvertise(_ event: RuntimeEventValue, runtime: RuntimeComponentContext) async {
+    private func consumeAdvertise(_ event: RuntimeEventValue, runtime: RuntimeModuleContext) async {
         guard let endpoint = decodeAdvertisedEndpoint(event.value) else { return }
         guard endpoint.role == .source || endpoint.role == .actor else { return }
         guard endpoint.parentID == contextID else { return }
@@ -262,7 +238,7 @@ private actor BasicIoRoutingEngine {
         )
     }
 
-    private func consumeDeadvertise(_ event: RuntimeEventValue, runtime: RuntimeComponentContext) async {
+    private func consumeDeadvertise(_ event: RuntimeEventValue, runtime: RuntimeModuleContext) async {
         for id in decodeDeadvertisedIDs(event.value) {
             guard let index = endpointIndex(id), let removed = endpoints[index] else { continue }
             endpoints[index] = nil
@@ -275,7 +251,7 @@ private actor BasicIoRoutingEngine {
 
     private func recompute(
         bucket: RoutingBucket,
-        runtime: RuntimeComponentContext
+        runtime: RuntimeModuleContext
     ) async {
         let candidates = endpointValues().filter {
             $0.parentID == contextID && $0.valueType == bucket.valueType && $0.representation == bucket.representation

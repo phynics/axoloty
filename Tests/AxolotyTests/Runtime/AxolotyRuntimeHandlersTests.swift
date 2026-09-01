@@ -11,7 +11,7 @@ extension AxolotyRuntimeTests {
     @Test("builder seals typed event streams and responders")
     func builderSealsModernContracts() throws {
         let identity = try RuntimeIdentity(id: .zero, name: "inspector")
-        var builder = try RuntimeDefinition.Builder(identity: identity, namespace: "building-a")
+        var builder = try RuntimeBuilder(identity: identity, namespace: "building-a")
         _ = try builder.events(
             matching: .family(.advertise),
             buffering: .coalesceLatest
@@ -28,7 +28,7 @@ extension AxolotyRuntimeTests {
     @Test("Call responders reject MQTT-invalid operation names")
     func rejectsInvalidResponderOperationNames() throws {
         let identity = try RuntimeIdentity(id: .zero, name: "invalid-operation-test")
-        var builder = try RuntimeDefinition.Builder(identity: identity, namespace: "test")
+        var builder = try RuntimeBuilder(identity: identity, namespace: "test")
         do {
             _ = try builder.respond(to: .call(operation: "invalid\0operation")) { _ in .noResponse }
             Issue.record("the responder accepted an operation name containing NUL")
@@ -44,7 +44,7 @@ extension AxolotyRuntimeTests {
     @Test("non-Call handlers reject operation filters")
     func rejectsNonCallOperationFilters() throws {
         let identity = try RuntimeIdentity(id: .zero, name: "non-call-operation-test")
-        var builder = try RuntimeDefinition.Builder(identity: identity, namespace: "test")
+        var builder = try RuntimeBuilder(identity: identity, namespace: "test")
         do {
             _ = try builder.respond(to: .advertise, operation: "not-a-call") { _ in .noResponse }
             Issue.record("the non-Call handler accepted an operation filter")
@@ -57,4 +57,3 @@ extension AxolotyRuntimeTests {
         }
     }
 }
-

@@ -4,7 +4,7 @@ import AxolotyObjectModel
 @_spi(AxolotyRuntimeAdapter) import AxolotyProtocol
 import AxolotyWire
 
-extension RuntimeDefinition.Builder {
+extension RuntimeBuilder {
     /// Registers a typed, fixed-representation IO source before startup.
     ///
     /// - Parameters:
@@ -12,7 +12,7 @@ extension RuntimeDefinition.Builder {
     ///   - valueType: The portable value type used by the source.
     ///   - publication: The bounded publication policy.
     ///   - externalRoute: An optional validated exact MQTT route.
-    /// - Returns: A sealed-definition source handle.
+    /// - Returns: A source handle bound to the finished runtime definition.
     /// - Throws: ``AxolotyError`` when metadata or capacity validation fails.
     public mutating func ioSource<Value: IoValue>(
         metadata: consuming Object<IoSourceMetadata>,
@@ -69,7 +69,7 @@ extension RuntimeDefinition.Builder {
     ///   - valueType: The portable value type delivered to the handler.
     ///   - recommendedUpdateRateMS: Optional actor recommendation.
     ///   - handler: The bounded asynchronous delivery callback.
-    /// - Returns: A sealed-definition actor handle.
+    /// - Returns: An actor handle bound to the finished runtime definition.
     /// - Throws: ``AxolotyError`` when metadata or capacity validation fails.
     public mutating func ioActor<Value: IoValue>(
         metadata: consuming Object<IoActorMetadata>,
@@ -147,32 +147,36 @@ extension RuntimeDefinition.Builder {
         _ normalized: consuming IoSourceEndpointDefinition,
         representation: IoValueRepresentation,
         publication: IoPublicationPolicy
-    ) throws(ProtocolError) -> IoSource<Value> {
-        guard !definition.sealed,
-              definition.ioEndpointRegistrations.count < definition.endpointRegistrationLimit else {
-            throw ProtocolError(.capacityExceeded)
+    ) throws -> IoSource<Value> {
+        let reservedIdentitySlot = identity == nil ? 0 : 1
+        return try commit { registrations in
+            let endpointLimit = min(registrations.capacities.ioEndpoints, registrations.capacities.ioCatalogue, 64 - reservedIdentitySlot)
+            guard registrations.ioEndpointRegistrations.count < endpointLimit else {
+                throw ProtocolError(.capacityExceeded)
+            }
+            guard !registrations.ioEndpointRegistrations.contains(where: { $0.id == normalized.id }) else {
+                throw ProtocolError(.invalidEndpoint)
+            }
+            let bytes = try runtimeObjectBytes(source: normalized)
+            let slot = registrations.ioEndpointRegistrations.count
+            registrations.ioEndpointRegistrations.append(RuntimeIoEndpointRegistration(
+                id: normalized.id,
+                role: .source,
+                representation: representation,
+                objectBytes: bytes,
+                publication: publication,
+                recommendedUpdateRateMS: nil,
+                handler: nil
+            ))
+            registrations.endpointGenerations.append(1)
+            return IoSource<Value>(
+                registryID: registrations.registryID,
+                slot: UInt16(slot),
+                generation: registrations.endpointGenerations[slot],
+                id: normalized.id,
+                representation: representation
+            )
         }
-        guard !definition.ioEndpointRegistrations.contains(where: { $0.id == normalized.id }) else {
-            throw ProtocolError(.invalidEndpoint)
-        }
-        let bytes = try runtimeObjectBytes(source: normalized)
-        let slot = definition.ioEndpointRegistrations.count
-        definition.ioEndpointRegistrations.append(RuntimeIoEndpointRegistration(
-            id: normalized.id,
-            role: .source,
-            representation: representation,
-            objectBytes: bytes,
-            publication: publication,
-            recommendedUpdateRateMS: nil,
-            handler: nil
-        ))
-        return IoSource(
-            registryID: definition.registryID,
-            slot: UInt16(slot),
-            generation: 1,
-            id: normalized.id,
-            representation: representation
-        )
     }
 
     private func normalizeSource(
@@ -203,31 +207,35 @@ extension RuntimeDefinition.Builder {
         _ normalized: consuming IoActorEndpointDefinition,
         representation: IoValueRepresentation,
         handler: @escaping @Sendable ([UInt8], IoDeliveryContext) async throws -> Void
-    ) throws(ProtocolError) -> IoActor<Value> {
-        guard !definition.sealed,
-              definition.ioEndpointRegistrations.count < definition.endpointRegistrationLimit else {
-            throw ProtocolError(.capacityExceeded)
+    ) throws -> IoActor<Value> {
+        let reservedIdentitySlot = identity == nil ? 0 : 1
+        return try commit { registrations in
+            let endpointLimit = min(registrations.capacities.ioEndpoints, registrations.capacities.ioCatalogue, 64 - reservedIdentitySlot)
+            guard registrations.ioEndpointRegistrations.count < endpointLimit else {
+                throw ProtocolError(.capacityExceeded)
+            }
+            guard !registrations.ioEndpointRegistrations.contains(where: { $0.id == normalized.id }) else {
+                throw ProtocolError(.invalidEndpoint)
+            }
+            let bytes = try runtimeObjectBytes(actor: normalized)
+            let slot = registrations.ioEndpointRegistrations.count
+            registrations.ioEndpointRegistrations.append(RuntimeIoEndpointRegistration(
+                id: normalized.id,
+                role: .actor,
+                representation: representation,
+                objectBytes: bytes,
+                publication: .immediate,
+                recommendedUpdateRateMS: normalized.recommendedUpdateRateMS,
+                handler: handler
+            ))
+            registrations.endpointGenerations.append(1)
+            return IoActor<Value>(
+                registryID: registrations.registryID,
+                slot: UInt16(slot),
+                generation: registrations.endpointGenerations[slot],
+                id: normalized.id,
+                representation: representation
+            )
         }
-        guard !definition.ioEndpointRegistrations.contains(where: { $0.id == normalized.id }) else {
-            throw ProtocolError(.invalidEndpoint)
-        }
-        let bytes = try runtimeObjectBytes(actor: normalized)
-        let slot = definition.ioEndpointRegistrations.count
-        definition.ioEndpointRegistrations.append(RuntimeIoEndpointRegistration(
-            id: normalized.id,
-            role: .actor,
-            representation: representation,
-            objectBytes: bytes,
-            publication: .immediate,
-            recommendedUpdateRateMS: normalized.recommendedUpdateRateMS,
-            handler: handler
-        ))
-        return IoActor(
-            registryID: definition.registryID,
-            slot: UInt16(slot),
-            generation: 1,
-            id: normalized.id,
-            representation: representation
-        )
     }
 }

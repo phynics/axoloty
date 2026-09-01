@@ -2,7 +2,7 @@
 
 This document records the accepted architecture for the 0.6 alignment tracked by [epic #627](https://github.com/phynics/axoloty/issues/627). The repository completed the G4 runtime cutover in PR [#649](https://github.com/phynics/axoloty/pull/649) and released the aligned 0.6 architecture as `0.6.0`.
 
-## Current implementation (0.6 G6 certification checkpoint)
+## Current implementation (0.7 runtime-registration checkpoint)
 
 The released implementation now consists of the root `Axoloty` host product,
 the Foundation-free `AxolotyWire`, `AxolotyObjectModel`, and
@@ -22,6 +22,14 @@ consume the runtime through owned event/request values and
 do not expose transport topics. Embedded firmware composes
 ``AxolotyStaticRuntime`` and owns only transport, platform, and main-loop
 concerns.
+
+Runtime composition is split into a mutable ``RuntimeBuilder`` and immutable
+``RuntimeDefinition``. The builder owns one value-semantic,
+capacity-validating registration draft. ``finish()`` consumes the builder and
+transfers that draft to the definition; the definition exposes no registration
+or sealing API. First-party modules are registered under stable internal keys,
+and failed multi-registration drafts discard handlers, streams, endpoints,
+module entries, and correlation reservations together.
 
 This section is the source of truth for what exists today. It must be updated whenever a gate changes the implemented package graph or removes a legacy path.
 

@@ -4,7 +4,7 @@ import Axoloty
 
 func runAgent() async throws {
     let identity = try RuntimeIdentity(id: .zero, name: "my-agent")
-    var builder = try RuntimeDefinition.Builder(identity: identity, namespace: "my-app")
+    var builder = try RuntimeBuilder(identity: identity, namespace: "my-app")
     _ = try builder.events(
         matching: .family(.advertise),
         buffering: .fail(capacity: 64)

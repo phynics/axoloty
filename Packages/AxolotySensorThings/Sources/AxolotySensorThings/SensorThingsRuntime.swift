@@ -31,11 +31,11 @@ public struct SensorThingsChannel<Schema: SensorThingsTopLevelSchema>: Sendable,
     }
 }
 
-/// Fixed bounds for one optional SensorThings runtime component.
+/// Fixed bounds for one optional SensorThings runtime module.
 public struct SensorThingsLimits: Sendable, Equatable {
     /// Maximum number of buffered Channel values.
     public let eventBufferCapacity: Int
-    /// Maximum number of source objects retained by one component.
+    /// Maximum number of source objects retained by one module.
     public let maximumTrackedSensors: Int
 
     /// Creates bounded SensorThings limits.
@@ -169,7 +169,7 @@ public struct SensorThingsPublisher: Sendable {
     }
 }
 
-/// One copied observation delivered by an observer component.
+/// One copied observation delivered by an observer module.
 public struct SensorThingsObservationDelivery: Sendable {
     /// The typed observation snapshot.
     public let observation: SensorThingsObjectSnapshot<Observation>
@@ -178,7 +178,7 @@ public struct SensorThingsObservationDelivery: Sendable {
 }
 
 /// Immutable source objects and Channel configuration captured before runtime
-/// sealing. The configuration contains only copyable snapshots.
+/// finishing. The configuration contains only copyable snapshots.
 public struct SensorThingsSourceConfiguration: Sendable {
     let sensor: SensorThingsObjectSnapshot<Sensor>
     let thing: SensorThingsObjectSnapshot<Thing>
@@ -200,7 +200,7 @@ public struct SensorThingsSourceConfiguration: Sendable {
     }
 }
 
-/// Configuration for a bounded observer component.
+/// Configuration for a bounded observer module.
 public struct SensorThingsObserverConfiguration: Sendable, Equatable {
     /// Sensor identity to accept from Channel events.
     public let sensorID: ObjectID
@@ -233,8 +233,8 @@ public struct SensorThingsObserverConfiguration: Sendable, Equatable {
     }
 }
 
-public extension RuntimeDefinition.Builder {
-    /// Installs one bounded SensorThings source component before sealing.
+public extension RuntimeBuilder {
+    /// Installs one bounded SensorThings source module before finishing.
     ///
     /// The source advertises the Thing and Sensor during `start`, invokes the
     /// supplied async producer from `run`, and deadvertises both objects from
@@ -243,7 +243,7 @@ public extension RuntimeDefinition.Builder {
         configuration: consuming SensorThingsSourceConfiguration,
         run: @escaping @Sendable (SensorThingsPublisher) async throws -> Void
     ) throws {
-        var draft = self
+        try withRuntimeModule(key: "axoloty.sensor-things.source") { draft in
         let sensor = configuration.sensor
         let thing = configuration.thing
         let sensorBytes = sensor.withEncodedBytes(copyBytes)
@@ -288,7 +288,7 @@ public extension RuntimeDefinition.Builder {
             return .response(sensorMatches ? sensorRetrieve : thingRetrieve)
         }
 
-        try draft.registerRuntimeComponent(RuntimeComponentRegistration(
+        return (RuntimeModuleRegistration(
             start: { runtime in
                 _ = await runtime.publish(.advertise(thingAdvertise))
                 _ = await runtime.publish(.advertise(sensorAdvertise))
@@ -305,8 +305,8 @@ public extension RuntimeDefinition.Builder {
                 _ = await runtime.publish(.deadvertise(sensorDeadvertise))
                 _ = await runtime.publish(.deadvertise(thingDeadvertise))
             }
-        ))
-        self = draft
+        ), ())
+        }
     }
 
     /// Installs one bounded observer for Channel observations.
@@ -314,7 +314,7 @@ public extension RuntimeDefinition.Builder {
         configuration: SensorThingsObserverConfiguration,
         receive: @escaping @Sendable (SensorThingsObservationDelivery) async -> Void
     ) throws {
-        var draft = self
+        try withRuntimeModule(key: "axoloty.sensor-things.observer") { draft in
         let stream = try draft.events(
             matching: .channel(identifier: configuration.observationChannel),
             buffering: .fail(capacity: configuration.limits.eventBufferCapacity)
@@ -329,10 +329,10 @@ public extension RuntimeDefinition.Builder {
         )
         let sensorID = configuration.sensorID
         let thingID = configuration.thingID
-        let sensorResolveID = try draft.reserveRuntimeComponentCorrelationID()
-        let sensorQueryID = try draft.reserveRuntimeComponentCorrelationID()
-        let thingResolveID = thingID == nil ? nil : try draft.reserveRuntimeComponentCorrelationID()
-        let thingQueryID = thingID == nil ? nil : try draft.reserveRuntimeComponentCorrelationID()
+        let sensorResolveID = try draft.reserveRuntimeModuleCorrelationID()
+        let sensorQueryID = try draft.reserveRuntimeModuleCorrelationID()
+        let thingResolveID = thingID == nil ? nil : try draft.reserveRuntimeModuleCorrelationID()
+        let thingQueryID = thingID == nil ? nil : try draft.reserveRuntimeModuleCorrelationID()
         let sensorDiscover = try encodeDiscover(objectID: sensorID, objectType: "coaty.sensorThings.Sensor")
         let sensorQuery = try encodeQuery(objectType: "coaty.sensorThings.Sensor")
         let thingDiscover = try thingID.map { try encodeDiscover(objectID: $0, objectType: "coaty.sensorThings.Thing") }
@@ -351,7 +351,7 @@ public extension RuntimeDefinition.Builder {
         let thingRetrieveStream: RuntimeEventStream? = try thingQueryID.map {
             try draft.events(matching: .correlatedResponse(capability: .retrieve, correlationID: $0), buffering: .coalesceLatest)
         }
-        try draft.registerRuntimeComponent(RuntimeComponentRegistration(
+        return (RuntimeModuleRegistration(
             start: { runtime in
                 _ = await runtime.request(.discover(correlationID: sensorResolveID, payload: sensorDiscover, timeoutMS: configuration.requestTimeoutMS))
                 _ = await runtime.request(.query(correlationID: sensorQueryID, payload: sensorQuery, timeoutMS: configuration.requestTimeoutMS))
@@ -397,8 +397,8 @@ public extension RuntimeDefinition.Builder {
                 if let correlation = thingResolveID { _ = await runtime.cancelRequest(correlation) }
                 if let correlation = thingQueryID { _ = await runtime.cancelRequest(correlation) }
             }
-        ))
-        self = draft
+        ), ())
+        }
     }
 }
 

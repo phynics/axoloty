@@ -19,13 +19,13 @@ extension AxolotyRuntimeTests {
     @Test("runtime orders subscription and identity lifecycle around transport")
     func lifecycleOrdering() async throws {
         let identity = try RuntimeIdentity(id: .zero, name: "lifecycle-test")
-        let runtimeDefinition = try RuntimeDefinition(
-            namespace: "test",
+        let runtimeDefinition = try RuntimeBuilder(
             sourceID: .zero,
+            namespace: "test",
             identity: identity,
             capacities: try RuntimeCapacities()
         )
-        let definition = try runtimeDefinition.seal()
+        let definition = try runtimeDefinition.finish()
         let transport = TestTransport()
         let runtime = AxolotyRuntime(definition: definition, transport: transport)
         #expect(await runtime.state() == .initialized)
@@ -55,12 +55,12 @@ extension AxolotyRuntimeTests {
     func startupFailureInjectionPreservesTerminalCleanup(stage: SetupFailureStage) async throws {
         let transport = TestTransport(failing: stage)
         let identity = try RuntimeIdentity(id: .zero, name: "failure-injection")
-        let definition = try RuntimeDefinition(
-            namespace: "test",
+        let definition = try RuntimeBuilder(
             sourceID: .zero,
+            namespace: "test",
             identity: identity,
             capacities: try RuntimeCapacities()
-        ).seal()
+        ).finish()
         let runtime = AxolotyRuntime(definition: definition, transport: transport)
 
         do {
@@ -154,4 +154,3 @@ extension AxolotyRuntimeTests {
         #expect(await runtime.lifecycleState() == .stopped)
     }
 }
-

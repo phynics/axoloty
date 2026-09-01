@@ -13,7 +13,8 @@ transition must enter `AxolotyProtocol`; this directory must not reimplement
 the Coaty family switch or expose raw MQTT topics, wildcard subscriptions, or
 transport-owned buffers.
 
-`RuntimeDefinition` is mutable only before sealing. `AxolotyRuntime` is
+`RuntimeBuilder` is mutable only before `finish()`; `RuntimeDefinition` is an
+immutable value with read-only registration metadata. `AxolotyRuntime` is
 single-use, actor-isolated, and bounded. Transport callbacks copy data before
 admission; a full ingress queue fails the runtime rather than dropping a
 protocol frame. Handler inputs and event-stream values are owned and sendable,

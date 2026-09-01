@@ -14,7 +14,7 @@ struct AxolotyRuntimeIoTests {
             id: ObjectID(bytes: ByteSlice(bytes: "00000000-0000-4000-8000-000000000091", length: 36))!.uuid,
             name: "host-io"
         )
-        var builder = try RuntimeDefinition.Builder(identity: identity, namespace: "host-io")
+    var builder = try RuntimeBuilder(identity: identity, namespace: "host-io")
         let sourceJSON: StaticString = "{\"objectId\":\"00000000-0000-4000-8000-000000000092\",\"objectType\":\"coaty.IoSource\",\"name\":\"source\",\"coreType\":\"IoSource\",\"valueType\":\"com.example.Bool\"}"
         let actorJSON: StaticString = "{\"objectId\":\"00000000-0000-4000-8000-000000000093\",\"objectType\":\"coaty.IoActor\",\"name\":\"actor\",\"coreType\":\"IoActor\",\"valueType\":\"com.example.Bool\"}"
         let source = try builder.ioSource(
@@ -43,10 +43,10 @@ struct AxolotyRuntimeIoTests {
             name: "catalogue-limit"
         )
         let capacities = try RuntimeCapacities(ioEndpoints: 64, ioCatalogue: 1)
-        var builder = try RuntimeDefinition.Builder(
+    var builder = try RuntimeBuilder(
             identity: identity,
             namespace: "catalogue-limit",
-            limits: capacities
+            capacities: capacities
         )
         func metadata(_ id: StaticString) throws -> Object<IoSourceMetadata> {
             try Object<IoSourceMetadata>(decoding: ByteSlice(bytes: id.utf8Start, length: id.utf8CodeUnitCount))
@@ -77,7 +77,7 @@ struct AxolotyRuntimeIoTests {
             id: ObjectID(bytes: ByteSlice(bytes: "00000000-0000-4000-8000-0000000000b1", length: 36))!.uuid,
             name: "host-io-wire"
         )
-        var builder = try RuntimeDefinition.Builder(identity: identity, namespace: "host-io-wire")
+    var builder = try RuntimeBuilder(identity: identity, namespace: "host-io-wire")
         let sourceID = "00000000-0000-4000-8000-0000000000b2"
         let actorID = "00000000-0000-4000-8000-0000000000b3"
         let sourceJSON: StaticString = "{\"objectId\":\"00000000-0000-4000-8000-0000000000b2\",\"objectType\":\"coaty.IoSource\",\"name\":\"source\",\"coreType\":\"IoSource\",\"valueType\":\"com.example.Bool\"}"

@@ -10,7 +10,7 @@ struct AxolotyUpdateCompleteConsumerTests {
     @Test(.enabled(if: scenarioIsEnabled))
     func decodesUpdateAndPublishesCorrelatedComplete() async throws {
         let environment = ModernConsumerSupport.environment()
-        var builder = try RuntimeDefinition.Builder(
+        var builder = try RuntimeBuilder(
             identity: ModernConsumerSupport.identity(name: "axoloty-modern-update-responder"),
             namespace: ModernConsumerSupport.namespace(environment: environment)
         )

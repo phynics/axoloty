@@ -3,15 +3,9 @@
 @_spi(AxolotyRuntimeAdapter) import AxolotyProtocol
 
 import AxolotyObjectModel
-
 import AxolotyWire
 
 /// Boundary validation shared by Call responders and filtered Call requests.
-///
-/// Operation names become one MQTT topic filter level. Keeping the limit and
-/// character rule in one helper prevents a value accepted by the definition
-/// builder from producing an unroutable topic when it is submitted directly
-/// as a ``RuntimeOperation``.
 enum RuntimeOperationValidation {
     static let maximumUTF8Bytes = 128
 
@@ -25,10 +19,286 @@ enum RuntimeOperationValidation {
     }
 }
 
-/// A pre-start runtime definition builder.
+/// The finite, value-semantic registration draft owned by ``RuntimeBuilder``.
 ///
-/// Registration is finite and mutable only until ``seal()`` consumes the
-/// builder. The sealed definition has no registration API.
+/// Runtime registrations are never exposed as mutable storage. Every builder
+/// operation copies this value, validates the complete proposed state, and
+/// commits it only after the operation succeeds.
+struct RuntimeRegistrations: Sendable {
+    let capacities: RuntimeCapacities
+    let registryID: ObjectID
+    var handlers: [RuntimeHandlerRegistration]
+    var eventRegistrations: [RuntimeEventRegistration]
+    var ioEndpointRegistrations: [RuntimeIoEndpointRegistration]
+    var endpointGenerations: [UInt32]
+    var modules: [RuntimeModuleRegistration]
+    var moduleKeys: Set<String>
+    var moduleCorrelationOrdinal: UInt32
+
+    init(capacities: RuntimeCapacities, registryID: ObjectID = runtimeRegistryNonce()) {
+        self.capacities = capacities
+        self.registryID = registryID
+        self.handlers = []
+        self.eventRegistrations = []
+        self.ioEndpointRegistrations = []
+        self.endpointGenerations = []
+        self.modules = []
+        self.moduleKeys = []
+        self.moduleCorrelationOrdinal = 0
+        handlers.reserveCapacity(capacities.handlers)
+        ioEndpointRegistrations.reserveCapacity(min(capacities.ioEndpoints, capacities.ioCatalogue))
+        endpointGenerations.reserveCapacity(min(capacities.ioEndpoints, capacities.ioCatalogue))
+        modules.reserveCapacity(4)
+    }
+
+    mutating func reserveModuleCorrelationID() -> UUID16 {
+        moduleCorrelationOrdinal &+= 1
+        let ordinal = moduleCorrelationOrdinal
+        let base = registryID.uuid.bytes
+        return UUID16(bytes: (
+            base.0, base.1, base.2, base.3, base.4, base.5, base.6, base.7,
+            base.8, base.9, base.10, base.11,
+            UInt8(truncatingIfNeeded: ordinal >> 24),
+            UInt8(truncatingIfNeeded: ordinal >> 16),
+            UInt8(truncatingIfNeeded: ordinal >> 8),
+            UInt8(truncatingIfNeeded: ordinal)
+        ))
+    }
+
+    func finishNewEventStreams(after count: Int) {
+        guard eventRegistrations.count > count else { return }
+        for registration in eventRegistrations[count...] {
+            registration.continuation.finish()
+        }
+    }
+}
+
+/// A pre-start runtime registration builder.
+public struct RuntimeBuilder: Sendable {
+    /// The namespace used by the host transport binding.
+    public let namespace: String
+    /// The local protocol source identity.
+    public let sourceID: UUID16
+    /// Optional modern identity metadata used by the binding advertisement.
+    public let identity: RuntimeIdentity?
+    /// The fixed limits for this runtime.
+    public var capacities: RuntimeCapacities { registrations.capacities }
+
+    var registrations: RuntimeRegistrations
+
+    /// Creates a builder from a complete runtime identity.
+    ///
+    /// - Parameters:
+    ///   - identity: The stable identity used by this runtime.
+    ///   - namespace: The validated MQTT namespace.
+    ///   - capacities: Optional finite runtime limits.
+    /// - Throws: ``AxolotyError`` when namespace or capacities are invalid.
+    public init(
+        identity: RuntimeIdentity,
+        namespace: String,
+        capacities: RuntimeCapacities? = nil
+    ) throws {
+        let resolvedCapacities = try capacities ?? RuntimeCapacities()
+        try self.init(sourceID: identity.id, namespace: namespace, identity: identity, capacities: resolvedCapacities)
+    }
+
+    /// Creates a builder from a source identity and optional metadata.
+    ///
+    /// - Parameters:
+    ///   - sourceID: The stable protocol source identity.
+    ///   - namespace: The validated MQTT namespace.
+    ///   - identity: Optional identity metadata whose ID must match `sourceID`.
+    ///   - capacities: Optional finite runtime limits.
+    /// - Throws: ``AxolotyError`` when namespace, identity, or capacities are invalid.
+    public init(
+        sourceID: UUID16,
+        namespace: String,
+        identity: RuntimeIdentity? = nil,
+        capacities: RuntimeCapacities? = nil
+    ) throws {
+        guard !namespace.isEmpty,
+              namespace.utf8.count <= 64,
+              !namespace.contains("/"),
+              !namespace.contains("#"),
+              !namespace.contains("+"),
+              !namespace.utf8.contains(0) else {
+            throw AxolotyError.invalidArgument(argument: "namespace", reason: "must contain 1...64 UTF-8 bytes and no MQTT topic separators")
+        }
+        if let identity, identity.id != sourceID {
+            throw AxolotyError.invalidArgument(argument: "identity", reason: "identity id must equal sourceID")
+        }
+        let resolvedCapacities = try capacities ?? RuntimeCapacities()
+        self.namespace = namespace
+        self.sourceID = sourceID
+        self.identity = identity
+        self.registrations = RuntimeRegistrations(capacities: resolvedCapacities)
+    }
+
+    mutating func commit<T>(_ operation: (inout RuntimeRegistrations) throws -> T) throws -> T {
+        var draft = registrations
+        let eventCount = draft.eventRegistrations.count
+        do {
+            let result = try operation(&draft)
+            registrations = draft
+            return result
+        } catch {
+            draft.finishNewEventStreams(after: eventCount)
+            throw error
+        }
+    }
+
+    /// Registers one bounded application handler.
+    ///
+    /// - Parameters:
+    ///   - capability: The closed protocol family handled by the callback.
+    ///   - operation: Optional Call operation filter.
+    ///   - maximumConcurrentInvocations: The callback's in-flight bound.
+    ///   - handler: The asynchronous owned invocation callback.
+    /// - Returns: The registration index in the finished definition.
+    /// - Throws: ``AxolotyError`` when validation or capacity checks fail.
+    @discardableResult
+    public mutating func respond(
+        to capability: ProtocolCapability,
+        operation: String? = nil,
+        maximumConcurrentInvocations: Int = 1,
+        handler: @escaping @Sendable (RuntimeInvocation) async throws -> RuntimeHandlerResult
+    ) throws -> Int {
+        return try commit { draft in
+            guard draft.handlers.count < draft.capacities.handlers else {
+                throw AxolotyError.runtime(code: .subscriptionFailed, reason: "runtime handler capacity is full")
+            }
+            if let operation {
+                guard capability == .call else {
+                    throw AxolotyError.invalidArgument(argument: "operation", reason: "operation filters are only valid for Call handlers")
+                }
+                guard RuntimeOperationValidation.isValidCallOperation(operation) else {
+                    throw AxolotyError.invalidArgument(argument: "operation", reason: "must contain 1 to 128 UTF-8 bytes and no MQTT topic separators")
+                }
+            }
+            guard maximumConcurrentInvocations > 0,
+                  maximumConcurrentInvocations <= draft.capacities.handlersInFlight else {
+                throw AxolotyError.invalidArgument(argument: "maximumConcurrentInvocations", reason: "must fit the runtime handler limit")
+            }
+            draft.handlers.append(RuntimeHandlerRegistration(capability: capability, operation: operation, maximumConcurrentInvocations: maximumConcurrentInvocations, handler: handler))
+            return draft.handlers.count - 1
+        }
+    }
+
+    /// Registers a bounded responder for a request family.
+    ///
+    /// - Parameters:
+    ///   - selector: The request family and optional Call operation filter.
+    ///   - maximumConcurrentInvocations: The callback's in-flight bound.
+    ///   - handler: The asynchronous owned invocation callback.
+    /// - Returns: The registration index in the finished definition.
+    /// - Throws: ``AxolotyError`` when validation or capacity checks fail.
+    @discardableResult
+    public mutating func respond(
+        to selector: RuntimeResponderSelector,
+        maximumConcurrentInvocations: Int = 1,
+        handler: @escaping @Sendable (RuntimeInvocation) async throws -> RuntimeHandlerResult
+    ) throws -> Int {
+        try respond(to: selector.capability, operation: selector.operation, maximumConcurrentInvocations: maximumConcurrentInvocations, handler: handler)
+    }
+
+    /// Registers a normalized event stream before startup.
+    ///
+    /// - Parameters:
+    ///   - selector: The normalized event selector.
+    ///   - policy: The bounded application buffering policy.
+    /// - Returns: An owned stream of normalized event values.
+    /// - Throws: ``AxolotyError`` when policy or stream capacity validation fails.
+    public mutating func events(
+        matching selector: RuntimeEventSelector,
+        buffering policy: RuntimeBufferingPolicy = .failAfterDrop(capacity: 64)
+    ) throws -> RuntimeEventStream {
+        return try commit { draft in
+            let capacity: Int
+            switch policy {
+            case let .failAfterDrop(value), let .fail(value), let .dropOldest(value), let .dropNewest(value):
+                guard value > 0, value <= draft.capacities.stream else {
+                    throw AxolotyError.invalidArgument(argument: "capacity", reason: "stream capacity must be in 1...runtime stream capacity")
+                }
+                capacity = value
+            case .coalesceLatest: capacity = 1
+            }
+            let buffering: AsyncStream<RuntimeEventValue>.Continuation.BufferingPolicy
+            switch policy {
+            case .failAfterDrop, .dropNewest: buffering = .bufferingOldest(capacity)
+            case .fail, .dropOldest: buffering = .bufferingNewest(capacity)
+            case .coalesceLatest: buffering = .bufferingNewest(1)
+            }
+            guard draft.eventRegistrations.count < draft.capacities.eventStreams else {
+                throw AxolotyError.runtime(code: .capacityExceeded, reason: "runtime event-stream capacity is full")
+            }
+            let pair = AsyncStream<RuntimeEventValue>.makeStream(bufferingPolicy: buffering)
+            draft.eventRegistrations.append(RuntimeEventRegistration(selector: selector, policy: policy, continuation: pair.continuation))
+            return RuntimeEventStream(stream: pair.stream)
+        }
+    }
+
+    /// Finishes registration and returns the immutable runtime definition.
+    ///
+    /// - Returns: The immutable definition containing the committed registration graph.
+    /// - Throws: An error reserved for future final validation of the graph.
+    public consuming func finish() throws -> RuntimeDefinition {
+        RuntimeDefinition(namespace: namespace, sourceID: sourceID, identity: identity, registrations: registrations)
+    }
+
+    /// Performs one first-party module registration as an atomic draft.
+    ///
+    /// - Parameters:
+    ///   - key: The stable internal module key.
+    ///   - body: The module registration draft.
+    /// - Returns: The value produced by the draft body.
+    /// - Throws: ``AxolotyError`` when the key or registration is invalid.
+    @_spi(AxolotyRuntimeAdapter)
+    public mutating func withRuntimeModule<T>(
+        key: String,
+        _ body: (inout RuntimeBuilder) throws -> (RuntimeModuleRegistration, T)
+    ) throws -> T {
+        guard !key.isEmpty, key.utf8.count <= 64 else {
+            throw AxolotyError.invalidArgument(argument: "key", reason: "runtime module key must contain 1...64 UTF-8 bytes")
+        }
+        guard !registrations.moduleKeys.contains(key) else {
+            throw AxolotyError.runtime(code: .capacityExceeded, reason: "runtime module key is already registered")
+        }
+        var draft = self
+        let eventCount = draft.registrations.eventRegistrations.count
+        guard draft.registrations.modules.count < 4 else {
+            throw AxolotyError.runtime(code: .capacityExceeded, reason: "runtime module capacity is full")
+        }
+        draft.registrations.moduleKeys.insert(key)
+        do {
+            let (registration, result) = try body(&draft)
+            guard draft.registrations.modules.count < 4 else {
+                throw AxolotyError.runtime(code: .capacityExceeded, reason: "runtime module capacity is full")
+            }
+            draft.registrations.modules.append(registration)
+            self = draft
+            return result
+        } catch {
+            draft.registrations.finishNewEventStreams(after: eventCount)
+            throw error
+        }
+    }
+
+    /// Registers a prebuilt first-party module under a stable key.
+    ///
+    /// - Parameters:
+    ///   - key: The stable internal module key.
+    ///   - registration: The module lifecycle registration.
+    /// - Throws: ``AxolotyError`` when the key is invalid or already registered.
+    @_spi(AxolotyRuntimeAdapter)
+    public mutating func withRuntimeModule(
+        key: String,
+        registration: RuntimeModuleRegistration
+    ) throws {
+        try registerRuntimeModule(registration, key: key)
+    }
+}
+
+/// An immutable runtime definition accepted by ``AxolotyRuntime``.
 public struct RuntimeDefinition: Sendable {
     /// The namespace used by the host transport binding.
     public let namespace: String
@@ -37,247 +307,23 @@ public struct RuntimeDefinition: Sendable {
     /// Optional modern identity metadata used by the binding advertisement.
     public let identity: RuntimeIdentity?
     /// The fixed limits for this runtime.
-    public let capacities: RuntimeCapacities
-    let registryID: ObjectID
+    public var capacities: RuntimeCapacities { registrations.capacities }
 
-    private var registrations: [RuntimeHandlerRegistration] = []
-    private var eventRegistrations: [RuntimeEventRegistration] = []
-    var ioEndpointRegistrations: [RuntimeIoEndpointRegistration] = []
-    var runtimeComponents: [RuntimeComponentRegistration] = []
-    var runtimeComponentCorrelationOrdinal: UInt32 = 0
-    var sealed = false
+    let registrations: RuntimeRegistrations
 
-    /// Keeps one ProtocolProcessor object slot available for runtime identity.
-    var endpointRegistrationLimit: Int {
-        let reservedIdentitySlot = identity == nil ? 0 : 1
-        return min(capacities.ioEndpoints, capacities.ioCatalogue, 64 - reservedIdentitySlot)
-    }
-
-    /// Creates an empty runtime definition.
-    public init(namespace: String, sourceID: UUID16, identity: RuntimeIdentity? = nil, capacities: RuntimeCapacities) throws {
-        guard !namespace.isEmpty,
-              namespace.utf8.count <= 64,
-              !namespace.contains("/"),
-              !namespace.contains("#"),
-              !namespace.contains("+"),
-              !namespace.utf8.contains(0) else {
-            throw AxolotyError.invalidArgument(
-                argument: "namespace",
-                reason: "must contain 1...64 UTF-8 bytes and no MQTT topic separators"
-            )
-        }
+    init(namespace: String, sourceID: UUID16, identity: RuntimeIdentity?, registrations: RuntimeRegistrations) {
         self.namespace = namespace
         self.sourceID = sourceID
         self.identity = identity
-        self.capacities = capacities
-        self.registryID = runtimeRegistryNonce()
-        self.registrations.reserveCapacity(capacities.handlers)
-        self.ioEndpointRegistrations.reserveCapacity(endpointRegistrationLimit)
-        self.runtimeComponents.reserveCapacity(4)
+        self.registrations = registrations
     }
-
-    /// Registers one bounded application handler.
-    @discardableResult
-    public mutating func register(
-        capability: ProtocolCapability,
-        operation: String? = nil,
-        maximumConcurrentInvocations: Int = 1,
-        handler: @escaping @Sendable (RuntimeInvocation) async throws -> RuntimeHandlerResult
-    ) throws -> Int {
-        guard !sealed else {
-            throw AxolotyError.runtime(code: .notStarted, reason: "the runtime definition is already sealed")
-        }
-        guard registrations.count < capacities.handlers else {
-            throw AxolotyError.runtime(code: .subscriptionFailed, reason: "runtime handler capacity is full")
-        }
-        if let operation {
-            guard capability == .call else {
-                throw AxolotyError.invalidArgument(
-                    argument: "operation",
-                    reason: "operation filters are only valid for Call handlers"
-                )
-            }
-            guard RuntimeOperationValidation.isValidCallOperation(operation) else {
-                throw AxolotyError.invalidArgument(
-                    argument: "operation",
-                    reason: "must contain 1 to 128 UTF-8 bytes and no MQTT topic separators"
-                )
-            }
-        }
-        guard maximumConcurrentInvocations > 0,
-              maximumConcurrentInvocations <= capacities.handlersInFlight else {
-            throw AxolotyError.invalidArgument(
-                argument: "maximumConcurrentInvocations",
-                reason: "must fit the runtime handler limit"
-            )
-        }
-        registrations.append(RuntimeHandlerRegistration(
-            capability: capability,
-            operation: operation,
-            maximumConcurrentInvocations: maximumConcurrentInvocations,
-            handler: handler
-        ))
-        return registrations.count - 1
-    }
-
-    /// Registers a bounded normalized event stream before startup.
-    public mutating func registerEvents(
-        matching selector: RuntimeEventSelector,
-        buffering policy: RuntimeBufferingPolicy
-    ) throws -> RuntimeEventStream {
-        let capacity: Int
-        switch policy {
-        case let .failAfterDrop(value), let .fail(value), let .dropOldest(value), let .dropNewest(value):
-            guard value > 0, value <= capacities.stream else {
-                throw AxolotyError.invalidArgument(argument: "capacity", reason: "stream capacity must be in 1...runtime stream capacity")
-            }
-            capacity = value
-        case .coalesceLatest:
-            capacity = 1
-        }
-        let buffering: AsyncStream<RuntimeEventValue>.Continuation.BufferingPolicy
-        switch policy {
-        case .failAfterDrop, .dropNewest: buffering = .bufferingOldest(capacity)
-        case .fail, .dropOldest: buffering = .bufferingNewest(capacity)
-        case .coalesceLatest: buffering = .bufferingNewest(1)
-        }
-        guard eventRegistrations.count < capacities.eventStreams else {
-            throw AxolotyError.runtime(code: .capacityExceeded, reason: "runtime event-stream capacity is full")
-        }
-        let pair = AsyncStream<RuntimeEventValue>.makeStream(bufferingPolicy: buffering)
-        eventRegistrations.append(RuntimeEventRegistration(selector: selector, policy: policy, continuation: pair.continuation))
-        return RuntimeEventStream(stream: pair.stream)
-    }
-
-    /// Seals this definition and prevents further registration.
-    public consuming func seal() throws -> SealedRuntimeDefinition {
-        guard !sealed else {
-            throw AxolotyError.runtime(code: .notStarted, reason: "the runtime definition is already sealed")
-        }
-        var copy = self
-        copy.sealed = true
-        return SealedRuntimeDefinition(
-            namespace: copy.namespace,
-            sourceID: copy.sourceID,
-            identity: copy.identity,
-            capacities: copy.capacities,
-            registrations: copy.registrations,
-            eventRegistrations: copy.eventRegistrations,
-            registryID: copy.registryID,
-            ioEndpointRegistrations: copy.ioEndpointRegistrations,
-            runtimeComponents: copy.runtimeComponents
-        )
-    }
-}
-
-/// An immutable runtime definition accepted by ``AxolotyRuntime``.
-public struct SealedRuntimeDefinition: Sendable {
-    /// The namespace used by the host transport binding.
-    public let namespace: String
-    /// The local protocol source identity.
-    public let sourceID: UUID16
-    /// Optional modern identity metadata used by the binding advertisement.
-    public let identity: RuntimeIdentity?
-    /// The fixed limits for this runtime.
-    public let capacities: RuntimeCapacities
-    let registryID: ObjectID
-    let registrations: [RuntimeHandlerRegistration]
-    let eventRegistrations: [RuntimeEventRegistration]
-    let ioEndpointRegistrations: [RuntimeIoEndpointRegistration]
-    let runtimeComponents: [RuntimeComponentRegistration]
 
     /// The number of registered handlers.
-    public var handlerCount: Int { registrations.count }
+    public var handlerCount: Int { registrations.handlers.count }
+    /// The number of registered event streams.
+    public var eventStreamCount: Int { registrations.eventRegistrations.count }
     /// The number of registered typed IO endpoints.
-    public var ioEndpointCount: Int { ioEndpointRegistrations.count }
-
-    init(namespace: String, sourceID: UUID16, identity: RuntimeIdentity? = nil, capacities: RuntimeCapacities, registrations: [RuntimeHandlerRegistration], eventRegistrations: [RuntimeEventRegistration] = [], registryID: ObjectID, ioEndpointRegistrations: [RuntimeIoEndpointRegistration] = [], runtimeComponents: [RuntimeComponentRegistration] = []) {
-        self.namespace = namespace
-        self.sourceID = sourceID
-        self.identity = identity
-        self.capacities = capacities
-        self.registryID = registryID
-        self.registrations = registrations
-        self.eventRegistrations = eventRegistrations
-        self.ioEndpointRegistrations = ioEndpointRegistrations
-        self.runtimeComponents = runtimeComponents
-    }
-}
-
-public extension RuntimeDefinition {
-    /// Mutable pre-start configuration builder. Calling ``finish()`` seals
-    /// the definition and makes its registration graph immutable.
-    struct Builder {
-        var definition: RuntimeDefinition
-        private var identity: RuntimeIdentity
-
-        /// Creates a builder with the host defaults.
-        public init(
-            identity: RuntimeIdentity,
-            namespace: String,
-            limits: RuntimeCapacities? = nil
-        ) throws {
-            self.identity = identity
-            let resolvedLimits: RuntimeCapacities
-            if let limits {
-                resolvedLimits = limits
-            } else {
-                resolvedLimits = try RuntimeCapacities()
-            }
-            self.definition = try RuntimeDefinition(
-                namespace: namespace,
-                sourceID: identity.id,
-                identity: identity,
-                capacities: resolvedLimits
-            )
-        }
-
-        /// Registers a family handler before startup.
-        @discardableResult
-        public mutating func respond(
-            to capability: ProtocolCapability,
-            operation: String? = nil,
-            maximumConcurrentInvocations: Int = 1,
-            handler: @escaping @Sendable (RuntimeInvocation) async throws -> RuntimeHandlerResult
-        ) throws -> Int {
-            try definition.register(
-                capability: capability,
-                operation: operation,
-                maximumConcurrentInvocations: maximumConcurrentInvocations,
-                handler: handler
-            )
-        }
-
-        /// Registers an event stream in the immutable runtime definition.
-        public mutating func events(
-            matching selector: RuntimeEventSelector,
-            buffering policy: RuntimeBufferingPolicy = .failAfterDrop(capacity: 64)
-        ) throws -> RuntimeEventStream {
-            try definition.registerEvents(matching: selector, buffering: policy)
-        }
-
-        /// Registers a bounded responder for a request family.
-        @discardableResult
-        public mutating func respond(
-            to selector: RuntimeResponderSelector,
-            maximumConcurrentInvocations: Int = 1,
-            handler: @escaping @Sendable (RuntimeInvocation) async throws -> RuntimeHandlerResult
-        ) throws -> Int {
-            guard maximumConcurrentInvocations > 0, maximumConcurrentInvocations <= definition.capacities.handlersInFlight else {
-                throw AxolotyError.invalidArgument(argument: "maximumConcurrentInvocations", reason: "must fit the runtime handler limit")
-            }
-            return try definition.register(
-                capability: selector.capability,
-                operation: selector.operation,
-                maximumConcurrentInvocations: maximumConcurrentInvocations,
-                handler: handler
-            )
-        }
-
-        /// Finishes registration and returns the immutable definition.
-        public consuming func finish() throws -> SealedRuntimeDefinition {
-            _ = identity
-            return try definition.seal()
-        }
-    }
+    public var ioEndpointCount: Int { registrations.ioEndpointRegistrations.count }
+    /// The number of registered first-party runtime modules.
+    public var moduleCount: Int { registrations.modules.count }
 }

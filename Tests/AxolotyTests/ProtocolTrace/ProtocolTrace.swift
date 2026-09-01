@@ -189,12 +189,12 @@ private struct HostRuntimeTraceReplay: RuntimeTraceDriver {
                 (trace.setup.first ?? trace.steps.first)?.capabilities.supportedFamilies ?? TraceEventFamily.allCases
             )
         )
-        let definition = try RuntimeDefinition(
-            namespace: "trace",
+        let definition = try RuntimeBuilder(
             sourceID: sourceID,
+            namespace: "trace",
             capacities: capacities
         )
-        let sealedDefinition = try definition.seal()
+        let sealedDefinition = try definition.finish()
         self.runtime = AxolotyRuntime(definition: sealedDefinition, transport: transport)
         self.driverState = trace.initialState
     }

@@ -55,7 +55,7 @@ extension AxolotyRuntimeTests {
     @Test("active profile namespace cannot be reused as an external route")
     func externalRouteValidationRejectsActiveProfile() throws {
         let identity = try RuntimeIdentity(id: .zero, name: "route-profile")
-        var builder = try RuntimeDefinition.Builder(identity: identity, namespace: "route-profile")
+        var builder = try RuntimeBuilder(identity: identity, namespace: "route-profile")
         let metadataJSON: StaticString = "{\"objectId\":\"00000000-0000-4000-8000-0000000000d1\",\"objectType\":\"coaty.IoSource\",\"name\":\"source\",\"coreType\":\"IoSource\",\"valueType\":\"com.example.Bool\"}"
         let metadata = try Object<IoSourceMetadata>(decoding: ByteSlice(
             bytes: metadataJSON.utf8Start,

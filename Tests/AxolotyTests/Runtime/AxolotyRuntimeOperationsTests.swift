@@ -81,11 +81,11 @@ extension AxolotyRuntimeTests {
 
     @Test("dispatch reservation rejects a complete multi-action publication atomically")
     func multiActionDispatchReservationIsAtomic() async throws {
-        let definition = try RuntimeDefinition(
-            namespace: "test",
+        let definition = try RuntimeBuilder(
             sourceID: .zero,
+            namespace: "test",
             capacities: try RuntimeCapacities(dispatch: 1)
-        ).seal()
+        ).finish()
         let transport = TestTransport()
         let runtime = AxolotyRuntime(definition: definition, transport: transport)
         try await runtime.start()
@@ -154,4 +154,3 @@ extension AxolotyRuntimeTests {
         await runtime.stop()
     }
 }
-

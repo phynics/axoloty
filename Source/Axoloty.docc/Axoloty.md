@@ -6,7 +6,7 @@ protocol processor is shared with the fixed-storage static runtime.
 
 ## Overview
 
-Configure a ``RuntimeDefinition`` with ``RuntimeDefinition/Builder``, then
+Configure a ``RuntimeBuilder`` and finish it into a ``RuntimeDefinition``, then
 start one ``AxolotyRuntime`` with an ``MQTTBinding``. Transport bytes are
 copied at the binding boundary, processed by ``AxolotyProtocol``, and exposed
 as owned ``RuntimeEventValue`` values. The host runtime owns lifecycle and
@@ -27,7 +27,7 @@ For a compiling introduction, see <doc:GettingStarted>.
 ### Runtime
 
 - ``RuntimeDefinition``
-- ``RuntimeDefinition/Builder``
+- ``RuntimeBuilder``
 - ``AxolotyRuntime``
 - ``RuntimeState``
 - ``RuntimeEventValue``

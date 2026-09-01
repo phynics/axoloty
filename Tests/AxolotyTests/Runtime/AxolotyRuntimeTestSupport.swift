@@ -7,13 +7,13 @@ import AxolotyProtocol
 import AxolotyTestSupport
 import AxolotyWire
 
-func makeDefinition() throws -> SealedRuntimeDefinition {
-    let definition = try RuntimeDefinition(
-        namespace: "test",
+func makeDefinition() throws -> RuntimeDefinition {
+    let builder = try RuntimeBuilder(
         sourceID: .zero,
+        namespace: "test",
         capacities: try RuntimeCapacities()
     )
-    return try definition.seal()
+    return try builder.finish()
 }
 enum SetupFailureStage: String, CaseIterable, Sendable {
     case start

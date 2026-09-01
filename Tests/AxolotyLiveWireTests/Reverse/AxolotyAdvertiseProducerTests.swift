@@ -43,7 +43,7 @@ struct AxolotyAdvertiseProducerTests {
         let port = UInt16(environment["WIRE_BROKER_PORT"] ?? "1883") ?? 1883
         let namespace = environment["WIRE_NAMESPACE"] ?? "wire-compat-v1"
         let identity = try RuntimeIdentity(id: Self.sourceID, name: "axoloty-advertise-producer")
-        let builder = try RuntimeDefinition.Builder(identity: identity, namespace: namespace)
+        let builder = try RuntimeBuilder(identity: identity, namespace: namespace)
         let definition = try builder.finish()
         let binding = try MQTTBinding(configuration: try MQTTBindingConfiguration(host: host, port: port))
         return AxolotyRuntime(definition: definition, transport: binding)
