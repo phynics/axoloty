@@ -19,8 +19,12 @@ enum AxolotyCommandInvocation: Equatable, Sendable {
     case explain(tier: String, ci: Bool)
     case checkPlan
     case check(requested: [String]?)
+    case build
+    case testOffline
+    case testTooling
     case verify(ci: Bool)
     case integration
+    case wireVerify
     case wireCapture
     case embeddedBuild
     case embeddedDoctor
@@ -87,15 +91,15 @@ struct AxolotyCommandParser: Sendable {
         case ["explain"]:
             return .explain(tier: environment["TIER"] ?? "", ci: false)
         case ["build"]:
-            return .check(requested: ["build"])
+            return .build
         case ["test", "offline"]:
-            return .check(requested: nil)
+            return .testOffline
         case ["test", "tooling"]:
-            return .check(requested: ["test-tooling"])
+            return .testTooling
         case ["test", "integration"]:
             return .integration
         case ["wire", "verify"]:
-            return .check(requested: ["test-wire"])
+            return .wireVerify
         case ["wire", "capture"]:
             return .wireCapture
         case ["embedded", "build"]:
