@@ -75,6 +75,41 @@ tooling tests. For the other tooling plans, use
 `make axoloty-tool AXOLOTY_TOOL_ARGS='test tooling'` or
 `make axoloty-tool AXOLOTY_TOOL_ARGS='test offline'`.
 
+### Required Linux timing and cache policy
+
+The required Linux plan warns when its warm-cache duration reaches 20 minutes.
+This warning does not fail the plan or replace a deadline. The plan retains its
+80-minute hard deadline, and the GitHub Actions job retains its 90-minute outer
+timeout so it can restore caches, start the container, and publish diagnostics.
+The six-run investigation baseline was:
+
+| Measurement | Median | p95 |
+|---|---:|---:|
+| Canonical plan | 17m21s | 17m48s |
+| Required Linux job | 18m58s | 19m32s |
+
+Each plan invocation writes command artifacts below
+`.testing/runs/<run-id>/invocations/<invocation-id>/commands/`. The primary CI
+invocation also writes
+`.testing/runs/<run-id>/reports/<invocation-id>-verify-ci.json` and the matching
+Markdown summary. CI rejects missing, incomplete, or multiple primary reports.
+It uploads both reports, every command artifact, and
+`.testing/required-checks.log` on success and failure.
+
+Required Linux checks restore three independent caches. The SwiftPM download
+cache uses an exact dependency key. The Swift compiler cache may restore the
+most recent cache for the current image and manifest identity. The ESP-IDF
+compiler cache uses `esp-idf-ccache-v1-<image-identity>-<commit>`, may restore a
+prior default-branch entry with the same image identity, and is limited to
+512 MiB. Only a successful push to `main` may save a new Swift compiler or
+ESP-IDF cache. Pull requests restore caches but never publish them. Timing
+evidence records ESP-IDF ccache statistics before and after each embedded
+build; the three embedded build directories remain separate evidence lanes.
+
+The G6 plan split is unchanged. Ordinary CI runs the G6 inventory and
+non-divergence checks without `g6-public-products-build`. Local G6 and release
+checkpoint plans retain the public-product build.
+
 Process-global signal, logging, environment, and fixed-port tests are declared
 as separate Swift invocations/lanes. The canonical graph executor invokes
 nodes serially, which enforces lane/resource non-overlap; ordinary Swift tests
