@@ -12,7 +12,7 @@ The current released API is Axoloty 0.6.2. The body below describes the active
 | `AxolotyProtocol` | The shared fixed-inline processor, correlations, association state, route classification, and normalized actions. |
 | `Axoloty` | The host lifecycle, bounded ingress, scheduling, handler supervision, and `MQTTBinding`. |
 | `AxolotyStaticRuntime` | Synchronous fixed-storage composition for Embedded Swift. |
-| `AxolotySensorThings` | Optional bounded SensorThings schemas and runtime-owned source/observer workflows. |
+| `AxolotySensorThings` | Optional bounded SensorThings schemas and one atomic runtime-owned source/direct-observation module. |
 
 Every host and static protocol transition enters `AxolotyProtocol`. The host
 runtime owns transport and concurrency policy; the static runtime owns only a
@@ -74,6 +74,13 @@ existing `.associate(_:)` spelling when no context is required.
 source identity, optional correlation, namespace, route classification,
 monotonic receipt time, and provenance. It never exposes a raw transport topic
 or a transport-owned buffer.
+
+`AxolotySensorThings` adds the atomic `RuntimeBuilder.sensorThings(limits:_:)`
+configuration transaction. Register sources and fixed-Sensor observation
+streams through its `SensorThingsConfiguration` closure.
+All typed Sensor/Thing producers and fixed-Sensor observation streams are
+validated and installed as one transaction. A second transaction is rejected;
+direct observation subscribes only to its configured Channel.
 
 Discover and Query are multi-response correlations. Update and Call are unary
 correlations. A request with a finite `timeoutMS` expires at the caller's

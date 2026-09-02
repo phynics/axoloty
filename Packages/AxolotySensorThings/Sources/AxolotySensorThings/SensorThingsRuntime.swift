@@ -4,6 +4,7 @@
 import AxolotyObjectModel
 import AxolotyProtocol
 import AxolotyWire
+import ErrorKit
 
 /// A validated application Channel identifier for SensorThings values.
 public struct SensorThingsChannel<Schema: SensorThingsTopLevelSchema>: Sendable, Hashable {
@@ -33,37 +34,40 @@ public struct SensorThingsChannel<Schema: SensorThingsTopLevelSchema>: Sendable,
 
 /// Fixed bounds for one optional SensorThings runtime module.
 public struct SensorThingsLimits: Sendable, Equatable {
-    /// Maximum number of buffered Channel values.
-    public let eventBufferCapacity: Int
-    /// Maximum number of source objects retained by one module.
-    public let maximumTrackedSensors: Int
+    /// Maximum number of configured Sensor sources.
+    public let maximumSensors: Int
+    /// Maximum number of configured direct observation streams.
+    public let maximumObservationStreams: Int
 
     /// Creates bounded SensorThings limits.
     ///
+    /// - Parameters:
+    ///   - maximumSensors: The maximum number of source Sensors.
+    ///   - maximumObservationStreams: The maximum number of direct streams.
     /// - Throws: ``AxolotyError`` when either limit is outside `1...64`.
-    public init(eventBufferCapacity: Int = 16, maximumTrackedSensors: Int = 16) throws {
-        guard (1...64).contains(eventBufferCapacity),
-              (1...64).contains(maximumTrackedSensors) else {
+    public init(maximumSensors: Int = 16, maximumObservationStreams: Int = 16) throws {
+        guard (1...64).contains(maximumSensors),
+              (1...64).contains(maximumObservationStreams) else {
             throw AxolotyError.invalidArgument(
                 argument: "limits",
                 reason: "SensorThings limits must be in 1...64"
             )
         }
-        self.eventBufferCapacity = eventBufferCapacity
-        self.maximumTrackedSensors = maximumTrackedSensors
+        self.maximumSensors = maximumSensors
+        self.maximumObservationStreams = maximumObservationStreams
     }
 
     /// The default bounded limits.
-    public static var `default`: Self { Self(uncheckedEventBufferCapacity: 16, maximumTrackedSensors: 16) }
+    public static var `default`: Self { Self(uncheckedMaximumSensors: 16, maximumObservationStreams: 16) }
 
-    private init(uncheckedEventBufferCapacity eventBufferCapacity: Int, maximumTrackedSensors: Int) {
-        self.eventBufferCapacity = eventBufferCapacity
-        self.maximumTrackedSensors = maximumTrackedSensors
+    private init(uncheckedMaximumSensors maximumSensors: Int, maximumObservationStreams: Int) {
+        self.maximumSensors = maximumSensors
+        self.maximumObservationStreams = maximumObservationStreams
     }
 
     fileprivate func validate() throws {
-        guard (1...64).contains(eventBufferCapacity),
-              (1...64).contains(maximumTrackedSensors) else {
+        guard (1...64).contains(maximumSensors),
+              (1...64).contains(maximumObservationStreams) else {
             throw AxolotyError.invalidArgument(argument: "limits", reason: "SensorThings limits must be in 1...64")
         }
     }
@@ -76,6 +80,8 @@ public struct SensorThingsObjectSnapshot<Schema: SensorThingsTopLevelSchema>: Se
     /// The decoded SensorThings schema value.
     public let value: Schema
     private let bytes: [UInt8]
+
+    fileprivate var encodedBytes: [UInt8] { bytes }
 
     /// Copies a bounded object before crossing an isolation boundary.
     public init(object: consuming Object<Schema>) throws(ObjectError) {
@@ -164,7 +170,7 @@ public struct SensorThingsPublisher: Sendable {
         case .ignored:
             throw AxolotyError.runtime(code: .notStarted, reason: "SensorThings operation was ignored")
         case let .rejected(reason):
-            throw AxolotyError.runtime(code: .capacityExceeded, reason: "SensorThings operation rejected: \(reason)")
+            throw runtimeError(for: reason)
         }
     }
 }
@@ -177,229 +183,297 @@ public struct SensorThingsObservationDelivery: Sendable {
     public let context: RuntimeEventContext
 }
 
-/// Immutable source objects and Channel configuration captured before runtime
-/// finishing. The configuration contains only copyable snapshots.
-public struct SensorThingsSourceConfiguration: Sendable {
-    let sensor: SensorThingsObjectSnapshot<Sensor>
-    let thing: SensorThingsObjectSnapshot<Thing>
-    let observationChannel: String
-    let limits: SensorThingsLimits
+/// An owned direct-observation stream for one fixed Sensor.
+public struct SensorObservationStream: AsyncSequence, Sendable {
+    /// The delivered observation and runtime context.
+    public typealias Element = SensorThingsObservationDelivery
+    private let sensorID: ObjectID
+    private let stream: RuntimeEventStream
+    private let diagnosticSink: SensorThingsDiagnosticSink
 
-    /// Creates a source configuration from typed SensorThings objects.
-    public init(
-        sensor: consuming Object<Sensor>,
-        thing: consuming Object<Thing>,
-        observationChannel: SensorThingsChannel<Observation>,
-        limits: SensorThingsLimits = .default
-    ) throws {
-        self.sensor = try SensorThingsObjectSnapshot(object: sensor)
-        self.thing = try SensorThingsObjectSnapshot(object: thing)
-        self.observationChannel = observationChannel.identifier
-        self.limits = limits
-        try limits.validate()
+    fileprivate init(sensorID: ObjectID, stream: RuntimeEventStream, diagnosticSink: SensorThingsDiagnosticSink) {
+        self.sensorID = sensorID
+        self.stream = stream
+        self.diagnosticSink = diagnosticSink
+    }
+
+    /// Creates an iterator over matching observation deliveries.
+    ///
+    /// - Returns: An iterator that completes when the runtime finishes the product stream.
+    public func makeAsyncIterator() -> Iterator {
+        Iterator(sensorID: sensorID, iterator: stream.makeAsyncIterator(), diagnosticSink: diagnosticSink)
+    }
+
+    /// An iterator over the stream's owned observation deliveries.
+    public struct Iterator: AsyncIteratorProtocol {
+        private let sensorID: ObjectID
+        private var iterator: AsyncStream<RuntimeEventValue>.Iterator
+        private let diagnosticSink: SensorThingsDiagnosticSink
+
+        fileprivate init(
+            sensorID: ObjectID,
+            iterator: AsyncStream<RuntimeEventValue>.Iterator,
+            diagnosticSink: SensorThingsDiagnosticSink
+        ) {
+            self.sensorID = sensorID
+            self.iterator = iterator
+            self.diagnosticSink = diagnosticSink
+        }
+
+        /// Returns the next matching observation, or `nil` after stream completion.
+        public mutating func next() async -> Element? {
+            while let event = await iterator.next() {
+                let snapshot: SensorThingsObjectSnapshot<Observation>
+                do { snapshot = try decodeSnapshot(Observation.self, from: event.value) }
+                catch {
+                    await diagnosticSink.emit(RuntimeDiagnostic(
+                        kind: .malformedPayload,
+                        detail: "SensorThings Observation Channel payload was invalid: \(sensorThingsErrorDetail(error))"
+                    ))
+                    continue
+                }
+                guard snapshot.envelope.parentObjectID == sensorID else { continue }
+                return SensorThingsObservationDelivery(observation: snapshot, context: event.context)
+            }
+            return nil
+        }
     }
 }
 
-/// Configuration for a bounded observer module.
-public struct SensorThingsObserverConfiguration: Sendable, Equatable {
-    /// Sensor identity to accept from Channel events.
-    public let sensorID: ObjectID
-    /// Optional Thing identity to require as the Sensor parent.
-    public let thingID: ObjectID?
-    /// Channel identifier to consume.
-    public let observationChannel: String
-    /// Timeout applied to bounded Query requests issued at startup.
-    public let requestTimeoutMS: UInt32
-    /// Event buffering and registry limits.
-    public let limits: SensorThingsLimits
+private actor SensorThingsDiagnosticSink {
+    private var handler: (@Sendable (RuntimeDiagnostic) async -> Void)?
 
-    /// Creates observer configuration.
-    public init(
-        sensorID: ObjectID,
-        thingID: ObjectID? = nil,
+    func install(_ handler: @escaping @Sendable (RuntimeDiagnostic) async -> Void) {
+        self.handler = handler
+    }
+
+    func emit(_ diagnostic: RuntimeDiagnostic) async {
+        await handler?(diagnostic)
+    }
+}
+
+private final class SensorThingsTransactionToken: @unchecked Sendable {
+    private var active = true
+    func invalidate() { active = false }
+    var isActive: Bool { active }
+}
+
+private struct SensorThingsSourceRegistration: Sendable {
+    let sensor: SensorThingsObjectSnapshot<Sensor>
+    let thing: SensorThingsObjectSnapshot<Thing>
+    let channelID: String
+    let run: @Sendable (SensorThingsPublisher) async throws -> Void
+}
+
+/// The atomic SensorThings registration draft passed to a builder transaction.
+public struct SensorThingsConfiguration {
+    fileprivate var builder: RuntimeBuilder
+    fileprivate var sources: [SensorThingsSourceRegistration] = []
+    fileprivate var observationStreams: [(ObjectID, RuntimeEventStream, SensorThingsDiagnosticSink)] = []
+    fileprivate var limits: SensorThingsLimits = .default
+    fileprivate let initialEventStreamCount: Int
+    fileprivate let token: SensorThingsTransactionToken
+
+    init(builder: RuntimeBuilder) {
+        self.builder = builder
+        self.initialEventStreamCount = builder.eventStreamCount
+        self.token = SensorThingsTransactionToken()
+    }
+
+    /// Registers one bounded Sensor/Thing producer.
+    ///
+    /// - Parameters:
+    ///   - sensor: The Sensor object to advertise and publish from.
+    ///   - thing: The parent Thing object for the Sensor.
+    ///   - observationChannel: The Channel used by published observations.
+    ///   - run: The structured producer body.
+    /// - Throws: ``AxolotyError`` when objects, parents, duplicates, or limits are invalid.
+    public mutating func source(
+        sensor: consuming Object<Sensor>,
+        thing: consuming Object<Thing>,
         observationChannel: SensorThingsChannel<Observation>,
-        requestTimeoutMS: UInt32 = 5_000,
-        limits: SensorThingsLimits = .default
+        run: @escaping @Sendable (SensorThingsPublisher) async throws -> Void
     ) throws {
-        guard requestTimeoutMS > 0 else {
-            throw AxolotyError.invalidArgument(argument: "requestTimeoutMS", reason: "timeout must be positive")
+        guard token.isActive else { throw AxolotyError.invalidArgument(argument: "configuration", reason: "SensorThings configuration transaction has ended") }
+        let sensorSnapshot: SensorThingsObjectSnapshot<Sensor>
+        let thingSnapshot: SensorThingsObjectSnapshot<Thing>
+        do {
+            sensorSnapshot = try SensorThingsObjectSnapshot(object: sensor)
+            thingSnapshot = try SensorThingsObjectSnapshot(object: thing)
+        } catch {
+            throw AxolotyError.caught(error)
         }
-        try limits.validate()
-        self.sensorID = sensorID
-        self.thingID = thingID
-        self.observationChannel = observationChannel.identifier
-        self.requestTimeoutMS = requestTimeoutMS
-        self.limits = limits
+        guard sensorSnapshot.envelope.parentObjectID == thingSnapshot.envelope.objectID else {
+            throw AxolotyError.invalidArgument(argument: "sensor", reason: "Sensor parentObjectId must match its Thing objectID")
+        }
+        guard sources.count < limits.maximumSensors else {
+            throw AxolotyError.runtime(code: .capacityExceeded, reason: "SensorThings sensor limit is full")
+        }
+        guard !sources.contains(where: { $0.sensor.envelope.objectID == sensorSnapshot.envelope.objectID }) else {
+            throw AxolotyError.invalidArgument(argument: "sensor", reason: "Sensor objectID is duplicated")
+        }
+        if let existing = sources.first(where: { $0.thing.envelope.objectID == thingSnapshot.envelope.objectID }),
+           existing.thing.encodedBytes != thingSnapshot.encodedBytes {
+            throw AxolotyError.invalidArgument(argument: "thing", reason: "Thing objectID has conflicting snapshots")
+        }
+        sources.append(SensorThingsSourceRegistration(
+            sensor: sensorSnapshot,
+            thing: thingSnapshot,
+            channelID: observationChannel.identifier,
+            run: run
+        ))
+    }
+
+    /// Registers one fixed-Sensor observation stream.
+    ///
+    /// - Parameters:
+    ///   - sensorID: The Sensor identity whose observations are delivered.
+    ///   - channel: The Channel to match.
+    ///   - buffering: The bounded application buffering policy.
+    /// - Returns: An owned asynchronous observation stream.
+    /// - Throws: ``AxolotyError`` when the stream capacity or module limit is exceeded.
+    public mutating func observations(
+        for sensorID: ObjectID,
+        channel: SensorThingsChannel<Observation>,
+        buffering: RuntimeBufferingPolicy
+    ) throws -> SensorObservationStream {
+        guard token.isActive else { throw AxolotyError.invalidArgument(argument: "configuration", reason: "SensorThings configuration transaction has ended") }
+        guard observationStreams.count < limits.maximumObservationStreams else {
+            throw AxolotyError.runtime(code: .capacityExceeded, reason: "SensorThings observation stream limit is full")
+        }
+        let diagnosticSink = SensorThingsDiagnosticSink()
+        let stream = try builder.events(matching: .channel(identifier: channel.identifier), buffering: buffering)
+        observationStreams.append((sensorID, stream, diagnosticSink))
+        return SensorObservationStream(sensorID: sensorID, stream: stream, diagnosticSink: diagnosticSink)
     }
 }
 
 public extension RuntimeBuilder {
-    /// Installs one bounded SensorThings source module before finishing.
+    /// Configures all SensorThings sources and direct-observation streams in one
+    /// atomic runtime-module transaction.
     ///
-    /// The source advertises the Thing and Sensor during `start`, invokes the
-    /// supplied async producer from `run`, and deadvertises both objects from
-    /// `stop`. Reconnect calls `start` again, so advertisement is idempotent.
-    mutating func sensorThingsSource(
-        configuration: consuming SensorThingsSourceConfiguration,
-        run: @escaping @Sendable (SensorThingsPublisher) async throws -> Void
-    ) throws {
-        try withRuntimeModule(key: "axoloty.sensor-things.source") { draft in
-        let sensor = configuration.sensor
-        let thing = configuration.thing
-        let sensorBytes = sensor.withEncodedBytes(copyBytes)
-        let thingBytes = thing.withEncodedBytes(copyBytes)
-        let sensorID = sensor.envelope.objectID
-        let thingID = thing.envelope.objectID
-        let channelID = configuration.observationChannel
-        let sensorAdvertise = try encodeAdvertise(object: sensorBytes)
-        let thingAdvertise = try encodeAdvertise(object: thingBytes)
-        let sensorResolve = try encodeResolve(object: sensorBytes)
-        let thingResolve = try encodeResolve(object: thingBytes)
-        let sensorRetrieve = try encodeRetrieve(objects: [sensorBytes])
-        let thingRetrieve = try encodeRetrieve(objects: [thingBytes])
-        let retrieveObjects = sensorID.uuid.isLexicographicallyBefore(thingID.uuid)
-            ? [sensorBytes, thingBytes]
-            : [thingBytes, sensorBytes]
-        let retrieve = try encodeRetrieve(objects: retrieveObjects)
-        let sensorDeadvertise = try encodeDeadvertise(objectID: sensorID)
-        let thingDeadvertise = try encodeDeadvertise(objectID: thingID)
-
-        // A single bounded responder handles both Sensor and Thing Discover
-        // requests; unsupported selectors receive no response. Query applies
-        // the supported object/core-type selectors and Coaty object filter,
-        // then returns matching objects in stable object-ID order.
-        try draft.respond(to: .discover) { invocation in
-            let payload = invocationPayload(invocation)
-            if discoverMatches(payload, objectID: thingID, objectType: "coaty.sensorThings.Thing") {
-                return .response(thingResolve)
+    /// - Parameters:
+    ///   - limits: The bounded source and direct-stream limits.
+    ///   - configure: The closure that registers sources and streams.
+    /// - Returns: The value returned by `configure`.
+    /// - Throws: ``AxolotyError`` when configuration or module registration fails.
+    mutating func sensorThings<Result>(
+        limits: SensorThingsLimits = .default,
+        _ configure: (inout SensorThingsConfiguration) throws -> Result
+    ) throws -> Result {
+        try limits.validate()
+        return try withRuntimeModule(key: "axoloty.sensor-things") { draft in
+            var configuration = SensorThingsConfiguration(builder: draft)
+            configuration.limits = limits
+            let result: Result
+            do {
+                result = try configure(&configuration)
+            } catch {
+                configuration.token.invalidate()
+                configuration.builder.finishNewRuntimeEventStreams(after: configuration.initialEventStreamCount)
+                throw error
             }
-            if discoverMatches(payload, objectID: sensorID, objectType: "coaty.sensorThings.Sensor") {
-                return .response(sensorResolve)
-            }
-            return .noResponse
-        }
-        try draft.respond(to: .query) { invocation in
-            let payload = invocationPayload(invocation)
-            if queryHasUnsupportedJoin(payload) { return .noResponse }
-            let sensorMatches = queryMatches(payload, objectType: "coaty.sensorThings.Sensor", object: sensorBytes)
-            let thingMatches = queryMatches(payload, objectType: "coaty.sensorThings.Thing", object: thingBytes)
-            guard sensorMatches || thingMatches else { return .noResponse }
-            if sensorMatches && thingMatches { return .response(retrieve) }
-            return .response(sensorMatches ? sensorRetrieve : thingRetrieve)
-        }
+            configuration.token.invalidate()
+            draft = configuration.builder
 
-        return (RuntimeModuleRegistration(
-            start: { runtime in
-                _ = await runtime.publish(.advertise(thingAdvertise))
-                _ = await runtime.publish(.advertise(sensorAdvertise))
-            },
-            run: { runtime in
-                let publisher = SensorThingsPublisher(
-                    sensorID: sensorID,
-                    channelID: channelID,
-                    submit: { operation in await runtime.publish(operation) }
-                )
-                do { try await run(publisher) } catch { return }
-            },
-            stop: { runtime in
-                _ = await runtime.publish(.deadvertise(sensorDeadvertise))
-                _ = await runtime.publish(.deadvertise(thingDeadvertise))
+            let orderedSources = configuration.sources.sorted {
+                $0.sensor.envelope.objectID.uuid.isLexicographicallyBefore($1.sensor.envelope.objectID.uuid)
             }
-        ), ())
-        }
-    }
+            var thingsByID: [ObjectID: [UInt8]] = [:]
+            for source in orderedSources where thingsByID[source.thing.envelope.objectID] == nil {
+                thingsByID[source.thing.envelope.objectID] = source.thing.encodedBytes
+            }
+            let orderedThings = thingsByID.sorted {
+                $0.key.uuid.isLexicographicallyBefore($1.key.uuid)
+            }
+            let sourceBytes = orderedSources.map { $0.sensor.withEncodedBytes(copyBytes) }
+            let sourceAdvertise = try sourceBytes.map { try encodeAdvertise(object: $0) }
+            let thingAdvertise = try orderedThings.map { try encodeAdvertise(object: $0.value) }
+            let sourceDeadvertise = try orderedSources.map { try encodeDeadvertise(objectID: $0.sensor.envelope.objectID) }
+            let thingDeadvertise = try orderedThings.map { try encodeDeadvertise(objectID: $0.key) }
+            let sourceResolve = try sourceBytes.map { try encodeResolve(object: $0) }
+            let allObjects = (orderedSources.enumerated().map {
+                ($0.element.sensor.envelope.objectID, $0.element.sensor.encodedBytes)
+            } + orderedThings.map { ($0.key, $0.value) })
+                .sorted { $0.0.uuid.isLexicographicallyBefore($1.0.uuid) }
 
-    /// Installs one bounded observer for Channel observations.
-    mutating func sensorThingsObserver(
-        configuration: SensorThingsObserverConfiguration,
-        receive: @escaping @Sendable (SensorThingsObservationDelivery) async -> Void
-    ) throws {
-        try withRuntimeModule(key: "axoloty.sensor-things.observer") { draft in
-        let stream = try draft.events(
-            matching: .channel(identifier: configuration.observationChannel),
-            buffering: .fail(capacity: configuration.limits.eventBufferCapacity)
-        )
-        let sensorAdvertisements = try draft.events(
-            matching: .advertise(objectType: "coaty.sensorThings.Sensor"),
-            buffering: .coalesceLatest
-        )
-        let thingAdvertisements = try draft.events(
-            matching: .advertise(objectType: "coaty.sensorThings.Thing"),
-            buffering: .coalesceLatest
-        )
-        let sensorID = configuration.sensorID
-        let thingID = configuration.thingID
-        let sensorResolveID = try draft.reserveRuntimeModuleCorrelationID()
-        let sensorQueryID = try draft.reserveRuntimeModuleCorrelationID()
-        let thingResolveID = thingID == nil ? nil : try draft.reserveRuntimeModuleCorrelationID()
-        let thingQueryID = thingID == nil ? nil : try draft.reserveRuntimeModuleCorrelationID()
-        let sensorDiscover = try encodeDiscover(objectID: sensorID, objectType: "coaty.sensorThings.Sensor")
-        let sensorQuery = try encodeQuery(objectType: "coaty.sensorThings.Sensor")
-        let thingDiscover = try thingID.map { try encodeDiscover(objectID: $0, objectType: "coaty.sensorThings.Thing") }
-        let thingQuery = thingID == nil ? nil : try encodeQuery(objectType: "coaty.sensorThings.Thing")
-        let sensorResolveStream = try draft.events(
-            matching: .correlatedResponse(capability: .resolve, correlationID: sensorResolveID),
-            buffering: .coalesceLatest
-        )
-        let sensorRetrieveStream = try draft.events(
-            matching: .correlatedResponse(capability: .retrieve, correlationID: sensorQueryID),
-            buffering: .coalesceLatest
-        )
-        let thingResolveStream: RuntimeEventStream? = try thingResolveID.map {
-            try draft.events(matching: .correlatedResponse(capability: .resolve, correlationID: $0), buffering: .coalesceLatest)
-        }
-        let thingRetrieveStream: RuntimeEventStream? = try thingQueryID.map {
-            try draft.events(matching: .correlatedResponse(capability: .retrieve, correlationID: $0), buffering: .coalesceLatest)
-        }
-        return (RuntimeModuleRegistration(
-            start: { runtime in
-                _ = await runtime.request(.discover(correlationID: sensorResolveID, payload: sensorDiscover, timeoutMS: configuration.requestTimeoutMS))
-                _ = await runtime.request(.query(correlationID: sensorQueryID, payload: sensorQuery, timeoutMS: configuration.requestTimeoutMS))
-                if let id = thingID, let correlation = thingResolveID, let payload = thingDiscover {
-                    _ = id
-                    _ = await runtime.request(.discover(correlationID: correlation, payload: payload, timeoutMS: configuration.requestTimeoutMS))
+            try draft.respond(to: .discover) { invocation in
+                let payload = invocationPayload(invocation)
+                for (index, source) in orderedSources.enumerated()
+                    where discoverMatches(payload, objectID: source.sensor.envelope.objectID, objectType: "coaty.sensorThings.Sensor") {
+                    return .response(sourceResolve[index])
                 }
-                if let correlation = thingQueryID, let payload = thingQuery {
-                    _ = await runtime.request(.query(correlationID: correlation, payload: payload, timeoutMS: configuration.requestTimeoutMS))
+                for thing in orderedThings
+                    where discoverMatches(payload, objectID: thing.key, objectType: "coaty.sensorThings.Thing") {
+                    return .response(try encodeResolve(object: thing.value))
                 }
-            },
-            run: { runtime in
-                await withTaskGroup(of: Void.self) { group in
-                    group.addTask {
-                        for await event in stream {
-                            guard !Task.isCancelled else { return }
-                            guard let snapshot = decodeSnapshot(Observation.self, from: event.value) else {
-                                await runtime.diagnose(RuntimeDiagnostic(kind: .malformedPayload, detail: "SensorThings Observation Channel payload was invalid"))
-                                continue
+                return .noResponse
+            }
+            try draft.respond(to: .query) { invocation in
+                let payload = invocationPayload(invocation)
+                guard !queryHasUnsupportedJoin(payload) else { return .noResponse }
+                let matching = allObjects.filter {
+                    queryMatches(payload, objectType: objectType(for: $0.0, sources: orderedSources), object: $0.1)
+                }
+                let bounded = Array(matching.prefix(limits.maximumSensors)).map(\.1)
+                guard !bounded.isEmpty else { return .noResponse }
+                return .response(try encodeRetrieve(objects: bounded))
+            }
+
+            let registrations = configuration.sources
+            let observationStreams = configuration.observationStreams
+            return (RuntimeModuleRegistration(
+                start: { runtime in
+                    for (_, _, sink) in observationStreams {
+                        await sink.install { diagnostic in await runtime.diagnose(diagnostic) }
+                    }
+                    for payload in thingAdvertise {
+                        await report(runtime.publish(.advertise(payload)), to: runtime, detail: "SensorThings Thing advertisement")
+                    }
+                    for payload in sourceAdvertise {
+                        await report(runtime.publish(.advertise(payload)), to: runtime, detail: "SensorThings Sensor advertisement")
+                    }
+                },
+                run: { runtime in
+                    await withTaskGroup(of: Void.self) { group in
+                        for source in registrations {
+                            group.addTask {
+                                let publisher = SensorThingsPublisher(
+                                    sensorID: source.sensor.envelope.objectID,
+                                    channelID: source.channelID,
+                                    submit: { operation in await runtime.publish(operation) }
+                                )
+                                do { try await source.run(publisher) }
+                                catch {
+                                    await runtime.diagnose(RuntimeDiagnostic(
+                                        kind: .handlerFailed,
+                                        detail: "SensorThings source producer failed: \(sensorThingsErrorDetail(error))"
+                                    ))
+                                }
                             }
-                            guard snapshot.envelope.parentObjectID == sensorID else { continue }
-                            await receive(SensorThingsObservationDelivery(observation: snapshot, context: event.context))
                         }
+                        await group.waitForAll()
                     }
-                    group.addTask { for await _ in sensorAdvertisements { if Task.isCancelled { return } } }
-                    group.addTask { for await _ in thingAdvertisements { if Task.isCancelled { return } } }
-                    group.addTask { for await event in sensorResolveStream { if Task.isCancelled { return }; _ = decodeSnapshot(Sensor.self, from: event.value) } }
-                    group.addTask { for await event in sensorRetrieveStream { if Task.isCancelled { return }; _ = event } }
-                    if let thingResolveStream {
-                        group.addTask { for await event in thingResolveStream { if Task.isCancelled { return }; _ = decodeSnapshot(Thing.self, from: event.value) } }
+                },
+                stop: { runtime in
+                    for payload in sourceDeadvertise {
+                        await report(runtime.publish(.deadvertise(payload)), to: runtime, detail: "SensorThings Sensor deadvertisement")
                     }
-                    if let thingRetrieveStream {
-                        group.addTask { for await _ in thingRetrieveStream { if Task.isCancelled { return } } }
+                    for payload in thingDeadvertise {
+                        await report(runtime.publish(.deadvertise(payload)), to: runtime, detail: "SensorThings Thing deadvertisement")
                     }
-                    await group.next()
-                    group.cancelAll()
+                    for (_, stream, _) in observationStreams {
+                        stream.finish()
+                    }
                 }
-                _ = runtime
-            },
-            stop: { runtime in
-                _ = await runtime.cancelRequest(sensorResolveID)
-                _ = await runtime.cancelRequest(sensorQueryID)
-                if let correlation = thingResolveID { _ = await runtime.cancelRequest(correlation) }
-                if let correlation = thingQueryID { _ = await runtime.cancelRequest(correlation) }
-            }
-        ), ())
+            ), result)
         }
     }
+}
+
+private func sensorThingsErrorDetail(_ error: Error) -> String {
+    let wrapped = error as? AxolotyError ?? AxolotyError.caught(error)
+    return ErrorKit.errorChainDescription(for: wrapped)
 }
 
 private func discoverMatches(_ payload: [UInt8], objectID: ObjectID, objectType: StaticString) -> Bool {
@@ -420,6 +494,44 @@ private func discoverMatches(_ payload: [UInt8], objectID: ObjectID, objectType:
         match = true
     }
     return match
+}
+
+private func objectType(
+    for objectID: ObjectID,
+    sources: [SensorThingsSourceRegistration]
+) -> StaticString {
+    if sources.contains(where: { $0.sensor.envelope.objectID == objectID }) {
+        return "coaty.sensorThings.Sensor"
+    }
+    return "coaty.sensorThings.Thing"
+}
+
+private func report(
+    _ receipt: RuntimeReceipt,
+    to runtime: RuntimeModuleContext,
+    detail: String
+) async {
+    guard case let .rejected(reason) = receipt else { return }
+    await runtime.diagnose(RuntimeDiagnostic(kind: .handlerFailed, detail: detail + " rejected: " + String(describing: reason)))
+}
+
+private func runtimeError(for rejection: RuntimeRejection) -> AxolotyError {
+    switch rejection {
+    case let .notRunning(state):
+        return .runtime(code: .notStarted, reason: "SensorThings operation was rejected because runtime is " + String(describing: state))
+    case let .malformedFrame(code):
+        return .runtime(code: .subscriptionFailed, reason: "SensorThings operation was rejected by malformed frame: " + String(describing: code))
+    case .malformedPayload:
+        return .decodingFailure(type: "SensorThings", reason: "operation payload was rejected")
+    case .invalidOperationName:
+        return .invalidArgument(argument: "operation", reason: "SensorThings operation name was rejected")
+    case let .protocol(code):
+        return .runtime(code: .subscriptionFailed, reason: "SensorThings operation was rejected by protocol: " + String(describing: code))
+    case .capacityExceeded:
+        return .runtime(code: .capacityExceeded, reason: "SensorThings operation exceeded runtime capacity")
+    case .staleTransport:
+        return .runtime(code: .cancelled, reason: "SensorThings operation was rejected by a stale transport")
+    }
 }
 
 private func queryHasUnsupportedJoin(_ payload: [UInt8]) -> Bool {
@@ -497,21 +609,32 @@ private func copyBytes(_ bytes: borrowing ByteSlice) -> [UInt8] {
 private func decodeSnapshot<Schema: SensorThingsTopLevelSchema>(
     _ type: Schema.Type,
     from payload: [UInt8]
-) -> SensorThingsObjectSnapshot<Schema>? {
-    guard !payload.isEmpty else { return nil }
-    var result: SensorThingsObjectSnapshot<Schema>?
+) throws -> SensorThingsObjectSnapshot<Schema> {
+    guard !payload.isEmpty else {
+        throw AxolotyError.decodingFailure(type: "SensorThingsObject", reason: "empty payload")
+    }
+    var result: Result<SensorThingsObjectSnapshot<Schema>, Error>?
     payload.withUnsafeBufferPointer { buffer in
-        guard let baseAddress = buffer.baseAddress else { return }
+        guard let baseAddress = buffer.baseAddress else {
+            result = .failure(AxolotyError.decodingFailure(type: "SensorThingsObject", reason: "empty payload"))
+            return
+        }
         let reader = WireReader(bytes: baseAddress, length: buffer.count)
-        guard let objectBytes = reader.readField("object") else { return }
+        guard let objectBytes = reader.readField("object") else {
+            result = .failure(AxolotyError.decodingFailure(type: "SensorThingsObject", reason: "missing object field"))
+            return
+        }
         do {
             let decoded = try Object<Schema>(decoding: objectBytes)
-            result = try SensorThingsObjectSnapshot(object: decoded)
+            result = .success(try SensorThingsObjectSnapshot(object: decoded))
         } catch {
-            result = nil
+            result = .failure(AxolotyError.caught(error))
         }
     }
-    return result
+    guard let result else {
+        throw AxolotyError.decodingFailure(type: "SensorThingsObject", reason: "missing payload")
+    }
+    return try result.get()
 }
 
 

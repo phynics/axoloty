@@ -88,14 +88,22 @@ public struct RuntimeEventStream: AsyncSequence, Sendable {
     public typealias Element = RuntimeEventValue
 
     private let stream: AsyncStream<RuntimeEventValue>
+    private let continuation: AsyncStream<RuntimeEventValue>.Continuation
 
-    init(stream: AsyncStream<RuntimeEventValue>) {
+    init(stream: AsyncStream<RuntimeEventValue>, continuation: AsyncStream<RuntimeEventValue>.Continuation) {
         self.stream = stream
+        self.continuation = continuation
     }
 
     /// Creates an iterator over owned, normalized event values.
     public func makeAsyncIterator() -> AsyncStream<RuntimeEventValue>.Iterator {
         stream.makeAsyncIterator()
+    }
+
+    /// Finishes the stream for a module-owned product during runtime shutdown.
+    @_spi(AxolotyRuntimeAdapter)
+    public func finish() {
+        continuation.finish()
     }
 }
 

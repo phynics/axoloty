@@ -237,7 +237,7 @@ let package = Package(
         ),
         .testTarget(
             name: "AxolotySensorThingsTests",
-            dependencies: ["AxolotySensorThings", "AxolotyObjectModel", "AxolotyProtocol", "AxolotyWire"],
+            dependencies: ["AxolotySensorThings", "Axoloty", "AxolotyObjectModel", "AxolotyProtocol", "AxolotyWire"],
             path: "Packages/AxolotySensorThings/Tests/AxolotySensorThingsTests"
         ),
         .testTarget(

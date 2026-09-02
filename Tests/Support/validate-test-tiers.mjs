@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const expectedTiers = new Set(["smoke", "unit", "module", "property", "wire-offline", "wire-live", "nightly", "manual-macos", "g3-object-model", "g4-runtime", "g6-non-divergence"]);
+const expectedTiers = new Set(["smoke", "unit", "module", "property", "wire-offline", "wire-live", "nightly", "manual-macos", "g3-object-model", "g4-runtime", "g5-optional-products", "g6-non-divergence"]);
 const networkModes = new Set(["none", "isolated", "isolated-broker", "isolated-containers"]);
 const brokerModes = new Set(["none", "local", "isolated"]);
 const hardwareModes = new Set(["forbidden", "optional", "required"]);

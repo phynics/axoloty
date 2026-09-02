@@ -106,7 +106,10 @@ The strict G4 package and consumer boundaries are required gates. They reject
 legacy runtime symbols, raw MQTT APIs outside the binding, parallel encoders,
 and implicit SwiftPM source discovery. Controller-based IO remains outside the
 G4 core. G5 now provides the optional AxolotySensorThings product with bounded
-Foundation-free schemas and runtime-owned source/observer workflows.
+Foundation-free schemas and one atomic runtime-owned source/direct-observation
+module. Sources validate Sensor-to-Thing parentage and deduplicate bounded
+Thing advertisements; direct observation subscribes only to its configured
+Channel.
 
 ### Transport-session transition investigation
 

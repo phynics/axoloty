@@ -13,6 +13,7 @@ enum CanonicalNamedPlan: String, CaseIterable, Sendable {
     case testTooling = "test-tooling"
     case objectModel = "object-model"
     case g4Runtime = "g4-runtime"
+    case g5OptionalProducts = "g5-optional-products"
 }
 
 enum CanonicalPlanRequest: Sendable {

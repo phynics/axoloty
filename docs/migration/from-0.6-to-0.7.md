@@ -38,12 +38,15 @@ source changes:
 | `RuntimeDefinition.registerEvents(...)` | `RuntimeBuilder.events(...)` |
 | `RuntimeDefinition.seal()` | `RuntimeBuilder.finish()` |
 
-The built-in IO routing module uses `axoloty.io-routing`; SensorThings uses
-`axoloty.sensor-things.source` and `axoloty.sensor-things.observer`. Repeated
-use of one key is rejected as a structured runtime error, and a failed module
-draft discards all handlers, streams, endpoints, and correlation reservations
-created by that draft. Use `withRuntimeModule(key:_:)` for an integration
-draft that must register multiple handlers, streams, endpoints, or correlation
-identities atomically. Use `registerRuntimeModule(_:key:)` only when the module
-registration is already prebuilt and does not need additional builder
-mutations.
+The built-in IO routing module uses `axoloty.io-routing`; SensorThings uses one
+`axoloty.sensor-things` module. The old
+`SensorThingsSourceConfiguration`, `SensorThingsObserverConfiguration`,
+`sensorThingsSource(configuration:run:)`, and
+`sensorThingsObserver(configuration:receive:)` symbols are removed without
+aliases. Use one `builder.sensorThings(limits:_:)` transaction. Register each
+source with `configuration.source(sensor:thing:observationChannel:run:)` and
+each fixed-Sensor stream with
+`configuration.observations(for:channel:buffering:)`. Repeated use is rejected
+as a structured runtime error, and a
+failed draft discards all handlers, streams, and module reservations created by
+that draft.

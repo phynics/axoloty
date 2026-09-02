@@ -71,3 +71,8 @@ and device callbacks; protocol transitions remain in ``AxolotyProtocol``.
 Read the project README for build and verification instructions. Typed IO
 endpoint and SensorThings APIs are available through their optional 0.7
 products.
+
+SensorThings sources and fixed-Sensor observations are installed together with
+one `RuntimeBuilder.sensorThings(limits:_:)` transaction. The
+transaction is bounded and atomic; direct observation uses only its configured
+Channel and never performs metadata discovery.

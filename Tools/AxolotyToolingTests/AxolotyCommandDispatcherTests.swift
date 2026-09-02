@@ -677,7 +677,7 @@ func checkpointManifestRecordsAllRequiredReleaseGatesInOrder() throws {
 
     #expect(manifest.schemaVersion == 3)
     #expect(manifest.releaseGates.map(\.id) == [
-        "smoke", "unit", "module", "property", "wire-offline", "wire-live", "g3-object-model", "g4-runtime",
+        "smoke", "unit", "module", "property", "wire-offline", "wire-live", "g3-object-model", "g4-runtime", "g5-optional-products",
         "g6-non-divergence",
     ])
     #expect(manifest.releaseGates.first { $0.id == "integration" } == nil)
