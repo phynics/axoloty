@@ -170,11 +170,8 @@ func waitForPublicationCount(
     _ transport: SensorThingsRecordingTransport,
     _ count: Int
 ) async throws {
-    let clock = ContinuousClock()
-    let deadline = clock.now.advanced(by: .seconds(2))
-    while await transport.allPublications().count < count {
-        if clock.now >= deadline { throw SensorThingsFixtureError() }
-        try await Task.sleep(for: .milliseconds(5))
+    try await waitForSensorThingsCondition {
+        await transport.allPublications().count >= count
     }
 }
 
@@ -183,11 +180,8 @@ func waitForPublicationCount(
     capability: ProtocolCapability,
     count: Int
 ) async throws {
-    let clock = ContinuousClock()
-    let deadline = clock.now.advanced(by: .seconds(2))
-    while await transport.allPublications().filter({ $0.routingKey.capability == capability }).count < count {
-        if clock.now >= deadline { throw SensorThingsFixtureError() }
-        try await Task.sleep(for: .milliseconds(5))
+    try await waitForSensorThingsCondition {
+        await transport.allPublications().filter { $0.routingKey.capability == capability }.count >= count
     }
 }
 
@@ -195,13 +189,21 @@ func waitForSensorThingsAdvertisementCount(
     _ transport: SensorThingsRecordingTransport,
     _ count: Int
 ) async throws {
+    try await waitForSensorThingsCondition {
+        await transport.allPublications().filter { publication in
+            guard publication.routingKey.capability == .advertise else { return false }
+            let type = publicationObjectType(publication)
+            return type == "coaty.sensorThings.Thing" || type == "coaty.sensorThings.Sensor"
+        }.count >= count
+    }
+}
+
+private func waitForSensorThingsCondition(
+    _ condition: @escaping @Sendable () async -> Bool
+) async throws {
     let clock = ContinuousClock()
     let deadline = clock.now.advanced(by: .seconds(2))
-    while await transport.allPublications().filter({ publication in
-        guard publication.routingKey.capability == .advertise else { return false }
-        let type = publicationObjectType(publication)
-        return type == "coaty.sensorThings.Thing" || type == "coaty.sensorThings.Sensor"
-    }).count < count {
+    while !(await condition()) {
         if clock.now >= deadline { throw SensorThingsFixtureError() }
         try await Task.sleep(for: .milliseconds(5))
     }

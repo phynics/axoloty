@@ -258,10 +258,17 @@ private final class SensorThingsTransactionToken: @unchecked Sendable {
     var isActive: Bool { active }
 }
 
+private struct SensorThingsSourceRegistration: Sendable {
+    let sensor: SensorThingsObjectSnapshot<Sensor>
+    let thing: SensorThingsObjectSnapshot<Thing>
+    let channelID: String
+    let run: @Sendable (SensorThingsPublisher) async throws -> Void
+}
+
 /// The atomic SensorThings registration draft passed to a builder transaction.
 public struct SensorThingsConfiguration {
     fileprivate var builder: RuntimeBuilder
-    fileprivate var sources: [(SensorThingsObjectSnapshot<Sensor>, SensorThingsObjectSnapshot<Thing>, String, @Sendable (SensorThingsPublisher) async throws -> Void)] = []
+    fileprivate var sources: [SensorThingsSourceRegistration] = []
     fileprivate var observationStreams: [(ObjectID, RuntimeEventStream, SensorThingsDiagnosticSink)] = []
     fileprivate var limits: SensorThingsLimits = .default
     fileprivate let initialEventStreamCount: Int
@@ -302,14 +309,19 @@ public struct SensorThingsConfiguration {
         guard sources.count < limits.maximumSensors else {
             throw AxolotyError.runtime(code: .capacityExceeded, reason: "SensorThings sensor limit is full")
         }
-        guard !sources.contains(where: { $0.0.envelope.objectID == sensorSnapshot.envelope.objectID }) else {
+        guard !sources.contains(where: { $0.sensor.envelope.objectID == sensorSnapshot.envelope.objectID }) else {
             throw AxolotyError.invalidArgument(argument: "sensor", reason: "Sensor objectID is duplicated")
         }
-        if let existing = sources.first(where: { $0.1.envelope.objectID == thingSnapshot.envelope.objectID }),
-           existing.1.encodedBytes != thingSnapshot.encodedBytes {
+        if let existing = sources.first(where: { $0.thing.envelope.objectID == thingSnapshot.envelope.objectID }),
+           existing.thing.encodedBytes != thingSnapshot.encodedBytes {
             throw AxolotyError.invalidArgument(argument: "thing", reason: "Thing objectID has conflicting snapshots")
         }
-        sources.append((sensorSnapshot, thingSnapshot, observationChannel.identifier, run))
+        sources.append(SensorThingsSourceRegistration(
+            sensor: sensorSnapshot,
+            thing: thingSnapshot,
+            channelID: observationChannel.identifier,
+            run: run
+        ))
     }
 
     /// Registers one fixed-Sensor observation stream.
@@ -365,30 +377,30 @@ public extension RuntimeBuilder {
             draft = configuration.builder
 
             let orderedSources = configuration.sources.sorted {
-                $0.0.envelope.objectID.uuid.isLexicographicallyBefore($1.0.envelope.objectID.uuid)
+                $0.sensor.envelope.objectID.uuid.isLexicographicallyBefore($1.sensor.envelope.objectID.uuid)
             }
             var thingsByID: [ObjectID: [UInt8]] = [:]
-            for source in orderedSources where thingsByID[source.1.envelope.objectID] == nil {
-                thingsByID[source.1.envelope.objectID] = source.1.encodedBytes
+            for source in orderedSources where thingsByID[source.thing.envelope.objectID] == nil {
+                thingsByID[source.thing.envelope.objectID] = source.thing.encodedBytes
             }
             let orderedThings = thingsByID.sorted {
                 $0.key.uuid.isLexicographicallyBefore($1.key.uuid)
             }
-            let sourceBytes = orderedSources.map { $0.0.withEncodedBytes(copyBytes) }
+            let sourceBytes = orderedSources.map { $0.sensor.withEncodedBytes(copyBytes) }
             let sourceAdvertise = try sourceBytes.map { try encodeAdvertise(object: $0) }
             let thingAdvertise = try orderedThings.map { try encodeAdvertise(object: $0.value) }
-            let sourceDeadvertise = try orderedSources.map { try encodeDeadvertise(objectID: $0.0.envelope.objectID) }
+            let sourceDeadvertise = try orderedSources.map { try encodeDeadvertise(objectID: $0.sensor.envelope.objectID) }
             let thingDeadvertise = try orderedThings.map { try encodeDeadvertise(objectID: $0.key) }
             let sourceResolve = try sourceBytes.map { try encodeResolve(object: $0) }
             let allObjects = (orderedSources.enumerated().map {
-                ($0.element.0.envelope.objectID, $0.element.0.encodedBytes)
+                ($0.element.sensor.envelope.objectID, $0.element.sensor.encodedBytes)
             } + orderedThings.map { ($0.key, $0.value) })
                 .sorted { $0.0.uuid.isLexicographicallyBefore($1.0.uuid) }
 
             try draft.respond(to: .discover) { invocation in
                 let payload = invocationPayload(invocation)
                 for (index, source) in orderedSources.enumerated()
-                    where discoverMatches(payload, objectID: source.0.envelope.objectID, objectType: "coaty.sensorThings.Sensor") {
+                    where discoverMatches(payload, objectID: source.sensor.envelope.objectID, objectType: "coaty.sensorThings.Sensor") {
                     return .response(sourceResolve[index])
                 }
                 for thing in orderedThings
@@ -427,11 +439,11 @@ public extension RuntimeBuilder {
                         for source in registrations {
                             group.addTask {
                                 let publisher = SensorThingsPublisher(
-                                    sensorID: source.0.envelope.objectID,
-                                    channelID: source.2,
+                                    sensorID: source.sensor.envelope.objectID,
+                                    channelID: source.channelID,
                                     submit: { operation in await runtime.publish(operation) }
                                 )
-                                do { try await source.3(publisher) }
+                                do { try await source.run(publisher) }
                                 catch {
                                     await runtime.diagnose(RuntimeDiagnostic(
                                         kind: .handlerFailed,
@@ -486,9 +498,9 @@ private func discoverMatches(_ payload: [UInt8], objectID: ObjectID, objectType:
 
 private func objectType(
     for objectID: ObjectID,
-    sources: [(SensorThingsObjectSnapshot<Sensor>, SensorThingsObjectSnapshot<Thing>, String, @Sendable (SensorThingsPublisher) async throws -> Void)]
+    sources: [SensorThingsSourceRegistration]
 ) -> StaticString {
-    if sources.contains(where: { $0.0.envelope.objectID == objectID }) {
+    if sources.contains(where: { $0.sensor.envelope.objectID == objectID }) {
         return "coaty.sensorThings.Sensor"
     }
     return "coaty.sensorThings.Thing"
