@@ -55,6 +55,11 @@ public enum RuntimeRejection: Sendable, Equatable {
 /// A bounded diagnostic emitted by the runtime supervision layer.
 public struct RuntimeDiagnostic: Sendable, Equatable {
     /// Stable diagnostic category.
+    ///
+    /// - Note: ``RuntimeDiagnostic`` is public API; downstream code may
+    ///   switch on or filter by this kind (e.g. alerting on
+    ///   ``capacityExceeded``), so treat it as a semver surface -- add new
+    ///   cases rather than repurposing or removing existing ones.
     public enum Kind: String, Sendable {
         /// A bounded queue could not accept more work.
         case capacityExceeded
@@ -66,6 +71,10 @@ public struct RuntimeDiagnostic: Sendable, Equatable {
         case malformedFrame
         /// A component payload was malformed or had the wrong type.
         case malformedPayload
+        /// An inbound frame arrived from a transport epoch superseded by a
+        /// later reconnect, and was discarded rather than processed. This is
+        /// routine during reconnection, not a sign of queue saturation.
+        case staleTransportFrame
     }
 
     /// The diagnostic category.

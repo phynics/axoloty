@@ -684,7 +684,10 @@ actor ProtocolExecutor {
     }
     private func receiveTransport(_ frame: RuntimeInboundFrame, epoch: UInt64) {
         guard epoch == transportEpoch else {
-            emit(.init(kind: .capacityExceeded, detail: "stale transport frame ignored"))
+            // A frame from a superseded transport epoch is routine during a
+            // reconnect, not capacity exhaustion -- keep it out of the
+            // capacity/saturation signal.
+            emit(.init(kind: .staleTransportFrame, detail: "stale transport frame ignored"))
             return
         }
         _ = receive(frame)
