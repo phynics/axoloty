@@ -28,7 +28,6 @@ actor ProtocolExecutor {
     var state: RuntimeLifecycleState = .stopped
     private var hasStarted = false
     var lifecycleAdvertisementActive = false
-    private var ingress: [RuntimeInboundFrame] = []
     var activeHandlers = 0
     private var handlerInFlight: [Int: Int] = [:]
     var nextHandlerID: UInt64 = 1
@@ -67,7 +66,6 @@ actor ProtocolExecutor {
         )
         self.eventRegistrations = definition.registrations.eventRegistrations
         self.ioStates = definition.registrations.ioEndpointRegistrations.map(RuntimeIoState.init)
-        self.ingress.reserveCapacity(definition.capacities.ingress)
         self.actionSink = ReusableProtocolActionSink(capacity: definition.capacities.dispatch)
         let events = AsyncStream<RuntimeEvent>.makeStream(
             bufferingPolicy: .bufferingNewest(definition.capacities.stream)
@@ -375,14 +373,14 @@ actor ProtocolExecutor {
         guard state == .running else {
             return .rejected(.notRunning(state))
         }
-        guard ingress.count < definition.capacities.ingress else {
-            diagnosticsSnapshotValue.ingressSaturation += 1
-            emit(.init(kind: .capacityExceeded, detail: "inbound frame queue is full"))
-            return .rejected(.capacityExceeded)
-        }
-        ingress.append(frame)
-        let next = ingress.removeFirst()
-        return processInbound(next)
+        // There is no separate holding queue here: `processInbound` is
+        // synchronous, so the only real bound on outstanding inbound work is
+        // the `AsyncStream` feeding `receiveTransport(_:epoch:)`
+        // (`.bufferingOldest(definition.capacities.ingress)`) together with
+        // `RuntimeOverflowGate`; saturation there is reported by
+        // `ingressOverflow()`. A frame reaching this method has already
+        // cleared that bound and is processed immediately.
+        return processInbound(frame)
     }
 
     func publish(_ operation: RuntimeOperation, nowMS: UInt32) -> RuntimeReceipt {
