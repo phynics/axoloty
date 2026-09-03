@@ -777,7 +777,7 @@ actor ProtocolExecutor {
                         correlationID: correlation,
                         payload: payload
                     ),
-                    nowMS: 0
+                    nowMS: monotonicNowMS()
                 )
             }
             return
@@ -789,7 +789,7 @@ actor ProtocolExecutor {
                 correlationID: correlation,
                 payload: payload
             ),
-            nowMS: 0
+            nowMS: monotonicNowMS()
         )
     }
     private func handlerFailed(_ detail: String, registrationIndex: Int = -1) {
