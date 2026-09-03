@@ -640,18 +640,23 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             for routeIndex in 0..<routeCount {
                 let associationIndex = routeIndices[routeIndex]
                 let association = associations[associationIndex]
-                let appended = withUnsafeBytes(of: associations[associationIndex].route) { buffer in
-                    let route = ByteSlice(
-                        bytes: buffer.baseAddress!.assumingMemoryBound(to: UInt8.self),
-                        length: association.routeLength
-                    )
-                    return sink.append(.publish(BorrowedProtocolPublication(
-                        routingKey: key,
-                        target: .associationRoute(route: route, kind: association.routeKind.classification),
-                        payload: operation.payload,
-                        isApplicationDelivery: routeIndex == 0
-                    )))
+                // The route is snapshotted into fixed inline storage rather
+                // than borrowed as a `ByteSlice` pointer: `associations` is
+                // internal processor state, and `InlineProtocolActionSink`
+                // does not copy borrowed bytes, so a pointer obtained via a
+                // scoped `withUnsafeBytes(of:)` closure would dangle the
+                // moment that closure returns -- exactly the memory it must
+                // remain valid past, since the sink is read by the caller
+                // after `processOutbound` itself returns.
+                guard let route = associationRouteSnapshot(association) else {
+                    return .rejected(.malformedPayload)
                 }
+                let appended = sink.append(.publish(BorrowedProtocolPublication(
+                    routingKey: key,
+                    target: .associationRoute(route: route, kind: association.routeKind.classification),
+                    payload: operation.payload,
+                    isApplicationDelivery: routeIndex == 0
+                )))
                 guard appended else { return .rejected(.capacityExceeded) }
             }
         } else {

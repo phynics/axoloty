@@ -97,7 +97,7 @@ struct ProtocolFoundationTests {
                         )
                         let associationPublication = BorrowedProtocolPublication(
                             routingKey: routingKey,
-                            target: .associationRoute(route: route, kind: .external),
+                            target: .associationRoute(route: BorrowedProtocolRouteSnapshot(slice: route)!, kind: .external),
                             payload: payload
                         )
                         let association = BorrowedIoAssociationTransition(
@@ -231,7 +231,7 @@ struct ProtocolFoundationTests {
                         )
                         let associationPublication = BorrowedProtocolPublication(
                             routingKey: routingKey,
-                            target: .associationRoute(route: route, kind: .external),
+                            target: .associationRoute(route: BorrowedProtocolRouteSnapshot(slice: route)!, kind: .external),
                             payload: payload
                         )
                         let association = BorrowedIoAssociationTransition(

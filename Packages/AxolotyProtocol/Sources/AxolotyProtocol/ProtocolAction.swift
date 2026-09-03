@@ -43,7 +43,16 @@ public enum BorrowedProtocolPublishTarget {
     /// A publication on the Coaty profile route.
     case profile(eventTypeFilter: ByteSlice?, filterKind: ProtocolEventTypeFilterKind)
     /// A publication on an exact external route.
-    case associationRoute(route: ByteSlice, kind: ProtocolRouteClassification)
+    ///
+    /// The route is carried by value (not as a `ByteSlice` pointer) because
+    /// its bytes come from the processor's own internal association state,
+    /// not from a caller-supplied buffer. A non-copying, escaping sink (see
+    /// `InlineProtocolActionSink`) may retain this action past the call that
+    /// produced it, so any pointer into transient processor-local storage
+    /// would dangle by the time it's read. `BorrowedProtocolRouteSnapshot`
+    /// copies the bytes into fixed inline storage up front, matching the
+    /// same safe pattern already used for association-transition routes.
+    case associationRoute(route: BorrowedProtocolRouteSnapshot, kind: ProtocolRouteClassification)
 }
 
 /// The target of an owned publication.
@@ -414,7 +423,7 @@ private extension BorrowedProtocolPublishTarget {
     borrowing func owned() -> OwnedProtocolPublishTarget {
         switch self {
         case .profile(let filter, let kind): return .profile(eventTypeFilter: filter?.ownedBytes(), filterKind: kind)
-        case .associationRoute(let route, let kind): return .associationRoute(route: route.ownedBytes(), kind: kind)
+        case .associationRoute(let route, let kind): return .associationRoute(route: route.owned(), kind: kind)
         }
     }
 }
