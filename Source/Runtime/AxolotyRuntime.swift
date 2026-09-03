@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import AxolotyProtocol
+import AxolotyObjectModel
 import AxolotyWire
 import Foundation
 
@@ -50,12 +51,11 @@ actor ProtocolExecutor {
     /// back, instead of silently losing already-accepted publications.
     /// Bounded by `definition.capacities.dispatch`, mirroring
     /// `queuedTransportEffects`.
-    private var pendingOutboundEffects: [RuntimeTransportEffect] = []
+    private var pendingOutboundEffects: [RuntimeQueuedTransportEffect] = []
     private var diagnosticsSnapshotValue = RuntimeDiagnostics()
-    var ioStates: [RuntimeIoState] = []
-    var ioObservers: [UInt64: RuntimeIoObserver] = [:]
-    var nextIoObserverID: UInt64 = 1
-    var ioFlushTasks: [Int: Task<Void, Never>] = [:]
+    var typedIoState: RuntimeTypedIoState
+    var pendingTypedIoToken: RuntimeTypedIoPublicationToken? = nil
+    var typedIoFlushAttempts = 0
     var runtimeModuleTasks: [Task<Void, Never>] = []
     private let eventRegistrations: [RuntimeEventRegistration]
 
@@ -74,7 +74,7 @@ actor ProtocolExecutor {
             maximumPendingCorrelations: definition.capacities.protocolMaximumPendingCorrelations
         )
         self.eventRegistrations = definition.registrations.eventRegistrations
-        self.ioStates = definition.registrations.ioEndpointRegistrations.map(RuntimeIoState.init)
+        self.typedIoState = RuntimeTypedIoState(registrations: definition.registrations)
         self.actionSink = ReusableProtocolActionSink(capacity: definition.capacities.dispatch)
         let events = AsyncStream<RuntimeEvent>.makeStream(
             bufferingPolicy: .bufferingNewest(definition.capacities.stream)
@@ -180,10 +180,10 @@ actor ProtocolExecutor {
         transportEpoch &+= 1
         let stoppingEpoch = transportEpoch
         await cancelAndDrainHandlers()
-        for task in ioFlushTasks.values { task.cancel() }
-        ioFlushTasks.removeAll(keepingCapacity: true)
+        typedIoState.clearTransportState()
+        finishIoObservers()
         cancelIngressPump()
-        let hasLifecycleEffects = lifecycleAdvertisementActive || !definition.registrations.ioEndpointRegistrations.isEmpty
+        let hasLifecycleEffects = lifecycleAdvertisementActive || typedIoState.hasEndpoints
         do {
             try enqueueIoDeadvertisements(nowMS: monotonicNowMS())
             try enqueueLifecycleDeadvertisement(nowMS: monotonicNowMS())
@@ -328,22 +328,27 @@ actor ProtocolExecutor {
 
     private func decrementOutbound() {
         outboundQueued = max(0, outboundQueued - 1)
-        if outboundQueued == 0 {
-            for index in ioStates.indices { ioStates[index].inFlight = false }
-            flushPendingIo(nowMS: monotonicNowMS())
-        }
     }
 
     /// - Parameter delivered: `true` once `transport.perform` has actually
     ///   succeeded for this effect. Only a delivered effect is popped from
     ///   `pendingOutboundEffects`; an effect that failed to send stays queued
     ///   there so it is replayed after the next successful `reconnect()`.
-    private func transportEffectCompleted(_ effect: RuntimeTransportEffect, delivered: Bool) {
+    private func transportEffectCompleted(_ queuedEffect: RuntimeQueuedTransportEffect, delivered: Bool) {
         if delivered, !pendingOutboundEffects.isEmpty {
             pendingOutboundEffects.removeFirst()
         }
         queuedTransportEffects = max(0, queuedTransportEffects - 1)
-        if case .publish = effect { decrementOutbound() }
+        switch queuedEffect {
+        case .publish:
+            decrementOutbound()
+        case let .typedIoPublication(_, token: typedToken):
+            decrementOutbound()
+            guard typedIoState.completeTransportPublication(typedToken) else { return }
+            flushPendingIo(at: typedToken.slot, nowMS: monotonicNowMS())
+        case .externalRouteActivated, .externalRouteDeactivated:
+            break
+        }
     }
 
     private func installOutboundPump() {
@@ -354,13 +359,13 @@ actor ProtocolExecutor {
         outboundTask = Task { [weak self, stream = outboundPipe.stream, transport, namespace = definition.namespace] in
             for await batch in stream {
                 guard !Task.isCancelled else { break }
-                for effect in batch.effects {
+                for queuedEffect in batch.effects {
                     guard !Task.isCancelled else { break }
                     do {
-                        try await transport.perform(effect, namespace: namespace)
-                        await self?.transportEffectCompleted(effect, delivered: true)
+                        try await transport.perform(queuedEffect.transportEffect, namespace: namespace)
+                        await self?.transportEffectCompleted(queuedEffect, delivered: true)
                     } catch {
-                        await self?.transportEffectCompleted(effect, delivered: false)
+                        await self?.transportEffectCompleted(queuedEffect, delivered: false)
                         await self?.transportFailed(runtimeErrorDetail(error))
                         break
                     }
@@ -570,8 +575,10 @@ actor ProtocolExecutor {
             actionSink.removeAll()
             return
         }
-        var effects: [RuntimeTransportEffect] = []
+        var effects: [RuntimeQueuedTransportEffect] = []
         effects.reserveCapacity(actionSink.count)
+        var changedSourceIDs: Set<ObjectID> = []
+        var changedActorIDs: Set<ObjectID> = []
         for index in 0..<actionSink.count {
             guard let borrowed = actionSink[index] else { continue }
             let action = borrowed.owned()
@@ -584,13 +591,21 @@ actor ProtocolExecutor {
             case .associationChanged(let transition):
                 emitRegisteredEvents(for: transition.delivery, owned: action, nowMS: nowMS)
                 dispatchToHandler(action, operation: operationName(for: transition.delivery))
+                changedSourceIDs.insert(ObjectID(uuid: transition.sourceID))
+                changedActorIDs.insert(ObjectID(uuid: transition.actorID))
             case .publish(let publication):
                 if publication.isApplicationDelivery,
                    let delivery = syntheticDelivery(for: publication) {
                     emitRegisteredEvents(for: delivery, owned: action, nowMS: nowMS)
                 }
                 if case .publish(let ownedPublication) = action {
-                    effects.append(.publish(ownedPublication))
+                    if ownedPublication.routingKey.capability == .ioValue,
+                       let token = pendingTypedIoToken {
+                        effects.append(.typedIoPublication(ownedPublication, token: token))
+                        pendingTypedIoToken = nil
+                    } else {
+                        effects.append(.publish(ownedPublication))
+                    }
                 }
             case .externalRouteActivated(let transition):
                 effects.append(.externalRouteActivated(transition.owned()))
@@ -600,7 +615,7 @@ actor ProtocolExecutor {
         }
         actionSink.removeAll()
         enqueueTransportEffects(effects)
-        notifyIoObservers()
+        notifyIoObservers(sourceIDs: changedSourceIDs, actorIDs: changedActorIDs)
     }
 
     func emitRegisteredEvents(for delivery: BorrowedProtocolDelivery, owned: OwnedProtocolAction, nowMS: UInt32) {
@@ -863,7 +878,7 @@ actor ProtocolExecutor {
         }
     }
 
-    private func enqueueTransportEffects(_ effects: [RuntimeTransportEffect]) {
+    private func enqueueTransportEffects(_ effects: [RuntimeQueuedTransportEffect]) {
         guard !effects.isEmpty else { return }
         // `pendingOutboundEffects` mirrors `queuedTransportEffects`, and
         // every caller of this method already bounds that count to
@@ -885,12 +900,14 @@ actor ProtocolExecutor {
         queuedTransportEffects += effects.count
         outboundQueued += effects.reduce(into: 0) { count, effect in
             if case .publish = effect { count += 1 }
+            if case .typedIoPublication = effect { count += 1 }
         }
         let result = outboundContinuation?.yield(RuntimeTransportEffectBatch(effects: effects))
         if case .dropped = result {
             queuedTransportEffects = max(0, queuedTransportEffects - effects.count)
             outboundQueued = max(0, outboundQueued - effects.reduce(into: 0) { count, effect in
                 if case .publish = effect { count += 1 }
+                if case .typedIoPublication = effect { count += 1 }
             })
             diagnosticsSnapshotValue.dispatchSaturation += 1
             emit(.init(kind: .capacityExceeded, detail: "outbound dispatch queue is full"))
@@ -917,7 +934,7 @@ actor ProtocolExecutor {
 
     private func enqueueLifecycleOperation(_ operation: RuntimeOperation, nowMS: UInt32) throws {
         let availableCapacity = max(0, definition.capacities.dispatch - queuedTransportEffects)
-        var effects: [RuntimeTransportEffect] = []
+        var effects: [RuntimeQueuedTransportEffect] = []
         let outcome = processOutboundOperation(
             operation,
             nowMS: nowMS,
@@ -949,7 +966,7 @@ actor ProtocolExecutor {
     }
 
     private func enqueueIoDeadvertisements(nowMS: UInt32) throws {
-        for endpoint in definition.registrations.ioEndpointRegistrations {
+        for endpoint in typedIoState.endpointRegistrations {
             let payload = RuntimeLifecyclePayload.deadvertise(objectID: endpoint.id)
             try enqueueLifecycleOperation(
                 .deadvertise(sourceID: endpoint.id.uuid, payload: payload),
