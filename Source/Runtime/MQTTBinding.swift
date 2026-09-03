@@ -21,8 +21,26 @@ public struct MQTTBindingConfiguration: Sendable, Equatable {
     public let connectionTimeoutMS: UInt32
     /// Largest Coaty profile topic admitted before runtime validation.
     public let maximumProfileTopicBytes: Int
+    /// Maximum exact external compatibility routes the binding will track
+    /// and subscribe to simultaneously.
+    public let maximumExternalRoutes: Int
 
     /// Creates a bounded MQTT binding configuration.
+    ///
+    /// - Parameters:
+    ///   - host: Broker host name or address.
+    ///   - port: Broker TCP port.
+    ///   - usesTLS: Enables TLS in the underlying MQTT client.
+    ///   - username: Optional broker credentials.
+    ///   - password: Optional broker password.
+    ///   - connectionTimeoutMS: Maximum time to wait for the broker to
+    ///     report an online state. Must be in `1...120000`.
+    ///   - maximumProfileTopicBytes: Largest Coaty profile topic admitted
+    ///     before runtime validation. Must be in `1...65536`.
+    ///   - maximumExternalRoutes: Maximum exact external compatibility
+    ///     routes tracked simultaneously. Must be in `1...64`.
+    /// - Throws: ``AxolotyError/invalidArgument(argument:reason:)`` when any
+    ///   parameter is outside its bounds.
     public init(
         host: String = "localhost",
         port: UInt16 = 1883,
@@ -30,7 +48,8 @@ public struct MQTTBindingConfiguration: Sendable, Equatable {
         username: String? = nil,
         password: String? = nil,
         connectionTimeoutMS: UInt32 = 10_000,
-        maximumProfileTopicBytes: Int = 512
+        maximumProfileTopicBytes: Int = 512,
+        maximumExternalRoutes: Int = 64
     ) throws {
         guard !host.isEmpty, port > 0 else {
             throw AxolotyError.invalidArgument(argument: "broker", reason: "host and port are required")
@@ -47,6 +66,12 @@ public struct MQTTBindingConfiguration: Sendable, Equatable {
                 reason: "must be in 1...65536"
             )
         }
+        guard maximumExternalRoutes > 0, maximumExternalRoutes <= 64 else {
+            throw AxolotyError.invalidArgument(
+                argument: "maximumExternalRoutes",
+                reason: "must be in 1...64"
+            )
+        }
         self.host = host
         self.port = port
         self.usesTLS = usesTLS
@@ -54,6 +79,7 @@ public struct MQTTBindingConfiguration: Sendable, Equatable {
         self.password = password
         self.connectionTimeoutMS = connectionTimeoutMS
         self.maximumProfileTopicBytes = maximumProfileTopicBytes
+        self.maximumExternalRoutes = maximumExternalRoutes
     }
 }
 
@@ -67,6 +93,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     private let delegate: RuntimeMQTTDelegate
     private let connectionTimeoutMS: UInt32
     private let maximumProfileTopicBytes: Int
+    private let maximumExternalRoutes: Int
     private var started = false
     private var activeNamespace: String?
     private var transportEpoch: UInt64 = 0
@@ -78,6 +105,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         self.delegate = delegate
         self.connectionTimeoutMS = configuration.connectionTimeoutMS
         self.maximumProfileTopicBytes = configuration.maximumProfileTopicBytes
+        self.maximumExternalRoutes = configuration.maximumExternalRoutes
         self.client = try RuntimeMQTTClient(configuration: configuration, delegate: delegate)
     }
 
@@ -219,42 +247,82 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         )
     }
 
+    /// Determines what ``activateExternalRoute(_:)`` must do for one exact
+    /// external route, given the current table and configured bound.
+    ///
+    /// This is a pure decision step (no locking, no I/O) so the caller's
+    /// error attribution can be exercised directly by tests: the returned
+    /// failure always names the one condition that was actually observed --
+    /// the binding not being started, an existing record mid-transition, or
+    /// the table being genuinely at capacity -- rather than a cause inferred
+    /// after the fact from unrelated state.
+    ///
+    /// - Parameters:
+    ///   - topic: The exact route topic being activated.
+    ///   - started: Whether the owning binding is currently started.
+    ///   - routes: The external route table, mutated in place on success.
+    ///   - capacity: The configured maximum number of tracked routes.
+    ///   - transportEpoch: The binding's current transport epoch, stamped
+    ///     onto any newly created record.
+    /// - Returns: `.success` with the record epoch and whether a new broker
+    ///   subscription must be issued, or `.failure` with the ``AxolotyError``
+    ///   that reports the exact cause.
+    static func resolveExternalRouteActivation(
+        topic: String,
+        started: Bool,
+        routes: inout [ExternalRouteRecord],
+        capacity: Int,
+        transportEpoch: UInt64
+    ) -> Result<(epoch: UInt64, shouldSubscribe: Bool), AxolotyError> {
+        guard started else {
+            return .failure(AxolotyError.runtime(code: .notStarted, reason: "MQTT binding is not started"))
+        }
+        if let index = routes.firstIndex(where: { $0.topic == topic }) {
+            guard routes[index].state == .subscribed else {
+                return .failure(AxolotyError.runtime(
+                    code: .subscriptionFailed,
+                    reason: "MQTT external route is transitioning and cannot be activated"
+                ))
+            }
+            routes[index].referenceCount += 1
+            return .success((routes[index].epoch, false))
+        }
+        guard routes.count < capacity else {
+            return .failure(AxolotyError.runtime(code: .capacityExceeded, reason: "MQTT external route table is full"))
+        }
+        let epoch = transportEpoch
+        routes.append(ExternalRouteRecord(
+            topic: topic,
+            referenceCount: 1,
+            state: .subscribing,
+            epoch: epoch
+        ))
+        return .success((epoch, true))
+    }
+
     private func activateExternalRoute(_ route: [UInt8]) async throws {
         let topic = String(decoding: route, as: UTF8.self)
-        let action = lock.withLock { () -> (epoch: UInt64, shouldSubscribe: Bool)? in
-            guard started else { return nil }
-            if let index = externalRoutes.firstIndex(where: { $0.topic == topic }) {
-                guard externalRoutes[index].state == .subscribed else { return nil }
-                externalRoutes[index].referenceCount += 1
-                return (externalRoutes[index].epoch, false)
-            }
-            guard externalRoutes.count < 64 else { return nil }
-            let epoch = transportEpoch
-            externalRoutes.append(ExternalRouteRecord(
+        let action: Result<(epoch: UInt64, shouldSubscribe: Bool), AxolotyError> = lock.withLock {
+            Self.resolveExternalRouteActivation(
                 topic: topic,
-                referenceCount: 1,
-                state: .subscribing,
-                epoch: epoch
-            ))
-            return (epoch, true)
+                started: started,
+                routes: &externalRoutes,
+                capacity: maximumExternalRoutes,
+                transportEpoch: transportEpoch
+            )
         }
-        guard let action else {
-            if lock.withLock({ externalRoutes.count >= 64 }) {
-                throw AxolotyError.runtime(code: .capacityExceeded, reason: "MQTT external route table is full")
-            }
-            return
-        }
-        guard action.shouldSubscribe else { return }
+        let resolved = try action.get()
+        guard resolved.shouldSubscribe else { return }
         do {
             try await client.subscribe(topic)
             lock.withLock {
-                guard action.epoch == transportEpoch,
-                      let index = externalRoutes.firstIndex(where: { $0.topic == topic && $0.epoch == action.epoch }) else { return }
+                guard resolved.epoch == transportEpoch,
+                      let index = externalRoutes.firstIndex(where: { $0.topic == topic && $0.epoch == resolved.epoch }) else { return }
                 externalRoutes[index].state = .subscribed
             }
         } catch {
             lock.withLock {
-                externalRoutes.removeAll { $0.topic == topic && $0.epoch == action.epoch }
+                externalRoutes.removeAll { $0.topic == topic && $0.epoch == resolved.epoch }
             }
             throw AxolotyError.network(error: error, reason: "MQTT external route subscription failed")
         }
@@ -447,11 +515,11 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     }
 }
 
-private enum ExternalRouteSubscriptionState: Sendable {
+enum ExternalRouteSubscriptionState: Sendable, Equatable {
     case subscribing, subscribed, unsubscribing
 }
 
-private struct ExternalRouteRecord: Sendable {
+struct ExternalRouteRecord: Sendable, Equatable {
     let topic: String
     var referenceCount: Int
     var state: ExternalRouteSubscriptionState
