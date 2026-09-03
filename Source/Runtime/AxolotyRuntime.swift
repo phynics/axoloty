@@ -13,6 +13,13 @@ actor ProtocolExecutor {
     let transport: AxolotyRuntimeTransport
     var processor: ProtocolProcessor<64>
     var actionSink = ReusableProtocolActionSink(capacity: 64)
+    /// Actions retained for ``conformanceObservation()``. Every other buffer
+    /// owned by this executor is capacity-bounded; this one must be too, or a
+    /// production runtime that never calls the conformance SPI accumulates one
+    /// copied action per dispatched action for the life of the instance. Bound
+    /// it to the same dispatch capacity used for the live action sink rather
+    /// than an invented constant, and drop the oldest entry once full so a
+    /// draining consumer still observes the most recent activity.
     var conformanceActions: [OwnedProtocolAction] = []
     /// One-way operations accepted while the transport is reconnecting.
     /// This queue is bounded by the dispatch capacity and is replayed in
@@ -549,7 +556,7 @@ actor ProtocolExecutor {
         for index in 0..<actionSink.count {
             guard let borrowed = actionSink[index] else { continue }
             let action = borrowed.owned()
-            conformanceActions.append(action)
+            recordConformanceAction(action)
             switch borrowed {
             case .deliver(let delivery):
                 emitRegisteredEvents(for: delivery, owned: action, nowMS: nowMS)
@@ -965,6 +972,16 @@ actor ProtocolExecutor {
 
     func emit(_ diagnostic: RuntimeDiagnostic) {
         diagnosticContinuation.yield(diagnostic)
+    }
+
+    /// Appends one copied action for ``conformanceObservation()``, bounded by
+    /// `definition.capacities.dispatch` so a production runtime that never
+    /// drains the conformance SPI cannot grow this buffer without bound.
+    private func recordConformanceAction(_ action: OwnedProtocolAction) {
+        if conformanceActions.count >= definition.capacities.dispatch {
+            conformanceActions.removeFirst()
+        }
+        conformanceActions.append(action)
     }
 
 }
