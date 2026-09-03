@@ -13,6 +13,13 @@ actor ProtocolExecutor {
     let transport: AxolotyRuntimeTransport
     var processor: ProtocolProcessor<64>
     var actionSink = ReusableProtocolActionSink(capacity: 64)
+    /// Actions retained for ``conformanceObservation()``. Every other buffer
+    /// owned by this executor is capacity-bounded; this one must be too, or a
+    /// production runtime that never calls the conformance SPI accumulates one
+    /// copied action per dispatched action for the life of the instance. Bound
+    /// it to the same dispatch capacity used for the live action sink rather
+    /// than an invented constant, and drop the oldest entry once full so a
+    /// draining consumer still observes the most recent activity.
     var conformanceActions: [OwnedProtocolAction] = []
     /// One-way operations accepted while the transport is reconnecting.
     /// This queue is bounded by the dispatch capacity and is replayed in
@@ -21,7 +28,6 @@ actor ProtocolExecutor {
     var state: RuntimeLifecycleState = .stopped
     private var hasStarted = false
     var lifecycleAdvertisementActive = false
-    private var ingress: [RuntimeInboundFrame] = []
     var activeHandlers = 0
     private var handlerInFlight: [Int: Int] = [:]
     var nextHandlerID: UInt64 = 1
@@ -36,6 +42,15 @@ actor ProtocolExecutor {
     private var outboundTask: Task<Void, Never>?
     var outboundQueued = 0
     private var queuedTransportEffects = 0
+    /// Effects handed to the outbound pump that have not yet been confirmed
+    /// delivered, in publication order. A transport failure discards the
+    /// pump and its `AsyncStream` buffer, but the caller already received an
+    /// `.accepted` receipt for this work; `transportFailed(_:)` leaves this
+    /// queue intact so `reconnect()` can replay it once the transport is
+    /// back, instead of silently losing already-accepted publications.
+    /// Bounded by `definition.capacities.dispatch`, mirroring
+    /// `queuedTransportEffects`.
+    private var pendingOutboundEffects: [RuntimeTransportEffect] = []
     private var diagnosticsSnapshotValue = RuntimeDiagnostics()
     var ioStates: [RuntimeIoState] = []
     var ioObservers: [UInt64: RuntimeIoObserver] = [:]
@@ -60,7 +75,6 @@ actor ProtocolExecutor {
         )
         self.eventRegistrations = definition.registrations.eventRegistrations
         self.ioStates = definition.registrations.ioEndpointRegistrations.map(RuntimeIoState.init)
-        self.ingress.reserveCapacity(definition.capacities.ingress)
         self.actionSink = ReusableProtocolActionSink(capacity: definition.capacities.dispatch)
         let events = AsyncStream<RuntimeEvent>.makeStream(
             bufferingPolicy: .bufferingNewest(definition.capacities.stream)
@@ -162,6 +176,7 @@ actor ProtocolExecutor {
         await stopRuntimeModules()
         state = .stopping
         offlineOperations.removeAll(keepingCapacity: true)
+        pendingOutboundEffects.removeAll(keepingCapacity: true)
         transportEpoch &+= 1
         let stoppingEpoch = transportEpoch
         await cancelAndDrainHandlers()
@@ -252,6 +267,10 @@ actor ProtocolExecutor {
             guard state == .reconnecting, transportEpoch == epoch else { return }
             state = .running
             await startRuntimeModules(restarting: true)
+            // Replay effects that were already accepted before the last
+            // transport failure ahead of operations accepted while
+            // reconnecting, preserving publication order.
+            replayQueuedOutboundEffects()
             flushOfflineOperations(nowMS: monotonicNowMS())
         } catch {
             guard state == .reconnecting, transportEpoch == epoch else { return }
@@ -315,7 +334,14 @@ actor ProtocolExecutor {
         }
     }
 
-    private func transportEffectCompleted(_ effect: RuntimeTransportEffect) {
+    /// - Parameter delivered: `true` once `transport.perform` has actually
+    ///   succeeded for this effect. Only a delivered effect is popped from
+    ///   `pendingOutboundEffects`; an effect that failed to send stays queued
+    ///   there so it is replayed after the next successful `reconnect()`.
+    private func transportEffectCompleted(_ effect: RuntimeTransportEffect, delivered: Bool) {
+        if delivered, !pendingOutboundEffects.isEmpty {
+            pendingOutboundEffects.removeFirst()
+        }
         queuedTransportEffects = max(0, queuedTransportEffects - 1)
         if case .publish = effect { decrementOutbound() }
     }
@@ -332,9 +358,9 @@ actor ProtocolExecutor {
                     guard !Task.isCancelled else { break }
                     do {
                         try await transport.perform(effect, namespace: namespace)
-                        await self?.transportEffectCompleted(effect)
+                        await self?.transportEffectCompleted(effect, delivered: true)
                     } catch {
-                        await self?.transportEffectCompleted(effect)
+                        await self?.transportEffectCompleted(effect, delivered: false)
                         await self?.transportFailed(runtimeErrorDetail(error))
                         break
                     }
@@ -368,14 +394,14 @@ actor ProtocolExecutor {
         guard state == .running else {
             return .rejected(.notRunning(state))
         }
-        guard ingress.count < definition.capacities.ingress else {
-            diagnosticsSnapshotValue.ingressSaturation += 1
-            emit(.init(kind: .capacityExceeded, detail: "inbound frame queue is full"))
-            return .rejected(.capacityExceeded)
-        }
-        ingress.append(frame)
-        let next = ingress.removeFirst()
-        return processInbound(next)
+        // There is no separate holding queue here: `processInbound` is
+        // synchronous, so the only real bound on outstanding inbound work is
+        // the `AsyncStream` feeding `receiveTransport(_:epoch:)`
+        // (`.bufferingOldest(definition.capacities.ingress)`) together with
+        // `RuntimeOverflowGate`; saturation there is reported by
+        // `ingressOverflow()`. A frame reaching this method has already
+        // cleared that bound and is processed immediately.
+        return processInbound(frame)
     }
 
     func publish(_ operation: RuntimeOperation, nowMS: UInt32) -> RuntimeReceipt {
@@ -549,7 +575,7 @@ actor ProtocolExecutor {
         for index in 0..<actionSink.count {
             guard let borrowed = actionSink[index] else { continue }
             let action = borrowed.owned()
-            conformanceActions.append(action)
+            recordConformanceAction(action)
             switch borrowed {
             case .deliver(let delivery):
                 emitRegisteredEvents(for: delivery, owned: action, nowMS: nowMS)
@@ -679,7 +705,10 @@ actor ProtocolExecutor {
     }
     private func receiveTransport(_ frame: RuntimeInboundFrame, epoch: UInt64) {
         guard epoch == transportEpoch else {
-            emit(.init(kind: .capacityExceeded, detail: "stale transport frame ignored"))
+            // A frame from a superseded transport epoch is routine during a
+            // reconnect, not capacity exhaustion -- keep it out of the
+            // capacity/saturation signal.
+            emit(.init(kind: .staleTransportFrame, detail: "stale transport frame ignored"))
             return
         }
         _ = receive(frame)
@@ -772,7 +801,7 @@ actor ProtocolExecutor {
                         correlationID: correlation,
                         payload: payload
                     ),
-                    nowMS: 0
+                    nowMS: monotonicNowMS()
                 )
             }
             return
@@ -784,7 +813,7 @@ actor ProtocolExecutor {
                 correlationID: correlation,
                 payload: payload
             ),
-            nowMS: 0
+            nowMS: monotonicNowMS()
         )
     }
     private func handlerFailed(_ detail: String, registrationIndex: Int = -1) {
@@ -836,6 +865,23 @@ actor ProtocolExecutor {
 
     private func enqueueTransportEffects(_ effects: [RuntimeTransportEffect]) {
         guard !effects.isEmpty else { return }
+        // `pendingOutboundEffects` mirrors `queuedTransportEffects`, and
+        // every caller of this method already bounds that count to
+        // `definition.capacities.dispatch` before reaching here, so this
+        // branch is not expected to fire in current call graphs. It stays as
+        // an explicit, deterministic shed-and-fail rather than letting
+        // retained outbound state grow past the dispatch capacity if a
+        // future caller changes that invariant.
+        guard pendingOutboundEffects.count + effects.count <= definition.capacities.dispatch else {
+            diagnosticsSnapshotValue.dispatchSaturation += 1
+            emit(.init(kind: .capacityExceeded, detail: "outbound retention queue is full"))
+            failRuntime(
+                code: .capacityExceeded,
+                detail: "outbound retention queue is full",
+                diagnostic: .capacityExceeded
+            )
+            return
+        }
         queuedTransportEffects += effects.count
         outboundQueued += effects.reduce(into: 0) { count, effect in
             if case .publish = effect { count += 1 }
@@ -853,7 +899,20 @@ actor ProtocolExecutor {
                 detail: "outbound dispatch queue is full",
                 diagnostic: .capacityExceeded
             )
+            return
         }
+        pendingOutboundEffects.append(contentsOf: effects)
+    }
+
+    /// Re-enqueues effects that were queued-but-unsent when the transport
+    /// last failed, in publication order, after a successful reconnect.
+    /// Called before `flushOfflineOperations(nowMS:)` so already-accepted
+    /// work is replayed ahead of operations accepted while reconnecting.
+    private func replayQueuedOutboundEffects() {
+        guard !pendingOutboundEffects.isEmpty else { return }
+        let effects = pendingOutboundEffects
+        pendingOutboundEffects.removeAll(keepingCapacity: true)
+        enqueueTransportEffects(effects)
     }
 
     private func enqueueLifecycleOperation(_ operation: RuntimeOperation, nowMS: UInt32) throws {
@@ -965,6 +1024,16 @@ actor ProtocolExecutor {
 
     func emit(_ diagnostic: RuntimeDiagnostic) {
         diagnosticContinuation.yield(diagnostic)
+    }
+
+    /// Appends one copied action for ``conformanceObservation()``, bounded by
+    /// `definition.capacities.dispatch` so a production runtime that never
+    /// drains the conformance SPI cannot grow this buffer without bound.
+    private func recordConformanceAction(_ action: OwnedProtocolAction) {
+        if conformanceActions.count >= definition.capacities.dispatch {
+            conformanceActions.removeFirst()
+        }
+        conformanceActions.append(action)
     }
 
 }

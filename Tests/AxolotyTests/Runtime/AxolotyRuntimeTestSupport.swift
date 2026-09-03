@@ -76,6 +76,12 @@ actor TestTransport: AxolotyRuntimeTransport {
     func firstSent() -> OwnedProtocolPublication? { sent.first }
     func lastSent() -> OwnedProtocolPublication? { sent.last }
 
+    /// Simulates a wire frame arriving on the currently installed transport
+    /// callback, exactly as a real transport implementation would invoke it.
+    func deliver(_ frame: RuntimeInboundFrame) {
+        receive?(frame)
+    }
+
     func fail(_ error: Error) { failure?(error) }
 }
 
@@ -126,6 +132,18 @@ final class RuntimeTestIteratorBox: @unchecked Sendable {
     }
 
     func next() async -> RuntimeEventValue? {
+        await iterator.next()
+    }
+}
+
+final class RuntimeTestDiagnosticIteratorBox: @unchecked Sendable {
+    private var iterator: AsyncStream<RuntimeDiagnostic>.Iterator
+
+    init(_ iterator: AsyncStream<RuntimeDiagnostic>.Iterator) {
+        self.iterator = iterator
+    }
+
+    func next() async -> RuntimeDiagnostic? {
         await iterator.next()
     }
 }
