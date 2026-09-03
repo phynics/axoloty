@@ -86,7 +86,16 @@ public struct InlineOwnedProtocolActionSink<let capacity: Int, let payloadCapaci
                 return false
             }
             slot.setSecondary(offset: retained.offset, length: retained.length)
-        case .deliver, .publish, .associationChanged:
+        case .publish(let publication):
+            if case .associationRoute(let route, _) = publication.target {
+                guard let retained = retainRoute(route) else {
+                    payloadBytesUsed = payloadCheckpoint
+                    routeBytesUsed = routeCheckpoint
+                    return false
+                }
+                slot.setSecondary(offset: retained.offset, length: retained.length)
+            }
+        case .deliver, .associationChanged:
             break
         }
         if case .associationChanged(let transition) = action, let route = transition.route {
@@ -254,7 +263,7 @@ public struct InlineOwnedProtocolActionSink<let capacity: Int, let payloadCapaci
         case .publish(let publication):
             switch publication.target {
             case .profile(let filter, _): return filter
-            case .associationRoute(let route, _): return route
+            case .associationRoute: return nil
             }
         case .associationChanged(let transition): return transition.delivery.topic
         case .externalRouteActivated, .externalRouteDeactivated: return nil
@@ -485,7 +494,12 @@ private struct InlineOwnedProtocolActionSlot {
                     filterKind: filterKind
                 )
             case .associationRoute:
-                target = .associationRoute(route: secondary, kind: routeClassification)
+                // `secondary` is a nonescaping view into this call's own
+                // retained byte arena (see `visit(at:_:)`), so snapshotting
+                // it here is safe: the snapshot's storage is copied, not
+                // pointer-borrowed, and the source view never needs to
+                // outlive this materialization.
+                target = .associationRoute(route: BorrowedProtocolRouteSnapshot(slice: secondary)!, kind: routeClassification)
             }
             return .publish(BorrowedProtocolPublication(
                 routingKey: routingKey!,
