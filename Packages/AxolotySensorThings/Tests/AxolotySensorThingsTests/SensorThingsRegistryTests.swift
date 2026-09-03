@@ -118,7 +118,7 @@ func registryThingDeadvertisementRemovesSensorsAtomically() async throws {
     #expect(second.total.count == 2)
 
     #expect(await runtime.receive(.profile(
-        topic: "coaty/3/registry-tests/DEADV/\(sender)",
+        topic: "coaty/3/registry-tests/DAD/\(sender)",
         payload: Array("{\"objectIds\":[\"\(registryThingID)\"]}".utf8),
         nowMS: 4
     )) == .accepted)
