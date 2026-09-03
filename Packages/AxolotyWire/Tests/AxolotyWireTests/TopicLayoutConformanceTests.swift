@@ -20,10 +20,19 @@ struct TopicLayoutConformanceTests {
     private let correlationId =
         "22222222-2222-4222-8222-222222222222"
 
-    private func view(_ topic: String) -> TopicView {
+    /// Parses `topic` and returns its ``TopicView/eventType`` computed while
+    /// the backing buffer is still pinned by the closure.
+    ///
+    /// `TopicView` borrows its backing bytes without copying, so it must
+    /// never escape the `withUnsafeBufferPointer` scope that owns them (see
+    /// ``validated(_:)`` below for the same pattern). Returning the `TopicView`
+    /// itself, as an earlier version of this helper did, left it holding a
+    /// dangling pointer into a deallocated `Array` the instant the function
+    /// returned.
+    private func eventType(_ topic: String) -> WireEventType? {
         let bytes = Array(topic.utf8)
         return bytes.withUnsafeBufferPointer { buf in
-            TopicView(topicBytes: buf.baseAddress!, length: buf.count)
+            TopicView(topicBytes: buf.baseAddress!, length: buf.count).eventType
         }
     }
 
@@ -63,36 +72,36 @@ struct TopicLayoutConformanceTests {
 
     @Test
     func exactThreeByteEventCodeIsRecognized() throws {
-        #expect(view("coaty/3/ns/ADV/\(sourceId)").eventType == .advertise)
-        #expect(view("coaty/3/ns/DSC/\(sourceId)/\(correlationId)").eventType == .discover)
-        #expect(view("coaty/3/ns/IOV/\(sourceId)").eventType == .ioValue)
+        #expect(eventType("coaty/3/ns/ADV/\(sourceId)") == .advertise)
+        #expect(eventType("coaty/3/ns/DSC/\(sourceId)/\(correlationId)") == .discover)
+        #expect(eventType("coaty/3/ns/IOV/\(sourceId)") == .ioValue)
     }
 
     @Test
     func eventCodeWithFilterIsRecognized() throws {
-        #expect(view("coaty/3/ns/ADV:sensors/\(sourceId)").eventType == .advertise)
-        #expect(view("coaty/3/ns/CHN:channel-a/\(sourceId)").eventType == .channel)
+        #expect(eventType("coaty/3/ns/ADV:sensors/\(sourceId)") == .advertise)
+        #expect(eventType("coaty/3/ns/CHN:channel-a/\(sourceId)") == .channel)
     }
 
     @Test
     func overLongEventCodeSharingPrefixIsRejected() {
         // Near-match codes that merely share the three-byte prefix must not
         // decode. Previously `eventType` coarse-prefix-matched `ADVZ` -> advertise.
-        #expect(view("coaty/3/ns/ADVZ/\(sourceId)").eventType == nil)
-        #expect(view("coaty/3/ns/ADVX:foo/\(sourceId)").eventType == nil)
-        #expect(view("coaty/3/ns/DSCX/\(sourceId)/\(correlationId)").eventType == nil)
+        #expect(eventType("coaty/3/ns/ADVZ/\(sourceId)") == nil)
+        #expect(eventType("coaty/3/ns/ADVX:foo/\(sourceId)") == nil)
+        #expect(eventType("coaty/3/ns/DSCX/\(sourceId)/\(correlationId)") == nil)
     }
 
     @Test
     func eventCodeWithOversizedPreFilterPrefixIsRejected() {
         // `ADVF:foo` has four bytes before ':' — not an exact three-byte code.
-        #expect(view("coaty/3/ns/ADVF:foo/\(sourceId)").eventType == nil)
+        #expect(eventType("coaty/3/ns/ADVF:foo/\(sourceId)") == nil)
     }
 
     @Test
     func shortEventCodeIsRejected() {
-        #expect(view("coaty/3/ns/AD/\(sourceId)").eventType == nil)
-        #expect(view("coaty/3/ns//\(sourceId)").eventType == nil)
+        #expect(eventType("coaty/3/ns/AD/\(sourceId)") == nil)
+        #expect(eventType("coaty/3/ns//\(sourceId)") == nil)
     }
 
     // MARK: - Exact layouts (validate)
