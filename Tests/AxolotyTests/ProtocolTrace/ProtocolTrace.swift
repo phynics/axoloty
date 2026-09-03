@@ -120,6 +120,13 @@ protocol RuntimeTraceDriver: ~Copyable {
 
 typealias NormalizedProtocolState = TraceState
 
+/// Carries the result of ``StaticTraceReplayAdapter/runOnLargeStack(_:)``
+/// back off the dedicated thread that ran the body.
+private final class LargeStackResultBox<Value>: @unchecked Sendable {
+    var value: Value?
+    var error: Error?
+}
+
 struct HostTraceReplayAdapter: TraceReplayAdapter {
     func replay(_ trace: ProtocolTrace) async throws -> TraceRun {
         try await HostRuntimeTraceReplay(trace: trace).replay()
@@ -127,10 +134,52 @@ struct HostTraceReplayAdapter: TraceReplayAdapter {
 }
 struct StaticTraceReplayAdapter: TraceReplayAdapter {
     func replay(_ trace: ProtocolTrace) async throws -> TraceRun {
-        var replay = try SharedProtocolTraceReplay<16>(trace: trace)
-        var sink = InlineProtocolActionSink<16>()
-        var verifier: StaticTraceVerifier<16>? = try StaticTraceVerifier<16>(trace: trace)
-        return try replay.replay(trace, sink: &sink, staticVerifier: &verifier)
+        try Self.runOnLargeStack {
+            var replay = try SharedProtocolTraceReplay<16>(trace: trace)
+            var sink = InlineProtocolActionSink<16>()
+            var verifier: StaticTraceVerifier<16>? = try StaticTraceVerifier<16>(trace: trace)
+            return try replay.replay(trace, sink: &sink, staticVerifier: &verifier)
+        }
+    }
+
+    /// Runs synchronous static-runtime work on a dedicated thread with a
+    /// generous stack.
+    ///
+    /// `StaticRuntimeESP32C6` (`StaticRuntime<16, 2048>`) embeds its fixed
+    /// IO-endpoint table, payload arena, and route storage inline, so a
+    /// single value is roughly 85 KB (`MemoryLayout<StaticRuntimeESP32C6>.size`).
+    /// That is intentional for the embedded target this preset ships to,
+    /// where the runtime lives as a statically-sized value with no heap.
+    /// It is fatal here: Swift Testing runs `async` test bodies on the
+    /// concurrency pool's worker threads, whose stacks are far smaller than
+    /// the process main thread's, and constructing (and copying through
+    /// nested initializers) an 85 KB value there overflows the stack guard
+    /// page — a SIGBUS in `___chkstk_darwin` inside
+    /// `StaticTraceVerifier.init(trace:)`, invisible to test-result parsing
+    /// because the process dies before Swift Testing can report anything.
+    ///
+    /// None of this adapter's work actually suspends, so it is safe to hop
+    /// onto a plain `Thread` sized for the value it constructs and block
+    /// synchronously for the (sub-millisecond) result instead.
+    private static func runOnLargeStack<Result>(_ body: @escaping @Sendable () throws -> Result) throws -> Result {
+        let box = LargeStackResultBox<Result>()
+        let semaphore = DispatchSemaphore(value: 0)
+        let thread = Thread {
+            do {
+                box.value = try body()
+            } catch {
+                box.error = error
+            }
+            semaphore.signal()
+        }
+        // StaticRuntimeESP32C6 alone is ~85 KB; 4 MiB leaves ample headroom
+        // for its nested initializers plus the surrounding replay/verifier
+        // state without depending on how a given host schedules test bodies.
+        thread.stackSize = 4 << 20
+        thread.start()
+        semaphore.wait()
+        if let error = box.error { throw error }
+        return box.value!
     }
 }
 
