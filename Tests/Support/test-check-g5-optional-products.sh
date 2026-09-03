@@ -14,6 +14,8 @@ printf '%s\n' 'policy' > "$tmp/Packages/AxolotySensorThings/AGENTS.md"
 printf '%s\n' 'mutating func sensorThings(' > "$tmp/Packages/AxolotySensorThings/Sources/AxolotySensorThings/SensorThingsRuntime.swift"
 printf '%s\n' 'tests' > "$tmp/Packages/AxolotySensorThings/Tests/AxolotySensorThingsTests/SensorThingsSourceWorkflowTests.swift"
 printf '%s\n' 'tests' > "$tmp/Packages/AxolotySensorThings/Tests/AxolotySensorThingsTests/SensorThingsDirectObservationTests.swift"
+printf '%s\n' 'registry' > "$tmp/Packages/AxolotySensorThings/Sources/AxolotySensorThings/SensorThingsRegistry.swift"
+printf '%s\n' 'tests' > "$tmp/Packages/AxolotySensorThings/Tests/AxolotySensorThingsTests/SensorThingsRegistryTests.swift"
 
 AXOLOTY_G5_PACKAGE_DIR="$tmp/Packages/AxolotySensorThings" "$checker" >/dev/null
 printf '%s\n' 'SensorThingsSourceConfiguration' >> "$tmp/Packages/AxolotySensorThings/Sources/AxolotySensorThings/SensorThingsRuntime.swift"

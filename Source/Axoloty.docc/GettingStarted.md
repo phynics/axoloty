@@ -76,3 +76,9 @@ SensorThings sources and fixed-Sensor observations are installed together with
 one `RuntimeBuilder.sensorThings(limits:_:)` transaction. The
 transaction is bounded and atomic; direct observation uses only its configured
 Channel and never performs metadata discovery.
+
+Thing-driven observation is a separate configuration:
+`observations(forSensorsOf:matching:buffering:)`. It discovers one exact Thing,
+queries Sensors with that Thing as `parentObjectId`, and returns a bounded
+catalogue-change stream plus an observation stream. Delivery uses the default
+Sensor-ID Channel only after the Thing and Sensor snapshots are both present.

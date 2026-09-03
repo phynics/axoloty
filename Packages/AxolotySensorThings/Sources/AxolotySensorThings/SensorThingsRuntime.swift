@@ -81,7 +81,7 @@ public struct SensorThingsObjectSnapshot<Schema: SensorThingsTopLevelSchema>: Se
     public let value: Schema
     private let bytes: [UInt8]
 
-    fileprivate var encodedBytes: [UInt8] { bytes }
+    var encodedBytes: [UInt8] { bytes }
 
     /// Copies a bounded object before crossing an isolation boundary.
     public init(object: consuming Object<Schema>) throws(ObjectError) {
@@ -270,6 +270,7 @@ public struct SensorThingsConfiguration {
     fileprivate var builder: RuntimeBuilder
     fileprivate var sources: [SensorThingsSourceRegistration] = []
     fileprivate var observationStreams: [(ObjectID, RuntimeEventStream, SensorThingsDiagnosticSink)] = []
+    fileprivate var registry: SensorThingsRegistryRegistration?
     fileprivate var limits: SensorThingsLimits = .default
     fileprivate let initialEventStreamCount: Int
     fileprivate let token: SensorThingsTransactionToken
@@ -346,6 +347,97 @@ public struct SensorThingsConfiguration {
         observationStreams.append((sensorID, stream, diagnosticSink))
         return SensorObservationStream(sensorID: sensorID, stream: stream, diagnosticSink: diagnosticSink)
     }
+
+    /// Registers a Thing-driven bounded Sensor catalogue and observation stream.
+    ///
+    /// - Parameters:
+    ///   - thingID: The exact Thing identity to discover and track.
+    ///   - sensorFilter: An optional Coaty object predicate applied to Sensors.
+    ///   - buffering: The buffering policy for observation delivery.
+    /// - Returns: The catalogue-change and observation streams owned by the module.
+    /// - Throws: ``AxolotyError`` when the module stream capacity is exhausted.
+    public mutating func observations(
+        forSensorsOf thingID: ObjectID,
+        matching sensorFilter: consuming SensorThingsObjectPredicate? = nil,
+        buffering: RuntimeBufferingPolicy
+    ) throws -> ThingSensorObservationStreams {
+        guard token.isActive else {
+            throw AxolotyError.invalidArgument(argument: "configuration", reason: "SensorThings configuration transaction has ended")
+        }
+        guard registry == nil else {
+            throw AxolotyError.invalidArgument(argument: "thingID", reason: "Thing-driven Sensor registry is already configured")
+        }
+        guard observationStreams.count < limits.maximumObservationStreams else {
+            throw AxolotyError.runtime(code: .capacityExceeded, reason: "SensorThings observation stream limit is full")
+        }
+        let filterBytes: [UInt8]?
+        if let sensorFilter {
+            var bytes = [UInt8](repeating: 0, count: WireBufferConfig.maxPayloadSize)
+            var length = 0
+            do {
+                try bytes.withUnsafeMutableBufferPointer { buffer in
+                    guard let base = buffer.baseAddress else { throw ObjectError(.capacityExceeded) }
+                    var writer = WireWriter(buffer: base, capacity: buffer.count)
+                    try sensorFilter.encode(to: &writer)
+                    length = writer.position
+                }
+            } catch {
+                throw AxolotyError.caught(error)
+            }
+            bytes.removeSubrange(length..<bytes.count)
+            filterBytes = bytes
+        } else {
+            filterBytes = nil
+        }
+        let cataloguePair = AsyncStream<SensorThingsCatalogueChange>.makeStream(
+            bufferingPolicy: .bufferingNewest(min(limits.maximumSensors, builder.capacities.stream))
+        )
+        let observationPair = AsyncStream<ThingSensorObservationDelivery>.makeStream(
+            bufferingPolicy: sensorThingsBufferingPolicy(buffering, capacity: builder.capacities.stream)
+        )
+        let eventStreams: (
+            RuntimeEventStream,
+            RuntimeEventStream,
+            RuntimeEventStream,
+            RuntimeEventStream,
+            RuntimeEventStream
+        )
+        do {
+            eventStreams = try (
+                builder.events(matching: .family(.channel), buffering: buffering),
+                builder.events(matching: .family(.advertise), buffering: .dropOldest(capacity: min(builder.capacities.stream, 64))),
+                builder.events(matching: .family(.deadvertise), buffering: .dropOldest(capacity: min(builder.capacities.stream, 64))),
+                builder.events(matching: .family(.resolve), buffering: .dropOldest(capacity: min(builder.capacities.stream, 64))),
+                builder.events(matching: .family(.retrieve), buffering: .dropOldest(capacity: min(builder.capacities.stream, 64)))
+            )
+        } catch {
+            cataloguePair.continuation.finish()
+            observationPair.continuation.finish()
+            throw error
+        }
+        let observationStream = eventStreams.0
+        let advertiseStream = eventStreams.1
+        let deadvertiseStream = eventStreams.2
+        let resolveStream = eventStreams.3
+        let retrieveStream = eventStreams.4
+        let streams = ThingSensorObservationStreams(
+            catalogueChanges: cataloguePair.stream,
+            observations: observationPair.stream
+        )
+        registry = SensorThingsRegistryRegistration(
+            thingID: thingID,
+            filterBytes: filterBytes,
+            catalogueContinuation: cataloguePair.continuation,
+            observationContinuation: observationPair.continuation,
+            observationStream: observationStream,
+            advertiseStream: advertiseStream,
+            deadvertiseStream: deadvertiseStream,
+            resolveStream: resolveStream,
+            retrieveStream: retrieveStream,
+            maximumSensors: limits.maximumSensors
+        )
+        return streams
+    }
 }
 
 public extension RuntimeBuilder {
@@ -371,10 +463,17 @@ public extension RuntimeBuilder {
             } catch {
                 configuration.token.invalidate()
                 configuration.builder.finishNewRuntimeEventStreams(after: configuration.initialEventStreamCount)
+                configuration.registry?.finishStreams()
                 throw error
             }
             configuration.token.invalidate()
             draft = configuration.builder
+            var committed = false
+            defer {
+                if !committed {
+                    configuration.registry?.finishStreams()
+                }
+            }
 
             let orderedSources = configuration.sources.sorted {
                 $0.sensor.envelope.objectID.uuid.isLexicographicallyBefore($1.sensor.envelope.objectID.uuid)
@@ -422,7 +521,8 @@ public extension RuntimeBuilder {
 
             let registrations = configuration.sources
             let observationStreams = configuration.observationStreams
-            return (RuntimeModuleRegistration(
+            let registry = configuration.registry
+            let registration = RuntimeModuleRegistration(
                 start: { runtime in
                     for (_, _, sink) in observationStreams {
                         await sink.install { diagnostic in await runtime.diagnose(diagnostic) }
@@ -432,6 +532,9 @@ public extension RuntimeBuilder {
                     }
                     for payload in sourceAdvertise {
                         await report(runtime.publish(.advertise(payload)), to: runtime, detail: "SensorThings Sensor advertisement")
+                    }
+                    if let registry {
+                        await registry.start(runtime: runtime)
                     }
                 },
                 run: { runtime in
@@ -452,6 +555,9 @@ public extension RuntimeBuilder {
                                 }
                             }
                         }
+                        if let registry {
+                            group.addTask { await registry.run(runtime: runtime) }
+                        }
                         await group.waitForAll()
                     }
                 },
@@ -465,8 +571,13 @@ public extension RuntimeBuilder {
                     for (_, stream, _) in observationStreams {
                         stream.finish()
                     }
+                    if let registry {
+                        await registry.stop(runtime: runtime)
+                    }
                 }
-            ), result)
+            )
+            committed = true
+            return (registration, result)
         }
     }
 }

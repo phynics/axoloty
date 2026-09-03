@@ -173,9 +173,9 @@ extension ProtocolExecutor {
         let tasks = runtimeModuleTasks
         for task in tasks { task.cancel() }
         runtimeModuleTasks.removeAll(keepingCapacity: true)
-        for task in tasks { await task.value }
         for registration in definition.registrations.modules {
             await registration.stop(context)
         }
+        for task in tasks { await task.value }
     }
 }

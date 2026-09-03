@@ -72,8 +72,9 @@ existing `.associate(_:)` spelling when no context is required.
 
 `RuntimeEventValue` contains an owned payload and a `RuntimeEventContext` with
 source identity, optional correlation, namespace, route classification,
-monotonic receipt time, and provenance. It never exposes a raw transport topic
-or a transport-owned buffer.
+monotonic receipt time, provenance, and (for Channel events) the copied
+semantic `channelIdentifier`. It never exposes a raw transport topic or a
+transport-owned buffer.
 
 `AxolotySensorThings` adds the atomic `RuntimeBuilder.sensorThings(limits:_:)`
 configuration transaction. Register sources and fixed-Sensor observation
@@ -81,6 +82,11 @@ streams through its `SensorThingsConfiguration` closure.
 All typed Sensor/Thing producers and fixed-Sensor observation streams are
 validated and installed as one transaction. A second transaction is rejected;
 direct observation subscribes only to its configured Channel.
+Thing-driven observation is a separate `observations(forSensorsOf:matching:buffering:)`
+workflow. It discovers one exact Thing, queries bounded Sensors whose
+`parentObjectId` matches that Thing, and reports deterministic catalogue
+changes. Its observation stream accepts only the default Sensor-ID Channel
+after both the Sensor and Thing are registered.
 
 Discover and Query are multi-response correlations. Update and Call are unary
 correlations. A request with a finite `timeoutMS` expires at the caller's

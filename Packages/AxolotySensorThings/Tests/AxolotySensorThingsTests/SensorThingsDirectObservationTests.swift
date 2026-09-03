@@ -52,6 +52,7 @@ func directObservationDeliversMatchingObservation() async throws {
     )) == .accepted)
     let delivery = try #require(await iterator.next())
     #expect(delivery.context.sourceID == (try fixtureID(sender).uuid))
+    #expect(delivery.context.channelIdentifier == "line-7")
     #expect(delivery.context.receiptTimeMS == 42)
     #expect(delivery.observation.value.result.encodedEquals("21.5"))
     await runtime.stop()

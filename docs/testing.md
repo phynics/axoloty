@@ -429,8 +429,8 @@ cross the wire. CoatyJS-only scenarios remain useful reference-wire evidence.
 ## G5 optional products
 
 The `g5-optional-products` tier proves the host-only SensorThings product
-boundary and its source/direct-observation workflows without a broker or
-hardware:
+boundary and its source, fixed-Sensor, and Thing-driven registry workflows
+without a broker or hardware:
 
 ```sh
 make test-tier TIER=g5-optional-products

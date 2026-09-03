@@ -31,6 +31,11 @@ public struct RuntimeEventContext: Sendable, Equatable {
     public let namespace: String
     /// Binding-owned route classification.
     public let route: ProtocolRouteClassification
+    /// The semantic Channel identifier when this event was delivered on a Channel.
+    ///
+    /// This is copied from the typed protocol delivery key. It intentionally
+    /// contains no transport topic or broker-specific routing detail.
+    public let channelIdentifier: String?
     /// Monotonic receipt time supplied by the binding.
     public let receiptTimeMS: UInt32
     /// Whether the event came from transport, a local operation, or replay.
@@ -42,6 +47,7 @@ public struct RuntimeEventContext: Sendable, Equatable {
         correlationID: UUID16? = nil,
         namespace: String,
         route: ProtocolRouteClassification = .coaty,
+        channelIdentifier: String? = nil,
         receiptTimeMS: UInt32,
         provenance: RuntimeEventProvenance = .transport
     ) {
@@ -49,6 +55,7 @@ public struct RuntimeEventContext: Sendable, Equatable {
         self.correlationID = correlationID
         self.namespace = namespace
         self.route = route
+        self.channelIdentifier = channelIdentifier
         self.receiptTimeMS = receiptTimeMS
         self.provenance = provenance
     }
