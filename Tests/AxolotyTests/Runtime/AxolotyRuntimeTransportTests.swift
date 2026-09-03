@@ -81,7 +81,7 @@ extension AxolotyRuntimeTests {
     func identityStartupTopicIsFiltered() throws {
         let id = try #require(UUID16(parsing: "44444444-4444-4444-8444-444444444444"))
         let key = try ProtocolRoutingKey(capability: .advertise, sourceID: id)
-        #expect(MQTTBinding.topic(
+        #expect(try MQTTBinding.topic(
             for: key,
             namespace: "test",
             eventTypeFilter: Array("Identity".utf8)
@@ -92,7 +92,7 @@ extension AxolotyRuntimeTests {
     func objectTypeFilterUsesDoubleColon() throws {
         let id = try #require(UUID16(parsing: "44444444-4444-4444-8444-444444444444"))
         let key = try ProtocolRoutingKey(capability: .advertise, sourceID: id)
-        #expect(MQTTBinding.topic(
+        #expect(try MQTTBinding.topic(
             for: key,
             namespace: "test",
             eventTypeFilter: Array("coaty.Identity".utf8),
