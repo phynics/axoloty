@@ -54,7 +54,11 @@ actor TestTransport: AxolotyRuntimeTransport {
     }
 
     func perform(_ effect: RuntimeTransportEffect, namespace: String) async throws {
-        guard case .publish(let publication) = effect else { return }
+        let publication: OwnedProtocolPublication
+        switch effect {
+        case .publish(let value): publication = value
+        default: return
+        }
         sent.append(publication)
         if failureStage == .advertisement, publication.routingKey.capability == .advertise {
             throw TestTransportFailure()
@@ -97,7 +101,10 @@ actor DrainingTransport: AxolotyRuntimeTransport {
     func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) {}
 
     func perform(_ effect: RuntimeTransportEffect, namespace: String) async throws {
-        guard case .publish = effect else { return }
+        switch effect {
+        case .publish: break
+        default: return
+        }
         sendStarted = true
         guard !released else { return }
         await withCheckedContinuation { continuation in

@@ -138,9 +138,11 @@ struct AxolotyLifecycleSubjectTests {
             scenario: scenario,
             selector: .advertise(objectType: "com.coaty.test.WireFixture")
         )
+        let diagnostics = LifecycleDiagnosticsLog()
+        await diagnostics.start(runtime)
         do {
             report(state: "ready", scenario: scenario)
-            try await waitForState(.reconnecting, runtime: runtime)
+            try await waitForState(.reconnecting, runtime: runtime, diagnostics: diagnostics)
             report(state: "offline", scenario: scenario)
             if publishAfterReconnect {
                 let first = await runtime.publish(.advertise(queuedPayload(name: "first")))
@@ -151,8 +153,7 @@ struct AxolotyLifecycleSubjectTests {
                 report(state: "published-offline", scenario: scenario, extra: ["count": "2"])
             }
             try await waitForReconnectMarker(scenario: scenario)
-            await runtime.reconnect()
-            try await waitForState(.running, runtime: runtime)
+            try await reconnectUntilRunning(runtime: runtime, diagnostics: diagnostics)
             report(state: "reconnected", scenario: scenario)
 
             if !publishAfterReconnect {
@@ -164,8 +165,10 @@ struct AxolotyLifecycleSubjectTests {
                 report(state: "probe-received", scenario: scenario, extra: ["name": "wire-fixture"])
             }
             report(state: "done", scenario: scenario)
+            await diagnostics.stop()
             await runtime.stop()
         } catch {
+            await diagnostics.stop()
             await runtime.stop()
             throw error
         }
@@ -195,9 +198,66 @@ struct AxolotyLifecycleSubjectTests {
         return (runtime, stream)
     }
 
-    private func waitForState(_ expected: RuntimeState, runtime: AxolotyRuntime) async throws {
-        try await waitUntil("runtime to enter \(expected) state", timeout: .seconds(60)) {
-            await runtime.state() == expected
+    /// Drives `reconnect()` until the runtime is running again.
+    ///
+    /// The harness publishes its readiness marker once the broker container is
+    /// back, which does not guarantee the broker is already accepting
+    /// connections. A reconnect that loses that race leaves the runtime
+    /// `.reconnecting` rather than failing it, so retrying is the caller's
+    /// half of that contract -- a single attempt would report a broker that is
+    /// merely slow as a dead runtime.
+    private func reconnectUntilRunning(
+        runtime: AxolotyRuntime,
+        diagnostics: LifecycleDiagnosticsLog
+    ) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(60))
+        var attempts = 0
+        while true {
+            await runtime.reconnect()
+            attempts += 1
+            let state = await runtime.state()
+            if state == .running { return }
+            guard clock.now < deadline else {
+                let counters = await runtime.diagnosticsSnapshot()
+                let recorded = await diagnostics.formatted()
+                throw AxolotyError.runtime(
+                    code: .timedOut,
+                    reason: """
+                        Gave up reconnecting after \(attempts) attempts; \
+                        observed=\(state); counters=\(counters); diagnostics=\(recorded)
+                        """
+                )
+            }
+            try await Task.sleep(for: .milliseconds(250))
+        }
+    }
+
+    private func waitForState(
+        _ expected: RuntimeState,
+        runtime: AxolotyRuntime,
+        diagnostics: LifecycleDiagnosticsLog
+    ) async throws {
+        do {
+            try await waitUntil("runtime to enter \(expected) state", timeout: .seconds(60)) {
+                await runtime.state() == expected
+            }
+        } catch {
+            // The observed state separates the two ways this wait can fail: a
+            // runtime still `.reconnecting` is stalled inside `reconnect()`,
+            // while `.failed` means it gave up and will never retry. Without
+            // this the timeout reports only that the state never changed,
+            // which is true of both.
+            let observed = await runtime.state()
+            let counters = await runtime.diagnosticsSnapshot()
+            let recorded = await diagnostics.formatted()
+            throw AxolotyError.runtime(
+                code: .timedOut,
+                reason: """
+                    Timed out waiting for runtime to enter \(expected) state; \
+                    observed=\(observed); counters=\(counters); diagnostics=\(recorded)
+                    """
+            )
         }
     }
 
@@ -289,6 +349,52 @@ struct AxolotyLifecycleSubjectTests {
         ]
         for (key, value) in extra { fields.append("\"\(key)\":\"\(value)\"") }
         FileHandle.standardOutput.write(Data("{\(fields.joined(separator: ","))}\n".utf8))
+    }
+}
+
+/// Records the runtime's diagnostic stream for the duration of one network
+/// scenario.
+///
+/// A lifecycle timeout otherwise reports only that the runtime never reached
+/// the expected state, which is equally true of a runtime stalled inside
+/// `reconnect()` and one that failed terminally and stopped retrying. The
+/// diagnostic stream carries the transport detail for both -- including the
+/// terminal detail `failRuntime` emits -- so recording it turns that timeout
+/// into a named cause.
+private actor LifecycleDiagnosticsLog {
+    /// Bounded like every other buffer the subject owns, so a scenario that
+    /// stalls for its full deadline cannot accumulate diagnostics without
+    /// limit. The newest entries are the ones that explain a timeout, so the
+    /// oldest are dropped once full.
+    private static let capacity = 32
+
+    private var entries: [String] = []
+    private var pump: Task<Void, Never>?
+
+    /// Begins recording. The runtime exposes a single diagnostic stream and
+    /// the subject is its only consumer.
+    func start(_ runtime: AxolotyRuntime) async {
+        guard pump == nil else { return }
+        let stream = await runtime.diagnostics()
+        pump = Task { [weak self] in
+            for await diagnostic in stream {
+                await self?.append("\(diagnostic.kind.rawValue)=\(diagnostic.detail)")
+            }
+        }
+    }
+
+    func stop() {
+        pump?.cancel()
+        pump = nil
+    }
+
+    func formatted() -> String {
+        entries.isEmpty ? "none" : entries.joined(separator: " | ")
+    }
+
+    private func append(_ entry: String) {
+        if entries.count == Self.capacity { entries.removeFirst() }
+        entries.append(entry)
     }
 }
 
