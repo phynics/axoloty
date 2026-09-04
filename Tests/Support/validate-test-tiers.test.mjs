@@ -6,7 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { discoverSelfTests, discoverTargetSelfTests, parseMakeTargets, validate } from "./validate-test-tiers.mjs";
+import { discoverSelfTests, discoverTargetSelfTests, parseMakeTargets, tierNodeCommandsFrom, validate } from "./validate-test-tiers.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 
@@ -15,7 +15,7 @@ test("checked-in contract covers discovered self-tests", () => {
   const errors = validate(document, {
     makeTargets: parseMakeTargets(path.join(root, "Makefile")),
     discoveredSelfTests: discoverSelfTests(path.join(root, "Tests")),
-    invokedSelfTests: discoverTargetSelfTests(path.join(root, "Makefile"), document.selfTests.map(entry => entry.path)),
+    invokedSelfTests: discoverTargetSelfTests(path.join(root, "Makefile"), document.selfTests.map(entry => entry.path), tierNodeCommandsFrom(document)),
     exists: relative => fs.existsSync(path.join(root, relative)),
   });
   assert.deepEqual(errors, []);

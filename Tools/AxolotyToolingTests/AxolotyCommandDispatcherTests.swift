@@ -163,7 +163,7 @@ func checkPlanPrintsStableJSON() {
         "wire-dependencies", "wire-independent-resolution", "wire-distribution", "support-wire-dependencies",
         "support-wire-resolution", "support-wire-isolation", "support-benchmark-corpus",
         "support-benchmark-size", "support-benchmark-wire", "support-benchmark-bounds",
-        "support-budget-manifest", "support-node-tests", "support-tier-contract",
+        "support-budget-manifest", "support-node-tests", "support-tier-contract", "support-swift-filter-contract",
         "support-protocol-package-self-test", "support-object-model-package-self-test",
         "support-object-model-evidence-self-test", "support-wire-state-self-test",
         "support-object-boundary-self-test", "no-escaping-borrows",

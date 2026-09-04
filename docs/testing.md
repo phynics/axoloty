@@ -166,7 +166,7 @@ separate from protocol-scenario execution.
 | G4 migration | `make test-tier TIER=g4-runtime` | yes | Replacement-runtime boundaries plus disjoint host, protocol-package, and static-runtime test slices; strict once G4 roots exist |
 | Wire offline | `make test-wire` | yes | Maintained lifecycle compatibility scenario contracts; no broker |
 | Wire live | `make test-wire-live` | yes | Live CoatyJS interop (host-run containers) |
-| Harness self-tests | `make test-support` | no | Capture/verifier tools, tier validation |
+| Harness self-tests | `make test-support` | yes | Support tier self-tests in the pinned container, plus the host-side wire-tool npm suite |
 
 Use `make verify` for the ordinary aggregate. New execution policy lives in the
 manifest, not in Make recipes or shell front controllers.

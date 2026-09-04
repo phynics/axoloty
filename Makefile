@@ -358,51 +358,13 @@ test-axoloty-semver-consumer: image
 		CONTAINER_ENV_VARS='AXOLOTY_CONSUMER_REPOSITORY_URL AXOLOTY_CONSUMER_VERSION AXOLOTY_CONSUMER_LOCAL AXOLOTY_CONSUMER_LOCAL_VERSION' \
 		.devcontainer/run.sh sh Tests/Support/check-axoloty-semver-consumer.sh
 
-# Harness self-tests are host-side Shell/JavaScript checks, apart from the
-# Embedded Swift compiler check, which uses the pinned toolchain.
+# Harness self-tests run as the canonical support tier in the pinned
+# container. The literal test-tier call stays visible for the tier
+# validator's static scan. The wire-tool npm suite stays host-side: it
+# needs registry access and owns its own workflow contract.
 test-support: resolve
-	Tests/Support/test-check-axoloty-wire-dependencies.sh
-	Tests/Support/test-check-axoloty-protocol-package.sh
-	Tests/Support/test-check-axoloty-object-model-package.sh
-	Tests/Support/test-check-g3-object-model-evidence.sh
-	Tests/Support/test-check-axoloty-wire-state-boundary.sh
-	Tests/Support/test-check-axoloty-object-boundary.sh
-	Tests/Support/test-check-no-escaping-borrows.sh
-	Tests/Support/test-check-g4-runtime-package-boundary.sh
-	Tests/Support/test-check-g4-runtime-consumer-boundary.sh
-	Tests/Support/test-check-g5-optional-products.sh
-	Tests/Support/test-check-g6-architecture.sh
-	Tests/Support/test-check-g6-product-boundary.sh
-	Tests/Support/test-check-g6-public-products.sh
-	Tests/Support/test-check-g6-resource-evidence.sh
-	Tests/Support/test-check-g6-wire-matrix.sh
-	Tests/Support/test-check-axoloty-wire-independent-resolution.sh
-	Tests/Support/test-check-axoloty-wire-distribution.sh
-	Tests/Support/test-check-axoloty-wire-test-isolation.sh
-	Tests/Support/test-check-benchmark-corpus.sh
-	Tests/Support/test-check-benchmark-size.sh
-	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-		Tests/Support/test-check-benchmark-wire.sh
-	Tests/Support/test-check-benchmark-wire-allocation.sh
-	Tests/Support/test-check-benchmark-wire-bounds.sh
-	Tests/Support/test-check-benchmark-wire-device.sh
-	Tests/Support/test-check-budget-manifest.sh
-	Tests/Support/test-build-embedded-swift.sh
-	Tests/Support/test-check-embedded-swift-linker.sh
-	$(call run_container,$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)) /workspace/Tests/Support/test-esp-idf-ccache.sh
-	$(call run_container,$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)) /workspace/Tests/Support/test-check-embedded-swift.sh
-	Tests/Support/test-embedded-swift-smoke.sh
-	Tests/Support/test-embedded-swift-test.sh
-	Tests/Support/test-embedded-runtime-identity.sh
-	Tests/Support/test-embedded-network.sh
-	Tests/Support/test-embedded-mqtt-client.sh
-	Tests/Support/test-embedded-coatyjs.sh
-	Tests/Support/test-run-container.sh
-	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-		.devcontainer/run.sh /workspace/Tests/Support/check-swift-test-filter-contract.sh
+	@$(MAKE) --no-print-directory test-tier TIER=support
 	$(MAKE) --no-print-directory wire-tool
-	node --test Tests/Support/*.test.mjs
-	node Tests/Support/validate-test-tiers.mjs Tests/Support/test-tiers.json
 
 test-wire-live:
 	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='wire capture' AXOLOTY_HOST_RUNTIME_BRIDGE=1

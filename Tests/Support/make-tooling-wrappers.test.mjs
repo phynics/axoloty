@@ -185,21 +185,26 @@ test("G1 device wrapper delegates policy and device access to axoloty-tool", () 
   assert.doesNotMatch(target, /\.devcontainer\/run\.sh|CONTAINER_DEVICES=/);
 });
 
-test("support runs the Embedded Swift self-test in the pinned container", () => {
+test("support self-tests run as the canonical support tier in the pinned container", () => {
   const makefile = fs.readFileSync("Makefile", "utf8");
   assert.match(makefile, /^test-support: resolve$/m);
   assert.match(
     recipe(makefile, "test-support"),
-    /\$\(call run_container,[^\n]*\) \/workspace\/Tests\/Support\/test-check-embedded-swift\.sh/,
+    /\$\(MAKE\) --no-print-directory test-tier TIER=support/,
   );
+  const document = JSON.parse(fs.readFileSync("Tests/Support/test-tiers.json", "utf8"));
+  const tier = document.tiers.find(candidate => candidate.id === "support");
+  const node = document.nodes.find(candidate => candidate.id === "support-embedded-compile");
+  assert.ok(tier.nodes.includes("support-embedded-compile"));
+  assert.equal(node.command.executable, "Tests/Support/test-check-embedded-swift.sh");
 });
 
-test("support benchmark self-test uses the worktree build and SwiftPM caches", () => {
-  const makefile = fs.readFileSync("Makefile", "utf8");
-  assert.match(
-    recipe(makefile, "test-support"),
-    /BUILD_DIR="\$\(BUILD_DIR\)" SPM_CACHE_DIR="\$\(SPM_CACHE_DIR\)" \\\n\s*Tests\/Support\/test-check-benchmark-wire\.sh/,
-  );
+test("support benchmark self-test keeps the worktree build and SwiftPM caches", () => {
+  const document = JSON.parse(fs.readFileSync("Tests/Support/test-tiers.json", "utf8"));
+  const node = document.nodes.find(candidate => candidate.id === "support-benchmark-wire");
+  assert.equal(node.command.executable, "Tests/Support/test-check-benchmark-wire.sh");
+  const tier = document.tiers.find(candidate => candidate.id === "support");
+  assert.ok(tier.nodes.includes("support-benchmark-wire"));
 });
 
 test("README package integration links both products by repository identity", () => {
