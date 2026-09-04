@@ -346,6 +346,28 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
   if (!requiredArtifacts.has("manifest.json") || !requiredArtifacts.has("verifier.log")) errors.push("failure artifacts must include manifest.json and verifier.log");
 
   if (!Array.isArray(document.selfTests)) return [...errors, "selfTests must be an array"];
+
+  const toolCommandIds = new Set(["release-checkpoint", "release-checkpoint-hardware", "release-fixture-bundle"]);
+  const toolEnv = document.toolContainerEnv;
+  if (typeof toolEnv !== "object" || toolEnv === null || Array.isArray(toolEnv)) {
+    errors.push("toolContainerEnv must be an object keyed by tool command identifier");
+  } else {
+    for (const [command, names] of Object.entries(toolEnv)) {
+      if (!toolCommandIds.has(command)) errors.push(`toolContainerEnv ${command}: unknown tool command identifier`);
+      if (!Array.isArray(names) || names.length === 0) {
+        errors.push(`toolContainerEnv ${command}: allowlist must be a nonempty array of env names`);
+        continue;
+      }
+      for (const name of names) {
+        if (typeof name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+          errors.push(`toolContainerEnv ${command}: invalid env name ${JSON.stringify(name)}`);
+        }
+      }
+    }
+    for (const command of toolCommandIds) {
+      if (!Array.isArray(toolEnv[command])) errors.push(`toolContainerEnv: missing allowlist for ${command}`);
+    }
+  }
   const canonicalGateNames = new Set([...(document.requiredGates ?? []), ...(document.ciRequiredGates ?? [])]);
   const canonicalCommandText = (document.nodes ?? [])
     .filter(node => canonicalGateNames.has(node?.id))

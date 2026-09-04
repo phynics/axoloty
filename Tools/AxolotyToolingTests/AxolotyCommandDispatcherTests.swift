@@ -235,6 +235,10 @@ func canonicalManifestDefinesVerifyRootsAndBoundedTestOne() throws {
     #expect(manifest.schemaVersion == 2)
     #expect(manifest.requiredGates.allSatisfy { gate in manifest.nodes.contains { $0.id == gate } })
     #expect(manifest.ciRequiredGates.allSatisfy { gate in manifest.nodes.contains { $0.id == gate } })
+    #expect(manifest.toolContainerEnv?.allowlist(for: "release-checkpoint")?.contains("AXOLOTY_GIT_TREE") == true)
+    #expect(manifest.toolContainerEnv?.allowlist(for: "release-checkpoint-hardware")?.contains("AXOLOTY_DEVICE") == true)
+    #expect(manifest.toolContainerEnv?.allowlist(for: "release-fixture-bundle")?.contains("AXOLOTY_IMAGE_IDENTITY") == true)
+    #expect(manifest.toolContainerEnv?.allowlist(for: "release-unknown") == nil)
     #expect(try resolver.command(.testOne(filter: "suite;touch /tmp/injected")).arguments.last == "suite;touch /tmp/injected")
     #expect(manifest.testOne.timeoutSeconds > 0)
     #expect(try resolver.resolve(.tier(

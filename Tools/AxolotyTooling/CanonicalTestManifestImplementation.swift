@@ -78,6 +78,8 @@ public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
     public let selfTests: [AxolotySelfTestContractEntry]
     /// Shared artifact contract.
     public let artifactContract: AxolotyArtifactContract
+    /// Container environment allowlists for axoloty-tool release commands.
+    public let toolContainerEnv: AxolotyToolContainerEnv?
     /// Shared flake policy.
     public let flakePolicy: AxolotyFlakePolicy
 
@@ -94,7 +96,8 @@ public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
         testOne: AxolotyCanonicalTestInterface,
         selfTests: [AxolotySelfTestContractEntry],
         artifactContract: AxolotyArtifactContract,
-        flakePolicy: AxolotyFlakePolicy
+        flakePolicy: AxolotyFlakePolicy,
+        toolContainerEnv: AxolotyToolContainerEnv? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.manifestID = manifestID
@@ -107,6 +110,7 @@ public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
         self.testOne = testOne
         self.selfTests = selfTests
         self.artifactContract = artifactContract
+        self.toolContainerEnv = toolContainerEnv
         self.flakePolicy = flakePolicy
     }
 }

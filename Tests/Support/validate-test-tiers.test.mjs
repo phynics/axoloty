@@ -104,6 +104,29 @@ test("validator rejects retired canonical nodes and filters if reintroduced", ()
   assert.ok(errors.includes('logging-global: retired test filter "LogManagerTests" must not be declared'));
 });
 
+test("validator enforces the tool container env allowlist contract", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const base = {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  };
+
+  const missingSection = JSON.parse(JSON.stringify(document));
+  delete missingSection.toolContainerEnv;
+  let errors = validate(missingSection, base);
+  assert.ok(errors.includes("toolContainerEnv must be an object keyed by tool command identifier"));
+
+  const badShape = JSON.parse(JSON.stringify(document));
+  badShape.toolContainerEnv["release-checkpoint"] = ["AXOLOTY_OK", "not an identifier"];
+  badShape.toolContainerEnv["release-unknown"] = ["AXOLOTY_X"];
+  delete badShape.toolContainerEnv["release-fixture-bundle"];
+  errors = validate(badShape, base);
+  assert.ok(errors.includes('toolContainerEnv release-checkpoint: invalid env name "not an identifier"'));
+  assert.ok(errors.includes("toolContainerEnv release-unknown: unknown tool command identifier"));
+  assert.ok(errors.includes("toolContainerEnv: missing allowlist for release-fixture-bundle"));
+});
+
 test("retired make test alias stays removed so no stale integration tier can return", () => {
   const makefile = fs.readFileSync(path.join(root, "Makefile"), "utf8");
   assert.doesNotMatch(makefile, /^test:\s*$/m);
