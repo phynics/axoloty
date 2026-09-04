@@ -88,8 +88,8 @@ DOC_HOSTING_BASE_PATH ?=
 	build test-decoder-context-sendable \
 	test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies \
 	test-axoloty-wire-independent-resolution test-axoloty-wire-distribution \
-	test-axoloty-semver-consumer test \
-	test-broker-regressions test-unit test-module \
+	test-axoloty-semver-consumer \
+	test-unit test-module \
 	test-wire test-wire-live test-support \
 	ci-preflight ci shell docs lint \
 	wire-tool clean serve-mqtt serve-mcp serve-dev embedded-toolchain-doctor \
@@ -129,13 +129,11 @@ help:
 		'make serve-mqtt    Run the local MQTT broker in the container' \
 		'make serve-mcp     Run the MCP service in the container' \
 		'make serve-dev     Run the MQTT + MCP development stack' \
-		'make test-broker-regressions  Deprecated: former broker regression filters are retired' \
 		'make test-decoder-context-sendable  Fail if the former decoder-context Sendable diagnostic returns' \
 		'make test-no-anycodable  Fail if AnyCodable is used in production source' \
 		'make test-no-foundation-types  Fail if forbidden Foundation types are used in production source' \
 		'make test-axoloty-wire-distribution  Validate root and standalone AxolotyWire consumers' \
 		'make test-axoloty-semver-consumer  Build clean semver consumers for both products' \
-		'make test          Deprecated: no canonical broker-backed tier is declared' \
 		'make test-unit     Run portable object-model and wire value tests' \
 		'make test-module   Run portable topic, wire, protocol, and model module tests' \
 		'make test-wire     Run offline wire fixtures and capture tests' \
@@ -313,10 +311,6 @@ checkpoint-hardware:
 			AXOLOTY_EVIDENCE_DIR="$(AXOLOTY_EVIDENCE_DIR)" AXOLOTY_G6_RESOURCE_EVIDENCE="$(AXOLOTY_G6_RESOURCE_EVIDENCE)" AXOLOTY_REPOSITORY="$(AXOLOTY_REPOSITORY)" \
 			AXOLOTY_DEVICE="$${AXOLOTY_DEVICE:-/dev/ttyACM0}"
 
-test-broker-regressions:
-	@printf '%s\n' 'error: broker regression filters are retired; use make test-wire-live for maintained broker evidence' >&2
-	@exit 69
-
 define run_test_tier
 	@$(MAKE) --no-print-directory test-tier TIER="$(TIER)"
 endef
@@ -324,10 +318,6 @@ endef
 build:
 	$(run_test_tier)
 build: TIER=smoke
-
-test:
-	@printf '%s\n' 'error: make test is retired; use make test-tier TIER=unit/module/property or make test-wire-live for broker evidence' >&2
-	@exit 69
 
 test-unit:
 	$(run_test_tier)

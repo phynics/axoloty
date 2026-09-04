@@ -146,11 +146,10 @@ test("decoder-context diagnostic distinguishes matching, clean, and invalid inpu
   }
 });
 
-test("retired broker wrapper reports an explicit expected-negative result", () => {
-  const result = spawnSync("make", ["test"], { encoding: "utf8" });
-  // GNU Make maps the recipe's deliberate exit 69 to its own status 2.
-  assert.equal(result.status, 2, `expected retired make test to fail: ${result.stderr}`);
-  assert.match(result.stderr, /make test is retired/);
+test("retired broker wrapper is fully removed rather than a stub", () => {
+  const makefile = fs.readFileSync("Makefile", "utf8");
+  assert.doesNotMatch(makefile, /^test:\s*$/m);
+  assert.doesNotMatch(makefile, /make test is retired/);
 });
 
 test("direct test wrappers preserve the invocation resource namespace", () => {
