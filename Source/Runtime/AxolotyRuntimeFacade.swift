@@ -4,8 +4,24 @@ import AxolotyProtocol
 import AxolotyWire
 import Foundation
 
+enum RuntimeQueuedTransportEffect: Sendable {
+    case publish(OwnedProtocolPublication)
+    case typedIoPublication(OwnedProtocolPublication, token: RuntimeTypedIoPublicationToken)
+    case externalRouteActivated(OwnedExternalRouteTransition)
+    case externalRouteDeactivated(OwnedExternalRouteTransition)
+
+    var transportEffect: RuntimeTransportEffect {
+        switch self {
+        case let .publish(publication): return .publish(publication)
+        case let .typedIoPublication(publication, token: _): return .publish(publication)
+        case let .externalRouteActivated(transition): return .externalRouteActivated(transition)
+        case let .externalRouteDeactivated(transition): return .externalRouteDeactivated(transition)
+        }
+    }
+}
+
 struct RuntimeTransportEffectBatch: Sendable {
-    let effects: [RuntimeTransportEffect]
+    let effects: [RuntimeQueuedTransportEffect]
 
     var count: Int { effects.count }
 }
@@ -149,6 +165,10 @@ public final class AxolotyRuntime: Sendable {
     @_spi(AxolotyRuntimeAdapter)
     public func conformanceObservation() async -> RuntimeConformanceObservation {
         await executor.conformanceObservation()
+    }
+
+    func typedIoFlushAttemptsForTesting() async -> Int {
+        await executor.typedIoFlushAttemptsForTesting()
     }
 }
 
