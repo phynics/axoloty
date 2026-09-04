@@ -321,8 +321,8 @@ struct WireCodecTests {
         let raw = reader.readRaw("result")
         #expect(raw != nil)
         // The raw bytes should contain the object
-        let rawStr = String(bytes: (0..<raw!.length).map { raw!.byte(at: $0)! }, encoding: .utf8)
-        #expect(rawStr?.contains("\"temp\"") == true)
+        let rawStr = String(decoding: (0..<raw!.length).map { raw!.byte(at: $0)! }, as: UTF8.self)
+        #expect(rawStr.contains("\"temp\"") == true)
     }
 
     @Test
@@ -450,7 +450,7 @@ struct WireCodecTests {
             WireWriter(buffer: buf.baseAddress!, capacity: buf.count)
         }
         try writer.writeInt(Int.min)
-        let written = String(bytes: buffer[0..<writer.position], encoding: .utf8)
+        let written = String(decoding: buffer[0..<writer.position], as: UTF8.self)
         #expect(written == "-9223372036854775808")
     }
 
@@ -464,7 +464,7 @@ struct WireCodecTests {
             WireWriter(buffer: buf.baseAddress!, capacity: buf.count)
         }
         try writer.writeUUID(uuid)
-        let written = String(bytes: buffer[0..<writer.position], encoding: .utf8)
+        let written = String(decoding: buffer[0..<writer.position], as: UTF8.self)
         #expect(written == "33333333-3333-4333-8333-333333333333")
         #expect(writer.position == 36)
     }

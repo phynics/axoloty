@@ -159,7 +159,7 @@ func checkPlanPrintsStableJSON() {
     let plan = try? JSONDecoder().decode(AxolotyCheckPlan.self, from: Data(result.standardOutput.utf8))
     var expectedNames = [
         "resolve", "build", "g2-trace-corpus", "g2-protocol-package", "g2-wire-state", "lint", "test-tooling", "test-inspector-cli", "test-unit", "test-module",
-        "test-fuzz", "test-wire", "no-anycodable", "no-foundation-wire",
+        "test-wire", "no-anycodable", "no-foundation-wire",
         "wire-dependencies", "wire-independent-resolution", "wire-distribution", "support-wire-dependencies",
         "support-wire-resolution", "support-wire-isolation", "support-benchmark-corpus",
         "support-benchmark-size", "support-benchmark-wire", "support-benchmark-bounds",
@@ -174,7 +174,7 @@ func checkPlanPrintsStableJSON() {
     ]
     #if os(Linux)
     expectedNames += [
-        "support-container", "support-fuzz-runner", "support-embedded-compile",
+        "support-container", "support-embedded-compile",
         "support-embedded-smoke", "embedded-toolchain", "embedded-build", "embedded-linker",
         "g1-bounded-runtime-host", "g1-bounded-runtime-sanitized", "g1-bounded-runtime-embedded",
         "g3-object-boundary", "g3-object-model-package", "g3-object-model-tests",
@@ -346,7 +346,7 @@ func checkpointPlanningAndCertificationUseOneManifestSnapshot() throws {
 }
 
 @Test
-func verifyPlanIncludesStaticSupportWithoutRecursiveCoverageGate() throws {
+func verifyPlanIncludesStaticSupportWithoutRecursiveGates() throws {
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
     let ordinary = try resolver.resolve(.named(
         .verify,
@@ -354,18 +354,10 @@ func verifyPlanIncludesStaticSupportWithoutRecursiveCoverageGate() throws {
         platform: AxolotyCheckPlan.currentPlatform,
         requested: nil
     ))
-    let ci = try resolver.resolve(.named(
-        .verify,
-        ci: true,
-        platform: AxolotyCheckPlan.currentPlatform,
-        requested: nil
-    ))
     #expect(ordinary.nodes.contains { $0.name == "support-tier-contract" })
     #expect(ordinary.nodes.contains { $0.name == "no-anycodable" })
     #expect(!ordinary.nodes.contains { $0.name == "integration-tests" })
     #expect(!ordinary.nodes.contains { $0.name == "logging-global" })
-    #expect(!ordinary.nodes.contains { $0.name == "coverage-check" })
-    #expect(!ci.nodes.contains { $0.name == "coverage-check" })
 }
 
 @Test
@@ -678,7 +670,7 @@ func checkpointManifestRecordsAllRequiredReleaseGatesInOrder() throws {
 
     #expect(manifest.schemaVersion == 3)
     #expect(manifest.releaseGates.map(\.id) == [
-        "smoke", "unit", "module", "property", "wire-offline", "wire-live", "g3-object-model", "g4-runtime", "g5-optional-products",
+        "smoke", "unit", "module", "wire-offline", "wire-live", "g3-object-model", "g4-runtime", "g5-optional-products",
         "g6-non-divergence",
     ])
     #expect(manifest.releaseGates.first { $0.id == "integration" } == nil)

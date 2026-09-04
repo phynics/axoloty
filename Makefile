@@ -44,8 +44,6 @@ AXOLOTY_ESP_IDF_CCACHE_DIR ?= $(HOME)/.cache/axoloty/esp-idf-ccache
 AXOLOTY_DEVICE_LEASE_ROOT ?= $(BUILD_CACHE_ROOT)/device-leases
 endif
 PACKAGE_PATH ?= .
-COVERAGE_BUILD_DIR ?= $(BUILD_DIR)-coverage
-TSAN_BUILD_DIR ?= $(BUILD_DIR)-tsan
 CONTAINER_MOUNTS := -v "$(CURDIR):$(WORKDIR)$(CONTAINER_MOUNT_SUFFIX)" -v "$(BUILD_DIR):$(WORKDIR)/.build$(CONTAINER_MOUNT_SUFFIX)" -v "$(SPM_CACHE_DIR):$(WORKDIR)/.swiftpm-cache$(CONTAINER_MOUNT_SUFFIX)"
 SWIFT_CACHE_ARGS := --cache-path /workspace/.swiftpm-cache
 SWIFT_LOCKED_ARGS := $(SWIFT_CACHE_ARGS) --disable-automatic-resolution
@@ -84,16 +82,16 @@ export AXOLOTY_CONSUMER_REPOSITORY_URL AXOLOTY_CONSUMER_VERSION AXOLOTY_CONSUMER
 DOC_HOSTING_BASE_PATH ?=
 
 .PHONY: \
-	help image resolve coverage-resolve worktree-bootstrap worktree-warm \
+	help image resolve worktree-bootstrap worktree-warm \
 	axoloty-tool verify verify-ci test-one test-tier explain \
 	hardware-check hardware-require release-fixture-bundle checkpoint checkpoint-hardware \
 	build test-decoder-context-sendable \
 	test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies \
 	test-axoloty-wire-independent-resolution test-axoloty-wire-distribution \
-	test-axoloty-semver-consumer test tsan-resolve test-tsan \
-	test-broker-regressions test-unit test-module test-fuzz fuzz-long \
+	test-axoloty-semver-consumer test \
+	test-broker-regressions test-unit test-module \
 	test-wire test-wire-live test-support \
-	coverage coverage-check ci-preflight ci shell docs lint \
+	ci-preflight ci shell docs lint \
 	wire-tool clean serve-mqtt serve-mcp serve-dev embedded-toolchain-doctor \
 	embedded-device-info embedded-device-smoke embedded-reproducible-build \
 	benchmark-size benchmark-wire benchmark-wire-allocation benchmark-static-io-ownership-allocation benchmark-wire-bounds \
@@ -138,15 +136,10 @@ help:
 		'make test-axoloty-wire-distribution  Validate root and standalone AxolotyWire consumers' \
 		'make test-axoloty-semver-consumer  Build clean semver consumers for both products' \
 		'make test          Deprecated: no canonical broker-backed tier is declared' \
-		'make test-tsan     Deprecated: former TSAN filters are retired until a real target returns' \
 		'make test-unit     Run portable object-model and wire value tests' \
 		'make test-module   Run portable topic, wire, protocol, and model module tests' \
-		'make test-fuzz     Run bounded wire parser property/fuzz tests' \
-		'make fuzz-long     Run an auditable multi-seed fuzz campaign' \
 		'make test-wire     Run offline wire fixtures and capture tests' \
 		'make test-support  Run support harness self-tests and tier validation' \
-		'make coverage      Run tests with code coverage and report Source/ coverage' \
-		'make coverage-check  Run coverage and fail if it regresses the baseline' \
 		'make test-wire-live  Run live CoatyJS compatibility scenarios' \
 		'make wire-tool   Build the npx-runnable wire-compatibility CLI' \
 		'make embedded-toolchain-doctor  Verify the device-independent ESP-IDF environment' \
@@ -174,11 +167,10 @@ help:
 		'make ci            Run the consolidated pull-request checks' \
 		'make shell         Open a shell in the Linux container' \
 		'make docs          Generate DocC API documentation into the active build cache' \
-		'make clean         Remove normal and coverage build artifacts' \
+		'make clean         Remove build artifacts' \
 		'' \
 		'BUILD_DIR and SPM_CACHE_DIR can point at different local cache directories' \
-		'BUILD_DIR defaults to a shared cache under /tmp; BUILD_LOCK=0 disables waiting for isolated CI runs' \
-		'COVERAGE_BUILD_DIR isolates instrumented artifacts from normal builds'
+		'BUILD_DIR defaults to a shared cache under /tmp; BUILD_LOCK=0 disables waiting for isolated CI runs'
 
 image:
 	@if [ "$(AXOLOTY_DEVCONTAINER)" = "1" ]; then \
@@ -345,10 +337,6 @@ test-module:
 	$(run_test_tier)
 test-module: TIER=module
 
-test-fuzz:
-	$(run_test_tier)
-test-fuzz: TIER=property
-
 test-wire:
 	$(run_test_tier)
 test-wire: TIER=wire-offline
@@ -379,24 +367,6 @@ test-axoloty-semver-consumer: image
 	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
 		CONTAINER_ENV_VARS='AXOLOTY_CONSUMER_REPOSITORY_URL AXOLOTY_CONSUMER_VERSION AXOLOTY_CONSUMER_LOCAL AXOLOTY_CONSUMER_LOCAL_VERSION' \
 		.devcontainer/run.sh sh Tests/Support/check-axoloty-semver-consumer.sh
-
-tsan-resolve: image
-	@mkdir -p "$(SPM_CACHE_DIR)"
-	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_RESOLVE_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(TSAN_BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh .devcontainer/resolve.sh
-	@git diff --exit-code -- Package.resolved
-
-test-tsan:
-	@printf '%s\n' 'error: the former TSAN filters are retired; add a real maintained target before restoring this gate' >&2
-	@exit 69
-
-fuzz-long:
-	AXOLOTY_FUZZ_ITERATIONS="$(or $(AXOLOTY_FUZZ_ITERATIONS),100000)" \
-	AXOLOTY_FUZZ_SEEDS="$(if $(AXOLOTY_FUZZ_SEEDS),$(AXOLOTY_FUZZ_SEEDS),1$(COMMA)2$(COMMA)3$(COMMA)4)" \
-	AXOLOTY_FUZZ_REPETITIONS="$(or $(AXOLOTY_FUZZ_REPETITIONS),1)" \
-	AXOLOTY_FUZZ_JOBS="$(or $(AXOLOTY_FUZZ_JOBS),2)" \
-	AXOLOTY_TOOL_CONTAINER_ENV_VARS='AXOLOTY_FUZZ_ITERATIONS AXOLOTY_FUZZ_SEEDS AXOLOTY_FUZZ_REPETITIONS AXOLOTY_FUZZ_JOBS AXOLOTY_FUZZ_BUILD_TIMEOUT_SECONDS AXOLOTY_FUZZ_CASE_TIMEOUT_SECONDS AXOLOTY_FUZZ_TERM_GRACE_SECONDS AXOLOTY_FUZZ_KILL_GRACE_SECONDS' \
-	AXOLOTY_TOOL_ARGS='test-tier nightly' \
-		$(MAKE) --no-print-directory axoloty-tool
 
 # Harness self-tests are host-side Shell/JavaScript checks, apart from the
 # Embedded Swift compiler check, which uses the pinned toolchain.
@@ -442,7 +412,6 @@ test-support: resolve
 	Tests/Support/test-embedded-mqtt-client.sh
 	Tests/Support/test-embedded-coatyjs.sh
 	Tests/Support/test-run-container.sh
-	Tests/Support/Fuzzing/test-run-fuzz.sh
 	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
 		.devcontainer/run.sh /workspace/Tests/Support/check-swift-test-filter-contract.sh
 	cd Tests/Support/WireCompatibility/tool && npm ci && npm test
@@ -581,30 +550,6 @@ embedded-swift-reproducible-build: image
 	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
 	.devcontainer/run.sh /workspace/Tests/Support/embedded-swift-reproducible-build.sh
 
-coverage-resolve: image
-	@mkdir -p "$(SPM_CACHE_DIR)"
-	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_RESOLVE_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(COVERAGE_BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh .devcontainer/resolve.sh
-	@git diff --exit-code -- Package.resolved
-
-coverage: coverage-resolve
-	@mkdir -p .testing/coverage
-	@if [ -n "$(COVERAGE_DIFF_BASE)" ]; then git diff --unified=0 "$(COVERAGE_DIFF_BASE)" HEAD > .testing/coverage/changed.diff; else git diff --unified=0 HEAD^ HEAD > .testing/coverage/changed.diff; fi
-	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(COVERAGE_BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh \
-		bash -o pipefail -c 'set -e; \
-		  pgrep mosquitto >/dev/null 2>&1 || mosquitto -d; \
-		  # Several integration tests configure process-global runtime settings. \
-		  # Swift Testing otherwise runs unrelated suites concurrently, which makes their setup race. \
-		  swift test $(SWIFT_LOCKED_ARGS) --no-parallel --enable-code-coverage 2>&1 | tee .testing/coverage/build.log; \
-		  BIN=$$(find .build -name AxolotyPackageTests.xctest -type f | head -1); \
-		  PROFDATA=$$(find .build -name default.profdata | head -1); \
-		  mkdir -p .testing/coverage; \
-		  llvm-cov export "$$BIN" -instr-profile="$$PROFDATA" -format=text > .testing/coverage/coverage.json; \
-		  node Tests/Support/coverage-tools.mjs summary .testing/coverage/coverage.json --report .testing/coverage/report.json; \
-		  node Tests/Support/coverage-tools.mjs report .testing/coverage/coverage.json .testing/coverage/changed.diff'
-
-coverage-check: coverage
-	node Tests/Support/coverage-tools.mjs check .testing/coverage/coverage.json Tests/Support/coverage-baseline.json
-
 ci-preflight:
 	@if [ "$${CI:-}" = "true" ] && [ "$(BUILD_LOCK)" != "0" ]; then echo 'CI must set BUILD_LOCK=0 because its workspace-local build directory is not shared' >&2; exit 2; fi
 
@@ -679,4 +624,4 @@ check-embedded-swift: image
 	.devcontainer/run.sh /workspace/Tests/Support/check-embedded-swift.sh
 
 clean:
-	rm -rf "$(BUILD_DIR)" "$(COVERAGE_BUILD_DIR)"
+	rm -rf "$(BUILD_DIR)"

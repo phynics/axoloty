@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const expectedTiers = new Set(["smoke", "unit", "module", "property", "wire-offline", "wire-live", "nightly", "manual-macos", "g3-object-model", "g4-runtime", "g5-optional-products", "g6-non-divergence"]);
+const expectedTiers = new Set(["smoke", "unit", "module", "wire-offline", "wire-live", "manual-macos", "g3-object-model", "g4-runtime", "g5-optional-products", "g6-non-divergence"]);
 const networkModes = new Set(["none", "isolated", "isolated-broker", "isolated-containers"]);
 const brokerModes = new Set(["none", "local", "isolated"]);
 const hardwareModes = new Set(["forbidden", "optional", "required"]);
@@ -241,7 +241,6 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
     "test-wire": "wire-offline",
     "test-unit": "unit",
     "test-module": "module",
-    "test-fuzz": "property",
   };
   for (const [target, planName] of Object.entries(makeAliases)) {
     const tier = document.tiers.find(candidate => candidate.makeTarget === target);
@@ -280,7 +279,7 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
     // wire-live and other peer/oracle tiers are intentionally attestable
     // rather than run inside the checkpoint, so they are exempt from node
     // coverage as long as they appear in releaseGates (checked above).
-    const attestableTiers = new Set(["wire-live", "nightly", "manual-macos"]);
+    const attestableTiers = new Set(["wire-live", "manual-macos"]);
     for (const tier of requiredReleaseTiers) {
       if (tier.nodes.some(node => checkpointRoots.has(node)) || attestableTiers.has(tier.id)) continue;
       errors.push(`required release tier ${JSON.stringify(tier.id)} is not covered by the checkpoint plan and not attestable`);

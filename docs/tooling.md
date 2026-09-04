@@ -67,7 +67,7 @@ plan starts MQTT or accesses hardware.
 The canonical `g5-optional-products` tier is a hardware-free release gate
 for the bounded host SensorThings source and direct-observation workflows.
 
-Live CoatyJS capture, coverage, and long fuzz campaigns retain focused Make
+Live CoatyJS capture retains focused Make
 targets while their existing evidence contracts remain in place. The former
 `axoloty-tool test integration` command is retained only as a deprecation
 diagnostic because its canonical broker-backed test nodes depended on removed
@@ -133,9 +133,8 @@ definition, and reviewed image lock, with no cross-content fallback. On a
 `main` run, a post-plan resolution check allows that immutable dependency cache
 to be saved even when a later required check fails; a failed resolution check
 leaves it unsaved. Compiler metadata and incremental build state remain
-success-only, and pull requests never write trusted caches. The separate
-coverage job uses an isolated instrumented build directory and does not save
-mutable coverage build outputs. Development image publishing uses a GHCR-backed
+success-only, and pull requests never write trusted caches. Development image
+publishing uses a GHCR-backed
 BuildKit cache; ordinary source checks pull the reviewed image by digest instead
 of rebuilding it.
 
