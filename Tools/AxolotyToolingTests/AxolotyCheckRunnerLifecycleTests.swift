@@ -472,6 +472,37 @@ func commandRunnerResolvesExecutableUsingCommandSpecificPath() throws {
 }
 
 @Test
+func commandRunnerLineBuffersChildStandardStreams() throws {
+    // A child writes to a pipe rather than a terminal, so its C runtime block
+    // buffers standard output. A command killed at its deadline then dies with
+    // its diagnostics unwritten and the artifact keeps an empty stream, which
+    // reports a hung test as `last-test=none` with no failure text. The runner
+    // wraps commands in `stdbuf`, which publishes its request through these
+    // environment values.
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: "axoloty-tool-line-buffer-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let environment = ["AXOLOTY_DEVCONTAINER": "1", "PATH": "/usr/bin:/bin"]
+    let validator = AxolotyExecutionContextValidator(environment: environment, platform: .linux)
+    let runner = FoundationCommandRunner(
+        contextValidator: validator,
+        environment: environment,
+        configuration: AxolotyCommandRunnerConfiguration(
+            commandTimeout: 10,
+            artifactRoot: root,
+            runID: "line-buffer",
+            installSignalHandler: false
+        )
+    )
+
+    let result = runner.run(AxolotyCommandPlan(executable: "env"))
+
+    #expect(result.exitCode == 0)
+    #expect(result.standardOutput.contains("_STDBUF_O=L"))
+    #expect(result.standardOutput.contains("_STDBUF_E=L"))
+}
+
+@Test
 func runnerConfigurationRejectsMalformedNegativeAndOversizedTimeouts() {
     for value in ["not-a-number", "-1", "nan", "9000000001"] {
         let configuration = AxolotyCommandRunnerConfiguration.from(environment: [

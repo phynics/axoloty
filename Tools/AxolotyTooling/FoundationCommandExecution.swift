@@ -414,8 +414,7 @@ final class FoundationCommandExecution: @unchecked Sendable {
         let stderr = Pipe()
         var mergedEnvironment = environment.merging(command.environment) { _, value in value }
         mergedEnvironment["AXOLOTY_PARENT_INVOCATION_ID"] = artifactStore.invocationID
-        let executable = resolveExecutable(command.executable, environment: mergedEnvironment)
-        let arguments = [command.executable] + command.arguments
+        let (executable, arguments) = lineBufferedInvocation(command, environment: mergedEnvironment)
         var argv: [UnsafeMutablePointer<CChar>?] = arguments.map { strdup($0) }
         argv.append(nil)
         let environmentEntries = mergedEnvironment.map { "\($0.key)=\($0.value)" }
@@ -468,6 +467,37 @@ final class FoundationCommandExecution: @unchecked Sendable {
         readers.start()
         return readers
     }
+
+    /// Resolves the command, wrapped in `stdbuf` when it is available.
+    ///
+    /// A child writes to a pipe rather than a terminal, so its C runtime
+    /// block buffers standard output. A command killed at its deadline dies
+    /// with that buffer unwritten, and the artifact keeps an empty stream: a
+    /// hung test reports `last-test=none` and no failure text even when the
+    /// test already recorded the failing expectation. Line buffering keeps
+    /// partial output attributable for one write per line. `stdbuf` works
+    /// through `LD_PRELOAD`, which children inherit, so a test binary spawned
+    /// by `swift test` is covered too.
+    ///
+    /// Wrapping is best effort. A toolchain without `stdbuf` keeps the
+    /// previous buffering rather than failing the command.
+    private func lineBufferedInvocation(
+        _ command: AxolotyCommandPlan,
+        environment: [String: String]
+    ) -> (executable: String, arguments: [String]) {
+        let resolved = resolveExecutable(command.executable, environment: environment)
+        let bufferTool = resolveExecutable(Self.lineBufferTool, environment: environment)
+        guard bufferTool != Self.lineBufferTool,
+              FileManager.default.isExecutableFile(atPath: bufferTool) else {
+            return (resolved, [command.executable] + command.arguments)
+        }
+        return (
+            bufferTool,
+            [Self.lineBufferTool, "-oL", "-eL", resolved] + command.arguments
+        )
+    }
+
+    private static let lineBufferTool = "stdbuf"
 
     private func resolveExecutable(_ executable: String, environment: [String: String]) -> String {
         guard !executable.contains("/") else { return executable }
