@@ -30,7 +30,7 @@ actor ProtocolExecutor {
     private var hasStarted = false
     var lifecycleAdvertisementActive = false
     var activeHandlers = 0
-    private var handlerInFlight: [Int: Int] = [:]
+    var handlerInFlight: [Int: Int] = [:]
     var nextHandlerID: UInt64 = 1
     var handlerTasks: [UInt64: Task<Void, Never>] = [:]
     private var terminalFailureValue: (AxolotyError.RuntimeErrorCode, String)?
@@ -52,7 +52,7 @@ actor ProtocolExecutor {
     /// Bounded by `definition.capacities.dispatch`, mirroring
     /// `queuedTransportEffects`.
     private var pendingOutboundEffects: [RuntimeQueuedTransportEffect] = []
-    private var diagnosticsSnapshotValue = RuntimeDiagnostics()
+    var diagnosticsSnapshotValue = RuntimeDiagnostics()
     var typedIoState: RuntimeTypedIoState
     var pendingTypedIoToken: RuntimeTypedIoPublicationToken? = nil
     var typedIoFlushAttempts = 0
@@ -60,7 +60,7 @@ actor ProtocolExecutor {
     private let eventRegistrations: [RuntimeEventRegistration]
 
     private let eventStream: AsyncStream<RuntimeEvent>
-    private let eventContinuation: AsyncStream<RuntimeEvent>.Continuation
+    let eventContinuation: AsyncStream<RuntimeEvent>.Continuation
     private let diagnosticStream: AsyncStream<RuntimeDiagnostic>
     private let diagnosticContinuation: AsyncStream<RuntimeDiagnostic>.Continuation
 
@@ -727,141 +727,6 @@ actor ProtocolExecutor {
             return
         }
         _ = receive(frame)
-    }
-    private func dispatchToHandler(_ action: OwnedProtocolAction, operation: String?) {
-        guard let match = definition.registrations.handlers.enumerated().first(where: {
-            guard $0.element.capability == action.capability else { return false }
-            return $0.element.operation == nil || $0.element.operation == operation
-        }) else {
-            return
-        }
-        let registrationIndex = match.offset
-        let registration = match.element
-        guard activeHandlers < definition.capacities.handlersInFlight else {
-            diagnosticsSnapshotValue.handlerSaturation += 1
-            emit(.init(kind: .capacityExceeded, detail: "handler supervision capacity is full"))
-            return
-        }
-        guard handlerInFlight[registrationIndex, default: 0] < registration.maximumConcurrentInvocations else {
-            diagnosticsSnapshotValue.handlerSaturation += 1
-            emit(.init(kind: .capacityExceeded, detail: "handler registration concurrency is full"))
-            return
-        }
-        activeHandlers += 1
-        handlerInFlight[registrationIndex, default: 0] += 1
-        let handlerID = nextHandlerID
-        nextHandlerID &+= 1
-        let invocation = RuntimeInvocation(
-            action: action,
-            operation: operation,
-            registrationIndex: registrationIndex,
-            handlerID: handlerID
-        )
-        eventContinuation.yield(.invocation(invocation))
-        let task = Task { [weak self] in
-            do {
-                let result = try await registration.handler(invocation)
-                guard !Task.isCancelled else {
-                    await self?.handlerCancelled(invocation)
-                    return
-                }
-                await self?.complete(invocation: invocation, result: result)
-            } catch is CancellationError {
-                await self?.handlerCancelled(invocation)
-            } catch {
-                await self?.handlerFailed(
-                    runtimeErrorDetail(error),
-                    registrationIndex: registrationIndex
-                )
-            }
-            await self?.handlerTaskFinished(handlerID)
-        }
-        handlerTasks[handlerID] = task
-    }
-    private func complete(invocation: RuntimeInvocation, result: RuntimeHandlerResult) {
-        activeHandlers = max(0, activeHandlers - 1)
-        decrementHandler(registrationIndex: invocation.registrationIndex)
-        let routingKey: ProtocolRoutingKey
-        switch invocation.action {
-        case .deliver(let value): routingKey = value.routingKey
-        case .publish(let value): routingKey = value.routingKey
-        case .associationChanged(let value): routingKey = value.delivery.routingKey
-        case .externalRouteActivated, .externalRouteDeactivated: return
-        }
-        guard let correlation = routingKey.correlationID else { return }
-        let responseCapability: ProtocolCapability
-        switch routingKey.capability {
-        case .discover: responseCapability = .resolve
-        case .query: responseCapability = .retrieve
-        case .update: responseCapability = .complete
-        case .call: responseCapability = .returnEvent
-        default:
-            emit(.init(kind: .handlerFailed, detail: "handler completion is not a request family"))
-            return
-        }
-        guard case let .response(payload) = result else {
-            if case let .remoteError(code, message) = result {
-                guard let payload = makeErrorResponsePayload(
-                    capability: responseCapability,
-                    code: code,
-                    message: message
-                ) else {
-                    emit(.init(kind: .handlerFailed, detail: "remote error could not be encoded"))
-                    return
-                }
-                _ = publish(
-                    RuntimeOperation(
-                        capability: responseCapability,
-                        sourceID: definition.sourceID,
-                        correlationID: correlation,
-                        payload: payload
-                    ),
-                    nowMS: monotonicNowMS()
-                )
-            }
-            return
-        }
-        _ = publish(
-            RuntimeOperation(
-                capability: responseCapability,
-                sourceID: definition.sourceID,
-                correlationID: correlation,
-                payload: payload
-            ),
-            nowMS: monotonicNowMS()
-        )
-    }
-    private func handlerFailed(_ detail: String, registrationIndex: Int = -1) {
-        activeHandlers = max(0, activeHandlers - 1)
-        decrementHandler(registrationIndex: registrationIndex)
-        emit(.init(kind: .handlerFailed, detail: detail))
-    }
-    private func handlerCancelled(_ invocation: RuntimeInvocation) {
-        activeHandlers = max(0, activeHandlers - 1)
-        decrementHandler(registrationIndex: invocation.registrationIndex)
-    }
-
-    private func handlerTaskFinished(_ handlerID: UInt64) {
-        handlerTasks.removeValue(forKey: handlerID)
-    }
-
-    private func cancelAndDrainHandlers() async {
-        let tasks = Array(handlerTasks.values)
-        handlerTasks.removeAll(keepingCapacity: true)
-        for task in tasks { task.cancel() }
-        for task in tasks { _ = await task.value }
-        activeHandlers = 0
-        handlerInFlight.removeAll(keepingCapacity: true)
-    }
-
-    private func decrementHandler(registrationIndex: Int) {
-        guard registrationIndex >= 0 else { return }
-        let remaining = max(0, handlerInFlight[registrationIndex, default: 0] - 1)
-        if remaining == 0 {
-            handlerInFlight.removeValue(forKey: registrationIndex)
-        } else {
-            handlerInFlight[registrationIndex] = remaining
-        }
     }
 
     private func operationName(for delivery: BorrowedProtocolDelivery) -> String? {

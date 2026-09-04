@@ -173,6 +173,7 @@ let package = Package(
                 "Runtime/RuntimeLifecyclePayload.swift",
                 "Runtime/ProtocolExecutor+Outbound.swift",
                 "Runtime/ProtocolExecutor+Conformance.swift",
+                "Runtime/ProtocolExecutor+Handlers.swift",
                 "Runtime/RuntimeModules.swift",
                 "Runtime/RuntimeSupport.swift",
                 "Runtime/MQTTBinding.swift",
