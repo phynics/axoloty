@@ -104,7 +104,6 @@ test("principal Make workflows use the canonical tooling entry points", () => {
     "release-fixture-bundle",
     "test-axoloty-wire-independent-resolution",
     "test-axoloty-wire-distribution",
-    "check-static-io-macro-embedded",
     "check-embedded-swift",
     "embedded-device-info",
     "embedded-device-smoke",
