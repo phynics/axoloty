@@ -62,6 +62,9 @@ function commandInvokesSelfTest(command, selfTestPath) {
     const program = commandTokensToInspect[executable] ?? "";
     if (shellTokenMatchesPath(program, selfTestPath) && !program.includes("*")) return true;
     if (program === ".devcontainer/run.sh") return invokes(commandTokensToInspect.slice(executable + 1));
+    if (program === "$(call" && /^run_container,/.test(commandTokensToInspect[executable + 1] ?? "")) {
+      return invokes(commandTokensToInspect.slice(executable + 2));
+    }
     if (["sh", "bash", "dash", "zsh"].includes(program)) {
       const script = shellScriptOperand(commandTokensToInspect, executable) ?? "";
       return !script.includes("*") && shellTokenMatchesPath(script, selfTestPath);

@@ -389,12 +389,8 @@ test-support: resolve
 	Tests/Support/test-check-budget-manifest.sh
 	Tests/Support/test-build-embedded-swift.sh
 	Tests/Support/test-check-embedded-swift-linker.sh
-	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
-	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-		.devcontainer/run.sh /workspace/Tests/Support/test-esp-idf-ccache.sh
-	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
-	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-		.devcontainer/run.sh /workspace/Tests/Support/test-check-embedded-swift.sh
+	$(call run_container,$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)) /workspace/Tests/Support/test-esp-idf-ccache.sh
+	$(call run_container,$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)) /workspace/Tests/Support/test-check-embedded-swift.sh
 	Tests/Support/test-embedded-swift-smoke.sh
 	Tests/Support/test-embedded-swift-test.sh
 	Tests/Support/test-embedded-runtime-identity.sh
@@ -424,21 +420,13 @@ embedded-toolchain-doctor:
 	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='embedded doctor' AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS=$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)
 
 embedded-device-info: image
-	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)" CONTAINER_DEVICES=/dev/ttyACM0 \
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
-	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-	.devcontainer/run.sh /workspace/Tests/Support/embedded-device-info.sh
+	CONTAINER_DEVICES=/dev/ttyACM0 $(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/embedded-device-info.sh
 
 embedded-device-smoke: image
-	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)" CONTAINER_DEVICES=/dev/ttyACM0 \
-	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
-	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-	.devcontainer/run.sh /workspace/Tests/Support/embedded-device-smoke.sh
+	CONTAINER_DEVICES=/dev/ttyACM0 $(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/embedded-device-smoke.sh
 
 embedded-reproducible-build: image
-	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
-	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-	.devcontainer/run.sh /workspace/Tests/Support/embedded-reproducible-build.sh
+	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/embedded-reproducible-build.sh
 
 embedded-swift-build:
 	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='embedded build' AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS=$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)
@@ -536,9 +524,14 @@ check-embedded-swift-linker:
 	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='embedded verify' AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS=$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)
 
 embedded-swift-reproducible-build: image
-	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
-	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-	.devcontainer/run.sh /workspace/Tests/Support/embedded-swift-reproducible-build.sh
+	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/embedded-swift-reproducible-build.sh
+
+# Shared container invocation prefix. The invoked command and its extra
+# environment stay on the recipe line, so `make -n`, the tier validator,
+# and the wrapper tests keep scanning the real invocations.
+define run_container
+CONTAINER_COMMAND_TIMEOUT_SECONDS="$(1)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh
+endef
 
 ci-preflight:
 	@if [ "$${CI:-}" = "true" ] && [ "$(BUILD_LOCK)" != "0" ]; then echo 'CI must set BUILD_LOCK=0 because its workspace-local build directory is not shared' >&2; exit 2; fi
@@ -564,54 +557,36 @@ lint: image
 	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" .devcontainer/run.sh swiftlint lint --no-cache --config .swiftlint.yml
 
 benchmark-size: resolve
-	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
-	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-	.devcontainer/run.sh /workspace/Tests/Support/check-benchmark-size.sh
+	$(call run_container,$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)) /workspace/Tests/Support/check-benchmark-size.sh
 
 benchmark-wire: resolve
-	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
-	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-	.devcontainer/run.sh /workspace/Tests/Support/check-benchmark-wire.sh
+	$(call run_container,$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)) /workspace/Tests/Support/check-benchmark-wire.sh
 
 # Host allocation-regression gate for the borrowed decode + static routing hot
 # path (issue #490): asserts zero per-iteration heap allocation under heaptrack.
 benchmark-wire-allocation: resolve
-	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
-	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-	.devcontainer/run.sh /workspace/Tests/Support/check-benchmark-wire-allocation.sh
+	$(call run_container,$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)) /workspace/Tests/Support/check-benchmark-wire-allocation.sh
 
 # Host allocation-regression gate for the macro-generated static handler and
 # fixed owning action-buffer operations introduced by G5.
 benchmark-static-io-ownership-allocation: resolve
-	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
-	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-	.devcontainer/run.sh /workspace/Tests/Support/check-static-io-ownership-allocation.sh
+	$(call run_container,$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)) /workspace/Tests/Support/check-static-io-ownership-allocation.sh
 
 check-static-io-macro-embedded: image
 	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='embedded verify' AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS=$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)
-	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
-	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-	.devcontainer/run.sh /workspace/Tests/Support/check-static-io-macro-embedded.sh
+	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/check-static-io-macro-embedded.sh
 
 benchmark-wire-bounds: resolve
-	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
-	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-	.devcontainer/run.sh /workspace/Tests/Support/check-benchmark-wire-bounds.sh
+	$(call run_container,$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)) /workspace/Tests/Support/check-benchmark-wire-bounds.sh
 
 benchmark-wire-device: resolve
-	CONTAINER_DEVICES=/dev/ttyACM0 \
-	CONTAINER_RECLAIM_BUILD_DIR=1 \
-	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
-	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-	.devcontainer/run.sh /workspace/Tests/Support/check-benchmark-wire-device.sh
+	CONTAINER_DEVICES=/dev/ttyACM0 CONTAINER_RECLAIM_BUILD_DIR=1 $(call run_container,$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)) /workspace/Tests/Support/check-benchmark-wire-device.sh
 
 check-budget-manifest:
 	Tests/Support/check-budget-manifest.sh
 
 check-embedded-swift: image
-	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
-	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-	.devcontainer/run.sh /workspace/Tests/Support/check-embedded-swift.sh
+	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/check-embedded-swift.sh
 
 clean:
 	rm -rf "$(BUILD_DIR)"

@@ -191,7 +191,7 @@ test("support runs the Embedded Swift self-test in the pinned container", () => 
   assert.match(makefile, /^test-support: resolve$/m);
   assert.match(
     recipe(makefile, "test-support"),
-    /\.devcontainer\/run\.sh \/workspace\/Tests\/Support\/test-check-embedded-swift\.sh/,
+    /\$\(call run_container,[^\n]*\) \/workspace\/Tests\/Support\/test-check-embedded-swift\.sh/,
   );
 });
 
