@@ -41,8 +41,15 @@ final class RuntimeMQTTClient: @unchecked Sendable {
 
     init(configuration: MQTTBindingConfiguration, delegate: RuntimeMQTTClientDelegate) throws {
         self.delegate = delegate
+        // `timeout` bounds the wait for a broker acknowledgement. Leaving it
+        // `nil` -- the library default -- schedules no timeout task at all, so
+        // a SUBACK or UNSUBACK that never arrives suspends the caller forever.
+        // A broker that vanishes without resetting the connection leaves that
+        // wait unbounded, which wedges `reconnect()` at the
+        // `removeSubscriptions(namespace:)` it starts with.
         let mqttConfiguration = MQTTClient.Configuration(
             keepAliveInterval: .seconds(30),
+            timeout: .milliseconds(Int64(configuration.operationTimeoutMS)),
             userName: configuration.username,
             password: configuration.password,
             useSSL: configuration.usesTLS,

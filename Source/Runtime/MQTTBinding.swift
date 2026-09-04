@@ -19,6 +19,24 @@ public struct MQTTBindingConfiguration: Sendable, Equatable {
     public let password: String?
     /// Maximum time to wait for the broker to report an online state.
     public let connectionTimeoutMS: UInt32
+    /// Maximum time to wait for a broker acknowledgement (SUBACK, UNSUBACK,
+    /// PUBACK) before failing the operation.
+    ///
+    /// Without this bound the underlying client waits for an acknowledgement
+    /// forever. A broker that disappears without resetting the connection --
+    /// a restarted broker whose socket is left half-open -- then wedges any
+    /// operation awaiting an acknowledgement, including the
+    /// `removeSubscriptions(namespace:)` that opens a reconnect. That hang is
+    /// unrecoverable: no reconnect can run while it is pending.
+    ///
+    /// - Note: MQTTNIO applies one timeout to every acknowledged exchange, so
+    ///   this also bounds the keepalive `PINGRESP`. A broker that fails to
+    ///   answer a ping within this window is treated as a transport failure and
+    ///   the runtime enters `.reconnecting`, which it recovers from by
+    ///   retrying. The trade is deliberate: an unbounded wait is an
+    ///   unrecoverable hang, while a premature ping timeout costs one
+    ///   recoverable reconnect.
+    public let operationTimeoutMS: UInt32
     /// Largest Coaty profile topic admitted before runtime validation.
     public let maximumProfileTopicBytes: Int
     /// Maximum exact external compatibility routes the binding will track
@@ -35,6 +53,9 @@ public struct MQTTBindingConfiguration: Sendable, Equatable {
     ///   - password: Optional broker password.
     ///   - connectionTimeoutMS: Maximum time to wait for the broker to
     ///     report an online state. Must be in `1...120000`.
+    ///   - operationTimeoutMS: Maximum time to wait for a broker
+    ///     acknowledgement before failing the operation. Must be in
+    ///     `1...120000`.
     ///   - maximumProfileTopicBytes: Largest Coaty profile topic admitted
     ///     before runtime validation. Must be in `1...65536`.
     ///   - maximumExternalRoutes: Maximum exact external compatibility
@@ -48,6 +69,7 @@ public struct MQTTBindingConfiguration: Sendable, Equatable {
         username: String? = nil,
         password: String? = nil,
         connectionTimeoutMS: UInt32 = 10_000,
+        operationTimeoutMS: UInt32 = 10_000,
         maximumProfileTopicBytes: Int = 512,
         maximumExternalRoutes: Int = 64
     ) throws {
@@ -57,6 +79,12 @@ public struct MQTTBindingConfiguration: Sendable, Equatable {
         guard connectionTimeoutMS > 0, connectionTimeoutMS <= 120_000 else {
             throw AxolotyError.invalidArgument(
                 argument: "connectionTimeoutMS",
+                reason: "must be in 1...120000"
+            )
+        }
+        guard operationTimeoutMS > 0, operationTimeoutMS <= 120_000 else {
+            throw AxolotyError.invalidArgument(
+                argument: "operationTimeoutMS",
                 reason: "must be in 1...120000"
             )
         }
@@ -78,6 +106,7 @@ public struct MQTTBindingConfiguration: Sendable, Equatable {
         self.username = username
         self.password = password
         self.connectionTimeoutMS = connectionTimeoutMS
+        self.operationTimeoutMS = operationTimeoutMS
         self.maximumProfileTopicBytes = maximumProfileTopicBytes
         self.maximumExternalRoutes = maximumExternalRoutes
     }
