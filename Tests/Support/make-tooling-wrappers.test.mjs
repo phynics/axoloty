@@ -56,14 +56,12 @@ test("principal Make workflows use the canonical tooling entry points", () => {
     "build",
     "test-unit",
     "test-module",
-    "test-fuzz",
     "test-wire",
   ];
   const tierMappings = {
     build: "smoke",
     "test-unit": "unit",
     "test-module": "module",
-    "test-fuzz": "property",
     "test-wire": "wire-offline",
   };
   assert.match(makefile, /define run_test_tier[\s\S]+?test-tier TIER=/);
@@ -148,11 +146,10 @@ test("decoder-context diagnostic distinguishes matching, clean, and invalid inpu
   }
 });
 
-test("retired broker wrapper reports an explicit expected-negative result", () => {
-  const result = spawnSync("make", ["test"], { encoding: "utf8" });
-  // GNU Make maps the recipe's deliberate exit 69 to its own status 2.
-  assert.equal(result.status, 2, `expected retired make test to fail: ${result.stderr}`);
-  assert.match(result.stderr, /make test is retired/);
+test("retired broker wrapper is fully removed rather than a stub", () => {
+  const makefile = fs.readFileSync("Makefile", "utf8");
+  assert.doesNotMatch(makefile, /^test:\s*$/m);
+  assert.doesNotMatch(makefile, /make test is retired/);
 });
 
 test("direct test wrappers preserve the invocation resource namespace", () => {
@@ -179,22 +176,6 @@ test("service wrappers forward an explicit MCP executable override", () => {
       `${target} must pass AXOLOTY_MCP_EXECUTABLE into the container`,
     );
   }
-});
-
-test("long fuzz campaign delegates to the canonical nightly tier", () => {
-  const makefile = fs.readFileSync("Makefile", "utf8");
-  const target = recipe(makefile, "fuzz-long");
-  assert.match(target, /\$\(MAKE\).*axoloty-tool/);
-  assert.match(target, /AXOLOTY_TOOL_ARGS='test-tier nightly'/);
-  for (const name of [
-    "AXOLOTY_FUZZ_ITERATIONS",
-    "AXOLOTY_FUZZ_SEEDS",
-    "AXOLOTY_FUZZ_REPETITIONS",
-    "AXOLOTY_FUZZ_JOBS",
-  ]) {
-    assert.match(target, new RegExp(`AXOLOTY_TOOL_CONTAINER_ENV_VARS=[^\n]*${name}`));
-  }
-  assert.doesNotMatch(target, /run-fuzz\.sh/);
 });
 
 test("G1 device wrapper delegates policy and device access to axoloty-tool", () => {

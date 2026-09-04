@@ -230,7 +230,7 @@ func offlinePlanOmitsEmbeddedChecksOnMacOS() throws {
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
     let plan = try resolver.resolve(.named(.offline, ci: false, platform: .macOS, requested: nil))
     #expect(!plan.nodes.contains { $0.name.hasPrefix("embedded-") })
-    #expect(!plan.nodes.contains { ["support-container", "support-fuzz-runner"].contains($0.name) })
+    #expect(!plan.nodes.contains { ["support-container"].contains($0.name) })
 }
 
 @Test

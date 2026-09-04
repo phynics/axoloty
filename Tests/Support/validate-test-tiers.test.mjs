@@ -104,10 +104,10 @@ test("validator rejects retired canonical nodes and filters if reintroduced", ()
   assert.ok(errors.includes('logging-global: retired test filter "LogManagerTests" must not be declared'));
 });
 
-test("retired make test alias cannot dispatch a stale integration tier", () => {
+test("retired make test alias stays removed so no stale integration tier can return", () => {
   const makefile = fs.readFileSync(path.join(root, "Makefile"), "utf8");
+  assert.doesNotMatch(makefile, /^test:\s*$/m);
   assert.doesNotMatch(makefile, /^test:\s*TIER=integration\s*$/m);
-  assert.match(makefile, /make test is retired; use make test-tier TIER=unit\/module\/property/);
   for (const filter of ["MQTTNIOClientTests", "DecentralizedLoggingTest", "LogManagerTests"]) {
     assert.doesNotMatch(makefile, new RegExp(`(?:--filter|\\|)\\s*[^"]*${filter}`), filter);
   }

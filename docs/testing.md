@@ -62,10 +62,7 @@ make explain TIER=unit
 ```
 
 `make verify` runs the ordinary pre-PR plan from the manifest. `make verify-ci`
-runs the mandatory CI plan and support gates. GitHub Actions runs source
-coverage in the separate, clearly named `Source coverage` job with
-`make coverage-check`; coverage artifacts are not part of the required test
-orchestration. Use
+runs the mandatory CI plan and support gates. Use
 `AXOLOTY_OUTPUT=json` for parseable manifests or `AXOLOTY_OUTPUT=human` for
 streaming progress and summaries. `FILTER` is passed as one argv element, never
 through a shell command string. `make explain` never executes a command and
@@ -167,35 +164,12 @@ separate from protocol-scenario execution.
 | Module | `make test-module` | yes | Portable topic, wire, protocol, and Coaty model module tests |
 | G3 boundary | `axoloty-tool` manifest node `g3-object-boundary` | no | Portable object-model dependency and Embedded Swift source-inclusion authority check |
 | G4 migration | `make test-tier TIER=g4-runtime` | yes | Replacement-runtime boundaries plus disjoint host, protocol-package, and static-runtime test slices; strict once G4 roots exist |
-| Property | `make test-fuzz` | yes | Deterministic wire parser bounds and corruption tests |
 | Wire offline | `make test-wire` | yes | Maintained lifecycle compatibility scenario contracts; no broker |
 | Wire live | `make test-wire-live` | yes | Live CoatyJS interop (host-run containers) |
-| Nightly | `make fuzz-long` | yes | Multi-seed fuzz campaign |
-| Harness self-tests | `make test-support` | no | Fuzz runner, capture/verifier tools, tier validation |
+| Harness self-tests | `make test-support` | no | Capture/verifier tools, tier validation |
 
 Use `make verify` for the ordinary aggregate. New execution policy lives in the
 manifest, not in Make recipes or shell front controllers.
-
-Nightly fuzz campaigns run from `.github/workflows/fuzz.yml` with the pinned
-development image. Scheduled runs use 100,000 iterations over seeds 1, 2, 3,
-and 4; manual runs may use bounded inputs and retain the finalized campaign
-manifest, summary, logs, and reproducers as workflow artifacts.
-
-## Source coverage ratchet
-
-`make coverage` runs the full test suite with `--enable-code-coverage`, exports
-per-file line coverage for `Source/` via `llvm-cov`, and writes
-`.testing/coverage/coverage.json` plus a normalized `report.json`. Only
-`Source/` production files contribute to the denominator; tests, dependencies,
-generated code, and reference agents are excluded.
-
-`make coverage-check` compares the measured coverage against the committed
-baseline at `Tests/Support/coverage-baseline.json`. It fails when aggregate
-`Source/` coverage drops by more than 1.0 percentage point, or when a
-production file already in the baseline loses covered lines. New files do not
-trip the per-file rule; they are absorbed by the aggregate gate. Update the
-baseline only in a reviewed change that intentionally accepts the new
-coverage level.
 
 ## Test tiers
 
@@ -204,10 +178,8 @@ coverage level.
 | Smoke | Prove the package builds and its smallest public path loads | Container only | 5 min | Every PR |
 | Unit | Pure functions and value semantics at one type boundary | None beyond test process | 2 min | Every PR |
 | Module | A subsystem through its public/internal module boundary | In-process fakes; broker only when intrinsic | 5 min | Every PR |
-| Property | Generated-input invariants, round trips, and parser robustness | Seeded generator | 10 min | Every PR with a bounded corpus |
 | Wire offline | Golden topics/payloads and capture-tool correctness | Versioned fixtures | 5 min | Every PR |
 | Wire live | Representative Axoloty/CoatyJS interoperability plus CoatyJS reference-wire protocol coverage | Containers, broker, CoatyJS image | 20 min | Protocol-facing PRs (enforced by the `Live CoatyJS compatibility gate`); full run before merge |
-| Nightly | Large generated corpora, repeat runs, reconnect/failure scenarios, sanitizers when available | Full container stack | 60 min | Nightly and release candidates |
 | Manual macOS oracle | Apple-platform API and transport confidence | Supported macOS/Xcode host | 30 min | Release candidates and Apple-specific changes |
 
 ### Smoke
@@ -237,54 +209,10 @@ Use deterministic fakes for clocks, ID sources, and transports where those are
 not the subject under test. Broker-backed module tests are appropriate for the
 MQTT adapter itself.
 
-### Property and fuzz testing
-
-Property tests complement examples; they do not replace them. Initial
-properties should include:
-
-- encode/decode preserves every supported object field;
-- JSON normalization is idempotent;
-- topic parse/render round trips for valid topic components;
-- malformed payloads and topics fail without crashing or hanging;
-- unknown JSON properties remain compatible where the protocol permits them;
-- arbitrary byte input to wire parsers cannot trap;
-- subscription matching agrees with a small, independent reference model.
-
-Every generated run records its seed. PR runs use a fixed seed set and bounded
-case count. Nightly runs add a time-seeded campaign and persist the seed and
-smallest reduced input on failure. A minimized regression becomes a committed
-example fixture before the bug is closed.
-
-Swift-native fuzzing may be added when toolchain support is stable in the
-container. Until then, deterministic generators in Swift Testing are the portable
-baseline. External fuzzers must emit replayable files, never only a crash log.
-
-For an extended, auditable campaign, use the runner beside the fuzz tests:
-
-```sh
-Tests/Support/Fuzzing/run-fuzz.sh \
-  --iterations 100000 \
-  --seeds 1,2,3,4 \
-  --repetitions 3 \
-  --jobs 4 \
-  --output .testing/fuzz
-```
-
-The runner assigns cases round-robin to `--jobs` workers (two by default). Each worker builds
-its Swift test products once in a private scratch path, then invokes its
-assigned seed/repetitions with `swift test --skip-build`. This avoids both a
-rebuild per case and contention on SwiftPM's shared build database, while
-preserving separate test processes and environment-controlled seeds. The
-runner works outside the development container by selecting Podman or Docker
-automatically, and works inside the container with `--direct`. It streams
-progress while writing a timestamped campaign directory containing
-`manifest.json`, `summary.tsv`, `campaign.log`, and one complete log per
-seed/repetition. A nonzero result means at least one case failed; later cases
-still run unless `--fail-fast` is supplied. Replay a case by copying its
-recorded `AXOLOTY_FUZZ_ITERATIONS`, `AXOLOTY_FUZZ_SEED`, and command from the
-case log, after preparing the test products with the same containerized build
-command. `make fuzz-long` runs a default 100,000-iteration, four-seed
-campaign.
+Wire parser robustness tests (malformed input, truncation, corruption, nesting
+and size limits, parser work bounds) belong to the module tier. A regression
+found by external testing becomes a committed example fixture before the bug is
+closed.
 
 ### Broker-backed transport evidence
 
@@ -375,8 +303,8 @@ must contain, where applicable:
 - verifier output and Swift Testing/JUnit output;
 - minimized generated input or a replay command.
 
-Successful PR runs may discard bulky captures after verification. Nightly and
-release runs retain a compact manifest and summary even on success. Artifacts
+Successful PR runs may discard bulky captures after verification. Release runs
+retain a compact manifest and summary even on success. Artifacts
 must not contain credentials or user data.
 
 ## Flake policy
@@ -392,8 +320,7 @@ running and reporting; it is never expressed as a skipped assertion in the
 main suite. Protocol compatibility tests and repeatable regressions are not
 eligible for quarantine. Fix or revert newly introduced flakes before merge.
 
-Nightly repeat runs should randomize scenario order and report pass rate and
-seed. The release gate requires no unresolved compatibility flake.
+The release gate requires no unresolved compatibility flake.
 
 ## Manual macOS oracle
 

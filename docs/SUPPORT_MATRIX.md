@@ -52,7 +52,7 @@ of the 0.6 product surface. Support levels use a consistent vocabulary:
 | Object lifecycle | Validated | `AxolotyRuntime` owns the single-use lifecycle, bounded ingress, reconnect, cancellation, and diagnostics. G4 lifecycle tests cover startup, failure, reconnect, and shutdown ordering. |
 | Object lifecycle controllers | Planned | The inherited controller hierarchy is absent from G4; G5 owns any future product controller. |
 | Dynamic object-type registration | Validated | Concurrent registration test (1000 iterations). Unregistered-type reporting test. |
-| Unknown/custom object decoding | Validated | Fuzz tests cover unknown fields, malformed input, and truncated payloads. Borrowed and owned raw JSON boundary tests cover nested values, exact-number lexemes, and bounded-capacity failures. |
+| Unknown/custom object decoding | Validated | Wire parser bounds tests cover unknown fields, malformed input, and truncated payloads. Borrowed and owned raw JSON boundary tests cover nested values, exact-number lexemes, and bounded-capacity failures. |
 | Dynamic controller registration | Planned | Process-global controller registration was retired with the G3 manager APIs; G5 owns any future registration contract. |
 | Runtime event and responder registration | Supported | Runtime definitions register bounded event streams and responders before startup. Registration belongs to the runtime definition, not a process-global controller manager. |
 

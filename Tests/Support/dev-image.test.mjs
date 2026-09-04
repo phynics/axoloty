@@ -17,13 +17,11 @@ const wireWorkflow = fs.readFileSync(".github/workflows/wire-compatibility.yml",
 const swiftPMWorkflows = [
   ciWorkflow,
   fs.readFileSync(".github/workflows/docs.yml", "utf8"),
-  fs.readFileSync(".github/workflows/fuzz.yml", "utf8"),
   wireWorkflow,
 ];
 const imageWorkflow = fs.readFileSync(".github/workflows/container-image.yml", "utf8");
 const openImageLockPR = fs.readFileSync(".github/scripts/open-image-lock-pr.sh", "utf8");
-const requiredCIJob = ciWorkflow.slice(ciWorkflow.indexOf("  required-checks:"), ciWorkflow.indexOf("\n  coverage:"));
-const coverageCIJob = ciWorkflow.slice(ciWorkflow.indexOf("  coverage:"), ciWorkflow.indexOf("\n  prune-build-caches:"));
+const requiredCIJob = ciWorkflow.slice(ciWorkflow.indexOf("  required-checks:"), ciWorkflow.indexOf("\n  prune-build-caches:"));
 
 test("required workflows isolate PR concurrency by number and preserve push evidence", () => {
   for (const workflow of [ciWorkflow, fs.readFileSync(".github/workflows/wire-compatibility.yml", "utf8")]) {
@@ -557,8 +555,7 @@ test("CI reuses stable, bounded Swift build cache namespaces", () => {
   ];
   assert.deepEqual(workflowPathList("Restore Swift compiler cache"), compilerCachePaths);
   assert.deepEqual(workflowPathList("Save Swift compiler cache"), compilerCachePaths);
-  assert.doesNotMatch(ciWorkflow, /^ {12}\.build\/ci(?:-coverage)?$/m);
-  assert.doesNotMatch(ciWorkflow, /^ {12}\.build\/ci-coverage\//m);
+  assert.doesNotMatch(ciWorkflow, /^ {12}\.build\/ci$/m);
   assert.match(ciWorkflow, /key: \$\{\{ env\.SWIFT_BUILD_CACHE_KEY \}\}[\s\S]*restore-keys: \|\s+\$\{\{ env\.SWIFT_BUILD_CACHE_PREFIX \}\}/);
   assert.match(requiredCIJob, /make verify-ci CONTAINER_RUNTIME=podman BUILD_DIR="\.build\/ci" BUILD_LOCK=0/);
   assert.doesNotMatch(ciWorkflow, /BUILD_DIR="\.build\/\$\{GITHUB_SHA\}"/);
@@ -707,7 +704,6 @@ test("required CI preserves the plan budget and uploads durable run evidence", (
   assert.match(requiredCIJob, /\.primary == true[\s\S]*\*-verify-ci\.json/);
   assert.match(requiredCIJob, /cat "\$markdown_report" >> "\$GITHUB_STEP_SUMMARY"/);
   assert.match(requiredCIJob, /SwiftPM exact hit:[\s\S]*Swift compiler exact hit:[\s\S]*ESP-IDF exact hit:/);
-  assert.doesNotMatch(requiredCIJob, /COVERAGE_BUILD_DIR|\.testing\/coverage|Upload coverage/);
   assert.match(requiredCIJob, /Save Swift compiler cache[\s\S]*if: success\(\)/);
 });
 
@@ -728,37 +724,6 @@ test("live wire allows bounded container creation on busy runners", () => {
     wireWorkflow,
     /make test-wire-live[^\n]*AXOLOTY_TOOL_CONTAINER_ENV_VARS=CONTAINER_CREATE_TIMEOUT_SECONDS/,
   );
-});
-
-test("coverage is an explicit job with a truthful missing-report failure", () => {
-  assert.match(coverageCIJob, /name: Source coverage/);
-  assert.match(coverageCIJob, /timeout-minutes: 90/);
-  assert.match(ciWorkflow, /workflow_dispatch:/);
-  assert.ok(
-    coverageCIJob.indexOf("name: Classify source coverage scope")
-      < coverageCIJob.indexOf("name: Setup container image"),
-    "coverage scope must be classified before image setup",
-  );
-  assert.match(coverageCIJob, /if \[ "\$\{\{ github\.event_name \}\}" = workflow_dispatch \]; then\n\s+force=--force/);
-  assert.match(coverageCIJob, /git diff --no-renames --name-only "\$BASE_SHA" "\$HEAD_SHA"/);
-  for (const step of [
-    "Compute cache key",
-    "Prepare coverage diagnostics",
-    "Setup container image",
-    "Restore SwiftPM dependency cache",
-    "Run coverage plan",
-  ]) {
-    assert.match(
-      workflowStepFrom(coverageCIJob, step),
-      /if: steps\.coverage_scope\.outputs\.required == 'true'/,
-      `${step} must stay off the coverage fast path`,
-    );
-  }
-  assert.match(coverageCIJob, /make coverage-check CONTAINER_RUNTIME=podman BUILD_DIR="\.build\/coverage" COVERAGE_BUILD_DIR="\.build\/coverage"/);
-  assert.match(coverageCIJob, /Require coverage report\n\s+if: always\(\) && steps\.coverage_scope\.outputs\.required == 'true'[\s\S]*Coverage did not produce \.testing\/coverage\/report\.json/);
-  assert.match(coverageCIJob, /Upload coverage report[\s\S]*if-no-files-found: error/);
-  assert.match(coverageCIJob, /Upload coverage diagnostics[\s\S]*if-no-files-found: warn/);
-  assert.doesNotMatch(coverageCIJob, /actions\/cache\/save/);
 });
 
 test("image lock PR fallback accepts only the exact repository policy denial", () => {
