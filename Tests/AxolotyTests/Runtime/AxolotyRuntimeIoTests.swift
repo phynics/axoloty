@@ -124,7 +124,10 @@ private actor IoWireRecordingTransport: AxolotyRuntimeTransport {
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
     func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) async {}
     func perform(_ effect: RuntimeTransportEffect, namespace: String) async throws {
-        if case .publish(let publication) = effect { sent.append(publication) }
+        switch effect {
+        case .publish(let publication): sent.append(publication)
+        default: break
+        }
     }
     func stop() async {}
     func installSubscriptions(namespace: String) async throws {}
