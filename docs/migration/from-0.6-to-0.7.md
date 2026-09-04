@@ -50,3 +50,11 @@ each fixed-Sensor stream with
 as a structured runtime error, and a
 failed draft discards all handlers, streams, and module reservations created by
 that draft.
+
+Thing-driven observation is configured separately with
+`configuration.observations(forSensorsOf:matching:buffering:)`. It returns
+bounded catalogue-change and relationship-checked observation streams. The
+registry performs exact Thing discovery and a parent-filtered Sensor query;
+its observation Channel is the Sensor ID. Fixed-Sensor observation continues
+to use the explicitly supplied custom Channel. `RuntimeEventContext` now
+includes the copied semantic `channelIdentifier` for Channel events.

@@ -211,13 +211,15 @@ IoValues exceeding 2^53 lose precision through CoatyJS's float64
 (`Int64.max` round-trips as `9223372036854776000`); Axoloty preserves Int64
 exactly.
 
-`SensorThings` is an optional G5 product. Its bounded schema models and
-source/direct-observation workflows are covered by retained portable fixtures
-and the already-
-proven standard Coaty Advertise, Discover/Resolve, Query/Retrieve, and Channel
-event paths. No compatible CoatyJS SensorThings package is available, so this
-row intentionally records fixture evidence rather than fabricating live
-SensorThings interoperability claims.
+`SensorThings` is an optional G5 product. Its bounded schema models, source,
+fixed-Sensor observation, and Thing-driven Sensor-registry workflows use the
+standard Coaty Advertise, Discover/Resolve, Query/Retrieve, Deadvertise, and
+Channel event paths. The registry's Sensor-ID Channel is a semantic event
+identifier; no raw MQTT topic is exposed. No compatible CoatyJS SensorThings
+package is available, so this row records fixture-backed wire evidence rather
+than fabricating live SensorThings interoperability claims. The 0.7 registry
+change is therefore classified as fixture-backed until a compatible reference
+agent is available; no `coaty/3` profile change is intended.
 
 ## CI enforcement of live wire evidence
 

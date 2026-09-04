@@ -43,7 +43,7 @@ of the 0.6 product surface. Support levels use a consistent vocabulary:
 | Capability | Support level | Evidence |
 |---|---|---|
 | SensorThings models | Supported (optional) | `AxolotySensorThings` provides bounded Foundation-free schemas backed by retained portable fixtures. |
-| SensorThings workflows | Supported (optional) | One atomic source/direct-observation module uses standard runtime operations; no controller hierarchy is exposed. |
+| SensorThings workflows | Supported (optional) | One atomic module provides source, fixed-Sensor observation, and separate bounded Thing-driven Sensor-registry workflows over standard runtime operations; no controller hierarchy is exposed. |
 
 ## Object model and lifecycle
 

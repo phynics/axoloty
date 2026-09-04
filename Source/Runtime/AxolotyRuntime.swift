@@ -640,6 +640,7 @@ actor ProtocolExecutor {
                     correlationID: delivery.routingKey.correlationID,
                     namespace: definition.namespace,
                     route: delivery.routeClassification,
+                    channelIdentifier: channelIdentifier(for: delivery),
                     receiptTimeMS: nowMS,
                     provenance: owned.isPublication ? .local : .transport
                 ),
@@ -705,6 +706,13 @@ actor ProtocolExecutor {
             topic: nil,
             payload: publication.payload
         )
+    }
+    private func channelIdentifier(for delivery: BorrowedProtocolDelivery) -> String? {
+        guard delivery.routingKey.capability == .channel,
+              case let .channel(identifier) = delivery.deliveryKey else { return nil }
+        return identifier.withBytes { pointer, length in
+            String(decoding: UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: UInt8.self), count: length), as: UTF8.self)
+        }
     }
     private func eventFamily(for capability: ProtocolCapability) -> RuntimeEventFamily {
         switch capability {
