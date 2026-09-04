@@ -274,11 +274,16 @@ actor ProtocolExecutor {
             flushOfflineOperations(nowMS: monotonicNowMS())
         } catch {
             guard state == .reconnecting, transportEpoch == epoch else { return }
-            failRuntime(
-                code: .brokerUnavailable,
-                detail: runtimeErrorDetail(error),
-                diagnostic: .transportFailed
-            )
+            // A transport failure while recovering is no more terminal than one
+            // during normal operation. `transportFailed(_:)` deliberately parks
+            // the executor in `.reconnecting` so the caller can restore the
+            // network path and invoke `reconnect()` again; failing the runtime
+            // here contradicted that contract and destroyed a recoverable
+            // instance the first time a restarted broker was not yet accepting
+            // connections. Stay `.reconnecting` and report the attempt so the
+            // caller can retry.
+            diagnosticsSnapshotValue.transportFailures += 1
+            emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
         }
     }
 

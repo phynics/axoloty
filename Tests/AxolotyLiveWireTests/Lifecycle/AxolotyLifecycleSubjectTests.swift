@@ -153,8 +153,7 @@ struct AxolotyLifecycleSubjectTests {
                 report(state: "published-offline", scenario: scenario, extra: ["count": "2"])
             }
             try await waitForReconnectMarker(scenario: scenario)
-            await runtime.reconnect()
-            try await waitForState(.running, runtime: runtime, diagnostics: diagnostics)
+            try await reconnectUntilRunning(runtime: runtime, diagnostics: diagnostics)
             report(state: "reconnected", scenario: scenario)
 
             if !publishAfterReconnect {
@@ -197,6 +196,41 @@ struct AxolotyLifecycleSubjectTests {
         }
         _ = scenario
         return (runtime, stream)
+    }
+
+    /// Drives `reconnect()` until the runtime is running again.
+    ///
+    /// The harness publishes its readiness marker once the broker container is
+    /// back, which does not guarantee the broker is already accepting
+    /// connections. A reconnect that loses that race leaves the runtime
+    /// `.reconnecting` rather than failing it, so retrying is the caller's
+    /// half of that contract -- a single attempt would report a broker that is
+    /// merely slow as a dead runtime.
+    private func reconnectUntilRunning(
+        runtime: AxolotyRuntime,
+        diagnostics: LifecycleDiagnosticsLog
+    ) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(60))
+        var attempts = 0
+        while true {
+            await runtime.reconnect()
+            attempts += 1
+            let state = await runtime.state()
+            if state == .running { return }
+            guard clock.now < deadline else {
+                let counters = await runtime.diagnosticsSnapshot()
+                let recorded = await diagnostics.formatted()
+                throw AxolotyError.runtime(
+                    code: .timedOut,
+                    reason: """
+                        Gave up reconnecting after \(attempts) attempts; \
+                        observed=\(state); counters=\(counters); diagnostics=\(recorded)
+                        """
+                )
+            }
+            try await Task.sleep(for: .milliseconds(250))
+        }
     }
 
     private func waitForState(
