@@ -132,23 +132,19 @@ test("cold semver consumer bounds SwiftPM build parallelism", () => {
 test("G4 runtime filters are disjoint and use their owning Swift packages", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
   const node = id => document.nodes.find(candidate => candidate.id === id);
-  const hostNodes = [node("g4-runtime-definition"), node("g4-host-runtime"), node("g4-runtime-concurrency")];
-  const hostTests = [
-    "mqttUUIDFormattingPreservesAllBytes", "identityStartupTopicIsFiltered", "builderEndpointProvenance",
-    "builderFinishesHandlers", "rejectsInvalidNamespaceBytes", "definitionBoundsNamespaceForGeneratedTopics",
-    "definitionBoundsEventStreams", "failedModuleRegistrationIsAtomic", "nestedDuplicateModuleKeyIsAtomic", "duplicateModuleKeyIsAtomic", "rejectsBeforeStart",
-    "acceptsLocalOperation", "callOperationNameReachesTransportAction", "channelIdentifierReachesTransportAction",
-    "multiActionDispatchReservationIsAtomic", "advertiseVariantsDoNotDuplicateRuntimeEvents", "channelRejectsMissingIdentifier",
-    "defaultRequestUsesMonotonicClock", "unlimitedDiscoverCanBeCanceled", "rejectsInvalidCallOperationNames",
-    "rejectsInvalidResponderOperationNames", "rejectsNonCallOperationFilters", "advertiseSelectorMatchesPayloadObjectType",
-    "lifecycleOrdering", "postStartTransportFailureEntersReconnect", "queuesOfflineOneWayPublication", "stopDrainsOutboundPump",
-  ];
-
-  for (const testName of hostTests) {
-    assert.equal(hostNodes.filter(candidate => candidate.filter.includes(testName)).length, 1, `${testName} must have one G4 owner`);
+  // The host runtime node claims whole suites rather than individual test
+  // names, so a test added to one of these suites runs without a manifest
+  // edit. Enumerating names here as well as in the manifest was the failure
+  // mode this replaced: 27 runtime tests were absent from both lists and so
+  // never executed, while every check still reported green.
+  const hostRuntime = node("g4-host-runtime");
+  for (const suite of ["AxolotyRuntimeTests", "AxolotyRuntimeIoTests", "RuntimeExecutorIoTests", "RuntimeTypedIoStateTests"]) {
+    assert.ok(hostRuntime.filter.includes(suite), `${suite} must be claimed by g4-host-runtime`);
   }
-  assert.equal(new Set(hostNodes.map(candidate => candidate.filter)).size, hostNodes.length);
-  assert.equal(hostNodes.some(candidate => candidate.filter.includes("AxolotyStaticRuntimeTests")), false);
+  // Suite names are capitalised and test names are not, so a lower-case
+  // alternative means someone has started enumerating tests again.
+  assert.doesNotMatch(hostRuntime.filter, /\|[a-z]/, "g4-host-runtime must filter by suite, not by test name");
+  assert.equal(hostRuntime.filter.includes("AxolotyStaticRuntimeTests"), false);
 
   const packageAssertions = [
     ["g4-protocol-lifecycle", "Packages/AxolotyProtocol", "ProtocolFoundationTests|ProtocolProcessorTests"],

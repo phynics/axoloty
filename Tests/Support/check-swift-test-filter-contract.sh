@@ -50,3 +50,37 @@ for (const id of ["test-unit", "test-module", "test-fuzz", "test-wire"]) {
 }
 NODE
 )
+
+# Every discovered test must be claimed by some canonical filter.
+#
+# The check above proves each filter still matches at least one test, which
+# catches a stale filter but never a missing one: a test added to an existing
+# suite simply never ran, and every gate stayed green while it happened. That
+# is not hypothetical -- 27 runtime tests and the whole of three IO suites were
+# absent from the manifest and had never executed in CI.
+unclaimed=$(node - "$manifest" "$list_output" <<'NODE'
+const fs = require("node:fs");
+const manifest = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const listing = fs.readFileSync(process.argv[3], "utf8")
+  .split("\n")
+  .map(line => line.trim())
+  .filter(line => line.includes("/") && !line.startsWith("["));
+const filters = manifest.nodes
+  .filter(node => typeof node.filter === "string" && node.filter)
+  .map(node => new RegExp(`(${node.filter})`));
+// Live wire subjects are gated behind WIRE_* environment variables and are
+// driven by the lifecycle shell runners rather than by a tier filter, so they
+// are deliberately unclaimed here.
+const exempt = /^AxolotyLiveWireTests\./;
+const unclaimed = listing.filter(test => !exempt.test(test) && !filters.some(rx => rx.test(test)));
+process.stdout.write(unclaimed.join("\n"));
+NODE
+)
+
+if [ -n "$unclaimed" ]; then
+    echo "error: these tests are claimed by no canonical tier filter and would never run:" >&2
+    printf '%s\n' "$unclaimed" >&2
+    echo "hint: add the owning suite to a node filter in Tests/Support/test-tiers.json" >&2
+    exit 1
+fi
+echo "PASS: every discovered test is claimed by a canonical tier filter"
