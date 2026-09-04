@@ -195,7 +195,7 @@ test("validator requires repository authority tests in the tooling filter", () =
 test("target self-test discovery recognizes shell commands and Node test globs", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-tool-invocations-"));
   const makefile = path.join(directory, "Makefile");
-  fs.writeFileSync(makefile, "test-support:\n\t/workspace/Tests/Support/test-one.sh\n\tnode --test Tests/Support/*.test.mjs\n");
+  fs.writeFileSync(makefile, "test-support:\n\t/workspace/Tests/Support/test-one.sh\n\tnode --test Tests/Support/*.test.mjs\n\t$(call run_container,600) /workspace/Tests/Support/test-two.sh\n");
   const invoked = discoverTargetSelfTests(makefile, [
     "Tests/Support/one.test.mjs",
     "Tests/Support/nested/one.test.mjs",
@@ -205,6 +205,7 @@ test("target self-test discovery recognizes shell commands and Node test globs",
   assert.deepEqual(invoked, new Map([["test-support", new Set([
     "Tests/Support/one.test.mjs",
     "Tests/Support/test-one.sh",
+    "Tests/Support/test-two.sh",
   ])]]));
 });
 
