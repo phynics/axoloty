@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const expectedTiers = new Set(["smoke", "unit", "module", "wire-offline", "wire-live", "manual-macos", "g3-object-model", "g4-runtime", "g5-optional-products", "g6-non-divergence"]);
+const expectedTiers = new Set(["smoke", "unit", "module", "wire-offline", "wire-live", "support", "manual-macos", "g3-object-model", "g4-runtime", "g5-optional-products", "g6-non-divergence"]);
 const networkModes = new Set(["none", "isolated", "isolated-broker", "isolated-containers"]);
 const brokerModes = new Set(["none", "local", "isolated"]);
 const hardwareModes = new Set(["forbidden", "optional", "required"]);
@@ -94,7 +94,7 @@ function recursiveMakeTarget(command) {
   return undefined;
 }
 
-export function discoverTargetSelfTests(makefilePath, selfTests) {
+export function discoverTargetSelfTests(makefilePath, selfTests, tierNodeCommands = new Map()) {
   if (!fs.existsSync(makefilePath)) return new Map();
   const recipes = new Map();
   let target;
@@ -117,6 +117,15 @@ export function discoverTargetSelfTests(makefilePath, selfTests) {
     children.set(name, new Set());
     for (const command of commands) {
       for (const selfTest of selfTests) if (commandInvokesSelfTest(command, selfTest)) direct.get(name).add(selfTest);
+      // A tier alias such as `$(MAKE) test-tier TIER=support` invokes every
+      // node command the manifest tier declares; resolve those commands so
+      // ownership checks keep holding through the indirection.
+      const tierAlias = /^\s*@?\$\(MAKE\)\s+--no-print-directory\s+test-tier\s+TIER="?([A-Za-z0-9_.-]+)"?/.exec(command);
+      if (tierAlias) {
+        for (const nodeCommand of tierNodeCommands.get(tierAlias[1]) ?? []) {
+          for (const selfTest of selfTests) if (commandInvokesSelfTest(nodeCommand, selfTest)) direct.get(name).add(selfTest);
+        }
+      }
       const child = recursiveMakeTarget(command);
       if (child) children.get(name).add(child);
     }
@@ -244,6 +253,7 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
     "test-wire": "wire-offline",
     "test-unit": "unit",
     "test-module": "module",
+    "test-support": "support",
   };
   for (const [target, planName] of Object.entries(makeAliases)) {
     const tier = document.tiers.find(candidate => candidate.makeTarget === target);
@@ -364,6 +374,16 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
   return errors;
 }
 
+export function tierNodeCommandsFrom(document) {
+  return new Map((document?.tiers ?? [])
+    .filter(tier => tier && typeof tier === "object" && Array.isArray(tier.nodes))
+    .map(tier => [tier.id, tier.nodes.flatMap(nodeId => {
+      const node = (document?.nodes ?? []).find(candidate => candidate?.id === nodeId);
+      if (!node?.command) return [];
+      return [[node.command.executable ?? "", ...(node.command.arguments ?? [])].join(" ")];
+    })]));
+}
+
 export function main(argumentsArray = process.argv.slice(2)) {
   if (argumentsArray.length > 1) { console.error("usage: validate-test-tiers.mjs [config-path]"); return 1; }
   const config = path.resolve(argumentsArray[0] ?? path.join(root, "Tests/Support/test-tiers.json"));
@@ -380,10 +400,11 @@ export function main(argumentsArray = process.argv.slice(2)) {
     const configuredSelfTests = Array.isArray(document?.selfTests)
       ? document.selfTests.flatMap(entry => typeof entry?.path === "string" ? [entry.path] : [])
       : [];
+    const tierNodeCommands = tierNodeCommandsFrom(document);
     const errors = validate(document, {
       makeTargets: parseMakeTargets(path.join(root, "Makefile")),
       discoveredSelfTests: discoverSelfTests(path.join(root, "Tests")),
-      invokedSelfTests: discoverTargetSelfTests(path.join(root, "Makefile"), configuredSelfTests),
+      invokedSelfTests: discoverTargetSelfTests(path.join(root, "Makefile"), configuredSelfTests, tierNodeCommands),
       exists: relative => fs.existsSync(path.join(root, relative)),
     });
     if (errors.length) { for (const error of errors) console.error(`test-tier configuration error: ${error}`); return 1; }
