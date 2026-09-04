@@ -194,7 +194,7 @@ private func nextEmbeddedHostValue(
         let diagnostics = await runtime.diagnosticsSnapshot()
         throw AxolotyError.runtime(
             code: .timedOut,
-            reason: "Timed out waiting for (label); state=\(state); diagnostics=\(diagnostics); cause=\(error)"
+            reason: "Timed out waiting for \(label); state=\(state); diagnostics=\(diagnostics); cause=\(error)"
         )
     }
 }
