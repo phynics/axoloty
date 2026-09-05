@@ -280,8 +280,10 @@ release-fixture-bundle: image
 		AXOLOTY_GIT_COMMIT="$$(git rev-parse HEAD)"; \
 		if test -z "$$(git status --porcelain)"; then AXOLOTY_GIT_CLEAN=true; else AXOLOTY_GIT_CLEAN=false; fi; \
 		export AXOLOTY_IMAGE_IDENTITY AXOLOTY_GIT_COMMIT AXOLOTY_GIT_CLEAN; \
+		container_env="$$(sh Tests/Support/tool-container-env.sh release-fixture-bundle)" || exit 1; \
+		test -n "$$container_env" || { echo 'release-fixture-bundle: empty container env allowlist' >&2; exit 1; }; \
 		$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='release fixture-bundle' AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS=$(AXOLOTY_RELEASE_TIMEOUT_SECONDS) \
-		AXOLOTY_TOOL_CONTAINER_ENV_VARS="$$(sh Tests/Support/tool-container-env.sh release-fixture-bundle)" \
+			AXOLOTY_TOOL_CONTAINER_ENV_VARS="$$container_env" \
 			AXOLOTY_IMAGE_IDENTITY="$$AXOLOTY_IMAGE_IDENTITY" AXOLOTY_GIT_COMMIT="$$AXOLOTY_GIT_COMMIT" \
 			AXOLOTY_GIT_CLEAN="$$AXOLOTY_GIT_CLEAN" AXOLOTY_CONSUMER_REPOSITORY_URL="$(AXOLOTY_CONSUMER_REPOSITORY_URL)" \
 			AXOLOTY_CONSUMER_VERSION="$(AXOLOTY_CONSUMER_VERSION)" AXOLOTY_CONSUMER_LOCAL="$(AXOLOTY_CONSUMER_LOCAL)" \
@@ -292,8 +294,10 @@ checkpoint:
 		AXOLOTY_GIT_TREE="$$(git rev-parse HEAD^{tree})"; \
 		if test -z "$$(git status --porcelain)"; then AXOLOTY_GIT_CLEAN=true; else AXOLOTY_GIT_CLEAN=false; fi; \
 		export AXOLOTY_GIT_COMMIT AXOLOTY_GIT_TREE AXOLOTY_GIT_CLEAN; \
+		container_env="$$(sh Tests/Support/tool-container-env.sh release-checkpoint)" || exit 1; \
+		test -n "$$container_env" || { echo 'release-checkpoint: empty container env allowlist' >&2; exit 1; }; \
 		$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='release checkpoint' AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS=$(AXOLOTY_RELEASE_TIMEOUT_SECONDS) \
-		AXOLOTY_TOOL_CONTAINER_ENV_VARS="$$(sh Tests/Support/tool-container-env.sh release-checkpoint)" \
+			AXOLOTY_TOOL_CONTAINER_ENV_VARS="$$container_env" \
 			AXOLOTY_GIT_COMMIT="$$AXOLOTY_GIT_COMMIT" AXOLOTY_GIT_TREE="$$AXOLOTY_GIT_TREE" AXOLOTY_GIT_CLEAN="$$AXOLOTY_GIT_CLEAN" \
 			AXOLOTY_EVIDENCE_DIR="$(AXOLOTY_EVIDENCE_DIR)" AXOLOTY_REPOSITORY="$(AXOLOTY_REPOSITORY)" AXOLOTY_G6_REQUIRE_SOURCE_RECEIPTS="$(AXOLOTY_G6_REQUIRE_SOURCE_RECEIPTS)" AXOLOTY_G6_HOST_RECEIPT="$(AXOLOTY_G6_HOST_RECEIPT)" AXOLOTY_G6_EMBEDDED_RECEIPT="$(AXOLOTY_G6_EMBEDDED_RECEIPT)" AXOLOTY_G6_WIRE_EVIDENCE="$(AXOLOTY_G6_WIRE_EVIDENCE)" \
 			AXOLOTY_CONSUMER_REPOSITORY_URL="$(AXOLOTY_CONSUMER_REPOSITORY_URL)" AXOLOTY_CONSUMER_VERSION="$(AXOLOTY_CONSUMER_VERSION)" \
@@ -304,9 +308,11 @@ checkpoint-hardware:
 		AXOLOTY_GIT_TREE="$$(git rev-parse HEAD^{tree})"; \
 		if test -z "$$(git status --porcelain)"; then AXOLOTY_GIT_CLEAN=true; else AXOLOTY_GIT_CLEAN=false; fi; \
 		export AXOLOTY_GIT_COMMIT AXOLOTY_GIT_TREE AXOLOTY_GIT_CLEAN; \
+		container_env="$$(sh Tests/Support/tool-container-env.sh release-checkpoint-hardware)" || exit 1; \
+		test -n "$$container_env" || { echo 'release-checkpoint-hardware: empty container env allowlist' >&2; exit 1; }; \
 		$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='release checkpoint-hardware' AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS=$(AXOLOTY_RELEASE_TIMEOUT_SECONDS) \
 			AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES="$${AXOLOTY_DEVICE:-/dev/ttyACM0}" \
-		AXOLOTY_TOOL_CONTAINER_ENV_VARS="$$(sh Tests/Support/tool-container-env.sh release-checkpoint-hardware)" \
+			AXOLOTY_TOOL_CONTAINER_ENV_VARS="$$container_env" \
 			AXOLOTY_GIT_COMMIT="$$AXOLOTY_GIT_COMMIT" AXOLOTY_GIT_TREE="$$AXOLOTY_GIT_TREE" AXOLOTY_GIT_CLEAN="$$AXOLOTY_GIT_CLEAN" \
 			AXOLOTY_EVIDENCE_DIR="$(AXOLOTY_EVIDENCE_DIR)" AXOLOTY_G6_RESOURCE_EVIDENCE="$(AXOLOTY_G6_RESOURCE_EVIDENCE)" AXOLOTY_REPOSITORY="$(AXOLOTY_REPOSITORY)" \
 			AXOLOTY_DEVICE="$${AXOLOTY_DEVICE:-/dev/ttyACM0}"
@@ -502,8 +508,11 @@ ci: ci-preflight
 shell: image
 	CONTAINER_COMMAND_TIMEOUT_SECONDS=0 CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" .devcontainer/run.sh bash
 
+# run.sh forwards only the names listed in CONTAINER_ENV_VARS, so the
+# hosting base path must be allowlisted, not merely exported.
 docs: resolve
-	DOC_HOSTING_BASE_PATH="$(DOC_HOSTING_BASE_PATH)" $(call run_container,$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)) sh .github/scripts/build-docs.sh
+	DOC_HOSTING_BASE_PATH="$(DOC_HOSTING_BASE_PATH)" CONTAINER_ENV_VARS=DOC_HOSTING_BASE_PATH \
+		$(call run_container,$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)) sh .github/scripts/build-docs.sh
 	@echo "docs: mirrored .build/docc -> .build-output/docc (repo-local, survives reboot)"
 
 lint: image

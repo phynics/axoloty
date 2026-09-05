@@ -226,3 +226,39 @@ test("host consumer journey stays synchronized across source and documentation",
   assert.equal(readme, fixture, "README host example must match the compiled consumer fixture");
   assert.equal(docc, fixture, "DocC host example must match the compiled consumer fixture");
 });
+
+test("docs generation forwards the hosting base path across the container boundary", () => {
+  // run.sh forwards only names listed in CONTAINER_ENV_VARS, so exporting
+  // DOC_HOSTING_BASE_PATH on the recipe line is not enough on its own.
+  const target = recipe(fs.readFileSync("Makefile", "utf8"), "docs");
+  assert.match(target, /DOC_HOSTING_BASE_PATH="\$\(DOC_HOSTING_BASE_PATH\)"/);
+  assert.match(target, /CONTAINER_ENV_VARS=[^\n]*\bDOC_HOSTING_BASE_PATH\b/);
+
+  const script = fs.readFileSync(".github/scripts/build-docs.sh", "utf8");
+  assert.match(script, /--hosting-base-path \$\{DOC_HOSTING_BASE_PATH\}/);
+  // The prepared renderer is only used when DocC is pointed at it.
+  assert.match(script, /prepare-docc-renderer\.sh \.build\/docc-renderer/);
+  assert.match(script, /DOCC_HTML_DIR=\/workspace\/\.build\/docc-renderer/);
+});
+
+test("release targets fail closed when the container env allowlist is unavailable", () => {
+  const makefile = fs.readFileSync("Makefile", "utf8");
+  const helper = "Tests/Support/tool-container-env.sh";
+  for (const [target, command] of [
+    ["release-fixture-bundle", "release-fixture-bundle"],
+    ["checkpoint", "release-checkpoint"],
+    ["checkpoint-hardware", "release-checkpoint-hardware"],
+  ]) {
+    const target_recipe = recipe(makefile, target);
+    // The helper runs node on the host; an unchecked command substitution
+    // would yield an empty allowlist and still run the release.
+    assert.match(target_recipe, new RegExp(`container_env="\\$\\$\\(sh ${helper} ${command}\\)" \\|\\| exit 1`));
+    assert.match(target_recipe, /test -n "\$\$container_env" \|\| \{ echo/);
+    assert.match(target_recipe, /AXOLOTY_TOOL_CONTAINER_ENV_VARS="\$\$container_env"/);
+  }
+
+  const missing = spawnSync("sh", [helper, "release-unknown"], { encoding: "utf8" });
+  assert.equal(missing.status, 1, missing.stderr);
+  assert.match(missing.stderr, /no allowlist for release-unknown/);
+  assert.equal(missing.stdout, "");
+});

@@ -14,7 +14,10 @@ if [ -n "${DOC_HOSTING_BASE_PATH:-}" ]; then
 fi
 
 # swift package --cache-path --disable-automatic-resolution mirrors the
-# make-level SWIFT_LOCKED_ARGS contract.
+# make-level SWIFT_LOCKED_ARGS contract. DOCC_HTML_DIR points DocC at the
+# renderer prepared above; without it the render silently falls back to the
+# toolchain default and the preparation step is dead work.
+DOCC_HTML_DIR=/workspace/.build/docc-renderer \
 swift package --cache-path /workspace/.swiftpm-cache --disable-automatic-resolution generate-documentation --target Axoloty \
 	--disable-indexing \
 	--transform-for-static-hosting \
