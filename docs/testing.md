@@ -41,7 +41,7 @@ never run it. It does not invoke Swift; run it through
 execution must always use the root Makefile and Podman.
 
 The required G3 object-model gates include the portable package graph and
-`g3-object-boundary`. `Tests/Support/check-axoloty-object-boundary.sh`
+`g3-object-boundary`. `Tests/Support/checks/check-axoloty-object-boundary.sh`
 checks the production packages and their Embedded Swift source inclusion; its
 paired `test-check-axoloty-object-boundary.sh` uses a synthetic fixture to prove that
 Foundation, MQTT/NIO, logging, actors/controllers/lifecycle, growable

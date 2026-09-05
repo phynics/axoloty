@@ -39,7 +39,7 @@ struct AxolotyHardwareCommands: Sendable {
     func run(_ command: AxolotyHardwareCommand) -> AxolotyCommandResult {
         let selectedDevice = command.device ?? environment["AXOLOTY_DEVICE"] ?? "/dev/ttyACM0"
         let plan = AxolotyCommandPlan(
-            executable: "Tests/Support/embedded-swift-test.sh",
+            executable: "Tests/Support/embedded/embedded-swift-test.sh",
             environment: ["EMBEDDED_DEVICE": selectedDevice],
             timeoutSeconds: 10 * 60
         )

@@ -25,13 +25,13 @@ set(AXOLOTY_SWIFT_SOURCES
 )
 set(AXOLOTY_CORPUS_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/GeneratedCorpus.swift")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    ${AXOLOTY_ROOT}/Tests/Support/generate-embedded-corpus.mjs
+    ${AXOLOTY_ROOT}/Tests/Support/embedded/generate-embedded-corpus.mjs
     ${AXOLOTY_ROOT}/Benchmarks/Corpus/manifest.json
     ${AXOLOTY_ROOT}/Benchmarks/Corpus/payloads/*.json
 )
 execute_process(
     COMMAND node
-        ${AXOLOTY_ROOT}/Tests/Support/generate-embedded-corpus.mjs
+        ${AXOLOTY_ROOT}/Tests/Support/embedded/generate-embedded-corpus.mjs
         ${AXOLOTY_ROOT}/Benchmarks/Corpus/manifest.json
         ${AXOLOTY_CORPUS_SOURCE}
     RESULT_VARIABLE AXOLOTY_CORPUS_GENERATION_RESULT

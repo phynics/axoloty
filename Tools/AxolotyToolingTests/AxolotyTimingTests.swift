@@ -176,7 +176,7 @@ func timingRunnerBuildsEightSerialHardwareFreePlansWithIsolatedScratch() throws 
     ])
 
     let embeddedBuild = try #require(runner.commands.first { $0.environment["AXOLOTY_TIMING_SCENARIO"] == "embedded-build" })
-    #expect(embeddedBuild.executable == "Tests/Support/build-embedded-swift.sh")
+    #expect(embeddedBuild.executable == "Tests/Support/embedded/build-embedded-swift.sh")
     #expect(embeddedBuild.arguments.isEmpty)
     #expect(embeddedBuild.executionContext == .project)
     #expect(embeddedBuild.environment["EMBEDDED_BUILD_DIR"]?.hasSuffix("/embedded-build") == true)
@@ -184,7 +184,7 @@ func timingRunnerBuildsEightSerialHardwareFreePlansWithIsolatedScratch() throws 
     #expect(embeddedBuild.environment["AXOLOTY_TIMING_EVIDENCE"] == "1")
 
     let linker = try #require(runner.commands.first { $0.environment["AXOLOTY_TIMING_SCENARIO"] == "linker-validation" })
-    #expect(linker.executable == "Tests/Support/check-embedded-swift-linker.sh")
+    #expect(linker.executable == "Tests/Support/checks/check-embedded-swift-linker.sh")
     #expect(linker.arguments.isEmpty)
     #expect(linker.executionContext == .project)
     #expect(linker.environment["AXOLOTY_EMBEDDED_LINKER_BUILD_DIR"]?.hasSuffix("/linker-validation") == true)

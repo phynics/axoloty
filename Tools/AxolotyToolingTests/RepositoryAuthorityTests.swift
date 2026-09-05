@@ -274,7 +274,7 @@ private func makeAuthorityFixture(
         "README.md": "# Axoloty\n.package(url: \"https://example.invalid\", from: \"\(version)\")\n",
         "Source/Axoloty.docc/GettingStarted.md": "# Getting Started\n.package(url: \"https://example.invalid\", from: \"\(version)\")\n",
         "Makefile": "AXOLOTY_CONSUMER_VERSION ?= \(makefileVersion ?? version)\n",
-        "Tests/Support/check-axoloty-semver-consumer.sh": "version=${AXOLOTY_CONSUMER_VERSION:-\(version)}\n",
+        "Tests/Support/checks/check-axoloty-semver-consumer.sh": "version=${AXOLOTY_CONSUMER_VERSION:-\(version)}\n",
         "Tools/AxolotyTooling/AxolotyCommandDispatcher.swift": "private static let version = \"\(version)\"\n",
         "Tools/AxolotyInspectorCore/InspectorArgumentParser.swift": "public static let version = \"\(version)\"\n",
         "Tools/AxolotyToolingTests/AxolotyCommandDispatcherTests.swift": "#expect(result.standardOutput == \"axoloty-tool \(version)\")\n",

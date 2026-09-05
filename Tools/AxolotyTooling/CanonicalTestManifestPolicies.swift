@@ -45,7 +45,7 @@ public struct AxolotyArtifactContract: Codable, Equatable, Sendable {
 
 /// Container environment allowlists for axoloty-tool release commands,
 /// keyed by tool command identifier. The make release targets consult the
-/// manifest through Tests/Support/tool-container-env.sh; the tier
+/// manifest through Tests/Support/lib/tool-container-env.sh; the tier
 /// validator enforces the section's shape. Decodes and encodes as the
 /// keyed dictionary itself, not as a wrapper object.
 public struct AxolotyToolContainerEnv: Codable, Equatable, Sendable {

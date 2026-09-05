@@ -7,9 +7,9 @@ publishes an `AxolotyWire` product for consumers that already use the root
 package. The standalone `Packages/AxolotyWire` package is the supported
 acquisition boundary when independent package resolution is required.
 
-`Tests/Support/check-axoloty-wire-distribution.sh` validates both modes by
+`Tests/Support/checks/check-axoloty-wire-distribution.sh` validates both modes by
 checking resolution separately from target build/link/runtime behavior.
-`Tests/Support/check-axoloty-semver-consumer.sh` additionally validates the
+`Tests/Support/checks/check-axoloty-semver-consumer.sh` additionally validates the
 published root-package product topology with a `from:` semantic-version
 requirement. By default, that gate creates a temporary bare `file://` remote
 and synthetic semver tag so pre-release checkpoints test the stable version

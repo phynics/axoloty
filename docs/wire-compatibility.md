@@ -228,7 +228,7 @@ or carry a reviewed exemption before merge, enforced by the repository's
 required `Live CoatyJS compatibility gate` check (issue #457).
 
 **Protocol-affecting paths** (authoritative list in
-`Tests/Support/classify-wire-change.mjs`, `PROTOCOL_AFFECTING`):
+`Tests/Support/wire/classify-wire-change.mjs`, `PROTOCOL_AFFECTING`):
 
 - `Packages/AxolotyWire/**` — AxolotyWire codec, routing, and package-owned tests.
 - `Source/**` — host wire codecs, events, core types, IO routing, SensorThings.
