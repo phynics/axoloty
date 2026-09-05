@@ -79,11 +79,10 @@ struct AxolotyCheckCommands: Sendable {
     private func planResult() -> AxolotyCommandResult {
         do {
             let resolver = try planResolver.get()
-            let plan = try resolver.resolve(.named(
-                .offline,
+            let plan = try resolver.resolve(.tier(
+                name: CanonicalTier.ci.rawValue,
                 ci: false,
-                platform: AxolotyCheckPlan.currentPlatform,
-                requested: nil
+                platform: AxolotyCheckPlan.currentPlatform
             ))
             return try AxolotyCommandFamilySupport.jsonResult(plan)
         } catch {
@@ -97,8 +96,8 @@ struct AxolotyCheckCommands: Sendable {
     private func checkResult(requested: [String]? = nil) -> AxolotyCommandResult {
         do {
             let resolver = try planResolver.get()
-            let plan = try resolver.resolve(.named(
-                .offline,
+            let plan = try resolver.resolve(.tier(
+                name: CanonicalTier.ci.rawValue,
                 ci: false,
                 platform: AxolotyCheckPlan.currentPlatform,
                 requested: requested
@@ -130,11 +129,10 @@ struct AxolotyCheckCommands: Sendable {
     private func verifyResult(ci: Bool) -> AxolotyCommandResult {
         do {
             let resolver = try planResolver.get()
-            let plan = try resolver.resolve(.named(
-                .verify,
+            let plan = try resolver.resolve(.tier(
+                name: CanonicalTier.ci.rawValue,
                 ci: ci,
-                platform: AxolotyCheckPlan.currentPlatform,
-                requested: nil
+                platform: AxolotyCheckPlan.currentPlatform
             ))
             return execute(plan: plan, writeVerificationReport: ci)
         } catch {

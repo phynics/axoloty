@@ -33,10 +33,11 @@ target. Validate the contract with:
 node Tests/Support/validate-test-tiers.mjs
 ```
 
-The validator checks tier metadata, resolves every `makeTarget` and self-test
-owner against the real Makefile targets, and fails if a maintained self-test
-is unmapped or owned by more than one target. It does not invoke Swift; run it
-through `make test-support` for the standard Makefile path. Build and test
+The validator checks category metadata and resolves every self-test against
+the nodes of the category that owns it, failing if a maintained self-test is
+unmapped, owned by more than one category, or owned by a category whose nodes
+never run it. It does not invoke Swift; run it through
+`make test-tier TIER=ci` for the standard Makefile path. Build and test
 execution must always use the root Makefile and Podman.
 
 The required G3 object-model gates include the portable package graph and
@@ -134,7 +135,7 @@ allocation growth, deterministic edit/read behavior, sanitizer results, and
 release size/timing under `.testing/g3-object-model/<candidate-sha>/`.
 
 G4 migration is represented by the optional `g4-runtime` tier. Run
-`make test-tier TIER=g4-runtime` while developing the replacement runtime.
+`make test-one FILTER=g4-runtime` while developing the replacement runtime.
 `g4-runtime-package-boundary` and `g4-runtime-consumer-boundary` are explicitly
 deferred until the host `AxolotyRuntime` source seam and
 `AxolotyStaticRuntime` package root exist. Once those seams exist, the same nodes reject inherited
@@ -144,43 +145,52 @@ pass is a migration-state report, not evidence that G4 runtime replacement is
 complete. The existing inspector/MCP roots are explicitly listed as historical
 consumers until the host transport adapter and typed event projection land;
 new examples or consumer roots are not covered by that allowlist and fail the
-boundary immediately. The tier also runs disjoint named slices of the host
-runtime tests, then runs the protocol and static-runtime tests through their
-own package manifests; a successful filtered process must therefore exercise a
-real test target rather than a root-package zero-test selection. The tier
+boundary immediately. The tier also runs the host runtime suite whole, then
+runs the protocol and static-runtime tests through their own package
+manifests; a successful filtered process must therefore exercise a real test
+target rather than a root-package zero-test selection. A gate selects a
+module, suite, or file and never a hand-listed set of test methods, because a
+method list stops covering tests added to that suite afterwards; the tier
+validator rejects the method-list form. The tier
 becomes a strict migration gate as those historical roots are removed from the
 allowlist.
 
-## Command-to-tier map
+## The four test categories
 
-Tiers with a direct Make target record it in the contract. The manual macOS
-oracle remains host-specific. Harness self-tests live in `make test-support`,
-separate from protocol-scenario execution.
+A category says what a run needs, and that is the only axis. Every node in the
+manifest belongs to exactly one narrower category and to `release`.
 
-| Tier | Make target | Runs Swift? | Notes |
-|---|---|:---:|---|
-| Smoke | `make build` | yes | Proves the package compiles and links |
-| Unit | `make test-unit` | yes | Portable object-model predicates and wire value semantics |
-| Module | `make test-module` | yes | Portable topic, wire, protocol, and Coaty model module tests |
-| G3 boundary | `axoloty-tool` manifest node `g3-object-boundary` | no | Portable object-model dependency and Embedded Swift source-inclusion authority check |
-| G4 migration | `make test-tier TIER=g4-runtime` | yes | Replacement-runtime boundaries plus disjoint host, protocol-package, and static-runtime test slices; strict once G4 roots exist |
-| Wire offline | `make test-wire` | yes | Maintained lifecycle compatibility scenario contracts; no broker |
-| Wire live | `make test-wire-live` | yes | Live CoatyJS interop (host-run containers) |
-| Harness self-tests | `make test-support` | no | Capture/verifier tools, tier validation |
+| Category | Command | Needs | Runs |
+|---|---|---|---|
+| `ci` | `make test-tier TIER=ci` | The pinned container | Everything that needs no broker infrastructure and no attached board. Every pull request. |
+| `wire` | `make test-tier TIER=wire` | Containers, a broker, the CoatyJS image | Live CoatyJS interoperability, with the host runtime bridge. |
+| `embedded` | `make test-tier TIER=embedded` | An attached ESP32-C6 | Checks that need real hardware. |
+| `release` | `make test-tier TIER=release` | Whatever the host has | Every test the host can run: `ci`, `wire`, `embedded`, the Apple-host oracle, and the release consumer checks. |
 
-Use `make verify` for the ordinary aggregate. New execution policy lives in the
-manifest, not in Make recipes or shell front controllers.
+`make verify` runs the `ci` category, and is the ordinary pre-PR command.
+`make test-one FILTER=...` runs one bounded suite or filter. There are no
+per-subject Make targets: a single suite is reached through `test-one`, and a
+group of them through its category. `make explain TIER=...` prints a
+category's commands, policies, locks, and artifacts without executing
+anything.
 
-## Test tiers
+Execution policy lives in the manifest, not in Make recipes or shell front
+controllers. The tier validator enforces that `requiredGates` is exactly the
+`ci` category, that `release` contains every other category, that no
+hardware node hides in a hardware-forbidden category, and that every
+self-test is run by some node of the category that owns it.
 
-| Tier | Purpose | Dependencies | Default timeout | Required cadence |
+## Category budgets
+
+| Category | Purpose | Dependencies | Default timeout | Required cadence |
 |---|---|---|---:|---|
-| Smoke | Prove the package builds and its smallest public path loads | Container only | 5 min | Every PR |
-| Unit | Pure functions and value semantics at one type boundary | None beyond test process | 2 min | Every PR |
-| Module | A subsystem through its public/internal module boundary | In-process fakes; broker only when intrinsic | 5 min | Every PR |
-| Wire offline | Golden topics/payloads and capture-tool correctness | Versioned fixtures | 5 min | Every PR |
-| Wire live | Representative Axoloty/CoatyJS interoperability plus CoatyJS reference-wire protocol coverage | Containers, broker, CoatyJS image | 20 min | Protocol-facing PRs (enforced by the `Live CoatyJS compatibility gate`); full run before merge |
-| Manual macOS oracle | Apple-platform API and transport confidence | Supported macOS/Xcode host | 30 min | Release candidates and Apple-specific changes |
+| `ci` | Build, unit, module, offline wire, boundary, and harness self-test coverage | Container only | 60 min | Every PR |
+| `wire` | Representative Axoloty/CoatyJS interoperability plus CoatyJS reference-wire protocol coverage | Containers, broker, CoatyJS image | 60 min | Protocol-facing PRs (enforced by the `Live CoatyJS compatibility gate`); full run before merge |
+| `embedded` | On-device evidence on an attached ESP32-C6 | Hardware | 60 min | Hardware checkpoints |
+| `release` | Everything above plus the Apple-host oracle and release consumer checks | Whatever the host has | 300 min | Release candidates |
+
+The subsections below describe the kinds of test that make up `ci`; they are
+groupings of intent, not separate commands.
 
 ### Smoke
 
@@ -219,10 +229,10 @@ closed.
 The repository currently has no maintained canonical broker-backed integration
 tier. The former `integration-tests` and `logging-global` nodes selected test
 files whose production APIs were removed, so they are retired rather than
-replaced with duplicate or zero-test filters. Use `make test-wire-live` for
+replaced with duplicate or zero-test filters. Use `make test-tier TIER=wire` for
 fresh broker/reference-agent evidence; it owns the broker lifecycle and records
 the required captures and logs. A new broker-backed product contract must add a
-real test target and evidence plan before it becomes a required tier.
+real test target and evidence plan before it joins a required category.
 
 ### Wire compatibility
 

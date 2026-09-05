@@ -81,12 +81,13 @@ private func checkpointManifestFixture() throws -> URL {
     var document = try #require(
         JSONSerialization.jsonObject(with: JSONEncoder().encode(baseline)) as? [String: Any]
     )
-    document["releaseGates"] = []
-    var plans = try #require(document["plans"] as? [String: Any])
-    var checkpoint = try #require(plans["checkpoint"] as? [String: Any])
-    checkpoint["nodes"] = ["resolve"]
-    plans["checkpoint"] = checkpoint
-    document["plans"] = plans
+    let tiers = try #require(document["tiers"] as? [[String: Any]])
+    var release = try #require(tiers.first { ($0["id"] as? String) == "release" })
+    release["nodes"] = ["resolve"]
+    // Only the release category remains, so releaseGates -- derived as every
+    // other category -- is empty and the checkpoint runs one command.
+    document["tiers"] = [release]
+    document["requiredGates"] = []
 
     let directory = FileManager.default.temporaryDirectory
         .appending(path: "axoloty-checkpoint-fixture-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -100,7 +101,6 @@ private func checkpointManifestFixture() throws -> URL {
 func typedInvocationParserClassifiesReleaseCommandsAndEnvironmentFallbacks() {
     let parser = AxolotyCommandParser(environment: ["FILTER": "FallbackSuite", "TIER": "unit"])
 
-    #expect(parser.parse(["release", "fixture-bundle"]) == .release(.fixtureBundle))
     #expect(parser.parse(["release", "checkpoint"]) == .release(.checkpoint(hardware: false)))
     #expect(parser.parse(["release", "checkpoint-hardware"]) == .release(.checkpoint(hardware: true)))
     #expect(parser.parse(["test-one"]) == .testOne(filter: "FallbackSuite"))
@@ -151,38 +151,40 @@ func versionCommandPrintsVersion() {
 }
 
 @Test
-func checkPlanPrintsStableJSON() {
+func checkPlanPrintsStableJSON() throws {
     let result = AxolotyCommandDispatcher().run(arguments: ["check", "--plan"])
 
     #expect(result.exitCode == 0)
     #expect(result.standardError.isEmpty)
     let plan = try? JSONDecoder().decode(AxolotyCheckPlan.self, from: Data(result.standardOutput.utf8))
-    var expectedNames = [
-        "resolve", "build", "g2-trace-corpus", "g2-protocol-package", "g2-wire-state", "lint", "test-tooling", "test-inspector-cli", "test-unit", "test-module",
-        "test-wire", "no-anycodable", "no-foundation-wire",
-        "wire-dependencies", "wire-independent-resolution", "wire-distribution", "support-wire-dependencies",
-        "support-wire-resolution", "support-wire-isolation", "support-benchmark-corpus",
-        "support-benchmark-size", "support-benchmark-wire", "support-benchmark-bounds",
-        "support-budget-manifest", "support-node-tests", "support-tier-contract",
-        "support-protocol-package-self-test", "support-object-model-package-self-test",
-        "support-object-model-evidence-self-test", "support-wire-state-self-test",
-        "support-object-boundary-self-test", "no-escaping-borrows",
-        "support-no-escaping-borrows-self-test", "support-g4-package-boundary-self-test",
-        "support-g4-consumer-boundary-self-test", "support-wire-distribution-self-test",
-        "support-benchmark-allocation-self-test", "support-embedded-linker-self-test",
-        "support-embedded-runtime-identity-self-test", "support-package-layout-self-test",
-    ]
-    #if os(Linux)
-    expectedNames += [
-        "support-container", "support-embedded-compile",
-        "support-embedded-smoke", "embedded-toolchain", "embedded-build", "embedded-linker",
-        "g1-bounded-runtime-host", "g1-bounded-runtime-sanitized", "g1-bounded-runtime-embedded",
-        "g3-object-boundary", "g3-object-model-package", "g3-object-model-tests",
-        "g3-object-macros-tests", "g3-coaty-models-tests", "g3-object-model-evidence-host",
-        "g3-object-model-evidence-sanitized", "g3-object-model-evidence-embedded",
-    ]
-    #endif
-    #expect(plan?.nodes.map(\.name) == expectedNames)
+    // The plan is the ci category. Deriving the expectation from the manifest
+    // keeps this honest when a node is added: a literal roster silently
+    // encodes one platform's answer and has to be rewritten every time.
+    let manifest = try #require(try? AxolotyCanonicalTestPlanResolver(
+        environment: ProcessInfo.processInfo.environment
+    ).manifest)
+    let ci = try #require(manifest.tiers.first { $0.id == "ci" })
+    let names = try #require(plan?.nodes.map(\.name))
+
+    #expect(!names.isEmpty)
+    #expect(Set(names).count == names.count, "the plan must not repeat a node")
+    #expect(Set(names).isSubset(of: Set(ci.nodes)), "the plan must not reach outside the ci category")
+    // Ordering is a dependency fact: nothing may run before what it depends on.
+    let position = Dictionary(uniqueKeysWithValues: names.enumerated().map { ($0.element, $0.offset) })
+    for node in manifest.nodes where position[node.id] != nil {
+        for dependency in node.dependencies {
+            if let earlier = position[dependency] {
+                #expect(earlier < position[node.id]!, "\(dependency) must precede \(node.id)")
+            }
+        }
+    }
+    // A category declaring no hardware must never resolve a hardware node.
+    for name in names {
+        #expect(manifest.nodes.first { $0.id == name }?.hardware == AxolotyTestHardwarePolicy.forbidden)
+    }
+    for expected in ["resolve", "build", "lint", "test-tooling", "test-unit", "test-module", "test-wire"] {
+        #expect(names.contains(expected), "\(expected) must be part of the ci category")
+    }
     #expect(plan?.nodes.first(where: { $0.name == "lint" })?.command.arguments == [
         "lint", "--no-cache", "--config", ".swiftlint.yml",
     ])
@@ -198,7 +200,7 @@ func checkPlanPrintsStableJSON() {
 }
 
 @Test
-func g3ObjectModelTierSelectsTheFullAggregate() throws {
+func ciCategorySelectsTheFullObjectModelAggregate() throws {
     let runner = RecordingSequenceRunner()
     let dispatcher = AxolotyCommandDispatcher(
         commandRunner: runner,
@@ -206,7 +208,7 @@ func g3ObjectModelTierSelectsTheFullAggregate() throws {
         environment: projectEnvironment
     )
 
-    let result = dispatcher.run(arguments: ["test-tier", "g3-object-model"])
+    let result = dispatcher.run(arguments: ["test-tier", CanonicalTier.ci.rawValue])
     let manifest = try JSONDecoder().decode(
         AxolotyCheckManifest.self,
         from: Data(result.standardOutput.utf8)
@@ -234,20 +236,24 @@ func canonicalManifestDefinesVerifyRootsAndBoundedTestOne() throws {
     let manifest = resolver.manifest
     #expect(manifest.schemaVersion == 2)
     #expect(manifest.requiredGates.allSatisfy { gate in manifest.nodes.contains { $0.id == gate } })
-    #expect(manifest.ciRequiredGates.allSatisfy { gate in manifest.nodes.contains { $0.id == gate } })
+    // requiredGates is the ci category, and releaseGates is derived from the
+    // declared categories rather than stored beside them.
+    #expect(Set(manifest.requiredGates).isSubset(of: Set(manifest.tiers.first { $0.id == "ci" }?.nodes ?? [])))
+    #expect(manifest.releaseGates == ["ci", "wire", "embedded"])
+    #expect(manifest.toolContainerEnv?.allowlist(for: "release-checkpoint")?.contains("AXOLOTY_GIT_TREE") == true)
+    #expect(manifest.toolContainerEnv?.allowlist(for: "release-checkpoint-hardware")?.contains("AXOLOTY_DEVICE") == true)
+    #expect(manifest.toolContainerEnv?.allowlist(for: "release-unknown") == nil)
     #expect(try resolver.command(.testOne(filter: "suite;touch /tmp/injected")).arguments.last == "suite;touch /tmp/injected")
     #expect(manifest.testOne.timeoutSeconds > 0)
     #expect(try resolver.resolve(.tier(
-        name: "unit",
+        name: CanonicalTier.wire.rawValue,
         ci: false,
         platform: AxolotyCheckPlan.currentPlatform
-    )).deadlineSeconds == 1_800)
-    #expect(try resolver.resolve(.named(
-        .verify,
-        ci: true,
+    )).deadlineSeconds == 3_600)
+    #expect(try resolver.resolve(.tier(name: CanonicalTier.ci.rawValue, ci: true,
         platform: AxolotyCheckPlan.currentPlatform,
         requested: nil
-    )).deadlineSeconds == 4_800)
+    )).deadlineSeconds == 3_600)
 }
 
 @Test
@@ -311,7 +317,16 @@ func checkpointPlanningAndCertificationUseOneManifestSnapshot() throws {
     var document = try #require(
         JSONSerialization.jsonObject(with: JSONEncoder().encode(baseline)) as? [String: Any]
     )
-    document["releaseGates"] = ["smoke"]
+    // releaseGates is every category except release, so a fixture names its
+    // gate by declaring exactly one other category.
+    let tiers = try #require(document["tiers"] as? [[String: Any]])
+    var release = try #require(tiers.first { ($0["id"] as? String) == "release" })
+    var gate = try #require(tiers.first { ($0["id"] as? String) == "ci" })
+    release["nodes"] = ["resolve"]
+    gate["nodes"] = ["resolve"]
+    gate["id"] = "smoke"
+    document["tiers"] = [gate, release]
+    document["requiredGates"] = []
     let directory = FileManager.default.temporaryDirectory
         .appending(path: "axoloty-manifest-snapshot-\(UUID().uuidString)", directoryHint: .isDirectory)
     let override = directory.appending(path: "manifest.json")
@@ -327,12 +342,12 @@ func checkpointPlanningAndCertificationUseOneManifestSnapshot() throws {
         ]) { _, value in value }
     )
 
-    document["releaseGates"] = ["unit"]
-    var plans = try #require(document["plans"] as? [String: Any])
-    var checkpoint = try #require(plans["checkpoint"] as? [String: Any])
-    checkpoint["nodes"] = []
-    plans["checkpoint"] = checkpoint
-    document["plans"] = plans
+    // Rewrite the file after the dispatcher was constructed: a different gate
+    // and nothing to run. The assertions below prove the first snapshot was
+    // the one used for both planning and certification.
+    gate["id"] = "unit"
+    release["nodes"] = []
+    document["tiers"] = [gate, release]
     try JSONSerialization.data(withJSONObject: document, options: [.sortedKeys]).write(to: override)
 
     let result = dispatcher.run(arguments: ["release", "checkpoint"])
@@ -348,9 +363,7 @@ func checkpointPlanningAndCertificationUseOneManifestSnapshot() throws {
 @Test
 func verifyPlanIncludesStaticSupportWithoutRecursiveGates() throws {
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
-    let ordinary = try resolver.resolve(.named(
-        .verify,
-        ci: false,
+    let ordinary = try resolver.resolve(.tier(name: CanonicalTier.ci.rawValue, ci: false,
         platform: AxolotyCheckPlan.currentPlatform,
         requested: nil
     ))
@@ -379,9 +392,9 @@ func canonicalExecutorSerializesIndependentNodes() {
 func explainIsMachineReadableAndHumanReadable() throws {
     let environment = projectEnvironment.merging(["AXOLOTY_OUTPUT": "human"]) { _, value in value }
     let dispatcher = AxolotyCommandDispatcher(environment: environment)
-    let result = dispatcher.run(arguments: ["explain", "unit"])
+    let result = dispatcher.run(arguments: ["explain", CanonicalTier.ci.rawValue])
     #expect(result.exitCode == 0)
-    #expect(result.standardOutput.contains("PLAN unit"))
+    #expect(result.standardOutput.contains("PLAN ci"))
     #expect(result.standardOutput.contains("policy network=none"))
 }
 
@@ -415,7 +428,7 @@ func embeddedDoctorRunsDeviceIndependentEnvironmentCheck() {
 @Test
 func checkPlanDisablesSwiftLintCache() throws {
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
-    let plan = try resolver.resolve(.named(.offline, ci: false, platform: .linux, requested: nil))
+    let plan = try resolver.resolve(.tier(name: CanonicalTier.ci.rawValue, ci: false, platform: .linux, requested: nil))
     let lint = try #require(plan.nodes.first { $0.name == "lint" })
 
     #expect(lint.command.arguments == ["lint", "--no-cache", "--config", ".swiftlint.yml"])
@@ -544,8 +557,6 @@ func checkpointPlanIncludesRequiredCompatibilityNodes() throws {
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
     let plan = try resolver.resolve(.checkpoint(
         hardwareDevice: nil,
-        source: "Tests/AxolotyTests/WireCompatibility/Fixtures",
-        destination: ".testing/fixture-bundle",
         consumerEnvironment: [:],
         platform: AxolotyCheckPlan.currentPlatform
     ))
@@ -558,8 +569,6 @@ func checkpointPlanIncludesRequiredCompatibilityNodes() throws {
 
     let hardwarePlan = try resolver.resolve(.checkpoint(
         hardwareDevice: "/dev/ttyACM0",
-        source: "Tests/AxolotyTests/WireCompatibility/Fixtures",
-        destination: ".testing/fixture-bundle",
         consumerEnvironment: [:],
         platform: AxolotyCheckPlan.currentPlatform
     ))
@@ -583,7 +592,7 @@ func checkpointFailsWhenRequiredReleaseGateHasNoEvidence() throws {
     let manifest = try JSONDecoder().decode(AxolotyCheckpointManifest.self, from: Data(result.standardOutput.utf8))
 
     #expect(result.exitCode == 1)
-    let wireLive = try #require(manifest.releaseGates.first { $0.id == "wire-live" })
+    let wireLive = try #require(manifest.releaseGates.first { $0.id == "wire" })
     #expect(wireLive.result == .skipped)
     #expect(manifest.releaseGates.contains { $0.result == .skipped })
 }
@@ -618,7 +627,7 @@ func checkpointRejectsLegacyGenericExternallyAttestedReleaseGate() throws {
             ]
         ),
         environment: projectEnvironment.merging([
-            "AXOLOTY_ATTESTATION_WIRE_LIVE_PATH": ".testing/wire/manifest.json",
+            "AXOLOTY_ATTESTATION_WIRE_PATH": ".testing/wire/manifest.json",
         ]) { _, value in value }
     )
 
@@ -626,7 +635,7 @@ func checkpointRejectsLegacyGenericExternallyAttestedReleaseGate() throws {
     let manifest = try JSONDecoder().decode(AxolotyCheckpointManifest.self, from: Data(result.standardOutput.utf8))
 
     #expect(result.exitCode == 1)
-    let wireLive = try #require(manifest.releaseGates.first { $0.id == "wire-live" })
+    let wireLive = try #require(manifest.releaseGates.first { $0.id == "wire" })
     #expect(wireLive.result == .failed)
     #expect(wireLive.evidence == ".testing/wire/manifest.json")
 }
@@ -643,7 +652,7 @@ func checkpointRejectsInvalidExternallyAttestedReleaseGate() throws {
             ]
         ),
         environment: projectEnvironment.merging([
-            "AXOLOTY_ATTESTATION_WIRE_LIVE_PATH": ".testing/wire/manifest.json",
+            "AXOLOTY_ATTESTATION_WIRE_PATH": ".testing/wire/manifest.json",
         ]) { _, value in value }
     )
 
@@ -651,7 +660,7 @@ func checkpointRejectsInvalidExternallyAttestedReleaseGate() throws {
     let manifest = try JSONDecoder().decode(AxolotyCheckpointManifest.self, from: Data(result.standardOutput.utf8))
 
     #expect(result.exitCode == 1)
-    let wireLive = try #require(manifest.releaseGates.first { $0.id == "wire-live" })
+    let wireLive = try #require(manifest.releaseGates.first { $0.id == "wire" })
     #expect(wireLive.result == .failed)
 }
 
@@ -661,7 +670,7 @@ func checkpointManifestRecordsAllRequiredReleaseGatesInOrder() throws {
         commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
         integrationRunner: StubIntegrationRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
         environment: projectEnvironment.merging([
-            "AXOLOTY_ATTESTATION_WIRE_LIVE_PATH": ".testing/wire/manifest.json",
+            "AXOLOTY_ATTESTATION_WIRE_PATH": ".testing/wire/manifest.json",
         ]) { _, value in value }
     )
 
@@ -669,10 +678,7 @@ func checkpointManifestRecordsAllRequiredReleaseGatesInOrder() throws {
     let manifest = try JSONDecoder().decode(AxolotyCheckpointManifest.self, from: Data(result.standardOutput.utf8))
 
     #expect(manifest.schemaVersion == 3)
-    #expect(manifest.releaseGates.map(\.id) == [
-        "smoke", "unit", "module", "wire-offline", "wire-live", "g3-object-model", "g4-runtime", "g5-optional-products",
-        "g6-non-divergence",
-    ])
+    #expect(manifest.releaseGates.map(\.id) == ["ci", "wire", "embedded"])
     #expect(manifest.releaseGates.first { $0.id == "integration" } == nil)
 }
 
@@ -695,11 +701,13 @@ func releaseCheckpointUsesTheInjectedExecutorEventSink() {
     let result = dispatcher.run(arguments: ["release", "checkpoint"])
 
     #expect(result.standardError.isEmpty)
+    // The release category declares an expected duration; the plan it replaced
+    // declared none.
     #expect(events.lines == [
-        "[axoloty] event=plan-start\n",
+        "[axoloty] event=plan-start expected=9000.000s\n",
         "[axoloty] event=node-start node=resolve expected=60.000s lease-wait=0.000s\n",
         "[axoloty] event=node-completion node=resolve status=passed elapsed=0.000s expected=60.000s lease-wait=0.000s\n",
-        "[axoloty] event=plan-completion status=passed elapsed=0.000s lease-wait=0.000s output-bytes=0\n",
+        "[axoloty] event=plan-completion status=passed elapsed=0.000s expected=9000.000s lease-wait=0.000s output-bytes=0\n",
     ])
 }
 
@@ -810,25 +818,6 @@ func wireVerifyRunsOnlyItsDependencyClosure() throws {
 }
 
 @Test
-func wireVerifyBundleRunsSemanticAndHashVerification() throws {
-    let runner = RecordingSequenceRunner()
-    let dispatcher = AxolotyCommandDispatcher(
-        commandRunner: runner,
-        fileSystem: StubFileSystem(paths: []),
-        environment: projectEnvironment
-    )
-
-    let result = dispatcher.run(arguments: ["wire", "verify", ".testing/downloaded"])
-    let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
-
-    #expect(result.exitCode == 0)
-    #expect(manifest.results.map(\.name) == ["resolve", "build", "test-wire", "wire-bundle-verify"])
-    #expect(runner.commands.last?.arguments == [
-        "Tests/Support/fixture-bundle.mjs", "verify", ".testing/downloaded",
-    ])
-}
-
-@Test
 func wireCaptureRunsEveryNodeThroughSupportedBridge() throws {
     let clock = ContinuousClock()
     let startedAt = clock.now
@@ -917,9 +906,7 @@ func testOfflineUsesTheCheckPlan() throws {
 
     #expect(result.exitCode == 0)
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: projectEnvironment)
-    let plan = try resolver.resolve(.named(
-        .offline,
-        ci: false,
+    let plan = try resolver.resolve(.tier(name: CanonicalTier.ci.rawValue, ci: false,
         platform: AxolotyCheckPlan.currentPlatform,
         requested: nil
     ))
@@ -982,40 +969,6 @@ func retiredIntegrationCommandDoesNotRunTheInjectedRunner() {
 private struct StubIntegrationRunner: AxolotyIntegrationRunning {
     let result: AxolotyCheckCommandResult
     func run() -> AxolotyCheckCommandResult { result }
-}
-
-@Test
-func releaseSnapshotsGenerateThenVerifyConfiguredBundle() throws {
-    let runner = RecordingSequenceRunner()
-    let dispatcher = AxolotyCommandDispatcher(
-        commandRunner: runner,
-        fileSystem: StubFileSystem(paths: []),
-        environment: [
-            "AXOLOTY_DEVCONTAINER": "1",
-            "AXOLOTY_FIXTURE_BUNDLE_SOURCE": "fixtures",
-            "AXOLOTY_FIXTURE_BUNDLE_OUTPUT": "artifacts",
-            "AXOLOTY_IMAGE_IDENTITY": "sha256:test",
-            "AXOLOTY_GIT_COMMIT": "abc123",
-            "AXOLOTY_GIT_CLEAN": "true",
-            "AXOLOTY_CONSUMER_REPOSITORY_URL": "file:///tmp/axoloty.git",
-            "AXOLOTY_CONSUMER_VERSION": "9.9.9",
-        ]
-    )
-
-    let result = dispatcher.run(arguments: ["release", "fixture-bundle"])
-    let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
-
-    #expect(result.exitCode == 0)
-    #expect(manifest.results.map(\.name) == ["fixture-bundle-generate", "fixture-bundle-verify", "release-semver-consumer"])
-    #expect(runner.commands.map(\.arguments) == [
-        ["Tests/Support/fixture-bundle.mjs", "generate", "fixtures", "artifacts"],
-        ["Tests/Support/fixture-bundle.mjs", "verify", "artifacts"],
-        [],
-    ])
-    #expect(runner.commands.first?.environment["AXOLOTY_IMAGE_IDENTITY"] == "sha256:test")
-    #expect(runner.commands.first?.environment["AXOLOTY_GIT_COMMIT"] == "abc123")
-    #expect(runner.commands.last?.executable == "Tests/Support/check-axoloty-semver-consumer.sh")
-    #expect(runner.commands.last?.environment["AXOLOTY_CONSUMER_VERSION"] == "9.9.9")
 }
 
 private final class RecordingSequenceRunner: AxolotyCheckCommandRunning, @unchecked Sendable {

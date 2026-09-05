@@ -42,11 +42,10 @@ private func certificationManifest(
     return AxolotyCanonicalTestManifest(
         manifestID: "certification-test",
         nodes: [node],
+        // releaseGates is derived from the declared categories, so a fixture
+        // names its gate by declaring a category with that id.
         tiers: gate == nil ? [] : [tier],
-        plans: [:],
         requiredGates: [],
-        ciRequiredGates: [],
-        releaseGates: gate.map { [$0] } ?? [],
         testOne: AxolotyCanonicalTestInterface(
             command: AxolotyCanonicalTestCommand(executable: "true"),
             timeoutSeconds: 1,

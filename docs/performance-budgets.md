@@ -245,14 +245,14 @@ Phase 4 progress until the regression is resolved.
 ## Validation commands
 
 ```text
-make build
+make test-one FILTER=smoke
 make verify
 make benchmark-wire
 make benchmark-wire-allocation
 make benchmark-size
 make benchmark-wire-bounds
 make benchmark-wire-device
-make test-wire test-wire-live
+make test-tier TIER=ci && make test-tier TIER=wire
 sh Tests/Support/check-budget-manifest.sh
 sh Tests/Support/test-check-budget-manifest.sh
 sh Tests/Support/check-benchmark-wire-allocation.sh

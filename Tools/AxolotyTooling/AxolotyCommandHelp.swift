@@ -40,14 +40,12 @@ enum AxolotyCommandHelp {
       test offline         Run the same offline plan as check.
       test tooling         Run offline developer-tool tests and prerequisites.
       test integration     Deprecated; no canonical broker-backed tier is declared.
-      wire verify [BUNDLE] Verify fixtures and an optional bundle without MQTT.
       wire capture         Run live MQTT captures with pinned reference agents.
       embedded build       Cross-compile the ESP32-C6 firmware on Linux.
       embedded doctor      Verify the container's ESP-IDF build environment.
       embedded verify      Build and verify the ESP32-C6 linker contract.
       hardware check       Run or skip the sporadic hardware smoke check.
       hardware require     Require an attached device and run its smoke check.
-      release fixture-bundle  Bundle committed wire fixtures offline (not fresh wire evidence).
       release checkpoint   Run the release checkpoint validation (no hardware).
       release checkpoint-hardware  Run checkpoint with ESP32-C6 smoke test.
          --device PATH      Override AXOLOTY_DEVICE (default: /dev/ttyACM0).

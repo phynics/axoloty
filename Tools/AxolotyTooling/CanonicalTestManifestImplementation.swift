@@ -65,19 +65,25 @@ public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
     /// Tier metadata and roots.
     public let tiers: [AxolotyCanonicalTestTier]
     /// Named plan roots.
-    public let plans: [String: AxolotyCanonicalTestPlanDefinition]
-    /// Required gates that every ordinary verify plan must include.
+    /// Nodes the ci category requires.
     public let requiredGates: [String]
+
+    /// The categories a release needs evidence for: every category except
+    /// `release` itself, which is their union. Derived so the set cannot drift
+    /// from the declared categories.
+    public var releaseGates: [String] {
+        tiers.map(\.id).filter { $0 != "release" }
+    }
     /// Required CI-only gates in addition to ordinary verification.
-    public let ciRequiredGates: [String]
     /// Mandatory release-tier gates the release checkpoint must account for.
-    public let releaseGates: [String]
     /// The reusable single-test command interface.
     public let testOne: AxolotyCanonicalTestInterface
     /// Self-test ownership metadata consumed by the Node validator.
     public let selfTests: [AxolotySelfTestContractEntry]
     /// Shared artifact contract.
     public let artifactContract: AxolotyArtifactContract
+    /// Container environment allowlists for axoloty-tool release commands.
+    public let toolContainerEnv: AxolotyToolContainerEnv?
     /// Shared flake policy.
     public let flakePolicy: AxolotyFlakePolicy
 
@@ -87,26 +93,22 @@ public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
         manifestID: String,
         nodes: [AxolotyCanonicalTestNode],
         tiers: [AxolotyCanonicalTestTier],
-        plans: [String: AxolotyCanonicalTestPlanDefinition],
         requiredGates: [String],
-        ciRequiredGates: [String],
-        releaseGates: [String],
         testOne: AxolotyCanonicalTestInterface,
         selfTests: [AxolotySelfTestContractEntry],
         artifactContract: AxolotyArtifactContract,
-        flakePolicy: AxolotyFlakePolicy
+        flakePolicy: AxolotyFlakePolicy,
+        toolContainerEnv: AxolotyToolContainerEnv? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.manifestID = manifestID
         self.nodes = nodes
         self.tiers = tiers
-        self.plans = plans
         self.requiredGates = requiredGates
-        self.ciRequiredGates = ciRequiredGates
-        self.releaseGates = releaseGates
         self.testOne = testOne
         self.selfTests = selfTests
         self.artifactContract = artifactContract
+        self.toolContainerEnv = toolContainerEnv
         self.flakePolicy = flakePolicy
     }
 }

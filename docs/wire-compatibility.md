@@ -248,7 +248,7 @@ fast path.
 **Gate behavior.** The `Live CoatyJS compatibility gate` job always runs (it is
 a reliable required status check). When a change set contains a
 protocol-affecting path, the gate runs the containerized live CoatyJS capture
-and its verifier (`make test-wire-live`) and requires the resulting captures and
+and its verifier (`make test-tier TIER=wire`) and requires the resulting captures and
 manifest. When no protocol-affecting path changed, the gate fast-paths to a
 pass without the expensive capture.
 

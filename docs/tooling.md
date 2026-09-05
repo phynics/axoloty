@@ -22,7 +22,6 @@ Linux product and ESP-IDF work is containerized:
 make verify
 make axoloty-tool AXOLOTY_TOOL_ARGS='wire verify'
 make hardware-check
-make release-fixture-bundle
 ```
 
 The container image carries a stable `axoloty-tool` launcher at
@@ -62,7 +61,6 @@ plan starts MQTT or accesses hardware.
 | `axoloty-tool measure timing` | no | no | Linux-only cold/warm build evidence |
 | `axoloty-tool hardware check` | no | optional | Run when attached; otherwise structured skip |
 | `axoloty-tool hardware require` | no | required | Explicit device/release gate |
-| `axoloty-tool release fixture-bundle` | no | no | Bundle committed wire fixtures offline (not fresh wire evidence) |
 
 The canonical `g5-optional-products` tier is a hardware-free release gate
 for the bounded host SensorThings source and direct-observation workflows.
@@ -154,27 +152,6 @@ manifest, and verifier logs; otherwise it fast-paths to a pass. The
 waives only the capture. The authoritative path list and exemption convention
 live in `Tests/Support/classify-wire-change.mjs` and
 `docs/wire-compatibility.md`, respectively.
-
-### Fixture bundle (offline, deterministic)
-
-`axoloty-tool release fixture-bundle` copies the reviewed wire captures from
-the committed fixtures into `.testing/fixture-bundle`, records byte hashes,
-scenario and reference-agent metadata, normalization profiles, and
-repository/toolchain/image provenance, then verifies the bundle without MQTT.
-The bundled manifest declares `evidence.type: fixture-bundle`,
-`evidence.mode: offline`, and `evidence.live: false`, so the artifact names
-itself accurately: it proves bundle integrity and byte-exact offline
-reproduction of committed fixtures, not a live capture of current release
-wire behavior.
-
-`AXOLOTY_FIXTURE_BUNDLE_SOURCE` and `AXOLOTY_FIXTURE_BUNDLE_OUTPUT` override
-the source and destination for a release workflow. The bundle is generated
-from fixtures; stable fixtures enter source control only through normal review
-and the compatibility-matrix policy. Pass a persisted or downloaded bundle to
-`axoloty-tool wire verify PATH` to rerun both the Swift semantic fixture
-contract and the bundle's hash/metadata checks. Fixture-bundle output
-overrides must remain below `.testing/` and cannot overlap the source
-captures.
 
 ### Fresh wire evidence (live capture)
 

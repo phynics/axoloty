@@ -204,8 +204,6 @@ public struct AxolotyCommandDispatcher: Sendable {
             return repositoryValidationCommands.run(arguments: arguments)
         case .hardware(let required, let device):
             return hardwareCommands.run(AxolotyHardwareCommand(required: required, device: device))
-        case .wireBundle(let path):
-            return wireCommands.run(.verifyBundle(path: path))
         case .testOne(let filter):
             return checkCommands.run(.testOne(filter: filter))
         case .testTier(let name, let ci):

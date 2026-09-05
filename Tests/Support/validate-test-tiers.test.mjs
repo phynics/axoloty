@@ -6,7 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { discoverSelfTests, discoverTargetSelfTests, parseMakeTargets, validate } from "./validate-test-tiers.mjs";
+import { collectFilterSymbols, discoverSelfTests, discoverTargetSelfTests, expandFilterAlternatives, parseMakeTargets, tierNodeCommandsFrom, validate } from "./validate-test-tiers.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 
@@ -15,7 +15,7 @@ test("checked-in contract covers discovered self-tests", () => {
   const errors = validate(document, {
     makeTargets: parseMakeTargets(path.join(root, "Makefile")),
     discoveredSelfTests: discoverSelfTests(path.join(root, "Tests")),
-    invokedSelfTests: discoverTargetSelfTests(path.join(root, "Makefile"), document.selfTests.map(entry => entry.path)),
+    invokedSelfTests: discoverTargetSelfTests(path.join(root, "Makefile"), document.selfTests.map(entry => entry.path), tierNodeCommandsFrom(document)),
     exists: relative => fs.existsSync(path.join(root, relative)),
   });
   assert.deepEqual(errors, []);
@@ -27,9 +27,8 @@ test("canonical contract contains no retired zero-test gates", () => {
   assert.deepEqual(document.nodes.filter(node => retired.has(node.id)), []);
   assert.equal(document.tiers.some(tier => tier.id === "integration"), false);
   assert.equal(document.requiredGates.some(gate => retired.has(gate)), false);
-  assert.equal(document.releaseGates.includes("integration"), false);
-  for (const plan of ["checkpoint", "checkpoint-hardware"]) {
-    assert.equal(document.plans[plan].nodes.some(node => retired.has(node)), false, plan);
+  for (const tier of document.tiers) {
+    assert.equal(tier.nodes.some(node => retired.has(node)), false, tier.id);
   }
 });
 
@@ -77,9 +76,11 @@ test("G6 public product builds are offline-only", () => {
   assert.equal(build.local, true);
   assert.equal(build.ci, false);
   assert.equal(build.command.environment.AXOLOTY_G6_PRODUCT_BUILD, "1");
-  assert.ok(document.tiers.find(tier => tier.id === "g6-non-divergence").nodes.includes(build.id));
-  assert.ok(document.plans.checkpoint.nodes.includes(build.id));
-  assert.equal(document.plans["checkpoint-hardware"].inherits, "checkpoint");
+  // It belongs to ci -- it needs no infrastructure -- but is local-only, so
+  // the resolver drops it from a CI run and it is not a required gate.
+  assert.ok(document.tiers.find(tier => tier.id === "ci").nodes.includes(build.id));
+  assert.ok(document.tiers.find(tier => tier.id === "release").nodes.includes(build.id));
+  assert.equal(document.requiredGates.includes(build.id), false);
 });
 
 test("validator rejects retired canonical nodes and filters if reintroduced", () => {
@@ -102,6 +103,29 @@ test("validator rejects retired canonical nodes and filters if reintroduced", ()
   assert.ok(errors.includes("logging-global: retired canonical node must not be declared"));
   assert.ok(errors.includes('integration-tests: retired test filter "MQTTNIOClientTests" must not be declared'));
   assert.ok(errors.includes('logging-global: retired test filter "LogManagerTests" must not be declared'));
+});
+
+test("validator enforces the tool container env allowlist contract", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const base = {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  };
+
+  const missingSection = JSON.parse(JSON.stringify(document));
+  delete missingSection.toolContainerEnv;
+  let errors = validate(missingSection, base);
+  assert.ok(errors.includes("toolContainerEnv must be an object keyed by tool command identifier"));
+
+  const badShape = JSON.parse(JSON.stringify(document));
+  badShape.toolContainerEnv["release-checkpoint"] = ["AXOLOTY_OK", "not an identifier"];
+  badShape.toolContainerEnv["release-unknown"] = ["AXOLOTY_X"];
+  delete badShape.toolContainerEnv["release-checkpoint-hardware"];
+  errors = validate(badShape, base);
+  assert.ok(errors.includes('toolContainerEnv release-checkpoint: invalid env name "not an identifier"'));
+  assert.ok(errors.includes("toolContainerEnv release-unknown: unknown tool command identifier"));
+  assert.ok(errors.includes("toolContainerEnv: missing allowlist for release-checkpoint-hardware"));
 });
 
 test("retired make test alias stays removed so no stale integration tier can return", () => {
@@ -129,26 +153,22 @@ test("cold semver consumer bounds SwiftPM build parallelism", () => {
   assert.match(script, /swift build --jobs "\$jobs" --configuration "\$configuration" --target AxolotyConsumer/);
 });
 
-test("G4 runtime filters are disjoint and use their owning Swift packages", () => {
+test("G4 runtime gates select whole suites and their owning Swift packages", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
   const node = id => document.nodes.find(candidate => candidate.id === id);
-  const hostNodes = [node("g4-runtime-definition"), node("g4-host-runtime"), node("g4-runtime-concurrency")];
-  const hostTests = [
-    "mqttUUIDFormattingPreservesAllBytes", "identityStartupTopicIsFiltered", "builderEndpointProvenance",
-    "builderFinishesHandlers", "rejectsInvalidNamespaceBytes", "definitionBoundsNamespaceForGeneratedTopics",
-    "definitionBoundsEventStreams", "failedModuleRegistrationIsAtomic", "nestedDuplicateModuleKeyIsAtomic", "duplicateModuleKeyIsAtomic", "rejectsBeforeStart",
-    "acceptsLocalOperation", "callOperationNameReachesTransportAction", "channelIdentifierReachesTransportAction",
-    "multiActionDispatchReservationIsAtomic", "advertiseVariantsDoNotDuplicateRuntimeEvents", "channelRejectsMissingIdentifier",
-    "defaultRequestUsesMonotonicClock", "unlimitedDiscoverCanBeCanceled", "rejectsInvalidCallOperationNames",
-    "rejectsInvalidResponderOperationNames", "rejectsNonCallOperationFilters", "advertiseSelectorMatchesPayloadObjectType",
-    "lifecycleOrdering", "postStartTransportFailureEntersReconnect", "queuesOfflineOneWayPublication", "stopDrainsOutboundPump",
-  ];
 
-  for (const testName of hostTests) {
-    assert.equal(hostNodes.filter(candidate => candidate.filter.includes(testName)).length, 1, `${testName} must have one G4 owner`);
+  // The host runtime suite was once three gates splitting one suite by a
+  // hand-listed set of method names, which left every test added to the suite
+  // afterwards unowned. One gate now selects the suite itself.
+  const host = node("g4-host-runtime");
+  assert.equal(host.filter, "AxolotyRuntimeTests");
+  assert.equal(host.command.arguments[host.command.arguments.indexOf("--filter") + 1], "AxolotyRuntimeTests");
+  assert.equal(host.dependencies.includes("build"), true);
+  for (const retired of ["g4-runtime-definition", "g4-runtime-concurrency"]) {
+    assert.equal(node(retired), undefined, `${retired} must stay consolidated into g4-host-runtime`);
+    assert.equal(document.requiredGates.includes(retired), false);
   }
-  assert.equal(new Set(hostNodes.map(candidate => candidate.filter)).size, hostNodes.length);
-  assert.equal(hostNodes.some(candidate => candidate.filter.includes("AxolotyStaticRuntimeTests")), false);
+  assert.equal(host.filter.includes("AxolotyStaticRuntimeTests"), false);
 
   const packageAssertions = [
     ["g4-protocol-lifecycle", "Packages/AxolotyProtocol", "ProtocolFoundationTests|ProtocolProcessorTests"],
@@ -195,7 +215,7 @@ test("validator requires repository authority tests in the tooling filter", () =
 test("target self-test discovery recognizes shell commands and Node test globs", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-tool-invocations-"));
   const makefile = path.join(directory, "Makefile");
-  fs.writeFileSync(makefile, "test-support:\n\t/workspace/Tests/Support/test-one.sh\n\tnode --test Tests/Support/*.test.mjs\n");
+  fs.writeFileSync(makefile, "test-support:\n\t/workspace/Tests/Support/test-one.sh\n\tnode --test Tests/Support/*.test.mjs\n\t$(call run_container,600) /workspace/Tests/Support/test-two.sh\n");
   const invoked = discoverTargetSelfTests(makefile, [
     "Tests/Support/one.test.mjs",
     "Tests/Support/nested/one.test.mjs",
@@ -205,6 +225,7 @@ test("target self-test discovery recognizes shell commands and Node test globs",
   assert.deepEqual(invoked, new Map([["test-support", new Set([
     "Tests/Support/one.test.mjs",
     "Tests/Support/test-one.sh",
+    "Tests/Support/test-two.sh",
   ])]]));
 });
 
@@ -260,19 +281,6 @@ test("validator rejects duplicate ownership and unknown targets", () => {
   assert.ok(errors.some(error => error.includes("duplicate ownership")));
 });
 
-test("validator rejects an owned self-test its target does not invoke", () => {
-  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
-  const omitted = "Tests/Support/test-check-benchmark-size.sh";
-  const invokedSelfTests = new Map([["test-support", new Set(document.selfTests.map(entry => entry.path).filter(entry => entry !== omitted))]]);
-  const errors = validate(document, {
-    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
-    discoveredSelfTests: [],
-    invokedSelfTests,
-    exists: () => true,
-  });
-  assert.ok(errors.some(error => error.includes(`${omitted}: makeTarget "test-support" does not invoke it`)));
-});
-
 test("validator requires every maintained self-test in a canonical verify gate", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
   const omitted = "Tests/Support/package-layout.test.mjs";
@@ -286,7 +294,7 @@ test("validator requires every maintained self-test in a canonical verify gate",
     discoveredSelfTests: [],
     exists: () => true,
   });
-  assert.ok(errors.includes(`selfTest ${omitted}: canonical verify has no required gate invoking it`));
+  assert.ok(errors.includes(`selfTest ${omitted}: no required gate invokes it`));
 });
 
 test("validator rejects required-gate metadata weakened with the gate list", () => {
@@ -299,113 +307,6 @@ test("validator rejects required-gate metadata weakened with the gate list", () 
     exists: () => true,
   });
   assert.ok(errors.some(error => error.includes('required node "support-tier-contract" is absent from requiredGates')));
-});
-
-test("validator rejects duplicated verify roots", () => {
-  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
-  document.plans.verify.nodes = ["build"];
-  const errors = validate(document, {
-    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
-    discoveredSelfTests: [],
-    exists: () => true,
-  });
-  assert.ok(errors.some(error => error.includes("verify roots must be derived")));
-});
-
-test("validator rejects a plan without an absolute deadline", () => {
-  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
-  delete document.plans.verify.timeoutSeconds;
-  const errors = validate(document, {
-    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
-    discoveredSelfTests: [],
-    exists: () => true,
-  });
-  assert.ok(errors.includes("plan verify: timeoutSeconds must be a positive integer"));
-});
-
-test("validator enforces the canonical CI plan budget below the job deadline", () => {
-  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
-  document.plans.verify.timeoutSeconds = 5400;
-  const errors = validate(document, {
-    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
-    discoveredSelfTests: [],
-    exists: () => true,
-  });
-  assert.ok(errors.includes("plan verify: timeoutSeconds must be 4800 seconds (80 minutes), below the 90-minute CI job deadline"));
-});
-
-test("validator rejects required release tier absent from releaseGates", () => {
-  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
-  document.releaseGates = document.releaseGates.filter(gate => gate !== "wire-live");
-  const errors = validate(document, {
-    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
-    discoveredSelfTests: [],
-    exists: () => true,
-  });
-  assert.ok(errors.some(error => error.includes('required tier "wire-live" is absent from releaseGates')));
-});
-
-test("validator rejects mandatory release tier omitted from the checkpoint plan", () => {
-  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
-  const objectModelNodes = new Set(document.tiers.find(tier => tier.id === "g3-object-model").nodes);
-  for (const plan of ["checkpoint", "checkpoint-hardware"]) {
-    document.plans[plan].nodes = document.plans[plan].nodes.filter(
-      node => !objectModelNodes.has(node)
-    );
-  }
-  const errors = validate(document, {
-    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
-    discoveredSelfTests: [],
-    exists: () => true,
-  });
-  assert.ok(errors.some(error => error.includes('required release tier "g3-object-model" is not covered by the checkpoint plan')));
-});
-
-test("validator accepts an intentionally attestable wire-live gate", () => {
-  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
-  document.plans.checkpoint.nodes = document.plans.checkpoint.nodes.filter(
-    node => node !== "wire-capture-manifest"
-  );
-  const errors = validate(document, {
-    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
-    discoveredSelfTests: [],
-    exists: () => true,
-  });
-  assert.equal(errors.some(error => error.includes("wire-live")), false);
-});
-
-test("validator resolves checkpoint-hardware inheritance", () => {
-  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
-  document.plans["checkpoint-hardware"].nodes = ["checkpoint-hardware-smoke"];
-  const errors = validate(document, {
-    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
-    discoveredSelfTests: [],
-    exists: () => true,
-  });
-  assert.equal(errors.some(error => error.includes("omits inherited node")), false);
-});
-
-test("validator rejects a hardware plan that stops inheriting checkpoint", () => {
-  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
-  document.plans["checkpoint-hardware"].inherits = "offline";
-  const errors = validate(document, {
-    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
-    discoveredSelfTests: [],
-    exists: () => true,
-  });
-  assert.ok(errors.some(error => error.includes("must inherit checkpoint")));
-});
-
-test("validator rejects checkpoint plan inheritance cycles", () => {
-  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
-  document.plans.offline.inherits = "checkpoint";
-  document.plans.checkpoint.inherits = "offline";
-  const errors = validate(document, {
-    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
-    discoveredSelfTests: [],
-    exists: () => true,
-  });
-  assert.ok(errors.some(error => error.includes("plan inheritance cycle")));
 });
 
 test("validator CLI reports stable selfTests schema errors", t => {
@@ -429,4 +330,124 @@ test("validator CLI reports stable selfTests schema errors", t => {
     assert.match(result.stderr, new RegExp(`test-tier configuration error: ${expected}`), name);
     assert.doesNotMatch(result.stderr, /TypeError|Cannot read properties|\.map is not a function/, name);
   }
+});
+
+test("filter alternatives expand through top-level and grouped alternation", () => {
+  assert.deepEqual(expandFilterAlternatives("A|B"), ["A", "B"]);
+  assert.deepEqual(expandFilterAlternatives("Suite/(a|b)"), ["Suite/a", "Suite/b"]);
+  assert.deepEqual(expandFilterAlternatives("Plain"), ["Plain"]);
+  assert.deepEqual(expandFilterAlternatives(null), []);
+});
+
+test("validator rejects a test filter branch that selects nothing", () => {
+  // Swift Testing ignores a filter branch matching no test: the run still
+  // exits 0 on the branches that did match, so a decayed gate stays green.
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const base = {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+    filterSymbols: collectFilterSymbols(root),
+  };
+  assert.deepEqual(validate(document, base).filter(error => error.includes("test filter selects")), []);
+
+  const decayed = JSON.parse(JSON.stringify(document));
+  const unit = decayed.nodes.find(node => node.id === "test-unit");
+  unit.filter = `${unit.filter}|RenamedAwayTests`;
+  unit.command.arguments[unit.command.arguments.indexOf("--filter") + 1] = unit.filter;
+  const runtime = decayed.nodes.find(node => node.id === "g4-host-runtime");
+  runtime.filter = "AxolotyRuntimeTests/(lifecycleOrdering|stopDrainsOutboundPump)";
+  runtime.command.arguments[runtime.command.arguments.indexOf("--filter") + 1] = runtime.filter;
+  const errors = validate(decayed, base);
+  assert.ok(errors.some(error => error.includes('"RenamedAwayTests"') && error.includes("matches no test module")));
+  // A method list is rejected outright: it cannot cover tests added later.
+  assert.ok(errors.some(error => error.includes("names individual test methods")));
+});
+
+test("validator rejects a node whose declared filter and --filter argument disagree", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const drifted = JSON.parse(JSON.stringify(document));
+  const node = drifted.nodes.find(candidate => candidate.id === "test-wire");
+  node.command.arguments[node.command.arguments.indexOf("--filter") + 1] = "SomethingElseTests";
+  const errors = validate(drifted, {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  });
+  assert.ok(errors.includes("test-wire: declared filter and the --filter argument disagree"));
+});
+
+test("the four categories are the whole taxonomy", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  assert.deepEqual(document.tiers.map(tier => tier.id), ["ci", "wire", "embedded", "release"]);
+  assert.equal("plans" in document, false);
+  assert.equal("releaseGates" in document, false);
+  assert.equal("ciRequiredGates" in document, false);
+
+  const base = {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  };
+  assert.deepEqual(validate(document, base), []);
+
+  // requiredGates is the ci category, not a second list that can drift from it.
+  const drifted = JSON.parse(JSON.stringify(document));
+  drifted.requiredGates = drifted.requiredGates.slice(1);
+  assert.ok(validate(drifted, base).includes("requiredGates must be the required, locally and CI available nodes of the ci category"));
+
+  // release means every test the host can run.
+  const partial = JSON.parse(JSON.stringify(document));
+  const release = partial.tiers.find(tier => tier.id === "release");
+  const dropped = partial.tiers.find(tier => tier.id === "wire").nodes[0];
+  release.nodes = release.nodes.filter(id => id !== dropped);
+  const errors = validate(partial, base);
+  assert.ok(errors.some(error => error.startsWith("release omits wire nodes")));
+  assert.ok(errors.some(error => error.startsWith("nodes outside every category")));
+});
+
+test("a hardware node cannot hide in a hardware-forbidden category", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const smuggled = JSON.parse(JSON.stringify(document));
+  const hardwareNode = smuggled.nodes.find(node => node.hardware !== "forbidden").id;
+  smuggled.tiers.find(tier => tier.id === "ci").nodes.push(hardwareNode);
+  smuggled.requiredGates.push(hardwareNode);
+  const errors = validate(smuggled, {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  });
+  assert.ok(errors.some(error => error.includes("cannot belong to a hardware-forbidden category")));
+});
+
+test("a self-test is owned by a category that actually runs it", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const orphaned = JSON.parse(JSON.stringify(document));
+  orphaned.selfTests[0].tier = "embedded";
+  const errors = validate(orphaned, {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  });
+  assert.ok(errors.some(error => error.includes('no node of the "embedded" category runs it')));
+});
+
+test("an attested category is declared by release and typed as a boolean", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const base = {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  };
+  // wire needs a host shell and a broker, so the release checkpoint proves it
+  // from recorded evidence instead of running its nodes.
+  const wire = document.tiers.find(tier => tier.id === "wire");
+  assert.equal(wire.attested, true);
+  const release = document.tiers.find(tier => tier.id === "release");
+  assert.ok(wire.nodes.every(id => release.nodes.includes(id)));
+  assert.equal(document.tiers.find(tier => tier.id === "ci").attested, false);
+
+  const malformed = JSON.parse(JSON.stringify(document));
+  malformed.tiers.find(tier => tier.id === "wire").attested = "yes";
+  assert.ok(validate(malformed, base).includes("wire: attested must be a boolean"));
 });

@@ -6,15 +6,14 @@ import Foundation
 public struct AxolotySelfTestContractEntry: Codable, Equatable, Sendable {
     /// Repository-relative self-test path.
     public let path: String
-    /// Owning Make target.
-    public let makeTarget: String
-    /// Owning tier.
+    /// Owning category. A self-test is owned by the category whose nodes run
+    /// it, which is a manifest fact and survives changes to the Make entry
+    /// points.
     public let tier: String
 
     /// Creates a self-test contract entry.
-    public init(path: String, makeTarget: String, tier: String) {
+    public init(path: String, tier: String) {
         self.path = path
-        self.makeTarget = makeTarget
         self.tier = tier
     }
 }
@@ -41,6 +40,36 @@ public struct AxolotyArtifactContract: Codable, Equatable, Sendable {
         self.brokerScenarios = brokerScenarios
         self.interopScenarios = interopScenarios
         self.generatedScenarios = generatedScenarios
+    }
+}
+
+/// Container environment allowlists for axoloty-tool release commands,
+/// keyed by tool command identifier. The make release targets consult the
+/// manifest through Tests/Support/tool-container-env.sh; the tier
+/// validator enforces the section's shape. Decodes and encodes as the
+/// keyed dictionary itself, not as a wrapper object.
+public struct AxolotyToolContainerEnv: Codable, Equatable, Sendable {
+    /// Allowlisted container environment variable names per tool command.
+    public let allowlists: [String: [String]]
+
+    /// Creates a container environment contract.
+    public init(allowlists: [String: [String]] = [:]) {
+        self.allowlists = allowlists
+    }
+
+    /// Creates the contract from the manifest's keyed dictionary.
+    public init(from decoder: Decoder) throws {
+        allowlists = try [String: [String]](from: decoder)
+    }
+
+    /// Encodes the contract as the keyed dictionary.
+    public func encode(to encoder: Encoder) throws {
+        try allowlists.encode(to: encoder)
+    }
+
+    /// The allowlist for a tool command identifier, if declared.
+    public func allowlist(for commandIdentifier: String) -> [String]? {
+        allowlists[commandIdentifier]
     }
 }
 
