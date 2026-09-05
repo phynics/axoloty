@@ -154,6 +154,38 @@
         "AxolotyProtocol",
         "Foundation",
         "ErrorKit",
+        "Synchronization"
+      ],
+      "forbiddenImports": [
+        "MQTTNIO",
+        "NIO",
+        "NIOCore",
+        "NIOPosix",
+        "NIOConcurrencyHelpers",
+        "NIOSSL",
+        "NIOTransportServices",
+        "Network",
+        "Logging",
+        "OSLog",
+        "Combine",
+        "MCP",
+        "AxolotyMQTT",
+        "AxolotyIoRouting",
+        "AxolotySensorThings",
+        "AxolotyInspectorCore",
+        "AxolotyTooling"
+      ]
+    },
+    {
+      "name": "AxolotyMQTT",
+      "role": "adapter",
+      "platformClass": "host",
+      "path": "Packages/AxolotyMQTT/Sources/AxolotyMQTT",
+      "allowedImports": [
+        "Axoloty",
+        "AxolotyWire",
+        "AxolotyProtocol",
+        "Foundation",
         "MQTTNIO",
         "NIO",
         "NIOConcurrencyHelpers",
@@ -162,16 +194,15 @@
         "Network"
       ],
       "forbiddenImports": [
-        "Logging",
-        "OSLog",
-        "Combine",
-        "MCP",
         "AxolotyIoRouting",
         "AxolotySensorThings",
         "AxolotyInspectorCore",
-        "AxolotyTooling"
+        "AxolotyTooling",
+        "MCP",
+        "Logging",
+        "OSLog"
       ],
-      "note": "MQTTNIO, NIO, NIOSSL, NIOTransportServices, and Network are allowed only until AxolotyMQTT is extracted. Epic #781 item B removes them from this target."
+      "note": "The only target permitted to name a networking library. A second carrier is a sibling adapter, not a change to Axoloty."
     },
     {
       "name": "AxolotyIoRouting",

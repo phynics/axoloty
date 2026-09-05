@@ -7,8 +7,10 @@ protocol processor is shared with the fixed-storage static runtime.
 ## Overview
 
 Configure a ``RuntimeBuilder`` and finish it into a ``RuntimeDefinition``, then
-start one ``AxolotyRuntime`` with an ``MQTTBinding``. Transport bytes are
-copied at the binding boundary, processed by ``AxolotyProtocol``, and exposed
+start one ``AxolotyRuntime`` with an ``AxolotyRuntimeTransport``. The
+`AxolotyMQTT` product supplies `MQTTBinding`, the default and validated
+transport. Transport bytes are
+copied at the transport boundary, processed by ``AxolotyProtocol``, and exposed
 as owned ``RuntimeEventValue`` values. The host runtime owns lifecycle and
 concurrency; protocol semantics remain in the shared processor.
 
@@ -35,8 +37,9 @@ For a compiling introduction, see <doc:GettingStarted>.
 
 ### Transport
 
-- ``MQTTBinding``
-- ``MQTTBindingConfiguration``
+- ``AxolotyRuntimeTransport``
+- ``RuntimeInboundFrame``
+- ``RuntimeTransportEffect``
 
 ### Errors
 

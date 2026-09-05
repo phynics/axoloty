@@ -21,7 +21,9 @@ fail() {
 
 host_sources=$(find "$runtime_package/Sources" -type f -name '*.swift' -print 2>/dev/null || true)
 if [ -z "$host_sources" ]; then
-    host_sources=$(find "$runtime_source_dir" -maxdepth 1 -type f \( -name 'AxolotyRuntime*.swift' -o -name 'MQTTBinding.swift' \) -print 2>/dev/null || true)
+    # MQTTBinding.swift moved to the AxolotyMQTT adapter target; the host
+    # runtime seam is the AxolotyRuntime* sources that remain here.
+    host_sources=$(find "$runtime_source_dir" -maxdepth 1 -type f -name 'AxolotyRuntime*.swift' -print 2>/dev/null || true)
 fi
 
 if [ -z "$host_sources" ] && [ ! -d "$static" ]; then

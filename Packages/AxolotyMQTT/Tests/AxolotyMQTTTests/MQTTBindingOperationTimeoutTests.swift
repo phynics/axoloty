@@ -1,9 +1,11 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Testing
-@testable import Axoloty
+import Axoloty
+@testable import AxolotyMQTT
 
-extension AxolotyRuntimeTests {
+@Suite
+struct MQTTBindingOperationTimeoutTests {
     @Test("MQTTBindingConfiguration rejects an out-of-range operation timeout")
     func mqttBindingConfigurationRejectsInvalidOperationTimeout() {
         #expect(throws: AxolotyError.self) {

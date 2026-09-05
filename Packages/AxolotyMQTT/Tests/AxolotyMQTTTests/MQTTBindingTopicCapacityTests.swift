@@ -1,7 +1,8 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Testing
-@testable import Axoloty
+import Axoloty
+@testable import AxolotyMQTT
 import AxolotyProtocol
 import AxolotyWire
 
@@ -12,7 +13,8 @@ import AxolotyWire
 /// ``TopicBuilder`` actually wrote (never to the raw allocation) across the
 /// shapes most likely to stress that formula: a multi-byte UTF-8 namespace,
 /// a long object-type filter, and the correlated (request/response) layout.
-extension AxolotyRuntimeTests {
+@Suite("MQTT topic capacity")
+struct MQTTBindingTopicCapacityTests {
     private static func sourceID() throws -> UUID16 {
         try #require(UUID16(parsing: "44444444-4444-4444-8444-444444444444"))
     }

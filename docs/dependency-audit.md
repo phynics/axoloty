@@ -28,7 +28,7 @@ in by the SwiftNIO family and swift-docc-plugin and inherit Apache-2.0.
 
 ### mqtt-nio (`2.13.0`, Apache-2.0)
 
-Imported only by `Source/Runtime/RuntimeMQTTClient.swift`, which the
+Imported only by `Packages/AxolotyMQTT/Sources/AxolotyMQTT/RuntimeMQTTClient.swift`, which the
 `MQTTBinding` owns for the host runtime. It is the sole MQTT transport and
 defines the wire path exercised by the compatibility suite. It must remain
 compatible with the Swift 6.3 container toolchain and the WASI feasibility
@@ -37,14 +37,14 @@ latest; no action needed. Keep as a `from:` range.
 
 ### swift-nio (`2.101.2`, Apache-2.0)
 
-Imported directly in `Source/Runtime/RuntimeMQTTClient.swift` (`NIO`) and
+Imported directly in `Packages/AxolotyMQTT/Sources/AxolotyMQTT/RuntimeMQTTClient.swift` (`NIO`) and
 required transitively by mqtt-nio. Direct use is limited to buffer and event
 loop primitives in the MQTT client. No direct API surface beyond the client.
 Current at latest. No action needed.
 
 ### swift-nio-ssl (`2.37.1`, Apache-2.0)
 
-Imported conditionally in `Source/Runtime/RuntimeMQTTClient.swift` via
+Imported conditionally in `Packages/AxolotyMQTT/Sources/AxolotyMQTT/RuntimeMQTTClient.swift` via
 `.when(platforms: [.linux])` in `Package.swift`; on Apple platforms TLS goes
 through `NIOTransportServices`/Network.framework instead. The `2.37.1` release
 enables `x25519_MLKEM768` by default and is current at latest. No action

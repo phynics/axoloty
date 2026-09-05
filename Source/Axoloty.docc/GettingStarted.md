@@ -16,6 +16,9 @@ dependencies: [
     name: "MyApp",
     dependencies: [
         .product(name: "Axoloty", package: "axoloty"),
+        // The MQTT transport. Depend on it only where you construct one:
+        // Axoloty itself resolves no MQTT or NIO dependency.
+        .product(name: "AxolotyMQTT", package: "axoloty"),
     ]
 )
 ```
@@ -27,6 +30,7 @@ bounded event streams and responders before calling `finish()`:
 
 ```swift
 import Axoloty
+import AxolotyMQTT
 
 func runAgent() async throws {
     let identity = try RuntimeIdentity(id: .zero, name: "my-agent")
