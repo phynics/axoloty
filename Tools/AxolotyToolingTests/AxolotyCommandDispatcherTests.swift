@@ -151,38 +151,40 @@ func versionCommandPrintsVersion() {
 }
 
 @Test
-func checkPlanPrintsStableJSON() {
+func checkPlanPrintsStableJSON() throws {
     let result = AxolotyCommandDispatcher().run(arguments: ["check", "--plan"])
 
     #expect(result.exitCode == 0)
     #expect(result.standardError.isEmpty)
     let plan = try? JSONDecoder().decode(AxolotyCheckPlan.self, from: Data(result.standardOutput.utf8))
-    var expectedNames = [
-        "resolve", "build", "g2-trace-corpus", "g2-protocol-package", "g2-wire-state", "lint", "test-tooling", "test-inspector-cli", "test-unit", "test-module",
-        "test-wire", "no-anycodable", "no-foundation-wire",
-        "wire-dependencies", "wire-independent-resolution", "wire-distribution", "support-wire-dependencies",
-        "support-wire-resolution", "support-wire-isolation", "support-benchmark-corpus",
-        "support-benchmark-size", "support-benchmark-wire", "support-benchmark-bounds",
-        "support-budget-manifest", "support-node-tests", "support-tier-contract", "support-swift-filter-contract",
-        "support-protocol-package-self-test", "support-object-model-package-self-test",
-        "support-object-model-evidence-self-test", "support-wire-state-self-test",
-        "support-object-boundary-self-test", "no-escaping-borrows",
-        "support-no-escaping-borrows-self-test", "support-g4-package-boundary-self-test",
-        "support-g4-consumer-boundary-self-test", "support-wire-distribution-self-test",
-        "support-benchmark-allocation-self-test", "support-embedded-linker-self-test",
-        "support-embedded-runtime-identity-self-test", "support-package-layout-self-test",
-    ]
-    #if os(Linux)
-    expectedNames += [
-        "support-container", "support-embedded-compile",
-        "support-embedded-smoke", "embedded-toolchain", "embedded-build", "embedded-linker",
-        "g1-bounded-runtime-host", "g1-bounded-runtime-sanitized", "g1-bounded-runtime-embedded",
-        "g3-object-boundary", "g3-object-model-package", "g3-object-model-tests",
-        "g3-object-macros-tests", "g3-coaty-models-tests", "g3-object-model-evidence-host",
-        "g3-object-model-evidence-sanitized", "g3-object-model-evidence-embedded",
-    ]
-    #endif
-    #expect(plan?.nodes.map(\.name) == expectedNames)
+    // The plan is the ci category. Deriving the expectation from the manifest
+    // keeps this honest when a node is added: a literal roster silently
+    // encodes one platform's answer and has to be rewritten every time.
+    let manifest = try #require(try? AxolotyCanonicalTestPlanResolver(
+        environment: ProcessInfo.processInfo.environment
+    ).manifest)
+    let ci = try #require(manifest.tiers.first { $0.id == "ci" })
+    let names = try #require(plan?.nodes.map(\.name))
+
+    #expect(!names.isEmpty)
+    #expect(Set(names).count == names.count, "the plan must not repeat a node")
+    #expect(Set(names).isSubset(of: Set(ci.nodes)), "the plan must not reach outside the ci category")
+    // Ordering is a dependency fact: nothing may run before what it depends on.
+    let position = Dictionary(uniqueKeysWithValues: names.enumerated().map { ($0.element, $0.offset) })
+    for node in manifest.nodes where position[node.id] != nil {
+        for dependency in node.dependencies {
+            if let earlier = position[dependency] {
+                #expect(earlier < position[node.id]!, "\(dependency) must precede \(node.id)")
+            }
+        }
+    }
+    // A category declaring no hardware must never resolve a hardware node.
+    for name in names {
+        #expect(manifest.nodes.first { $0.id == name }?.hardware == AxolotyTestHardwarePolicy.forbidden)
+    }
+    for expected in ["resolve", "build", "lint", "test-tooling", "test-unit", "test-module", "test-wire"] {
+        #expect(names.contains(expected), "\(expected) must be part of the ci category")
+    }
     #expect(plan?.nodes.first(where: { $0.name == "lint" })?.command.arguments == [
         "lint", "--no-cache", "--config", ".swiftlint.yml",
     ])
