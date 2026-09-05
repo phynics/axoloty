@@ -51,6 +51,12 @@ as a structured runtime error, and a
 failed draft discards all handlers, streams, and module reservations created by
 that draft.
 
+`SensorThingsObserverConfiguration.requestTimeoutMS` is removed with its
+enclosing type and has no replacement. Discovery and query requests now use a
+fixed 5,000 ms bound, the same value the old configuration defaulted to.
+Applications that raised or lowered that timeout have no supported way to
+change it in 0.7.
+
 Thing-driven observation is configured separately with
 `configuration.observations(forSensorsOf:matching:buffering:)`. It returns
 bounded catalogue-change and relationship-checked observation streams. The

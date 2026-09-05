@@ -1,7 +1,7 @@
 # Coaty feature matrix — Axoloty 0.5.1 historical snapshot
 
 > This matrix is frozen release-era evidence for Axoloty 0.5.1. It is not the
-> authority for the active 0.6 runtime. The current architecture and support
+> authority for the active runtime. The current architecture and support
 > classification are defined by [ARCHITECTURE.md](../ARCHITECTURE.md),
 > [ROADMAP.md](ROADMAP.md), and [SUPPORT_MATRIX.md](SUPPORT_MATRIX.md).
 > In particular, controller-based IO and SensorThings runtime APIs shown in
@@ -104,7 +104,7 @@ wire-evidence section and `../docs/wire-compatibility.md`.
 
 ## Current wire-compatibility evidence
 
-See [SUPPORT_MATRIX.md](SUPPORT_MATRIX.md) for the full 0.6.2 support
+See [SUPPORT_MATRIX.md](SUPPORT_MATRIX.md) for the full 0.7.0 support
 classification and [docs/wire-compatibility.md](../docs/wire-compatibility.md)
 for per-direction wire evidence.
 
