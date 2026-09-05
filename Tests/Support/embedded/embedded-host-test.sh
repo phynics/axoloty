@@ -31,7 +31,7 @@ AXOLOTY_DEVICE_ROLE="$role" node "$support_dir/generate-embedded-network-config.
 idf.py -B "$build_dir" -D SDKCONFIG="$sdkconfig" build
 (cd "$build_dir" && python3 "$esptool" --chip esp32c6 --port "$device" --before default_reset --after no_reset write_flash @flash_args)
 
-SERIAL_TOOLS="$support_dir/serial-tools.mjs" AGENT_VALIDATOR="$support_dir/embedded-agent-validator.mjs" \
+SERIAL_TOOLS="$support_dir/../lib/serial-tools.mjs" AGENT_VALIDATOR="$support_dir/embedded-agent-validator.mjs" \
   ESPTOOL="$esptool" ROOT="$root" SWIFT_BUILD="$swift_build" node --input-type=module - \
   "$device" "$role" "$direction" "$output_dir" "$AXOLOTY_MQTT_HOST" "${AXOLOTY_MQTT_PORT:-1883}" "$ready" <<'JS'
 import fs from "node:fs";

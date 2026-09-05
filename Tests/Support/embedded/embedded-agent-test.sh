@@ -56,7 +56,7 @@ flash_without_reset() {
 flash_without_reset "$device_b" "$build_root/b"
 flash_without_reset "$device_a" "$build_root/a"
 
-SERIAL_TOOLS="$support_dir/serial-tools.mjs" \
+SERIAL_TOOLS="$support_dir/../lib/serial-tools.mjs" \
 AGENT_VALIDATOR="$support_dir/embedded-agent-validator.mjs" \
 ESPTOOL="$esptool" node --input-type=module - \
   "$device_a" "$device_b" "$output_dir" <<'JS'

@@ -48,7 +48,7 @@ echo "== capture (deadline ${deadline}s) =="
 # Reset the device and capture serial output without requiring an interactive
 # idf.py monitor.
 esptool.py --port "$device" run >/dev/null 2>&1 || true
-SERIAL_TOOLS="$support_dir/serial-tools.mjs" node --input-type=module - "$device" "$deadline" "$ser_dir" <<'JS' || fail "capture/parse failed"
+SERIAL_TOOLS="$support_dir/../lib/serial-tools.mjs" node --input-type=module - "$device" "$deadline" "$ser_dir" <<'JS' || fail "capture/parse failed"
 import fs from "node:fs"; const { captureSerial } = await import(process.env.SERIAL_TOOLS);
 const [device,deadline,out]=process.argv.slice(2), lines=[]; const captured=await captureSerial(device,Number(deadline),line=>{lines.push(line);console.log(line);}); const results=lines.flatMap(line=>{const i=line.indexOf("{");if(i<0)return[];try{return[JSON.parse(line.slice(i))];}catch{return[];}});fs.writeFileSync(`${out}/device-benchmark.json`,JSON.stringify(results,null,2)+"\n");fs.writeFileSync(`${out}/device-benchmark-raw.txt`,lines.join("\n"));if(!results.some(r=>r.benchmark==="complete")){console.error(`BENCHMARK WIRE DEVICE FAIL: no completion marker within ${deadline}s`);process.exit(1);}console.log("BENCHMARK WIRE DEVICE OK");
 JS

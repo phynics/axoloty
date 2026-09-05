@@ -41,7 +41,7 @@ for pair in "$device_b:$build_root/b" "$device_a:$build_root/a"; do
   (cd "$build_dir" && python3 "$esptool" --chip esp32c6 --port "$device" --before default_reset --after no_reset write_flash @flash_args)
 done
 
-SERIAL_TOOLS="$support_dir/serial-tools.mjs" AGENT_VALIDATOR="$support_dir/embedded-agent-validator.mjs" \
+SERIAL_TOOLS="$support_dir/../lib/serial-tools.mjs" AGENT_VALIDATOR="$support_dir/embedded-agent-validator.mjs" \
   ESPTOOL="$esptool" RUNNER="$agent_dir/embedded-interoperability-runner.js" node --input-type=module - \
   "$device_a" "$device_b" "$output_dir" "$AXOLOTY_MQTT_HOST" "${AXOLOTY_MQTT_PORT:-1883}" <<'JS'
 import fs from "node:fs";

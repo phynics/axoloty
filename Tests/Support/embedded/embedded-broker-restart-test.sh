@@ -39,7 +39,7 @@ cp "$reference_dir/package.json" "$reference_dir/package-lock.json" \
 printf 'listener %s\nallow_anonymous true\npersistence false\n' "$port" >"$broker_config"
 (cd "$build_dir" && python3 "$esptool" --chip esp32c6 --port "$device" --before default_reset --after no_reset write_flash @flash_args)
 
-SERIAL_TOOLS="$support_dir/serial-tools.mjs" AGENT_VALIDATOR="$support_dir/embedded-agent-validator.mjs" \
+SERIAL_TOOLS="$support_dir/../lib/serial-tools.mjs" AGENT_VALIDATOR="$support_dir/embedded-agent-validator.mjs" \
   ESPTOOL="$esptool" RUNNER="$agent_dir/embedded-interoperability-runner.js" BROKER_CONFIG="$broker_config" \
   EMBEDDED_BROKER_RESTART_MANAGED="$managed_broker" node --input-type=module - \
   "$device" "$output_dir" "$AXOLOTY_MQTT_HOST" "$port" "$ready_file" "$resume_file" <<'JS'

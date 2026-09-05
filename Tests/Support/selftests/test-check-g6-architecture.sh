@@ -13,7 +13,8 @@ mkdir -p "$fixture/Packages/AxolotyWire/Sources/AxolotyWire" \
     "$fixture/Packages/AxolotyProtocol/Sources/AxolotyProtocol" \
     "$fixture/Embedded/swift/components/axoloty_wire" \
     "$fixture/Embedded/swift/components/axoloty_protocol" \
-    "$fixture/Tests/Support"
+    "$fixture/Tests/Support/checks" \
+    "$fixture/Tests/Support/evidence"
 cp "$checker" "$fixture/Tests/Support/checks/check-g6-architecture.sh"
 cp "$root/Tests/Support/evidence/validate-g6-source-receipts.mjs" "$fixture/Tests/Support/evidence/validate-g6-source-receipts.mjs"
 cp "$root/Tests/Support/evidence/emit-g6-source-receipt.mjs" "$fixture/Tests/Support/evidence/emit-g6-source-receipt.mjs"

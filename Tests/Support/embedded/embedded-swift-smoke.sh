@@ -114,7 +114,7 @@ fi
 
 failure_stage=capture
 echo "== monitor (deadline ${deadline}s, structured protocol) =="
-SERIAL_TOOLS="$support_dir/serial-tools.mjs" SMOKE_VALIDATOR="${EMBEDDED_VALIDATOR:-$support_dir/embedded-swift-smoke-validator.mjs}" SMOKE_VALIDATOR_FACTORY="${EMBEDDED_VALIDATOR_FACTORY:-createEmbeddedSwiftSmokeValidator}" node --input-type=module - "$device" "$deadline" "$smoke_log" "$result_file" <<'JS'
+SERIAL_TOOLS="$support_dir/../lib/serial-tools.mjs" SMOKE_VALIDATOR="${EMBEDDED_VALIDATOR:-$support_dir/embedded-swift-smoke-validator.mjs}" SMOKE_VALIDATOR_FACTORY="${EMBEDDED_VALIDATOR_FACTORY:-createEmbeddedSwiftSmokeValidator}" node --input-type=module - "$device" "$deadline" "$smoke_log" "$result_file" <<'JS'
 import fs from "node:fs";
 const { captureSerial } = await import(process.env.SERIAL_TOOLS);
 const validatorModule = await import(process.env.SMOKE_VALIDATOR);

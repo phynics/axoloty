@@ -32,7 +32,7 @@ cp "$reference_dir/package.json" "$reference_dir/package-lock.json" \
 (cd "$agent_dir" && npm ci --omit=optional)
 (cd "$build_dir" && python3 "$esptool" --chip esp32c6 --port "$device" --before default_reset --after no_reset write_flash @flash_args)
 
-SERIAL_TOOLS="$support_dir/serial-tools.mjs" AGENT_VALIDATOR="$support_dir/embedded-agent-validator.mjs" \
+SERIAL_TOOLS="$support_dir/../lib/serial-tools.mjs" AGENT_VALIDATOR="$support_dir/embedded-agent-validator.mjs" \
   ESPTOOL="$esptool" RUNNER="$agent_dir/embedded-interoperability-runner.js" node --input-type=module - \
   "$device" "$role" "$output_dir" "$AXOLOTY_MQTT_HOST" "${AXOLOTY_MQTT_PORT:-1883}" <<'JS'
 import fs from "node:fs";
