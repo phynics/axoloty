@@ -841,6 +841,56 @@ func wireCaptureRunsEveryNodeThroughSupportedBridge() throws {
     #expect(clock.now - startedAt < .seconds(5))
 }
 
+/// The wire category resolved as a plain tier must point the manifest node at
+/// `WIRE_OUTPUT_DIR`, exactly as `wire capture` does. CI runs `test-tier wire`
+/// with that variable overridden, so a tier plan that kept the literal
+/// `.testing/wire` token indexed a directory no capture wrote.
+@Test
+func wireTierPointsTheManifestNodeAtTheConfiguredOutputDirectory() throws {
+    let outputDirectory = ".testing/runs/tier-wire/wire"
+    let resolver = try AxolotyCanonicalTestPlanResolver(
+        environment: ProcessInfo.processInfo.environment.merging([
+            "WIRE_OUTPUT_DIR": outputDirectory,
+        ]) { _, value in value }
+    )
+
+    let plan = try resolver.resolve(.tier(
+        name: CanonicalTier.wire.rawValue,
+        ci: false,
+        platform: .linux
+    ))
+    let manifestNode = try #require(plan.nodes.first { $0.name == "wire-capture-manifest" })
+
+    #expect(manifestNode.command.arguments == [
+        "Tests/Support/WireCompatibility/tool/dist/index.js",
+        "manifest",
+        outputDirectory,
+        "\(outputDirectory)/manifest.json",
+    ])
+    #expect(manifestNode.command.environment["WIRE_OUTPUT_DIR"] == outputDirectory)
+}
+
+/// Without an override the token stays literal, so ordinary local runs keep
+/// writing and indexing `.testing/wire`.
+@Test
+func wireTierKeepsTheDefaultOutputDirectoryWhenUnset() throws {
+    var environment = ProcessInfo.processInfo.environment
+    environment.removeValue(forKey: "WIRE_OUTPUT_DIR")
+    let resolver = try AxolotyCanonicalTestPlanResolver(environment: environment)
+
+    let plan = try resolver.resolve(.tier(
+        name: CanonicalTier.wire.rawValue,
+        ci: false,
+        platform: .linux
+    ))
+    let manifestNode = try #require(plan.nodes.first { $0.name == "wire-capture-manifest" })
+
+    #expect(manifestNode.command.arguments.dropFirst(2) == [
+        ".testing/wire",
+        ".testing/wire/manifest.json",
+    ])
+}
+
 @Test
 func wireCaptureForwardsInvocationScopedOutputToEveryNode() throws {
     let bridge = try BridgeCapabilityFixture()

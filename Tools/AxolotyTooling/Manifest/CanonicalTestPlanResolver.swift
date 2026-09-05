@@ -45,20 +45,28 @@ enum CanonicalCommandRequest: Sendable {
 
 struct AxolotyCanonicalTestPlanResolver: Sendable {
     let manifest: AxolotyCanonicalTestManifest
+    /// The ambient environment. The wire category's capture scripts read
+    /// `WIRE_OUTPUT_DIR` from it, so a plan that names capture directories has
+    /// to agree with the value they will actually use.
+    private let environment: [String: String]
 
     init(environment: [String: String]) throws {
         manifest = try Self.loadManifest(environment: environment)
+        self.environment = environment
     }
 
     init(manifest: AxolotyCanonicalTestManifest) {
         self.manifest = manifest
+        environment = [:]
     }
 
     func resolve(_ request: CanonicalPlanRequest) throws -> AxolotyCheckPlan {
         try validateManifest()
         switch request {
         case .tier(let name, let ci, let platform, let requested):
-            return try resolveTier(name, ci: ci, platform: platform, requested: requested)
+            let plan = try resolveTier(name, ci: ci, platform: platform, requested: requested)
+            guard name == CanonicalTier.wire.rawValue else { return plan }
+            return wireOutputRewritten(plan, environment: environment)
         case .checkpoint(let hardwareDevice, let consumerEnvironment, let platform):
             let plan = try resolveTier(
                 CanonicalTier.release.rawValue,
@@ -72,20 +80,7 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
             return rewrite(plan, substitutions: [:], environment: environment)
         case .wireCapture(let environment, let platform):
             let plan = try resolveTier(CanonicalTier.wire.rawValue, ci: false, platform: platform)
-            let outputDirectory = environment["WIRE_OUTPUT_DIR"] ?? ".testing/wire"
-            var overlay = environment
-            overlay["WIRE_OUTPUT_DIR"] = outputDirectory
-            if let runID = environment["WIRE_RUN_ID"] ?? environment["AXOLOTY_RUN_ID"] {
-                overlay["WIRE_RUN_ID"] = runID
-            }
-            return rewrite(
-                plan,
-                substitutions: [
-                    ".testing/wire": outputDirectory,
-                    ".testing/wire/manifest.json": "\(outputDirectory)/manifest.json",
-                ],
-                environment: overlay
-            )
+            return wireOutputRewritten(plan, environment: environment)
         }
     }
 
@@ -331,6 +326,33 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
             environment: specification.environment,
             executionContext: specification.executionContext,
             timeoutSeconds: timeoutSeconds
+        )
+    }
+
+    /// Points the wire category's capture directories at `WIRE_OUTPUT_DIR`.
+    ///
+    /// The manifest writes `.testing/wire` as a substitution token rather than
+    /// a literal: the capture scripts honour `WIRE_OUTPUT_DIR` from the
+    /// environment, so a plan that hardcoded the token would index a directory
+    /// nothing wrote. Both the `wire capture` command and a plain `test-tier
+    /// wire` run resolve the same category, so both apply the rewrite.
+    private func wireOutputRewritten(
+        _ plan: AxolotyCheckPlan,
+        environment: [String: String]
+    ) -> AxolotyCheckPlan {
+        let outputDirectory = environment["WIRE_OUTPUT_DIR"] ?? ".testing/wire"
+        var overlay = environment
+        overlay["WIRE_OUTPUT_DIR"] = outputDirectory
+        if let runID = environment["WIRE_RUN_ID"] ?? environment["AXOLOTY_RUN_ID"] {
+            overlay["WIRE_RUN_ID"] = runID
+        }
+        return rewrite(
+            plan,
+            substitutions: [
+                ".testing/wire": outputDirectory,
+                ".testing/wire/manifest.json": "\(outputDirectory)/manifest.json",
+            ],
+            environment: overlay
         )
     }
 
