@@ -13,7 +13,7 @@ import AxolotyWire
 actor FailOnceOnPublishTransport: AxolotyRuntimeTransport {
     private var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
     private var failure: (@Sendable (Error) -> Void)?
-    private(set) var sent: [OwnedProtocolPublication] = []
+    private(set) var sent: [RuntimeOutboundMessage] = []
     private var shouldFailNextPublish: Bool
 
     init(failFirstPublish: Bool = true) {
@@ -28,7 +28,7 @@ actor FailOnceOnPublishTransport: AxolotyRuntimeTransport {
         failure = handler
     }
 
-    func perform(_ effect: RuntimeTransportEffect, namespace: String) async throws {
+    func perform(_ effect: RuntimeTransportEffect) async throws {
         guard case .publish(let publication) = effect else { return }
         if shouldFailNextPublish {
             shouldFailNextPublish = false

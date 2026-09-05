@@ -8,7 +8,7 @@ import Testing
 @testable import AxolotySensorThings
 
 actor SensorThingsRecordingTransport: AxolotyRuntimeTransport {
-    private(set) var publications: [OwnedProtocolPublication] = []
+    private(set) var publications: [RuntimeOutboundMessage] = []
     private(set) var lifecycle: [String] = []
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
@@ -17,7 +17,7 @@ actor SensorThingsRecordingTransport: AxolotyRuntimeTransport {
 
     func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) async {}
 
-    func perform(_ effect: RuntimeTransportEffect, namespace: String) async throws {
+    func perform(_ effect: RuntimeTransportEffect) async throws {
         guard case let .publish(publication) = effect else { return }
         publications.append(publication)
     }
@@ -34,7 +34,7 @@ actor SensorThingsRecordingTransport: AxolotyRuntimeTransport {
         lifecycle.append("remove")
     }
 
-    func allPublications() -> [OwnedProtocolPublication] {
+    func allPublications() -> [RuntimeOutboundMessage] {
         publications
     }
 }
@@ -148,7 +148,7 @@ func channelPayload<Schema: ObjectSchema>(_ object: borrowing Object<Schema>) ->
     return Array("{\"object\":".utf8) + objectBytes + Array("}".utf8)
 }
 
-func publicationObjectType(_ publication: OwnedProtocolPublication) -> String? {
+func publicationObjectType(_ publication: RuntimeOutboundMessage) -> String? {
     let bytes = publication.payload
     guard let objectStart = bytes.firstIndex(of: 0x7B) else { return nil }
     let text = String(decoding: bytes[objectStart...], as: UTF8.self)
@@ -158,7 +158,7 @@ func publicationObjectType(_ publication: OwnedProtocolPublication) -> String? {
     return String(suffix[..<end])
 }
 
-func publicationObjectID(_ publication: OwnedProtocolPublication) -> String? {
+func publicationObjectID(_ publication: RuntimeOutboundMessage) -> String? {
     let text = String(decoding: publication.payload, as: UTF8.self)
     guard let idStart = text.range(of: "\"objectId\":\"") else { return nil }
     let suffix = text[idStart.upperBound...]
@@ -181,7 +181,7 @@ func waitForPublicationCount(
     count: Int
 ) async throws {
     try await waitForSensorThingsCondition {
-        await transport.allPublications().filter { $0.routingKey.capability == capability }.count >= count
+        await transport.allPublications().filter { routeEventType($0.route) == capability.wireEventType.wireCode.description }.count >= count
     }
 }
 
@@ -191,7 +191,7 @@ func waitForSensorThingsAdvertisementCount(
 ) async throws {
     try await waitForSensorThingsCondition {
         await transport.allPublications().filter { publication in
-            guard publication.routingKey.capability == .advertise else { return false }
+            guard routeEventType(publication.route) == ProtocolCapability.advertise.wireEventType.wireCode.description else { return false }
             let type = publicationObjectType(publication)
             return type == "coaty.sensorThings.Thing" || type == "coaty.sensorThings.Sensor"
         }.count >= count
@@ -224,4 +224,14 @@ func nextDiagnostic(from stream: AsyncStream<RuntimeDiagnostic>) async throws ->
         group.cancelAll()
         return result
     }
+}
+
+/// The event-type code of a resolved Coaty route, without any filter suffix.
+///
+/// Transports receive finished routes rather than routing keys, so tests match
+/// the wire event segment of `coaty/3/<namespace>/<event>/<source>`.
+func routeEventType(_ route: String) -> String {
+    let segments = route.split(separator: "/", omittingEmptySubsequences: false)
+    guard segments.count >= 4 else { return "" }
+    return String(segments[3].split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)[0])
 }

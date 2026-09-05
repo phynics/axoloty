@@ -166,6 +166,7 @@ let package = Package(
                 "Runtime/Executor/ProtocolExecutor+Handlers.swift",
                 "Runtime/RuntimeModules.swift",
                 "Runtime/RuntimeSupport.swift",
+                "Runtime/CoatyRoute.swift",
             ]
         ),
         // The MQTT transport adapter. Every MQTT and NIO dependency lives

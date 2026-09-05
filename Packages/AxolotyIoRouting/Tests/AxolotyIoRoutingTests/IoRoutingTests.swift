@@ -98,7 +98,7 @@ private actor RoutingRecordingTransport: AxolotyRuntimeTransport {
     private var publications: [[UInt8]] = []
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
-    func perform(_ effect: RuntimeTransportEffect, namespace: String) async throws {
+    func perform(_ effect: RuntimeTransportEffect) async throws {
         guard case .publish(let publication) = effect else { return }
         publications.append(publication.payload)
     }

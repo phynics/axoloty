@@ -10,12 +10,44 @@ enum RuntimeQueuedTransportEffect: Sendable {
     case externalRouteActivated(OwnedExternalRouteTransition)
     case externalRouteDeactivated(OwnedExternalRouteTransition)
 
-    var transportEffect: RuntimeTransportEffect {
+    /// Resolves this effect against `namespace` into a transport effect.
+    ///
+    /// Publications carry a routing key and a target until this point; the
+    /// route is synthesized here so every transport receives finished bytes.
+    func transportEffect(namespace: String) throws -> RuntimeTransportEffect {
         switch self {
-        case let .publish(publication): return .publish(publication)
-        case let .typedIoPublication(publication, token: _): return .publish(publication)
+        case let .publish(publication):
+            return .publish(try RuntimeOutboundMessage(publication, namespace: namespace))
+        case let .typedIoPublication(publication, token: _):
+            return .publish(try RuntimeOutboundMessage(publication, namespace: namespace))
         case let .externalRouteActivated(transition): return .externalRouteActivated(transition)
         case let .externalRouteDeactivated(transition): return .externalRouteDeactivated(transition)
+        }
+    }
+}
+
+extension RuntimeOutboundMessage {
+    /// Resolves a publication's target into a finished route.
+    init(_ publication: OwnedProtocolPublication, namespace: String) throws {
+        switch publication.target {
+        case let .profile(eventTypeFilter, filterKind):
+            self.init(
+                route: try CoatyRoute.route(
+                    for: publication.routingKey,
+                    namespace: namespace,
+                    eventTypeFilter: eventTypeFilter,
+                    eventTypeFilterKind: filterKind
+                ),
+                payload: publication.payload
+            )
+        case let .associationRoute(route, kind):
+            guard kind != .unrelated else {
+                throw AxolotyError.invalidArgument(
+                    argument: "route",
+                    reason: "unrelated routes cannot be published"
+                )
+            }
+            self.init(route: String(decoding: route, as: UTF8.self), payload: publication.payload)
         }
     }
 }

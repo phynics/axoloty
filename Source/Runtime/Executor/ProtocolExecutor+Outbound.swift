@@ -72,7 +72,9 @@ extension ProtocolExecutor {
 
         for publication in publications {
             emitRegisteredEvents(for: publication, nowMS: nowMS)
-            try await transport.perform(.publish(publication), namespace: definition.namespace)
+            try await transport.perform(
+                .publish(try RuntimeOutboundMessage(publication, namespace: definition.namespace))
+            )
         }
     }
 

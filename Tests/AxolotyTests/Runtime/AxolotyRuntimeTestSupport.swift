@@ -35,7 +35,7 @@ enum SetupFailureStage: String, CaseIterable, Sendable {
 actor TestTransport: AxolotyRuntimeTransport {
     private var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
     private var failure: (@Sendable (Error) -> Void)?
-    private var sent: [OwnedProtocolPublication] = []
+    private var sent: [RuntimeOutboundMessage] = []
     private(set) var lifecycle: [String] = []
     private let failureStage: SetupFailureStage?
 
@@ -53,14 +53,14 @@ actor TestTransport: AxolotyRuntimeTransport {
         failure = handler
     }
 
-    func perform(_ effect: RuntimeTransportEffect, namespace: String) async throws {
-        let publication: OwnedProtocolPublication
+    func perform(_ effect: RuntimeTransportEffect) async throws {
+        let message: RuntimeOutboundMessage
         switch effect {
-        case .publish(let value): publication = value
+        case .publish(let value): message = value
         default: return
         }
-        sent.append(publication)
-        if failureStage == .advertisement, publication.routingKey.capability == .advertise {
+        sent.append(message)
+        if failureStage == .advertisement, isAdvertiseRoute(message.route) {
             throw TestTransportFailure()
         }
     }
@@ -77,8 +77,8 @@ actor TestTransport: AxolotyRuntimeTransport {
     func removeSubscriptions(namespace: String) async throws { lifecycle.append("remove") }
 
     func sentCount() -> Int { sent.count }
-    func firstSent() -> OwnedProtocolPublication? { sent.first }
-    func lastSent() -> OwnedProtocolPublication? { sent.last }
+    func firstSent() -> RuntimeOutboundMessage? { sent.first }
+    func lastSent() -> RuntimeOutboundMessage? { sent.last }
 
     /// Simulates a wire frame arriving on the currently installed transport
     /// callback, exactly as a real transport implementation would invoke it.
@@ -100,7 +100,7 @@ actor DrainingTransport: AxolotyRuntimeTransport {
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
     func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) {}
 
-    func perform(_ effect: RuntimeTransportEffect, namespace: String) async throws {
+    func perform(_ effect: RuntimeTransportEffect) async throws {
         switch effect {
         case .publish: break
         default: return
@@ -153,4 +153,31 @@ final class RuntimeTestDiagnosticIteratorBox: @unchecked Sendable {
     func next() async -> RuntimeDiagnostic? {
         await iterator.next()
     }
+}
+
+/// Whether a resolved route publishes a Coaty Advertise event.
+///
+/// Transports now receive finished routes rather than routing keys, so tests
+/// that previously matched `routingKey.capability` match the wire event type
+/// segment instead. A Coaty route is `coaty/3/<namespace>/<event>/<source>`,
+/// and the Advertise event type is `ADV`, optionally filtered as `ADV:Type`
+/// or `ADV::coaty.Type`.
+func isAdvertiseRoute(_ route: String) -> Bool {
+    let segments = route.split(separator: "/", omittingEmptySubsequences: false)
+    guard segments.count >= 4 else { return false }
+    return segments[3] == "ADV" || segments[3].hasPrefix("ADV:")
+}
+
+/// Whether a resolved route publishes a Coaty Deadvertise event.
+func isDeadvertiseRoute(_ route: String) -> Bool {
+    let segments = route.split(separator: "/", omittingEmptySubsequences: false)
+    guard segments.count >= 4 else { return false }
+    return segments[3] == "DAD" || segments[3].hasPrefix("DAD:")
+}
+
+/// The event-type code of a resolved Coaty route, without any filter suffix.
+func routeEventType(_ route: String) -> String {
+    let segments = route.split(separator: "/", omittingEmptySubsequences: false)
+    guard segments.count >= 4 else { return "" }
+    return String(segments[3].split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)[0])
 }

@@ -102,7 +102,7 @@ struct AxolotyRuntimeIoTests {
 
         try await runtime.start()
         let startup = await transport.publications()
-        #expect(startup.contains { $0.routingKey.capability == .advertise })
+        #expect(startup.contains { isAdvertiseRoute($0.route) })
         #expect(startup.contains { String(decoding: $0.payload, as: UTF8.self).contains(sourceID) })
         #expect(startup.contains { String(decoding: $0.payload, as: UTF8.self).contains(actorID) })
         #expect(startup.contains {
@@ -113,24 +113,24 @@ struct AxolotyRuntimeIoTests {
         await runtime.stop()
         let shutdown = await transport.publications()
         #expect(shutdown.count > startup.count)
-        #expect(shutdown.contains { $0.routingKey.capability == .deadvertise })
+        #expect(shutdown.contains { isDeadvertiseRoute($0.route) })
         #expect(sourceHandle.id != actorHandle.id)
     }
 }
 
 private actor IoWireRecordingTransport: AxolotyRuntimeTransport {
-    private var sent: [OwnedProtocolPublication] = []
+    private var sent: [RuntimeOutboundMessage] = []
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
     func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) async {}
-    func perform(_ effect: RuntimeTransportEffect, namespace: String) async throws {
+    func perform(_ effect: RuntimeTransportEffect) async throws {
         switch effect {
-        case .publish(let publication): sent.append(publication)
+        case .publish(let message): sent.append(message)
         default: break
         }
     }
     func stop() async {}
     func installSubscriptions(namespace: String) async throws {}
     func removeSubscriptions(namespace: String) async throws {}
-    func publications() -> [OwnedProtocolPublication] { sent }
+    func publications() -> [RuntimeOutboundMessage] { sent }
 }
