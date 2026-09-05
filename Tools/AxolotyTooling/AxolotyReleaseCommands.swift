@@ -29,7 +29,6 @@ extension FoundationFileSystem: ReleaseEvidenceByteLoading {
 
 /// A release-specific command parsed by ``AxolotyCommandParser``.
 enum ReleaseCommand: Equatable, Sendable {
-    case fixtureBundle
     case checkpoint(hardware: Bool)
 }
 
@@ -414,39 +413,12 @@ struct AxolotyReleaseCommands: Sendable {
 
     func run(_ command: ReleaseCommand) -> AxolotyCommandResult {
         switch command {
-        case .fixtureBundle:
-            return fixtureBundle()
         case .checkpoint(let hardware):
             return checkpoint(hardware: hardware)
         }
     }
 
-    private func fixtureBundle() -> AxolotyCommandResult {
-        do {
-            let source = environment["AXOLOTY_FIXTURE_BUNDLE_SOURCE"] ?? "Tests/AxolotyTests/WireCompatibility/Fixtures"
-            let destination = environment["AXOLOTY_FIXTURE_BUNDLE_OUTPUT"] ?? ".testing/fixture-bundle"
-            let forwardedEnvironment = [
-                "AXOLOTY_IMAGE_IDENTITY", "AXOLOTY_GIT_COMMIT", "AXOLOTY_GIT_CLEAN",
-                "AXOLOTY_CONSUMER_REPOSITORY_URL", "AXOLOTY_CONSUMER_VERSION",
-                "AXOLOTY_CONSUMER_LOCAL", "AXOLOTY_CONSUMER_LOCAL_VERSION",
-            ].reduce(into: [String: String]()) { values, name in values[name] = environment[name] }
-            let resolved = try resolver.get()
-            let plan = try resolved.resolve(.fixtureBundle(
-                source: source,
-                destination: destination,
-                environment: forwardedEnvironment,
-                platform: AxolotyCheckPlan.currentPlatform
-            ))
-            let results = execute(plan)
-            return render(AxolotyCheckManifest(results: results), exitCode: results.allSatisfy { $0.status == .passed } ? 0 : 1)
-        } catch {
-            return AxolotyCommandResult(standardError: "error: unable to generate fixture bundle\n", exitCode: 70)
-        }
-    }
-
     private func checkpoint(hardware: Bool) -> AxolotyCommandResult {
-        let source = environment["AXOLOTY_FIXTURE_BUNDLE_SOURCE"] ?? "Tests/AxolotyTests/WireCompatibility/Fixtures"
-        let destination = environment["AXOLOTY_FIXTURE_BUNDLE_OUTPUT"] ?? ".testing/fixture-bundle"
         let consumerEnvironment = [
             "AXOLOTY_CONSUMER_REPOSITORY_URL", "AXOLOTY_CONSUMER_VERSION",
             "AXOLOTY_CONSUMER_LOCAL", "AXOLOTY_CONSUMER_LOCAL_VERSION",
@@ -456,8 +428,6 @@ struct AxolotyReleaseCommands: Sendable {
             let device = hardware ? (environment["AXOLOTY_DEVICE"] ?? "/dev/ttyACM0") : nil
             let plan = try resolved.resolve(.checkpoint(
                 hardwareDevice: device,
-                source: source,
-                destination: destination,
                 consumerEnvironment: consumerEnvironment,
                 platform: AxolotyCheckPlan.currentPlatform
             ))

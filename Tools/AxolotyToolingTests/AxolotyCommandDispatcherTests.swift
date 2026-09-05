@@ -100,7 +100,6 @@ private func checkpointManifestFixture() throws -> URL {
 func typedInvocationParserClassifiesReleaseCommandsAndEnvironmentFallbacks() {
     let parser = AxolotyCommandParser(environment: ["FILTER": "FallbackSuite", "TIER": "unit"])
 
-    #expect(parser.parse(["release", "fixture-bundle"]) == .release(.fixtureBundle))
     #expect(parser.parse(["release", "checkpoint"]) == .release(.checkpoint(hardware: false)))
     #expect(parser.parse(["release", "checkpoint-hardware"]) == .release(.checkpoint(hardware: true)))
     #expect(parser.parse(["test-one"]) == .testOne(filter: "FallbackSuite"))
@@ -237,7 +236,6 @@ func canonicalManifestDefinesVerifyRootsAndBoundedTestOne() throws {
     #expect(manifest.ciRequiredGates.allSatisfy { gate in manifest.nodes.contains { $0.id == gate } })
     #expect(manifest.toolContainerEnv?.allowlist(for: "release-checkpoint")?.contains("AXOLOTY_GIT_TREE") == true)
     #expect(manifest.toolContainerEnv?.allowlist(for: "release-checkpoint-hardware")?.contains("AXOLOTY_DEVICE") == true)
-    #expect(manifest.toolContainerEnv?.allowlist(for: "release-fixture-bundle")?.contains("AXOLOTY_IMAGE_IDENTITY") == true)
     #expect(manifest.toolContainerEnv?.allowlist(for: "release-unknown") == nil)
     #expect(try resolver.command(.testOne(filter: "suite;touch /tmp/injected")).arguments.last == "suite;touch /tmp/injected")
     #expect(manifest.testOne.timeoutSeconds > 0)
@@ -548,8 +546,6 @@ func checkpointPlanIncludesRequiredCompatibilityNodes() throws {
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
     let plan = try resolver.resolve(.checkpoint(
         hardwareDevice: nil,
-        source: "Tests/AxolotyTests/WireCompatibility/Fixtures",
-        destination: ".testing/fixture-bundle",
         consumerEnvironment: [:],
         platform: AxolotyCheckPlan.currentPlatform
     ))
@@ -562,8 +558,6 @@ func checkpointPlanIncludesRequiredCompatibilityNodes() throws {
 
     let hardwarePlan = try resolver.resolve(.checkpoint(
         hardwareDevice: "/dev/ttyACM0",
-        source: "Tests/AxolotyTests/WireCompatibility/Fixtures",
-        destination: ".testing/fixture-bundle",
         consumerEnvironment: [:],
         platform: AxolotyCheckPlan.currentPlatform
     ))
@@ -814,25 +808,6 @@ func wireVerifyRunsOnlyItsDependencyClosure() throws {
 }
 
 @Test
-func wireVerifyBundleRunsSemanticAndHashVerification() throws {
-    let runner = RecordingSequenceRunner()
-    let dispatcher = AxolotyCommandDispatcher(
-        commandRunner: runner,
-        fileSystem: StubFileSystem(paths: []),
-        environment: projectEnvironment
-    )
-
-    let result = dispatcher.run(arguments: ["wire", "verify", ".testing/downloaded"])
-    let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
-
-    #expect(result.exitCode == 0)
-    #expect(manifest.results.map(\.name) == ["resolve", "build", "test-wire", "wire-bundle-verify"])
-    #expect(runner.commands.last?.arguments == [
-        "Tests/Support/fixture-bundle.mjs", "verify", ".testing/downloaded",
-    ])
-}
-
-@Test
 func wireCaptureRunsEveryNodeThroughSupportedBridge() throws {
     let clock = ContinuousClock()
     let startedAt = clock.now
@@ -986,40 +961,6 @@ func retiredIntegrationCommandDoesNotRunTheInjectedRunner() {
 private struct StubIntegrationRunner: AxolotyIntegrationRunning {
     let result: AxolotyCheckCommandResult
     func run() -> AxolotyCheckCommandResult { result }
-}
-
-@Test
-func releaseSnapshotsGenerateThenVerifyConfiguredBundle() throws {
-    let runner = RecordingSequenceRunner()
-    let dispatcher = AxolotyCommandDispatcher(
-        commandRunner: runner,
-        fileSystem: StubFileSystem(paths: []),
-        environment: [
-            "AXOLOTY_DEVCONTAINER": "1",
-            "AXOLOTY_FIXTURE_BUNDLE_SOURCE": "fixtures",
-            "AXOLOTY_FIXTURE_BUNDLE_OUTPUT": "artifacts",
-            "AXOLOTY_IMAGE_IDENTITY": "sha256:test",
-            "AXOLOTY_GIT_COMMIT": "abc123",
-            "AXOLOTY_GIT_CLEAN": "true",
-            "AXOLOTY_CONSUMER_REPOSITORY_URL": "file:///tmp/axoloty.git",
-            "AXOLOTY_CONSUMER_VERSION": "9.9.9",
-        ]
-    )
-
-    let result = dispatcher.run(arguments: ["release", "fixture-bundle"])
-    let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
-
-    #expect(result.exitCode == 0)
-    #expect(manifest.results.map(\.name) == ["fixture-bundle-generate", "fixture-bundle-verify", "release-semver-consumer"])
-    #expect(runner.commands.map(\.arguments) == [
-        ["Tests/Support/fixture-bundle.mjs", "generate", "fixtures", "artifacts"],
-        ["Tests/Support/fixture-bundle.mjs", "verify", "artifacts"],
-        [],
-    ])
-    #expect(runner.commands.first?.environment["AXOLOTY_IMAGE_IDENTITY"] == "sha256:test")
-    #expect(runner.commands.first?.environment["AXOLOTY_GIT_COMMIT"] == "abc123")
-    #expect(runner.commands.last?.executable == "Tests/Support/check-axoloty-semver-consumer.sh")
-    #expect(runner.commands.last?.environment["AXOLOTY_CONSUMER_VERSION"] == "9.9.9")
 }
 
 private final class RecordingSequenceRunner: AxolotyCheckCommandRunning, @unchecked Sendable {

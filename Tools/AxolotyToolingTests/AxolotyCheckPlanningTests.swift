@@ -7,38 +7,32 @@ import Testing
 extension AxolotyCheckTests {
 
 @Test
-func checkpointPlansResolveReleaseSnapshotPlaceholders() throws {
+func checkpointPlansCarryNoUnresolvedPlaceholders() throws {
+    // Release snapshot placeholders existed only for fixture-bundle nodes.
+    // With bundle generation removed, no checkpoint command may still carry an
+    // unsubstituted placeholder.
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
-    let source = "Tests/Fixtures/custom"
-    let destination = ".testing/custom-release"
     let plans = [
         try resolver.resolve(.checkpoint(
             hardwareDevice: nil,
-            source: source,
-            destination: destination,
             consumerEnvironment: [:],
             platform: AxolotyCheckPlan.currentPlatform
         )),
         try resolver.resolve(.checkpoint(
             hardwareDevice: "/dev/ttyACM0",
-            source: source,
-            destination: destination,
             consumerEnvironment: [:],
             platform: AxolotyCheckPlan.currentPlatform
         )),
     ]
 
     for plan in plans {
-        let generate = try #require(plan.nodes.first { $0.name.hasSuffix("fixture-bundle-generate") })
-        let verify = try #require(plan.nodes.first { $0.name.hasSuffix("fixture-bundle-verify") })
-        #expect(generate.command.arguments == [
-            "Tests/Support/fixture-bundle.mjs", "generate", source, destination,
-        ])
-        #expect(verify.command.arguments == [
-            "Tests/Support/fixture-bundle.mjs", "verify", destination,
-        ])
-        #expect(!generate.command.arguments.contains("${SOURCE}"))
-        #expect(!generate.command.arguments.contains("${DESTINATION}"))
+        #expect(!plan.nodes.isEmpty)
+        for node in plan.nodes {
+            for argument in [node.command.executable] + node.command.arguments {
+                #expect(!argument.contains("${"), "unresolved placeholder in \(node.name): \(argument)")
+            }
+            #expect(!node.command.executable.hasSuffix("fixture-bundle.mjs"))
+        }
     }
 }
 

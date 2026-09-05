@@ -434,7 +434,7 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
 
   if (!Array.isArray(document.selfTests)) return [...errors, "selfTests must be an array"];
 
-  const toolCommandIds = new Set(["release-checkpoint", "release-checkpoint-hardware", "release-fixture-bundle"]);
+  const toolCommandIds = new Set(["release-checkpoint", "release-checkpoint-hardware"]);
   const toolEnv = document.toolContainerEnv;
   if (typeof toolEnv !== "object" || toolEnv === null || Array.isArray(toolEnv)) {
     errors.push("toolContainerEnv must be an object keyed by tool command identifier");

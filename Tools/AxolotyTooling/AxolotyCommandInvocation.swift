@@ -13,7 +13,6 @@ enum AxolotyCommandInvocation: Equatable, Sendable {
     case timing(arguments: [String])
     case repositoryValidation(arguments: [String])
     case hardware(required: Bool, device: String?)
-    case wireBundle(path: String)
     case testOne(filter: String)
     case testTier(name: String, ci: Bool)
     case explain(tier: String, ci: Bool)
@@ -51,9 +50,6 @@ struct AxolotyCommandParser: Sendable {
            ["check", "require"].contains(arguments[1]),
            arguments[2] == "--device" {
             return .hardware(required: arguments[1] == "require", device: arguments[3])
-        }
-        if arguments.count == 3, arguments[0] == "wire", arguments[1] == "verify" {
-            return .wireBundle(path: arguments[2])
         }
         if arguments.count == 3, arguments[0] == "test-one", arguments[1] == "--filter" {
             return .testOne(filter: arguments[2])
@@ -108,8 +104,6 @@ struct AxolotyCommandParser: Sendable {
             return .embeddedDoctor
         case ["embedded", "verify"]:
             return .embeddedVerify
-        case ["release", "fixture-bundle"]:
-            return .release(.fixtureBundle)
         case ["release", "checkpoint"]:
             return .release(.checkpoint(hardware: false))
         case ["release", "checkpoint-hardware"]:

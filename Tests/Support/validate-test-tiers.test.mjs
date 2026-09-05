@@ -120,11 +120,11 @@ test("validator enforces the tool container env allowlist contract", () => {
   const badShape = JSON.parse(JSON.stringify(document));
   badShape.toolContainerEnv["release-checkpoint"] = ["AXOLOTY_OK", "not an identifier"];
   badShape.toolContainerEnv["release-unknown"] = ["AXOLOTY_X"];
-  delete badShape.toolContainerEnv["release-fixture-bundle"];
+  delete badShape.toolContainerEnv["release-checkpoint-hardware"];
   errors = validate(badShape, base);
   assert.ok(errors.includes('toolContainerEnv release-checkpoint: invalid env name "not an identifier"'));
   assert.ok(errors.includes("toolContainerEnv release-unknown: unknown tool command identifier"));
-  assert.ok(errors.includes("toolContainerEnv: missing allowlist for release-fixture-bundle"));
+  assert.ok(errors.includes("toolContainerEnv: missing allowlist for release-checkpoint-hardware"));
 });
 
 test("retired make test alias stays removed so no stale integration tier can return", () => {

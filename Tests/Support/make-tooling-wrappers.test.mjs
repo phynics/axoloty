@@ -77,7 +77,6 @@ test("principal Make workflows use the canonical tooling entry points", () => {
     "hardware-check",
     "hardware-require",
     "g1-bounded-runtime-device",
-    "release-fixture-bundle",
   ]) {
     assert.match(recipe(makefile, target), /\$\(MAKE\).*\baxoloty-tool\b/, `${target} must forward to axoloty-tool`);
   }
@@ -101,7 +100,6 @@ test("principal Make workflows use the canonical tooling entry points", () => {
   }
 
   for (const target of [
-    "release-fixture-bundle",
     "test-axoloty-wire-independent-resolution",
     "test-axoloty-wire-distribution",
     "check-embedded-swift",
@@ -245,7 +243,6 @@ test("release targets fail closed when the container env allowlist is unavailabl
   const makefile = fs.readFileSync("Makefile", "utf8");
   const helper = "Tests/Support/tool-container-env.sh";
   for (const [target, command] of [
-    ["release-fixture-bundle", "release-fixture-bundle"],
     ["checkpoint", "release-checkpoint"],
     ["checkpoint-hardware", "release-checkpoint-hardware"],
   ]) {

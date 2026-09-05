@@ -5,11 +5,9 @@ import Foundation
 enum CanonicalNamedPlan: String, CaseIterable, Sendable {
     case offline
     case verify
-    case fixtureBundle = "fixture-bundle"
     case checkpoint
     case checkpointHardware = "checkpoint-hardware"
     case wireLive = "wire-live"
-    case wireBundle = "wire-bundle"
     case testTooling = "test-tooling"
     case objectModel = "object-model"
     case g4Runtime = "g4-runtime"
@@ -28,25 +26,13 @@ enum CanonicalPlanRequest: Sendable {
         ci: Bool,
         platform: AxolotyCheckPlan.Platform
     )
-    case fixtureBundle(
-        source: String,
-        destination: String,
-        environment: [String: String],
-        platform: AxolotyCheckPlan.Platform
-    )
     case checkpoint(
         hardwareDevice: String?,
-        source: String,
-        destination: String,
         consumerEnvironment: [String: String],
         platform: AxolotyCheckPlan.Platform
     )
     case wireCapture(
         environment: [String: String],
-        platform: AxolotyCheckPlan.Platform
-    )
-    case downloadedWireBundle(
-        path: String,
         platform: AxolotyCheckPlan.Platform
     )
 }
@@ -86,25 +72,7 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
             )
         case .tier(let name, let ci, let platform):
             return try resolveTier(name, ci: ci, platform: platform)
-        case .fixtureBundle(let source, let destination, let environment, let platform):
-            let plan = try resolveNamed(
-                .fixtureBundle,
-                ci: false,
-                platform: platform,
-                requested: nil
-            )
-            return rewrite(
-                plan,
-                substitutions: ["${SOURCE}": source, "${DESTINATION}": destination],
-                environment: environment
-            )
-        case .checkpoint(
-            let hardwareDevice,
-            let source,
-            let destination,
-            let consumerEnvironment,
-            let platform
-        ):
+        case .checkpoint(let hardwareDevice, let consumerEnvironment, let platform):
             let plan = try resolveNamed(
                 hardwareDevice == nil ? .checkpoint : .checkpointHardware,
                 ci: false,
@@ -115,11 +83,7 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
             if let hardwareDevice {
                 environment["EMBEDDED_DEVICE"] = hardwareDevice
             }
-            return rewrite(
-                plan,
-                substitutions: ["${SOURCE}": source, "${DESTINATION}": destination],
-                environment: environment
-            )
+            return rewrite(plan, substitutions: [:], environment: environment)
         case .wireCapture(let environment, let platform):
             let plan = try resolveNamed(
                 .wireLive,
@@ -141,14 +105,6 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
                 ],
                 environment: overlay
             )
-        case .downloadedWireBundle(let path, let platform):
-            let plan = try resolveNamed(
-                .wireBundle,
-                ci: false,
-                platform: platform,
-                requested: nil
-            )
-            return rewrite(plan, substitutions: ["${BUNDLE}": path])
         }
     }
 
@@ -226,19 +182,13 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
         case .tier(let tier, let selectedCI, _):
             name = tier
             ci = selectedCI
-        case .fixtureBundle:
-            name = CanonicalNamedPlan.fixtureBundle.rawValue
-            ci = false
-        case .checkpoint(let hardwareDevice, _, _, _, _):
+        case .checkpoint(let hardwareDevice, _, _):
             name = hardwareDevice == nil
                 ? CanonicalNamedPlan.checkpoint.rawValue
                 : CanonicalNamedPlan.checkpointHardware.rawValue
             ci = false
         case .wireCapture:
             name = CanonicalNamedPlan.wireLive.rawValue
-            ci = false
-        case .downloadedWireBundle:
-            name = CanonicalNamedPlan.wireBundle.rawValue
             ci = false
         }
         let byID = Dictionary(uniqueKeysWithValues: manifest.nodes.map { ($0.id, $0) })

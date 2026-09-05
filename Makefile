@@ -84,7 +84,7 @@ DOC_HOSTING_BASE_PATH ?=
 .PHONY: \
 	help image resolve worktree-bootstrap worktree-warm \
 	axoloty-tool verify verify-ci test-one test-tier explain \
-	hardware-check hardware-require release-fixture-bundle checkpoint checkpoint-hardware \
+	hardware-check hardware-require checkpoint checkpoint-hardware \
 	build test-decoder-context-sendable \
 	test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies \
 	test-axoloty-wire-independent-resolution test-axoloty-wire-distribution \
@@ -122,7 +122,6 @@ help:
 		'make hardware-check  Run or skip the sporadic ESP32-C6 smoke check' \
 		'make hardware-require  Require an attached ESP32-C6 smoke check' \
 		'make g1-bounded-runtime-device  Run the G1 candidate evidence on an attached ESP32-C6' \
-		'make release-fixture-bundle  Bundle committed wire fixtures offline (not fresh wire evidence)' \
 		'make checkpoint     Run the release checkpoint validation (no hardware)' \
 		'make checkpoint-hardware  Run checkpoint with ESP32-C6 smoke test' \
 		'make build         Build Axoloty in the Linux container' \
@@ -274,20 +273,6 @@ g1-bounded-runtime-device:
 		AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES='$(AXOLOTY_DEVICE)' \
 		AXOLOTY_TOOL_CONTAINER_ENV_VARS='AXOLOTY_DEVICE' \
 		AXOLOTY_DEVICE='$(AXOLOTY_DEVICE)'
-
-release-fixture-bundle: image
-	@AXOLOTY_IMAGE_IDENTITY="$$( $(CONTAINER_RUNTIME) image inspect --format '{{.Id}}' "$(IMAGE)" )"; \
-		AXOLOTY_GIT_COMMIT="$$(git rev-parse HEAD)"; \
-		if test -z "$$(git status --porcelain)"; then AXOLOTY_GIT_CLEAN=true; else AXOLOTY_GIT_CLEAN=false; fi; \
-		export AXOLOTY_IMAGE_IDENTITY AXOLOTY_GIT_COMMIT AXOLOTY_GIT_CLEAN; \
-		container_env="$$(sh Tests/Support/tool-container-env.sh release-fixture-bundle)" || exit 1; \
-		test -n "$$container_env" || { echo 'release-fixture-bundle: empty container env allowlist' >&2; exit 1; }; \
-		$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='release fixture-bundle' AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS=$(AXOLOTY_RELEASE_TIMEOUT_SECONDS) \
-			AXOLOTY_TOOL_CONTAINER_ENV_VARS="$$container_env" \
-			AXOLOTY_IMAGE_IDENTITY="$$AXOLOTY_IMAGE_IDENTITY" AXOLOTY_GIT_COMMIT="$$AXOLOTY_GIT_COMMIT" \
-			AXOLOTY_GIT_CLEAN="$$AXOLOTY_GIT_CLEAN" AXOLOTY_CONSUMER_REPOSITORY_URL="$(AXOLOTY_CONSUMER_REPOSITORY_URL)" \
-			AXOLOTY_CONSUMER_VERSION="$(AXOLOTY_CONSUMER_VERSION)" AXOLOTY_CONSUMER_LOCAL="$(AXOLOTY_CONSUMER_LOCAL)" \
-			AXOLOTY_CONSUMER_LOCAL_VERSION="$(AXOLOTY_CONSUMER_LOCAL_VERSION)"
 
 checkpoint:
 	@AXOLOTY_GIT_COMMIT="$$(git rev-parse HEAD)"; \

@@ -5,7 +5,6 @@ import Foundation
 /// A typed wire-family command routed by ``AxolotyWireCommands``.
 enum AxolotyWireCommand: Equatable, Sendable {
     case verifyFixtures
-    case verifyBundle(path: String)
     case capture
 }
 
@@ -33,8 +32,6 @@ struct AxolotyWireCommands: Sendable {
         switch command {
         case .verifyFixtures:
             return wireFixturesResult()
-        case .verifyBundle(let path):
-            return wireBundleResult(path: path)
         case .capture:
             return wireCaptureResult()
         }
@@ -48,28 +45,6 @@ struct AxolotyWireCommands: Sendable {
                 ci: false,
                 platform: AxolotyCheckPlan.currentPlatform,
                 requested: ["test-wire"]
-            ))
-            let results = executor.execute(plan)
-            let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
-            return AxolotyCommandFamilySupport.manifestResult(
-                AxolotyCheckManifest(results: results),
-                outputMode: outputMode,
-                exitCode: exitCode
-            )
-        } catch {
-            return AxolotyCommandResult(
-                standardError: "error: \(AxolotyCommandFamilySupport.manifestDiagnostic(error))\n",
-                exitCode: 70
-            )
-        }
-    }
-
-    private func wireBundleResult(path: String) -> AxolotyCommandResult {
-        do {
-            let resolver = try planResolver.get()
-            let plan = try resolver.resolve(.downloadedWireBundle(
-                path: path,
-                platform: AxolotyCheckPlan.currentPlatform
             ))
             let results = executor.execute(plan)
             let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
