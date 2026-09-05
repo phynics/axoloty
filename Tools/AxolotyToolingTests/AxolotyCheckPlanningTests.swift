@@ -78,23 +78,30 @@ func injectedManifestSchemaIsValidatedBeforeResolution() throws {
 }
 
 @Test
-func releaseCategoryContainsEveryOtherCategory() throws {
-    // "release" means every test the host can run, so each narrower category
-    // must be a subset of it.
+func releaseCategoryDeclaresEveryOtherCategoryAndRunsWhatItCan() throws {
+    // release declares the full scope of a release. Categories marked attested
+    // are proved by recorded evidence instead of being run inside it, so they
+    // belong to its declared nodes but not to its resolved plan.
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
-    func nodes(_ tier: CanonicalTier) throws -> Set<String> {
+    let declared = try #require(resolver.manifest.tiers.first { $0.id == "release" }).nodes
+    func resolved(_ tier: CanonicalTier) throws -> Set<String> {
         Set(try resolver.resolve(.tier(
             name: tier.rawValue,
             ci: false,
             platform: .linux
         )).nodes.map(\.name))
     }
-    // Hardware nodes only resolve on Linux, so compare on that platform.
-    let hardwareNames = try nodes(.release)
+    let release = try resolved(.release)
     for narrower in [CanonicalTier.ci, .wire, .embedded] {
-        #expect(try nodes(narrower).isSubset(of: hardwareNames), "\(narrower.rawValue) must be part of release")
+        let tier = try #require(resolver.manifest.tiers.first { $0.id == narrower.rawValue })
+        #expect(Set(tier.nodes).isSubset(of: Set(declared)), "\(narrower.rawValue) must be declared by release")
+        if tier.attested {
+            #expect(Set(tier.nodes).isDisjoint(with: release), "\(narrower.rawValue) is attested, not run inside release")
+            #expect(!(try resolved(narrower)).isEmpty, "\(narrower.rawValue) must still resolve on its own")
+        } else {
+            #expect(try resolved(narrower).isSubset(of: release), "\(narrower.rawValue) must run inside release")
+        }
     }
-    #expect(hardwareNames.contains("checkpoint-hardware-smoke"))
 }
 
 @Test

@@ -254,7 +254,15 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
     }
   }
 
-  // "release" means every test the host can run, so it contains the others.
+  for (const tier of tierByID.values()) {
+    if ("attested" in tier && typeof tier.attested !== "boolean") {
+      errors.push(`${tier.id}: attested must be a boolean`);
+    }
+  }
+
+  // "release" means every test the host can run, so it contains the others --
+  // an attested category is declared here even though release proves it from
+  // recorded evidence rather than running its nodes.
   if (releaseTier) {
     for (const narrower of ["ci", "wire", "embedded"]) {
       const tier = tierByID.get(narrower);

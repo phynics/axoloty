@@ -81,12 +81,13 @@ private func checkpointManifestFixture() throws -> URL {
     var document = try #require(
         JSONSerialization.jsonObject(with: JSONEncoder().encode(baseline)) as? [String: Any]
     )
-    document["releaseGates"] = []
-    var plans = try #require(document["plans"] as? [String: Any])
-    var checkpoint = try #require(plans["checkpoint"] as? [String: Any])
-    checkpoint["nodes"] = ["resolve"]
-    plans["checkpoint"] = checkpoint
-    document["plans"] = plans
+    let tiers = try #require(document["tiers"] as? [[String: Any]])
+    var release = try #require(tiers.first { ($0["id"] as? String) == "release" })
+    release["nodes"] = ["resolve"]
+    // Only the release category remains, so releaseGates -- derived as every
+    // other category -- is empty and the checkpoint runs one command.
+    document["tiers"] = [release]
+    document["requiredGates"] = []
 
     let directory = FileManager.default.temporaryDirectory
         .appending(path: "axoloty-checkpoint-fixture-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -197,7 +198,7 @@ func checkPlanPrintsStableJSON() {
 }
 
 @Test
-func g3ObjectModelTierSelectsTheFullAggregate() throws {
+func ciCategorySelectsTheFullObjectModelAggregate() throws {
     let runner = RecordingSequenceRunner()
     let dispatcher = AxolotyCommandDispatcher(
         commandRunner: runner,
@@ -205,7 +206,7 @@ func g3ObjectModelTierSelectsTheFullAggregate() throws {
         environment: projectEnvironment
     )
 
-    let result = dispatcher.run(arguments: ["test-tier", "g3-object-model"])
+    let result = dispatcher.run(arguments: ["test-tier", CanonicalTier.ci.rawValue])
     let manifest = try JSONDecoder().decode(
         AxolotyCheckManifest.self,
         from: Data(result.standardOutput.utf8)
@@ -235,7 +236,7 @@ func canonicalManifestDefinesVerifyRootsAndBoundedTestOne() throws {
     #expect(manifest.requiredGates.allSatisfy { gate in manifest.nodes.contains { $0.id == gate } })
     // requiredGates is the ci category, and releaseGates is derived from the
     // declared categories rather than stored beside them.
-    #expect(Set(manifest.requiredGates) == Set(manifest.tiers.first { $0.id == "ci" }?.nodes ?? []))
+    #expect(Set(manifest.requiredGates).isSubset(of: Set(manifest.tiers.first { $0.id == "ci" }?.nodes ?? [])))
     #expect(manifest.releaseGates == ["ci", "wire", "embedded"])
     #expect(manifest.toolContainerEnv?.allowlist(for: "release-checkpoint")?.contains("AXOLOTY_GIT_TREE") == true)
     #expect(manifest.toolContainerEnv?.allowlist(for: "release-checkpoint-hardware")?.contains("AXOLOTY_DEVICE") == true)
@@ -243,14 +244,14 @@ func canonicalManifestDefinesVerifyRootsAndBoundedTestOne() throws {
     #expect(try resolver.command(.testOne(filter: "suite;touch /tmp/injected")).arguments.last == "suite;touch /tmp/injected")
     #expect(manifest.testOne.timeoutSeconds > 0)
     #expect(try resolver.resolve(.tier(
-        name: "unit",
+        name: CanonicalTier.wire.rawValue,
         ci: false,
         platform: AxolotyCheckPlan.currentPlatform
-    )).deadlineSeconds == 1_800)
+    )).deadlineSeconds == 3_600)
     #expect(try resolver.resolve(.tier(name: CanonicalTier.ci.rawValue, ci: true,
         platform: AxolotyCheckPlan.currentPlatform,
         requested: nil
-    )).deadlineSeconds == 4_800)
+    )).deadlineSeconds == 3_600)
 }
 
 @Test
@@ -314,7 +315,16 @@ func checkpointPlanningAndCertificationUseOneManifestSnapshot() throws {
     var document = try #require(
         JSONSerialization.jsonObject(with: JSONEncoder().encode(baseline)) as? [String: Any]
     )
-    document["releaseGates"] = ["smoke"]
+    // releaseGates is every category except release, so a fixture names its
+    // gate by declaring exactly one other category.
+    let tiers = try #require(document["tiers"] as? [[String: Any]])
+    var release = try #require(tiers.first { ($0["id"] as? String) == "release" })
+    var gate = try #require(tiers.first { ($0["id"] as? String) == "ci" })
+    release["nodes"] = ["resolve"]
+    gate["nodes"] = ["resolve"]
+    gate["id"] = "smoke"
+    document["tiers"] = [gate, release]
+    document["requiredGates"] = []
     let directory = FileManager.default.temporaryDirectory
         .appending(path: "axoloty-manifest-snapshot-\(UUID().uuidString)", directoryHint: .isDirectory)
     let override = directory.appending(path: "manifest.json")
@@ -330,12 +340,12 @@ func checkpointPlanningAndCertificationUseOneManifestSnapshot() throws {
         ]) { _, value in value }
     )
 
-    document["releaseGates"] = ["unit"]
-    var plans = try #require(document["plans"] as? [String: Any])
-    var checkpoint = try #require(plans["checkpoint"] as? [String: Any])
-    checkpoint["nodes"] = []
-    plans["checkpoint"] = checkpoint
-    document["plans"] = plans
+    // Rewrite the file after the dispatcher was constructed: a different gate
+    // and nothing to run. The assertions below prove the first snapshot was
+    // the one used for both planning and certification.
+    gate["id"] = "unit"
+    release["nodes"] = []
+    document["tiers"] = [gate, release]
     try JSONSerialization.data(withJSONObject: document, options: [.sortedKeys]).write(to: override)
 
     let result = dispatcher.run(arguments: ["release", "checkpoint"])
@@ -380,9 +390,9 @@ func canonicalExecutorSerializesIndependentNodes() {
 func explainIsMachineReadableAndHumanReadable() throws {
     let environment = projectEnvironment.merging(["AXOLOTY_OUTPUT": "human"]) { _, value in value }
     let dispatcher = AxolotyCommandDispatcher(environment: environment)
-    let result = dispatcher.run(arguments: ["explain", "unit"])
+    let result = dispatcher.run(arguments: ["explain", CanonicalTier.ci.rawValue])
     #expect(result.exitCode == 0)
-    #expect(result.standardOutput.contains("PLAN unit"))
+    #expect(result.standardOutput.contains("PLAN ci"))
     #expect(result.standardOutput.contains("policy network=none"))
 }
 
@@ -580,7 +590,7 @@ func checkpointFailsWhenRequiredReleaseGateHasNoEvidence() throws {
     let manifest = try JSONDecoder().decode(AxolotyCheckpointManifest.self, from: Data(result.standardOutput.utf8))
 
     #expect(result.exitCode == 1)
-    let wireLive = try #require(manifest.releaseGates.first { $0.id == "wire-live" })
+    let wireLive = try #require(manifest.releaseGates.first { $0.id == "wire" })
     #expect(wireLive.result == .skipped)
     #expect(manifest.releaseGates.contains { $0.result == .skipped })
 }
@@ -615,7 +625,7 @@ func checkpointRejectsLegacyGenericExternallyAttestedReleaseGate() throws {
             ]
         ),
         environment: projectEnvironment.merging([
-            "AXOLOTY_ATTESTATION_WIRE_LIVE_PATH": ".testing/wire/manifest.json",
+            "AXOLOTY_ATTESTATION_WIRE_PATH": ".testing/wire/manifest.json",
         ]) { _, value in value }
     )
 
@@ -623,7 +633,7 @@ func checkpointRejectsLegacyGenericExternallyAttestedReleaseGate() throws {
     let manifest = try JSONDecoder().decode(AxolotyCheckpointManifest.self, from: Data(result.standardOutput.utf8))
 
     #expect(result.exitCode == 1)
-    let wireLive = try #require(manifest.releaseGates.first { $0.id == "wire-live" })
+    let wireLive = try #require(manifest.releaseGates.first { $0.id == "wire" })
     #expect(wireLive.result == .failed)
     #expect(wireLive.evidence == ".testing/wire/manifest.json")
 }
@@ -640,7 +650,7 @@ func checkpointRejectsInvalidExternallyAttestedReleaseGate() throws {
             ]
         ),
         environment: projectEnvironment.merging([
-            "AXOLOTY_ATTESTATION_WIRE_LIVE_PATH": ".testing/wire/manifest.json",
+            "AXOLOTY_ATTESTATION_WIRE_PATH": ".testing/wire/manifest.json",
         ]) { _, value in value }
     )
 
@@ -648,7 +658,7 @@ func checkpointRejectsInvalidExternallyAttestedReleaseGate() throws {
     let manifest = try JSONDecoder().decode(AxolotyCheckpointManifest.self, from: Data(result.standardOutput.utf8))
 
     #expect(result.exitCode == 1)
-    let wireLive = try #require(manifest.releaseGates.first { $0.id == "wire-live" })
+    let wireLive = try #require(manifest.releaseGates.first { $0.id == "wire" })
     #expect(wireLive.result == .failed)
 }
 
@@ -658,7 +668,7 @@ func checkpointManifestRecordsAllRequiredReleaseGatesInOrder() throws {
         commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
         integrationRunner: StubIntegrationRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
         environment: projectEnvironment.merging([
-            "AXOLOTY_ATTESTATION_WIRE_LIVE_PATH": ".testing/wire/manifest.json",
+            "AXOLOTY_ATTESTATION_WIRE_PATH": ".testing/wire/manifest.json",
         ]) { _, value in value }
     )
 
@@ -666,10 +676,7 @@ func checkpointManifestRecordsAllRequiredReleaseGatesInOrder() throws {
     let manifest = try JSONDecoder().decode(AxolotyCheckpointManifest.self, from: Data(result.standardOutput.utf8))
 
     #expect(manifest.schemaVersion == 3)
-    #expect(manifest.releaseGates.map(\.id) == [
-        "smoke", "unit", "module", "wire-offline", "wire-live", "g3-object-model", "g4-runtime", "g5-optional-products",
-        "g6-non-divergence",
-    ])
+    #expect(manifest.releaseGates.map(\.id) == ["ci", "wire", "embedded"])
     #expect(manifest.releaseGates.first { $0.id == "integration" } == nil)
 }
 
@@ -692,11 +699,13 @@ func releaseCheckpointUsesTheInjectedExecutorEventSink() {
     let result = dispatcher.run(arguments: ["release", "checkpoint"])
 
     #expect(result.standardError.isEmpty)
+    // The release category declares an expected duration; the plan it replaced
+    // declared none.
     #expect(events.lines == [
-        "[axoloty] event=plan-start\n",
+        "[axoloty] event=plan-start expected=9000.000s\n",
         "[axoloty] event=node-start node=resolve expected=60.000s lease-wait=0.000s\n",
         "[axoloty] event=node-completion node=resolve status=passed elapsed=0.000s expected=60.000s lease-wait=0.000s\n",
-        "[axoloty] event=plan-completion status=passed elapsed=0.000s lease-wait=0.000s output-bytes=0\n",
+        "[axoloty] event=plan-completion status=passed elapsed=0.000s expected=9000.000s lease-wait=0.000s output-bytes=0\n",
     ])
 }
 

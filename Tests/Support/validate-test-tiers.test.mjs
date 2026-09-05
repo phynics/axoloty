@@ -431,3 +431,23 @@ test("a self-test is owned by a category that actually runs it", () => {
   });
   assert.ok(errors.some(error => error.includes('no node of the "embedded" category runs it')));
 });
+
+test("an attested category is declared by release and typed as a boolean", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const base = {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  };
+  // wire needs a host shell and a broker, so the release checkpoint proves it
+  // from recorded evidence instead of running its nodes.
+  const wire = document.tiers.find(tier => tier.id === "wire");
+  assert.equal(wire.attested, true);
+  const release = document.tiers.find(tier => tier.id === "release");
+  assert.ok(wire.nodes.every(id => release.nodes.includes(id)));
+  assert.equal(document.tiers.find(tier => tier.id === "ci").attested, false);
+
+  const malformed = JSON.parse(JSON.stringify(document));
+  malformed.tiers.find(tier => tier.id === "wire").attested = "yes";
+  assert.ok(validate(malformed, base).includes("wire: attested must be a boolean"));
+});

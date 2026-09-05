@@ -173,6 +173,13 @@ public struct AxolotyCanonicalTestNode: Codable, Equatable, Sendable {
 
 /// A canonical test tier and its root nodes.
 public struct AxolotyCanonicalTestTier: Codable, Equatable, Sendable {
+    private enum CodingKeys: String, CodingKey {
+        case id, timeoutSeconds, expectedDurationSeconds, cadence, required, local, ci
+        case makeTarget, workflow, network, broker, hardware, resources, isolation
+        case artifacts, nodes
+        case attestedFlag = "attested"
+    }
+
     /// The stable tier identifier.
     public let id: String
     /// Tier deadline in seconds.
@@ -207,6 +214,12 @@ public struct AxolotyCanonicalTestTier: Codable, Equatable, Sendable {
     public let artifacts: [String]
     /// Root node identifiers selected by the tier.
     public let nodes: [String]
+    /// Whether the category is proved by recorded evidence rather than run
+    /// inside another category. An attested category still runs on its own
+    /// (`test-tier TIER=<id>`); it is excluded when a wider category resolves,
+    /// because its nodes need a context that category cannot provide.
+    public var attested: Bool { attestedFlag ?? false }
+    private let attestedFlag: Bool?
 
     /// Creates a canonical test tier.
     public init(
@@ -225,7 +238,8 @@ public struct AxolotyCanonicalTestTier: Codable, Equatable, Sendable {
         resources: [String] = [],
         isolation: AxolotyTestIsolation = .parallel,
         artifacts: [String] = [],
-        nodes: [String]
+        nodes: [String],
+        attested: Bool = false
     ) {
         self.id = id
         self.timeoutSeconds = timeoutSeconds
@@ -243,6 +257,7 @@ public struct AxolotyCanonicalTestTier: Codable, Equatable, Sendable {
         self.isolation = isolation
         self.artifacts = artifacts
         self.nodes = nodes
+        self.attestedFlag = attested
     }
 }
 

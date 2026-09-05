@@ -217,9 +217,17 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
                 }
             }
         }
+        // An attested category is proved by recorded evidence, not by running
+        // its nodes inside a wider one: they need a context -- a host shell, a
+        // broker, an Apple machine -- that the wider run cannot provide. It
+        // still resolves in full when requested by name.
+        let attestedElsewhere = definition.attested ? [] : manifest.tiers
+            .filter { $0.attested && $0.id != name }
+            .flatMap(\.nodes)
+        let roots = definition.nodes.filter { !attestedElsewhere.contains($0) }
         let availability: @Sendable (AxolotyCanonicalTestNode) -> Bool = { ci ? $0.ci : $0.local }
         let declaredPlan = try resolve(
-            roots: definition.nodes,
+            roots: roots,
             platform: platform,
             availability: availability,
             deadlineSeconds: definition.timeoutSeconds,
