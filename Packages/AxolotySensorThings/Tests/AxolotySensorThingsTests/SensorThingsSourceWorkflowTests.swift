@@ -6,6 +6,7 @@ import Axoloty
 import AxolotyObjectModel
 import AxolotyWire
 @testable import AxolotySensorThings
+import AxolotySensorThingsModel
 
 private let sourceIDOne = "11111111-1111-4111-8111-111111111111"
 private let sourceIDTwo = "22222222-2222-4222-8222-222222222222"

@@ -9,6 +9,7 @@
 
 import AxolotyObjectModel
 import AxolotySensorThings
+import AxolotySensorThingsModel
 
 let coreType = ObjectCoreType.coatyObject
 let metadata = try! SensorThingsJSONValue("{\"manufacturer\":\"axoloty\"}")

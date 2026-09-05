@@ -231,15 +231,43 @@
       "note": "Reaches the runtime through package-scoped extension declarations rather than an SPI, so the surface is compiler-enforced first-party rather than opt-in."
     },
     {
+      "name": "AxolotySensorThingsModel",
+      "role": "portable",
+      "platformClass": "portable",
+      "path": "Packages/AxolotySensorThings/Sources/AxolotySensorThingsModel",
+      "allowedImports": [
+        "AxolotyObjectModel",
+        "AxolotyWire"
+      ],
+      "forbiddenImports": [
+        "Foundation",
+        "MQTTNIO",
+        "NIO",
+        "NIOCore",
+        "NIOConcurrencyHelpers",
+        "NIOSSL",
+        "NIOTransportServices",
+        "Network",
+        "Logging",
+        "OSLog",
+        "ErrorKit",
+        "Combine",
+        "Axoloty",
+        "AxolotySensorThings"
+      ],
+      "note": "SensorThings schemas and JSON shaping. Depends only on the portable object model, so encoding or decoding SensorThings values needs no runtime."
+    },
+    {
       "name": "AxolotySensorThings",
       "role": "capability",
       "platformClass": "host",
       "path": "Packages/AxolotySensorThings/Sources/AxolotySensorThings",
       "allowedImports": [
         "Axoloty",
-        "AxolotyWire",
         "AxolotyObjectModel",
         "AxolotyProtocol",
+        "AxolotySensorThingsModel",
+        "AxolotyWire",
         "ErrorKit"
       ],
       "forbiddenImports": [

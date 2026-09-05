@@ -4,6 +4,7 @@ import Testing
 import AxolotyObjectModel
 import AxolotyWire
 @testable import AxolotySensorThings
+import AxolotySensorThingsModel
 
 @Test("channel identifiers reject separators and wildcards")
 func channelRejectsSeparators() throws {

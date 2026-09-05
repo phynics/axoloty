@@ -128,6 +128,24 @@ declarations under the same names.
 consumes it and is compiled for Embedded Swift through CMake components that
 pass no `-package-name`, so `package` would not cross that boundary.
 
+## SensorThings schemas moved to `AxolotySensorThingsModel`
+
+The SensorThings schemas and JSON shaping are now their own product, which
+depends only on the portable object model. A consumer that encodes or decodes
+SensorThings values no longer pulls in the runtime.
+
+```swift
+.product(name: "AxolotySensorThingsModel", package: "axoloty"),
+```
+
+```swift
+import AxolotySensorThings       // registration, sources, the registry
+import AxolotySensorThingsModel  // Thing, Sensor, Observation, JSON values
+```
+
+No symbol changed name or behavior. Code that only registers SensorThings
+workflows needs no edit; code that names a schema type adds the second import.
+
 ## MQTT remains the default and validated transport
 
 Nothing about the wire format, the sealed `coaty/3` profile, or broker
