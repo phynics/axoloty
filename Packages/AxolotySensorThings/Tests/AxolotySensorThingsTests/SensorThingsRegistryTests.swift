@@ -55,12 +55,12 @@ func registryTracksRelationshipsAndSensorChannel() async throws {
 
     let sender = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
     try #require(await runtime.receive(.profile(
-        topic: "coaty/3/registry-tests/ADV::coaty.sensorThings.Thing/\(sender)",
+        route: "coaty/3/registry-tests/ADV::coaty.sensorThings.Thing/\(sender)",
         payload: advertisePayload(try fixtureThing(id: registryThingID)),
         nowMS: 1
     )) == .accepted)
     try #require(await runtime.receive(.profile(
-        topic: "coaty/3/registry-tests/ADV::coaty.sensorThings.Sensor/\(sender)",
+        route: "coaty/3/registry-tests/ADV::coaty.sensorThings.Sensor/\(sender)",
         payload: advertisePayload(try fixtureSensor(id: registrySensorID, parentID: registryThingID)),
         nowMS: 2
     )) == .accepted)
@@ -73,7 +73,7 @@ func registryTracksRelationshipsAndSensorChannel() async throws {
     var observations = streams.observations.makeAsyncIterator()
     let observation = try fixtureObservation(id: registryObservationID, parentID: registrySensorID)
     try #require(await runtime.receive(.profile(
-        topic: "coaty/3/registry-tests/CHN:\(registrySensorID)/\(sender)",
+        route: "coaty/3/registry-tests/CHN:\(registrySensorID)/\(sender)",
         payload: channelPayload(observation),
         nowMS: 3
     )) == .accepted)
@@ -99,17 +99,17 @@ func registryThingDeadvertisementRemovesSensorsAtomically() async throws {
     var catalogue = streams.catalogueChanges.makeAsyncIterator()
     let sender = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
     try #require(await runtime.receive(.profile(
-        topic: "coaty/3/registry-tests/ADV::coaty.sensorThings.Thing/\(sender)",
+        route: "coaty/3/registry-tests/ADV::coaty.sensorThings.Thing/\(sender)",
         payload: advertisePayload(try fixtureThing(id: registryThingID)),
         nowMS: 1
     )) == .accepted)
     try #require(await runtime.receive(.profile(
-        topic: "coaty/3/registry-tests/ADV::coaty.sensorThings.Sensor/\(sender)",
+        route: "coaty/3/registry-tests/ADV::coaty.sensorThings.Sensor/\(sender)",
         payload: advertisePayload(try fixtureSensor(id: registrySensorID, parentID: registryThingID)),
         nowMS: 2
     )) == .accepted)
     try #require(await runtime.receive(.profile(
-        topic: "coaty/3/registry-tests/ADV::coaty.sensorThings.Sensor/\(sender)",
+        route: "coaty/3/registry-tests/ADV::coaty.sensorThings.Sensor/\(sender)",
         payload: advertisePayload(try fixtureSensor(id: registrySecondSensorID, parentID: registryThingID)),
         nowMS: 3
     )) == .accepted)
@@ -120,7 +120,7 @@ func registryThingDeadvertisementRemovesSensorsAtomically() async throws {
     #expect(second.total.count == 2)
 
     try #require(await runtime.receive(.profile(
-        topic: "coaty/3/registry-tests/DAD/\(sender)",
+        route: "coaty/3/registry-tests/DAD/\(sender)",
         payload: Array("{\"objectIds\":[\"\(registryThingID)\"]}".utf8),
         nowMS: 4
     )) == .accepted)

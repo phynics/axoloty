@@ -39,7 +39,7 @@ extension AxolotyRuntimeTests {
             + "55555555-5555-4555-8555-555555555555"
         #expect(topic.utf8.count == 150)
         let payload = Array(#"{"result":{"answer":49,"variant":"original"},"executionInfo":{"responder":"coatyjs-2.4.0"}}"#.utf8)
-        let receipt = await runtime.receive(.profile(topic: topic, payload: payload, nowMS: 2))
+        let receipt = await runtime.receive(.profile(route: topic, payload: payload, nowMS: 2))
         try #require(receipt == .accepted)
 
         var iterator = stream.makeAsyncIterator()
@@ -51,7 +51,7 @@ extension AxolotyRuntimeTests {
             #"{"result":{"answer":49,"variant":"duplicate"},"executionInfo":{"responder":"coatyjs-2.4.0"}}"#.utf8
         )
         #expect(await runtime.receive(.profile(
-            topic: topic,
+            route: topic,
             payload: duplicatePayload,
             nowMS: 3
         )) == .rejected(.protocol(.duplicate)))
@@ -101,7 +101,7 @@ extension AxolotyRuntimeTests {
 
         let iterator = RuntimeTestIteratorBox(stream.makeAsyncIterator())
         let receipt = await runtime.receive(.profile(
-            topic: "coaty/3/test/ADV:CoatyObject/22222222-2222-4222-8222-222222222222",
+            route: "coaty/3/test/ADV:CoatyObject/22222222-2222-4222-8222-222222222222",
             payload: Array(#"{"object":{"objectId":"11111111-1111-4111-8111-111111111111","coreType":"CoatyObject","objectType":"com.coaty.test.WireFixture","name":"wire-fixture"}}"#.utf8),
             nowMS: 0
         ))

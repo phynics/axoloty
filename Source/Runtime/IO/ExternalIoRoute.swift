@@ -4,34 +4,40 @@
 import AxolotyObjectModel
 import AxolotyWire
 
-/// A validated exact MQTT route for an external IO source.
-public struct MQTTExternalIoRoute: Sendable, Hashable {
-    let topic: String
-    let topicBytes: BoundedEncodedText<256>
+/// A validated exact route for an external IO source.
+///
+/// The grammar is the validated transport's: bounded UTF-8, no empty segments,
+/// and none of the characters MQTT reserves for wildcards or quoting. It is
+/// deliberately no laxer than that. A route accepted here must be publishable
+/// on the transport Axoloty validates against, and a stricter-than-necessary
+/// rule stays safe if a future carrier permits more.
+public struct ExternalIoRoute: Sendable, Hashable {
+    let route: String
+    let routeBytes: BoundedEncodedText<256>
 
     /// Creates an exact external route.
     ///
-    /// - Parameter topic: A non-wildcard MQTT topic with non-empty levels.
-    /// - Throws: ``AxolotyError`` when the topic is not a bounded exact route.
-    public init(_ topic: String) throws {
-        let bytes = Array(topic.utf8)
+    /// - Parameter route: A non-wildcard route with non-empty segments.
+    /// - Throws: ``AxolotyError`` when the route is not a bounded exact route.
+    public init(_ route: String) throws {
+        let bytes = Array(route.utf8)
         guard !bytes.isEmpty, bytes.count <= WireBufferConfig.maxTopicLength else {
-            throw AxolotyError.invalidArgument(argument: "topic", reason: "must contain 1...256 UTF-8 bytes")
+            throw AxolotyError.invalidArgument(argument: "route", reason: "must contain 1...256 UTF-8 bytes")
         }
         guard bytes.first != 0x2F, bytes.last != 0x2F else {
-            throw AxolotyError.invalidArgument(argument: "topic", reason: "must not start or end with '/'")
+            throw AxolotyError.invalidArgument(argument: "route", reason: "must not start or end with '/'")
         }
         var previousWasSeparator = false
         for byte in bytes {
             guard byte >= 0x20, byte != 0x22, byte != 0x23, byte != 0x2B, byte != 0x5C else {
                 throw AxolotyError.invalidArgument(
-                    argument: "topic",
+                    argument: "route",
                     reason: "must not contain control characters, quotes, backslashes, '+' or '#'"
                 )
             }
             if byte == 0x2F {
                 guard !previousWasSeparator else {
-                    throw AxolotyError.invalidArgument(argument: "topic", reason: "must not contain empty levels")
+                    throw AxolotyError.invalidArgument(argument: "route", reason: "must not contain empty segments")
                 }
                 previousWasSeparator = true
             } else {
@@ -44,17 +50,17 @@ public struct MQTTExternalIoRoute: Sendable, Hashable {
             encoded = BoundedEncodedText(bytes: ByteSlice(bytes: base, length: buffer.count))
         }
         guard let encoded else {
-            throw AxolotyError.invalidArgument(argument: "topic", reason: "must contain 1 to 256 UTF-8 bytes")
+            throw AxolotyError.invalidArgument(argument: "route", reason: "must contain 1 to 256 UTF-8 bytes")
         }
-        self.topic = topic
-        self.topicBytes = encoded
+        self.route = route
+        self.routeBytes = encoded
     }
 }
 
 /// A copied inbound frame admitted by a transport boundary.
 public enum RuntimeInboundFrame: Sendable, Equatable {
     /// A Coaty Core profile frame.
-    case profile(topic: String, payload: [UInt8], nowMS: UInt32)
+    case profile(route: String, payload: [UInt8], nowMS: UInt32)
     /// An exact external IO route and its copied payload.
     case externalIo(route: String, payload: [UInt8], nowMS: UInt32)
 }

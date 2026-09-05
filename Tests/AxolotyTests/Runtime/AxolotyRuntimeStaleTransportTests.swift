@@ -30,7 +30,7 @@ extension AxolotyRuntimeTests {
 
             let staleTopic = "coaty/3/test/ADV:CoatyObject/33333333-3333-4333-8333-333333333333"
             let stalePayload = Array(#"{"object":{"objectId":"11111111-1111-4111-8111-111111111111","coreType":"CoatyObject","objectType":"com.coaty.test.StaleFixture","name":"stale-fixture"}}"#.utf8)
-            await transport.deliver(.profile(topic: staleTopic, payload: stalePayload, nowMS: 0))
+            await transport.deliver(.profile(route: staleTopic, payload: stalePayload, nowMS: 0))
             await runtime.reconnect()
 
             try await waitUntil("runtime to finish reconnecting") {

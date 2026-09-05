@@ -88,7 +88,7 @@ struct AxolotyRuntimeIoTests {
                 length: sourceJSON.utf8CodeUnitCount
             )),
             as: Bool.self,
-            externalRoute: try MQTTExternalIoRoute("plant/line-7/temperature")
+            externalRoute: try ExternalIoRoute("plant/line-7/temperature")
         )
         let actorHandle = try builder.ioActor(
             metadata: try Object<IoActorMetadata>(decoding: ByteSlice(

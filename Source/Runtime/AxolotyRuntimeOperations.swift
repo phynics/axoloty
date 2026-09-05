@@ -23,7 +23,7 @@ public enum RuntimeRequest: Sendable, Equatable {
     case query(correlationID: UUID16, payload: [UInt8], timeoutMS: UInt32)
     case update(correlationID: UUID16, payload: [UInt8], timeoutMS: UInt32)
     case call(correlationID: UUID16, payload: [UInt8], timeoutMS: UInt32)
-    /// Issues a Call request with the operation name encoded as the Coaty topic filter.
+    /// Issues a Call request with the operation name encoded as the Coaty route filter.
     case callWithOperation(correlationID: UUID16, operation: String, payload: [UInt8], timeoutMS: UInt32)
 
     /// Creates a filtered Call request while preserving the compact legacy spelling.
@@ -57,7 +57,7 @@ public struct RuntimeOperation: Sendable, Equatable {
     public let payload: [UInt8]
     /// The request timeout for request capabilities.
     public let requestTimeoutMS: UInt32?
-    /// The optional Channel identifier or Call operation encoded as the topic filter.
+    /// The optional Channel identifier or Call operation encoded as the route filter.
     public let operationName: String?
 
     /// Creates an owned local operation inside the runtime boundary.

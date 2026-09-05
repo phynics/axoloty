@@ -50,7 +50,7 @@ func runAgent() async throws {
 
 `run()` is single-use. Call ``AxolotyRuntime/stop()`` for graceful shutdown,
 or create a new runtime after a terminal failure. Event values and handler
-inputs are owned before they cross an asynchronous boundary; raw MQTT topics
+inputs are owned before they cross an asynchronous boundary; raw transport routes
 are never part of the public runtime API.
 
 ## Observe events

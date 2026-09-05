@@ -9,14 +9,17 @@ import ErrorKit
 
 /// A validated application Channel identifier for SensorThings values.
 public struct SensorThingsChannel<Schema: SensorThingsTopLevelSchema>: Sendable, Hashable {
-    /// The identifier encoded into the standard Channel topic filter.
+    /// The identifier encoded into the Channel route's filter segment.
     public let identifier: String
 
     /// Creates a Channel identifier.
     ///
-    /// - Parameter identifier: One bounded MQTT topic level.
+    /// - Parameter identifier: One bounded route segment. It becomes the
+    ///   filter on a Coaty Channel route, so it may not contain a segment
+    ///   separator or any character the validated transport reserves for
+    ///   wildcards.
     /// - Throws: ``AxolotyError`` when the identifier is empty, too large, or
-    ///   contains topic separators/wildcards.
+    ///   contains a segment separator or reserved character.
     public init(_ identifier: String) throws {
         guard !identifier.isEmpty,
               identifier.utf8.count <= 128,

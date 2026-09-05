@@ -85,6 +85,26 @@ their names. MQTT implements them as server-side wildcard subscriptions, which
 is a broker capability rather than a concept every carrier shares; both default
 to no-ops, so an adapter without the concept simply does not implement them.
 
+## `MQTTExternalIoRoute` is `ExternalIoRoute`
+
+The type validating an exact external IO route lost its carrier prefix, and its
+members follow:
+
+| 0.7 | 0.8 |
+|---|---|
+| `MQTTExternalIoRoute(_ topic: String)` | `ExternalIoRoute(_ route: String)` |
+| `RuntimeInboundFrame.profile(topic:payload:nowMS:)` | `.profile(route:payload:nowMS:)` |
+
+The accepted grammar is unchanged: bounded UTF-8, no empty segments, and none
+of the characters MQTT reserves for wildcards or quoting. That rule is
+deliberately no laxer than the validated transport requires, so a route
+accepted here stays publishable if a future carrier permits more.
+
+Diagnostic text and documentation that described "MQTT topic separators" or
+"MQTT topic levels" now say "route separators" and "route segments". The
+`SensorThingsChannel` identifier is documented as a route segment rather than
+an MQTT topic level. No behavior changed.
+
 ## SensorThings schemas moved to `AxolotySensorThingsModel`
 
 The SensorThings schemas and JSON shaping are now their own product, which

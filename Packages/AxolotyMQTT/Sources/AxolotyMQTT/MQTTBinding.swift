@@ -386,7 +386,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
                 namespace: activeNamespace,
                 maximumTopicLength: maximumProfileTopicBytes
             ) {
-                return .profile(topic: topic, payload: payload, nowMS: nowMS)
+                return .profile(route: topic, payload: payload, nowMS: nowMS)
             }
             guard externalRoutes.contains(where: {
                 $0.state == .subscribed && $0.epoch == transportEpoch && $0.topic == topic

@@ -42,7 +42,7 @@ public enum RuntimeRejection: Sendable, Equatable {
     case malformedFrame(ProtocolError.Code)
     /// The operation payload is empty or invalid for its family.
     case malformedPayload
-    /// A filtered Call operation name cannot be represented as one MQTT topic level.
+    /// A filtered Call operation name cannot be represented as one route segment.
     case invalidOperationName
     /// A processor-defined rejection code.
     case `protocol`(ProtocolError.Code)

@@ -169,7 +169,7 @@ let package = Package(
                 "Runtime/AxolotyRuntimeDefinition+IO.swift",
                 "Runtime/AxolotyRuntime.swift",
                 "Runtime/AxolotyRuntimeFacade.swift",
-                "Runtime/IO/MQTTExternalIoRoute.swift",
+                "Runtime/IO/ExternalIoRoute.swift",
                 "Runtime/IO/RuntimeIO.swift",
                 "Runtime/IO/RuntimeTypedIoState.swift",
                 "Runtime/RuntimeLifecyclePayload.swift",
