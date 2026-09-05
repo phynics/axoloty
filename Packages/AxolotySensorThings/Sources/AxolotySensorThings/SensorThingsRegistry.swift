@@ -2,6 +2,7 @@
 
 @_spi(AxolotyRuntimeAdapter) import Axoloty
 import AxolotyObjectModel
+import AxolotySensorThingsModel
 import AxolotyProtocol
 import AxolotyWire
 
@@ -217,9 +218,8 @@ struct SensorThingsRegistryRegistration: Sendable {
 private actor SensorThingsRegistryCoordinator {
     private let thingID: ObjectID
     private let filter: [UInt8]?
-    private let maximumSensors: Int
-    private var thing: SensorThingsObjectSnapshot<Thing>?
-    private var sensors: [ObjectID: SensorThingsObjectSnapshot<Sensor>] = [:]
+    /// The catalogue decides what changes; this actor decodes and publishes.
+    private var catalogue: SensorThingsCatalogue
     private let catalogueContinuation: AsyncStream<SensorThingsCatalogueChange>.Continuation
     private let observationContinuation: AsyncStream<ThingSensorObservationDelivery>.Continuation
 
@@ -232,7 +232,7 @@ private actor SensorThingsRegistryCoordinator {
     ) {
         self.thingID = thingID
         self.filter = filterBytes
-        self.maximumSensors = maximumSensors
+        self.catalogue = SensorThingsCatalogue(thingID: thingID, maximumSensors: maximumSensors)
         self.catalogueContinuation = catalogueContinuation
         self.observationContinuation = observationContinuation
     }
@@ -286,19 +286,7 @@ private actor SensorThingsRegistryCoordinator {
             return
         }
         for id in ids {
-            if id == thingID {
-                guard let oldThing = thing else { continue }
-                // Remove Sensors one at a time so every change contains the
-                // complete remaining catalogue. Clearing the dictionary first
-                // would make every removal report an identical empty total.
-                for sensorID in sensors.keys.sorted(by: { $0.uuid.isLexicographicallyBefore($1.uuid) }) {
-                    guard let sensor = sensors.removeValue(forKey: sensorID) else { continue }
-                    await emit(.removed, sensor: sensor, thing: oldThing, diagnose: diagnose)
-                }
-                thing = nil
-            } else if let sensor = sensors.removeValue(forKey: id) {
-                await emit(.removed, sensor: sensor, thing: thing, diagnose: diagnose)
-            }
+            await publish(catalogue.remove(id), diagnose: diagnose)
         }
     }
 
@@ -308,23 +296,19 @@ private actor SensorThingsRegistryCoordinator {
     ) async {
         guard let channel = event.context.channelIdentifier,
               let sensorUUID = UUID16(parsing: channel),
-              let sensorID = Optional(ObjectID(uuid: sensorUUID)),
-              let sensor = sensors[sensorID],
-              let thing,
-              sensor.envelope.parentObjectID == thingID,
+              let pair = catalogue.deliverableSensor(ObjectID(uuid: sensorUUID)),
               let objectBytes = wrappedObject(event.value, field: "object") else { return }
         guard let observation = decodeSnapshot(Observation.self, bytes: objectBytes) else {
             await diagnose(registryMalformed("Observation Channel payload"))
             return
         }
-        guard observation.envelope.parentObjectID == sensorID else { return }
+        guard observation.envelope.parentObjectID == pair.0.envelope.objectID else { return }
         observationContinuation.yield(ThingSensorObservationDelivery(
             observation: observation,
-            sensor: sensor,
-            thing: thing,
+            sensor: pair.0,
+            thing: pair.1,
             context: event.context
         ))
-        _ = diagnose
     }
 
     func finish() {
@@ -340,46 +324,53 @@ private actor SensorThingsRegistryCoordinator {
             await diagnose(registryMalformed("SensorThings metadata"))
             return
         }
-        if type == "coaty.sensorThings.Thing" {
-            guard let decoded = decodeSnapshot(Thing.self, bytes: objectBytes),
-                  decoded.envelope.objectID == thingID else { return }
-            if thing?.encodedBytes == decoded.encodedBytes { return }
-            let oldThing = thing
-            thing = decoded
-            if oldThing != nil {
-                for sensor in sortedSensors() {
-                    await emit(.changed, sensor: sensor, thing: decoded, diagnose: diagnose)
-                }
-            } else {
-                for sensor in sortedSensors() {
-                    await emit(.added, sensor: sensor, thing: decoded, diagnose: diagnose)
-                }
-            }
+        let outcome: SensorThingsCatalogue.Outcome
+        switch type {
+        case "coaty.sensorThings.Thing":
+            guard let decoded = decodeSnapshot(Thing.self, bytes: objectBytes) else { return }
+            outcome = catalogue.apply(thing: decoded)
+        case "coaty.sensorThings.Sensor":
+            guard let decoded = decodeSnapshot(Sensor.self, bytes: objectBytes),
+                  matchesFilter(sensorBytes: objectBytes) else { return }
+            outcome = catalogue.apply(sensor: decoded)
+        default:
             return
         }
-        guard type == "coaty.sensorThings.Sensor",
-              let sensor = decodeSnapshot(Sensor.self, bytes: objectBytes),
-              sensor.envelope.parentObjectID == thingID,
-              matchesFilter(sensorBytes: objectBytes) else { return }
-        let id = sensor.envelope.objectID
-        if let old = sensors[id] {
-            guard old.encodedBytes != sensor.encodedBytes else { return }
-            sensors[id] = sensor
-            if let thing {
-                await emit(.changed, sensor: sensor, thing: thing, diagnose: diagnose)
-            }
-            return
-        }
-        guard sensors.count < maximumSensors else {
+        await publish(outcome, diagnose: diagnose)
+    }
+
+    /// Turns a catalogue outcome into diagnostics and published changes.
+    private func publish(
+        _ outcome: SensorThingsCatalogue.Outcome,
+        diagnose: @escaping @Sendable (RuntimeDiagnostic) async -> Void
+    ) async {
+        if outcome.isCapacityExceeded {
             await diagnose(RuntimeDiagnostic(
                 kind: .capacityExceeded,
                 detail: "Thing-driven Sensor registry reached its sensor limit"
             ))
             return
         }
-        sensors[id] = sensor
-        if let thing {
-            await emit(.added, sensor: sensor, thing: thing, diagnose: diagnose)
+        for transition in outcome.transitions {
+            await emit(transition, diagnose: diagnose)
+        }
+    }
+
+    private func emit(
+        _ transition: SensorThingsCatalogue.Transition,
+        diagnose: @escaping @Sendable (RuntimeDiagnostic) async -> Void
+    ) async {
+        let result = catalogueContinuation.yield(SensorThingsCatalogueChange(
+            kind: transition.kind,
+            sensor: transition.sensor,
+            thing: transition.thing,
+            total: catalogue.entries
+        ))
+        if case .dropped = result {
+            await diagnose(RuntimeDiagnostic(
+                kind: .capacityExceeded,
+                detail: "Thing-driven Sensor catalogue stream is full"
+            ))
         }
     }
 
@@ -407,32 +398,6 @@ private actor SensorThingsRegistryCoordinator {
         return result
     }
 
-    private func sortedSensors() -> [SensorThingsObjectSnapshot<Sensor>] {
-        sensors.sorted { $0.key.uuid.isLexicographicallyBefore($1.key.uuid) }.map(\.value)
-    }
-
-    private func emit(
-        _ kind: SensorThingsCatalogueChangeKind,
-        sensor: SensorThingsObjectSnapshot<Sensor>?,
-        thing: SensorThingsObjectSnapshot<Thing>?,
-        diagnose: @escaping @Sendable (RuntimeDiagnostic) async -> Void
-    ) async {
-        let entries = thing.map { value in
-            sortedSensors().map { SensorThingsCatalogueEntry(sensor: $0, thing: value) }
-        } ?? []
-        let result = catalogueContinuation.yield(SensorThingsCatalogueChange(
-            kind: kind,
-            sensor: sensor,
-            thing: thing,
-            total: entries
-        ))
-        if case .dropped = result {
-            await diagnose(RuntimeDiagnostic(
-                kind: .capacityExceeded,
-                detail: "Thing-driven Sensor catalogue stream is full"
-            ))
-        }
-    }
 }
 
 func sensorThingsBufferingPolicy(
@@ -628,15 +593,3 @@ private func uuidBytes(_ uuid: UUID16) -> [UInt8] {
     return result
 }
 
-private extension UUID16 {
-    func isLexicographicallyBefore(_ other: UUID16) -> Bool {
-        withUnsafeBytes(of: bytes) { left in
-            withUnsafeBytes(of: other.bytes) { right in
-                for index in 0..<16 {
-                    if left[index] != right[index] { return left[index] < right[index] }
-                }
-                return false
-            }
-        }
-    }
-}

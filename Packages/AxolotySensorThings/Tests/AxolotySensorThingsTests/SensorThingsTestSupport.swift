@@ -6,6 +6,7 @@ import AxolotyWire
 import Testing
 @_spi(AxolotyRuntimeAdapter) import Axoloty
 @testable import AxolotySensorThings
+import AxolotySensorThingsModel
 
 actor SensorThingsRecordingTransport: AxolotyRuntimeTransport {
     private(set) var publications: [RuntimeOutboundMessage] = []

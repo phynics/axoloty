@@ -85,6 +85,24 @@ their names. MQTT implements them as server-side wildcard subscriptions, which
 is a broker capability rather than a concept every carrier shares; both default
 to no-ops, so an adapter without the concept simply does not implement them.
 
+## SensorThings schemas moved to `AxolotySensorThingsModel`
+
+The SensorThings schemas and JSON shaping are now their own product, which
+depends only on the portable object model. A consumer that encodes or decodes
+SensorThings values no longer pulls in the runtime.
+
+```swift
+.product(name: "AxolotySensorThingsModel", package: "axoloty"),
+```
+
+```swift
+import AxolotySensorThings       // registration, sources, the registry
+import AxolotySensorThingsModel  // Thing, Sensor, Observation, JSON values
+```
+
+No symbol changed name or behavior. Code that only registers SensorThings
+workflows needs no edit; code that names a schema type adds the second import.
+
 ## MQTT remains the default and validated transport
 
 Nothing about the wire format, the sealed `coaty/3` profile, or broker

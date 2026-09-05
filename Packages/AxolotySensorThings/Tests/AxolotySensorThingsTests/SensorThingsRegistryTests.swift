@@ -6,6 +6,7 @@ import Testing
 import AxolotyObjectModel
 import AxolotyWire
 @testable import AxolotySensorThings
+import AxolotySensorThingsModel
 
 private let registryThingID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 private let registrySensorID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"

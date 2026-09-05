@@ -19,6 +19,7 @@ let package = Package(
     .library(name: "AxolotyProtocol"), .library(name: "AxolotyObjectModel"),
     .library(name: "AxolotyCoatyModels"), .library(name: "AxolotyMQTT"),
     .library(name: "AxolotyIoRouting"),
+    .library(name: "AxolotySensorThingsModel"),
     .library(name: "AxolotySensorThings"), .library(name: "AxolotyStaticRuntime"),
     .executable(name: "axoloty-tool"), .executable(name: "ax"),
     .executable(name: "axoloty-inspect"), .executable(name: "axoloty-mcp")

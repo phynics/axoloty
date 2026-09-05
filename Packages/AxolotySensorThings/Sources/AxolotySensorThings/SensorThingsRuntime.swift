@@ -2,6 +2,7 @@
 
 @_spi(AxolotyRuntimeAdapter) import Axoloty
 import AxolotyObjectModel
+import AxolotySensorThingsModel
 import AxolotyProtocol
 import AxolotyWire
 import ErrorKit
@@ -689,18 +690,6 @@ private func rawArrayContains(_ bytes: ByteSlice, _ literal: StaticString) -> Bo
     return false
 }
 
-private extension UUID16 {
-    func isLexicographicallyBefore(_ other: UUID16) -> Bool {
-        withUnsafeBytes(of: bytes) { left in
-            withUnsafeBytes(of: other.bytes) { right in
-                for index in 0..<16 {
-                    if left[index] != right[index] { return left[index] < right[index] }
-                }
-                return false
-            }
-        }
-    }
-}
 
 private func invocationPayload(_ invocation: RuntimeInvocation) -> [UInt8] {
     switch invocation.action {

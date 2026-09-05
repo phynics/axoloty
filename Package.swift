@@ -41,6 +41,10 @@ let package = Package(
             targets: ["AxolotyIoRouting"]
         ),
         .library(
+            name: "AxolotySensorThingsModel",
+            targets: ["AxolotySensorThingsModel"]
+        ),
+        .library(
             name: "AxolotySensorThings",
             targets: ["AxolotySensorThings"]
         ),
@@ -120,9 +124,17 @@ let package = Package(
             dependencies: ["Axoloty", "AxolotyProtocol", "AxolotyObjectModel", "AxolotyWire"],
             path: "Packages/AxolotyIoRouting/Sources/AxolotyIoRouting"
         ),
+        // SensorThings schemas and JSON shaping. Depends only on the portable
+        // object model, so a consumer that encodes or decodes SensorThings
+        // values needs no runtime.
+        .target(
+            name: "AxolotySensorThingsModel",
+            dependencies: ["AxolotyObjectModel", "AxolotyWire"],
+            path: "Packages/AxolotySensorThings/Sources/AxolotySensorThingsModel"
+        ),
         .target(
             name: "AxolotySensorThings",
-            dependencies: ["Axoloty", "AxolotyObjectModel", "AxolotyProtocol", "AxolotyWire"],
+            dependencies: ["Axoloty", "AxolotySensorThingsModel", "AxolotyObjectModel", "AxolotyProtocol", "AxolotyWire"],
             path: "Packages/AxolotySensorThings/Sources/AxolotySensorThings"
         ),
         .target(
@@ -258,7 +270,7 @@ let package = Package(
         ),
         .testTarget(
             name: "AxolotySensorThingsTests",
-            dependencies: ["AxolotySensorThings", "Axoloty", "AxolotyObjectModel", "AxolotyProtocol", "AxolotyWire"],
+            dependencies: ["AxolotySensorThingsModel", "AxolotySensorThings", "Axoloty", "AxolotyObjectModel", "AxolotyProtocol", "AxolotyWire"],
             path: "Packages/AxolotySensorThings/Tests/AxolotySensorThingsTests"
         ),
         .testTarget(
@@ -405,7 +417,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "SensorThingsConsumer",
-            dependencies: ["AxolotySensorThings"],
+            dependencies: ["AxolotySensorThingsModel", "AxolotySensorThings"],
             path: "Benchmarks/Consumers/SensorThingsConsumer"
         ),
         // Release-only wire benchmark executable (issue #300). Measures

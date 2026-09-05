@@ -13,6 +13,7 @@ const EXPECTED = Object.freeze({
     "AxolotyCoatyModels",
     "AxolotyMQTT",
     "AxolotyIoRouting",
+    "AxolotySensorThingsModel",
     "AxolotySensorThings",
     "AxolotyStaticRuntime",
   ],
