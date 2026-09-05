@@ -4,7 +4,7 @@ import AxolotyObjectModel
 import AxolotyProtocol
 import AxolotyWire
 import Testing
-@_spi(AxolotyRuntimeAdapter) import Axoloty
+import Axoloty
 @testable import AxolotySensorThings
 
 actor SensorThingsRecordingTransport: AxolotyRuntimeTransport {

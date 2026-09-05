@@ -194,8 +194,7 @@ public final class AxolotyRuntime: Sendable {
     /// This SPI is restricted to first-party profile conformance tests. It
     /// exposes copied actions and bounded state, never borrowed wire values or
     /// a mutation handle.
-    @_spi(AxolotyRuntimeAdapter)
-    public func conformanceObservation() async -> RuntimeConformanceObservation {
+    package func conformanceObservation() async -> RuntimeConformanceObservation {
         await executor.conformanceObservation()
     }
 
@@ -205,8 +204,7 @@ public final class AxolotyRuntime: Sendable {
 }
 
 /// A copied protocol state used by first-party profile conformance tests.
-@_spi(AxolotyRuntimeAdapter)
-public struct RuntimeConformanceState: Sendable, Equatable {
+package struct RuntimeConformanceState: Sendable, Equatable {
     /// Active advertised object identities.
     public let activeObjectIDs: [UUID16]
     /// Outstanding request correlations.
@@ -231,8 +229,7 @@ public struct RuntimeConformanceState: Sendable, Equatable {
 }
 
 /// Owned actions and state captured from one production runtime operation.
-@_spi(AxolotyRuntimeAdapter)
-public struct RuntimeConformanceObservation: Sendable, Equatable {
+package struct RuntimeConformanceObservation: Sendable, Equatable {
     /// Actions emitted by the operation in order.
     public let actions: [OwnedProtocolAction]
     /// State after the operation.

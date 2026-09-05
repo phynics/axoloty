@@ -105,6 +105,29 @@ Diagnostic text and documentation that described "MQTT topic separators" or
 `SensorThingsChannel` identifier is documented as a route segment rather than
 an MQTT topic level. No behavior changed.
 
+## The runtime extension surface is package-scoped
+
+`@_spi(AxolotyRuntimeAdapter) import Axoloty` becomes a plain `import Axoloty`.
+The declarations a first-party capability product uses to register a runtime
+module -- `RuntimeModuleContext`, `RuntimeModuleRegistration`,
+`registerRuntimeModule`, `reserveRuntimeModuleCorrelationID`, and the
+conformance observation used by trace tests -- are now `package` rather than
+`public` behind an SPI.
+
+This is a real narrowing rather than a rename. An SPI is a convention: any
+package could write the `@_spi` import and get the full surface. `package`
+access is enforced by the compiler, so the surface is reachable only from
+targets inside this package. Code outside it that imported the SPI to register
+a runtime module no longer compiles, and there is no supported replacement --
+first-party module registration is the intended audience.
+
+Nothing else changed. `AxolotyIoRouting` and `AxolotySensorThings` use the same
+declarations under the same names.
+
+`AxolotyProtocol` keeps its `AxolotyRuntimeAdapter` SPI. `AxolotyStaticRuntime`
+consumes it and is compiled for Embedded Swift through CMake components that
+pass no `-package-name`, so `package` would not cross that boundary.
+
 ## MQTT remains the default and validated transport
 
 Nothing about the wire format, the sealed `coaty/3` profile, or broker

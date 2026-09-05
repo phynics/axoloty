@@ -227,7 +227,8 @@
         "OSLog",
         "MCP",
         "AxolotySensorThings"
-      ]
+      ],
+      "note": "Reaches the runtime through package-scoped extension declarations rather than an SPI, so the surface is compiler-enforced first-party rather than opt-in."
     },
     {
       "name": "AxolotySensorThings",
@@ -253,7 +254,8 @@
         "OSLog",
         "MCP",
         "AxolotyIoRouting"
-      ]
+      ],
+      "note": "Reaches the runtime through package-scoped extension declarations rather than an SPI, so the surface is compiler-enforced first-party rather than opt-in."
     },
     {
       "name": "AxolotyInspectorCore",

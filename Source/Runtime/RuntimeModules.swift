@@ -6,8 +6,7 @@ import AxolotyWire
 /// Package-only runtime module context used by first-party optional
 /// products. The host remains the lifecycle owner; modules may only submit
 /// closed one-way operations through this context.
-@_spi(AxolotyRuntimeAdapter)
-public struct RuntimeModuleContext: Sendable {
+package struct RuntimeModuleContext: Sendable {
     /// The configured runtime namespace.
     public let namespace: String
     /// The runtime's stable source identity.
@@ -51,8 +50,7 @@ public struct RuntimeModuleContext: Sendable {
 ///
 /// Optional products use this seam to attach tasks to the existing runtime
 /// lifecycle. It is intentionally SPI-only and is not a general plugin API.
-@_spi(AxolotyRuntimeAdapter)
-public struct RuntimeModuleRegistration: @unchecked Sendable {
+package struct RuntimeModuleRegistration: @unchecked Sendable {
     let start: @Sendable (RuntimeModuleContext) async -> Void
     let run: @Sendable (RuntimeModuleContext) async -> Void
     let stop: @Sendable (RuntimeModuleContext) async -> Void
@@ -82,8 +80,7 @@ extension RuntimeBuilder {
     ///   - registration: The module lifecycle callbacks.
     ///   - key: The stable internal module key.
     /// - Throws: ``AxolotyError`` when the key is invalid, duplicated, or at capacity.
-    @_spi(AxolotyRuntimeAdapter)
-    public mutating func registerRuntimeModule(
+    package mutating func registerRuntimeModule(
         _ registration: RuntimeModuleRegistration,
         key: String
     ) throws {
@@ -97,8 +94,7 @@ extension RuntimeBuilder {
     ///
     /// - Returns: A correlation identity reserved within the current builder draft.
     /// - Throws: ``AxolotyError`` if the builder cannot commit the reservation.
-    @_spi(AxolotyRuntimeAdapter)
-    public mutating func reserveRuntimeModuleCorrelationID() throws -> UUID16 {
+    package mutating func reserveRuntimeModuleCorrelationID() throws -> UUID16 {
         return try commit { $0.reserveModuleCorrelationID() }
     }
 }
