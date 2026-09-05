@@ -29,10 +29,16 @@ struct SensorThingsCatalogue: Sendable {
     }
 
     /// One catalogue transition, before it becomes a published change.
+    ///
+    /// `total` is captured when the transition is produced, not when it is
+    /// published. Removing a Thing produces several transitions at once, and a
+    /// total read afterwards would be the final empty catalogue for every one
+    /// of them -- so a subscriber could not watch the catalogue shrink.
     struct Transition: Sendable {
         let kind: SensorThingsCatalogueChangeKind
         let sensor: SensorThingsObjectSnapshot<Sensor>?
         let thing: SensorThingsObjectSnapshot<Thing>?
+        let total: [SensorThingsCatalogueEntry]
     }
 
     private let thingID: ObjectID
@@ -54,7 +60,13 @@ struct SensorThingsCatalogue: Sendable {
     /// The complete catalogue as publishable entries.
     var entries: [SensorThingsCatalogueEntry] {
         guard let thing else { return [] }
-        return sortedSensors.map { SensorThingsCatalogueEntry(sensor: $0, thing: thing) }
+        return entries(pairedWith: thing)
+    }
+
+    /// Entries paired with an explicit Thing, for transitions produced while
+    /// the Thing itself is being removed.
+    private func entries(pairedWith thing: SensorThingsObjectSnapshot<Thing>) -> [SensorThingsCatalogueEntry] {
+        sortedSensors.map { SensorThingsCatalogueEntry(sensor: $0, thing: thing) }
     }
 
     /// Applies a decoded Thing.
@@ -68,7 +80,8 @@ struct SensorThingsCatalogue: Sendable {
         let hadThing = thing != nil
         thing = decoded
         let kind: SensorThingsCatalogueChangeKind = hadThing ? .changed : .added
-        return .changed(sortedSensors.map { Transition(kind: kind, sensor: $0, thing: decoded) })
+        let total = entries
+        return .changed(sortedSensors.map { Transition(kind: kind, sensor: $0, thing: decoded, total: total) })
     }
 
     /// Applies a decoded Sensor that already passed the caller's filter.
@@ -83,12 +96,12 @@ struct SensorThingsCatalogue: Sendable {
             guard existing.encodedBytes != decoded.encodedBytes else { return .ignored }
             sensors[id] = decoded
             guard let thing else { return .ignored }
-            return .changed([Transition(kind: .changed, sensor: decoded, thing: thing)])
+            return .changed([Transition(kind: .changed, sensor: decoded, thing: thing, total: entries)])
         }
         guard sensors.count < maximumSensors else { return .capacityExceeded }
         sensors[id] = decoded
         guard let thing else { return .ignored }
-        return .changed([Transition(kind: .added, sensor: decoded, thing: thing)])
+        return .changed([Transition(kind: .added, sensor: decoded, thing: thing, total: entries)])
     }
 
     /// Removes one object by identifier.
@@ -102,13 +115,20 @@ struct SensorThingsCatalogue: Sendable {
             var transitions: [Transition] = []
             for sensorID in sensors.keys.sorted(by: { $0.uuid.isLexicographicallyBefore($1.uuid) }) {
                 guard let sensor = sensors.removeValue(forKey: sensorID) else { continue }
-                transitions.append(Transition(kind: .removed, sensor: sensor, thing: oldThing))
+                // The total is captured after this removal, so each transition
+                // reports the catalogue as it stood at that step.
+                transitions.append(Transition(
+                    kind: .removed,
+                    sensor: sensor,
+                    thing: oldThing,
+                    total: entries(pairedWith: oldThing)
+                ))
             }
             thing = nil
             return transitions.isEmpty ? .ignored : .changed(transitions)
         }
         guard let sensor = sensors.removeValue(forKey: id) else { return .ignored }
-        return .changed([Transition(kind: .removed, sensor: sensor, thing: thing)])
+        return .changed([Transition(kind: .removed, sensor: sensor, thing: thing, total: entries)])
     }
 
     /// Whether an Observation may be delivered for `sensorID`.

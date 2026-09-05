@@ -364,7 +364,7 @@ private actor SensorThingsRegistryCoordinator {
             kind: transition.kind,
             sensor: transition.sensor,
             thing: transition.thing,
-            total: catalogue.entries
+            total: transition.total
         ))
         if case .dropped = result {
             await diagnose(RuntimeDiagnostic(

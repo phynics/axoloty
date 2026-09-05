@@ -97,10 +97,13 @@ struct SensorThingsCatalogueTests {
 
         let outcome = subject.remove(ObjectID(uuid: uuid))
 
-        // One transition per Sensor, not a single collapsed removal: each is
-        // published separately so the accompanying total shrinks step by step.
+        // One transition per Sensor, not a single collapsed removal, and each
+        // carries the catalogue as it stood at that step. Reading the total
+        // after the removals instead would report an identical empty
+        // catalogue for both, hiding the shrink from every subscriber.
         #expect(outcome.transitions.count == 2)
         #expect(outcome.transitions.allSatisfy { $0.kind == .removed })
+        #expect(outcome.transitions.map(\.total.count) == [1, 0])
         #expect(subject.thing == nil)
         #expect(subject.sortedSensors.isEmpty)
     }
