@@ -113,6 +113,7 @@ The checked-in, compilable version is [`Examples/Sources/HostRuntimeExample/main
 
 ```swift
 import Axoloty
+import AxolotyMQTT
 
 func runAgent() async throws {
     let identity = try RuntimeIdentity(id: .zero, name: "my-agent")
