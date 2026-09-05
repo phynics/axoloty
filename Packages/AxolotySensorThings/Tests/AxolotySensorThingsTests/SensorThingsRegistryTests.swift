@@ -2,7 +2,7 @@
 
 import AxolotyProtocol
 import Testing
-@_spi(AxolotyRuntimeAdapter) import Axoloty
+import Axoloty
 import AxolotyObjectModel
 import AxolotyWire
 @testable import AxolotySensorThings

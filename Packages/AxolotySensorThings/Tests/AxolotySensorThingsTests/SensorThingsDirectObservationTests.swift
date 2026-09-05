@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Testing
-@_spi(AxolotyRuntimeAdapter) import Axoloty
+import Axoloty
 import AxolotyObjectModel
 import AxolotyWire
 @testable import AxolotySensorThings

@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-@_spi(AxolotyRuntimeAdapter) import Axoloty
+import Axoloty
 import AxolotyObjectModel
 import AxolotySensorThingsModel
 import AxolotyProtocol

@@ -478,7 +478,15 @@ public struct IoSource<Value: IoEndpointValue>: Sendable, Hashable {
     ///
     /// Application code receives handles from endpoint registration and does
     /// not construct them directly.
-    @_spi(AxolotyRuntimeAdapter)
+    // The AxolotyRuntimeAdapter SPI stays an SPI here, unlike the host runtime's
+// equivalent surface, which is now `package`. AxolotyStaticRuntime consumes
+// these declarations and is compiled for Embedded Swift through ESP-IDF CMake
+// components that pass `-module-name` without `-package-name`, so `package`
+// would not cross that boundary. Converting it means adding that flag to the
+// embedded components -- the mechanism exists, `json_core` already does it --
+// and verifying on hardware.
+
+@_spi(AxolotyRuntimeAdapter)
     public init(
         registryID: ObjectID,
         slot: UInt16,
