@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
-@_spi(AxolotyRuntimeAdapter) import Axoloty
+import Axoloty
 import AxolotyObjectModel
 import AxolotyProtocol
 import AxolotyStaticRuntime

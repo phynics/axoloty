@@ -239,16 +239,14 @@ public struct RuntimeBuilder: Sendable {
 
     /// Returns the number of event streams currently registered in this
     /// provisional builder.
-    @_spi(AxolotyRuntimeAdapter)
-    public var eventStreamCount: Int {
+    package var eventStreamCount: Int {
         registrations.eventRegistrations.count
     }
 
     /// Finishes event streams provisionally registered after the supplied count.
     ///
     /// - Parameter count: The number of streams retained before the provisional draft.
-    @_spi(AxolotyRuntimeAdapter)
-    public mutating func finishNewRuntimeEventStreams(after count: Int) {
+    package mutating func finishNewRuntimeEventStreams(after count: Int) {
         registrations.finishNewEventStreams(after: count)
     }
 
@@ -267,8 +265,7 @@ public struct RuntimeBuilder: Sendable {
     ///   - body: The module registration draft.
     /// - Returns: The value produced by the draft body.
     /// - Throws: ``AxolotyError`` when the key or registration is invalid.
-    @_spi(AxolotyRuntimeAdapter)
-    public mutating func withRuntimeModule<T>(
+    package mutating func withRuntimeModule<T>(
         key: String,
         _ body: (inout RuntimeBuilder) throws -> (RuntimeModuleRegistration, T)
     ) throws -> T {
@@ -304,8 +301,7 @@ public struct RuntimeBuilder: Sendable {
     ///   - key: The stable internal module key.
     ///   - registration: The module lifecycle registration.
     /// - Throws: ``AxolotyError`` when the key is invalid or already registered.
-    @_spi(AxolotyRuntimeAdapter)
-    public mutating func withRuntimeModule(
+    package mutating func withRuntimeModule(
         key: String,
         registration: RuntimeModuleRegistration
     ) throws {

@@ -108,8 +108,7 @@ public struct RuntimeEventStream: AsyncSequence, Sendable {
     }
 
     /// Finishes the stream for a module-owned product during runtime shutdown.
-    @_spi(AxolotyRuntimeAdapter)
-    public func finish() {
+    package func finish() {
         continuation.finish()
     }
 }
