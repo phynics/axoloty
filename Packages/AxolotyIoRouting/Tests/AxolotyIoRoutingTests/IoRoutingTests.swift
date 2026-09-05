@@ -70,7 +70,7 @@ func basicRoutingMatchesScopedEndpoints() async throws {
             length: sourceJSON.utf8CodeUnitCount
         )),
         as: Bool.self,
-        externalRoute: try MQTTExternalIoRoute(externalRoute)
+        externalRoute: try ExternalIoRoute(externalRoute)
     )
     let actor = try builder.ioActor(
         metadata: try Object<IoActorMetadata>(decoding: ByteSlice(

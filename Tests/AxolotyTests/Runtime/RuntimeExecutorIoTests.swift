@@ -33,7 +33,7 @@ struct RuntimeExecutorIoTests {
 
         let association = "{\"ioSourceId\":\"\(sourceID)\",\"ioActorId\":\"\(actorID)\",\"associatingRoute\":\"coaty/executor-stop\"}"
         #expect(await runtime.receive(.profile(
-            topic: "coaty/3/executor-stop/ASC/\(sourceID)",
+            route: "coaty/3/executor-stop/ASC/\(sourceID)",
             payload: Array(association.utf8),
             nowMS: 1
         )) == .accepted)
@@ -95,12 +95,12 @@ struct RuntimeExecutorIoTests {
 
         let association = "{\"ioSourceId\":\"\(sourceID)\",\"ioActorId\":\"\(actorID)\",\"associatingRoute\":\"coaty/handler-capacity\"}"
         #expect(await runtime.receive(.profile(
-            topic: "coaty/3/handler-capacity/ASC/\(sourceID)",
+            route: "coaty/3/handler-capacity/ASC/\(sourceID)",
             payload: Array(association.utf8),
             nowMS: 1
         )) == .accepted)
         #expect(await runtime.receive(.profile(
-            topic: "coaty/3/handler-capacity/IOV/\(sourceID)",
+            route: "coaty/3/handler-capacity/IOV/\(sourceID)",
             payload: Array("true".utf8),
             nowMS: 2
         )) == .accepted)
@@ -109,7 +109,7 @@ struct RuntimeExecutorIoTests {
         }
 
         #expect(await runtime.receive(.profile(
-            topic: "coaty/3/handler-capacity/CHN:ordinary/\(sourceID)",
+            route: "coaty/3/handler-capacity/CHN:ordinary/\(sourceID)",
             payload: Array("{}".utf8),
             nowMS: 3
         )) == .accepted)
@@ -123,7 +123,7 @@ struct RuntimeExecutorIoTests {
         try await waitUntil("ordinary runtime handler to start") {
             guard await channelGate.startedCount == 0 else { return true }
             _ = await runtime.receive(.profile(
-                topic: "coaty/3/handler-capacity/CHN:ordinary/\(sourceID)",
+                route: "coaty/3/handler-capacity/CHN:ordinary/\(sourceID)",
                 payload: Array("{}".utf8),
                 nowMS: 4
             ))
@@ -131,7 +131,7 @@ struct RuntimeExecutorIoTests {
         }
 
         #expect(await runtime.receive(.profile(
-            topic: "coaty/3/handler-capacity/IOV/\(sourceID)",
+            route: "coaty/3/handler-capacity/IOV/\(sourceID)",
             payload: Array("false".utf8),
             nowMS: 5
         )) == .accepted)
@@ -171,7 +171,7 @@ struct RuntimeExecutorIoTests {
         }
         let association = "{\"ioSourceId\":\"\(sourceID)\",\"ioActorId\":\"00000000-0000-0000-0000-000000000752\",\"associatingRoute\":\"coaty/shared-transport\"}"
         #expect(await runtime.receive(.profile(
-            topic: "coaty/3/shared-transport/ASC/\(sourceID)",
+            route: "coaty/3/shared-transport/ASC/\(sourceID)",
             payload: Array(association.utf8),
             nowMS: 1
         )) == .accepted)

@@ -90,7 +90,7 @@ public struct RuntimeBuilder: Sendable {
     ///
     /// - Parameters:
     ///   - identity: The stable identity used by this runtime.
-    ///   - namespace: The validated MQTT namespace.
+    ///   - namespace: The validated runtime namespace.
     ///   - capacities: Optional finite runtime limits.
     /// - Throws: ``AxolotyError`` when namespace or capacities are invalid.
     public init(
@@ -106,7 +106,7 @@ public struct RuntimeBuilder: Sendable {
     ///
     /// - Parameters:
     ///   - sourceID: The stable protocol source identity.
-    ///   - namespace: The validated MQTT namespace.
+    ///   - namespace: The validated runtime namespace.
     ///   - identity: Optional identity metadata whose ID must match `sourceID`.
     ///   - capacities: Optional finite runtime limits.
     /// - Throws: ``AxolotyError`` when namespace, identity, or capacities are invalid.
@@ -122,7 +122,7 @@ public struct RuntimeBuilder: Sendable {
               !namespace.contains("#"),
               !namespace.contains("+"),
               !namespace.utf8.contains(0) else {
-            throw AxolotyError.invalidArgument(argument: "namespace", reason: "must contain 1...64 UTF-8 bytes and no MQTT topic separators")
+            throw AxolotyError.invalidArgument(argument: "namespace", reason: "must contain 1...64 UTF-8 bytes and no route separators")
         }
         if let identity, identity.id != sourceID {
             throw AxolotyError.invalidArgument(argument: "identity", reason: "identity id must equal sourceID")
@@ -172,7 +172,7 @@ public struct RuntimeBuilder: Sendable {
                     throw AxolotyError.invalidArgument(argument: "operation", reason: "operation filters are only valid for Call handlers")
                 }
                 guard RuntimeOperationValidation.isValidCallOperation(operation) else {
-                    throw AxolotyError.invalidArgument(argument: "operation", reason: "must contain 1 to 128 UTF-8 bytes and no MQTT topic separators")
+                    throw AxolotyError.invalidArgument(argument: "operation", reason: "must contain 1 to 128 UTF-8 bytes and no route separators")
                 }
             }
             guard maximumConcurrentInvocations > 0,

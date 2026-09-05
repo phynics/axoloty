@@ -11,7 +11,7 @@ diagnostic value is owned and sendable, so it may be recorded or forwarded to
 an application's logger without retaining transport buffers.
 
 Applications choose their own `swift-log` bootstrap and filtering policy.
-Axoloty does not expose raw MQTT topics or transport-owned buffers through the
+Axoloty does not expose raw transport routes or transport-owned buffers through the
 diagnostic API. Correlate a request/response exchange with the
 `RuntimeEventContext.correlationID` value and use the context's route
 classification when distinguishing the exact external compatibility route.

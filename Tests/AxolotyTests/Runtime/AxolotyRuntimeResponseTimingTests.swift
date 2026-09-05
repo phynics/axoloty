@@ -27,7 +27,7 @@ extension AxolotyRuntimeTests {
             + "22222222-2222-4222-8222-222222222222/"
             + "99999999-9999-4999-8999-999999999999"
         let receipt = await runtime.receive(.profile(
-            topic: topic,
+            route: topic,
             payload: Array(#"{"parameters":{"operand":7}}"#.utf8),
             nowMS: 0
         ))

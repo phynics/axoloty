@@ -327,17 +327,17 @@ func discoverReturnsFilteredSensorAndThingSnapshots() async throws {
     try await waitForSensorThingsAdvertisementCount(transport, 3)
     let requester = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
     let topic = "coaty/3/sensor-tests/DSC/\(requester)"
-    #expect(await runtime.receive(.profile(topic: topic + "/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", payload: Array("{\"objectId\":\"\(sourceIDOne)\"}".utf8), nowMS: 30)) == .accepted)
+    #expect(await runtime.receive(.profile(route: topic + "/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", payload: Array("{\"objectId\":\"\(sourceIDOne)\"}".utf8), nowMS: 30)) == .accepted)
     try await waitForPublicationCount(transport, capability: .resolve, count: 1)
     let sensor = try #require(await transport.allPublications().last { routeEventType($0.route) == ProtocolCapability.resolve.wireEventType.wireCode.description })
     #expect(publicationObjectID(sensor) == sourceIDOne)
     #expect(publicationObjectType(sensor) == "coaty.sensorThings.Sensor")
-    #expect(await runtime.receive(.profile(topic: topic + "/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", payload: Array("{\"objectTypes\":[\"coaty.sensorThings.Thing\"]}".utf8), nowMS: 31)) == .accepted)
+    #expect(await runtime.receive(.profile(route: topic + "/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", payload: Array("{\"objectTypes\":[\"coaty.sensorThings.Thing\"]}".utf8), nowMS: 31)) == .accepted)
     try await waitForPublicationCount(transport, capability: .resolve, count: 2)
     let thing = try #require(await transport.allPublications().last { routeEventType($0.route) == ProtocolCapability.resolve.wireEventType.wireCode.description })
     #expect(publicationObjectID(thing) == thingIDOne)
     #expect(publicationObjectType(thing) == "coaty.sensorThings.Thing")
-    #expect(await runtime.receive(.profile(topic: topic + "/cccccccc-cccc-4ccc-8ccc-cccccccccccc", payload: Array("{\"coreTypes\":[\"CoatyObject\"]}".utf8), nowMS: 32)) == .accepted)
+    #expect(await runtime.receive(.profile(route: topic + "/cccccccc-cccc-4ccc-8ccc-cccccccccccc", payload: Array("{\"coreTypes\":[\"CoatyObject\"]}".utf8), nowMS: 32)) == .accepted)
     try await waitForPublicationCount(transport, capability: .resolve, count: 3)
     #expect(await transport.allPublications().filter { routeEventType($0.route) == ProtocolCapability.resolve.wireEventType.wireCode.description }.count == 3)
     await runtime.stop()
@@ -369,7 +369,7 @@ func queryReturnsFilteredSensorBytesWithinBound() async throws {
     let requester = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
     let query = Array("{\"objectTypes\":[\"coaty.sensorThings.Sensor\"],\"objectFilter\":{\"conditions\":[\"description\",[7,\"wanted\"]]}}".utf8)
     #expect(await runtime.receive(.profile(
-        topic: "coaty/3/sensor-tests/QRY/\(requester)/\(correlation)",
+        route: "coaty/3/sensor-tests/QRY/\(requester)/\(correlation)",
         payload: query,
         nowMS: 20
     )) == .accepted)
@@ -383,7 +383,7 @@ func queryReturnsFilteredSensorBytesWithinBound() async throws {
 
     let unfilteredQuery = Array("{\"objectTypes\":[\"coaty.sensorThings.Sensor\"]}".utf8)
     #expect(await runtime.receive(.profile(
-        topic: "coaty/3/sensor-tests/QRY/\(requester)/dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        route: "coaty/3/sensor-tests/QRY/\(requester)/dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         payload: unfilteredQuery,
         nowMS: 21
     )) == .accepted)
@@ -414,7 +414,7 @@ func queryRejectsUnsupportedJoinWithoutResponse() async throws {
     let before = await transport.allPublications().count
     let correlation = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
     #expect(await runtime.receive(.profile(
-        topic: "coaty/3/sensor-tests/QRY/\(sourceIDTwo)/\(correlation)",
+        route: "coaty/3/sensor-tests/QRY/\(sourceIDTwo)/\(correlation)",
         payload: Array("{\"objectJoinConditions\":{}}".utf8),
         nowMS: 20
     )) == .accepted)
