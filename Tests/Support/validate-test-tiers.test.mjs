@@ -6,7 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { discoverSelfTests, discoverTargetSelfTests, parseMakeTargets, tierNodeCommandsFrom, validate } from "./validate-test-tiers.mjs";
+import { collectFilterSymbols, discoverSelfTests, discoverTargetSelfTests, expandFilterAlternatives, parseMakeTargets, tierNodeCommandsFrom, validate } from "./validate-test-tiers.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 
@@ -161,7 +161,7 @@ test("G4 runtime filters are disjoint and use their owning Swift packages", () =
     "builderFinishesHandlers", "rejectsInvalidNamespaceBytes", "definitionBoundsNamespaceForGeneratedTopics",
     "definitionBoundsEventStreams", "failedModuleRegistrationIsAtomic", "nestedDuplicateModuleKeyIsAtomic", "duplicateModuleKeyIsAtomic", "rejectsBeforeStart",
     "acceptsLocalOperation", "callOperationNameReachesTransportAction", "channelIdentifierReachesTransportAction",
-    "multiActionDispatchReservationIsAtomic", "advertiseVariantsDoNotDuplicateRuntimeEvents", "channelRejectsMissingIdentifier",
+    "multiActionDispatchReservationIsAtomic", "advertiseVariantsDoNotDuplicateRuntimeEvents",
     "defaultRequestUsesMonotonicClock", "unlimitedDiscoverCanBeCanceled", "rejectsInvalidCallOperationNames",
     "rejectsInvalidResponderOperationNames", "rejectsNonCallOperationFilters", "advertiseSelectorMatchesPayloadObjectType",
     "lifecycleOrdering", "postStartTransportFailureEntersReconnect", "queuesOfflineOneWayPublication", "stopDrainsOutboundPump",
@@ -172,6 +172,9 @@ test("G4 runtime filters are disjoint and use their owning Swift packages", () =
   }
   assert.equal(new Set(hostNodes.map(candidate => candidate.filter)).size, hostNodes.length);
   assert.equal(hostNodes.some(candidate => candidate.filter.includes("AxolotyStaticRuntimeTests")), false);
+  // channelRejectsMissingIdentifier belongs to AxolotyStaticRuntime and is owned
+  // by g4-static-runtime; naming it here selected nothing in the root package.
+  assert.equal(hostNodes.some(candidate => candidate.filter.includes("channelRejectsMissingIdentifier")), false);
 
   const packageAssertions = [
     ["g4-protocol-lifecycle", "Packages/AxolotyProtocol", "ProtocolFoundationTests|ProtocolProcessorTests"],
@@ -453,4 +456,48 @@ test("validator CLI reports stable selfTests schema errors", t => {
     assert.match(result.stderr, new RegExp(`test-tier configuration error: ${expected}`), name);
     assert.doesNotMatch(result.stderr, /TypeError|Cannot read properties|\.map is not a function/, name);
   }
+});
+
+test("filter alternatives expand through top-level and grouped alternation", () => {
+  assert.deepEqual(expandFilterAlternatives("A|B"), ["A", "B"]);
+  assert.deepEqual(expandFilterAlternatives("Suite/(a|b)"), ["Suite/a", "Suite/b"]);
+  assert.deepEqual(expandFilterAlternatives("Plain"), ["Plain"]);
+  assert.deepEqual(expandFilterAlternatives(null), []);
+});
+
+test("validator rejects a test filter branch that selects nothing", () => {
+  // Swift Testing ignores a filter branch matching no test: the run still
+  // exits 0 on the branches that did match, so a decayed gate stays green.
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const base = {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+    filterSymbols: collectFilterSymbols(root),
+  };
+  assert.deepEqual(validate(document, base).filter(error => error.includes("test filter selects")), []);
+
+  const decayed = JSON.parse(JSON.stringify(document));
+  const unit = decayed.nodes.find(node => node.id === "test-unit");
+  unit.filter = `${unit.filter}|RenamedAwayTests`;
+  unit.command.arguments[unit.command.arguments.indexOf("--filter") + 1] = unit.filter;
+  const runtime = decayed.nodes.find(node => node.id === "g4-runtime-concurrency");
+  runtime.filter = runtime.filter.replace("lifecycleOrdering", "lifecycleOrderingRenamed");
+  runtime.command.arguments[runtime.command.arguments.indexOf("--filter") + 1] = runtime.filter;
+  const errors = validate(decayed, base);
+  assert.ok(errors.some(error => error.includes('"RenamedAwayTests"') && error.includes("matches no test module")));
+  assert.ok(errors.some(error => error.includes('"lifecycleOrderingRenamed"') && error.includes('"AxolotyRuntimeTests" does not declare')));
+});
+
+test("validator rejects a node whose declared filter and --filter argument disagree", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const drifted = JSON.parse(JSON.stringify(document));
+  const node = drifted.nodes.find(candidate => candidate.id === "test-wire");
+  node.command.arguments[node.command.arguments.indexOf("--filter") + 1] = "SomethingElseTests";
+  const errors = validate(drifted, {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  });
+  assert.ok(errors.includes("test-wire: declared filter and the --filter argument disagree"));
 });

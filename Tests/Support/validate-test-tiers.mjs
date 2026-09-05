@@ -147,6 +147,83 @@ export function discoverTargetSelfTests(makefilePath, selfTests, tierNodeCommand
   return invoked;
 }
 
+// A SwiftPM `--filter` value is one unanchored regular expression whose
+// top-level `|` branches are independent selectors. Swift Testing silently
+// ignores a branch that matches nothing -- the run still exits 0 as long as
+// some other branch matched -- so a renamed or copied-across-packages name
+// decays into a gate that quietly tests less. Expanding the branches lets the
+// contract check each one against the source tree.
+export function expandFilterAlternatives(filter) {
+  if (typeof filter !== "string" || !filter) return [];
+  const splitTopLevel = expression => {
+    const parts = [];
+    let depth = 0;
+    let current = "";
+    for (const character of expression) {
+      if (character === "(") depth += 1;
+      else if (character === ")") depth -= 1;
+      if (character === "|" && depth === 0) { parts.push(current); current = ""; continue; }
+      current += character;
+    }
+    parts.push(current);
+    return parts;
+  };
+  const expand = expression => splitTopLevel(expression).flatMap(branch => {
+    const group = /\(([^()]*)\)/.exec(branch);
+    if (!group || !group[1].includes("|")) return [branch];
+    return splitTopLevel(group[1]).flatMap(alternative =>
+      expand(branch.slice(0, group.index) + alternative + branch.slice(group.index + group[0].length)));
+  });
+  return expand(filter).map(alternative => alternative.trim()).filter(Boolean);
+}
+
+// Names a filter branch may legitimately select: a test module, a suite type
+// or its display name, a source file (SwiftPM scopes free `@Test` functions by
+// file), or a test function. `suiteMembers` additionally records which
+// functions each suite type declares, so a `Suite/method` branch can be
+// checked against that suite rather than against any same-named function
+// elsewhere in the tree -- the shape a name copied from a sibling package takes.
+export function collectFilterSymbols(repositoryRoot, directories = ["Tests", "Tools", "Packages", "Source"]) {
+  const names = new Set();
+  const suiteMembers = new Map();
+  const addFile = absolute => {
+    const name = path.basename(absolute);
+    if (name === "Package.swift") {
+      for (const match of fs.readFileSync(absolute, "utf8").matchAll(/name:\s*"([A-Za-z_]\w*)"/g)) names.add(match[1]);
+      return;
+    }
+    if (!name.endsWith(".swift")) return;
+    names.add(name.slice(0, -".swift".length));
+    const contents = fs.readFileSync(absolute, "utf8");
+    for (const match of contents.matchAll(/\b(?:struct|class|enum|actor)\s+([A-Za-z_]\w*)/g)) names.add(match[1]);
+    for (const match of contents.matchAll(/@Suite\(\s*"([^"]+)"/g)) names.add(match[1]);
+    const functions = [...contents.matchAll(/\bfunc\s+([A-Za-z_]\w*)/g)].map(match => match[1]);
+    for (const functionName of functions) names.add(functionName);
+    // A suite's tests are spread across the file declaring the type and every
+    // file extending it; both forms contribute the functions in that file.
+    const owners = new Set([
+      ...[...contents.matchAll(/\b(?:struct|class|actor)\s+([A-Za-z_]\w*)/g)].map(match => match[1]),
+      ...[...contents.matchAll(/\bextension\s+([A-Za-z_]\w*)/g)].map(match => match[1]),
+    ]);
+    for (const owner of owners) {
+      if (!suiteMembers.has(owner)) suiteMembers.set(owner, new Set());
+      for (const functionName of functions) suiteMembers.get(owner).add(functionName);
+    }
+  };
+  const visit = directory => {
+    if (!fs.existsSync(directory)) return;
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const absolute = path.join(directory, entry.name);
+      if (entry.isDirectory()) visit(absolute);
+      else addFile(absolute);
+    }
+  };
+  for (const directory of directories) visit(path.join(repositoryRoot, directory));
+  const rootManifest = path.join(repositoryRoot, "Package.swift");
+  if (fs.existsSync(rootManifest)) addFile(rootManifest);
+  return { names, suiteMembers };
+}
+
 export function discoverSelfTests(testsDirectory) {
   if (!fs.existsSync(testsDirectory)) return [];
   const base = path.dirname(testsDirectory);
@@ -164,7 +241,7 @@ export function discoverSelfTests(testsDirectory) {
   return [...new Set(found)].sort();
 }
 
-export function validate(document, { makeTargets, discoveredSelfTests, invokedSelfTests = new Map(), exists = () => true }) {
+export function validate(document, { makeTargets, discoveredSelfTests, invokedSelfTests = new Map(), exists = () => true, filterSymbols = undefined }) {
   const errors = [];
   if (document.schemaVersion !== 2) errors.push("schemaVersion must be 2");
   if (typeof document.manifestID !== "string" || !document.manifestID) errors.push("manifestID must be a nonempty string");
@@ -221,6 +298,27 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
     if (retiredCanonicalNodes.has(node.id)) errors.push(`${node.id}: retired canonical node must not be declared`);
     const filters = typeof node.filter === "string" ? node.filter.split("|") : [];
     for (const filter of filters) if (retiredCanonicalFilters.has(filter)) errors.push(`${node.id}: retired test filter ${JSON.stringify(filter)} must not be declared`);
+    // The declared filter and the argument the command actually passes are two
+    // copies of one selector; a gate that drifts between them runs something
+    // other than what the manifest documents.
+    const commandArguments = Array.isArray(node.command?.arguments) ? node.command.arguments : [];
+    const filterArgumentIndex = commandArguments.indexOf("--filter");
+    const filterArgument = filterArgumentIndex >= 0 ? commandArguments[filterArgumentIndex + 1] : undefined;
+    if ((node.filter ?? undefined) !== filterArgument && (node.filter || filterArgument)) {
+      errors.push(`${node.id}: declared filter and the --filter argument disagree`);
+    }
+    // Every top-level branch of a filter must select something that exists.
+    // Swift Testing ignores a branch matching nothing without failing the run.
+    if (filterSymbols) {
+      for (const alternative of expandFilterAlternatives(node.filter)) {
+        const [scope, member] = alternative.includes("/") ? alternative.split("/", 2) : [alternative, undefined];
+        if (scope && !filterSymbols.names.has(scope)) {
+          errors.push(`${node.id}: test filter selects ${JSON.stringify(scope)}, which matches no test module, suite, file, or function`);
+        } else if (member && !(filterSymbols.suiteMembers.get(scope)?.has(member) ?? false)) {
+          errors.push(`${node.id}: test filter selects ${JSON.stringify(member)}, which ${JSON.stringify(scope)} does not declare`);
+        }
+      }
+    }
     if (nodeIds.has(node.id)) errors.push(`duplicate node id ${JSON.stringify(node.id)}`);
     nodeIds.add(node.id);
     for (const dependency of node.dependencies ?? []) if (!nodeIds.has(dependency) && !(document.nodes ?? []).some(candidate => candidate?.id === dependency)) errors.push(`${node.id}: unknown dependency ${JSON.stringify(dependency)}`);
@@ -428,6 +526,7 @@ export function main(argumentsArray = process.argv.slice(2)) {
       discoveredSelfTests: discoverSelfTests(path.join(root, "Tests")),
       invokedSelfTests: discoverTargetSelfTests(path.join(root, "Makefile"), configuredSelfTests, tierNodeCommands),
       exists: relative => fs.existsSync(path.join(root, relative)),
+      filterSymbols: collectFilterSymbols(root),
     });
     if (errors.length) { for (const error of errors) console.error(`test-tier configuration error: ${error}`); return 1; }
     console.log(`PASS: ${document.tiers.length} test tiers and ${document.selfTests.length} self-tests satisfy the Axoloty testing contract`);
