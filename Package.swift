@@ -313,7 +313,7 @@ let package = Package(
         ),
         .testTarget(
             name: "AxolotyInspectorRuntimeTests",
-            dependencies: ["AxolotyInspectorRuntime", "AxolotyInspectorCore"],
+            dependencies: ["AxolotyInspectorRuntime", "AxolotyInspectorCore", "Axoloty"],
             path: "Tools/AxolotyInspectorRuntimeTests"
         ),
         .testTarget(

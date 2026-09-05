@@ -73,6 +73,19 @@ public struct InspectorConnectionConfiguration: Equatable, Sendable {
         self.password = password
         self.connectTimeout = connectTimeout
     }
+
+    /// ``connectTimeout`` clamped to the 1...120_000 millisecond range a
+    /// transport can accept.
+    ///
+    /// Transport factories live in composition roots, which would otherwise
+    /// each repeat this conversion. The configuration owns the timeout, so it
+    /// owns the conversion.
+    public var connectTimeoutMilliseconds: UInt32 {
+        let components = connectTimeout.components
+        let milliseconds = components.seconds * 1_000
+            + Int64(components.attoseconds / 1_000_000_000_000_000)
+        return UInt32(max(1, min(120_000, milliseconds)))
+    }
 }
 
 extension InspectorConnectionConfiguration: CustomStringConvertible {
