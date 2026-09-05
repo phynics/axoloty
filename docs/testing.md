@@ -144,10 +144,13 @@ pass is a migration-state report, not evidence that G4 runtime replacement is
 complete. The existing inspector/MCP roots are explicitly listed as historical
 consumers until the host transport adapter and typed event projection land;
 new examples or consumer roots are not covered by that allowlist and fail the
-boundary immediately. The tier also runs disjoint named slices of the host
-runtime tests, then runs the protocol and static-runtime tests through their
-own package manifests; a successful filtered process must therefore exercise a
-real test target rather than a root-package zero-test selection. The tier
+boundary immediately. The tier also runs the host runtime suite whole, then
+runs the protocol and static-runtime tests through their own package
+manifests; a successful filtered process must therefore exercise a real test
+target rather than a root-package zero-test selection. A gate selects a
+module, suite, or file and never a hand-listed set of test methods, because a
+method list stops covering tests added to that suite afterwards; the tier
+validator rejects the method-list form. The tier
 becomes a strict migration gate as those historical roots are removed from the
 allowlist.
 
@@ -163,7 +166,7 @@ separate from protocol-scenario execution.
 | Unit | `make test-unit` | yes | Portable object-model predicates and wire value semantics |
 | Module | `make test-module` | yes | Portable topic, wire, protocol, and Coaty model module tests |
 | G3 boundary | `axoloty-tool` manifest node `g3-object-boundary` | no | Portable object-model dependency and Embedded Swift source-inclusion authority check |
-| G4 migration | `make test-tier TIER=g4-runtime` | yes | Replacement-runtime boundaries plus disjoint host, protocol-package, and static-runtime test slices; strict once G4 roots exist |
+| G4 migration | `make test-tier TIER=g4-runtime` | yes | Replacement-runtime boundaries plus the whole host runtime suite and the protocol and static-runtime package suites; strict once G4 roots exist |
 | Wire offline | `make test-wire` | yes | Maintained lifecycle compatibility scenario contracts; no broker |
 | Wire live | `make test-wire-live` | yes | Live CoatyJS interop (host-run containers) |
 | Harness self-tests | `make test-support` | yes | Support tier self-tests in the pinned container, plus the host-side wire-tool npm suite |

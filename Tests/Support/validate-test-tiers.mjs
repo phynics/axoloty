@@ -178,14 +178,10 @@ export function expandFilterAlternatives(filter) {
 }
 
 // Names a filter branch may legitimately select: a test module, a suite type
-// or its display name, a source file (SwiftPM scopes free `@Test` functions by
-// file), or a test function. `suiteMembers` additionally records which
-// functions each suite type declares, so a `Suite/method` branch can be
-// checked against that suite rather than against any same-named function
-// elsewhere in the tree -- the shape a name copied from a sibling package takes.
+// or its display name, or a source file -- SwiftPM scopes free `@Test`
+// functions by their file, so a file name is a real selector.
 export function collectFilterSymbols(repositoryRoot, directories = ["Tests", "Tools", "Packages", "Source"]) {
   const names = new Set();
-  const suiteMembers = new Map();
   const addFile = absolute => {
     const name = path.basename(absolute);
     if (name === "Package.swift") {
@@ -197,18 +193,6 @@ export function collectFilterSymbols(repositoryRoot, directories = ["Tests", "To
     const contents = fs.readFileSync(absolute, "utf8");
     for (const match of contents.matchAll(/\b(?:struct|class|enum|actor)\s+([A-Za-z_]\w*)/g)) names.add(match[1]);
     for (const match of contents.matchAll(/@Suite\(\s*"([^"]+)"/g)) names.add(match[1]);
-    const functions = [...contents.matchAll(/\bfunc\s+([A-Za-z_]\w*)/g)].map(match => match[1]);
-    for (const functionName of functions) names.add(functionName);
-    // A suite's tests are spread across the file declaring the type and every
-    // file extending it; both forms contribute the functions in that file.
-    const owners = new Set([
-      ...[...contents.matchAll(/\b(?:struct|class|actor)\s+([A-Za-z_]\w*)/g)].map(match => match[1]),
-      ...[...contents.matchAll(/\bextension\s+([A-Za-z_]\w*)/g)].map(match => match[1]),
-    ]);
-    for (const owner of owners) {
-      if (!suiteMembers.has(owner)) suiteMembers.set(owner, new Set());
-      for (const functionName of functions) suiteMembers.get(owner).add(functionName);
-    }
   };
   const visit = directory => {
     if (!fs.existsSync(directory)) return;
@@ -221,7 +205,7 @@ export function collectFilterSymbols(repositoryRoot, directories = ["Tests", "To
   for (const directory of directories) visit(path.join(repositoryRoot, directory));
   const rootManifest = path.join(repositoryRoot, "Package.swift");
   if (fs.existsSync(rootManifest)) addFile(rootManifest);
-  return { names, suiteMembers };
+  return names;
 }
 
 export function discoverSelfTests(testsDirectory) {
@@ -311,11 +295,16 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
     // Swift Testing ignores a branch matching nothing without failing the run.
     if (filterSymbols) {
       for (const alternative of expandFilterAlternatives(node.filter)) {
-        const [scope, member] = alternative.includes("/") ? alternative.split("/", 2) : [alternative, undefined];
-        if (scope && !filterSymbols.names.has(scope)) {
-          errors.push(`${node.id}: test filter selects ${JSON.stringify(scope)}, which matches no test module, suite, file, or function`);
-        } else if (member && !(filterSymbols.suiteMembers.get(scope)?.has(member) ?? false)) {
-          errors.push(`${node.id}: test filter selects ${JSON.stringify(member)}, which ${JSON.stringify(scope)} does not declare`);
+        // A gate selects a whole module, suite, or file. A hand-listed set of
+        // methods silently stops covering tests added to that suite later, and
+        // silently keeps naming ones that move away; `make test-one FILTER=`
+        // is the supported way to run a single test.
+        if (alternative.includes("/")) {
+          errors.push(`${node.id}: test filter ${JSON.stringify(alternative)} names individual test methods; select a module, suite, or file instead`);
+          continue;
+        }
+        if (!filterSymbols.has(alternative)) {
+          errors.push(`${node.id}: test filter selects ${JSON.stringify(alternative)}, which matches no test module, suite, or file`);
         }
       }
     }

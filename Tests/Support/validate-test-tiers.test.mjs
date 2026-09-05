@@ -152,29 +152,22 @@ test("cold semver consumer bounds SwiftPM build parallelism", () => {
   assert.match(script, /swift build --jobs "\$jobs" --configuration "\$configuration" --target AxolotyConsumer/);
 });
 
-test("G4 runtime filters are disjoint and use their owning Swift packages", () => {
+test("G4 runtime gates select whole suites and their owning Swift packages", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
   const node = id => document.nodes.find(candidate => candidate.id === id);
-  const hostNodes = [node("g4-runtime-definition"), node("g4-host-runtime"), node("g4-runtime-concurrency")];
-  const hostTests = [
-    "mqttUUIDFormattingPreservesAllBytes", "identityStartupTopicIsFiltered", "builderEndpointProvenance",
-    "builderFinishesHandlers", "rejectsInvalidNamespaceBytes", "definitionBoundsNamespaceForGeneratedTopics",
-    "definitionBoundsEventStreams", "failedModuleRegistrationIsAtomic", "nestedDuplicateModuleKeyIsAtomic", "duplicateModuleKeyIsAtomic", "rejectsBeforeStart",
-    "acceptsLocalOperation", "callOperationNameReachesTransportAction", "channelIdentifierReachesTransportAction",
-    "multiActionDispatchReservationIsAtomic", "advertiseVariantsDoNotDuplicateRuntimeEvents",
-    "defaultRequestUsesMonotonicClock", "unlimitedDiscoverCanBeCanceled", "rejectsInvalidCallOperationNames",
-    "rejectsInvalidResponderOperationNames", "rejectsNonCallOperationFilters", "advertiseSelectorMatchesPayloadObjectType",
-    "lifecycleOrdering", "postStartTransportFailureEntersReconnect", "queuesOfflineOneWayPublication", "stopDrainsOutboundPump",
-  ];
 
-  for (const testName of hostTests) {
-    assert.equal(hostNodes.filter(candidate => candidate.filter.includes(testName)).length, 1, `${testName} must have one G4 owner`);
+  // The host runtime suite was once three gates splitting one suite by a
+  // hand-listed set of method names, which left every test added to the suite
+  // afterwards unowned. One gate now selects the suite itself.
+  const host = node("g4-host-runtime");
+  assert.equal(host.filter, "AxolotyRuntimeTests");
+  assert.equal(host.command.arguments[host.command.arguments.indexOf("--filter") + 1], "AxolotyRuntimeTests");
+  assert.equal(host.dependencies.includes("build"), true);
+  for (const retired of ["g4-runtime-definition", "g4-runtime-concurrency"]) {
+    assert.equal(node(retired), undefined, `${retired} must stay consolidated into g4-host-runtime`);
+    assert.equal(document.requiredGates.includes(retired), false);
   }
-  assert.equal(new Set(hostNodes.map(candidate => candidate.filter)).size, hostNodes.length);
-  assert.equal(hostNodes.some(candidate => candidate.filter.includes("AxolotyStaticRuntimeTests")), false);
-  // channelRejectsMissingIdentifier belongs to AxolotyStaticRuntime and is owned
-  // by g4-static-runtime; naming it here selected nothing in the root package.
-  assert.equal(hostNodes.some(candidate => candidate.filter.includes("channelRejectsMissingIdentifier")), false);
+  assert.equal(host.filter.includes("AxolotyStaticRuntimeTests"), false);
 
   const packageAssertions = [
     ["g4-protocol-lifecycle", "Packages/AxolotyProtocol", "ProtocolFoundationTests|ProtocolProcessorTests"],
@@ -481,12 +474,13 @@ test("validator rejects a test filter branch that selects nothing", () => {
   const unit = decayed.nodes.find(node => node.id === "test-unit");
   unit.filter = `${unit.filter}|RenamedAwayTests`;
   unit.command.arguments[unit.command.arguments.indexOf("--filter") + 1] = unit.filter;
-  const runtime = decayed.nodes.find(node => node.id === "g4-runtime-concurrency");
-  runtime.filter = runtime.filter.replace("lifecycleOrdering", "lifecycleOrderingRenamed");
+  const runtime = decayed.nodes.find(node => node.id === "g4-host-runtime");
+  runtime.filter = "AxolotyRuntimeTests/(lifecycleOrdering|stopDrainsOutboundPump)";
   runtime.command.arguments[runtime.command.arguments.indexOf("--filter") + 1] = runtime.filter;
   const errors = validate(decayed, base);
   assert.ok(errors.some(error => error.includes('"RenamedAwayTests"') && error.includes("matches no test module")));
-  assert.ok(errors.some(error => error.includes('"lifecycleOrderingRenamed"') && error.includes('"AxolotyRuntimeTests" does not declare')));
+  // A method list is rejected outright: it cannot cover tests added later.
+  assert.ok(errors.some(error => error.includes("names individual test methods")));
 });
 
 test("validator rejects a node whose declared filter and --filter argument disagree", () => {
