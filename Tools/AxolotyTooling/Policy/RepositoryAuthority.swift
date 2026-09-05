@@ -106,10 +106,10 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
             ("Source/Axoloty.docc/GettingStarted.md", "from: \"" + semanticVersion + "\"", true),
             ("Makefile", "AXOLOTY_CONSUMER_VERSION \\?= " + semanticVersion, false),
             ("Tests/Support/checks/check-axoloty-semver-consumer.sh", "version=.*:-" + semanticVersion + "\\}", false),
-            ("Tools/AxolotyTooling/AxolotyCommandDispatcher.swift", "private static let version = \"" + semanticVersion + "\"", false),
+            ("Tools/AxolotyTooling/Commands/AxolotyCommandDispatcher.swift", "private static let version = \"" + semanticVersion + "\"", false),
             ("Tools/AxolotyInspectorCore/InspectorArgumentParser.swift", "public static let version = \"" + semanticVersion + "\"", false),
-            ("Tools/AxolotyToolingTests/AxolotyCommandDispatcherTests.swift", "axoloty-tool " + semanticVersion, true),
-            ("Tools/AxolotyToolingTests/AxolotyServeParserTests.swift", "(?:ax|axoloty-tool) " + semanticVersion, true),
+            ("Tools/AxolotyToolingTests/Commands/AxolotyCommandDispatcherTests.swift", "axoloty-tool " + semanticVersion, true),
+            ("Tools/AxolotyToolingTests/Commands/AxolotyServeParserTests.swift", "(?:ax|axoloty-tool) " + semanticVersion, true),
             ("Tools/AxolotyInspectorCoreTests/InspectorArgumentParserTests.swift", "version == \"" + semanticVersion + "\"", true),
             ("docs/API.md", "Axoloty " + semanticVersion, true),
             ("docs/SUPPORT_MATRIX.md", "(?:Axoloty )?" + semanticVersion + " (?:support matrix|checkpoint)", true),
@@ -119,7 +119,7 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
         let repositoryDerivedClaims: [String: String] = [
             "Makefile": "AXOLOTY_CONSUMER_VERSION ?= $(shell tr -d '[:space:]' < VERSION)",
             "Tests/Support/checks/check-axoloty-semver-consumer.sh": "version=${AXOLOTY_CONSUMER_VERSION:-}",
-            "Tools/AxolotyTooling/AxolotyCommandDispatcher.swift": "private let version: String",
+            "Tools/AxolotyTooling/Commands/AxolotyCommandDispatcher.swift": "private let version: String",
             "Tools/AxolotyInspectorCore/InspectorArgumentParser.swift": "public static var version: String { AxolotyVersion.current() }",
         ]
         for (path, pattern, allMatches) in claims {

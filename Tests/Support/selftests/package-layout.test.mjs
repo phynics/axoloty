@@ -60,7 +60,7 @@ test("both packages compile the shared canonical plan resolver", () => {
   assert.match(toolsTarget, /path: "AxolotyTooling"/);
   assert.doesNotMatch(rootTarget, /\b(?:sources|exclude):\s*\[/);
   assert.doesNotMatch(toolsTarget, /\b(?:sources|exclude):\s*\[/);
-  assert.ok(fs.existsSync(path.join(root, "Tools/AxolotyTooling/CanonicalTestPlanResolver.swift")));
+  assert.ok(fs.existsSync(path.join(root, "Tools/AxolotyTooling/Manifest/CanonicalTestPlanResolver.swift")));
 });
 
 test("Swift files outside orchestration support belong to one declared test target", () => {

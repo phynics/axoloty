@@ -6,9 +6,9 @@ import test from "node:test";
 
 const root = path.resolve(new URL("../../..", import.meta.url).pathname);
 const toolingRoot = path.join(root, "Tools/AxolotyTooling");
-const resolverPath = "Tools/AxolotyTooling/CanonicalTestPlanResolver.swift";
-const plannerPath = "Tools/AxolotyTooling/AxolotyCheckPlanning.swift";
-const manifestContractsPath = "Tools/AxolotyTooling/CanonicalTestManifestContracts.swift";
+const resolverPath = "Tools/AxolotyTooling/Manifest/CanonicalTestPlanResolver.swift";
+const plannerPath = "Tools/AxolotyTooling/Check/AxolotyCheckPlanning.swift";
+const manifestContractsPath = "Tools/AxolotyTooling/Manifest/CanonicalTestManifestContracts.swift";
 
 function swiftFiles(directory) {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
