@@ -261,10 +261,129 @@ func repositoryAuthorityRejectsSiblingPrefixLinkEscape() throws {
     #expect(report.findings.contains { $0.rule == "links.scope" })
 }
 
+/// The policy must fail closed: a forbidden import is a finding, not a warning.
+@Test
+func modulePolicyRejectsAForbiddenImport() throws {
+    let fixture = try makeAuthorityFixture(sources: [
+        "Packages/FixtureWire/Sources/Wire.swift": "import AllowedModule\nimport Foundation\n",
+    ])
+    defer { try? FileManager.default.removeItem(at: fixture) }
+
+    let report = AxolotyRepositoryAuthorityValidator(root: fixture).validate()
+
+    #expect(report.status == "failed")
+    #expect(report.findings.contains {
+        $0.rule == "modules.forbidden"
+            && $0.path == "Packages/FixtureWire/Sources/Wire.swift"
+            && $0.message.contains("Foundation")
+    })
+}
+
+/// An import that is neither allowed nor forbidden is still a finding. A policy
+/// that only listed prohibitions would silently accept a new dependency.
+@Test
+func modulePolicyRejectsAnUndeclaredImport() throws {
+    let fixture = try makeAuthorityFixture(sources: [
+        "Packages/FixtureWire/Sources/Wire.swift": "import AllowedModule\nimport SomethingNew\n",
+    ])
+    defer { try? FileManager.default.removeItem(at: fixture) }
+
+    let report = AxolotyRepositoryAuthorityValidator(root: fixture).validate()
+
+    #expect(report.status == "failed")
+    #expect(report.findings.contains { $0.rule == "modules.undeclared" && $0.message.contains("SomethingNew") })
+}
+
+/// Attributed imports must be seen. `@preconcurrency import MQTTNIO` and
+/// `@_spi(...) import AxolotyProtocol` both appear in this repository, and a
+/// scanner that only matched bare `import` lines would report a clean tree.
+@Test
+func modulePolicySeesAttributedImports() throws {
+    let fixture = try makeAuthorityFixture(sources: [
+        "Packages/FixtureWire/Sources/Wire.swift": """
+        import AllowedModule
+        @preconcurrency import NIO
+        @_spi(SomeSPI) import SomethingNew
+        @preconcurrency @_spi(Other) import Foundation
+        """,
+    ])
+    defer { try? FileManager.default.removeItem(at: fixture) }
+
+    let report = AxolotyRepositoryAuthorityValidator(root: fixture).validate()
+
+    #expect(report.findings.contains { $0.rule == "modules.forbidden" && $0.message.contains("NIO") })
+    #expect(report.findings.contains { $0.rule == "modules.undeclared" && $0.message.contains("SomethingNew") })
+    #expect(report.findings.contains { $0.rule == "modules.forbidden" && $0.message.contains("Foundation") })
+}
+
+/// Nested sources are covered. The host runtime keeps Executor, IO, and
+/// Transport subdirectories, so a non-recursive scan would miss the transport.
+@Test
+func modulePolicyScansNestedSources() throws {
+    let fixture = try makeAuthorityFixture(sources: [
+        "Packages/FixtureWire/Sources/Nested/Deep.swift": "import Foundation\n",
+    ])
+    defer { try? FileManager.default.removeItem(at: fixture) }
+
+    let report = AxolotyRepositoryAuthorityValidator(root: fixture).validate()
+
+    #expect(report.findings.contains { $0.rule == "modules.forbidden" && $0.message.contains("Foundation") })
+}
+
+/// A policy that contradicts itself is a policy error, not a source error.
+@Test
+func modulePolicyRejectsContradictoryDeclarations() throws {
+    let fixture = try makeAuthorityFixture(modulePolicy: """
+    {"schemaVersion":1,"roles":{"portable":"p"},"platformClasses":{"portable":"p"},
+     "forbiddenEverywhere":[],
+     "targets":[{"name":"FixtureWire","role":"portable","platformClass":"portable",
+       "path":"Packages/FixtureWire/Sources",
+       "allowedImports":["Foundation"],"forbiddenImports":["Foundation"]}]}
+    """, sources: ["Packages/FixtureWire/Sources/Wire.swift": "\n"])
+    defer { try? FileManager.default.removeItem(at: fixture) }
+
+    let report = AxolotyRepositoryAuthorityValidator(root: fixture).validate()
+
+    #expect(report.findings.contains { $0.rule == "modules.contradiction" })
+}
+
+/// A missing or unreadable policy fails rather than silently skipping.
+@Test
+func modulePolicyMustBePresent() throws {
+    let fixture = try makeAuthorityFixture(sources: ["Packages/FixtureWire/Sources/Wire.swift": "\n"])
+    defer { try? FileManager.default.removeItem(at: fixture) }
+    try FileManager.default.removeItem(at: fixture.appendingPathComponent("docs/module-policy.yml"))
+
+    let report = AxolotyRepositoryAuthorityValidator(root: fixture).validate()
+
+    #expect(report.status == "failed")
+    #expect(report.findings.contains { $0.rule == "modules.read" })
+}
+
+/// A declared target whose directory is gone is a finding, so a renamed or
+/// deleted target cannot quietly drop out of policy coverage.
+@Test
+func modulePolicyRejectsAMissingTargetDirectory() throws {
+    let fixture = try makeAuthorityFixture(modulePolicy: """
+    {"schemaVersion":1,"roles":{"portable":"p"},"platformClasses":{"portable":"p"},
+     "forbiddenEverywhere":[],
+     "targets":[{"name":"Departed","role":"portable","platformClass":"portable",
+       "path":"Packages/Departed/Sources","allowedImports":[],"forbiddenImports":[]}]}
+    """)
+    defer { try? FileManager.default.removeItem(at: fixture) }
+
+    let report = AxolotyRepositoryAuthorityValidator(root: fixture).validate()
+
+    #expect(report.status == "failed")
+    #expect(report.findings.contains { $0.rule == "modules.path" })
+}
+
 private func makeAuthorityFixture(
     version: String = "0.5.1",
     makefileVersion: String? = nil,
-    exception: String = "{\"schemaVersion\":1,\"exceptions\":[]}"
+    exception: String = "{\"schemaVersion\":1,\"exceptions\":[]}",
+    modulePolicy: String = defaultFixtureModulePolicy,
+    sources: [String: String] = [:]
 ) throws -> URL {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent("axoloty-authority-" + UUID().uuidString)
@@ -293,11 +412,27 @@ private func makeAuthorityFixture(
         "Tests/AGENTS.md": "# Instructions\n## Jurisdiction\nThis guide applies to `Tests/`. The root [`AGENTS.md`](../AGENTS.md) rules apply.\n## Specialized rules\n",
         "Tools/AGENTS.md": "# Instructions\n## Jurisdiction\nThis guide applies to `Tools/`. The root [`AGENTS.md`](../AGENTS.md) rules apply.\n## Specialized rules\n",
         "docs/architecture-exceptions.yml": exception,
+        "docs/module-policy.yml": modulePolicy,
+        "Packages/FixtureWire/Sources/Wire.swift": "import AllowedModule\n",
     ]
-    for (path, content) in files {
+    for (path, content) in files.merging(sources) { _, override in override } {
         let url = root.appendingPathComponent(path)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data(content.utf8).write(to: url)
     }
     return root
 }
+
+/// One portable target that allows exactly one import. Negative tests vary the
+/// sources rather than the policy, so each asserts the rule it names.
+private let defaultFixtureModulePolicy = """
+{"schemaVersion":1,
+ "roles":{"portable":"p"},
+ "platformClasses":{"portable":"p"},
+ "forbiddenEverywhere":[],
+ "targets":[{"name":"FixtureWire","role":"portable","platformClass":"portable",
+   "path":"Packages/FixtureWire/Sources",
+   "allowedImports":["AllowedModule"],
+   "forbiddenImports":["Foundation","NIO"]}]}
+"""
+

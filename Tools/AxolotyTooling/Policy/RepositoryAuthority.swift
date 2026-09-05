@@ -73,6 +73,7 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
         validateAgents(findings: &findings)
         let invariants = validateArchitecture(findings: &findings)
         validateExceptions(invariants: invariants, findings: &findings)
+        validateModulePolicy(findings: &findings)
         findings.sort {
             ($0.path ?? "", $0.rule, $0.message) < ($1.path ?? "", $1.rule, $1.message)
         }
@@ -239,6 +240,140 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
             findings.append(.init(rule: "architecture.invariants", path: "ARCHITECTURE.md", message: "INV-001 must be declared and marked non-waivable"))
         }
         return unique
+    }
+
+    /// Checks every target's imports against the declared module policy.
+    ///
+    /// The dependency direction in `ARCHITECTURE.md` is prose, and the
+    /// forbidden-import lists it implies were previously duplicated across
+    /// separate gate scripts. This reads one declaration instead, so a new
+    /// target or a new forbidden import is a data change rather than a script
+    /// change.
+    private func validateModulePolicy(findings: inout [AxolotyRepositoryAuthorityFinding]) {
+        let path = "docs/module-policy.yml"
+        guard let data = readData(path) else {
+            findings.append(.init(rule: "modules.read", path: path, message: "module policy is missing or unreadable"))
+            return
+        }
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            findings.append(.init(rule: "modules.schema", path: path, message: "module policy must be JSON-compatible YAML"))
+            return
+        }
+        guard object["schemaVersion"] as? Int == 1, let rawTargets = object["targets"] as? [Any] else {
+            findings.append(.init(rule: "modules.schema", path: path, message: "module policy requires schemaVersion 1 and a targets array"))
+            return
+        }
+        let roles = Set((object["roles"] as? [String: Any])?.keys.map { $0 } ?? [])
+        let platformClasses = Set((object["platformClasses"] as? [String: Any])?.keys.map { $0 } ?? [])
+        let forbiddenEverywhere = Set((object["forbiddenEverywhere"] as? [Any])?.compactMap { nonEmptyString($0) } ?? [])
+        var names = Set<String>()
+
+        for (index, rawTarget) in rawTargets.enumerated() {
+            let prefix = "targets[" + String(index) + "]"
+            guard let target = rawTarget as? [String: Any] else {
+                findings.append(.init(rule: "modules.schema", path: path, message: prefix + " must be an object"))
+                continue
+            }
+            for key in ["name", "role", "platformClass", "path", "allowedImports", "forbiddenImports"] where target[key] == nil {
+                findings.append(.init(rule: "modules.required", path: path, message: prefix + " is missing " + key))
+            }
+            guard let name = nonEmptyString(target["name"]), let relativePath = nonEmptyString(target["path"]) else {
+                continue
+            }
+            if !names.insert(name).inserted {
+                findings.append(.init(rule: "modules.duplicate", path: path, message: "duplicate target " + name))
+            }
+            if let role = nonEmptyString(target["role"]), !roles.isEmpty, !roles.contains(role) {
+                findings.append(.init(rule: "modules.role", path: path, message: name + " declares unknown role " + role))
+            }
+            if let platformClass = nonEmptyString(target["platformClass"]), !platformClasses.isEmpty, !platformClasses.contains(platformClass) {
+                findings.append(.init(rule: "modules.platform", path: path, message: name + " declares unknown platform class " + platformClass))
+            }
+
+            let allowed = Set((target["allowedImports"] as? [Any])?.compactMap { nonEmptyString($0) } ?? [])
+            let forbidden = Set((target["forbiddenImports"] as? [Any])?.compactMap { nonEmptyString($0) } ?? [])
+                .union(forbiddenEverywhere)
+            for overlap in allowed.intersection(forbidden).sorted() {
+                findings.append(.init(rule: "modules.contradiction", path: path, message: name + " both allows and forbids " + overlap))
+            }
+
+            let directory = root.appendingPathComponent(relativePath)
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+                findings.append(.init(rule: "modules.path", path: relativePath, message: name + " declares a path that is not a directory"))
+                continue
+            }
+            for source in swiftSources(under: directory).sorted(by: { $0.path < $1.path }) {
+                let sourcePath = relativePath + "/" + source.lastPathComponent
+                for module in importedModules(in: source).sorted() {
+                    if forbidden.contains(module) {
+                        findings.append(.init(rule: "modules.forbidden", path: sourcePath, message: name + " must not import " + module))
+                    } else if !allowed.contains(module) {
+                        findings.append(.init(rule: "modules.undeclared", path: sourcePath, message: name + " imports undeclared module " + module))
+                    }
+                }
+            }
+        }
+    }
+
+    /// Every Swift source under a target directory, recursively.
+    private func swiftSources(under directory: URL) -> [URL] {
+        guard let enumerator = FileManager.default.enumerator(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+        return enumerator.compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" }
+    }
+
+    /// The module names one source imports.
+    ///
+    /// An import may carry any number of leading attributes and may name a
+    /// declaration rather than a module. Both forms appear in this repository
+    /// -- `@preconcurrency import MQTTNIO` and
+    /// `@_spi(AxolotyRuntimeAdapter) import AxolotyProtocol` -- so neither can
+    /// be treated as an unattributed `import Module` line.
+    private func importedModules(in source: URL) -> Set<String> {
+        guard let text = try? String(contentsOf: source, encoding: .utf8) else { return [] }
+        var modules = Set<String>()
+        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            var line = rawLine.trimmingCharacters(in: .whitespaces)
+            while line.hasPrefix("@") {
+                guard let cut = attributeEnd(of: line) else { break }
+                line = String(line[cut...]).trimmingCharacters(in: .whitespaces)
+            }
+            guard line.hasPrefix("import ") else { continue }
+            var remainder = String(line.dropFirst("import ".count)).trimmingCharacters(in: .whitespaces)
+            for kind in ["typealias ", "struct ", "class ", "enum ", "protocol ", "func ", "var ", "let "] where remainder.hasPrefix(kind) {
+                remainder = String(remainder.dropFirst(kind.count))
+                break
+            }
+            let module = remainder.prefix { $0.isLetter || $0.isNumber || $0 == "_" }
+            if !module.isEmpty { modules.insert(String(module)) }
+        }
+        return modules
+    }
+
+    /// The index just past one leading attribute, including any argument list.
+    private func attributeEnd(of line: String) -> String.Index? {
+        var index = line.index(after: line.startIndex)
+        while index < line.endIndex, line[index].isLetter || line[index].isNumber || line[index] == "_" {
+            index = line.index(after: index)
+        }
+        guard index < line.endIndex else { return nil }
+        if line[index] == "(" {
+            var depth = 0
+            while index < line.endIndex {
+                if line[index] == "(" { depth += 1 }
+                if line[index] == ")" {
+                    depth -= 1
+                    if depth == 0 { return line.index(after: index) }
+                }
+                index = line.index(after: index)
+            }
+            return nil
+        }
+        return index
     }
 
     private func validateExceptions(

@@ -192,6 +192,13 @@ Outbound processing follows the same boundary in reverse, beginning with a typed
 
 ## Target dependency direction
 
+The diagram below is the human-readable form. The enforced form is
+[`docs/module-policy.yml`](./docs/module-policy.yml): one declaration per
+target giving its role, platform class, allowed imports, and forbidden
+imports. `axoloty-tool repository validate` checks every Swift source against
+it, so a new dependency is a policy change rather than a silent one. Where the
+two disagree, the policy is authoritative and this section is the defect.
+
 ```text
 AxolotyWire
     ^
