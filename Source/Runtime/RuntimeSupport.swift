@@ -4,7 +4,7 @@ import AxolotyProtocol
 import AxolotyWire
 import ErrorKit
 import Foundation
-import NIOConcurrencyHelpers
+import Synchronization
 
 extension OwnedProtocolAction {
     var capability: ProtocolCapability {
@@ -39,16 +39,20 @@ func monotonicNowMS() -> UInt32 {
     UInt32(truncatingIfNeeded: DispatchTime.now().uptimeNanoseconds / 1_000_000)
 }
 
-final class RuntimeOverflowGate: @unchecked Sendable {
-    private let lock = NIOLock()
-    private var signaled = false
+/// A once-only saturation latch.
+///
+/// Claimed from a transport receive callback, which may run on a transport
+/// event-loop thread, so it cannot be an actor. It was the host runtime's only
+/// use of NIO outside the transport itself.
+final class RuntimeOverflowGate: Sendable {
+    private let signaled = Mutex(false)
 
     func reset() {
-        lock.withLock { signaled = false }
+        signaled.withLock { $0 = false }
     }
 
     func claim() -> Bool {
-        lock.withLock {
+        signaled.withLock { signaled in
             guard !signaled else { return false }
             signaled = true
             return true
@@ -57,7 +61,9 @@ final class RuntimeOverflowGate: @unchecked Sendable {
 }
 
 extension ByteSlice {
-    func utf8Equals(_ value: String) -> Bool {
+    /// Package-visible so the transport adapter can compare a borrowed route
+    /// against a literal without this becoming public API.
+    package func utf8Equals(_ value: String) -> Bool {
         let bytes = Array(value.utf8)
         guard bytes.count == length else { return false }
         for index in 0..<length where byte(at: index) != bytes[index] {

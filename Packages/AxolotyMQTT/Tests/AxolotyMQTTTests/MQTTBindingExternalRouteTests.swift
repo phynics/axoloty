@@ -1,9 +1,11 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Testing
-@testable import Axoloty
+import Axoloty
+@testable import AxolotyMQTT
 
-extension AxolotyRuntimeTests {
+@Suite("MQTT external routes")
+struct MQTTBindingExternalRouteTests {
     @Test("external route activation reports capacity exceeded only when the table is genuinely full")
     func externalRouteActivationReportsCapacityExceeded() throws {
         var routes = [

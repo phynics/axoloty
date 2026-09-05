@@ -74,7 +74,10 @@ let package = Package(
     dependencies: [.package(url: "$url", from: "$version")],
     targets: [
         .executableTarget(name: "WireConsumer", dependencies: [.product(name: "AxolotyWire", package: "axoloty")]),
-        .executableTarget(name: "AxolotyConsumer", dependencies: [.product(name: "Axoloty", package: "axoloty")]),
+        .executableTarget(name: "AxolotyConsumer", dependencies: [
+            .product(name: "Axoloty", package: "axoloty"),
+            .product(name: "AxolotyMQTT", package: "axoloty"),
+        ]),
     ]
 )
 EOF

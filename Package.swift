@@ -33,6 +33,10 @@ let package = Package(
             targets: ["AxolotyCoatyModels"]
         ),
         .library(
+            name: "AxolotyMQTT",
+            targets: ["AxolotyMQTT"]
+        ),
+        .library(
             name: "AxolotyIoRouting",
             targets: ["AxolotyIoRouting"]
         ),
@@ -137,21 +141,7 @@ let package = Package(
                 "AxolotyWire",
                 "AxolotyProtocol",
                 "AxolotyObjectModel",
-                .product(name: "MQTTNIO", package: "mqtt-nio"),
-                .product(name: "NIO", package: "swift-nio"),
-                .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
-                .product(
-                    name: "NIOSSL",
-                    package: "swift-nio-ssl",
-                    condition: .when(platforms: [.linux])
-                ),
-                .product(
-                    name: "NIOTransportServices",
-                    package: "swift-nio-transport-services",
-                    condition: .when(platforms: [.macOS, .iOS])
-                ),
                 .product(name: "ErrorKit", package: "ErrorKit"),
-                .product(name: "IkigaJSON", package: "swift-json"),
             ],
             path: "Source",
             exclude: ["Runtime/AGENTS.md"],
@@ -176,9 +166,36 @@ let package = Package(
                 "Runtime/Executor/ProtocolExecutor+Handlers.swift",
                 "Runtime/RuntimeModules.swift",
                 "Runtime/RuntimeSupport.swift",
-                "Runtime/Transport/MQTTBinding.swift",
-                "Runtime/Transport/RuntimeMQTTClient.swift",
             ]
+        ),
+        // The MQTT transport adapter. Every MQTT and NIO dependency lives
+        // here, so a consumer of the runtime alone resolves none of them.
+        .target(
+            name: "AxolotyMQTT",
+            dependencies: [
+                "Axoloty",
+                "AxolotyProtocol",
+                "AxolotyWire",
+                .product(name: "MQTTNIO", package: "mqtt-nio"),
+                .product(name: "NIO", package: "swift-nio"),
+                .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
+                .product(
+                    name: "NIOSSL",
+                    package: "swift-nio-ssl",
+                    condition: .when(platforms: [.linux])
+                ),
+                .product(
+                    name: "NIOTransportServices",
+                    package: "swift-nio-transport-services",
+                    condition: .when(platforms: [.macOS, .iOS])
+                ),
+            ],
+            path: "Packages/AxolotyMQTT/Sources/AxolotyMQTT"
+        ),
+        .testTarget(
+            name: "AxolotyMQTTTests",
+            dependencies: ["AxolotyMQTT", "Axoloty", "AxolotyProtocol", "AxolotyWire"],
+            path: "Packages/AxolotyMQTT/Tests/AxolotyMQTTTests"
         ),
         .target(
             name: "AxolotyTestSupport",
@@ -205,6 +222,7 @@ let package = Package(
         .testTarget(
             name: "AxolotyLiveWireTests",
             dependencies: [
+                "AxolotyMQTT",
                 "Axoloty",
                 "AxolotyWire",
                 "AxolotyProtocol",
@@ -303,7 +321,8 @@ let package = Package(
         ),
         .executableTarget(
             name: "AxolotyInspectorCLI",
-            dependencies: ["Axoloty", "AxolotyInspectorCore", "AxolotyInspectorRuntime"],
+            dependencies: [
+                "AxolotyMQTT","Axoloty", "AxolotyInspectorCore", "AxolotyInspectorRuntime"],
             path: "Tools/axoloty-inspect"
         ),
         .testTarget(
@@ -345,6 +364,7 @@ let package = Package(
         .executableTarget(
             name: "AxolotyMCPServer",
             dependencies: [
+                "AxolotyMQTT",
                 "AxolotyMCP",
                 "AxolotyTooling",
                 "Axoloty",
