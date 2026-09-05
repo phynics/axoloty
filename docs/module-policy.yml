@@ -281,7 +281,7 @@
         "MQTTNIO",
         "AxolotyTooling"
       ],
-      "note": "Runs an HTTP server directly on NIO. These products are declared on the target rather than inherited from Axoloty, so extracting AxolotyMQTT does not break this target."
+      "note": "Runs an HTTP server directly on NIO, and declares NIOCore, NIOPosix, and NIOHTTP1 on the target rather than inheriting them from Axoloty. Extracting AxolotyMQTT therefore does not affect this target."
     },
     {
       "name": "AxolotyTooling",

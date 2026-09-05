@@ -415,7 +415,8 @@ private func makeAuthorityFixture(
         "docs/module-policy.yml": modulePolicy,
         "Packages/FixtureWire/Sources/Wire.swift": "import AllowedModule\n",
     ]
-    for (path, content) in files.merging(sources) { _, override in override } {
+    let allFiles = files.merging(sources, uniquingKeysWith: { _, override in override })
+    for (path, content) in allFiles {
         let url = root.appendingPathComponent(path)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data(content.utf8).write(to: url)
