@@ -24,7 +24,7 @@ actor RestartingBrokerTransport: AxolotyRuntimeTransport {
         }
     }
 
-    func perform(_ effect: RuntimeTransportEffect, namespace: String) async throws {}
+    func perform(_ effect: RuntimeTransportEffect) async throws {}
     func stop() async {}
 
     func startAttempts() -> Int { startCount }

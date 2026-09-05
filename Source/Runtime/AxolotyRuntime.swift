@@ -367,7 +367,7 @@ actor ProtocolExecutor {
                 for queuedEffect in batch.effects {
                     guard !Task.isCancelled else { break }
                     do {
-                        try await transport.perform(queuedEffect.transportEffect, namespace: namespace)
+                        try await transport.perform(queuedEffect.transportEffect(namespace: namespace))
                         await self?.transportEffectCompleted(queuedEffect, delivered: true)
                     } catch {
                         await self?.transportEffectCompleted(queuedEffect, delivered: false)

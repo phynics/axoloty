@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+import AxolotyProtocol
 import Testing
 @_spi(AxolotyRuntimeAdapter) import Axoloty
 import AxolotyObjectModel
@@ -27,9 +28,9 @@ func registryStartsCombinedWorkflow() async throws {
     try await waitForPublicationCount(transport, capability: .discover, count: 1)
     try await waitForPublicationCount(transport, capability: .query, count: 1)
     let publications = await transport.allPublications()
-    #expect(publications.contains { $0.routingKey.capability == .discover })
-    #expect(publications.contains { $0.routingKey.capability == .query })
-    let queryPayload = publications.first(where: { $0.routingKey.capability == .query })?.payload ?? []
+    #expect(publications.contains { routeEventType($0.route) == ProtocolCapability.discover.wireEventType.wireCode.description })
+    #expect(publications.contains { routeEventType($0.route) == ProtocolCapability.query.wireEventType.wireCode.description })
+    let queryPayload = publications.first(where: { routeEventType($0.route) == ProtocolCapability.query.wireEventType.wireCode.description })?.payload ?? []
     let queryText = String(decoding: queryPayload, as: UTF8.self)
     #expect(queryText.contains("coaty.sensorThings.Sensor"))
     #expect(queryText.contains("parentObjectId"))

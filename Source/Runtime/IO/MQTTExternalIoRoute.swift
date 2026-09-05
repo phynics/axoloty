@@ -59,10 +59,27 @@ public enum RuntimeInboundFrame: Sendable, Equatable {
     case externalIo(route: String, payload: [UInt8], nowMS: UInt32)
 }
 
+/// A finished outbound message: where it goes, and what it carries.
+///
+/// The runtime resolves the route before handing the message to a transport,
+/// so an adapter never needs profile knowledge to address a publication.
+public struct RuntimeOutboundMessage: Sendable, Equatable {
+    /// The exact route to publish on.
+    public let route: String
+    /// The copied payload.
+    public let payload: [UInt8]
+
+    /// Creates an outbound message.
+    public init(route: String, payload: [UInt8]) {
+        self.route = route
+        self.payload = payload
+    }
+}
+
 /// One exhaustive transport effect retained by the host runtime.
 public enum RuntimeTransportEffect: Sendable, Equatable {
-    /// Publish an owned protocol publication.
-    case publish(OwnedProtocolPublication)
+    /// Publish a finished route and payload.
+    case publish(RuntimeOutboundMessage)
     /// Subscribe the exact external route after an association activation.
     case externalRouteActivated(OwnedExternalRouteTransition)
     /// Unsubscribe the exact external route after an association deactivation.

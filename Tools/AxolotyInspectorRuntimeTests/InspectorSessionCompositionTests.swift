@@ -18,7 +18,7 @@ private actor StubTransport: AxolotyRuntimeTransport {
     }
 
     func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) async {}
-    func perform(_ effect: RuntimeTransportEffect, namespace: String) async throws {}
+    func perform(_ effect: RuntimeTransportEffect) async throws {}
     func stop() async { receive = nil }
 }
 

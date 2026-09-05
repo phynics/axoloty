@@ -45,12 +45,13 @@ extension AxolotyRuntimeTests {
         try await waitUntil("Call operation to reach the transport") {
             await transport.sentCount() == 1
         }
-        let action = try #require(await transport.lastSent())
-        guard case .profile(let filter, _) = action.target else {
-            Issue.record("Call publication did not use the profile target")
-            return
-        }
-        #expect(filter == Array("wire-fixture-operation".utf8))
+        let message = try #require(await transport.lastSent())
+        // The transport receives a resolved route, so the operation name is
+        // asserted where it actually appears on the wire: as a direct filter
+        // on the event-type segment.
+        let event = try #require(message.route.split(separator: "/", omittingEmptySubsequences: false).dropFirst(3).first)
+        #expect(event.hasSuffix(":wire-fixture-operation"))
+        #expect(!event.contains("::"))
         await runtime.stop()
     }
 
@@ -69,13 +70,11 @@ extension AxolotyRuntimeTests {
         try await waitUntil("Channel operation to reach the transport") {
             await transport.sentCount() == 1
         }
-        let action = try #require(await transport.lastSent())
-        guard case .profile(let filter, let kind) = action.target else {
-            Issue.record("Channel publication did not use the profile target")
-            return
-        }
-        #expect(filter == Array("wire-fixture-channel".utf8))
-        #expect(kind == .direct)
+        let message = try #require(await transport.lastSent())
+        let event = try #require(message.route.split(separator: "/", omittingEmptySubsequences: false).dropFirst(3).first)
+        #expect(event.hasSuffix(":wire-fixture-channel"))
+        // A direct filter uses one separator; an object-type filter uses two.
+        #expect(!event.contains("::"))
         await runtime.stop()
     }
 

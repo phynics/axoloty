@@ -33,7 +33,7 @@ extension AxolotyRuntimeTests {
         #expect(await runtime.state() == .running)
         #expect(await transport.lifecycle == ["start", "install"])
         let advertisement = try #require(await transport.firstSent())
-        #expect(advertisement.routingKey.capability == .advertise)
+        #expect(isAdvertiseRoute(advertisement.route))
         #expect(String(decoding: advertisement.payload, as: UTF8.self).contains("coaty.Identity"))
 
         await runtime.reconnect()
@@ -47,7 +47,7 @@ extension AxolotyRuntimeTests {
         let lifecycle = await transport.lifecycle
         #expect(Array(lifecycle.suffix(2)) == ["remove", "stop"])
         let deadvertisement = try #require(await transport.lastSent())
-        #expect(deadvertisement.routingKey.capability == .deadvertise)
+        #expect(isDeadvertiseRoute(deadvertisement.route))
         #expect(String(decoding: deadvertisement.payload, as: UTF8.self) == "{\"objectIds\":[\"00000000-0000-0000-0000-000000000000\"]}")
     }
 

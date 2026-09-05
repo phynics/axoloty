@@ -194,7 +194,7 @@ private final class HostTraceTransport: AxolotyRuntimeTransport, @unchecked Send
     func removeSubscriptions(namespace: String) async throws {}
     func stop() async {}
 
-    func perform(_ effect: RuntimeTransportEffect, namespace: String) async throws {
+    func perform(_ effect: RuntimeTransportEffect) async throws {
         record(effect)
     }
 

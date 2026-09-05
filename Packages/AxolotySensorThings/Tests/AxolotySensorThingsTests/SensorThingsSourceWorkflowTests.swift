@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+import AxolotyProtocol
 import Testing
 @_spi(AxolotyRuntimeAdapter) import Axoloty
 import AxolotyObjectModel
@@ -149,7 +150,7 @@ func identicalThingSnapshotsAreDeduplicated() async throws {
     try await waitForSensorThingsAdvertisementCount(transport, 6)
 
     let publications = await transport.allPublications()
-    let advertisements = publications.filter { $0.routingKey.capability == .advertise }
+    let advertisements = publications.filter { routeEventType($0.route) == ProtocolCapability.advertise.wireEventType.wireCode.description }
     let sensorThingsAdvertisements = advertisements.filter {
         let type = publicationObjectType($0)
         return type == "coaty.sensorThings.Thing" || type == "coaty.sensorThings.Sensor"
@@ -181,7 +182,7 @@ func sourceLifecycleOrdering() async throws {
     try await waitForSensorThingsAdvertisementCount(transport, 4)
     let startup = await transport.allPublications()
     let startupAdvertisements = startup.filter { publication in
-        guard publication.routingKey.capability == .advertise else { return false }
+        guard routeEventType(publication.route) == ProtocolCapability.advertise.wireEventType.wireCode.description else { return false }
         let type = publicationObjectType(publication)
         return type == "coaty.sensorThings.Thing" || type == "coaty.sensorThings.Sensor"
     }
@@ -195,7 +196,7 @@ func sourceLifecycleOrdering() async throws {
 
     await runtime.stop()
     let allPublications = await transport.allPublications()
-    let shutdown = allPublications.filter { $0.routingKey.capability == .deadvertise }
+    let shutdown = allPublications.filter { routeEventType($0.route) == ProtocolCapability.deadvertise.wireEventType.wireCode.description }
     try #require(shutdown.count == 2)
     #expect(String(decoding: shutdown[0].payload, as: UTF8.self).contains(sourceIDOne))
     #expect(String(decoding: shutdown[1].payload, as: UTF8.self).contains(thingIDOne))
@@ -309,7 +310,7 @@ func producerFailureIsIsolated() async throws {
     let diagnostic = try await nextDiagnostic(from: diagnostics)
     #expect(diagnostic.kind == .handlerFailed)
     #expect(diagnostic.detail.contains("producer failed"))
-    #expect(await transport.allPublications().contains { $0.routingKey.capability == .channel })
+    #expect(await transport.allPublications().contains { routeEventType($0.route) == ProtocolCapability.channel.wireEventType.wireCode.description })
     await runtime.stop()
 }
 
@@ -328,17 +329,17 @@ func discoverReturnsFilteredSensorAndThingSnapshots() async throws {
     let topic = "coaty/3/sensor-tests/DSC/\(requester)"
     #expect(await runtime.receive(.profile(topic: topic + "/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", payload: Array("{\"objectId\":\"\(sourceIDOne)\"}".utf8), nowMS: 30)) == .accepted)
     try await waitForPublicationCount(transport, capability: .resolve, count: 1)
-    let sensor = try #require(await transport.allPublications().last { $0.routingKey.capability == .resolve })
+    let sensor = try #require(await transport.allPublications().last { routeEventType($0.route) == ProtocolCapability.resolve.wireEventType.wireCode.description })
     #expect(publicationObjectID(sensor) == sourceIDOne)
     #expect(publicationObjectType(sensor) == "coaty.sensorThings.Sensor")
     #expect(await runtime.receive(.profile(topic: topic + "/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", payload: Array("{\"objectTypes\":[\"coaty.sensorThings.Thing\"]}".utf8), nowMS: 31)) == .accepted)
     try await waitForPublicationCount(transport, capability: .resolve, count: 2)
-    let thing = try #require(await transport.allPublications().last { $0.routingKey.capability == .resolve })
+    let thing = try #require(await transport.allPublications().last { routeEventType($0.route) == ProtocolCapability.resolve.wireEventType.wireCode.description })
     #expect(publicationObjectID(thing) == thingIDOne)
     #expect(publicationObjectType(thing) == "coaty.sensorThings.Thing")
     #expect(await runtime.receive(.profile(topic: topic + "/cccccccc-cccc-4ccc-8ccc-cccccccccccc", payload: Array("{\"coreTypes\":[\"CoatyObject\"]}".utf8), nowMS: 32)) == .accepted)
     try await waitForPublicationCount(transport, capability: .resolve, count: 3)
-    #expect(await transport.allPublications().filter { $0.routingKey.capability == .resolve }.count == 3)
+    #expect(await transport.allPublications().filter { routeEventType($0.route) == ProtocolCapability.resolve.wireEventType.wireCode.description }.count == 3)
     await runtime.stop()
 }
 
@@ -374,7 +375,7 @@ func queryReturnsFilteredSensorBytesWithinBound() async throws {
     )) == .accepted)
     try await waitForPublicationCount(transport, capability: .retrieve, count: 1)
 
-    let response = try #require(await transport.allPublications().last { $0.routingKey.capability == .retrieve })
+    let response = try #require(await transport.allPublications().last { routeEventType($0.route) == ProtocolCapability.retrieve.wireEventType.wireCode.description })
     let responseText = String(decoding: response.payload, as: UTF8.self)
     #expect(responseText.contains(sourceIDTwo))
     #expect(!responseText.contains(sourceIDOne))
@@ -387,7 +388,7 @@ func queryReturnsFilteredSensorBytesWithinBound() async throws {
         nowMS: 21
     )) == .accepted)
     try await waitForPublicationCount(transport, capability: .retrieve, count: 2)
-    let boundedResponse = try #require(await transport.allPublications().last { $0.routingKey.capability == .retrieve })
+    let boundedResponse = try #require(await transport.allPublications().last { routeEventType($0.route) == ProtocolCapability.retrieve.wireEventType.wireCode.description })
     let boundedText = String(decoding: boundedResponse.payload, as: UTF8.self)
     #expect(boundedText.contains(sourceIDOne))
     #expect(boundedText.contains(sourceIDTwo))

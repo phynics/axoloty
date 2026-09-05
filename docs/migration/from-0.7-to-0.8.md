@@ -64,6 +64,27 @@ they supply an MQTT factory, which is where transport selection now lives.
 `InspectorConnectionConfiguration` gains `connectTimeoutMilliseconds`, the
 clamped millisecond form a transport accepts.
 
+## The transport port carries a finished route
+
+A custom `AxolotyRuntimeTransport` sees a resolved route rather than a routing
+key, and `perform` no longer takes a namespace:
+
+| 0.7 | 0.8 |
+|---|---|
+| `perform(_ effect: RuntimeTransportEffect, namespace: String)` | `perform(_ effect: RuntimeTransportEffect)` |
+| `.publish(OwnedProtocolPublication)` | `.publish(RuntimeOutboundMessage)` |
+
+`RuntimeOutboundMessage` is a `route` and a `payload`. Route synthesis moved
+into the runtime as `CoatyRoute`, so an adapter no longer needs Coaty profile
+knowledge to address a publication — it only decides how to put bytes on a
+wire. Adapters that inspected `publication.routingKey` or
+`publication.target` now read the route.
+
+`installSubscriptions(namespace:)` and `removeSubscriptions(namespace:)` keep
+their names. MQTT implements them as server-side wildcard subscriptions, which
+is a broker capability rather than a concept every carrier shares; both default
+to no-ops, so an adapter without the concept simply does not implement them.
+
 ## MQTT remains the default and validated transport
 
 Nothing about the wire format, the sealed `coaty/3` profile, or broker

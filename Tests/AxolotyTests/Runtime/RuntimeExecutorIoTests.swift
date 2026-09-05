@@ -225,7 +225,7 @@ private actor BlockingPublicationTransport: AxolotyRuntimeTransport {
     private(set) var blockedPublicationStarted = false
     private var released = false
     private var waiter: CheckedContinuation<Void, Never>?
-    private(set) var publications: [OwnedProtocolPublication] = []
+    private(set) var publications: [RuntimeOutboundMessage] = []
 
     init(blockedCapability: ProtocolCapability) {
         self.blockedCapability = blockedCapability
@@ -237,10 +237,10 @@ private actor BlockingPublicationTransport: AxolotyRuntimeTransport {
     func removeSubscriptions(namespace: String) async throws {}
     func stop() async {}
 
-    func perform(_ effect: RuntimeTransportEffect, namespace: String) async throws {
+    func perform(_ effect: RuntimeTransportEffect) async throws {
         guard case let .publish(publication) = effect else { return }
         publications.append(publication)
-        guard publication.routingKey.capability == blockedCapability else { return }
+        guard routeEventType(publication.route) == blockedCapability.wireEventType.wireCode.description else { return }
         blockedPublicationStarted = true
         guard !released else { return }
         await withCheckedContinuation { continuation in
@@ -256,13 +256,14 @@ private actor BlockingPublicationTransport: AxolotyRuntimeTransport {
 
     func publicationCount(for capability: ProtocolCapability) -> Int {
         publications.reduce(into: 0) { count, publication in
-            if publication.routingKey.capability == capability { count += 1 }
+            if routeEventType(publication.route) == capability.wireEventType.wireCode.description { count += 1 }
         }
     }
 
     var ioPayloads: [[UInt8]] {
         publications.compactMap { publication in
-            publication.routingKey.capability == .ioValue ? publication.payload : nil
+            routeEventType(publication.route) == ProtocolCapability.ioValue.wireEventType.wireCode.description
+                ? publication.payload : nil
         }
     }
 }
@@ -270,7 +271,7 @@ private actor BlockingPublicationTransport: AxolotyRuntimeTransport {
 private actor RecordingPublicationTransport: AxolotyRuntimeTransport {
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
     func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) async {}
-    func perform(_ effect: RuntimeTransportEffect, namespace: String) async throws {}
+    func perform(_ effect: RuntimeTransportEffect) async throws {}
     func stop() async {}
     func installSubscriptions(namespace: String) async throws {}
     func removeSubscriptions(namespace: String) async throws {}
