@@ -304,10 +304,14 @@ checkpoint-hardware:
 			AXOLOTY_EVIDENCE_DIR="$(AXOLOTY_EVIDENCE_DIR)" AXOLOTY_G6_RESOURCE_EVIDENCE="$(AXOLOTY_G6_RESOURCE_EVIDENCE)" AXOLOTY_REPOSITORY="$(AXOLOTY_REPOSITORY)" \
 			AXOLOTY_DEVICE="$${AXOLOTY_DEVICE:-/dev/ttyACM0}"
 
-test-decoder-context-sendable:
+# The check needs build diagnostics, so it runs the build itself rather than a
+# test filter. run.sh executes directly when already inside the container.
+test-decoder-context-sendable: image
 	@build_log=$$(mktemp); \
 	trap 'rm -f "$$build_log"' EXIT; \
-	if ! $(MAKE) --no-print-directory test-one FILTER=smoke >"$$build_log" 2>&1; then cat "$$build_log"; exit 1; fi; \
+	if ! $(call run_container,$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)) \
+		swift build -Xswiftc -warnings-as-errors $(SWIFT_LOCKED_ARGS) >"$$build_log" 2>&1; \
+	then cat "$$build_log"; exit 1; fi; \
 	cat "$$build_log"; \
 	sh Tests/Support/check-decoder-context-diagnostic.sh "$$build_log"
 
