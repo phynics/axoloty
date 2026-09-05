@@ -33,7 +33,7 @@ extension AxolotyRuntimeTests {
             let payload = Array(
                 #"{"object":{"objectId":"11111111-1111-4111-8111-\#(String(format: "%012x", index))","coreType":"CoatyObject","objectType":"com.coaty.test.ConformanceBufferFixture","name":"conformance-buffer-fixture"}}"#.utf8
             )
-            let receipt = await runtime.receive(.profile(topic: topic, payload: payload, nowMS: 0))
+            let receipt = await runtime.receive(.profile(route: topic, payload: payload, nowMS: 0))
             #expect(receipt == .accepted)
         }
 

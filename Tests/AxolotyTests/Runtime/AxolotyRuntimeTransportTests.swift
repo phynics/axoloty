@@ -10,8 +10,8 @@ import AxolotyWire
 extension AxolotyRuntimeTests {
     @Test("external MQTT routes accept bounded exact topics")
     func externalRouteValidationAcceptsExactTopic() throws {
-        let route = try MQTTExternalIoRoute("plant/line-7/temperature")
-        let sameRoute = try MQTTExternalIoRoute("plant/line-7/temperature")
+        let route = try ExternalIoRoute("plant/line-7/temperature")
+        let sameRoute = try ExternalIoRoute("plant/line-7/temperature")
         #expect(route == sameRoute)
     }
 
@@ -24,13 +24,13 @@ extension AxolotyRuntimeTests {
 
         #expect(topic.utf8.count > 128)
         #expect(topic.utf8.count <= WireBufferConfig.maxTopicLength)
-        _ = try MQTTExternalIoRoute(topic)
+        _ = try ExternalIoRoute(topic)
     }
 
     @Test("external MQTT routes retain metadata without encoded-size inflation")
     func externalRouteMetadataUsesExactBytes() throws {
-        let route = try MQTTExternalIoRoute("plant/line-7/temperature")
-        route.topicBytes.withBytes { bytes in
+        let route = try ExternalIoRoute("plant/line-7/temperature")
+        route.routeBytes.withBytes { bytes in
             #expect(bytes.equals("plant/line-7/temperature"))
         }
     }
@@ -41,14 +41,14 @@ extension AxolotyRuntimeTests {
             "", "/leading", "trailing/", "double//slash", "wild/+", "wild/#",
             "nul\0topic", "quoted/\"topic", #"backslash/\topic"#, "control/\ntopic",
         ] {
-            #expect(throws: AxolotyError.self) { _ = try MQTTExternalIoRoute(topic) }
+            #expect(throws: AxolotyError.self) { _ = try ExternalIoRoute(topic) }
         }
-        let bounded = try? MQTTExternalIoRoute(
+        let bounded = try? ExternalIoRoute(
             String(repeating: "x", count: WireBufferConfig.maxTopicLength)
         )
         #expect(bounded != nil)
         #expect(throws: AxolotyError.self) {
-            _ = try MQTTExternalIoRoute(String(repeating: "x", count: WireBufferConfig.maxTopicLength + 1))
+            _ = try ExternalIoRoute(String(repeating: "x", count: WireBufferConfig.maxTopicLength + 1))
         }
     }
 
@@ -61,7 +61,7 @@ extension AxolotyRuntimeTests {
             bytes: metadataJSON.utf8Start,
             length: metadataJSON.utf8CodeUnitCount
         ))
-        let route = try MQTTExternalIoRoute("coaty/3/route-profile/IOV/00000000-0000-4000-8000-0000000000d2")
+        let route = try ExternalIoRoute("coaty/3/route-profile/IOV/00000000-0000-4000-8000-0000000000d2")
         var rejected = false
         do {
             _ = try builder.ioSource(metadata: metadata, as: Bool.self, externalRoute: route)

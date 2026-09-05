@@ -12,7 +12,7 @@ extension AxolotyRuntimeTests {
     func rejectsBeforeStart() async throws {
         let definition = try makeDefinition()
         let runtime = AxolotyRuntime(definition: definition, transport: TestTransport())
-        let receipt = await runtime.receive(.profile(topic: "coaty/3/test/IOV/00000000-0000-0000-0000-000000000000", payload: [0x7B, 0x7D], nowMS: 0))
+        let receipt = await runtime.receive(.profile(route: "coaty/3/test/IOV/00000000-0000-0000-0000-000000000000", payload: [0x7B, 0x7D], nowMS: 0))
         #expect(receipt == .rejected(.notRunning(.stopped)))
     }
 

@@ -339,7 +339,7 @@ private struct HostRuntimeTraceReplay: RuntimeTraceDriver {
             let object = Self.identity(objectID)
             let topic = "coaty/3/trace/ADV/\(Self.uuidText(object))"
             let payload = "{\"object\":{\"objectId\":\"\(Self.uuidText(object))\",\"coreType\":\"CoatyObject\",\"objectType\":\"trace.Object\",\"name\":\"\(objectID)\"}}"
-            _ = await runtime.receive(.profile(topic: topic, payload: Array(payload.utf8), nowMS: UInt32(time)))
+            _ = await runtime.receive(.profile(route: topic, payload: Array(payload.utf8), nowMS: UInt32(time)))
         }
         if let correlationID = state.pendingCorrelationIDs.first {
             let correlation = Self.identity(correlationID)
@@ -389,7 +389,7 @@ private struct HostRuntimeTraceReplay: RuntimeTraceDriver {
             let correlationText = correlation.map(Self.uuidText)
             let topic = "coaty/3/trace/\(input.family.rawValue)/\(Self.uuidText(source))"
                 + (correlationText.map { "/\($0)" } ?? "")
-            receipt = await runtime.receive(.profile(topic: topic, payload: Array(input.fixturePayload.utf8), nowMS: UInt32(step.timeMilliseconds)))
+            receipt = await runtime.receive(.profile(route: topic, payload: Array(input.fixturePayload.utf8), nowMS: UInt32(step.timeMilliseconds)))
         }
         return (receipt, await runtime.conformanceObservation())
     }

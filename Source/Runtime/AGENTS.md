@@ -10,7 +10,7 @@ rules apply; this guide specializes them for the G4 host execution profile.
 `AxolotyRuntime` owns host lifecycle, scheduling, transport ownership, bounded
 ingress/dispatch, supervised handlers, and diagnostics. Every protocol
 transition must enter `AxolotyProtocol`; this directory must not reimplement
-the Coaty family switch or expose raw MQTT topics, wildcard subscriptions, or
+the Coaty family switch or expose raw transport routes, wildcard subscriptions, or
 transport-owned buffers.
 
 `RuntimeBuilder` is mutable only before `finish()`; `RuntimeDefinition` is an

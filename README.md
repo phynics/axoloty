@@ -20,8 +20,11 @@ MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/
 __Axoloty__ is a Swift framework for building distributed, collaborative IoT
 applications out of loosely coupled, decentralized components called *agents*.
 Agents communicate with each other in (soft) real time over a publish-subscribe
-messaging backbone (MQTT), and can run on IoT devices, mobile devices, in
-microservices, or in cloud and backend services.
+messaging backbone, and can run on IoT devices, mobile devices, in
+microservices, or in cloud and backend services. MQTT is the transport Axoloty
+ships, validates against live CoatyJS, and exercises on hardware; it reaches
+the runtime through a replaceable adapter (`AxolotyMQTT`) rather than defining
+what Axoloty networking is.
 
 Axoloty provides an application and communication layer foundation for
 collaborative IoT prosumer scenarios where smart agents act in an autonomous,
@@ -160,7 +163,7 @@ The ESP32-C6 embedded target supports only Advertise/Deadvertise and
 Discover/Resolve. It uses a static composition model (no dynamic
 registration) with bounded capacities:
 
-- Axoloty max topic length: 256 bytes. MQTT and Coaty do not impose this
+- Axoloty max route length: 256 bytes. MQTT and Coaty do not impose this
   limit, so longer topics are an intentional compatibility divergence.
 - Advertised external IO routes also reject control characters, quotation
   marks, and backslashes to keep their encoded metadata statically bounded.

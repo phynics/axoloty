@@ -111,7 +111,7 @@ extension ProtocolExecutor {
             return operationNameBytes.withUnsafeBufferPointer { operationBuffer in
                 // An absent optional filter is represented by an empty
                 // temporary buffer here; do not turn that buffer into a
-                // present zero-length topic level.
+                // present zero-length route segment.
                 let operationName: ByteSlice? = operationBuffer.count == 0
                     ? nil
                     : operationBuffer.baseAddress.map {

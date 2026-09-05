@@ -46,7 +46,7 @@ func directObservationDeliversMatchingObservation() async throws {
     let observation = try fixtureObservation(id: directObservationID, parentID: directSensorID)
     let sender = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     #expect(await runtime.receive(.profile(
-        topic: "coaty/3/sensor-tests/CHN:line-7/\(sender)",
+        route: "coaty/3/sensor-tests/CHN:line-7/\(sender)",
         payload: channelPayload(observation),
         nowMS: 42
     )) == .accepted)
@@ -73,12 +73,12 @@ func directObservationDropsMismatchedAndMalformedPayloads() async throws {
     let sender = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     let mismatched = try fixtureObservation(id: directObservationID, parentID: directOtherSensorID)
     #expect(await runtime.receive(.profile(
-        topic: "coaty/3/sensor-tests/CHN:line-7/\(sender)",
+        route: "coaty/3/sensor-tests/CHN:line-7/\(sender)",
         payload: channelPayload(mismatched),
         nowMS: 42
     )) == .accepted)
     #expect(await runtime.receive(.profile(
-        topic: "coaty/3/sensor-tests/CHN:line-7/\(sender)",
+        route: "coaty/3/sensor-tests/CHN:line-7/\(sender)",
         payload: Array("{\"object\":{\"notAnObservation\":true}}".utf8),
         nowMS: 43
     )) == .accepted)
@@ -124,8 +124,8 @@ func directObservationBufferSaturationIsDiagnosed() async throws {
     let first = try fixtureObservation(id: directObservationID, parentID: directSensorID, result: "1")
     let second = try fixtureObservation(id: "44444444-4444-4444-8444-444444444444", parentID: directSensorID, result: "2")
     let topic = "coaty/3/sensor-tests/CHN:line-7/\(sender)"
-    #expect(await runtime.receive(.profile(topic: topic, payload: channelPayload(first), nowMS: 1)) == .accepted)
-    #expect(await runtime.receive(.profile(topic: topic, payload: channelPayload(second), nowMS: 2)) == .accepted)
+    #expect(await runtime.receive(.profile(route: topic, payload: channelPayload(first), nowMS: 1)) == .accepted)
+    #expect(await runtime.receive(.profile(route: topic, payload: channelPayload(second), nowMS: 2)) == .accepted)
     #expect(await runtime.state() == .failed)
     let diagnostic = try await nextDiagnostic(from: diagnostics)
     #expect(diagnostic.kind == .capacityExceeded)

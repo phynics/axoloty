@@ -21,7 +21,7 @@ public enum RuntimeEventFamily: Sendable, Equatable, CaseIterable {
 }
 
 /// Context attached to a normalized event. It deliberately contains no raw
-/// MQTT topic or transport-owned buffer.
+/// route or transport-owned buffer.
 public struct RuntimeEventContext: Sendable, Equatable {
     /// The source that produced the event.
     public let sourceID: UUID16
