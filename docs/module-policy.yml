@@ -255,9 +255,14 @@
         "MCP",
         "Logging",
         "MQTTNIO",
-        "NIO"
+        "NIO",
+        "NIOCore",
+        "NIOPosix",
+        "NIOSSL",
+        "NIOTransportServices",
+        "Network"
       ],
-      "note": "Epic #781 item G moves transport selection out of this target into the executable composition root."
+      "note": "Composes protocol behavior and names no transport. The executable supplies AxolotyInspectorSession.TransportFactory, so a second carrier is a composition-root change."
     },
     {
       "name": "AxolotyMCP",
@@ -281,7 +286,7 @@
         "MQTTNIO",
         "AxolotyTooling"
       ],
-      "note": "Runs an HTTP server directly on NIO, and declares NIOCore, NIOPosix, and NIOHTTP1 on the target rather than inheriting them from Axoloty. Extracting AxolotyMQTT therefore does not affect this target."
+      "note": "Runs an HTTP server directly on NIO, and declares NIOCore, NIOPosix, and NIOHTTP1 on the target rather than inheriting them from Axoloty. It selects no runtime transport; the executable supplies one."
     },
     {
       "name": "AxolotyTooling",

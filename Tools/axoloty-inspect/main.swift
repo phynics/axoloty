@@ -30,7 +30,7 @@ case let .run(config):
 func runInspector(
     _ config: InspectorConfiguration,
     sessionFactory: @MainActor (InspectorConnectionConfiguration) throws -> InspectorSession = { configuration in
-        try AxolotyInspectorSession(configuration: configuration)
+        try AxolotyInspectorSession(configuration: configuration, transport: MQTTInspectorTransport.factory)
     },
     signalHandler: InspectorSignalHandling = InspectorSignalHandler()
 ) async -> Int32 {

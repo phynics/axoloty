@@ -22,7 +22,7 @@ public protocol InspectorSession {
     func stop()
 }
 
-/// Inspector adapter over the structured host runtime and MQTT binding.
+/// Inspector adapter over the structured host runtime and a supplied transport.
 ///
 /// The adapter owns no protocol state. It only decodes owned runtime event
 /// values into the inspector's stable catalogue shapes.
@@ -37,8 +37,24 @@ public final class AxolotyInspectorSession: InspectorSession {
     private var discoveryTask: Task<Void, Never>?
     private var discoveryCorrelation: UUID16?
 
-    /// Creates a session from broker configuration.
-    public init(configuration: InspectorConnectionConfiguration) throws {
+    /// Builds the transport a session runs on.
+    ///
+    /// The session owns protocol composition, not carrier selection. Naming a
+    /// concrete transport here would make every inspector consumer depend on
+    /// one, so the composition root supplies it.
+    public typealias TransportFactory =
+        @Sendable (InspectorConnectionConfiguration) throws -> any AxolotyRuntimeTransport
+
+    /// Creates a session from connection configuration and a transport.
+    ///
+    /// - Parameters:
+    ///   - configuration: Connection and namespace settings.
+    ///   - makeTransport: Builds the transport for `configuration`. Executables
+    ///     pass the carrier they are built to speak.
+    public init(
+        configuration: InspectorConnectionConfiguration,
+        transport makeTransport: TransportFactory
+    ) throws {
         let capacities = try RuntimeCapacities(
             ingress: 64,
             dispatch: 64,
@@ -65,15 +81,7 @@ public final class AxolotyInspectorSession: InspectorSession {
             buffering: .dropOldest(capacity: 64)
         )
         let sealed = try definition.finish()
-        let binding = try MQTTBinding(configuration: MQTTBindingConfiguration(
-            host: configuration.host,
-            port: configuration.port,
-            usesTLS: configuration.usesTLS,
-            username: configuration.username,
-            password: configuration.password,
-            connectionTimeoutMS: UInt32(max(1, min(120_000, configuration.connectTimeout.millisecondsValue)))
-        ))
-        self.runtime = AxolotyRuntime(definition: sealed, transport: binding)
+        self.runtime = AxolotyRuntime(definition: sealed, transport: try makeTransport(configuration))
         self.namespace = configuration.namespace
     }
 

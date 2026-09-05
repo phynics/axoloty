@@ -17,7 +17,7 @@ private func makeMCPPropertySchema(type: String, description: String) -> Value {
 
 /// The Axoloty MCP server.
 ///
-/// Connects to an MQTT broker through Axoloty, maintains a passive object
+/// Connects through Axoloty on a transport its caller supplies, maintains a passive object
 /// catalogue, and exposes read-only inspection capabilities through MCP
 /// tools and resources.
 @MainActor
@@ -115,13 +115,16 @@ public final class AxolotyMCPServer {
     ///   - port: MQTT broker port.
     ///   - namespace: Coaty namespace.
     ///   - connectTimeout: Broker readiness timeout.
+    ///   - makeTransport: Builds the session transport. Supplied by the
+    ///     executable so this target names no carrier.
     /// - Throws: ``InspectorError`` if the underlying inspector session
     ///   cannot be configured.
     public init(
         host: String,
         port: UInt16,
         namespace: String,
-        connectTimeout: Duration = .seconds(10)
+        connectTimeout: Duration = .seconds(10),
+        transport makeTransport: AxolotyInspectorSession.TransportFactory
     ) throws {
         let connectionConfig = Self.makeConnectionConfiguration(
             host: host,
@@ -129,7 +132,7 @@ public final class AxolotyMCPServer {
             namespace: namespace,
             connectTimeout: connectTimeout
         )
-        let session = try AxolotyInspectorSession(configuration: connectionConfig)
+        let session = try AxolotyInspectorSession(configuration: connectionConfig, transport: makeTransport)
         self.session = session
         self.catalogueService = InspectorCatalogueService(session: session, namespace: namespace)
         self.responseEncoder = ResponseEncoder()

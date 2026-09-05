@@ -158,7 +158,8 @@ func runMCPServer(
             host: host,
             port: port,
             namespace: namespace,
-            connectTimeout: connectTimeout
+            connectTimeout: connectTimeout,
+            transport: MQTTInspectorTransport.factory
         )
         switch transport {
         case "stdio":
