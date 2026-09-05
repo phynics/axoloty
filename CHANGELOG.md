@@ -9,8 +9,56 @@ fork, through CoatySwift 2.4.0, remain documented in the
 
 ## [Unreleased]
 
-Development toward Axoloty 1.0 is in progress and tracked by the
-[v1 release epic](https://github.com/phynics/axoloty/issues/272).
+No changes are pending. Strategy for the next line is tracked in
+[`docs/ROADMAP.md`](./docs/ROADMAP.md).
+
+## [0.7.0] - 2026-09-05
+
+Axoloty 0.7.0 is a source-breaking architecture-stabilization release. It is
+still pre-1.0 and its public API may change.
+
+### Added
+
+- Thing-driven SensorThings observation backed by a bounded registry that
+  performs exact Thing discovery and a parent-filtered Sensor query, and
+  returns catalogue-change and relationship-checked observation streams.
+- `RuntimeEventContext.channelIdentifier`, the copied semantic Channel
+  identifier for Channel events.
+- Attested test categories: a category declares whether it is executed or
+  proved from recorded evidence, so the release checkpoint no longer tries to
+  run nodes that need a context it cannot provide.
+
+### Changed
+
+- **Breaking:** `RuntimeBuilder` owns a finite transactional registration
+  draft and `RuntimeDefinition` is the immutable value produced by
+  `finish()`. Runtime and SensorThings registration failures are atomic.
+- **Breaking:** the runtime component SPI is renamed to a module SPI, and
+  first-party modules register under stable internal keys.
+- Typed IO state is concentrated behind the executor that owns it.
+- The canonical test taxonomy is four categories (`ci`, `wire`, `embedded`,
+  `release`) rather than eleven tiers and nine named plans.
+- `Tests/Support`, `Tools/AxolotyTooling`, and the host runtime sources are
+  grouped into purpose directories. Module names are unchanged.
+- `AxolotyVersion.current` resolves the checkout version by searching upward
+  from its own source file instead of expanding `#filePath` at the call site
+  and assuming a fixed directory depth.
+
+### Removed
+
+- **Breaking:** `SealedRuntimeDefinition`, `RuntimeDefinition.Builder`,
+  `RuntimeDefinition.seal()`, and the mutable registration methods on
+  `RuntimeDefinition`.
+- **Breaking:** `SensorThingsSourceConfiguration`,
+  `SensorThingsObserverConfiguration`, and their free-function registration
+  entry points, without aliases.
+
+### Validation boundary
+
+Static gates, harness self-tests, and the repository authority pass on the
+release tree, and the `ci` and `wire` categories run in CI. The `embedded`
+category and `make checkpoint` require a Linux host with an attached
+ESP32-C6 and are recorded separately.
 
 ## [0.6.2] - 2026-08-28
 

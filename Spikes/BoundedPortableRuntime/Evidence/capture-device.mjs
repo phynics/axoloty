@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import fs from "node:fs";
-import { captureSerial } from "../../../Tests/Support/serial-tools.mjs";
+import { captureSerial } from "../../../Tests/Support/lib/serial-tools.mjs";
 
 const [device, deadline, output, log] = process.argv.slice(2);
 let result;

@@ -5,7 +5,7 @@
 // Prints the ``AXOLOTY_SMOKE_OK`` marker through ESP-IDF's logging stack,
 // flushes stdout, waits one second so a serial monitor is guaranteed to
 // capture the line, then restarts the device. The smoke harness
-// (Tests/Support/embedded-device-smoke.sh) greps the monitor output for the
+// (Tests/Support/embedded/embedded-device-smoke.sh) greps the monitor output for the
 // marker within a 30-second deadline.
 //
 // This is a C program rather than Embedded Swift because Swift 6.3 recognizes

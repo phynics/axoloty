@@ -3,7 +3,7 @@
   "corpusVersion": 1,
   "moduleApiVersion": "AxolotyWire-1.0",
   "approvalStatus": "provisional",
-  "$comment": "Provisional performance and resource budgets. Host baselines are pending until `make benchmark-wire` and `make benchmark-size` are run on the NixOS host (issue #303). Device measurements are provisional: the esp32c6 values retained here originate from the C surrogate benchmark (issue #302), which did not execute production AxolotyWire Swift interfaces; production Embedded Swift device evidence is tracked in issue #322. The manifest may only move to approvalStatus=approved once host baselines are populated and Embedded Swift device evidence satisfies every approval gate enforced by Tests/Support/check-budget-manifest.sh. Do not edit manually — update via PR with evidence.",
+  "$comment": "Provisional performance and resource budgets. Host baselines are pending until `make benchmark-wire` and `make benchmark-size` are run on the NixOS host (issue #303). Device measurements are provisional: the esp32c6 values retained here originate from the C surrogate benchmark (issue #302), which did not execute production AxolotyWire Swift interfaces; production Embedded Swift device evidence is tracked in issue #322. The manifest may only move to approvalStatus=approved once host baselines are populated and Embedded Swift device evidence satisfies every approval gate enforced by Tests/Support/checks/check-budget-manifest.sh. Do not edit manually — update via PR with evidence.",
   "noisePolicy": {
     "relativeMAD": 0.05,
     "allocationVariance": "exact-zero",

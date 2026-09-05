@@ -14,7 +14,7 @@ scope, issue #277).
 > is tracked in `#322`. The manifest may only move to `approved` once
 > host baselines are populated and Embedded Swift device evidence
 > satisfies every approval gate enforced by
-> `Tests/Support/check-budget-manifest.sh`. No host/device numbers were
+> `Tests/Support/checks/check-budget-manifest.sh`. No host/device numbers were
 > fabricated for this provisional snapshot.
 
 ## Budget manifest
@@ -22,8 +22,8 @@ scope, issue #277).
 The machine-readable budget manifest lives at
 `Benchmarks/Baselines/budget-manifest.json`. It is keyed by environment
 (host, esp32c6), toolchain, compiler, optimization mode, corpus version,
-and module API version. `Tests/Support/check-budget-manifest.sh` validates
-its structure and approval state; `Tests/Support/test-check-budget-manifest.sh`
+and module API version. `Tests/Support/checks/check-budget-manifest.sh` validates
+its structure and approval state; `Tests/Support/selftests/test-check-budget-manifest.sh`
 is the negative self-test suite.
 
 ### Provisional vs approved
@@ -253,10 +253,10 @@ make benchmark-size
 make benchmark-wire-bounds
 make benchmark-wire-device
 make test-tier TIER=ci && make test-tier TIER=wire
-sh Tests/Support/check-budget-manifest.sh
-sh Tests/Support/test-check-budget-manifest.sh
-sh Tests/Support/check-benchmark-wire-allocation.sh
-sh Tests/Support/test-check-benchmark-wire-allocation.sh
+sh Tests/Support/checks/check-budget-manifest.sh
+sh Tests/Support/selftests/test-check-budget-manifest.sh
+sh Tests/Support/checks/check-benchmark-wire-allocation.sh
+sh Tests/Support/selftests/test-check-benchmark-wire-allocation.sh
 ```
 
 The Phase 3 (#276) closure and Phase 4 entry require the

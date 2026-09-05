@@ -24,7 +24,7 @@ cd "$project"
 idf_log=$(mktemp)
 . "${IDF_PATH:-/opt/esp/idf}/export.sh" >"$idf_log" 2>&1 || { cat "$idf_log" >&2; exit 1; }
 rm -f "$idf_log"
-. /workspace/Tests/Support/embedded-build-cache.sh
+. /workspace/Tests/Support/embedded/embedded-build-cache.sh
 
 swift build -Xswiftc -warnings-as-errors \
     --package-path /workspace/Spikes/BoundedPortableRuntime/MacroProbe \

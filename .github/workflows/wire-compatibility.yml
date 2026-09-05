@@ -142,7 +142,7 @@ jobs:
             exit 0
           fi
           set +e
-          classifier="$(node Tests/Support/classify-wire-change.mjs \
+          classifier="$(node Tests/Support/wire/classify-wire-change.mjs \
             --changed "${CHANGED:-}" --exempt "${exemption:-}")"
           classifier_status=$?
           set -e

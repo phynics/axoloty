@@ -105,8 +105,8 @@ boundary that is actually crossed).
 
 ## Automated gate
 
-`Tests/Support/check-no-escaping-borrows.sh` (self-test:
-`Tests/Support/test-check-no-escaping-borrows.sh`) flags the exact shape of
+`Tests/Support/checks/check-no-escaping-borrows.sh` (self-test:
+`Tests/Support/selftests/test-check-no-escaping-borrows.sh`) flags the exact shape of
 bug #1 generalized to any of the borrowed view types: a
 `return <expr>.withUnsafeX(...) { ... }` (or free-function
 `withUnsafeBytes(of:)` / `withUnsafeMutableBytes(of:)` spelling) whose
@@ -119,7 +119,7 @@ the closure returns and is correctly not flagged; the many closures that
 return a `Bool`/`Int`/generic `body(...)` result are also correctly not
 flagged.
 
-The scanner (`Tests/Support/detect-escaping-borrow.pl`) does real brace-depth
+The scanner (`Tests/Support/lib/detect-escaping-borrow.pl`) does real brace-depth
 tracking (after stripping `//` comments) from the closure's own opening
 brace to find *that* closure's matching close, rather than "the next line
 that is a bare `}`" — the latter is wrong as soon as the closure body
@@ -144,7 +144,7 @@ borrow does not actually escape.
 
 This script is intentionally **not** wired into the check-plan JSON or CI
 graph. A maintainer adding it to CI should add
-`Tests/Support/check-no-escaping-borrows.sh` alongside the other
+`Tests/Support/checks/check-no-escaping-borrows.sh` alongside the other
 `check-no-*.sh` entries (see `check-no-anycodable.sh`,
 `check-no-foundation-types.sh`) in whatever manifest drives the check-plan
 (e.g. `test-tiers.json` / the CI workflow that invokes `Tests/Support/*.sh`).

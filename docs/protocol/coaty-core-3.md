@@ -102,4 +102,4 @@ non-divergence and release proof.**
 - [`Packages/AxolotyProtocol/Tests/AxolotyProtocolTests/ProtocolProcessorTests.swift`](../../Packages/AxolotyProtocol/Tests/AxolotyProtocolTests/ProtocolProcessorTests.swift)
 - [`Packages/AxolotyObjectModel/Tests/AxolotyObjectModelTests/` directory](../../Packages/AxolotyObjectModel/Tests/AxolotyObjectModelTests/)
 - [`Spikes/BoundedObjectModelEvidence/EVIDENCE.md`](../../Spikes/BoundedObjectModelEvidence/EVIDENCE.md)
-- [`Tests/Support/check-axoloty-wire-state-boundary.sh`](../../Tests/Support/check-axoloty-wire-state-boundary.sh)
+- [`Tests/Support/checks/check-axoloty-wire-state-boundary.sh`](../../Tests/Support/checks/check-axoloty-wire-state-boundary.sh)

@@ -150,7 +150,7 @@ runs the containerized live capture and verifier and uploads the captures,
 manifest, and verifier logs; otherwise it fast-paths to a pass. The
 `live-wire-exemption` label records a dated, expiring reviewed exemption that
 waives only the capture. The authoritative path list and exemption convention
-live in `Tests/Support/classify-wire-change.mjs` and
+live in `Tests/Support/wire/classify-wire-change.mjs` and
 `docs/wire-compatibility.md`, respectively.
 
 ### Fresh wire evidence (live capture)
@@ -201,7 +201,7 @@ forbidden in `make verify` and ordinary offline tiers.
 The architecture checker can require compiler-input receipts with
 `AXOLOTY_G6_REQUIRE_SOURCE_RECEIPTS=1`, naming one SwiftPM receipt and one
 ESP-IDF/CMake receipt through `AXOLOTY_G6_HOST_RECEIPT` and
-`AXOLOTY_G6_EMBEDDED_RECEIPT`. `Tests/Support/emit-g6-source-receipt.mjs`
+`AXOLOTY_G6_EMBEDDED_RECEIPT`. `Tests/Support/evidence/emit-g6-source-receipt.mjs`
 derives a receipt from an actual `compile_commands.json`; the validator then
 compares canonical repository-relative path/hash sets for `AxolotyWire` and
 `AxolotyProtocol`. Configured globs are retained only as a development

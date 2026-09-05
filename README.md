@@ -10,9 +10,10 @@ version](https://img.shields.io/badge/swift-6.3-%23F05138?logo=swift)](https://d
 MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 > **Development checkpoint.** [`VERSION`](./VERSION) identifies the current
-> published release (`0.6.2`). Axoloty is not API-stable. The 0.6 line aligns
-> the host and Embedded Swift runtimes around the shared wire and protocol path,
-> with typed IO and optional products from G5.
+> published release (`0.7.0`). Axoloty is not API-stable. The 0.7 line makes
+> runtime composition explicit through `RuntimeBuilder` and the immutable
+> `RuntimeDefinition`, on the shared host and Embedded Swift wire and protocol
+> path established by 0.6.
 
 ## About Axoloty
 
@@ -47,8 +48,8 @@ collaborative, and ad-hoc fashion. Its key properties include:
 
 Axoloty is a modernized fork of
 [coatyio/coaty-swift](https://github.com/coatyio/coaty-swift) and follows its
-own direction documented in [ROADMAP.md](./docs/ROADMAP.md). The accepted 0.6
-boundaries and transition state are documented in
+own direction documented in [ROADMAP.md](./docs/ROADMAP.md). The accepted
+architecture boundaries and transition state are documented in
 [ARCHITECTURE.md](./ARCHITECTURE.md). For an explicit
 comparison against CoatyJS and legacy CoatySwift, see
 [FEATURE_MATRIX.md](./docs/FEATURE_MATRIX.md). For support levels per
@@ -71,7 +72,7 @@ Add Axoloty to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.6.2"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.7.0"),
 ],
 targets: [
     .executableTarget(
@@ -87,7 +88,7 @@ For a wire target in a consumer that already resolves the root package:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.6.2"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.7.0"),
 ],
 targets: [
     .executableTarget(
@@ -219,7 +220,7 @@ swift run --package-path Tools axoloty-inspect discover --core-type Identity
 See [docs/inspector.md](./docs/inspector.md) for the full reference.
 
 For the current release's changes, see
-[0.6.2 release notes](./docs/releases/0.6.2.md). For migrating from legacy
+[0.7.0 release notes](./docs/releases/0.7.0.md). For migrating from legacy
 CoatySwift, see [the 0.2 migration guide](./docs/migration/from-coatyswift-to-0.2.md).
 For the 0.7 runtime-registration migration, see
 [the 0.6-to-0.7 guide](./docs/migration/from-0.6-to-0.7.md).

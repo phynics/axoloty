@@ -44,7 +44,7 @@ start_ns=$(date +%s%N)
 EMBEDDED_PROJECT_DIR=/workspace/Embedded/swift \
 EMBEDDED_BUILD_DIR="$build" \
 EMBEDDED_EXPORT_DIR="$export_dir" \
-/workspace/Tests/Support/build-embedded-swift.sh >"$artifact/embedded-build.log" 2>&1
+/workspace/Tests/Support/embedded/build-embedded-swift.sh >"$artifact/embedded-build.log" 2>&1
 end_ns=$(date +%s%N)
 
 firmware="$export_dir/axoloty-swift.bin"
