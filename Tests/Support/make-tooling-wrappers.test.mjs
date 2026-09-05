@@ -52,25 +52,7 @@ test("principal Make workflows use the canonical tooling entry points", () => {
   for (const target of advertisedTargets) {
     assert.match(makefile, new RegExp(`^${target}:[^\\n]*$`, "m"), `${target} is advertised but has no Make rule`);
   }
-  const tierTargets = [
-    "build",
-    "test-unit",
-    "test-module",
-    "test-wire",
-  ];
-  const tierMappings = {
-    build: "smoke",
-    "test-unit": "unit",
-    "test-module": "module",
-    "test-wire": "wire-offline",
-  };
-  assert.match(makefile, /define run_test_tier[\s\S]+?test-tier TIER=/);
-  for (const target of tierTargets) {
-    assert.match(recipe(makefile, target), /\$\(run_test_tier\)/, `${target} must use the shared tier wrapper`);
-    assert.match(makefile, new RegExp(`^${target}: TIER=${tierMappings[target]}$`, "m"));
-  }
   for (const target of [
-    "test-wire-live",
     "embedded-toolchain-doctor",
     "embedded-swift-build",
     "check-embedded-swift-linker",
@@ -155,13 +137,19 @@ test("direct test wrappers preserve the invocation resource namespace", () => {
     makefile,
     /AXOLOTY_RUN_CONTAINER_ENV_VARS := AXOLOTY_RUN_ID AXOLOTY_RUNS_DIR WIRE_OUTPUT_DIR AXOLOTY_RESOURCE_LEASE_ROOT/,
   );
-  for (const target of ["test-one", "test-tier"]) {
-    assert.match(
-      recipe(makefile, target),
-      /CONTAINER_ENV_VARS="\$\(AXOLOTY_RUN_CONTAINER_ENV_VARS\)"/,
-      `${target} must forward run-scoped values into the project container`,
-    );
-  }
+  assert.match(
+    recipe(makefile, "test-one"),
+    /CONTAINER_ENV_VARS="\$\(AXOLOTY_RUN_CONTAINER_ENV_VARS\)"/,
+    "test-one must forward run-scoped values into the project container",
+  );
+  // test-tier reaches the container through axoloty-tool, which forwards the
+  // same run-scoped namespace by reference rather than respelling the list.
+  assert.match(recipe(makefile, "test-tier"), /\$\(MAKE\).*\baxoloty-tool\b/s);
+  assert.match(
+    recipe(makefile, "axoloty-tool"),
+    /CONTAINER_ENV_VARS="[^"]*\$\(AXOLOTY_RUN_CONTAINER_ENV_VARS\)"/,
+    "axoloty-tool must forward run-scoped values into the project container",
+  );
 });
 
 test("service wrappers forward an explicit MCP executable override", () => {
@@ -181,28 +169,6 @@ test("G1 device wrapper delegates policy and device access to axoloty-tool", () 
   assert.match(target, /AXOLOTY_TOOL_ARGS='test-one --filter g1-bounded-runtime-device'/);
   assert.match(target, /AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES='\$\(AXOLOTY_DEVICE\)'/);
   assert.doesNotMatch(target, /\.devcontainer\/run\.sh|CONTAINER_DEVICES=/);
-});
-
-test("support self-tests run as the canonical support tier in the pinned container", () => {
-  const makefile = fs.readFileSync("Makefile", "utf8");
-  assert.match(makefile, /^test-support: resolve$/m);
-  assert.match(
-    recipe(makefile, "test-support"),
-    /\$\(MAKE\) --no-print-directory test-tier TIER=support/,
-  );
-  const document = JSON.parse(fs.readFileSync("Tests/Support/test-tiers.json", "utf8"));
-  const tier = document.tiers.find(candidate => candidate.id === "support");
-  const node = document.nodes.find(candidate => candidate.id === "support-embedded-compile");
-  assert.ok(tier.nodes.includes("support-embedded-compile"));
-  assert.equal(node.command.executable, "Tests/Support/test-check-embedded-swift.sh");
-});
-
-test("support benchmark self-test keeps the worktree build and SwiftPM caches", () => {
-  const document = JSON.parse(fs.readFileSync("Tests/Support/test-tiers.json", "utf8"));
-  const node = document.nodes.find(candidate => candidate.id === "support-benchmark-wire");
-  assert.equal(node.command.executable, "Tests/Support/test-check-benchmark-wire.sh");
-  const tier = document.tiers.find(candidate => candidate.id === "support");
-  assert.ok(tier.nodes.includes("support-benchmark-wire"));
 });
 
 test("README package integration links both products by repository identity", () => {
@@ -258,4 +224,18 @@ test("release targets fail closed when the container env allowlist is unavailabl
   assert.equal(missing.status, 1, missing.stderr);
   assert.match(missing.stderr, /no allowlist for release-unknown/);
   assert.equal(missing.stdout, "");
+});
+
+test("the four categories are the only test entry points", () => {
+  const makefile = fs.readFileSync("Makefile", "utf8");
+  // Per-subject aliases were replaced by `make test-tier TIER=<category>`;
+  // a single suite is reached with `make test-one FILTER=...`.
+  for (const retired of ["build", "test-unit", "test-module", "test-wire", "test-support", "test-wire-live"]) {
+    assert.doesNotMatch(makefile, new RegExp(`^${retired}:`, "m"), `${retired} must not remain a Make target`);
+  }
+  for (const kept of ["test-tier", "test-one", "explain", "verify"]) {
+    assert.match(makefile, new RegExp(`^${kept}:`, "m"), `${kept} must remain a Make target`);
+  }
+  const document = JSON.parse(fs.readFileSync("Tests/Support/test-tiers.json", "utf8"));
+  assert.deepEqual(document.tiers.map(tier => tier.id), ["ci", "wire", "embedded", "release"]);
 });

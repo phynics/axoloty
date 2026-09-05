@@ -39,15 +39,10 @@ func checkpointPlansCarryNoUnresolvedPlaceholders() throws {
 @Test
 func canonicalManifestAndExecutablePlansUseIndependentSchemaVersions() throws {
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
-    var plans = try CanonicalNamedPlan.allCases.map { name in
-        try resolver.resolve(.named(
-            name,
-            ci: false,
-            platform: AxolotyCheckPlan.currentPlatform,
-            requested: nil
-        ))
-    }
-    plans += try resolver.manifest.tiers.map { tier in
+    // Every declared category must resolve, and the manifest and the plans it
+    // produces version independently.
+    #expect(Set(resolver.manifest.tiers.map(\.id)) == Set(CanonicalTier.allCases.map(\.rawValue)))
+    let plans = try resolver.manifest.tiers.map { tier in
         try resolver.resolve(.tier(
             name: tier.id,
             ci: false,
@@ -67,10 +62,7 @@ func injectedManifestSchemaIsValidatedBeforeResolution() throws {
         manifestID: resolver.manifest.manifestID,
         nodes: resolver.manifest.nodes,
         tiers: resolver.manifest.tiers,
-        plans: resolver.manifest.plans,
         requiredGates: resolver.manifest.requiredGates,
-        ciRequiredGates: resolver.manifest.ciRequiredGates,
-        releaseGates: resolver.manifest.releaseGates,
         testOne: resolver.manifest.testOne,
         selfTests: resolver.manifest.selfTests,
         artifactContract: resolver.manifest.artifactContract,
@@ -78,9 +70,7 @@ func injectedManifestSchemaIsValidatedBeforeResolution() throws {
     )
 
     #expect(throws: AxolotyCanonicalTestManifestError.unsupportedSchema(1)) {
-        _ = try AxolotyCanonicalTestPlanResolver(manifest: invalid).resolve(.named(
-            .offline,
-            ci: false,
+        _ = try AxolotyCanonicalTestPlanResolver(manifest: invalid).resolve(.tier(name: CanonicalTier.ci.rawValue, ci: false,
             platform: AxolotyCheckPlan.currentPlatform,
             requested: nil
         ))
@@ -88,23 +78,22 @@ func injectedManifestSchemaIsValidatedBeforeResolution() throws {
 }
 
 @Test
-func hardwareCheckpointInheritsEveryOrdinaryCheckpointNode() throws {
+func releaseCategoryContainsEveryOtherCategory() throws {
+    // "release" means every test the host can run, so each narrower category
+    // must be a subset of it.
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
-    let checkpoint = try resolver.resolve(.named(
-        .checkpoint,
-        ci: false,
-        platform: AxolotyCheckPlan.currentPlatform,
-        requested: nil
-    ))
-    let hardware = try resolver.resolve(.named(
-        .checkpointHardware,
-        ci: false,
-        platform: AxolotyCheckPlan.currentPlatform,
-        requested: nil
-    ))
-    let hardwareNames = Set(hardware.nodes.map(\.name))
-
-    #expect(Set(checkpoint.nodes.map(\.name)).isSubset(of: hardwareNames))
+    func nodes(_ tier: CanonicalTier) throws -> Set<String> {
+        Set(try resolver.resolve(.tier(
+            name: tier.rawValue,
+            ci: false,
+            platform: .linux
+        )).nodes.map(\.name))
+    }
+    // Hardware nodes only resolve on Linux, so compare on that platform.
+    let hardwareNames = try nodes(.release)
+    for narrower in [CanonicalTier.ci, .wire, .embedded] {
+        #expect(try nodes(narrower).isSubset(of: hardwareNames), "\(narrower.rawValue) must be part of release")
+    }
     #expect(hardwareNames.contains("checkpoint-hardware-smoke"))
 }
 
@@ -152,9 +141,7 @@ func plannerReportsCycles() {
 @Test
 func modelsEncodeAndDecode() throws {
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
-    let plan = try resolver.resolve(.named(
-        .offline,
-        ci: false,
+    let plan = try resolver.resolve(.tier(name: CanonicalTier.ci.rawValue, ci: false,
         platform: AxolotyCheckPlan.currentPlatform,
         requested: nil
     ))
@@ -188,12 +175,12 @@ func legacySchemaV1PlanDefaultsMissingExecutionContextAndReencodesItExplicitly()
 @Test
 func verifyPlanPropagatesCalibratedTimingExpectations() throws {
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
-    let plan = try resolver.resolve(.named(.verify, ci: true, platform: .linux, requested: nil))
+    let plan = try resolver.resolve(.tier(name: CanonicalTier.ci.rawValue, ci: true, platform: .linux, requested: nil))
     let expectations = Dictionary(uniqueKeysWithValues: plan.nodes.map { ($0.name, $0.expectedDurationSeconds) })
 
     #expect(plan.schemaVersion == 1)
     #expect(plan.expectedDurationSeconds == 1_200)
-    #expect(plan.deadlineSeconds == 4_800)
+    #expect(plan.deadlineSeconds == 3_600)
     #expect(expectations["embedded-build"] == 180)
     #expect(expectations["g4-static-runtime"] == 120)
     #expect(expectations["g2-trace-corpus"] == 90)
@@ -222,7 +209,7 @@ func schemaV2CheckPlanIsRejected() throws {
 @Test
 func offlinePlanOmitsEmbeddedChecksOnMacOS() throws {
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
-    let plan = try resolver.resolve(.named(.offline, ci: false, platform: .macOS, requested: nil))
+    let plan = try resolver.resolve(.tier(name: CanonicalTier.ci.rawValue, ci: false, platform: .macOS, requested: nil))
     #expect(!plan.nodes.contains { $0.name.hasPrefix("embedded-") })
     #expect(!plan.nodes.contains { ["support-container"].contains($0.name) })
 }
@@ -230,7 +217,7 @@ func offlinePlanOmitsEmbeddedChecksOnMacOS() throws {
 @Test
 func offlinePlanIncludesEmbeddedChecksOnLinux() throws {
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
-    let plan = try resolver.resolve(.named(.offline, ci: false, platform: .linux, requested: nil))
+    let plan = try resolver.resolve(.tier(name: CanonicalTier.ci.rawValue, ci: false, platform: .linux, requested: nil))
     let names = plan.nodes.map(\.name)
     let embeddedBuild = names.firstIndex(of: "embedded-build")
     let embeddedLinker = names.firstIndex(of: "embedded-linker")
@@ -286,9 +273,7 @@ func namedPlanRejectsRequestedNodesOutsideItsResolvedClosure() throws {
     #expect(throws: AxolotyCanonicalTestManifestError.unavailableNode(
         "checkpoint-hardware-smoke"
     )) {
-        _ = try resolver.resolve(.named(
-            .offline,
-            ci: false,
+        _ = try resolver.resolve(.tier(name: CanonicalTier.ci.rawValue, ci: false,
             platform: .linux,
             requested: ["checkpoint-hardware-smoke"]
         ))

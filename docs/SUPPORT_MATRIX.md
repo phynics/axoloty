@@ -80,7 +80,7 @@ of the 0.6 product surface. Support levels use a consistent vocabulary:
 Cross-implementation evidence is recorded in
 [docs/wire-compatibility.md](../docs/wire-compatibility.md).
 The pinned CoatyJS 2.4.0 reference agent is the source of truth for wire
-shape. Live wire captures are generated with `make test-wire-live` and
+shape. Live wire captures are generated with `make test-tier TIER=wire` and
 physical embedded evidence with the `make embedded-*-test` harnesses.
 
 | Direction | Status |

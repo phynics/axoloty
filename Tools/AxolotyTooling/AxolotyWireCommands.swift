@@ -40,8 +40,8 @@ struct AxolotyWireCommands: Sendable {
     private func wireFixturesResult() -> AxolotyCommandResult {
         do {
             let resolver = try planResolver.get()
-            let plan = try resolver.resolve(.named(
-                .offline,
+            let plan = try resolver.resolve(.tier(
+                name: CanonicalTier.ci.rawValue,
                 ci: false,
                 platform: AxolotyCheckPlan.currentPlatform,
                 requested: ["test-wire"]

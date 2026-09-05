@@ -233,7 +233,10 @@ func canonicalManifestDefinesVerifyRootsAndBoundedTestOne() throws {
     let manifest = resolver.manifest
     #expect(manifest.schemaVersion == 2)
     #expect(manifest.requiredGates.allSatisfy { gate in manifest.nodes.contains { $0.id == gate } })
-    #expect(manifest.ciRequiredGates.allSatisfy { gate in manifest.nodes.contains { $0.id == gate } })
+    // requiredGates is the ci category, and releaseGates is derived from the
+    // declared categories rather than stored beside them.
+    #expect(Set(manifest.requiredGates) == Set(manifest.tiers.first { $0.id == "ci" }?.nodes ?? []))
+    #expect(manifest.releaseGates == ["ci", "wire", "embedded"])
     #expect(manifest.toolContainerEnv?.allowlist(for: "release-checkpoint")?.contains("AXOLOTY_GIT_TREE") == true)
     #expect(manifest.toolContainerEnv?.allowlist(for: "release-checkpoint-hardware")?.contains("AXOLOTY_DEVICE") == true)
     #expect(manifest.toolContainerEnv?.allowlist(for: "release-unknown") == nil)
@@ -244,9 +247,7 @@ func canonicalManifestDefinesVerifyRootsAndBoundedTestOne() throws {
         ci: false,
         platform: AxolotyCheckPlan.currentPlatform
     )).deadlineSeconds == 1_800)
-    #expect(try resolver.resolve(.named(
-        .verify,
-        ci: true,
+    #expect(try resolver.resolve(.tier(name: CanonicalTier.ci.rawValue, ci: true,
         platform: AxolotyCheckPlan.currentPlatform,
         requested: nil
     )).deadlineSeconds == 4_800)
@@ -350,9 +351,7 @@ func checkpointPlanningAndCertificationUseOneManifestSnapshot() throws {
 @Test
 func verifyPlanIncludesStaticSupportWithoutRecursiveGates() throws {
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
-    let ordinary = try resolver.resolve(.named(
-        .verify,
-        ci: false,
+    let ordinary = try resolver.resolve(.tier(name: CanonicalTier.ci.rawValue, ci: false,
         platform: AxolotyCheckPlan.currentPlatform,
         requested: nil
     ))
@@ -417,7 +416,7 @@ func embeddedDoctorRunsDeviceIndependentEnvironmentCheck() {
 @Test
 func checkPlanDisablesSwiftLintCache() throws {
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
-    let plan = try resolver.resolve(.named(.offline, ci: false, platform: .linux, requested: nil))
+    let plan = try resolver.resolve(.tier(name: CanonicalTier.ci.rawValue, ci: false, platform: .linux, requested: nil))
     let lint = try #require(plan.nodes.first { $0.name == "lint" })
 
     #expect(lint.command.arguments == ["lint", "--no-cache", "--config", ".swiftlint.yml"])
@@ -896,9 +895,7 @@ func testOfflineUsesTheCheckPlan() throws {
 
     #expect(result.exitCode == 0)
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: projectEnvironment)
-    let plan = try resolver.resolve(.named(
-        .offline,
-        ci: false,
+    let plan = try resolver.resolve(.tier(name: CanonicalTier.ci.rawValue, ci: false,
         platform: AxolotyCheckPlan.currentPlatform,
         requested: nil
     ))

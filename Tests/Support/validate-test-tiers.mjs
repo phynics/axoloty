@@ -5,7 +5,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const expectedTiers = new Set(["smoke", "unit", "module", "wire-offline", "wire-live", "support", "manual-macos", "g3-object-model", "g4-runtime", "g5-optional-products", "g6-non-divergence"]);
+// The four canonical categories. A category says what a run needs: "ci" needs
+// nothing beyond the container, "wire" needs broker infrastructure, "embedded"
+// needs an attached board, and "release" is everything the host can run.
+const expectedTiers = new Set(["ci", "wire", "embedded", "release"]);
 const networkModes = new Set(["none", "isolated", "isolated-broker", "isolated-containers"]);
 const brokerModes = new Set(["none", "local", "isolated"]);
 const hardwareModes = new Set(["forbidden", "optional", "required"]);
@@ -230,50 +233,52 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
   if (document.schemaVersion !== 2) errors.push("schemaVersion must be 2");
   if (typeof document.manifestID !== "string" || !document.manifestID) errors.push("manifestID must be a nonempty string");
   if (!Array.isArray(document.nodes)) errors.push("nodes must be an array");
-  if (!document.plans || typeof document.plans !== "object" || Array.isArray(document.plans)) errors.push("plans must be an object");
-  if (!Array.isArray(document.requiredGates) || !Array.isArray(document.ciRequiredGates)) errors.push("requiredGates and ciRequiredGates must be arrays");
-  if (!Array.isArray(document.releaseGates)) errors.push("releaseGates must be an array");
+  if (!Array.isArray(document.requiredGates)) errors.push("requiredGates must be an array");
+  if ("plans" in document) errors.push("plans were replaced by the four categories; remove the plans section");
+  if ("releaseGates" in document) errors.push("releaseGates was replaced by the release category; remove it");
+  if ("ciRequiredGates" in document) errors.push("ciRequiredGates was folded into the ci category; remove it");
 
-  // Resolve named-plan inheritance before checking coverage. Keeping this
-  // here (and in the Swift planner) makes the checked-in JSON independently
-  // auditable by CI and catches omissions before any command executes.
-  const resolving = new Set();
-  const resolvedPlans = new Map();
-  const resolvePlan = name => {
-    if (resolvedPlans.has(name)) return resolvedPlans.get(name);
-    const plan = document.plans?.[name];
-    if (!plan || typeof plan !== "object") {
-      errors.push(`plan ${name}: unknown plan`);
-      return [];
-    }
-    if (resolving.has(name)) {
-      errors.push(`plan inheritance cycle at ${JSON.stringify(name)}`);
-      return [];
-    }
-    resolving.add(name);
-    const parent = plan.inherits ? resolvePlan(plan.inherits) : [];
-    const nodes = [...new Set([...parent, ...(Array.isArray(plan.nodes) ? plan.nodes : [])])];
-    resolving.delete(name);
-    resolvedPlans.set(name, nodes);
-    return nodes;
-  };
-  for (const name of Object.keys(document.plans ?? {})) resolvePlan(name);
-  const ordinaryPlanNames = ["verify", "offline"];
-  for (const name of ordinaryPlanNames) {
-    for (const node of resolvedPlans.get(name) ?? []) {
-      const declaration = (document.nodes ?? []).find(candidate => candidate?.id === node);
-      if (declaration?.hardware !== "forbidden") {
-        errors.push(`plan ${name}: hardware node ${JSON.stringify(node)} is forbidden in ordinary/offline plans`);
+  const tierByID = new Map((document.tiers ?? []).filter(t => t && typeof t === "object").map(t => [t.id, t]));
+  const ciTier = tierByID.get("ci");
+  const releaseTier = tierByID.get("release");
+
+  // A category that declares no hardware must not contain a node that needs it:
+  // that declaration is how a host decides whether it can run the category.
+  for (const tier of tierByID.values()) {
+    if (tier.hardware !== "forbidden") continue;
+    for (const id of tier.nodes ?? []) {
+      const node = (document.nodes ?? []).find(candidate => candidate?.id === id);
+      if (node && node.hardware !== "forbidden") {
+        errors.push(`${tier.id}: hardware node ${JSON.stringify(id)} cannot belong to a hardware-forbidden category`);
       }
     }
   }
-  const ordinary = new Set(resolvedPlans.get("checkpoint") ?? []);
-  const hardware = new Set(resolvedPlans.get("checkpoint-hardware") ?? []);
-  if (document.plans?.["checkpoint-hardware"]?.inherits !== "checkpoint") {
-    errors.push("plan checkpoint-hardware must inherit checkpoint");
+
+  // "release" means every test the host can run, so it contains the others.
+  if (releaseTier) {
+    for (const narrower of ["ci", "wire", "embedded"]) {
+      const tier = tierByID.get(narrower);
+      if (!tier) continue;
+      const missing = (tier.nodes ?? []).filter(id => !(releaseTier.nodes ?? []).includes(id));
+      if (missing.length) errors.push(`release omits ${narrower} nodes ${JSON.stringify(missing.sort())}`);
+    }
+    const orphans = (document.nodes ?? []).map(node => node?.id).filter(id => !(releaseTier.nodes ?? []).includes(id));
+    if (orphans.length) errors.push(`nodes outside every category: ${JSON.stringify(orphans.sort())}`);
   }
-  for (const node of ordinary) if (!hardware.has(node)) errors.push(`plan checkpoint-hardware omits inherited node ${JSON.stringify(node)}`);
-  if (hardware.size <= ordinary.size) errors.push("plan checkpoint-hardware must be a strict superset of checkpoint");
+
+  // requiredGates is derived from the ci category: exactly those of its nodes
+  // the manifest marks required and available both locally and in CI. Nodes
+  // that are local-only stay in the category and are filtered when resolving.
+  if (ciTier && Array.isArray(document.requiredGates)) {
+    const expected = (ciTier.nodes ?? []).filter(id => {
+      const node = (document.nodes ?? []).find(candidate => candidate?.id === id);
+      return node?.required && node.local && node.ci;
+    });
+    const gates = JSON.stringify([...document.requiredGates].sort());
+    if (gates !== JSON.stringify([...expected].sort())) {
+      errors.push("requiredGates must be the required, locally and CI available nodes of the ci category");
+    }
+  }
 
   const nodeIds = new Set();
   for (const node of document.nodes ?? []) {
@@ -320,70 +325,20 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
     if (node.hardware !== "forbidden" && !node.resources?.includes("embedded-device")) errors.push(`${node.id}: hardware nodes must own embedded-device`);
     if (["signal-disposition", "logging-global", "environment", "fixed-port-1883"].some(resource => (node.resources ?? []).includes(resource)) && node.isolation === "parallel") errors.push(`${node.id}: process-global or fixed-port resources cannot use parallel isolation`);
   }
-  const gateNames = new Set([...(document.requiredGates ?? []), ...(document.ciRequiredGates ?? [])]);
+  const gateNames = new Set(document.requiredGates ?? []);
   for (const gate of gateNames) if (!nodeIds.has(gate)) errors.push(`required gate ${JSON.stringify(gate)} is not a declared node`);
   for (const node of document.nodes ?? []) {
     if (node?.required && node.local && node.ci && !gateNames.has(node.id)) {
       errors.push(`required node ${JSON.stringify(node.id)} is absent from requiredGates`);
     }
   }
-  for (const [name, plan] of Object.entries(document.plans ?? {})) {
-    if (!Array.isArray(plan?.nodes)) { errors.push(`plan ${name}: nodes must be an array`); continue; }
-    if (!Number.isInteger(plan.timeoutSeconds) || plan.timeoutSeconds <= 0) {
-      errors.push(`plan ${name}: timeoutSeconds must be a positive integer`);
-    } else if (name === "verify" && plan.timeoutSeconds !== 4800) {
-      errors.push("plan verify: timeoutSeconds must be 4800 seconds (80 minutes), below the 90-minute CI job deadline");
-    }
-    for (const node of [...plan.nodes, ...(plan.ciNodes ?? [])]) if (!nodeIds.has(node)) errors.push(`plan ${name}: unknown node ${JSON.stringify(node)}`);
-  }
-  const makeAliases = {
-    "test-wire": "wire-offline",
-    "test-unit": "unit",
-    "test-module": "module",
-    "test-support": "support",
-  };
-  for (const [target, planName] of Object.entries(makeAliases)) {
-    const tier = document.tiers.find(candidate => candidate.makeTarget === target);
-    if (!tier) errors.push(`Make target ${target} has no canonical tier`);
-    if (target === "test-wire" && document.plans?.[planName]?.nodes?.includes("test-tooling")) errors.push("test-wire must not include tooling tests");
-  }
-  if (!document.plans?.verify || !Array.isArray(document.plans.verify.nodes)) errors.push("verify plan must exist");
-  if ((document.plans?.verify?.nodes ?? []).length || (document.plans?.verify?.ciNodes ?? []).length) {
-    errors.push("verify roots must be derived from requiredGates and ciRequiredGates, not duplicated in plans.verify");
-  }
   for (const gate of document.requiredGates ?? []) {
     const node = document.nodes.find(candidate => candidate.id === gate);
     if (!node?.required || !node.local || !node.ci) errors.push(`required gate ${JSON.stringify(gate)} must be required and available locally and in CI`);
   }
-  for (const gate of document.ciRequiredGates ?? []) {
-    const node = document.nodes.find(candidate => candidate.id === gate);
-    if (!node?.required || !node.ci) errors.push(`CI required gate ${JSON.stringify(gate)} must be required and CI-available`);
-  }
   const toolingNode = (document.nodes ?? []).find(node => node?.id === "test-tooling");
   if (!toolingNode?.filter?.split("|").includes("RepositoryAuthorityTests")) {
     errors.push("test-tooling must select RepositoryAuthorityTests");
-  }
-  const checkpointRoots = new Set([...ordinary, ...hardware]);
-  for (const gate of document.releaseGates ?? []) {
-    const tier = (document.tiers ?? []).find(candidate => candidate?.id === gate);
-    if (!tier) errors.push(`release gate ${JSON.stringify(gate)} is not a declared tier`);
-    else if (!tier.required) errors.push(`release gate ${JSON.stringify(gate)} must reference a required tier`);
-  }
-  for (const tier of (document.tiers ?? [])) {
-    if (tier?.required && !(document.releaseGates ?? []).includes(tier.id)) {
-      errors.push(`required tier ${JSON.stringify(tier.id)} is absent from releaseGates`);
-    }
-  }
-  if (checkpointRoots.size) {
-    const requiredReleaseTiers = (document.tiers ?? []).filter(tier => tier?.required);
-    // wire-live and other peer/oracle tiers are intentionally attestable
-    // rather than run inside the checkpoint, so they are exempt from node
-    // coverage as long as they appear in releaseGates (checked above).
-    const attestableTiers = new Set(["wire-live", "manual-macos"]);
-    for (const tier of requiredReleaseTiers) {
-      if (tier.nodes.some(node => checkpointRoots.has(node)) || attestableTiers.has(tier.id)) continue;
-      errors.push(`required release tier ${JSON.stringify(tier.id)} is not covered by the checkpoint plan and not attestable`);
-    }
   }
   if (!document.testOne?.command?.filterFlag || !Number.isInteger(document.testOne?.timeoutSeconds) || document.testOne.timeoutSeconds <= 0) errors.push("testOne must declare a filterFlag and positive timeoutSeconds");
 
@@ -405,7 +360,7 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
       continue;
     }
     if (!Number.isInteger(tier.timeoutSeconds) || tier.timeoutSeconds <= 0) errors.push(`${tier.id}: timeoutSeconds must be a positive integer`);
-    else if (tier.timeoutSeconds > 3600) errors.push(`${tier.id}: timeoutSeconds exceeds the one-hour policy`);
+    else if (tier.id !== "release" && tier.timeoutSeconds > 3600) errors.push(`${tier.id}: timeoutSeconds exceeds the one-hour policy`);
     if (!Number.isInteger(tier.expectedDurationSeconds) || tier.expectedDurationSeconds <= 0) errors.push(`${tier.id}: expectedDurationSeconds must be a positive integer`);
     if (!networkModes.has(tier.network)) errors.push(`${tier.id}: unknown network mode ${JSON.stringify(tier.network)}`);
     if (!brokerModes.has(tier.broker)) errors.push(`${tier.id}: unknown broker mode ${JSON.stringify(tier.broker)}`);
@@ -455,31 +410,39 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
       if (!Array.isArray(toolEnv[command])) errors.push(`toolContainerEnv: missing allowlist for ${command}`);
     }
   }
-  const canonicalGateNames = new Set([...(document.requiredGates ?? []), ...(document.ciRequiredGates ?? [])]);
+  const canonicalGateNames = new Set(document.requiredGates ?? []);
   const canonicalCommandText = (document.nodes ?? [])
     .filter(node => canonicalGateNames.has(node?.id))
     .map(node => JSON.stringify(node?.command ?? {}))
     .join("\n");
+  // Ownership is a manifest fact now, not a Makefile one: a self-test is owned
+  // when some node of its declared category actually runs it. That survives any
+  // change to the Make entry points, which is what made the old rule fragile.
+  const commandTextByTier = new Map((document.tiers ?? []).map(tier => [tier.id,
+    (tier.nodes ?? [])
+      .map(id => (document.nodes ?? []).find(node => node?.id === id))
+      .filter(Boolean)
+      .map(node => JSON.stringify(node.command ?? {}))
+      .join("\n")]));
   const owned = new Map();
   for (const entry of document.selfTests) {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) { errors.push("selfTests entries must be objects"); continue; }
-    const absent = ["path", "makeTarget", "tier"].filter(field => !(field in entry));
+    const absent = ["path", "tier"].filter(field => !(field in entry));
     if (absent.length) { errors.push(`selfTest ${entry.path ?? "?"}: missing fields ${JSON.stringify(absent.sort())}`); continue; }
+    if ("makeTarget" in entry) errors.push(`selfTest ${entry.path}: makeTarget was replaced by tier ownership; remove it`);
     if (typeof entry.path !== "string" || !entry.path) errors.push("selfTest path must be a nonempty string");
-    if (typeof entry.makeTarget !== "string" || !entry.makeTarget) errors.push(`selfTest ${entry.path || "?"}: makeTarget must be a nonempty string`);
-    else if (!makeTargets.has(entry.makeTarget)) errors.push(`selfTest ${entry.path}: makeTarget ${JSON.stringify(entry.makeTarget)} is not a Makefile target`);
     if (typeof entry.tier !== "string" || !ids.includes(entry.tier)) errors.push(`selfTest ${entry.path}: tier ${JSON.stringify(entry.tier)} is unknown`);
     if (entry.path && !exists(entry.path)) errors.push(`selfTest ${entry.path}: file does not exist`);
-    if (entry.path && invokedSelfTests.has(entry.makeTarget) && !invokedSelfTests.get(entry.makeTarget).has(entry.path)) {
-      errors.push(`selfTest ${entry.path}: makeTarget ${JSON.stringify(entry.makeTarget)} does not invoke it`);
+    if (entry.path && !(commandTextByTier.get(entry.tier) ?? "").includes(entry.path)) {
+      errors.push(`selfTest ${entry.path}: no node of the ${JSON.stringify(entry.tier)} category runs it`);
     }
     if (entry.path && !canonicalCommandText.includes(entry.path)) {
-      errors.push(`selfTest ${entry.path}: canonical verify has no required gate invoking it`);
+      errors.push(`selfTest ${entry.path}: no required gate invokes it`);
     }
     if (owned.has(entry.path)) errors.push(`selfTest ${entry.path}: duplicate ownership (also owned by ${JSON.stringify(owned.get(entry.path))})`);
-    else owned.set(entry.path, entry.makeTarget);
+    else owned.set(entry.path, entry.tier);
   }
-  for (const found of discoveredSelfTests) if (!owned.has(found)) errors.push(`unmapped self-test ${found}: add it to selfTests with an owning makeTarget`);
+  for (const found of discoveredSelfTests) if (!owned.has(found)) errors.push(`unmapped self-test ${found}: add it to selfTests with an owning category`);
   return errors;
 }
 

@@ -85,12 +85,12 @@ DOC_HOSTING_BASE_PATH ?=
 	help image resolve worktree-bootstrap worktree-warm \
 	axoloty-tool verify verify-ci test-one test-tier explain \
 	hardware-check hardware-require checkpoint checkpoint-hardware \
-	build test-decoder-context-sendable \
+	 test-decoder-context-sendable \
 	test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies \
 	test-axoloty-wire-independent-resolution test-axoloty-wire-distribution \
 	test-axoloty-semver-consumer \
-	test-unit test-module \
-	test-wire test-wire-live test-support \
+	  \
+	   \
 	ci-preflight ci shell docs lint \
 	wire-tool clean serve-mqtt serve-mcp serve-dev embedded-toolchain-doctor \
 	embedded-device-info embedded-device-smoke embedded-reproducible-build \
@@ -117,14 +117,13 @@ help:
 		'make axoloty-tool AXOLOTY_TOOL_ARGS="--help"  Run the Swift tooling CLI in-container' \
 		'make verify        Run the canonical ordinary pre-PR verification plan' \
 		'make test-one FILTER=...  Run one bounded suite or test filter' \
-		'make test-tier TIER=...  Run one canonical test tier' \
+		'make test-tier TIER=ci|wire|embedded|release  Run one canonical test category' \
 		'make explain TIER=...  Explain commands, policies, locks, and artifacts' \
 		'make hardware-check  Run or skip the sporadic ESP32-C6 smoke check' \
 		'make hardware-require  Require an attached ESP32-C6 smoke check' \
 		'make g1-bounded-runtime-device  Run the G1 candidate evidence on an attached ESP32-C6' \
 		'make checkpoint     Run the release checkpoint validation (no hardware)' \
 		'make checkpoint-hardware  Run checkpoint with ESP32-C6 smoke test' \
-		'make build         Build Axoloty in the Linux container' \
 		'make serve-mqtt    Run the local MQTT broker in the container' \
 		'make serve-mcp     Run the MCP service in the container' \
 		'make serve-dev     Run the MQTT + MCP development stack' \
@@ -133,11 +132,6 @@ help:
 		'make test-no-foundation-types  Fail if forbidden Foundation types are used in production source' \
 		'make test-axoloty-wire-distribution  Validate root and standalone AxolotyWire consumers' \
 		'make test-axoloty-semver-consumer  Build clean semver consumers for both products' \
-		'make test-unit     Run portable object-model and wire value tests' \
-		'make test-module   Run portable topic, wire, protocol, and model module tests' \
-		'make test-wire     Run offline wire fixtures and capture tests' \
-		'make test-support  Run support harness self-tests and tier validation' \
-		'make test-wire-live  Run live CoatyJS compatibility scenarios' \
 		'make wire-tool   Build the npx-runnable wire-compatibility CLI' \
 		'make embedded-toolchain-doctor  Verify the device-independent ESP-IDF environment' \
 		'make embedded-device-info  Query the board and record a device manifest' \
@@ -209,7 +203,7 @@ axoloty-tool: image
 	AXOLOTY_DEVICE="$(AXOLOTY_DEVICE)" \
 	AXOLOTY_DEVICE_LEASE_ROOT="$(AXOLOTY_DEVICE_LEASE_ROOT)" \
 	CONTAINER_OPTIONAL_DEVICES="$(AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES)" \
-	CONTAINER_ENV_VARS="$(AXOLOTY_TOOL_CONTAINER_ENV_VARS) AXOLOTY_DEVICE_LEASE_ROOT AXOLOTY_EMBEDDED_LINKER_CLEAN AXOLOTY_RUN_ID AXOLOTY_RUNS_DIR WIRE_OUTPUT_DIR AXOLOTY_RESOURCE_LEASE_ROOT" \
+	CONTAINER_ENV_VARS="$(AXOLOTY_TOOL_CONTAINER_ENV_VARS) AXOLOTY_DEVICE_LEASE_ROOT AXOLOTY_EMBEDDED_LINKER_CLEAN $(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
 	.devcontainer/run.sh /opt/axoloty/bin/axoloty-tool $(AXOLOTY_TOOL_ARGS)
 
 serve-mqtt: image
@@ -243,12 +237,20 @@ test-one: image
 		CONTAINER_ENV_VARS="$(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
 		.devcontainer/run.sh /opt/axoloty/bin/axoloty-tool test-one --filter "$$filter"
 
-test-tier: image
+# The four categories are the only test entry points. The wire category needs
+# the host runtime bridge, and records the G6 wire matrix when a run asks for
+# that evidence; both used to live in the retired test-wire-live wrapper.
+test-tier:
 	@tier=$(call shell_quote,$(TIER)); \
 		test -n "$$tier" || { echo 'TIER is required' >&2; exit 2; }; \
-		CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_TIER_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-		CONTAINER_ENV_VARS="$(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
-		.devcontainer/run.sh /opt/axoloty/bin/axoloty-tool test-tier "$$tier"
+		case "$(TIER)" in wire) bridge=1;; *) bridge="$(AXOLOTY_HOST_RUNTIME_BRIDGE)";; esac; \
+		$(MAKE) --no-print-directory axoloty-tool \
+			AXOLOTY_TOOL_ARGS="test-tier $$tier" \
+			AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS=$(AXOLOTY_TIER_TIMEOUT_SECONDS) \
+			AXOLOTY_HOST_RUNTIME_BRIDGE="$$bridge"
+	@if [ "$(TIER)" = "wire" ] && test -n "$${AXOLOTY_G6_WIRE_EVIDENCE:-}"; then \
+		Tests/Support/check-g6-wire-matrix.sh; \
+	fi
 
 explain: image
 	@tier=$(call shell_quote,$(TIER)); \
@@ -302,30 +304,10 @@ checkpoint-hardware:
 			AXOLOTY_EVIDENCE_DIR="$(AXOLOTY_EVIDENCE_DIR)" AXOLOTY_G6_RESOURCE_EVIDENCE="$(AXOLOTY_G6_RESOURCE_EVIDENCE)" AXOLOTY_REPOSITORY="$(AXOLOTY_REPOSITORY)" \
 			AXOLOTY_DEVICE="$${AXOLOTY_DEVICE:-/dev/ttyACM0}"
 
-define run_test_tier
-	@$(MAKE) --no-print-directory test-tier TIER="$(TIER)"
-endef
-
-build:
-	$(run_test_tier)
-build: TIER=smoke
-
-test-unit:
-	$(run_test_tier)
-test-unit: TIER=unit
-
-test-module:
-	$(run_test_tier)
-test-module: TIER=module
-
-test-wire:
-	$(run_test_tier)
-test-wire: TIER=wire-offline
-
 test-decoder-context-sendable:
 	@build_log=$$(mktemp); \
 	trap 'rm -f "$$build_log"' EXIT; \
-	if ! $(MAKE) build >"$$build_log" 2>&1; then cat "$$build_log"; exit 1; fi; \
+	if ! $(MAKE) --no-print-directory test-one FILTER=smoke >"$$build_log" 2>&1; then cat "$$build_log"; exit 1; fi; \
 	cat "$$build_log"; \
 	sh Tests/Support/check-decoder-context-diagnostic.sh "$$build_log"
 
@@ -353,15 +335,6 @@ test-axoloty-semver-consumer: image
 # container. The literal test-tier call stays visible for the tier
 # validator's static scan. The wire-tool npm suite stays host-side: it
 # needs registry access and owns its own workflow contract.
-test-support: resolve
-	@$(MAKE) --no-print-directory test-tier TIER=support
-	$(MAKE) --no-print-directory wire-tool
-
-test-wire-live:
-	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='wire capture' AXOLOTY_HOST_RUNTIME_BRIDGE=1
-	@if test -n "$${AXOLOTY_G6_WIRE_EVIDENCE:-}"; then \
-		Tests/Support/check-g6-wire-matrix.sh; \
-	fi
 
 wire-tool:
 	cd Tests/Support/WireCompatibility/tool && npm ci && npm test

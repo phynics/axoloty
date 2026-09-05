@@ -6,15 +6,14 @@ import Foundation
 public struct AxolotySelfTestContractEntry: Codable, Equatable, Sendable {
     /// Repository-relative self-test path.
     public let path: String
-    /// Owning Make target.
-    public let makeTarget: String
-    /// Owning tier.
+    /// Owning category. A self-test is owned by the category whose nodes run
+    /// it, which is a manifest fact and survives changes to the Make entry
+    /// points.
     public let tier: String
 
     /// Creates a self-test contract entry.
-    public init(path: String, makeTarget: String, tier: String) {
+    public init(path: String, tier: String) {
         self.path = path
-        self.makeTarget = makeTarget
         self.tier = tier
     }
 }

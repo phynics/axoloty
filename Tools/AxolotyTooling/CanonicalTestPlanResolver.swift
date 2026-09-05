@@ -2,29 +2,23 @@
 
 import Foundation
 
-enum CanonicalNamedPlan: String, CaseIterable, Sendable {
-    case offline
-    case verify
-    case checkpoint
-    case checkpointHardware = "checkpoint-hardware"
-    case wireLive = "wire-live"
-    case testTooling = "test-tooling"
-    case objectModel = "object-model"
-    case g4Runtime = "g4-runtime"
-    case g5OptionalProducts = "g5-optional-products"
+/// The canonical test categories. A category says what a run needs, and that
+/// is the only axis: `ci` needs nothing beyond the container, `wire` needs
+/// broker infrastructure, `embedded` needs an attached board, and `release`
+/// is everything the host can run.
+enum CanonicalTier: String, CaseIterable, Sendable {
+    case ci
+    case wire
+    case embedded
+    case release
 }
 
 enum CanonicalPlanRequest: Sendable {
-    case named(
-        CanonicalNamedPlan,
-        ci: Bool,
-        platform: AxolotyCheckPlan.Platform,
-        requested: [String]?
-    )
     case tier(
         name: String,
         ci: Bool,
-        platform: AxolotyCheckPlan.Platform
+        platform: AxolotyCheckPlan.Platform,
+        requested: [String]? = nil
     )
     case checkpoint(
         hardwareDevice: String?,
@@ -63,21 +57,13 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
     func resolve(_ request: CanonicalPlanRequest) throws -> AxolotyCheckPlan {
         try validateManifest()
         switch request {
-        case .named(let name, let ci, let platform, let requested):
-            return try resolveNamed(
-                name,
-                ci: ci,
-                platform: platform,
-                requested: requested
-            )
-        case .tier(let name, let ci, let platform):
-            return try resolveTier(name, ci: ci, platform: platform)
+        case .tier(let name, let ci, let platform, let requested):
+            return try resolveTier(name, ci: ci, platform: platform, requested: requested)
         case .checkpoint(let hardwareDevice, let consumerEnvironment, let platform):
-            let plan = try resolveNamed(
-                hardwareDevice == nil ? .checkpoint : .checkpointHardware,
+            let plan = try resolveTier(
+                CanonicalTier.release.rawValue,
                 ci: false,
-                platform: platform,
-                requested: nil
+                platform: platform
             )
             var environment = consumerEnvironment
             if let hardwareDevice {
@@ -85,12 +71,7 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
             }
             return rewrite(plan, substitutions: [:], environment: environment)
         case .wireCapture(let environment, let platform):
-            let plan = try resolveNamed(
-                .wireLive,
-                ci: false,
-                platform: platform,
-                requested: nil
-            )
+            let plan = try resolveTier(CanonicalTier.wire.rawValue, ci: false, platform: platform)
             let outputDirectory = environment["WIRE_OUTPUT_DIR"] ?? ".testing/wire"
             var overlay = environment
             overlay["WIRE_OUTPUT_DIR"] = outputDirectory
@@ -176,19 +157,14 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
         let name: String
         let ci: Bool
         switch request {
-        case .named(let named, let selectedCI, _, _):
-            name = named.rawValue
-            ci = selectedCI
-        case .tier(let tier, let selectedCI, _):
+        case .tier(let tier, let selectedCI, _, _):
             name = tier
             ci = selectedCI
-        case .checkpoint(let hardwareDevice, _, _):
-            name = hardwareDevice == nil
-                ? CanonicalNamedPlan.checkpoint.rawValue
-                : CanonicalNamedPlan.checkpointHardware.rawValue
+        case .checkpoint:
+            name = CanonicalTier.release.rawValue
             ci = false
         case .wireCapture:
-            name = CanonicalNamedPlan.wireLive.rawValue
+            name = CanonicalTier.wire.rawValue
             ci = false
         }
         let byID = Dictionary(uniqueKeysWithValues: manifest.nodes.map { ($0.id, $0) })
@@ -222,15 +198,44 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
     private func resolveTier(
         _ name: String,
         ci: Bool,
-        platform: AxolotyCheckPlan.Platform
+        platform: AxolotyCheckPlan.Platform,
+        requested: [String]? = nil
     ) throws -> AxolotyCheckPlan {
         guard let definition = manifest.tiers.first(where: { $0.id == name }) else {
             throw AxolotyCanonicalTestManifestError.unknownEntry(name)
         }
-        return try resolve(
+        // A category that declares it needs no hardware must not contain a node
+        // that does; that is the whole basis on which a host decides it can run
+        // the category at all.
+        if definition.hardware == .forbidden {
+            for root in definition.nodes {
+                if let node = manifest.nodes.first(where: { $0.id == root }), node.hardware != .forbidden {
+                    throw AxolotyCanonicalTestManifestError.invalidPlan(
+                        name: name,
+                        reason: "hardware node \(root) is forbidden in the \(name) category"
+                    )
+                }
+            }
+        }
+        let availability: @Sendable (AxolotyCanonicalTestNode) -> Bool = { ci ? $0.ci : $0.local }
+        let declaredPlan = try resolve(
             roots: definition.nodes,
             platform: platform,
-            availability: { ci ? $0.ci : $0.local },
+            availability: availability,
+            deadlineSeconds: definition.timeoutSeconds,
+            expectedDurationSeconds: definition.expectedDurationSeconds
+        )
+        guard let requested else { return declaredPlan }
+        let available = Set(declaredPlan.nodes.map(\.name))
+        guard requested.allSatisfy(available.contains) else {
+            throw AxolotyCanonicalTestManifestError.unavailableNode(
+                requested.first { !available.contains($0) } ?? name
+            )
+        }
+        return try resolve(
+            roots: requested,
+            platform: platform,
+            availability: availability,
             deadlineSeconds: definition.timeoutSeconds,
             expectedDurationSeconds: definition.expectedDurationSeconds
         )
@@ -240,82 +245,6 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
         guard manifest.schemaVersion == AxolotyCanonicalTestManifest.currentSchemaVersion else {
             throw AxolotyCanonicalTestManifestError.unsupportedSchema(manifest.schemaVersion)
         }
-    }
-
-    private func resolveNamed(
-        _ name: CanonicalNamedPlan,
-        ci: Bool,
-        platform: AxolotyCheckPlan.Platform,
-        requested: [String]?
-    ) throws -> AxolotyCheckPlan {
-        guard let definition = manifest.plans[name.rawValue] else {
-            throw AxolotyCanonicalTestManifestError.unknownEntry(name.rawValue)
-        }
-        let declaredRoots = try inheritedRoots(for: name.rawValue, ci: ci, stack: [])
-        let roots: [String]
-        if name == .verify {
-            roots = manifest.requiredGates + (ci ? manifest.ciRequiredGates : [])
-            if !declaredRoots.isEmpty, declaredRoots != roots {
-                throw AxolotyCanonicalTestManifestError.invalidPlan(
-                    name: name.rawValue,
-                    reason: "verify roots must be derived from requiredGates and ciRequiredGates"
-                )
-            }
-        } else {
-            roots = declaredRoots
-        }
-        if name == .checkpointHardware {
-            guard definition.inherits == CanonicalNamedPlan.checkpoint.rawValue else {
-                throw AxolotyCanonicalTestManifestError.invalidPlan(
-                    name: name.rawValue,
-                    reason: "checkpoint-hardware must inherit checkpoint"
-                )
-            }
-            let ordinary = Set(try inheritedRoots(
-                for: CanonicalNamedPlan.checkpoint.rawValue,
-                ci: ci,
-                stack: []
-            ))
-            let hardware = Set(roots)
-            guard ordinary.isSubset(of: hardware), hardware.count > ordinary.count else {
-                throw AxolotyCanonicalTestManifestError.invalidPlan(
-                    name: name.rawValue,
-                    reason: "checkpoint-hardware must be a strict superset of checkpoint"
-                )
-            }
-        }
-        if name == .verify || name == .offline {
-            for root in roots {
-                if let node = manifest.nodes.first(where: { $0.id == root }),
-                   node.hardware != .forbidden {
-                    throw AxolotyCanonicalTestManifestError.invalidPlan(
-                        name: name.rawValue,
-                        reason: "hardware node \(root) is forbidden in ordinary/offline plans"
-                    )
-                }
-            }
-        }
-        let declaredPlan = try resolve(
-            roots: roots,
-            platform: platform,
-            availability: { ci ? $0.ci : $0.local },
-            deadlineSeconds: definition.timeoutSeconds,
-            expectedDurationSeconds: definition.expectedDurationSeconds
-        )
-        guard let requested else { return declaredPlan }
-        let availableNodeNames = Set(declaredPlan.nodes.map(\.name))
-        guard requested.allSatisfy(availableNodeNames.contains) else {
-            let unavailable = requested.first { !availableNodeNames.contains($0) }
-                ?? name.rawValue
-            throw AxolotyCanonicalTestManifestError.unavailableNode(unavailable)
-        }
-        return try resolve(
-            roots: requested,
-            platform: platform,
-            availability: { ci ? $0.ci : $0.local },
-            deadlineSeconds: definition.timeoutSeconds,
-            expectedDurationSeconds: definition.expectedDurationSeconds
-        )
     }
 
     private func resolve(
@@ -343,28 +272,6 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
             deadlineSeconds: deadlineSeconds,
             expectedDurationSeconds: expectedDurationSeconds
         )
-    }
-
-    private func inheritedRoots(
-        for name: String,
-        ci: Bool,
-        stack: [String]
-    ) throws -> [String] {
-        guard let definition = manifest.plans[name] else {
-            throw AxolotyCanonicalTestManifestError.unknownEntry(name)
-        }
-        guard !stack.contains(name) else {
-            throw AxolotyCanonicalTestManifestError.planInheritanceCycle(stack + [name])
-        }
-        let localRoots = ci ? (definition.ciNodes ?? definition.nodes) : definition.nodes
-        guard let parent = definition.inherits else { return localRoots }
-        guard manifest.plans[parent] != nil else {
-            throw AxolotyCanonicalTestManifestError.missingPlanInheritance(
-                plan: name,
-                parent: parent
-            )
-        }
-        return try inheritedRoots(for: parent, ci: ci, stack: stack + [name]) + localRoots
     }
 
     private func node(named name: String) throws -> AxolotyCanonicalTestNode {
