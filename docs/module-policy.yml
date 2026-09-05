@@ -1,0 +1,324 @@
+{
+  "schemaVersion": 1,
+  "roles": {
+    "portable": "Compiled for both host and constrained-device profiles. No host runtime, transport, or platform dependency.",
+    "host": "The host runtime. Owns lifecycle and composition; depends on portable targets and a transport port.",
+    "adapter": "Implements a transport port for one carrier. The only place a networking library may appear.",
+    "capability": "An optional first-party product built on the runtime's declared extension surface.",
+    "application": "A composition or firmware entry point.",
+    "tooling": "Developer and orchestration tools. Not part of any shipped runtime graph."
+  },
+  "platformClasses": {
+    "portable": "Must compile for host and Embedded Swift.",
+    "host": "Host platforms only (macOS, iOS, Linux).",
+    "tooling": "Host platforms only; never compiled into a runtime profile."
+  },
+  "forbiddenEverywhere": [],
+  "targets": [
+    {
+      "name": "AxolotyWire",
+      "role": "portable",
+      "platformClass": "portable",
+      "path": "Packages/AxolotyWire/Sources/AxolotyWire",
+      "allowedImports": [
+        "_JSONCore"
+      ],
+      "forbiddenImports": [
+        "Foundation",
+        "MQTTNIO",
+        "NIO",
+        "NIOCore",
+        "NIOPosix",
+        "NIOConcurrencyHelpers",
+        "NIOSSL",
+        "NIOTransportServices",
+        "Network",
+        "Logging",
+        "OSLog",
+        "ErrorKit",
+        "Combine"
+      ]
+    },
+    {
+      "name": "AxolotyObjectModel",
+      "role": "portable",
+      "platformClass": "portable",
+      "path": "Packages/AxolotyObjectModel/Sources/AxolotyObjectModel",
+      "allowedImports": [
+        "AxolotyWire"
+      ],
+      "forbiddenImports": [
+        "Foundation",
+        "MQTTNIO",
+        "NIO",
+        "NIOCore",
+        "NIOPosix",
+        "NIOConcurrencyHelpers",
+        "NIOSSL",
+        "NIOTransportServices",
+        "Network",
+        "Logging",
+        "OSLog",
+        "ErrorKit",
+        "Combine",
+        "Axoloty"
+      ]
+    },
+    {
+      "name": "AxolotyProtocol",
+      "role": "portable",
+      "platformClass": "portable",
+      "path": "Packages/AxolotyProtocol/Sources/AxolotyProtocol",
+      "allowedImports": [
+        "AxolotyWire",
+        "AxolotyObjectModel"
+      ],
+      "forbiddenImports": [
+        "Foundation",
+        "MQTTNIO",
+        "NIO",
+        "NIOCore",
+        "NIOPosix",
+        "NIOConcurrencyHelpers",
+        "NIOSSL",
+        "NIOTransportServices",
+        "Network",
+        "Logging",
+        "OSLog",
+        "ErrorKit",
+        "Combine",
+        "Axoloty"
+      ]
+    },
+    {
+      "name": "AxolotyCoatyModels",
+      "role": "portable",
+      "platformClass": "portable",
+      "path": "Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels",
+      "allowedImports": [
+        "AxolotyObjectModel",
+        "AxolotyWire"
+      ],
+      "forbiddenImports": [
+        "Foundation",
+        "MQTTNIO",
+        "NIO",
+        "NIOCore",
+        "NIOPosix",
+        "NIOConcurrencyHelpers",
+        "NIOSSL",
+        "NIOTransportServices",
+        "Network",
+        "Logging",
+        "OSLog",
+        "ErrorKit",
+        "Combine",
+        "Axoloty"
+      ]
+    },
+    {
+      "name": "AxolotyStaticRuntime",
+      "role": "portable",
+      "platformClass": "portable",
+      "path": "Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntime",
+      "allowedImports": [
+        "AxolotyWire",
+        "AxolotyObjectModel",
+        "AxolotyProtocol"
+      ],
+      "forbiddenImports": [
+        "Foundation",
+        "MQTTNIO",
+        "NIO",
+        "NIOCore",
+        "NIOPosix",
+        "NIOConcurrencyHelpers",
+        "NIOSSL",
+        "NIOTransportServices",
+        "Network",
+        "Logging",
+        "OSLog",
+        "ErrorKit",
+        "Combine",
+        "Axoloty"
+      ]
+    },
+    {
+      "name": "Axoloty",
+      "role": "host",
+      "platformClass": "host",
+      "path": "Source",
+      "allowedImports": [
+        "AxolotyWire",
+        "AxolotyObjectModel",
+        "AxolotyProtocol",
+        "Foundation",
+        "ErrorKit",
+        "MQTTNIO",
+        "NIO",
+        "NIOConcurrencyHelpers",
+        "NIOSSL",
+        "NIOTransportServices",
+        "Network"
+      ],
+      "forbiddenImports": [
+        "Logging",
+        "OSLog",
+        "Combine",
+        "MCP",
+        "AxolotyIoRouting",
+        "AxolotySensorThings",
+        "AxolotyInspectorCore",
+        "AxolotyTooling"
+      ],
+      "note": "MQTTNIO, NIO, NIOSSL, NIOTransportServices, and Network are allowed only until AxolotyMQTT is extracted. Epic #781 item B removes them from this target."
+    },
+    {
+      "name": "AxolotyIoRouting",
+      "role": "capability",
+      "platformClass": "host",
+      "path": "Packages/AxolotyIoRouting/Sources/AxolotyIoRouting",
+      "allowedImports": [
+        "Axoloty",
+        "AxolotyWire",
+        "AxolotyObjectModel",
+        "AxolotyProtocol"
+      ],
+      "forbiddenImports": [
+        "MQTTNIO",
+        "NIO",
+        "NIOCore",
+        "NIOConcurrencyHelpers",
+        "NIOSSL",
+        "NIOTransportServices",
+        "Network",
+        "Logging",
+        "OSLog",
+        "MCP",
+        "AxolotySensorThings"
+      ]
+    },
+    {
+      "name": "AxolotySensorThings",
+      "role": "capability",
+      "platformClass": "host",
+      "path": "Packages/AxolotySensorThings/Sources/AxolotySensorThings",
+      "allowedImports": [
+        "Axoloty",
+        "AxolotyWire",
+        "AxolotyObjectModel",
+        "AxolotyProtocol",
+        "ErrorKit"
+      ],
+      "forbiddenImports": [
+        "MQTTNIO",
+        "NIO",
+        "NIOCore",
+        "NIOConcurrencyHelpers",
+        "NIOSSL",
+        "NIOTransportServices",
+        "Network",
+        "Logging",
+        "OSLog",
+        "MCP",
+        "AxolotyIoRouting"
+      ]
+    },
+    {
+      "name": "AxolotyInspectorCore",
+      "role": "tooling",
+      "platformClass": "tooling",
+      "path": "Tools/AxolotyInspectorCore",
+      "allowedImports": [
+        "AxolotyVersion",
+        "Foundation"
+      ],
+      "forbiddenImports": [
+        "Axoloty",
+        "MQTTNIO",
+        "NIO",
+        "MCP"
+      ]
+    },
+    {
+      "name": "AxolotyInspectorRuntime",
+      "role": "tooling",
+      "platformClass": "tooling",
+      "path": "Tools/AxolotyInspectorRuntime",
+      "allowedImports": [
+        "Axoloty",
+        "AxolotyInspectorCore",
+        "AxolotyWire",
+        "Foundation"
+      ],
+      "forbiddenImports": [
+        "MCP",
+        "Logging",
+        "MQTTNIO",
+        "NIO"
+      ],
+      "note": "Epic #781 item G moves transport selection out of this target into the executable composition root."
+    },
+    {
+      "name": "AxolotyMCP",
+      "role": "tooling",
+      "platformClass": "tooling",
+      "path": "Tools/AxolotyMCP",
+      "allowedImports": [
+        "Axoloty",
+        "AxolotyInspectorCore",
+        "AxolotyInspectorRuntime",
+        "ErrorKit",
+        "Foundation",
+        "FoundationNetworking",
+        "Logging",
+        "MCP",
+        "NIOCore",
+        "NIOPosix",
+        "NIOHTTP1"
+      ],
+      "forbiddenImports": [
+        "MQTTNIO",
+        "AxolotyTooling"
+      ],
+      "note": "Runs an HTTP server directly on NIO, and declares NIOCore, NIOPosix, and NIOHTTP1 on the target rather than inheriting them from Axoloty. Extracting AxolotyMQTT therefore does not affect this target."
+    },
+    {
+      "name": "AxolotyTooling",
+      "role": "tooling",
+      "platformClass": "tooling",
+      "path": "Tools/AxolotyTooling",
+      "allowedImports": [
+        "AxolotyProcessLauncher",
+        "AxolotyVersion",
+        "Darwin",
+        "Foundation",
+        "Glibc"
+      ],
+      "forbiddenImports": [
+        "Axoloty",
+        "AxolotyWire",
+        "AxolotyProtocol",
+        "MQTTNIO",
+        "NIO",
+        "MCP"
+      ]
+    },
+    {
+      "name": "AxolotyVersion",
+      "role": "tooling",
+      "platformClass": "tooling",
+      "path": "Tools/AxolotyVersion",
+      "allowedImports": [
+        "Foundation"
+      ],
+      "forbiddenImports": [
+        "Axoloty",
+        "AxolotyWire",
+        "MQTTNIO",
+        "NIO",
+        "MCP"
+      ]
+    }
+  ]
+}
