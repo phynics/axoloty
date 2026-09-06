@@ -25,7 +25,9 @@ let package = Package(
 )
 EOF
 (cd "$fixture" && Tests/Support/checks/check-g6-public-products.sh) >/dev/null
-sed -i 's/\.executable(name: "axoloty-mcp")/.executable(name: "unexpected")/' "$fixture/Package.swift"
+# The root package declares no executables, so the negative case mutates a
+# library product instead.
+sed -i 's/\.library(name: "AxolotyMQTT")/.library(name: "unexpected")/' "$fixture/Package.swift"
 if (cd "$fixture" && Tests/Support/checks/check-g6-public-products.sh) >/dev/null 2>&1; then
     echo "error: product inventory accepted an unexpected product" >&2
     exit 1
