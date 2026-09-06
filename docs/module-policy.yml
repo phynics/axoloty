@@ -289,7 +289,7 @@
       "name": "AxolotyInspectorCore",
       "role": "tooling",
       "platformClass": "tooling",
-      "path": "Tools/AxolotyInspectorCore",
+      "path": "Apps/AxolotyInspectorCore",
       "allowedImports": [
         "AxolotyVersion",
         "Foundation"
@@ -305,7 +305,7 @@
       "name": "AxolotyInspectorRuntime",
       "role": "tooling",
       "platformClass": "tooling",
-      "path": "Tools/AxolotyInspectorRuntime",
+      "path": "Apps/AxolotyInspectorRuntime",
       "allowedImports": [
         "Axoloty",
         "AxolotyInspectorCore",
@@ -329,7 +329,7 @@
       "name": "AxolotyMCP",
       "role": "tooling",
       "platformClass": "tooling",
-      "path": "Tools/AxolotyMCP",
+      "path": "Apps/AxolotyMCP",
       "allowedImports": [
         "Axoloty",
         "AxolotyInspectorCore",

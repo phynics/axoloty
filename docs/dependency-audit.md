@@ -53,7 +53,7 @@ preserved.
 
 ### swift-log (`1.14.0`, Apache-2.0)
 
-Imported by `Tools/AxolotyMCP/AxolotyMCPServer.swift`, which uses the
+Imported by `Apps/AxolotyMCP/AxolotyMCPServer.swift`, which uses the
 `Logger` facade for encoding-failure diagnostics. The root `Axoloty` target
 does not declare `swift-log`; applications choose their own logging bootstrap
 for runtime diagnostics. The `1.14.0` release adds task-local logger support.

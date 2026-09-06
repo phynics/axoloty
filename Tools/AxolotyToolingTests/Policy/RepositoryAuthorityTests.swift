@@ -4,9 +4,23 @@
 import Foundation
 import Testing
 
+/// The repository root, resolved from this file rather than the working
+/// directory.
+///
+/// These tests run from the Tools package, whose working directory is `Tools/`
+/// rather than the checkout root. Anchoring on `#filePath` keeps them correct
+/// wherever they are invoked from.
+private func repositoryRoot(_ file: StaticString = #filePath) -> URL {
+    URL(fileURLWithPath: "\(file)")
+        .deletingLastPathComponent()   // Policy
+        .deletingLastPathComponent()   // AxolotyToolingTests
+        .deletingLastPathComponent()   // Tools
+        .deletingLastPathComponent()   // checkout root
+}
+
 @Test
 func repositoryAuthorityPassesForCheckout() {
-    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    let root = repositoryRoot()
     let report = AxolotyRepositoryAuthorityValidator(root: root).validate()
 
     #expect(report.status == "passed", "\(report.findings)")
@@ -15,7 +29,7 @@ func repositoryAuthorityPassesForCheckout() {
 
 @Test
 func repositoryAuthorityCommandSupportsHumanAndJSONOutput() throws {
-    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    let root = repositoryRoot()
     let dispatcher = AxolotyCommandDispatcher(
         repositoryRoot: root,
         installSignalHandler: false
@@ -395,10 +409,10 @@ private func makeAuthorityFixture(
         "Makefile": "AXOLOTY_CONSUMER_VERSION ?= \(makefileVersion ?? version)\n",
         "Tests/Support/checks/check-axoloty-semver-consumer.sh": "version=${AXOLOTY_CONSUMER_VERSION:-\(version)}\n",
         "Tools/AxolotyTooling/Commands/AxolotyCommandDispatcher.swift": "private static let version = \"\(version)\"\n",
-        "Tools/AxolotyInspectorCore/InspectorArgumentParser.swift": "public static let version = \"\(version)\"\n",
+        "Apps/AxolotyInspectorCore/InspectorArgumentParser.swift": "public static let version = \"\(version)\"\n",
         "Tools/AxolotyToolingTests/Commands/AxolotyCommandDispatcherTests.swift": "#expect(result.standardOutput == \"axoloty-tool \(version)\")\n",
         "Tools/AxolotyToolingTests/Commands/AxolotyServeParserTests.swift": "#expect(result.standardOutput == \"ax \(version)\")\n",
-        "Tools/AxolotyInspectorCoreTests/InspectorArgumentParserTests.swift": "#expect(InspectorArgumentParser.version == \"\(version)\")\n",
+        "Apps/AxolotyInspectorCoreTests/InspectorArgumentParserTests.swift": "#expect(InspectorArgumentParser.version == \"\(version)\")\n",
         "docs/API.md": "# Axoloty \(version) API documentation\n> Axoloty \(version) is current.\n",
         "docs/SUPPORT_MATRIX.md": "# Axoloty \(version) support matrix\nThis is the \(version) checkpoint.\n",
         "ARCHITECTURE.md": "# Architecture\n- `INV-001` shared production processor (non-waivable)\n- `INV-002` bounded state\n",

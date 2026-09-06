@@ -19,16 +19,20 @@ if [ "${1:-}" = "serve" ] && { [ "${2:-}" = "mcp" ] || [ "${2:-}" = "dev" ]; } \
     root_build_dir=${AXOLOTY_ROOT_BUILD_DIR:-${BUILD_DIR:-/workspace/.build}}
     root_cache_path=${AXOLOTY_ROOT_CACHE_PATH:-${SPM_CACHE_DIR:-/workspace/.swiftpm-cache}}
 
+    # axoloty-mcp is a product of the Apps package, not the library package.
+    apps_package_path="$root_package_path/Apps"
+    apps_build_dir="${AXOLOTY_APPS_BUILD_DIR:-$root_build_dir/apps}"
+
     swift build \
-        --package-path "$root_package_path" \
-        --scratch-path "$root_build_dir" \
+        --package-path "$apps_package_path" \
+        --scratch-path "$apps_build_dir" \
         --cache-path "$root_cache_path" \
         --disable-automatic-resolution \
         --product axoloty-mcp
 
     mcp_bin_dir=$(swift build \
-        --package-path "$root_package_path" \
-        --scratch-path "$root_build_dir" \
+        --package-path "$apps_package_path" \
+        --scratch-path "$apps_build_dir" \
         --cache-path "$root_cache_path" \
         --disable-automatic-resolution \
         --show-bin-path)
