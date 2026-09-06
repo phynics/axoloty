@@ -4,13 +4,14 @@ Axoloty is a Swift runtime and protocol suite for collaborative distributed agen
 
 ## Current checkpoint
 
-[`VERSION`](../VERSION) identifies the current released version (`0.7.0`). Axoloty remains pre-1.0 and its public API may change. The 0.7 line is released; no successor line is open.
+[`VERSION`](../VERSION) identifies the current released version (`0.7.0`). Axoloty remains pre-1.0 and its public API may change. The 0.7 line is the active checkpoint; no successor line is open.
 
 Historical release outcomes are preserved in [`docs/releases/`](./releases/) and [`CHANGELOG.md`](../CHANGELOG.md). They do not define current strategy.
 
-## Released: 0.7 architecture stabilization
+## Active direction: 0.7 architecture stabilization and transport boundary
 
-[Epic #753](https://github.com/phynics/axoloty/issues/753) concentrated
+The 0.7 line has two accepted programs. [Epic #753](https://github.com/phynics/axoloty/issues/753)
+concentrated
 orchestration, runtime registration, SensorThings workflows, and typed IO
 state behind deep modules with explicit ownership.
 
@@ -25,6 +26,14 @@ The delivered outcomes are:
 - typed IO state is concentrated behind the executor that owns it;
 - the canonical test taxonomy is four categories, and an attested category is
   proved from recorded evidence rather than executed.
+
+[Epic #781](https://github.com/phynics/axoloty/issues/781) then made the
+transport a declared, enforced boundary: MQTT behind an adapter product, a
+transport port that carries a finished route, a package-scoped runtime
+extension surface, a machine-checked module policy, and a root package that
+declares only libraries. It carries the v0.7.0 release, because its changes are
+source-breaking and landed before 0.7.0 was tagged; releasing twice would ask
+consumers to migrate twice for one architectural change.
 
 Outcomes are recorded in [`docs/releases/0.7.0.md`](./releases/0.7.0.md) and
 the removed public API is mapped in
