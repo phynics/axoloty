@@ -10,16 +10,16 @@ let package = Package(
         .executable(name: "WireExample", targets: ["WireExample"]),
     ],
     dependencies: [
-        .package(path: ".."),
+        .package(name: "Axoloty", path: ".."),
     ],
     targets: [
         .executableTarget(
             name: "HostRuntimeExample",
-            dependencies: [.product(name: "Axoloty", package: "workspace")]
+            dependencies: [.product(name: "Axoloty", package: "Axoloty")]
         ),
         .executableTarget(
             name: "WireExample",
-            dependencies: [.product(name: "AxolotyWire", package: "workspace")]
+            dependencies: [.product(name: "AxolotyWire", package: "Axoloty")]
         ),
     ]
 )
