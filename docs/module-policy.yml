@@ -96,8 +96,7 @@
       "platformClass": "portable",
       "path": "Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels",
       "allowedImports": [
-        "AxolotyObjectModel",
-        "AxolotyWire"
+        "AxolotyObjectModel"
       ],
       "forbiddenImports": [
         "Foundation",

@@ -308,6 +308,33 @@ func modulePolicyRejectsAnUndeclaredImport() throws {
     #expect(report.findings.contains { $0.rule == "modules.undeclared" && $0.message.contains("SomethingNew") })
 }
 
+/// An allowed import nothing uses is the same class of boundary drift as an
+/// undeclared one: it grants access nothing needs, which is exactly how a
+/// real dependency (`AxolotyCoatyModels` allowing `AxolotyWire` when only
+/// `AxolotyObjectModel` was ever imported) went unnoticed until this rule
+/// existed.
+@Test
+func modulePolicyRejectsAnUnusedAllowedImport() throws {
+    let fixture = try makeAuthorityFixture(modulePolicy: """
+    {"schemaVersion":1,"roles":{"portable":"p"},"platformClasses":{"portable":"p"},
+     "forbiddenEverywhere":[],
+     "targets":[{"name":"FixtureWire","role":"portable","platformClass":"portable",
+       "path":"Packages/FixtureWire/Sources",
+       "allowedImports":["AllowedModule","NeverImported"],"forbiddenImports":[]}]}
+    """, sources: ["Packages/FixtureWire/Sources/Wire.swift": "import AllowedModule\n"])
+    defer { try? FileManager.default.removeItem(at: fixture) }
+
+    let report = AxolotyRepositoryAuthorityValidator(root: fixture).validate()
+
+    #expect(report.status == "failed")
+    #expect(report.findings.contains {
+        $0.rule == "modules.unused"
+            && $0.path == "Packages/FixtureWire/Sources"
+            && $0.message.contains("NeverImported")
+    })
+    #expect(!report.findings.contains { $0.message.contains("AllowedModule") })
+}
+
 /// Attributed imports must be seen. `@preconcurrency import MQTTNIO` and
 /// `@_spi(...) import AxolotyProtocol` both appear in this repository, and a
 /// scanner that only matched bare `import` lines would report a clean tree.

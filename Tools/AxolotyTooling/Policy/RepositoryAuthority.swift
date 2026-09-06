@@ -303,15 +303,23 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
                 findings.append(.init(rule: "modules.path", path: relativePath, message: name + " declares a path that is not a directory"))
                 continue
             }
+            var importedAnywhere = Set<String>()
             for source in swiftSources(under: directory).sorted(by: { $0.path < $1.path }) {
                 let sourcePath = relativePath + "/" + source.lastPathComponent
                 for module in importedModules(in: source).sorted() {
+                    importedAnywhere.insert(module)
                     if forbidden.contains(module) {
                         findings.append(.init(rule: "modules.forbidden", path: sourcePath, message: name + " must not import " + module))
                     } else if !allowed.contains(module) {
                         findings.append(.init(rule: "modules.undeclared", path: sourcePath, message: name + " imports undeclared module " + module))
                     }
                 }
+            }
+            // An allowed import that no source actually uses is the same class of
+            // boundary drift as an undeclared one: it grants access nothing needs,
+            // so a real dependency could hide behind it invisibly.
+            for module in allowed.subtracting(importedAnywhere).sorted() {
+                findings.append(.init(rule: "modules.unused", path: relativePath, message: name + " allows " + module + " but no source imports it"))
             }
         }
     }
