@@ -94,7 +94,7 @@ DOC_HOSTING_BASE_PATH ?=
 	ci-preflight ci shell docs lint \
 	wire-tool clean serve-mqtt serve-mcp serve-dev embedded-toolchain-doctor \
 	embedded-device-info embedded-device-smoke embedded-reproducible-build \
-	benchmark-size benchmark-wire benchmark-wire-allocation benchmark-static-io-ownership-allocation benchmark-wire-bounds \
+	benchmark-wire benchmark-wire-allocation benchmark-static-io-ownership-allocation benchmark-wire-bounds \
 	check-static-io-macro-embedded \
 	benchmark-wire-device check-budget-manifest check-embedded-swift \
 	check-embedded-swift-linker embedded-swift-build embedded-swift-flash \
@@ -142,7 +142,6 @@ help:
 		'make embedded-broker-restart-test  Restart a broker and verify receive after resubscribe' \
 		'make embedded-interop-test  Run the complete physical Phase 4 interoperability gate' \
 		'make embedded-reproducible-build  Verify the firmware bin is reproducible' \
-		'make benchmark-size  Build release consumers and compare binary-size baselines' \
 		'make benchmark-wire  Run release wire benchmarks (p50/p95 latency + allocations)' \
 		'make benchmark-wire-allocation  Host zero-per-iteration allocation gate for wire decode/route' \
 		'make benchmark-static-io-ownership-allocation  Host zero-growth allocation gate for static IO ownership primitives' \
@@ -479,9 +478,6 @@ docs: resolve
 
 lint: image
 	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" .devcontainer/run.sh swiftlint lint --no-cache --config .swiftlint.yml
-
-benchmark-size: resolve
-	$(call run_container,$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)) /workspace/Tests/Support/checks/check-benchmark-size.sh
 
 benchmark-wire: resolve
 	$(call run_container,$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)) /workspace/Tests/Support/checks/check-benchmark-wire.sh

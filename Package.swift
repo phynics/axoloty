@@ -272,8 +272,8 @@ let package = Package(
         // connectivity and the official MCP Swift SDK for protocol.
         // Build-only release consumers for binary-size and dependency-closure
         // benchmarking (issue #299). Not shipped as products — they exist so
-        // `make benchmark-size` can measure the linked binary size and verify
-        // the AxolotyWire consumer pulls no host runtime dependencies.
+        // the linked binary size can be measured and to verify the
+        // AxolotyWire consumer pulls no host runtime dependencies.
         .executableTarget(
             name: "AxolotyWireConsumer",
             dependencies: [
@@ -287,8 +287,8 @@ let package = Package(
             path: "Benchmarks/Consumers/AxolotyConsumer"
         ),
         // Additional release consumers for binary-size attribution (issue
-        // #353). Each anchors a different subsystem so `make benchmark-size`
-        // can measure its incremental contribution to binary size.
+        // #353). Each anchors a different subsystem so its incremental
+        // contribution to binary size can be measured.
         .executableTarget(
             name: "CommunicationConsumer",
             dependencies: ["Axoloty"],
