@@ -19,12 +19,20 @@ private func repositoryRoot(_ file: StaticString = #filePath) -> URL {
 }
 
 @Test
-func repositoryAuthorityPassesForCheckout() {
+func repositoryAuthorityPassesForCheckout() throws {
     let root = repositoryRoot()
     let report = AxolotyRepositoryAuthorityValidator(root: root).validate()
 
     #expect(report.status == "passed", "\(report.findings)")
-    #expect(report.version == "0.7.0")
+
+    // Read the checkout's real VERSION file rather than hardcoding it, so
+    // this assertion cannot drift out of sync with the next version bump.
+    // `RepositoryAuthority` does not govern this test file itself (it also
+    // holds unrelated synthetic version fixtures elsewhere), so nothing else
+    // catches that drift.
+    let checkoutVersion = try String(contentsOf: root.appendingPathComponent("VERSION"), encoding: .utf8)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    #expect(report.version == checkoutVersion)
 }
 
 @Test
