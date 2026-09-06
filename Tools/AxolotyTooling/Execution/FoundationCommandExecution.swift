@@ -65,15 +65,43 @@ final class FoundationCommandExecution: @unchecked Sendable {
             startedAt: startedAt,
             deadline: deadline
         )
-        let streamedStreams: Set<AxolotyCommandOutputStream> = configuration.outputMode == .human
-            ? [.standardOutput, .standardError]
-            : [.standardError]
+        let streamedStreams: Set<AxolotyCommandOutputStream>
+        switch configuration.outputMode {
+        case .raw:
+            streamedStreams = [.standardOutput, .standardError]
+        case .json:
+            streamedStreams = [.standardError]
+        case .progress:
+            // Raw child output stays captured in artifacts; the progress
+            // tracker owns live presentation.
+            streamedStreams = []
+        }
         let collector = AxolotyCommandOutputCollector(
             streamOutput: configuration.streamOutput,
             streamedStreams: streamedStreams
         )
+        let tracker: AxolotyCommandProgressTracker?
+        if configuration.outputMode == .progress {
+            let renderer: AxolotyCommandProgressRendering = configuration.interactiveOutput
+                ? AxolotyInteractiveProgressRenderer()
+                : AxolotyContinuousProgressRenderer()
+            let progressTracker = AxolotyCommandProgressTracker(
+                node: context.node,
+                stage: context.stage,
+                command: command,
+                renderer: renderer,
+                emit: { live, plain in collector.emitProgressLocked(live, plain: plain) }
+            )
+            collector.setLineObserver { stream, line in
+                progressTracker.consumeLine(line, stream: stream)
+            }
+            tracker = progressTracker
+        } else {
+            tracker = nil
+        }
 
         if cancellation.isCancelled {
+            tracker?.abandon()
             return cancelledBeforeStart(
                 command: command,
                 context: context,
@@ -111,17 +139,22 @@ final class FoundationCommandExecution: @unchecked Sendable {
             stderr: resources.stderr,
             collector: collector
         )
+        tracker?.start()
 
         let heartbeat = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
-        let heartbeatHandler: @Sendable () -> Void = { [context, collector] in
-            let snapshot = collector.diagnosticSnapshot()
-            Self.emitHeartbeat(
-                context: context,
-                startedAt: startedAt,
-                lastTest: snapshot.lastTest,
-                outputBytes: snapshot.outputBytes,
-                collector: collector
-            )
+        let heartbeatHandler: @Sendable () -> Void = { [context, collector, tracker] in
+            if let tracker {
+                tracker.fallback(elapsed: Date().timeIntervalSince(startedAt))
+            } else {
+                let snapshot = collector.diagnosticSnapshot()
+                Self.emitHeartbeat(
+                    context: context,
+                    startedAt: startedAt,
+                    lastTest: snapshot.lastTest,
+                    outputBytes: snapshot.outputBytes,
+                    collector: collector
+                )
+            }
         }
         heartbeat.setEventHandler(handler: heartbeatHandler)
         heartbeat.schedule(
@@ -152,6 +185,12 @@ final class FoundationCommandExecution: @unchecked Sendable {
                 readers: readers
             )
             collector.finishLines()
+            let elapsed = Date().timeIntervalSince(startedAt)
+            tracker?.complete(
+                success: false,
+                elapsed: elapsed,
+                reason: interruption == .timedOut ? "timed out" : "cancelled"
+            )
             let result = Self.interruptedResult(
                 outcome: interruption,
                 context: context,
@@ -186,6 +225,7 @@ final class FoundationCommandExecution: @unchecked Sendable {
             command: command,
             context: context,
             startedAt: startedAt,
+            tracker: tracker,
             artifact: artifact
         ))
     }
@@ -202,6 +242,11 @@ final class FoundationCommandExecution: @unchecked Sendable {
                 readers: state.readers
             )
             state.collector.finishLines()
+            state.tracker?.complete(
+                success: false,
+                elapsed: Date().timeIntervalSince(state.startedAt),
+                reason: interruption == .timedOut ? "timed out" : "cancelled"
+            )
             let result = Self.interruptedResult(
                 outcome: interruption,
                 context: state.context,
@@ -237,6 +282,20 @@ final class FoundationCommandExecution: @unchecked Sendable {
                 artifactPath: state.artifact.directory.path
             )
         )
+        state.tracker?.complete(
+            success: result.exitCode == 0,
+            elapsed: finishedAt.timeIntervalSince(state.startedAt)
+        )
+        if result.exitCode != 0, let tracker = state.tracker {
+            Self.presentFailureDiagnostics(
+                standardOutput: String(decoding: standardOutput, as: UTF8.self),
+                standardError: String(decoding: standardError, as: UTF8.self),
+                command: state.command,
+                context: state.context,
+                artifactDirectory: state.artifact.directory.path,
+                tracker: tracker
+            )
+        }
         finishArtifact(
             state,
             result: result,
@@ -245,6 +304,36 @@ final class FoundationCommandExecution: @unchecked Sendable {
             standardError: standardError
         )
         return result
+    }
+
+    /// Parses and presents structured diagnostics for a failed command.
+    ///
+    /// Parsing is post-completion and advisory: any parsing outcome leaves
+    /// the command result, artifacts, and lifecycle semantics untouched.
+    private static func presentFailureDiagnostics(
+        standardOutput: String,
+        standardError: String,
+        command: AxolotyCommandPlan,
+        context: AxolotyCommandRunContext,
+        artifactDirectory: String,
+        tracker: AxolotyCommandProgressTracker
+    ) {
+        let presentationContext = AxolotyDiagnosticPresenter.Context(
+            node: context.node,
+            stage: context.stage,
+            command: AxolotyCommandProgressTracker.commandDescription(command),
+            artifactDirectory: artifactDirectory
+        )
+        let report = SwiftDiagnosticParser()
+            .parse(standardOutput: standardOutput, standardError: standardError)
+            .map { AxolotyDiagnosticSelection.apply($0) }
+        let presented = report.map {
+            AxolotyDiagnosticPresenter.present($0, context: presentationContext)
+        } ?? AxolotyDiagnosticPresenter.presentUnparsed(
+            standardError: standardError,
+            context: presentationContext
+        )
+        tracker.emitFailureText(presented)
     }
 
     private static func isSwiftTestCommand(_ command: AxolotyCommandPlan) -> Bool {
@@ -570,6 +659,7 @@ private struct CommandExecutionState {
     let command: AxolotyCommandPlan
     let context: AxolotyCommandRunContext
     let startedAt: Date
+    let tracker: AxolotyCommandProgressTracker?
     let artifact: AxolotyCommandArtifactStore.Artifact
 }
 

@@ -566,12 +566,12 @@ struct AxolotyReleaseCommands: Sendable {
     }
 
     private func render(_ manifest: AxolotyCheckManifest, exitCode: Int32) -> AxolotyCommandResult {
-        guard outputMode == .human else { return (try? Self.jsonResult(manifest, exitCode: exitCode)) ?? AxolotyCommandResult(exitCode: 70) }
+        guard outputMode != .json else { return (try? Self.jsonResult(manifest, exitCode: exitCode)) ?? AxolotyCommandResult(exitCode: 70) }
         return AxolotyCommandResult(standardOutput: humanSummary(manifest.results), exitCode: exitCode)
     }
 
     private func render(_ manifest: AxolotyCheckpointManifest, exitCode: Int32) -> AxolotyCommandResult {
-        guard outputMode == .human else { return (try? Self.jsonResult(manifest, exitCode: exitCode)) ?? AxolotyCommandResult(exitCode: 70) }
+        guard outputMode != .json else { return (try? Self.jsonResult(manifest, exitCode: exitCode)) ?? AxolotyCommandResult(exitCode: 70) }
         return AxolotyCommandResult(standardOutput: humanSummary(manifest.results), exitCode: exitCode)
     }
 
