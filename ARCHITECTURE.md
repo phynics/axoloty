@@ -1,35 +1,58 @@
 # Axoloty architecture
 
-This document records the accepted architecture for the 0.6 alignment tracked by [epic #627](https://github.com/phynics/axoloty/issues/627). The repository completed the G4 runtime cutover in PR [#649](https://github.com/phynics/axoloty/pull/649) and released the aligned 0.6 architecture as `0.6.0`.
+This document records the accepted architecture for the 0.6 alignment tracked by [epic #627](https://github.com/phynics/axoloty/issues/627), deepened by the 0.7 [runtime-registration](https://github.com/phynics/axoloty/issues/753) and [transport-boundary](https://github.com/phynics/axoloty/issues/781) epics. The repository completed the G4 runtime cutover in PR [#649](https://github.com/phynics/axoloty/pull/649) and released the aligned 0.6 architecture as `0.6.0`; the 0.7 epics released as `0.7.0`.
 
-## Current implementation (0.7 runtime-registration checkpoint)
+## Current implementation (0.7.0 checkpoint)
 
-The released implementation now consists of the root `Axoloty` host product,
-the Foundation-free `AxolotyWire`, `AxolotyObjectModel`, and
-`AxolotyProtocol` products, the separate `AxolotyCoatyModels` convenience
-product and optional `AxolotySensorThings` product, the inspector/MCP tools, and the existing Embedded Swift integration.
-The host runtime contains the G4 ``AxolotyRuntime`` lifecycle and
-``MQTTBinding``. The inherited class-object, controller, manager, and
-SensorThings runtime hierarchy has been removed from active production
-targets; G5 introduces only modern optional products. `AxolotyWire` supplies
-profile-neutral wire syntax, borrowed values, and caller-owned parser
-workspaces; `AxolotyObjectModel` supplies bounded semantic objects, schemas,
-predicates, and runtime-local registration; `AxolotyProtocol` supplies the
-sealed Coaty/3 inventory, routing-key/frame types, structured protocol errors,
-fixed-inline state, caller-owned action sinks, route classification, the
-shared inbound/outbound processor, and Coaty filter adaptation. Inspector and MCP
-consume the runtime through owned event/request values and
-do not expose transport topics. Embedded firmware composes
-``AxolotyStaticRuntime`` and owns only transport, platform, and main-loop
-concerns.
+The released implementation consists of the root `Axoloty` host library, the
+Foundation-free `AxolotyWire`, `AxolotyObjectModel`, and `AxolotyProtocol`
+products, the separate `AxolotyMQTT` transport adapter, `AxolotyCoatyModels`
+convenience product, and optional `AxolotyIoRouting`, `AxolotySensorThingsModel`,
+and `AxolotySensorThings` products. The root package declares no executable
+products: the `Tools` package owns the `axoloty-tool`/`ax` orchestration
+harness, and the `Apps` package owns the `axoloty-inspect` inspector and
+`axoloty-mcp` server, so neither `swift-sdk` nor a development-tool
+dependency graph reaches a runtime consumer. The inherited class-object,
+controller, manager, and SensorThings runtime hierarchy has been removed
+from active production targets.
+
+The host runtime target, `Axoloty`, contains the G4 ``AxolotyRuntime``
+lifecycle and the ``AxolotyRuntimeTransport`` port; it imports no MQTT or
+SwiftNIO code. `AxolotyMQTT` is the sole MQTT/SwiftNIO adapter: it depends on
+`Axoloty`, implements `AxolotyRuntimeTransport`, and is the only target a
+consumer must add to obtain a working transport. `perform(_:)` takes a
+`RuntimeTransportEffect` carrying a finished `RuntimeOutboundMessage` — route
+synthesis (`CoatyRoute`) happens in the runtime, so an adapter needs no
+Coaty-profile knowledge to address a publication. `ExternalIoRoute` is the
+one typed external-IO route type; there is no MQTT-specific route type.
+`AxolotyWire` supplies profile-neutral wire syntax, borrowed values, and
+caller-owned parser workspaces; `AxolotyObjectModel` supplies bounded
+semantic objects, schemas, predicates, and runtime-local registration;
+`AxolotyProtocol` supplies the sealed Coaty/3 inventory, routing-key/frame
+types, structured protocol errors, fixed-inline state, caller-owned action
+sinks, route classification, the shared inbound/outbound processor, and
+Coaty filter adaptation. Inspector and MCP consume the runtime through owned
+event/request values and do not expose transport topics. Embedded firmware
+composes ``AxolotyStaticRuntime`` and owns only transport, platform, and
+main-loop concerns.
 
 Runtime composition is split into a mutable ``RuntimeBuilder`` and immutable
 ``RuntimeDefinition``. The builder owns one value-semantic,
 capacity-validating registration draft. ``finish()`` consumes the builder and
 transfers that draft to the definition; the definition exposes no registration
-or sealing API. First-party modules are registered under stable internal keys,
-and failed multi-registration drafts discard handlers, streams, endpoints,
-module entries, and correlation reservations together.
+or sealing API. First-party runtime modules are registered under stable
+internal keys behind `package` access rather than a public SPI, and failed
+multi-registration drafts discard handlers, streams, endpoints, module
+entries, and correlation reservations together. Typed IO state is
+concentrated behind the executor that owns it rather than spread across the
+runtime surface, and SensorThings supports Thing-driven observation through
+a bounded registry that performs exact Thing discovery and a
+parent-filtered Sensor query.
+
+[`docs/module-policy.yml`](./docs/module-policy.yml) declares every target's
+role, platform class, and permitted/forbidden imports; `axoloty-tool
+repository validate` checks every Swift source against it, so a new
+cross-target dependency is a policy change rather than a silent one.
 
 This section is the source of truth for what exists today. It must be updated whenever a gate changes the implemented package graph or removes a legacy path.
 
@@ -94,8 +117,10 @@ fixed-storage claims.
 ### G4 status: runtime replacement complete
 
 The ``Axoloty`` target has an explicit modern source list containing the
-runtime definition, host runtime, MQTT binding, transport client, and error
-boundary. Its private actor executor owns bounded ingress, dispatch, lifecycle,
+runtime definition, host runtime, the ``AxolotyRuntimeTransport`` port, and
+error boundary; it contains no MQTT or transport-client sources; those moved
+to the separate ``AxolotyMQTT`` adapter target in the 0.7 transport-boundary
+epic. Its private actor executor owns bounded ingress, dispatch, lifecycle,
 reconnect, cancellation, and diagnostics while all thirteen protocol families
 enter the shared ``ProtocolProcessor``. ``AxolotyStaticRuntime`` provides the
 fixed synchronous profile for Embedded Swift. Inspector and MCP use the same
@@ -154,18 +179,23 @@ The ESP32-C6 node proves same-source compilation and linkage. G4 owns runtime re
 G5 owns IO and optional-product boundaries; G6 owns non-divergence and release
 proof.
 
-The canonical `g4-runtime` tier contains lifecycle, static, host, concurrency,
-boundary, and package checks. The tier and its boundary nodes are required:
-replacement sources must not retain inherited lifecycle or parallel encoder
-symbols, and every current inspector/MCP consumer must use the replacement
-runtime or be removed. The reports are acceptance evidence, not an allowlist
-or an architecture exception.
+The `g4-runtime-*` checks (lifecycle, static, host, concurrency, boundary, and
+package) enforce this: replacement sources must not retain inherited
+lifecycle or parallel encoder symbols, and every current inspector/MCP
+consumer must use the replacement runtime or be removed. They are required
+nodes of the `ci`/`release` categories; the eleven-tier/nine-plan taxonomy
+this paragraph originally described (a standalone `g4-runtime` tier) no
+longer exists; 0.7's [#755](https://github.com/phynics/axoloty/issues/755)
+and [#756](https://github.com/phynics/axoloty/issues/756) collapsed it into
+the four canonical categories `ci`, `wire`, `embedded`, `release`. The
+reports remain acceptance evidence, not an allowlist or an architecture
+exception.
 
 ## Product boundary
 
 Axoloty is a core runtime plus first-party development tools.
 
-The core consists of a portable wire implementation, portable protocol processing and state, a host runtime profile, and a static runtime profile. Inspector, MCP, and repository orchestration are first-party tools that consume supported runtime interfaces. SensorThings, Coaty convenience models, and automatic IO-routing policy are optional products rather than core protocol concerns.
+The core consists of a portable wire implementation, portable protocol processing and state, a host runtime profile, and a static runtime profile. The `AxolotyMQTT` adapter is the default and validated transport, not the definition of Axoloty networking: a consumer that never constructs a transport links no MQTT or SwiftNIO code. Inspector (`Apps`), MCP (`Apps`), and repository orchestration (`Tools`) are first-party tools that consume supported runtime interfaces from separate SwiftPM packages, not root-package products. SensorThings, Coaty convenience models, and automatic IO-routing policy are optional products rather than core protocol concerns.
 
 ## Runtime profiles
 
@@ -209,9 +239,10 @@ AxolotyProtocol
 AxolotyStaticRuntime
 
 Axoloty host runtime ----> AxolotyProtocol
+AxolotyMQTT (adapter) ----> Axoloty, AxolotyProtocol, AxolotyWire
 Embedded firmware -------> AxolotyStaticRuntime
 Optional products -------> supported Axoloty runtime and object APIs
-Inspector / MCP ---------> supported Axoloty runtime APIs
+Tools (axoloty-tool/ax), Apps (axoloty-inspect/axoloty-mcp) -> supported Axoloty runtime APIs
 ```
 
 `AxolotyWire` owns wire syntax, codecs, validation, low-level object-envelope
@@ -241,6 +272,8 @@ does not own a transport. It imports no MQTT/NIO, host object hierarchy,
 logging, actor, or controller framework.
 
 `AxolotyStaticRuntime` owns fixed composition, static delivery, bounded presets, and portable endpoint integration. It contains no protocol rule absent from `AxolotyProtocol`.
+
+`AxolotyMQTT` owns the MQTT/SwiftNIO transport adapter: it implements `AxolotyRuntimeTransport` against `mqtt-nio` and is the only target in the graph that imports MQTT or SwiftNIO code. It depends on `Axoloty`, `AxolotyProtocol`, and `AxolotyWire`; nothing in those three imports it back, so a consumer that composes a runtime definition without constructing a transport never resolves or links MQTT/SwiftNIO.
 
 ## Architectural invariants
 
