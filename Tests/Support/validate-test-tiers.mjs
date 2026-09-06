@@ -183,7 +183,7 @@ export function expandFilterAlternatives(filter) {
 // Names a filter branch may legitimately select: a test module, a suite type
 // or its display name, or a source file -- SwiftPM scopes free `@Test`
 // functions by their file, so a file name is a real selector.
-export function collectFilterSymbols(repositoryRoot, directories = ["Tests", "Tools", "Packages", "Source"]) {
+export function collectFilterSymbols(repositoryRoot, directories = ["Tests", "Tools", "Apps", "Packages", "Source"]) {
   const names = new Set();
   const addFile = absolute => {
     const name = path.basename(absolute);
