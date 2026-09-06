@@ -9,20 +9,10 @@ fork, through CoatySwift 2.4.0, remain documented in the
 
 ## [Unreleased]
 
-Strategy for the next line is tracked in
+No changes are pending. Strategy for the next line is tracked in
 [`docs/ROADMAP.md`](./docs/ROADMAP.md).
 
-### Removed
-
-- The `checkpoint-benchmark-size`/`support-benchmark-size` test-tier nodes,
-  the `make benchmark-size` target, and the committed
-  `Benchmarks/Baselines/size-baseline.json` it compared against. The
-  baseline recorded exact binary sizes for the release consumers and had
-  to be manually refreshed after nearly every change that touched the
-  runtime, which made it a persistent source of stale-gate failures
-  rather than a useful regression signal.
-
-## [0.7.0] - 2026-09-05
+## [0.7.0] - 2026-09-06
 
 Axoloty 0.7.0 is a source-breaking architecture-stabilization release. It is
 still pre-1.0 and its public API may change.
@@ -37,6 +27,9 @@ still pre-1.0 and its public API may change.
 - Attested test categories: a category declares whether it is executed or
   proved from recorded evidence, so the release checkpoint no longer tries to
   run nodes that need a context it cannot provide.
+- Stage-aware compiler output for `axoloty-tool`: build and test commands
+  render live per-file compile progress and structured diagnostics instead of
+  raw, unbuffered SwiftPM/Swift Testing output.
 
 ### Changed
 
@@ -79,6 +72,13 @@ still pre-1.0 and its public API may change.
 - **Breaking:** `SensorThingsSourceConfiguration`,
   `SensorThingsObserverConfiguration`, and their free-function registration
   entry points, without aliases.
+- The `checkpoint-benchmark-size`/`support-benchmark-size` test-tier nodes,
+  the `make benchmark-size` target, and the committed
+  `Benchmarks/Baselines/size-baseline.json` it compared against. The
+  baseline recorded exact binary sizes for the release consumers and had
+  to be manually refreshed after nearly every change that touched the
+  runtime, which made it a persistent source of stale-gate failures
+  rather than a useful regression signal.
 
 ### Validation boundary
 
