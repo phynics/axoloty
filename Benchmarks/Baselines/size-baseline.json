@@ -1,14 +1,14 @@
 {
-  "commit": "c352fdc2",
+  "commit": "b542a828",
   "swiftVersion": "Swift version 6.3.3 (swift-6.3.3-RELEASE)\nTarget: x86_64-unknown-linux-gnu",
   "buildMode": "release",
   "buildFlags": "-c release -Xswiftc -O -Xswiftc -wmo",
   "consumers": {
     "AxolotyWireConsumer": {
-      "unstrippedBytes": 1130080,
-      "strippedBytes": 277656,
+      "unstrippedBytes": 1127128,
+      "strippedBytes": 273560,
       "sections": {
-        "text": 145066,
+        "text": 142298,
         "rodata": 14866,
         "data": 352,
         "bss": 11184
@@ -20,20 +20,20 @@
         "libswift_RegexParser.so",
         "libc.so.6"
       ],
-      "sha256": "81429a5267169cc6814b716f4d52eac855d717171eb516c7cb49565027f42d79",
+      "sha256": "fc663aeee5abeba3fda997ac3ed967eb88521667d16f2a063746a0c8dc3862e1",
       "dependencyClosure": [
         "AxolotyWire"
       ],
       "hostDependencyCheck": "passed"
     },
     "AxolotyConsumer": {
-      "unstrippedBytes": 50246512,
-      "strippedBytes": 10973952,
+      "unstrippedBytes": 50361280,
+      "strippedBytes": 11006720,
       "sections": {
-        "text": 6355905,
-        "rodata": 938738,
-        "data": 49488,
-        "bss": 230592
+        "text": 6373953,
+        "rodata": 942834,
+        "data": 49216,
+        "bss": 230720
       },
       "dynamicLibraries": [
         "libswiftCore.so",
@@ -55,7 +55,7 @@
         "libc.so.6",
         "ld-linux-x86-64.so.2"
       ],
-      "sha256": "e5cce2c15fef58a884bc85d946dedcc8d8befa950b5c5342cebead99f8668af8",
+      "sha256": "287f73b317fe58bc9fae9186d12ee4e07521fb821b3e638149ee77e2ccdf0e89",
       "dependencyClosure": [
         "Axoloty",
         "errorkit",
@@ -79,13 +79,13 @@
       "hostDependencyCheck": "n/a"
     },
     "CommunicationConsumer": {
-      "unstrippedBytes": 50246400,
-      "strippedBytes": 10973952,
+      "unstrippedBytes": 50361176,
+      "strippedBytes": 11006720,
       "sections": {
-        "text": 6355985,
-        "rodata": 938738,
-        "data": 49488,
-        "bss": 230576
+        "text": 6374033,
+        "rodata": 942834,
+        "data": 49216,
+        "bss": 230720
       },
       "dynamicLibraries": [
         "libswiftCore.so",
@@ -107,7 +107,7 @@
         "libc.so.6",
         "ld-linux-x86-64.so.2"
       ],
-      "sha256": "8304f855e858fc91b0c2f16b0dac9f36c13c22d239287271371316cb15f81739",
+      "sha256": "922bd065ced5fbc809058992113b8b059ea773151902b63fe4980d4602b866c0",
       "dependencyClosure": [
         "Axoloty",
         "errorkit",
@@ -131,13 +131,13 @@
       "hostDependencyCheck": "n/a"
     },
     "IoRoutingConsumer": {
-      "unstrippedBytes": 50620576,
-      "strippedBytes": 11080448,
+      "unstrippedBytes": 50734824,
+      "strippedBytes": 11109120,
       "sections": {
-        "text": 6442305,
+        "text": 6460673,
         "rodata": 942834,
-        "data": 50120,
-        "bss": 231760
+        "data": 49856,
+        "bss": 231904
       },
       "dynamicLibraries": [
         "libswiftCore.so",
@@ -159,7 +159,7 @@
         "libc.so.6",
         "ld-linux-x86-64.so.2"
       ],
-      "sha256": "e72f9f70ee1dfbfb0545357c56a1f92a7b8efb88c3dfcd7aa6f261fc8b3df04d",
+      "sha256": "60dbda98d0e793bd2022cf8cc3088919f15f4faa2031610777e6a86cc4daf1fa",
       "dependencyClosure": [
         "AxolotyIoRouting",
         "errorkit",
@@ -183,13 +183,13 @@
       "hostDependencyCheck": "n/a"
     },
     "SensorThingsConsumer": {
-      "unstrippedBytes": 50803736,
-      "strippedBytes": 11133696,
+      "unstrippedBytes": 51455208,
+      "strippedBytes": 11367168,
       "sections": {
-        "text": 6467297,
-        "rodata": 942834,
-        "data": 50216,
-        "bss": 239072
+        "text": 6657057,
+        "rodata": 946930,
+        "data": 51648,
+        "bss": 241616
       },
       "dynamicLibraries": [
         "libswiftCore.so",
@@ -211,7 +211,7 @@
         "libc.so.6",
         "ld-linux-x86-64.so.2"
       ],
-      "sha256": "913080582e9f480262e57e351e3643a6367ed905c0a1fc60d3a02e8b9979b993",
+      "sha256": "ca46fe38f311ff246681d0bff4db762778dfd3cdc835b5f493668c6c0a5b0e6d",
       "dependencyClosure": [
         "AxolotySensorThings",
         "errorkit",
