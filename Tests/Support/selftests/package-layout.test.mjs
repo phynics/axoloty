@@ -53,14 +53,24 @@ test("test targets have explicit ownership and no per-file root selection", () =
   assert.doesNotMatch(targetBlock("testTarget", "AxolotyLiveWireTests"), /\b(?:sources|exclude):\s*\[/);
 });
 
-test("both packages compile the shared canonical plan resolver", () => {
-  const rootTarget = targetBlock("target", "AxolotyTooling");
+test("the orchestration harness is declared once, by the Tools package", () => {
+  // AxolotyTooling was declared in both the root and Tools manifests, so the
+  // canonical plan resolver was compiled twice from one source tree. The root
+  // package is now a library package and declares no harness target, which
+  // makes the Tools package its single owner.
   const toolsTarget = targetBlock("target", "AxolotyTooling", toolsManifest);
-  assert.match(rootTarget, /path: "Tools\/AxolotyTooling"/);
   assert.match(toolsTarget, /path: "AxolotyTooling"/);
-  assert.doesNotMatch(rootTarget, /\b(?:sources|exclude):\s*\[/);
   assert.doesNotMatch(toolsTarget, /\b(?:sources|exclude):\s*\[/);
+  assert.doesNotMatch(manifest, /name: "AxolotyTooling"/);
+  assert.doesNotMatch(manifest, /name: "AxolotyCLI"/);
   assert.ok(fs.existsSync(path.join(root, "Tools/AxolotyTooling/Manifest/CanonicalTestPlanResolver.swift")));
+});
+
+test("the root package declares no executable products", () => {
+  // Executables belong to the Tools harness and the Apps applications. Keeping
+  // them out of the root manifest is what keeps their dependencies out of a
+  // library consumer's resolution graph.
+  assert.doesNotMatch(manifest, /\.executable\(/);
 });
 
 test("Swift files outside orchestration support belong to one declared test target", () => {

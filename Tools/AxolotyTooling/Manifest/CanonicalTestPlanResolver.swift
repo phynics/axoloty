@@ -385,25 +385,40 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
     private static func loadManifest(
         environment: [String: String]
     ) throws -> AxolotyCanonicalTestManifest {
-        let sourceFile = URL(fileURLWithPath: #filePath)
-        let sourceRoot = sourceFile
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
         let currentRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let bundledManifest = Bundle.module.url(forResource: "test-tiers", withExtension: "json")
         let candidates = [
             environment["AXOLOTY_TEST_MANIFEST"].flatMap { path in
                 path.isEmpty ? nil : URL(fileURLWithPath: path, relativeTo: currentRoot)
             },
-            currentRoot.appending(path: "Tests/Support/test-tiers.json"),
-            sourceRoot.appending(path: "Tests/Support/test-tiers.json"),
+            checkoutManifest(near: currentRoot),
+            checkoutManifest(near: URL(fileURLWithPath: #filePath).deletingLastPathComponent()),
             bundledManifest,
         ].compactMap { $0 }
         for candidate in candidates where FileManager.default.fileExists(atPath: candidate.path) {
             return try loadManifest(from: candidate)
         }
         throw AxolotyCanonicalTestManifestError.notFound(candidates.map(\.path))
+    }
+
+
+    /// Walks up from `directory` to the first checkout holding the canonical
+    /// manifest.
+    ///
+    /// Counting directories instead was a latent defect twice over: the count
+    /// was correct only while this file sat at a particular depth, and only
+    /// while the process ran from the checkout root. Grouping the tooling
+    /// sources moved the file, and moving the tests into the Tools package
+    /// moved the working directory. Searching survives both.
+    private static func checkoutManifest(near directory: URL) -> URL? {
+        var candidate = directory
+        while true {
+            let manifest = candidate.appending(path: "Tests/Support/test-tiers.json")
+            if FileManager.default.fileExists(atPath: manifest.path) { return manifest }
+            let parent = candidate.deletingLastPathComponent()
+            if parent.path == candidate.path { return nil }
+            candidate = parent
+        }
     }
 
     private static func loadManifest(
