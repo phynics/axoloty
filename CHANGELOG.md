@@ -43,6 +43,23 @@ still pre-1.0 and its public API may change.
 - `AxolotyVersion.current` resolves the checkout version by searching upward
   from its own source file instead of expanding `#filePath` at the call site
   and assuming a fixed directory depth.
+- **Breaking:** MQTT is an adapter product, `AxolotyMQTT`, rather than part of
+  the runtime. Applications that construct a transport add the product and
+  import it; the `Axoloty` target links no MQTT or SwiftNIO code.
+- **Breaking:** the transport port carries a finished route and payload.
+  `RuntimeTransportEffect.publish` takes `RuntimeOutboundMessage`, and
+  `perform` no longer takes a namespace.
+- **Breaking:** `ExternalIoRoute` replaces `MQTTExternalIoRoute`, and
+  `RuntimeInboundFrame.profile` takes `route:` rather than `topic:`.
+- **Breaking:** first-party runtime module registration is `package`-scoped
+  rather than public behind `@_spi(AxolotyRuntimeAdapter)`.
+- **Breaking:** SensorThings schemas moved to the portable
+  `AxolotySensorThingsModel` product.
+- **Breaking:** the root package declares no executable products. The
+  orchestration harness is the `Tools` package and the developer applications
+  are the `Apps` package.
+- `docs/module-policy.yml` declares every target's role, platform class, and
+  permitted imports, enforced by `axoloty-tool repository validate`.
 
 ### Removed
 

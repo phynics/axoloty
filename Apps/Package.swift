@@ -21,8 +21,12 @@ let package = Package(
         .executable(name: "axoloty-mcp", targets: ["AxolotyMCPServer"]),
     ],
     dependencies: [
-        .package(path: ".."),
-        .package(path: "../Tools"),
+        // Named explicitly: a path dependency's identity is otherwise its
+        // directory name, which is the checkout directory. The container
+        // mounts this repository at /workspace, so the identity would be
+        // "workspace" there and "Axoloty" on a developer's machine.
+        .package(name: "Axoloty", path: ".."),
+        .package(name: "AxolotyTools", path: "../Tools"),
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", exact: "0.12.1"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.14.0"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.101.2"),
@@ -30,7 +34,7 @@ let package = Package(
     targets: [
         .target(
             name: "AxolotyInspectorCore",
-            dependencies: [.product(name: "AxolotyVersion", package: "Tools")],
+            dependencies: [.product(name: "AxolotyVersion", package: "AxolotyTools")],
             path: "AxolotyInspectorCore"
         ),
         .target(
@@ -73,7 +77,7 @@ let package = Package(
                 "AxolotyMCP",
                 "AxolotyInspectorCore",
                 "AxolotyInspectorRuntime",
-                .product(name: "AxolotyTooling", package: "Tools"),
+                .product(name: "AxolotyTooling", package: "AxolotyTools"),
             ],
             path: "axoloty-mcp"
         ),
@@ -105,7 +109,7 @@ let package = Package(
             dependencies: [
                 "AxolotyMCP",
                 "AxolotyMCPServer",
-                .product(name: "AxolotyTooling", package: "Tools"),
+                .product(name: "AxolotyTooling", package: "AxolotyTools"),
             ],
             path: "AxolotyMCPTests"
         ),
