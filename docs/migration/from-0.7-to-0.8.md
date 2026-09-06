@@ -152,3 +152,32 @@ Nothing about the wire format, the sealed `coaty/3` profile, or broker
 interoperability changed. MQTT is the transport Axoloty validates against live
 CoatyJS and on hardware; the split makes it a replaceable adapter rather than
 part of the runtime's definition.
+
+## The repository is three packages
+
+The root package is now a library package. It declares no executable products,
+and the developer applications moved to a new `Apps` package:
+
+| Package | Contents | Notable dependencies |
+|---|---|---|
+| root | the runtime, portable layers, capability products, the MQTT adapter | mqtt-nio, SwiftNIO, swift-json, ErrorKit |
+| `Tools` | the `axoloty-tool` / `ax` orchestration harness | none |
+| `Apps` | `axoloty-inspect` and `axoloty-mcp` | swift-sdk, swift-log |
+
+Nothing about the library API changed. A consumer depending on `Axoloty`,
+`AxolotyMQTT`, or any other library product is unaffected, and gains one thing:
+`swift-sdk` and its transitive `eventsource` leave the resolution graph
+entirely, because only the MCP server ever needed them.
+
+Anyone who built the executables from the root package builds them from their
+new package instead:
+
+```
+swift build --package-path Tools --product axoloty-tool
+swift build --package-path Apps  --product axoloty-mcp
+```
+
+`mqtt-nio` and the SwiftNIO family remain in root resolution. They are required
+by `AxolotyMQTT`, which stays a root product so it is obtainable from the
+repository URL; SwiftPM resolves a package's whole dependency list regardless of
+which products a consumer selects.

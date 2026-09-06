@@ -189,9 +189,18 @@ func checkPlanPrintsStableJSON() throws {
         "lint", "--no-cache", "--config", ".swiftlint.yml",
     ])
     #expect(plan?.nodes.first(where: { $0.name == "test-tooling" })?.command.arguments == [
-        "test", "-Xswiftc", "-warnings-as-errors", "--cache-path", ".swiftpm-cache",
+        "test", "-Xswiftc", "-warnings-as-errors", "--package-path", "Tools",
+        "--scratch-path", ".build/tooling", "--cache-path", ".swiftpm-cache",
         "--disable-automatic-resolution", "--filter",
-        "AxolotyCommandDispatcherTests|AxolotyTimingTests|AxolotyDeviceLeaseTests|AxolotyResourceLeaseTests|AxolotyDevelopmentServiceTests|AxolotyMQTTServiceTests|AxolotyServeParserTests|RepositoryAuthorityTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyMCPTests",
+        "AxolotyCommandDispatcherTests|AxolotyTimingTests|AxolotyDeviceLeaseTests|AxolotyResourceLeaseTests|AxolotyDevelopmentServiceTests|AxolotyMQTTServiceTests|AxolotyServeParserTests|RepositoryAuthorityTests",
+    ])
+    // The application tests are a separate node against the Apps package, so
+    // neither run resolves the other's dependency graph.
+    #expect(plan?.nodes.first(where: { $0.name == "test-apps" })?.command.arguments == [
+        "test", "-Xswiftc", "-warnings-as-errors", "--package-path", "Apps",
+        "--scratch-path", ".build/apps", "--cache-path", ".swiftpm-cache",
+        "--disable-automatic-resolution", "--filter",
+        "AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyMCPTests",
     ])
     #expect(plan?.nodes.allSatisfy { timeout in
         guard let seconds = timeout.command.timeoutSeconds else { return false }
@@ -977,10 +986,13 @@ func testToolingUsesOnlyItsCheckPlanDependencyClosure() throws {
 
     #expect(result.exitCode == 0)
     #expect(manifest.results.map(\.name) == ["resolve", "build", "test-tooling"])
+    // The harness tests live in the Tools package now, and the inspector and
+    // MCP tests moved to the Apps package as node `test-apps`.
     #expect(runner.commands.last?.arguments == [
-        "test", "-Xswiftc", "-warnings-as-errors", "--cache-path", ".swiftpm-cache",
+        "test", "-Xswiftc", "-warnings-as-errors", "--package-path", "Tools",
+        "--scratch-path", ".build/tooling", "--cache-path", ".swiftpm-cache",
         "--disable-automatic-resolution", "--filter",
-        "AxolotyCommandDispatcherTests|AxolotyTimingTests|AxolotyDeviceLeaseTests|AxolotyResourceLeaseTests|AxolotyDevelopmentServiceTests|AxolotyMQTTServiceTests|AxolotyServeParserTests|RepositoryAuthorityTests|AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyMCPTests",
+        "AxolotyCommandDispatcherTests|AxolotyTimingTests|AxolotyDeviceLeaseTests|AxolotyResourceLeaseTests|AxolotyDevelopmentServiceTests|AxolotyMQTTServiceTests|AxolotyServeParserTests|RepositoryAuthorityTests",
     ])
 }
 

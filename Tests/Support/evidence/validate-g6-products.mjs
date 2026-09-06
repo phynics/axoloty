@@ -17,7 +17,9 @@ const EXPECTED = Object.freeze({
     "AxolotySensorThings",
     "AxolotyStaticRuntime",
   ],
-  executables: ["axoloty-tool", "ax", "axoloty-inspect", "axoloty-mcp"],
+  // The root package is a library package. Executables are products of the
+  // Tools harness package and the Apps application package.
+  executables: [],
 });
 
 function sorted(values) {

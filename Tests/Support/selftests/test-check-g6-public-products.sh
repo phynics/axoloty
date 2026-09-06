@@ -20,9 +20,7 @@ let package = Package(
     .library(name: "AxolotyCoatyModels"), .library(name: "AxolotyMQTT"),
     .library(name: "AxolotyIoRouting"),
     .library(name: "AxolotySensorThingsModel"),
-    .library(name: "AxolotySensorThings"), .library(name: "AxolotyStaticRuntime"),
-    .executable(name: "axoloty-tool"), .executable(name: "ax"),
-    .executable(name: "axoloty-inspect"), .executable(name: "axoloty-mcp")
+    .library(name: "AxolotySensorThings"), .library(name: "AxolotyStaticRuntime")
   ]
 )
 EOF
