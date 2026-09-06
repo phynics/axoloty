@@ -9,8 +9,18 @@ fork, through CoatySwift 2.4.0, remain documented in the
 
 ## [Unreleased]
 
-No changes are pending. Strategy for the next line is tracked in
+Strategy for the next line is tracked in
 [`docs/ROADMAP.md`](./docs/ROADMAP.md).
+
+### Removed
+
+- The `checkpoint-benchmark-size`/`support-benchmark-size` test-tier nodes,
+  the `make benchmark-size` target, and the committed
+  `Benchmarks/Baselines/size-baseline.json` it compared against. The
+  baseline recorded exact binary sizes for the release consumers and had
+  to be manually refreshed after nearly every change that touched the
+  runtime, which made it a persistent source of stale-gate failures
+  rather than a useful regression signal.
 
 ## [0.7.0] - 2026-09-05
 

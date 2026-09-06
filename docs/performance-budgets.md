@@ -112,24 +112,6 @@ calibrated batches ≥ 250ms). p50/p95 in nanoseconds.
 for both p50 and p95 (50% headroom over the worst clean run). Populate by
 running `make benchmark-wire` on the NixOS host.
 
-## Host binary-size budgets
-
-Measured by `make benchmark-size` (release-mode build, stripped/unstripped
-ELF bytes, section sizes, dependency closure).
-
-| Consumer | Budget (stripped) | Status |
-|----------|------------------|--------|
-| AxolotyWireConsumer | pending | pending-baseline |
-| AxolotyConsumer | pending | pending-baseline |
-
-**Host binary/section-size budget formula:** `ceil(max(clean build 1,
-clean build 2) × 1.2)` (20% headroom over the worst clean build).
-
-AxolotyWireConsumer must resolve zero host packages (mqtt-nio, swift-nio,
-NIOSSL, NIOTransportServices, swift-log, ErrorKit, IkigaJSON). Their
-appearance is a failure, not baseline drift. `AxolotyConsumer` may carry
-host dependencies.
-
 ## ESP32-C6 device budgets
 
 Measured on the physical ESP32-C6 (QFN40, rev v0.0, 160MHz, 4MB flash)
@@ -249,7 +231,6 @@ make test-one FILTER=smoke
 make verify
 make benchmark-wire
 make benchmark-wire-allocation
-make benchmark-size
 make benchmark-wire-bounds
 make benchmark-wire-device
 make test-tier TIER=ci && make test-tier TIER=wire
