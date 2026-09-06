@@ -13,7 +13,10 @@ public enum AxolotyCommandOutputMode: String, Codable, Equatable, Sendable {
     /// Keep command standard output available for the final machine result.
     case json
     /// Forward command output to the terminal as it is produced.
-    case human
+    case raw
+    /// Parse subprocess output and present stage-aware progress and failure
+    /// diagnostics while retaining complete raw artifacts.
+    case progress
 }
 // swiftlint:enable file_length function_parameter_count optional_data_string_conversion
 
@@ -105,6 +108,12 @@ public struct AxolotyCommandRunnerConfiguration: Sendable {
     public let heartbeatInterval: TimeInterval
     /// The live-output policy.
     public let outputMode: AxolotyCommandOutputMode
+    /// Whether live progress output should render as an interactive terminal.
+    ///
+    /// Only the `progress` output mode consults this setting. It defaults to
+    /// `isatty(1)` detection so redirected runs stay append-only even when
+    /// the mode is explicitly requested.
+    public let interactiveOutput: Bool
     /// The root directory for durable run artifacts.
     public let artifactRoot: URL
     /// An optional externally supplied run identifier.
@@ -126,6 +135,8 @@ public struct AxolotyCommandRunnerConfiguration: Sendable {
     ///   - terminationGracePeriod: Bounded TERM-to-KILL grace period in seconds.
     ///   - heartbeatInterval: Progress heartbeat interval in seconds.
     ///   - outputMode: The live-output policy.
+    ///   - interactiveOutput: Whether progress output behaves as an
+    ///     interactive terminal. Defaults to `isatty(1)` detection.
     ///   - artifactRoot: Root for durable run directories.
     ///   - runID: Optional run identifier. A UUID is generated when absent.
     ///   - installSignalHandler: Whether to forward process signals into cancellation.
@@ -135,6 +146,7 @@ public struct AxolotyCommandRunnerConfiguration: Sendable {
         terminationGracePeriod: TimeInterval = 2,
         heartbeatInterval: TimeInterval = 5,
         outputMode: AxolotyCommandOutputMode = .json,
+        interactiveOutput: Bool? = nil,
         artifactRoot: URL = URL(filePath: ".testing/runs"),
         runID: String? = nil,
         installSignalHandler: Bool = true,
@@ -149,6 +161,7 @@ public struct AxolotyCommandRunnerConfiguration: Sendable {
         let safeHeartbeat = heartbeatInterval.isFinite ? max(0.01, heartbeatInterval) : 5
         self.heartbeatInterval = safeHeartbeat
         self.outputMode = outputMode
+        self.interactiveOutput = interactiveOutput ?? (isatty(1) == 1)
         if artifactRoot.isFileURL, !artifactRoot.path.hasPrefix("/") {
             self.artifactRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
                 .appending(path: artifactRoot.path)
@@ -188,7 +201,9 @@ public struct AxolotyCommandRunnerConfiguration: Sendable {
     /// `AXOLOTY_COMMAND_TIMEOUT_SECONDS`, `AXOLOTY_COMMAND_TERM_GRACE_SECONDS`,
     /// `AXOLOTY_HEARTBEAT_SECONDS`, `AXOLOTY_OUTPUT`, `AXOLOTY_RUNS_DIR`, and
     /// `AXOLOTY_RUN_ID` are recognized. An interactive stdout defaults to
-    /// human output; non-interactive invocations retain the JSON-only contract.
+    /// progress output; non-interactive invocations retain the JSON-only
+    /// contract. Legacy values are mapped deliberately: `human` selects raw
+    /// streaming, and `AXOLOTY_PROGRESS=1` selects progress output.
     ///
     /// - Parameter environment: Environment values used for configuration.
     /// - Returns: Configuration with environment-derived lifecycle settings.
@@ -211,12 +226,14 @@ public struct AxolotyCommandRunnerConfiguration: Sendable {
         ) ?? 5
         let outputMode: AxolotyCommandOutputMode
         switch environment["AXOLOTY_OUTPUT"] ?? environment["AXOLOTY_TOOL_OUTPUT"] {
-        case "human", "progress":
-            outputMode = .human
+        case "human":
+            outputMode = .raw
+        case "progress":
+            outputMode = .progress
         case "json":
             outputMode = .json
         default:
-            outputMode = environment["AXOLOTY_PROGRESS"] == "1" || isatty(1) == 1 ? .human : .json
+            outputMode = environment["AXOLOTY_PROGRESS"] == "1" || isatty(1) == 1 ? .progress : .json
         }
         let artifactPath = environment["AXOLOTY_RUNS_DIR"] ?? ".testing/runs"
         let root = URL(fileURLWithPath: artifactPath, relativeTo: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))

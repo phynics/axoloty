@@ -22,7 +22,7 @@ enum AxolotyCommandFamilySupport {
         outputMode: AxolotyCommandOutputMode,
         exitCode: Int32
     ) -> AxolotyCommandResult {
-        guard outputMode == .human else {
+        guard outputMode != .json else {
             return (try? jsonResult(manifest, exitCode: exitCode))
                 ?? AxolotyCommandResult(exitCode: 70)
         }
