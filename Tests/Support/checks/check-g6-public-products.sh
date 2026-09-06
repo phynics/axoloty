@@ -41,9 +41,22 @@ for configuration in debug release; do
     done
 done
 
-for executable in axoloty-tool ax axoloty-inspect axoloty-mcp; do
+# axoloty-tool/ax are products of the Tools harness package; axoloty-inspect/
+# axoloty-mcp are products of the Apps application package. Neither is a
+# product of the root library package, so each needs its own package-path
+# build before it can be smoke-tested.
+for spec in "Tools:axoloty-tool" "Tools:ax" "Apps:axoloty-inspect" "Apps:axoloty-mcp"; do
+    package_path=${spec%%:*}
+    executable=${spec#*:}
+    for configuration in debug release; do
+        log="${TMPDIR:-/tmp}/axoloty-g6-product-${configuration}-${executable}.log"
+        if ! (cd "$root" && swift build --disable-automatic-resolution --package-path "$package_path" --configuration "$configuration" --product "$executable") >"$log" 2>&1; then
+            cat "$log" >&2
+            exit 1
+        fi
+    done
     log="${TMPDIR:-/tmp}/axoloty-g6-product-smoke-${executable}.log"
-    if ! (cd "$root" && swift run --disable-automatic-resolution --skip-build "$executable" --help) >"$log" 2>&1; then
+    if ! (cd "$root" && swift run --disable-automatic-resolution --package-path "$package_path" --skip-build "$executable" --help) >"$log" 2>&1; then
         cat "$log" >&2
         exit 1
     fi
