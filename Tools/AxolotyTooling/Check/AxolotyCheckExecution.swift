@@ -31,6 +31,7 @@ public struct AxolotyCheckExecutor: Sendable {
     private let resourceLeaseManager: any AxolotyResourceLeasing
     private let overrunScheduler: any AxolotyOverrunScheduling
     private let eventSink: @Sendable (AxolotyCheckExecutionEvent) -> Void
+    private let quarantine: AxolotyQuarantineLedger
 
     private static let crossProcessResources: Set<String> = [
         "fixed-port-1883",
@@ -45,6 +46,7 @@ public struct AxolotyCheckExecutor: Sendable {
         commandRunner: any AxolotyCheckCommandRunning,
         cancellation: AxolotyCommandCancellation? = nil,
         resourceLeaseManager: (any AxolotyResourceLeasing)? = nil,
+        quarantine: AxolotyQuarantineLedger = AxolotyQuarantineLedger(entries: []),
         eventSink: @escaping @Sendable (AxolotyCheckExecutionEvent) -> Void = { _ in }
     ) {
         self.init(
@@ -52,6 +54,7 @@ public struct AxolotyCheckExecutor: Sendable {
             contextValidator: AxolotyExecutionContextValidator(),
             cancellation: cancellation,
             resourceLeaseManager: resourceLeaseManager,
+            quarantine: quarantine,
             eventSink: eventSink
         )
     }
@@ -63,6 +66,7 @@ public struct AxolotyCheckExecutor: Sendable {
         clock: any AxolotyTimingClock = AxolotyContinuousTimingClock(),
         resourceLeaseManager: (any AxolotyResourceLeasing)? = nil,
         overrunScheduler: any AxolotyOverrunScheduling = DispatchOverrunScheduler(),
+        quarantine: AxolotyQuarantineLedger = AxolotyQuarantineLedger(entries: []),
         eventSink: @escaping @Sendable (AxolotyCheckExecutionEvent) -> Void = { _ in }
     ) {
         self.commandRunner = commandRunner
@@ -70,6 +74,7 @@ public struct AxolotyCheckExecutor: Sendable {
         self.cancellation = cancellation
         self.clock = clock
         self.overrunScheduler = overrunScheduler
+        self.quarantine = quarantine
         self.eventSink = eventSink
         self.resourceLeaseManager = resourceLeaseManager
             ?? FoundationResourceLeaseManager(environment: contextValidator.environment)
@@ -235,7 +240,13 @@ public struct AxolotyCheckExecutor: Sendable {
                 planDeadline: planDeadline,
                 finishedAt: finishedAt
             )
-            let status: AxolotyCheckStatus = result.exitCode == 0 ? .passed : .failed
+            // A quarantined node keeps its real exit code, output, and
+            // failed-test list in the artifact -- only the node's reported
+            // status is downgraded, so a quarantined failure is never
+            // silently discarded.
+            let quarantinedFailure = result.exitCode != 0
+                && quarantine.allQuarantined(result.observation?.failedTestNames ?? [], nodeID: node.name)
+            let status: AxolotyCheckStatus = (result.exitCode == 0 || quarantinedFailure) ? .passed : .failed
             statuses[node.name] = status
             let timing = AxolotyCheckTiming(
                 elapsedSeconds: max(0, finishedAt - nodeStartedAt),

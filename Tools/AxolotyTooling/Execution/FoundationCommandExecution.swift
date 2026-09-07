@@ -279,7 +279,8 @@ final class FoundationCommandExecution: @unchecked Sendable {
                 elapsedSeconds: finishedAt.timeIntervalSince(state.startedAt),
                 lastTest: snapshot.lastTest,
                 outputBytes: snapshot.outputBytes,
-                artifactPath: state.artifact.directory.path
+                artifactPath: state.artifact.directory.path,
+                failedTestNames: state.tracker?.failedTestNames() ?? []
             )
         )
         state.tracker?.complete(

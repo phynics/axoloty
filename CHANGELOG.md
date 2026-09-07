@@ -17,6 +17,15 @@ Strategy for the next line is tracked in [`docs/ROADMAP.md`](./docs/ROADMAP.md).
   declares a SwiftPM product dependency no source in it imports. It caught
   a real instance on introduction: `AxolotyTests` declared `IkigaJSON`
   (from `swift-json`) without importing it, now removed.
+- A manifest-driven quarantine ledger for known-flaky Swift Testing names.
+  `Tests/Support/test-tiers.json` declares owned, expiring, evidenced
+  quarantine entries (matching the existing `flakePolicy` contract); a node
+  whose only failures match an unexpired entry is reported passed, with its
+  real exit code, output, and failed-test list preserved verbatim in the
+  artifact. The five known host-flaky families
+  (`commandRunner*`/`projectCommand*`/`mqttService*`/`devService*`/
+  `mcpService*`) are registered against a placeholder owner and a
+  2026-10-18 deadline pending a real assignment.
 
 ### Removed
 

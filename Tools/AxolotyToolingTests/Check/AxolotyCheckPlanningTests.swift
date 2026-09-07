@@ -66,7 +66,8 @@ func injectedManifestSchemaIsValidatedBeforeResolution() throws {
         testOne: resolver.manifest.testOne,
         selfTests: resolver.manifest.selfTests,
         artifactContract: resolver.manifest.artifactContract,
-        flakePolicy: resolver.manifest.flakePolicy
+        flakePolicy: resolver.manifest.flakePolicy,
+        quarantine: resolver.manifest.quarantine
     )
 
     #expect(throws: AxolotyCanonicalTestManifestError.unsupportedSchema(1)) {

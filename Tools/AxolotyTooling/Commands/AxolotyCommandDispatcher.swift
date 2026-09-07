@@ -111,6 +111,7 @@ public struct AxolotyCommandDispatcher: Sendable {
             cancellation: invocationCancellation,
             clock: clock,
             overrunScheduler: overrunScheduler,
+            quarantine: AxolotyQuarantineLedger(entries: (try? planResolution.get())?.manifest.quarantine ?? []),
             eventSink: eventSink ?? { event in
                 try? FileHandle.standardError.write(contentsOf: Data(event.diagnosticLine().utf8))
             }
