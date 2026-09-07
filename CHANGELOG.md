@@ -9,8 +9,18 @@ fork, through CoatySwift 2.4.0, remain documented in the
 
 ## [Unreleased]
 
-No changes are pending. Strategy for the next line is tracked in
-[`docs/ROADMAP.md`](./docs/ROADMAP.md).
+Strategy for the next line is tracked in [`docs/ROADMAP.md`](./docs/ROADMAP.md).
+
+### Added
+
+- A `ci`-tier gate (`g6-unused-product-deps`) that fails when a target
+  declares a SwiftPM product dependency no source in it imports. It caught
+  a real instance on introduction: `AxolotyTests` declared `IkigaJSON`
+  (from `swift-json`) without importing it, now removed.
+
+### Removed
+
+- `AxolotyTests`'s unused `IkigaJSON` product dependency.
 
 ## [0.7.0] - 2026-09-06
 
