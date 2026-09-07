@@ -306,7 +306,10 @@ actor ProtocolExecutor {
         case .running: return .running
         case .reconnecting: return .reconnecting
         case .stopping: return .stopping
-        case .failed, .closed: return .failed
+        case .failed: return .failed
+        // ``RuntimeState`` has no separate closed case. A closed instance is
+        // terminally stopped, not failed; reserve ``failed`` for an error.
+        case .closed: return .stopped
         }
     }
 

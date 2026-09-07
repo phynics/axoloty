@@ -51,6 +51,17 @@ extension AxolotyRuntimeTests {
         #expect(String(decoding: deadvertisement.payload, as: UTF8.self) == "{\"objectIds\":[\"00000000-0000-0000-0000-000000000000\"]}")
     }
 
+    @Test("closed runtime reports terminally stopped through modern state")
+    func closedRuntimeReportsStoppedState() async throws {
+        let runtime = AxolotyRuntime(definition: try makeDefinition(), transport: TestTransport())
+        try await runtime.start()
+
+        await runtime.close()
+
+        #expect(await runtime.lifecycleState() == .closed)
+        #expect(await runtime.state() == .stopped)
+    }
+
     @Test("startup failure injection preserves terminal cleanup", arguments: SetupFailureStage.allCases)
     func startupFailureInjectionPreservesTerminalCleanup(stage: SetupFailureStage) async throws {
         let transport = TestTransport(failing: stage)
