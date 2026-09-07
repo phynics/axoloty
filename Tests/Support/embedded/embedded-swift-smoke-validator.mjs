@@ -12,8 +12,7 @@ export const expectedSmokeTests = new Set([
   "topicParse:filter", "dtoDecode:advertise", "dtoDecode:uuid", "dtoDecode:int",
   "dtoDecode:bool", "dtoDecode:missingField", "malformed:truncated", "malformed:empty",
   "malformed:invalidUUID", "uuid16:parseValid", "uuid16:parseInvalid", "uuid16:zero",
-  "config:payloadMax2048", "config:topicMax256", "config:maxSubscribers8",
-  "config:maxFamilyEntries16",
+  "config:payloadMax2048", "config:topicMax256",
 ]);
 
 const fatalFragments = ["Guru Meditation", "Task watchdog got triggered", "abort()", "Backtrace:"];

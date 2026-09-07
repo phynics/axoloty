@@ -9,9 +9,7 @@ import PackageDescription
 /// SwiftPM consumer can build it without host runtime targets. Its tested
 /// resolved package closure is exactly `axolotywire`, `swift-json`,
 /// `swift-nio`, `swift-atomics`, `swift-collections`, and `swift-system`;
-/// `swift-nio` is resolution-only. The root Axoloty package declares the same
-/// target directly and re-exports its public symbols through
-/// ``WireImportShim`` so existing `import Axoloty` clients keep working.
+/// `swift-nio` is resolution-only.
 ///
 /// See the repository `ARCHITECTURE.md` for the boundary contract.
 let package = Package(

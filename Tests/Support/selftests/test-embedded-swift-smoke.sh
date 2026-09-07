@@ -51,16 +51,16 @@ const { makeRecord } = await import(process.env.VALIDATOR);
 const names = [
   "topicParse:ADV", "topicParse:DAD", "topicParse:DSC", "topicParse:RSV", "topicParse:CHN", "topicParse:ASC", "topicParse:IOV", "topicParse:raw", "topicParse:filter",
   "dtoDecode:advertise", "dtoDecode:uuid", "dtoDecode:int", "dtoDecode:bool", "dtoDecode:missingField", "malformed:truncated", "malformed:empty", "malformed:invalidUUID",
-  "uuid16:parseValid", "uuid16:parseInvalid", "uuid16:zero", "config:payloadMax2048", "config:topicMax256", "config:maxSubscribers8", "config:maxFamilyEntries16",
+  "uuid16:parseValid", "uuid16:parseInvalid", "uuid16:zero", "config:payloadMax2048", "config:topicMax256",
 ];
 let previous = 0;
 for (let sequence = 0; sequence < names.length + 3; sequence++) {
   let record;
   if (sequence === 0) record = makeRecord(0, "boot", "boot", "started", previous);
   else if (sequence <= names.length) record = makeRecord(sequence, names[sequence - 1], "smokeCheck", "passed", previous);
-  else if (sequence === names.length + 1) record = makeRecord(sequence, "summary", "summary", "completed", previous, { passed: 24, failed: 0 });
+  else if (sequence === names.length + 1) record = makeRecord(sequence, "summary", "summary", "completed", previous, { passed: 22, failed: 0 });
   else {
-    record = makeRecord(sequence, "completion", "complete", "completed", previous, { passed: 24, failed: 0 });
+    record = makeRecord(sequence, "completion", "complete", "completed", previous, { passed: 22, failed: 0 });
     record.finalChecksum = record.checksum;
   }
   console.log(JSON.stringify(record)); previous = record.checksum;
@@ -105,7 +105,7 @@ run_smoke() {
     rm -f "$out_dir/swift-smoke-result.json" "$out_dir/swift-smoke-log.txt"
     case "$1" in
         success) success_records > "$device" ;;
-        missing) success_records | grep -v 'config:maxFamilyEntries16' > "$device" ;;
+        missing) success_records | grep -v 'config:topicMax256' > "$device" ;;
         duplicate) success_records | sed '/"caseId":"topicParse:ADV"/a {"schemaVersion":2,"runId":"embedded-swift-smoke-v2","sequence":1,"caseId":"topicParse:ADV","operation":"smokeCheck","stage":"execute","status":"passed","checksum":0}' > "$device" ;;
         failed|no-summary|reboot|bad-counts) success_records > "$TEMP_DIR/records"; rewrite_records "$1" "$TEMP_DIR/records" > "$device" ;;
         nonmonotonic) success_records | sed '0,/"sequence":2/s//"sequence":1/' > "$device" ;;

@@ -21,14 +21,4 @@ public enum WireBufferConfig {
     /// Maximum topic levels in a Coaty topic (protocol, version, namespace,
     /// event, sourceId, correlationId, postfix = 7).
     public static let maxTopicLevels: Int = TopicLevelStorage.count
-
-    /// Maximum concurrent subscribers per event type.
-    public static let maxSubscribers: Int = 8
-
-    /// Maximum keyed entries in a bounded family.
-    public static let maxFamilyEntries: Int = 16
-
-    /// Maximum subscribers per keyed family entry.
-    public static let maxFamilySubscribers: Int = 4
-
 }
