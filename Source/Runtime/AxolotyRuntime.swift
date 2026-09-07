@@ -27,6 +27,7 @@ actor ProtocolExecutor {
     /// publication order after a successful reconnect.
     private var offlineOperations: [RuntimeOperation] = []
     var state: RuntimeLifecycleState = .stopped
+    private var terminationWaiter: CheckedContinuation<RuntimeLifecycleState, Never>?
     private var hasStarted = false
     var lifecycleAdvertisementActive = false
     var activeHandlers = 0
@@ -204,6 +205,7 @@ actor ProtocolExecutor {
         }
         guard state == .stopping, transportEpoch == stoppingEpoch else { return }
         state = .stopped
+        signalTermination()
     }
 
     func close() async {
@@ -212,6 +214,7 @@ actor ProtocolExecutor {
             await stop()
         }
         state = .closed
+        signalTermination()
         finishIoObservers()
         for registration in eventRegistrations {
             registration.continuation.finish()
@@ -298,6 +301,48 @@ actor ProtocolExecutor {
     }
 
     func lifecycleState() -> RuntimeLifecycleState { state }
+
+    /// Waits for the executor to reach a terminal lifecycle state.
+    ///
+    /// The waiter is owned by this actor so ``stop()`` and failure teardown
+    /// wake ``run()`` without a polling task or a second lifecycle owner.
+    func waitForTermination() async -> RuntimeLifecycleState {
+        if let terminalState = terminationState() {
+            return terminalState
+        }
+        return await withTaskCancellationHandler(operation: {
+            await withCheckedContinuation { continuation in
+                if let terminalState = self.terminationState() {
+                    continuation.resume(returning: terminalState)
+                } else {
+                    self.terminationWaiter = continuation
+                }
+            }
+        }, onCancel: {
+            Task { [weak self] in
+                await self?.cancelTerminationWaiter()
+            }
+        })
+    }
+
+    private func terminationState() -> RuntimeLifecycleState? {
+        switch state {
+        case .failed, .stopped, .closed: return state
+        case .starting, .running, .reconnecting, .stopping: return nil
+        }
+    }
+
+    private func signalTermination() {
+        guard let waiter = terminationWaiter, let terminalState = terminationState() else { return }
+        terminationWaiter = nil
+        waiter.resume(returning: terminalState)
+    }
+
+    private func cancelTerminationWaiter() {
+        guard let waiter = terminationWaiter else { return }
+        terminationWaiter = nil
+        waiter.resume(returning: state)
+    }
 
     func runtimeState() -> RuntimeState {
         switch state {
@@ -907,6 +952,7 @@ actor ProtocolExecutor {
         emit(.init(kind: diagnostic, detail: detail))
         guard state != .stopping, state != .stopped, state != .closed else { return }
         state = .failed
+        signalTermination()
         transportEpoch &+= 1
         cancelIngressPump()
         outboundContinuation?.finish()
