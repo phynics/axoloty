@@ -201,7 +201,6 @@ let package = Package(
                 "AxolotyStaticRuntime",
                 "AxolotyTestSupport",
                 .product(name: "ErrorKit", package: "ErrorKit"),
-                .product(name: "IkigaJSON", package: "swift-json"),
             ],
             path: "Tests/AxolotyTests",
             resources: [
