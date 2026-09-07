@@ -18,6 +18,9 @@ public struct InlineOwnedProtocolActionSink<let capacity: Int, let payloadCapaci
     private var routeBytesUsed: Int
     private var used: Int
     private var reserved: Int
+    private var batchStartUsed: Int
+    private var batchPayloadBytesUsed: Int
+    private var batchRouteBytesUsed: Int
 
     /// Creates an empty owning action sink.
     public init() {
@@ -28,6 +31,9 @@ public struct InlineOwnedProtocolActionSink<let capacity: Int, let payloadCapaci
         routeBytesUsed = 0
         used = 0
         reserved = 0
+        batchStartUsed = 0
+        batchPayloadBytesUsed = 0
+        batchRouteBytesUsed = 0
     }
 
     /// Number of actions currently retained by the sink.
@@ -49,6 +55,9 @@ public struct InlineOwnedProtocolActionSink<let capacity: Int, let payloadCapaci
     public mutating func preflight(actionCount: Int) -> Bool {
         guard reserved == 0, actionCount >= 0,
               actionCount <= capacity - used else { return false }
+        batchStartUsed = used
+        batchPayloadBytesUsed = payloadBytesUsed
+        batchRouteBytesUsed = routeBytesUsed
         reserved = actionCount
         return true
     }
@@ -58,22 +67,26 @@ public struct InlineOwnedProtocolActionSink<let capacity: Int, let payloadCapaci
     /// - Parameter action: A protocol-valid action whose borrowed bytes remain
     ///   caller-owned.
     /// - Returns: `true` when the complete action was copied. Invalid byte
-    ///   bounds or a missing reservation leave retained slots unchanged.
+    ///   bounds or a missing reservation leave retained slots unchanged. A
+    ///   failed append rolls back every action admitted by the current
+    ///   preflight, including its retained bytes.
     public mutating func append(_ action: BorrowedProtocolAction) -> Bool {
-        guard reserved > 0, used < capacity,
+        guard reserved > 0 else { return false }
+        guard used < capacity,
               var slot = InlineOwnedProtocolActionSlot(copying: action) else {
+            rollbackBatch()
             return false
         }
-        let payloadCheckpoint = payloadBytesUsed
-        let routeCheckpoint = routeBytesUsed
         if let payload = Self.payload(of: action) {
-            guard let retained = retainPayload(payload) else { return false }
+            guard let retained = retainPayload(payload) else {
+                rollbackBatch()
+                return false
+            }
             slot.setPrimary(offset: retained.offset, length: retained.length)
         }
         if let secondary = Self.secondaryBytes(of: action) {
             guard let retained = retainRoute(secondary) else {
-                payloadBytesUsed = payloadCheckpoint
-                routeBytesUsed = routeCheckpoint
+                rollbackBatch()
                 return false
             }
             slot.setSecondary(offset: retained.offset, length: retained.length)
@@ -81,16 +94,14 @@ public struct InlineOwnedProtocolActionSink<let capacity: Int, let payloadCapaci
         switch action {
         case .externalRouteActivated(let transition), .externalRouteDeactivated(let transition):
             guard let retained = retainRoute(transition.route) else {
-                payloadBytesUsed = payloadCheckpoint
-                routeBytesUsed = routeCheckpoint
+                rollbackBatch()
                 return false
             }
             slot.setSecondary(offset: retained.offset, length: retained.length)
         case .publish(let publication):
             if case .associationRoute(let route, _) = publication.target {
                 guard let retained = retainRoute(route) else {
-                    payloadBytesUsed = payloadCheckpoint
-                    routeBytesUsed = routeCheckpoint
+                    rollbackBatch()
                     return false
                 }
                 slot.setSecondary(offset: retained.offset, length: retained.length)
@@ -106,8 +117,7 @@ public struct InlineOwnedProtocolActionSink<let capacity: Int, let payloadCapaci
                 retained = retainRoute(route)
             }
             guard let retained else {
-                payloadBytesUsed = payloadCheckpoint
-                routeBytesUsed = routeCheckpoint
+                rollbackBatch()
                 return false
             }
             slot.setQuaternary(offset: retained.offset, length: retained.length)
@@ -116,6 +126,14 @@ public struct InlineOwnedProtocolActionSink<let capacity: Int, let payloadCapaci
         used += 1
         reserved -= 1
         return true
+    }
+
+    private mutating func rollbackBatch() {
+        for index in batchStartUsed..<used { slots[index] = nil }
+        used = batchStartUsed
+        payloadBytesUsed = batchPayloadBytesUsed
+        routeBytesUsed = batchRouteBytesUsed
+        reserved = 0
     }
 
     /// Visits one retained action through call-scoped borrowed views.
@@ -147,6 +165,9 @@ public struct InlineOwnedProtocolActionSink<let capacity: Int, let payloadCapaci
         reserved = 0
         payloadBytesUsed = 0
         routeBytesUsed = 0
+        batchStartUsed = 0
+        batchPayloadBytesUsed = 0
+        batchRouteBytesUsed = 0
     }
 
     private mutating func retainPayload(_ bytes: ByteSlice) -> (offset: Int, length: Int)? {

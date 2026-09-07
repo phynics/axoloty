@@ -129,7 +129,9 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
     ) -> ProtocolProcessOutcome {
         guard sink.count == 0 else { return .rejected(.capacityExceeded) }
         sink.removeAll()
-        return processor.processOutbound(operation, nowMS: nowMS, classifier: routeClassifier, sink: &sink)
+        let outcome = processor.processOutbound(operation, nowMS: nowMS, classifier: routeClassifier, sink: &sink)
+        if case .rejected = outcome { sink.removeAll() }
+        return outcome
     }
 
     /// Processes one inbound frame and retains its action until ``drain``.
@@ -140,6 +142,7 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
         guard sink.count == 0 else { return .rejected(.capacityExceeded) }
         sink.removeAll()
         let outcome = processor.processInbound(.profile(frame), nowMS: nowMS, classifier: routeClassifier, sink: &sink)
+        if case .rejected = outcome { sink.removeAll() }
         if case .accepted = outcome {
             receiveContext = StaticIoReceiveContext(
                 receivedAtMS: nowMS,
@@ -184,6 +187,7 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
         guard sink.count == 0 else { return .rejected(.capacityExceeded) }
         sink.removeAll()
         let outcome = processor.processInbound(.profile(frame), nowMS: nowMS, classifier: classifier, sink: &sink)
+        if case .rejected = outcome { sink.removeAll() }
         if case .accepted = outcome {
             receiveContext = StaticIoReceiveContext(
                 receivedAtMS: nowMS,
@@ -201,7 +205,9 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
     ) -> ProtocolProcessOutcome {
         guard sink.count == 0 else { return .rejected(.capacityExceeded) }
         sink.removeAll()
-        return processor.processOutbound(operation, nowMS: nowMS, classifier: classifier, sink: &sink)
+        let outcome = processor.processOutbound(operation, nowMS: nowMS, classifier: classifier, sink: &sink)
+        if case .rejected = outcome { sink.removeAll() }
+        return outcome
     }
 
     /// Expires all requests whose caller-supplied deadlines have elapsed.
