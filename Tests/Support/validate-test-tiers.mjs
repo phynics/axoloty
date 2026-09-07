@@ -392,6 +392,28 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
   if (JSON.stringify([...(flake.quarantineRequires ?? [])].sort()) !== JSON.stringify(["deadline", "evidence", "owner", "ticket"])) {
     errors.push("quarantineRequires must name owner, ticket, evidence, and deadline");
   }
+
+  const isoDate = /^\d{4}-\d{2}-\d{2}$/;
+  const quarantineIds = new Set();
+  for (const entry of document.quarantine ?? []) {
+    const label = entry?.id ?? "<missing id>";
+    if (typeof entry?.id !== "string" || !entry.id) errors.push(`quarantine ${label}: id must be a nonempty string`);
+    else if (quarantineIds.has(entry.id)) errors.push(`quarantine ${label}: duplicate id`);
+    else quarantineIds.add(entry.id);
+    if (!Array.isArray(entry?.testNamePrefixes) || entry.testNamePrefixes.length === 0 || entry.testNamePrefixes.some(name => typeof name !== "string" || !name)) {
+      errors.push(`quarantine ${label}: testNamePrefixes must be a nonempty array of nonempty strings`);
+    }
+    if (!Array.isArray(entry?.nodeIds) || entry.nodeIds.length === 0 || entry.nodeIds.some(node => !nodeIds.has(node))) {
+      errors.push(`quarantine ${label}: nodeIds must be a nonempty array of declared node ids`);
+    }
+    for (const field of flake.quarantineRequires ?? []) {
+      if (typeof entry?.[field] !== "string" || !entry[field]) errors.push(`quarantine ${label}: ${field} must be a nonempty string`);
+    }
+    if (typeof entry?.deadline !== "string" || !isoDate.test(entry.deadline)) {
+      errors.push(`quarantine ${label}: deadline must be an ISO date (YYYY-MM-DD)`);
+    }
+  }
+
   const requiredArtifacts = new Set(document.artifactContract?.requiredOnFailure ?? []);
   if (!requiredArtifacts.has("manifest.json") || !requiredArtifacts.has("verifier.log")) errors.push("failure artifacts must include manifest.json and verifier.log");
 

@@ -192,7 +192,7 @@ func checkPlanPrintsStableJSON() throws {
         "test", "-Xswiftc", "-warnings-as-errors", "--package-path", "Tools",
         "--scratch-path", ".build/tooling", "--cache-path", ".swiftpm-cache",
         "--disable-automatic-resolution", "--filter",
-        "AxolotyCommandDispatcherTests|AxolotyTimingTests|AxolotyDeviceLeaseTests|AxolotyResourceLeaseTests|AxolotyDevelopmentServiceTests|AxolotyMQTTServiceTests|AxolotyServeParserTests|RepositoryAuthorityTests",
+        "AxolotyCommandDispatcherTests|AxolotyTimingTests|AxolotyDeviceLeaseTests|AxolotyResourceLeaseTests|AxolotyDevelopmentServiceTests|AxolotyMQTTServiceTests|AxolotyServeParserTests|RepositoryAuthorityTests|AxolotyQuarantineLedgerTests",
     ])
     // The application tests are a separate node against the Apps package, so
     // neither run resolves the other's dependency graph.
@@ -992,7 +992,7 @@ func testToolingUsesOnlyItsCheckPlanDependencyClosure() throws {
         "test", "-Xswiftc", "-warnings-as-errors", "--package-path", "Tools",
         "--scratch-path", ".build/tooling", "--cache-path", ".swiftpm-cache",
         "--disable-automatic-resolution", "--filter",
-        "AxolotyCommandDispatcherTests|AxolotyTimingTests|AxolotyDeviceLeaseTests|AxolotyResourceLeaseTests|AxolotyDevelopmentServiceTests|AxolotyMQTTServiceTests|AxolotyServeParserTests|RepositoryAuthorityTests",
+        "AxolotyCommandDispatcherTests|AxolotyTimingTests|AxolotyDeviceLeaseTests|AxolotyResourceLeaseTests|AxolotyDevelopmentServiceTests|AxolotyMQTTServiceTests|AxolotyServeParserTests|RepositoryAuthorityTests|AxolotyQuarantineLedgerTests",
     ])
 }
 

@@ -65,7 +65,8 @@ private func certificationManifest(
             automaticRetries: 0,
             diagnosticReruns: 0,
             quarantineRequires: []
-        )
+        ),
+        quarantine: []
     )
 }
 

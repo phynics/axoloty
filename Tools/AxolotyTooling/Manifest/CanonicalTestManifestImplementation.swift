@@ -86,6 +86,8 @@ public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
     public let toolContainerEnv: AxolotyToolContainerEnv?
     /// Shared flake policy.
     public let flakePolicy: AxolotyFlakePolicy
+    /// Owned, expiring, evidenced quarantine entries for known-flaky test names.
+    public let quarantine: [AxolotyQuarantineEntry]
 
     /// Creates a canonical manifest data contract.
     public init(
@@ -98,6 +100,7 @@ public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
         selfTests: [AxolotySelfTestContractEntry],
         artifactContract: AxolotyArtifactContract,
         flakePolicy: AxolotyFlakePolicy,
+        quarantine: [AxolotyQuarantineEntry] = [],
         toolContainerEnv: AxolotyToolContainerEnv? = nil
     ) {
         self.schemaVersion = schemaVersion
@@ -110,5 +113,6 @@ public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
         self.artifactContract = artifactContract
         self.toolContainerEnv = toolContainerEnv
         self.flakePolicy = flakePolicy
+        self.quarantine = quarantine
     }
 }

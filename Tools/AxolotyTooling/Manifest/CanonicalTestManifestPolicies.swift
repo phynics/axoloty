@@ -89,3 +89,48 @@ public struct AxolotyFlakePolicy: Codable, Equatable, Sendable {
         self.quarantineRequires = quarantineRequires
     }
 }
+
+/// One owned, expiring, evidenced quarantine of a known-flaky test-name family,
+/// satisfying `AxolotyFlakePolicy.quarantineRequires`.
+public struct AxolotyQuarantineEntry: Codable, Equatable, Sendable {
+    /// The stable identifier for this quarantine entry.
+    public let id: String
+    /// Test-name prefixes this entry covers (a Swift Testing test name starting
+    /// with any of these is quarantined).
+    public let testNamePrefixes: [String]
+    /// The check nodes this entry applies to. A failure of a matching test name
+    /// in any other node is not quarantined.
+    public let nodeIds: [String]
+    /// The person or team accountable for resolving the flake.
+    public let owner: String
+    /// The tracking reference for resolving the flake.
+    public let ticket: String
+    /// A link to the evidence that motivated the quarantine.
+    public let evidence: String
+    /// The date this quarantine expires, as `YYYY-MM-DD`. An expired entry no
+    /// longer suppresses a failure.
+    public let deadline: String
+    /// A short human-readable explanation.
+    public let reason: String
+
+    /// Creates a quarantine entry.
+    public init(
+        id: String,
+        testNamePrefixes: [String],
+        nodeIds: [String],
+        owner: String,
+        ticket: String,
+        evidence: String,
+        deadline: String,
+        reason: String
+    ) {
+        self.id = id
+        self.testNamePrefixes = testNamePrefixes
+        self.nodeIds = nodeIds
+        self.owner = owner
+        self.ticket = ticket
+        self.evidence = evidence
+        self.deadline = deadline
+        self.reason = reason
+    }
+}

@@ -332,6 +332,40 @@ test("validator CLI reports stable selfTests schema errors", t => {
   }
 });
 
+test("validator CLI reports stable quarantine schema errors", t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-tool-quarantine-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const base = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const entry = () => ({
+    id: "q-fixture",
+    testNamePrefixes: ["fixtureFlake"],
+    nodeIds: ["test-tooling"],
+    owner: "someone",
+    ticket: "#1",
+    evidence: "https://example.invalid/comment",
+    deadline: "2026-10-18",
+    reason: "fixture",
+  });
+  const cases = [
+    ["missing-owner", document => { const e = entry(); delete e.owner; document.quarantine = [e]; }, "owner must be a nonempty string"],
+    ["missing-ticket", document => { const e = entry(); delete e.ticket; document.quarantine = [e]; }, "ticket must be a nonempty string"],
+    ["dangling-node", document => { document.quarantine = [{ ...entry(), nodeIds: ["not-a-real-node"] }]; }, "nodeIds must be a nonempty array of declared node ids"],
+    ["empty-prefixes", document => { document.quarantine = [{ ...entry(), testNamePrefixes: [] }]; }, "testNamePrefixes must be a nonempty array"],
+    ["bad-deadline", document => { document.quarantine = [{ ...entry(), deadline: "not-a-date" }]; }, "deadline must be an ISO date"],
+    ["duplicate-id", document => { document.quarantine = [entry(), entry()]; }, "duplicate id"],
+  ];
+
+  for (const [name, mutate, expected] of cases) {
+    const document = structuredClone(base);
+    mutate(document);
+    const config = path.join(directory, `${name}.json`);
+    fs.writeFileSync(config, JSON.stringify(document));
+    const result = spawnSync(process.execPath, [path.join(root, "Tests/Support/validate-test-tiers.mjs"), config], { encoding: "utf8" });
+    assert.equal(result.status, 1, name);
+    assert.match(result.stderr, new RegExp(`test-tier configuration error: quarantine .*: ${expected}`), name);
+  }
+});
+
 test("filter alternatives expand through top-level and grouped alternation", () => {
   assert.deepEqual(expandFilterAlternatives("A|B"), ["A", "B"]);
   assert.deepEqual(expandFilterAlternatives("Suite/(a|b)"), ["Suite/a", "Suite/b"]);

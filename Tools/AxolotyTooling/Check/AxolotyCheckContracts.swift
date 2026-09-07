@@ -161,13 +161,24 @@ public struct AxolotyCommandObservation: Codable, Equatable, Sendable {
     public let outputBytes: Int
     /// Directory containing the command artifacts.
     public let artifactPath: String
+    /// Every Swift Testing test name reported failed or as having recorded an
+    /// issue, across the whole run. Empty when the command ran no Swift
+    /// Testing suite or none failed.
+    public let failedTestNames: Set<String>
 
     /// Creates a successful-lifecycle command observation.
-    public init(elapsedSeconds: TimeInterval, lastTest: String?, outputBytes: Int, artifactPath: String) {
+    public init(
+        elapsedSeconds: TimeInterval,
+        lastTest: String?,
+        outputBytes: Int,
+        artifactPath: String,
+        failedTestNames: Set<String> = []
+    ) {
         self.elapsedSeconds = elapsedSeconds
         self.lastTest = lastTest
         self.outputBytes = outputBytes
         self.artifactPath = artifactPath
+        self.failedTestNames = failedTestNames
     }
 }
 
