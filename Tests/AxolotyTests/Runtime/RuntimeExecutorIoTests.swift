@@ -232,7 +232,7 @@ private actor BlockingPublicationTransport: AxolotyRuntimeTransport {
     }
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
-    func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) async {}
+    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {}
     func installSubscriptions(namespace: String) async throws {}
     func removeSubscriptions(namespace: String) async throws {}
     func stop() async {}
@@ -270,7 +270,7 @@ private actor BlockingPublicationTransport: AxolotyRuntimeTransport {
 
 private actor RecordingPublicationTransport: AxolotyRuntimeTransport {
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
-    func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) async {}
+    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {}
     func perform(_ effect: RuntimeTransportEffect) async throws {}
     func stop() async {}
     func installSubscriptions(namespace: String) async throws {}

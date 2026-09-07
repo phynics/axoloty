@@ -16,7 +16,7 @@ actor SensorThingsRecordingTransport: AxolotyRuntimeTransport {
         lifecycle.append("start")
     }
 
-    func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) async {}
+    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {}
 
     func perform(_ effect: RuntimeTransportEffect) async throws {
         guard case let .publish(publication) = effect else { return }

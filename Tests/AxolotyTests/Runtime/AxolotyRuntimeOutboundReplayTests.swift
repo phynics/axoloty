@@ -12,7 +12,7 @@ import AxolotyWire
 /// publish after that.
 actor FailOnceOnPublishTransport: AxolotyRuntimeTransport {
     private var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
-    private var failure: (@Sendable (Error) -> Void)?
+    private var failure: (@Sendable (RuntimeTransportFailure) -> Void)?
     private(set) var sent: [RuntimeOutboundMessage] = []
     private var shouldFailNextPublish: Bool
 
@@ -24,7 +24,7 @@ actor FailOnceOnPublishTransport: AxolotyRuntimeTransport {
         self.receive = receive
     }
 
-    func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) {
+    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) {
         failure = handler
     }
 

@@ -34,7 +34,7 @@ enum SetupFailureStage: String, CaseIterable, Sendable {
 
 actor TestTransport: AxolotyRuntimeTransport {
     private var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
-    private var failure: (@Sendable (Error) -> Void)?
+    private var failure: (@Sendable (RuntimeTransportFailure) -> Void)?
     private var sent: [RuntimeOutboundMessage] = []
     private(set) var lifecycle: [String] = []
     private let failureStage: SetupFailureStage?
@@ -49,7 +49,7 @@ actor TestTransport: AxolotyRuntimeTransport {
         if failureStage == .start { throw TestTransportFailure() }
     }
 
-    func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) {
+    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) {
         failure = handler
     }
 
@@ -86,7 +86,16 @@ actor TestTransport: AxolotyRuntimeTransport {
         receive?(frame)
     }
 
-    func fail(_ error: Error) { failure?(error) }
+    func fail(_ error: Error) {
+        let wrapped = error as? AxolotyError ?? AxolotyError.caught(error)
+        let code: AxolotyError.RuntimeErrorCode
+        if case let .runtime(runtimeCode, _) = wrapped {
+            code = runtimeCode
+        } else {
+            code = .brokerUnavailable
+        }
+        failure?(RuntimeTransportFailure(code: code, detail: wrapped.userFriendlyMessage))
+    }
 }
 
 struct TestTransportFailure: Error, Sendable {}
@@ -98,7 +107,7 @@ actor DrainingTransport: AxolotyRuntimeTransport {
     private var sendWaiter: CheckedContinuation<Void, Never>?
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
-    func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) {}
+    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) {}
 
     func perform(_ effect: RuntimeTransportEffect) async throws {
         switch effect {

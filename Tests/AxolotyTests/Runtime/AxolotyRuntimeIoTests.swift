@@ -122,7 +122,7 @@ private actor IoWireRecordingTransport: AxolotyRuntimeTransport {
     private var sent: [RuntimeOutboundMessage] = []
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
-    func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) async {}
+    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {}
     func perform(_ effect: RuntimeTransportEffect) async throws {
         switch effect {
         case .publish(let message): sent.append(message)

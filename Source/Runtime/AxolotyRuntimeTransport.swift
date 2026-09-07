@@ -4,6 +4,28 @@
 
 import AxolotyWire
 
+/// An owned, sendable failure reported by a runtime transport.
+///
+/// Transport adapters convert foreign errors into this value before invoking
+/// the runtime failure callback. The code is stable for programmatic handling;
+/// the detail is a human-readable description of the observed failure.
+public struct RuntimeTransportFailure: Error, Equatable, Sendable {
+    /// The stable runtime category for this failure.
+    public let code: AxolotyError.RuntimeErrorCode
+    /// A human-readable description of the observed failure.
+    public let detail: String
+
+    /// Creates an owned transport failure.
+    ///
+    /// - Parameters:
+    ///   - code: Stable runtime category for this failure.
+    ///   - detail: Human-readable description of the observed failure.
+    public init(code: AxolotyError.RuntimeErrorCode, detail: String) {
+        self.code = code
+        self.detail = detail
+    }
+}
+
 /// A transport boundary for the host runtime.
 ///
 /// Implementations own networking and invoke `receive` only with copied data.
@@ -13,10 +35,11 @@ public protocol AxolotyRuntimeTransport: AnyObject, Sendable {
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws
     /// Installs a callback for failures after startup has completed.
     ///
-    /// The callback is invoked with an owned error value and may be called
-    /// from a transport event-loop thread. Implementations must not retain
-    /// borrowed protocol data in this callback.
-    func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) async
+    /// The callback is invoked with an owned ``RuntimeTransportFailure`` and
+    /// may be called from a transport event-loop thread.
+    /// Implementations must wrap foreign failures before invoking it and must not
+    /// retain borrowed protocol data in this callback.
+    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async
     /// Applies one owned transport effect in protocol action order.
     ///
     /// - Parameter effect: A finished publication, or an exact external-route
@@ -46,7 +69,7 @@ public protocol AxolotyRuntimeTransport: AnyObject, Sendable {
 }
 
 public extension AxolotyRuntimeTransport {
-    func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) async { _ = handler }
+    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async { _ = handler }
     func installSubscriptions(namespace: String) async throws {}
     func removeSubscriptions(namespace: String) async throws {}
     func classifyRoute(_ route: ByteSlice) -> ProtocolRouteClassification {
