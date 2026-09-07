@@ -24,8 +24,7 @@ Strategy for the next line is tracked in [`docs/ROADMAP.md`](./docs/ROADMAP.md).
   real exit code, output, and failed-test list preserved verbatim in the
   artifact. The five known host-flaky families
   (`commandRunner*`/`projectCommand*`/`mqttService*`/`devService*`/
-  `mcpService*`) are registered against a placeholder owner and a
-  2026-10-18 deadline pending a real assignment.
+  `mcpService*`) are registered to `phynics` with a 2026-10-18 deadline.
 
 ### Removed
 
