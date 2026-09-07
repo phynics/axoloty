@@ -10,19 +10,37 @@ public struct StaticRuntimeDefinition<let payloadCapacity: Int>: ~Copyable {
     public let registryID: ObjectID
     /// Families enabled for this firmware image.
     public let capabilities: ProtocolCapabilities
+    /// Optional maximum number of simultaneously advertised objects.
+    ///
+    /// When `nil`, the consuming runtime's storage capacity is used.
+    public let maximumObjects: Int?
+    /// Optional maximum number of outstanding request correlations.
+    ///
+    /// When `nil`, the consuming runtime's storage capacity is used.
+    public let maximumPendingCorrelations: Int?
     /// Maximum accepted wire payload size, fixed by the type specialization.
     public var maximumPayloadBytes: Int { payloadCapacity }
     /// Maximum accepted wire payload size for this definition specialization.
     public static var maximumPayloadBytes: Int { payloadCapacity }
 
     /// Creates a bounded static definition.
+    ///
+    /// - Parameters:
+    ///   - registryID: Opaque identity used to reject handles from another runtime registry.
+    ///   - capabilities: Families accepted by this binding.
+    ///   - maximumObjects: Optional maximum number of simultaneously advertised objects.
+    ///   - maximumPendingCorrelations: Optional maximum number of outstanding request correlations.
     public init(
         registryID: ObjectID,
         capabilities: ProtocolCapabilities = .coatyCore3,
+        maximumObjects: Int? = nil,
+        maximumPendingCorrelations: Int? = nil
     ) {
         precondition(payloadCapacity >= 0 && payloadCapacity <= WireBufferConfig.maxPayloadSize)
         self.registryID = registryID
         self.capabilities = capabilities
+        self.maximumObjects = maximumObjects
+        self.maximumPendingCorrelations = maximumPendingCorrelations
     }
 }
 
@@ -80,11 +98,17 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
         definition: consuming StaticRuntimeDefinition<payloadCapacity>,
         routeClassifier: ExactProtocolRouteClassifier
     ) {
+        let maximumObjects = definition.maximumObjects ?? capacity
+        let maximumPendingCorrelations = definition.maximumPendingCorrelations ?? capacity
+        precondition(maximumObjects >= 0 && maximumObjects <= capacity)
+        precondition(maximumPendingCorrelations >= 0 && maximumPendingCorrelations <= capacity)
         self.registryID = definition.registryID
         self.routeClassifier = routeClassifier
         self.processor = ProtocolProcessor<capacity>(
             capabilities: definition.capabilities,
-            maximumPayloadBytes: payloadCapacity
+            maximumPayloadBytes: payloadCapacity,
+            maximumObjects: maximumObjects,
+            maximumPendingCorrelations: maximumPendingCorrelations
         )
         self.subscriptions = ProtocolSubscriptionRegistry<capacity>()
         self.sink = InlineOwnedProtocolActionSink<capacity, payloadCapacity>()

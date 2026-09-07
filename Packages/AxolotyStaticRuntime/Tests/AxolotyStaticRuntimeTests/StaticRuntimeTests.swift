@@ -14,6 +14,10 @@ private func staticRegistryID(_ literal: StaticString = "00000000-0000-4000-8000
     ObjectID(bytes: staticPayload(literal))!
 }
 
+private func staticUUID(_ literal: StaticString) -> UUID16 {
+    UUID16(parsing: staticPayload(literal))!
+}
+
 @Suite("Axoloty static runtime")
 struct StaticRuntimeTests {
     @Test("selected payload capacity is enforced before sink mutation")
@@ -77,6 +81,81 @@ struct StaticRuntimeTests {
         #expect(MemoryLayout<StaticRuntime<16, 64>>.size < MemoryLayout<StaticRuntime<16, 512>>.size)
         #expect(MemoryLayout<StaticRuntime<64, 64>>.size < MemoryLayout<StaticRuntime<64, 512>>.size)
         #expect(MemoryLayout<StaticRuntime<16, 512>>.size < MemoryLayout<StaticRuntime<16, 2048>>.size)
+    }
+
+    @Test("definition defaults follow consuming runtime capacity")
+    func definitionDefaultsFollowRuntimeCapacity() throws {
+        let definition = StaticRuntimeDefinition<2048>(registryID: staticRegistryID())
+        #expect(definition.maximumObjects == nil)
+        #expect(definition.maximumPendingCorrelations == nil)
+        var runtime = StaticRuntime<1, 2048>(
+            definition: definition,
+            routeClassifier: ExactProtocolRouteClassifier(externalRoute: "external/wire-compat-v1/io-external-1")
+        )
+        let first = try ProtocolLocalOperation(
+            capability: .discover,
+            sourceID: .zero,
+            correlationID: staticUUID("00000000-0000-4000-8000-000000000011"),
+            payload: staticPayload(),
+            requestTimeoutMS: 100
+        )
+        let second = try ProtocolLocalOperation(
+            capability: .discover,
+            sourceID: .zero,
+            correlationID: staticUUID("00000000-0000-4000-8000-000000000012"),
+            payload: staticPayload(),
+            requestTimeoutMS: 100
+        )
+        #expect(runtime.send(first, nowMS: 1) == .accepted)
+        #expect(runtime.drain { _ in } == 1)
+        #expect(runtime.send(second, nowMS: 2) == .rejected(.capacityExceeded))
+        #expect(runtime.state.pendingCorrelations == 1)
+    }
+
+    @Test("definition preserves reduced protocol limits")
+    func definitionPreservesReducedProtocolLimits() throws {
+        let definition = StaticRuntimeDefinition<2048>(
+            registryID: staticRegistryID(),
+            maximumObjects: 1,
+            maximumPendingCorrelations: 1
+        )
+        var runtime = StaticRuntime<4, 2048>(
+            definition: definition,
+            routeClassifier: ExactProtocolRouteClassifier(externalRoute: "external/wire-compat-v1/io-external-1")
+        )
+        let firstRequest = try ProtocolLocalOperation(
+            capability: .discover,
+            sourceID: .zero,
+            correlationID: staticUUID("00000000-0000-4000-8000-000000000021"),
+            payload: staticPayload(),
+            requestTimeoutMS: 100
+        )
+        let secondRequest = try ProtocolLocalOperation(
+            capability: .discover,
+            sourceID: .zero,
+            correlationID: staticUUID("00000000-0000-4000-8000-000000000022"),
+            payload: staticPayload(),
+            requestTimeoutMS: 100
+        )
+        #expect(runtime.send(firstRequest, nowMS: 1) == .accepted)
+        #expect(runtime.drain { _ in } == 1)
+        #expect(runtime.send(secondRequest, nowMS: 2) == .rejected(.capacityExceeded))
+        #expect(runtime.state.pendingCorrelations == 1)
+
+        let firstPayload: StaticString = #"{"object":{"objectId":"11111111-1111-4111-8111-111111111111","coreType":"CoatyObject","objectType":"test.Object","name":"first"}}"#
+        let secondPayload: StaticString = #"{"object":{"objectId":"22222222-2222-4222-8222-222222222222","coreType":"CoatyObject","objectType":"test.Object","name":"second"}}"#
+        #expect(runtime.receive(
+            topic: staticPayload("coaty/3/ns/ADV/11111111-1111-4111-8111-111111111111"),
+            payload: staticPayload(firstPayload),
+            nowMS: 3
+        ) == .accepted)
+        #expect(runtime.drain { _ in } == 1)
+        #expect(runtime.receive(
+            topic: staticPayload("coaty/3/ns/ADV/22222222-2222-4222-8222-222222222222"),
+            payload: staticPayload(secondPayload),
+            nowMS: 4
+        ) == .rejected(.capacityExceeded))
+        #expect(runtime.state.activeRecords == 1)
     }
 
     @Test("one shared fixed processor sends and drains synchronously")
