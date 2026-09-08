@@ -103,7 +103,8 @@ extension AxolotyRuntimeTests {
 
     @Test("RuntimeBuilder handlers receive normalized invocations")
     func builderHandlerIsInvoked() async throws {
-        let correlation = try #require(UUID16(parsing: "00000000-0000-4000-8000-000000000811"))
+        let correlationText = "00000000-0000-4000-8000-000000000811"
+        let correlation = try #require(UUID16(parsing: correlationText))
         let invocation = InvocationRecorder()
         var builder = try RuntimeBuilder(sourceID: .zero, namespace: "handler-api-contract")
         _ = try builder.respond(to: .call(operation: "device.read")) { value in
@@ -115,7 +116,7 @@ extension AxolotyRuntimeTests {
         try await runtime.start()
 
         await transport.deliver(.profile(
-            route: "coaty/3/handler-api-contract/CLL:device.read/00000000-0000-4000-8000-000000000812/\(correlation)",
+            route: "coaty/3/handler-api-contract/CLL:device.read/00000000-0000-4000-8000-000000000812/\(correlationText)",
             payload: Array("{\"parameters\":{\"operand\":7}}".utf8),
             nowMS: 4
         ))
@@ -139,9 +140,10 @@ extension AxolotyRuntimeTests {
         let diagnostics = await runtime.diagnostics()
         var iterator = diagnostics.makeAsyncIterator()
 
-        let correlation = try #require(UUID16(parsing: "00000000-0000-4000-8000-000000000821"))
+        let correlationText = "00000000-0000-4000-8000-000000000821"
+        let correlation = try #require(UUID16(parsing: correlationText))
         await transport.deliver(.profile(
-            route: "coaty/3/handler-error-contract/CLL:device.fail/00000000-0000-4000-8000-000000000822/\(correlation)",
+            route: "coaty/3/handler-error-contract/CLL:device.fail/00000000-0000-4000-8000-000000000822/\(correlationText)",
             payload: Array("{}".utf8),
             nowMS: 5
         ))
@@ -154,7 +156,8 @@ extension AxolotyRuntimeTests {
 
     @Test("handler responses publish through the injected transport")
     func handlerResponseUsesInjectedTransport() async throws {
-        let correlation = try #require(UUID16(parsing: "00000000-0000-4000-8000-000000000831"))
+        let correlationText = "00000000-0000-4000-8000-000000000831"
+        let correlation = try #require(UUID16(parsing: correlationText))
         let responsePayload = Array("{\"result\":{\"answer\":42}}".utf8)
         var builder = try RuntimeBuilder(sourceID: .zero, namespace: "response-api-contract")
         _ = try builder.respond(to: .call(operation: "device.read")) { _ in
@@ -164,7 +167,7 @@ extension AxolotyRuntimeTests {
         let runtime = AxolotyRuntime(definition: try builder.finish(), transport: transport)
         try await runtime.start()
         await transport.deliver(.profile(
-            route: "coaty/3/response-api-contract/CLL:device.read/00000000-0000-4000-8000-000000000832/\(correlation)",
+            route: "coaty/3/response-api-contract/CLL:device.read/00000000-0000-4000-8000-000000000832/\(correlationText)",
             payload: Array("{}".utf8),
             nowMS: 6
         ))
@@ -173,7 +176,7 @@ extension AxolotyRuntimeTests {
         }
         let publication = try #require(await transport.lastSent())
         #expect(routeEventType(publication.route) == ProtocolCapability.returnEvent.wireEventType.wireCode.description)
-        #expect(publication.route.hasSuffix("/\(correlation)"))
+        #expect(publication.route.hasSuffix("/\(correlationText)"))
         #expect(publication.payload == responsePayload)
         await runtime.stop()
     }
