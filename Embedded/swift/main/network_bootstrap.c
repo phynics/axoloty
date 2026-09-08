@@ -13,6 +13,7 @@
 #include "nvs_flash.h"
 #include "runtime_identity.h"
 #include "embedded_shared_flags.h"
+#include "mqtt_event_validation.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
@@ -182,18 +183,16 @@ static void network_mqtt_event(void *handler_args, esp_event_base_t base, int32_
     else if (event_id == MQTT_EVENT_SUBSCRIBED) network_mqtt_bits_set(network_agent_role ? AGENT_SUBSCRIBED_BIT : 8U);
     else if (event_id == MQTT_EVENT_PUBLISHED) network_mqtt_bits_set(16U);
     else if (event_id == MQTT_EVENT_DATA && network_agent_role) {
-        int valid = event && event->topic_len >= 0 && event->topic_len < NETWORK_MAX_TOPIC &&
-            event->data_len >= 0 && event->data_len < NETWORK_MAX_PAYLOAD &&
-            event->total_data_len >= 0 && event->total_data_len < NETWORK_MAX_PAYLOAD &&
-            event->current_data_offset >= 0 &&
-            event->current_data_offset <= event->total_data_len &&
-            event->data_len <= event->total_data_len - event->current_data_offset &&
-            event->data;
         // The static endpoint profile has no reassembly buffer. A fragmented
         // PUBLISH is rejected at the transport boundary instead of retaining
-        // partial untrusted data or allocating a continuation buffer.
-        valid = valid && event->topic && event->topic_len > 0 &&
-            event->current_data_offset == 0 && event->data_len == event->total_data_len;
+        // partial untrusted data. The helper includes the
+        // event->current_data_offset == 0 && event->data_len == event->total_data_len
+        // requirement while keeping callback validation host-testable.
+        int valid = axoloty_mqtt_event_data_is_valid(
+            event ? event->topic : NULL, event ? event->topic_len : -1,
+            event ? event->data : NULL, event ? event->data_len : -1,
+            event ? event->total_data_len : -1,
+            event ? event->current_data_offset : -1);
         if (valid) {
             int32_t output_topic_length = 0;
             int32_t output_payload_length = 0;
@@ -245,9 +244,12 @@ static void network_mqtt_event(void *handler_args, esp_event_base_t base, int32_
                 agent_actor_route_length = 0;
             }
         }
-    } else if (event_id == MQTT_EVENT_DATA && event && event->topic && event->data &&
-              event->topic_len >= 0 && event->topic_len < NETWORK_MAX_TOPIC &&
-              event->data_len >= 0 && event->data_len < NETWORK_MAX_PAYLOAD &&
+    } else if (event_id == MQTT_EVENT_DATA &&
+              axoloty_mqtt_event_data_is_valid(
+                  event ? event->topic : NULL, event ? event->topic_len : -1,
+                  event ? event->data : NULL, event ? event->data_len : -1,
+                  event ? event->total_data_len : -1,
+                  event ? event->current_data_offset : -1) &&
               event->topic_len == (int)strlen(network_topic) &&
              event->data_len == (int)network_payload_length &&
              memcmp(event->topic, network_topic, event->topic_len) == 0 &&
