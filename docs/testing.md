@@ -36,8 +36,11 @@ node Tests/Support/validate-test-tiers.mjs
 The validator checks category metadata and resolves every self-test against
 the nodes of the category that owns it, failing if a maintained self-test is
 unmapped, owned by more than one category, or owned by a category whose nodes
-never run it. It does not invoke Swift; run it through
-`make test-tier TIER=ci` for the standard Makefile path. Build and test
+never run it. It also checks Makefile wrapper ownership when invocation data is
+available. Filtered Swift nodes are checked against their owning package's
+discovered test targets, files, and suites; each alternation branch must match,
+and production symbols are not accepted as test selectors. It does not invoke
+Swift; run it through `make test-tier TIER=ci` for the standard Makefile path. Build and test
 execution must always use the root Makefile and Podman.
 
 The required G3 object-model gates include the portable package graph and
