@@ -93,7 +93,7 @@ public final class AxolotyRuntime: Sendable {
                 Task { await self.stop() }
             })
             started = true
-            await executor.waitForTermination()
+            _ = await executor.waitForTermination()
             try Task.checkCancellation()
             if let failure = await executor.terminalFailure() {
                 await stop()
@@ -106,7 +106,8 @@ public final class AxolotyRuntime: Sendable {
                 await stop()
                 return
             }
-            if started || await lifecycleState() == .failed {
+            let failedDuringStart = await lifecycleState() == .failed
+            if started || failedDuringStart {
                 await stop()
             }
             throw error
