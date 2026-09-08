@@ -65,8 +65,8 @@ struct RuntimeExecutorIoTests {
 
     @Test("IO actor and ordinary handlers share the executor admission bound")
     func ioActorAndOrdinaryHandlerShareAdmissionCapacity() async throws {
-        let sourceID = "00000000-0000-0000-0000-000000000741"
-        let actorID = "00000000-0000-0000-0000-000000000742"
+        let sourceID = "00000000-0000-4000-8000-000000000741"
+        let actorID = "00000000-0000-4000-8000-000000000742"
         let ioGate = InvocationGate()
         let channelGate = InvocationGate()
         var builder = try RuntimeBuilder(
@@ -147,7 +147,7 @@ struct RuntimeExecutorIoTests {
 
     @Test("latest IO publication queues behind shared transport work and flushes once")
     func latestIoPublicationQueuesBehindTransportWork() async throws {
-        let sourceID = "00000000-0000-0000-0000-000000000751"
+        let sourceID = "00000000-0000-4000-8000-000000000751"
         var builder = try RuntimeBuilder(
             sourceID: try #require(UUID16(parsing: sourceID)),
             namespace: "shared-transport",
@@ -169,7 +169,7 @@ struct RuntimeExecutorIoTests {
                 payload: Array("{}".utf8)
             )) == .accepted
         }
-        let association = "{\"ioSourceId\":\"\(sourceID)\",\"ioActorId\":\"00000000-0000-0000-0000-000000000752\",\"associatingRoute\":\"coaty/shared-transport\"}"
+        let association = "{\"ioSourceId\":\"\(sourceID)\",\"ioActorId\":\"00000000-0000-4000-8000-000000000752\",\"associatingRoute\":\"coaty/shared-transport\"}"
         #expect(await runtime.receive(.profile(
             route: "coaty/3/shared-transport/ASC/\(sourceID)",
             payload: Array(association.utf8),
