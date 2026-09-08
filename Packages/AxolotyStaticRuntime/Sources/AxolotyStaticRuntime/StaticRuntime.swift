@@ -30,13 +30,20 @@ public struct StaticRuntimeDefinition<let payloadCapacity: Int>: ~Copyable {
     ///   - capabilities: Families accepted by this binding.
     ///   - maximumObjects: Optional maximum number of simultaneously advertised objects.
     ///   - maximumPendingCorrelations: Optional maximum number of outstanding request correlations.
+    /// - Throws: ``ProtocolCapacityError`` if the payload specialization is
+    ///   outside the wire payload bound.
     public init(
         registryID: ObjectID,
         capabilities: ProtocolCapabilities = .coatyCore3,
         maximumObjects: Int? = nil,
         maximumPendingCorrelations: Int? = nil
-    ) {
-        precondition(payloadCapacity >= 0 && payloadCapacity <= WireBufferConfig.maxPayloadSize)
+    ) throws(ProtocolCapacityError) {
+        guard payloadCapacity >= 0 else {
+            throw ProtocolCapacityError(.negativeCapacity, parameter: "payloadCapacity")
+        }
+        guard payloadCapacity <= WireBufferConfig.maxPayloadSize else {
+            throw ProtocolCapacityError(.exceedsMaximum, parameter: "payloadCapacity")
+        }
         self.registryID = registryID
         self.capabilities = capabilities
         self.maximumObjects = maximumObjects
@@ -68,15 +75,32 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
     ///   - capabilities: Families accepted by this binding.
     ///   - maximumObjects: Maximum simultaneous advertised objects.
     ///   - maximumPendingCorrelations: Maximum outstanding request correlations.
+    /// - Throws: ``ProtocolCapacityError`` if a caller-supplied limit is
+    ///   negative or exceeds the runtime's fixed storage capacity.
     public init(
         registryID: ObjectID,
         capabilities: ProtocolCapabilities = .coatyCore3,
         maximumObjects: Int = capacity,
         maximumPendingCorrelations: Int = capacity,
-    ) {
-        precondition(payloadCapacity >= 0 && payloadCapacity <= WireBufferConfig.maxPayloadSize)
-        precondition(maximumObjects >= 0 && maximumObjects <= capacity)
-        precondition(maximumPendingCorrelations >= 0 && maximumPendingCorrelations <= capacity)
+    ) throws(ProtocolCapacityError) {
+        guard payloadCapacity >= 0 else {
+            throw ProtocolCapacityError(.negativeCapacity, parameter: "payloadCapacity")
+        }
+        guard payloadCapacity <= WireBufferConfig.maxPayloadSize else {
+            throw ProtocolCapacityError(.exceedsMaximum, parameter: "payloadCapacity")
+        }
+        guard maximumObjects >= 0 else {
+            throw ProtocolCapacityError(.negativeCapacity, parameter: "maximumObjects")
+        }
+        guard maximumObjects <= capacity else {
+            throw ProtocolCapacityError(.exceedsMaximum, parameter: "maximumObjects")
+        }
+        guard maximumPendingCorrelations >= 0 else {
+            throw ProtocolCapacityError(.negativeCapacity, parameter: "maximumPendingCorrelations")
+        }
+        guard maximumPendingCorrelations <= capacity else {
+            throw ProtocolCapacityError(.exceedsMaximum, parameter: "maximumPendingCorrelations")
+        }
         self.registryID = registryID
         self.routeClassifier = ExactProtocolRouteClassifier(
             externalRoute: "external/wire-compat-v1/io-external-1"

@@ -851,7 +851,7 @@ fileprivate struct StaticTraceVerifier<let traceCapacity: Int>: ~Copyable {
         let capabilities = try SharedProtocolTraceReplay<traceCapacity>.capabilities(
             firstStep?.capabilities.supportedFamilies ?? TraceEventFamily.allCases
         )
-        runtime = StaticRuntimeESP32C6(
+        runtime = try StaticRuntimeESP32C6(
             registryID: ObjectID(uuid: Self.identity("trace-static-registry")),
             capabilities: capabilities,
             maximumObjects: firstStep?.limits.maximumObjects ?? 16,
