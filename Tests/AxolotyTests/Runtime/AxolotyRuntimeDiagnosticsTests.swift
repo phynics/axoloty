@@ -108,7 +108,9 @@ extension AxolotyRuntimeTests {
 
         await transport.fail(AxolotyError.runtime(code: .brokerUnavailable, reason: "typed transport failure"))
 
-        #expect(await failures.stream.first == "brokerUnavailable:typed transport failure")
+        var iterator = failures.stream.makeAsyncIterator()
+        let failure = await iterator.next()
+        #expect(failure == "brokerUnavailable:typed transport failure")
         failures.continuation.finish()
     }
 
