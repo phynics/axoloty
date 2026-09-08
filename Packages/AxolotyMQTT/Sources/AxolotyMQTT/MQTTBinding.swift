@@ -119,7 +119,7 @@ public struct MQTTBindingConfiguration: Sendable, Equatable {
 /// before handing it to ``AxolotyRuntime`` and never parses protocol families.
 public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     private let lock = NIOLock()
-    private let client: RuntimeMQTTClient
+    private let client: any RuntimeMQTTClientAdapter
     private let delegate: RuntimeMQTTDelegate
     private let connectionTimeoutMS: UInt32
     private let maximumProfileTopicBytes: Int
@@ -137,6 +137,23 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         self.maximumProfileTopicBytes = configuration.maximumProfileTopicBytes
         self.maximumExternalRoutes = configuration.maximumExternalRoutes
         self.client = try RuntimeMQTTClient(configuration: configuration, delegate: delegate)
+    }
+
+    /// Creates a binding with an injected adapter for in-process tests.
+    ///
+    /// This initializer is internal. It preserves the public production
+    /// initializer and keeps the callback delegate and transport ownership
+    /// boundaries identical to the broker-backed path.
+    init(
+        configuration: MQTTBindingConfiguration,
+        client: any RuntimeMQTTClientAdapter,
+        delegate: RuntimeMQTTDelegate
+    ) {
+        self.delegate = delegate
+        self.connectionTimeoutMS = configuration.connectionTimeoutMS
+        self.maximumProfileTopicBytes = configuration.maximumProfileTopicBytes
+        self.maximumExternalRoutes = configuration.maximumExternalRoutes
+        self.client = client
     }
 
     /// Starts the broker connection and installs the copied frame callback.
@@ -465,7 +482,7 @@ struct ExternalRouteRecord: Sendable, Equatable {
     let epoch: UInt64
 }
 
-private final class RuntimeMQTTDelegate: RuntimeMQTTClientDelegate, @unchecked Sendable {
+final class RuntimeMQTTDelegate: RuntimeMQTTClientDelegate, @unchecked Sendable {
     private let lock = NIOLock()
     private var receive: (@Sendable (String, [UInt8], UInt32) -> Void)?
     private var startContinuation: CheckedContinuation<Void, Error>?
