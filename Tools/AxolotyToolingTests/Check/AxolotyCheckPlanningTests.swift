@@ -106,6 +106,59 @@ func releaseCategoryDeclaresEveryOtherCategoryAndRunsWhatItCan() throws {
 }
 
 @Test
+func resolvedPlanRetainsMaintainedPackageAndRouteCoverage() throws {
+    let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
+    let plan = try resolver.resolve(.tier(
+        name: CanonicalTier.ci.rawValue,
+        ci: false,
+        platform: .linux
+    ))
+    let byName = Dictionary(uniqueKeysWithValues: plan.nodes.map { ($0.name, $0) })
+    for name in ["g4-host-runtime", "g4-static-runtime", "g5-optional-products-tests", "test-module"] {
+        #expect(byName[name] != nil, "missing canonical coverage node: \(name)")
+    }
+    func filterArgument(for name: String) throws -> String {
+        let arguments = try #require(byName[name]?.command.arguments)
+        let index = try #require(arguments.firstIndex(of: "--filter"))
+        let valueIndex = arguments.index(after: index)
+        try #require(valueIndex < arguments.endIndex)
+        return arguments[valueIndex]
+    }
+    let hostFilter = try filterArgument(for: "g4-host-runtime")
+    #expect(hostFilter.contains("CoatyRouteTests"))
+    #expect(hostFilter.contains("CoatyRouteCapacityTests"))
+    let staticFilter = try filterArgument(for: "g4-static-runtime")
+    #expect(staticFilter.contains("StaticIoActorMacroTests"))
+    #expect(staticFilter.contains("staticIoActorRejectsNonEnum"))
+    let mqttFilter = try filterArgument(for: "g4-mqtt-tests")
+    #expect(mqttFilter.contains("MQTTBindingTests"))
+    #expect(mqttFilter.contains("MQTTBindingExternalRouteTests"))
+    #expect(mqttFilter.contains("MQTTBindingOperationTimeoutTests"))
+    let routingFilter = try filterArgument(for: "g4-io-routing-tests")
+    #expect(routingFilter == "AxolotyIoRoutingTests")
+    let moduleFilter = try filterArgument(for: "test-module")
+    #expect(moduleFilter.contains("AxolotySensorThingsTests"))
+}
+
+@Test
+func resolverKeepsPackageScopedFilterCommandsBoundToTheirOwner() throws {
+    let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
+    func filterArgument(for command: AxolotyCommandPlan) throws -> String {
+        let index = try #require(command.arguments.firstIndex(of: "--filter"))
+        let valueIndex = command.arguments.index(after: index)
+        try #require(valueIndex < command.arguments.endIndex)
+        return command.arguments[valueIndex]
+    }
+    let staticCommand = try resolver.command(.node(name: "g4-static-runtime"))
+    #expect(staticCommand.arguments.contains("--package-path"))
+    #expect(staticCommand.arguments.contains("Packages/AxolotyStaticRuntime"))
+    #expect(try filterArgument(for: staticCommand).contains("staticIoActorRejectsNonEnum"))
+    let protocolCommand = try resolver.command(.node(name: "g4-protocol-lifecycle"))
+    #expect(protocolCommand.arguments.contains("Packages/AxolotyProtocol"))
+    #expect(try filterArgument(for: protocolCommand).contains("ProtocolProcessorTests"))
+}
+
+@Test
 func plannerOrdersDependenciesBeforeDependants() throws {
     let plan = try AxolotyCheckPlanner().plan([node("app", dependencies: ["core"]), node("core")])
     #expect(plan.nodes.map(\.name) == ["core", "app"])

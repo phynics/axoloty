@@ -6,7 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { collectFilterSymbols, discoverSelfTests, discoverTargetSelfTests, expandFilterAlternatives, parseMakeTargets, tierNodeCommandsFrom, validate } from "../validate-test-tiers.mjs";
+import { collectFilterSymbols, collectFilterSymbolsByPackage, discoverSelfTests, discoverTargetSelfTests, expandFilterAlternatives, parseMakeTargets, tierNodeCommandsFrom, validate } from "../validate-test-tiers.mjs";
 
 const root = path.resolve(import.meta.dirname, "../../..");
 
@@ -17,6 +17,7 @@ test("checked-in contract covers discovered self-tests", () => {
     discoveredSelfTests: discoverSelfTests(path.join(root, "Tests")),
     invokedSelfTests: discoverTargetSelfTests(path.join(root, "Makefile"), document.selfTests.map(entry => entry.path), tierNodeCommandsFrom(document)),
     exists: relative => fs.existsSync(path.join(root, relative)),
+    filterSymbols: collectFilterSymbolsByPackage(root),
   });
   assert.deepEqual(errors, []);
 });
@@ -161,8 +162,8 @@ test("G4 runtime gates select whole suites and their owning Swift packages", () 
   // hand-listed set of method names, which left every test added to the suite
   // afterwards unowned. One gate now selects the suite itself.
   const host = node("g4-host-runtime");
-  assert.equal(host.filter, "AxolotyRuntimeTests");
-  assert.equal(host.command.arguments[host.command.arguments.indexOf("--filter") + 1], "AxolotyRuntimeTests");
+  assert.ok(host.filter.split("|").includes("AxolotyRuntimeTests"));
+  assert.equal(host.command.arguments[host.command.arguments.indexOf("--filter") + 1], host.filter);
   assert.equal(host.dependencies.includes("build"), true);
   for (const retired of ["g4-runtime-definition", "g4-runtime-concurrency"]) {
     assert.equal(node(retired), undefined, `${retired} must stay consolidated into g4-host-runtime`);
@@ -171,14 +172,14 @@ test("G4 runtime gates select whole suites and their owning Swift packages", () 
   assert.equal(host.filter.includes("AxolotyStaticRuntimeTests"), false);
 
   const packageAssertions = [
-    ["g4-protocol-lifecycle", "Packages/AxolotyProtocol", "ProtocolFoundationTests|ProtocolProcessorTests"],
-    ["g4-static-runtime", "Packages/AxolotyStaticRuntime", "StaticRuntimeTests|StaticTypedIoTests"],
+    ["g4-protocol-lifecycle", "Packages/AxolotyProtocol", ["ProtocolFoundationTests", "ProtocolProcessorTests"]],
+    ["g4-static-runtime", "Packages/AxolotyStaticRuntime", ["StaticRuntimeTests", "StaticTypedIoTests", "StaticIoActorMacroTests", "staticIoActorRejectsNonEnum"]],
   ];
-  for (const [id, packagePath, filter] of packageAssertions) {
+  for (const [id, packagePath, filters] of packageAssertions) {
     const candidate = node(id);
     const args = candidate.command.arguments;
     assert.equal(args[args.indexOf("--package-path") + 1], packagePath, `${id} must invoke its owning package`);
-    assert.equal(candidate.filter, filter);
+    assert.ok(filters.every(filter => candidate.filter.split("|").includes(filter)), id);
     assert.equal(args.includes("--product"), false, `${id} must run tests, not request a product`);
   }
 });
@@ -202,7 +203,7 @@ test("discovery includes shell and Node self-tests", () => {
 test("validator requires repository authority tests in the tooling filter", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
   const node = document.nodes.find(candidate => candidate.id === "test-tooling");
-  node.filter = node.filter.split("|").filter(suite => suite !== "RepositoryAuthorityTests").join("|");
+  node.filter = node.filter.split("|").filter(branch => !branch.startsWith("repositoryAuthority") && !branch.startsWith("modulePolicy")).join("|");
   node.command.arguments[node.command.arguments.indexOf("--filter") + 1] = node.filter;
   const errors = validate(document, {
     makeTargets: parseMakeTargets(path.join(root, "Makefile")),
@@ -210,6 +211,20 @@ test("validator requires repository authority tests in the tooling filter", () =
     exists: () => true,
   });
   assert.ok(errors.includes("test-tooling must select RepositoryAuthorityTests"));
+});
+
+test("filter discovery records preserve an empty root scratch path", () => {
+  const script = fs.readFileSync(path.join(root, "Tests/Support/checks/check-swift-test-filter-contract.sh"), "utf8");
+  // Bash treats adjacent tabs as one separator. ASCII unit separator keeps the
+  // empty scratch-path field in root-package records intact.
+  assert.match(script, /IFS=\$'\\x1f' read -r node_id package_path scratch_path branch/);
+  assert.match(script, /\.join\("\\x1f"\)/);
+  const result = spawnSync("bash", ["-c", "while IFS=$'\\x1f' read -r a b c d; do printf '%s|%s|%s|%s\n' \"$a\" \"$b\" \"$c\" \"$d\"; done", "--"], {
+    input: "root\x1f.\x1f\x1fProtocolTraceTests\n",
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, "root|.| |ProtocolTraceTests\n".replace("| |", "||"));
 });
 
 test("target self-test discovery recognizes shell commands and Node test globs", () => {
@@ -409,6 +424,45 @@ test("validator rejects a node whose declared filter and --filter argument disag
     exists: () => true,
   });
   assert.ok(errors.includes("test-wire: declared filter and the --filter argument disagree"));
+});
+
+test("filter discovery contains test declarations but not production symbols", () => {
+  const symbols = collectFilterSymbols(root);
+  assert.ok(symbols.has("AxolotyMQTTTests"));
+  assert.ok(symbols.has("MQTTBindingExternalRouteTests"));
+  assert.ok(symbols.has("IoRoutingTests"));
+  assert.ok(symbols.has("StaticIoActorMacroExpansionTests"));
+  assert.ok(symbols.has("SensorThingsSmokeTests"));
+  assert.ok(symbols.has("CoatyRouteTests"));
+  assert.equal(symbols.has("AxolotyRuntime"), false);
+  assert.equal(symbols.has("RuntimeBuilder"), false);
+});
+
+test("package-scoped filter discovery rejects selectors from another package", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const base = {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+    filterSymbols: collectFilterSymbolsByPackage(root),
+  };
+  const drifted = structuredClone(document);
+  const node = drifted.nodes.find(candidate => candidate.id === "g4-static-runtime");
+  node.filter = "MQTTBindingTests";
+  node.command.arguments[node.command.arguments.indexOf("--filter") + 1] = node.filter;
+  assert.ok(validate(drifted, base).some(error => error.includes('"MQTTBindingTests"')));
+});
+
+test("validator checks Make ownership when invocation data is supplied", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const pathName = document.selfTests[0].path;
+  const errors = validate(document, {
+    makeTargets: new Set(),
+    discoveredSelfTests: [],
+    invokedSelfTests: new Map(),
+    exists: () => true,
+  });
+  assert.ok(errors.includes(`${"selfTest " + pathName}: no Make target invokes it`));
 });
 
 test("the four categories are the whole taxonomy", () => {

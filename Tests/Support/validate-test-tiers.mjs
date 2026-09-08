@@ -128,6 +128,15 @@ export function discoverTargetSelfTests(makefilePath, selfTests, tierNodeCommand
         for (const nodeCommand of tierNodeCommands.get(tierAlias[1]) ?? []) {
           for (const selfTest of selfTests) if (commandInvokesSelfTest(nodeCommand, selfTest)) direct.get(name).add(selfTest);
         }
+      } else if (/test-tier\s+\$\{?\$?\(?tier\)?\}?/.test(command) || /AXOLOTY_TOOL_ARGS=.*test-tier.*\$\$tier/.test(command)) {
+        // The root Makefile forwards the user-selected tier through axoloty-tool
+        // instead of spelling a literal `TIER=` value. Claim all declared
+        // categories for this dynamic wrapper.
+        for (const nodeCommands of tierNodeCommands.values()) {
+          for (const nodeCommand of nodeCommands) {
+            for (const selfTest of selfTests) if (commandInvokesSelfTest(nodeCommand, selfTest)) direct.get(name).add(selfTest);
+          }
+        }
       }
       const child = recursiveMakeTarget(command);
       if (child) children.get(name).add(child);
@@ -183,32 +192,114 @@ export function expandFilterAlternatives(filter) {
 // Names a filter branch may legitimately select: a test module, a suite type
 // or its display name, or a source file -- SwiftPM scopes free `@Test`
 // functions by their file, so a file name is a real selector.
-export function collectFilterSymbols(repositoryRoot, directories = ["Tests", "Tools", "Apps", "Packages", "Source"]) {
-  const names = new Set();
-  const addFile = absolute => {
-    const name = path.basename(absolute);
-    if (name === "Package.swift") {
-      for (const match of fs.readFileSync(absolute, "utf8").matchAll(/name:\s*"([A-Za-z_]\w*)"/g)) names.add(match[1]);
-      return;
+// Return test selectors from the test targets SwiftPM actually discovers. Do not
+// scan production sources: a type such as `AxolotyRuntime` is not a test
+// selector merely because it appears in a source file.
+function packageTestTargets(manifestPath) {
+  if (!fs.existsSync(manifestPath)) return [];
+  const source = fs.readFileSync(manifestPath, "utf8");
+  const targets = [];
+  const starts = [...source.matchAll(/^\s*\.testTarget\(\s*\n?\s*name:\s*"([A-Za-z_]\w*)"([\s\S]*?)(?=^\s*\.(?:testTarget|target|executableTarget|macro)\(|^\s*\)\s*$)/gm)];
+  for (const match of starts) {
+    const body = match[2] ?? "";
+    const pathMatch = /path:\s*"([^"]+)"/.exec(body);
+    const targetPath = pathMatch?.[1] ?? `Tests/${match[1]}`;
+    targets.push({ name: match[1], path: path.resolve(path.dirname(manifestPath), targetPath) });
+  }
+  return targets;
+}
+
+function testTargetSymbols(manifestPath) {
+  const symbols = new Set();
+  for (const target of packageTestTargets(manifestPath)) {
+    if (!fs.existsSync(target.path)) continue;
+    const files = [];
+    const visit = directory => {
+      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        const absolute = path.join(directory, entry.name);
+        if (entry.isDirectory()) visit(absolute);
+        else if (entry.name.endsWith(".swift")) files.push(absolute);
+      }
+    };
+    visit(target.path);
+    const contents = new Map(files.map(file => [file, fs.readFileSync(file, "utf8")]));
+    const suiteNames = new Set();
+    for (const text of contents.values()) {
+      for (const match of text.matchAll(/@Suite(?:\(\s*(?:"([^"]+)"|[^)]*)\))?\s*(?:struct|class|enum|actor)\s+([A-Za-z_]\w*)/g)) {
+        suiteNames.add(match[2]);
+        if (match[1]) suiteNames.add(match[1]);
+      }
     }
-    if (!name.endsWith(".swift")) return;
-    names.add(name.slice(0, -".swift".length));
-    const contents = fs.readFileSync(absolute, "utf8");
-    for (const match of contents.matchAll(/\b(?:struct|class|enum|actor)\s+([A-Za-z_]\w*)/g)) names.add(match[1]);
-    for (const match of contents.matchAll(/@Suite\(\s*"([^"]+)"/g)) names.add(match[1]);
-  };
-  const visit = directory => {
-    if (!fs.existsSync(directory)) return;
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      const absolute = path.join(directory, entry.name);
-      if (entry.isDirectory()) visit(absolute);
-      else addFile(absolute);
+    // Swift Testing permits a suite declaration and its @Test methods to be
+    // split over extensions. Count both declarations and extensions when
+    // deciding whether this target contains tests.
+    const testFiles = files.filter(file => {
+      const text = contents.get(file);
+      return /(?:^|\n)\s*@Test\b/.test(text)
+        || [...suiteNames].some(name => new RegExp(`extension\\s+${name}\\b`).test(text));
+    });
+    // A test target with no @Test declarations is not a valid selector. This
+    // also prevents a stale target name from making a zero-test gate green.
+    if (testFiles.length === 0) continue;
+    symbols.add(target.name);
+    for (const file of testFiles) {
+      symbols.add(path.basename(file, ".swift"));
+      const text = contents.get(file);
+      for (const match of text.matchAll(/@Suite(?:\(\s*(?:"([^"]+)"|[^)]*)\))?\s*(?:struct|class|enum|actor)\s+([A-Za-z_]\w*)/g)) {
+        symbols.add(match[2]);
+        if (match[1]) symbols.add(match[1]);
+      }
+      // Files with top-level Swift Testing functions have no suite selector.
+      // Keep their actual function names available for a package command that
+      // must select this maintained file without selecting unrelated tests.
+      if (!text.includes("@Suite")) {
+        for (const match of text.matchAll(/@Test(?:\([^)]*\))?[\s\S]{0,240}?\bfunc\s+([A-Za-z_]\w*)\s*\(/g)) {
+          symbols.add(match[1]);
+        }
+      }
     }
+    // A suite whose declaration is in an empty file is still a valid selector
+    // when an extension elsewhere contributes its tests.
+    for (const name of suiteNames) symbols.add(name);
+  }
+  return symbols;
+}
+
+/**
+ * Discover valid selectors for each Swift package in the checkout.
+ *
+ * The returned map is keyed by the package path used by a manifest command;
+ * `.` is the root package. Values contain only test target names, test file
+ * names, and Swift Testing suite names discovered under test targets.
+ */
+export function collectFilterSymbolsByPackage(repositoryRoot) {
+  const packages = new Map();
+  const add = packagePath => {
+    const relative = path.relative(repositoryRoot, packagePath).split(path.sep).join("/") || ".";
+    packages.set(relative, testTargetSymbols(path.join(packagePath, "Package.swift")));
   };
-  for (const directory of directories) visit(path.join(repositoryRoot, directory));
-  const rootManifest = path.join(repositoryRoot, "Package.swift");
-  if (fs.existsSync(rootManifest)) addFile(rootManifest);
-  return names;
+  add(repositoryRoot);
+  for (const entry of fs.readdirSync(repositoryRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+    const packagePath = path.join(repositoryRoot, entry.name);
+    if (fs.existsSync(path.join(packagePath, "Package.swift"))) add(packagePath);
+    if (entry.name === "Packages") {
+      for (const child of fs.readdirSync(packagePath, { withFileTypes: true })) {
+        const nested = path.join(packagePath, child.name);
+        if (child.isDirectory() && fs.existsSync(path.join(nested, "Package.swift"))) add(nested);
+      }
+    }
+  }
+  return packages;
+}
+
+export function collectFilterSymbols(repositoryRoot, directories = undefined) {
+  const byPackage = collectFilterSymbolsByPackage(repositoryRoot);
+  const all = new Set();
+  for (const symbols of byPackage.values()) for (const symbol of symbols) all.add(symbol);
+  // `directories` was accepted by the original helper. Keep the argument for
+  // callers, but intentionally do not use it to scan production files.
+  return all;
 }
 
 export function discoverSelfTests(testsDirectory) {
@@ -228,7 +319,7 @@ export function discoverSelfTests(testsDirectory) {
   return [...new Set(found)].sort();
 }
 
-export function validate(document, { makeTargets, discoveredSelfTests, invokedSelfTests = new Map(), exists = () => true, filterSymbols = undefined }) {
+export function validate(document, { makeTargets, discoveredSelfTests, invokedSelfTests = undefined, exists = () => true, filterSymbols = undefined }) {
   const errors = [];
   if (document.schemaVersion !== 2) errors.push("schemaVersion must be 2");
   if (typeof document.manifestID !== "string" || !document.manifestID) errors.push("manifestID must be a nonempty string");
@@ -307,6 +398,13 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
     // Every top-level branch of a filter must select something that exists.
     // Swift Testing ignores a branch matching nothing without failing the run.
     if (filterSymbols) {
+      // A package-scoped discovery map prevents a root-package selector from
+      // accidentally validating a name that exists only in Tools or Apps.
+      const packagePathIndex = commandArguments.indexOf("--package-path");
+      const packagePath = packagePathIndex >= 0 ? commandArguments[packagePathIndex + 1] : ".";
+      const symbols = filterSymbols instanceof Map
+        ? (filterSymbols.get(packagePath ?? ".") ?? new Set())
+        : filterSymbols;
       for (const alternative of expandFilterAlternatives(node.filter)) {
         // A gate selects a whole module, suite, or file. A hand-listed set of
         // methods silently stops covering tests added to that suite later, and
@@ -316,8 +414,8 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
           errors.push(`${node.id}: test filter ${JSON.stringify(alternative)} names individual test methods; select a module, suite, or file instead`);
           continue;
         }
-        if (!filterSymbols.has(alternative)) {
-          errors.push(`${node.id}: test filter selects ${JSON.stringify(alternative)}, which matches no test module, suite, or file`);
+        if (!symbols.has(alternative)) {
+          errors.push(`${node.id}: test filter selects ${JSON.stringify(alternative)}, which matches no test module, suite, or file in ${JSON.stringify(packagePath)}`);
         }
       }
     }
@@ -345,7 +443,14 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
     if (!node?.required || !node.local || !node.ci) errors.push(`required gate ${JSON.stringify(gate)} must be required and available locally and in CI`);
   }
   const toolingNode = (document.nodes ?? []).find(node => node?.id === "test-tooling");
-  if (!toolingNode?.filter?.split("|").includes("RepositoryAuthorityTests")) {
+  // RepositoryAuthorityTests declares free-function tests with no suite, so a
+  // bare file label never matches SwiftPM discovery. Require the gate to name
+  // the file's test functions instead: every selector in that file starts
+  // with repositoryAuthority or modulePolicy.
+  const toolingBranches = toolingNode?.filter?.split("|") ?? [];
+  const selectsAuthority = toolingBranches.some(branch => branch.startsWith("repositoryAuthority"));
+  const selectsModulePolicy = toolingBranches.some(branch => branch.startsWith("modulePolicy"));
+  if (!selectsAuthority || !selectsModulePolicy) {
     errors.push("test-tooling must select RepositoryAuthorityTests");
   }
   if (!document.testOne?.command?.filterFlag || !Number.isInteger(document.testOne?.timeoutSeconds) || document.testOne.timeoutSeconds <= 0) errors.push("testOne must declare a filterFlag and positive timeoutSeconds");
@@ -469,6 +574,14 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
     if (entry.path && !canonicalCommandText.includes(entry.path)) {
       errors.push(`selfTest ${entry.path}: no required gate invokes it`);
     }
+    if (entry.path && invokedSelfTests instanceof Map) {
+      const targets = [...invokedSelfTests.entries()]
+        .filter(([, paths]) => paths.has(entry.path))
+        .map(([target]) => target);
+      if (targets.length === 0) {
+        errors.push(`selfTest ${entry.path}: no Make target invokes it`);
+      }
+    }
     if (owned.has(entry.path)) errors.push(`selfTest ${entry.path}: duplicate ownership (also owned by ${JSON.stringify(owned.get(entry.path))})`);
     else owned.set(entry.path, entry.tier);
   }
@@ -508,7 +621,7 @@ export function main(argumentsArray = process.argv.slice(2)) {
       discoveredSelfTests: discoverSelfTests(path.join(root, "Tests")),
       invokedSelfTests: discoverTargetSelfTests(path.join(root, "Makefile"), configuredSelfTests, tierNodeCommands),
       exists: relative => fs.existsSync(path.join(root, relative)),
-      filterSymbols: collectFilterSymbols(root),
+      filterSymbols: collectFilterSymbolsByPackage(root),
     });
     if (errors.length) { for (const error of errors) console.error(`test-tier configuration error: ${error}`); return 1; }
     console.log(`PASS: ${document.tiers.length} test tiers and ${document.selfTests.length} self-tests satisfy the Axoloty testing contract`);
