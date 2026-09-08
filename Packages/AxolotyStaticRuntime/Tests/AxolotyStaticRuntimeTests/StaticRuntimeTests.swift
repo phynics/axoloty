@@ -49,6 +49,51 @@ struct StaticRuntimeTests {
         }
     }
 
+    @Test("owning sink rolls back a partially appended action batch")
+    func owningSinkRollsBackPartialBatch() throws {
+        let source = UUID16(parsing: "00000000-0000-4000-8000-000000000001")!
+        let actors = [
+            "00000000-0000-4000-8000-000000000002",
+            "00000000-0000-4000-8000-000000000003",
+            "00000000-0000-4000-8000-000000000004",
+            "00000000-0000-4000-8000-000000000005",
+            "00000000-0000-4000-8000-000000000006",
+            "00000000-0000-4000-8000-000000000007",
+            "00000000-0000-4000-8000-000000000008",
+            "00000000-0000-4000-8000-000000000009",
+            "00000000-0000-4000-8000-00000000000a"
+        ]
+        var runtime = StaticRuntime<16, 2048>(registryID: staticRegistryID())
+
+        for (index, actorLiteral) in actors.enumerated() {
+            let route = "coaty/" + String(repeating: "r", count: 240) + String(index)
+            let payload = Array("{\"ioSourceId\":\"00000000-0000-4000-8000-000000000001\",\"ioActorId\":\"\(actorLiteral)\",\"associatingRoute\":\"\(route)\"}".utf8)
+            let result = payload.withUnsafeBufferPointer { buffer in
+                let operation = try! ProtocolLocalOperation(
+                    capability: .associate,
+                    sourceID: source,
+                    payload: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+                )
+                return runtime.send(operation)
+            }
+            #expect(result == .accepted)
+            _ = runtime.drain { _ in }
+        }
+
+        let operation = try ProtocolLocalOperation(
+            capability: .ioValue,
+            sourceID: source,
+            payload: staticPayload()
+        )
+        let stateBeforeRejection = runtime.state
+        #expect(runtime.send(operation) == .rejected(.capacityExceeded))
+        #expect(runtime.actionCount == 0)
+        #expect(runtime.state == stateBeforeRejection)
+        #expect(runtime.send(operation) == .rejected(.capacityExceeded))
+        #expect(runtime.actionCount == 0)
+        #expect(runtime.state == stateBeforeRejection)
+    }
+
     @Test("payload capacity changes inline runtime layout")
     func payloadCapacityChangesLayout() {
         #expect(MemoryLayout<StaticRuntime<16, 128>>.size < MemoryLayout<StaticRuntime<16, 512>>.size)
