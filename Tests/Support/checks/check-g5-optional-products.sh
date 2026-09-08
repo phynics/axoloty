@@ -27,6 +27,6 @@ fi
 if grep -Eq 'axoloty\.sensor-things\.(source|observer)|Task\.detached|RuntimeComponent' "$runtime"; then
     fail "SensorThings runtime has more than one module or an unowned task path"
 fi
-grep -q 'SensorThingsRegistryTests' "$root/Tests/Support/test-tiers.json" || fail "registry tests are not in the G5 tier"
+grep -q 'registryStartsCombinedWorkflow' "$root/Tests/Support/test-tiers.json" || fail "registry tests are not in the G5 tier"
 
 echo "G5 optional-products boundary passed"
