@@ -141,13 +141,19 @@ func resolvedPlanRetainsMaintainedPackageAndRouteCoverage() throws {
 @Test
 func resolverKeepsPackageScopedFilterCommandsBoundToTheirOwner() throws {
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
+    func filterArgument(for command: AxolotyCommandPlan) throws -> String {
+        let index = try #require(command.arguments.firstIndex(of: "--filter"))
+        let valueIndex = command.arguments.index(after: index)
+        try #require(valueIndex < command.arguments.endIndex)
+        return command.arguments[valueIndex]
+    }
     let staticCommand = try resolver.command(.node(name: "g4-static-runtime"))
     #expect(staticCommand.arguments.contains("--package-path"))
     #expect(staticCommand.arguments.contains("Packages/AxolotyStaticRuntime"))
-    #expect(staticCommand.arguments.contains("StaticIoActorMacroExpansionTests"))
+    #expect(try filterArgument(for: staticCommand).contains("staticIoActorRejectsNonEnum"))
     let protocolCommand = try resolver.command(.node(name: "g4-protocol-lifecycle"))
     #expect(protocolCommand.arguments.contains("Packages/AxolotyProtocol"))
-    #expect(protocolCommand.arguments.contains("ProtocolProcessorTests"))
+    #expect(try filterArgument(for: protocolCommand).contains("ProtocolProcessorTests"))
 }
 
 @Test
