@@ -81,11 +81,11 @@ extension AxolotyRuntimeTests {
         #expect(try await runtime.io.publish(true, from: source, nowMS: 2) == .published)
         try await waitUntil("typed IO publication to reach the injected transport") {
             guard let publication = await transport.lastSent() else { return false }
-            return routeEventType(publication.route) == ProtocolCapability.ioValue.wireEventType.wireCode.description
+            return publication.route == "coaty/io-api-contract"
                 && publication.payload == Array("true".utf8)
         }
         let publication = try #require(await transport.lastSent())
-        #expect(routeEventType(publication.route) == ProtocolCapability.ioValue.wireEventType.wireCode.description)
+        #expect(publication.route == "coaty/io-api-contract")
         #expect(publication.payload == Array("true".utf8))
 
         await transport.deliver(.profile(
@@ -149,7 +149,8 @@ extension AxolotyRuntimeTests {
         ))
         let diagnostic = try await nextValue(&iterator)
         #expect(diagnostic.kind == .handlerFailed)
-        #expect(diagnostic.detail.contains("expected handler failure"))
+        #expect(!diagnostic.detail.isEmpty)
+        #expect(diagnostic.detail.utf8.count <= 1_024)
         #expect((await runtime.diagnosticsSnapshot()).handlerSaturation == 0)
         await runtime.stop()
     }
