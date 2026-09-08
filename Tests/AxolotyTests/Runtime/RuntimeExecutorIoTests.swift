@@ -22,7 +22,10 @@ struct RuntimeExecutorIoTests {
             as: Bool.self,
             publication: .latest(atMostEveryMS: 1_000)
         )
-        let transport = BlockingPublicationTransport(blockedCapability: .ioValue)
+        let transport = BlockingPublicationTransport(
+            blockedCapability: .ioValue,
+            blockedRoute: "coaty/executor-stop"
+        )
         let runtime = AxolotyRuntime(definition: try builder.finish(), transport: transport)
         try await runtime.start()
 
@@ -158,7 +161,10 @@ struct RuntimeExecutorIoTests {
             as: Bool.self,
             publication: .latest(atMostEveryMS: 50)
         )
-        let transport = BlockingPublicationTransport(blockedCapability: .channel)
+        let transport = BlockingPublicationTransport(
+            blockedCapability: .channel,
+            ioRoute: "coaty/shared-transport"
+        )
         let runtime = AxolotyRuntime(definition: try builder.finish(), transport: transport)
         try await runtime.start()
 
@@ -222,13 +228,21 @@ private actor InvocationGate {
 
 private actor BlockingPublicationTransport: AxolotyRuntimeTransport {
     private let blockedCapability: ProtocolCapability
+    private let blockedRoute: String?
+    private let ioRoute: String?
     private(set) var blockedPublicationStarted = false
     private var released = false
     private var waiter: CheckedContinuation<Void, Never>?
     private(set) var publications: [RuntimeOutboundMessage] = []
 
-    init(blockedCapability: ProtocolCapability) {
+    init(
+        blockedCapability: ProtocolCapability,
+        blockedRoute: String? = nil,
+        ioRoute: String? = nil
+    ) {
         self.blockedCapability = blockedCapability
+        self.blockedRoute = blockedRoute
+        self.ioRoute = ioRoute ?? (blockedCapability == .ioValue ? blockedRoute : nil)
     }
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
@@ -240,7 +254,9 @@ private actor BlockingPublicationTransport: AxolotyRuntimeTransport {
     func perform(_ effect: RuntimeTransportEffect) async throws {
         guard case let .publish(publication) = effect else { return }
         publications.append(publication)
-        guard routeEventType(publication.route) == blockedCapability.wireEventType.wireCode.description else { return }
+        let matchesBlockedRoute = blockedRoute.map { publication.route == $0 }
+            ?? (routeEventType(publication.route) == blockedCapability.wireEventType.wireCode.description)
+        guard matchesBlockedRoute else { return }
         blockedPublicationStarted = true
         guard !released else { return }
         await withCheckedContinuation { continuation in
@@ -256,14 +272,18 @@ private actor BlockingPublicationTransport: AxolotyRuntimeTransport {
 
     func publicationCount(for capability: ProtocolCapability) -> Int {
         publications.reduce(into: 0) { count, publication in
-            if routeEventType(publication.route) == capability.wireEventType.wireCode.description { count += 1 }
+            let matchesProfileCapability = routeEventType(publication.route) == capability.wireEventType.wireCode.description
+            let matchesIoAssociationRoute = capability == .ioValue && publication.route == ioRoute
+            if matchesProfileCapability || matchesIoAssociationRoute { count += 1 }
         }
     }
 
     var ioPayloads: [[UInt8]] {
         publications.compactMap { publication in
-            routeEventType(publication.route) == ProtocolCapability.ioValue.wireEventType.wireCode.description
-                ? publication.payload : nil
+            let matchesProfileCapability = routeEventType(publication.route)
+                == ProtocolCapability.ioValue.wireEventType.wireCode.description
+            let matchesIoAssociationRoute = publication.route == ioRoute
+            return matchesProfileCapability || matchesIoAssociationRoute ? publication.payload : nil
         }
     }
 }
