@@ -2,6 +2,7 @@
 
 import Axoloty
 import AxolotyMQTT
+import AxolotyProtocol
 import AxolotyTestSupport
 import AxolotyWire
 import Foundation
