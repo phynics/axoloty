@@ -155,7 +155,7 @@ struct StaticRuntimeTests {
             payload: staticPayload(secondPayload),
             nowMS: 4
         ) == .rejected(.capacityExceeded))
-        #expect(runtime.state.activeRecords == 1)
+        #expect(runtime.state.activeObjects == 1)
     }
 
     @Test("one shared fixed processor sends and drains synchronously")
