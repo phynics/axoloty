@@ -8,6 +8,44 @@ import AxolotyTestSupport
 import AxolotyWire
 
 extension AxolotyRuntimeTests {
+    @Test("run completes when the executor is stopped")
+    func runCompletesWhenStopped() async throws {
+        let runtime = AxolotyRuntime(definition: try makeDefinition(), transport: TestTransport())
+        let running = Task { try await runtime.run() }
+        try await waitUntil("runtime to enter running state") {
+            await runtime.state() == .running
+        }
+
+        await runtime.stop()
+        try await withTimeout("run to complete after stop", timeout: .seconds(2)) {
+            try await running.value
+        }
+        #expect(await runtime.state() == .stopped)
+    }
+
+    @Test("run cancellation during startup stops the executor")
+    func runCancellationDuringStartupStopsExecutor() async throws {
+        let transport = BlockingStartTransport()
+        let runtime = AxolotyRuntime(definition: try makeDefinition(), transport: transport)
+        let running = Task { () -> Bool in
+            do {
+                try await runtime.run()
+                return true
+            } catch {
+                return false
+            }
+        }
+        try await waitUntil("transport start to begin") {
+            await transport.didStart
+        }
+
+        running.cancel()
+        #expect(try await withTimeout("run cancellation during startup") {
+            await running.value
+        })
+        #expect(await runtime.state() == .stopped)
+    }
+
     @Test("runtime rejects work before start")
     func rejectsBeforeStart() async throws {
         let definition = try makeDefinition()

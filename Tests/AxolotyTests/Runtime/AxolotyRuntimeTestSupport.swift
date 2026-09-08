@@ -91,6 +91,31 @@ actor TestTransport: AxolotyRuntimeTransport {
 
 struct TestTransportFailure: Error, Sendable {}
 
+actor BlockingStartTransport: AxolotyRuntimeTransport {
+    private(set) var didStart = false
+    private var didStop = false
+    private var startWaiter: CheckedContinuation<Void, Never>?
+
+    func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
+        didStart = true
+        await withCheckedContinuation { continuation in
+            if didStop {
+                continuation.resume()
+            } else {
+                startWaiter = continuation
+            }
+        }
+    }
+
+    func perform(_ effect: RuntimeTransportEffect) async throws {}
+
+    func stop() async {
+        didStop = true
+        startWaiter?.resume()
+        startWaiter = nil
+    }
+}
+
 actor DrainingTransport: AxolotyRuntimeTransport {
     private(set) var sendStarted = false
     private(set) var didStop = false

@@ -81,33 +81,35 @@ public final class AxolotyRuntime: Sendable {
         }
     }
 
-    /// Runs the runtime until a caller invokes ``stop()``. The transport
-    /// remains owned by the runtime for the duration of this call.
+    /// Runs the runtime until a caller invokes ``stop()``. Task cancellation
+    /// requests the same graceful stop and is consumed after cleanup. The
+    /// transport remains owned by the runtime for the duration of this call.
     public func run() async throws {
-        try await start()
+        var started = false
         do {
-            while true {
-                switch await lifecycleState() {
-                case .running, .starting, .reconnecting, .stopping:
-                    try await Task.sleep(for: .milliseconds(25))
-                case .failed:
-                    let failure = await executor.terminalFailure()
-                    await stop()
-                    if let failure {
-                        throw AxolotyError.runtime(code: failure.0, reason: failure.1)
-                    }
-                    return
-                case .stopped, .closed:
-                    if let failure = await executor.terminalFailure() {
-                        throw AxolotyError.runtime(code: failure.0, reason: failure.1)
-                    }
-                    return
-                }
+            try await withTaskCancellationHandler(operation: {
+                try await start()
+            }, onCancel: {
+                Task { await self.stop() }
+            })
+            started = true
+            _ = await executor.waitForTermination()
+            try Task.checkCancellation()
+            if let failure = await executor.terminalFailure() {
+                await stop()
+                throw AxolotyError.runtime(code: failure.0, reason: failure.1)
             }
         } catch is CancellationError {
             await stop()
         } catch {
-            await stop()
+            if Task.isCancelled {
+                await stop()
+                return
+            }
+            let failedDuringStart = await lifecycleState() == .failed
+            if started || failedDuringStart {
+                await stop()
+            }
             throw error
         }
     }
