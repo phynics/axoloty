@@ -47,6 +47,8 @@ test("MQTT binding runner rejects an unavailable runtime without creating artifa
         ...process.env,
         CONTAINER_RUNTIME: fakeRuntime,
         FAKE_RUNTIME_LOG: path.join(temporary, "runtime.log"),
+        BUILD_DIR: path.join(temporary, "build"),
+        SPM_CACHE_DIR: path.join(temporary, "swiftpm-cache"),
         WIRE_OUTPUT_DIR: output,
         WIRE_RUN_ID: "mqtt-binding-self-test",
         WIRE_MQTT_BINDING_DEADLINE_SECONDS: "1",
