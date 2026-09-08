@@ -108,7 +108,7 @@ struct StaticRuntimeTests {
             Issue.record("negative maximumObjects was accepted")
         } catch {
             #expect(error.reason == .negativeCapacity)
-            #expect(error.parameter == "maximumObjects")
+            #expect(error.parameter.description == "maximumObjects")
         }
 
         do {
@@ -119,7 +119,7 @@ struct StaticRuntimeTests {
             Issue.record("maximumObjects above storage capacity was accepted")
         } catch {
             #expect(error.reason == .exceedsMaximum)
-            #expect(error.parameter == "maximumObjects")
+            #expect(error.parameter.description == "maximumObjects")
         }
 
         do {
@@ -130,7 +130,7 @@ struct StaticRuntimeTests {
             Issue.record("negative maximumPendingCorrelations was accepted")
         } catch {
             #expect(error.reason == .negativeCapacity)
-            #expect(error.parameter == "maximumPendingCorrelations")
+            #expect(error.parameter.description == "maximumPendingCorrelations")
         }
 
         do {
@@ -141,7 +141,7 @@ struct StaticRuntimeTests {
             Issue.record("maximumPendingCorrelations above storage capacity was accepted")
         } catch {
             #expect(error.reason == .exceedsMaximum)
-            #expect(error.parameter == "maximumPendingCorrelations")
+            #expect(error.parameter.description == "maximumPendingCorrelations")
         }
     }
 
@@ -152,7 +152,7 @@ struct StaticRuntimeTests {
             Issue.record("payload capacity above the wire maximum was accepted")
         } catch {
             #expect(error.reason == .exceedsMaximum)
-            #expect(error.parameter == "payloadCapacity")
+            #expect(error.parameter.description == "payloadCapacity")
         }
     }
 
