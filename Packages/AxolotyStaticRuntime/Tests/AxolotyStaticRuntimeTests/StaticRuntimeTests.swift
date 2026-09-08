@@ -188,7 +188,7 @@ struct StaticRuntimeTests {
 
     @Test("definition defaults follow consuming runtime capacity")
     func definitionDefaultsFollowRuntimeCapacity() throws {
-        let definition = StaticRuntimeDefinition<2048>(registryID: staticRegistryID())
+        let definition = try StaticRuntimeDefinition<2048>(registryID: staticRegistryID())
         #expect(definition.maximumObjects == nil)
         #expect(definition.maximumPendingCorrelations == nil)
         var runtime = StaticRuntime<1, 2048>(
@@ -217,7 +217,7 @@ struct StaticRuntimeTests {
 
     @Test("definition preserves reduced protocol limits")
     func definitionPreservesReducedProtocolLimits() throws {
-        let definition = StaticRuntimeDefinition<2048>(
+        let definition = try StaticRuntimeDefinition<2048>(
             registryID: staticRegistryID(),
             maximumObjects: 1,
             maximumPendingCorrelations: 1
