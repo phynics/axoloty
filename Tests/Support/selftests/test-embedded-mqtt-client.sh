@@ -62,4 +62,5 @@ for (const call of calls) {
   prior = position;
 }
 JS
+Tests/Support/embedded/embedded-mqtt-host-test.sh
 echo "embedded MQTT overlay support self-test passed"

@@ -1,6 +1,34 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+#if EMBEDDED_MQTT_HOST_TEST
+// Host self-tests compile this firmware-local overlay without resolving the
+// Embedded Swift package graph. Keep the production limits in sync here.
+private enum WireBufferConfig {
+    static let maxTopicLength = 256
+    static let maxPayloadSize = 2_048
+}
+#else
 import AxolotyWire
+#endif
+
+#if EMBEDDED_MQTT_HOST_TEST
+// The host fixture supplies these symbols. The production build receives the
+// same declarations from BridgingHeader.h, so the seam adds no runtime layer.
+@_silgen_name("axoloty_mqtt_configure_last_will")
+private func axoloty_mqtt_configure_last_will(_ topic: UnsafePointer<UInt8>, _ topicLength: Int32, _ payload: UnsafePointer<UInt8>, _ payloadLength: Int32) -> Int32
+@_silgen_name("axoloty_mqtt_connect_wait")
+private func axoloty_mqtt_connect_wait(_ deadlineMS: UInt32) -> Int32
+@_silgen_name("axoloty_mqtt_subscribe_wait")
+private func axoloty_mqtt_subscribe_wait(_ topic: UnsafePointer<UInt8>, _ topicLength: Int32, _ deadlineMS: UInt32) -> Int32
+@_silgen_name("axoloty_mqtt_publish")
+private func axoloty_mqtt_publish(_ topic: UnsafePointer<UInt8>, _ topicLength: Int32, _ payload: UnsafePointer<UInt8>, _ payloadLength: Int32) -> Int32
+@_silgen_name("axoloty_mqtt_wait_loopback")
+private func axoloty_mqtt_wait_loopback(_ deadlineMS: UInt32) -> Int32
+@_silgen_name("axoloty_mqtt_reconnect_wait")
+private func axoloty_mqtt_reconnect_wait(_ deadlineMS: UInt32) -> Int32
+@_silgen_name("axoloty_mqtt_disconnect")
+private func axoloty_mqtt_disconnect() -> Int32
+#endif
 
 /// Bounded, synchronous MQTT operations for the single-device embedded gate.
 ///
@@ -24,7 +52,7 @@ struct EmbeddedMQTTClient {
     ) -> Bool {
         guard state == .idle, topicLength > 0,
               topicLength <= Int32(WireBufferConfig.maxTopicLength),
-              payloadLength >= 0, payloadLength <= 2_048 else { return false }
+              payloadLength >= 0, payloadLength <= Int32(WireBufferConfig.maxPayloadSize) else { return false }
         return axoloty_mqtt_configure_last_will(topic, topicLength, payload, payloadLength) != 0
     }
 
@@ -51,7 +79,7 @@ struct EmbeddedMQTTClient {
     ) -> Bool {
         guard state == .subscribed, topicLength > 0,
               topicLength <= Int32(WireBufferConfig.maxTopicLength),
-              payloadLength >= 0, payloadLength <= 2_048 else { return false }
+              payloadLength >= 0, payloadLength <= Int32(WireBufferConfig.maxPayloadSize) else { return false }
         return axoloty_mqtt_publish(topic, topicLength, payload, payloadLength) != 0
     }
 
