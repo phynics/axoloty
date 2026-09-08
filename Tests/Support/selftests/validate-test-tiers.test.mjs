@@ -203,7 +203,7 @@ test("discovery includes shell and Node self-tests", () => {
 test("validator requires repository authority tests in the tooling filter", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
   const node = document.nodes.find(candidate => candidate.id === "test-tooling");
-  node.filter = node.filter.split("|").filter(suite => suite !== "RepositoryAuthorityTests").join("|");
+  node.filter = node.filter.split("|").filter(branch => !branch.startsWith("repositoryAuthority") && !branch.startsWith("modulePolicy")).join("|");
   node.command.arguments[node.command.arguments.indexOf("--filter") + 1] = node.filter;
   const errors = validate(document, {
     makeTargets: parseMakeTargets(path.join(root, "Makefile")),

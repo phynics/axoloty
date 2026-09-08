@@ -443,7 +443,14 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
     if (!node?.required || !node.local || !node.ci) errors.push(`required gate ${JSON.stringify(gate)} must be required and available locally and in CI`);
   }
   const toolingNode = (document.nodes ?? []).find(node => node?.id === "test-tooling");
-  if (!toolingNode?.filter?.split("|").includes("RepositoryAuthorityTests")) {
+  // RepositoryAuthorityTests declares free-function tests with no suite, so a
+  // bare file label never matches SwiftPM discovery. Require the gate to name
+  // the file's test functions instead: every selector in that file starts
+  // with repositoryAuthority or modulePolicy.
+  const toolingBranches = toolingNode?.filter?.split("|") ?? [];
+  const selectsAuthority = toolingBranches.some(branch => branch.startsWith("repositoryAuthority"));
+  const selectsModulePolicy = toolingBranches.some(branch => branch.startsWith("modulePolicy"));
+  if (!selectsAuthority || !selectsModulePolicy) {
     errors.push("test-tooling must select RepositoryAuthorityTests");
   }
   if (!document.testOne?.command?.filterFlag || !Number.isInteger(document.testOne?.timeoutSeconds) || document.testOne.timeoutSeconds <= 0) errors.push("testOne must declare a filterFlag and positive timeoutSeconds");
