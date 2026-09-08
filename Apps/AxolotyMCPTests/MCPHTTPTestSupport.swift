@@ -37,6 +37,7 @@ func startHTTPServer(
     }
 
     do {
+        let started = ContinuousClock.now
         try await withDeadline("\(phase) readiness", timeout: timeout) {
             while await server.listeningPort() == nil {
                 if let failure = await state.failure() {
@@ -46,6 +47,7 @@ func startHTTPServer(
                 try await Task.sleep(for: .milliseconds(5))
             }
         }
+        print("[mcp-lifecycle-timing] phase=\(phase) readiness elapsed=\(ContinuousClock.now - started)")
         return startTask
     } catch {
         startTask.cancel()
@@ -59,12 +61,20 @@ func startHTTPServer(
 func stopHTTPServer(
     _ server: MCPHTTPServer,
     startTask: Task<Void, Error>,
-    phase: String
+    phase: String,
+    timeout: Duration = .seconds(5)
 ) async throws {
-    try await withDeadline(phase) {
-        await server.stop()
-        try await startTask.value
+    let started = ContinuousClock.now
+    do {
+        try await withDeadline(phase, timeout: timeout) {
+            await server.stop()
+            try await startTask.value
+        }
+    } catch {
+        print("[mcp-lifecycle-timing] phase=\(phase) outcome=error elapsed=\(ContinuousClock.now - started)")
+        throw error
     }
+    print("[mcp-lifecycle-timing] phase=\(phase) outcome=completed elapsed=\(ContinuousClock.now - started)")
 }
 
 func makeHTTPServer(
