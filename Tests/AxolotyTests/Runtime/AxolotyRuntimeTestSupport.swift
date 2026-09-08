@@ -49,7 +49,7 @@ actor TestTransport: AxolotyRuntimeTransport {
         if failureStage == .start { throw TestTransportFailure() }
     }
 
-    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) {
+    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {
         failure = handler
     }
 
@@ -107,7 +107,7 @@ actor DrainingTransport: AxolotyRuntimeTransport {
     private var sendWaiter: CheckedContinuation<Void, Never>?
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
-    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) {}
+    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {}
 
     func perform(_ effect: RuntimeTransportEffect) async throws {
         switch effect {

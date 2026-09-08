@@ -24,7 +24,7 @@ actor FailOnceOnPublishTransport: AxolotyRuntimeTransport {
         self.receive = receive
     }
 
-    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) {
+    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {
         failure = handler
     }
 
