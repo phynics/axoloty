@@ -101,16 +101,17 @@ extension AxolotyRuntimeTests {
     @Test("transport failure callbacks receive owned typed values")
     func transportFailureCallbackUsesOwnedValue() async throws {
         let transport = TestTransport()
-        let failures = AsyncStream<String>.makeStream()
-        var iterator = failures.stream.makeAsyncIterator()
+        let failures = AsyncStream<RuntimeTransportFailure>.makeStream()
         await transport.setFailureHandler { failure in
-            failures.continuation.yield("\(failure.code.rawValue):\(failure.detail)")
+            failures.continuation.yield(failure)
         }
 
         await transport.fail(AxolotyError.runtime(code: .brokerUnavailable, reason: "typed transport failure"))
 
-        let failure = await iterator.next()
-        #expect(failure == "brokerUnavailable:typed transport failure")
+        var iterator = failures.stream.makeAsyncIterator()
+        let failure = try await nextValue(&iterator, timeout: .seconds(5))
+        #expect(failure.code == .brokerUnavailable)
+        #expect(failure.detail == "typed transport failure")
         failures.continuation.finish()
     }
 
