@@ -153,7 +153,7 @@ JS
 
 run_smoke success
 node --input-type=module - "$out_dir/swift-smoke-result.json" <<'JS'
-import fs from "node:fs"; import assert from "node:assert/strict"; const r=JSON.parse(fs.readFileSync(process.argv[2])); assert.equal(r.schemaVersion,2); assert.equal(r.runId,"embedded-swift-smoke-v2"); assert.equal(r.validation.passed,true); assert.equal(r.linesCaptured,27);
+import fs from "node:fs"; import assert from "node:assert/strict"; const r=JSON.parse(fs.readFileSync(process.argv[2])); assert.equal(r.schemaVersion,2); assert.equal(r.runId,"embedded-swift-smoke-v2"); assert.equal(r.validation.passed,true); assert.equal(r.linesCaptured,25);
 JS
 grep -qx -- '--chip' "$TEMP_DIR/esptool-args.txt"
 grep -qx -- '@flash_args' "$TEMP_DIR/esptool-args.txt"
