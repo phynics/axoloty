@@ -189,7 +189,7 @@ private final class HostTraceTransport: AxolotyRuntimeTransport, @unchecked Send
     private var effects: [RuntimeTransportEffect] = []
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
-    func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) async {}
+    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {}
     func installSubscriptions(namespace: String) async throws {}
     func removeSubscriptions(namespace: String) async throws {}
     func stop() async {}

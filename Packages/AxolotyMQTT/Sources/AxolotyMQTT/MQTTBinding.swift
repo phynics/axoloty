@@ -193,7 +193,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     }
 
     /// Forwards post-start transport failures to the owning runtime.
-    public func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) async {
+    public func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {
         delegate.setFailureHandler(handler)
     }
 
@@ -538,15 +538,22 @@ final class RuntimeMQTTDelegate: RuntimeMQTTClientDelegate, @unchecked Sendable 
         finishStart(.failure(error))
     }
 
-    func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) {
+    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) {
         lock.withLock { failure = handler }
     }
 
-    private var failure: (@Sendable (Error) -> Void)?
+    private var failure: (@Sendable (RuntimeTransportFailure) -> Void)?
 
     private func emitFailure(_ error: Error) {
         let callback = lock.withLock { failure }
-        callback?(error)
+        let wrapped = error as? AxolotyError ?? AxolotyError.caught(error)
+        let code: AxolotyError.RuntimeErrorCode
+        if case let .runtime(runtimeCode, _) = wrapped {
+            code = runtimeCode
+        } else {
+            code = .brokerUnavailable
+        }
+        callback?(RuntimeTransportFailure(code: code, detail: wrapped.userFriendlyMessage))
     }
 
     @discardableResult

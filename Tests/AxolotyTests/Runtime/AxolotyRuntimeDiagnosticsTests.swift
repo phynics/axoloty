@@ -6,6 +6,7 @@ import AxolotyObjectModel
 import AxolotyProtocol
 import AxolotyTestSupport
 import AxolotyWire
+import Foundation
 
 extension AxolotyRuntimeTests {
     @Test("run completes when the executor is stopped")
@@ -145,6 +146,34 @@ extension AxolotyRuntimeTests {
         #expect(await runtime.state() == .reconnecting)
         #expect((await runtime.diagnosticsSnapshot()).transportFailures == 1)
         await runtime.stop()
+    }
+
+    @Test("transport failure callbacks receive owned typed values")
+    func transportFailureCallbackUsesOwnedValue() async throws {
+        final class FailureBox: @unchecked Sendable {
+            private let lock = NSLock()
+            private var stored: RuntimeTransportFailure?
+            func store(_ failure: RuntimeTransportFailure) {
+                lock.withLock { stored = failure }
+            }
+            func current() -> RuntimeTransportFailure? {
+                lock.withLock { stored }
+            }
+        }
+        let box = FailureBox()
+        let transport = TestTransport()
+        await transport.setFailureHandler { failure in
+            box.store(failure)
+        }
+
+        await transport.fail(AxolotyError.runtime(code: .brokerUnavailable, reason: "typed transport failure"))
+
+        try await waitUntil("typed transport failure arrives") {
+            box.current() != nil
+        }
+        let failure = try #require(box.current())
+        #expect(failure.code == .brokerUnavailable)
+        #expect(failure.detail == "typed transport failure")
     }
 
     @Test("runtime queues bounded one-way publications across reconnect")

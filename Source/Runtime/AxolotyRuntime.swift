@@ -128,8 +128,8 @@ actor ProtocolExecutor {
         queuedTransportEffects = 0
         installOutboundPump()
         do {
-            await transport.setFailureHandler { [weak self] error in
-                Task { await self?.transportFailed(runtimeErrorDetail(error)) }
+            await transport.setFailureHandler { [weak self] failure in
+                Task { await self?.transportFailed(failure.detail) }
             }
             try await transport.start { [weak self, continuation = ingressPipe.continuation, overflowGate = ingressOverflowGate] frame in
                 let result = continuation.yield(frame)
@@ -253,8 +253,8 @@ actor ProtocolExecutor {
             try? await transport.removeSubscriptions(namespace: definition.namespace)
             await transport.stop()
             installOutboundPump()
-            await transport.setFailureHandler { [weak self] error in
-                Task { await self?.transportFailed(runtimeErrorDetail(error)) }
+            await transport.setFailureHandler { [weak self] failure in
+                Task { await self?.transportFailed(failure.detail) }
             }
             try await transport.start { [weak self, continuation = ingressPipe.continuation, overflowGate = ingressOverflowGate] frame in
                 let result = continuation.yield(frame)
