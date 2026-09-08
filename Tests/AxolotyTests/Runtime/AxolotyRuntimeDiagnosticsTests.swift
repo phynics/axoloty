@@ -102,13 +102,13 @@ extension AxolotyRuntimeTests {
     func transportFailureCallbackUsesOwnedValue() async throws {
         let transport = TestTransport()
         let failures = AsyncStream<String>.makeStream()
+        var iterator = failures.stream.makeAsyncIterator()
         await transport.setFailureHandler { failure in
             failures.continuation.yield("\(failure.code.rawValue):\(failure.detail)")
         }
 
         await transport.fail(AxolotyError.runtime(code: .brokerUnavailable, reason: "typed transport failure"))
 
-        var iterator = failures.stream.makeAsyncIterator()
         let failure = await iterator.next()
         #expect(failure == "brokerUnavailable:typed transport failure")
         failures.continuation.finish()
