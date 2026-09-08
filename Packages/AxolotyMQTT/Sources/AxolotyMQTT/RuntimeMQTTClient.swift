@@ -21,12 +21,29 @@ protocol RuntimeMQTTClientDelegate: AnyObject, Sendable {
     func runtimeMQTTClientDidFail(_ error: Error)
 }
 
+/// The transport operations consumed by ``MQTTBinding``.
+///
+/// This internal seam keeps broker I/O replaceable in adapter tests. Production
+/// callers still receive the concrete ``RuntimeMQTTClient`` through the public
+/// binding initializer.
+protocol RuntimeMQTTClientAdapter: AnyObject, Sendable {
+    func connect()
+    func disconnect() async
+    func publish(topic: String, payload: [UInt8]) async throws
+
+    @MainActor
+    func subscribe(_ topic: String) async throws
+
+    @MainActor
+    func unsubscribe(_ topic: String) async throws
+}
+
 /// A bounded MQTT-NIO adapter for the structured runtime.
 ///
 /// This type owns only the broker socket and copies publish data at the
 /// synchronous MQTT callback boundary. Protocol parsing and lifecycle policy
 /// remain in ``AxolotyRuntime``.
-final class RuntimeMQTTClient: @unchecked Sendable {
+final class RuntimeMQTTClient: RuntimeMQTTClientAdapter, @unchecked Sendable {
     private let lock = NIOLock()
     private let delegate: RuntimeMQTTClientDelegate
     private let qos: MQTTQoS = .atMostOnce
