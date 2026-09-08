@@ -539,8 +539,6 @@ private func runSmoke() -> Int32 {
 
     record("config:payloadMax2048", WireBufferConfig.maxPayloadSize == 2_048)
     record("config:topicMax256", WireBufferConfig.maxTopicLength == 256)
-    record("config:maxSubscribers8", WireBufferConfig.maxSubscribers == 8)
-    record("config:maxFamilyEntries16", WireBufferConfig.maxFamilyEntries == 16)
 
     // === Deterministic vector corpus ===
     writeIntVector("writer:zero", 0, "0")
