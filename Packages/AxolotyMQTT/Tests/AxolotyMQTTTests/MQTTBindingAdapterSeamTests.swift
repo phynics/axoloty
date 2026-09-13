@@ -9,6 +9,28 @@ import Testing
 
 @Suite("MQTT binding adapter seam")
 struct MQTTBindingAdapterSeamTests {
+    @Test("identity last will is passed to the MQTT adapter and omitted without one")
+    func lifecycleLastWill() async throws {
+        let will = RuntimeTransportLastWill(
+            topic: "coaty/3/node/DAD/11111111-2222-4333-8444-555555555555",
+            payload: Array("{\"objectIds\":[\"11111111-2222-4333-8444-555555555555\"]}".utf8)
+        )
+
+        let delegate = RuntimeMQTTDelegate()
+        let client = FakeMQTTClient(delegate: delegate, connectsImmediately: true)
+        let binding = try makeBinding(client: client, delegate: delegate)
+        try await binding.start(receive: { _ in }, lastWill: will)
+        #expect(client.lastWill() == will)
+        await binding.stop()
+
+        let noWillDelegate = RuntimeMQTTDelegate()
+        let noWillClient = FakeMQTTClient(delegate: noWillDelegate, connectsImmediately: true)
+        let noWillBinding = try makeBinding(client: noWillClient, delegate: noWillDelegate)
+        try await noWillBinding.start(receive: { _ in }, lastWill: nil)
+        #expect(noWillClient.lastWill() == nil)
+        await noWillBinding.stop()
+    }
+
     @Test("start and stop own the adapter lifecycle")
     func startAndStop() async throws {
         let delegate = RuntimeMQTTDelegate()
@@ -170,7 +192,9 @@ struct MQTTBindingAdapterSeamTests {
         await binding.setFailureHandler { failure.record($0) }
         try await binding.start { _ in }
         client.emitFailure(FakeError.connection)
-        #expect((failure.value() as? FakeError) == .connection)
+        let transportFailure = failure.value() as? RuntimeTransportFailure
+        #expect(transportFailure?.code == .brokerUnavailable)
+        #expect(transportFailure?.detail.isEmpty == false)
     }
 
     private func makeBinding(
@@ -250,6 +274,7 @@ private final class FakeMQTTClient: RuntimeMQTTClientAdapter, @unchecked Sendabl
     private var subscribeError: FakeError?
     private var unsubscribeError: FakeError?
     private var shouldBlockNextSubscribe = false
+    private var lastWillValue: RuntimeTransportLastWill?
 
     init(delegate: RuntimeMQTTDelegate, connectsImmediately: Bool) {
         self.delegate = delegate
@@ -260,13 +285,15 @@ private final class FakeMQTTClient: RuntimeMQTTClientAdapter, @unchecked Sendabl
     func disconnectCount() -> Int { locked { disconnectCountValue } }
     func subscribeTopics() -> [String] { locked { subscribeTopicsValue } }
     func unsubscribeTopics() -> [String] { locked { unsubscribeTopicsValue } }
+    func lastWill() -> RuntimeTransportLastWill? { locked { lastWillValue } }
     func setPublishError(_ error: FakeError?) { locked { publishError = error } }
     func setSubscribeError(_ error: FakeError?) { locked { subscribeError = error } }
     func setUnsubscribeError(_ error: FakeError?) { locked { unsubscribeError = error } }
     func blockNextSubscribe() { locked { shouldBlockNextSubscribe = true } }
 
-    func connect() {
+    func connect(will: RuntimeTransportLastWill?) {
         locked { connectCountValue += 1 }
+        locked { lastWillValue = will }
         if connectsImmediately { delegate.runtimeMQTTClientDidBecomeOnline() }
     }
 

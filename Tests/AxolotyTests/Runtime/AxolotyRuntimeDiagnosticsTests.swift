@@ -71,6 +71,11 @@ extension AxolotyRuntimeTests {
         try await runtime.start()
         #expect(await runtime.state() == .running)
         #expect(await transport.lifecycle == ["start", "install"])
+        let expectedWill = RuntimeTransportLastWill(
+            topic: "coaty/3/test/DAD/00000000-0000-0000-0000-000000000000",
+            payload: Array("{\"objectIds\":[\"00000000-0000-0000-0000-000000000000\"]}".utf8)
+        )
+        #expect(await transport.lastWills == [expectedWill])
         let advertisement = try #require(await transport.firstSent())
         #expect(isAdvertiseRoute(advertisement.route))
         #expect(String(decoding: advertisement.payload, as: UTF8.self).contains("coaty.Identity"))
@@ -80,6 +85,7 @@ extension AxolotyRuntimeTests {
         #expect(await transport.lifecycle == [
             "start", "install", "remove", "stop", "start", "install"
         ])
+        #expect(await transport.lastWills == [expectedWill, expectedWill])
 
         await runtime.stop()
         #expect(await runtime.state() == .stopped)
@@ -88,6 +94,16 @@ extension AxolotyRuntimeTests {
         let deadvertisement = try #require(await transport.lastSent())
         #expect(isDeadvertiseRoute(deadvertisement.route))
         #expect(String(decoding: deadvertisement.payload, as: UTF8.self) == "{\"objectIds\":[\"00000000-0000-0000-0000-000000000000\"]}")
+    }
+
+    @Test("runtime without an identity does not configure a transport last will")
+    func lifecycleWithoutIdentityOmitsLastWill() async throws {
+        let transport = TestTransport()
+        let runtime = AxolotyRuntime(definition: try makeDefinition(), transport: transport)
+
+        try await runtime.start()
+        #expect(await transport.lastWills == [nil])
+        await runtime.stop()
     }
 
     @Test("closed runtime reports terminally stopped through modern state")

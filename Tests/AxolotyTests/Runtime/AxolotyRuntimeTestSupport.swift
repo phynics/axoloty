@@ -37,6 +37,7 @@ actor TestTransport: AxolotyRuntimeTransport {
     private var failure: (@Sendable (RuntimeTransportFailure) -> Void)?
     private var sent: [RuntimeOutboundMessage] = []
     private(set) var lifecycle: [String] = []
+    private(set) var lastWills: [RuntimeTransportLastWill?] = []
     private let failureStage: SetupFailureStage?
 
     init(failing failureStage: SetupFailureStage? = nil) {
@@ -47,6 +48,14 @@ actor TestTransport: AxolotyRuntimeTransport {
         self.receive = receive
         lifecycle.append("start")
         if failureStage == .start { throw TestTransportFailure() }
+    }
+
+    func start(
+        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
+        lastWill: RuntimeTransportLastWill?
+    ) async throws {
+        lastWills.append(lastWill)
+        try await start(receive: receive)
     }
 
     func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {
