@@ -27,7 +27,7 @@ protocol RuntimeMQTTClientDelegate: AnyObject, Sendable {
 /// callers still receive the concrete ``RuntimeMQTTClient`` through the public
 /// binding initializer.
 protocol RuntimeMQTTClientAdapter: AnyObject, Sendable {
-    func connect()
+    func connect(will: RuntimeTransportLastWill?)
     func disconnect() async
     func publish(topic: String, payload: [UInt8]) async throws
 
@@ -95,9 +95,14 @@ final class RuntimeMQTTClient: RuntimeMQTTClientAdapter, @unchecked Sendable {
         eventLoopGroup.shutdownGracefully { _ in }
     }
 
-    func connect() {
+    func connect(will: RuntimeTransportLastWill?) {
         lock.withLock { intentionalDisconnect = false }
-        client.connect(cleanSession: true, will: nil).whenComplete { [weak self] result in
+        let mqttWill: (topicName: String, payload: ByteBuffer, qos: MQTTQoS, retain: Bool)? = will.map {
+            var buffer = ByteBufferAllocator().buffer(capacity: $0.payload.count)
+            buffer.writeBytes($0.payload)
+            return (topicName: $0.topic, payload: buffer, qos: .atMostOnce, retain: false)
+        }
+        client.connect(cleanSession: true, will: mqttWill).whenComplete { [weak self] result in
             switch result {
             case .success:
                 self?.delegate.runtimeMQTTClientDidBecomeOnline()

@@ -128,15 +128,19 @@ actor ProtocolExecutor {
         queuedTransportEffects = 0
         installOutboundPump()
         do {
+            let lastWill = try makeTransportLastWill()
             await transport.setFailureHandler { [weak self] failure in
                 Task { await self?.transportFailed(failure.detail) }
             }
-            try await transport.start { [weak self, continuation = ingressPipe.continuation, overflowGate = ingressOverflowGate] frame in
-                let result = continuation.yield(frame)
-                if case .dropped = result, overflowGate.claim() {
-                    Task { await self?.ingressOverflow() }
-                }
-            }
+            try await transport.start(
+                receive: { [weak self, continuation = ingressPipe.continuation, overflowGate = ingressOverflowGate] frame in
+                    let result = continuation.yield(frame)
+                    if case .dropped = result, overflowGate.claim() {
+                        Task { await self?.ingressOverflow() }
+                    }
+                },
+                lastWill: lastWill
+            )
             guard state == .starting, transportEpoch == epoch else {
                 await transport.stop()
                 return (.notStarted, "runtime start was superseded by another lifecycle transition")
@@ -245,6 +249,7 @@ actor ProtocolExecutor {
             }
         }
         do {
+            let lastWill = try makeTransportLastWill()
             await stopOutboundPump()
             // A broker-side close can race this explicit reconnect.  The
             // binding may therefore already have lost its subscription
@@ -256,12 +261,15 @@ actor ProtocolExecutor {
             await transport.setFailureHandler { [weak self] failure in
                 Task { await self?.transportFailed(failure.detail) }
             }
-            try await transport.start { [weak self, continuation = ingressPipe.continuation, overflowGate = ingressOverflowGate] frame in
-                let result = continuation.yield(frame)
-                if case .dropped = result, overflowGate.claim() {
-                    Task { await self?.ingressOverflow() }
-                }
-            }
+            try await transport.start(
+                receive: { [weak self, continuation = ingressPipe.continuation, overflowGate = ingressOverflowGate] frame in
+                    let result = continuation.yield(frame)
+                    if case .dropped = result, overflowGate.claim() {
+                        Task { await self?.ingressOverflow() }
+                    }
+                },
+                lastWill: lastWill
+            )
             guard state == .reconnecting, transportEpoch == epoch else { return }
             try await transport.installSubscriptions(namespace: definition.namespace)
             guard state == .reconnecting, transportEpoch == epoch else { return }

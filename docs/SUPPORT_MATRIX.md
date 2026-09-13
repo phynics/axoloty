@@ -61,7 +61,7 @@ product surface. Support levels use a consistent vocabulary:
 | Capability | Support level | Evidence |
 |---|---|---|
 | MQTT reconnect | Validated | Four live network-failure scenarios (reconnect-resubscribe, broker-restart, clean-session, and offline-queueing) via a controllable TCP proxy. Embedded broker-restart: 11/11 checks. |
-| MQTT last will | Validated | Offline fixtures (CoatyJS last-will, graceful-deadvertise). Live: SIGKILL→broker-issued last-will at QoS 0. Embedded: forced-reset last-will 8/8 checks. Cross-implementation Axoloty↔CoatyJS last-will direction: Compatibility-unverified. |
+| MQTT last will | Supported | Host binding installs the identity deadvertisement as a non-retained QoS 0 will; focused adapter/runtime tests cover its route and payload. Live host SIGKILL evidence is pending. Embedded: forced-reset last-will 8/8 checks. Cross-implementation Axoloty↔CoatyJS last-will direction: Compatibility-unverified. |
 | TLS | Supported | Platform-conditional implementation (NIOSSL on Linux, NIOTransportServices on Apple). Manual macOS oracle verification only — no automated TLS tests. |
 | mDNS discovery | Unsupported | The G4 runtime does not publish or discover brokers through mDNS. |
 | MQTT QoS configuration | Supported | The G4 MQTT binding uses QoS 0, which matches CoatyJS 2.4.0. Higher QoS is not supported by the current binding. |

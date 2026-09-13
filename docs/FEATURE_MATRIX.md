@@ -63,7 +63,7 @@ wire-evidence section and `../docs/wire-compatibility.md`.
 | Channel | Yes | Yes | Yes | Validated: offline fixtures, live both directions. |
 | Raw string/binary topics | Yes | Yes | Yes | Exact cross-language binary behavior is not yet fully captured. |
 | Deferred offline publication/subscription | Yes | Yes | Yes | Validated: four live network-failure scenarios (reconnect, broker-restart, clean-session, offline-queueing). |
-| Distributed lifecycle / MQTT last will | Yes | Yes | Yes | Validated: offline fixtures, live captures, embedded physical evidence. Cross-implementation last-will direction unverified. |
+| Distributed lifecycle / MQTT last will | Yes | Yes | Yes | Supported on host and embedded. Host identity last-will route/payload is covered by adapter and runtime tests; embedded physical evidence is available. Cross-implementation last-will direction remains unverified. |
 | MQTT transport | Yes | Yes | Yes | JS uses MQTT.js; legacy Swift used CocoaMQTT; Axoloty uses mqtt-nio. |
 | WAMP transport | Yes | No | No | JS documents MQTT and WAMP bindings; Swift implements MQTT only. |
 | TLS MQTT | Yes | Yes | Yes | Supported: platform-conditional impl (NIOSSL/Network.framework). Manual macOS oracle only; no automated TLS tests. |
@@ -115,7 +115,7 @@ for per-direction wire evidence.
 | Legacy CoatySwift 2.4.0 → Axoloty | Compatibility-unverified — fixtures captured; live macOS oracle runner pending. |
 | Axoloty → legacy CoatySwift 2.4.0 | Compatibility-unverified — live macOS oracle runner pending. |
 | Associate / IoValue | **Partial** — one live direction verified; two recorded wire divergences (isExternalRoute force-unwrap blocks JS→modern; IoValue payload wrapping remediated). |
-| Reconnect, broker restart, clean session, last will, QoS | **Validated** — four live network-failure scenarios with Axoloty as subject; embedded physical evidence for broker-restart and last-will. |
+| Reconnect, broker restart, clean session, last will, QoS | **Validated** — four live network-failure scenarios with Axoloty as subject, focused host last-will adapter/runtime coverage, and embedded physical evidence for broker-restart and last-will. |
 | Axoloty ↔ ESP32-C6 (Advertise/Deadvertise, Discover/Resolve) | **Validated** — physical evidence: two-device exchange, host interop, CoatyJS bidirectional, last-will, broker-restart. |
 | CoatyJS ↔ ESP32-C6 (Advertise/Deadvertise, Discover/Resolve) | **Validated** — physical evidence: both directions on real hardware. |
 

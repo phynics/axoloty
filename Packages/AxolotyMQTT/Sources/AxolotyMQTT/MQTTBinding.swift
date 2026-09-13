@@ -158,6 +158,18 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
 
     /// Starts the broker connection and installs the copied frame callback.
     public func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
+        try await start(receive: receive, lastWill: nil)
+    }
+
+    /// Starts the broker connection with an optional lifecycle last will.
+    ///
+    /// The runtime supplies the will after it has resolved its namespace and
+    /// identity. Keeping it out of ``MQTTBindingConfiguration`` avoids
+    /// constructing a connection before that lifecycle data exists.
+    public func start(
+        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
+        lastWill: RuntimeTransportLastWill?
+    ) async throws {
         do {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 let admitted = lock.withLock {
@@ -177,7 +189,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
                 }
                 delegate.setStartContinuation(continuation)
                 delegate.armStartTimeout(milliseconds: connectionTimeoutMS)
-                client.connect()
+                client.connect(will: lastWill)
             }
         } catch {
             lock.withLock {
@@ -236,15 +248,22 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     /// Installs bounded wildcard subscriptions for the closed profile.
     public func installSubscriptions(namespace: String) async throws {
         lock.withLock { activeNamespace = namespace }
-        try await client.subscribe(RuntimeTopicBuilder.subscribeAllOneWayTopics(namespace: namespace))
-        // Request/reply filters (for example `UPD::com.example.Type` and
-        // `CLL:operation`) are encoded in the event-type topic segment. MQTT
-        // wildcards match complete segments, so a family-specific `UPD/+`-
-        // style filter would not match those suffixed event types. The
-        // correlated shape has exactly three segments after the namespace;
-        // subscribe once to that bounded shape and let ProtocolProcessor
-        // enforce the closed capability set.
-        try await client.subscribe(RuntimeTopicBuilder.subscribeAllCorrelatedTopics(namespace: namespace))
+        do {
+            try await client.subscribe(RuntimeTopicBuilder.subscribeAllOneWayTopics(namespace: namespace))
+            // Request/reply filters (for example `UPD::com.example.Type` and
+            // `CLL:operation`) are encoded in the event-type topic segment.
+            // MQTT wildcards match complete segments, so a family-specific
+            // `UPD/+`-style filter would not match those suffixed event types.
+            // The correlated shape has exactly three segments after the
+            // namespace; subscribe once to that bounded shape and let
+            // ProtocolProcessor enforce the closed capability set.
+            try await client.subscribe(RuntimeTopicBuilder.subscribeAllCorrelatedTopics(namespace: namespace))
+        } catch {
+            lock.withLock {
+                if activeNamespace == namespace { activeNamespace = nil }
+            }
+            throw AxolotyError.network(error: error, reason: "MQTT profile subscription failed")
+        }
     }
 
     /// Removes the same profile subscriptions during shutdown/reconnect.
@@ -265,7 +284,9 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         catch { if firstError == nil { firstError = error } }
         do { try await client.unsubscribe(RuntimeTopicBuilder.subscribeAllCorrelatedTopics(namespace: namespace)) }
         catch { if firstError == nil { firstError = error } }
-        if let firstError { throw firstError }
+        if let firstError {
+            throw AxolotyError.network(error: firstError, reason: "MQTT subscription removal failed")
+        }
     }
 
     /// Classifies the binding's exact external compatibility route.

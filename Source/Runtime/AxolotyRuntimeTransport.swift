@@ -26,6 +26,28 @@ public struct RuntimeTransportFailure: Error, Equatable, Sendable {
     }
 }
 
+/// An owned MQTT-compatible last-will publication supplied at transport start.
+///
+/// The runtime builds this message from its lifecycle identity. A transport
+/// may install it on its connection, or ignore it when its carrier has no
+/// last-will feature.
+public struct RuntimeTransportLastWill: Sendable, Equatable {
+    /// The exact route on which the broker publishes the will.
+    public let topic: String
+    /// The copied payload published by the broker.
+    public let payload: [UInt8]
+
+    /// Creates a transport last-will publication.
+    ///
+    /// - Parameters:
+    ///   - topic: Exact destination route.
+    ///   - payload: Owned payload bytes.
+    public init(topic: String, payload: [UInt8]) {
+        self.topic = topic
+        self.payload = payload
+    }
+}
+
 /// A transport boundary for the host runtime.
 ///
 /// Implementations own networking and invoke `receive` only with copied data.
@@ -33,6 +55,11 @@ public struct RuntimeTransportFailure: Error, Equatable, Sendable {
 public protocol AxolotyRuntimeTransport: AnyObject, Sendable {
     /// Starts the transport and installs the owned-frame receive callback.
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws
+    /// Starts the transport and optionally installs a lifecycle last will.
+    func start(
+        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
+        lastWill: RuntimeTransportLastWill?
+    ) async throws
     /// Installs a callback for failures after startup has completed.
     ///
     /// The callback is invoked with an owned ``RuntimeTransportFailure`` and
@@ -69,6 +96,23 @@ public protocol AxolotyRuntimeTransport: AnyObject, Sendable {
 }
 
 public extension AxolotyRuntimeTransport {
+    /// Starts the transport with an optional lifecycle last will.
+    ///
+    /// Existing adapters that do not support a broker last will can continue
+    /// implementing ``start(receive:)``; the default implementation ignores
+    /// this message and preserves that behavior.
+    ///
+    /// - Parameters:
+    ///   - receive: Callback for copied inbound frames.
+    ///   - lastWill: Optional publication for an unclean disconnect.
+    /// - Throws: The transport's startup error.
+    func start(
+        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
+        lastWill: RuntimeTransportLastWill?
+    ) async throws {
+        try await start(receive: receive)
+    }
+
     func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async { _ = handler }
     func installSubscriptions(namespace: String) async throws {}
     func removeSubscriptions(namespace: String) async throws {}
