@@ -109,6 +109,13 @@ clean proof gate. If the shared compiler cache is suspected of corruption, run
 
 ## Embedded Swift status
 
+Firmware outside this repository consumes portable Core source through
+[`docs/embedded-consumer-contract.json`](./embedded-consumer-contract.json).
+See the [embedded consumer contract](./embedded-consumer-contract.md) for the
+supported paths, compiler arguments, dependency lock, macro procedure, and
+validation command. Axoloty's root `.build` directory is not part of that
+contract.
+
 Swift 6.3 compiles AxolotyWire for `riscv32-none-none-eabi` using
 `-enable-experimental-feature Embedded`. The `espressif/idf_swift` ESP-IDF
 component (v1.0.1) integrates the Swift compiler into the ESP-IDF build

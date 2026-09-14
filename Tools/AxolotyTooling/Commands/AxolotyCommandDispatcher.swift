@@ -92,8 +92,12 @@ public struct AxolotyCommandDispatcher: Sendable {
             planResolver: try? planResolution.get()
         )
         let fileSystem = fileSystem ?? FoundationFileSystem()
-        let normalizedRepositoryRoot = (repositoryRoot ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
-            .standardizedFileURL
+        let environmentRepositoryRoot = environment["AXOLOTY_SOURCE_DIR"].flatMap { path in
+            path.isEmpty ? nil : URL(fileURLWithPath: path)
+        }
+        let normalizedRepositoryRoot = (
+            repositoryRoot ?? environmentRepositoryRoot ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        ).standardizedFileURL
         let processRunnerFactory = processRunnerFactory ?? { FoundationProcessRunner() }
         let portProbe = portProbe ?? FoundationServiceProbe()
         let tempDirProvider = tempDirProvider ?? FoundationTempDirectoryProvider()

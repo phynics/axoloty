@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "repository": {
+    "identity": "phynics/axoloty",
+    "url": "https://github.com/phynics/axoloty.git",
+    "revisionFormat": "git-commit-sha1"
+  },
+  "swift": {
+    "toolsVersion": "6.3",
+    "languageMode": 6,
+    "requiredExperimentalFeatures": [
+      "Embedded",
+      "Lifetimes"
+    ],
+    "requiredCompilerFlags": [
+      "-swift-version",
+      "6",
+      "-enable-experimental-feature",
+      "Embedded",
+      "-enable-experimental-feature",
+      "Lifetimes"
+    ]
+  },
+  "portablePackages": [
+    {
+      "package": "AxolotyWire",
+      "packagePath": "Packages/AxolotyWire",
+      "product": "AxolotyWire",
+      "target": "AxolotyWire",
+      "module": "AxolotyWire",
+      "sourcePath": "Packages/AxolotyWire/Sources/AxolotyWire"
+    },
+    {
+      "package": "AxolotyObjectModel",
+      "packagePath": "Packages/AxolotyObjectModel",
+      "product": "AxolotyObjectModel",
+      "target": "AxolotyObjectModel",
+      "module": "AxolotyObjectModel",
+      "sourcePath": "Packages/AxolotyObjectModel/Sources/AxolotyObjectModel"
+    },
+    {
+      "package": "AxolotyProtocol",
+      "packagePath": "Packages/AxolotyProtocol",
+      "product": "AxolotyProtocol",
+      "target": "AxolotyProtocol",
+      "module": "AxolotyProtocol",
+      "sourcePath": "Packages/AxolotyProtocol/Sources/AxolotyProtocol"
+    },
+    {
+      "package": "AxolotyCoatyModels",
+      "packagePath": "Packages/AxolotyCoatyModels",
+      "product": "AxolotyCoatyModels",
+      "target": "AxolotyCoatyModels",
+      "module": "AxolotyCoatyModels",
+      "sourcePath": "Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels"
+    },
+    {
+      "package": "AxolotyStaticRuntime",
+      "packagePath": "Packages/AxolotyStaticRuntime",
+      "product": "AxolotyStaticRuntime",
+      "target": "AxolotyStaticRuntime",
+      "module": "AxolotyStaticRuntime",
+      "sourcePath": "Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntime"
+    }
+  ],
+  "staticRuntimeMacro": {
+    "package": "AxolotyStaticRuntime",
+    "packagePath": "Packages/AxolotyStaticRuntime",
+    "buildTarget": "AxolotyStaticRuntime",
+    "target": "AxolotyStaticRuntimeMacrosImplementation",
+    "executable": "AxolotyStaticRuntimeMacrosImplementation-tool",
+    "pluginModule": "AxolotyStaticRuntimeMacrosImplementation"
+  },
+  "jsonCore": {
+    "identity": "swift-json",
+    "repository": "https://github.com/phynics/swift-json.git",
+    "version": "2.5.3",
+    "revision": "ec81216be5bbe2f02f45831d05256de2af452be8",
+    "product": "IkigaJSONCore",
+    "module": "_JSONCore",
+    "packageName": "IkigaJSON",
+    "sourcePath": "Sources/_JSONCore",
+    "lockPath": "Packages/AxolotyStaticRuntime/Package.resolved"
+  }
+}
