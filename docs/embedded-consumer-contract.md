@@ -89,3 +89,33 @@ The following paths are private and unsupported:
 
 Consumers may add platform flags, a target triple, and SDK-specific integration.
 Those settings do not change the Core contract.
+
+## Supported preparation command
+
+An external firmware checkout obtains Core paths and build-time tools from the
+supported command. Set `AXOLOTY_SOURCE_DIR` to an existing, clean, canonical
+Axoloty checkout and provide absolute paths owned by the caller:
+
+```sh
+axoloty-tool embedded consumer prepare \
+  --scratch /tmp/axoloty-consumer-tools \
+  --output /tmp/axoloty-consumer-tools/preparation.json
+```
+
+The command validates the contract before invoking SwiftPM, builds
+`AxolotyStaticRuntime` with the committed lock and
+`--disable-automatic-resolution`, and emits the same versioned JSON report
+that it writes to `--output`. It does not inspect `Tests/Support`, firmware
+files, ESP-IDF, or hardware. Scratch and output paths must be outside Core.
+
+The report has schema version 1 and contains the Core commit and dirty state,
+the contract SHA-256, Swift 6.3 compiler flags, the five portable source
+directories in dependency order, the locked `_JSONCore` revision and source,
+and the static-runtime macro executable and scratch directory. Consumers must
+treat paths as absolute and reject reports with an unknown schema or a path
+outside the declared Core or scratch roots.
+
+`AxolotySensorThingsModel` remains a portable package for host applications,
+but it is intentionally absent from this standalone contract: the offline
+embedded fixture has no SensorThings dependency and the five-package list is
+the complete production protocol/runtime closure for the ESP32-C6 consumer.

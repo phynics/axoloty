@@ -28,6 +28,7 @@ enum AxolotyCommandInvocation: Equatable, Sendable {
     case embeddedBuild
     case embeddedDoctor
     case embeddedVerify
+    case embeddedConsumerPrepare(arguments: [String])
     case release(ReleaseCommand)
 }
 
@@ -65,6 +66,12 @@ struct AxolotyCommandParser: Sendable {
         }
         if arguments.count == 3, arguments[0] == "explain", arguments[1] == "--ci" {
             return .explain(tier: arguments[2], ci: true)
+        }
+        if arguments.count >= 3,
+           arguments[0] == "embedded",
+           arguments[1] == "consumer",
+           arguments[2] == "prepare" {
+            return .embeddedConsumerPrepare(arguments: Array(arguments.dropFirst(3)))
         }
 
         switch arguments {

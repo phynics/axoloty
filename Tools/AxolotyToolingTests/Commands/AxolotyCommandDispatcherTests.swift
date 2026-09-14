@@ -119,6 +119,26 @@ func typedInvocationParserPreservesSemanticCommandOwnership() {
 }
 
 @Test
+func typedInvocationParserClassifiesEmbeddedConsumerPreparation() {
+    let parser = AxolotyCommandParser(environment: [:])
+
+    #expect(parser.parse([
+        "embedded", "consumer", "prepare", "--scratch", "/tmp/tools", "--output", "/tmp/report.json",
+    ]) == .embeddedConsumerPrepare(arguments: ["--scratch", "/tmp/tools", "--output", "/tmp/report.json"]))
+}
+
+@Test
+func embeddedConsumerPreparationHelpIsContextual() {
+    let result = AxolotyCommandDispatcher(environment: [:], installSignalHandler: false).run(
+        arguments: ["embedded", "consumer", "prepare", "--help"]
+    )
+
+    #expect(result.exitCode == 0)
+    #expect(result.standardOutput.contains("--scratch <absolute-path>"))
+    #expect(result.standardError.isEmpty)
+}
+
+@Test
 func helpCommandPrintsUsage() {
     let result = AxolotyCommandDispatcher().run(arguments: ["help"])
 
