@@ -11,18 +11,17 @@ set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 root_dir=$(CDPATH= cd -- "$script_dir/../../.." && pwd)
-support_dir="$root_dir/Tests/Support/embedded"
 
 command -v swift >/dev/null 2>&1 || {
-    echo "FAIL: swift is required to prepare the Embedded Swift Core tools" >&2
+    echo "FAIL: swift is required to run the Embedded consumer preparation command" >&2
     exit 1
 }
 command -v swiftc >/dev/null 2>&1 || {
     echo "FAIL: swiftc is required for the Embedded Swift Core check" >&2
     exit 1
 }
-command -v realpath >/dev/null 2>&1 || {
-    echo "FAIL: realpath is required for the Embedded Swift Core check" >&2
+command -v node >/dev/null 2>&1 || {
+    echo "FAIL: node is required to read the preparation report" >&2
     exit 1
 }
 
@@ -49,21 +48,50 @@ trap 'rm -rf -- "$workdir"' EXIT HUP INT TERM
 
 compiler_dir="$workdir/compiler"
 macro_scratch=${AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR:-$workdir/macro-tools}
-mkdir -p -- "$compiler_dir"
-AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR=$macro_scratch
-export AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR
+preparation_report="$workdir/preparation.json"
+mkdir -p -- "$compiler_dir" "$macro_scratch"
 
-AXOLOTY_EMBEDDED_CORE_TOOLS_NO_EXEC=1 . "$support_dir/prepare-embedded-core-tools.sh"
-embedded_core_prepare_tools "$compiler_dir" "$support_dir/resolve-embedded-core.sh"
+echo "Preparing Core consumer tools through axoloty-tool..."
+tool=${AXOLOTY_TOOL:-/opt/axoloty/bin/axoloty-tool}
+"$tool" embedded consumer prepare \
+    --scratch "$macro_scratch" \
+    --output "$preparation_report" \
+    >"$workdir/preparation.stdout"
+[ -s "$preparation_report" ] || {
+    echo "FAIL: consumer preparation did not produce a report" >&2
+    exit 1
+}
 
-source_root=$AXOLOTY_SOURCE_DIR
+json_field() {
+    field=$1
+    node -e 'const fs=require("fs"); const value=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); let current=value; for (const key of process.argv[2].split(".")) current=current[key]; if (typeof current === "boolean") process.stdout.write(current ? "true" : "false"); else if (Array.isArray(current)) process.stdout.write(current.join("\n")); else process.stdout.write(String(current));' "$preparation_report" "$field"
+}
+
+test "$(json_field status)" = prepared || { echo "FAIL: preparation status is not prepared" >&2; exit 1; }
+test "$(json_field core.dirty)" = false || { echo "FAIL: Core checkout is dirty" >&2; exit 1; }
+test "$(json_field core.sourceDir)" = "$AXOLOTY_SOURCE_DIR" || { echo "FAIL: preparation report selected a different Core root" >&2; exit 1; }
+
+source_root=$(json_field core.sourceDir)
+json_core_dir=$(json_field jsonCore.sourceDir)
+macro_tool=$(json_field staticRuntimeMacro.executable)
+macro_scratch=$(json_field staticRuntimeMacro.scratchDir)
+package_names=$(node -e 'const fs=require("fs"); const value=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(value.portablePackages.map(item => item.name).join(","));' "$preparation_report")
+[ "$package_names" = "AxolotyWire,AxolotyObjectModel,AxolotyProtocol,AxolotyCoatyModels,AxolotyStaticRuntime" ] || {
+    echo "FAIL: preparation report portable package order is invalid" >&2
+    exit 1
+}
+AXOLOTY_WIRE_SOURCE_DIR=$(json_field portablePackages.0.sourcePath)
+AXOLOTY_OBJECT_MODEL_SOURCE_DIR=$(json_field portablePackages.1.sourcePath)
+AXOLOTY_PROTOCOL_SOURCE_DIR=$(json_field portablePackages.2.sourcePath)
+AXOLOTY_COATY_MODELS_SOURCE_DIR=$(json_field portablePackages.3.sourcePath)
+AXOLOTY_STATIC_RUNTIME_SOURCE_DIR=$(json_field portablePackages.4.sourcePath)
+export AXOLOTY_WIRE_SOURCE_DIR AXOLOTY_OBJECT_MODEL_SOURCE_DIR AXOLOTY_PROTOCOL_SOURCE_DIR AXOLOTY_COATY_MODELS_SOURCE_DIR AXOLOTY_STATIC_RUNTIME_SOURCE_DIR
 fixture=${AXOLOTY_EMBEDDED_CORE_FIXTURE:-$source_root/Tests/Support/fixtures/StaticIoActorEmbeddedConsumer.swift}
 [ -f "$fixture" ] || {
     echo "FAIL: Embedded Swift consumer fixture is missing: $fixture" >&2
     exit 1
 }
 
-json_core_dir=$AXOLOTY_JSON_CORE_SOURCE_DIR
 [ -d "$json_core_dir" ] || {
     echo "FAIL: resolved swift-json _JSONCore source is missing: $json_core_dir" >&2
     exit 1
@@ -119,7 +147,7 @@ compile_module() {
             -parse-as-library -Osize -wmo \
             -warnings-as-errors \
             -module-name "$module_name" \
-            -load-plugin-executable "$AXOLOTY_STATIC_RUNTIME_MACRO_TOOL#AxolotyStaticRuntimeMacrosImplementation" \
+            -load-plugin-executable "$macro_tool#AxolotyStaticRuntimeMacrosImplementation" \
             -I "$workdir" \
             -emit-module -emit-module-path "$workdir/$module_name.swiftmodule" \
             -c "$@" \
@@ -153,7 +181,7 @@ swiftc \
     -enable-experimental-feature Embedded \
     -enable-experimental-feature Lifetimes \
     -parse-as-library -Osize -wmo \
-    -load-plugin-executable "$AXOLOTY_STATIC_RUNTIME_MACRO_TOOL#AxolotyStaticRuntimeMacrosImplementation" \
+    -load-plugin-executable "$macro_tool#AxolotyStaticRuntimeMacrosImplementation" \
     -I "$workdir" \
     -c "$fixture" \
     -o "$workdir/StaticIoActorEmbeddedConsumer.o"
