@@ -242,7 +242,8 @@ func verifyPlanPropagatesCalibratedTimingExpectations() throws {
     #expect(plan.schemaVersion == 1)
     #expect(plan.expectedDurationSeconds == 1_200)
     #expect(plan.deadlineSeconds == 3_600)
-    #expect(expectations["embedded-build"] == 180)
+    #expect(expectations["embedded-core-consumer"] == 300)
+    #expect(expectations["embedded-build"] == nil)
     #expect(expectations["g4-static-runtime"] == 120)
     #expect(expectations["g2-trace-corpus"] == 90)
     #expect(expectations["wire-distribution"] == 60)
@@ -280,8 +281,7 @@ func offlinePlanIncludesEmbeddedChecksOnLinux() throws {
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
     let plan = try resolver.resolve(.tier(name: CanonicalTier.ci.rawValue, ci: false, platform: .linux, requested: nil))
     let names = plan.nodes.map(\.name)
-    let embeddedBuild = names.firstIndex(of: "embedded-build")
-    let embeddedLinker = names.firstIndex(of: "embedded-linker")
+    let embeddedCoreConsumer = names.firstIndex(of: "embedded-core-consumer")
     let boundedHost = names.firstIndex(of: "g1-bounded-runtime-host")
     let boundedSanitized = names.firstIndex(of: "g1-bounded-runtime-sanitized")
     let boundedEmbedded = names.firstIndex(of: "g1-bounded-runtime-embedded")
@@ -294,8 +294,9 @@ func offlinePlanIncludesEmbeddedChecksOnLinux() throws {
     let objectSanitized = names.firstIndex(of: "g3-object-model-evidence-sanitized")
     let objectEmbedded = names.firstIndex(of: "g3-object-model-evidence-embedded")
 
-    #expect(embeddedBuild != nil)
-    #expect(embeddedLinker != nil)
+    #expect(embeddedCoreConsumer != nil)
+    #expect(!names.contains("embedded-build"))
+    #expect(!names.contains("embedded-linker"))
     #expect(boundedHost != nil)
     #expect(boundedSanitized != nil)
     #expect(boundedEmbedded != nil)
@@ -306,12 +307,11 @@ func offlinePlanIncludesEmbeddedChecksOnLinux() throws {
     #expect(coatyModels != nil)
     #expect(objectHost != nil)
     #expect(objectSanitized != nil)
-    #expect(objectEmbedded != nil)
-    if let embeddedBuild, let embeddedLinker, let boundedHost, let boundedSanitized, let boundedEmbedded,
+    #expect(objectEmbedded == nil)
+    if let embeddedCoreConsumer, let boundedHost, let boundedSanitized, let boundedEmbedded,
        let objectBoundary, let objectPackage, let objectTests, let objectMacros, let coatyModels,
-       let objectHost, let objectSanitized, let objectEmbedded {
-        #expect(embeddedBuild < embeddedLinker)
-        #expect(embeddedLinker < boundedHost)
+       let objectHost, let objectSanitized {
+        #expect(embeddedCoreConsumer < boundedHost)
         #expect(boundedHost < boundedSanitized)
         #expect(boundedSanitized < boundedEmbedded)
         #expect(boundedEmbedded < objectBoundary)
@@ -321,7 +321,6 @@ func offlinePlanIncludesEmbeddedChecksOnLinux() throws {
         #expect(objectMacros < coatyModels)
         #expect(coatyModels < objectHost)
         #expect(objectHost < objectSanitized)
-        #expect(objectSanitized < objectEmbedded)
     }
 }
 

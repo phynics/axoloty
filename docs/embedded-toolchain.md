@@ -98,6 +98,12 @@ Use `AXOLOTY_EMBEDDED_LINKER_CLEAN=1 make check-embedded-swift-linker` for the
 clean proof gate. If the shared compiler cache is suspected of corruption, run
 `make shell`, then `ccache --clear`; the next build repopulates it from source.
 
+The ESP-IDF linker probe above validates the current firmware integration. It
+is separate from `make check-embedded-core-consumer`, the required
+hardware-free Core portability gate. The Core gate compiles every portable
+module and a real macro-expanded consumer without reading `Embedded/swift` or
+using ESP-IDF build output.
+
 | File | Produced by |
 |---|---|
 | `device-manifest.json` | `embedded-device-info` |

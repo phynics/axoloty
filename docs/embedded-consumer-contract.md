@@ -89,3 +89,23 @@ The following paths are private and unsupported:
 
 Consumers may add platform flags, a target triple, and SDK-specific integration.
 Those settings do not change the Core contract.
+
+## Verify Core portability
+
+Run the required hardware-free consumer gate through the repository entry
+point:
+
+```sh
+make check-embedded-core-consumer
+```
+
+The gate compiles `_JSONCore` and all five portable packages for the repository's
+RISC-V Embedded Swift test target. It then compiles a real `@StaticIoActor`
+consumer with the resolved macro executable and performs a relocatable link of
+the resulting objects. The gate reads Core sources and caller-owned scratch
+storage only. It does not read the firmware project, invoke ESP-IDF, use a
+broker, or probe hardware.
+
+The target triple and linker are test-gate implementation details. They do not
+extend the downstream contract described by
+`docs/embedded-consumer-contract.json`.

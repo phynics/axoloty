@@ -233,8 +233,10 @@ func ciCategorySelectsTheFullObjectModelAggregate() throws {
     #expect(names.contains("g3-object-model-evidence-host"))
     #expect(names.contains("g3-object-model-evidence-sanitized"))
     #if os(Linux)
-    #expect(names.contains("g3-object-model-evidence-embedded"))
+    #expect(names.contains("embedded-core-consumer"))
+    #expect(!names.contains("g3-object-model-evidence-embedded"))
     #else
+    #expect(!names.contains("embedded-core-consumer"))
     #expect(!names.contains("g3-object-model-evidence-embedded"))
     #endif
 }
@@ -574,6 +576,7 @@ func checkpointPlanIncludesRequiredCompatibilityNodes() throws {
     #expect(!plan.nodes.contains { $0.name == "logging-global" })
     #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-host" })
     #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-sanitized" })
+    #expect(plan.nodes.contains { $0.name == "embedded-core-consumer" })
     #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-embedded" })
 
     let hardwarePlan = try resolver.resolve(.checkpoint(
@@ -585,6 +588,7 @@ func checkpointPlanIncludesRequiredCompatibilityNodes() throws {
     #expect(!hardwarePlan.nodes.contains { $0.name == "logging-global" })
     #expect(hardwarePlan.nodes.contains { $0.name == "g3-object-model-evidence-host" })
     #expect(hardwarePlan.nodes.contains { $0.name == "g3-object-model-evidence-sanitized" })
+    #expect(hardwarePlan.nodes.contains { $0.name == "embedded-core-consumer" })
     #expect(hardwarePlan.nodes.contains { $0.name == "g3-object-model-evidence-embedded" })
 }
 

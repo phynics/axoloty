@@ -128,12 +128,11 @@ collected only by the explicit live-wire workflow.
 
 The G3 object-model foundation is required coverage within the `ci` category.
 The category validates the bounded model tests, schema/model packages, and
-source/dependency boundary. Its host, sanitized, and Linux-only embedded
-cross-build evidence nodes are included in the required verification and
-release-checkpoint plans; platform filtering omits the embedded node on macOS.
-The embedded Swift image compiles the same sources through the
-`axoloty_object_model` ESP-IDF component and the static main consumer imports
-`AxolotyObjectModel` to prove module discovery and linkage.
+source/dependency boundary. Its host and sanitized evidence nodes are included
+in required verification and release-checkpoint plans. On Linux, the separate
+`embedded-core-consumer` gate compiles the object model with every portable
+Core module and a real macro-expanded consumer. This proof does not use an
+ESP-IDF component or firmware checkout; platform filtering omits it on macOS.
 The required G3 evidence nodes additionally record measured layouts, heaptrack
 allocation growth, deterministic edit/read behavior, sanitizer results, and
 release size/timing under `.testing/g3-object-model/<candidate-sha>/`.

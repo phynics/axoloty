@@ -94,6 +94,28 @@ func repositoryAuthorityPassesForCheckoutRejectingEmbeddedContractSwiftJSONLockD
 }
 
 @Test
+func repositoryAuthorityPassesForCheckoutRejectingEmbeddedContractModulePolicyDrift() throws {
+    let fixture = try makeEmbeddedContractFixture()
+    defer { try? FileManager.default.removeItem(at: fixture) }
+
+    let policyURL = fixture.appendingPathComponent("docs/module-policy.yml")
+    var policy = try JSONSerialization.jsonObject(
+        with: Data(contentsOf: policyURL)
+    ) as! [String: Any]
+    var targets = policy["targets"] as! [[String: Any]]
+    let wireIndex = targets.firstIndex { ($0["name"] as? String) == "AxolotyWire" }!
+    targets[wireIndex]["platformClass"] = "host"
+    policy["targets"] = targets
+    try JSONSerialization.data(withJSONObject: policy, options: [.sortedKeys]).write(to: policyURL)
+
+    let findings = AxolotyEmbeddedConsumerContractValidator(root: fixture).validate()
+    #expect(findings.contains {
+        $0.rule == "embedded-contract.packages.modulePolicy" &&
+            $0.message.contains("AxolotyWire must use platformClass portable")
+    })
+}
+
+@Test
 func repositoryAuthorityPassesForCheckoutReportingEmbeddedContractCommandFailure() throws {
     let fixture = try makeEmbeddedContractFixture()
     defer { try? FileManager.default.removeItem(at: fixture) }
@@ -170,6 +192,10 @@ private func makeEmbeddedContractFixture() throws -> URL {
     try fileManager.copyItem(
         at: sourceRoot.appendingPathComponent("docs/embedded-consumer-contract.json"),
         to: fixture.appendingPathComponent("docs/embedded-consumer-contract.json")
+    )
+    try fileManager.copyItem(
+        at: sourceRoot.appendingPathComponent("docs/module-policy.yml"),
+        to: fixture.appendingPathComponent("docs/module-policy.yml")
     )
     for (package, sourceDirectory) in [
         ("AxolotyWire", "AxolotyWire"),
