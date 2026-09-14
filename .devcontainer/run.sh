@@ -760,6 +760,11 @@ elif [ -r /sys/fs/selinux/enforce ] && [ "$(cat /sys/fs/selinux/enforce)" = 1 ];
     mount_suffix=:Z
     selinux_labeling_active=1
 fi
+external_mount_suffix=""
+case "$mount_suffix" in
+    :Z) external_mount_suffix=',Z' ;;
+    :z) external_mount_suffix=',z' ;;
+esac
 common_git_mount=""
 if [ -n "$common_git_dir" ]; then
     common_git_mount="$common_git_dir:$common_git_dir$mount_suffix"
@@ -789,6 +794,86 @@ if [ -n "${AXOLOTY_DEVICE_LEASE_ROOT:-}" ]; then
     device_lease_mount="$device_lease_root:$device_lease_root$device_lease_mount_suffix"
     device_lease_env="AXOLOTY_DEVICE_LEASE_ROOT=$device_lease_root"
 fi
+
+# Translate the two source trees that Embedded Swift is allowed to consume.
+# The active checkout is already mounted at bridge_workdir; an explicitly
+# selected external checkout gets a deterministic, read-only mount instead of
+# leaking an arbitrary host path into the container. Container-visible paths
+# are written back to the forwarded environment below.
+external_core_mount_spec=""
+external_core_git_mount_spec=""
+external_project_mount_spec=""
+translate_embedded_source_path() {
+    env_name="$1"
+    mount_label="$2"
+    eval "source_value=\${$env_name-}"
+    [ -n "$source_value" ] || return 0
+    case "$source_value" in
+        /*) ;;
+        *) echo "$env_name must be an absolute path: $source_value" >&2; exit 2 ;;
+    esac
+    # A nested command running in an existing container already speaks the
+    # container path language. Keep those explicit paths stable.
+    case "$source_value" in
+        "$workdir")
+            translated_path="$bridge_workdir"
+            ;;
+        "$workdir"/*)
+            translated_path="$bridge_workdir/${source_value#"$workdir/"}"
+            ;;
+        *)
+            host_path=$(realpath -e -- "$source_value" 2>/dev/null || true)
+            if [ -z "$host_path" ]; then
+                echo "$env_name does not exist on the host: $source_value" >&2
+                exit 2
+            fi
+            [ -d "$host_path" ] || {
+                echo "$env_name is not a directory: $source_value" >&2
+                exit 2
+            }
+            case "$host_path" in
+                "$root_dir")
+                    translated_path="$bridge_workdir"
+                    ;;
+                "$root_dir"/*)
+                    translated_path="$bridge_workdir/${host_path#"$root_dir/"}"
+                    ;;
+                *)
+                    path_hash=$(printf '%s' "$host_path" | sha256sum | awk '{print substr($1, 1, 16)}')
+                    translated_path="/opt/axoloty/external/${mount_label}-${path_hash}"
+                    mount_spec="$host_path:$translated_path:ro$external_mount_suffix"
+                    if [ "$env_name" = AXOLOTY_SOURCE_DIR ]; then
+                        external_core_mount_spec="$mount_spec"
+                        # A linked Git worktree's .git file points outside the
+                        # worktree. Preserve that read-only metadata path so
+                        # provenance checks work after translating the source
+                        # tree to its deterministic container location.
+                        git_common_dir=$(git -C "$host_path" rev-parse --git-common-dir 2>/dev/null || true)
+                        if [ -n "$git_common_dir" ]; then
+                            git_common_dir=$(realpath -e -- "$host_path/$git_common_dir" 2>/dev/null || \
+                                realpath -e -- "$git_common_dir" 2>/dev/null || true)
+                            case "$git_common_dir" in
+                                ""|"$host_path"|"$host_path"/*) ;;
+                                *) external_core_git_mount_spec="$git_common_dir:$git_common_dir:ro$external_mount_suffix" ;;
+                            esac
+                        fi
+                    else
+                        external_project_mount_spec="$mount_spec"
+                    fi
+                    ;;
+            esac
+            ;;
+    esac
+
+    if [ "$env_name" = AXOLOTY_SOURCE_DIR ]; then
+        AXOLOTY_SOURCE_DIR="$translated_path"
+    else
+        EMBEDDED_PROJECT_DIR="$translated_path"
+    fi
+}
+translate_embedded_source_path AXOLOTY_SOURCE_DIR core
+translate_embedded_source_path EMBEDDED_PROJECT_DIR firmware
+
 # Extra `podman run`/`docker run` flags for targets that need a relaxed
 # sandbox. Used by `make test-tsan`: ThreadSanitizer must disable ASLR via
 # the `personality` syscall, which the default seccomp profile denies. Empty
@@ -992,6 +1077,9 @@ create_container() {
                 -v "$spm_cache_dir:$spm_cache_dir" \
                 -v "$ccache_mount" \
                 -v "$common_git_mount" \
+                ${external_core_mount_spec:+-v "$external_core_mount_spec"} \
+                ${external_core_git_mount_spec:+-v "$external_core_git_mount_spec"} \
+                ${external_project_mount_spec:+-v "$external_project_mount_spec"} \
                 -v "$device_lease_mount" \
                 -e "$device_lease_env" \
                 -v "$root_dir:$bridge_workdir$mount_suffix" \
@@ -1027,6 +1115,9 @@ create_container() {
                 -v "$spm_cache_dir:$spm_cache_dir" \
                 -v "$ccache_mount" \
                 -v "$common_git_mount" \
+                ${external_core_mount_spec:+-v "$external_core_mount_spec"} \
+                ${external_core_git_mount_spec:+-v "$external_core_git_mount_spec"} \
+                ${external_project_mount_spec:+-v "$external_project_mount_spec"} \
                 -v "$root_dir:$bridge_workdir$mount_suffix" \
                 -w "$bridge_workdir" \
                 --name "$container_name" \
@@ -1053,6 +1144,9 @@ create_container() {
             -v "$build_dir:$bridge_workdir/.build$mount_suffix" \
             -v "$spm_cache_dir:$bridge_workdir/.swiftpm-cache$mount_suffix" \
             -v "$ccache_mount" \
+            ${external_core_mount_spec:+-v "$external_core_mount_spec"} \
+            ${external_core_git_mount_spec:+-v "$external_core_git_mount_spec"} \
+            ${external_project_mount_spec:+-v "$external_project_mount_spec"} \
             -w "$bridge_workdir" \
             --name "$container_name" \
             --cidfile "$container_cidfile" \
@@ -1075,6 +1169,9 @@ create_container() {
             -v "$build_dir:$bridge_workdir/.build$mount_suffix" \
             -v "$spm_cache_dir:$bridge_workdir/.swiftpm-cache$mount_suffix" \
             -v "$ccache_mount" \
+            ${external_core_mount_spec:+-v "$external_core_mount_spec"} \
+            ${external_core_git_mount_spec:+-v "$external_core_git_mount_spec"} \
+            ${external_project_mount_spec:+-v "$external_project_mount_spec"} \
             -w "$bridge_workdir" \
             --name "$container_name" \
             --cidfile "$container_cidfile" \

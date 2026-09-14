@@ -93,8 +93,9 @@ if ! grep -Fq 'name: "AxolotyObjectModelTests"' "$root_manifest" || \
     echo "error: root AxolotyObjectModel test target is not wired to the standalone tests" >&2
     exit 1
 fi
-if ! grep -Fq 'AxolotyObjectModel/Sources/AxolotyObjectModel/*.swift' "$component"; then
-    echo "error: ESP-IDF component does not compile the AxolotyObjectModel source glob" >&2
+if ! grep -Fq 'include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/axoloty-source.cmake")' "$component" || \
+   ! grep -Fq '"${AXOLOTY_OBJECT_MODEL_SOURCE_DIR}/*.swift"' "$component"; then
+    echo "error: ESP-IDF component does not compile the resolved AxolotyObjectModel source directory" >&2
     exit 1
 fi
 if ! grep -Fq 'idf_swift' "$component_manifest" || \
@@ -165,7 +166,8 @@ if ! grep -Fq 'name: "AxolotyCoatyModelsTests"' "$root_manifest" || \
     echo "error: root package does not wire AxolotyCoatyModels tests" >&2
     exit 1
 fi
-if ! grep -Fq 'Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels/*.swift' "$coaty_component" || \
+if ! grep -Fq 'include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/axoloty-source.cmake")' "$coaty_component" || \
+   ! grep -Fq '"${AXOLOTY_COATY_MODELS_SOURCE_DIR}/*.swift"' "$coaty_component" || \
    ! grep -Eq '^[[:space:]]*PRIV_REQUIRES[[:space:]].*axoloty_object_model([[:space:]]|$)' "$coaty_component" || \
    ! grep -Eq '^[[:space:]]*PRIV_REQUIRES[[:space:]].*axoloty_wire([[:space:]]|$)' "$coaty_component" || \
    ! grep -Eq '^[[:space:]]*PRIV_REQUIRES[[:space:]].*json_core([[:space:]]|$)' "$coaty_component" || \

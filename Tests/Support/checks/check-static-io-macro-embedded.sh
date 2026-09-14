@@ -10,8 +10,8 @@ set -eu
 root_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 embedded_dir="$root_dir/.build/embedded-swift/esp-idf"
 fixture="$root_dir/Tests/Support/fixtures/StaticIoActorEmbeddedConsumer.swift"
-macro_tool=$(find "$root_dir/.build" -type f \
-    -name 'AxolotyStaticRuntimeMacrosImplementation-tool' -print -quit)
+macro_scratch=${AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR:-$root_dir/.build/embedded-swift-core-tools}
+macro_tool=${AXOLOTY_STATIC_RUNTIME_MACRO_TOOL:-$macro_scratch/x86_64-unknown-linux-gnu/debug/AxolotyStaticRuntimeMacrosImplementation-tool}
 
 [ -n "$macro_tool" ] || {
     echo "static IO macro implementation tool is missing; run the root build first" >&2

@@ -17,22 +17,24 @@ set -eu
 out_dir="${EMBEDDED_OUTPUT_DIR:-/workspace/.testing/embedded}"
 report="$out_dir/reproducible-build.json"
 project_dir="${EMBEDDED_PROJECT_DIR:-/workspace/Embedded}"
+build_dir="${EMBEDDED_BUILD_DIR:-/workspace/.build/embedded-reproducible}"
+sdkconfig="$build_dir/sdkconfig"
 bin_name="axoloty-smoke.bin"
-# idf.py places the app image under build/<project>.bin relative to the
-# project root.
-bin_path="$project_dir/build/$bin_name"
+bin_path="$build_dir/$bin_name"
 
 # Source ESP-IDF for idf.py.
 # shellcheck source=/dev/null
 . "${IDF_PATH:-/opt/esp/idf}/export.sh" >/dev/null 2>&1
 
 mkdir -p "$out_dir"
+mkdir -p "$build_dir"
 
 cd "$project_dir"
 
 sha_for_clean_build() {
-    idf.py fullclean >/dev/null 2>&1
-    idf.py build >/dev/null 2>&1
+    idf.py -B "$build_dir" -D SDKCONFIG="$sdkconfig" fullclean >/dev/null 2>&1
+    idf.py -B "$build_dir" -D SDKCONFIG="$sdkconfig" set-target esp32c6 >/dev/null 2>&1
+    idf.py -B "$build_dir" -D SDKCONFIG="$sdkconfig" build >/dev/null 2>&1
     if [ ! -f "$bin_path" ]; then
         echo "REPRODUCIBLE BUILD FAIL: $bin_path not produced" >&2
         exit 1

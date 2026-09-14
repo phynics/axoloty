@@ -14,7 +14,7 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 checker="$root/Tests/Support/checks/check-embedded-swift.sh"
 
 # 1. The real AxolotyWire sources must compile under Embedded Swift.
-if ! sh "$checker" >/dev/null 2>&1; then
+if ! AXOLOTY_SOURCE_DIR="$root" sh "$checker" >/dev/null 2>&1; then
     echo "expected checker to pass against real AxolotyWire sources" >&2
     exit 1
 fi

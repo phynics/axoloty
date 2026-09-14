@@ -2,17 +2,14 @@
 # foundation sources used by the standalone SwiftPM package and exports the
 # importable AxolotyObjectModel module for static embedded consumers.
 
-get_filename_component(AXOLOTY_ROOT
-    "${CMAKE_CURRENT_LIST_DIR}/../../../.."
-    ABSOLUTE
-)
+include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/axoloty-source.cmake")
 
 file(GLOB AXOLOTY_OBJECT_MODEL_SOURCES
-    "${AXOLOTY_ROOT}/Packages/AxolotyObjectModel/Sources/AxolotyObjectModel/*.swift"
+    "${AXOLOTY_OBJECT_MODEL_SOURCE_DIR}/*.swift"
 )
 
 if(NOT AXOLOTY_OBJECT_MODEL_SOURCES)
-    message(FATAL_ERROR "No AxolotyObjectModel sources found at ${AXOLOTY_ROOT}/Packages/AxolotyObjectModel/Sources/AxolotyObjectModel/")
+    message(FATAL_ERROR "No AxolotyObjectModel sources found at ${AXOLOTY_OBJECT_MODEL_SOURCE_DIR}")
 endif()
 
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/empty_bridging_header.h "")

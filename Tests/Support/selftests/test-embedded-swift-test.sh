@@ -3,7 +3,8 @@
 
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
-node --input-type=module <<'JS'
+EMBEDDED_PROJECT_DIR="$ROOT_DIR/Embedded/swift" EMBEDDED_CORPUS_MANIFEST= \
+    node --input-type=module <<'JS'
 import assert from "node:assert/strict";
 import { makeRecord } from "./Tests/Support/embedded/embedded-swift-smoke-validator.mjs";
 import { expectedEmbeddedSwiftTests, createEmbeddedSwiftTestValidator } from "./Tests/Support/embedded/embedded-swift-test-validator.mjs";

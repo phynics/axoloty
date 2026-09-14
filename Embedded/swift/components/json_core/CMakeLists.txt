@@ -4,20 +4,9 @@
 # module so the production AxolotyWire component uses the same tokenizer as the
 # standalone SwiftPM package.
 
-get_filename_component(AXOLOTY_ROOT
-    "${CMAKE_CURRENT_LIST_DIR}/../../../.."
-    ABSOLUTE
-)
+include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/axoloty-source.cmake")
 
-set(JSON_CORE_ROOT
-    "${AXOLOTY_ROOT}/.build/checkouts/swift-json/Sources/_JSONCore"
-)
-if(NOT IS_DIRECTORY "${JSON_CORE_ROOT}")
-    message(FATAL_ERROR
-        "Pinned swift-json _JSONCore sources not found at ${JSON_CORE_ROOT}; "
-        "run the checked-in SwiftPM resolution before configuring Embedded Swift."
-    )
-endif()
+set(JSON_CORE_ROOT "${AXOLOTY_JSON_CORE_SOURCE_DIR}")
 file(GLOB JSON_CORE_SOURCES
     "${JSON_CORE_ROOT}/*.swift"
     "${JSON_CORE_ROOT}/Parser/*.swift"

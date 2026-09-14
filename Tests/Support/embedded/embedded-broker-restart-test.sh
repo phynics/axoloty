@@ -11,6 +11,8 @@ build_dir=${EMBEDDED_BROKER_RESTART_BUILD_DIR:-/workspace/.build/embedded-broker
 output_dir=${EMBEDDED_OUTPUT_DIR:-/workspace/.testing/embedded}
 managed_broker=${EMBEDDED_BROKER_RESTART_MANAGED:-1}
 support_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+AXOLOTY_EMBEDDED_CORE_TOOLS_NO_EXEC=1 . "$support_dir/prepare-embedded-core-tools.sh"
+embedded_core_prepare_tools "$build_dir" "$support_dir/resolve-embedded-core.sh"
 reference_dir=$(CDPATH= cd -- "$support_dir/../WireCompatibility/ReferenceAgents/coatyjs" && pwd)
 port=${EMBEDDED_BROKER_RESTART_PORT:-1883}
 esptool="${IDF_PATH:-/opt/esp/idf}/components/esptool_py/esptool/esptool.py"
@@ -23,11 +25,14 @@ cleanup() { rm -f "$config" "$broker_config"; }
 trap cleanup EXIT INT TERM
 test -e "$device"
 . "${IDF_PATH:-/opt/esp/idf}/export.sh" >/dev/null 2>&1
+. "$support_dir/embedded-build-cache.sh"
 mkdir -p "$build_dir" "$output_dir"
 rm -f "$ready_file" "$resume_file"
 cd "$project_dir"
 sdkconfig="$build_dir/sdkconfig"
-if [ ! -f "$build_dir/CMakeCache.txt" ]; then idf.py -B "$build_dir" -D SDKCONFIG="$sdkconfig" set-target esp32c6; fi
+config_flags="broker-restart"
+axoloty_enable_esp_idf_ccache "$project_dir" esp32c6 "$config_flags"
+axoloty_prepare_esp_idf_build "$build_dir" esp32c6 0 "$config_flags" -D SDKCONFIG="$sdkconfig"
 AXOLOTY_DEVICE_ROLE=B AXOLOTY_AGENT_SCENARIO=broker-restart AXOLOTY_MQTT_PORT="$port" \
   node "$support_dir/generate-embedded-network-config.mjs" "$config"
 idf.py -B "$build_dir" -D SDKCONFIG="$sdkconfig" build

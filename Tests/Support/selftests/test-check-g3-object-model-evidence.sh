@@ -47,7 +47,7 @@ grep -Fq '. "${IDF_PATH:-/opt/esp/idf}/export.sh" >"$idf_log" 2>&1' "$probe/chec
 grep -Fq 'rm -f "$idf_log"' "$probe/check-embedded.sh"
 grep -Fq '/workspace/.devcontainer/resolve.sh' "$probe/check-embedded.sh"
 grep -Fq 'pinned swift-json _JSONCore checkout is unavailable' "$probe/check-embedded.sh"
-grep -Fq 'run the checked-in SwiftPM resolution before configuring Embedded Swift' "$root/Embedded/swift/components/json_core/CMakeLists.txt"
+grep -Fq 'set(JSON_CORE_ROOT "${AXOLOTY_JSON_CORE_SOURCE_DIR}")' "$root/Embedded/swift/components/json_core/CMakeLists.txt"
 grep -Fq 'riscv32-esp-elf-size -A "$elf"' "$probe/check-embedded.sh"
 grep -Fq '$1 ~ /^\./' "$probe/check-embedded.sh"
 grep -Fq 'print $1 "\t" $2' "$probe/check-embedded.sh"

@@ -18,6 +18,12 @@ mkdir -p "$project_dir" "$build_dir" "$out_dir" \
     "$idf_dir/components/esptool_py/esptool"
 : > "$device"
 : > "$build_dir/flash_args"
+macro_scratch="$TEMP_DIR/macro-scratch"
+macro_tool="$macro_scratch/bin/AxolotyStaticRuntimeMacrosImplementation-tool"
+json_core_dir="$macro_scratch/checkouts/swift-json/Sources/_JSONCore"
+mkdir -p "$(dirname "$macro_tool")" "$json_core_dir"
+: > "$macro_tool"
+chmod +x "$macro_tool"
 
 mkdir -p "$TEMP_DIR/bin"
 cat > "$TEMP_DIR/bin/idf.py" <<'PY'
@@ -25,8 +31,18 @@ cat > "$TEMP_DIR/bin/idf.py" <<'PY'
 import os
 import sys
 
+if os.environ.get("FAKE_IDF_ARGS"):
+    with open(os.environ["FAKE_IDF_ARGS"], "a", encoding="utf-8") as output:
+        output.write(" ".join(sys.argv[1:]) + "\n")
 if os.environ.get("FAKE_IDF_FAILURE") == "1":
     raise SystemExit(1)
+if "set-target" in sys.argv:
+    build_index = sys.argv.index("-B") + 1
+    os.makedirs(sys.argv[build_index], exist_ok=True)
+    with open(os.path.join(sys.argv[build_index], "CMakeCache.txt"), "w", encoding="utf-8") as output:
+        output.write("IDF_TARGET:STRING=esp32c6\n")
+        if os.environ.get("IDF_CCACHE_ENABLE") == "1":
+            output.write("CCACHE_ENABLE:UNINITIALIZED=1\n")
 PY
 chmod +x "$TEMP_DIR/bin/idf.py"
 
@@ -104,7 +120,7 @@ JS
 run_smoke() {
     rm -f "$out_dir/swift-smoke-result.json" "$out_dir/swift-smoke-log.txt"
     case "$1" in
-        success) success_records > "$device" ;;
+        success|build-success) success_records > "$device" ;;
         missing) success_records | grep -v 'config:topicMax256' > "$device" ;;
         duplicate) success_records | sed '/"caseId":"topicParse:ADV"/a {"schemaVersion":2,"runId":"embedded-swift-smoke-v2","sequence":1,"caseId":"topicParse:ADV","operation":"smokeCheck","stage":"execute","status":"passed","checksum":0}' > "$device" ;;
         failed|no-summary|reboot|bad-counts) success_records > "$TEMP_DIR/records"; rewrite_records "$1" "$TEMP_DIR/records" > "$device" ;;
@@ -118,6 +134,7 @@ run_smoke() {
     test_device="$device" test_skip_build=1 test_idf_failure=0 test_esptool_failure=0 test_validator_factory=createEmbeddedSwiftSmokeValidator
     case "$1" in
         setup-failure) test_device="$TEMP_DIR/missing-device" ;;
+        build-success) test_skip_build=0 ;;
         build-failure) test_skip_build=0 test_idf_failure=1 ;;
         flash-failure) test_esptool_failure=1 ;;
         capture-failure) test_validator_factory=missingValidator ;;
@@ -126,9 +143,12 @@ run_smoke() {
     PATH="$TEMP_DIR/bin:$PATH" \
     EMBEDDED_DEVICE="$test_device" EMBEDDED_PROJECT_DIR="$project_dir" \
     EMBEDDED_BUILD_DIR="$build_dir" EMBEDDED_OUTPUT_DIR="$out_dir" \
+    AXOLOTY_SOURCE_DIR="$ROOT_DIR" AXOLOTY_JSON_CORE_SOURCE_DIR="$json_core_dir" \
+    AXOLOTY_STATIC_RUNTIME_MACRO_TOOL="$macro_tool" AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR="$macro_scratch" \
     EMBEDDED_DEADLINE=1 \
     EMBEDDED_SKIP_BUILD="$test_skip_build" EMBEDDED_VALIDATOR_FACTORY="$test_validator_factory" \
     FAKE_IDF_FAILURE="$test_idf_failure" FAKE_ESPTOOL_FAILURE="$test_esptool_failure" \
+    FAKE_IDF_ARGS="$TEMP_DIR/idf-args" \
     FAKE_ESPTOOL_ARGS="$TEMP_DIR/esptool-args.txt" FAKE_SERIAL_MODE="$1" \
         "$ROOT_DIR/Tests/Support/embedded/embedded-swift-smoke.sh"
 }
@@ -157,6 +177,10 @@ import fs from "node:fs"; import assert from "node:assert/strict"; const r=JSON.
 JS
 grep -qx -- '--chip' "$TEMP_DIR/esptool-args.txt"
 grep -qx -- '@flash_args' "$TEMP_DIR/esptool-args.txt"
+
+: > "$TEMP_DIR/idf-args"
+run_smoke build-success
+test "$(grep -c 'set-target esp32c6' "$TEMP_DIR/idf-args")" -eq 1
 
 VALIDATOR="$ROOT_DIR/Tests/Support/embedded/embedded-swift-smoke-validator.mjs" node --input-type=module <<'JS'
 import assert from "node:assert/strict";
@@ -204,6 +228,7 @@ assert.ok(result.validation.diagnostic.length > 0);
 assert.ok(result.validation.diagnostic.length <= 256);
 JS
 done
+grep -Fqx -- "-B $build_dir -D SDKCONFIG=$build_dir/sdkconfig set-target esp32c6" "$TEMP_DIR/idf-args"
 
 rm "$build_dir/flash_args"
 run_expected_failure "embedded-swift-smoke/missing-flash-args" any run_smoke success

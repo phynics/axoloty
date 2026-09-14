@@ -17,8 +17,9 @@ wire_dir="$root/Packages/AxolotyWire/Sources/AxolotyWire"
 protocol_dir="$root/Packages/AxolotyProtocol/Sources/AxolotyProtocol"
 wire_cmake="$root/Embedded/swift/components/axoloty_wire/CMakeLists.txt"
 protocol_cmake="$root/Embedded/swift/components/axoloty_protocol/CMakeLists.txt"
+source_resolver="$root/Embedded/swift/cmake/axoloty-source.cmake"
 
-for path in "$wire_dir" "$protocol_dir" "$wire_cmake" "$protocol_cmake"; do
+for path in "$wire_dir" "$protocol_dir" "$wire_cmake" "$protocol_cmake" "$source_resolver"; do
     test -e "$path" || fail "missing required source boundary path: $path"
 done
 
@@ -42,10 +43,15 @@ printf '%s' "$root_manifest" | grep -Fq 'path: "Packages/AxolotyProtocol/Sources
 
 wire_text=$(sed -E 's:#.*$::' "$wire_cmake")
 protocol_text=$(sed -E 's:#.*$::' "$protocol_cmake")
-printf '%s' "$wire_text" | grep -Fq 'Packages/AxolotyWire/Sources/AxolotyWire/*.swift' \
-    || fail "ESP-IDF AxolotyWire component does not compile the package source root"
-printf '%s' "$protocol_text" | grep -Fq 'Packages/AxolotyProtocol/Sources/AxolotyProtocol/*.swift' \
-    || fail "ESP-IDF AxolotyProtocol component does not compile the package source root"
+resolver_text=$(sed -E 's:#.*$::' "$source_resolver")
+printf '%s' "$wire_text" | grep -Fq '"${AXOLOTY_WIRE_SOURCE_DIR}/*.swift"' \
+    || fail "ESP-IDF AxolotyWire component does not compile the resolved package source root"
+printf '%s' "$protocol_text" | grep -Fq '"${AXOLOTY_PROTOCOL_SOURCE_DIR}/*.swift"' \
+    || fail "ESP-IDF AxolotyProtocol component does not compile the resolved package source root"
+printf '%s' "$resolver_text" | grep -Fq '"Packages/AxolotyWire/Sources/AxolotyWire"' \
+    || fail "Embedded source resolver does not bind AxolotyWire to its package source root"
+printf '%s' "$resolver_text" | grep -Fq '"Packages/AxolotyProtocol/Sources/AxolotyProtocol"' \
+    || fail "Embedded source resolver does not bind AxolotyProtocol to its package source root"
 
 wire_sources=$(find "$wire_dir" -maxdepth 1 -type f -name '*.swift' -printf '%f\n' | sort)
 protocol_sources=$(find "$protocol_dir" -maxdepth 1 -type f -name '*.swift' -printf '%f\n' | sort)

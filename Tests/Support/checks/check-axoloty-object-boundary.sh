@@ -96,7 +96,8 @@ fi
 
 test -f "$component/CMakeLists.txt" || fail "missing Embedded Swift object-model component"
 component_text=$(sed -E 's:#.*$::' "$component/CMakeLists.txt")
-printf '%s' "$component_text" | grep -Fq 'Packages/AxolotyObjectModel/Sources/AxolotyObjectModel/*.swift' || fail "Embedded Swift component omits the object-model source glob"
+printf '%s' "$component_text" | grep -Fq 'include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/axoloty-source.cmake")' || fail "Embedded Swift component omits the Core source resolver"
+printf '%s' "$component_text" | grep -Fq '"${AXOLOTY_OBJECT_MODEL_SOURCE_DIR}/*.swift"' || fail "Embedded Swift component omits the resolved object-model source directory"
 printf '%s' "$component_text" | grep -Fq 'idf_component_register_swift' || fail "Embedded Swift component does not register Swift sources"
 
 echo "AxolotyObjectModel/AxolotyObjectMacros boundary and source inclusion passed"

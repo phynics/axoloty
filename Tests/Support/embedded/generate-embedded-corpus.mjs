@@ -84,7 +84,7 @@ const borrowedBenchmarkStatements = manifest.cases.map((corpusCase, index) => {
 }).join("\n");
 
 const source = `// Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
-// Generated from Benchmarks/Corpus/manifest.json. Do not edit.
+// Generated from the firmware fixture snapshot. Do not edit.
 
 import AxolotyWire
 

@@ -3,17 +3,14 @@
 # AxolotyCoatyModels ESP-IDF component. Compile the same bounded first-party
 # model sources used by SwiftPM and publish an importable module for consumers.
 
-get_filename_component(AXOLOTY_ROOT
-    "${CMAKE_CURRENT_LIST_DIR}/../../../.."
-    ABSOLUTE
-)
+include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/axoloty-source.cmake")
 
 file(GLOB AXOLOTY_COATY_MODELS_SOURCES
-    "${AXOLOTY_ROOT}/Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels/*.swift"
+    "${AXOLOTY_COATY_MODELS_SOURCE_DIR}/*.swift"
 )
 
 if(NOT AXOLOTY_COATY_MODELS_SOURCES)
-    message(FATAL_ERROR "No AxolotyCoatyModels sources found at ${AXOLOTY_ROOT}/Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels/")
+    message(FATAL_ERROR "No AxolotyCoatyModels sources found at ${AXOLOTY_COATY_MODELS_SOURCE_DIR}")
 endif()
 
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/empty_bridging_header.h "")

@@ -1,16 +1,13 @@
 # AxolotyStaticRuntime ESP-IDF component. The component compiles the same
 # fixed, Foundation-free runtime source used by its standalone SwiftPM target.
 
-get_filename_component(AXOLOTY_ROOT
-    "${CMAKE_CURRENT_LIST_DIR}/../../../.."
-    ABSOLUTE
-)
+include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/axoloty-source.cmake")
 
 set(AXOLOTY_STATIC_RUNTIME_SOURCES
-    "${AXOLOTY_ROOT}/Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntime/StaticRuntime.swift"
-    "${AXOLOTY_ROOT}/Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntime/StaticIoActor.swift"
-    "${AXOLOTY_ROOT}/Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntime/StaticIoRegistry.swift"
-    "${AXOLOTY_ROOT}/Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntime/StaticIoRuntime.swift"
+    "${AXOLOTY_STATIC_RUNTIME_SOURCE_DIR}/StaticRuntime.swift"
+    "${AXOLOTY_STATIC_RUNTIME_SOURCE_DIR}/StaticIoActor.swift"
+    "${AXOLOTY_STATIC_RUNTIME_SOURCE_DIR}/StaticIoRegistry.swift"
+    "${AXOLOTY_STATIC_RUNTIME_SOURCE_DIR}/StaticIoRuntime.swift"
 )
 foreach(AXOLOTY_STATIC_RUNTIME_SOURCE IN LISTS AXOLOTY_STATIC_RUNTIME_SOURCES)
     if(NOT EXISTS "${AXOLOTY_STATIC_RUNTIME_SOURCE}")
@@ -21,19 +18,6 @@ foreach(AXOLOTY_STATIC_RUNTIME_SOURCE IN LISTS AXOLOTY_STATIC_RUNTIME_SOURCES)
 endforeach()
 
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/empty_bridging_header.h "")
-
-file(GLOB AXOLOTY_STATIC_RUNTIME_MACRO_TOOLS
-    LIST_DIRECTORIES FALSE
-    "${AXOLOTY_ROOT}/.build/debug/AxolotyStaticRuntimeMacrosImplementation-tool"
-    "${AXOLOTY_ROOT}/.build/*/debug/AxolotyStaticRuntimeMacrosImplementation-tool"
-)
-list(LENGTH AXOLOTY_STATIC_RUNTIME_MACRO_TOOLS AXOLOTY_STATIC_RUNTIME_MACRO_TOOL_COUNT)
-if(AXOLOTY_STATIC_RUNTIME_MACRO_TOOL_COUNT EQUAL 0)
-    message(FATAL_ERROR
-        "AxolotyStaticRuntime macro tool is missing; run the root build first"
-    )
-endif()
-list(GET AXOLOTY_STATIC_RUNTIME_MACRO_TOOLS 0 AXOLOTY_STATIC_RUNTIME_MACRO_TOOL)
 
 idf_component_register(
     SRCS "component_anchor.c"

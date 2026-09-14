@@ -50,12 +50,13 @@ if printf '%s' "$manifest_without_comments" | grep -Eq '(Foundation|MQTTNIO|NIO|
     exit 1
 fi
 
+if ! grep -Fq 'include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/axoloty-source.cmake")' "$component" || \
+   ! grep -Fq '"${AXOLOTY_PROTOCOL_SOURCE_DIR}/*.swift"' "$component"; then
+    echo "error: ESP-IDF component does not compile the resolved AxolotyProtocol source directory" >&2
+    exit 1
+fi
 for source in "$@"; do
     basename=$(basename "$source")
-    if ! grep -Fq 'AxolotyProtocol/Sources/AxolotyProtocol/*.swift' "$component"; then
-        echo "error: ESP-IDF component does not compile the AxolotyProtocol source glob" >&2
-        exit 1
-    fi
     case "$basename" in
         *.swift) : ;;
         *) echo "error: unexpected protocol source $source" >&2; exit 1 ;;

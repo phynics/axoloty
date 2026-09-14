@@ -18,7 +18,8 @@ out_dir="${EMBEDDED_OUTPUT_DIR:-/workspace/.testing/embedded}"
 smoke_log="$out_dir/swift-smoke-log.txt"
 result_file="$out_dir/swift-smoke-result.json"
 project_dir="${EMBEDDED_PROJECT_DIR:-/workspace/Embedded/swift}"
-build_dir="${EMBEDDED_BUILD_DIR:-$project_dir/build}"
+build_dir="${EMBEDDED_BUILD_DIR:-/workspace/.build/embedded-swift}"
+sdkconfig="$build_dir/sdkconfig"
 deadline=${EMBEDDED_DEADLINE:-120}
 skip_build=${EMBEDDED_SKIP_BUILD:-0}
 support_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -68,20 +69,23 @@ if ! . "${IDF_PATH:-/opt/esp/idf}/export.sh" >/dev/null 2>&1; then
     write_failure setup "unable to load ESP-IDF environment"
     exit 1
 fi
+. "$support_dir/embedded-build-cache.sh"
 if ! cd "$project_dir"; then
     write_failure setup "embedded project directory is unavailable: $project_dir"
     exit 1
 fi
+project_dir=$(pwd)
+export EMBEDDED_PROJECT_DIR="$project_dir"
 
 if [ "$skip_build" = "0" ]; then
     failure_stage=build
-    echo "== set-target =="
-    if ! idf.py -B "$build_dir" set-target esp32c6; then
-        write_failure build "ESP-IDF set-target failed for esp32c6 (inspect the build output)"
-        exit 1
-    fi
+    AXOLOTY_EMBEDDED_CORE_TOOLS_NO_EXEC=1 . "$support_dir/prepare-embedded-core-tools.sh"
+    embedded_core_prepare_tools "$build_dir" "$support_dir/resolve-embedded-core.sh"
+    axoloty_enable_esp_idf_ccache "$project_dir" esp32c6 smoke
+    axoloty_prepare_esp_idf_build "$build_dir" esp32c6 0 smoke \
+        -D SDKCONFIG="$sdkconfig"
     echo "== build =="
-    if ! idf.py -B "$build_dir" build; then
+    if ! idf.py -B "$build_dir" -D SDKCONFIG="$sdkconfig" build; then
         write_failure build "ESP-IDF build failed (inspect the build output)"
         exit 1
     fi
