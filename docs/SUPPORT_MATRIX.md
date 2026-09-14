@@ -34,15 +34,15 @@ product surface. Support levels use a consistent vocabulary:
 
 | Capability | Support level | Evidence |
 |---|---|---|
-| Associate / IoValue | Partial | G4 shared protocol and binding support are implemented. Typed IO endpoint ergonomics remain a G5 product boundary. |
+| Associate / IoValue | Supported (optional) | Shared protocol and binding support are implemented; typed endpoint and routing behavior is covered by `AxolotyIoRouting` and runtime tests. Cross-implementation evidence remains incomplete. |
 | IoState | Host-only | Internal diagnostic state; not exchanged cross-implementation. |
-| Rule-based IO routing | Planned | G5 owns optional IO-routing policy. |
+| Rule-based IO routing | Supported (optional) | `AxolotyIoRouting` provides bounded host-side Basic IO routing with atomic registration and scoped endpoint matching. |
 
 ## SensorThings
 
 | Capability | Support level | Evidence |
 |---|---|---|
-| SensorThings models | Supported (optional) | `AxolotySensorThings` provides bounded Foundation-free schemas backed by retained portable fixtures. |
+| SensorThings models | Supported (optional) | `AxolotySensorThingsModel` provides bounded Foundation-free schemas and JSON codecs backed by retained portable fixtures. |
 | SensorThings workflows | Supported (optional) | One atomic module provides source, fixed-Sensor observation, and separate bounded Thing-driven Sensor-registry workflows over standard runtime operations; no controller hierarchy is exposed. |
 
 ## Object model and lifecycle
@@ -50,10 +50,10 @@ product surface. Support levels use a consistent vocabulary:
 | Capability | Support level | Evidence |
 |---|---|---|
 | Object lifecycle | Validated | `AxolotyRuntime` owns the single-use lifecycle, bounded ingress, reconnect, cancellation, and diagnostics. G4 lifecycle tests cover startup, failure, reconnect, and shutdown ordering. |
-| Object lifecycle controllers | Planned | The inherited controller hierarchy is absent from G4; G5 owns any future product controller. |
+| Object lifecycle controllers | Unsupported | The inherited controller hierarchy is not part of the current runtime; use explicit runtime modules and handlers. |
 | Dynamic object-type registration | Validated | Concurrent registration test (1000 iterations). Unregistered-type reporting test. |
 | Unknown/custom object decoding | Validated | Wire parser bounds tests cover unknown fields, malformed input, and truncated payloads. Borrowed and owned raw JSON boundary tests cover nested values, exact-number lexemes, and bounded-capacity failures. |
-| Dynamic controller registration | Planned | Process-global controller registration was retired with the G3 manager APIs; G5 owns any future registration contract. |
+| Dynamic controller registration | Unsupported | Process-global controller registration was retired with the manager APIs and has no current replacement contract. |
 | Runtime event and responder registration | Supported | Runtime definitions register bounded event streams and responders before startup. Registration belongs to the runtime definition, not a process-global controller manager. |
 
 ## Transport and connectivity

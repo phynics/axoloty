@@ -68,10 +68,10 @@ node Tests/Support/WireCompatibility/tool/dist/index.js legacy-manifest \
   --version 2.4.0 --source-commit COMMIT --scenario advertise
 ```
 
-Run the wire suites with:
+Run the offline wire verification with:
 
 ```sh
-make test-wire
+make axoloty-tool AXOLOTY_TOOL_ARGS='wire verify'
 ```
 
 ## Process deadlines

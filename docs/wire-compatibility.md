@@ -9,13 +9,13 @@ Reference versions must be pinned before captured fixtures become normative:
 
 | Capability | JS → modern | Modern → JS | Legacy → modern | Modern → legacy | Gate |
 |---|---|---|---|---|---|
-| Advertise | Compatible | Compatible with normalization | Compatible | Not tested (macOS runner consumer mode added, requires macOS host) | PR |
-| Deadvertise | Compatible | Compatible with normalization | Compatible | Not tested (macOS runner consumer mode added, requires macOS host) | PR |
-| Discover / Resolve | Compatible | Compatible with normalization | Compatible | Not tested (macOS runner responder mode added, requires macOS host) | PR |
-| Query / Retrieve | Compatible | Compatible with normalization (filters exercised) | Not tested | Not tested (macOS runner responder mode added, requires macOS host) | PR |
-| Update / Complete | Compatible | Compatible with normalization | Not tested | Not tested (macOS runner consumer mode pending) | PR |
-| Call / Return | Compatible | Compatible with normalization | Not tested | Not tested (macOS runner responder mode added, requires macOS host) | PR |
-| Channel | Compatible | Compatible with normalization | Not tested | Not tested (macOS runner consumer mode added, requires macOS host) | PR |
+| Advertise | Compatible | Compatible with normalization | Compatible | Not tested (the macOS runner is producer-only) | PR |
+| Deadvertise | Compatible | Compatible with normalization | Compatible | Not tested (the macOS runner is producer-only) | PR |
+| Discover / Resolve | Compatible | Compatible with normalization | Compatible | Not tested (the macOS runner is producer-only) | PR |
+| Query / Retrieve | Compatible | Compatible with normalization (filters exercised) | Not tested | Not tested (the macOS runner is producer-only) | PR |
+| Update / Complete | Compatible | Compatible with normalization | Not tested | Not tested (the macOS runner is producer-only) | PR |
+| Call / Return | Compatible | Compatible with normalization | Not tested | Not tested (the macOS runner is producer-only) | PR |
+| Channel | Compatible | Compatible with normalization | Not tested | Not tested (the macOS runner is producer-only) | PR |
 | Identity lifecycle / last will | Not tested | Not tested | Not tested | Not tested | Nightly |
 | Associate / IoState / IoValue | Partial | Partial | Not tested | Not tested | Nightly |
 | Decentralized logging | Not tested | Not tested | Not tested | Not tested | Nightly |
@@ -203,9 +203,10 @@ reviewed physical evidence under `.testing/embedded/`.
 (T-021). Generic Associate and IoValue wire families remain owned by
 `AxolotyProtocol` and `AxolotyWire`; the current live subjects use
 `AxolotyRuntime` and bounded peer acknowledgements. The matrix stays `Partial`
-until the forced live gate is rerun in CI. The G4 runtime does not ship
-controller-based or rule-based IO routing, and `IoState` is an internal API,
-not a wire publication. Legacy CoatySwift IO directions remain descoped by
+until the forced live gate is rerun with current evidence. The optional
+`AxolotyIoRouting` product now provides the bounded host-side Basic IO routing
+policy; `IoState` remains an internal API, not a wire publication. Legacy
+CoatySwift IO directions remain descoped by
 `Audit/LegacySwiftIOScopeDecision.md` (no macOS/Xcode host). JS integer
 IoValues exceeding 2^53 lose precision through CoatyJS's float64
 (`Int64.max` round-trips as `9223372036854776000`); Axoloty preserves Int64

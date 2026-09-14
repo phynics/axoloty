@@ -40,8 +40,8 @@ its manifest records producer/reference version, scenario, normalization
 profile, and content hashes. Release workflows should retain raw capture and
 manifest artifacts rather than relying on prose or screenshots.
 
-Fresh evidence of current wire behavior comes only
-from the live reference-agent capture path (`wire-live`).
+Fresh evidence of current wire behavior comes only from the live
+reference-agent capture path in the `wire` test category.
 
 The probe supports QoS 0 and 1 subscriptions. Coaty compatibility scenarios
 currently need no QoS 2 handshake; the probe fails explicitly if one is

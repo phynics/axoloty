@@ -217,8 +217,8 @@ without writing a custom agent — passive catalogue (`catalog`) or active
 discovery (`discover`):
 
 ```sh
-swift run --package-path Tools axoloty-inspect catalog --duration 10s
-swift run --package-path Tools axoloty-inspect discover --core-type Identity
+swift run --package-path Apps axoloty-inspect catalog --duration 10s
+swift run --package-path Apps axoloty-inspect discover --core-type Identity
 ```
 
 See [docs/inspector.md](./docs/inspector.md) for the full reference.

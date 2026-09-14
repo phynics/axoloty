@@ -1,8 +1,7 @@
 # Performance and Resource Budgets
 
-Status: implements issue #303. Converts measured host/device evidence
-from #299–#302 into versioned budgets, defines regression policy, and
-splits the Phase 4 kill gates into entry-evidence gates (prerequisites
+Status: defines the versioned host/device budgets and regression policy. The
+Phase 4 gate split uses entry-evidence gates (prerequisites
 for reclosing Phase 3 / beginning Phase 4) and completion gates (Phase 4
 scope, issue #277).
 
@@ -193,7 +192,7 @@ prerequisites for beginning Phase 4.
 At least 5 gates, each with `id`, `description`, `threshold`, and
 `thresholdType`:
 
-1. **`clean-cross-build-flash`** — `make embedded-image` + `make
+1. **`clean-cross-build-flash`** — `make embedded-swift-flash` and `make
    embedded-device-smoke` succeed from a clean checkout (pass-fail).
 2. **`max-size-wire-pass`** — `make benchmark-wire-bounds` passes with
    all 36 bounds tests green (numeric).
@@ -227,7 +226,7 @@ Phase 4 progress until the regression is resolved.
 ## Validation commands
 
 ```text
-make test-one FILTER=smoke
+make test-one FILTER='AxolotyCheckTests'
 make verify
 make benchmark-wire
 make benchmark-wire-allocation
