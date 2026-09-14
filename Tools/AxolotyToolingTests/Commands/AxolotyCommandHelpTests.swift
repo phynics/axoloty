@@ -43,6 +43,6 @@ func repositoryValidationHelpKeepsStableUsageDocument() {
     )
 
     #expect(result.exitCode == 0)
-    #expect(result.standardOutput == "Usage: axoloty-tool repository validate [--format human|json]\n")
+    #expect(result.standardOutput == "Usage: axoloty-tool repository validate [--embedded-consumer-contract] [--format human|json]\n")
     #expect(result.standardError.isEmpty)
 }

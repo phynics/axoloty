@@ -20,7 +20,7 @@ enum AxolotyCommandHelp {
         return usage.replacingOccurrences(of: "axoloty-tool", with: executableName)
     }
 
-    static let repositoryValidationUsage = "Usage: axoloty-tool repository validate [--format human|json]\n"
+    static let repositoryValidationUsage = "Usage: axoloty-tool repository validate [--embedded-consumer-contract] [--format human|json]\n"
 
     private static let usageDocument = """
     Usage: axoloty-tool <command>
