@@ -61,6 +61,9 @@ playground.xcworkspace
 # SwiftPM workspace state (untracked local cache for host-side test runs)
 .swiftpm/
 
+# Development-container compiler cache mounted at the checkout root.
+.ccache/
+
 # Code Injection
 #
 # After new code Injection tools there's a generated folder /iOSInjectionProject
