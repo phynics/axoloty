@@ -504,8 +504,7 @@ benchmark-static-io-ownership-allocation: resolve
 	$(call run_container,$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)) /workspace/Tests/Support/checks/check-static-io-ownership-allocation.sh
 
 check-embedded-core-consumer: image
-	AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR=/workspace/.build/embedded-swift-core-tools \
-	CONTAINER_ENV_VARS="$(AXOLOTY_RUN_CONTAINER_ENV_VARS) AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR" \
+	CONTAINER_ENV_VARS="$(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
 	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/checks/check-embedded-swift-core.sh
 
 check-static-io-macro-embedded: check-embedded-core-consumer
