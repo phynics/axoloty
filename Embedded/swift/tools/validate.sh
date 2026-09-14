@@ -65,9 +65,9 @@ fi
 # keeps the audit rule out of its own result. The generated clean-room record
 # names that exclusion.
 if command -v rg >/dev/null 2>&1; then
-    if rg -n --hidden --glob '!.git/**' --glob '!tools/**' \
+    if (cd "$project_dir" && rg -n --hidden --glob '!.git/**' --glob '!tools/**' \
         'Packages/|\.build/|Tests/Support|resolve-embedded-core|prepare-embedded-core' \
-        "$project_dir"; then
+        .); then
         echo "error: firmware source contains an unsupported Core or private support reference" >&2
         exit 1
     fi
