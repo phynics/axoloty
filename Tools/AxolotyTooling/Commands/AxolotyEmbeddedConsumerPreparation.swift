@@ -140,6 +140,16 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
         } catch {
             return failure("could not create caller-owned scratch directory: \(error.localizedDescription)", code: 1)
         }
+        let lockPath = scratchURL.appendingPathComponent(".axoloty-consumer.lock")
+        let lockDescriptor = open(lockPath.path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+        guard lockDescriptor >= 0, flock(lockDescriptor, LOCK_EX) == 0 else {
+            if lockDescriptor >= 0 { close(lockDescriptor) }
+            return failure("could not acquire preparation scratch lock", code: 1)
+        }
+        defer {
+            _ = flock(lockDescriptor, LOCK_UN)
+            close(lockDescriptor)
+        }
         let packagePath = coreURL.appendingPathComponent("Packages/AxolotyStaticRuntime").path
         let build = commandRunner.run(AxolotyCommandPlan(
             executable: "swift",
@@ -177,8 +187,20 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
         guard let jsonCore = canonicalExistingDirectory(jsonURL.path), isWithin(path: jsonCore, root: scratchURL) else {
             return failure("resolved swift-json _JSONCore source is missing under scratch", code: 1)
         }
-        guard let lockRevision = lockedRevision(coreURL: coreURL), lockRevision == contract.jsonRevision else {
+        let jsonCheckout = scratchURL.appendingPathComponent("checkouts/swift-json")
+        let jsonSHAResult = runGit(["-C", jsonCheckout.path, "rev-parse", "--verify", "HEAD^{commit}"])
+        let jsonSHA = jsonSHAResult.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard jsonSHAResult.exitCode == 0, jsonSHA == contract.jsonRevision,
+              let lockRevision = lockedRevision(coreURL: coreURL), lockRevision == contract.jsonRevision else {
             return failure("resolved swift-json revision does not match the embedded consumer contract", code: 1)
+        }
+
+        let finalSHAResult = runGit(["-C", coreURL.path, "rev-parse", "--verify", "HEAD^{commit}"])
+        let finalStatusResult = runGit(["-C", coreURL.path, "status", "--porcelain", "--untracked-files=normal"])
+        guard finalSHAResult.exitCode == 0, finalStatusResult.exitCode == 0,
+              finalSHAResult.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines) == sha,
+              (!finalStatusResult.standardOutput.isEmpty) == dirty else {
+            return failure("Core checkout changed during preparation", code: 1)
         }
 
         let report = AxolotyEmbeddedConsumerPreparationReport(
@@ -360,8 +382,8 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
         try data.write(to: temporary, options: .withoutOverwriting)
         if rename(temporary.path, url.path) != 0 {
             if FileManager.default.fileExists(atPath: url.path) {
-                try FileManager.default.removeItem(at: url)
-                try FileManager.default.moveItem(at: temporary, to: url)
+                try? FileManager.default.removeItem(at: temporary)
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno), userInfo: nil)
             } else {
                 try? FileManager.default.removeItem(at: temporary)
                 throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno), userInfo: nil)

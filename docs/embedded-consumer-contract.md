@@ -99,7 +99,7 @@ Axoloty checkout and provide absolute paths owned by the caller:
 ```sh
 axoloty-tool embedded consumer prepare \
   --scratch /tmp/axoloty-consumer-tools \
-  --output /tmp/axoloty-consumer-tools/preparation.json
+  --output /tmp/axoloty-consumer-preparation.json
 ```
 
 The command validates the contract before invoking SwiftPM, builds
