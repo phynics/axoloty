@@ -33,6 +33,32 @@ test("canonical contract contains no retired zero-test gates", () => {
   }
 });
 
+test("CI preserves the firmware-independent Embedded Core contract", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const ci = document.tiers.find(tier => tier.id === "ci");
+  const node = id => document.nodes.find(candidate => candidate.id === id);
+  const consumer = node("embedded-core-consumer");
+
+  assert.ok(ci);
+  assert.ok(consumer);
+  assert.equal(consumer.command.executable, "Tests/Support/checks/check-embedded-swift-core.sh");
+  assert.deepEqual(consumer.dependencies, ["embedded-toolchain"]);
+  assert.equal(consumer.hardware, "forbidden");
+  assert.equal(consumer.network, "none");
+  assert.equal(consumer.broker, "none");
+  assert.equal(consumer.resources.includes("embedded-build"), false);
+  assert.equal(ci.nodes.includes(consumer.id), true);
+  assert.equal(document.requiredGates.includes(consumer.id), true);
+
+  // repository-authority enforces docs/module-policy.yml; g6-profile-trace
+  // owns the shared host/static semantic replay suite.
+  for (const required of ["repository-authority", "g6-profile-trace"]) {
+    assert.ok(node(required), required);
+    assert.equal(ci.nodes.includes(required), true, required);
+    assert.equal(document.requiredGates.includes(required), true, required);
+  }
+});
+
 test("package CI checks use stable isolated scratch paths", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
   const expected = new Map([

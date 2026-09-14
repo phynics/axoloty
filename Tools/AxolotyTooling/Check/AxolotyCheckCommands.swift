@@ -68,7 +68,7 @@ struct AxolotyCheckCommands: Sendable {
                 exitCode: 69
             )
         case .embeddedBuild:
-            return checkResult(requested: ["embedded-build"])
+            return runNamedCheck("embedded-build")
         case .embeddedDoctor:
             return runNamedCheck("embedded-toolchain")
         case .embeddedVerify:
@@ -123,7 +123,32 @@ struct AxolotyCheckCommands: Sendable {
     }
 
     private func runNamedCheck(_ name: String) -> AxolotyCommandResult {
-        checkResult(requested: [name])
+        do {
+            let resolver = try planResolver.get()
+            let command = try resolver.command(.node(name: name))
+            if let failure = contextValidator.failureResult(validating: [command]) {
+                return AxolotyCommandFamilySupport.commandResult(failure)
+            }
+            let result = execute(
+                command,
+                context: AxolotyCommandRunContext(node: name, stage: "check")
+            )
+            let check = AxolotyCheckResult(
+                name: name,
+                status: result.exitCode == 0 ? .passed : .failed,
+                command: result
+            )
+            return AxolotyCommandFamilySupport.manifestResult(
+                AxolotyCheckManifest(results: [check]),
+                outputMode: outputMode,
+                exitCode: result.exitCode == 0 ? 0 : 1
+            )
+        } catch {
+            return AxolotyCommandResult(
+                standardError: "error: \(AxolotyCommandFamilySupport.manifestDiagnostic(error))\n",
+                exitCode: 70
+            )
+        }
     }
 
     private func verifyResult(ci: Bool) -> AxolotyCommandResult {

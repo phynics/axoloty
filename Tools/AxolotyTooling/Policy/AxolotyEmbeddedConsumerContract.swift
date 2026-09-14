@@ -95,6 +95,7 @@ internal struct AxolotyEmbeddedConsumerContractValidator {
         validateSwift(contract.swift, findings: &findings)
         validateRootManifestSwift(findings: &findings)
         validatePortablePackages(contract.portablePackages, findings: &findings)
+        validatePortableModulePolicy(contract.portablePackages, findings: &findings)
         validateMacro(contract.staticRuntimeMacro, findings: &findings)
         validateJSONCore(contract.jsonCore, findings: &findings)
         validateWireBoundary(findings: &findings)
@@ -324,6 +325,57 @@ internal struct AxolotyEmbeddedConsumerContractValidator {
         }
         for expected in Self.packages where !seen.contains(expected.name) {
             findings.append(finding("packages.missing", path: expected.path, "portable package \(expected.name) is missing from the contract"))
+        }
+    }
+
+    private func validatePortableModulePolicy(
+        _ entries: [[String: Any]],
+        findings: inout [AxolotyRepositoryAuthorityFinding]
+    ) {
+        let policyPath = "docs/module-policy.yml"
+        guard let data = try? Data(contentsOf: root.appendingPathComponent(policyPath)),
+              let policy = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let targets = policy["targets"] as? [[String: Any]] else {
+            findings.append(finding(
+                "packages.modulePolicy",
+                path: policyPath,
+                "module policy must declare the Embedded consumer packages"
+            ))
+            return
+        }
+
+        let targetsByName = Dictionary(
+            targets.compactMap { target -> (String, [String: Any])? in
+                guard let name = stringValue(target["name"]), !name.isEmpty else { return nil }
+                return (name, target)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+        for entry in entries {
+            guard let package = stringValue(entry["package"]),
+                  let sourcePath = stringValue(entry["sourcePath"]) else { continue }
+            guard let target = targetsByName[package] else {
+                findings.append(finding(
+                    "packages.modulePolicy",
+                    path: policyPath,
+                    "portable package \(package) is missing from module policy"
+                ))
+                continue
+            }
+            if stringValue(target["platformClass"]) != "portable" {
+                findings.append(finding(
+                    "packages.modulePolicy",
+                    path: policyPath,
+                    "portable package \(package) must use platformClass portable"
+                ))
+            }
+            if stringValue(target["path"]) != sourcePath {
+                findings.append(finding(
+                    "packages.modulePolicy",
+                    path: policyPath,
+                    "portable package \(package) path must match its consumer contract sourcePath"
+                ))
+            }
         }
     }
 

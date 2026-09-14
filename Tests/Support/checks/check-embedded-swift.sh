@@ -18,7 +18,7 @@ set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 support_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../embedded" && pwd)
 embedded_build_dir=${EMBEDDED_BUILD_DIR:-/workspace/.build/embedded-swift}
-AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR=${AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR:-$embedded_build_dir.core-tools}
+AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR=${AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR:-/workspace/.build/embedded-swift-core-tools}
 export AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR
 AXOLOTY_EMBEDDED_CORE_TOOLS_NO_EXEC=1 . "$support_dir/prepare-embedded-core-tools.sh"
 embedded_core_prepare_tools "$embedded_build_dir" "$support_dir/resolve-embedded-core.sh"
