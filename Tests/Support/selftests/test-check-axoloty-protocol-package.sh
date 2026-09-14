@@ -13,7 +13,6 @@ trap 'rm -rf "$tmp"' EXIT
 copy_package() {
     rm -rf "$tmp/package"
     mkdir -p "$tmp/package"
-    cp "$root/Packages/AxolotyProtocol/AGENTS.md" "$tmp/package/"
     cp "$root/Packages/AxolotyProtocol/Package.swift" "$root/Packages/AxolotyProtocol/Package.resolved" "$tmp/package/"
     cp -R "$root/Packages/AxolotyProtocol/Sources" "$root/Packages/AxolotyProtocol/Tests" "$tmp/package/"
 }

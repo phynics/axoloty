@@ -19,8 +19,6 @@ write_fixture() {
         "$tmp/Packages/AxolotyObjectMacros/Sources/AxolotyObjectMacrosImplementation" \
         "$tmp/Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels" \
         "$tmp/Embedded/swift/components/axoloty_object_model"
-    printf '%s\n' '# fixture' > "$tmp/Packages/AxolotyObjectModel/AGENTS.md"
-    printf '%s\n' '# fixture' > "$tmp/Packages/AxolotyObjectMacros/AGENTS.md"
     printf '%s\n' '// swift-tools-version:6.3' 'import PackageDescription' 'let package = Package(name: "AxolotyCoatyModels", products: [.library(name: "AxolotyCoatyModels", targets: ["AxolotyCoatyModels"])], dependencies: [.package(path: "../AxolotyObjectModel")], targets: [.target(name: "AxolotyCoatyModels", path: "Sources/AxolotyCoatyModels")])' > "$tmp/Packages/AxolotyCoatyModels/Package.swift"
     printf '%s\n' \
         '// swift-tools-version:6.3' \

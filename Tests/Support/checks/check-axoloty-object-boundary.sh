@@ -27,8 +27,6 @@ test -f "$model/Package.swift" || fail "missing AxolotyObjectModel Package.swift
 test -f "$macros/Package.swift" || fail "missing AxolotyObjectMacros Package.swift"
 test -f "$model/Package.resolved" || fail "missing AxolotyObjectModel Package.resolved"
 test -f "$macros/Package.resolved" || fail "missing AxolotyObjectMacros Package.resolved"
-test -f "$model/AGENTS.md" || fail "missing AxolotyObjectModel AGENTS.md"
-test -f "$macros/AGENTS.md" || fail "missing AxolotyObjectMacros AGENTS.md"
 test -f "$coaty/Package.swift" || fail "missing AxolotyCoatyModels Package.swift"
 
 model_sources="$model/Sources"

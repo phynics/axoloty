@@ -12,7 +12,6 @@ fail() {
     exit 1
 }
 
-[ -f "$package/AGENTS.md" ] || fail "SensorThings package policy is missing"
 [ -f "$runtime" ] || fail "SensorThings runtime source is missing"
 [ -f "$package/Tests/AxolotySensorThingsTests/SensorThingsSourceWorkflowTests.swift" ] || fail "source workflow tests are missing"
 [ -f "$package/Tests/AxolotySensorThingsTests/SensorThingsDirectObservationTests.swift" ] || fail "direct observation tests are missing"

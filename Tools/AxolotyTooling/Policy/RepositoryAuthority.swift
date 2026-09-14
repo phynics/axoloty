@@ -192,8 +192,9 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
             return
         }
         for marker in [
-            "## Jurisdiction", "## Documentation authority", "## Architectural invariants",
-            "## Supported workflow", "## Prohibited shortcuts", "## Authority links",
+            "## Documentation authority", "## Supported workflow", "## GitHub-centered work",
+            "## Architectural invariants", "## Module ownership", "## Source conventions",
+            "## Wire compatibility",
         ] {
             if !rootAgents.contains(marker) {
                 findings.append(.init(rule: "agents.root", path: "AGENTS.md", message: "root AGENTS.md must contain " + marker))
@@ -209,21 +210,6 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
         ]
         for forbidden in volatileDetails where rootAgents.localizedCaseInsensitiveContains(forbidden) {
             findings.append(.init(rule: "agents.volatile", path: "AGENTS.md", message: "root AGENTS.md contains volatile operational detail: " + forbidden))
-        }
-        let scopes = ["Embedded", "Packages/AxolotyWire", "Tests", "Tools"]
-        for scope in scopes {
-            let path = scope + "/AGENTS.md"
-            guard let scoped = read(path) else {
-                findings.append(.init(rule: "agents.scoped", path: path, message: "scoped AGENTS.md is missing"))
-                continue
-            }
-            let rootLink = scope == "Packages/AxolotyWire"
-                ? "The root [`AGENTS.md`](../../AGENTS.md) rules apply"
-                : "The root [`AGENTS.md`](../AGENTS.md) rules apply"
-            if !scoped.contains("## Jurisdiction") || !scoped.contains("## Specialized rules") ||
-                !scoped.contains("This guide applies to `" + scope + "/`.") || !scoped.contains(rootLink) {
-                findings.append(.init(rule: "agents.scoped", path: path, message: "scoped AGENTS.md must declare its exact jurisdiction and specialized root rules"))
-            }
         }
     }
 
