@@ -16,6 +16,7 @@ preparation_scratch=${EMBEDDED_PREPARATION_SCRATCH:-"$proof_root/core-tools"}
 manifest="$evidence_dir/preparation.json"
 clean_room="$evidence_dir/clean-room.json"
 sdkconfig="$build_dir/sdkconfig"
+build_project_dir="$proof_root/tooling/firmware-build"
 
 mkdir -p "$build_dir" "$evidence_dir" "$preparation_scratch" "$proof_root/tooling"
 if [ -z "${AXOLOTY_PROOF_RUN_ID:-}" ] ||
@@ -27,6 +28,13 @@ fi
 manifest=$(realpath -e -- "$manifest")
 export AXOLOTY_CONSUMER_MANIFEST="$manifest"
 
+# ESP-IDF materializes managed_components and generated metadata beside the
+# project. The source checkout is mounted read-only by the outer runner, so
+# build a writable copy under the proof root while retaining the original
+# firmware root for clean-room and provenance checks.
+mkdir -p "$build_project_dir"
+cp -a "$project_dir/." "$build_project_dir/"
+
 idf_path=${IDF_PATH:-/opt/esp/idf}
 if [ ! -f "$idf_path/export.sh" ]; then
     echo "error: ESP-IDF export script is unavailable: $idf_path/export.sh" >&2
@@ -36,7 +44,7 @@ fi
 . "$idf_path/export.sh" >/dev/null 2>&1
 
 : > "$evidence_dir/build.log"
-cd "$project_dir"
+cd "$build_project_dir"
 if [ ! -f "$build_dir/CMakeCache.txt" ] || \
     ! grep -q '^IDF_TARGET:STRING=esp32c6$' "$build_dir/CMakeCache.txt"; then
     idf.py -B "$build_dir" -D SDKCONFIG="$sdkconfig" set-target esp32c6 >> "$evidence_dir/build.log" 2>&1
