@@ -100,6 +100,31 @@ test("principal Make workflows use the canonical tooling entry points", () => {
   }
 });
 
+test("external firmware proof keeps preparation and ESP-IDF ownership separate", () => {
+  const makefile = fs.readFileSync("Makefile", "utf8");
+  const validate = fs.readFileSync("Embedded/swift/tools/validate.sh", "utf8");
+  const build = fs.readFileSync("Embedded/swift/tools/build.sh", "utf8");
+  const flash = fs.readFileSync("Embedded/swift/tools/flash.sh", "utf8");
+  const cmake = fs.readFileSync("Embedded/swift/cmake/axoloty-source.cmake", "utf8");
+
+  for (const target of [
+    "embedded-external-consumer-validate",
+    "embedded-external-consumer-proof",
+    "embedded-external-consumer-flash",
+  ]) {
+    assert.match(makefile, new RegExp(`^${target}:.*\\bimage\\b`, "m"));
+  }
+  assert.match(validate, /embedded consumer prepare/);
+  assert.match(validate, /privateReferenceScan/);
+  assert.match(build, /tools\/validate\.sh/);
+  assert.match(build, /AXOLOTY_CONSUMER_MANIFEST/);
+  assert.match(flash, /write_flash @flash_args/);
+  assert.doesNotMatch(build, /Tests\/Support|resolve-embedded-core|prepare-embedded-core/);
+  assert.doesNotMatch(flash, /Tests\/Support|resolve-embedded-core|prepare-embedded-core/);
+  assert.match(cmake, /string\(JSON/);
+  assert.doesNotMatch(cmake, /Package\.swift|file\(GLOB package_sources/);
+});
+
 test("decoder-context diagnostic distinguishes matching, clean, and invalid input", () => {
   const checker = "Tests/Support/checks/check-decoder-context-diagnostic.sh";
   const missing = spawnSync("sh", [checker, path.join(os.tmpdir(), `axoloty-missing-${process.pid}`)], { encoding: "utf8" });

@@ -115,6 +115,66 @@ and the static-runtime macro executable and scratch directory. Consumers must
 treat paths as absolute and reject reports with an unknown schema or a path
 outside the declared Core or scratch roots.
 
+## Run the external firmware proof
+
+The checked-in ESP32-C6 firmware is also a usable external-consumer fixture.
+Copy it to a directory outside the Core checkout. The copy must contain the
+firmware-owned `tools` directory. The proof mounts the Core checkout and the
+firmware checkout read-only, then writes only to `BUILD_DIR`.
+
+On the four-core NixOS host, run the hardware-free proof with four build jobs:
+
+```sh
+CORE_DIR="$(git rev-parse --show-toplevel)"
+FIRMWARE_DIR="$(mktemp -d /tmp/axoloty-firmware.XXXXXX)"
+PROOF_BUILD_DIR=/tmp/axoloty-external-proof
+cp -a "$CORE_DIR/Embedded/swift/." "$FIRMWARE_DIR/"
+
+AXOLOTY_SOURCE_DIR="$CORE_DIR" \
+EMBEDDED_PROJECT_DIR="$FIRMWARE_DIR" \
+BUILD_DIR="$PROOF_BUILD_DIR" \
+AXOLOTY_EXTERNAL_FIRMWARE_JOBS=4 \
+make embedded-external-consumer-validate
+
+AXOLOTY_SOURCE_DIR="$CORE_DIR" \
+EMBEDDED_PROJECT_DIR="$FIRMWARE_DIR" \
+BUILD_DIR="$PROOF_BUILD_DIR" \
+AXOLOTY_EXTERNAL_FIRMWARE_JOBS=4 \
+make embedded-external-consumer-proof
+```
+
+The proof uses the pinned `axoloty-dev` image. It does not need a board or
+sudo. The preparation report, clean-room result, firmware binary, and
+provenance are under
+`/tmp/axoloty-external-proof/external-firmware/evidence/` and
+`/tmp/axoloty-external-proof/external-firmware/axoloty-swift.bin`.
+`provenance.json` records the Core SHA and dirty state, contract digest, locked
+dependency and macro paths, firmware revision when available, tool versions,
+artifact SHA-256, and the fact that the two source trees were disjoint.
+
+To flash the same copy, use the NixOS non-interactive sudo wrapper on the
+outer Make invocation. Do not run the firmware script with `sudo` inside the
+container:
+
+```sh
+SUDO=/run/wrappers/bin/sudo \
+AXOLOTY_SOURCE_DIR="$CORE_DIR" \
+EMBEDDED_PROJECT_DIR="$FIRMWARE_DIR" \
+EMBEDDED_DEVICE=/dev/ttyACM0 \
+BUILD_DIR="$PROOF_BUILD_DIR" \
+AXOLOTY_EXTERNAL_FIRMWARE_JOBS=4 \
+make embedded-external-consumer-flash
+```
+
+The flash target passes `/dev/ttyACM0` only for this explicit hardware gate.
+It requires the existing `flash_args` and `axoloty-swift.bin` from the
+hardware-free proof, queries the chip and rejects a non-C6 device, flashes the
+exact binary named by `flash_args`, and captures the
+`embedded-swift-smoke-v2` JSON Lines protocol. The target reclaims root-owned
+files in `BUILD_DIR` after a rootful Podman run. Check `provenance.json`,
+`chip-info.txt`, `smoke-result.json`, and the binary checksum after the build
+before treating the proof as a GO.
+
 `AxolotySensorThingsModel` remains a portable package for host applications,
 but it is intentionally absent from this standalone contract: the offline
 embedded fixture has no SensorThings dependency and the five-package list is

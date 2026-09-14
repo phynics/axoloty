@@ -104,6 +104,12 @@ hardware-free Core portability gate. The Core gate compiles every portable
 module and a real macro-expanded consumer without reading `Embedded/swift` or
 using ESP-IDF build output.
 
+For the real external-consumer boundary proof, copy `Embedded/swift` outside
+the checkout and run `make embedded-external-consumer-proof`. The
+[external consumer instructions](./embedded-consumer-contract.md#run-the-external-firmware-proof)
+include the four-core NixOS commands, evidence paths, and the explicit
+`SUDO=/run/wrappers/bin/sudo` form for flashing.
+
 | File | Produced by |
 |---|---|
 | `device-manifest.json` | `embedded-device-info` |

@@ -23,13 +23,14 @@ ifeq ($(strip $(RUN_ID)),)
 RUN_ID := $(shell printf '%s-%s' "$$(date +%s)" "$$$$")
 endif
 AXOLOTY_RUN_ID ?= $(RUN_ID)
+AXOLOTY_PROOF_RUN_ID ?= $(RUN_ID)
 AXOLOTY_RUNS_DIR ?= .testing/runs
 WIRE_OUTPUT_DIR ?= $(AXOLOTY_RUNS_DIR)/$(RUN_ID)/wire
 # This is deliberately container-visible. The path is relative to the
 # mounted worktree, while .swiftpm-cache is the shared cache mount.
 AXOLOTY_RESOURCE_LEASE_ROOT ?= .swiftpm-cache/.axoloty-resource-leases
-AXOLOTY_RUN_CONTAINER_ENV_VARS := AXOLOTY_RUN_ID AXOLOTY_RUNS_DIR WIRE_OUTPUT_DIR AXOLOTY_RESOURCE_LEASE_ROOT AXOLOTY_SOURCE_DIR EMBEDDED_PROJECT_DIR EMBEDDED_CORPUS_MANIFEST
-export AXOLOTY_RUN_ID AXOLOTY_RUNS_DIR WIRE_OUTPUT_DIR AXOLOTY_RESOURCE_LEASE_ROOT EMBEDDED_PROJECT_DIR EMBEDDED_CORPUS_MANIFEST
+AXOLOTY_RUN_CONTAINER_ENV_VARS := AXOLOTY_RUN_ID AXOLOTY_PROOF_RUN_ID AXOLOTY_RUNS_DIR WIRE_OUTPUT_DIR AXOLOTY_RESOURCE_LEASE_ROOT AXOLOTY_SOURCE_DIR EMBEDDED_PROJECT_DIR EMBEDDED_CORPUS_MANIFEST
+export AXOLOTY_RUN_ID AXOLOTY_PROOF_RUN_ID AXOLOTY_RUNS_DIR WIRE_OUTPUT_DIR AXOLOTY_RESOURCE_LEASE_ROOT EMBEDDED_PROJECT_DIR EMBEDDED_CORPUS_MANIFEST
 BUILD_LOCK ?= 1
 export BUILD_LOCK
 ifeq ($(AXOLOTY_DEVCONTAINER),1)
@@ -63,6 +64,7 @@ AXOLOTY_TIER_TIMEOUT_SECONDS ?= 18000
 AXOLOTY_EXPLAIN_TIMEOUT_SECONDS ?= 60
 AXOLOTY_RESOLVE_TIMEOUT_SECONDS ?= 1800
 AXOLOTY_EMBEDDED_TIMEOUT_SECONDS ?= 7200
+AXOLOTY_EXTERNAL_FIRMWARE_JOBS ?= 4
 AXOLOTY_RELEASE_TIMEOUT_SECONDS ?= 18000
 AXOLOTY_CONSUMER_REPOSITORY_URL ?= https://github.com/phynics/axoloty.git
 AXOLOTY_CONSUMER_VERSION ?= $(shell tr -d '[:space:]' < VERSION)
@@ -104,6 +106,8 @@ DOC_HOSTING_BASE_PATH ?=
 	benchmark-wire-device check-budget-manifest check-embedded-swift \
 	check-embedded-swift-linker embedded-swift-build embedded-swift-flash \
 	embedded-swift-test embedded-swift-reproducible-build \
+	embedded-external-consumer-validate embedded-external-consumer-proof \
+	embedded-external-consumer-flash \
 	embedded-network-test embedded-agent-test embedded-coatyjs-test embedded-host-test \
 	embedded-last-will-test embedded-broker-restart-test embedded-interop-test
 
@@ -159,6 +163,9 @@ help:
 		'make check-embedded-swift-linker  Verify Unicode runtime links for ESP32-C6' \
 		'make embedded-swift-build  Build the ESP32-C6 Embedded Swift firmware' \
 		'make embedded-swift-flash  Build, flash, and capture the Swift smoke marker' \
+		'make embedded-external-consumer-validate  Prepare and clean-room-check a copied firmware checkout' \
+		'make embedded-external-consumer-proof  Build copied firmware against the selected Core checkout' \
+	'make embedded-external-consumer-flash  Flash an existing external proof on ESP32-C6' \
 		'make embedded-swift-reproducible-build  Verify firmware is bit-for-bit reproducible' \
 		'make ci            Run the consolidated pull-request checks' \
 		'make shell         Open a shell in the Linux container' \
@@ -463,6 +470,42 @@ check-embedded-swift-linker:
 embedded-swift-reproducible-build: image
 	CONTAINER_ENV_VARS="$(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
 	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/embedded/embedded-swift-reproducible-build.sh
+
+# The external-consumer proof takes a firmware checkout outside Core. The
+# host-side guard prevents an in-tree build from being mistaken for a boundary
+# proof. run.sh mounts both source trees read-only and exposes only the build
+# cache for generated output.
+define embedded_external_consumer_precondition
+test -n $(call shell_quote,$(EMBEDDED_PROJECT_DIR)) || { echo 'EMBEDDED_PROJECT_DIR must point to a copied firmware checkout' >&2; exit 2; }; \
+core=$$(realpath -e -- $(call shell_quote,$(AXOLOTY_SOURCE_DIR))) || exit 2; \
+firmware=$$(realpath -e -- $(call shell_quote,$(EMBEDDED_PROJECT_DIR))) || exit 2; \
+case "$$firmware/" in "$$core/"*|"$$core") echo 'firmware checkout must be outside AXOLOTY_SOURCE_DIR' >&2; exit 2;; esac; \
+case "$$core/" in "$$firmware/"*|"$$firmware") echo 'AXOLOTY_SOURCE_DIR must be outside the firmware checkout' >&2; exit 2;; esac; \
+test -x "$$firmware/tools/validate.sh" || { echo "missing firmware wrapper: $$firmware/tools/validate.sh" >&2; exit 2; }
+endef
+
+embedded-external-consumer-validate: image
+	@$(call embedded_external_consumer_precondition)
+	@CMAKE_BUILD_PARALLEL_LEVEL="$(AXOLOTY_EXTERNAL_FIRMWARE_JOBS)" \
+	NINJAFLAGS="-j$(AXOLOTY_EXTERNAL_FIRMWARE_JOBS)" \
+	CONTAINER_ENV_VARS="CMAKE_BUILD_PARALLEL_LEVEL NINJAFLAGS $(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
+	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) sh -c 'exec "$$EMBEDDED_PROJECT_DIR/tools/validate.sh"'
+
+embedded-external-consumer-proof: image
+	@$(call embedded_external_consumer_precondition)
+	@CMAKE_BUILD_PARALLEL_LEVEL="$(AXOLOTY_EXTERNAL_FIRMWARE_JOBS)" \
+	NINJAFLAGS="-j$(AXOLOTY_EXTERNAL_FIRMWARE_JOBS)" \
+	CONTAINER_ENV_VARS="CMAKE_BUILD_PARALLEL_LEVEL NINJAFLAGS $(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
+	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) sh -c 'exec "$$EMBEDDED_PROJECT_DIR/tools/build.sh"'
+
+embedded-external-consumer-flash: image
+	@$(call embedded_external_consumer_precondition)
+	@CMAKE_BUILD_PARALLEL_LEVEL="$(AXOLOTY_EXTERNAL_FIRMWARE_JOBS)" \
+	NINJAFLAGS="-j$(AXOLOTY_EXTERNAL_FIRMWARE_JOBS)" \
+	CONTAINER_DEVICES="$${EMBEDDED_DEVICE:-/dev/ttyACM0}" \
+	CONTAINER_RECLAIM_BUILD_DIR=1 \
+	CONTAINER_ENV_VARS="CMAKE_BUILD_PARALLEL_LEVEL NINJAFLAGS EMBEDDED_DEVICE $(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
+	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) sh -c 'exec "$$EMBEDDED_PROJECT_DIR/tools/flash.sh"'
 
 # Shared container invocation prefix. The invoked command and its extra
 # environment stay on the recipe line, so `make -n`, the tier validator,

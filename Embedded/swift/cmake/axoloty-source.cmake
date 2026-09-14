@@ -1,176 +1,159 @@
 # Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 #
-# Boundary helpers for the Embedded Swift consumer. Every path that points
-# into Axoloty Core is supplied by the caller; this file deliberately has no
-# checkout-layout discovery logic.
+# Read the Core-owned preparation report. Core checkout discovery, SwiftPM
+# preparation, and contract validation belong to axoloty-tool. This file only
+# translates the versioned report into the CMake variables used by ESP-IDF.
 
-function(axoloty_require_canonical_directory variable_name description out_name)
-    if(NOT DEFINED ENV{${variable_name}} OR "$ENV{${variable_name}}" STREQUAL "")
-        message(FATAL_ERROR
-            "${variable_name} is required: supply the canonical ${description}"
-        )
-    endif()
+if(AXOLOTY_CONSUMER_MANIFEST_LOADED)
+    return()
+endif()
+set(AXOLOTY_CONSUMER_MANIFEST_LOADED TRUE)
 
-    set(candidate "$ENV{${variable_name}}")
-    if(NOT IS_ABSOLUTE "${candidate}")
-        message(FATAL_ERROR
-            "${variable_name} must be an absolute canonical path: ${candidate}"
-        )
-    endif()
-    if(NOT IS_DIRECTORY "${candidate}")
-        message(FATAL_ERROR
-            "${variable_name} does not name a directory: ${candidate}"
-        )
-    endif()
-
-    file(REAL_PATH "${candidate}" resolved)
-    if(NOT "${candidate}" STREQUAL "${resolved}")
-        message(FATAL_ERROR
-            "${variable_name} must be canonical; resolved ${candidate} to ${resolved}"
-        )
-    endif()
-    set("${out_name}" "${resolved}" PARENT_SCOPE)
-endfunction()
-
-function(axoloty_require_core_child variable_name relative_path out_name)
-    axoloty_require_canonical_directory(
-        "${variable_name}" "${relative_path}" "${out_name}"
-    )
-    set(child "$ENV{${variable_name}}")
-    file(RELATIVE_PATH relative_to_core "${AXOLOTY_SOURCE_DIR}" "${child}")
-    if(IS_ABSOLUTE "${relative_to_core}" OR
-       "${relative_to_core}" STREQUAL ".." OR
-       "${relative_to_core}" MATCHES "^\.\./")
-        message(FATAL_ERROR
-            "${variable_name} escapes AXOLOTY_SOURCE_DIR: ${child}"
-        )
-    endif()
-    if(NOT "${relative_to_core}" STREQUAL "${relative_path}")
-        message(FATAL_ERROR
-            "${variable_name} must resolve to ${relative_path} under AXOLOTY_SOURCE_DIR; got ${relative_to_core}"
-        )
-    endif()
-    set("${out_name}" "$ENV{${variable_name}}" PARENT_SCOPE)
-endfunction()
-
-function(axoloty_require_core_package package_name source_variable)
-    set(package_dir "${AXOLOTY_SOURCE_DIR}/Packages/${package_name}")
-    set(manifest "${package_dir}/Package.swift")
-    if(NOT EXISTS "${manifest}")
-        message(FATAL_ERROR
-            "${package_name} package manifest is missing: ${manifest}"
-        )
-    endif()
-    file(READ "${manifest}" manifest_text)
-    if(NOT manifest_text MATCHES "Package[ \\t]*\\(")
-        message(FATAL_ERROR
-            "${package_name} package manifest is not a Swift package: ${manifest}"
-        )
-    endif()
-    if(NOT manifest_text MATCHES "name:[ \\t]*\\\"${package_name}\\\"")
-        message(FATAL_ERROR
-            "${package_name} package manifest has an unexpected identity: ${manifest}"
-        )
-    endif()
-    if(NOT IS_DIRECTORY "${${source_variable}}")
-        message(FATAL_ERROR
-            "${package_name} source directory is missing: ${${source_variable}}"
-        )
-    endif()
-    file(GLOB package_sources "${${source_variable}}/*.swift")
-    if(NOT package_sources)
-        message(FATAL_ERROR
-            "${package_name} source directory contains no Swift files: ${${source_variable}}"
-        )
-    endif()
-endfunction()
-
-axoloty_require_canonical_directory(
-    AXOLOTY_SOURCE_DIR "the Axoloty Core checkout" AXOLOTY_SOURCE_DIR
-)
-axoloty_require_core_child(
-    AXOLOTY_WIRE_SOURCE_DIR
-    "Packages/AxolotyWire/Sources/AxolotyWire"
-    AXOLOTY_WIRE_SOURCE_DIR
-)
-axoloty_require_core_child(
-    AXOLOTY_OBJECT_MODEL_SOURCE_DIR
-    "Packages/AxolotyObjectModel/Sources/AxolotyObjectModel"
-    AXOLOTY_OBJECT_MODEL_SOURCE_DIR
-)
-axoloty_require_core_child(
-    AXOLOTY_PROTOCOL_SOURCE_DIR
-    "Packages/AxolotyProtocol/Sources/AxolotyProtocol"
-    AXOLOTY_PROTOCOL_SOURCE_DIR
-)
-axoloty_require_core_child(
-    AXOLOTY_COATY_MODELS_SOURCE_DIR
-    "Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels"
-    AXOLOTY_COATY_MODELS_SOURCE_DIR
-)
-axoloty_require_core_child(
-    AXOLOTY_STATIC_RUNTIME_SOURCE_DIR
-    "Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntime"
-    AXOLOTY_STATIC_RUNTIME_SOURCE_DIR
-)
-axoloty_require_core_package(AxolotyWire AXOLOTY_WIRE_SOURCE_DIR)
-axoloty_require_core_package(AxolotyObjectModel AXOLOTY_OBJECT_MODEL_SOURCE_DIR)
-axoloty_require_core_package(AxolotyProtocol AXOLOTY_PROTOCOL_SOURCE_DIR)
-axoloty_require_core_package(AxolotyCoatyModels AXOLOTY_COATY_MODELS_SOURCE_DIR)
-axoloty_require_core_package(AxolotyStaticRuntime AXOLOTY_STATIC_RUNTIME_SOURCE_DIR)
-
-axoloty_require_canonical_directory(
-    AXOLOTY_JSON_CORE_SOURCE_DIR "the resolved _JSONCore source directory" AXOLOTY_JSON_CORE_SOURCE_DIR
-)
-axoloty_require_canonical_directory(
-    AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR
-    "the caller-owned macro scratch directory"
-    AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR
-)
-if(NOT DEFINED ENV{AXOLOTY_STATIC_RUNTIME_MACRO_TOOL} OR
-   "$ENV{AXOLOTY_STATIC_RUNTIME_MACRO_TOOL}" STREQUAL "")
+if(NOT DEFINED ENV{AXOLOTY_CONSUMER_MANIFEST} OR
+   "$ENV{AXOLOTY_CONSUMER_MANIFEST}" STREQUAL "")
     message(FATAL_ERROR
-        "AXOLOTY_STATIC_RUNTIME_MACRO_TOOL is required: supply the built macro executable"
-    )
-endif()
-set(AXOLOTY_STATIC_RUNTIME_MACRO_TOOL "$ENV{AXOLOTY_STATIC_RUNTIME_MACRO_TOOL}")
-if(NOT IS_ABSOLUTE "${AXOLOTY_STATIC_RUNTIME_MACRO_TOOL}" OR
-   NOT EXISTS "${AXOLOTY_STATIC_RUNTIME_MACRO_TOOL}")
-    message(FATAL_ERROR
-        "AXOLOTY_STATIC_RUNTIME_MACRO_TOOL must be an existing absolute path: ${AXOLOTY_STATIC_RUNTIME_MACRO_TOOL}"
-    )
-endif()
-file(REAL_PATH "${AXOLOTY_STATIC_RUNTIME_MACRO_TOOL}" AXOLOTY_STATIC_RUNTIME_MACRO_TOOL_REAL)
-if(NOT "${AXOLOTY_STATIC_RUNTIME_MACRO_TOOL}" STREQUAL "${AXOLOTY_STATIC_RUNTIME_MACRO_TOOL_REAL}")
-    message(FATAL_ERROR
-        "AXOLOTY_STATIC_RUNTIME_MACRO_TOOL must be canonical: ${AXOLOTY_STATIC_RUNTIME_MACRO_TOOL}"
-    )
-endif()
-file(RELATIVE_PATH AXOLOTY_MACRO_RELATIVE_TO_SCRATCH
-    "${AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR}"
-    "${AXOLOTY_STATIC_RUNTIME_MACRO_TOOL}"
-)
-if(IS_ABSOLUTE "${AXOLOTY_MACRO_RELATIVE_TO_SCRATCH}" OR
-   "${AXOLOTY_MACRO_RELATIVE_TO_SCRATCH}" STREQUAL ".." OR
-   "${AXOLOTY_MACRO_RELATIVE_TO_SCRATCH}" MATCHES "^\.\./")
-    message(FATAL_ERROR
-        "AXOLOTY_STATIC_RUNTIME_MACRO_TOOL must be inside AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR"
+        "AXOLOTY_CONSUMER_MANIFEST is required; run the firmware validate wrapper first"
     )
 endif()
 
-if(NOT DEFINED ENV{AXOLOTY_CORE_SHA} OR "$ENV{AXOLOTY_CORE_SHA}" STREQUAL "")
-    message(FATAL_ERROR "AXOLOTY_CORE_SHA is required for Embedded Swift provenance")
+set(AXOLOTY_CONSUMER_MANIFEST "$ENV{AXOLOTY_CONSUMER_MANIFEST}")
+if(NOT IS_ABSOLUTE "${AXOLOTY_CONSUMER_MANIFEST}" OR
+   NOT EXISTS "${AXOLOTY_CONSUMER_MANIFEST}")
+    message(FATAL_ERROR
+        "AXOLOTY_CONSUMER_MANIFEST must be an existing absolute file: ${AXOLOTY_CONSUMER_MANIFEST}"
+    )
 endif()
-set(AXOLOTY_CORE_SHA "$ENV{AXOLOTY_CORE_SHA}")
+file(REAL_PATH "${AXOLOTY_CONSUMER_MANIFEST}" AXOLOTY_CONSUMER_MANIFEST_REAL)
+if(NOT "${AXOLOTY_CONSUMER_MANIFEST}" STREQUAL "${AXOLOTY_CONSUMER_MANIFEST_REAL}")
+    message(FATAL_ERROR "AXOLOTY_CONSUMER_MANIFEST must be canonical")
+endif()
+file(READ "${AXOLOTY_CONSUMER_MANIFEST}" AXOLOTY_CONSUMER_JSON)
+
+string(JSON AXOLOTY_CONSUMER_SCHEMA GET "${AXOLOTY_CONSUMER_JSON}" schemaVersion)
+if(NOT AXOLOTY_CONSUMER_SCHEMA EQUAL 1)
+    message(FATAL_ERROR "unsupported Axoloty consumer manifest schema: ${AXOLOTY_CONSUMER_SCHEMA}")
+endif()
+string(JSON AXOLOTY_CONSUMER_STATUS GET "${AXOLOTY_CONSUMER_JSON}" status)
+if(NOT AXOLOTY_CONSUMER_STATUS STREQUAL "prepared")
+    message(FATAL_ERROR "Axoloty consumer preparation did not pass: ${AXOLOTY_CONSUMER_STATUS}")
+endif()
+
+string(JSON AXOLOTY_SOURCE_DIR GET "${AXOLOTY_CONSUMER_JSON}" core sourceDir)
+string(JSON AXOLOTY_CORE_SHA GET "${AXOLOTY_CONSUMER_JSON}" core sha)
+string(JSON AXOLOTY_CORE_DIRTY_VALUE GET "${AXOLOTY_CONSUMER_JSON}" core dirty)
+if(NOT IS_ABSOLUTE "${AXOLOTY_SOURCE_DIR}" OR NOT IS_DIRECTORY "${AXOLOTY_SOURCE_DIR}")
+    message(FATAL_ERROR "Core sourceDir in the consumer manifest is not a directory")
+endif()
+file(REAL_PATH "${AXOLOTY_SOURCE_DIR}" AXOLOTY_SOURCE_DIR_REAL)
+if(NOT "${AXOLOTY_SOURCE_DIR}" STREQUAL "${AXOLOTY_SOURCE_DIR_REAL}")
+    message(FATAL_ERROR "Core sourceDir in the consumer manifest must be canonical")
+endif()
 string(LENGTH "${AXOLOTY_CORE_SHA}" AXOLOTY_CORE_SHA_LENGTH)
 if(NOT AXOLOTY_CORE_SHA_LENGTH EQUAL 40 OR
    NOT AXOLOTY_CORE_SHA MATCHES "^[0-9a-fA-F]+$")
-    message(FATAL_ERROR "AXOLOTY_CORE_SHA must be a 40-character commit SHA: ${AXOLOTY_CORE_SHA}")
+    message(FATAL_ERROR "Core sha in the consumer manifest is invalid")
 endif()
-if(NOT DEFINED ENV{AXOLOTY_CORE_DIRTY})
-    message(FATAL_ERROR "AXOLOTY_CORE_DIRTY is required for Embedded Swift provenance")
+if(AXOLOTY_CORE_DIRTY_VALUE STREQUAL "true" OR
+   AXOLOTY_CORE_DIRTY_VALUE STREQUAL "ON" OR
+   AXOLOTY_CORE_DIRTY_VALUE STREQUAL "1")
+    set(AXOLOTY_CORE_DIRTY 1)
+else()
+    set(AXOLOTY_CORE_DIRTY 0)
 endif()
-set(AXOLOTY_CORE_DIRTY "$ENV{AXOLOTY_CORE_DIRTY}")
-if(NOT AXOLOTY_CORE_DIRTY MATCHES "^(0|1)$")
-    message(FATAL_ERROR "AXOLOTY_CORE_DIRTY must be 0 or 1: ${AXOLOTY_CORE_DIRTY}")
+
+# A caller may select the Core checkout in the environment. The report remains
+# authoritative, but this check catches a stale or mismatched environment
+# before CMake starts compiling firmware.
+if(DEFINED ENV{AXOLOTY_SOURCE_DIR} AND NOT "$ENV{AXOLOTY_SOURCE_DIR}" STREQUAL "")
+    file(REAL_PATH "$ENV{AXOLOTY_SOURCE_DIR}" AXOLOTY_SELECTED_SOURCE_DIR)
+    if(NOT "${AXOLOTY_SELECTED_SOURCE_DIR}" STREQUAL "${AXOLOTY_SOURCE_DIR}")
+        message(FATAL_ERROR "AXOLOTY_SOURCE_DIR disagrees with the consumer manifest")
+    endif()
+endif()
+
+string(JSON AXOLOTY_PACKAGE_COUNT LENGTH "${AXOLOTY_CONSUMER_JSON}" portablePackages)
+math(EXPR AXOLOTY_PACKAGE_LAST "${AXOLOTY_PACKAGE_COUNT} - 1")
+foreach(AXOLOTY_PACKAGE_INDEX RANGE ${AXOLOTY_PACKAGE_LAST})
+    string(JSON AXOLOTY_PACKAGE_NAME GET
+        "${AXOLOTY_CONSUMER_JSON}" portablePackages ${AXOLOTY_PACKAGE_INDEX} name
+    )
+    string(JSON AXOLOTY_PACKAGE_SOURCE GET
+        "${AXOLOTY_CONSUMER_JSON}" portablePackages ${AXOLOTY_PACKAGE_INDEX} sourcePath
+    )
+    if(AXOLOTY_PACKAGE_NAME STREQUAL "AxolotyWire")
+        set(AXOLOTY_WIRE_SOURCE_DIR "${AXOLOTY_PACKAGE_SOURCE}")
+    elseif(AXOLOTY_PACKAGE_NAME STREQUAL "AxolotyObjectModel")
+        set(AXOLOTY_OBJECT_MODEL_SOURCE_DIR "${AXOLOTY_PACKAGE_SOURCE}")
+    elseif(AXOLOTY_PACKAGE_NAME STREQUAL "AxolotyProtocol")
+        set(AXOLOTY_PROTOCOL_SOURCE_DIR "${AXOLOTY_PACKAGE_SOURCE}")
+    elseif(AXOLOTY_PACKAGE_NAME STREQUAL "AxolotyCoatyModels")
+        set(AXOLOTY_COATY_MODELS_SOURCE_DIR "${AXOLOTY_PACKAGE_SOURCE}")
+    elseif(AXOLOTY_PACKAGE_NAME STREQUAL "AxolotyStaticRuntime")
+        set(AXOLOTY_STATIC_RUNTIME_SOURCE_DIR "${AXOLOTY_PACKAGE_SOURCE}")
+    endif()
+endforeach()
+
+foreach(AXOLOTY_PACKAGE_SOURCE_DIR IN ITEMS
+    AXOLOTY_WIRE_SOURCE_DIR
+    AXOLOTY_OBJECT_MODEL_SOURCE_DIR
+    AXOLOTY_PROTOCOL_SOURCE_DIR
+    AXOLOTY_COATY_MODELS_SOURCE_DIR
+    AXOLOTY_STATIC_RUNTIME_SOURCE_DIR
+)
+    if(NOT DEFINED ${AXOLOTY_PACKAGE_SOURCE_DIR} OR
+       NOT IS_DIRECTORY "${${AXOLOTY_PACKAGE_SOURCE_DIR}}")
+        message(FATAL_ERROR "consumer manifest is missing ${AXOLOTY_PACKAGE_SOURCE_DIR}")
+    endif()
+    file(REAL_PATH "${${AXOLOTY_PACKAGE_SOURCE_DIR}}" AXOLOTY_RESOLVED_PACKAGE_SOURCE)
+    if(NOT "${${AXOLOTY_PACKAGE_SOURCE_DIR}}" STREQUAL "${AXOLOTY_RESOLVED_PACKAGE_SOURCE}")
+        message(FATAL_ERROR "${AXOLOTY_PACKAGE_SOURCE_DIR} must be canonical")
+    endif()
+    file(RELATIVE_PATH AXOLOTY_PACKAGE_RELATIVE
+        "${AXOLOTY_SOURCE_DIR}" "${AXOLOTY_RESOLVED_PACKAGE_SOURCE}"
+    )
+    if(IS_ABSOLUTE "${AXOLOTY_PACKAGE_RELATIVE}" OR
+       "${AXOLOTY_PACKAGE_RELATIVE}" STREQUAL ".." OR
+       "${AXOLOTY_PACKAGE_RELATIVE}" MATCHES "^\.\./")
+        message(FATAL_ERROR "${AXOLOTY_PACKAGE_SOURCE_DIR} escapes the Core checkout")
+    endif()
+endforeach()
+
+string(JSON AXOLOTY_JSON_CORE_SOURCE_DIR GET
+    "${AXOLOTY_CONSUMER_JSON}" jsonCore sourceDir
+)
+string(JSON AXOLOTY_STATIC_RUNTIME_MACRO_TOOL GET
+    "${AXOLOTY_CONSUMER_JSON}" staticRuntimeMacro executable
+)
+string(JSON AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR GET
+    "${AXOLOTY_CONSUMER_JSON}" staticRuntimeMacro scratchDir
+)
+foreach(AXOLOTY_SCRATCH_VALUE IN ITEMS
+    AXOLOTY_JSON_CORE_SOURCE_DIR
+    AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR
+)
+    if(NOT IS_ABSOLUTE "${${AXOLOTY_SCRATCH_VALUE}}" OR
+       NOT IS_DIRECTORY "${${AXOLOTY_SCRATCH_VALUE}}")
+        message(FATAL_ERROR "${AXOLOTY_SCRATCH_VALUE} from the consumer manifest is not a directory")
+    endif()
+    file(REAL_PATH "${${AXOLOTY_SCRATCH_VALUE}}" AXOLOTY_SCRATCH_REAL)
+    if(NOT "${${AXOLOTY_SCRATCH_VALUE}}" STREQUAL "${AXOLOTY_SCRATCH_REAL}")
+        message(FATAL_ERROR "${AXOLOTY_SCRATCH_VALUE} must be canonical")
+    endif()
+endforeach()
+if(NOT IS_ABSOLUTE "${AXOLOTY_STATIC_RUNTIME_MACRO_TOOL}" OR
+   NOT EXISTS "${AXOLOTY_STATIC_RUNTIME_MACRO_TOOL}")
+    message(FATAL_ERROR "static-runtime macro executable is missing")
+endif()
+file(REAL_PATH "${AXOLOTY_STATIC_RUNTIME_MACRO_TOOL}" AXOLOTY_MACRO_REAL)
+if(NOT "${AXOLOTY_STATIC_RUNTIME_MACRO_TOOL}" STREQUAL "${AXOLOTY_MACRO_REAL}")
+    message(FATAL_ERROR "static-runtime macro executable must be canonical")
+endif()
+file(RELATIVE_PATH AXOLOTY_MACRO_RELATIVE
+    "${AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR}"
+    "${AXOLOTY_STATIC_RUNTIME_MACRO_TOOL}"
+)
+if(IS_ABSOLUTE "${AXOLOTY_MACRO_RELATIVE}" OR
+   "${AXOLOTY_MACRO_RELATIVE}" STREQUAL ".." OR
+   "${AXOLOTY_MACRO_RELATIVE}" MATCHES "^\.\./")
+    message(FATAL_ERROR "static-runtime macro executable escapes caller scratch")
 endif()
