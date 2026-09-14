@@ -494,6 +494,12 @@ mkdir -p "$$run_root"; \
 if [ ! -e "$$run_root/core/.git" ]; then \
   test ! -e "$$run_root/core" || { echo 'proof Core directory is incomplete' >&2; exit 1; }; \
   git clone --no-local --no-checkout "$$source_dir" "$$run_root/core" >/dev/null; \
+  if [ ! -f "$$run_root/firmware/.axoloty-source-revision" ]; then \
+    test ! -e "$$run_root/firmware" || { echo 'proof firmware directory is incomplete' >&2; exit 1; }; \
+    mkdir -p "$$run_root/firmware"; \
+    git -C "$$source_dir" archive "$$commit" Embedded/swift | tar -x -C "$$run_root/firmware" --strip-components=2; \
+    printf '%s\n' "$$commit" > "$$run_root/firmware/.axoloty-source-revision"; \
+  fi; \
   git -C "$$run_root/core" sparse-checkout init --no-cone; \
   git -C "$$run_root/core" sparse-checkout set --no-cone '/*' '!/Tests/' '!/Embedded/'; \
   git -C "$$run_root/core" checkout --detach "$$commit" >/dev/null; \
