@@ -55,6 +55,16 @@ func repositoryAuthorityCommandSupportsHumanAndJSONOutput() throws {
     )
     #expect(report.status == "passed")
     #expect(report.findings.isEmpty)
+
+    let embeddedContract = dispatcher.run(arguments: [
+        "repository", "validate", "--embedded-consumer-contract", "--format", "json",
+    ])
+    #expect(embeddedContract.exitCode == 0)
+    let embeddedReport = try JSONDecoder().decode(
+        AxolotyRepositoryAuthorityReport.self,
+        from: Data(embeddedContract.standardOutput.utf8)
+    )
+    #expect(embeddedReport.status == "passed", "\(embeddedReport.findings)")
 }
 
 @Test
@@ -485,4 +495,3 @@ private let defaultFixtureModulePolicy = """
    "allowedImports":["AllowedModule"],
    "forbiddenImports":["Foundation","NIO"]}]}
 """
-
