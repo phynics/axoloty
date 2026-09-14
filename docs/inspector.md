@@ -183,9 +183,13 @@ runtime definition and uses the runtime-owned event streams for observation.
 - **Application tests** (`AxolotyInspectorCLITests`): fake session tests
   for application orchestration, output formatting, cancellation — no
   broker needed.
-- **Broker integration tests** (`InspectorBrokerIntegrationTests`):
-  env-gated tests against a real Mosquitto broker. Enable with
-  `AXOLOTY_INSPECTOR_LIVE=1`.
+- **Runtime and MCP tests** (`AxolotyInspectorRuntimeTests` and
+  `AxolotyMCPTests`): adapter, session, and server behavior using test doubles;
+  no broker is needed.
+
+The canonical `ci` test category also runs these tests and
+`AxolotyInspectorCLITests`; there is no separate broker-gated inspector test
+target.
 
 All tests use Swift Testing (`import Testing`, `@Test`, `#expect`).
 
@@ -194,8 +198,8 @@ All tests use Swift Testing (`import Testing`, `@Test`, `#expect`).
 On macOS:
 
 ```sh
-swift build --product axoloty-inspect
-swift test --filter AxolotyInspector
+swift build --package-path Apps --product axoloty-inspect
+swift test --package-path Apps --filter AxolotyInspector
 ```
 
 On Linux, use the pinned container via the Makefile env or `.devcontainer/run.sh`:
@@ -204,7 +208,7 @@ On Linux, use the pinned container via the Makefile env or `.devcontainer/run.sh
 CONTAINER_RUNTIME=podman IMAGE=axoloty-dev \
 BUILD_DIR=.build BUILD_LOCK=0 \
 SPM_CACHE_DIR="$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux" \
-.devcontainer/run.sh swift build \
+.devcontainer/run.sh swift build --package-path /workspace/Apps \
   --cache-path /workspace/.swiftpm-cache \
   --disable-automatic-resolution \
   --product axoloty-inspect
@@ -212,7 +216,7 @@ SPM_CACHE_DIR="$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux" \
 CONTAINER_RUNTIME=podman IMAGE=axoloty-dev \
 BUILD_DIR=.build BUILD_LOCK=0 \
 SPM_CACHE_DIR="$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux" \
-.devcontainer/run.sh swift test \
+.devcontainer/run.sh swift test --package-path /workspace/Apps \
   --cache-path /workspace/.swiftpm-cache \
   --disable-automatic-resolution \
   --filter AxolotyInspector

@@ -75,7 +75,6 @@ make embedded-device-info          # query the board, write .testing/embedded/de
 make embedded-device-smoke         # build, flash, monitor C smoke image (30s deadline)
 make embedded-swift-build          # build the Embedded Swift firmware
 make embedded-swift-flash           # build, flash, monitor Swift smoke + AxolotyWire exercise
-make embedded-network-test          # prove Wi-Fi and MQTT loopback on the selected device
 make embedded-network-test          # acceptance gate for the Swift MQTT overlay
 make embedded-agent-test            # prove the two-device Phase 4 exchange
 make embedded-reproducible-build    # build twice from clean, compare .bin SHA-256

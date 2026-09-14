@@ -25,7 +25,7 @@ On Linux, `make image` installs non-interactive mounted-worktree launchers at
 bootstrap at `/opt/axoloty/bin/axoloty-cli`.
 The shared bootstrap runs the tooling product with `swift run` against the
 mounted worktree and cache. For `serve mcp` and `serve dev`, it first builds the
-root `axoloty-mcp` product and passes its executable path to the service
+Apps package's `axoloty-mcp` product and passes its executable path to the service
 runner. This keeps MCP readiness timing separate from SwiftPM compilation. An
 explicit `AXOLOTY_MCP_EXECUTABLE` skips that preparation step.
 
@@ -39,13 +39,13 @@ make serve-dev
 ```
 
 The wrappers use host networking because services bind only to loopback; no
-service policy is implemented in Make or shell. On macOS, run the root package
-natively:
+service policy is implemented in Make or shell. On macOS, run the tooling
+package natively:
 
 ```sh
-swift run --package-path . ax serve mqtt
-swift run --package-path . ax serve mcp --transport http
-swift run --package-path . ax serve dev
+swift run --package-path Tools ax serve mqtt
+swift run --package-path Tools ax serve mcp --transport http
+swift run --package-path Tools ax serve dev
 ```
 
 Use `make serve-mqtt` to run the local broker in the foreground. Stop it with

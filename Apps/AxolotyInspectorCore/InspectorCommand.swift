@@ -1,9 +1,6 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 /// The top-level inspector command selected by the operator.
-///
-/// During Phase A only ``InspectorCommand/catalog(_:)`` is implemented;
-/// parsing ``discover`` returns an unsupported-command error.
 public enum InspectorCommand: Equatable, Sendable {
     /// Passive observation of Advertise and Deadvertise events.
     case catalog(CatalogCommand)

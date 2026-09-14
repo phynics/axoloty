@@ -37,8 +37,10 @@ macOS uses its pinned native Swift toolchain:
 swift run --package-path Tools axoloty-tool check
 ```
 
-The root package also publishes `ax` and `axoloty-mcp`. Linux images provide
-mounted-worktree launchers for all three products under `/opt/axoloty/bin`.
+The `Tools` package publishes `ax` and `axoloty-tool`; the `Apps` package
+publishes `axoloty-inspect` and `axoloty-mcp`. Linux images provide
+mounted-worktree launchers for the tooling and service products under
+`/opt/axoloty/bin`.
 Use `make serve-mqtt`, `make serve-mcp`, or `make serve-dev` for thin container
 entry points. Service policy remains in `AxolotyTooling`, not Make or shell.
 The Linux `ax` and `axoloty-tool` launchers build the mounted-worktree
@@ -62,7 +64,7 @@ plan starts MQTT or accesses hardware.
 | `axoloty-tool hardware check` | no | optional | Run when attached; otherwise structured skip |
 | `axoloty-tool hardware require` | no | required | Explicit device/release gate |
 
-The canonical `g5-optional-products` tier is a hardware-free release gate
+The `ci` category includes the required optional-product boundary and tests
 for the bounded host SensorThings source and direct-observation workflows.
 
 Live CoatyJS capture retains focused Make
@@ -156,7 +158,7 @@ live in `Tests/Support/wire/classify-wire-change.mjs` and
 ### Fresh wire evidence (live capture)
 
 Fresh evidence of current wire behavior is produced only by the live
-reference-agent capture path (`axoloty-tool wire capture`, tier `wire-live`).
+reference-agent capture path (`axoloty-tool wire capture`, `wire` category).
 It runs pinned reference agents against a real MQTT broker and records raw
 captures, a manifest carrying provenance, reference version, scenario, and
 normalization profiles, plus Swift-side semantic verification. The fixture
@@ -167,10 +169,10 @@ bundle is never presented as this evidence.
 `make checkpoint` (or `axoloty-tool release checkpoint`) is the release
 certification gate. It runs every ordinary offline check, binary-size
 benchmarks, and release snapshot verification.
-The canonical release-gate list (`releaseGates` in the test-tier manifest)
-names every mandatory release tier — `smoke`, `unit`, `module`, `property`,
-`wire-offline`, `wire-live`, `g3-object-model`, `g4-runtime`, and
-`g6-non-divergence`. The checkpoint manifest records
+The tooling derives its `releaseGates` from the `tiers` array in the test-tier
+manifest. The current gates are `ci`, `wire`, and `embedded`; the `release`
+category adds the Apple-host oracle and release consumer checks. The checkpoint
+manifest records
 a disposition for each gate:
 
 - **executed** — a covering node ran and passed inside the checkpoint;
@@ -181,8 +183,8 @@ a disposition for each gate:
 
 The command fails if any required gate is skipped or has invalid evidence, so a
 release cannot be certified with missing mandatory-tier proof. Tiers that are
-not normally run inside the checkpoint (for example the live `wire-live`
-capture and the hardware resource tier) must supply typed evidence bundles.
+not normally run inside the checkpoint (for example the live `wire` capture and
+the hardware resource tier) must supply typed evidence bundles.
 Point the checkpoint at one evidence root with `AXOLOTY_EVIDENCE_DIR`; each
 gate is loaded from `<root>/<gate>/evidence.json` and its declared artifacts
 are rehashed. Every bundle must identify the repository, full commit SHA, Git
@@ -261,11 +263,11 @@ custom agent. It has two subcommands:
 
 ```sh
 # macOS
-swift run --package-path Tools axoloty-inspect catalog --duration 10s
-swift run --package-path Tools axoloty-inspect discover --core-type Identity
+swift run --package-path Apps axoloty-inspect catalog --duration 10s
+swift run --package-path Apps axoloty-inspect discover --core-type Identity
 
 # Linux (container)
-.devcontainer/run.sh swift run --product axoloty-inspect catalog --duration 10s
+.devcontainer/run.sh swift run --package-path /workspace/Apps axoloty-inspect catalog --duration 10s
 ```
 
 The inspector uses `AxolotyInspectorCore` (zero external dependencies, pure

@@ -36,8 +36,8 @@ Use the repository entry points rather than reproducing container or toolchain c
 
 1. `make verify` — ordinary pre-PR verification.
 2. `make test-one FILTER='SuiteOrTest'` — one bounded test process.
-3. `make test-tier TIER=unit` — one canonical tier.
-4. `make explain TIER=unit` — inspect the graph and policies without execution.
+3. `make test-tier TIER=ci` — one canonical hardware-free tier.
+4. `make explain TIER=ci` — inspect the graph and policies without execution.
 
 Use `make verify-ci` only when reproducing the required CI plan. Use
 `make checkpoint`/`make checkpoint-hardware` for release validation; hardware
