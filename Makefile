@@ -24,6 +24,8 @@ RUN_ID := $(shell printf '%s-%s' "$$(date +%s)" "$$$$")
 endif
 AXOLOTY_RUN_ID ?= $(RUN_ID)
 AXOLOTY_PROOF_RUN_ID ?= $(RUN_ID)
+AXOLOTY_PROOF_ROOT ?= /tmp/axoloty-go-proof
+AXOLOTY_PROOF_EVIDENCE_ROOT ?= .testing/embedded/consumer-proof
 AXOLOTY_RUNS_DIR ?= .testing/runs
 WIRE_OUTPUT_DIR ?= $(AXOLOTY_RUNS_DIR)/$(RUN_ID)/wire
 # This is deliberately container-visible. The path is relative to the
@@ -106,6 +108,8 @@ DOC_HOSTING_BASE_PATH ?=
 	benchmark-wire-device check-budget-manifest check-embedded-swift \
 	check-embedded-swift-linker embedded-swift-build embedded-swift-flash \
 	embedded-swift-test embedded-swift-reproducible-build \
+	embedded-consumer-proof-build embedded-consumer-proof-flash \
+	embedded-consumer-proof-validate \
 	embedded-external-consumer-validate embedded-external-consumer-proof \
 	embedded-external-consumer-flash \
 	embedded-network-test embedded-agent-test embedded-coatyjs-test embedded-host-test \
@@ -163,9 +167,12 @@ help:
 		'make check-embedded-swift-linker  Verify Unicode runtime links for ESP32-C6' \
 		'make embedded-swift-build  Build the ESP32-C6 Embedded Swift firmware' \
 		'make embedded-swift-flash  Build, flash, and capture the Swift smoke marker' \
-		'make embedded-external-consumer-validate  Prepare and clean-room-check a copied firmware checkout' \
-		'make embedded-external-consumer-proof  Build copied firmware against the selected Core checkout' \
-	'make embedded-external-consumer-flash  Flash an existing external proof on ESP32-C6' \
+		'make embedded-consumer-proof-build AXOLOTY_PROOF_RUN_ID=...  Build an unrelated-root firmware proof' \
+		'make embedded-consumer-proof-flash AXOLOTY_PROOF_RUN_ID=... EMBEDDED_DEVICE=... SUDO=...  Flash and capture the proof' \
+		'make embedded-consumer-proof-validate AXOLOTY_PROOF_RUN_ID=...  Validate final durable proof evidence' \
+		'make embedded-external-consumer-validate  Compatibility alias for embedded-consumer-proof-validate' \
+		'make embedded-external-consumer-proof  Compatibility alias for embedded-consumer-proof-build' \
+		'make embedded-external-consumer-flash  Compatibility alias for embedded-consumer-proof-flash' \
 		'make embedded-swift-reproducible-build  Verify firmware is bit-for-bit reproducible' \
 		'make ci            Run the consolidated pull-request checks' \
 		'make shell         Open a shell in the Linux container' \
@@ -471,41 +478,84 @@ embedded-swift-reproducible-build: image
 	CONTAINER_ENV_VARS="$(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
 	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/embedded/embedded-swift-reproducible-build.sh
 
-# The external-consumer proof takes a firmware checkout outside Core. The
-# host-side guard prevents an in-tree build from being mistaken for a boundary
-# proof. run.sh mounts both source trees read-only and exposes only the build
-# cache for generated output.
-define embedded_external_consumer_precondition
-test -n $(call shell_quote,$(EMBEDDED_PROJECT_DIR)) || { echo 'EMBEDDED_PROJECT_DIR must point to a copied firmware checkout' >&2; exit 2; }; \
-core=$$(realpath -e -- $(call shell_quote,$(AXOLOTY_SOURCE_DIR))) || exit 2; \
-firmware=$$(realpath -e -- $(call shell_quote,$(EMBEDDED_PROJECT_DIR))) || exit 2; \
-case "$$firmware/" in "$$core/"*|"$$core") echo 'firmware checkout must be outside AXOLOTY_SOURCE_DIR' >&2; exit 2;; esac; \
-case "$$core/" in "$$firmware/"*|"$$firmware") echo 'AXOLOTY_SOURCE_DIR must be outside the firmware checkout' >&2; exit 2;; esac; \
-test -x "$$firmware/tools/validate.sh" || { echo "missing firmware wrapper: $$firmware/tools/validate.sh" >&2; exit 2; }
+# Prepare a clean, unrelated proof layout. The working Core is a sparse clone
+# with Tests/ and Embedded/ excluded; the firmware is an archive of exactly the
+# same commit. The complete proof root is mounted as the container build
+# directory, so no output can be written into either source tree.
+define embedded_proof_prepare_host
+test -n "$(AXOLOTY_PROOF_RUN_ID)" || { echo 'AXOLOTY_PROOF_RUN_ID is required' >&2; exit 64; }; \
+printf '%s' "$(AXOLOTY_PROOF_RUN_ID)" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$$' || { echo 'invalid AXOLOTY_PROOF_RUN_ID' >&2; exit 64; }; \
+source_dir=$$(realpath -e -- "$(AXOLOTY_SOURCE_DIR)") || { echo 'AXOLOTY_SOURCE_DIR is not a canonical directory' >&2; exit 64; }; \
+test -d "$$source_dir/.git" -o -f "$$source_dir/.git" || { echo 'AXOLOTY_SOURCE_DIR is not a Git checkout' >&2; exit 64; }; \
+test -z "$$(git -C "$$source_dir" status --porcelain)" || { echo 'AXOLOTY_SOURCE_DIR must be clean' >&2; exit 1; }; \
+commit=$$(git -C "$$source_dir" rev-parse HEAD) || exit 1; \
+run_root="$(AXOLOTY_PROOF_ROOT)/$(AXOLOTY_PROOF_RUN_ID)"; \
+mkdir -p "$$run_root"; \
+if [ ! -e "$$run_root/core/.git" ]; then \
+  test ! -e "$$run_root/core" || { echo 'proof Core directory is incomplete' >&2; exit 1; }; \
+  git clone --no-local --no-checkout "$$source_dir" "$$run_root/core" >/dev/null; \
+  git -C "$$run_root/core" sparse-checkout init --no-cone; \
+  git -C "$$run_root/core" sparse-checkout set --no-cone '/*' '!/Tests/' '!/Embedded/'; \
+  git -C "$$run_root/core" checkout --detach "$$commit" >/dev/null; \
+fi; \
+test "$$(git -C "$$run_root/core" rev-parse HEAD)" = "$$commit" || { echo 'sparse Core commit differs from selected commit' >&2; exit 1; }; \
+test ! -e "$$run_root/core/Tests" && test ! -e "$$run_root/core/Embedded" || { echo 'sparse Core unexpectedly contains Tests or Embedded' >&2; exit 1; }; \
+if [ ! -f "$$run_root/firmware/.axoloty-source-revision" ]; then \
+  test ! -e "$$run_root/firmware" || { echo 'proof firmware directory is incomplete' >&2; exit 1; }; \
+  mkdir -p "$$run_root/firmware"; \
+  git -C "$$source_dir" archive "$$commit" Embedded/swift | tar -x -C "$$run_root/firmware" --strip-components=2; \
+  printf '%s\n' "$$commit" > "$$run_root/firmware/.axoloty-source-revision"; \
+fi; \
+test "$$(tr -d '[:space:]' < "$$run_root/firmware/.axoloty-source-revision")" = "$$commit" || { echo 'firmware commit differs from selected commit' >&2; exit 1; }; \
+test ! -d "$$run_root/firmware/Packages" && test ! -d "$$run_root/firmware/Tests" || { echo 'firmware contains copied Core sources' >&2; exit 1; }; \
+mkdir -p "$$run_root/build" "$$run_root/core-tools" "$$run_root/tooling" "$$run_root/working-evidence"; \
+run_root="$$run_root" core_dir="$$run_root/core" firmware_dir="$$run_root/firmware" commit="$$commit"
 endef
 
-embedded-external-consumer-validate: image
-	@$(call embedded_external_consumer_precondition)
-	@CMAKE_BUILD_PARALLEL_LEVEL="$(AXOLOTY_EXTERNAL_FIRMWARE_JOBS)" \
-	NINJAFLAGS="-j$(AXOLOTY_EXTERNAL_FIRMWARE_JOBS)" \
-	CONTAINER_ENV_VARS="CMAKE_BUILD_PARALLEL_LEVEL NINJAFLAGS $(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
-	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) sh -c 'exec "$$EMBEDDED_PROJECT_DIR/tools/validate.sh"'
+define embedded_proof_container_env
+CONTAINER_ENV_VARS="AXOLOTY_SOURCE_DIR EMBEDDED_PROJECT_DIR EMBEDDED_PROOF_ROOT EMBEDDED_BUILD_DIR EMBEDDED_EVIDENCE_DIR EMBEDDED_PREPARATION_SCRATCH EMBEDDED_VALIDATE_FINAL AXOLOTY_EXPECTED_FIRMWARE_SHA AXOLOTY_PROOF_RUN_ID CMAKE_BUILD_PARALLEL_LEVEL NINJAFLAGS EMBEDDED_DEVICE $(AXOLOTY_RUN_CONTAINER_ENV_VARS)"
+endef
 
-embedded-external-consumer-proof: image
-	@$(call embedded_external_consumer_precondition)
-	@CMAKE_BUILD_PARALLEL_LEVEL="$(AXOLOTY_EXTERNAL_FIRMWARE_JOBS)" \
-	NINJAFLAGS="-j$(AXOLOTY_EXTERNAL_FIRMWARE_JOBS)" \
-	CONTAINER_ENV_VARS="CMAKE_BUILD_PARALLEL_LEVEL NINJAFLAGS $(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
-	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) sh -c 'exec "$$EMBEDDED_PROJECT_DIR/tools/build.sh"'
+embedded-consumer-proof-build: image
+	@set -eu; $(call embedded_proof_prepare_host); \
+	CMAKE_BUILD_PARALLEL_LEVEL="$(AXOLOTY_EXTERNAL_FIRMWARE_JOBS)" NINJAFLAGS="-j$(AXOLOTY_EXTERNAL_FIRMWARE_JOBS)" \
+	AXOLOTY_SOURCE_DIR="$$core_dir" EMBEDDED_PROJECT_DIR="$$firmware_dir" \
+	AXOLOTY_EXPECTED_FIRMWARE_SHA="$$commit" EMBEDDED_PROOF_ROOT=/workspace/.build \
+	EMBEDDED_BUILD_DIR=/workspace/.build/build EMBEDDED_EVIDENCE_DIR=/workspace/.build/working-evidence \
+	EMBEDDED_PREPARATION_SCRATCH=/workspace/.build/core-tools BUILD_DIR="$$run_root" \
+	$(call embedded_proof_container_env) \
+	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
+	.devcontainer/run.sh sh -c 'exec "$$EMBEDDED_PROJECT_DIR/tools/build.sh"'; \
+	evidence="$(AXOLOTY_PROOF_EVIDENCE_ROOT)/$(AXOLOTY_PROOF_RUN_ID)"; mkdir -p "$$evidence"; cp -a "$$run_root/working-evidence/." "$$evidence/"
 
-embedded-external-consumer-flash: image
-	@$(call embedded_external_consumer_precondition)
-	@CMAKE_BUILD_PARALLEL_LEVEL="$(AXOLOTY_EXTERNAL_FIRMWARE_JOBS)" \
-	NINJAFLAGS="-j$(AXOLOTY_EXTERNAL_FIRMWARE_JOBS)" \
-	CONTAINER_DEVICES="$${EMBEDDED_DEVICE:-/dev/ttyACM0}" \
-	CONTAINER_RECLAIM_BUILD_DIR=1 \
-	CONTAINER_ENV_VARS="CMAKE_BUILD_PARALLEL_LEVEL NINJAFLAGS EMBEDDED_DEVICE $(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
-	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) sh -c 'exec "$$EMBEDDED_PROJECT_DIR/tools/flash.sh"'
+embedded-consumer-proof-flash: image
+	@set -eu; $(call embedded_proof_prepare_host); \
+	test -f "$$run_root/build/flash_args" && test -s "$$run_root/build/axoloty-swift.bin" || { echo 'proof build artifacts are missing; run embedded-consumer-proof-build' >&2; exit 1; }; \
+	CMAKE_BUILD_PARALLEL_LEVEL="$(AXOLOTY_EXTERNAL_FIRMWARE_JOBS)" NINJAFLAGS="-j$(AXOLOTY_EXTERNAL_FIRMWARE_JOBS)" \
+	AXOLOTY_SOURCE_DIR="$$core_dir" EMBEDDED_PROJECT_DIR="$$firmware_dir" AXOLOTY_EXPECTED_FIRMWARE_SHA="$$commit" \
+	EMBEDDED_PROOF_ROOT=/workspace/.build EMBEDDED_BUILD_DIR=/workspace/.build/build EMBEDDED_EVIDENCE_DIR=/workspace/.build/working-evidence \
+	EMBEDDED_PREPARATION_SCRATCH=/workspace/.build/core-tools BUILD_DIR="$$run_root" SUDO="$(SUDO)" \
+	CONTAINER_DEVICES="$${EMBEDDED_DEVICE:-/dev/ttyACM0}" CONTAINER_RECLAIM_BUILD_DIR=1 \
+	$(call embedded_proof_container_env) \
+	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
+	.devcontainer/run.sh sh -c 'exec "$$EMBEDDED_PROJECT_DIR/tools/flash.sh"'; \
+	evidence="$(AXOLOTY_PROOF_EVIDENCE_ROOT)/$(AXOLOTY_PROOF_RUN_ID)"; mkdir -p "$$evidence"; cp -a "$$run_root/working-evidence/." "$$evidence/"
+
+embedded-consumer-proof-validate: image
+	@set -eu; $(call embedded_proof_prepare_host); \
+	AXOLOTY_SOURCE_DIR="$$core_dir" EMBEDDED_PROJECT_DIR="$$firmware_dir" AXOLOTY_EXPECTED_FIRMWARE_SHA="$$commit" \
+	EMBEDDED_PROOF_ROOT=/workspace/.build EMBEDDED_BUILD_DIR=/workspace/.build/build EMBEDDED_EVIDENCE_DIR=/workspace/.build/working-evidence \
+	EMBEDDED_PREPARATION_SCRATCH=/workspace/.build/core-tools EMBEDDED_VALIDATE_FINAL=1 BUILD_DIR="$$run_root" \
+	$(call embedded_proof_container_env) \
+	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
+	.devcontainer/run.sh sh -c 'exec "$$EMBEDDED_PROJECT_DIR/tools/validate.sh"'; \
+	evidence="$(AXOLOTY_PROOF_EVIDENCE_ROOT)/$(AXOLOTY_PROOF_RUN_ID)"; mkdir -p "$$evidence"; cp -a "$$run_root/working-evidence/." "$$evidence/"; \
+	printf 'EMBEDDED CONSUMER GO PROOF PASSED\nrun-id: %s\ncore-sha: %s\nfirmware-sha256: %s\ndevice: esp32c6\nevidence: %s\n' "$(AXOLOTY_PROOF_RUN_ID)" "$$commit" "$$(node -p 'require("./$(AXOLOTY_PROOF_EVIDENCE_ROOT)/$(AXOLOTY_PROOF_RUN_ID)/go-proof.json").firmwareSha256')" "$$evidence"
+
+# Compatibility adapters for the previous experimental names.
+embedded-external-consumer-validate: embedded-consumer-proof-validate
+embedded-external-consumer-proof: embedded-consumer-proof-build
+embedded-external-consumer-flash: embedded-consumer-proof-flash
 
 # Shared container invocation prefix. The invoked command and its extra
 # environment stay on the recipe line, so `make -n`, the tier validator,

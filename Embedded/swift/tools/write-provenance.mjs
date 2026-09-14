@@ -18,6 +18,9 @@ const canonical = value => fs.realpathSync(value);
 const coreRoot = canonical(manifest.core.sourceDir);
 const firmware = canonical(firmwareRoot);
 const artifact = canonical(artifactPath);
+if (manifest.status !== "prepared" || manifest.core.dirty !== false) {
+  throw new Error("cannot write build provenance from an unprepared or dirty Core");
+}
 const relative = (root, candidate) => {
   const value = path.relative(root, candidate);
   if (value.startsWith("..") || path.isAbsolute(value)) throw new Error(`path escapes root: ${candidate}`);
@@ -42,6 +45,10 @@ const firmwareRevision = command("git", ["-C", firmware, "rev-parse", "HEAD"]);
 const firmwareDirty = command("git", ["-C", firmware, "status", "--porcelain"]) !== null
   ? command("git", ["-C", firmware, "status", "--porcelain"]) !== ""
   : null;
+const extractedRevision = fs.readFileSync(path.join(firmware, ".axoloty-source-revision"), "utf8").trim();
+if (extractedRevision !== manifest.core.sha) {
+  throw new Error("firmware extraction revision differs from Core provenance");
+}
 const output = {
   schemaVersion: 1,
   status: "passed",
@@ -56,6 +63,7 @@ const output = {
   firmware: {
     sourceDir: firmware,
     revision: firmwareRevision,
+    extractedRevision,
     dirty: firmwareDirty,
     sourceCopied: false,
   },
@@ -76,6 +84,7 @@ const output = {
     sha256,
     byteCount: fs.statSync(artifact).size,
   },
+  firmwareSha256: sha256,
   checks: {
     privateReferenceScan: cleanRoom.privateReferenceScan,
     manifestSchema: manifest.schemaVersion,

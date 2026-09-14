@@ -108,9 +108,9 @@ test("external firmware proof keeps preparation and ESP-IDF ownership separate",
   const cmake = fs.readFileSync("Embedded/swift/cmake/axoloty-source.cmake", "utf8");
 
   for (const target of [
-    "embedded-external-consumer-validate",
-    "embedded-external-consumer-proof",
-    "embedded-external-consumer-flash",
+    "embedded-consumer-proof-build",
+    "embedded-consumer-proof-flash",
+    "embedded-consumer-proof-validate",
   ]) {
     assert.match(makefile, new RegExp(`^${target}:.*\\bimage\\b`, "m"));
   }
@@ -119,6 +119,11 @@ test("external firmware proof keeps preparation and ESP-IDF ownership separate",
   assert.match(build, /tools\/validate\.sh/);
   assert.match(build, /AXOLOTY_CONSUMER_MANIFEST/);
   assert.match(flash, /write_flash @flash_args/);
+  assert.doesNotMatch(flash, /build\.sh/);
+  assert.match(makefile, /AXOLOTY_PROOF_ROOT/);
+  assert.match(makefile, /sparse-checkout/);
+  assert.match(flash, /device-manifest\.json/);
+  assert.match(flash, /swift-smoke-log\.txt/);
   assert.doesNotMatch(build, /Tests\/Support|resolve-embedded-core|prepare-embedded-core/);
   assert.doesNotMatch(flash, /Tests\/Support|resolve-embedded-core|prepare-embedded-core/);
   assert.match(cmake, /string\(JSON/);

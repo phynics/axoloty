@@ -117,63 +117,75 @@ outside the declared Core or scratch roots.
 
 ## Run the external firmware proof
 
-The checked-in ESP32-C6 firmware is also a usable external-consumer fixture.
-Copy it to a directory outside the Core checkout. The copy must contain the
-firmware-owned `tools` directory. The proof mounts the Core checkout and the
-firmware checkout read-only, then writes only to `BUILD_DIR`.
+The checked-in ESP32-C6 firmware is extracted by the build target into an
+unrelated sibling directory. The target creates this run layout and mounts the
+two source trees read-only:
 
-On the four-core NixOS host, run the hardware-free proof with four build jobs:
-
-```sh
-CORE_DIR="$(git rev-parse --show-toplevel)"
-FIRMWARE_DIR="$(mktemp -d /tmp/axoloty-firmware.XXXXXX)"
-PROOF_BUILD_DIR=/tmp/axoloty-external-proof
-cp -a "$CORE_DIR/Embedded/swift/." "$FIRMWARE_DIR/"
-
-AXOLOTY_SOURCE_DIR="$CORE_DIR" \
-EMBEDDED_PROJECT_DIR="$FIRMWARE_DIR" \
-BUILD_DIR="$PROOF_BUILD_DIR" \
-AXOLOTY_EXTERNAL_FIRMWARE_JOBS=4 \
-make embedded-external-consumer-validate
-
-AXOLOTY_SOURCE_DIR="$CORE_DIR" \
-EMBEDDED_PROJECT_DIR="$FIRMWARE_DIR" \
-BUILD_DIR="$PROOF_BUILD_DIR" \
-AXOLOTY_EXTERNAL_FIRMWARE_JOBS=4 \
-make embedded-external-consumer-proof
+```text
+/tmp/axoloty-go-proof/<run-id>/
+  core/             # sparse Axoloty checkout (no Tests/ or Embedded/)
+  firmware/         # Embedded/swift archive from the same commit
+  build/            # ESP-IDF output, including flash_args
+  core-tools/       # caller-owned SwiftPM preparation scratch
+  tooling/          # proof tooling scratch
+  working-evidence/ # intermediate evidence before durable copy
 ```
 
-The proof uses the pinned `axoloty-dev` image. It does not need a board or
-sudo. The preparation report, clean-room result, firmware binary, and
-provenance are under
-`/tmp/axoloty-external-proof/external-firmware/evidence/` and
-`/tmp/axoloty-external-proof/external-firmware/axoloty-swift.bin`.
-`provenance.json` records the Core SHA and dirty state, contract digest, locked
-dependency and macro paths, firmware revision when available, tool versions,
-artifact SHA-256, and the fact that the two source trees were disjoint.
-
-To flash the same copy, use the NixOS non-interactive sudo wrapper on the
-outer Make invocation. Do not run the firmware script with `sudo` inside the
-container:
+From a fresh, detached `origin/main` driver checkout, prepare the pinned
+image and choose one run identifier. The build is rootless and may take up to
+two hours on this four-core machine; cold Swift macro preparation can spend
+about 15 minutes compiling before ESP-IDF starts. Do not cancel while compiler
+or heartbeat output advances.
 
 ```sh
+export AXOLOTY_PROOF_RUN_ID="go-$(date -u +%Y%m%dT%H%M%SZ)"
+make image
+make embedded-toolchain-doctor
+make embedded-consumer-proof-build \
+  AXOLOTY_PROOF_RUN_ID="$AXOLOTY_PROOF_RUN_ID"
+```
+
+Connect an ESP32-C6, identify its serial device, and refresh sudo credentials.
+Sudo is used only by the outer flash target to run the rootful device
+container; it is not used by the build or inside the firmware scripts.
+
+```sh
+ls -l /dev/ttyACM* /dev/ttyUSB*
+sudo -v
+sudo -n true
 SUDO=/run/wrappers/bin/sudo \
-AXOLOTY_SOURCE_DIR="$CORE_DIR" \
-EMBEDDED_PROJECT_DIR="$FIRMWARE_DIR" \
 EMBEDDED_DEVICE=/dev/ttyACM0 \
-BUILD_DIR="$PROOF_BUILD_DIR" \
-AXOLOTY_EXTERNAL_FIRMWARE_JOBS=4 \
-make embedded-external-consumer-flash
+make embedded-consumer-proof-flash \
+  AXOLOTY_PROOF_RUN_ID="$AXOLOTY_PROOF_RUN_ID"
+make embedded-consumer-proof-validate \
+  AXOLOTY_PROOF_RUN_ID="$AXOLOTY_PROOF_RUN_ID"
 ```
 
-The flash target passes `/dev/ttyACM0` only for this explicit hardware gate.
-It requires the existing `flash_args` and `axoloty-swift.bin` from the
-hardware-free proof, queries the chip and rejects a non-C6 device, flashes the
-exact binary named by `flash_args`, and captures the
-`embedded-swift-smoke-v2` JSON Lines protocol. The target reclaims root-owned
-files in `BUILD_DIR` after a rootful Podman run. Check `provenance.json`,
-`chip-info.txt`, `smoke-result.json`, and the binary checksum after the build
-before treating the proof as a GO.
+Override `EMBEDDED_DEVICE` when enumeration differs. The flash stage never
+rebuilds: it requires the existing `flash_args` and `axoloty-swift.bin`,
+queries and validates the ESP32-C6 identity, flashes that exact artifact,
+captures bounded serial output, and validates the checksummed
+`embedded-swift-smoke-v2` JSONL boot, all 22 cases, summary, and completion.
+Any reboot, fatal output, malformed record, checksum failure, missing case, or
+timeout leaves the proof failed. Durable evidence is copied to
+`.testing/embedded/consumer-proof/<run-id>/`:
+
+```text
+build.log
+preparation.json
+build-provenance.json
+device-manifest.json
+device-info-raw.txt
+flash.log
+swift-smoke-log.txt
+swift-smoke-result.json
+axoloty-swift.bin
+go-proof.json
+```
+
+The final validator prints `EMBEDDED CONSUMER GO PROOF PASSED` only when
+`go-proof.json` reports `result: "passed"` and cross-checks the clean Core SHA,
+contract hash, artifact SHA-256, ESP32-C6 identity, and smoke result.
 
 `AxolotySensorThingsModel` remains a portable package for host applications,
 but it is intentionally absent from this standalone contract: the offline

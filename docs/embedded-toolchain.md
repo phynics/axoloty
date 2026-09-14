@@ -104,11 +104,13 @@ hardware-free Core portability gate. The Core gate compiles every portable
 module and a real macro-expanded consumer without reading `Embedded/swift` or
 using ESP-IDF build output.
 
-For the real external-consumer boundary proof, copy `Embedded/swift` outside
-the checkout and run `make embedded-external-consumer-proof`. The
+For the real external-consumer boundary proof, run
+`make embedded-consumer-proof-build` from a clean detached driver checkout.
+The target creates a sparse Core checkout and firmware sibling under
+`/tmp/axoloty-go-proof/<run-id>/`; the
 [external consumer instructions](./embedded-consumer-contract.md#run-the-external-firmware-proof)
-include the four-core NixOS commands, evidence paths, and the explicit
-`SUDO=/run/wrappers/bin/sudo` form for flashing.
+include the four-core cold-build allowance, durable evidence paths, and the
+explicit `SUDO=/run/wrappers/bin/sudo` form for flashing.
 
 | File | Produced by |
 |---|---|
