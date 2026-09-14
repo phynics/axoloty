@@ -2,17 +2,14 @@
 # sources as a separate Embedded Swift module that the main application
 # imports via `import AxolotyWire`.
 
-get_filename_component(AXOLOTY_ROOT
-    "${CMAKE_CURRENT_LIST_DIR}/../../../.."
-    ABSOLUTE
-)
+include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/axoloty-source.cmake")
 
 file(GLOB AXOLOTY_WIRE_SOURCES
-    "${AXOLOTY_ROOT}/Packages/AxolotyWire/Sources/AxolotyWire/*.swift"
+    "${AXOLOTY_WIRE_SOURCE_DIR}/*.swift"
 )
 
 if(NOT AXOLOTY_WIRE_SOURCES)
-    message(FATAL_ERROR "No AxolotyWire sources found at ${AXOLOTY_ROOT}/Packages/AxolotyWire/Sources/AxolotyWire/")
+    message(FATAL_ERROR "No AxolotyWire sources found at ${AXOLOTY_WIRE_SOURCE_DIR}")
 endif()
 
 # Create an empty bridging header — AxolotyWire is pure Swift and needs

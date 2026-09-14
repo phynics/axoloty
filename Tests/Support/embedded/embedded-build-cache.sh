@@ -9,7 +9,11 @@ axoloty_esp_idf_cache_key() {
     flags=$2
     idf_revision=$(git -C "${IDF_PATH:-/opt/esp/idf}" rev-parse HEAD 2>/dev/null || idf.py --version 2>/dev/null || printf unknown)
     compiler_identity=$(riscv32-esp-elf-gcc -dumpmachine -dumpfullversion -dumpversion 2>/dev/null || printf unknown)
-    printf '%s\n' "$idf_revision" "$compiler_identity" "$target" "$flags" | sha256sum | awk '{print substr($1, 1, 20)}'
+    core_source=${AXOLOTY_SOURCE_DIR:-unknown}
+    core_sha=${AXOLOTY_CORE_SHA:-unknown}
+    core_dirty=${AXOLOTY_CORE_DIRTY:-unknown}
+    printf '%s\n' "$idf_revision" "$compiler_identity" "$target" "$flags" \
+        "$core_source" "$core_sha" "$core_dirty" | sha256sum | awk '{print substr($1, 1, 20)}'
 }
 
 axoloty_enable_esp_idf_ccache() {
@@ -78,7 +82,7 @@ axoloty_prepare_esp_idf_build() {
 
     if [ "$requires_reconfigure" = 1 ]; then
         rm -f "$fingerprint_file"
-        idf.py -B "$build_dir" fullclean
+        idf.py -B "$build_dir" "$@" fullclean
     fi
 
     if [ ! -f "$cache" ]; then

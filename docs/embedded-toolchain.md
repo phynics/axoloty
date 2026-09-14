@@ -218,7 +218,8 @@ To verify:
 make embedded-reproducible-build
 ```
 
-The script builds `Embedded/` twice from a full clean, records the SHA-256 of
-`build/axoloty-smoke.bin` each time, and writes both hashes plus a boolean
+The script builds `Embedded/` twice from a full clean in the writable
+`/workspace/.build/embedded-reproducible` directory, records the SHA-256 of
+`axoloty-smoke.bin` each time, and writes both hashes plus a boolean
 `reproducible` field to `.testing/embedded/reproducible-build.json`. It exits
 non-zero if the hashes differ.

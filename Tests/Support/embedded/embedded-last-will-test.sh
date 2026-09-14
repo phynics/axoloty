@@ -11,11 +11,14 @@ project_dir=${EMBEDDED_PROJECT_DIR:-/workspace/Embedded/swift}
 build_root=${EMBEDDED_LAST_WILL_BUILD_ROOT:-/workspace/.build/embedded-last-will}
 output_dir=${EMBEDDED_OUTPUT_DIR:-/workspace/.testing/embedded}
 support_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+AXOLOTY_EMBEDDED_CORE_TOOLS_NO_EXEC=1 . "$support_dir/prepare-embedded-core-tools.sh"
+embedded_core_prepare_tools "$build_root" "$support_dir/resolve-embedded-core.sh"
 reference_dir=$(CDPATH= cd -- "$support_dir/../WireCompatibility/ReferenceAgents/coatyjs" && pwd)
 esptool="${IDF_PATH:-/opt/esp/idf}/components/esptool_py/esptool/esptool.py"
 
 for device in "$device_a" "$device_b"; do test -e "$device"; done
 . "${IDF_PATH:-/opt/esp/idf}/export.sh" >/dev/null 2>&1
+. "$support_dir/embedded-build-cache.sh"
 mkdir -p "$build_root" "$output_dir"
 cd "$project_dir"
 config_a="$build_root/a/esp-idf/main/axoloty_network_config.h"
@@ -24,7 +27,9 @@ trap 'rm -f "$config_a" "$config_b"' EXIT
 
 build_role() {
   role=$1; build_dir=$2; sdkconfig="$build_dir/sdkconfig"
-  if [ ! -f "$build_dir/CMakeCache.txt" ]; then idf.py -B "$build_dir" -D SDKCONFIG="$sdkconfig" set-target esp32c6; fi
+  config_flags="last-will:$role"
+  axoloty_enable_esp_idf_ccache "$project_dir" esp32c6 "$config_flags"
+  axoloty_prepare_esp_idf_build "$build_dir" esp32c6 0 "$config_flags" -D SDKCONFIG="$sdkconfig"
   AXOLOTY_DEVICE_ROLE="$role" AXOLOTY_AGENT_SCENARIO=last-will \
     node "$support_dir/generate-embedded-network-config.mjs" "$build_dir/esp-idf/main/axoloty_network_config.h"
   idf.py -B "$build_dir" -D SDKCONFIG="$sdkconfig" build

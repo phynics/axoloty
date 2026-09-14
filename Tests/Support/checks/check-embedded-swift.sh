@@ -16,7 +16,13 @@
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
-wire_dir="$root/Packages/AxolotyWire/Sources/AxolotyWire"
+support_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../embedded" && pwd)
+embedded_build_dir=${EMBEDDED_BUILD_DIR:-/workspace/.build/embedded-swift}
+AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR=${AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR:-$embedded_build_dir.core-tools}
+export AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR
+AXOLOTY_EMBEDDED_CORE_TOOLS_NO_EXEC=1 . "$support_dir/prepare-embedded-core-tools.sh"
+embedded_core_prepare_tools "$embedded_build_dir" "$support_dir/resolve-embedded-core.sh"
+wire_dir="$AXOLOTY_WIRE_SOURCE_DIR"
 probe="$root/Tests/Support/embedded/embedded-swift-link-probe.swift"
 parser_probe="$root/Tests/Support/embedded/embedded-swift-parser-probe.swift"
 host_shims="$root/Tests/Support/embedded/embedded-swift-host-shims.c"
@@ -44,9 +50,9 @@ fi
 workdir=$(mktemp -d)
 trap 'rm -rf "$workdir"' EXIT
 
-jsoncore_dir="$root/.build/checkouts/swift-json/Sources/_JSONCore"
+jsoncore_dir="$AXOLOTY_JSON_CORE_SOURCE_DIR"
 if [ ! -d "$jsoncore_dir" ]; then
-    echo "FAIL: pinned swift-json checkout not available at $jsoncore_dir" >&2
+    echo "FAIL: resolved swift-json _JSONCore source not available at $jsoncore_dir" >&2
     exit 1
 fi
 jsoncore_files="$jsoncore_dir"/*.swift

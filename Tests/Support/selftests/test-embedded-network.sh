@@ -51,10 +51,16 @@ if AXOLOTY_WIFI_SSID=ssid AXOLOTY_WIFI_PASSWORD=password \
   echo "invalid runtime identity unexpectedly accepted" >&2
   exit 1
 fi
-node --input-type=module <<'JS'
+fixture_project="$tmp/fixture-project"
+mkdir -p "$fixture_project/fixtures"
+printf '%s\n' '{"cases":[{"id":"selftest-only"}]}' > "$fixture_project/fixtures/manifest.json"
+ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
+EMBEDDED_PROJECT_DIR="$fixture_project" node --input-type=module <<'JS'
 import { createEmbeddedNetworkValidator, expectedNetworkTests } from "./Tests/Support/embedded/embedded-network-validator.mjs";
 import { createEmbeddedAgentValidator, expectedAgentTests, expectedLastWillTests, expectedBrokerRestartTests } from "./Tests/Support/embedded/embedded-agent-validator.mjs";
 if (expectedNetworkTests.size < 7) process.exit(1);
+if (!expectedNetworkTests.has("corpus:selftest-only:topicParse")) process.exit(1);
+if (expectedNetworkTests.has("corpus:advertise-small:topicParse")) process.exit(1);
 const validator = createEmbeddedNetworkValidator();
 if (!validator || typeof validator.observe !== "function") process.exit(1);
 if (expectedAgentTests.size !== 10) process.exit(1);

@@ -5,12 +5,9 @@ import {
   createEmbeddedSwiftSmokeValidator,
   failureResult,
 } from "./embedded-swift-smoke-validator.mjs";
-import fs from "node:fs";
+import { resolveEmbeddedCorpusManifest } from "./embedded-corpus-manifest.mjs";
 
-const manifest = JSON.parse(fs.readFileSync(
-  new URL("../../../Benchmarks/Corpus/manifest.json", import.meta.url),
-  "utf8",
-));
+const manifest = resolveEmbeddedCorpusManifest();
 const corpusOperations = [
   "topicParse", "dtoDecode", "dtoEncode", "combined", "borrowed", "topicBuild",
 ];

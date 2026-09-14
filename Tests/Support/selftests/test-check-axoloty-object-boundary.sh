@@ -39,7 +39,8 @@ write_fixture() {
     printf '%s\n' 'import SwiftSyntax' > "$tmp/Packages/AxolotyObjectMacros/Sources/AxolotyObjectMacros/Fixture.swift"
     printf '%s\n' 'struct FixtureMacroImplementation {}' > "$tmp/Packages/AxolotyObjectMacros/Sources/AxolotyObjectMacrosImplementation/Fixture.swift"
     printf '%s\n' \
-        'file(GLOB AXOLOTY_OBJECT_MODEL_SOURCES "${AXOLOTY_ROOT}/Packages/AxolotyObjectModel/Sources/AxolotyObjectModel/*.swift")' \
+        'include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/axoloty-source.cmake")' \
+        'file(GLOB AXOLOTY_OBJECT_MODEL_SOURCES "${AXOLOTY_OBJECT_MODEL_SOURCE_DIR}/*.swift")' \
         'idf_component_register_swift(${COMPONENT_LIB} SRCS ${AXOLOTY_OBJECT_MODEL_SOURCES})' \
         > "$tmp/Embedded/swift/components/axoloty_object_model/CMakeLists.txt"
 }
@@ -100,7 +101,7 @@ if run_checker >/dev/null 2>&1; then
 fi
 
 write_fixture
-sed -i '/Packages\/AxolotyObjectModel/d' "$tmp/Embedded/swift/components/axoloty_object_model/CMakeLists.txt"
+sed -i '/AXOLOTY_OBJECT_MODEL_SOURCE_DIR/d' "$tmp/Embedded/swift/components/axoloty_object_model/CMakeLists.txt"
 if run_checker >/dev/null 2>&1; then
     echo "error: checker accepted missing source inclusion" >&2
     exit 1

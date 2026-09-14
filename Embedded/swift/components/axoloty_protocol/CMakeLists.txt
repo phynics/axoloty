@@ -2,17 +2,14 @@
 # sources used by the standalone SwiftPM package and exports the module for
 # future static-runtime consumers without adding a second processor.
 
-get_filename_component(AXOLOTY_ROOT
-    "${CMAKE_CURRENT_LIST_DIR}/../../../.."
-    ABSOLUTE
-)
+include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/axoloty-source.cmake")
 
 file(GLOB AXOLOTY_PROTOCOL_SOURCES
-    "${AXOLOTY_ROOT}/Packages/AxolotyProtocol/Sources/AxolotyProtocol/*.swift"
+    "${AXOLOTY_PROTOCOL_SOURCE_DIR}/*.swift"
 )
 
 if(NOT AXOLOTY_PROTOCOL_SOURCES)
-    message(FATAL_ERROR "No AxolotyProtocol sources found at ${AXOLOTY_ROOT}/Packages/AxolotyProtocol/Sources/AxolotyProtocol/")
+    message(FATAL_ERROR "No AxolotyProtocol sources found at ${AXOLOTY_PROTOCOL_SOURCE_DIR}")
 endif()
 
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/empty_bridging_header.h "")

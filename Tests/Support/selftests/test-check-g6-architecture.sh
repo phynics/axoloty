@@ -13,6 +13,7 @@ mkdir -p "$fixture/Packages/AxolotyWire/Sources/AxolotyWire" \
     "$fixture/Packages/AxolotyProtocol/Sources/AxolotyProtocol" \
     "$fixture/Embedded/swift/components/axoloty_wire" \
     "$fixture/Embedded/swift/components/axoloty_protocol" \
+    "$fixture/Embedded/swift/cmake" \
     "$fixture/Tests/Support/checks" \
     "$fixture/Tests/Support/evidence"
 cp "$checker" "$fixture/Tests/Support/checks/check-g6-architecture.sh"
@@ -23,8 +24,12 @@ printf '%s\n' 'struct ProtocolFixture {}' > "$fixture/Packages/AxolotyProtocol/S
 printf '%s\n' 'let package = Package(name: "AxolotyWire", targets: [.target(name: "AxolotyWire", path: "Sources/AxolotyWire")])' > "$fixture/Packages/AxolotyWire/Package.swift"
 printf '%s\n' 'let package = Package(name: "AxolotyProtocol", targets: [.target(name: "AxolotyProtocol", path: "Sources/AxolotyProtocol")])' > "$fixture/Packages/AxolotyProtocol/Package.swift"
 printf '%s\n' 'path: "Packages/AxolotyWire/Sources/AxolotyWire"' 'path: "Packages/AxolotyProtocol/Sources/AxolotyProtocol"' > "$fixture/Package.swift"
-printf '%s\n' 'file(GLOB AXOLOTY_WIRE_SOURCES "${AXOLOTY_ROOT}/Packages/AxolotyWire/Sources/AxolotyWire/*.swift")' > "$fixture/Embedded/swift/components/axoloty_wire/CMakeLists.txt"
-printf '%s\n' 'file(GLOB AXOLOTY_PROTOCOL_SOURCES "${AXOLOTY_ROOT}/Packages/AxolotyProtocol/Sources/AxolotyProtocol/*.swift")' > "$fixture/Embedded/swift/components/axoloty_protocol/CMakeLists.txt"
+printf '%s\n' 'file(GLOB AXOLOTY_WIRE_SOURCES "${AXOLOTY_WIRE_SOURCE_DIR}/*.swift")' > "$fixture/Embedded/swift/components/axoloty_wire/CMakeLists.txt"
+printf '%s\n' 'file(GLOB AXOLOTY_PROTOCOL_SOURCES "${AXOLOTY_PROTOCOL_SOURCE_DIR}/*.swift")' > "$fixture/Embedded/swift/components/axoloty_protocol/CMakeLists.txt"
+printf '%s\n' \
+    '"Packages/AxolotyWire/Sources/AxolotyWire"' \
+    '"Packages/AxolotyProtocol/Sources/AxolotyProtocol"' \
+    > "$fixture/Embedded/swift/cmake/axoloty-source.cmake"
 
 (cd "$fixture" && "$fixture/Tests/Support/checks/check-g6-architecture.sh") >/dev/null
 
@@ -49,7 +54,7 @@ if (cd "$fixture" && AXOLOTY_G6_REQUIRE_SOURCE_RECEIPTS=1 \
     echo "error: checker accepted a mismatched compiler-input receipt" >&2
     exit 1
 fi
-sed -i 's#Packages/AxolotyProtocol/Sources/AxolotyProtocol/\*\.swift#Packages/AxolotyProtocol/Sources/Missing/*.swift#' \
+sed -i 's#AXOLOTY_PROTOCOL_SOURCE_DIR#AXOLOTY_MISSING_SOURCE_DIR#' \
     "$fixture/Embedded/swift/components/axoloty_protocol/CMakeLists.txt"
 if (cd "$fixture" && "$fixture/Tests/Support/checks/check-g6-architecture.sh") >/dev/null 2>&1; then
     echo "error: checker accepted a missing protocol source inclusion" >&2

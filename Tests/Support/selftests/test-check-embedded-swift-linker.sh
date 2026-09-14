@@ -9,6 +9,7 @@ set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 checker="$root/Tests/Support/checks/check-embedded-swift-linker.sh"
+export AXOLOTY_SOURCE_DIR="$root"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
@@ -18,6 +19,12 @@ build_dir="$tmp/build"
 records="$tmp/idf-args"
 mkdir -p "$fake_bin" "$fake_idf"
 export AXOLOTY_ESP_IDF_CCACHE_DIR="$tmp/ccache"
+export AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR="$tmp/macro-scratch"
+export AXOLOTY_STATIC_RUNTIME_MACRO_TOOL="$tmp/macro-scratch/bin/AxolotyStaticRuntimeMacrosImplementation-tool"
+export AXOLOTY_JSON_CORE_SOURCE_DIR="$tmp/macro-scratch/checkouts/swift-json/Sources/_JSONCore"
+mkdir -p "$(dirname "$AXOLOTY_STATIC_RUNTIME_MACRO_TOOL")" "$AXOLOTY_JSON_CORE_SOURCE_DIR"
+: > "$AXOLOTY_STATIC_RUNTIME_MACRO_TOOL"
+chmod +x "$AXOLOTY_STATIC_RUNTIME_MACRO_TOOL"
 
 cat > "$fake_bin/idf.py" <<'PY'
 #!/usr/bin/env python3
@@ -98,9 +105,9 @@ if ! IDF_PATH="$fake_idf" PATH="$fake_bin:$PATH" \
     echo "expected linker checker success with fake ESP-IDF" >&2
     exit 1
 fi
-grep -F -- "-DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON set-target esp32c6" "$records" >/dev/null
+grep -F -- "-DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON -D SDKCONFIG=$build_dir/sdkconfig set-target esp32c6" "$records" >/dev/null
 grep -F -- "IDF_PY_BUILD_JOBS=2" "$records" >/dev/null
-grep -F -- "-DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON build" "$records" >/dev/null
+grep -F -- "-DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON -D SDKCONFIG=$build_dir/sdkconfig build" "$records" >/dev/null
 ! grep -F -- "build -j" "$records" >/dev/null
 
 # A warm run must preserve the configured build tree: only the incremental
@@ -111,7 +118,7 @@ IDF_PATH="$fake_idf" PATH="$fake_bin:$PATH" \
     RISCV_NM="$fake_bin/riscv32-esp-elf-nm" \
     "$checker"
 test "$(grep -Fc -- "set-target esp32c6" "$records")" -eq 1
-test "$(grep -Fc -- "-DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON build" "$records")" -eq 2
+test "$(grep -Fc -- "-DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON -D SDKCONFIG=$build_dir/sdkconfig build" "$records")" -eq 2
 grep -Fqx 'CCACHE_ENABLE:UNINITIALIZED=1' "$build_dir/CMakeCache.txt"
 
 timing_output=$(IDF_PATH="$fake_idf" PATH="$fake_bin:$PATH" \
@@ -130,7 +137,7 @@ IDF_PATH="$fake_idf" PATH="$fake_bin:$PATH" \
     AXOLOTY_EMBEDDED_LINKER_BUILD_DIR="$build_dir" \
     RISCV_NM="$fake_bin/riscv32-esp-elf-nm" \
     "$checker"
-grep -F -- "-B $build_dir fullclean" "$records" >/dev/null
+grep -F -- "-B $build_dir -DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON -D SDKCONFIG=$build_dir/sdkconfig fullclean" "$records" >/dev/null
 test "$(grep -Fc -- "set-target esp32c6" "$records")" -eq 2
 
 # Proof/checkpoint callers retain an explicit clean mode.
@@ -140,7 +147,7 @@ IDF_PATH="$fake_idf" PATH="$fake_bin:$PATH" \
     AXOLOTY_EMBEDDED_LINKER_CLEAN=1 \
     RISCV_NM="$fake_bin/riscv32-esp-elf-nm" \
     "$checker"
-grep -F -- "-B $build_dir fullclean" "$records" >/dev/null
+grep -F -- "-B $build_dir -DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON -D SDKCONFIG=$build_dir/sdkconfig fullclean" "$records" >/dev/null
 test "$(grep -Fc -- "set-target esp32c6" "$records")" -eq 3
 
 failure_status=0
@@ -159,7 +166,7 @@ test "$failure_status" -eq 42
 printf '%s\n' "$output" | grep -F "ninja: fake linker failure" >/dev/null
 printf '%s\n' "$output" | grep -F "fake ESP-IDF build log" >/dev/null
 grep -F -- "IDF_PY_BUILD_JOBS=3" "$records" >/dev/null
-grep -F -- "-DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON build" "$records" >/dev/null
+grep -F -- "-DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON -D SDKCONFIG=$build_dir/sdkconfig build" "$records" >/dev/null
 
 if output=$(IDF_PATH="$fake_idf" PATH="$fake_bin:$PATH" \
     FAKE_IDF_ARGS="$records" AXOLOTY_EMBEDDED_LINKER_JOBS=0 \

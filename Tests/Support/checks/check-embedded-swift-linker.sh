@@ -7,6 +7,7 @@
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
+support_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../embedded" && pwd)
 project="$root/Embedded/swift"
 jobs=${AXOLOTY_EMBEDDED_LINKER_JOBS:-2}
 clean=${AXOLOTY_EMBEDDED_LINKER_CLEAN:-0}
@@ -49,15 +50,22 @@ trap report_failure EXIT
 cd "$project"
 
 . "$root/Tests/Support/embedded/embedded-build-cache.sh"
+AXOLOTY_EMBEDDED_CORE_NO_EXEC=1 . "$support_dir/resolve-embedded-core.sh"
+embedded_core_resolve
 config_flags=unicode-linker-probe
 config_key=$(axoloty_esp_idf_cache_key esp32c6 "$config_flags")
 build_dir=${AXOLOTY_EMBEDDED_LINKER_BUILD_DIR:-/workspace/.build/embedded-swift-linker/$config_key}
+sdkconfig="$build_dir/sdkconfig"
+AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR=${AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR:-$root/.build/embedded-swift-core-tools}
+export AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR
+AXOLOTY_EMBEDDED_CORE_TOOLS_NO_EXEC=1 . "$support_dir/prepare-embedded-core-tools.sh"
+embedded_core_prepare_tools "$build_dir" "$support_dir/resolve-embedded-core.sh"
 axoloty_enable_esp_idf_ccache "$project" esp32c6 "$config_flags"
 axoloty_print_esp_idf_ccache_stats before
 axoloty_prepare_esp_idf_build "$build_dir" esp32c6 "$clean" "$config_flags" \
-    -DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON >"$idf_log" 2>&1
+    -DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON -D SDKCONFIG="$sdkconfig" >"$idf_log" 2>&1
 IDF_PY_BUILD_JOBS="$jobs" idf.py -B "$build_dir" \
-    -DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON build >"$idf_log" 2>&1
+    -DAXOLOTY_SWIFT_UNICODE_LINKER_PROBE=ON -D SDKCONFIG="$sdkconfig" build >"$idf_log" 2>&1
 if [ "${AXOLOTY_TIMING_EVIDENCE:-0}" = 1 ]; then
     cat "$idf_log"
 fi

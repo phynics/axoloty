@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "sourcePath": "Benchmarks/Corpus",
+  "coreRepository": "https://github.com/phynics/axoloty.git",
+  "coreRevision": "fd7cd7cce7acd9851d33d1e1c296143d7b843de0",
+  "sourceDigest": "35d7fcd3b17d9c85a27502bc4d0c6df9f2581e91309565d0395350474e7b800d",
+  "files": 40,
+  "productionSourceCopied": false
+}

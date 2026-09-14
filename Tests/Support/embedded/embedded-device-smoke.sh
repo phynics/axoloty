@@ -18,6 +18,8 @@ device=${EMBEDDED_DEVICE:-/dev/ttyACM0}
 out_dir="${EMBEDDED_OUTPUT_DIR:-/workspace/.testing/embedded}"
 smoke_log="$out_dir/smoke-log.txt"
 project_dir="${EMBEDDED_PROJECT_DIR:-/workspace/Embedded}"
+build_dir="${EMBEDDED_BUILD_DIR:-/workspace/.build/embedded-device-smoke}"
+sdkconfig="$build_dir/sdkconfig"
 marker="AXOLOTY_SMOKE_OK"
 # Hard deadline (seconds). The smoke app prints the marker within ~1s of boot,
 # so 30s is generous while still bounding the run.
@@ -33,17 +35,18 @@ fi
 . "${IDF_PATH:-/opt/esp/idf}/export.sh" >/dev/null 2>&1
 
 mkdir -p "$out_dir"
+mkdir -p "$build_dir"
 
 cd "$project_dir"
 
 echo "== set-target =="
-idf.py set-target esp32c6
+idf.py -B "$build_dir" -D SDKCONFIG="$sdkconfig" set-target esp32c6
 
 echo "== build =="
-idf.py build
+idf.py -B "$build_dir" -D SDKCONFIG="$sdkconfig" build
 
 echo "== flash =="
-idf.py -p "$device" flash
+idf.py -B "$build_dir" -D SDKCONFIG="$sdkconfig" -p "$device" flash
 
 echo "== monitor (deadline ${deadline}s, marker: ${marker}) =="
 # idf.py monitor runs until interrupted. `timeout` enforces the deadline; the
@@ -51,7 +54,7 @@ echo "== monitor (deadline ${deadline}s, marker: ${marker}) =="
 # pipefail + `|| true` so a non-zero exit from timeout (124) does not abort
 # the script before we inspect the log.
 set +e
-timeout "$deadline" idf.py -p "$device" monitor 2>&1 | tee "$smoke_log"
+timeout "$deadline" idf.py -B "$build_dir" -D SDKCONFIG="$sdkconfig" -p "$device" monitor 2>&1 | tee "$smoke_log"
 set -e
 
 if grep -q "$marker" "$smoke_log"; then

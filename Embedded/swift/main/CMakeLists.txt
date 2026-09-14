@@ -6,10 +6,7 @@
 # module and exercise public symbols so the application proves module
 # discovery and linkage, not just compilation.
 
-get_filename_component(AXOLOTY_ROOT
-    "${CMAKE_CURRENT_LIST_DIR}/../../.."
-    ABSOLUTE
-)
+include("${CMAKE_CURRENT_LIST_DIR}/../cmake/axoloty-source.cmake")
 
 option(AXOLOTY_SWIFT_UNICODE_LINKER_PROBE
     "Compile a String-normalization probe to verify the Unicode linker setup"
@@ -24,15 +21,18 @@ set(AXOLOTY_SWIFT_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/StaticDeviceAgent.swift
 )
 set(AXOLOTY_CORPUS_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/GeneratedCorpus.swift")
+set(AXOLOTY_CORPUS_FIXTURE_DIR "${CMAKE_CURRENT_LIST_DIR}/../fixtures")
+set(AXOLOTY_CORPUS_GENERATOR "${AXOLOTY_CORPUS_FIXTURE_DIR}/generate-embedded-corpus.mjs")
+set(AXOLOTY_CORPUS_MANIFEST "${AXOLOTY_CORPUS_FIXTURE_DIR}/manifest.json")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    ${AXOLOTY_ROOT}/Tests/Support/embedded/generate-embedded-corpus.mjs
-    ${AXOLOTY_ROOT}/Benchmarks/Corpus/manifest.json
-    ${AXOLOTY_ROOT}/Benchmarks/Corpus/payloads/*.json
+    ${AXOLOTY_CORPUS_GENERATOR}
+    ${AXOLOTY_CORPUS_MANIFEST}
+    ${AXOLOTY_CORPUS_FIXTURE_DIR}/payloads/*.json
 )
 execute_process(
     COMMAND node
-        ${AXOLOTY_ROOT}/Tests/Support/embedded/generate-embedded-corpus.mjs
-        ${AXOLOTY_ROOT}/Benchmarks/Corpus/manifest.json
+        ${AXOLOTY_CORPUS_GENERATOR}
+        ${AXOLOTY_CORPUS_MANIFEST}
         ${AXOLOTY_CORPUS_SOURCE}
     RESULT_VARIABLE AXOLOTY_CORPUS_GENERATION_RESULT
 )

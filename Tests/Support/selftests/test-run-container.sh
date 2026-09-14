@@ -754,6 +754,55 @@ done
 SH
 chmod +x "$fake_bin/fake-sudo" "$fake_bin/fake-podman"
 
+# Explicit external Core and firmware trees are translated to deterministic,
+# read-only container mounts and the child receives only the translated paths.
+external_core="$TEMP_DIR/external-core"
+external_firmware="$TEMP_DIR/external-firmware"
+mkdir -p "$external_core" "$external_firmware"
+: > "$capture"
+: > "$capture_argv"
+FAKE_RUNTIME_ARGV_CAPTURE=1 AXOLOTY_SOURCE_DIR="$external_core" \
+EMBEDDED_PROJECT_DIR="$external_firmware" CONTAINER_RUNTIME="$fake_bin/fake-podman" \
+CONTAINER_ENV_VARS="AXOLOTY_SOURCE_DIR EMBEDDED_PROJECT_DIR" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+grep -q -- "/opt/axoloty/external/core-" "$capture_env"
+grep -q -- "/opt/axoloty/external/firmware-" "$capture_env"
+grep -q -- "$external_core:/opt/axoloty/external/core-.*:ro" "$capture"
+grep -q -- "$external_firmware:/opt/axoloty/external/firmware-.*:ro" "$capture"
+grep -q -- '--env-file ' "$capture"
+
+# Source mounts remain discrete argv entries even when valid paths contain
+# whitespace. This also proves they cannot be reparsed as runtime options.
+external_core_with_space="$TEMP_DIR/external core"
+external_firmware_with_space="$TEMP_DIR/external firmware"
+mkdir -p "$external_core_with_space" "$external_firmware_with_space"
+: > "$capture_argv"
+FAKE_RUNTIME_ARGV_CAPTURE=1 AXOLOTY_SOURCE_DIR="$external_core_with_space" \
+EMBEDDED_PROJECT_DIR="$external_firmware_with_space" CONTAINER_RUNTIME="$fake_bin/fake-podman" \
+CONTAINER_ENV_VARS="AXOLOTY_SOURCE_DIR EMBEDDED_PROJECT_DIR" BUILD_DIR="$build_dir" BUILD_LOCK=0 \
+    "$ROOT_DIR/.devcontainer/run.sh" true
+grep -Fqx -- "$external_core_with_space:/opt/axoloty/external/core-$(printf '%s' "$external_core_with_space" | sha256sum | awk '{print substr($1, 1, 16)}'):ro" "$capture_argv"
+grep -Fqx -- "$external_firmware_with_space:/opt/axoloty/external/firmware-$(printf '%s' "$external_firmware_with_space" | sha256sum | awk '{print substr($1, 1, 16)}'):ro" "$capture_argv"
+
+# Linked Core worktrees carry their Git metadata outside the worktree root.
+# Mount the common directory at its original absolute path so the translated
+# checkout can still report its SHA and dirty state inside the container.
+external_repository="$TEMP_DIR/external-repository"
+external_worktree="$TEMP_DIR/external-worktree"
+git init -q "$external_repository"
+git -C "$external_repository" config user.name "Axoloty Self-Test"
+git -C "$external_repository" config user.email "self-test@invalid.example"
+printf 'fixture\n' > "$external_repository/fixture.txt"
+git -C "$external_repository" add fixture.txt
+git -C "$external_repository" commit -q -m fixture
+git -C "$external_repository" worktree add -q -b external-worktree "$external_worktree"
+external_git_common=$(realpath -e -- "$external_repository/.git")
+: > "$capture_argv"
+FAKE_RUNTIME_ARGV_CAPTURE=1 AXOLOTY_SOURCE_DIR="$external_worktree" \
+CONTAINER_RUNTIME="$fake_bin/fake-podman" CONTAINER_ENV_VARS="AXOLOTY_SOURCE_DIR" \
+BUILD_DIR="$build_dir" BUILD_LOCK=0 "$ROOT_DIR/.devcontainer/run.sh" true
+grep -Fqx -- "$external_git_common:$external_git_common:ro" "$capture_argv"
+
 # Managed launches create the container synchronously, verify its immutable ID,
 # then attach to start. This avoids ownership inspection racing the runtime's
 # storage lock.

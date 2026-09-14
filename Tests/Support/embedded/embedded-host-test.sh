@@ -12,12 +12,15 @@ build_root=${EMBEDDED_HOST_BUILD_ROOT:-/workspace/.build/embedded-host}
 swift_build=${EMBEDDED_HOST_SWIFT_BUILD:-/workspace/.build/embedded-host-swift}
 output_dir=${EMBEDDED_OUTPUT_DIR:-/workspace/.testing/embedded}
 support_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+AXOLOTY_EMBEDDED_CORE_TOOLS_NO_EXEC=1 . "$support_dir/prepare-embedded-core-tools.sh"
+embedded_core_prepare_tools "$build_root" "$support_dir/resolve-embedded-core.sh"
 root=$(CDPATH= cd -- "$support_dir/../.." && pwd)
 esptool="${IDF_PATH:-/opt/esp/idf}/components/esptool_py/esptool/esptool.py"
 
 case "$role" in A) direction=host-requester ;; B) direction=host-responder ;; *) echo "EMBEDDED_HOST_ROLE must be A or B" >&2; exit 2 ;; esac
 test -e "$device"
 . "${IDF_PATH:-/opt/esp/idf}/export.sh" >/dev/null 2>&1
+. "$support_dir/embedded-build-cache.sh"
 mkdir -p "$build_root" "$swift_build" "$output_dir"
 cd "$project_dir"
 build_dir="$build_root/$(printf '%s' "$role" | tr '[:upper:]' '[:lower:]')"
@@ -26,7 +29,9 @@ config="$build_dir/esp-idf/main/axoloty_network_config.h"
 ready="$output_dir/host-$role.ready"
 trap 'rm -f "$config" "$ready"' EXIT
 rm -f "$ready"
-if [ ! -f "$build_dir/CMakeCache.txt" ]; then idf.py -B "$build_dir" -D SDKCONFIG="$sdkconfig" set-target esp32c6; fi
+config_flags="host:$role"
+axoloty_enable_esp_idf_ccache "$project_dir" esp32c6 "$config_flags"
+axoloty_prepare_esp_idf_build "$build_dir" esp32c6 0 "$config_flags" -D SDKCONFIG="$sdkconfig"
 AXOLOTY_DEVICE_ROLE="$role" node "$support_dir/generate-embedded-network-config.mjs" "$config"
 idf.py -B "$build_dir" -D SDKCONFIG="$sdkconfig" build
 (cd "$build_dir" && python3 "$esptool" --chip esp32c6 --port "$device" --before default_reset --after no_reset write_flash @flash_args)
