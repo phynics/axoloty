@@ -8,6 +8,7 @@
 set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+project_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
 proof_run_id=${AXOLOTY_PROOF_RUN_ID:-manual}
 proof_root=${EMBEDDED_PROOF_ROOT:-/workspace/.build}
 build_dir=${EMBEDDED_BUILD_DIR:-"$proof_root/build"}
@@ -96,8 +97,18 @@ fi
 
 echo "== monitor (deadline ${deadline}s, smoke protocol) =="
 set +e
-timeout "$deadline" idf.py -B "$build_dir" -p "$device" monitor > "$serial_log" 2>&1
-monitor_status=$?
+if command -v script >/dev/null 2>&1; then
+    # idf_monitor requires a TTY on stdin.  `script` supplies a bounded
+    # pseudo-terminal while keeping the captured stream file-oriented for the
+    # JSONL validator.
+    timeout --foreground "$deadline" script -q -e -c \
+        "exec idf.py -C '$project_dir' -B '$build_dir' -p '$device' monitor" \
+        /dev/null > "$serial_log" 2>&1
+    monitor_status=$?
+else
+    echo "error: the pinned image lacks the 'script' pseudo-terminal helper" >&2
+    monitor_status=127
+fi
 set -e
 set +e
 node "$script_dir/validate-smoke.mjs" "$serial_log" "$smoke_result" "$device" "$deadline"
