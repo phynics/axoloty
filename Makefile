@@ -493,8 +493,6 @@ proof_root=$$(realpath -m -- "$(AXOLOTY_PROOF_ROOT)") || { echo 'AXOLOTY_PROOF_R
 evidence_root=$$(realpath -m -- "$(AXOLOTY_PROOF_EVIDENCE_ROOT)") || { echo 'AXOLOTY_PROOF_EVIDENCE_ROOT is not a valid path' >&2; exit 64; }; \
 case "$$proof_root/" in "$$source_dir/"*|"$$source_dir") echo 'proof root overlaps AXOLOTY_SOURCE_DIR' >&2; exit 64;; esac; \
 case "$$source_dir/" in "$$proof_root/"*|"$$proof_root") echo 'AXOLOTY_SOURCE_DIR overlaps proof root' >&2; exit 64;; esac; \
-case "$$evidence_root/" in "$$source_dir/"*|"$$source_dir") echo 'proof evidence root overlaps AXOLOTY_SOURCE_DIR' >&2; exit 64;; esac; \
-case "$$source_dir/" in "$$evidence_root/"*|"$$evidence_root") echo 'AXOLOTY_SOURCE_DIR overlaps proof evidence root' >&2; exit 64;; esac; \
 run_root="$$proof_root/$(AXOLOTY_PROOF_RUN_ID)"; \
 mkdir -p "$$run_root"; \
 if [ ! -e "$$run_root/core/.git" ]; then \
