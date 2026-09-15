@@ -37,9 +37,9 @@ rm -f "$evidence_dir/device-manifest.json" "$evidence_dir/device-info-raw.txt" \
     "$evidence_dir/flash.log" "$evidence_dir/swift-smoke-log.txt" \
     "$evidence_dir/swift-smoke-result.json" "$evidence_dir/go-proof.json"
 
-idf_path=${IDF_PATH:-/opt/esp/idf}
+idf_root=${IDF_PATH:-/opt/esp/idf}
 # shellcheck source=/dev/null
-. "$idf_path/export.sh" >/dev/null 2>&1
+. "$idf_root/export.sh" >/dev/null 2>&1
 
 mkdir -p "$evidence_dir"
 set +e
@@ -85,7 +85,7 @@ if [ "$artifact_in_flash_args" -ne 1 ]; then
 fi
 if ! (
     cd "$build_dir"
-    python3 "$idf_path/components/esptool_py/esptool/esptool.py" \
+    python3 "$idf_root/components/esptool_py/esptool/esptool.py" \
         --chip esp32c6 --port "$device" \
         --before default_reset --after hard_reset write_flash @flash_args
 ) > "$evidence_dir/flash.log" 2>&1; then
