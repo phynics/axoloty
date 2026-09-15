@@ -100,7 +100,7 @@ DOC_HOSTING_BASE_PATH ?=
 	wire-tool clean serve-mqtt serve-mcp serve-dev embedded-toolchain-doctor \
 	embedded-device-info embedded-device-smoke embedded-reproducible-build \
 	benchmark-wire benchmark-wire-allocation benchmark-static-io-ownership-allocation benchmark-wire-bounds \
-	check-static-io-macro-embedded \
+	check-embedded-core-consumer check-static-io-macro-embedded \
 	benchmark-wire-device check-budget-manifest check-embedded-swift \
 	check-embedded-swift-linker embedded-swift-build embedded-swift-flash \
 	embedded-swift-test embedded-swift-reproducible-build \
@@ -150,7 +150,8 @@ help:
 		'make benchmark-wire  Run release wire benchmarks (p50/p95 latency + allocations)' \
 		'make benchmark-wire-allocation  Host zero-per-iteration allocation gate for wire decode/route' \
 		'make benchmark-static-io-ownership-allocation  Host zero-growth allocation gate for static IO ownership primitives' \
-		'make check-static-io-macro-embedded  Type-check macro-generated IO handler for ESP32-C6' \
+		'make check-embedded-core-consumer  Compile every portable module and a real macro consumer for Embedded Swift' \
+		'make check-static-io-macro-embedded  Compatibility alias for check-embedded-core-consumer' \
 		'make benchmark-wire-bounds  Run malformed-input and capacity bounds tests' \
 		'make benchmark-wire-device  Run ESP32-C6 on-device wire benchmarks' \
 		'make check-budget-manifest  Validate the performance budget manifest' \
@@ -502,8 +503,11 @@ benchmark-wire-allocation: resolve
 benchmark-static-io-ownership-allocation: resolve
 	$(call run_container,$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)) /workspace/Tests/Support/checks/check-static-io-ownership-allocation.sh
 
-check-static-io-macro-embedded: check-embedded-swift-linker
-	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/checks/check-static-io-macro-embedded.sh
+check-embedded-core-consumer: image
+	CONTAINER_ENV_VARS="$(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
+	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/checks/check-embedded-swift-core.sh
+
+check-static-io-macro-embedded: check-embedded-core-consumer
 
 benchmark-wire-bounds: resolve
 	$(call run_container,$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)) /workspace/Tests/Support/checks/check-benchmark-wire-bounds.sh
