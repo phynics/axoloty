@@ -24,12 +24,25 @@ command -v node >/dev/null 2>&1 || {
     echo "FAIL: node is required to read the preparation report" >&2
     exit 1
 }
+command -v realpath >/dev/null 2>&1 || {
+    echo "FAIL: realpath is required to validate Core and scratch boundaries" >&2
+    exit 1
+}
 
 # The selected Core checkout is an explicit boundary. The default is useful
 # for the repository's ordinary check, while callers may point this gate at a
 # separate clean checkout or worktree.
 AXOLOTY_SOURCE_DIR=${AXOLOTY_SOURCE_DIR:-$root_dir}
 export AXOLOTY_SOURCE_DIR
+source_root=$(CDPATH= cd -- "$AXOLOTY_SOURCE_DIR" && pwd -P)
+
+path_is_inside_source() {
+    candidate=$(realpath -m -- "$1")
+    case "$candidate" in
+        "$source_root"|"$source_root"/*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
 # Keep all generated compiler and macro state in a caller-owned temporary
 # tree. In particular, do not use the firmware build directory or a package's
@@ -42,12 +55,23 @@ case "$scratch_parent" in
         exit 1
         ;;
 esac
+if path_is_inside_source "$scratch_parent"; then
+    if [ -n "${AXOLOTY_EMBEDDED_CORE_CHECK_DIR:-}" ]; then
+        echo "FAIL: AXOLOTY_EMBEDDED_CORE_CHECK_DIR must be outside AXOLOTY_SOURCE_DIR: $scratch_parent" >&2
+        exit 1
+    fi
+    scratch_parent=/tmp/axoloty-embedded-core
+fi
 mkdir -p -- "$scratch_parent"
 workdir=$(mktemp -d "$scratch_parent/run.XXXXXX")
 trap 'rm -rf -- "$workdir"' EXIT HUP INT TERM
 
 compiler_dir="$workdir/compiler"
 macro_scratch=${AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR:-$workdir/macro-tools}
+if path_is_inside_source "$macro_scratch"; then
+    echo "FAIL: AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR must be outside AXOLOTY_SOURCE_DIR: $macro_scratch" >&2
+    exit 1
+fi
 preparation_report="$workdir/preparation.json"
 mkdir -p -- "$compiler_dir" "$macro_scratch"
 
