@@ -134,7 +134,6 @@ let package = Package(
                 .product(name: "ErrorKit", package: "ErrorKit"),
             ],
             path: "Source",
-            exclude: ["Runtime/AGENTS.md"],
             sources: [
                 "Common/AxolotyError.swift",
                 "Runtime/AxolotyRuntimeConfiguration.swift",

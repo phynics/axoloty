@@ -1,117 +1,91 @@
 # Agent instructions for Axoloty
 
-This file is the stable contributor constitution.
-
-## Jurisdiction
-
-These rules apply to the entire repository. A scoped guide may specialize them for its subtree but cannot weaken an architectural invariant or repository-wide workflow rule.
-
-Scoped instructions add local constraints:
-
-- [`Packages/AxolotyWire/AGENTS.md`](./Packages/AxolotyWire/AGENTS.md) — portable wire boundary;
-- [`Packages/AxolotyObjectModel/AGENTS.md`](./Packages/AxolotyObjectModel/AGENTS.md) — portable semantic object boundary;
-- [`Packages/AxolotyObjectMacros/AGENTS.md`](./Packages/AxolotyObjectMacros/AGENTS.md) — build-time schema generation;
-- [`Packages/AxolotyCoatyModels/AGENTS.md`](./Packages/AxolotyCoatyModels/AGENTS.md) — first-party portable Coaty schemas;
-- [`Packages/AxolotyProtocol/AGENTS.md`](./Packages/AxolotyProtocol/AGENTS.md) — shared protocol processor and filter adapter;
-- [`Embedded/AGENTS.md`](./Embedded/AGENTS.md) — Embedded Swift and hardware policy;
-- [`Tools/AGENTS.md`](./Tools/AGENTS.md) — orchestration and first-party tools;
-- [`Tests/AGENTS.md`](./Tests/AGENTS.md) — test tiers and compatibility evidence.
+This file is the repository's contributor constitution. It applies to every path. Keep policy here unless a subtree has substantial, durable needs that cannot remain clear at the root.
 
 ## Documentation authority
 
-1. Executable code, manifests, and tests describe actual current behavior.
+1. Executable code, manifests, and tests describe current behavior.
 2. Accepted ADRs record hard-to-reverse decisions and rationale.
 3. GitHub issues and projects hold plans and unresolved decisions.
-4. ROADMAP summarizes active strategy.
+4. `docs/ROADMAP.md` summarizes active strategy.
 5. README, API, support, migration, and release documents state public contracts.
-6. AGENTS files define contributor policy.
+6. This file defines contributor policy.
 
-Disagreement is a defect. `ARCHITECTURE.md` separates the implemented current state from the accepted migration delta; it is not a planning scratchpad. Historical release notes are immutable. Supersede ADRs rather than rewriting accepted history. Git history is the archive; delete obsolete mixed plan/current-state prose once durable rationale is captured.
+Treat disagreement as a defect. `ARCHITECTURE.md` separates implemented state from accepted migration work. Do not use it as a planning scratchpad. Historical release notes are immutable. Supersede an accepted ADR instead of rewriting it. Delete obsolete planning prose after durable rationale is recorded.
 
-Temporary architecture violations require a narrow, expiring entry in [`docs/architecture-exceptions.yml`](./docs/architecture-exceptions.yml). An exception cannot redefine an invariant.
+Record a temporary architecture violation as a narrow, expiring entry in `docs/architecture-exceptions.yml`. An exception cannot redefine an invariant.
 
 ## Supported workflow
 
-Use the repository entry points rather than reproducing container or toolchain commands:
+Use repository entry points:
 
 1. `make verify` — ordinary pre-PR verification.
 2. `make test-one FILTER='SuiteOrTest'` — one bounded test process.
 3. `make test-tier TIER=ci` — one canonical hardware-free tier.
 4. `make explain TIER=ci` — inspect the graph and policies without execution.
 
-Use `make verify-ci` only when reproducing the required CI plan. Use
-`make checkpoint`/`make checkpoint-hardware` for release validation; hardware
-is never probed by ordinary verification. See `docs/testing.md` for the
-manifest and compatibility aliases.
+Use `make verify-ci` only to reproduce the required CI plan. Use `make checkpoint` and `make checkpoint-hardware` for release validation. Ordinary verification never probes hardware.
 
-The Makefile is a thin compatibility/bootstrap surface; orchestration policy belongs in `AxolotyTooling`. Linux product and Embedded Swift builds use the pinned container through root Make targets. Do not run native Swift product builds on Linux. `Package.resolved` is authoritative; dependency resolution changes require the dedicated repository target.
+Linux product and Embedded Swift builds use the pinned container through root Make targets. Do not run native Swift product builds on Linux. Run `make embedded-toolchain-doctor` for device-independent setup diagnostics. A cold mounted-worktree build on a four-core Linux host can spend about 15 minutes compiling tooling before the requested node starts. While compiler steps advance, let the repository timeout own the deadline.
 
-## GitHub-centered planning
+The Makefile and shell launchers are thin bootstrap and compatibility layers. Put orchestration policy, validation, and lifecycle behavior in `AxolotyTooling`. `Package.resolved` is authoritative. Use the repository resolution target for an authorized dependency update.
 
-- Fetch `origin/main` and compare it before branching.
-- Search issue titles and bodies before filing; preserve historical T-IDs.
-- Keep designs, specifications, implementation plans, checklists, and planning updates in GitHub issues or comments. Do not commit local ticket/specification files.
-- Implement each authorized issue in a dedicated worktree and branch.
-- Keep one fix per PR, rooted in a local reproduction where applicable.
-- Update the owning issue when scope, decisions, sequencing, or acceptance criteria change.
+## GitHub-centered work
+
+- Fetch and compare `origin/main` before branching.
+- Search issue titles and bodies before filing. Preserve historical T-IDs.
+- Keep designs, plans, checklists, and planning updates in GitHub issues or comments.
+- Implement each authorized issue in its own worktree and branch.
+- Keep one fix per PR and begin bug fixes with a local reproduction.
+- Update the owning issue when scope, sequencing, decisions, or acceptance criteria change.
 - Open PRs against `main` with `Closes #<issue-number>`.
-- Creating an unrequested issue is scope expansion; surface it to the requester first.
+- Ask before creating an issue that the user did not request.
 
-Before every commit or push, verify the working directory and current branch. Preserve unrelated user changes and stage only the intended paths. Use Conventional Commits with the checkout's configured identity and no bot co-author trailer.
-
-## Prohibited shortcuts
-
-- Keep orchestration policy in `AxolotyTooling`; keep Make and shell entry points thin.
-- Use the pinned build environment through repository entry points for Linux product and Embedded Swift work.
-- Keep ordinary verification hardware-free; use explicit hardware gates for probing and flashing.
-- Keep plans and checklists in their owning GitHub issues rather than local planning files.
-- Preserve the resolved dependency lockfile unless the authorized change explicitly updates dependencies.
+Before each commit or push, verify the worktree and branch. Preserve unrelated changes and stage only intended paths. Use Conventional Commits with the configured identity and no bot co-author trailer.
 
 ## Architectural invariants
 
-- Host and static runtime profiles share the production wire and protocol critical path.
-- `coaty/3` remains sealed as Coaty Core Profile 3; new primitives use separately versioned profiles.
-- Portable protocol state is finite and saturation is structured and atomic.
-- Borrowed wire values never cross asynchronous or isolation boundaries.
-- Static runtime code contains no protocol rule absent from `AxolotyProtocol`.
-- General raw MQTT application APIs are not part of the target runtime.
-- Ordinary verification never probes, reserves, flashes, or requests privileges for hardware.
+- Host and static runtime profiles share the production wire and protocol path.
+- `coaty/3` remains sealed as Coaty Core Profile 3. Add new behavior through a separately versioned profile.
+- Portable state is finite. Saturation and stale-token rejection are structured and atomic.
+- Borrowed values stay inside synchronous calls. Materialize owned values before an asynchronous or isolation boundary.
+- Static runtime and transport adapters contain no protocol rule absent from `AxolotyProtocol`.
+- The runtime does not expose a general raw-MQTT application API.
+- Ordinary verification never probes, reserves, flashes, or requests hardware privileges.
 
-See [`docs/adr/`](./docs/adr/) for rationale and [`docs/protocol/coaty-core-3.md`](./docs/protocol/coaty-core-3.md) for protocol authority.
+See `ARCHITECTURE.md`, `CONTEXT.md`, `docs/adr/`, `docs/ROADMAP.md`, and `docs/protocol/coaty-core-3.md` for the enforced design and vocabulary.
 
-## Authority links
+## Module ownership
 
-- [`ARCHITECTURE.md`](./ARCHITECTURE.md) — implemented boundaries, accepted migration delta, and stable invariants.
-- [`CONTEXT.md`](./CONTEXT.md) — canonical project vocabulary.
-- [`docs/ROADMAP.md`](./docs/ROADMAP.md) — active strategic direction and current gate.
-- [`docs/protocol/coaty-core-3.md`](./docs/protocol/coaty-core-3.md) — normative protocol profile.
-- [`docs/adr/`](./docs/adr/) — architectural decisions and rationale.
-- GitHub Issues — complete planning record.
+- `AxolotyWire` owns profile-neutral wire syntax, route envelopes, codecs, validation, low-level object-envelope decoding, wire values, parser workspaces, and wire errors. It owns no protocol state, runtime, transport, Foundation, ErrorKit, logging, MQTT, or NIO policy.
+- `AxolotyObjectModel` owns bounded semantic objects, schemas, presence, number and JSON views, predicates, and caller-owned schema registration. Preserve unknown fields and numeric lexemes. Use literal-inline storage and atomic mutations. Registration is fixed-inline, explicit, runtime-local, and caller-sealed; identical repeats are idempotent, while conflicts and saturation fail atomically. Do not add reflection, global registration, growable collection storage, or escaping captured closures.
+- `AxolotyObjectMacros` contains only SwiftSyntax macro implementation and diagnostics. Pin its SwiftSyntax toolchain version. Generated schemas must match manual `ObjectSchema` behavior and must not hide runtime registration or unbounded storage. Diagnose invalid schemas during expansion. Never check in generated Swift as a substitute for the source contract.
+- `AxolotyCoatyModels` contains complete first-party portable schemas. Do not publish marker types for models without a bounded representation. Preserve Coaty wire names and defaults, validate semantics, and fail atomically on overflow.
+- `AxolotyProtocol` owns the sealed profile inventory, routing keys, frame boundaries, typed protocol errors, bounded state, action sinks, filter adapter, and shared processor. It performs no allocation, asynchronous work, transport, lifecycle, actor, or logging work. Callers supply time and bounded sinks. Subscriptions use generation-protected slot tokens; handlers use noncapturing numeric-context entries. Reject saturation and stale tokens without partial mutation.
+- `AxolotyStaticRuntime` owns fixed synchronous composition around one shared processor, one subscription registry, one caller-drained owning action sink, and one slot-indexed endpoint registry. It may keep one pending latest value, but no transport policy, actor, task, logging, controller, or second family switch. Its `tiny = 1`, `esp32C6Static = 16`, and `hostDefault = 64` aliases describe storage capacity, not scheduling.
+- `Source/Runtime` owns host lifecycle, scheduling, transport ownership, bounded ingress, supervised handlers, and diagnostics. `RuntimeBuilder` is mutable only before `finish()`; `RuntimeDefinition` is immutable; `AxolotyRuntime` is single-use and actor-isolated. Copy transport data before admission, fail rather than drop a full protocol ingress queue, and keep handler values owned and sendable. Do not expose raw routes or wildcard subscriptions, add a second processor, or create an unbounded task per message.
+- `AxolotySensorThings` owns typed source and direct-observation workflows. Use one bounded runtime-owned coordinator and the existing Coaty operation families. Do not create a transport, processor, detached task hierarchy, raw MQTT route, or retired controller API.
+- `Embedded` owns platform and transport integration, identity persistence, clocks, Wi-Fi, hardware IO, storage, and firmware composition. Firmware deploys the static runtime and must not reimplement protocol semantics. Never commit Wi-Fi or broker credentials. Keep device paths, credentials, reachability, and live timing in operator configuration.
+- `Tools` contains first-party developer tools. Inspector and MCP use supported runtime interfaces and no privileged protocol backdoor. If a tool needs arbitrary MQTT packets, give the tool its own transport client. Keep machine-readable stdout free of dynamic diagnostics.
+- `Tests` and `Tests/Support/test-tiers.json` own verification policy and evidence. Use Swift Testing, explicit concurrency or deadlines for broker tests, and root Make targets. Keep offline fixtures distinct from fresh live-wire evidence. Replay identical overlapping traces through host and static profiles and compare state, actions, and structured rejections.
+
+Portable packages compile the same production sources for host and Embedded Swift. Conditional compilation may adapt unavailable mechanics but must not change semantics. Keep portable packages free of Foundation, MQTT and NIO, ErrorKit, logging, actors, controllers, lifecycle frameworks, transports, process-global state, and runtime tasks unless the ownership list above explicitly allows them.
 
 ## Source conventions
 
-- New comment-capable source files need `// Copyright (c) <year> <contributor>. Licensed under the MIT License.` using the first publication year.
+- Add `// Copyright (c) <year> <contributor>. Licensed under the MIT License.` to new comment-capable source files, using the first publication year.
 - Follow the repository SwiftLint configuration.
-- Public types, properties, methods, initializers, and protocols require DocC, including parameters, return values, and errors where applicable.
-- Swift tests use Swift Testing, never XCTest.
+- Add DocC to public types, properties, methods, initializers, and protocols. Document parameters, returns, and errors when present.
+- Write Swift tests with Swift Testing, never XCTest.
 
-### Errors during the transition
+Host package APIs wrap foreign errors as `AxolotyError` at the public boundary. Portable protocol layers use focused typed errors and do not depend on ErrorKit. Log the full error chain only where a failure is handled, dropped, converted, or terminates an operation.
 
-Current host package APIs use `AxolotyError`/ErrorKit and must not leak bare foreign errors. Wrap foreign errors at the public boundary and log the full error chain only where a failure is handled, dropped, converted, or terminates an operation. Portable protocol layers use focused typed errors and must not depend on ErrorKit.
+Applications choose `swift-log` bootstrap and filtering. Use `Logging.Logger` only in targets that declare `swift-log`. Keep message text stable and dynamic values in metadata. Reuse or mint a local correlation or attempt identifier for multi-hop work without changing the wire contract. Use `RuntimeDiagnostics` for bounded host counters and streams.
 
-### Logging
+## Wire compatibility
 
-Applications choose their `swift-log` bootstrap and filtering policy. Use
-`Logging.Logger` only in targets that declare the `swift-log` product. Keep
-message text stable and put dynamic values in metadata. Correlate multi-hop
-flows with an existing correlation or attempt identifier, or mint a local one
-without changing the wire contract. Use `RuntimeDiagnostics` for bounded host
-runtime counters and streams.
+The pinned CoatyJS reference agent under `Tests/Support/WireCompatibility/ReferenceAgents/` is the wire-shape authority.
 
-### Wire compatibility
-
-Axoloty targets wire compatibility with pinned CoatyJS reference agent (`Tests/Support/WireCompatibility/ReferenceAgents/`). Reference = source of truth for wire shape.
-
-- **Match CoatyJS where possible.** Axoloty/CoatyJS disagree on wire detail (field presence, payload wrapping, encoding overload): default = change Axoloty to match reference, not record difference as accepted. Captured discrepancy = defect to fix, not divergence to ratify — unless matching impossible or more harmful than breaking.
-- **Remain compatible despite divergence.** Unavoidable divergence: Axoloty must still tolerate peer's wire shape. Decode optional fields defensively (never force-unwrap field peer may omit), accept bare payload external producer sends. Trapping on peer's legitimate omission = bug, not compatibility boundary.
-- **No accidental divergences.** Wire-format or field-presence change requires regression test locking in new behavior + update to `docs/wire-compatibility.md`. Record only deliberate, unavoidable divergences (e.g. platform constraint like CoatyJS hardcoding QoS 0) with capture evidence + linked decision.
+- Change Axoloty to match CoatyJS when possible. Treat a captured discrepancy as a defect unless matching is impossible or causes greater breakage.
+- Tolerate a legitimate peer shape when divergence is unavoidable. Decode optional fields defensively and accept bare payloads emitted by external producers.
+- Add a regression test and update `docs/wire-compatibility.md` for every wire-format or field-presence change. Record only deliberate, unavoidable divergence with capture evidence and a linked decision.

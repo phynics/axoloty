@@ -10,7 +10,6 @@ trap 'rm -rf "$tmp"' EXIT
 
 mkdir -p "$tmp/Packages/AxolotySensorThings/Sources/AxolotySensorThings" \
     "$tmp/Packages/AxolotySensorThings/Tests/AxolotySensorThingsTests"
-printf '%s\n' 'policy' > "$tmp/Packages/AxolotySensorThings/AGENTS.md"
 printf '%s\n' 'mutating func sensorThings(' > "$tmp/Packages/AxolotySensorThings/Sources/AxolotySensorThings/SensorThingsRuntime.swift"
 printf '%s\n' 'tests' > "$tmp/Packages/AxolotySensorThings/Tests/AxolotySensorThingsTests/SensorThingsSourceWorkflowTests.swift"
 printf '%s\n' 'tests' > "$tmp/Packages/AxolotySensorThings/Tests/AxolotySensorThingsTests/SensorThingsDirectObservationTests.swift"
