@@ -47,7 +47,11 @@ path_is_inside_source() {
 # Keep all generated compiler and macro state in a caller-owned temporary
 # tree. In particular, do not use the firmware build directory or a package's
 # implicit .build directory for this Core-only proof.
-scratch_parent=${AXOLOTY_EMBEDDED_CORE_CHECK_DIR:-${TMPDIR:-/tmp}/axoloty-embedded-core}
+# The repository container sets TMPDIR under the mounted Core checkout for
+# bridge artifacts. That location is intentionally invalid for the public
+# consumer command, so use an independent caller-owned default unless the
+# caller supplies an explicit absolute directory.
+scratch_parent=${AXOLOTY_EMBEDDED_CORE_CHECK_DIR:-/tmp/axoloty-embedded-core}
 case "$scratch_parent" in
     /*) ;;
     *)
