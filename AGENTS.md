@@ -1,6 +1,8 @@
 # Agent instructions for Axoloty
 
-This file is the repository's contributor constitution. It applies to every path. Keep policy here unless a subtree has substantial, durable needs that cannot remain clear at the root.
+This is the repository-wide contributor constitution and the sole `AGENTS.md`.
+Keep policy here; add a nested guide only for a durable constraint that cannot
+be stated clearly at this level.
 
 ## Documentation authority
 
@@ -26,7 +28,7 @@ Use repository entry points:
 
 Use `make verify-ci` only to reproduce the required CI plan. Use `make checkpoint` and `make checkpoint-hardware` for release validation. Ordinary verification never probes hardware.
 
-Linux product and Embedded Swift builds use the pinned container through root Make targets. Do not run native Swift product builds on Linux. Run `make embedded-toolchain-doctor` for device-independent setup diagnostics. A cold mounted-worktree build on a four-core Linux host can spend about 15 minutes compiling tooling before the requested node starts. While compiler steps advance, let the repository timeout own the deadline.
+Linux product and Embedded Swift builds use the pinned container through root Make targets. Do not run native Swift product builds on Linux. Run `make embedded-toolchain-doctor` for device-independent setup diagnostics. A cold mounted-worktree build on a four-core Linux host can spend about 15 minutes compiling tooling before the requested node starts. The external consumer proof may run for up to two hours; compiler and heartbeat output are progress even when no test name changes, so let the repository timeout own the deadline and do not cancel an advancing build. Keep one `AXOLOTY_PROOF_RUN_ID` across proof build, flash, and validation.
 
 The Makefile and shell launchers are thin bootstrap and compatibility layers. Put orchestration policy, validation, and lifecycle behavior in `AxolotyTooling`. `Package.resolved` is authoritative. Use the repository resolution target for an authorized dependency update.
 
