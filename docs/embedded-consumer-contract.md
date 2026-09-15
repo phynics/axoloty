@@ -177,9 +177,12 @@ Override `EMBEDDED_DEVICE` when enumeration differs. The flash stage never
 rebuilds: it requires the existing `flash_args` and `axoloty-swift.bin`,
 queries and validates the ESP32-C6 identity, flashes that exact artifact,
 captures bounded serial output, and validates the checksummed
-`embedded-swift-smoke-v2` JSONL boot, all 22 cases, summary, and completion.
-Any reboot, fatal output, malformed record, checksum failure, missing case, or
-timeout leaves the proof failed. Durable evidence is copied to
+`embedded-swift-smoke-v2` JSONL boot, all 312 deterministic checks, summary, and
+completion. A reboot before the passed completion record, fatal output,
+malformed record, checksum failure, missing case, or timeout leaves the proof
+failed. The firmware may perform its intentional post-completion restart after
+the validator has observed the passed completion record. Durable evidence is
+copied to
 `.testing/embedded/consumer-proof/<run-id>/`:
 
 ```text

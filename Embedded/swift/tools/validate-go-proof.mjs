@@ -3,6 +3,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { createEmbeddedSwiftTestValidator } from "./validate-smoke.mjs";
 
 const [evidenceDirInput, buildDirInput, coreDirInput, firmwareDirInput,
   expectedCoreSha, preparationScratchInput, device, proofRunId] = process.argv.slice(2);
@@ -112,6 +113,23 @@ expect(samePath(deviceManifest.rawInfoPath, path.join(evidenceDir, "device-info-
   "device manifest raw-info link is invalid");
 expect(/ESP32-C6/i.test(fs.readFileSync(path.join(evidenceDir, "device-info-raw.txt"), "utf8")),
   "device-info-raw.txt does not identify ESP32-C6");
+
+const flashLog = fs.readFileSync(path.join(evidenceDir, "flash.log"), "utf8");
+expect(/Hash of data verified\./.test(flashLog), "flash.log does not prove an esptool write verification");
+
+const replayValidator = createEmbeddedSwiftTestValidator();
+const smokeLog = fs.readFileSync(path.join(evidenceDir, "swift-smoke-log.txt"), "utf8");
+for (const rawLine of smokeLog.split(/\r?\n/)) {
+  const start = rawLine.indexOf("{");
+  const end = rawLine.lastIndexOf("}");
+  const line = start >= 0 && end >= start ? rawLine.slice(start, end + 1) : rawLine;
+  if (replayValidator.observe(line)) break;
+}
+const replayedSmoke = replayValidator.result();
+expect(replayedSmoke.passed === true,
+  `serial smoke log does not replay as passed: ${replayedSmoke.reason ?? "unknown failure"}`);
+expect(JSON.stringify(smoke.validation) === JSON.stringify(replayedSmoke),
+  "recorded smoke result differs from the independently replayed serial log");
 
 expect(smoke.schemaVersion === 2 && smoke.runId === "embedded-swift-smoke-v2" && smoke.device === device &&
   Number.isInteger(smoke.linesCaptured) && smoke.linesCaptured > 0 && smoke.validation?.passed === true,
