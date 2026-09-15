@@ -32,7 +32,7 @@ rm -f "$evidence_dir/build-provenance.json" "$evidence_dir/axoloty-swift.bin"
 rm -rf "$build_project_dir"
 mkdir -p "$build_project_dir"
 rm -f "$build_dir/flash_args" "$build_dir/axoloty-swift.bin"
-"$script_dir/validate.sh" "$manifest"
+"$project_dir/tools/validate.sh" "$manifest"
 manifest=$(realpath -e -- "$manifest")
 export AXOLOTY_CONSUMER_MANIFEST="$manifest"
 

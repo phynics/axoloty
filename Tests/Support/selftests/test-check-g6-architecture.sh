@@ -27,8 +27,11 @@ printf '%s\n' 'path: "Packages/AxolotyWire/Sources/AxolotyWire"' 'path: "Package
 printf '%s\n' 'file(GLOB AXOLOTY_WIRE_SOURCES "${AXOLOTY_WIRE_SOURCE_DIR}/*.swift")' > "$fixture/Embedded/swift/components/axoloty_wire/CMakeLists.txt"
 printf '%s\n' 'file(GLOB AXOLOTY_PROTOCOL_SOURCES "${AXOLOTY_PROTOCOL_SOURCE_DIR}/*.swift")' > "$fixture/Embedded/swift/components/axoloty_protocol/CMakeLists.txt"
 printf '%s\n' \
-    '"Packages/AxolotyWire/Sources/AxolotyWire"' \
-    '"Packages/AxolotyProtocol/Sources/AxolotyProtocol"' \
+    'string(JSON AXOLOTY_PACKAGE_NAME GET "${AXOLOTY_CONSUMER_JSON}" portablePackages 0 name)' \
+    'if(AXOLOTY_PACKAGE_NAME STREQUAL "AxolotyWire")' \
+    'set(AXOLOTY_WIRE_SOURCE_DIR "${AXOLOTY_PACKAGE_SOURCE}")' \
+    'if(AXOLOTY_PACKAGE_NAME STREQUAL "AxolotyProtocol")' \
+    'set(AXOLOTY_PROTOCOL_SOURCE_DIR "${AXOLOTY_PACKAGE_SOURCE}")' \
     > "$fixture/Embedded/swift/cmake/axoloty-source.cmake"
 
 (cd "$fixture" && "$fixture/Tests/Support/checks/check-g6-architecture.sh") >/dev/null

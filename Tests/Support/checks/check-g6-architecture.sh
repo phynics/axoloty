@@ -48,10 +48,12 @@ printf '%s' "$wire_text" | grep -Fq '"${AXOLOTY_WIRE_SOURCE_DIR}/*.swift"' \
     || fail "ESP-IDF AxolotyWire component does not compile the resolved package source root"
 printf '%s' "$protocol_text" | grep -Fq '"${AXOLOTY_PROTOCOL_SOURCE_DIR}/*.swift"' \
     || fail "ESP-IDF AxolotyProtocol component does not compile the resolved package source root"
-printf '%s' "$resolver_text" | grep -Fq '"Packages/AxolotyWire/Sources/AxolotyWire"' \
-    || fail "Embedded source resolver does not bind AxolotyWire to its package source root"
-printf '%s' "$resolver_text" | grep -Fq '"Packages/AxolotyProtocol/Sources/AxolotyProtocol"' \
-    || fail "Embedded source resolver does not bind AxolotyProtocol to its package source root"
+printf '%s' "$resolver_text" | grep -Fq 'portablePackages' \
+    || fail "Embedded source resolver does not read portable package paths from the preparation report"
+printf '%s' "$resolver_text" | grep -Fq 'STREQUAL "AxolotyWire"' \
+    || fail "Embedded source resolver does not bind AxolotyWire from the preparation report"
+printf '%s' "$resolver_text" | grep -Fq 'STREQUAL "AxolotyProtocol"' \
+    || fail "Embedded source resolver does not bind AxolotyProtocol from the preparation report"
 
 wire_sources=$(find "$wire_dir" -maxdepth 1 -type f -name '*.swift' -printf '%f\n' | sort)
 protocol_sources=$(find "$protocol_dir" -maxdepth 1 -type f -name '*.swift' -printf '%f\n' | sort)
