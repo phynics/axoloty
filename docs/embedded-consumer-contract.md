@@ -131,11 +131,21 @@ two source trees read-only:
   working-evidence/ # intermediate evidence before durable copy
 ```
 
-From a fresh, detached `origin/main` driver checkout, prepare the pinned
-image and choose one run identifier. The build is rootless and may take up to
-two hours on this four-core machine; cold Swift macro preparation can spend
-about 15 minutes compiling before ESP-IDF starts. Do not cancel while compiler
-or heartbeat output advances.
+Create a fresh, detached `origin/main` driver checkout. Keep this driver
+checkout separate from both the Core and firmware trees that the proof creates:
+
+```sh
+export AXOLOTY_PROOF_DRIVER=/tmp/axoloty-go-driver
+git clone https://github.com/phynics/axoloty.git "$AXOLOTY_PROOF_DRIVER"
+cd "$AXOLOTY_PROOF_DRIVER"
+git switch --detach origin/main
+test -z "$(git status --porcelain)"
+```
+
+Prepare the pinned image and choose one run identifier. The build is rootless
+and may take up to two hours on this four-core machine; cold Swift macro
+preparation can spend about 15 minutes compiling before ESP-IDF starts. Do not
+cancel while compiler or heartbeat output advances.
 
 ```sh
 export AXOLOTY_PROOF_RUN_ID="go-$(date -u +%Y%m%dT%H%M%SZ)"
