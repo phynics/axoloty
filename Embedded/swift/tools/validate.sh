@@ -60,13 +60,12 @@ if [ ! -f "$revision_file" ] ||
     exit 1
 fi
 
-# The firmware may use its own tools, but the source tree must not name Core's
-# private tests, resolver scripts, or root build. Excluding this tools folder
-# keeps the audit rule out of its own result. The generated clean-room record
-# names that exclusion.
+# The firmware source tree, including its own tools, must not name Core's
+# private tests, resolver scripts, or root build. The path fragment is built at
+# runtime so this checker does not exempt or hide its own policy string.
 if command -v rg >/dev/null 2>&1; then
     private_tests_path=$(printf '%s/%s' Tests Support)
-    if (cd "$project_dir" && rg -n --hidden --glob '!.git/**' --glob '!tools/**' \
+    if (cd "$project_dir" && rg -n --hidden --glob '!.git/**' \
         "Packages/|\\.build/|${private_tests_path}|resolve-embedded-core|prepare-embedded-core" \
         .); then
         echo "error: firmware source contains an unsupported Core or private support reference" >&2
@@ -146,7 +145,7 @@ const record = {
   portableSourceCopied: false,
   proofRunId: process.env.PROOF_RUN_ID,
   privateReferenceScan: "passed",
-  privateReferenceScanExcluded: "tools/**",
+  privateReferenceScanExcluded: null,
   manifest: process.env.MANIFEST,
 };
 const temporary = `${process.env.CLEAN_ROOM}.tmp-${process.pid}`;
