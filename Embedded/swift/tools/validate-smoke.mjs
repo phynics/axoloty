@@ -19,6 +19,49 @@ export const expectedSmokeTests = new Set([
   "config:payloadMax2048", "config:topicMax256",
 ]);
 
+const corpusOperations = [
+  "topicParse", "dtoDecode", "dtoEncode", "combined", "borrowed", "topicBuild",
+];
+
+/** Stable production-vector IDs emitted by the offline firmware smoke image. */
+export const expectedVectorTests = new Set([
+  "writer:zero", "writer:one", "writer:minusOne", "writer:max", "writer:min",
+  "topic:exact", "topic:underCapacity", "topic:overflow",
+  "capacity:payload0", "capacity:payload1", "capacity:payload512",
+  "capacity:payload2047", "capacity:payload2048", "capacity:payload2049", "capacity:topic0",
+  "capacity:topic1", "capacity:topic256", "capacity:topic257",
+  "malformed:truncation", "malformed:corruption", "malformed:utf8",
+  "malformed:escape", "malformed:literal", "malformed:number",
+  "malformed:missing", "malformed:unknown", "malformed:duplicate",
+  "malformed:reordered", "malformed:trailing", "malformed:nesting",
+  "borrowed:topicView", "borrowed:reader", "router:subscribe", "router:dispatch",
+  "agent:identity", "agent:advertise", "agent:deadvertise", "agent:advertisedState",
+  "agent:discover", "agent:discoverById", "agent:rejectWrongFilter",
+  "agent:beginDiscover", "agent:boundedOutstanding",
+  "agent:wrongCorrelation", "agent:resolve", "agent:duplicateResolve",
+  "agent:beginTimedDiscover", "agent:resolveTimeout",
+  "agent:fixedPublish", "agent:fixedDeadvertise",
+  "agent:fixedDiscover", "agent:fixedResolve",
+  "agent:callbackRejectUnsolicitedResolve", "agent:callbackAdvertise",
+  "agent:callbackResolve", "agent:callbackRejectDuplicateResolve",
+]);
+
+const firmwareToolsDirectory = path.dirname(fileURLToPath(import.meta.url));
+const fixtureManifest = JSON.parse(fs.readFileSync(
+  path.join(firmwareToolsDirectory, "../fixtures/manifest.json"), "utf8",
+));
+if (!Array.isArray(fixtureManifest.cases)) {
+  throw new Error("firmware fixture manifest must contain a cases array");
+}
+
+/** Complete offline proof stream, including vectors and the firmware corpus. */
+export const expectedEmbeddedSwiftTests = new Set([
+  ...expectedSmokeTests,
+  ...expectedVectorTests,
+  ...fixtureManifest.cases.flatMap(({ id }) =>
+    corpusOperations.map(operation => `corpus:${id}:${operation}`)),
+]);
+
 const fatalFragments = ["Guru Meditation", "Task watchdog got triggered", "abort()", "Backtrace:"];
 const recordStages = new Set(["boot", "execute", "summary", "completion"]);
 
@@ -144,19 +187,26 @@ export function createEmbeddedSwiftSmokeValidator(expectedTests = expectedSmokeT
   return { observe, result };
 }
 
+/** Creates the strict validator used by the firmware-owned proof runner. */
+export function createEmbeddedSwiftTestValidator() {
+  return createEmbeddedSwiftSmokeValidator(expectedEmbeddedSwiftTests);
+}
+
 function runCLI() {
   const [logPath, resultPath, device = "unknown", deadline = "0"] = process.argv.slice(2);
   if (!logPath || !resultPath) {
     console.error("usage: validate-smoke.mjs serial-log result-json [device] [deadline-seconds]");
     process.exit(64);
   }
-  const validator = createEmbeddedSwiftSmokeValidator();
+  const validator = createEmbeddedSwiftTestValidator();
   const lines = fs.readFileSync(logPath, "utf8").split(/\r?\n/);
   for (const rawLine of lines) {
     const start = rawLine.indexOf("{");
     const end = rawLine.lastIndexOf("}");
-    if (start >= 0 && end >= start) validator.observe(rawLine.slice(start, end + 1));
-    else validator.observe(rawLine);
+    const done = start >= 0 && end >= start
+      ? validator.observe(rawLine.slice(start, end + 1))
+      : validator.observe(rawLine);
+    if (done) break;
   }
   const validation = validator.result();
   const output = {
