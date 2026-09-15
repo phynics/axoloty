@@ -131,9 +131,12 @@ struct AxolotyRepositoryValidationCommands: Sendable {
     /// Parses and executes one repository validation command.
     func run(arguments: [String]) -> AxolotyCommandResult {
         var format = "human"
+        var validateEmbeddedConsumerContract = false
         var index = 0
         while index < arguments.count {
             switch arguments[index] {
+            case "--embedded-consumer-contract":
+                validateEmbeddedConsumerContract = true
             case "--json":
                 format = "json"
             case "--format":
@@ -155,7 +158,18 @@ struct AxolotyRepositoryValidationCommands: Sendable {
             }
             index += 1
         }
-        let report = AxolotyRepositoryAuthorityValidator(root: repositoryRoot).validate()
+        let authorityReport = AxolotyRepositoryAuthorityValidator(root: repositoryRoot).validate()
+        let contractFindings = validateEmbeddedConsumerContract
+            ? AxolotyEmbeddedConsumerContractValidator(root: repositoryRoot).validate()
+            : []
+        let findings = (authorityReport.findings + contractFindings).sorted {
+            ($0.path ?? "", $0.rule, $0.message) < ($1.path ?? "", $1.rule, $1.message)
+        }
+        let report = AxolotyRepositoryAuthorityReport(
+            version: authorityReport.version,
+            status: findings.isEmpty ? "passed" : "failed",
+            findings: findings
+        )
         if format == "json" {
             return (try? AxolotyCommandFamilySupport.jsonResult(report, exitCode: report.status == "passed" ? 0 : 1))
                 ?? AxolotyCommandResult(standardError: "error: unable to encode repository authority report\n", exitCode: 70)

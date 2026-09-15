@@ -17,6 +17,7 @@ public struct AxolotyCommandDispatcher: Sendable {
     private let timingCommands: AxolotyTimingCommandRunner
     private let repositoryValidationCommands: AxolotyRepositoryValidationCommands
     private let releaseCommands: AxolotyReleaseCommands
+    private let embeddedConsumerPreparation: AxolotyEmbeddedConsumerPreparation
 
     /// Creates a dispatcher from live executable configuration.
     ///
@@ -92,8 +93,12 @@ public struct AxolotyCommandDispatcher: Sendable {
             planResolver: try? planResolution.get()
         )
         let fileSystem = fileSystem ?? FoundationFileSystem()
-        let normalizedRepositoryRoot = (repositoryRoot ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
-            .standardizedFileURL
+        let environmentRepositoryRoot = environment["AXOLOTY_SOURCE_DIR"].flatMap { path in
+            path.isEmpty ? nil : URL(fileURLWithPath: path)
+        }
+        let normalizedRepositoryRoot = (
+            repositoryRoot ?? environmentRepositoryRoot ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        ).standardizedFileURL
         let processRunnerFactory = processRunnerFactory ?? { FoundationProcessRunner() }
         let portProbe = portProbe ?? FoundationServiceProbe()
         let tempDirProvider = tempDirProvider ?? FoundationTempDirectoryProvider()
@@ -171,6 +176,10 @@ public struct AxolotyCommandDispatcher: Sendable {
                 ISO8601DateFormatter().string(from: Date())
             }
         )
+        self.embeddedConsumerPreparation = AxolotyEmbeddedConsumerPreparation(
+            environment: environment,
+            commandRunner: configuredCommandRunner
+        )
     }
 
     /// Resolves command-line arguments to their externally visible result.
@@ -235,6 +244,8 @@ public struct AxolotyCommandDispatcher: Sendable {
             return checkCommands.run(.embeddedDoctor)
         case .embeddedVerify:
             return checkCommands.run(.embeddedVerify)
+        case .embeddedConsumerPrepare(let arguments):
+            return embeddedConsumerPreparation.run(arguments: arguments)
         case .release(let command):
             return releaseCommands.run(command)
         }
