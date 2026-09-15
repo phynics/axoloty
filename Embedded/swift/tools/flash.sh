@@ -88,7 +88,7 @@ if ! (
     cd "$build_dir"
     python3 "$idf_root/components/esptool_py/esptool/esptool.py" \
         --chip esp32c6 --port "$device" \
-        --before default_reset --after hard_reset write_flash @flash_args
+        --before default_reset --after no_reset write_flash @flash_args
 ) > "$evidence_dir/flash.log" 2>&1; then
     cat "$evidence_dir/flash.log" >&2
     echo "error: flashing failed for $device" >&2
