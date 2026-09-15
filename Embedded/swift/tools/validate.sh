@@ -15,6 +15,11 @@ build_dir=${EMBEDDED_BUILD_DIR:-"$proof_root/build"}
 evidence_dir=${EMBEDDED_EVIDENCE_DIR:-"$build_dir/evidence"}
 preparation_scratch=${EMBEDDED_PREPARATION_SCRATCH:-"$proof_root/core-tools"}
 manifest_input=${1:-"$evidence_dir/preparation.json"}
+device=${EMBEDDED_DEVICE:-}
+if [ -z "$device" ] && [ -f "$evidence_dir/device-manifest.json" ]; then
+    device=$(node -p 'require(process.argv[1]).device' "$evidence_dir/device-manifest.json")
+fi
+device=${device:-/dev/ttyACM0}
 
 if [ -z "${AXOLOTY_SOURCE_DIR:-}" ]; then
     echo "error: AXOLOTY_SOURCE_DIR must select the Core checkout" >&2
@@ -160,13 +165,9 @@ if [ "${EMBEDDED_VALIDATE_FINAL:-0}" = 1 ]; then
         echo "error: final proof is incomplete; go-proof.json is missing" >&2
         exit 1
     fi
-    node --input-type=module - "$final_proof" <<'JS'
-import fs from "node:fs";
-const proof = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-if (proof.result !== "passed" || proof.device !== "esp32c6" || proof.smoke?.validation?.passed !== true) {
-  throw new Error("go-proof.json does not report a passed ESP32-C6 smoke proof");
-}
-JS
+    node "$script_dir/validate-go-proof.mjs" \
+        "$evidence_dir" "$build_dir" "$core_dir" "$firmware_dir" \
+        "$expected_firmware_sha" "$preparation_scratch" "$device" "$proof_run_id"
 fi
 
 echo "External firmware validation passed"

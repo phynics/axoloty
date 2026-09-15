@@ -30,6 +30,13 @@ if [ ! -f "$manifest" ] || [ ! -f "$build_dir/flash_args" ] || \
     exit 1
 fi
 
+# Never allow a previous attempt's device or GO records to survive a retry.
+# The build provenance remains, but every flash-specific record is regenerated
+# from the device and artifact used by this invocation.
+rm -f "$evidence_dir/device-manifest.json" "$evidence_dir/device-info-raw.txt" \
+    "$evidence_dir/flash.log" "$evidence_dir/swift-smoke-log.txt" \
+    "$evidence_dir/swift-smoke-result.json" "$evidence_dir/go-proof.json"
+
 idf_path=${IDF_PATH:-/opt/esp/idf}
 # shellcheck source=/dev/null
 . "$idf_path/export.sh" >/dev/null 2>&1
@@ -47,8 +54,20 @@ fi
 node "$script_dir/write-device-manifest.mjs" \
     "$device" "$evidence_dir/device-info-raw.txt" "$evidence_dir/device-manifest.json"
 
-artifact="$build_dir/axoloty-swift.bin"
-artifact_real=$(realpath -e -- "$artifact")
+artifact=$(realpath -e -- "$build_dir/axoloty-swift.bin")
+artifact_real="$artifact"
+node --input-type=module - "$artifact" "$evidence_dir/build-provenance.json" <<'JS'
+import crypto from "node:crypto";
+import fs from "node:fs";
+
+const [artifactPath, provenancePath] = process.argv.slice(2);
+const provenance = JSON.parse(fs.readFileSync(provenancePath, "utf8"));
+const actual = crypto.createHash("sha256").update(fs.readFileSync(artifactPath)).digest("hex");
+if (provenance.artifact?.path !== artifactPath || provenance.artifact?.sha256 !== actual ||
+    provenance.firmwareSha256 !== actual) {
+  throw new Error("the built artifact changed after provenance was recorded");
+}
+JS
 artifact_in_flash_args=0
 for flash_arg in $(tr '\n' ' ' < "$build_dir/flash_args"); do
     case "$flash_arg" in
@@ -94,5 +113,5 @@ if [ "$monitor_status" -ne 0 ] && [ "$monitor_status" -ne 124 ]; then
 fi
 node "$script_dir/write-go-proof.mjs" \
     "$evidence_dir/build-provenance.json" "$smoke_result" \
-    "$evidence_dir/device-manifest.json" "$evidence_dir/go-proof.json"
+    "$evidence_dir/device-manifest.json" "$evidence_dir/go-proof.json" "$artifact"
 echo "External firmware flash and smoke validation passed: $device"

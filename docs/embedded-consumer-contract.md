@@ -131,8 +131,10 @@ two source trees read-only:
   working-evidence/ # intermediate evidence before durable copy
 ```
 
-Create a fresh, detached `origin/main` driver checkout. Keep this driver
-checkout separate from both the Core and firmware trees that the proof creates:
+After the remediation PRs merge, create a fresh, detached `origin/main` driver
+checkout. Keep this driver checkout separate from both the Core and firmware
+trees that the proof creates. While validating this branch before merge, use
+the proof branch's final commit in place of `origin/main`.
 
 ```sh
 export AXOLOTY_PROOF_DRIVER=/tmp/axoloty-go-driver
@@ -183,6 +185,8 @@ timeout leaves the proof failed. Durable evidence is copied to
 ```text
 build.log
 preparation.json
+clean-room.json
+consumer-preparation.stdout
 build-provenance.json
 device-manifest.json
 device-info-raw.txt

@@ -489,7 +489,13 @@ source_dir=$$(realpath -e -- "$(AXOLOTY_SOURCE_DIR)") || { echo 'AXOLOTY_SOURCE_
 test -d "$$source_dir/.git" -o -f "$$source_dir/.git" || { echo 'AXOLOTY_SOURCE_DIR is not a Git checkout' >&2; exit 64; }; \
 test -z "$$(git -C "$$source_dir" status --porcelain)" || { echo 'AXOLOTY_SOURCE_DIR must be clean' >&2; exit 1; }; \
 commit=$$(git -C "$$source_dir" rev-parse HEAD) || exit 1; \
-run_root="$(AXOLOTY_PROOF_ROOT)/$(AXOLOTY_PROOF_RUN_ID)"; \
+proof_root=$$(realpath -m -- "$(AXOLOTY_PROOF_ROOT)") || { echo 'AXOLOTY_PROOF_ROOT is not a valid path' >&2; exit 64; }; \
+evidence_root=$$(realpath -m -- "$(AXOLOTY_PROOF_EVIDENCE_ROOT)") || { echo 'AXOLOTY_PROOF_EVIDENCE_ROOT is not a valid path' >&2; exit 64; }; \
+case "$$proof_root/" in "$$source_dir/"*|"$$source_dir") echo 'proof root overlaps AXOLOTY_SOURCE_DIR' >&2; exit 64;; esac; \
+case "$$source_dir/" in "$$proof_root/"*|"$$proof_root") echo 'AXOLOTY_SOURCE_DIR overlaps proof root' >&2; exit 64;; esac; \
+case "$$evidence_root/" in "$$source_dir/"*|"$$source_dir") echo 'proof evidence root overlaps AXOLOTY_SOURCE_DIR' >&2; exit 64;; esac; \
+case "$$source_dir/" in "$$evidence_root/"*|"$$evidence_root") echo 'AXOLOTY_SOURCE_DIR overlaps proof evidence root' >&2; exit 64;; esac; \
+run_root="$$proof_root/$(AXOLOTY_PROOF_RUN_ID)"; \
 mkdir -p "$$run_root"; \
 if [ ! -e "$$run_root/core/.git" ]; then \
   test ! -e "$$run_root/core" || { echo 'proof Core directory is incomplete' >&2; exit 1; }; \

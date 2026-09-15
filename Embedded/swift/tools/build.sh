@@ -24,6 +24,14 @@ if [ -z "${AXOLOTY_PROOF_RUN_ID:-}" ] ||
     echo "error: AXOLOTY_PROOF_RUN_ID must be a stable filesystem-safe identifier" >&2
     exit 64
 fi
+# A retried build must not inherit a prior artifact, provenance record, or
+# generated ESP-IDF project. These paths are all inside the caller-owned proof
+# root and are recreated below; clearing them prevents a failed retry from
+# being mistaken for a successful build.
+rm -f "$evidence_dir/build-provenance.json" "$evidence_dir/axoloty-swift.bin"
+rm -rf "$build_project_dir"
+mkdir -p "$build_project_dir"
+rm -f "$build_dir/flash_args" "$build_dir/axoloty-swift.bin"
 "$script_dir/validate.sh" "$manifest"
 manifest=$(realpath -e -- "$manifest")
 export AXOLOTY_CONSUMER_MANIFEST="$manifest"
@@ -32,7 +40,6 @@ export AXOLOTY_CONSUMER_MANIFEST="$manifest"
 # project. The source checkout is mounted read-only by the outer runner, so
 # build a writable copy under the proof root while retaining the original
 # firmware root for clean-room and provenance checks.
-mkdir -p "$build_project_dir"
 cp -a "$project_dir/." "$build_project_dir/"
 
 idf_path=${IDF_PATH:-/opt/esp/idf}
