@@ -229,3 +229,26 @@ private func makeEmbeddedContractFixture() throws -> URL {
     )
     return fixture
 }
+
+@Test
+func macroExecutableNamesAcceptBothBuildSystemSpellings() {
+    // SwiftPM's native build system emits the "-tool" spelling the contract
+    // declares; Swift Build emits the bare target name.
+    #expect(
+        AxolotyEmbeddedConsumerPreparation.macroExecutableNames(
+            for: "AxolotyStaticRuntimeMacrosImplementation-tool"
+        ) == [
+            "AxolotyStaticRuntimeMacrosImplementation-tool",
+            "AxolotyStaticRuntimeMacrosImplementation",
+        ]
+    )
+}
+
+@Test
+func macroExecutableNamesLeaveAnUnsuffixedContractNameAlone() {
+    #expect(
+        AxolotyEmbeddedConsumerPreparation.macroExecutableNames(
+            for: "AxolotyStaticRuntimeMacrosImplementation"
+        ) == ["AxolotyStaticRuntimeMacrosImplementation"]
+    )
+}
