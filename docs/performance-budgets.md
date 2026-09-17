@@ -164,9 +164,11 @@ also equal `0`.
 |-------|-------|----------|
 | Payload | Axoloty limit: 2,048 bytes (static runtimes may select a smaller capacity) | Accepted at the selected limit, rejected above it; values above 2,048 are never accepted. Coaty does not impose this ceiling, so this is an intentional divergence. |
 | Topic | Axoloty limit: 256 bytes | Accepted at 256 bytes and rejected at 257 bytes. MQTT and Coaty do not impose this ceiling, so this is an intentional compatibility divergence. |
-| maxSubscribers | 8 | 9th rejected |
-| maxFamilyEntries | 16 | 17th rejected |
-| maxFamilySubscribers | 4 | 5th rejected |
+
+The subscriber and family-capacity rows were removed in 0.8.0 together with
+the `WireBufferConfig` constants that named them; nothing enforced those
+values. Protocol state capacity is a `ProtocolBufferConfig` preset chosen per
+runtime.
 
 Each size limit must declare `overLimitRejected: true`; a hard-coded
 over-limit "success" record is a validator failure.

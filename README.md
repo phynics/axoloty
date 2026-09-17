@@ -171,8 +171,9 @@ registration) with bounded capacities:
   limit, so messages above 2 KiB are an intentional compatibility divergence.
 - Static runtimes may select a smaller compile-time payload capacity (for
   example, `StaticRuntime<16, 128>`); 2,048 bytes remains the sealed maximum.
-- Max subscribers: 8
-- Max family entries: 16
+- Protocol state capacity is a compile-time preset of `ProtocolBufferConfig`.
+  The ESP32-C6 firmware profile uses `esp32C6Static = 16` simultaneous
+  objects and outstanding correlations.
 - QoS: 0 only
 - TLS: not supported
 - No IO routing, Channel, Query/Retrieve, Update/Complete, or Call/Return
@@ -180,6 +181,14 @@ registration) with bounded capacities:
 See [docs/embedded-toolchain.md](./docs/embedded-toolchain.md) for toolchain
 setup and [SUPPORT_MATRIX.md](./docs/SUPPORT_MATRIX.md) for the full
 capability matrix.
+
+Concrete firmware is moving to
+[`phynics/axoloty-embedded`](https://github.com/phynics/axoloty-embedded),
+tracked by [epic #845](https://github.com/phynics/axoloty/issues/845). This
+repository keeps the portable packages and proves they stay Embedded-Swift
+compatible; firmware consumes an exact Axoloty revision through the
+[embedded consumer contract](./docs/embedded-consumer-contract.md). The
+ESP32-C6 firmware still lives here until that migration lands.
 
 API documentation is built from in-source DocC comments and published to
 GitHub Pages: <https://phynics.github.io/axoloty/documentation/Axoloty/>.
