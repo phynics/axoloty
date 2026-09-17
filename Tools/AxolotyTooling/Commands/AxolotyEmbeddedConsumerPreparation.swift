@@ -179,8 +179,15 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
         let binOutput = bin.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
         let binLines = binOutput.split(whereSeparator: { character in character == "\n" || character == "\r" })
         let binPath = binLines.last.map(String.init) ?? ""
-        let macroURL = URL(fileURLWithPath: binPath).appendingPathComponent(contract.macroExecutable)
-        guard let macro = canonicalExistingFile(macroURL.path), isOutside(path: macro, root: coreURL), isWithin(path: macro, root: scratchURL) else {
+        // SwiftPM's native build system names a macro executable
+        // "<target>-tool". Swift Build, the default on an Apple host from
+        // Swift 6.4, emits the bare target name. Accept either, preferring
+        // the contract spelling, and report whichever resolved.
+        let binURL = URL(fileURLWithPath: binPath)
+        let resolvedMacro = Self.macroExecutableNames(for: contract.macroExecutable).lazy.compactMap { name in
+            canonicalExistingFile(binURL.appendingPathComponent(name).path)
+        }.first
+        guard let macro = resolvedMacro, isOutside(path: macro, root: coreURL), isWithin(path: macro, root: scratchURL) else {
             return failure("static-runtime macro executable must be inside caller-owned scratch", code: 1)
         }
         let jsonURL = scratchURL.appendingPathComponent("checkouts/swift-json/Sources/_JSONCore")
@@ -243,6 +250,17 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
         guard arguments.count == 4, arguments[0] == "--scratch", arguments[2] == "--output" else { return nil }
         guard arguments[1].hasPrefix("/"), arguments[3].hasPrefix("/") else { return nil }
         return Paths(scratch: arguments[1], output: arguments[3])
+    }
+
+    /// Macro executable names to try, in preference order.
+    ///
+    /// SwiftPM's native build system emits `<target>-tool`, the spelling the
+    /// contract declares. Swift Build, the default on an Apple host from
+    /// Swift 6.4, emits the bare target name.
+    static func macroExecutableNames(for contractName: String) -> [String] {
+        let suffix = "-tool"
+        guard contractName.hasSuffix(suffix) else { return [contractName] }
+        return [contractName, String(contractName.dropLast(suffix.count))]
     }
 
     private func parseContract(_ data: Data) -> Contract? {
