@@ -9,10 +9,41 @@ fork, through CoatySwift 2.4.0, remain documented in the
 
 ## [Unreleased]
 
-Strategy for the next line is tracked in [`docs/ROADMAP.md`](./docs/ROADMAP.md).
+No changes are pending. Strategy for the next line is tracked in
+[`docs/ROADMAP.md`](./docs/ROADMAP.md).
+
+## [0.8.0] - 2026-09-17
+
+Axoloty 0.8.0 is a source-breaking release. It is the exact Core revision that
+the embedded firmware split (epic #845) locks against. It is still pre-1.0 and
+its public API may change.
 
 ### Added
 
+- A versioned embedded consumer contract,
+  `docs/embedded-consumer-contract.json`, naming the five portable packages
+  (`AxolotyWire`, `AxolotyObjectModel`, `AxolotyProtocol`,
+  `AxolotyCoatyModels`, `AxolotyStaticRuntime`), their required Swift 6,
+  Embedded, and Lifetimes flags, the `StaticIoActor` macro plugin inputs, and
+  the pinned `swift-json` identity. `axoloty-tool repository validate
+  --embedded-consumer-contract` checks it against the package manifests and
+  locks, and `axoloty-tool embedded consumer prepare` prepares a consumer in
+  caller-owned scratch space.
+- `AXOLOTY_SOURCE_DIR` as the single explicit override that selects the Core
+  checkout for firmware builds. Build diagnostics report the selected commit
+  and whether that checkout is dirty.
+- A required, firmware-independent CI gate
+  (`make check-embedded-core-consumer`) that compiles the portable packages for
+  riscv32 Embedded Swift, expands the production `StaticIoActor` macro,
+  compiles an external consumer fixture, and partially links the result.
+- `RuntimeTransportFailure`, the owned `Sendable` value a transport passes to
+  the runtime failure callback.
+- `RuntimeTransportLastWill` and
+  `MQTTBinding.start(receive:lastWill:)`. The host runtime installs its
+  identity deadvertisement as a non-retained QoS 0 MQTT last will and reuses
+  it on reconnect.
+- Optional `maximumObjects` and `maximumPendingCorrelations` limits on
+  `StaticRuntimeDefinition`, forwarded to the protocol processor.
 - A `ci`-tier gate (`g6-unused-product-deps`) that fails when a target
   declares a SwiftPM product dependency no source in it imports. It caught
   a real instance on introduction: `AxolotyTests` declared `IkigaJSON`
@@ -26,9 +57,41 @@ Strategy for the next line is tracked in [`docs/ROADMAP.md`](./docs/ROADMAP.md).
   (`commandRunner*`/`projectCommand*`/`mqttService*`/`devService*`/
   `mcpService*`) are registered to `phynics` with a 2026-10-18 deadline.
 
+### Changed
+
+- **Breaking:** `AxolotyRuntimeTransport.setFailureHandler(_:)` takes a
+  `(RuntimeTransportFailure) -> Void` handler instead of `(Error) -> Void`.
+  Custom transports must update the signature and wrap foreign errors before
+  invoking it. A transport that keeps the 0.7 signature still compiles but
+  never receives the handler.
+- **Breaking:** `StaticRuntimeDefinition.init` and `StaticRuntime.init`
+  throw `ProtocolCapacityError` for an invalid payload, object, or
+  correlation capacity instead of trapping.
+- A failed static-runtime action batch rolls back its sink slots and byte
+  arenas, so a rejected operation leaves no partial state.
+- `AxolotyRuntime.state()` reports a normally closed runtime as `.stopped`;
+  `.failed` is reserved for actual failures.
+- `AxolotyRuntime.run()` wakes from an executor-owned termination signal on
+  stop, close, or failure instead of polling every 25 ms, and handles
+  cancellation during startup and graceful shutdown.
+- MQTT profile subscription install and removal failures map to
+  `AxolotyError.network` and clear the failed subscription state.
+- Embedded entry points no longer discover Core through parent directories or
+  a root `.build` path. Firmware-mediated build, link, and evidence nodes are
+  no longer required CI nodes; explicit release commands still run them.
+
 ### Removed
 
+- **Breaking:** `WireBufferConfig.maxSubscribers`,
+  `WireBufferConfig.maxFamilyEntries`, and
+  `WireBufferConfig.maxFamilySubscribers`. Nothing enforced them; protocol
+  capacities are owned by `AxolotyProtocol`.
 - `AxolotyTests`'s unused `IkigaJSON` product dependency.
+
+### Fixed
+
+- `Examples/Package.swift` resolves the root package by an explicit name, so
+  it builds from a checkout whose directory is not named `workspace`.
 
 ## [0.7.0] - 2026-09-06
 
@@ -326,7 +389,10 @@ and reproducible compatibility and resource evidence.
 Initial Axoloty prerelease as an independently maintained, modernized fork of
 CoatySwift.
 
-[Unreleased]: https://github.com/phynics/axoloty/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/phynics/axoloty/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/phynics/axoloty/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/phynics/axoloty/compare/v0.6.2...v0.7.0
+[0.6.2]: https://github.com/phynics/axoloty/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/phynics/axoloty/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/phynics/axoloty/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/phynics/axoloty/compare/v0.5.0...v0.5.1

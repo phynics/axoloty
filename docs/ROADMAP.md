@@ -4,13 +4,37 @@ Axoloty is a Swift runtime and protocol suite for collaborative distributed agen
 
 ## Current checkpoint
 
-[`VERSION`](../VERSION) identifies the current released version (`0.7.0`). Axoloty remains pre-1.0 and its public API may change. The 0.7 line is the active checkpoint; no successor line is open.
+[`VERSION`](../VERSION) identifies the current released version (`0.8.0`). Axoloty remains pre-1.0 and its public API may change. The 0.8 line is the active checkpoint.
 
 Historical release outcomes are preserved in [`docs/releases/`](./releases/) and [`CHANGELOG.md`](../CHANGELOG.md). They do not define current strategy.
 
-## Active direction: 0.7 architecture stabilization and transport boundary
+## Active direction: embedded firmware split, then Swift 6.4
 
-The 0.7 line has two accepted programs. [Epic #753](https://github.com/phynics/axoloty/issues/753)
+Axoloty 0.8.0 is the Core revision that the embedded firmware split starts
+from. It publishes the versioned
+[embedded consumer contract](./embedded-consumer-contract.md) and a
+firmware-independent Embedded Swift portability gate in required CI. Outcomes
+are recorded in [`docs/releases/0.8.0.md`](./releases/0.8.0.md).
+
+The programs run in this order:
+
+1. [Epic #845](https://github.com/phynics/axoloty/issues/845) moves concrete
+   firmware products, board and toolchain integration, and device
+   qualification into `phynics/axoloty-embedded`. Axoloty keeps the portable
+   protocol/runtime implementation and proves it remains Embedded Swift
+   compatible. The pre-split gate (S1–S3) passed and the owner recorded GO;
+   repository extraction proceeds from S4.
+2. [Epic #878](https://github.com/phynics/axoloty/issues/878) adopts Swift 6.4
+   after the firmware migration lands, so a toolchain change never overlaps a
+   behavior-preserving move.
+
+Embedded Zenoh implementation under
+[epic #796](https://github.com/phynics/axoloty/issues/796) is blocked on the
+split. Host and shared Zenoh work stays in Axoloty.
+
+## Completed: 0.7 architecture stabilization and transport boundary
+
+The 0.7 line had two accepted programs. [Epic #753](https://github.com/phynics/axoloty/issues/753)
 concentrated
 orchestration, runtime registration, SensorThings workflows, and typed IO
 state behind deep modules with explicit ownership.
@@ -90,7 +114,7 @@ Implementation tickets are created lazily as each gate opens. [AT Protocol resea
 
 ## Explicit non-goals
 
-These remain out of scope through the 0.7 line:
+These remain out of scope through the 0.8 line:
 
 - a production `axoloty/1` extension profile;
 - dynamic profile registration or live runtime reconfiguration;
