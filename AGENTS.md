@@ -4,6 +4,17 @@ This is the repository-wide contributor constitution and the sole `AGENTS.md`.
 Keep policy here; add a nested guide only for a durable constraint that cannot
 be stated clearly at this level.
 
+## Related repositories
+
+[`phynics/axoloty-embedded`](https://github.com/phynics/axoloty-embedded) owns
+concrete firmware products: applications, board and SDK integration, embedded
+transport backends, profiles, and device qualification. This repository owns
+the portable protocol and runtime implementation and proves it stays
+Embedded-Swift compatible. The boundary and its migration are tracked by
+[epic #845](https://github.com/phynics/axoloty/issues/845).
+
+Ordinary Axoloty work needs no checkout of that repository.
+
 ## Documentation authority
 
 1. Executable code, manifests, and tests describe current behavior.
@@ -27,6 +38,8 @@ Use repository entry points:
 4. `make explain TIER=ci` — inspect the graph and policies without execution.
 
 Use `make verify-ci` only to reproduce the required CI plan. Use `make checkpoint` and `make checkpoint-hardware` for release validation. Ordinary verification never probes hardware.
+
+The supported external-consumer boundary is `docs/embedded-consumer-contract.json`, reached through `axoloty-tool embedded consumer prepare`. A consumer selects a checkout with `AXOLOTY_SOURCE_DIR` and owns its own scratch space. Never expose Axoloty's root `.build`, a parent-directory layout, or anything under `Tests/` to a firmware consumer, and never copy portable source out of this repository.
 
 Linux product and Embedded Swift builds use the pinned container through root Make targets. Do not run native Swift product builds on Linux. Run `make embedded-toolchain-doctor` for device-independent setup diagnostics. A cold mounted-worktree build on a four-core Linux host can spend about 15 minutes compiling tooling before the requested node starts. The external consumer proof may run for up to two hours; compiler and heartbeat output are progress even when no test name changes, so let the repository timeout own the deadline and do not cancel an advancing build. Keep one `AXOLOTY_PROOF_RUN_ID` across proof build, flash, and validation.
 
@@ -67,7 +80,7 @@ See `ARCHITECTURE.md`, `CONTEXT.md`, `docs/adr/`, `docs/ROADMAP.md`, and `docs/p
 - `AxolotyStaticRuntime` owns fixed synchronous composition around one shared processor, one subscription registry, one caller-drained owning action sink, and one slot-indexed endpoint registry. It may keep one pending latest value, but no transport policy, actor, task, logging, controller, or second family switch. Its `tiny = 1`, `esp32C6Static = 16`, and `hostDefault = 64` aliases describe storage capacity, not scheduling.
 - `Source/Runtime` owns host lifecycle, scheduling, transport ownership, bounded ingress, supervised handlers, and diagnostics. `RuntimeBuilder` is mutable only before `finish()`; `RuntimeDefinition` is immutable; `AxolotyRuntime` is single-use and actor-isolated. Copy transport data before admission, fail rather than drop a full protocol ingress queue, and keep handler values owned and sendable. Do not expose raw routes or wildcard subscriptions, add a second processor, or create an unbounded task per message.
 - `AxolotySensorThings` owns typed source and direct-observation workflows. Use one bounded runtime-owned coordinator and the existing Coaty operation families. Do not create a transport, processor, detached task hierarchy, raw MQTT route, or retired controller API.
-- `Embedded` owns platform and transport integration, identity persistence, clocks, Wi-Fi, hardware IO, storage, and firmware composition. Firmware deploys the static runtime and must not reimplement protocol semantics. Never commit Wi-Fi or broker credentials. Keep device paths, credentials, reachability, and live timing in operator configuration.
+- `Embedded` owns platform and transport integration, identity persistence, clocks, Wi-Fi, hardware IO, storage, and firmware composition. Firmware deploys the static runtime and must not reimplement protocol semantics. This ownership is migrating to `phynics/axoloty-embedded` under [epic #845](https://github.com/phynics/axoloty/issues/845); until [#848](https://github.com/phynics/axoloty/issues/848) lands, firmware stays here and changes to it remain behavior-preserving. Never commit Wi-Fi or broker credentials. Keep device paths, credentials, reachability, and live timing in operator configuration.
 - `Tools` contains first-party developer tools. Inspector and MCP use supported runtime interfaces and no privileged protocol backdoor. If a tool needs arbitrary MQTT packets, give the tool its own transport client. Keep machine-readable stdout free of dynamic diagnostics.
 - `Tests` and `Tests/Support/test-tiers.json` own verification policy and evidence. Use Swift Testing, explicit concurrency or deadlines for broker tests, and root Make targets. Keep offline fixtures distinct from fresh live-wire evidence. Replay identical overlapping traces through host and static profiles and compare state, actions, and structured rejections.
 

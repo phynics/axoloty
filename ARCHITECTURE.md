@@ -1,8 +1,8 @@
 # Axoloty architecture
 
-This document records the accepted architecture for the 0.6 alignment tracked by [epic #627](https://github.com/phynics/axoloty/issues/627), deepened by the 0.7 [runtime-registration](https://github.com/phynics/axoloty/issues/753) and [transport-boundary](https://github.com/phynics/axoloty/issues/781) epics. The repository completed the G4 runtime cutover in PR [#649](https://github.com/phynics/axoloty/pull/649) and released the aligned 0.6 architecture as `0.6.0`; the 0.7 epics released as `0.7.0`.
+This document records the accepted architecture for the 0.6 alignment tracked by [epic #627](https://github.com/phynics/axoloty/issues/627), deepened by the 0.7 [runtime-registration](https://github.com/phynics/axoloty/issues/753) and [transport-boundary](https://github.com/phynics/axoloty/issues/781) epics. The repository completed the G4 runtime cutover in PR [#649](https://github.com/phynics/axoloty/pull/649) and released the aligned 0.6 architecture as `0.6.0`; the 0.7 epics released as `0.7.0`. The 0.8 line adds the versioned embedded consumer boundary released as `0.8.0`, under the firmware-split [epic #845](https://github.com/phynics/axoloty/issues/845).
 
-## Current implementation (0.7.0 checkpoint)
+## Current implementation (0.8 checkpoint)
 
 The released implementation consists of the root `Axoloty` host library, the
 Foundation-free `AxolotyWire`, `AxolotyObjectModel`, and `AxolotyProtocol`
@@ -190,6 +190,23 @@ and [#756](https://github.com/phynics/axoloty/issues/756) collapsed it into
 the four canonical categories `ci`, `wire`, `embedded`, `release`. The
 reports remain acceptance evidence, not an allowlist or an architecture
 exception.
+
+## Embedded consumer boundary
+
+Firmware outside this repository consumes the portable packages through one
+versioned contract, `docs/embedded-consumer-contract.json`, and the
+`axoloty-tool embedded consumer prepare` command. The contract names the five
+portable packages, their required compiler flags, the macro plugin inputs, and
+the pinned `swift-json` identity. A consumer selects a checkout with
+`AXOLOTY_SOURCE_DIR` and owns its scratch space; Axoloty's root `.build`, a
+parent-directory layout, and the `Tests/` tree are outside the boundary. A
+required, hardware-free gate compiles the portable packages for riscv32
+Embedded Swift, expands the production macro, and links an external consumer
+fixture.
+
+Accepted migration: concrete firmware composition and device qualification move
+to `phynics/axoloty-embedded` under epic #845. Portable packages stay here and
+are never copied.
 
 ## Product boundary
 

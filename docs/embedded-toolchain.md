@@ -1,5 +1,11 @@
 # ESP32-C6 toolchain pinning and workflow
 
+Ownership note: this toolchain and the ESP32-C6 firmware it builds are
+migrating to [`phynics/axoloty-embedded`](https://github.com/phynics/axoloty-embedded)
+under [epic #845](https://github.com/phynics/axoloty/issues/845). The document
+describes the current in-repository workflow and stays accurate until
+[#848](https://github.com/phynics/axoloty/issues/848) moves it.
+
 Status: implements issue #297, updated by #320 and #321. The ESP32-C6
 toolchain is included in the single dev image (`axoloty-dev`). Embedded
 Swift cross-compilation is working — AxolotyWire compiles and runs on-device,

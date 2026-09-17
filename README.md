@@ -49,6 +49,13 @@ collaborative, and ad-hoc fashion. Its key properties include:
   fixed-inline processor, bounded request state, and borrowed/owned actions,
 * and an ESP32-C6 embedded proof in Embedded Swift.
 
+Concrete embedded firmware lives in
+[`phynics/axoloty-embedded`](https://github.com/phynics/axoloty-embedded),
+which consumes an exact Axoloty revision through the
+[embedded consumer contract](./docs/embedded-consumer-contract.md). This
+repository owns the portable packages. The ESP32-C6 firmware is still here
+while [epic #845](https://github.com/phynics/axoloty/issues/845) migrates it.
+
 Axoloty is a modernized fork of
 [coatyio/coaty-swift](https://github.com/coatyio/coaty-swift) and follows its
 own direction documented in [ROADMAP.md](./docs/ROADMAP.md). The accepted
@@ -171,8 +178,9 @@ registration) with bounded capacities:
   limit, so messages above 2 KiB are an intentional compatibility divergence.
 - Static runtimes may select a smaller compile-time payload capacity (for
   example, `StaticRuntime<16, 128>`); 2,048 bytes remains the sealed maximum.
-- Max subscribers: 8
-- Max family entries: 16
+- Protocol state capacity is a compile-time preset of `ProtocolBufferConfig`.
+  The ESP32-C6 firmware profile uses `esp32C6Static = 16` simultaneous
+  objects and outstanding correlations.
 - QoS: 0 only
 - TLS: not supported
 - No IO routing, Channel, Query/Retrieve, Update/Complete, or Call/Return
@@ -180,6 +188,11 @@ registration) with bounded capacities:
 See [docs/embedded-toolchain.md](./docs/embedded-toolchain.md) for toolchain
 setup and [SUPPORT_MATRIX.md](./docs/SUPPORT_MATRIX.md) for the full
 capability matrix.
+
+Firmware ownership is moving to
+[`phynics/axoloty-embedded`](https://github.com/phynics/axoloty-embedded); the
+ESP32-C6 firmware above stays here until
+[#848](https://github.com/phynics/axoloty/issues/848) lands.
 
 API documentation is built from in-source DocC comments and published to
 GitHub Pages: <https://phynics.github.io/axoloty/documentation/Axoloty/>.
