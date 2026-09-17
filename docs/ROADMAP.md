@@ -4,17 +4,18 @@ Axoloty is a Swift runtime and protocol suite for collaborative distributed agen
 
 ## Current checkpoint
 
-[`VERSION`](../VERSION) identifies the current released version (`0.8.0`). Axoloty remains pre-1.0 and its public API may change. The 0.8 line is the active checkpoint.
+[`VERSION`](../VERSION) identifies the current released version (`0.8.1`). Axoloty remains pre-1.0 and its public API may change. The 0.8 line is the active checkpoint.
 
 Historical release outcomes are preserved in [`docs/releases/`](./releases/) and [`CHANGELOG.md`](../CHANGELOG.md). They do not define current strategy.
 
 ## Active direction: embedded firmware split, then Swift 6.4
 
-Axoloty 0.8.0 is the Core revision that the embedded firmware split starts
-from. It publishes the versioned
+Axoloty 0.8.1 is the Core revision that the embedded firmware split locks
+against. It publishes the versioned
 [embedded consumer contract](./embedded-consumer-contract.md) and a
 firmware-independent Embedded Swift portability gate in required CI. Outcomes
-are recorded in [`docs/releases/0.8.0.md`](./releases/0.8.0.md).
+are recorded in [`docs/releases/0.8.0.md`](./releases/0.8.0.md) and
+[`docs/releases/0.8.1.md`](./releases/0.8.1.md).
 
 The programs run in this order:
 

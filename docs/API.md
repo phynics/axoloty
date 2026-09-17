@@ -1,6 +1,6 @@
-# Axoloty 0.8.0 API documentation
+# Axoloty 0.8.1 API documentation
 
-The current released API is Axoloty 0.8.0. The body below describes the active
+The current released API is Axoloty 0.8.1. The body below describes the active
 0.8 development API and does not change the released version.
 
 ## Package boundaries
