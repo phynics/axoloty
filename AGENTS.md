@@ -4,6 +4,17 @@ This is the repository-wide contributor constitution and the sole `AGENTS.md`.
 Keep policy here; add a nested guide only for a durable constraint that cannot
 be stated clearly at this level.
 
+## Related repositories
+
+[`phynics/axoloty-embedded`](https://github.com/phynics/axoloty-embedded) owns
+concrete firmware products: applications, board and SDK integration, embedded
+transport backends, profiles, and device qualification. This repository owns
+the portable protocol and runtime implementation and proves it stays
+Embedded-Swift compatible. The boundary and its migration are tracked by
+[epic #845](https://github.com/phynics/axoloty/issues/845).
+
+Ordinary Axoloty work needs no checkout of that repository.
+
 ## Documentation authority
 
 1. Executable code, manifests, and tests describe current behavior.

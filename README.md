@@ -49,6 +49,13 @@ collaborative, and ad-hoc fashion. Its key properties include:
   fixed-inline processor, bounded request state, and borrowed/owned actions,
 * and an ESP32-C6 embedded proof in Embedded Swift.
 
+Concrete embedded firmware lives in
+[`phynics/axoloty-embedded`](https://github.com/phynics/axoloty-embedded),
+which consumes an exact Axoloty revision through the
+[embedded consumer contract](./docs/embedded-consumer-contract.md). This
+repository owns the portable packages. The ESP32-C6 firmware is still here
+while [epic #845](https://github.com/phynics/axoloty/issues/845) migrates it.
+
 Axoloty is a modernized fork of
 [coatyio/coaty-swift](https://github.com/coatyio/coaty-swift) and follows its
 own direction documented in [ROADMAP.md](./docs/ROADMAP.md). The accepted
@@ -182,13 +189,10 @@ See [docs/embedded-toolchain.md](./docs/embedded-toolchain.md) for toolchain
 setup and [SUPPORT_MATRIX.md](./docs/SUPPORT_MATRIX.md) for the full
 capability matrix.
 
-Concrete firmware is moving to
-[`phynics/axoloty-embedded`](https://github.com/phynics/axoloty-embedded),
-tracked by [epic #845](https://github.com/phynics/axoloty/issues/845). This
-repository keeps the portable packages and proves they stay Embedded-Swift
-compatible; firmware consumes an exact Axoloty revision through the
-[embedded consumer contract](./docs/embedded-consumer-contract.md). The
-ESP32-C6 firmware still lives here until that migration lands.
+Firmware ownership is moving to
+[`phynics/axoloty-embedded`](https://github.com/phynics/axoloty-embedded); the
+ESP32-C6 firmware above stays here until
+[#848](https://github.com/phynics/axoloty/issues/848) lands.
 
 API documentation is built from in-source DocC comments and published to
 GitHub Pages: <https://phynics.github.io/axoloty/documentation/Axoloty/>.
