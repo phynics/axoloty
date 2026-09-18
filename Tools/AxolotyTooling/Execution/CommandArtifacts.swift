@@ -336,7 +336,7 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
 
     private func createDirectorySafely(at url: URL) throws {
         var current = URL(fileURLWithPath: "/")
-        for component in url.standardizedFileURL.pathComponents.dropFirst() {
+        for component in Self.lexicallyNormalized(url).pathComponents.dropFirst() {
             current.appendPathComponent(component)
             if FileManager.default.fileExists(atPath: current.path) {
                 if (try? FileManager.default.destinationOfSymbolicLink(atPath: current.path)) != nil {
@@ -375,11 +375,21 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
                 throw ArtifactStoreError.unsafeRoot("artifact path contains a symbolic link")
             }
         }
-        let resolvedRoot = root.resolvingSymlinksInPath().standardizedFileURL.path
-        let resolvedURL = url.resolvingSymlinksInPath().standardizedFileURL.path
-        guard resolvedURL == resolvedRoot || resolvedURL.hasPrefix(resolvedRoot + "/") else {
+        // Compare lexically. Foundation's filesystem-resolving normalizations
+        // rewrite an existing /private/tmp path to /tmp but leave a path that
+        // does not exist yet untouched, so a root and its not-yet-created
+        // child would not share a prefix. Every component above was already
+        // rejected if it is a symbolic link, so no resolution is needed here.
+        let normalizedRoot = Self.lexicallyNormalized(root).path
+        let normalizedURL = Self.lexicallyNormalized(url).path
+        guard normalizedURL == normalizedRoot || normalizedURL.hasPrefix(normalizedRoot + "/") else {
             throw ArtifactStoreError.unsafeRoot("artifact path escapes artifact root")
         }
+    }
+
+    /// Normalizes `.` and `..` without consulting the filesystem.
+    private static func lexicallyNormalized(_ url: URL) -> URL {
+        url.absoluteURL.standardized
     }
 
     private enum ArtifactStoreError: LocalizedError {

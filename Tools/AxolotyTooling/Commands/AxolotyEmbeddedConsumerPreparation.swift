@@ -116,8 +116,15 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
         }
 
         let gitRoot = runGit(["-C", coreURL.path, "rev-parse", "--show-toplevel"])
-        guard gitRoot.exitCode == 0,
-              let resolvedGitRoot = canonicalExistingDirectory(gitRoot.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)),
+        guard gitRoot.exitCode == 0 else {
+            // A failed git invocation is an environment problem, not a claim
+            // about the selected checkout. Report what actually happened.
+            return failure(
+                "could not resolve the Core checkout root: \(bounded(gitRoot.standardError + gitRoot.standardOutput))",
+                code: 1
+            )
+        }
+        guard let resolvedGitRoot = canonicalExistingDirectory(gitRoot.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)),
               resolvedGitRoot == coreURL else {
             return failure("AXOLOTY_SOURCE_DIR must be the canonical Git checkout root", code: 64)
         }
