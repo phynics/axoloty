@@ -100,6 +100,16 @@ public struct AxolotyCommandLifecycle: Codable, Equatable, Sendable {
 }
 
 public struct AxolotyCommandRunnerConfiguration: Sendable {
+    /// The process working directory, as reported by the operating system.
+    ///
+    /// `getcwd` already returns a path with every symbolic link resolved, so
+    /// artifact roots derived from it must not be normalized through
+    /// ``URL/standardizedFileURL``, which would map /private/tmp back to the
+    /// /tmp symbolic link on macOS.
+    static var workingDirectory: URL {
+        URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    }
+
     /// The maximum wall-clock time for each command, or `nil` for no deadline.
     public let commandTimeout: TimeInterval?
     /// The grace period between SIGTERM and SIGKILL.
@@ -163,9 +173,13 @@ public struct AxolotyCommandRunnerConfiguration: Sendable {
         self.outputMode = outputMode
         self.interactiveOutput = interactiveOutput ?? (isatty(1) == 1)
         if artifactRoot.isFileURL, !artifactRoot.path.hasPrefix("/") {
-            self.artifactRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-                .appending(path: artifactRoot.path)
-                .standardizedFileURL
+            // Merge with the working directory and normalize lexically.
+            // ``standardizedFileURL`` resolves against the filesystem and
+            // rewrites /private/tmp to /tmp on macOS, which would introduce a
+            // symbolic link the caller never named and fail root validation.
+            self.artifactRoot = URL(fileURLWithPath: artifactRoot.path, relativeTo: Self.workingDirectory)
+                .absoluteURL
+                .standardized
         } else {
             self.artifactRoot = artifactRoot
         }
@@ -236,8 +250,9 @@ public struct AxolotyCommandRunnerConfiguration: Sendable {
             outputMode = environment["AXOLOTY_PROGRESS"] == "1" || isatty(1) == 1 ? .progress : .json
         }
         let artifactPath = environment["AXOLOTY_RUNS_DIR"] ?? ".testing/runs"
-        let root = URL(fileURLWithPath: artifactPath, relativeTo: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
-            .standardizedFileURL
+        let root = URL(fileURLWithPath: artifactPath, relativeTo: workingDirectory)
+            .absoluteURL
+            .standardized
         return Self(
             commandTimeout: timeout,
             terminationGracePeriod: grace,
