@@ -1,7 +1,7 @@
-# Axoloty 0.8.1 support matrix
+# Axoloty 0.8.2 support matrix
 
 This matrix records the support level for the current implementation, backed
-by behavioral test evidence. [`VERSION`](../VERSION) is `0.8.1`. Typed IO
+by behavioral test evidence. [`VERSION`](../VERSION) is `0.8.2`. Typed IO
 endpoint ergonomics and the optional SensorThings products are part of the
 product surface. Support levels use a consistent vocabulary:
 
