@@ -12,6 +12,42 @@ fork, through CoatySwift 2.4.0, remain documented in the
 No changes are pending. Strategy for the next line is tracked in
 [`docs/ROADMAP.md`](./docs/ROADMAP.md).
 
+## [0.8.1] - 2026-09-18
+
+Axoloty 0.8.1 makes macOS a working host for embedded consumer preparation.
+There is no public API change. It is the revision `phynics/axoloty-embedded`
+locks against.
+
+### Fixed
+
+- The five standalone portable packages declare the same `.macOS("26.0")` /
+  `.iOS("26.0")` floor as the root package. They declared no platforms, so
+  SwiftPM defaulted them to macOS 12 while their sources use `InlineArray`,
+  which needs the 26.0 SDKs. Building any of them natively on an Apple host
+  failed, and so did `axoloty-tool embedded consumer prepare`, because it
+  builds the standalone `AxolotyStaticRuntime` package. Linux and Embedded
+  Swift targets resolve no Apple platform version and are unaffected.
+- Consumer preparation accepts either macro executable spelling. SwiftPM's
+  native build system emits `AxolotyStaticRuntimeMacrosImplementation-tool`,
+  the name the contract declares, while Swift Build, the default on an Apple
+  host from Swift 6.4, emits the bare target name. Preparation previously
+  failed on macOS with a misleading scratch-containment error. The contract
+  document is unchanged and the report still carries the resolved absolute
+  path.
+
+### Removed
+
+- `Packages/AxolotyWire/Package.resolved`, committed by accident in #880. It
+  pinned swift-nio 2.103.0 and swift-system 1.8.1 where every other
+  standalone portable package pins 2.101.3 and 1.7.5.
+
+### Documentation
+
+- `docs/embedded-consumer-contract.md` records the supported preparation
+  hosts: Linux in the pinned container is the reference host and the one
+  required CI uses, and macOS is supported for local firmware development.
+  A macOS host still cannot run the firmware build, which needs ESP-IDF.
+
 ## [0.8.0] - 2026-09-17
 
 Axoloty 0.8.0 is a source-breaking release. It is the exact Core revision that
@@ -389,7 +425,8 @@ and reproducible compatibility and resource evidence.
 Initial Axoloty prerelease as an independently maintained, modernized fork of
 CoatySwift.
 
-[Unreleased]: https://github.com/phynics/axoloty/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/phynics/axoloty/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/phynics/axoloty/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/phynics/axoloty/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/phynics/axoloty/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/phynics/axoloty/compare/v0.6.1...v0.6.2
