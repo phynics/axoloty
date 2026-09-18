@@ -12,6 +12,28 @@ fork, through CoatySwift 2.4.0, remain documented in the
 No changes are pending. Strategy for the next line is tracked in
 [`docs/ROADMAP.md`](./docs/ROADMAP.md).
 
+## [0.8.2] - 2026-09-18
+
+Axoloty 0.8.2 fixes embedded consumer preparation from a working directory
+under `/tmp` on macOS. There is no public API change. It is the revision
+`phynics/axoloty-embedded` locks against.
+
+### Fixed
+
+- Artifact paths are normalized lexically instead of being resolved against
+  the filesystem. Foundation rewrites an existing `/private/tmp` path to
+  `/tmp`, which is a symbolic link, so deriving the artifact root from the
+  working directory introduced a symbolic link the caller never named and
+  root validation refused to run any command. `getcwd` had already returned
+  the real path. The same rewrite made containment inconsistent, because it
+  applies to a path that exists but not to one that does not, so a
+  not-yet-created child appeared to escape its own root. A root that
+  genuinely is a symbolic link is still rejected (#885).
+- `axoloty-tool embedded consumer prepare` reports the underlying error when
+  git cannot start, instead of reporting that `AXOLOTY_SOURCE_DIR` is not the
+  canonical checkout root. The old message blamed the selected checkout for
+  an environment failure.
+
 ## [0.8.1] - 2026-09-18
 
 Axoloty 0.8.1 makes macOS a working host for embedded consumer preparation.
@@ -425,7 +447,8 @@ and reproducible compatibility and resource evidence.
 Initial Axoloty prerelease as an independently maintained, modernized fork of
 CoatySwift.
 
-[Unreleased]: https://github.com/phynics/axoloty/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/phynics/axoloty/compare/v0.8.2...HEAD
+[0.8.2]: https://github.com/phynics/axoloty/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/phynics/axoloty/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/phynics/axoloty/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/phynics/axoloty/compare/v0.6.2...v0.7.0
