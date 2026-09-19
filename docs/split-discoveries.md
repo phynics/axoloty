@@ -200,3 +200,34 @@ removed in the removal commit.
    gated commit the task requires: not before `axoloty-embedded` proves a
    clean-clone build of the ESP32-C6 + MQTT profile against the locked Core
    revision.
+
+## 9. Update 2026-09-19: the build precondition is met, and so is the toolchain
+
+Two of the assumptions section 8 was written under have since changed.
+
+**The clean-clone precondition in item 5 is satisfied.** `axoloty-embedded`
+built the ESP32-C6 + MQTT profile from a standalone clone against this exact
+locked revision, `39e1ec0662f65f853c7439ca7d636fd579cc4c05`, with
+`AXOLOTY_STRICT_CORE=1` and Core reporting `dirty=false`:
+
+| | |
+|---|---|
+| artifact | `axoloty-swift.bin`, 749456 bytes |
+| SHA-256 | `7a2780258888c8bd52034d3de6397de38a958cbc09ad6f693c605519d743a8e3` |
+| contract | `72a48bdc9beabca6583ff55fdffe4ba3a05266dbd8d475bd36e8b21cafa56933` |
+| toolchain | `axoloty-dev:latest` — Swift 6.3.3, ESP-IDF v5.4 |
+
+The digest was reproduced by a second run from an independent scratch tree.
+The record is `docs/evidence/esp32c6-mqtt-firmware-build.json` in that
+repository, at build tier. Note the tier: **the profile is still unqualified**,
+because no board has been flashed. Item 5's gate was written about the build,
+and the build is now proven; do not read this as device qualification.
+
+**Item 1's "needs a Swift toolchain to verify" is no longer a blocker.** The
+toolchain is in a container, not on PATH — `docker images` shows
+`axoloty-dev:latest` and `swift:6.3-jammy`. A gate rewrite can therefore be
+verified here rather than deferred.
+
+So the remaining blockers are items 1–4 — all of them rewrites of Core-side
+checks that read `Embedded/swift`, none of them waiting on anything external.
+Item 5 stays last, and stays a single gated commit.
