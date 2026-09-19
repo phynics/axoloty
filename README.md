@@ -10,7 +10,7 @@ version](https://img.shields.io/badge/swift-6.3-%23F05138?logo=swift)](https://d
 MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 > **Development checkpoint.** [`VERSION`](./VERSION) identifies the current
-> published release (`0.8.0`). Axoloty is not API-stable. The 0.8 line
+> published release (`0.8.1`). Axoloty is not API-stable. The 0.8 line
 > publishes a versioned contract for firmware that consumes the portable Core
 > from outside this repository, on the explicit runtime composition introduced
 > by 0.7 and the shared host and Embedded Swift path established by 0.6.
@@ -49,6 +49,13 @@ collaborative, and ad-hoc fashion. Its key properties include:
   fixed-inline processor, bounded request state, and borrowed/owned actions,
 * and an ESP32-C6 embedded proof in Embedded Swift.
 
+Concrete embedded firmware lives in
+[`phynics/axoloty-embedded`](https://github.com/phynics/axoloty-embedded),
+which consumes an exact Axoloty revision through the
+[embedded consumer contract](./docs/embedded-consumer-contract.md). This
+repository owns the portable packages. The ESP32-C6 firmware is still here
+while [epic #845](https://github.com/phynics/axoloty/issues/845) migrates it.
+
 Axoloty is a modernized fork of
 [coatyio/coaty-swift](https://github.com/coatyio/coaty-swift) and follows its
 own direction documented in [ROADMAP.md](./docs/ROADMAP.md). The accepted
@@ -75,7 +82,7 @@ Add Axoloty to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.8.0"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.8.1"),
 ],
 targets: [
     .executableTarget(
@@ -91,7 +98,7 @@ For a wire target in a consumer that already resolves the root package:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.8.0"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.8.1"),
 ],
 targets: [
     .executableTarget(
@@ -171,8 +178,9 @@ registration) with bounded capacities:
   limit, so messages above 2 KiB are an intentional compatibility divergence.
 - Static runtimes may select a smaller compile-time payload capacity (for
   example, `StaticRuntime<16, 128>`); 2,048 bytes remains the sealed maximum.
-- Max subscribers: 8
-- Max family entries: 16
+- Protocol state capacity is a compile-time preset of `ProtocolBufferConfig`.
+  The ESP32-C6 firmware profile uses `esp32C6Static = 16` simultaneous
+  objects and outstanding correlations.
 - QoS: 0 only
 - TLS: not supported
 - No IO routing, Channel, Query/Retrieve, Update/Complete, or Call/Return
@@ -180,6 +188,11 @@ registration) with bounded capacities:
 See [docs/embedded-toolchain.md](./docs/embedded-toolchain.md) for toolchain
 setup and [SUPPORT_MATRIX.md](./docs/SUPPORT_MATRIX.md) for the full
 capability matrix.
+
+Firmware ownership is moving to
+[`phynics/axoloty-embedded`](https://github.com/phynics/axoloty-embedded); the
+ESP32-C6 firmware above stays here until
+[#848](https://github.com/phynics/axoloty/issues/848) lands.
 
 API documentation is built from in-source DocC comments and published to
 GitHub Pages: <https://phynics.github.io/axoloty/documentation/Axoloty/>.
@@ -224,7 +237,7 @@ swift run --package-path Apps axoloty-inspect discover --core-type Identity
 See [docs/inspector.md](./docs/inspector.md) for the full reference.
 
 For the current release's changes, see
-[0.8.0 release notes](./docs/releases/0.8.0.md). For migrating from legacy
+[0.8.1 release notes](./docs/releases/0.8.1.md). For migrating from legacy
 CoatySwift, see [the 0.2 migration guide](./docs/migration/from-coatyswift-to-0.2.md).
 For the 0.7 runtime-registration migration, see
 [the 0.6-to-0.7 guide](./docs/migration/from-0.6-to-0.7.md). For the 0.8

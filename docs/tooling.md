@@ -60,6 +60,7 @@ plan starts MQTT or accesses hardware.
 | `axoloty-tool wire capture` | local | no | Live reference-agent capture (host-side orchestration) |
 | `axoloty-tool embedded build` | no | no | ESP32-C6 cross-compilation on Linux |
 | `axoloty-tool embedded verify` | no | no | Build plus linker contract verification |
+| `axoloty-tool embedded consumer prepare` | no | no | Prepare a supported external consumer from `AXOLOTY_SOURCE_DIR` |
 | `axoloty-tool measure timing` | no | no | Linux-only cold/warm build evidence |
 | `axoloty-tool hardware check` | no | optional | Run when attached; otherwise structured skip |
 | `axoloty-tool hardware require` | no | required | Explicit device/release gate |

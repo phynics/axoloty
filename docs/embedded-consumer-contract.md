@@ -64,8 +64,14 @@ $CONSUMER_CORE_TOOLS_SCRATCH/checkouts/swift-json/Sources/_JSONCore
 Building `AxolotyStaticRuntime` links the macro executable as a build
 prerequisite. Building only the macro target compiles its objects but does not
 link the executable with SwiftPM 6.3. Locate the output directory with the same
-package and scratch arguments plus `swift build --show-bin-path`. The executable
-name is `staticRuntimeMacro.executable`. Load it with:
+package and scratch arguments plus `swift build --show-bin-path`.
+
+The executable name depends on the build system. SwiftPM's native build system
+emits `staticRuntimeMacro.executable`, which ends in `-tool`. Swift Build, the
+default on an Apple host from Swift 6.4, emits the bare target name without
+that suffix. A consumer accepts either, preferring the contract spelling; the
+preparation report always carries the resolved absolute path, so a consumer
+that reads the report needs no name handling of its own. Load it with:
 
 ```text
 -load-plugin-executable <absolute-executable-path>#AxolotyStaticRuntimeMacrosImplementation
@@ -89,6 +95,14 @@ The following paths are private and unsupported:
 
 Consumers may add platform flags, a target triple, and SDK-specific integration.
 Those settings do not change the Core contract.
+
+## Supported preparation hosts
+
+Linux through the pinned container is the reference host and the one required
+CI uses. macOS is supported for local firmware development: the portable
+packages declare a 26.0 Apple platform floor, and preparation accepts the Swift
+Build macro executable name. A macOS host still cannot run the firmware build
+itself, which needs ESP-IDF in the container.
 
 ## Supported preparation command
 
