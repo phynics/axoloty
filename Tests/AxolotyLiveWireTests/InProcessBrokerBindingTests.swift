@@ -24,7 +24,7 @@ struct InProcessBrokerBindingTests {
     private static let fixtureID = "88888888-8888-4888-8888-888888888888"
     private static let externalRoute = "axoloty/live/external"
 
-    @Test("host MQTTBinding exchanges frames through an in-process broker")
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["WIRE_MQTT_BINDING_NETWORK_LIVE"] != "1"))
     func bindingLifecycleAgainstInProcessBroker() async throws {
         let timeout = Duration.seconds(15)
         let firstBroker = TestMQTTBroker()
@@ -137,7 +137,7 @@ struct InProcessBrokerBindingTests {
         }
     }
 
-    @Test("publishes a runtime last will through an in-process broker")
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["WIRE_MQTT_BINDING_NETWORK_LIVE"] != "1"))
     func willIsDeliveredThroughInProcessBroker() async throws {
         let timeout = Duration.seconds(15)
         let broker = TestMQTTBroker()
