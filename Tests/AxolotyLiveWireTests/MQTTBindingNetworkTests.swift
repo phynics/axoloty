@@ -17,6 +17,10 @@ import Testing
 struct MQTTBindingNetworkTests {
     private static let sourceID = UUID16(parsing: "66666666-6666-4666-8666-666666666666")!
     private static let peerID = UUID16(parsing: "77777777-7777-4777-8777-777777777777")!
+    /// The canonical hyphenated form. `UUID16` has no string accessor, so
+    /// string interpolation would emit its debug description and build a topic
+    /// with spaces, which the runtime rejects as a profile route.
+    private static let peerIDString = "77777777-7777-4777-8777-777777777777"
     private static let fixtureID = "88888888-8888-4888-8888-888888888888"
     private static let externalRoute = "axoloty/live/external"
 
@@ -50,7 +54,7 @@ struct MQTTBindingNetworkTests {
             }
             report("started", "namespace=\(namespace)")
 
-            let profileRoute = "coaty/3/\(namespace)/ADV:Identity/\(Self.peerID)"
+            let profileRoute = "coaty/3/\(namespace)/ADV:Identity/\(Self.peerIDString)"
             let profilePayload = Array("{\"object\":{\"coreType\":\"Identity\",\"objectType\":\"coaty.Identity\",\"objectId\":\"\(Self.fixtureID)\"}}".utf8)
             try await peer.perform(.publish(RuntimeOutboundMessage(route: profileRoute, payload: profilePayload)))
             try await waitFor("profile receive", timeout: timeout) {

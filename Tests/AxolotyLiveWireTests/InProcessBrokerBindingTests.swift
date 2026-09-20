@@ -1,0 +1,162 @@
+// Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
+
+import Axoloty
+import AxolotyMQTT
+import AxolotyProtocol
+import AxolotyTestBroker
+import AxolotyTestSupport
+import AxolotyWire
+import Foundation
+import Testing
+
+/// Broker-backed coverage for the host MQTT transport boundary that needs no
+/// container runtime, no Mosquitto, and no fixed port.
+///
+/// The in-process ``TestMQTTBroker`` is the default broker. The Mosquitto path
+/// stays reachable through the shell runner for conformance, so the two are
+/// held to one contract: both must satisfy the same suite.
+struct InProcessBrokerBindingTests {
+    private static let sourceID = UUID16(parsing: "66666666-6666-4666-8666-666666666666")!
+    private static let peerID = UUID16(parsing: "77777777-7777-4777-8777-777777777777")!
+    /// The canonical hyphenated form, because `UUID16` has no string accessor
+    /// and string interpolation would emit its debug description.
+    private static let peerIDString = "77777777-7777-4777-8777-777777777777"
+    private static let fixtureID = "88888888-8888-4888-8888-888888888888"
+    private static let externalRoute = "axoloty/live/external"
+
+    @Test("host MQTTBinding exchanges frames through an in-process broker")
+    func bindingLifecycleAgainstInProcessBroker() async throws {
+        let timeout = Duration.seconds(15)
+        let firstBroker = TestMQTTBroker()
+        let port = try firstBroker.start()
+        var broker: TestMQTTBroker? = firstBroker
+        defer { broker?.stop() }
+        let namespace = "axoloty-inprocess-\(port)"
+        let subjectInbox = FrameInbox()
+        let peerInbox = FrameInbox()
+        let subject = try makeBinding(port: port)
+        let peer = try makeBinding(port: port)
+
+        do {
+            try await withTimeout("subject MQTTBinding start", timeout: timeout) {
+                try await subject.start { frame in Task { await subjectInbox.append(frame) } }
+            }
+            try await withTimeout("peer MQTTBinding start", timeout: timeout) {
+                try await peer.start { frame in Task { await peerInbox.append(frame) } }
+            }
+            try await withTimeout("subject profile subscriptions", timeout: timeout) {
+                try await subject.installSubscriptions(namespace: namespace)
+            }
+            try await withTimeout("peer profile subscriptions", timeout: timeout) {
+                try await peer.installSubscriptions(namespace: namespace)
+            }
+
+            let profileRoute = "coaty/3/\(namespace)/ADV:Identity/\(Self.peerIDString)"
+            let profilePayload = Array("{\"object\":{\"coreType\":\"Identity\",\"objectType\":\"coaty.Identity\",\"objectId\":\"\(Self.fixtureID)\"}}".utf8)
+            try await peer.perform(.publish(RuntimeOutboundMessage(route: profileRoute, payload: profilePayload)))
+            try await waitUntil("profile receive", timeout: timeout) {
+                await subjectInbox.contains { frame in
+                    if case let .profile(route, payload, _) = frame {
+                        return route == profileRoute && payload == profilePayload
+                    }
+                    return false
+                }
+            }
+
+            let unrelatedRoute = "other/\(namespace)/not-coaty"
+            let beforeUnrelated = await subjectInbox.count
+            try await peer.perform(.publish(RuntimeOutboundMessage(
+                route: unrelatedRoute,
+                payload: Array("unrelated".utf8)
+            )))
+            try await Task.sleep(for: .milliseconds(250))
+            #expect(await subjectInbox.count == beforeUnrelated, "unrelated MQTT routes must be filtered")
+
+            let external = OwnedExternalRouteTransition(
+                sourceID: Self.sourceID,
+                actorID: Self.peerID,
+                route: Array(Self.externalRoute.utf8)
+            )
+            try await subject.perform(.externalRouteActivated(external))
+            let externalPayload = Array("{\"value\":42}".utf8)
+            try await peer.perform(.publish(RuntimeOutboundMessage(
+                route: Self.externalRoute,
+                payload: externalPayload
+            )))
+            try await waitUntil("external route receive", timeout: timeout) {
+                await subjectInbox.contains { frame in
+                    if case let .externalIo(route, payload, _) = frame {
+                        return route == Self.externalRoute && payload == externalPayload
+                    }
+                    return false
+                }
+            }
+
+            let beforeDeactivation = await subjectInbox.count
+            try await subject.perform(.externalRouteDeactivated(external))
+            try await peer.perform(.publish(RuntimeOutboundMessage(
+                route: Self.externalRoute,
+                payload: Array("{\"value\":43}".utf8)
+            )))
+            try await Task.sleep(for: .milliseconds(250))
+            #expect(await subjectInbox.count == beforeDeactivation, "a deactivated external route must be filtered")
+
+            // Replace the broker on the same port to force a reconnect with no
+            // container restart and no shell marker file.
+            try await withTimeout("peer MQTTBinding stop for restart", timeout: timeout) { await peer.stop() }
+            try await withTimeout("subject MQTTBinding stop for restart", timeout: timeout) { await subject.stop() }
+            broker?.stop()
+            let replacement = TestMQTTBroker(configuration: TestMQTTBroker.Configuration(port: port))
+            broker = replacement
+            try replacement.start()
+            try await withTimeout("peer MQTTBinding restart", timeout: timeout) {
+                try await peer.start { frame in Task { await peerInbox.append(frame) } }
+                try await peer.installSubscriptions(namespace: namespace)
+            }
+            try await withTimeout("subject MQTTBinding restart", timeout: timeout) {
+                try await subject.start { frame in Task { await subjectInbox.append(frame) } }
+                try await subject.installSubscriptions(namespace: namespace)
+            }
+            let resumedRoute = "coaty/3/\(namespace)/ADV:Identity/\(Self.peerIDString)"
+            try await peer.perform(.publish(RuntimeOutboundMessage(route: resumedRoute, payload: profilePayload)))
+            try await waitUntil("post-restart profile receive", timeout: timeout) {
+                await subjectInbox.contains { frame in
+                    if case let .profile(route, payload, _) = frame {
+                        return route == resumedRoute && payload == profilePayload
+                    }
+                    return false
+                }
+            }
+
+            try await withTimeout("peer MQTTBinding stop", timeout: timeout) { await peer.stop() }
+            try await withTimeout("subject MQTTBinding stop", timeout: timeout) { await subject.stop() }
+        } catch {
+            try? await withTimeout("peer MQTTBinding failure stop", timeout: timeout) { await peer.stop() }
+            try? await withTimeout("subject MQTTBinding failure stop", timeout: timeout) { await subject.stop() }
+            throw error
+        }
+    }
+
+    private func makeBinding(port: Int) throws -> MQTTBinding {
+        try MQTTBinding(configuration: MQTTBindingConfiguration(
+            host: "127.0.0.1",
+            port: UInt16(port),
+            connectionTimeoutMS: 10_000,
+            operationTimeoutMS: 10_000
+        ))
+    }
+}
+
+private actor FrameInbox {
+    private var frames: [RuntimeInboundFrame] = []
+
+    func append(_ frame: RuntimeInboundFrame) {
+        frames.append(frame)
+    }
+
+    var count: Int { frames.count }
+
+    func contains(_ predicate: @Sendable (RuntimeInboundFrame) -> Bool) -> Bool {
+        frames.contains(where: predicate)
+    }
+}
