@@ -137,6 +137,57 @@ struct InProcessBrokerBindingTests {
         }
     }
 
+    @Test("publishes a runtime last will through an in-process broker")
+    func willIsDeliveredThroughInProcessBroker() async throws {
+        let timeout = Duration.seconds(15)
+        let broker = TestMQTTBroker()
+        let port = try broker.start()
+        defer { broker.stop() }
+        let willRoute = "axoloty/live/will"
+        let willPayload = Array("gone".utf8)
+        let observerInbox = FrameInbox()
+        let observer = try makeBinding(port: port)
+        let doomed = try makeBinding(port: port)
+        defer {
+            Task {
+                await observer.stop()
+                await doomed.stop()
+            }
+        }
+
+        try await withTimeout("observer MQTTBinding start", timeout: timeout) {
+            try await observer.start { frame in Task { await observerInbox.append(frame) } }
+        }
+        let established = Set(broker.connections().map(\.id))
+        try await withTimeout("MQTTBinding start with a last will", timeout: timeout) {
+            try await doomed.start(
+                receive: { _ in },
+                lastWill: RuntimeTransportLastWill(topic: willRoute, payload: willPayload)
+            )
+        }
+        let doomedID = try #require(broker.connections().map(\.id).first { !established.contains($0) })
+
+        let transition = OwnedExternalRouteTransition(
+            sourceID: Self.sourceID,
+            actorID: Self.peerID,
+            route: Array(willRoute.utf8)
+        )
+        try await observer.perform(.externalRouteActivated(transition))
+        try await waitUntil("will subscription", timeout: timeout) {
+            broker.subscriptions().contains { $0.filter == willRoute }
+        }
+
+        try broker.injectDisconnect(connectionID: doomedID)
+        try await waitUntil("will delivery", timeout: timeout) {
+            await observerInbox.contains { frame in
+                if case let .externalIo(route, payload, _) = frame {
+                    return route == willRoute && payload == willPayload
+                }
+                return false
+            }
+        }
+    }
+
     private func makeBinding(port: Int) throws -> MQTTBinding {
         try MQTTBinding(configuration: MQTTBindingConfiguration(
             host: "127.0.0.1",
