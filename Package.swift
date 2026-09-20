@@ -52,6 +52,13 @@ let package = Package(
             name: "AxolotyStaticRuntime",
             targets: ["AxolotyStaticRuntime"]
         ),
+        // Verification infrastructure, not a shipped product: an in-process
+        // MQTT 3.1.1 broker so broker-backed checks need no container, no
+        // fixed port, and no Mosquitto. No shipped product may depend on it.
+        .library(
+            name: "AxolotyTestBroker",
+            targets: ["AxolotyTestBroker"]
+        ),
     ],
     dependencies: [
         .package(url: "https://github.com/swift-server-community/mqtt-nio.git", from: "2.13.0"),
@@ -191,6 +198,30 @@ let package = Package(
             name: "AxolotyTestSupport",
             path: "Tests/AxolotyTestSupport"
         ),
+        // In-process MQTT 3.1.1 broker for hardware-free, container-free
+        // end-to-end tests. It depends on NIO only, so it adds no new
+        // dependency to the package. It is deliberately outside every shipped
+        // product's dependency closure.
+        .target(
+            name: "AxolotyTestBroker",
+            dependencies: [
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
+            ],
+            path: "Tests/AxolotyTestBroker"
+        ),
+        .testTarget(
+            name: "AxolotyTestBrokerTests",
+            dependencies: [
+                "AxolotyTestBroker",
+                .product(name: "MQTTNIO", package: "mqtt-nio"),
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
+            ],
+            path: "Tests/AxolotyTestBrokerTests"
+        ),
         .testTarget(
             name: "AxolotyTests",
             dependencies: [
@@ -216,6 +247,7 @@ let package = Package(
                 "AxolotyWire",
                 "AxolotyProtocol",
                 "AxolotyTestSupport",
+                "AxolotyTestBroker",
             ],
             path: "Tests/AxolotyLiveWireTests"
         ),
