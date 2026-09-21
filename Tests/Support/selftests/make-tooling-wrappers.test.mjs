@@ -84,7 +84,6 @@ test("principal Make workflows use the canonical tooling entry points", () => {
   for (const target of [
     "test-axoloty-wire-independent-resolution",
     "test-axoloty-wire-distribution",
-    "check-embedded-swift",
     "embedded-device-info",
     "embedded-device-smoke",
     "embedded-reproducible-build",

@@ -125,8 +125,8 @@ because a retained artifact depends on them.
 | `Tests/Support/embedded/embedded-swift-test-validator.mjs` | MOVE | `Makefile:419`; `embedded-swift-test.sh:7`; `embedded-network-validator.mjs:4`; `Tests/Support/selftests/test-embedded-swift-test.sh:10` |
 | `Tests/Support/embedded/embedded-swift-test.sh` | MOVE | `Makefile:421`; `Tests/Support/test-tiers.json:90,100,163`; `Tools/AxolotyTooling/Commands/AxolotyHardwareCommands.swift:42`; `Tools/AxolotyToolingTests/Commands/AxolotyCommandDispatcherTests.swift:502,540` |
 | `Tests/Support/embedded/generate-embedded-network-config.mjs` | MOVE | `embedded-agent-test.sh:37`; `embedded-broker-restart-test.sh:37`; `embedded-coatyjs-test.sh:31`; `embedded-host-test.sh:35`; `embedded-last-will-test.sh:34`; `embedded-network-test.sh:19`; `Tests/Support/selftests/test-embedded-network.sh:10,50` |
-| `Tests/Support/embedded/embedded-core-source.sh` | TRANSITIONAL | firmware-owned build and device harnesses until #854 |
-| `Tests/Support/embedded/embedded-core-tools.sh` | TRANSITIONAL | firmware-owned build and device harnesses until #854 |
+| `Tests/Support/embedded/embedded-core-source.sh` | RETIRED | superseded by the external Embedded consumer contract |
+| `Tests/Support/embedded/embedded-core-tools.sh` | RETIRED | superseded by the external Embedded consumer contract |
 | `Tests/Support/checks/check-embedded-swift-linker.sh` | MOVE | `Tools/AxolotyToolingTests/Timing/AxolotyTimingTests.swift:187`; `Tests/Support/test-tiers.json:80,98,160` |
 | `Tests/Support/checks/check-embedded-environment.sh` | SUPERSEDE | `Tests/Support/test-tiers.json:95`; `Tools/AxolotyToolingTests/Commands/AxolotyCommandDispatcherTests.swift:456` |
 | `Tests/Support/checks/check-embedded-toolchain.sh` | MOVE | only a comment reference at `Tests/Support/embedded/embedded-device-info.sh:93`; the tooling's `embedded doctor` resolves to `check-embedded-environment.sh`, so this path is already orphaned in tooling |
