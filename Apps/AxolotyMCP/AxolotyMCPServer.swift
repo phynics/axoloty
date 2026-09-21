@@ -545,7 +545,7 @@ public final class AxolotyMCPServer {
     func collectStatus() async -> ServerStatus {
         let count = await catalogueService.store.count
         let snapshot = await catalogueService.store.snapshot(filter: ObjectCatalogueFilter())
-        let transportState = await catalogueService.transportState()
+        let transportState = await session.transportState()
         return ServerStatus(
             mqttConnected: transportState == .online,
             namespace: snapshot.namespace,

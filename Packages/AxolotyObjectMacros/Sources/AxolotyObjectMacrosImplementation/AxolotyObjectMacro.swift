@@ -188,7 +188,7 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
             if let defaultExpression = descriptor.defaultExpression {
                 return "try encoder.encodeDefault(\(descriptor.name), default: \(defaultExpression), forKey: \(literal(descriptor.wireName)))"
             }
-            return "try encoder.encode(\(descriptor.name), forKey: \(literal(descriptor.wireName)))"
+            return "try \(descriptor.name).encode(to: &encoder, forKey: \(literal(descriptor.wireName)))"
         }.joined(separator: "\n        ")
         let decoderWitness = decoderStatements
         let encoderWitness = encoderStatements.isEmpty ? "" : encoderStatements

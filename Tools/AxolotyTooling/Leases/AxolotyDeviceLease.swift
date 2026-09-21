@@ -53,14 +53,6 @@ public struct FoundationDeviceLeaseManager: AxolotyDeviceLeasing {
         leaseRoot = root.standardizedFileURL
     }
 
-    /// Creates a device lease manager rooted at the supplied directory.
-    ///
-    /// - Parameter leaseRoot: The directory shared by processes that must
-    ///   contend for device leases.
-    public init(leaseRoot: URL) {
-        self.init(root: leaseRoot)
-    }
-
     /// Acquires a non-blocking lock keyed by the configured device path.
     public func acquire(device: String) -> (any AxolotyDeviceLease)? {
         guard !device.isEmpty else { return nil }

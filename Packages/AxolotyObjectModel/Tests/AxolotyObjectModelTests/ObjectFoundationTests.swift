@@ -85,7 +85,7 @@ private struct TypedValueSchema: ObjectSchema {
     init(value: Int) { self.value = value }
 
     borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
-        try encoder.encode(value, forKey: "value")
+        try value.encode(to: &encoder, forKey: "value")
     }
 }
 

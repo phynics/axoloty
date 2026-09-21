@@ -331,11 +331,6 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
         return count
     }
 
-    /// Drains the synchronous action sink through the transport-facing name.
-    @discardableResult
-    public mutating func drainActions(_ body: (BorrowedProtocolAction) -> Void) -> Int {
-        drain(body)
-    }
 }
 
 /// The fixed profile used by the static device agent.

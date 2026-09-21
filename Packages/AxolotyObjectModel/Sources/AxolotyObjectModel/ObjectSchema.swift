@@ -382,20 +382,6 @@ public protocol ObjectSchema: Sendable {
 public typealias ObjectFieldEncoder<let editorCapacity: Int> = ObjectEditor<editorCapacity>
 
 extension ObjectEditor {
-    /// Encodes one bounded primitive or application-defined field value.
-    ///
-    /// - Parameters:
-    ///   - value: The value to encode.
-    ///   - key: The bounded wire key for the value.
-    /// - Throws: ``ObjectEncodingError`` when encoding fails.
-    public mutating func encode<T: ObjectFieldEncodable>(
-        _ value: T,
-        forKey key: StaticString
-    ) throws(ObjectEncodingError) {
-        do { try value.encode(to: &self, forKey: key) }
-        catch { throw error }
-    }
-
     /// Encodes a field, omitting it when it equals its canonical default.
     ///
     /// - Parameters:
@@ -412,7 +398,7 @@ extension ObjectEditor {
             do { try remove(key) }
             catch { throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
         } else {
-            try encode(value, forKey: key)
+            try value.encode(to: &self, forKey: key)
         }
     }
 }

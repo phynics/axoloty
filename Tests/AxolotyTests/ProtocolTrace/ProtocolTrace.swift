@@ -994,7 +994,7 @@ fileprivate struct StaticTraceVerifier<let traceCapacity: Int>: ~Copyable {
 
     private mutating func drainOwned() -> [OwnedProtocolAction] {
         var actions: [OwnedProtocolAction] = []
-        runtime.drainActions { action in actions.append(action.owned()) }
+        runtime.drain { action in actions.append(action.owned()) }
         return actions
     }
 

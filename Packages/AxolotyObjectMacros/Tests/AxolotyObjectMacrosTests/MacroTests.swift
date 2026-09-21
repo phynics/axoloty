@@ -31,8 +31,8 @@ func schemaMacroExpansion() {
                 self.alarms = try fields.decodeIfPresent("alarmCodes", as: Int.self)
             }
             public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
-                try encoder.encode(temperature, forKey: "temperature")
-                try encoder.encode(alarms, forKey: "alarmCodes")
+                try temperature.encode(to: &encoder, forKey: "temperature")
+                try alarms.encode(to: &encoder, forKey: "alarmCodes")
             }
         }
         extension Reading: ObjectSchema {}
@@ -74,9 +74,9 @@ func schemaMacroDiagnostics() {
                 self.third = try fields.decode("objectId", as: Int.self)
             }
             public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
-                try encoder.encode(first, forKey: "first")
-                try encoder.encode(second, forKey: "first")
-                try encoder.encode(third, forKey: "objectId")
+                try first.encode(to: &encoder, forKey: "first")
+                try second.encode(to: &encoder, forKey: "first")
+                try third.encode(to: &encoder, forKey: "objectId")
             }
         }
         extension Bad: ObjectSchema {}
@@ -326,7 +326,7 @@ func schemaMacroRejectsTextDefault() {
                 self.label = try fields.decode("label", as: BoundedEncodedText<16>.self)
             }
             public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
-                try encoder.encode(label, forKey: "label")
+                try label.encode(to: &encoder, forKey: "label")
             }
         }
         extension BadDefault: ObjectSchema {}
