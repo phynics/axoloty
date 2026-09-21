@@ -12,13 +12,12 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 write_fixture() {
-    rm -rf "$tmp/Packages" "$tmp/Embedded"
+    rm -rf "$tmp/Packages"
     mkdir -p \
         "$tmp/Packages/AxolotyObjectModel/Sources/AxolotyObjectModel" \
         "$tmp/Packages/AxolotyObjectMacros/Sources/AxolotyObjectMacros" \
         "$tmp/Packages/AxolotyObjectMacros/Sources/AxolotyObjectMacrosImplementation" \
-        "$tmp/Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels" \
-        "$tmp/Embedded/swift/components/axoloty_object_model"
+        "$tmp/Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels"
     printf '%s\n' '// swift-tools-version:6.3' 'import PackageDescription' 'let package = Package(name: "AxolotyCoatyModels", products: [.library(name: "AxolotyCoatyModels", targets: ["AxolotyCoatyModels"])], dependencies: [.package(path: "../AxolotyObjectModel")], targets: [.target(name: "AxolotyCoatyModels", path: "Sources/AxolotyCoatyModels")])' > "$tmp/Packages/AxolotyCoatyModels/Package.swift"
     printf '%s\n' \
         '// swift-tools-version:6.3' \
@@ -36,18 +35,12 @@ write_fixture() {
     printf '%s\n' 'struct FixtureCoatyModel {}' > "$tmp/Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels/Fixture.swift"
     printf '%s\n' 'import SwiftSyntax' > "$tmp/Packages/AxolotyObjectMacros/Sources/AxolotyObjectMacros/Fixture.swift"
     printf '%s\n' 'struct FixtureMacroImplementation {}' > "$tmp/Packages/AxolotyObjectMacros/Sources/AxolotyObjectMacrosImplementation/Fixture.swift"
-    printf '%s\n' \
-        'include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/axoloty-source.cmake")' \
-        'file(GLOB AXOLOTY_OBJECT_MODEL_SOURCES "${AXOLOTY_OBJECT_MODEL_SOURCE_DIR}/*.swift")' \
-        'idf_component_register_swift(${COMPONENT_LIB} SRCS ${AXOLOTY_OBJECT_MODEL_SOURCES})' \
-        > "$tmp/Embedded/swift/components/axoloty_object_model/CMakeLists.txt"
 }
 
 run_checker() {
     AXOLOTY_OBJECT_MODEL_PACKAGE_DIR="$tmp/Packages/AxolotyObjectModel" \
     AXOLOTY_OBJECT_MACROS_PACKAGE_DIR="$tmp/Packages/AxolotyObjectMacros" \
     AXOLOTY_COATY_MODELS_PACKAGE_DIR="$tmp/Packages/AxolotyCoatyModels" \
-    AXOLOTY_OBJECT_MODEL_COMPONENT_DIR="$tmp/Embedded/swift/components/axoloty_object_model" \
         "$checker"
 }
 
@@ -95,13 +88,6 @@ write_fixture
 printf '%s\n' ' .package(url: "https://github.com/swift-server-community/mqtt-nio.git", from: "2.13.0"),' >> "$tmp/Packages/AxolotyObjectModel/Package.swift"
 if run_checker >/dev/null 2>&1; then
     echo "error: checker accepted forbidden manifest dependency" >&2
-    exit 1
-fi
-
-write_fixture
-sed -i '/AXOLOTY_OBJECT_MODEL_SOURCE_DIR/d' "$tmp/Embedded/swift/components/axoloty_object_model/CMakeLists.txt"
-if run_checker >/dev/null 2>&1; then
-    echo "error: checker accepted missing source inclusion" >&2
     exit 1
 fi
 

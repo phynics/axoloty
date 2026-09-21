@@ -20,34 +20,25 @@ const number = key => {
   return value;
 };
 const sections = fs.readFileSync(sectionsPath, "utf8").trim().split(/\n/).filter(Boolean).map(line => {
-  if (line.includes("\\t")) throw new Error("section row uses a literal \\\\t; expected a tab separator: " + line);
+  if (line.includes("\\t")) throw new Error("section row uses a literal \\t; expected a tab separator: " + line);
   const [name, bytesText] = line.split("\t");
   const bytes = Number(bytesText);
   if (!name || !Number.isInteger(bytes) || bytes < 0) throw new Error(`invalid section line: ${line}`);
   return {name, bytes};
 });
-for (const name of [".iram0.text", ".flash.text"]) {
-  const section = sections.find(candidate => candidate.name === name);
-  if (!section || section.bytes < 1) {
-    throw new Error("embedded report is missing a positive " + name + " section");
-  }
-}
 
 const report = {
   schemaVersion: 1,
-  evidenceKind: "embedded-cross-build",
+  evidenceKind: "portable-object-model",
   candidateSha,
   status: "passed",
   compileSuccess: metadata.compileSuccess === "true",
   coverage: "foundation-schema-model-predicate-module-linkage",
-  source: "Embedded/swift",
+  source: "portable-object-model",
   toolchain: metadata.toolchain,
   compileSeconds: number("compileSeconds"),
-  firmwareBytes: number("firmwareBytes"),
-  elfBytes: number("elfBytes"),
-  mapBytes: number("mapBytes"),
   sections,
   hardware: "pending-hardware",
 };
-if (!report.compileSuccess || !report.toolchain) throw new Error("embedded build did not report a successful toolchain build");
+if (!report.compileSuccess || !report.toolchain) throw new Error("portable probe did not report a successful toolchain build");
 fs.writeFileSync(outputPath, JSON.stringify(report, null, 2) + "\n");

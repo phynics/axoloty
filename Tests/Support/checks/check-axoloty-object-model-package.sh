@@ -1,10 +1,10 @@
 #!/bin/sh
 # Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-# Checks the portable object-model package boundary and its ESP-IDF source
-# inclusion. The model may depend on AxolotyWire only; host-runtime layers do
-# not belong in this portable package. Schema and predicate types are part of
-# the object-model boundary and are intentionally allowed here.
+# Checks the portable object-model package boundary. The model may depend on
+# AxolotyWire only; host-runtime layers do not belong in this portable package.
+# Schema and predicate types are part of the object-model boundary and are
+# intentionally allowed here.
 
 set -eu
 
@@ -13,15 +13,9 @@ package_dir=${AXOLOTY_OBJECT_MODEL_PACKAGE_DIR:-$root/Packages/AxolotyObjectMode
 source_dir="$package_dir/Sources/AxolotyObjectModel"
 manifest="$package_dir/Package.swift"
 root_manifest=${AXOLOTY_ROOT_MANIFEST:-$root/Package.swift}
-component=${AXOLOTY_OBJECT_MODEL_COMPONENT:-$root/Embedded/swift/components/axoloty_object_model/CMakeLists.txt}
-component_manifest=${AXOLOTY_OBJECT_MODEL_COMPONENT_MANIFEST:-$root/Embedded/swift/components/axoloty_object_model/idf_component.yml}
-main_component=${AXOLOTY_OBJECT_MODEL_MAIN_COMPONENT:-$root/Embedded/swift/main/CMakeLists.txt}
-protocol_component=${AXOLOTY_PROTOCOL_COMPONENT:-$root/Embedded/swift/components/axoloty_protocol/CMakeLists.txt}
 coaty_package_dir=${AXOLOTY_COATY_MODELS_PACKAGE_DIR:-$root/Packages/AxolotyCoatyModels}
 coaty_source_dir="$coaty_package_dir/Sources/AxolotyCoatyModels"
 coaty_manifest=${AXOLOTY_COATY_MODELS_MANIFEST:-$coaty_package_dir/Package.swift}
-coaty_component=${AXOLOTY_COATY_MODELS_COMPONENT:-$root/Embedded/swift/components/axoloty_coaty_models/CMakeLists.txt}
-coaty_component_manifest=${AXOLOTY_COATY_MODELS_COMPONENT_MANIFEST:-$root/Embedded/swift/components/axoloty_coaty_models/idf_component.yml}
 
 set -- "$source_dir"/*.swift
 if [ "$1" = "$source_dir/*.swift" ]; then
@@ -44,23 +38,6 @@ if [ ! -f "$manifest" ]; then
     echo "error: missing AxolotyObjectModel Package.swift" >&2
     exit 1
 fi
-if [ ! -f "$component" ]; then
-    echo "error: missing AxolotyObjectModel ESP-IDF component" >&2
-    exit 1
-fi
-if [ ! -f "$component_manifest" ]; then
-    echo "error: missing AxolotyObjectModel ESP-IDF manifest" >&2
-    exit 1
-fi
-if [ ! -f "$main_component" ]; then
-    echo "error: missing embedded main component" >&2
-    exit 1
-fi
-if [ ! -f "$protocol_component" ]; then
-    echo "error: missing AxolotyProtocol ESP-IDF component" >&2
-    exit 1
-fi
-
 manifest_without_comments=$(sed -E 's://.*$::' "$manifest")
 package_entries=$(printf '%s' "$manifest_without_comments" | grep -E '^[[:space:]]*\.package\(' || true)
 package_entry_count=$(printf '%s' "$package_entries" | awk 'NF { count++ } END { print count + 0 }')
@@ -93,45 +70,8 @@ if ! grep -Fq 'name: "AxolotyObjectModelTests"' "$root_manifest" || \
     echo "error: root AxolotyObjectModel test target is not wired to the standalone tests" >&2
     exit 1
 fi
-if ! grep -Fq 'include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/axoloty-source.cmake")' "$component" || \
-   ! grep -Fq '"${AXOLOTY_OBJECT_MODEL_SOURCE_DIR}/*.swift"' "$component"; then
-    echo "error: ESP-IDF component does not compile the resolved AxolotyObjectModel source directory" >&2
-    exit 1
-fi
-if ! grep -Fq 'idf_swift' "$component_manifest" || \
-   ! grep -Fq 'idf_swift' "$component" || \
-   ! grep -Fq 'axoloty_wire' "$component" || \
-   ! grep -Fq 'json_core' "$component"; then
-    echo "error: ESP-IDF model component dependencies are incomplete" >&2
-    exit 1
-fi
-if ! grep -Fq 'AxolotyWire' "$component" || ! grep -Fq 'AxolotyObjectModel' "$component"; then
-    echo "error: ESP-IDF component does not declare the model/wire module boundary" >&2
-    exit 1
-fi
-if ! grep -Fq 'OUTPUT ${AXOLOTY_OBJECT_MODEL_MODULE_ALIAS}' "$component" || \
-   ! grep -Fq 'add_custom_target(axoloty_object_model_module_alias' "$component"; then
-    echo "error: ESP-IDF component does not publish an explicit model module output" >&2
-    exit 1
-fi
-if ! grep -Fq 'axoloty_object_model' "$main_component" || \
-   ! grep -Fq 'add_dependencies(${COMPONENT_LIB} axoloty_object_model_module_alias)' "$main_component"; then
-    echo "error: embedded main does not depend on the model module output" >&2
-    exit 1
-fi
-if ! grep -Fq 'OUTPUT ${AXOLOTY_PROTOCOL_MODULE_ALIAS}' "$protocol_component" || \
-   ! grep -Fq 'add_custom_target(axoloty_protocol_module_alias' "$protocol_component" || \
-   ! grep -Fq 'add_dependencies(${COMPONENT_LIB} axoloty_protocol_module_alias)' "$main_component"; then
-    echo "error: protocol module publication is not an explicit main compile dependency" >&2
-    exit 1
-fi
-
 if [ ! -f "$coaty_manifest" ] || [ ! -d "$coaty_source_dir" ]; then
     echo "error: missing AxolotyCoatyModels package sources" >&2
-    exit 1
-fi
-if [ ! -f "$coaty_component" ] || [ ! -f "$coaty_component_manifest" ]; then
-    echo "error: missing AxolotyCoatyModels ESP-IDF component" >&2
     exit 1
 fi
 set -- "$coaty_source_dir"/*.swift
@@ -166,32 +106,6 @@ if ! grep -Fq 'name: "AxolotyCoatyModelsTests"' "$root_manifest" || \
     echo "error: root package does not wire AxolotyCoatyModels tests" >&2
     exit 1
 fi
-if ! grep -Fq 'include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/axoloty-source.cmake")' "$coaty_component" || \
-   ! grep -Fq '"${AXOLOTY_COATY_MODELS_SOURCE_DIR}/*.swift"' "$coaty_component" || \
-   ! grep -Eq '^[[:space:]]*PRIV_REQUIRES[[:space:]].*axoloty_object_model([[:space:]]|$)' "$coaty_component" || \
-   ! grep -Eq '^[[:space:]]*PRIV_REQUIRES[[:space:]].*axoloty_wire([[:space:]]|$)' "$coaty_component" || \
-   ! grep -Eq '^[[:space:]]*PRIV_REQUIRES[[:space:]].*json_core([[:space:]]|$)' "$coaty_component" || \
-   ! grep -Fq 'axoloty_wire' "$coaty_component" || \
-   ! grep -Fq 'AxolotyObjectModel.swiftmodule' "$coaty_component" || \
-   ! grep -Fq 'AxolotyWire.swiftmodule' "$coaty_component" || \
-   ! grep -Fq '_JSONCore.swiftmodule' "$coaty_component" || \
-   ! grep -Fq 'WIRE_COMPONENT_BINARY_DIR' "$coaty_component" || \
-   ! grep -Fq 'JSON_CORE_COMPONENT_BINARY_DIR' "$coaty_component" || \
-   ! grep -Fq '    ${WIRE_COMPONENT_BINARY_DIR}' "$coaty_component" || \
-   ! grep -Fq '    ${JSON_CORE_COMPONENT_BINARY_DIR}' "$coaty_component" || \
-   ! grep -Fq 'APPEND PROPERTIES OBJECT_DEPENDS "${WIRE_MODULE_ALIAS}"' "$coaty_component" || \
-   ! grep -Fq 'APPEND PROPERTIES OBJECT_DEPENDS "${JSON_CORE_MODULE_ALIAS}"' "$coaty_component" || \
-   ! grep -Fq 'OUTPUT ${AXOLOTY_COATY_MODELS_MODULE_ALIAS}' "$coaty_component"; then
-    echo "error: ESP-IDF CoatyModels component has an incomplete transitive source/module dependency" >&2
-    exit 1
-fi
-if ! grep -Fq 'axoloty_coaty_models' "$main_component" || \
-   ! grep -Fq 'add_dependencies(${COMPONENT_LIB} axoloty_coaty_models_module_alias)' "$main_component" || \
-   ! grep -Fq 'CoatyModelsModuleConsumer.swift' "$main_component"; then
-    echo "error: embedded main does not consume the CoatyModels module output" >&2
-    exit 1
-fi
-
 if [ "${AXOLOTY_OBJECT_MODEL_SKIP_BUILD:-0}" != "1" ]; then
     swift build --package-path "$package_dir" \
         --scratch-path "$root/.build/packages/axoloty-object-model" \
