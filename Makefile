@@ -105,7 +105,7 @@ DOC_HOSTING_BASE_PATH ?=
 	embedded-device-info embedded-device-smoke embedded-reproducible-build \
 	benchmark-wire benchmark-wire-allocation benchmark-static-io-ownership-allocation benchmark-wire-bounds \
 	check-embedded-core-consumer check-static-io-macro-embedded \
-	benchmark-wire-device check-budget-manifest check-embedded-swift \
+	benchmark-wire-device check-budget-manifest \
 	check-embedded-swift-linker embedded-swift-build embedded-swift-flash \
 	embedded-swift-test embedded-swift-reproducible-build \
 	embedded-consumer-proof-build embedded-consumer-proof-flash \
@@ -619,8 +619,6 @@ benchmark-wire-device: resolve
 
 check-budget-manifest:
 	Tests/Support/checks/check-budget-manifest.sh
-
-check-embedded-swift: check-embedded-core-consumer
 
 clean:
 	rm -rf "$(BUILD_DIR)"
