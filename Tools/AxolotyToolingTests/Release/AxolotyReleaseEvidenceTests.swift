@@ -504,6 +504,33 @@ func checkpointCertificationPreservesBinaryArtifactBytesAndExactSubject() throws
 }
 
 @Test
+func checkpointCertificationRejectsMismatchedExpectedProducerID() throws {
+    let bundle = try makeEvidenceBundle()
+    defer { try? FileManager.default.removeItem(at: bundle) }
+    let envelope = try Data(contentsOf: bundle.appendingPathComponent("evidence.json"))
+    let result = AxolotyCheckpointCertification().certify(
+        manifest: certificationManifest(gate: "wire-live"),
+        results: [AxolotyCheckResult(name: "checkpoint-node", status: .passed)],
+        metadata: certificationMetadata(),
+        evidence: ReleaseEvidenceInput(bundles: [
+            "wire-live": ReleaseEvidenceBundle(
+                path: bundle.path,
+                envelope: envelope,
+                artifacts: ["artifacts/capture.jsonl": Data("capture".utf8)],
+                files: ["evidence.json", "artifacts/capture.jsonl"],
+                source: .evidenceDirectory
+            ),
+        ]),
+        expectedProducerID: "expected-producer"
+    )
+
+    let gate = try #require(result.manifest.releaseGates.first)
+    #expect(gate.result == .failed)
+    #expect(gate.note == "invalid evidence producer: expected expected-producer, got test-producer")
+    #expect(result.exitCode == 1)
+}
+
+@Test
 func foundationEvidenceByteLoaderPreservesBinaryArtifactBytes() throws {
     let bytes = Data([0x00, 0xFF, 0x10, 0x80, 0x0A])
     let url = FileManager.default.temporaryDirectory
