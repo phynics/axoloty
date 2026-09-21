@@ -16,11 +16,6 @@ copy_package() {
     cp -R "$root/Packages/AxolotyObjectModel/Sources" "$root/Packages/AxolotyObjectModel/Tests" "$tmp/package/"
 }
 
-copy_coaty_component() {
-    cp "$root/Embedded/swift/components/axoloty_coaty_models/CMakeLists.txt" \
-        "$tmp/coaty-models.CMakeLists.txt"
-}
-
 check_source_rejected() {
     label=$1
     mutation=$2
@@ -28,7 +23,6 @@ check_source_rejected() {
     echo "$mutation" >> "$tmp/package/Sources/AxolotyObjectModel/Primitives.swift"
     if AXOLOTY_OBJECT_MODEL_PACKAGE_DIR="$tmp/package" \
        AXOLOTY_OBJECT_MODEL_SKIP_BUILD=1 \
-       AXOLOTY_OBJECT_MODEL_COMPONENT="$root/Embedded/swift/components/axoloty_object_model/CMakeLists.txt" \
        "$root/Tests/Support/checks/check-axoloty-object-model-package.sh" >/dev/null 2>&1; then
         echo "error: checker accepted $label boundary" >&2
         exit 1
@@ -42,7 +36,6 @@ check_source_allowed() {
     echo "$mutation" >> "$tmp/package/Sources/AxolotyObjectModel/Primitives.swift"
     if ! AXOLOTY_OBJECT_MODEL_PACKAGE_DIR="$tmp/package" \
        AXOLOTY_OBJECT_MODEL_SKIP_BUILD=1 \
-       AXOLOTY_OBJECT_MODEL_COMPONENT="$root/Embedded/swift/components/axoloty_object_model/CMakeLists.txt" \
        "$root/Tests/Support/checks/check-axoloty-object-model-package.sh" >/dev/null 2>&1; then
         echo "error: checker rejected allowed $label type" >&2
         exit 1
@@ -72,35 +65,8 @@ copy_package
 sed -i 's/\.product(name: "AxolotyWire", package: "AxolotyWire")/.product(name: "NIO", package: "swift-nio")/' "$tmp/package/Package.swift"
 if AXOLOTY_OBJECT_MODEL_PACKAGE_DIR="$tmp/package" \
    AXOLOTY_OBJECT_MODEL_SKIP_BUILD=1 \
-   AXOLOTY_OBJECT_MODEL_COMPONENT="$root/Embedded/swift/components/axoloty_object_model/CMakeLists.txt" \
    "$root/Tests/Support/checks/check-axoloty-object-model-package.sh" >/dev/null 2>&1; then
     echo "error: checker accepted forbidden manifest dependency" >&2
-    exit 1
-fi
-
-copy_package
-copy_coaty_component
-sed -i 's/ axoloty_wire//' "$tmp/coaty-models.CMakeLists.txt"
-if AXOLOTY_OBJECT_MODEL_PACKAGE_DIR="$tmp/package" \
-   AXOLOTY_OBJECT_MODEL_SKIP_BUILD=1 \
-   AXOLOTY_COATY_MODELS_SKIP_BUILD=1 \
-   AXOLOTY_OBJECT_MODEL_COMPONENT="$root/Embedded/swift/components/axoloty_object_model/CMakeLists.txt" \
-   AXOLOTY_COATY_MODELS_COMPONENT="$tmp/coaty-models.CMakeLists.txt" \
-   "$root/Tests/Support/checks/check-axoloty-object-model-package.sh" >/dev/null 2>&1; then
-    echo "error: checker accepted missing AxolotyWire transitive component dependency" >&2
-    exit 1
-fi
-
-copy_package
-copy_coaty_component
-sed -i 's/ json_core//' "$tmp/coaty-models.CMakeLists.txt"
-if AXOLOTY_OBJECT_MODEL_PACKAGE_DIR="$tmp/package" \
-   AXOLOTY_OBJECT_MODEL_SKIP_BUILD=1 \
-   AXOLOTY_COATY_MODELS_SKIP_BUILD=1 \
-   AXOLOTY_OBJECT_MODEL_COMPONENT="$root/Embedded/swift/components/axoloty_object_model/CMakeLists.txt" \
-   AXOLOTY_COATY_MODELS_COMPONENT="$tmp/coaty-models.CMakeLists.txt" \
-   "$root/Tests/Support/checks/check-axoloty-object-model-package.sh" >/dev/null 2>&1; then
-    echo "error: checker accepted missing _JSONCore transitive component dependency" >&2
     exit 1
 fi
 

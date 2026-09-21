@@ -8,6 +8,8 @@ probe="$root/Spikes/BoundedObjectModelEvidence"
 candidate=$(git -C "$root" rev-parse HEAD)
 artifact="$root/.testing/g3-object-model/$candidate"
 build="$artifact/host-build"
+evidence_name=${AXOLOTY_G3_EVIDENCE_NAME:-host-evidence.json}
+node_name=${AXOLOTY_G3_EVIDENCE_NODE:-g3-object-model-evidence-host}
 mkdir -p "$artifact"
 
 run_swift() {
@@ -56,8 +58,8 @@ size -A "$release_binary" | awk '$2 ~ /^[0-9]+$/ { print $1 "\t" $2 }' >"$artifa
 
 node "$probe/Evidence/assemble-host-evidence.mjs" \
     "$artifact/probe.json" "$artifact/allocation-measurements.tsv" "$artifact/release-sections.tsv" \
-    "$candidate" "$compile_seconds" "$release_bytes" "$toolchain" "$artifact/host-evidence.json"
+    "$candidate" "$compile_seconds" "$release_bytes" "$toolchain" "$artifact/$evidence_name"
 
 node "$probe/Evidence/validate-evidence.mjs" \
-    "$probe/Evidence/evidence.schema.json" "$artifact/host-evidence.json"
-echo "PASS g3-object-model-evidence-host candidate=$candidate artifact=$artifact/host-evidence.json"
+    "$probe/Evidence/evidence.schema.json" "$artifact/$evidence_name"
+echo "PASS $node_name candidate=$candidate artifact=$artifact/$evidence_name"
