@@ -79,8 +79,8 @@ export EMBEDDED_PROJECT_DIR="$project_dir"
 
 if [ "$skip_build" = "0" ]; then
     failure_stage=build
-    AXOLOTY_EMBEDDED_CORE_TOOLS_NO_EXEC=1 . "$support_dir/prepare-embedded-core-tools.sh"
-    embedded_core_prepare_tools "$build_dir" "$support_dir/resolve-embedded-core.sh"
+    AXOLOTY_EMBEDDED_CORE_TOOLS_NO_EXEC=1 . "$support_dir/embedded-core-tools.sh"
+    embedded_core_prepare_tools "$build_dir" "$support_dir/embedded-core-source.sh"
     axoloty_enable_esp_idf_ccache "$project_dir" esp32c6 smoke
     axoloty_prepare_esp_idf_build "$build_dir" esp32c6 0 smoke \
         -D SDKCONFIG="$sdkconfig"

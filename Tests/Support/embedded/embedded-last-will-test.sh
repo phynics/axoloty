@@ -11,8 +11,8 @@ project_dir=${EMBEDDED_PROJECT_DIR:-/workspace/Embedded/swift}
 build_root=${EMBEDDED_LAST_WILL_BUILD_ROOT:-/workspace/.build/embedded-last-will}
 output_dir=${EMBEDDED_OUTPUT_DIR:-/workspace/.testing/embedded}
 support_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-AXOLOTY_EMBEDDED_CORE_TOOLS_NO_EXEC=1 . "$support_dir/prepare-embedded-core-tools.sh"
-embedded_core_prepare_tools "$build_root" "$support_dir/resolve-embedded-core.sh"
+AXOLOTY_EMBEDDED_CORE_TOOLS_NO_EXEC=1 . "$support_dir/embedded-core-tools.sh"
+embedded_core_prepare_tools "$build_root" "$support_dir/embedded-core-source.sh"
 reference_dir=$(CDPATH= cd -- "$support_dir/../WireCompatibility/ReferenceAgents/coatyjs" && pwd)
 esptool="${IDF_PATH:-/opt/esp/idf}/components/esptool_py/esptool/esptool.py"
 

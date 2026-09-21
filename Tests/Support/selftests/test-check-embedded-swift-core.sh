@@ -2,9 +2,9 @@
 # Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 # Self-test for the Core-owned Embedded Swift consumer gate (issue #850).
-# The real check is intentionally run twice: once against the production
-# fixture and once against a malformed fixture. The second run proves that a
-# consumer source failure cannot be hidden by successful Core module builds.
+# The real check is intentionally run against the production fixture, a
+# malformed fixture, and a failing RISC-V linker. The negative runs prove that
+# consumer and link failures cannot be hidden by successful Core module builds.
 
 set -eu
 
@@ -56,6 +56,28 @@ if AXOLOTY_SOURCE_DIR="$root" \
 fi
 echo "  PASS: malformed Embedded consumer source is rejected"
 
+# The RISC-V link probe must remain a required part of the surviving gate.
+# Inject a deterministic linker failure after compilation to prove that the
+# checker does not regress to compile-only coverage.
+failing_linker="$tmpdir/failing-linker"
+cat > "$failing_linker" <<'SH'
+#!/bin/sh
+echo "synthetic unresolved RISC-V relocation" >&2
+exit 42
+SH
+chmod +x "$failing_linker"
+if AXOLOTY_SOURCE_DIR="$root" \
+    AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR="$macro_scratch" \
+    AXOLOTY_STATIC_RUNTIME_MACRO_TOOL="$macro_tool" \
+    AXOLOTY_RISCV_LINKER="$failing_linker" \
+    "$checker" >"$tmpdir/link-fail.log" 2>&1; then
+    cat "$tmpdir/link-fail.log" >&2
+    echo "failing RISC-V linker unexpectedly passed" >&2
+    exit 1
+fi
+grep -Fq 'synthetic unresolved RISC-V relocation' "$tmpdir/link-fail.log"
+echo "  PASS: RISC-V link failures are rejected"
+
 # Keep this check auditable: this gate must not grow a hidden firmware/SDK
 # dependency while its manifest remains a hardware-free CI requirement.
 if grep -Eq 'Embedded/swift|ESP-IDF|idf\.py|IDF_PATH' "$checker"; then
@@ -65,4 +87,4 @@ fi
 echo "  PASS: checker source has no firmware or ESP-IDF dependency"
 
 echo ""
-echo "SELF-TEST OK (4 checks passed, 0 failed)"
+echo "SELF-TEST OK (5 checks passed, 0 failed)"

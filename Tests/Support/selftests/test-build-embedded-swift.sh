@@ -198,7 +198,7 @@ echo 'embedded build cache recovery self-test: OK'
 # The resolver is independent of the firmware checkout. Use a local clone in
 # an unrelated temporary root to prove that no parent-directory relationship
 # or root .build search is required.
-resolver="$root/Tests/Support/embedded/resolve-embedded-core.sh"
+resolver="$root/Tests/Support/embedded/embedded-core-source.sh"
 clean_core="$tmp/unrelated-core"
 firmware_copy="$tmp/unrelated-firmware"
 git clone --quiet --no-hardlinks "$root" "$clean_core"
@@ -316,8 +316,8 @@ auto_prepare() {
     PATH="$bin_dir:$PATH"
     AXOLOTY_SOURCE_DIR="$clean_core"
     export PATH AXOLOTY_SOURCE_DIR
-    AXOLOTY_EMBEDDED_CORE_TOOLS_NO_EXEC=1 . "$root/Tests/Support/embedded/prepare-embedded-core-tools.sh"
-    embedded_core_prepare_tools "$build" "$root/Tests/Support/embedded/resolve-embedded-core.sh"
+    AXOLOTY_EMBEDDED_CORE_TOOLS_NO_EXEC=1 . "$root/Tests/Support/embedded/embedded-core-tools.sh"
+    embedded_core_prepare_tools "$build" "$root/Tests/Support/embedded/embedded-core-source.sh"
     printf '%s\n' "$AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR" > "$build.scratch"
     test -x "$AXOLOTY_STATIC_RUNTIME_MACRO_TOOL"
     test -d "$AXOLOTY_JSON_CORE_SOURCE_DIR"

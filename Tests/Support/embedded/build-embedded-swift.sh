@@ -16,8 +16,8 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 # Resolve the Core checkout before ESP-IDF starts. The firmware project is
 # intentionally allowed to live in a copied or otherwise unrelated tree; all
 # portable source, dependency, and macro paths cross this explicit boundary.
-AXOLOTY_EMBEDDED_CORE_TOOLS_NO_EXEC=1 . "$support_dir/prepare-embedded-core-tools.sh"
-embedded_core_prepare_tools "$build_dir" "$support_dir/resolve-embedded-core.sh"
+AXOLOTY_EMBEDDED_CORE_TOOLS_NO_EXEC=1 . "$support_dir/embedded-core-tools.sh"
+embedded_core_prepare_tools "$build_dir" "$support_dir/embedded-core-source.sh"
 
 printf 'Embedded Core: source=%s sha=%s dirty=%s\n' \
     "$AXOLOTY_SOURCE_DIR" "$AXOLOTY_CORE_SHA" "$AXOLOTY_CORE_DIRTY"

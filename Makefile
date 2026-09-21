@@ -163,7 +163,6 @@ help:
 		'make benchmark-wire-bounds  Run malformed-input and capacity bounds tests' \
 		'make benchmark-wire-device  Run ESP32-C6 on-device wire benchmarks' \
 		'make check-budget-manifest  Validate the performance budget manifest' \
-		'make check-embedded-swift  Verify AxolotyWire compiles and links under Embedded Swift' \
 		'make check-embedded-swift-linker  Verify Unicode runtime links for ESP32-C6' \
 		'make embedded-swift-build  Build the ESP32-C6 Embedded Swift firmware' \
 		'make embedded-swift-flash  Build, flash, and capture the Swift smoke marker' \
@@ -621,9 +620,7 @@ benchmark-wire-device: resolve
 check-budget-manifest:
 	Tests/Support/checks/check-budget-manifest.sh
 
-check-embedded-swift: image
-	CONTAINER_ENV_VARS="$(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
-	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/checks/check-embedded-swift.sh
+check-embedded-swift: check-embedded-core-consumer
 
 clean:
 	rm -rf "$(BUILD_DIR)"

@@ -7,10 +7,11 @@
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
-support_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../embedded" && pwd)
 project="$root/Embedded/swift"
 jobs=${AXOLOTY_EMBEDDED_LINKER_JOBS:-2}
 clean=${AXOLOTY_EMBEDDED_LINKER_CLEAN:-0}
+tool=${AXOLOTY_TOOL:-/opt/axoloty/bin/axoloty-tool}
+macro_scratch=${AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR:-/tmp/axoloty-embedded-linker-tools}
 
 case "$jobs" in
     ''|*[!0-9]*)
@@ -24,6 +25,7 @@ if [ "$jobs" -lt 1 ] || [ "$jobs" -gt 64 ]; then
 fi
 
 idf_log=$(mktemp)
+preparation_report=$(mktemp)
 report_failure() {
     status=$?
     if [ "$status" -ne 0 ]; then
@@ -42,24 +44,65 @@ report_failure() {
         fi
     fi
     rm -f "$idf_log"
+    rm -f "$preparation_report"
     exit "$status"
 }
 trap report_failure EXIT
+
+command -v node >/dev/null 2>&1 || {
+    echo "EMBEDDED SWIFT LINKER FAIL: node is required to read the Core preparation report" >&2
+    exit 1
+}
+
+AXOLOTY_SOURCE_DIR=${AXOLOTY_SOURCE_DIR:-$root}
+export AXOLOTY_SOURCE_DIR
+"$tool" embedded consumer prepare \
+    --scratch "$macro_scratch" \
+    --output "$preparation_report" >"$idf_log" 2>&1
+
+json_field() {
+    field=$1
+    node -e 'const fs=require("fs"); const value=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); let current=value; for (const key of process.argv[2].split(".")) current=current[key]; if (typeof current === "boolean") process.stdout.write(current ? "true" : "false"); else process.stdout.write(String(current));' "$preparation_report" "$field"
+}
+
+test "$(json_field status)" = prepared || {
+    echo "EMBEDDED SWIFT LINKER FAIL: Core consumer preparation did not complete" >&2
+    exit 1
+}
+test "$(json_field core.dirty)" = false || {
+    echo "EMBEDDED SWIFT LINKER FAIL: Core checkout is dirty" >&2
+    exit 1
+}
+test "$(json_field core.sourceDir)" = "$AXOLOTY_SOURCE_DIR" || {
+    echo "EMBEDDED SWIFT LINKER FAIL: preparation selected a different Core checkout" >&2
+    exit 1
+}
+
+AXOLOTY_SOURCE_DIR=$(json_field core.sourceDir)
+AXOLOTY_CORE_SHA=$(json_field core.sha)
+AXOLOTY_CORE_DIRTY=$(json_field core.dirty)
+AXOLOTY_WIRE_SOURCE_DIR=$(json_field portablePackages.0.sourcePath)
+AXOLOTY_OBJECT_MODEL_SOURCE_DIR=$(json_field portablePackages.1.sourcePath)
+AXOLOTY_PROTOCOL_SOURCE_DIR=$(json_field portablePackages.2.sourcePath)
+AXOLOTY_COATY_MODELS_SOURCE_DIR=$(json_field portablePackages.3.sourcePath)
+AXOLOTY_STATIC_RUNTIME_SOURCE_DIR=$(json_field portablePackages.4.sourcePath)
+AXOLOTY_JSON_CORE_SOURCE_DIR=$(json_field jsonCore.sourceDir)
+AXOLOTY_STATIC_RUNTIME_MACRO_TOOL=$(json_field staticRuntimeMacro.executable)
+AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR=$(json_field staticRuntimeMacro.scratchDir)
+export AXOLOTY_SOURCE_DIR AXOLOTY_CORE_SHA AXOLOTY_CORE_DIRTY \
+    AXOLOTY_WIRE_SOURCE_DIR AXOLOTY_OBJECT_MODEL_SOURCE_DIR \
+    AXOLOTY_PROTOCOL_SOURCE_DIR AXOLOTY_COATY_MODELS_SOURCE_DIR \
+    AXOLOTY_STATIC_RUNTIME_SOURCE_DIR AXOLOTY_JSON_CORE_SOURCE_DIR \
+    AXOLOTY_STATIC_RUNTIME_MACRO_TOOL AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR
 
 . "${IDF_PATH:-/opt/esp/idf}/export.sh" >"$idf_log" 2>&1
 cd "$project"
 
 . "$root/Tests/Support/embedded/embedded-build-cache.sh"
-AXOLOTY_EMBEDDED_CORE_NO_EXEC=1 . "$support_dir/resolve-embedded-core.sh"
-embedded_core_resolve
 config_flags=unicode-linker-probe
 config_key=$(axoloty_esp_idf_cache_key esp32c6 "$config_flags")
 build_dir=${AXOLOTY_EMBEDDED_LINKER_BUILD_DIR:-/workspace/.build/embedded-swift-linker/$config_key}
 sdkconfig="$build_dir/sdkconfig"
-AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR=${AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR:-$root/.build/embedded-swift-core-tools}
-export AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR
-AXOLOTY_EMBEDDED_CORE_TOOLS_NO_EXEC=1 . "$support_dir/prepare-embedded-core-tools.sh"
-embedded_core_prepare_tools "$build_dir" "$support_dir/resolve-embedded-core.sh"
 axoloty_enable_esp_idf_ccache "$project" esp32c6 "$config_flags"
 axoloty_print_esp_idf_ccache_stats before
 axoloty_prepare_esp_idf_build "$build_dir" esp32c6 "$clean" "$config_flags" \

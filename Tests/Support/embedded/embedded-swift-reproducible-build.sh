@@ -20,13 +20,13 @@ bin_name="axoloty-swift.bin"
 build_dir="${EMBEDDED_BUILD_DIR:-/workspace/.build/embedded-swift-reproducible}"
 sdkconfig="$build_dir/sdkconfig"
 support_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-AXOLOTY_EMBEDDED_CORE_TOOLS_NO_EXEC=1 . "$support_dir/prepare-embedded-core-tools.sh"
+AXOLOTY_EMBEDDED_CORE_TOOLS_NO_EXEC=1 . "$support_dir/embedded-core-tools.sh"
 
 # Validate the caller-selected directory before either build preparation or
 # the clean-build rm. A reproducible build owns a dedicated directory whose
 # name makes accidental broad-path deletion impossible. Existing directories
 # must be real directories, not symlinks; their parent must already exist.
-AXOLOTY_EMBEDDED_CORE_NO_EXEC=1 . "$support_dir/resolve-embedded-core.sh"
+AXOLOTY_EMBEDDED_CORE_NO_EXEC=1 . "$support_dir/embedded-core-source.sh"
 embedded_core_resolve
 project_dir=$(realpath -e -- "$project_dir" 2>/dev/null) || {
     echo "REPRODUCIBLE BUILD FAIL: embedded project directory does not exist: $project_dir" >&2
@@ -103,7 +103,7 @@ validate_reproducible_build_dir() {
 }
 
 validate_reproducible_build_dir "$build_dir"
-embedded_core_prepare_tools "$build_dir" "$support_dir/resolve-embedded-core.sh"
+embedded_core_prepare_tools "$build_dir" "$support_dir/embedded-core-source.sh"
 bin_path="$build_dir/$bin_name"
 
 # Source ESP-IDF for idf.py.

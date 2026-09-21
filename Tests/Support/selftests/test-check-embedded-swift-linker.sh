@@ -26,6 +26,43 @@ mkdir -p "$(dirname "$AXOLOTY_STATIC_RUNTIME_MACRO_TOOL")" "$AXOLOTY_JSON_CORE_S
 : > "$AXOLOTY_STATIC_RUNTIME_MACRO_TOOL"
 chmod +x "$AXOLOTY_STATIC_RUNTIME_MACRO_TOOL"
 
+core_sha=$(git -C "$root" rev-parse HEAD)
+preparation_report="$tmp/preparation.json"
+cat > "$preparation_report" <<JSON
+{
+  "schemaVersion": 1,
+  "status": "prepared",
+  "contractSHA256": "fixture",
+  "core": {"sourceDir": "$root", "sha": "$core_sha", "dirty": false},
+  "swift": {"toolsVersion": "6.3", "languageMode": 6, "compilerFlags": []},
+  "portablePackages": [
+    {"name": "AxolotyWire", "sourcePath": "$root/Packages/AxolotyWire/Sources/AxolotyWire"},
+    {"name": "AxolotyObjectModel", "sourcePath": "$root/Packages/AxolotyObjectModel/Sources/AxolotyObjectModel"},
+    {"name": "AxolotyProtocol", "sourcePath": "$root/Packages/AxolotyProtocol/Sources/AxolotyProtocol"},
+    {"name": "AxolotyCoatyModels", "sourcePath": "$root/Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels"},
+    {"name": "AxolotyStaticRuntime", "sourcePath": "$root/Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntime"}
+  ],
+  "jsonCore": {"revision": "fixture", "sourceDir": "$AXOLOTY_JSON_CORE_SOURCE_DIR"},
+  "staticRuntimeMacro": {"executable": "$AXOLOTY_STATIC_RUNTIME_MACRO_TOOL", "pluginModule": "fixture", "scratchDir": "$AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR"}
+}
+JSON
+
+cat > "$fake_bin/axoloty-tool" <<'SH'
+#!/bin/sh
+output=
+while [ "$#" -gt 0 ]; do
+    if [ "$1" = "--output" ]; then
+        shift
+        output=$1
+    fi
+    shift
+done
+cp "$FAKE_PREPARATION_REPORT" "$output"
+SH
+chmod +x "$fake_bin/axoloty-tool"
+export AXOLOTY_TOOL="$fake_bin/axoloty-tool"
+export FAKE_PREPARATION_REPORT="$preparation_report"
+
 cat > "$fake_bin/idf.py" <<'PY'
 #!/usr/bin/env python3
 import os
