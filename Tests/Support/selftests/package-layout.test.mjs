@@ -78,6 +78,8 @@ test("Swift files outside orchestration support belong to one declared test targ
     "AxolotyTests",
     "AxolotyLiveWireTests",
     "AxolotyTestSupport",
+    "AxolotyTestBroker",
+    "AxolotyTestBrokerTests",
   ];
   const unowned = walk(testsRoot)
     .filter(relative => relative.endsWith(".swift"))

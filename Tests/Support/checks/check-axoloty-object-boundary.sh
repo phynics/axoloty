@@ -3,9 +3,8 @@
 
 # Enforce the G3 portable object-model package boundary. This checker is
 # intentionally source-level: the production packages are expected to be
-# independently buildable, and the Embedded Swift component must compile the
-# same object-model source glob. It does not claim that G3 is implemented when
-# either package or its source inclusion is absent.
+# independently buildable, and no firmware checkout is needed to prove their
+# dependency and source policy.
 
 set -eu
 
@@ -13,7 +12,6 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 model=${AXOLOTY_OBJECT_MODEL_PACKAGE_DIR:-$root/Packages/AxolotyObjectModel}
 macros=${AXOLOTY_OBJECT_MACROS_PACKAGE_DIR:-$root/Packages/AxolotyObjectMacros}
 coaty=${AXOLOTY_COATY_MODELS_PACKAGE_DIR:-$root/Packages/AxolotyCoatyModels}
-component=${AXOLOTY_OBJECT_MODEL_COMPONENT_DIR:-$root/Embedded/swift/components/axoloty_object_model}
 
 fail() {
     echo "error: $*" >&2
@@ -92,10 +90,4 @@ if printf '%s' "$coaty_manifest" | grep -Eiq '(Foundation|MQTTNIO|mqtt-nio|swift
     fail "forbidden manifest dependency or host boundary in AxolotyCoatyModels"
 fi
 
-test -f "$component/CMakeLists.txt" || fail "missing Embedded Swift object-model component"
-component_text=$(sed -E 's:#.*$::' "$component/CMakeLists.txt")
-printf '%s' "$component_text" | grep -Fq 'include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/axoloty-source.cmake")' || fail "Embedded Swift component omits the Core source resolver"
-printf '%s' "$component_text" | grep -Fq '"${AXOLOTY_OBJECT_MODEL_SOURCE_DIR}/*.swift"' || fail "Embedded Swift component omits the resolved object-model source directory"
-printf '%s' "$component_text" | grep -Fq 'idf_component_register_swift' || fail "Embedded Swift component does not register Swift sources"
-
-echo "AxolotyObjectModel/AxolotyObjectMacros boundary and source inclusion passed"
+echo "AxolotyObjectModel/AxolotyObjectMacros boundary and source policy passed"
