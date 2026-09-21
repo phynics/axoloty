@@ -162,7 +162,8 @@ struct AxolotyCheckpointCertification: Sendable {
         manifest: AxolotyCanonicalTestManifest,
         results: [AxolotyCheckResult],
         metadata: CheckpointMetadata,
-        evidence: ReleaseEvidenceInput
+        evidence: ReleaseEvidenceInput,
+        expectedProducerID: String? = nil
     ) -> CheckpointCertificationResult {
         let hardwareResults = results.filter { result in
             manifest.nodes.first(where: { $0.id == result.name })?.hardware == .required
@@ -175,7 +176,8 @@ struct AxolotyCheckpointCertification: Sendable {
                 manifest: manifest,
                 results: results,
                 metadata: metadata,
-                evidence: evidence.bundles[gate]
+                evidence: evidence.bundles[gate],
+                expectedProducerID: expectedProducerID
             )
         }
         let certificate = AxolotyCheckpointManifest(
@@ -202,7 +204,8 @@ struct AxolotyCheckpointCertification: Sendable {
         manifest: AxolotyCanonicalTestManifest,
         results: [AxolotyCheckResult],
         metadata: CheckpointMetadata,
-        evidence: ReleaseEvidenceBundle?
+        evidence: ReleaseEvidenceBundle?,
+        expectedProducerID: String?
     ) -> AxolotyCheckpointGate {
         let resultByName = Dictionary(uniqueKeysWithValues: results.map { ($0.name, $0) })
         let coveringNodes = manifest.tiers.first { $0.id == gate }?.nodes ?? []
@@ -242,19 +245,40 @@ struct AxolotyCheckpointCertification: Sendable {
                     )
                 }
                 do {
-                    let validated = try validate(
-                        envelope: envelope,
-                        gate: gate,
+                    guard let commit = try? AxolotyGitCommitSHA(metadata.gitCommit),
+                          let tree = metadata.gitTree.flatMap({ try? AxolotyGitTreeSHA($0) }),
+                          let version = try? AxolotySemanticVersion(metadata.releaseVersion),
+                          let repository = try? AxolotyRepositoryIdentity(
+                              metadata.repository ?? "github.com/phynics/axoloty"
+                          ) else {
+                        throw AxolotyReleaseEvidenceError.invalidSubject(
+                            "evidence requires full commit/tree and semantic version metadata"
+                        )
+                    }
+                    let subject = AxolotyReleaseSubject(
+                        repository: repository,
+                        commit: commit,
+                        tree: tree,
+                        version: version,
+                        clean: metadata.gitClean
+                    )
+                    let validated = try AxolotyEvidenceBundleValidator.validate(
+                        envelopeData: envelope,
+                        expectedGate: AxolotyReleaseGateID(rawValue: gate),
+                        context: AxolotyEvidenceValidationContext(
+                            expectedSubject: subject,
+                            bundleRoot: URL(filePath: evidence.path),
+                            expectedProducerID: expectedProducerID
+                        ),
                         artifacts: evidence.artifacts,
-                        files: evidence.files,
-                        metadata: metadata
+                        files: evidence.files
                     )
                     return AxolotyCheckpointGate(
                         id: gate,
                         result: .attested,
                         nodes: coveringResults,
                         evidence: evidence.path,
-                        evidenceDigest: validated,
+                        evidenceDigest: validated.bundleDigest,
                         note: "exact-subject evidence bundle validated"
                     )
                 } catch let error as AxolotyReleaseEvidenceError {
@@ -298,81 +322,6 @@ struct AxolotyCheckpointCertification: Sendable {
         )
     }
 
-    private func validate(
-        envelope data: Data,
-        gate: String,
-        artifacts: [String: Data],
-        files: [String],
-        metadata: CheckpointMetadata
-    ) throws -> String {
-        let envelope: AxolotyEvidenceEnvelope<AxolotyJSONValue>
-        do {
-            envelope = try JSONDecoder().decode(AxolotyEvidenceEnvelope<AxolotyJSONValue>.self, from: data)
-        } catch {
-            throw AxolotyReleaseEvidenceError.malformedEnvelope(error.localizedDescription)
-        }
-        guard envelope.envelopeSchema == AxolotyEvidenceEnvelope<AxolotyJSONValue>.currentSchemaVersion else {
-            throw AxolotyReleaseEvidenceError.unsupportedSchema("envelope=\(envelope.envelopeSchema)")
-        }
-        guard envelope.gate == AxolotyReleaseGateID(rawValue: gate) else {
-            throw AxolotyReleaseEvidenceError.gateMismatch(expected: gate, actual: envelope.gate.rawValue)
-        }
-        guard let commit = try? AxolotyGitCommitSHA(metadata.gitCommit),
-              let tree = metadata.gitTree.flatMap({ try? AxolotyGitTreeSHA($0) }),
-              let version = try? AxolotySemanticVersion(metadata.releaseVersion),
-              let repository = try? AxolotyRepositoryIdentity(metadata.repository ?? "github.com/phynics/axoloty") else {
-            throw AxolotyReleaseEvidenceError.invalidSubject("evidence requires full commit/tree and semantic version metadata")
-        }
-        let subject = AxolotyReleaseSubject(
-            repository: repository,
-            commit: commit,
-            tree: tree,
-            version: version,
-            clean: metadata.gitClean
-        )
-        guard envelope.subject == subject else {
-            throw AxolotyReleaseEvidenceError.subjectMismatch("repository, commit, tree, version, or clean state differs")
-        }
-        guard envelope.subject.clean else {
-            throw AxolotyReleaseEvidenceError.invalidSubject("release evidence must come from a clean checkout")
-        }
-        guard envelope.result == .passed else {
-            throw AxolotyReleaseEvidenceError.failedEvidence
-        }
-        try envelope.producer.validate(expectedCommit: envelope.subject.commit)
-        guard envelope.gateSchema == 1 else {
-            throw AxolotyReleaseEvidenceError.unsupportedSchema(
-                "gate=\(envelope.gate.rawValue), schema=\(envelope.gateSchema)"
-            )
-        }
-        guard !envelope.artifacts.isEmpty else {
-            throw AxolotyReleaseEvidenceError.artifactMismatch("evidence bundle declares no artifacts")
-        }
-        var declared = Set<String>()
-        for artifact in envelope.artifacts {
-            guard (try? AxolotyEvidenceArtifact(
-                role: artifact.role,
-                relativePath: artifact.relativePath,
-                sha256: artifact.sha256,
-                byteCount: artifact.byteCount,
-                mediaType: artifact.mediaType
-            )) != nil else {
-                throw AxolotyReleaseEvidenceError.invalidArtifact(artifact.relativePath)
-            }
-            guard declared.insert(artifact.relativePath).inserted else {
-                throw AxolotyReleaseEvidenceError.artifactMismatch(artifact.relativePath)
-            }
-            guard let value = artifacts[artifact.relativePath],
-                  value.count == artifact.byteCount,
-                  AxolotySHA256().hash(value) == artifact.sha256 else {
-                throw AxolotyReleaseEvidenceError.artifactMismatch(artifact.relativePath)
-            }
-        }
-        for file in files where file != "evidence.json" && !declared.contains(file) {
-            throw AxolotyReleaseEvidenceError.artifactMismatch(file)
-        }
-        return AxolotySHA256().hash(data)
-    }
 }
 
 /// Executes the fixture and checkpoint release commands.
