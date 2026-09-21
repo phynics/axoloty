@@ -6,8 +6,8 @@ set -eu
 project_dir=${EMBEDDED_PROJECT_DIR:-/workspace/Embedded/swift}
 build_dir=${EMBEDDED_BUILD_DIR:-/workspace/.build/embedded-swift-network}
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-AXOLOTY_EMBEDDED_CORE_TOOLS_NO_EXEC=1 . "$script_dir/prepare-embedded-core-tools.sh"
-embedded_core_prepare_tools "$build_dir" "$script_dir/resolve-embedded-core.sh"
+AXOLOTY_EMBEDDED_CORE_TOOLS_NO_EXEC=1 . "$script_dir/embedded-core-tools.sh"
+embedded_core_prepare_tools "$build_dir" "$script_dir/embedded-core-source.sh"
 . "${IDF_PATH:-/opt/esp/idf}/export.sh" >/dev/null 2>&1
 . "$script_dir/embedded-build-cache.sh"
 mkdir -p "$build_dir"

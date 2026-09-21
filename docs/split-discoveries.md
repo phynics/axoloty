@@ -45,27 +45,33 @@ with the tree too:
 - `Tests/Support/selftests/test-check-axoloty-object-model-package.sh:20-21,31,45,75,87,100`
 - `Tests/Support/selftests/test-check-g6-architecture.sh:14-16,27-28,35,61`
 
-## 2. Firmware evidence ownership
+## 2. A `KEEP` check that depends on the `MOVE`d tree
 
-The embedded object-model cross-build evidence producer moves to
-`axoloty-embedded`. Core retains the firmware-free host and sanitizer probes,
-and keeps the legacy `check-embedded.sh` path as a compatibility wrapper for
-the portable probe. No Core spike reads `Embedded/` or invokes ESP-IDF.
+`Spikes/BoundedObjectModelEvidence/check-embedded.sh` is classified
+`KEEP/REWRITE IN AXOLOTY` (`g3-object-model-evidence-embedded`), yet:
 
-## 3. The flagship portability gate depends on `SUPERSEDE` tools
+- `:44` sets `EMBEDDED_PROJECT_DIR=/workspace/Embedded/swift`, and
+- `:47` invokes `/workspace/Tests/Support/embedded/build-embedded-swift.sh`.
 
-`Tests/Support/checks/check-embedded-swift.sh` contains no `Embedded/` reference,
-which is why it was reported safe. It does depend on the pre-split Core
-resolvers, both classified `SUPERSEDE/DELETE`:
+It measures the *migrated firmware's* object-model section sizes. It has no
+replacement. A `KEEP` check that builds a `MOVE`d tree is a contradiction in the
+inventory and needs a maintainer decision: either the evidence producer moves to
+`axoloty-embedded`, or Axoloty grows a firmware-free probe that measures the
+portable object model. The same tree is named by
+`Spikes/BoundedObjectModelEvidence/Evidence/evidence.schema.json:195`
+(`"source": {"const": "Embedded/swift"}`) and `EVIDENCE.md:42`.
 
-- `:19,23-24` source `Tests/Support/embedded/prepare-embedded-core-tools.sh`
-  and pass `Tests/Support/embedded/resolve-embedded-core.sh`.
+## 3. The flagship portability gate depended on `SUPERSEDE` tools
 
-Deleting either resolver breaks the required `check-embedded-swift` gate (and
-`check-embedded-swift-linker.sh:53,61-62`). They must stay until
-`check-embedded-swift.sh` is rewritten to obtain the same values from
-`axoloty-tool embedded consumer prepare` (the mechanism the newer
-`check-embedded-swift-core.sh` already uses).
+The old AxolotyWire-only gate was removed. Its RISC-V link probe and host
+parser probe now run as part of
+`check-embedded-swift-core.sh`, which already consumes the
+`axoloty-tool embedded consumer prepare` report. The linker gate also consumes
+that report directly instead of sourcing the pre-split resolver pair.
+
+The remaining firmware-owned scripts still reference the transitional consumer
+helpers until the ownership removal in #854. They are not part of the retained
+Core gate path and must be removed or re-homed with the firmware tooling.
 
 ## 4. Core tooling call sites
 
@@ -94,7 +100,7 @@ because a retained artifact depends on them.
 
 | Path | Disposition | Retained dependents (file:line) |
 |---|---|---|
-| `Tests/Support/embedded/build-embedded-swift.sh` | MOVE | `Tools/AxolotyToolingTests/Timing/AxolotyTimingTests.swift:179`; `Tests/Support/test-tiers.json:88,97,157` |
+| `Tests/Support/embedded/build-embedded-swift.sh` | MOVE | `Spikes/BoundedObjectModelEvidence/check-embedded.sh:47`; `Tools/AxolotyToolingTests/Timing/AxolotyTimingTests.swift:179`; `Tests/Support/test-tiers.json:88,97,157` |
 | `Tests/Support/embedded/embedded-agent-test.sh` | MOVE | `Makefile:436` |
 | `Tests/Support/embedded/embedded-agent-validator.mjs` | MOVE | `embedded-agent-test.sh:63`; `embedded-broker-restart-test.sh:47`; `embedded-coatyjs-test.sh:40`; `embedded-host-test.sh:39`; `embedded-last-will-test.sh:49`; `Tests/Support/selftests/test-embedded-network.sh:60` |
 | `Tests/Support/embedded/embedded-broker-restart-test.sh` | MOVE | `Makefile:461` |
@@ -119,8 +125,8 @@ because a retained artifact depends on them.
 | `Tests/Support/embedded/embedded-swift-test-validator.mjs` | MOVE | `Makefile:419`; `embedded-swift-test.sh:7`; `embedded-network-validator.mjs:4`; `Tests/Support/selftests/test-embedded-swift-test.sh:10` |
 | `Tests/Support/embedded/embedded-swift-test.sh` | MOVE | `Makefile:421`; `Tests/Support/test-tiers.json:90,100,163`; `Tools/AxolotyTooling/Commands/AxolotyHardwareCommands.swift:42`; `Tools/AxolotyToolingTests/Commands/AxolotyCommandDispatcherTests.swift:502,540` |
 | `Tests/Support/embedded/generate-embedded-network-config.mjs` | MOVE | `embedded-agent-test.sh:37`; `embedded-broker-restart-test.sh:37`; `embedded-coatyjs-test.sh:31`; `embedded-host-test.sh:35`; `embedded-last-will-test.sh:34`; `embedded-network-test.sh:19`; `Tests/Support/selftests/test-embedded-network.sh:10,50` |
-| `Tests/Support/embedded/resolve-embedded-core.sh` | SUPERSEDE | `Tests/Support/checks/check-embedded-swift.sh:24`; `check-embedded-swift-linker.sh:53,62`; `build-embedded-swift.sh:20`; `prepare-embedded-core-tools.sh:124`; device harnesses |
-| `Tests/Support/embedded/prepare-embedded-core-tools.sh` | SUPERSEDE | `Tests/Support/checks/check-embedded-swift.sh:23`; `check-embedded-swift-linker.sh:61`; `build-embedded-swift.sh:19`; device harnesses |
+| `Tests/Support/embedded/embedded-core-source.sh` | TRANSITIONAL | firmware-owned build and device harnesses until #854 |
+| `Tests/Support/embedded/embedded-core-tools.sh` | TRANSITIONAL | firmware-owned build and device harnesses until #854 |
 | `Tests/Support/checks/check-embedded-swift-linker.sh` | MOVE | `Tools/AxolotyToolingTests/Timing/AxolotyTimingTests.swift:187`; `Tests/Support/test-tiers.json:80,98,160` |
 | `Tests/Support/checks/check-embedded-environment.sh` | SUPERSEDE | `Tests/Support/test-tiers.json:95`; `Tools/AxolotyToolingTests/Commands/AxolotyCommandDispatcherTests.swift:456` |
 | `Tests/Support/checks/check-embedded-toolchain.sh` | MOVE | only a comment reference at `Tests/Support/embedded/embedded-device-info.sh:93`; the tooling's `embedded doctor` resolves to `check-embedded-environment.sh`, so this path is already orphaned in tooling |
@@ -177,13 +183,11 @@ removed in the removal commit.
    assert against the portable packages and the `axoloty-tool embedded consumer
    prepare` report, not the firmware tree. This changes required CI coverage and
    needs a Swift toolchain to verify.
-2. Replace the firmware implementation behind
-   `Spikes/BoundedObjectModelEvidence/check-embedded.sh` with the firmware-free
-   compatibility probe and remove the `Embedded/swift` constant from its schema
-   and `EVIDENCE.md`.
-3. Rewrite `check-embedded-swift.sh` to stop sourcing
-   `prepare-embedded-core-tools.sh` and `resolve-embedded-core.sh`, so those
-   `SUPERSEDE` files can go.
+2. Re-home or replace `Spikes/BoundedObjectModelEvidence/check-embedded.sh` and
+   remove the `Embedded/swift` constant from its schema and `EVIDENCE.md`.
+3. Retire the old AxolotyWire-only gate and fold its link/parser coverage into
+   the Core consumer gate. Re-home the remaining firmware-owned
+   callers before deleting the `SUPERSEDE` preparation helpers under #854.
 4. Rewrite `AxolotyHardwareCommands` and its tests for the hardware-command
    family, and delete the `AxolotyTimingTests`/`AxolotyCommandDispatcherTests`
    assertions for the removed paths.

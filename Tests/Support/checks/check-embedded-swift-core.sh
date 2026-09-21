@@ -4,8 +4,9 @@
 # Compile and partially link the portable Axoloty Core profile as Embedded
 # Swift. This gate deliberately owns no firmware project, SDK, broker, or
 # hardware state. It proves the dependency order used by a downstream Core
-# consumer and expands a real StaticIoActor declaration with the production
-# macro plugin.
+# consumer, expands a real StaticIoActor declaration with the production macro
+# plugin, and retains the RISC-V and host parser probes from the retired
+# AxolotyWire-only gate.
 
 set -eu
 
@@ -26,6 +27,10 @@ command -v node >/dev/null 2>&1 || {
 }
 command -v realpath >/dev/null 2>&1 || {
     echo "FAIL: realpath is required to validate Core and scratch boundaries" >&2
+    exit 1
+}
+command -v clang >/dev/null 2>&1 || {
+    echo "FAIL: clang is required for the host parser probe" >&2
     exit 1
 }
 
@@ -202,6 +207,28 @@ compile_module AxolotyProtocol "$AXOLOTY_PROTOCOL_SOURCE_DIR"
 compile_module AxolotyCoatyModels "$AXOLOTY_COATY_MODELS_SOURCE_DIR"
 compile_module AxolotyStaticRuntime "$AXOLOTY_STATIC_RUNTIME_SOURCE_DIR"
 
+link_probe="$source_root/Tests/Support/embedded/embedded-swift-link-probe.swift"
+parser_probe="$source_root/Tests/Support/embedded/embedded-swift-parser-probe.swift"
+host_shims="$source_root/Tests/Support/embedded/embedded-swift-host-shims.c"
+for probe_source in "$link_probe" "$parser_probe" "$host_shims"; do
+    [ -f "$probe_source" ] || {
+        echo "FAIL: Embedded Swift probe source is missing: $probe_source" >&2
+        exit 1
+    }
+done
+
+echo "Compiling the AxolotyWire RISC-V link probe..."
+swiftc \
+    -target riscv32-none-none-eabi \
+    -swift-version 6 \
+    -enable-experimental-feature Embedded \
+    -enable-experimental-feature Lifetimes \
+    -enable-experimental-feature StrictConcurrency \
+    -parse-as-library -Osize -wmo \
+    -I "$workdir" \
+    -c "$link_probe" \
+    -o "$workdir/embedded-wire-link-probe.o"
+
 echo "Compiling the real StaticIoActor Embedded consumer..."
 swiftc \
     -target riscv32-none-none-eabi \
@@ -251,6 +278,14 @@ find_riscv_linker() {
 echo "Partially linking the Core modules and consumer..."
 riscv_linker=$(find_riscv_linker)
 "$riscv_linker" -r \
+    -o "$workdir/embedded-wire-linked.o" \
+    "$workdir/embedded-wire-link-probe.o" \
+    "$workdir/AxolotyWire.o" \
+    "$workdir/_JSONCore.o"
+wire_linked_size=$(wc -c < "$workdir/embedded-wire-linked.o")
+echo "  AxolotyWire link probe: ${wire_linked_size} bytes"
+
+"$riscv_linker" -r \
     -o "$workdir/embedded-core-linked.o" \
     "$workdir/StaticIoActorEmbeddedConsumer.o" \
     "$workdir/AxolotyStaticRuntime.o" \
@@ -261,4 +296,54 @@ riscv_linker=$(find_riscv_linker)
     "$workdir/_JSONCore.o"
 
 linked_size=$(wc -c < "$workdir/embedded-core-linked.o")
-echo "EMBEDDED SWIFT CORE OK — five portable modules, _JSONCore, and StaticIoActor consumer linked: ${linked_size} bytes"
+
+echo "Running Embedded Swift parser behavior probe..."
+host_target=$(swiftc -print-target-info | node -e 'let data=""; process.stdin.on("data", chunk => data += chunk); process.stdin.on("end", () => process.stdout.write(JSON.parse(data).target.triple));')
+swift_resource_dir=$(swiftc -print-target-info | node -e 'let data=""; process.stdin.on("data", chunk => data += chunk); process.stdin.on("end", () => process.stdout.write(JSON.parse(data).paths.runtimeResourcePath));')
+unicode_archive="$swift_resource_dir/embedded/$host_target/libswiftUnicodeDataTables.a"
+[ -f "$unicode_archive" ] || {
+    echo "FAIL: Embedded Unicode archive not found for host target $host_target at $unicode_archive" >&2
+    exit 1
+}
+
+set --
+for source in "$json_core_dir"/*.swift "$json_core_dir"/Parser/*.swift "$json_core_dir"/SIMD/*.swift; do
+    [ -f "$source" ] || continue
+    set -- "$@" "$source"
+done
+[ "$#" -gt 0 ] || {
+    echo "FAIL: no _JSONCore source files found for the host parser probe" >&2
+    exit 1
+}
+
+swiftc \
+    -target "$host_target" \
+    -swift-version 6 \
+    -enable-experimental-feature Embedded \
+    -enable-experimental-feature Lifetimes \
+    -enable-experimental-feature StrictConcurrency \
+    -package-name IkigaJSON \
+    -parse-as-library -Osize -wmo \
+    -module-name _JSONCore \
+    -emit-module -c "$@" \
+    -o "$workdir/JSONCore-host.o" \
+    -emit-module-path "$workdir/_JSONCore.swiftmodule"
+clang -c "$host_shims" -o "$workdir/embedded-host-shims.o"
+swiftc \
+    -target "$host_target" \
+    -swift-version 6 \
+    -enable-experimental-feature Embedded \
+    -enable-experimental-feature Lifetimes \
+    -enable-experimental-feature StrictConcurrency \
+    -Osize -wmo \
+    -I "$workdir" \
+    "$AXOLOTY_WIRE_SOURCE_DIR"/*.swift "$parser_probe" \
+    "$workdir/JSONCore-host.o" \
+    "$workdir/embedded-host-shims.o" \
+    "$unicode_archive" \
+    -Xlinker -lm \
+    -o "$workdir/embedded-parser-probe"
+"$workdir/embedded-parser-probe"
+
+echo "  Parser behavior: valid, missing-data, literal, number, and nesting mappings passed"
+echo "EMBEDDED SWIFT CORE OK — five portable modules, StaticIoActor consumer, RISC-V link probe, and parser probe passed: ${linked_size} bytes"

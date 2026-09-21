@@ -4,7 +4,7 @@
 //
 // This file imports AxolotyWire as a separate module and exercises every
 // runtime-relevant public API. It is compiled with `swiftc -c` and linked
-// against the AxolotyWire module object by check-embedded-swift.sh.
+// against the AxolotyWire module object by check-embedded-swift-core.sh.
 //
 // A compile-only check cannot catch missing runtime symbols (e.g. Unicode
 // normalization tables), ABI mismatches, or relocation errors. This probe

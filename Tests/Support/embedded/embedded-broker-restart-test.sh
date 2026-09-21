@@ -11,8 +11,8 @@ build_dir=${EMBEDDED_BROKER_RESTART_BUILD_DIR:-/workspace/.build/embedded-broker
 output_dir=${EMBEDDED_OUTPUT_DIR:-/workspace/.testing/embedded}
 managed_broker=${EMBEDDED_BROKER_RESTART_MANAGED:-1}
 support_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-AXOLOTY_EMBEDDED_CORE_TOOLS_NO_EXEC=1 . "$support_dir/prepare-embedded-core-tools.sh"
-embedded_core_prepare_tools "$build_dir" "$support_dir/resolve-embedded-core.sh"
+AXOLOTY_EMBEDDED_CORE_TOOLS_NO_EXEC=1 . "$support_dir/embedded-core-tools.sh"
+embedded_core_prepare_tools "$build_dir" "$support_dir/embedded-core-source.sh"
 reference_dir=$(CDPATH= cd -- "$support_dir/../WireCompatibility/ReferenceAgents/coatyjs" && pwd)
 port=${EMBEDDED_BROKER_RESTART_PORT:-1883}
 esptool="${IDF_PATH:-/opt/esp/idf}/components/esptool_py/esptool/esptool.py"

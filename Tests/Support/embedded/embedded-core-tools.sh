@@ -121,5 +121,5 @@ embedded_core_prepare_tools() {
 
 if [ "${AXOLOTY_EMBEDDED_CORE_TOOLS_NO_EXEC:-0}" != 1 ]; then
     embedded_core_prepare_tools "${1:-/workspace/.build/embedded-swift}" \
-        "${2:-/workspace/Tests/Support/embedded/resolve-embedded-core.sh}"
+        "${2:-/workspace/Tests/Support/embedded/embedded-core-source.sh}"
 fi
