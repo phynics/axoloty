@@ -318,7 +318,7 @@ struct WireCodecTests {
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 
-        let raw = reader.readRaw("result")
+        let raw = reader.readField("result")
         #expect(raw != nil)
         // The raw bytes should contain the object
         let rawStr = String(decoding: (0..<raw!.length).map { raw!.byte(at: $0)! }, as: UTF8.self)
@@ -333,8 +333,8 @@ struct WireCodecTests {
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 
-        #expect(reader.readRaw("privateData") != nil)
-        #expect(reader.readRaw("filter") != nil)
+        #expect(reader.readField("privateData") != nil)
+        #expect(reader.readField("filter") != nil)
     }
 
     @Test
@@ -356,7 +356,7 @@ struct WireCodecTests {
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 
-        let raw = reader.readRaw("metadata")
+        let raw = reader.readField("metadata")
         #expect(try #require(raw).equals("null"))
     }
 
@@ -404,7 +404,7 @@ struct WireCodecTests {
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 
-        #expect(reader.readRaw("a") == nil)
+        #expect(reader.readField("a") == nil)
         #expect(reader.readBool("a") == nil)
     }
 

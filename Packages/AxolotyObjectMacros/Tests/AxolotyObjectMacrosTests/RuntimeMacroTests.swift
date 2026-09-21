@@ -43,10 +43,10 @@ public struct ManualReading: ObjectSchema {
     }
 
     public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
-        try encoder.encode(temperature, forKey: "temperature")
-        try encoder.encode(alarms, forKey: "alarmCodes")
+        try temperature.encode(to: &encoder, forKey: "temperature")
+        try alarms.encode(to: &encoder, forKey: "alarmCodes")
         try encoder.encodeDefault(retries, default: 3, forKey: "retries")
-        try encoder.encode(state, forKey: "state")
+        try state.encode(to: &encoder, forKey: "state")
     }
 }
 

@@ -423,9 +423,6 @@ public struct WireReader {
         if slot.kind == .trueValue { return true }; if slot.kind == .falseValue { return false }; return nil
     }
 
-    /// Reads a complete raw JSON value, including quotes for strings.
-    public func readRaw(_ key: StaticString) -> ByteSlice? { readField(key) }
-
     /// Reads an optional raw value, treating an explicit JSON `null` as absent.
     public func readOptionalRaw(_ key: StaticString) -> ByteSlice? {
         guard index.failure == nil, let slot = index.find(bytes: bytes, key: key), slot.kind != .nullValue else { return nil }

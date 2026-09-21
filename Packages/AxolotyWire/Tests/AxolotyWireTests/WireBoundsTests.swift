@@ -166,7 +166,7 @@ struct WireReaderImplementationTests {
                 }
             }()
             #expect(failure == nil, "Unexpected bounded-value failure: \(String(describing: failure?.reason))")
-            #expect(reader.readRaw("payload") != nil)
+            #expect(reader.readField("payload") != nil)
         }
     }
 
@@ -177,7 +177,7 @@ struct WireReaderImplementationTests {
             let reader = WireReader(bytes: buffer.baseAddress!, length: buffer.count)
             let failure = validationError(reader)
 
-            #expect(reader.readRaw("payload") == nil)
+            #expect(reader.readField("payload") == nil)
             guard let failure else {
                 Issue.record("Expected truncated nested object to fail")
                 return

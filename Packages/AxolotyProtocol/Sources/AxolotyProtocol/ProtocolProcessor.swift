@@ -775,7 +775,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     private static func advertisedObjectField(_ field: StaticString, payload: ByteSlice) -> ByteSlice? {
         payload.withBytes { pointer, length in
             let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
-            guard let object = reader.readRaw("object") else { return nil }
+            guard let object = reader.readField("object") else { return nil }
             return object.withBytes { objectPointer, objectLength in
                 let objectReader = WireReader(
                     bytes: objectPointer.assumingMemoryBound(to: UInt8.self),
@@ -978,7 +978,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     private static func advertisedObjectID(_ payload: ByteSlice) -> UUID16? {
         payload.withBytes { pointer, length in
             let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
-            guard let object = reader.readRaw("object") else { return nil }
+            guard let object = reader.readField("object") else { return nil }
             return object.withBytes { objectPointer, objectLength in
                 let objectReader = WireReader(
                     bytes: objectPointer.assumingMemoryBound(to: UInt8.self),
@@ -1068,7 +1068,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         var matched = 0
         payload.withBytes { pointer, length in
             let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
-            guard let rawIDs = reader.readRaw("objectIds") else {
+            guard let rawIDs = reader.readField("objectIds") else {
                 valid = false
                 return
             }
