@@ -242,3 +242,13 @@ broker, or probe hardware.
 The target triple and linker are test-gate implementation details. They do not
 extend the downstream contract described by
 `docs/embedded-consumer-contract.json`.
+
+## Validate the repository cutover
+
+The required `repository-cutover-boundary` gate verifies this contract from the
+Core side: it rejects contract paths that leave the checkout or enter private
+Core layout, keeps `AXOLOTY_SOURCE_DIR` the only documented local override, and
+pins the required plan against firmware and hardware coupling. With
+`AXOLOTY_EMBEDDED_COMPARE_DIR` it audits a firmware checkout, its lock, and its
+recorded evidence against this Core checkout. See
+[embedded-cutover-validation.md](./embedded-cutover-validation.md).
