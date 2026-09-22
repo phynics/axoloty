@@ -115,15 +115,29 @@ jobs:
             .build/ci/tooling/x86_64-unknown-linux-gnu/debug/index/store
             .build/ci/tooling/x86_64-unknown-linux-gnu/debug/Modules
             .build/ci/packages/*/build.db
+            .build/ci/packages/*/checkouts
             .build/ci/packages/*/debug.yaml
             .build/ci/packages/*/plugin-tools.yaml
             .build/ci/packages/*/workspace-state.json
             .build/ci/packages/*/plugins
+            .build/ci/packages/*/repositories
             .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/*.build
             .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/description.json
             .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/index/store
             .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/Modules
             .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/ModuleCache
+            .build/ci/apps/build.db
+            .build/ci/apps/checkouts
+            .build/ci/apps/debug.yaml
+            .build/ci/apps/plugin-tools.yaml
+            .build/ci/apps/workspace-state.json
+            .build/ci/apps/plugins
+            .build/ci/apps/repositories
+            .build/ci/apps/x86_64-unknown-linux-gnu/debug/*.build
+            .build/ci/apps/x86_64-unknown-linux-gnu/debug/description.json
+            .build/ci/apps/x86_64-unknown-linux-gnu/debug/index/store
+            .build/ci/apps/x86_64-unknown-linux-gnu/debug/Modules
+            .build/ci/apps/x86_64-unknown-linux-gnu/debug/ModuleCache
           key: ${{ env.SWIFT_BUILD_CACHE_KEY }}
           restore-keys: |
             ${{ env.SWIFT_BUILD_CACHE_PREFIX }}
@@ -260,15 +274,29 @@ jobs:
             .build/ci/tooling/x86_64-unknown-linux-gnu/debug/index/store
             .build/ci/tooling/x86_64-unknown-linux-gnu/debug/Modules
             .build/ci/packages/*/build.db
+            .build/ci/packages/*/checkouts
             .build/ci/packages/*/debug.yaml
             .build/ci/packages/*/plugin-tools.yaml
             .build/ci/packages/*/workspace-state.json
             .build/ci/packages/*/plugins
+            .build/ci/packages/*/repositories
             .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/*.build
             .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/description.json
             .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/index/store
             .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/Modules
             .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/ModuleCache
+            .build/ci/apps/build.db
+            .build/ci/apps/checkouts
+            .build/ci/apps/debug.yaml
+            .build/ci/apps/plugin-tools.yaml
+            .build/ci/apps/workspace-state.json
+            .build/ci/apps/plugins
+            .build/ci/apps/repositories
+            .build/ci/apps/x86_64-unknown-linux-gnu/debug/*.build
+            .build/ci/apps/x86_64-unknown-linux-gnu/debug/description.json
+            .build/ci/apps/x86_64-unknown-linux-gnu/debug/index/store
+            .build/ci/apps/x86_64-unknown-linux-gnu/debug/Modules
+            .build/ci/apps/x86_64-unknown-linux-gnu/debug/ModuleCache
           key: ${{ env.SWIFT_BUILD_CACHE_KEY }}
 
       - name: Save ESP-IDF compiler cache
@@ -306,6 +334,10 @@ jobs:
           cache_ids="$RUNNER_TEMP/swift-build-cache-ids"
           gh cache list --ref refs/heads/main --key "swift-build-v3-compiler-6.3-linux-" \
             --sort created_at --order desc --limit 100 --json id --jq '.[2:][].id' > "$cache_ids"
+          # ESP-IDF ccache keys are per-commit too; unpruned copies (~370 MB
+          # each) filled the repository quota and evicted the Swift caches.
+          gh cache list --ref refs/heads/main --key "esp-idf-ccache-v1-" \
+            --sort created_at --order desc --limit 100 --json id --jq '.[2:][].id' >> "$cache_ids"
           gh cache list --ref refs/heads/main --key "swift-build-v2-coverage-6.3-linux-" \
             --limit 100 --json id --jq '.[].id' >> "$cache_ids"
           gh cache list --ref refs/heads/main --key "swift-build-coverage-6.3-linux-" \

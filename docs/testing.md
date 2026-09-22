@@ -105,7 +105,10 @@ most recent cache for the current image and manifest identity. The ESP-IDF
 compiler cache uses `esp-idf-ccache-v1-<image-identity>-<commit>`, may restore a
 prior default-branch entry with the same image identity, and is limited to
 512 MiB. Only a successful push to `main` may save a new Swift compiler or
-ESP-IDF cache. Pull requests restore caches but never publish them. Timing
+ESP-IDF cache. After each push to `main`, CI keeps the two newest Swift
+compiler and ESP-IDF caches and deletes older ones, so per-commit keys stay
+within the repository cache quota. Pull requests restore caches but never
+publish them. Timing
 evidence records ESP-IDF ccache statistics before and after each embedded
 build; the three embedded build directories remain separate evidence lanes.
 

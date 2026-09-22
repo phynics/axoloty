@@ -16,20 +16,27 @@ cd "$root_dir"
 # test list. The Node side emits one row per alternation branch, so a branch
 # that silently decays cannot hide behind a sibling branch that still matches.
 # Use a non-whitespace delimiter: root-package records have an empty scratch path.
+# Discovery output depends only on the package and scratch path, so each
+# listing is produced once and reused by every branch that targets it; the
+# manifest expands to hundreds of branches across a handful of packages.
+listing_dir=$(mktemp -d)
+trap 'rm -rf "$listing_dir"' EXIT
 while IFS=$'\x1f' read -r node_id package_path scratch_path branch; do
     [ -n "$node_id" ] && [ -n "$branch" ] || {
         echo "error: canonical test filter record is incomplete" >&2
         exit 1
     }
-    output=$(mktemp)
-    trap 'rm -f "$output"' EXIT
-    args=(test --list-tests --cache-path "$cache_path" --disable-automatic-resolution)
-    if [ "$package_path" != "." ]; then args+=(--package-path "$package_path"); fi
-    if [ -n "$scratch_path" ]; then args+=(--scratch-path "$scratch_path"); fi
-    if ! timeout "$list_timeout" swift "${args[@]}" >"$output" 2>&1; then
-        echo "error: SwiftPM test discovery failed for $node_id; see the listing output below" >&2
-        cat "$output" >&2
-        exit 1
+    listing_key=$(printf '%s\x1f%s' "$package_path" "$scratch_path" | cksum | tr ' ' '-')
+    output="$listing_dir/$listing_key.txt"
+    if [ ! -f "$output" ]; then
+        args=(test --list-tests --cache-path "$cache_path" --disable-automatic-resolution)
+        if [ "$package_path" != "." ]; then args+=(--package-path "$package_path"); fi
+        if [ -n "$scratch_path" ]; then args+=(--scratch-path "$scratch_path"); fi
+        if ! timeout "$list_timeout" swift "${args[@]}" >"$output" 2>&1; then
+            echo "error: SwiftPM test discovery failed for $node_id; see the listing output below" >&2
+            cat "$output" >&2
+            exit 1
+        fi
     fi
     if ! node - "$output" "$branch" <<'NODE'
 const fs = require("node:fs");
