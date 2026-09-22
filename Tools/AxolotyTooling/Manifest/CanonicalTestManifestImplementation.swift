@@ -18,11 +18,6 @@ public enum AxolotyCanonicalTestManifestError: Error, Equatable, Sendable, Local
     case unknownEntry(String)
     /// A requested node is unavailable on the selected platform.
     case unavailableNode(String)
-    /// A named plan inherits from a plan that is not declared.
-    case missingPlanInheritance(plan: String, parent: String)
-    /// Named plan inheritance contains a cycle.
-    case planInheritanceCycle([String])
-
     /// A human-readable explanation suitable for a command diagnostic.
     public var userFriendlyMessage: String {
         switch self {
@@ -40,10 +35,6 @@ public enum AxolotyCanonicalTestManifestError: Error, Equatable, Sendable, Local
             return "canonical test manifest entry not found: \(name)"
         case .unavailableNode(let name):
             return "canonical test node is unavailable on this platform: \(name)"
-        case .missingPlanInheritance(let plan, let parent):
-            return "canonical test plan \(plan) inherits from unknown plan \(parent)"
-        case .planInheritanceCycle(let plans):
-            return "canonical test plan inheritance cycle: \(plans.joined(separator: " -> "))"
         }
     }
 

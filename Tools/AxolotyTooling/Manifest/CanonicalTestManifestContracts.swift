@@ -261,35 +261,6 @@ public struct AxolotyCanonicalTestTier: Codable, Equatable, Sendable {
     }
 }
 
-/// Named roots for a canonical execution plan.
-public struct AxolotyCanonicalTestPlanDefinition: Codable, Equatable, Sendable {
-    /// Roots for ordinary local execution.
-    public let nodes: [String]
-    /// An optional plan whose roots are included before these roots.
-    public let inherits: String?
-    /// Roots for CI execution. Missing means the ordinary roots.
-    public let ciNodes: [String]?
-    /// The absolute wall-clock budget for this plan, in seconds.
-    public let timeoutSeconds: TimeInterval?
-    /// Expected plan duration used as a warning threshold.
-    public let expectedDurationSeconds: TimeInterval?
-
-    /// Creates a plan definition.
-    public init(
-        nodes: [String],
-        inherits: String? = nil,
-        ciNodes: [String]? = nil,
-        timeoutSeconds: TimeInterval? = nil,
-        expectedDurationSeconds: TimeInterval? = nil
-    ) {
-        self.nodes = nodes
-        self.inherits = inherits
-        self.ciNodes = ciNodes
-        self.timeoutSeconds = timeoutSeconds
-        self.expectedDurationSeconds = expectedDurationSeconds
-    }
-}
-
 /// The reusable command interface for `test-one`.
 public struct AxolotyCanonicalTestInterface: Codable, Equatable, Sendable {
     /// The command template.
