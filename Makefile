@@ -23,28 +23,21 @@ ifeq ($(strip $(RUN_ID)),)
 RUN_ID := $(shell printf '%s-%s' "$$(date +%s)" "$$$$")
 endif
 AXOLOTY_RUN_ID ?= $(RUN_ID)
-AXOLOTY_PROOF_RUN_ID ?= $(RUN_ID)
-AXOLOTY_PROOF_ROOT ?= /tmp/axoloty-go-proof
-AXOLOTY_PROOF_EVIDENCE_ROOT ?= .testing/embedded/consumer-proof
 AXOLOTY_RUNS_DIR ?= .testing/runs
 WIRE_OUTPUT_DIR ?= $(AXOLOTY_RUNS_DIR)/$(RUN_ID)/wire
 # This is deliberately container-visible. The path is relative to the
 # mounted worktree, while .swiftpm-cache is the shared cache mount.
 AXOLOTY_RESOURCE_LEASE_ROOT ?= .swiftpm-cache/.axoloty-resource-leases
-AXOLOTY_RUN_CONTAINER_ENV_VARS := AXOLOTY_RUN_ID AXOLOTY_RUNS_DIR WIRE_OUTPUT_DIR AXOLOTY_RESOURCE_LEASE_ROOT AXOLOTY_PROOF_RUN_ID AXOLOTY_SOURCE_DIR EMBEDDED_PROJECT_DIR EMBEDDED_CORPUS_MANIFEST
-export AXOLOTY_RUN_ID AXOLOTY_PROOF_RUN_ID AXOLOTY_RUNS_DIR WIRE_OUTPUT_DIR AXOLOTY_RESOURCE_LEASE_ROOT EMBEDDED_PROJECT_DIR EMBEDDED_CORPUS_MANIFEST
+AXOLOTY_RUN_CONTAINER_ENV_VARS := AXOLOTY_RUN_ID AXOLOTY_RUNS_DIR WIRE_OUTPUT_DIR AXOLOTY_RESOURCE_LEASE_ROOT
+export AXOLOTY_RUN_ID AXOLOTY_RUNS_DIR WIRE_OUTPUT_DIR AXOLOTY_RESOURCE_LEASE_ROOT
 BUILD_LOCK ?= 1
 export BUILD_LOCK
 ifeq ($(AXOLOTY_DEVCONTAINER),1)
 BUILD_DIR ?= /workspace/.build
 SPM_CACHE_DIR ?= /workspace/.swiftpm-cache
-AXOLOTY_ESP_IDF_CCACHE_DIR ?= /workspace/.ccache
-AXOLOTY_DEVICE_LEASE_ROOT ?= /workspace/.build/device-leases
 else
 BUILD_DIR ?= $(BUILD_CACHE_ROOT)/worktrees/$(WORKTREE_NAME)/debug
 SPM_CACHE_DIR ?= $(HOME)/.cache/coaty-swift/swiftpm/$(CACHE_NAMESPACE)
-AXOLOTY_ESP_IDF_CCACHE_DIR ?= $(HOME)/.cache/axoloty/esp-idf-ccache
-AXOLOTY_DEVICE_LEASE_ROOT ?= $(BUILD_CACHE_ROOT)/device-leases
 endif
 PACKAGE_PATH ?= .
 CONTAINER_MOUNTS := -v "$(CURDIR):$(WORKDIR)$(CONTAINER_MOUNT_SUFFIX)" -v "$(BUILD_DIR):$(WORKDIR)/.build$(CONTAINER_MOUNT_SUFFIX)" -v "$(SPM_CACHE_DIR):$(WORKDIR)/.swiftpm-cache$(CONTAINER_MOUNT_SUFFIX)"
@@ -52,12 +45,6 @@ SWIFT_CACHE_ARGS := --cache-path /workspace/.swiftpm-cache
 SWIFT_LOCKED_ARGS := $(SWIFT_CACHE_ARGS) --disable-automatic-resolution
 COMMA := ,
 AXOLOTY_TOOL_ARGS ?= --help
-AXOLOTY_DEVICE ?= /dev/ttyACM0
-AXOLOTY_EMBEDDED_LINKER_CLEAN ?= 0
-export AXOLOTY_DEVICE_LEASE_ROOT
-export AXOLOTY_ESP_IDF_CCACHE_DIR
-AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES ?=
-AXOLOTY_TOOL_CONTAINER_ENV_VARS ?=
 # The CLI enforces node and plan deadlines. This is the outer safety budget
 # for a container command that stops producing progress before the CLI exits.
 AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS ?= 4800
@@ -66,7 +53,6 @@ AXOLOTY_TIER_TIMEOUT_SECONDS ?= 18000
 AXOLOTY_EXPLAIN_TIMEOUT_SECONDS ?= 60
 AXOLOTY_RESOLVE_TIMEOUT_SECONDS ?= 1800
 AXOLOTY_EMBEDDED_TIMEOUT_SECONDS ?= 7200
-AXOLOTY_EXTERNAL_FIRMWARE_JOBS ?= 4
 AXOLOTY_RELEASE_TIMEOUT_SECONDS ?= 18000
 AXOLOTY_CONSUMER_REPOSITORY_URL ?= https://github.com/phynics/axoloty.git
 AXOLOTY_CONSUMER_VERSION ?= $(shell tr -d '[:space:]' < VERSION)
@@ -93,27 +79,16 @@ DOC_HOSTING_BASE_PATH ?=
 .PHONY: \
 	help image resolve worktree-bootstrap worktree-warm \
 	axoloty-tool verify verify-ci test-one test-tier explain \
-	hardware-check hardware-require checkpoint checkpoint-hardware \
-	 test-decoder-context-sendable \
+	checkpoint \
+	test-decoder-context-sendable \
 	test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies \
 	test-axoloty-wire-independent-resolution test-axoloty-wire-distribution \
 	test-axoloty-semver-consumer \
-	  \
-	   \
 	ci-preflight ci shell docs lint \
-	wire-tool clean serve-mqtt serve-mcp serve-dev embedded-toolchain-doctor \
-	embedded-device-info embedded-device-smoke embedded-reproducible-build \
+	wire-tool clean serve-mqtt serve-mcp serve-dev \
 	benchmark-wire benchmark-wire-allocation benchmark-static-io-ownership-allocation benchmark-wire-bounds \
 	check-embedded-core-consumer check-static-io-macro-embedded \
-	benchmark-wire-device check-budget-manifest check-embedded-swift \
-	check-embedded-swift-linker embedded-swift-build embedded-swift-flash \
-	embedded-swift-test embedded-swift-reproducible-build \
-	embedded-consumer-proof-build embedded-consumer-proof-flash \
-	embedded-consumer-proof-validate \
-	embedded-external-consumer-validate embedded-external-consumer-proof \
-	embedded-external-consumer-flash \
-	embedded-network-test embedded-agent-test embedded-coatyjs-test embedded-host-test \
-	embedded-last-will-test embedded-broker-restart-test embedded-interop-test
+	check-budget-manifest check-embedded-swift
 
 # Quote user-provided values before placing them in a shell assignment. The
 # resulting value is still passed to run.sh as one argv element.
@@ -123,7 +98,7 @@ shell_quote = $(SINGLE_QUOTE)$(subst $(SINGLE_QUOTE),$(SINGLE_QUOTE)$(DOUBLE_QUO
 
 help:
 	@printf '%s\n' \
-		'make image         Build the dev container image (includes ESP32-C6 toolchain)' \
+		'make image         Build the dev container image' \
 		'make resolve PACKAGE_PATH=.  Resolve one package lockfile using the shared SwiftPM cache' \
 		'make worktree-bootstrap  Prepare dependency cache and validate Package.resolved' \
 		'make worktree-warm  Bootstrap and compile the current worktree' \
@@ -132,11 +107,7 @@ help:
 		'make test-one FILTER=...  Run one bounded suite or test filter' \
 		'make test-tier TIER=ci|wire|embedded|release  Run one canonical test category' \
 		'make explain TIER=...  Explain commands, policies, locks, and artifacts' \
-		'make hardware-check  Run or skip the sporadic ESP32-C6 smoke check' \
-		'make hardware-require  Require an attached ESP32-C6 smoke check' \
-		'make g1-bounded-runtime-device  Run the G1 candidate evidence on an attached ESP32-C6' \
-		'make checkpoint     Run the release checkpoint validation (no hardware)' \
-		'make checkpoint-hardware  Run checkpoint with ESP32-C6 smoke test' \
+		'make checkpoint     Run the release checkpoint validation' \
 		'make serve-mqtt    Run the local MQTT broker in the container' \
 		'make serve-mcp     Run the MCP service in the container' \
 		'make serve-dev     Run the MQTT + MCP development stack' \
@@ -146,33 +117,13 @@ help:
 		'make test-axoloty-wire-distribution  Validate root and standalone AxolotyWire consumers' \
 		'make test-axoloty-semver-consumer  Build clean semver consumers for both products' \
 		'make wire-tool   Build the npx-runnable wire-compatibility CLI' \
-		'make embedded-toolchain-doctor  Verify the device-independent ESP-IDF environment' \
-		'make embedded-device-info  Query the board and record a device manifest' \
-		'make embedded-device-smoke  Build, flash, and capture the smoke marker' \
-		'make embedded-coatyjs-test  Run one Phase 4 direction (EMBEDDED_COATY_ROLE=A|B)' \
-		'make embedded-host-test  Run one Phase 4 host direction (EMBEDDED_HOST_ROLE=A|B)' \
-		'make embedded-last-will-test  Force-reset A and verify its broker-issued will on B' \
-		'make embedded-broker-restart-test  Restart a broker and verify receive after resubscribe' \
-		'make embedded-interop-test  Run the complete physical Phase 4 interoperability gate' \
-		'make embedded-reproducible-build  Verify the firmware bin is reproducible' \
 		'make benchmark-wire  Run release wire benchmarks (p50/p95 latency + allocations)' \
 		'make benchmark-wire-allocation  Host zero-per-iteration allocation gate for wire decode/route' \
 		'make benchmark-static-io-ownership-allocation  Host zero-growth allocation gate for static IO ownership primitives' \
 		'make check-embedded-core-consumer  Compile every portable module and a real macro consumer for Embedded Swift' \
 		'make check-static-io-macro-embedded  Compatibility alias for check-embedded-core-consumer' \
 		'make benchmark-wire-bounds  Run malformed-input and capacity bounds tests' \
-		'make benchmark-wire-device  Run ESP32-C6 on-device wire benchmarks' \
 		'make check-budget-manifest  Validate the performance budget manifest' \
-		'make check-embedded-swift-linker  Verify Unicode runtime links for ESP32-C6' \
-		'make embedded-swift-build  Build the ESP32-C6 Embedded Swift firmware' \
-		'make embedded-swift-flash  Build, flash, and capture the Swift smoke marker' \
-		'make embedded-consumer-proof-build AXOLOTY_PROOF_RUN_ID=...  Build an unrelated-root firmware proof' \
-		'make embedded-consumer-proof-flash AXOLOTY_PROOF_RUN_ID=... EMBEDDED_DEVICE=... SUDO=...  Flash and capture the proof' \
-		'make embedded-consumer-proof-validate AXOLOTY_PROOF_RUN_ID=...  Validate final durable proof evidence' \
-		'make embedded-external-consumer-validate  Compatibility alias for embedded-consumer-proof-validate' \
-		'make embedded-external-consumer-proof  Compatibility alias for embedded-consumer-proof-build' \
-		'make embedded-external-consumer-flash  Compatibility alias for embedded-consumer-proof-flash' \
-		'make embedded-swift-reproducible-build  Verify firmware is bit-for-bit reproducible' \
 		'make ci            Run the consolidated pull-request checks' \
 		'make shell         Open a shell in the Linux container' \
 		'make docs          Generate DocC API documentation into the active build cache' \
@@ -216,12 +167,7 @@ axoloty-tool: image
 	AXOLOTY_HOST_RUNTIME_BRIDGE="$(AXOLOTY_HOST_RUNTIME_BRIDGE)" \
 	CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
 	BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-	AXOLOTY_ESP_IDF_CCACHE_DIR="$(AXOLOTY_ESP_IDF_CCACHE_DIR)" \
-	AXOLOTY_EMBEDDED_LINKER_CLEAN="$(AXOLOTY_EMBEDDED_LINKER_CLEAN)" \
-	AXOLOTY_DEVICE="$(AXOLOTY_DEVICE)" \
-	AXOLOTY_DEVICE_LEASE_ROOT="$(AXOLOTY_DEVICE_LEASE_ROOT)" \
-	CONTAINER_OPTIONAL_DEVICES="$(AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES)" \
-	CONTAINER_ENV_VARS="$(AXOLOTY_TOOL_CONTAINER_ENV_VARS) AXOLOTY_SOURCE_DIR AXOLOTY_DEVICE_LEASE_ROOT AXOLOTY_EMBEDDED_LINKER_CLEAN $(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
+	CONTAINER_ENV_VARS="$(AXOLOTY_TOOL_CONTAINER_ENV_VARS) AXOLOTY_SOURCE_DIR $(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
 	.devcontainer/run.sh /opt/axoloty/bin/axoloty-tool $(AXOLOTY_TOOL_ARGS)
 
 serve-mqtt: image
@@ -277,23 +223,6 @@ explain: image
 		CONTAINER_ENV_VARS=AXOLOTY_OUTPUT AXOLOTY_OUTPUT=human \
 		.devcontainer/run.sh /opt/axoloty/bin/axoloty-tool explain "$$tier"
 
-hardware-check:
-	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='hardware check' \
-		AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES='$(AXOLOTY_DEVICE)' AXOLOTY_TOOL_CONTAINER_ENV_VARS='AXOLOTY_DEVICE' \
-		AXOLOTY_DEVICE='$(AXOLOTY_DEVICE)'
-
-hardware-require:
-	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='hardware require' \
-		AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES='$(AXOLOTY_DEVICE)' AXOLOTY_TOOL_CONTAINER_ENV_VARS='AXOLOTY_DEVICE' \
-		AXOLOTY_DEVICE='$(AXOLOTY_DEVICE)'
-
-g1-bounded-runtime-device:
-	@$(MAKE) --no-print-directory axoloty-tool \
-		AXOLOTY_TOOL_ARGS='test-one --filter g1-bounded-runtime-device' \
-		AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES='$(AXOLOTY_DEVICE)' \
-		AXOLOTY_TOOL_CONTAINER_ENV_VARS='AXOLOTY_DEVICE' \
-		AXOLOTY_DEVICE='$(AXOLOTY_DEVICE)'
-
 checkpoint:
 	@AXOLOTY_GIT_COMMIT="$$(git rev-parse HEAD)"; \
 		AXOLOTY_GIT_TREE="$$(git rev-parse HEAD^{tree})"; \
@@ -307,20 +236,6 @@ checkpoint:
 			AXOLOTY_EVIDENCE_DIR="$(AXOLOTY_EVIDENCE_DIR)" AXOLOTY_REPOSITORY="$(AXOLOTY_REPOSITORY)" AXOLOTY_G6_REQUIRE_SOURCE_RECEIPTS="$(AXOLOTY_G6_REQUIRE_SOURCE_RECEIPTS)" AXOLOTY_G6_HOST_RECEIPT="$(AXOLOTY_G6_HOST_RECEIPT)" AXOLOTY_G6_EMBEDDED_RECEIPT="$(AXOLOTY_G6_EMBEDDED_RECEIPT)" AXOLOTY_G6_WIRE_EVIDENCE="$(AXOLOTY_G6_WIRE_EVIDENCE)" \
 			AXOLOTY_CONSUMER_REPOSITORY_URL="$(AXOLOTY_CONSUMER_REPOSITORY_URL)" AXOLOTY_CONSUMER_VERSION="$(AXOLOTY_CONSUMER_VERSION)" \
 			AXOLOTY_CONSUMER_LOCAL="$(AXOLOTY_CONSUMER_LOCAL)" AXOLOTY_CONSUMER_LOCAL_VERSION="$(AXOLOTY_CONSUMER_LOCAL_VERSION)"
-
-checkpoint-hardware:
-	@AXOLOTY_GIT_COMMIT="$$(git rev-parse HEAD)"; \
-		AXOLOTY_GIT_TREE="$$(git rev-parse HEAD^{tree})"; \
-		if test -z "$$(git status --porcelain)"; then AXOLOTY_GIT_CLEAN=true; else AXOLOTY_GIT_CLEAN=false; fi; \
-		export AXOLOTY_GIT_COMMIT AXOLOTY_GIT_TREE AXOLOTY_GIT_CLEAN; \
-		container_env="$$(sh Tests/Support/lib/tool-container-env.sh release-checkpoint-hardware)" || exit 1; \
-		test -n "$$container_env" || { echo 'release-checkpoint-hardware: empty container env allowlist' >&2; exit 1; }; \
-		$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='release checkpoint-hardware' AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS=$(AXOLOTY_RELEASE_TIMEOUT_SECONDS) \
-			AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES="$${AXOLOTY_DEVICE:-/dev/ttyACM0}" \
-			AXOLOTY_TOOL_CONTAINER_ENV_VARS="$$container_env" \
-			AXOLOTY_GIT_COMMIT="$$AXOLOTY_GIT_COMMIT" AXOLOTY_GIT_TREE="$$AXOLOTY_GIT_TREE" AXOLOTY_GIT_CLEAN="$$AXOLOTY_GIT_CLEAN" \
-			AXOLOTY_EVIDENCE_DIR="$(AXOLOTY_EVIDENCE_DIR)" AXOLOTY_G6_RESOURCE_EVIDENCE="$(AXOLOTY_G6_RESOURCE_EVIDENCE)" AXOLOTY_REPOSITORY="$(AXOLOTY_REPOSITORY)" \
-			AXOLOTY_DEVICE="$${AXOLOTY_DEVICE:-/dev/ttyACM0}"
 
 # The check needs build diagnostics, so it runs the build itself rather than a
 # test filter. run.sh executes directly when already inside the container.
@@ -361,212 +276,6 @@ test-axoloty-semver-consumer: image
 wire-tool:
 	cd Tests/Support/WireCompatibility/tool && npm ci && npm test
 
-# Device test preconditions and result copying. The invoked script and its
-# environment stay on the recipe line for `make -n` and the tier validator.
-define embedded_wifi_precondition
-test -n "$$AXOLOTY_WIFI_SSID" && test -n "$$AXOLOTY_WIFI_PASSWORD" || { echo '$(1)' >&2; exit 2; }
-endef
-
-define embedded_broker_precondition
-test -n "$$AXOLOTY_WIFI_SSID" && test -n "$$AXOLOTY_WIFI_PASSWORD" && test -n "$$AXOLOTY_MQTT_HOST" || { echo '$(1)' >&2; exit 2; }
-endef
-
-define copy_embedded_artifacts
-mkdir -p .testing/embedded || exit 1; \
-	for artifact in swift-smoke-log.txt swift-smoke-result.json; do \
-		if [ -f "$(BUILD_DIR)/embedded-results/$$artifact" ]; then \
-			cp "$(BUILD_DIR)/embedded-results/$$artifact" ".testing/embedded/$(1)$$artifact" || exit 1; \
-		fi; \
-	done; \
-	exit $$status
-endef
-
-# ESP32-C6 embedded toolchain is included in the single dev image.
-# See .devcontainer/Dockerfile and docs/embedded-toolchain.md.
-
-embedded-toolchain-doctor:
-	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='embedded doctor' AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS=$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)
-
-embedded-device-info: image
-	CONTAINER_DEVICES=/dev/ttyACM0 $(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/embedded/embedded-device-info.sh
-
-embedded-device-smoke: image
-	CONTAINER_DEVICES=/dev/ttyACM0 EMBEDDED_BUILD_DIR=/workspace/.build/embedded-device-smoke \
-	CONTAINER_ENV_VARS="EMBEDDED_BUILD_DIR $(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
-	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/embedded/embedded-device-smoke.sh
-
-embedded-reproducible-build: image
-	EMBEDDED_BUILD_DIR=/workspace/.build/embedded-reproducible \
-	CONTAINER_ENV_VARS="EMBEDDED_BUILD_DIR $(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
-	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/embedded/embedded-reproducible-build.sh
-
-embedded-swift-build:
-	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='embedded build' AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS=$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)
-
-embedded-swift-flash: embedded-swift-build
-	@CONTAINER_DEVICES=/dev/ttyACM0 CONTAINER_RECLAIM_BUILD_DIR=1 EMBEDDED_SKIP_BUILD=1 \
-	EMBEDDED_BUILD_DIR=/workspace/.build/embedded-swift \
-	EMBEDDED_OUTPUT_DIR=/workspace/.build/embedded-results \
-	CONTAINER_ENV_VARS="EMBEDDED_SKIP_BUILD EMBEDDED_BUILD_DIR EMBEDDED_OUTPUT_DIR $(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
-	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/embedded/embedded-swift-smoke.sh; \
-	status=$$?; \
-	$(call copy_embedded_artifacts,)
-
-embedded-swift-test: embedded-swift-build
-	@CONTAINER_DEVICES=/dev/ttyACM0 CONTAINER_RECLAIM_BUILD_DIR=1 EMBEDDED_SKIP_BUILD=1 \
-	EMBEDDED_BUILD_DIR=/workspace/.build/embedded-swift EMBEDDED_OUTPUT_DIR=/workspace/.build/embedded-results \
-	EMBEDDED_VALIDATOR=/workspace/Tests/Support/embedded/embedded-swift-test-validator.mjs \
-	CONTAINER_ENV_VARS="EMBEDDED_SKIP_BUILD EMBEDDED_BUILD_DIR EMBEDDED_OUTPUT_DIR EMBEDDED_VALIDATOR EMBEDDED_VALIDATOR_FACTORY $(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
-	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/embedded/embedded-swift-test.sh; \
-	status=$$?; \
-	$(call copy_embedded_artifacts,vector-)
-
-embedded-network-test: image
-	@$(call embedded_wifi_precondition,embedded network test requires AXOLOTY_WIFI_SSID and AXOLOTY_WIFI_PASSWORD)
-	@CONTAINER_DEVICES="$${EMBEDDED_DEVICE:-/dev/ttyACM0}" CONTAINER_RECLAIM_BUILD_DIR=1 \
-	EMBEDDED_BUILD_DIR=/workspace/.build/embedded-swift-network EMBEDDED_OUTPUT_DIR=/workspace/.build/embedded-network-results \
-	CONTAINER_ENV_VARS="AXOLOTY_WIFI_SSID AXOLOTY_WIFI_PASSWORD AXOLOTY_MQTT_HOST AXOLOTY_MQTT_PORT AXOLOTY_RUNTIME_IDENTITY EMBEDDED_DEVICE EMBEDDED_BUILD_DIR EMBEDDED_OUTPUT_DIR $(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
-	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/embedded/embedded-network-test.sh
-
-embedded-agent-test: image
-	@$(call embedded_wifi_precondition,embedded agent test requires AXOLOTY_WIFI_SSID and AXOLOTY_WIFI_PASSWORD)
-	@CONTAINER_DEVICES="$${EMBEDDED_DEVICE_A:-/dev/ttyACM0} $${EMBEDDED_DEVICE_B:-/dev/ttyACM1}" CONTAINER_RECLAIM_BUILD_DIR=1 \
-	CONTAINER_ENV_VARS="AXOLOTY_WIFI_SSID AXOLOTY_WIFI_PASSWORD AXOLOTY_MQTT_HOST AXOLOTY_MQTT_PORT AXOLOTY_RUNTIME_IDENTITY EMBEDDED_DEVICE_A EMBEDDED_DEVICE_B EMBEDDED_AGENT_BUILD_ROOT EMBEDDED_OUTPUT_DIR EMBEDDED_AGENT_BUILD_ONLY $(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
-	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/embedded/embedded-agent-test.sh
-
-embedded-coatyjs-test: image
-	@$(call embedded_broker_precondition,embedded CoatyJS test requires Wi-Fi and broker settings)
-	@CONTAINER_DEVICES="$${EMBEDDED_DEVICE:-/dev/ttyACM0}" CONTAINER_RECLAIM_BUILD_DIR=1 \
-	CONTAINER_ENV_VARS="AXOLOTY_WIFI_SSID AXOLOTY_WIFI_PASSWORD AXOLOTY_MQTT_HOST AXOLOTY_MQTT_PORT AXOLOTY_RUNTIME_IDENTITY EMBEDDED_COATY_ROLE EMBEDDED_DEVICE EMBEDDED_COATY_BUILD_ROOT EMBEDDED_OUTPUT_DIR EMBEDDED_COATY_DEADLINE $(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
-	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/embedded/embedded-coatyjs-test.sh
-
-embedded-host-test: image
-	@$(call embedded_broker_precondition,embedded host test requires Wi-Fi and broker settings)
-	@CONTAINER_DEVICES="$${EMBEDDED_DEVICE:-/dev/ttyACM0}" CONTAINER_RECLAIM_BUILD_DIR=1 \
-	CONTAINER_ENV_VARS="AXOLOTY_WIFI_SSID AXOLOTY_WIFI_PASSWORD AXOLOTY_MQTT_HOST AXOLOTY_MQTT_PORT AXOLOTY_RUNTIME_IDENTITY EMBEDDED_HOST_ROLE EMBEDDED_DEVICE EMBEDDED_HOST_BUILD_ROOT EMBEDDED_HOST_SWIFT_BUILD EMBEDDED_OUTPUT_DIR EMBEDDED_HOST_DEADLINE EMBEDDED_HOST_BUILD_DEADLINE $(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
-	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/embedded/embedded-host-test.sh
-
-embedded-last-will-test: image
-	@$(call embedded_broker_precondition,embedded last-will test requires Wi-Fi and broker settings)
-	@CONTAINER_DEVICES="$${EMBEDDED_DEVICE_A:-/dev/ttyACM0} $${EMBEDDED_DEVICE_B:-/dev/ttyACM1}" CONTAINER_RECLAIM_BUILD_DIR=1 \
-	CONTAINER_ENV_VARS="AXOLOTY_WIFI_SSID AXOLOTY_WIFI_PASSWORD AXOLOTY_MQTT_HOST AXOLOTY_MQTT_PORT AXOLOTY_RUNTIME_IDENTITY EMBEDDED_DEVICE_A EMBEDDED_DEVICE_B EMBEDDED_LAST_WILL_BUILD_ROOT EMBEDDED_OUTPUT_DIR EMBEDDED_LAST_WILL_DEADLINE $(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
-	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/embedded/embedded-last-will-test.sh
-
-embedded-broker-restart-test: image
-	@$(call embedded_broker_precondition,embedded broker-restart test requires Wi-Fi and broker host settings)
-	@CONTAINER_DEVICES="$${EMBEDDED_DEVICE:-/dev/ttyACM1}" CONTAINER_RECLAIM_BUILD_DIR=1 \
-	CONTAINER_SECURITY_OPTS="--network host" \
-	CONTAINER_ENV_VARS="AXOLOTY_WIFI_SSID AXOLOTY_WIFI_PASSWORD AXOLOTY_MQTT_HOST AXOLOTY_RUNTIME_IDENTITY EMBEDDED_BROKER_RESTART_PORT EMBEDDED_BROKER_RESTART_MANAGED EMBEDDED_DEVICE EMBEDDED_BROKER_RESTART_BUILD_DIR EMBEDDED_OUTPUT_DIR EMBEDDED_BROKER_RESTART_DEADLINE $(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
-	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/embedded/embedded-broker-restart-test.sh
-
-embedded-interop-test:
-	@status=0; \
-	$(MAKE) --no-print-directory embedded-agent-test || status=1; \
-	$(MAKE) --no-print-directory embedded-host-test EMBEDDED_HOST_ROLE=A EMBEDDED_DEVICE="$${EMBEDDED_DEVICE_A:-/dev/ttyACM0}" || status=1; \
-	$(MAKE) --no-print-directory embedded-host-test EMBEDDED_HOST_ROLE=B EMBEDDED_DEVICE="$${EMBEDDED_DEVICE_B:-/dev/ttyACM1}" || status=1; \
-	$(MAKE) --no-print-directory embedded-coatyjs-test EMBEDDED_COATY_ROLE=A EMBEDDED_DEVICE="$${EMBEDDED_DEVICE_A:-/dev/ttyACM0}" || status=1; \
-	$(MAKE) --no-print-directory embedded-coatyjs-test EMBEDDED_COATY_ROLE=B EMBEDDED_DEVICE="$${EMBEDDED_DEVICE_B:-/dev/ttyACM1}" || status=1; \
-	$(MAKE) --no-print-directory embedded-last-will-test || status=1; \
-	$(MAKE) --no-print-directory embedded-broker-restart-test EMBEDDED_DEVICE="$${EMBEDDED_DEVICE_B:-/dev/ttyACM1}" || status=1; \
-	exit $$status
-
-check-embedded-swift-linker:
-	@$(MAKE) --no-print-directory axoloty-tool AXOLOTY_TOOL_ARGS='embedded verify' AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS=$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)
-
-embedded-swift-reproducible-build: image
-	CONTAINER_ENV_VARS="$(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
-	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/embedded/embedded-swift-reproducible-build.sh
-
-# Prepare a clean, unrelated proof layout. The working Core is a sparse clone
-# with Tests/ and Embedded/ excluded; the firmware is an archive of exactly the
-# same commit. The complete proof root is mounted as the container build
-# directory, so no output can be written into either source tree.
-define embedded_proof_prepare_host
-test -n "$(AXOLOTY_PROOF_RUN_ID)" || { echo 'AXOLOTY_PROOF_RUN_ID is required' >&2; exit 64; }; \
-printf '%s' "$(AXOLOTY_PROOF_RUN_ID)" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$$' || { echo 'invalid AXOLOTY_PROOF_RUN_ID' >&2; exit 64; }; \
-source_dir=$$(realpath -e -- "$(AXOLOTY_SOURCE_DIR)") || { echo 'AXOLOTY_SOURCE_DIR is not a canonical directory' >&2; exit 64; }; \
-test -d "$$source_dir/.git" -o -f "$$source_dir/.git" || { echo 'AXOLOTY_SOURCE_DIR is not a Git checkout' >&2; exit 64; }; \
-test -z "$$(git -C "$$source_dir" status --porcelain)" || { echo 'AXOLOTY_SOURCE_DIR must be clean' >&2; exit 1; }; \
-commit=$$(git -C "$$source_dir" rev-parse HEAD) || exit 1; \
-proof_root=$$(realpath -m -- "$(AXOLOTY_PROOF_ROOT)") || { echo 'AXOLOTY_PROOF_ROOT is not a valid path' >&2; exit 64; }; \
-evidence_root=$$(realpath -m -- "$(AXOLOTY_PROOF_EVIDENCE_ROOT)") || { echo 'AXOLOTY_PROOF_EVIDENCE_ROOT is not a valid path' >&2; exit 64; }; \
-case "$$proof_root/" in "$$source_dir/"*|"$$source_dir") echo 'proof root overlaps AXOLOTY_SOURCE_DIR' >&2; exit 64;; esac; \
-case "$$source_dir/" in "$$proof_root/"*|"$$proof_root") echo 'AXOLOTY_SOURCE_DIR overlaps proof root' >&2; exit 64;; esac; \
-run_root="$$proof_root/$(AXOLOTY_PROOF_RUN_ID)"; \
-mkdir -p "$$run_root"; \
-if [ ! -e "$$run_root/core/.git" ]; then \
-  test ! -e "$$run_root/core" || { echo 'proof Core directory is incomplete' >&2; exit 1; }; \
-  git clone --no-local --no-checkout "$$source_dir" "$$run_root/core" >/dev/null; \
-  if [ ! -f "$$run_root/firmware/.axoloty-source-revision" ]; then \
-    test ! -e "$$run_root/firmware" || { echo 'proof firmware directory is incomplete' >&2; exit 1; }; \
-    mkdir -p "$$run_root/firmware"; \
-    git -C "$$source_dir" archive "$$commit" Embedded/swift | tar -x -C "$$run_root/firmware" --strip-components=2; \
-    printf '%s\n' "$$commit" > "$$run_root/firmware/.axoloty-source-revision"; \
-  fi; \
-  git -C "$$run_root/core" sparse-checkout init --no-cone; \
-  git -C "$$run_root/core" sparse-checkout set --no-cone '/*' '!/Tests/' '!/Embedded/'; \
-  git -C "$$run_root/core" checkout --detach "$$commit" >/dev/null; \
-fi; \
-test "$$(git -C "$$run_root/core" rev-parse HEAD)" = "$$commit" || { echo 'sparse Core commit differs from selected commit' >&2; exit 1; }; \
-test ! -e "$$run_root/core/Tests" && test ! -e "$$run_root/core/Embedded" || { echo 'sparse Core unexpectedly contains Tests or Embedded' >&2; exit 1; }; \
-if [ ! -f "$$run_root/firmware/.axoloty-source-revision" ]; then \
-  test ! -e "$$run_root/firmware" || { echo 'proof firmware directory is incomplete' >&2; exit 1; }; \
-  mkdir -p "$$run_root/firmware"; \
-  git -C "$$source_dir" archive "$$commit" Embedded/swift | tar -x -C "$$run_root/firmware" --strip-components=2; \
-  printf '%s\n' "$$commit" > "$$run_root/firmware/.axoloty-source-revision"; \
-fi; \
-test "$$(tr -d '[:space:]' < "$$run_root/firmware/.axoloty-source-revision")" = "$$commit" || { echo 'firmware commit differs from selected commit' >&2; exit 1; }; \
-test ! -d "$$run_root/firmware/Packages" && test ! -d "$$run_root/firmware/Tests" || { echo 'firmware contains copied Core sources' >&2; exit 1; }; \
-mkdir -p "$$run_root/build" "$$run_root/core-tools" "$$run_root/tooling" "$$run_root/working-evidence"; \
-run_root="$$run_root" core_dir="$$run_root/core" firmware_dir="$$run_root/firmware" commit="$$commit"
-endef
-
-define embedded_proof_container_env
-CONTAINER_ENV_VARS="AXOLOTY_SOURCE_DIR EMBEDDED_PROJECT_DIR EMBEDDED_PROOF_ROOT EMBEDDED_BUILD_DIR EMBEDDED_EVIDENCE_DIR EMBEDDED_PREPARATION_SCRATCH EMBEDDED_VALIDATE_FINAL AXOLOTY_EXPECTED_FIRMWARE_SHA AXOLOTY_PROOF_RUN_ID CMAKE_BUILD_PARALLEL_LEVEL NINJAFLAGS EMBEDDED_DEVICE $(AXOLOTY_RUN_CONTAINER_ENV_VARS)"
-endef
-
-embedded-consumer-proof-build: image
-	@set -eu; $(call embedded_proof_prepare_host); \
-	CMAKE_BUILD_PARALLEL_LEVEL="$(AXOLOTY_EXTERNAL_FIRMWARE_JOBS)" NINJAFLAGS="-j$(AXOLOTY_EXTERNAL_FIRMWARE_JOBS)" \
-	AXOLOTY_SOURCE_DIR="$$core_dir" EMBEDDED_PROJECT_DIR="$$firmware_dir" \
-	AXOLOTY_EXPECTED_FIRMWARE_SHA="$$commit" EMBEDDED_PROOF_ROOT=/workspace/.build \
-	EMBEDDED_BUILD_DIR=/workspace/.build/build EMBEDDED_EVIDENCE_DIR=/workspace/.build/working-evidence \
-	EMBEDDED_PREPARATION_SCRATCH=/workspace/.build/core-tools BUILD_DIR="$$run_root" \
-	$(call embedded_proof_container_env) \
-	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
-	.devcontainer/run.sh sh -c 'exec "$$EMBEDDED_PROJECT_DIR/tools/build.sh"'; \
-	evidence="$(AXOLOTY_PROOF_EVIDENCE_ROOT)/$(AXOLOTY_PROOF_RUN_ID)"; mkdir -p "$$evidence"; cp -a "$$run_root/working-evidence/." "$$evidence/"
-
-embedded-consumer-proof-flash: image
-	@set -eu; $(call embedded_proof_prepare_host); \
-	test -f "$$run_root/build/flash_args" && test -s "$$run_root/build/axoloty-swift.bin" || { echo 'proof build artifacts are missing; run embedded-consumer-proof-build' >&2; exit 1; }; \
-	CMAKE_BUILD_PARALLEL_LEVEL="$(AXOLOTY_EXTERNAL_FIRMWARE_JOBS)" NINJAFLAGS="-j$(AXOLOTY_EXTERNAL_FIRMWARE_JOBS)" \
-	AXOLOTY_SOURCE_DIR="$$core_dir" EMBEDDED_PROJECT_DIR="$$firmware_dir" AXOLOTY_EXPECTED_FIRMWARE_SHA="$$commit" \
-	EMBEDDED_PROOF_ROOT=/workspace/.build EMBEDDED_BUILD_DIR=/workspace/.build/build EMBEDDED_EVIDENCE_DIR=/workspace/.build/working-evidence \
-	EMBEDDED_PREPARATION_SCRATCH=/workspace/.build/core-tools BUILD_DIR="$$run_root" SUDO="$(SUDO)" \
-	CONTAINER_DEVICES="$${EMBEDDED_DEVICE:-/dev/ttyACM0}" CONTAINER_RECLAIM_BUILD_DIR=1 \
-	$(call embedded_proof_container_env) \
-	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
-	.devcontainer/run.sh sh -c 'exec "$$EMBEDDED_PROJECT_DIR/tools/flash.sh"'; \
-	evidence="$(AXOLOTY_PROOF_EVIDENCE_ROOT)/$(AXOLOTY_PROOF_RUN_ID)"; mkdir -p "$$evidence"; cp -a "$$run_root/working-evidence/." "$$evidence/"
-
-embedded-consumer-proof-validate: image
-	@set -eu; $(call embedded_proof_prepare_host); \
-	AXOLOTY_SOURCE_DIR="$$core_dir" EMBEDDED_PROJECT_DIR="$$firmware_dir" AXOLOTY_EXPECTED_FIRMWARE_SHA="$$commit" \
-	EMBEDDED_PROOF_ROOT=/workspace/.build EMBEDDED_BUILD_DIR=/workspace/.build/build EMBEDDED_EVIDENCE_DIR=/workspace/.build/working-evidence \
-	EMBEDDED_PREPARATION_SCRATCH=/workspace/.build/core-tools EMBEDDED_VALIDATE_FINAL=1 BUILD_DIR="$$run_root" \
-	$(call embedded_proof_container_env) \
-	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" \
-	.devcontainer/run.sh sh -c 'exec "$$EMBEDDED_PROJECT_DIR/tools/validate.sh"'; \
-	evidence="$(AXOLOTY_PROOF_EVIDENCE_ROOT)/$(AXOLOTY_PROOF_RUN_ID)"; mkdir -p "$$evidence"; cp -a "$$run_root/working-evidence/." "$$evidence/"; \
-	printf 'EMBEDDED CONSUMER GO PROOF PASSED\nrun-id: %s\ncore-sha: %s\nfirmware-sha256: %s\ndevice: esp32c6\nevidence: %s\n' "$(AXOLOTY_PROOF_RUN_ID)" "$$commit" "$$(node -p 'require("./$(AXOLOTY_PROOF_EVIDENCE_ROOT)/$(AXOLOTY_PROOF_RUN_ID)/go-proof.json").firmwareSha256')" "$$evidence"
-
-# Compatibility adapters for the previous experimental names.
-embedded-external-consumer-validate: embedded-consumer-proof-validate
-embedded-external-consumer-proof: embedded-consumer-proof-build
-embedded-external-consumer-flash: embedded-consumer-proof-flash
-
-# Shared container invocation prefix. The invoked command and its extra
 # environment stay on the recipe line, so `make -n`, the tier validator,
 # and the wrapper tests keep scanning the real invocations.
 define run_container
@@ -613,9 +322,6 @@ check-static-io-macro-embedded: check-embedded-core-consumer
 
 benchmark-wire-bounds: resolve
 	$(call run_container,$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)) /workspace/Tests/Support/checks/check-benchmark-wire-bounds.sh
-
-benchmark-wire-device: resolve
-	CONTAINER_DEVICES=/dev/ttyACM0 CONTAINER_RECLAIM_BUILD_DIR=1 $(call run_container,$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)) /workspace/Tests/Support/checks/check-benchmark-wire-device.sh
 
 check-budget-manifest:
 	Tests/Support/checks/check-budget-manifest.sh

@@ -4,8 +4,8 @@ import Foundation
 
 /// The canonical test categories. A category says what a run needs, and that
 /// is the only axis: `ci` needs nothing beyond the container, `wire` needs
-/// broker infrastructure, `embedded` needs an attached board, and `release`
-/// is everything the host can run.
+/// broker infrastructure, `embedded` proves Core Embedded Swift compatibility,
+/// and `release` is everything the host can run.
 enum CanonicalTier: String, CaseIterable, Sendable {
     case ci
     case wire
@@ -21,7 +21,6 @@ enum CanonicalPlanRequest: Sendable {
         requested: [String]? = nil
     )
     case checkpoint(
-        hardwareDevice: String?,
         consumerEnvironment: [String: String],
         platform: AxolotyCheckPlan.Platform
     )
@@ -67,17 +66,13 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
             let plan = try resolveTier(name, ci: ci, platform: platform, requested: requested)
             guard name == CanonicalTier.wire.rawValue else { return plan }
             return wireOutputRewritten(plan, environment: environment)
-        case .checkpoint(let hardwareDevice, let consumerEnvironment, let platform):
+        case .checkpoint(let consumerEnvironment, let platform):
             let plan = try resolveTier(
                 CanonicalTier.release.rawValue,
                 ci: false,
                 platform: platform
             )
-            var environment = consumerEnvironment
-            if let hardwareDevice {
-                environment["EMBEDDED_DEVICE"] = hardwareDevice
-            }
-            return rewrite(plan, substitutions: [:], environment: environment)
+            return rewrite(plan, substitutions: [:], environment: consumerEnvironment)
         case .wireCapture(let environment, let platform):
             let plan = try resolveTier(CanonicalTier.wire.rawValue, ci: false, platform: platform)
             return wireOutputRewritten(plan, environment: environment)
@@ -113,10 +108,6 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
                 try command(.node(name: "build"))
             case .focusedTestBuild:
                 try command(.testOne(filter: filter))
-            case .embeddedBuild:
-                try command(.node(name: "embedded-build"))
-            case .linkerValidation:
-                try command(.node(name: "embedded-linker"))
             }
             var arguments = base.arguments
             var environment = base.environment
@@ -128,12 +119,6 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
                 if !arguments.contains("--scratch-path") {
                     arguments += ["--scratch-path", workspace]
                 }
-            case .embeddedBuild:
-                environment["EMBEDDED_BUILD_DIR"] = workspace
-                environment["AXOLOTY_TIMING_EVIDENCE"] = "1"
-            case .linkerValidation:
-                environment["AXOLOTY_EMBEDDED_LINKER_BUILD_DIR"] = workspace
-                environment["AXOLOTY_TIMING_EVIDENCE"] = "1"
             }
             return AxolotyCommandPlan(
                 executable: base.executable,

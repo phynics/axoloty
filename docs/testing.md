@@ -99,15 +99,11 @@ Markdown summary. CI rejects missing, incomplete, or multiple primary reports.
 It uploads both reports, every command artifact, and
 `.testing/required-checks.log` on success and failure.
 
-Required Linux checks restore three independent caches. The SwiftPM download
+Required Linux checks restore two independent caches. The SwiftPM download
 cache uses an exact dependency key. The Swift compiler cache may restore the
-most recent cache for the current image and manifest identity. The ESP-IDF
-compiler cache uses `esp-idf-ccache-v1-<image-identity>-<commit>`, may restore a
-prior default-branch entry with the same image identity, and is limited to
-512 MiB. Only a successful push to `main` may save a new Swift compiler or
-ESP-IDF cache. Pull requests restore caches but never publish them. Timing
-evidence records ESP-IDF ccache statistics before and after each embedded
-build; the three embedded build directories remain separate evidence lanes.
+most recent cache for the current image and manifest identity. Only a
+successful push to `main` may save a new Swift compiler cache. Pull requests
+restore caches but never publish them.
 
 The G6 plan split is unchanged. Ordinary CI runs the G6 inventory and
 non-divergence checks without `g6-public-products-build`. Local G6 and release
@@ -117,11 +113,11 @@ Process-global signal, logging, environment, and fixed-port tests are declared
 as separate Swift invocations/lanes. The canonical graph executor invokes
 nodes serially, which enforces lane/resource non-overlap; ordinary Swift tests
 may still use their own internal parallel execution. Ordinary verification
-declares hardware forbidden and never probes or reserves a device; hardware
-remains opt-in through checkpoint-hardware or hardware-require.
+declares hardware forbidden and never probes or reserves a device; device
+qualification runs in `phynics/axoloty-embedded`.
 
 On macOS, `axoloty-tool check` selects the same host and offline-wire checks but omits the
-Linux-only ESP-IDF nodes. This is an explicit platform capability difference,
+Linux-only Embedded Swift gate. This is an explicit platform capability difference,
 not a silent skip. Ordinary verification has no broker-backed integration tier;
 wire parser correctness never requires a broker. Fresh broker evidence is
 collected only by the explicit live-wire workflow.
@@ -155,7 +151,7 @@ manifest belongs to exactly one narrower category and to `release`.
 |---|---|---|---|
 | `ci` | `make test-tier TIER=ci` | The pinned container | Everything that needs no broker infrastructure and no attached board. Every pull request. |
 | `wire` | `make test-tier TIER=wire` | Containers, a broker, the CoatyJS image | Live CoatyJS interoperability, with the host runtime bridge. |
-| `embedded` | `make test-tier TIER=embedded` | An attached ESP32-C6 | Checks that need real hardware. |
+| `embedded` | `make test-tier TIER=embedded` | The pinned container; no firmware or hardware | Core Embedded Swift compatibility: portable-module compilation, macro expansion, and RISC-V linkage. |
 | `release` | `make test-tier TIER=release` | Whatever the host has | Every test the host can run: `ci`, `wire`, `embedded`, the Apple-host oracle, and the release consumer checks. |
 
 `make verify` runs the `ci` category, and is the ordinary pre-PR command.
@@ -177,7 +173,7 @@ self-test is run by some node of the category that owns it.
 |---|---|---|---:|---|
 | `ci` | Build, unit, module, offline wire, boundary, and harness self-test coverage | Container only | 60 min | Every PR |
 | `wire` | Representative Axoloty/CoatyJS interoperability plus CoatyJS reference-wire protocol coverage | Containers, broker, CoatyJS image | 60 min | Protocol-facing PRs (enforced by the `Live CoatyJS compatibility gate`); full run before merge |
-| `embedded` | On-device evidence on an attached ESP32-C6 | Hardware | 60 min | Hardware checkpoints |
+| `embedded` | Core Embedded Swift compatibility on the pinned Linux container | Container only | 60 min | Every PR |
 | `release` | Everything above plus the Apple-host oracle and release consumer checks | Whatever the host has | 300 min | Release candidates |
 
 The subsections below describe the kinds of test that make up `ci`; they are

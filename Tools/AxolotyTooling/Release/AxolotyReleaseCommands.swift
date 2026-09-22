@@ -29,7 +29,7 @@ extension FoundationFileSystem: ReleaseEvidenceByteLoading {
 
 /// A release-specific command parsed by ``AxolotyCommandParser``.
 enum ReleaseCommand: Equatable, Sendable {
-    case checkpoint(hardware: Bool)
+    case checkpoint
 }
 
 /// Where an externally supplied evidence bundle was requested from.
@@ -362,33 +362,25 @@ struct AxolotyReleaseCommands: Sendable {
 
     func run(_ command: ReleaseCommand) -> AxolotyCommandResult {
         switch command {
-        case .checkpoint(let hardware):
-            return checkpoint(hardware: hardware)
+        case .checkpoint:
+            return checkpoint()
         }
     }
 
-    private func checkpoint(hardware: Bool) -> AxolotyCommandResult {
+    private func checkpoint() -> AxolotyCommandResult {
         let consumerEnvironment = [
             "AXOLOTY_CONSUMER_REPOSITORY_URL", "AXOLOTY_CONSUMER_VERSION",
             "AXOLOTY_CONSUMER_LOCAL", "AXOLOTY_CONSUMER_LOCAL_VERSION",
         ].reduce(into: [String: String]()) { values, name in values[name] = environment[name] }
         do {
             let resolved = try resolver.get()
-            let device = hardware ? (environment["AXOLOTY_DEVICE"] ?? "/dev/ttyACM0") : nil
             let plan = try resolved.resolve(.checkpoint(
-                hardwareDevice: device,
                 consumerEnvironment: consumerEnvironment,
                 platform: AxolotyCheckPlan.currentPlatform
             ))
             let gitCommands = metadataCommands()
             if let failure = contextValidator.failureResult(validating: plan.nodes.map(\.command) + gitCommands) {
                 return Self.commandResult(failure)
-            }
-            if let device, !fileSystem.exists(atPath: device) {
-                return AxolotyCommandResult(
-                    standardError: "error: checkpoint-hardware requires a device at \(device)\n",
-                    exitCode: 1
-                )
             }
             let results = execute(plan)
             let metadata = collectMetadata(gitCommands: gitCommands)

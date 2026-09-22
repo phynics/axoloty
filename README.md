@@ -22,9 +22,9 @@ applications out of loosely coupled, decentralized components called *agents*.
 Agents communicate with each other in (soft) real time over a publish-subscribe
 messaging backbone, and can run on IoT devices, mobile devices, in
 microservices, or in cloud and backend services. MQTT is the transport Axoloty
-ships, validates against live CoatyJS, and exercises on hardware; it reaches
-the runtime through a replaceable adapter (`AxolotyMQTT`) rather than defining
-what Axoloty networking is.
+ships and validates against live CoatyJS; it reaches the runtime through a
+replaceable adapter (`AxolotyMQTT`) rather than defining what Axoloty
+networking is.
 
 Axoloty provides an application and communication layer foundation for
 collaborative IoT prosumer scenarios where smart agents act in an autonomous,
@@ -47,14 +47,14 @@ collaborative, and ad-hoc fashion. Its key properties include:
   standalone package boundary for embedded targets,
 * a Foundation-free `AxolotyProtocol` foundation package with the shared
   fixed-inline processor, bounded request state, and borrowed/owned actions,
-* and an ESP32-C6 embedded proof in Embedded Swift.
+* and a hardware-free Core Embedded Swift compatibility gate that compiles
+  every portable module and a real macro consumer.
 
 Concrete embedded firmware lives in
 [`phynics/axoloty-embedded`](https://github.com/phynics/axoloty-embedded),
 which consumes an exact Axoloty revision through the
 [embedded consumer contract](./docs/embedded-consumer-contract.md). This
-repository owns the portable packages. The ESP32-C6 firmware is still here
-while [epic #845](https://github.com/phynics/axoloty/issues/845) migrates it.
+repository owns the portable packages and the hardware-free Core gate.
 
 Axoloty is a modernized fork of
 [coatyio/coaty-swift](https://github.com/coatyio/coaty-swift) and follows its
@@ -185,14 +185,10 @@ registration) with bounded capacities:
 - TLS: not supported
 - No IO routing, Channel, Query/Retrieve, Update/Complete, or Call/Return
 
-See [docs/embedded-toolchain.md](./docs/embedded-toolchain.md) for toolchain
-setup and [SUPPORT_MATRIX.md](./docs/SUPPORT_MATRIX.md) for the full
-capability matrix.
-
-Firmware ownership is moving to
-[`phynics/axoloty-embedded`](https://github.com/phynics/axoloty-embedded); the
-ESP32-C6 firmware above stays here until
-[#848](https://github.com/phynics/axoloty/issues/848) lands.
+See [SUPPORT_MATRIX.md](./docs/SUPPORT_MATRIX.md) for the full capability
+matrix. Firmware, board integration, and device qualification are owned by
+[`phynics/axoloty-embedded`](https://github.com/phynics/axoloty-embedded);
+this repository keeps the hardware-free Core Embedded Swift gate.
 
 API documentation is built from in-source DocC comments and published to
 GitHub Pages: <https://phynics.github.io/axoloty/documentation/Axoloty/>.
@@ -208,8 +204,6 @@ macOS runs the same offline plan with native Swift:
 ```sh
 make worktree-bootstrap  # resolve dependencies into the shared SwiftPM cache
 make verify              # Linux: canonical ordinary verification
-make hardware-check      # run or skip the sporadically attached ESP32-C6
-make hardware-require    # require the ESP32-C6 for an explicit release gate
 
 # local services
 make serve-mqtt

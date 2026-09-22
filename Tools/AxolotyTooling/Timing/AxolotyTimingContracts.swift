@@ -8,10 +8,6 @@ public enum AxolotyTimingScenario: String, CaseIterable, Codable, Equatable, Sen
     case hostBuild = "host-build"
     /// A focused Swift test build.
     case focusedTestBuild = "focused-test-build"
-    /// The hardware-free Embedded Swift build.
-    case embeddedBuild = "embedded-build"
-    /// The hardware-free ESP-IDF linker validation.
-    case linkerValidation = "linker-validation"
 }
 /// Whether a timing measurement starts from a fresh or reused scratch tree.
 public enum AxolotyTimingMode: String, Codable, Equatable, Sendable {

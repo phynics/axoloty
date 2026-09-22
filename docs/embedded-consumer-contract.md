@@ -129,99 +129,15 @@ and the static-runtime macro executable and scratch directory. Consumers must
 treat paths as absolute and reject reports with an unknown schema or a path
 outside the declared Core or scratch roots.
 
-## Run the external firmware proof
+## External firmware proof
 
-The checked-in ESP32-C6 firmware is extracted by the build target into an
-unrelated sibling directory. The target creates this run layout and mounts the
-two source trees read-only:
-
-```text
-/tmp/axoloty-go-proof/<run-id>/
-  core/             # sparse Axoloty checkout (no Tests/ or Embedded/)
-  firmware/         # Embedded/swift archive from the same commit
-  build/            # ESP-IDF output, including flash_args
-  core-tools/       # caller-owned SwiftPM preparation scratch
-  tooling/          # proof tooling scratch
-  working-evidence/ # intermediate evidence before durable copy
-```
-
-After the remediation PRs merge, create a fresh, detached `origin/main` driver
-checkout. Keep this driver checkout separate from both the Core and firmware
-trees that the proof creates. While validating this branch before merge, use
-the proof branch's final commit in place of `origin/main`.
-
-```sh
-export AXOLOTY_PROOF_DRIVER=/tmp/axoloty-go-driver
-git clone https://github.com/phynics/axoloty.git "$AXOLOTY_PROOF_DRIVER"
-cd "$AXOLOTY_PROOF_DRIVER"
-git switch --detach origin/main
-test -z "$(git status --porcelain)"
-```
-
-Prepare the pinned image and choose one run identifier. The build is rootless
-and may take up to two hours on this four-core machine; cold Swift macro
-preparation can spend about 15 minutes compiling before ESP-IDF starts. Do not
-cancel while compiler or heartbeat output advances.
-
-```sh
-export AXOLOTY_PROOF_RUN_ID="go-$(date -u +%Y%m%dT%H%M%SZ)"
-make image
-make embedded-toolchain-doctor
-make embedded-consumer-proof-build \
-  AXOLOTY_PROOF_RUN_ID="$AXOLOTY_PROOF_RUN_ID"
-```
-
-Connect an ESP32-C6, identify its serial device, and refresh sudo credentials.
-Sudo is used only by the outer flash target to run the rootful device
-container; it is not used by the build or inside the firmware scripts.
-
-```sh
-ls -l /dev/ttyACM* /dev/ttyUSB*
-sudo -v
-sudo -n true
-SUDO=/run/wrappers/bin/sudo \
-EMBEDDED_DEVICE=/dev/ttyACM0 \
-make embedded-consumer-proof-flash \
-  AXOLOTY_PROOF_RUN_ID="$AXOLOTY_PROOF_RUN_ID"
-make embedded-consumer-proof-validate \
-  AXOLOTY_PROOF_RUN_ID="$AXOLOTY_PROOF_RUN_ID"
-```
-
-Override `EMBEDDED_DEVICE` when enumeration differs. The flash stage never
-rebuilds: it requires the existing `flash_args` and `axoloty-swift.bin`,
-queries and validates the ESP32-C6 identity, flashes that exact artifact,
-captures bounded serial output, and validates the checksummed
-`embedded-swift-smoke-v2` JSONL boot, all 312 deterministic checks, summary, and
-completion. A reboot before the passed completion record, fatal output,
-malformed record, checksum failure, missing case, or timeout leaves the proof
-failed. The firmware may perform its intentional post-completion restart after
-the validator has observed the passed completion record. Durable evidence is
-copied to
-`.testing/embedded/consumer-proof/<run-id>/`:
-
-```text
-build.log
-preparation.json
-clean-room.json
-consumer-preparation.stdout
-build-provenance.json
-device-manifest.json
-device-info-raw.txt
-flash.log
-swift-smoke-log.txt
-swift-smoke-result.json
-axoloty-swift.bin
-go-proof.json
-```
-
-The final validator prints `EMBEDDED CONSUMER GO PROOF PASSED` only when
-`go-proof.json` reports `result: "passed"` and cross-checks the clean Core SHA,
-contract hash, artifact SHA-256, ESP32-C6 identity, and smoke result.
-
-`AxolotySensorThingsModel` remains a portable package for host applications,
-but it is intentionally absent from this standalone contract: the offline
-embedded fixture has no SensorThings dependency and the five-package list is
-the complete production protocol/runtime closure for the ESP32-C6 consumer.
+The ESP32-C6 build, flash, and device-qualification proof that consumes this
+contract lives in
+[`phynics/axoloty-embedded`](https://github.com/phynics/axoloty-embedded).
+That repository selects a Core checkout with `AXOLOTY_SOURCE_DIR`, runs
+`axoloty-tool embedded consumer prepare`, and owns its firmware, toolchain,
+device, and evidence artifacts. This repository keeps the contract, the
+preparation command, and the hardware-free portability gate below.
 
 ## Verify Core portability
 

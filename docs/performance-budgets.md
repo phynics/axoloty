@@ -113,8 +113,9 @@ running `make benchmark-wire` on the NixOS host.
 
 ## ESP32-C6 device budgets
 
-Measured on the physical ESP32-C6 (QFN40, rev v0.0, 160MHz, 4MB flash)
-via `make benchmark-wire-device`. The `esp32c6` environment declares
+Measured on the physical ESP32-C6 (QFN40, rev v0.0, 160MHz, 4MB flash) by the
+device benchmark now owned by `phynics/axoloty-embedded`. The `esp32c6`
+environment declares
 `implementation: "embedded-swift"`; an approved manifest must identify
 this implementation (the C surrogate is never approval-eligible). The
 provisional values below originate from the C surrogate (#302) and are

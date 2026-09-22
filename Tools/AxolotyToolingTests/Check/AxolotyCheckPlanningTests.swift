@@ -14,12 +14,6 @@ func checkpointPlansCarryNoUnresolvedPlaceholders() throws {
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
     let plans = [
         try resolver.resolve(.checkpoint(
-            hardwareDevice: nil,
-            consumerEnvironment: [:],
-            platform: AxolotyCheckPlan.currentPlatform
-        )),
-        try resolver.resolve(.checkpoint(
-            hardwareDevice: "/dev/ttyACM0",
             consumerEnvironment: [:],
             platform: AxolotyCheckPlan.currentPlatform
         )),
@@ -284,7 +278,6 @@ func offlinePlanIncludesEmbeddedChecksOnLinux() throws {
     let embeddedCoreConsumer = names.firstIndex(of: "embedded-core-consumer")
     let boundedHost = names.firstIndex(of: "g1-bounded-runtime-host")
     let boundedSanitized = names.firstIndex(of: "g1-bounded-runtime-sanitized")
-    let boundedEmbedded = names.firstIndex(of: "g1-bounded-runtime-embedded")
     let objectBoundary = names.firstIndex(of: "g3-object-boundary")
     let objectPackage = names.firstIndex(of: "g3-object-model-package")
     let objectTests = names.firstIndex(of: "g3-object-model-tests")
@@ -299,7 +292,6 @@ func offlinePlanIncludesEmbeddedChecksOnLinux() throws {
     #expect(!names.contains("embedded-linker"))
     #expect(boundedHost != nil)
     #expect(boundedSanitized != nil)
-    #expect(boundedEmbedded != nil)
     #expect(objectBoundary != nil)
     #expect(objectPackage != nil)
     #expect(objectTests != nil)
@@ -308,13 +300,12 @@ func offlinePlanIncludesEmbeddedChecksOnLinux() throws {
     #expect(objectHost != nil)
     #expect(objectSanitized != nil)
     #expect(objectEmbedded == nil)
-    if let embeddedCoreConsumer, let boundedHost, let boundedSanitized, let boundedEmbedded,
+    if let embeddedCoreConsumer, let boundedHost, let boundedSanitized,
        let objectBoundary, let objectPackage, let objectTests, let objectMacros, let coatyModels,
        let objectHost, let objectSanitized {
         #expect(embeddedCoreConsumer < boundedHost)
         #expect(boundedHost < boundedSanitized)
-        #expect(boundedSanitized < boundedEmbedded)
-        #expect(boundedEmbedded < objectBoundary)
+        #expect(boundedSanitized < objectBoundary)
         #expect(objectBoundary < objectPackage)
         #expect(objectPackage < objectTests)
         #expect(objectTests < objectMacros)
@@ -331,11 +322,11 @@ func namedPlanRejectsRequestedNodesOutsideItsResolvedClosure() throws {
     )
 
     #expect(throws: AxolotyCanonicalTestManifestError.unavailableNode(
-        "checkpoint-hardware-smoke"
+        "checkpoint-semver-consumer"
     )) {
         _ = try resolver.resolve(.tier(name: CanonicalTier.ci.rawValue, ci: false,
             platform: .linux,
-            requested: ["checkpoint-hardware-smoke"]
+            requested: ["checkpoint-semver-consumer"]
         ))
     }
 }

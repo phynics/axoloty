@@ -12,7 +12,6 @@ enum AxolotyCommandInvocation: Equatable, Sendable {
     case serve(arguments: [String])
     case timing(arguments: [String])
     case repositoryValidation(arguments: [String])
-    case hardware(required: Bool, device: String?)
     case testOne(filter: String)
     case testTier(name: String, ci: Bool)
     case explain(tier: String, ci: Bool)
@@ -25,9 +24,6 @@ enum AxolotyCommandInvocation: Equatable, Sendable {
     case integration
     case wireVerify
     case wireCapture
-    case embeddedBuild
-    case embeddedDoctor
-    case embeddedVerify
     case embeddedConsumerPrepare(arguments: [String])
     case release(ReleaseCommand)
 }
@@ -45,12 +41,6 @@ struct AxolotyCommandParser: Sendable {
         }
         if arguments.first == "repository", arguments.dropFirst().first == "validate" {
             return .repositoryValidation(arguments: Array(arguments.dropFirst(2)))
-        }
-        if arguments.count == 4,
-           arguments[0] == "hardware",
-           ["check", "require"].contains(arguments[1]),
-           arguments[2] == "--device" {
-            return .hardware(required: arguments[1] == "require", device: arguments[3])
         }
         if arguments.count == 3, arguments[0] == "test-one", arguments[1] == "--filter" {
             return .testOne(filter: arguments[2])
@@ -105,20 +95,8 @@ struct AxolotyCommandParser: Sendable {
             return .wireVerify
         case ["wire", "capture"]:
             return .wireCapture
-        case ["embedded", "build"]:
-            return .embeddedBuild
-        case ["embedded", "doctor"]:
-            return .embeddedDoctor
-        case ["embedded", "verify"]:
-            return .embeddedVerify
         case ["release", "checkpoint"]:
-            return .release(.checkpoint(hardware: false))
-        case ["release", "checkpoint-hardware"]:
-            return .release(.checkpoint(hardware: true))
-        case ["hardware", "check"]:
-            return .hardware(required: false, device: nil)
-        case ["hardware", "require"]:
-            return .hardware(required: true, device: nil)
+            return .release(.checkpoint)
         default:
             return .unsupported
         }
