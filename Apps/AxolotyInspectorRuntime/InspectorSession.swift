@@ -7,7 +7,7 @@ import Foundation
 
 /// The injectable session boundary for the inspector application.
 @MainActor
-public protocol InspectorSession {
+public protocol InspectorSession: InspectorDiscovering {
     /// Starts the modern host runtime and waits for broker readiness.
     func connect() async throws
     /// Returns the current runtime transport state.
@@ -98,7 +98,7 @@ public final class AxolotyInspectorSession: InspectorSession {
     public func transportState() async -> InspectorTransportState {
         switch await runtime.state() {
         case .running, .starting, .reconnecting: return .online
-        case .initialized, .stopping, .stopped, .failed: return .offline
+        case .initialized, .stopping, .stopped, .failed, .closed: return .offline
         }
     }
 

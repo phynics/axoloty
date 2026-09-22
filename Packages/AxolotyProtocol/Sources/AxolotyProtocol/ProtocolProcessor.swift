@@ -135,7 +135,6 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             if case .active = pending[index].state { pendingCount += 1 }
         }
         return ProtocolStateSnapshot(
-            activeRecords: associationCount,
             activeAssociations: associationCount,
             generation: generation,
             activeObjects: objectCount,
@@ -702,9 +701,9 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             if let objectType = Self.advertisedObjectType(frame.payload) {
                 return .advertiseFilter(objectType)
             }
-            if let filter = frame.topicView.eventTypeFilter { return .advertiseFilter(filter) }
+            if let filter = frame.eventTypeFilter { return .advertiseFilter(filter) }
         case .channel:
-            if let channel = frame.topicView.eventTypeFilter { return .channel(channel) }
+            if let channel = frame.eventTypeFilter { return .channel(channel) }
         case .associate:
             let reader = frame.payload.withBytes { pointer, length in
                 WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)

@@ -527,15 +527,29 @@ test("CI reuses stable, bounded Swift build cache namespaces", () => {
     ".build/ci/tooling/x86_64-unknown-linux-gnu/debug/index/store",
     ".build/ci/tooling/x86_64-unknown-linux-gnu/debug/Modules",
     ".build/ci/packages/*/build.db",
+    ".build/ci/packages/*/checkouts",
     ".build/ci/packages/*/debug.yaml",
     ".build/ci/packages/*/plugin-tools.yaml",
     ".build/ci/packages/*/workspace-state.json",
     ".build/ci/packages/*/plugins",
+    ".build/ci/packages/*/repositories",
     ".build/ci/packages/*/x86_64-unknown-linux-gnu/debug/*.build",
     ".build/ci/packages/*/x86_64-unknown-linux-gnu/debug/description.json",
     ".build/ci/packages/*/x86_64-unknown-linux-gnu/debug/index/store",
     ".build/ci/packages/*/x86_64-unknown-linux-gnu/debug/Modules",
     ".build/ci/packages/*/x86_64-unknown-linux-gnu/debug/ModuleCache",
+    ".build/ci/apps/build.db",
+    ".build/ci/apps/checkouts",
+    ".build/ci/apps/debug.yaml",
+    ".build/ci/apps/plugin-tools.yaml",
+    ".build/ci/apps/workspace-state.json",
+    ".build/ci/apps/plugins",
+    ".build/ci/apps/repositories",
+    ".build/ci/apps/x86_64-unknown-linux-gnu/debug/*.build",
+    ".build/ci/apps/x86_64-unknown-linux-gnu/debug/description.json",
+    ".build/ci/apps/x86_64-unknown-linux-gnu/debug/index/store",
+    ".build/ci/apps/x86_64-unknown-linux-gnu/debug/Modules",
+    ".build/ci/apps/x86_64-unknown-linux-gnu/debug/ModuleCache",
   ];
   assert.deepEqual(workflowPathList("Restore Swift compiler cache"), compilerCachePaths);
   assert.deepEqual(workflowPathList("Save Swift compiler cache"), compilerCachePaths);
@@ -546,6 +560,7 @@ test("CI reuses stable, bounded Swift build cache namespaces", () => {
   assert.match(ciWorkflow, /actions: write/);
   assert.match(ciWorkflow, /gh cache list --ref refs\/heads\/main --key "swift-build-v3-compiler-6\.3-linux-"/);
   assert.match(ciWorkflow, /--sort created_at --order desc --limit 100 --json id --jq '\.\[2:\]\[\]\.id'/);
+  assert.match(ciWorkflow, /gh cache list --ref refs\/heads\/main --key "esp-idf-ccache-v1-"/);
   assert.match(ciWorkflow, /gh cache list --ref refs\/heads\/main --key "swift-build-v2-coverage-6\.3-linux-"/);
   assert.match(ciWorkflow, /gh cache list --ref refs\/heads\/main --key "swift-build-coverage-6\.3-linux-"/);
   assert.match(ciWorkflow, /gh cache delete "\$cache_id"/);
@@ -591,6 +606,7 @@ while [ "$#" -gt 0 ]; do
 done
 case "$key" in
   swift-build-v3-compiler-6.3-linux-) printf 'v3-oldest\\nv3-old\\n' ;;
+  esp-idf-ccache-v1-) printf 'esp-oldest\\nesp-old\\n' ;;
   swift-build-v2-coverage-6.3-linux-) printf 'v2-old\\n' ;;
   swift-build-coverage-6.3-linux-) printf 'legacy-old\\n' ;;
   *) exit 2 ;;
@@ -616,6 +632,8 @@ esac
     assert.deepEqual(fs.readFileSync(deleted, "utf8").trim().split("\n"), [
       "v3-oldest",
       "v3-old",
+      "esp-oldest",
+      "esp-old",
       "v2-old",
       "legacy-old",
     ]);

@@ -39,6 +39,41 @@ public enum MCPTransport: String, Sendable, Equatable, CaseIterable {
     case stdio, http
 }
 
+/// A validated broker connection timeout accepted by the MCP service.
+public struct MCPConnectTimeout: Sendable, Equatable {
+    /// The normalized command-line spelling passed to the MCP process.
+    public let rawValue: String
+    /// The timeout in seconds used for readiness calculations.
+    public let seconds: TimeInterval
+
+    /// Creates a timeout from a positive seconds, minutes, or hours value.
+    ///
+    /// - Parameter rawValue: A positive duration such as `10s`, `2m`, or `1h`.
+    ///
+    /// Values are limited to 24 hours so a malformed configuration cannot
+    /// silently become an unbounded readiness wait.
+    public init?(_ rawValue: String) {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let unit = trimmed.last else { return nil }
+        let amount = String(trimmed.dropLast())
+        guard let number = Int64(amount), number > 0 else { return nil }
+        let multiplier: Int64
+        switch unit.lowercased() {
+        case "s": multiplier = 1
+        case "m": multiplier = 60
+        case "h": multiplier = 3_600
+        default: return nil
+        }
+        let (totalSeconds, overflow) = number.multipliedReportingOverflow(by: multiplier)
+        guard !overflow, totalSeconds <= 86_400 else { return nil }
+        self.rawValue = trimmed
+        self.seconds = TimeInterval(totalSeconds)
+    }
+
+    /// The default MCP broker timeout.
+    public static let `default` = Self("10s")!
+}
+
 /// Configuration for the local MQTT broker service.
 public struct MQTTServiceConfiguration: Equatable, Sendable {
     /// Native listen address.
@@ -80,8 +115,8 @@ public struct MCPServiceConfiguration: Equatable, Sendable {
     public let brokerPort: UInt16
     /// Coaty namespace.
     public let namespace: String
-    /// Broker readiness deadline (e.g. ``10s``).
-    public let connectTimeout: String
+    /// Validated broker readiness deadline.
+    public let connectTimeout: MCPConnectTimeout
     /// Structured output mode (HTTP only).
     public let output: ServeOutputMode
 
@@ -94,7 +129,7 @@ public struct MCPServiceConfiguration: Equatable, Sendable {
         brokerHost: String = "localhost",
         brokerPort: UInt16 = 1883,
         namespace: String = "-",
-        connectTimeout: String = "10s",
+        connectTimeout: MCPConnectTimeout = .default,
         output: ServeOutputMode = .human
     ) {
         self.transport = transport

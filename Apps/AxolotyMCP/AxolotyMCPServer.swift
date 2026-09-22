@@ -25,7 +25,7 @@ public final class AxolotyMCPServer {
     private static let logger = Logger(label: "axoloty.mcp")
     private let server: Server
     private let catalogueService: InspectorCatalogueService
-    private let session: InspectorSession
+    private let session: InspectorDiscovering
     private let responseEncoder: ResponseEncoder
     private let encodingFailureLogger: EncodingFailureLogger
     private var httpServer: MCPHTTPServer?
@@ -354,7 +354,7 @@ public final class AxolotyMCPServer {
     }
 
     static func discoveryResponseStream(
-        session: InspectorSession,
+        session: InspectorDiscovering,
         event: InspectorDiscoverRequest
     ) async -> AsyncThrowingStream<InspectorResponseEvent, Error> {
         let responseStream = await session.discover(event)

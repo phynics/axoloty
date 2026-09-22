@@ -215,6 +215,12 @@ private struct TrailingManualSchema: ObjectSchema {
     }
 }
 
+@Test func envelopeDecodesEscapedCoreTypeIdentity() throws {
+    let bytes = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.Typed\",\"name\":\"Typed\",\"coreType\":\"Io\\u0053ource\"}")
+    let envelope = try ObjectEnvelope<64, 64>(decoding: bytes)
+    #expect(envelope.coreType == .ioSource)
+}
+
 @Test func typedObjectEditPreservesUnknownFields() throws {
     let bytes = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.TypedValue\",\"name\":\"Typed\",\"coreType\":\"CoatyObject\",\"value\":1,\"unknown\":1e2}")
     var object = try Object<TypedValueSchema>(decoding: bytes)

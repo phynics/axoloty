@@ -87,7 +87,7 @@ DOC_HOSTING_BASE_PATH ?=
 	ci-preflight ci shell docs lint \
 	wire-tool clean serve-mqtt serve-mcp serve-dev \
 	benchmark-wire benchmark-wire-allocation benchmark-static-io-ownership-allocation benchmark-wire-bounds \
-	check-embedded-core-consumer check-static-io-macro-embedded \
+	check-embedded-core-consumer check-embedded-cutover check-static-io-macro-embedded \
 	check-budget-manifest check-embedded-swift
 
 # Quote user-provided values before placing them in a shell assignment. The
@@ -121,6 +121,7 @@ help:
 		'make benchmark-wire-allocation  Host zero-per-iteration allocation gate for wire decode/route' \
 		'make benchmark-static-io-ownership-allocation  Host zero-growth allocation gate for static IO ownership primitives' \
 		'make check-embedded-core-consumer  Compile every portable module and a real macro consumer for Embedded Swift' \
+		'make check-embedded-cutover  Validate the Core/firmware repository boundary' \
 		'make check-static-io-macro-embedded  Compatibility alias for check-embedded-core-consumer' \
 		'make benchmark-wire-bounds  Run malformed-input and capacity bounds tests' \
 		'make check-budget-manifest  Validate the performance budget manifest' \
@@ -317,6 +318,9 @@ benchmark-static-io-ownership-allocation: resolve
 check-embedded-core-consumer: image
 	CONTAINER_ENV_VARS="$(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
 	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/checks/check-embedded-swift-core.sh
+
+check-embedded-cutover:
+	Tests/Support/checks/check-embedded-cutover.sh
 
 check-static-io-macro-embedded: check-embedded-core-consumer
 

@@ -133,6 +133,8 @@ public enum RuntimeState: Sendable, Equatable {
     case stopped
     /// A terminal startup or transport failure occurred.
     case failed
+    /// The runtime was permanently closed and cannot be started again.
+    case closed
 }
 
 enum RuntimeIoEndpointRole: Sendable, Equatable {

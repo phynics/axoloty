@@ -265,8 +265,7 @@ public struct BoundedDynamicObject<let byteCapacity: Int, let fieldCapacity: Int
     }
 }
 
-@usableFromInline
-struct EditOperation {
+fileprivate struct EditOperation {
     // Matches ObjectType's documented bounded UTF-8 key capacity.
     var key: InlineArray<128, UInt8> = InlineArray(repeating: 0)
     var keyLength: Int = 0
@@ -277,17 +276,17 @@ struct EditOperation {
 
 /// A bounded, two-phase edit plan for a dynamic object.
 public struct ObjectEditor<let byteCapacity: Int> {
-    @usableFromInline var source: InlineArray<byteCapacity, UInt8>
-    @usableFromInline var sourceLength: Int
-    @usableFromInline var values: InlineArray<byteCapacity, UInt8>
-    @usableFromInline var valueLength: Int
+    fileprivate var source: InlineArray<byteCapacity, UInt8>
+    fileprivate var sourceLength: Int
+    fileprivate var values: InlineArray<byteCapacity, UInt8>
+    fileprivate var valueLength: Int
     // The wire tokenizer's authoritative indexed-field maximum.
-    @usableFromInline var operations: InlineArray<24, EditOperation>
-    @usableFromInline var operationCount: Int
-    @usableFromInline var output: InlineArray<byteCapacity, UInt8>
-    @usableFromInline var outputLength: Int
+    fileprivate var operations: InlineArray<24, EditOperation>
+    fileprivate var operationCount: Int
+    fileprivate var output: InlineArray<byteCapacity, UInt8>
+    fileprivate var outputLength: Int
 
-    @usableFromInline init(source bytes: ByteSlice) {
+    fileprivate init(source bytes: ByteSlice) {
         source = InlineArray(repeating: 0); sourceLength = bytes.length
         values = InlineArray(repeating: 0); valueLength = 0
         operations = InlineArray(repeating: EditOperation()); operationCount = 0
@@ -449,7 +448,7 @@ public struct ObjectEditor<let byteCapacity: Int> {
     }
 
     private mutating func addOperation(key: StaticString, valueStart: Int, valueLength: Int, kind: UInt8) throws(ObjectError) {
-        guard operationCount < 24, key.utf8CodeUnitCount <= 128 else { throw ObjectError(.capacityExceeded) }
+        guard operationCount < 24, key.utf8CodeUnitCount <= ObjectFieldKey.maxLength else { throw ObjectError(.capacityExceeded) }
         for index in 0..<key.utf8CodeUnitCount {
             let byte = key.utf8Start[index]
             guard byte >= 0x20, byte != 0x22, byte != 0x5C else { throw ObjectError(.invalidEditValue) }

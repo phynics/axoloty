@@ -412,7 +412,7 @@ func mcpServiceForwardsConfiguredConnectTimeout() {
         installSignalHandler: false
     )
 
-    _ = runner.run(MCPServiceConfiguration(transport: .http, connectTimeout: "37s"))
+    _ = runner.run(MCPServiceConfiguration(transport: .http, connectTimeout: MCPConnectTimeout("37s")!))
     let args = processRunner.startSpec?.arguments ?? []
     guard let index = args.firstIndex(of: "--connect-timeout") else {
         Issue.record("expected connect-timeout argument")

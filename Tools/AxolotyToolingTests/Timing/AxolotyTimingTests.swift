@@ -98,6 +98,7 @@ func timingParsersReportBuildStepsAndCacheStatsWithoutGuessing() {
     #expect(cache.status == .available)
     #expect(cache.value == 12)
     #expect(cache.diagnostic?.contains("hits=9") == true)
+    #expect(AxolotyTimingOutputParser.cacheMetric(from: "Cache hits: 9\n").value == nil)
 
     let ccache = AxolotyTimingOutputParser.cacheMetric(from: "direct_cache_hit 19\npreprocessed_cache_hit 8\ncache_miss\t4\n")
     #expect(ccache.hits == 27)
@@ -152,7 +153,7 @@ func timingRunnerBuildsFourSerialHardwareFreePlansWithIsolatedScratch() throws {
     #expect(workspace.prepared.map { $0.1 } == [.cold, .warm, .cold, .warm])
     #expect(workspace.cleaned.isEmpty)
     #expect(report.measurements.allSatisfy { $0.durationSeconds == 0.25 })
-    #expect(report.measurements.allSatisfy { $0.toolchain.platform == "linux" })
+    #expect(report.toolchain.platform == "linux")
     #expect(report.measurements.allSatisfy { $0.cache.hits == 3 && $0.cache.misses == 1 })
 
     let hostBuild = try #require(runner.commands.first)

@@ -672,7 +672,7 @@ struct AxolotyEvidenceBundleValidator {
             }
             guard let artifactData = artifacts[artifact.relativePath],
                   artifactData.count == artifact.byteCount,
-                  AxolotySHA256().hash(artifactData) == artifact.sha256 else {
+                  AxolotySHA256().hash(artifactData) == artifact.sha256.lowercased() else {
                 throw AxolotyReleaseEvidenceError.artifactMismatch(artifact.relativePath)
             }
         }

@@ -120,12 +120,12 @@ final class OverrunFiringRunner: AxolotyCheckCommandRunning, @unchecked Sendable
         scheduler.fireAll()
         return AxolotyCheckCommandResult(
             exitCode: 0,
-            observation: AxolotyCommandObservation(
+            payload: .observation(AxolotyCommandObservation(
                 elapsedSeconds: 4,
                 lastTest: "last-test",
                 outputBytes: 42,
                 artifactPath: "/artifacts/slow"
-            )
+            ))
         )
     }
 }

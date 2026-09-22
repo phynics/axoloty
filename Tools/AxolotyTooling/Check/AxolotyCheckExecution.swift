@@ -403,8 +403,7 @@ public struct AxolotyCheckExecutor: Sendable {
             exitCode: result.exitCode == 0 ? 124 : result.exitCode,
             standardOutput: result.standardOutput,
             standardError: standardError,
-            lifecycle: result.lifecycle,
-            observation: result.observation
+            payload: result.payload
         )
     }
 }

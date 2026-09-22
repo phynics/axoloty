@@ -106,15 +106,15 @@ extension AxolotyRuntimeTests {
         await runtime.stop()
     }
 
-    @Test("closed runtime reports terminally stopped through modern state")
-    func closedRuntimeReportsStoppedState() async throws {
+    @Test("closed runtime preserves its terminal state through modern state")
+    func closedRuntimeReportsClosedState() async throws {
         let runtime = AxolotyRuntime(definition: try makeDefinition(), transport: TestTransport())
         try await runtime.start()
 
         await runtime.close()
 
         #expect(await runtime.lifecycleState() == .closed)
-        #expect(await runtime.state() == .stopped)
+        #expect(await runtime.state() == .closed)
     }
 
     @Test("startup failure injection preserves terminal cleanup", arguments: SetupFailureStage.allCases)

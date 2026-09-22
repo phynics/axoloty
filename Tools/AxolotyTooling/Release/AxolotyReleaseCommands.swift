@@ -389,7 +389,8 @@ struct AxolotyReleaseCommands: Sendable {
                 manifest: resolved.manifest,
                 results: results,
                 metadata: metadata,
-                evidence: evidence
+                evidence: evidence,
+                expectedProducerID: expectedProducerID
             )
             return render(certified.manifest, exitCode: certified.exitCode)
         } catch let error as AxolotyCanonicalTestManifestError {
@@ -431,6 +432,18 @@ struct AxolotyReleaseCommands: Sendable {
             swiftVersion: swift,
             timestamp: timestampProvider()
         )
+    }
+
+    /// The producer identity every supplied evidence bundle must declare, when
+    /// the operator pins one.
+    ///
+    /// The value is optional so an unpinned checkpoint keeps accepting any
+    /// validated producer. An empty or whitespace-only value is treated as
+    /// unpinned rather than as a producer named by the empty string.
+    private var expectedProducerID: String? {
+        guard let value = environment["AXOLOTY_EVIDENCE_PRODUCER_ID"] else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func loadEvidence(for manifest: AxolotyCanonicalTestManifest) -> ReleaseEvidenceInput {

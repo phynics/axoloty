@@ -35,11 +35,6 @@ public struct IoValueType: Sendable, Equatable, Hashable {
         guard let result else { throw ProtocolError(.malformedPayload) }
         self = result
     }
-    /// Encodes the identifier into an object field.
-    public borrowing func encodeField<let capacity: Int>(to editor: inout ObjectFieldEncoder<capacity>, forKey key: StaticString) throws(ObjectEncodingError) {
-        do throws(ObjectError) { try value.encodeField(key, to: &editor) }
-        catch { throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
-    }
 }
 
 extension IoValueType: ObjectFieldEncodable {

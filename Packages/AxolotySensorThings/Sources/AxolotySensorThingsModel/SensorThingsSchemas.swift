@@ -40,8 +40,6 @@ public struct UnitOfMeasurement: ObjectSchema, Sendable, Equatable {
     /// Unit definition URI.
     public var definition: Presence<BoundedEncodedText<128>>
 
-    private var rawSnapshot: SensorThingsJSONValue?
-
     /// The fixed SensorThings schema descriptor.
     public static let schema: PortableObjectSchema<UnitOfMeasurement> = sensorThingsSchema(
         "coaty.sensorThings.UnitOfMeasurement",
@@ -57,7 +55,6 @@ public struct UnitOfMeasurement: ObjectSchema, Sendable, Equatable {
         self.name = name
         self.symbol = symbol
         self.definition = definition
-        self.rawSnapshot = nil
     }
 
     /// Decodes a unit while preserving missing/null/value state.
@@ -65,7 +62,6 @@ public struct UnitOfMeasurement: ObjectSchema, Sendable, Equatable {
         name = try fields.presence("name", as: BoundedEncodedText<128>.self)
         symbol = try fields.presence("symbol", as: BoundedEncodedText<128>.self)
         definition = try fields.presence("definition", as: BoundedEncodedText<128>.self)
-        fields.withEncodedBytes { bytes in self.rawSnapshot = try? SensorThingsJSONValue(copying: bytes) }
     }
 
     /// Encodes all unit keys while preserving missing and explicit null states.
@@ -91,8 +87,6 @@ public struct ObservedProperty: ObjectSchema, Sendable, Equatable {
     /// Human-readable property description.
     public var description: BoundedEncodedText<128>
 
-    private var rawSnapshot: SensorThingsJSONValue?
-
     /// The fixed SensorThings schema descriptor.
     public static let schema: PortableObjectSchema<ObservedProperty> = sensorThingsSchema(
         "coaty.sensorThings.ObservedProperty",
@@ -108,7 +102,6 @@ public struct ObservedProperty: ObjectSchema, Sendable, Equatable {
         self.name = name
         self.definition = definition
         self.description = description
-        self.rawSnapshot = nil
     }
 
     /// Decodes an observed property.
@@ -116,7 +109,6 @@ public struct ObservedProperty: ObjectSchema, Sendable, Equatable {
         name = try fields.decode("name", as: BoundedEncodedText<128>.self)
         definition = try fields.decode("definition", as: BoundedEncodedText<128>.self)
         description = try fields.decode("description", as: BoundedEncodedText<128>.self)
-        fields.withEncodedBytes { bytes in self.rawSnapshot = try? SensorThingsJSONValue(copying: bytes) }
     }
 
     /// Encodes an observed property.
@@ -589,11 +581,7 @@ extension UnitOfMeasurement: ObjectFieldDecodable, ObjectFieldEncodable {
         to editor: inout ObjectFieldEncoder<capacity>,
         forKey key: StaticString
     ) throws(ObjectEncodingError) {
-        if let rawSnapshot {
-            try rawSnapshot.encode(to: &editor, forKey: key)
-        } else {
-            try encodeNested(self, to: &editor, forKey: key)
-        }
+        try encodeNested(self, to: &editor, forKey: key)
     }
 }
 
@@ -607,11 +595,7 @@ extension ObservedProperty: ObjectFieldDecodable, ObjectFieldEncodable {
         to editor: inout ObjectFieldEncoder<capacity>,
         forKey key: StaticString
     ) throws(ObjectEncodingError) {
-        if let rawSnapshot {
-            try rawSnapshot.encode(to: &editor, forKey: key)
-        } else {
-            try encodeNested(self, to: &editor, forKey: key)
-        }
+        try encodeNested(self, to: &editor, forKey: key)
     }
 }
 
