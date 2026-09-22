@@ -4,11 +4,27 @@
 import AxolotyObjectModel
 import AxolotyWire
 
+protocol IoExecuting: Actor {
+    func publishIo<Value: IoEndpointValue>(
+        _ encoded: [UInt8], representation: IoValueRepresentation, from source: IoSource<Value>, nowMS: UInt32
+    ) -> IoPublicationReceipt
+
+    func ioState<Value: IoEndpointValue>(of source: IoSource<Value>) throws(ProtocolError) -> IoAssociationState
+    func ioState<Value: IoEndpointValue>(of actor: IoActor<Value>) throws(ProtocolError) -> IoAssociationState
+
+    func ioAssociations<Value: IoEndpointValue>(
+        of source: IoSource<Value>, buffering: RuntimeBufferingPolicy
+    ) throws(ProtocolError) -> AsyncStream<IoAssociationState>
+    func ioAssociations<Value: IoEndpointValue>(
+        of actor: IoActor<Value>, buffering: RuntimeBufferingPolicy
+    ) throws(ProtocolError) -> AsyncStream<IoAssociationState>
+}
+
 /// Executor-backed typed IO operations for a running host runtime.
 public struct RuntimeIO: Sendable {
-    private let executor: ProtocolExecutor
+    private let executor: any IoExecuting
 
-    init(executor: ProtocolExecutor) { self.executor = executor }
+    init(executor: any IoExecuting) { self.executor = executor }
 
     /// Publishes one typed value from a registered source.
     /// - Parameters:
@@ -82,6 +98,8 @@ public struct RuntimeIO: Sendable {
         catch { throw AxolotyError.caught(error) }
     }
 }
+
+extension ProtocolExecutor: IoExecuting {}
 
 extension ProtocolExecutor {
     func flushPendingIo(at slot: Int, nowMS: UInt32) {

@@ -54,8 +54,8 @@ public struct ProtocolFrame: Sendable, Equatable {
 public struct BorrowedProtocolFrame {
     /// The complete borrowed topic buffer.
     public let topic: ByteSlice
-    /// The parsed topic view retained for synchronous selector derivation.
-    public let topicView: TopicView
+    /// The event-type filter borrowed from the topic, if present.
+    public let eventTypeFilter: ByteSlice?
     /// The validated routing key.
     public let routingKey: ProtocolRoutingKey
     /// The borrowed payload view.
@@ -94,7 +94,7 @@ public struct BorrowedProtocolFrame {
             correlationID = nil
         }
         self.topic = topic.rawBytes
-        self.topicView = topic
+        self.eventTypeFilter = topic.eventTypeFilter
         self.routingKey = try ProtocolRoutingKey(
             capability: capability,
             sourceID: sourceID,

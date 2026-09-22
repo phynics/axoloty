@@ -146,12 +146,15 @@ public struct InspectorDiscoveryResult: Codable, Sendable, Equatable {
     }
 }
 
-/// Protocol for performing active discovery.
-public protocol InspectorDiscovering: Sendable {
-    /// Performs discovery for the objects matching the given request.
+/// The discovery operations needed by an active-discovery consumer.
+@MainActor
+public protocol InspectorDiscovering {
+    /// Returns the current runtime transport state.
+    func transportState() async -> InspectorTransportState
+
+    /// Publishes one typed Discover operation and returns matching Resolve events.
     ///
-    /// - Parameter request: The discovery selectors and timeout.
-    /// - Returns: The discovery result, including any matched objects and
-    ///   whether the operation timed out.
-    func discover(request: InspectorDiscoveryRequest) async throws -> InspectorDiscoveryResult
+    /// - Parameter request: The validated Discover event.
+    /// - Returns: The bounded stream of correlated Resolve events.
+    func discover(_ request: InspectorDiscoverRequest) async -> AsyncStream<InspectorResponseEvent>
 }

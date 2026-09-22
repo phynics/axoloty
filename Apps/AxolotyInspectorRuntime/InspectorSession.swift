@@ -7,7 +7,7 @@ import Foundation
 
 /// The injectable session boundary for the inspector application.
 @MainActor
-public protocol InspectorSession {
+public protocol InspectorSession: InspectorDiscovering {
     /// Starts the modern host runtime and waits for broker readiness.
     func connect() async throws
     /// Returns the current runtime transport state.
