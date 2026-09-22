@@ -115,20 +115,24 @@ jobs:
             .build/ci/tooling/x86_64-unknown-linux-gnu/debug/index/store
             .build/ci/tooling/x86_64-unknown-linux-gnu/debug/Modules
             .build/ci/packages/*/build.db
+            .build/ci/packages/*/checkouts
             .build/ci/packages/*/debug.yaml
             .build/ci/packages/*/plugin-tools.yaml
             .build/ci/packages/*/workspace-state.json
             .build/ci/packages/*/plugins
+            .build/ci/packages/*/repositories
             .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/*.build
             .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/description.json
             .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/index/store
             .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/Modules
             .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/ModuleCache
             .build/ci/apps/build.db
+            .build/ci/apps/checkouts
             .build/ci/apps/debug.yaml
             .build/ci/apps/plugin-tools.yaml
             .build/ci/apps/workspace-state.json
             .build/ci/apps/plugins
+            .build/ci/apps/repositories
             .build/ci/apps/x86_64-unknown-linux-gnu/debug/*.build
             .build/ci/apps/x86_64-unknown-linux-gnu/debug/description.json
             .build/ci/apps/x86_64-unknown-linux-gnu/debug/index/store
@@ -270,20 +274,24 @@ jobs:
             .build/ci/tooling/x86_64-unknown-linux-gnu/debug/index/store
             .build/ci/tooling/x86_64-unknown-linux-gnu/debug/Modules
             .build/ci/packages/*/build.db
+            .build/ci/packages/*/checkouts
             .build/ci/packages/*/debug.yaml
             .build/ci/packages/*/plugin-tools.yaml
             .build/ci/packages/*/workspace-state.json
             .build/ci/packages/*/plugins
+            .build/ci/packages/*/repositories
             .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/*.build
             .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/description.json
             .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/index/store
             .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/Modules
             .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/ModuleCache
             .build/ci/apps/build.db
+            .build/ci/apps/checkouts
             .build/ci/apps/debug.yaml
             .build/ci/apps/plugin-tools.yaml
             .build/ci/apps/workspace-state.json
             .build/ci/apps/plugins
+            .build/ci/apps/repositories
             .build/ci/apps/x86_64-unknown-linux-gnu/debug/*.build
             .build/ci/apps/x86_64-unknown-linux-gnu/debug/description.json
             .build/ci/apps/x86_64-unknown-linux-gnu/debug/index/store
