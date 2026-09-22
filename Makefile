@@ -104,14 +104,12 @@ DOC_HOSTING_BASE_PATH ?=
 	wire-tool clean serve-mqtt serve-mcp serve-dev embedded-toolchain-doctor \
 	embedded-device-info embedded-device-smoke embedded-reproducible-build \
 	benchmark-wire benchmark-wire-allocation benchmark-static-io-ownership-allocation benchmark-wire-bounds \
-	check-embedded-core-consumer check-static-io-macro-embedded \
+	check-embedded-core-consumer \
 	benchmark-wire-device check-budget-manifest check-embedded-swift \
 	check-embedded-swift-linker embedded-swift-build embedded-swift-flash \
 	embedded-swift-test embedded-swift-reproducible-build \
 	embedded-consumer-proof-build embedded-consumer-proof-flash \
 	embedded-consumer-proof-validate \
-	embedded-external-consumer-validate embedded-external-consumer-proof \
-	embedded-external-consumer-flash \
 	embedded-network-test embedded-agent-test embedded-coatyjs-test embedded-host-test \
 	embedded-last-will-test embedded-broker-restart-test embedded-interop-test
 
@@ -159,7 +157,6 @@ help:
 		'make benchmark-wire-allocation  Host zero-per-iteration allocation gate for wire decode/route' \
 		'make benchmark-static-io-ownership-allocation  Host zero-growth allocation gate for static IO ownership primitives' \
 		'make check-embedded-core-consumer  Compile every portable module and a real macro consumer for Embedded Swift' \
-		'make check-static-io-macro-embedded  Compatibility alias for check-embedded-core-consumer' \
 		'make benchmark-wire-bounds  Run malformed-input and capacity bounds tests' \
 		'make benchmark-wire-device  Run ESP32-C6 on-device wire benchmarks' \
 		'make check-budget-manifest  Validate the performance budget manifest' \
@@ -169,9 +166,6 @@ help:
 		'make embedded-consumer-proof-build AXOLOTY_PROOF_RUN_ID=...  Build an unrelated-root firmware proof' \
 		'make embedded-consumer-proof-flash AXOLOTY_PROOF_RUN_ID=... EMBEDDED_DEVICE=... SUDO=...  Flash and capture the proof' \
 		'make embedded-consumer-proof-validate AXOLOTY_PROOF_RUN_ID=...  Validate final durable proof evidence' \
-		'make embedded-external-consumer-validate  Compatibility alias for embedded-consumer-proof-validate' \
-		'make embedded-external-consumer-proof  Compatibility alias for embedded-consumer-proof-build' \
-		'make embedded-external-consumer-flash  Compatibility alias for embedded-consumer-proof-flash' \
 		'make embedded-swift-reproducible-build  Verify firmware is bit-for-bit reproducible' \
 		'make ci            Run the consolidated pull-request checks' \
 		'make shell         Open a shell in the Linux container' \
@@ -561,11 +555,6 @@ embedded-consumer-proof-validate: image
 	evidence="$(AXOLOTY_PROOF_EVIDENCE_ROOT)/$(AXOLOTY_PROOF_RUN_ID)"; mkdir -p "$$evidence"; cp -a "$$run_root/working-evidence/." "$$evidence/"; \
 	printf 'EMBEDDED CONSUMER GO PROOF PASSED\nrun-id: %s\ncore-sha: %s\nfirmware-sha256: %s\ndevice: esp32c6\nevidence: %s\n' "$(AXOLOTY_PROOF_RUN_ID)" "$$commit" "$$(node -p 'require("./$(AXOLOTY_PROOF_EVIDENCE_ROOT)/$(AXOLOTY_PROOF_RUN_ID)/go-proof.json").firmwareSha256')" "$$evidence"
 
-# Compatibility adapters for the previous experimental names.
-embedded-external-consumer-validate: embedded-consumer-proof-validate
-embedded-external-consumer-proof: embedded-consumer-proof-build
-embedded-external-consumer-flash: embedded-consumer-proof-flash
-
 # Shared container invocation prefix. The invoked command and its extra
 # environment stay on the recipe line, so `make -n`, the tier validator,
 # and the wrapper tests keep scanning the real invocations.
@@ -608,8 +597,6 @@ benchmark-static-io-ownership-allocation: resolve
 check-embedded-core-consumer: image
 	CONTAINER_ENV_VARS="$(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
 	$(call run_container,$(AXOLOTY_EMBEDDED_TIMEOUT_SECONDS)) /workspace/Tests/Support/checks/check-embedded-swift-core.sh
-
-check-static-io-macro-embedded: check-embedded-core-consumer
 
 benchmark-wire-bounds: resolve
 	$(call run_container,$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)) /workspace/Tests/Support/checks/check-benchmark-wire-bounds.sh
