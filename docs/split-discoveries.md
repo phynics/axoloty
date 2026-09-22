@@ -228,3 +228,26 @@ verified here rather than deferred.
 So the remaining blockers are items 1–4 — all of them rewrites of Core-side
 checks that read `Embedded/swift`, none of them waiting on anything external.
 Item 5 stays last, and stays a single gated commit.
+
+## 10. Update 2026-09-22: cutover validation is a required gate
+
+S10 (#855) now has a mechanical Core-side half. The required `ci` gate
+`repository-cutover-boundary` (`Tests/Support/checks/check-embedded-cutover.sh`)
+pins the cutover boundary that items 1–4 must preserve:
+
+- the consumer contract names only repository-relative portable Core paths, and
+  `AXOLOTY_SOURCE_DIR` stays the only documented local override;
+- every required canonical gate declares hardware forbidden and references no
+  firmware-owned path, device environment, or `.build/embedded` directory; and
+- the firmware-free `embedded-core-consumer` gate stays in the required plan.
+
+With a firmware checkout, the same check audits it. It validates the lock,
+runs that repository's own `Tools/check-invariants.sh` against this Core
+checkout, and requires every evidence record and release certificate to pin the
+locked Core revision. The four #855 tests and the exact commands are in
+`docs/embedded-cutover-validation.md`.
+
+The remaining item is the removal itself: `Embedded/swift/`, the firmware-owned
+harness under `Tests/Support/embedded/`, and their `Makefile` and tier families
+still make required CI read the firmware tree. They are #854's scope, and this
+gate will prove the plan becomes firmware-tree-free when it lands.

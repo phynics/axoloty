@@ -146,6 +146,14 @@ workflow tests. Use `make test-one FILTER=...` for a focused suite and
 process must select a real test target rather than a root-package zero-test
 selection.
 
+The embedded repository cutover is pinned by the required `ci` gate
+`repository-cutover-boundary`. It proves the published consumer contract exposes
+only repository-relative portable Core paths, that `AXOLOTY_SOURCE_DIR` is the
+only documented local Core override, and that every required gate stays
+firmware-free and hardware-free. With `AXOLOTY_EMBEDDED_COMPARE_DIR` it also
+audits a firmware checkout against this Core revision. See
+[`docs/embedded-cutover-validation.md`](embedded-cutover-validation.md).
+
 ## The four test categories
 
 A category says what a run needs, and that is the only axis. Every node in the
