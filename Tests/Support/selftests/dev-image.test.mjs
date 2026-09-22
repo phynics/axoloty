@@ -197,17 +197,11 @@ test("the development image does not bake root package products or source", () =
   assert.doesNotMatch(dockerfile, /COPY --from=[^\n]+\/(?:ax|axoloty-mcp)\b/);
 });
 
-test("the image gives its non-root ESP user a writable stable home", () => {
-  assert.match(dockerfile, /useradd --home-dir \/tmp --no-create-home/);
-  assert.doesNotMatch(dockerfile, /useradd[^\n]*--home-dir \/home\/esp/);
-  assert.match(dockerfile, /git config --system --add safe\.directory \/opt\/esp\/idf/);
-  assert.match(dockerfile, /safe\.directory \/opt\/esp\/idf\/components\/openthread\/openthread/);
-});
-
-test("the image includes ESP-IDF's supported compiler cache", () => {
-  assert.match(dockerfile, /ARG CCACHE_VERSION=4\.5\.1-1/);
-  assert.match(dockerfile, /ENV ESP_IDF_VERSION=\$\{ESP_IDF_VERSION\}/);
-  assert.match(dockerfile, /"ccache=\$\{CCACHE_VERSION\}"/);
+test("the image leaves firmware toolchains to axoloty-embedded", () => {
+  assert.doesNotMatch(dockerfile, /ESP_IDF_VERSION|espflash|IDF_PATH|IDF_TOOLS_PATH/);
+  assert.doesNotMatch(dockerfile, /ARG CCACHE_VERSION|"ccache=/);
+  assert.doesNotMatch(dockerfile, /useradd[^\n]*\besp\b/);
+  assert.doesNotMatch(dockerfile, /\/opt\/esp\/idf/);
 });
 
 test("image freshness is keyed by immutable inputs and can skip a current image", () => {
@@ -307,8 +301,6 @@ test("image is a no-op when Make runs inside the development container", () => {
 
 test("nested container Make uses mounted build and SwiftPM cache paths", () => {
   const environment = isolatedMakeEnvironment();
-  delete environment.AXOLOTY_DEVICE_LEASE_ROOT;
-  delete environment.AXOLOTY_ESP_IDF_CCACHE_DIR;
   delete environment.BUILD_DIR;
   delete environment.SPM_CACHE_DIR;
 
@@ -326,8 +318,6 @@ test("nested container Make uses mounted build and SwiftPM cache paths", () => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /BUILD_DIR="\/workspace\/.build"/);
   assert.match(result.stdout, /SPM_CACHE_DIR="\/workspace\/.swiftpm-cache"/);
-  assert.match(result.stdout, /AXOLOTY_ESP_IDF_CCACHE_DIR="\/workspace\/.ccache"/);
-  assert.match(result.stdout, /AXOLOTY_DEVICE_LEASE_ROOT="\/workspace\/.build\/device-leases"/);
   assert.doesNotMatch(result.stdout, /\/tmp\/coaty-swift-build/);
 });
 
@@ -335,8 +325,6 @@ test("nested container Make preserves explicit mounted path overrides", () => {
   const environment = isolatedMakeEnvironment();
   delete environment.BUILD_DIR;
   delete environment.SPM_CACHE_DIR;
-  delete environment.AXOLOTY_DEVICE_LEASE_ROOT;
-  delete environment.AXOLOTY_ESP_IDF_CCACHE_DIR;
 
   const result = spawnSync("make", [
     "--no-print-directory",
@@ -345,8 +333,6 @@ test("nested container Make preserves explicit mounted path overrides", () => {
     "AXOLOTY_TOOL_ARGS=--help",
     "BUILD_DIR=/custom/build",
     "SPM_CACHE_DIR=/custom/swiftpm-cache",
-    "AXOLOTY_ESP_IDF_CCACHE_DIR=/custom/ccache",
-    "AXOLOTY_DEVICE_LEASE_ROOT=/custom/device-leases",
   ], {
     cwd: ".",
     encoding: "utf8",
@@ -361,8 +347,6 @@ test("nested container Make preserves explicit mounted path overrides", () => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /BUILD_DIR="\/custom\/build"/);
   assert.match(result.stdout, /SPM_CACHE_DIR="\/custom\/swiftpm-cache"/);
-  assert.match(result.stdout, /AXOLOTY_ESP_IDF_CCACHE_DIR="\/custom\/ccache"/);
-  assert.match(result.stdout, /AXOLOTY_DEVICE_LEASE_ROOT="\/custom\/device-leases"/);
   assert.doesNotMatch(result.stdout, /\/workspace\/(?:\.build|\.swiftpm-cache)/);
 });
 
@@ -721,19 +705,14 @@ test("required CI preserves the plan budget and uploads durable run evidence", (
   assert.match(requiredCIJob, /Summarize verification evidence[\s\S]*manifest\.json[\s\S]*verifier\.log/);
   assert.match(requiredCIJob, /\.primary == true[\s\S]*\*-verify-ci\.json/);
   assert.match(requiredCIJob, /cat "\$markdown_report" >> "\$GITHUB_STEP_SUMMARY"/);
-  assert.match(requiredCIJob, /SwiftPM exact hit:[\s\S]*Swift compiler exact hit:[\s\S]*ESP-IDF exact hit:/);
+  assert.match(requiredCIJob, /SwiftPM exact hit:[\s\S]*Swift compiler exact hit:/);
   assert.match(requiredCIJob, /Save Swift compiler cache[\s\S]*if: success\(\)/);
 });
 
-test("required CI restores but only successful main pushes save the bounded ESP-IDF cache", () => {
-  const restore = workflowStep("Restore ESP-IDF compiler cache");
-  const save = workflowStep("Save ESP-IDF compiler cache");
-  assert.match(requiredCIJob, /ESP_IDF_CCACHE_PREFIX="esp-idf-ccache-v1-\$\{image_identity\}-"/);
-  assert.match(requiredCIJob, /ESP_IDF_CCACHE_KEY=\$\{ESP_IDF_CCACHE_PREFIX\}\$\{GITHUB_SHA\}/);
-  assert.match(restore, /path: ~\/\.cache\/axoloty\/esp-idf-ccache/);
-  assert.match(restore, /key: \$\{\{ env\.ESP_IDF_CCACHE_KEY \}\}[\s\S]*restore-keys: \|[\s\S]*\$\{\{ env\.ESP_IDF_CCACHE_PREFIX \}\}/);
-  assert.match(save, /if: success\(\)[^\n]*github\.event_name == 'push'[^\n]*github\.ref == 'refs\/heads\/main'[^\n]*steps\.esp_idf_ccache\.outputs\.cache-hit != 'true'/);
-  assert.match(save, /path: ~\/\.cache\/axoloty\/esp-idf-ccache[\s\S]*key: \$\{\{ env\.ESP_IDF_CCACHE_KEY \}\}/);
+test("required CI no longer carries the migrated ESP-IDF compiler cache", () => {
+  assert.doesNotMatch(requiredCIJob, /ESP_IDF_CCACHE_PREFIX|ESP_IDF_CCACHE_KEY/);
+  assert.doesNotMatch(requiredCIJob, /esp-idf-ccache/);
+  assert.doesNotMatch(requiredCIJob, /Restore ESP-IDF compiler cache|Save ESP-IDF compiler cache/);
 });
 
 test("live wire allows bounded container creation on busy runners", () => {

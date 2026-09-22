@@ -41,15 +41,8 @@ enum AxolotyCommandHelp {
       test tooling         Run offline developer-tool tests and prerequisites.
       test integration     Deprecated; no canonical broker-backed tier is declared.
       wire capture         Run live MQTT captures with pinned reference agents.
-      embedded build       Cross-compile the ESP32-C6 firmware on Linux.
       embedded consumer prepare  Prepare a standalone Embedded Swift consumer report.
-      embedded doctor      Verify the container's ESP-IDF build environment.
-      embedded verify      Build and verify the ESP32-C6 linker contract.
-      hardware check       Run or skip the sporadic hardware smoke check.
-      hardware require     Require an attached device and run its smoke check.
       release checkpoint   Run the release checkpoint validation (no hardware).
-      release checkpoint-hardware  Run checkpoint with ESP32-C6 smoke test.
-         --device PATH      Override AXOLOTY_DEVICE (default: /dev/ttyACM0).
       measure timing        Measure cold/warm hardware-free builds (Linux only).
       repository validate    Validate version, documentation, and architecture authority.
       serve mqtt           Start a local Mosquitto broker in the foreground.

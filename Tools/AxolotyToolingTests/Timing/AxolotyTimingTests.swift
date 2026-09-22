@@ -121,7 +121,7 @@ func timingParsersReportBuildStepsAndCacheStatsWithoutGuessing() {
 }
 
 @Test
-func timingRunnerBuildsEightSerialHardwareFreePlansWithIsolatedScratch() throws {
+func timingRunnerBuildsFourSerialHardwareFreePlansWithIsolatedScratch() throws {
     let runner = TimingRecordingRunner()
     let workspace = TimingRecordingWorkspace()
     let timing = AxolotyTimingRunner(
@@ -137,8 +137,7 @@ func timingRunnerBuildsEightSerialHardwareFreePlansWithIsolatedScratch() throws 
         identity: AxolotyTimingToolchainIdentity(
             platform: "linux",
             architecture: "test-arch",
-            swiftVersion: "Swift test",
-            espIDFVersion: "ESP-IDF test"
+            swiftVersion: "Swift test"
         )
     )
 
@@ -149,9 +148,9 @@ func timingRunnerBuildsEightSerialHardwareFreePlansWithIsolatedScratch() throws 
     ))
 
     #expect(report.exitCode == 0)
-    #expect(report.measurements.count == 8)
-    #expect(runner.commands.count == 8)
-    #expect(workspace.prepared.map { $0.1 } == [.cold, .warm, .cold, .warm, .cold, .warm, .cold, .warm])
+    #expect(report.measurements.count == 4)
+    #expect(runner.commands.count == 4)
+    #expect(workspace.prepared.map { $0.1 } == [.cold, .warm, .cold, .warm])
     #expect(workspace.cleaned.isEmpty)
     #expect(report.measurements.allSatisfy { $0.durationSeconds == 0.25 })
     #expect(report.toolchain.platform == "linux")
@@ -175,20 +174,7 @@ func timingRunnerBuildsEightSerialHardwareFreePlansWithIsolatedScratch() throws 
         "--disable-automatic-resolution", "--filter", "AxolotyTimingTests",
         "--scratch-path", "/tmp/timing/focused-test-build",
     ])
-
-    let embeddedBuild = try #require(runner.commands.first { $0.environment["AXOLOTY_TIMING_SCENARIO"] == "embedded-build" })
-    #expect(embeddedBuild.arguments.isEmpty)
-    #expect(embeddedBuild.executionContext == .project)
-    #expect(embeddedBuild.environment["EMBEDDED_BUILD_DIR"]?.hasSuffix("/embedded-build") == true)
-    #expect(embeddedBuild.environment["AXOLOTY_TIMING_MODE"] == "cold")
-    #expect(embeddedBuild.environment["AXOLOTY_TIMING_EVIDENCE"] == "1")
-
-    let linker = try #require(runner.commands.first { $0.environment["AXOLOTY_TIMING_SCENARIO"] == "linker-validation" })
-    #expect(linker.arguments.isEmpty)
-    #expect(linker.executionContext == .project)
-    #expect(linker.environment["AXOLOTY_EMBEDDED_LINKER_BUILD_DIR"]?.hasSuffix("/linker-validation") == true)
-    #expect(linker.environment["AXOLOTY_TIMING_EVIDENCE"] == "1")
-    #expect(linker.environment["EMBEDDED_DEVICE"] == nil)
+    #expect(focused.environment["AXOLOTY_TIMING_SCENARIO"] == "focused-test-build")
 }
 
 @Test
@@ -204,7 +190,7 @@ func timingRunnerCleansScratchWhenKeepIsDisabledAndBoundsFailureDiagnostics() {
         environment: timingTestEnvironment,
         workspace: workspace,
         clock: TimingRecordingClock(),
-        identity: .init(platform: "linux", architecture: "test", swiftVersion: "unknown", espIDFVersion: "unknown")
+        identity: .init(platform: "linux", architecture: "test", swiftVersion: "unknown")
     )
 
     let report = timing.run(AxolotyTimingOptions(
@@ -216,7 +202,7 @@ func timingRunnerCleansScratchWhenKeepIsDisabledAndBoundsFailureDiagnostics() {
     #expect(report.exitCode == 1)
     #expect(report.measurements.allSatisfy { $0.exitCode == 23 })
     #expect(report.measurements.allSatisfy { ($0.diagnostic?.count ?? 0) <= 512 })
-    #expect(workspace.cleaned.count == 4)
+    #expect(workspace.cleaned.count == 2)
 }
 
 @Test
@@ -226,7 +212,7 @@ func timingRunnerRejectsUnsupportedPlatformsBeforeLaunchingCommands() {
         commandRunner: runner,
         environment: timingTestEnvironment,
         platform: .macOS,
-        identity: .init(platform: "macOS", architecture: "test", swiftVersion: "unknown", espIDFVersion: "unknown")
+        identity: .init(platform: "macOS", architecture: "test", swiftVersion: "unknown")
     )
 
     let report = timing.run(AxolotyTimingOptions(scratchRoot: "/tmp/timing"))
@@ -245,7 +231,7 @@ func dispatcherExposesTimingAsSortedJSONAndRejectsInvalidCLIOptions() throws {
         environment: timingTestEnvironment,
         workspace: TimingRecordingWorkspace(),
         clock: TimingRecordingClock(),
-        identity: .init(platform: "linux", architecture: "test", swiftVersion: "test", espIDFVersion: "test")
+        identity: .init(platform: "linux", architecture: "test", swiftVersion: "test")
     )
     let dispatcher = AxolotyCommandDispatcher(
         commandRunner: runner,
@@ -261,7 +247,7 @@ func dispatcherExposesTimingAsSortedJSONAndRejectsInvalidCLIOptions() throws {
     let measurements = try #require(document["measurements"] as? [[String: Any]])
     #expect(result.exitCode == 0)
     #expect(result.standardError.isEmpty)
-    #expect(measurements.count == 8)
+    #expect(measurements.count == 4)
     #expect(result.standardOutput.firstIndex(of: "\n") != nil)
     let exitCodeKey = try #require(result.standardOutput.range(of: "\"exitCode\""))
     let measurementsKey = try #require(result.standardOutput.range(of: "\"measurements\""))

@@ -12,7 +12,6 @@ public struct AxolotyCommandDispatcher: Sendable {
     private let version: String
     private let checkCommands: AxolotyCheckCommands
     private let wireCommands: AxolotyWireCommands
-    private let hardwareCommands: AxolotyHardwareCommands
     private let serveCommands: AxolotyServeCommandRunner
     private let timingCommands: AxolotyTimingCommandRunner
     private let repositoryValidationCommands: AxolotyRepositoryValidationCommands
@@ -50,7 +49,6 @@ public struct AxolotyCommandDispatcher: Sendable {
         executableName: String = "axoloty-tool",
         commandRunner: any AxolotyCheckCommandRunning = FoundationCommandRunner(),
         integrationRunner: (any AxolotyIntegrationRunning)? = nil,
-        deviceLeaseManager: any AxolotyDeviceLeasing = FoundationDeviceLeaseManager(),
         fileSystem: (any AxolotyFileSystem)? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         processRunnerFactory: (@Sendable () -> any AxolotyManagedProcessRunning)? = nil,
@@ -140,13 +138,6 @@ public struct AxolotyCommandDispatcher: Sendable {
             planResolver: planResolution,
             executor: executor
         )
-        self.hardwareCommands = AxolotyHardwareCommands(
-            commandRunner: configuredCommandRunner,
-            contextValidator: contextValidator,
-            deviceLeaseManager: deviceLeaseManager,
-            fileSystem: fileSystem,
-            environment: environment
-        )
         self.serveCommands = AxolotyServeCommandRunner(
             executableName: executableName,
             environment: environment,
@@ -212,8 +203,6 @@ public struct AxolotyCommandDispatcher: Sendable {
             return timingCommands.run(arguments: arguments)
         case .repositoryValidation(let arguments):
             return repositoryValidationCommands.run(arguments: arguments)
-        case .hardware(let required, let device):
-            return hardwareCommands.run(AxolotyHardwareCommand(required: required, device: device))
         case .testOne(let filter):
             return checkCommands.run(.testOne(filter: filter))
         case .testTier(let name, let ci):
@@ -238,12 +227,6 @@ public struct AxolotyCommandDispatcher: Sendable {
             return wireCommands.run(.capture)
         case .wireVerify:
             return wireCommands.run(.verifyFixtures)
-        case .embeddedBuild:
-            return checkCommands.run(.embeddedBuild)
-        case .embeddedDoctor:
-            return checkCommands.run(.embeddedDoctor)
-        case .embeddedVerify:
-            return checkCommands.run(.embeddedVerify)
         case .embeddedConsumerPrepare(let arguments):
             return embeddedConsumerPreparation.run(arguments: arguments)
         case .release(let command):

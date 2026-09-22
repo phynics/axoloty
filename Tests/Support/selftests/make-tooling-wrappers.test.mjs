@@ -52,16 +52,6 @@ test("principal Make workflows use the canonical tooling entry points", () => {
   for (const target of advertisedTargets) {
     assert.match(makefile, new RegExp(`^${target}:[^\\n]*$`, "m"), `${target} is advertised but has no Make rule`);
   }
-  for (const target of [
-    "embedded-toolchain-doctor",
-    "embedded-swift-build",
-    "check-embedded-swift-linker",
-    "hardware-check",
-    "hardware-require",
-    "g1-bounded-runtime-device",
-  ]) {
-    assert.match(recipe(makefile, target), /\$\(MAKE\).*\baxoloty-tool\b/, `${target} must forward to axoloty-tool`);
-  }
   for (const target of ["verify", "verify-ci", "test-one", "test-tier", "explain"]) {
     assert.match(recipe(makefile, target), /(?:\.devcontainer\/run\.sh.*axoloty-tool|\$\(MAKE\).*\baxoloty-tool\b)/, `${target} must run axoloty-tool in the pinned container`);
   }
@@ -84,49 +74,23 @@ test("principal Make workflows use the canonical tooling entry points", () => {
   for (const target of [
     "test-axoloty-wire-independent-resolution",
     "test-axoloty-wire-distribution",
-    "embedded-device-info",
-    "embedded-device-smoke",
-    "embedded-reproducible-build",
-    "embedded-swift-reproducible-build",
-    "embedded-network-test",
-    "embedded-agent-test",
-    "embedded-coatyjs-test",
-    "embedded-host-test",
-    "embedded-last-will-test",
-    "embedded-broker-restart-test",
   ]) {
     assert.match(makefile, new RegExp(`^${target}:.*\\bimage\\b`, "m"), `${target} must establish the dev image`);
   }
-});
-
-test("external firmware proof keeps preparation and ESP-IDF ownership separate", () => {
-  const makefile = fs.readFileSync("Makefile", "utf8");
-  const validate = fs.readFileSync("Embedded/swift/tools/validate.sh", "utf8");
-  const build = fs.readFileSync("Embedded/swift/tools/build.sh", "utf8");
-  const flash = fs.readFileSync("Embedded/swift/tools/flash.sh", "utf8");
-  const cmake = fs.readFileSync("Embedded/swift/cmake/axoloty-source.cmake", "utf8");
 
   for (const target of [
+    "embedded-toolchain-doctor",
+    "embedded-swift-build",
+    "check-embedded-swift-linker",
+    "hardware-check",
+    "hardware-require",
+    "checkpoint-hardware",
     "embedded-consumer-proof-build",
-    "embedded-consumer-proof-flash",
-    "embedded-consumer-proof-validate",
+    "embedded-device-smoke",
+    "benchmark-wire-device",
   ]) {
-    assert.match(makefile, new RegExp(`^${target}:.*\\bimage\\b`, "m"));
+    assert.doesNotMatch(makefile, new RegExp(`^${target}:`, "m"), `${target} must be removed with the migrated firmware`);
   }
-  assert.match(validate, /embedded consumer prepare/);
-  assert.match(validate, /privateReferenceScan/);
-  assert.match(build, /tools\/validate\.sh/);
-  assert.match(build, /AXOLOTY_CONSUMER_MANIFEST/);
-  assert.match(flash, /write_flash @flash_args/);
-  assert.doesNotMatch(flash, /build\.sh/);
-  assert.match(makefile, /AXOLOTY_PROOF_ROOT/);
-  assert.match(makefile, /sparse-checkout/);
-  assert.match(flash, /device-manifest\.json/);
-  assert.match(flash, /swift-smoke-log\.txt/);
-  assert.doesNotMatch(build, /Tests\/Support|resolve-embedded-core|prepare-embedded-core/);
-  assert.doesNotMatch(flash, /Tests\/Support|resolve-embedded-core|prepare-embedded-core/);
-  assert.match(cmake, /string\(JSON/);
-  assert.doesNotMatch(cmake, /Package\.swift|file\(GLOB package_sources/);
 });
 
 test("decoder-context diagnostic distinguishes matching, clean, and invalid input", () => {
@@ -192,12 +156,18 @@ test("service wrappers forward an explicit MCP executable override", () => {
   }
 });
 
-test("G1 device wrapper delegates policy and device access to axoloty-tool", () => {
+test("device and hardware wrappers left with the migrated firmware", () => {
   const makefile = fs.readFileSync("Makefile", "utf8");
-  const target = recipe(makefile, "g1-bounded-runtime-device");
-  assert.match(target, /AXOLOTY_TOOL_ARGS='test-one --filter g1-bounded-runtime-device'/);
-  assert.match(target, /AXOLOTY_TOOL_CONTAINER_OPTIONAL_DEVICES='\$\(AXOLOTY_DEVICE\)'/);
-  assert.doesNotMatch(target, /\.devcontainer\/run\.sh|CONTAINER_DEVICES=/);
+  for (const target of [
+    "g1-bounded-runtime-device",
+    "hardware-check",
+    "hardware-require",
+    "checkpoint-hardware",
+    "embedded-swift-flash",
+    "embedded-swift-test",
+  ]) {
+    assert.doesNotMatch(makefile, new RegExp(`^${target}:`, "m"), `${target} must not remain a Make target`);
+  }
 });
 
 test("README package integration links both products by repository identity", () => {
@@ -237,14 +207,11 @@ test("docs generation forwards the hosting base path across the container bounda
 test("release targets fail closed when the container env allowlist is unavailable", () => {
   const makefile = fs.readFileSync("Makefile", "utf8");
   const helper = "Tests/Support/lib/tool-container-env.sh";
-  for (const [target, command] of [
-    ["checkpoint", "release-checkpoint"],
-    ["checkpoint-hardware", "release-checkpoint-hardware"],
-  ]) {
-    const target_recipe = recipe(makefile, target);
+  {
+    const target_recipe = recipe(makefile, "checkpoint");
     // The helper runs node on the host; an unchecked command substitution
     // would yield an empty allowlist and still run the release.
-    assert.match(target_recipe, new RegExp(`container_env="\\$\\$\\(sh ${helper} ${command}\\)" \\|\\| exit 1`));
+    assert.match(target_recipe, new RegExp(`container_env="\\$\\$\\(sh ${helper} release-checkpoint\\)" \\|\\| exit 1`));
     assert.match(target_recipe, /test -n "\$\$container_env" \|\| \{ echo/);
     assert.match(target_recipe, /AXOLOTY_TOOL_CONTAINER_ENV_VARS="\$\$container_env"/);
   }

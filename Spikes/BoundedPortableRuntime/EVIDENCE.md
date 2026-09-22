@@ -18,14 +18,11 @@ Run the hardware-free nodes from the repository root:
 ```sh
 make test-one FILTER='g1-bounded-runtime-host'
 make test-one FILTER='g1-bounded-runtime-sanitized'
-make test-one FILTER='g1-bounded-runtime-embedded'
 ```
 
-With an ESP32-C6 at `AXOLOTY_DEVICE` (default `/dev/ttyACM0`), run:
-
-```sh
-make g1-bounded-runtime-device
-```
+The `g1-bounded-runtime-embedded` cross-build and `g1-bounded-runtime-device`
+nodes moved to `phynics/axoloty-embedded` with the firmware. Their historical
+measurements are recorded below.
 
 Generated, schema-validated reports and raw logs are written under
 `.testing/g1-bounded-runtime/<candidate-sha>/`. Build products and generated

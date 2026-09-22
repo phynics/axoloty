@@ -207,9 +207,9 @@ compile_module AxolotyProtocol "$AXOLOTY_PROTOCOL_SOURCE_DIR"
 compile_module AxolotyCoatyModels "$AXOLOTY_COATY_MODELS_SOURCE_DIR"
 compile_module AxolotyStaticRuntime "$AXOLOTY_STATIC_RUNTIME_SOURCE_DIR"
 
-link_probe="$source_root/Tests/Support/embedded/embedded-swift-link-probe.swift"
-parser_probe="$source_root/Tests/Support/embedded/embedded-swift-parser-probe.swift"
-host_shims="$source_root/Tests/Support/embedded/embedded-swift-host-shims.c"
+link_probe="$source_root/Tests/Support/fixtures/embedded-swift-link-probe.swift"
+parser_probe="$source_root/Tests/Support/fixtures/embedded-swift-parser-probe.swift"
+host_shims="$source_root/Tests/Support/fixtures/embedded-swift-host-shims.c"
 for probe_source in "$link_probe" "$parser_probe" "$host_shims"; do
     [ -f "$probe_source" ] || {
         echo "FAIL: Embedded Swift probe source is missing: $probe_source" >&2

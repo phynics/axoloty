@@ -83,20 +83,15 @@ public struct AxolotyTimingToolchainIdentity: Codable, Equatable, Sendable {
     public let architecture: String
     /// The Swift toolchain identity, or `unknown` when not supplied.
     public let swiftVersion: String
-    /// The ESP-IDF identity, or `unknown` when not supplied.
-    public let espIDFVersion: String
-
     /// Creates a toolchain identity.
     /// - Parameters:
     ///   - platform: Stable host platform name.
     ///   - architecture: Stable host architecture name.
     ///   - swiftVersion: Swift compiler identity.
-    ///   - espIDFVersion: ESP-IDF identity.
-    public init(platform: String, architecture: String, swiftVersion: String, espIDFVersion: String) {
+    public init(platform: String, architecture: String, swiftVersion: String) {
         self.platform = platform
         self.architecture = architecture
         self.swiftVersion = swiftVersion
-        self.espIDFVersion = espIDFVersion
     }
 
     static func current(environment: [String: String]) -> Self {
@@ -115,8 +110,7 @@ public struct AxolotyTimingToolchainIdentity: Codable, Equatable, Sendable {
         return Self(
             platform: platform,
             architecture: architecture,
-            swiftVersion: environment["SWIFT_VERSION"] ?? "unknown",
-            espIDFVersion: environment["ESP_IDF_VERSION"] ?? "unknown"
+            swiftVersion: environment["SWIFT_VERSION"] ?? "unknown"
         )
     }
 }
@@ -181,7 +175,7 @@ public struct AxolotyTimingReport: Codable, Equatable, Sendable {
     public let scratchRoot: String
     /// Whether scratch trees were retained.
     public let keepScratch: Bool
-    /// Eight serially collected measurements, or empty on unsupported platform.
+    /// Serially collected measurements, or empty on unsupported platform.
     public let measurements: [AxolotyTimingMeasurement]
     /// Overall process exit status for the timing command.
     public let exitCode: Int32

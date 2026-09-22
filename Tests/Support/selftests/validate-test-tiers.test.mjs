@@ -42,10 +42,11 @@ test("CI preserves the firmware-independent Embedded Core contract", () => {
   assert.ok(ci);
   assert.ok(consumer);
   assert.equal(consumer.command.executable, "Tests/Support/checks/check-embedded-swift-core.sh");
-  assert.deepEqual(consumer.dependencies, ["embedded-toolchain"]);
+  assert.deepEqual(consumer.dependencies, []);
   assert.equal(consumer.hardware, "forbidden");
   assert.equal(consumer.network, "none");
   assert.equal(consumer.broker, "none");
+  assert.deepEqual(consumer.resources, ["source-tree"]);
   assert.equal(consumer.resources.includes("embedded-build"), false);
   assert.equal(ci.nodes.includes(consumer.id), true);
   assert.equal(document.requiredGates.includes(consumer.id), true);
@@ -148,11 +149,14 @@ test("validator enforces the tool container env allowlist contract", () => {
   const badShape = JSON.parse(JSON.stringify(document));
   badShape.toolContainerEnv["release-checkpoint"] = ["AXOLOTY_OK", "not an identifier"];
   badShape.toolContainerEnv["release-unknown"] = ["AXOLOTY_X"];
-  delete badShape.toolContainerEnv["release-checkpoint-hardware"];
   errors = validate(badShape, base);
   assert.ok(errors.includes('toolContainerEnv release-checkpoint: invalid env name "not an identifier"'));
   assert.ok(errors.includes("toolContainerEnv release-unknown: unknown tool command identifier"));
-  assert.ok(errors.includes("toolContainerEnv: missing allowlist for release-checkpoint-hardware"));
+
+  const missingAllowlist = JSON.parse(JSON.stringify(document));
+  delete missingAllowlist.toolContainerEnv["release-checkpoint"];
+  errors = validate(missingAllowlist, base);
+  assert.ok(errors.includes("toolContainerEnv: missing allowlist for release-checkpoint"));
 });
 
 test("retired make test alias stays removed so no stale integration tier can return", () => {
@@ -523,9 +527,25 @@ test("the four categories are the whole taxonomy", () => {
 test("a hardware node cannot hide in a hardware-forbidden category", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
   const smuggled = JSON.parse(JSON.stringify(document));
-  const hardwareNode = smuggled.nodes.find(node => node.hardware !== "forbidden").id;
-  smuggled.tiers.find(tier => tier.id === "ci").nodes.push(hardwareNode);
-  smuggled.requiredGates.push(hardwareNode);
+  smuggled.nodes.push({
+    id: "smuggled-hardware",
+    dependencies: [],
+    command: { executable: "sh", arguments: [], environment: {}, executionContext: "project" },
+    filter: null,
+    timeoutSeconds: 60,
+    expectedDurationSeconds: 60,
+    cadence: "hardware-checkpoint",
+    required: false,
+    local: true,
+    ci: false,
+    network: "none",
+    broker: "none",
+    hardware: "required",
+    resources: ["embedded-device"],
+    isolation: "exclusive",
+    artifacts: [],
+  });
+  smuggled.tiers.find(tier => tier.id === "ci").nodes.push("smuggled-hardware");
   const errors = validate(smuggled, {
     makeTargets: parseMakeTargets(path.join(root, "Makefile")),
     discoveredSelfTests: [],

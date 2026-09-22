@@ -8,7 +8,7 @@ Axoloty is a Swift runtime and protocol suite for collaborative distributed agen
 
 Historical release outcomes are preserved in [`docs/releases/`](./releases/) and [`CHANGELOG.md`](../CHANGELOG.md). They do not define current strategy.
 
-## Active direction: embedded firmware split, then Swift 6.4
+## Active direction: Swift 6.4
 
 Axoloty 0.8.2 is the Core revision that the embedded firmware split locks
 against. It publishes the versioned
@@ -20,19 +20,18 @@ are recorded in [`docs/releases/0.8.0.md`](./releases/0.8.0.md) and
 
 The programs run in this order:
 
-1. [Epic #845](https://github.com/phynics/axoloty/issues/845) moves concrete
+1. [Epic #845](https://github.com/phynics/axoloty/issues/845) moved concrete
    firmware products, board and toolchain integration, and device
    qualification into `phynics/axoloty-embedded`. Axoloty keeps the portable
    protocol/runtime implementation and proves it remains Embedded Swift
-   compatible. The pre-split gate (S1–S3) passed and the owner recorded GO;
-   repository extraction proceeds from S4.
+   compatible. The migration landed; firmware no longer lives here.
 2. [Epic #878](https://github.com/phynics/axoloty/issues/878) adopts Swift 6.4
-   after the firmware migration lands, so a toolchain change never overlaps a
-   behavior-preserving move.
+   now that the firmware migration has landed, so a toolchain change never
+   overlaps a behavior-preserving move.
 
 Embedded Zenoh implementation under
-[epic #796](https://github.com/phynics/axoloty/issues/796) is blocked on the
-split. Host and shared Zenoh work stays in Axoloty.
+[epic #796](https://github.com/phynics/axoloty/issues/796) is owned by
+`phynics/axoloty-embedded`. Host and shared Zenoh work stays in Axoloty.
 
 ## Completed: 0.7 architecture stabilization and transport boundary
 
@@ -77,8 +76,9 @@ the removed public API is mapped in
 | [#757](https://github.com/phynics/axoloty/issues/757) | Add Thing-driven bounded SensorThings registry. | Merged |
 | [#760](https://github.com/phynics/axoloty/issues/760) | Concentrate executor-owned typed IO state. | Merged |
 
-The `embedded` category and `make checkpoint` need a Linux host with an
-attached ESP32-C6. They are recorded outside this document.
+The `embedded` category is the hardware-free Core Embedded Swift gate and runs
+on the pinned Linux container. Device qualification is recorded in
+`phynics/axoloty-embedded`.
 
 ## Completed: 0.6 architecture alignment
 

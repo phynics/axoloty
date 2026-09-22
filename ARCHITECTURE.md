@@ -111,8 +111,8 @@ fixtures remain historical evidence only. G3 does not introduce a second
 runtime or lifecycle.
 The boundary checks and the maintained
 [`Spikes/BoundedObjectModelEvidence`](./Spikes/BoundedObjectModelEvidence)
-host/sanitizer/ESP32-C6 evidence enforce this package graph and its
-fixed-storage claims.
+host/sanitizer evidence enforce this package graph and its fixed-storage
+claims. ESP32-C6 cross-build evidence is owned by `phynics/axoloty-embedded`.
 
 ### G4 status: runtime replacement complete
 
@@ -175,7 +175,7 @@ specializations now spell both dimensions (`StaticRuntime<capacity,
 payloadCapacity>`); the payload dimension may be reduced below 2,048 bytes but
 cannot exceed Axoloty's sealed wire maximum. This bounded-memory ceiling is an
 intentional divergence from Coaty, which does not define a 2 KiB payload limit.
-The ESP32-C6 node proves same-source compilation and linkage. G4 owns runtime replacement;
+The ESP32-C6 node proved same-source compilation and linkage; that node now lives in `phynics/axoloty-embedded`, while the hardware-free Core gate proves portable-module compilation and linkage here. G4 owns runtime replacement;
 G5 owns IO and optional-product boundaries; G6 owns non-divergence and release
 proof.
 
@@ -204,9 +204,10 @@ required, hardware-free gate compiles the portable packages for riscv32
 Embedded Swift, expands the production macro, and links an external consumer
 fixture.
 
-Accepted migration: concrete firmware composition and device qualification move
-to `phynics/axoloty-embedded` under epic #845. Portable packages stay here and
-are never copied.
+Completed migration: concrete firmware composition, the ESP32-C6 toolchain, and
+device qualification live in `phynics/axoloty-embedded` under epic #845.
+Portable packages stay here and are never copied. This repository keeps only
+the hardware-free Core Embedded Swift gate.
 
 ## Product boundary
 

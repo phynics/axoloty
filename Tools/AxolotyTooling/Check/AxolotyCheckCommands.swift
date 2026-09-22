@@ -14,9 +14,6 @@ enum AxolotyCheckCommand: Equatable, Sendable {
     case testTier(name: String, ci: Bool)
     case explain(tier: String, ci: Bool)
     case integration
-    case embeddedBuild
-    case embeddedDoctor
-    case embeddedVerify
 }
 
 /// Executes canonical checks, plans, and check-oriented compatibility aliases.
@@ -67,12 +64,6 @@ struct AxolotyCheckCommands: Sendable {
                 standardError: "error: broker-backed integration tier is retired; use a declared test tier or wire capture for broker evidence\n",
                 exitCode: 69
             )
-        case .embeddedBuild:
-            return runNamedCheck("embedded-build")
-        case .embeddedDoctor:
-            return runNamedCheck("embedded-toolchain")
-        case .embeddedVerify:
-            return runNamedCheck("embedded-linker")
         }
     }
 
@@ -113,35 +104,6 @@ struct AxolotyCheckCommands: Sendable {
             return AxolotyCommandResult(
                 standardError: "error: requested check is unavailable on this platform\n",
                 exitCode: 69
-            )
-        } catch {
-            return AxolotyCommandResult(
-                standardError: "error: \(AxolotyCommandFamilySupport.manifestDiagnostic(error))\n",
-                exitCode: 70
-            )
-        }
-    }
-
-    private func runNamedCheck(_ name: String) -> AxolotyCommandResult {
-        do {
-            let resolver = try planResolver.get()
-            let command = try resolver.command(.node(name: name))
-            if let failure = contextValidator.failureResult(validating: [command]) {
-                return AxolotyCommandFamilySupport.commandResult(failure)
-            }
-            let result = execute(
-                command,
-                context: AxolotyCommandRunContext(node: name, stage: "check")
-            )
-            let check = AxolotyCheckResult(
-                name: name,
-                status: result.exitCode == 0 ? .passed : .failed,
-                command: result
-            )
-            return AxolotyCommandFamilySupport.manifestResult(
-                AxolotyCheckManifest(results: [check]),
-                outputMode: outputMode,
-                exitCode: result.exitCode == 0 ? 0 : 1
             )
         } catch {
             return AxolotyCommandResult(

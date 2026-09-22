@@ -29,18 +29,13 @@ let package = Package(
             path: "axoloty-tool"
         ),
         .executableTarget(
-            name: "AxolotyDeviceLeaseProbe",
-            dependencies: ["AxolotyTooling"],
-            path: "AxolotyDeviceLeaseProbe"
-        ),
-        .executableTarget(
             name: "AxolotyResourceLeaseProbe",
             dependencies: ["AxolotyTooling"],
             path: "AxolotyResourceLeaseProbe"
         ),
         .testTarget(
             name: "AxolotyToolingTests",
-            dependencies: ["AxolotyTooling", "AxolotyDeviceLeaseProbe", "AxolotyResourceLeaseProbe"],
+            dependencies: ["AxolotyTooling", "AxolotyResourceLeaseProbe"],
             path: "AxolotyToolingTests",
             resources: [.copy("Fixtures/legacy-check-plan-v1.json")]
         ),
