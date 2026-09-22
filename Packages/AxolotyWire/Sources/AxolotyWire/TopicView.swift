@@ -111,7 +111,10 @@ public struct TopicView {
     /// The event-type filter (the part after ':' in level 3), if present.
     public var eventTypeFilter: ByteSlice? {
         guard let eventLevel = level(3) else { return nil }
-        return eventLevel.findByte(0x3A) // ':'
+        guard let colon = eventLevel.findByteIndex(0x3A), colon == 3 else { return nil }
+        let markerLength = eventLevel.byte(at: colon + 1) == 0x3A ? 1 : 0
+        let start = colon + 1 + markerLength
+        return eventLevel.subSlice(from: start, length: eventLevel.length - start)
     }
 
     /// The namespace level (topic level 2), or nil if absent.
@@ -396,15 +399,3 @@ extension WireEventType: RawRepresentable {
     }
 }
 #endif
-
-extension ByteSlice {
-    /// Finds a byte value and returns the sub-slice after it, or nil.
-    func findByte(_ target: UInt8) -> ByteSlice? {
-        for i in 0..<length where pointer.load(fromByteOffset: i, as: UInt8.self) == target {
-            let remaining = length - i - 1
-            guard remaining > 0 else { return ByteSlice(pointer: pointer.advanced(by: i + 1), length: 0) }
-            return ByteSlice(pointer: pointer.advanced(by: i + 1), length: remaining)
-        }
-        return nil
-    }
-}

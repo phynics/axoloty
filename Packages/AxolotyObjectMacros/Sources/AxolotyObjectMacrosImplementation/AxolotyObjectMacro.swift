@@ -4,6 +4,7 @@ import SwiftDiagnostics
 import SwiftSyntax
 import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
+import AxolotyObjectModel
 
 private enum SchemaDiagnosticID: String {
     case invalidObjectType
@@ -144,8 +145,8 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
             if reserved.contains(where: { decodeEscapes($0) == Optional(wireName) }) {
                 context.diagnose(Diagnostic(node: Syntax(variable), message: SchemaDiagnostic(.reservedWireName, "wire field '\(wireName)' is reserved by the object envelope")))
             }
-            if wireName.utf8.count > 128 {
-                context.diagnose(Diagnostic(node: Syntax(variable), message: SchemaDiagnostic(.malformedWireName, "wire field exceeds the bounded 128-byte key limit")))
+            if wireName.utf8.count > ObjectFieldKey.maxLength {
+                context.diagnose(Diagnostic(node: Syntax(variable), message: SchemaDiagnostic(.malformedWireName, "wire field exceeds the bounded \(ObjectFieldKey.maxLength)-byte key limit")))
                 continue
             }
             if wireNames.contains(where: { decodeEscapes($0) == Optional(wireName) }) {

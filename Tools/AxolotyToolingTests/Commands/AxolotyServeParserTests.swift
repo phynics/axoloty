@@ -162,7 +162,7 @@ func serveMcpStdioDefaults() {
     #expect(config.brokerHost == "localhost")
     #expect(config.brokerPort == 1883)
     #expect(config.namespace == "-")
-    #expect(config.connectTimeout == "10s")
+    #expect(config.connectTimeout.rawValue == "10s")
 }
 
 @Test
@@ -196,7 +196,7 @@ func serveMcpAcceptsBoundedConnectTimeout() {
         Issue.record("expected success")
         return
     }
-    #expect(config.connectTimeout == "2m")
+    #expect(config.connectTimeout.rawValue == "2m")
 }
 
 @Test

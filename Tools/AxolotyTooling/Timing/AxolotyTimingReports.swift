@@ -35,7 +35,7 @@ public struct AxolotyTimingMetric: Codable, Equatable, Sendable {
 public struct AxolotyTimingCacheStats: Codable, Equatable, Sendable {
     /// `available` when at least one cache counter was observed.
     public let status: AxolotyTimingMetricStatus
-    /// The sum of hits and misses when both were available.
+    /// The sum of hits and misses when both were available, otherwise `nil`.
     public let value: Int?
     /// Cache hits, if reported by the command or injected reader.
     public let hits: Int?
@@ -47,7 +47,7 @@ public struct AxolotyTimingCacheStats: Codable, Equatable, Sendable {
     init(hits: Int?, misses: Int?, diagnostic: String? = nil) {
         self.hits = hits
         self.misses = misses
-        value = hits.map { $0 + (misses ?? 0) } ?? misses
+        value = if let hits, let misses { hits + misses } else { nil }
         if hits != nil || misses != nil {
             status = .available
             self.diagnostic = diagnostic
@@ -143,8 +143,6 @@ public struct AxolotyTimingMeasurement: Codable, Equatable, Sendable {
     public let scratchPath: String
     /// The exact command plan used for this measurement.
     public let command: AxolotyCommandPlan
-    /// Toolchain identity for this measurement.
-    public let toolchain: AxolotyTimingToolchainIdentity
 
     init(
         scenario: AxolotyTimingScenario,
@@ -156,8 +154,7 @@ public struct AxolotyTimingMeasurement: Codable, Equatable, Sendable {
         cache: AxolotyTimingCacheStats,
         scratchReused: Bool,
         scratchPath: String,
-        command: AxolotyCommandPlan,
-        toolchain: AxolotyTimingToolchainIdentity
+        command: AxolotyCommandPlan
     ) {
         self.scenario = scenario
         self.mode = mode
@@ -169,7 +166,6 @@ public struct AxolotyTimingMeasurement: Codable, Equatable, Sendable {
         self.scratchReused = scratchReused
         self.scratchPath = scratchPath
         self.command = command
-        self.toolchain = toolchain
     }
 }
 

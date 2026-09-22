@@ -135,7 +135,6 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             if case .active = pending[index].state { pendingCount += 1 }
         }
         return ProtocolStateSnapshot(
-            activeRecords: associationCount,
             activeAssociations: associationCount,
             generation: generation,
             activeObjects: objectCount,

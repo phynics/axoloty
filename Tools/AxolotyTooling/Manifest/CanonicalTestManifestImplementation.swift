@@ -53,6 +53,11 @@ public enum AxolotyCanonicalTestManifestError: Error, Equatable, Sendable, Local
 
 /// The versioned, checked-in source of all canonical test execution plans.
 public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, manifestID, nodes, tiers, requiredGates, testOne
+        case selfTests, artifactContract, toolContainerEnv, flakePolicy, quarantine
+    }
+
     /// The current manifest schema version.
     public static let currentSchemaVersion = 2
 
@@ -64,9 +69,50 @@ public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
     public let nodes: [AxolotyCanonicalTestNode]
     /// Tier metadata and roots.
     public let tiers: [AxolotyCanonicalTestTier]
-    /// Named plan roots.
-    /// Nodes the ci category requires.
-    public let requiredGates: [String]
+    /// Required, local, CI-available nodes in the `ci` category.
+    ///
+    /// This projection is derived from ``nodes`` and ``tiers`` so the
+    /// serialized manifest cannot carry a second, drifting gate list.
+    public var requiredGates: [String] {
+        guard let ciTier = tiers.first(where: { $0.id == "ci" }) else { return [] }
+        return ciTier.nodes.filter { nodeID in
+            guard let node = nodes.first(where: { $0.id == nodeID }) else { return false }
+            return node.required && node.local && node.ci
+        }
+    }
+
+    /// Decodes the manifest while treating the legacy gate array as an
+    /// untrusted projection of the declared tiers and nodes.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        manifestID = try container.decode(String.self, forKey: .manifestID)
+        nodes = try container.decode([AxolotyCanonicalTestNode].self, forKey: .nodes)
+        tiers = try container.decode([AxolotyCanonicalTestTier].self, forKey: .tiers)
+        _ = try container.decodeIfPresent([String].self, forKey: .requiredGates)
+        testOne = try container.decode(AxolotyCanonicalTestInterface.self, forKey: .testOne)
+        selfTests = try container.decode([AxolotySelfTestContractEntry].self, forKey: .selfTests)
+        artifactContract = try container.decode(AxolotyArtifactContract.self, forKey: .artifactContract)
+        toolContainerEnv = try container.decodeIfPresent(AxolotyToolContainerEnv.self, forKey: .toolContainerEnv)
+        flakePolicy = try container.decode(AxolotyFlakePolicy.self, forKey: .flakePolicy)
+        quarantine = try container.decode([AxolotyQuarantineEntry].self, forKey: .quarantine)
+    }
+
+    /// Encodes the derived gate projection under the established manifest key.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encode(manifestID, forKey: .manifestID)
+        try container.encode(nodes, forKey: .nodes)
+        try container.encode(tiers, forKey: .tiers)
+        try container.encode(requiredGates, forKey: .requiredGates)
+        try container.encode(testOne, forKey: .testOne)
+        try container.encode(selfTests, forKey: .selfTests)
+        try container.encode(artifactContract, forKey: .artifactContract)
+        try container.encodeIfPresent(toolContainerEnv, forKey: .toolContainerEnv)
+        try container.encode(flakePolicy, forKey: .flakePolicy)
+        try container.encode(quarantine, forKey: .quarantine)
+    }
 
     /// The categories a release needs evidence for: every category except
     /// `release` itself, which is their union. Derived so the set cannot drift
@@ -95,7 +141,6 @@ public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
         manifestID: String,
         nodes: [AxolotyCanonicalTestNode],
         tiers: [AxolotyCanonicalTestTier],
-        requiredGates: [String],
         testOne: AxolotyCanonicalTestInterface,
         selfTests: [AxolotySelfTestContractEntry],
         artifactContract: AxolotyArtifactContract,
@@ -107,7 +152,6 @@ public struct AxolotyCanonicalTestManifest: Codable, Equatable, Sendable {
         self.manifestID = manifestID
         self.nodes = nodes
         self.tiers = tiers
-        self.requiredGates = requiredGates
         self.testOne = testOne
         self.selfTests = selfTests
         self.artifactContract = artifactContract

@@ -300,9 +300,9 @@ public struct AxolotyServeParser: Sendable {
             }
         }
 
-        let connectTimeout = flags.values["connect-timeout"] ?? "10s"
-        guard Self.isValidConnectTimeout(connectTimeout) else {
-            return .failure(.invalidDuration(connectTimeout))
+        let connectTimeoutValue = flags.values["connect-timeout"] ?? "10s"
+        guard let connectTimeout = MCPConnectTimeout(connectTimeoutValue) else {
+            return .failure(.invalidDuration(connectTimeoutValue))
         }
 
         let output: ServeOutputMode
@@ -387,7 +387,7 @@ public struct AxolotyServeParser: Sendable {
             brokerHost: "127.0.0.1",
             brokerPort: mqttPort,
             namespace: namespace,
-            connectTimeout: "10s",
+            connectTimeout: .default,
             output: output
         )
 
@@ -437,31 +437,7 @@ public struct AxolotyServeParser: Sendable {
         host == "127.0.0.1" || host == "localhost" || host == "::1"
     }
 
-    private static func isValidConnectTimeout(_ value: String) -> Bool {
-        guard let duration = parseBoundedDuration(value) else { return false }
-        return duration > 0
-    }
-
-    static func connectTimeoutSeconds(_ value: String) -> Double? {
-        parseBoundedDuration(value).map(Double.init)
-    }
-
-    /// Mirrors the duration syntax used by the inspector CLI without making
-    /// the orchestration target depend on the product runtime target.
-    private static func parseBoundedDuration(_ rawValue: String) -> Int64? {
-        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let unit = trimmed.last else { return nil }
-        let amount = String(trimmed.dropLast())
-        guard let number = Int64(amount), number > 0 else { return nil }
-        let multiplier: Int64
-        switch unit.lowercased() {
-        case "s": multiplier = 1
-        case "m": multiplier = 60
-        case "h": multiplier = 3_600
-        default: return nil
-        }
-        let (seconds, overflow) = number.multipliedReportingOverflow(by: multiplier)
-        guard !overflow, seconds <= 86_400 else { return nil }
-        return seconds
+    static func connectTimeoutSeconds(_ value: MCPConnectTimeout) -> Double {
+        value.seconds
     }
 }

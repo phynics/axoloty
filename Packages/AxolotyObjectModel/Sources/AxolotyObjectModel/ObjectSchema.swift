@@ -62,6 +62,9 @@ public struct ObjectFieldFlags: OptionSet, Sendable, Equatable {
 
 /// A bounded wire key stored separately from the larger object-type vocabulary.
 public struct ObjectFieldKey: Sendable, Equatable {
+    /// Maximum UTF-8 byte length accepted by every bounded object-field path.
+    public static let maxLength = 128
+
     private let literal: StaticString
     /// Number of meaningful UTF-8 bytes.
     ///
@@ -73,7 +76,7 @@ public struct ObjectFieldKey: Sendable, Equatable {
     /// - Parameter value: The literal to retain.
     /// - Returns: A key, or `nil` when the literal exceeds the wire bound.
     public init?(_ value: StaticString) {
-        guard value.utf8CodeUnitCount <= WireBufferConfig.maxTopicLength else { return nil }
+        guard value.utf8CodeUnitCount <= Self.maxLength else { return nil }
         literal = value
     }
 

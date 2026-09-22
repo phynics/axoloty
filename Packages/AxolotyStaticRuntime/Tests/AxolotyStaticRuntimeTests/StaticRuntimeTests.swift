@@ -404,7 +404,7 @@ struct StaticRuntimeTests {
         #expect(cancelled)
         #expect(runtime.state.pendingCorrelations == 0)
         runtime.resetTransport()
-        #expect(runtime.state.activeRecords == 0)
+        #expect(runtime.state.activeAssociations == 0)
         #expect(runtime.state.pendingCorrelations == 0)
     }
 }

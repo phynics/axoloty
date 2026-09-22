@@ -66,3 +66,23 @@ func thingObjectRoundTrip() throws {
     #expect(Object<Thing>.schema.objectType == Thing.schema.objectType)
     #expect(object.withEncodedBytes { $0.length > 0 })
 }
+
+@Test("mutating a decoded unit updates its encoded fields")
+func decodedUnitMutationUsesTypedFields() throws {
+    let sourceObject = try fixtureSensor(
+        id: "33333333-3333-4333-8333-333333333333",
+        parentID: "44444444-4444-4444-8444-444444444444"
+    )
+    let source = fixtureBytes(sourceObject)
+    try source.withUnsafeBufferPointer { buffer in
+        var object = try Object<Sensor>(decoding: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count))
+        try object.edit { value in
+            value.unitOfMeasurement.symbol = .value(try #require(BoundedEncodedText<128>("K")))
+        }
+
+        #expect(object.value.unitOfMeasurement.symbol == .value(try #require(BoundedEncodedText<128>("K"))))
+        #expect(object.withEncodedBytes { bytes in
+            bytes.asString().contains(#""symbol":"K""#)
+        })
+    }
+}
