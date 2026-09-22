@@ -22,8 +22,6 @@ public enum BorrowedProtocolInput {
 
 /// A compact, fixed-storage state observation.
 public struct ProtocolStateSnapshot: Sendable, Equatable {
-    /// Number of active association records.
-    public let activeRecords: Int
     /// Number of active association routes.
     public let activeAssociations: Int
     /// Reserved object count reported by future object adapters.
@@ -35,13 +33,11 @@ public struct ProtocolStateSnapshot: Sendable, Equatable {
 
     /// Creates a state snapshot.
     public init(
-        activeRecords: Int,
         activeAssociations: Int,
         generation: UInt32,
         activeObjects: Int = 0,
         pendingCorrelations: Int = 0
     ) {
-        self.activeRecords = activeRecords
         self.activeAssociations = activeAssociations
         self.activeObjects = activeObjects
         self.pendingCorrelations = pendingCorrelations

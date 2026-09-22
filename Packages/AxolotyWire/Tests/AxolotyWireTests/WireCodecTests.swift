@@ -75,6 +75,13 @@ struct WireCodecTests {
 
         #expect(view.eventType == .associate)
         #expect(try #require(view.eventTypeFilter).equals("io-context-1"))
+
+        let typedTopic = "coaty/3/wire-compat-v1/ADV::coaty.Sensor/33333333-3333-4333-8333-333333333333"
+        let typedBytes = Array(typedTopic.utf8)
+        let typedView = typedBytes.withUnsafeBufferPointer { buffer in
+            TopicView(topicBytes: buffer.baseAddress!, length: buffer.count)
+        }
+        #expect(try #require(typedView.eventTypeFilter).equals("coaty.Sensor"))
     }
 
     @Test

@@ -159,7 +159,7 @@ public struct AxolotyMCPServiceRunner: Sendable {
             "--broker-host", config.brokerHost,
             "--broker-port", String(config.brokerPort),
             "--namespace", config.namespace,
-            "--connect-timeout", config.connectTimeout,
+            "--connect-timeout", config.connectTimeout.rawValue,
         ]
         if config.transport == .http {
             args.append(contentsOf: [
@@ -172,8 +172,7 @@ public struct AxolotyMCPServiceRunner: Sendable {
     }
 
     static func readinessTimeoutSeconds(for config: MCPServiceConfiguration) -> Double {
-        let brokerTimeout = AxolotyServeParser.connectTimeoutSeconds(config.connectTimeout) ?? 10
-        return brokerTimeout + 5
+        return AxolotyServeParser.connectTimeoutSeconds(config.connectTimeout) + 5
     }
 
     private func isInterrupted(_ signalHandler: ServiceSignalHandling?) -> Bool {

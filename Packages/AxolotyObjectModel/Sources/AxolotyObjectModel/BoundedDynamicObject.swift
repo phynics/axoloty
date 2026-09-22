@@ -448,7 +448,7 @@ public struct ObjectEditor<let byteCapacity: Int> {
     }
 
     private mutating func addOperation(key: StaticString, valueStart: Int, valueLength: Int, kind: UInt8) throws(ObjectError) {
-        guard operationCount < 24, key.utf8CodeUnitCount <= 128 else { throw ObjectError(.capacityExceeded) }
+        guard operationCount < 24, key.utf8CodeUnitCount <= ObjectFieldKey.maxLength else { throw ObjectError(.capacityExceeded) }
         for index in 0..<key.utf8CodeUnitCount {
             let byte = key.utf8Start[index]
             guard byte >= 0x20, byte != 0x22, byte != 0x5C else { throw ObjectError(.invalidEditValue) }

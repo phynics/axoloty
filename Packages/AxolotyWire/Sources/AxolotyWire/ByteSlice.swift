@@ -147,8 +147,8 @@ public struct ByteSlice: Equatable, Hashable {
 
     /// Returns the index of the first occurrence of `target`, or nil if absent.
     ///
-    /// This is distinct from the slicing `findByte(_:)` helper used by topic
-    /// parsing, which returns the sub-slice *after* the matched byte.
+    /// Topic parsing uses this index to distinguish the event code delimiter
+    /// from typed filter markers.
     @inlinable
     public func findByteIndex(_ target: UInt8) -> Int? {
         for i in 0..<length where pointer.load(fromByteOffset: i, as: UInt8.self) == target {

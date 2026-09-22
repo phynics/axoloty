@@ -45,7 +45,6 @@ private func certificationManifest(
         // releaseGates is derived from the declared categories, so a fixture
         // names its gate by declaring a category with that id.
         tiers: gate == nil ? [] : [tier],
-        requiredGates: [],
         testOne: AxolotyCanonicalTestInterface(
             command: AxolotyCanonicalTestCommand(executable: "true"),
             timeoutSeconds: 1,
@@ -163,6 +162,34 @@ func evidenceLoaderValidatesExactSubjectAndArtifactDigest() throws {
     #expect(result.gate == "wire-live")
     #expect(result.subject == subject)
     #expect(result.bundleDigest.count == 64)
+}
+
+@Test
+func evidenceLoaderAcceptsUppercaseArtifactDigest() throws {
+    let bundle = try makeEvidenceBundle()
+    defer { try? FileManager.default.removeItem(at: bundle) }
+    let evidenceURL = bundle.appendingPathComponent("evidence.json")
+    var document = try #require(
+        JSONSerialization.jsonObject(with: Data(contentsOf: evidenceURL)) as? [String: Any]
+    )
+    var artifacts = try #require(document["artifacts"] as? [[String: Any]])
+    artifacts[0]["sha256"] = try #require(artifacts[0]["sha256"] as? String).uppercased()
+    document["artifacts"] = artifacts
+    try JSONSerialization.data(withJSONObject: document).write(to: evidenceURL)
+
+    let subject = AxolotyReleaseSubject(
+        repository: evidenceRepository,
+        commit: evidenceCommit,
+        tree: evidenceTree,
+        version: evidenceVersion,
+        clean: true
+    )
+    let result = try AxolotyEvidenceBundleLoader().validate(
+        bundle: bundle,
+        expectedGate: "wire-live",
+        context: AxolotyEvidenceValidationContext(expectedSubject: subject, bundleRoot: bundle)
+    )
+    #expect(result.gate == "wire-live")
 }
 
 @Test

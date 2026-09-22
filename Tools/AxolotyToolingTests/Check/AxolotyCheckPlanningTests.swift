@@ -62,7 +62,6 @@ func injectedManifestSchemaIsValidatedBeforeResolution() throws {
         manifestID: resolver.manifest.manifestID,
         nodes: resolver.manifest.nodes,
         tiers: resolver.manifest.tiers,
-        requiredGates: resolver.manifest.requiredGates,
         testOne: resolver.manifest.testOne,
         selfTests: resolver.manifest.selfTests,
         artifactContract: resolver.manifest.artifactContract,

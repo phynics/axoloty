@@ -94,6 +94,14 @@ public struct AxolotyCommandPlan: Codable, Equatable, Sendable {
     }
 }
 
+/// The mutually exclusive diagnostics payload of a command execution.
+public enum AxolotyCommandResultPayload: Sendable, Equatable {
+    /// Diagnostics from a command that was interrupted by timeout or cancellation.
+    case lifecycle(AxolotyCommandLifecycle)
+    /// Diagnostics from a command that reached normal process completion.
+    case observation(AxolotyCommandObservation)
+}
+
 /// The captured result of a command execution.
 public struct AxolotyCheckCommandResult: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
@@ -110,24 +118,32 @@ public struct AxolotyCheckCommandResult: Codable, Equatable, Sendable {
     public let standardOutput: String
     /// Standard error captured from the process.
     public let standardError: String
+    /// The one optional diagnostics payload produced by the command.
+    public let payload: AxolotyCommandResultPayload?
+
     /// Lifecycle diagnostics when the command timed out or was cancelled.
-    public let lifecycle: AxolotyCommandLifecycle?
+    public var lifecycle: AxolotyCommandLifecycle? {
+        guard case let .lifecycle(value) = payload else { return nil }
+        return value
+    }
+
     /// Diagnostics observed for a command that reached normal process completion.
-    public let observation: AxolotyCommandObservation?
+    public var observation: AxolotyCommandObservation? {
+        guard case let .observation(value) = payload else { return nil }
+        return value
+    }
 
     /// Creates a command result.
     public init(
         exitCode: Int32,
         standardOutput: String = "",
         standardError: String = "",
-        lifecycle: AxolotyCommandLifecycle? = nil,
-        observation: AxolotyCommandObservation? = nil
+        payload: AxolotyCommandResultPayload? = nil
     ) {
         self.exitCode = exitCode
         self.standardOutput = standardOutput
         self.standardError = standardError
-        self.lifecycle = lifecycle
-        self.observation = observation
+        self.payload = payload
     }
 
     /// Decodes a command result while accepting pre-lifecycle result payloads.
@@ -136,8 +152,22 @@ public struct AxolotyCheckCommandResult: Codable, Equatable, Sendable {
         exitCode = try container.decode(Int32.self, forKey: .exitCode)
         standardOutput = try container.decode(String.self, forKey: .standardOutput)
         standardError = try container.decode(String.self, forKey: .standardError)
-        lifecycle = try container.decodeIfPresent(AxolotyCommandLifecycle.self, forKey: .lifecycle)
-        observation = try container.decodeIfPresent(AxolotyCommandObservation.self, forKey: .observation)
+        let lifecycle = try container.decodeIfPresent(AxolotyCommandLifecycle.self, forKey: .lifecycle)
+        let observation = try container.decodeIfPresent(AxolotyCommandObservation.self, forKey: .observation)
+        guard lifecycle == nil || observation == nil else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .lifecycle,
+                in: container,
+                debugDescription: "a command result cannot contain both lifecycle and observation diagnostics"
+            )
+        }
+        if let lifecycle {
+            payload = .lifecycle(lifecycle)
+        } else if let observation {
+            payload = .observation(observation)
+        } else {
+            payload = nil
+        }
     }
 
     /// Encodes the existing result fields and lifecycle diagnostics when present.
@@ -146,8 +176,14 @@ public struct AxolotyCheckCommandResult: Codable, Equatable, Sendable {
         try container.encode(exitCode, forKey: .exitCode)
         try container.encode(standardOutput, forKey: .standardOutput)
         try container.encode(standardError, forKey: .standardError)
-        try container.encodeIfPresent(lifecycle, forKey: .lifecycle)
-        try container.encodeIfPresent(observation, forKey: .observation)
+        switch payload {
+        case .lifecycle(let lifecycle):
+            try container.encode(lifecycle, forKey: .lifecycle)
+        case .observation(let observation):
+            try container.encode(observation, forKey: .observation)
+        case nil:
+            break
+        }
     }
 }
 

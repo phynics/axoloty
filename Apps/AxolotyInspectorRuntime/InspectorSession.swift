@@ -98,7 +98,7 @@ public final class AxolotyInspectorSession: InspectorSession {
     public func transportState() async -> InspectorTransportState {
         switch await runtime.state() {
         case .running, .starting, .reconnecting: return .online
-        case .initialized, .stopping, .stopped, .failed: return .offline
+        case .initialized, .stopping, .stopped, .failed, .closed: return .offline
         }
     }
 

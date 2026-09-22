@@ -7,6 +7,32 @@ import Testing
 extension AxolotyCheckTests {
 
 @Test
+func commandResultRejectsBothDiagnosticPayloads() throws {
+    let lifecycle = AxolotyCommandLifecycle(outcome: .cancelled, elapsedSeconds: 1)
+    let observation = AxolotyCommandObservation(
+        elapsedSeconds: 1,
+        lastTest: nil,
+        outputBytes: 0,
+        artifactPath: "/artifacts/command"
+    )
+    let encoder = JSONEncoder()
+    var document = try #require(
+        JSONSerialization.jsonObject(
+            with: encoder.encode(AxolotyCheckCommandResult(
+                exitCode: 130,
+                payload: .lifecycle(lifecycle)
+            ))
+        ) as? [String: Any]
+    )
+    document["observation"] = try JSONSerialization.jsonObject(with: encoder.encode(observation))
+    let data = try JSONSerialization.data(withJSONObject: document)
+
+    #expect(throws: Error.self) {
+        _ = try JSONDecoder().decode(AxolotyCheckCommandResult.self, from: data)
+    }
+}
+
+@Test
 func verificationReportCoversEveryTerminalStatusAndDiagnostics() throws {
     let root = FileManager.default.temporaryDirectory
         .appending(path: "axoloty-verification-report-\(UUID().uuidString)")
@@ -25,12 +51,12 @@ func verificationReportCoversEveryTerminalStatusAndDiagnostics() throws {
             command: status == .skipped ? nil : AxolotyCheckCommandResult(
                 exitCode: status == .passed ? 0 : 1,
                 standardError: status == .passed ? "" : "diagnostic-\(status.rawValue)",
-                observation: status == .passed ? AxolotyCommandObservation(
+                payload: status == .passed ? .observation(AxolotyCommandObservation(
                     elapsedSeconds: 2,
                     lastTest: "test-name",
                     outputBytes: 42,
                     artifactPath: "/artifacts/node-passed"
-                ) : nil
+                )) : nil
             ),
             timing: status == .skipped ? nil : AxolotyCheckTiming(
                 elapsedSeconds: TimeInterval(index + 1),
@@ -46,13 +72,13 @@ func verificationReportCoversEveryTerminalStatusAndDiagnostics() throws {
             command: AxolotyCheckCommandResult(
                 exitCode: 124,
                 standardError: "timed out",
-                lifecycle: AxolotyCommandLifecycle(
+                payload: .lifecycle(AxolotyCommandLifecycle(
                     outcome: .timedOut,
                     elapsedSeconds: 30,
                     lastTest: "slow-test",
                     artifactPath: "/artifacts/timed-out",
                     outputBytes: 100
-                )
+                ))
             ),
             timing: AxolotyCheckTiming(
                 elapsedSeconds: 30,
@@ -66,7 +92,7 @@ func verificationReportCoversEveryTerminalStatusAndDiagnostics() throws {
             command: AxolotyCheckCommandResult(
                 exitCode: 130,
                 standardError: "cancelled",
-                lifecycle: AxolotyCommandLifecycle(outcome: .cancelled, elapsedSeconds: 3)
+                payload: .lifecycle(AxolotyCommandLifecycle(outcome: .cancelled, elapsedSeconds: 3))
             ),
             timing: AxolotyCheckTiming(
                 elapsedSeconds: 3,
@@ -115,6 +141,7 @@ func verificationReportCoversEveryTerminalStatusAndDiagnostics() throws {
     #expect(markdown.contains("node-timed-out"))
     #expect(markdown.contains("node-cancelled"))
     #expect(markdown.contains("node-lease-failed"))
+    #expect(markdown.contains("| 100 |"))
 }
 
 @Test

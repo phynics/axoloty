@@ -18,13 +18,13 @@ private struct QuarantineStubCommandRunner: AxolotyLifecycleCommandRunning {
         return AxolotyCheckCommandResult(
             exitCode: 1,
             standardError: "1 issue",
-            observation: AxolotyCommandObservation(
+            payload: .observation(AxolotyCommandObservation(
                 elapsedSeconds: 0,
                 lastTest: failedTestNames.first,
                 outputBytes: 0,
                 artifactPath: "/tmp",
                 failedTestNames: failedTestNames
-            )
+            ))
         )
     }
 }
