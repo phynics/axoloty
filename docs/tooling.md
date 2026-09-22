@@ -193,7 +193,10 @@ tree, semantic version, clean checkout, producer, and schema version. Imported
 CI or device evidence must also carry external provenance. A legacy
 `AXOLOTY_ATTESTATION_<GATE>_PATH` path is accepted only when it points to the
 same typed bundle format; status-only JSON is rejected. The checkpoint manifest
-records the validated bundle digest alongside executed and failed gates.
+records the validated bundle digest alongside executed and failed gates. Set
+`AXOLOTY_EVIDENCE_PRODUCER_ID` to require a specific producer identity in every
+supplied bundle; a mismatch fails the gate instead of attesting it. When the
+variable is unset or empty, any validated producer is accepted.
 
 `checkpoint-hardware` is structurally an extension of `checkpoint`, so it
 cannot omit an ordinary node when the base plan changes. Hardware remains
