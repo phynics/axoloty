@@ -14,6 +14,7 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 source "$ROOT_DIR/Tests/Support/lib/expected-failure.sh"
 TEMP_DIR=$(mktemp -d)
 socket_server=""
+shared_worktree=""
 export AXOLOTY_ESP_IDF_CCACHE_DIR="$TEMP_DIR/esp-idf-ccache"
 # Keep the fake container scenarios independent from a caller-provided SwiftPM
 # cache. Aggregate verification deliberately supplies an external cache, while
@@ -22,6 +23,9 @@ SPM_CACHE_DIR="$TEMP_DIR/swiftpm-cache"
 export SPM_CACHE_DIR
 
 cleanup() {
+    if [ -n "$shared_worktree" ]; then
+        git -C "$ROOT_DIR" worktree remove --force "$shared_worktree" 2>/dev/null || true
+    fi
     if [ -n "$socket_server" ]; then
         kill "$socket_server" 2>/dev/null || true
         wait_bounded "$socket_server" cleanup-socket-server 5 || true
@@ -802,6 +806,23 @@ FAKE_RUNTIME_ARGV_CAPTURE=1 AXOLOTY_SOURCE_DIR="$external_worktree" \
 CONTAINER_RUNTIME="$fake_bin/fake-podman" CONTAINER_ENV_VARS="AXOLOTY_SOURCE_DIR" \
 BUILD_DIR="$build_dir" BUILD_LOCK=0 "$ROOT_DIR/.devcontainer/run.sh" true
 grep -Fqx -- "$external_git_common:$external_git_common:ro" "$capture_argv"
+
+# An external Core worktree can share this checkout's common Git directory.
+# The primary mount already makes that directory available, so a second
+# read-only mount at the same destination would make Podman reject the launch.
+shared_worktree="$TEMP_DIR/shared-core-worktree"
+git -C "$ROOT_DIR" worktree add -q --detach "$shared_worktree" HEAD
+: > "$capture_argv"
+FAKE_RUNTIME_ARGV_CAPTURE=1 AXOLOTY_SOURCE_DIR="$shared_worktree" \
+CONTAINER_RUNTIME="$fake_bin/fake-podman" CONTAINER_ENV_VARS="AXOLOTY_SOURCE_DIR" \
+BUILD_DIR="$build_dir" BUILD_LOCK=0 "$ROOT_DIR/.devcontainer/run.sh" true
+grep -Fxc -- "$common_git_dir:$common_git_dir" "$capture_argv" | grep -Fxq 1
+if grep -Fq -- "$common_git_dir:$common_git_dir:ro" "$capture_argv"; then
+    echo "shared Core worktree mounted its common Git directory twice" >&2
+    exit 1
+fi
+git -C "$ROOT_DIR" worktree remove "$shared_worktree"
+shared_worktree=""
 
 # Managed launches create the container synchronously, verify its immutable ID,
 # then attach to start. This avoids ownership inspection racing the runtime's

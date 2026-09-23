@@ -284,7 +284,7 @@ func offlinePlanIncludesEmbeddedChecksOnLinux() throws {
     let coatyModels = names.firstIndex(of: "g3-coaty-models-tests")
     let objectHost = names.firstIndex(of: "g3-object-model-evidence-host")
     let objectSanitized = names.firstIndex(of: "g3-object-model-evidence-sanitized")
-    let objectEmbedded = names.firstIndex(of: "g3-object-model-evidence-embedded")
+    let objectPortable = names.firstIndex(of: "g3-object-model-evidence-portable")
 
     #expect(embeddedCoreConsumer != nil)
     #expect(!names.contains("embedded-build"))
@@ -298,7 +298,7 @@ func offlinePlanIncludesEmbeddedChecksOnLinux() throws {
     #expect(coatyModels != nil)
     #expect(objectHost != nil)
     #expect(objectSanitized != nil)
-    #expect(objectEmbedded == nil)
+    #expect(objectPortable == nil)
     if let embeddedCoreConsumer, let boundedHost, let boundedSanitized,
        let objectBoundary, let objectPackage, let objectTests, let objectMacros, let coatyModels,
        let objectHost, let objectSanitized {

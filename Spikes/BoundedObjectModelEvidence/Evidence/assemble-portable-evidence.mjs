@@ -5,7 +5,7 @@ import fs from "node:fs";
 
 const [metadataPath, sectionsPath, candidateSha, outputPath] = process.argv.slice(2);
 if (!metadataPath || !sectionsPath || !candidateSha || !outputPath) {
-  console.error("usage: assemble-embedded-evidence.mjs METADATA SECTIONS SHA OUTPUT");
+  console.error("usage: assemble-portable-evidence.mjs METADATA SECTIONS SHA OUTPUT");
   process.exit(2);
 }
 

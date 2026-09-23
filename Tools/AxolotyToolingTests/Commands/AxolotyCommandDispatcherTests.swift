@@ -235,10 +235,10 @@ func ciCategorySelectsTheFullObjectModelAggregate() throws {
     #expect(names.contains("g3-object-model-evidence-sanitized"))
     #if os(Linux)
     #expect(names.contains("embedded-core-consumer"))
-    #expect(!names.contains("g3-object-model-evidence-embedded"))
+    #expect(!names.contains("g3-object-model-evidence-portable"))
     #else
     #expect(!names.contains("embedded-core-consumer"))
-    #expect(!names.contains("g3-object-model-evidence-embedded"))
+    #expect(!names.contains("g3-object-model-evidence-portable"))
     #endif
 }
 
@@ -467,7 +467,7 @@ func checkpointPlanIncludesRequiredCompatibilityNodes() throws {
     #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-host" })
     #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-sanitized" })
     #expect(plan.nodes.contains { $0.name == "embedded-core-consumer" })
-    #expect(!plan.nodes.contains { $0.name == "g3-object-model-evidence-embedded" })
+    #expect(!plan.nodes.contains { $0.name == "g3-object-model-evidence-portable" })
 }
 
 @Test
