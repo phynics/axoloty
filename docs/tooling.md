@@ -196,10 +196,11 @@ and builds every expected library and executable in both configurations before
 running side-effect-free `--help` smoke commands. The wire matrix validator
 requires exact set equality with `g6-scenario-matrix.json`, normalized capture
 artifacts, broker/Axoloty/CoatyJS logs, and exact commit, executable,
-CoatyJS-lockfile, broker, and matrix identities. Resource evidence requires
-approved policy, two independent host runs, two physical ESP32-C6 power-cycle
-runs, production Embedded Swift, and the sustained workload thresholds; a C
-surrogate can never satisfy the gate.
+CoatyJS-lockfile, broker, and matrix identities. Resource evidence is bound to
+the exact bytes of `Tests/Support/evidence/g6-resource-policy.json`. The policy
+requires two independent host runs, two physical ESP32-C6 power-cycle runs,
+production Embedded Swift, the sustained workload limits, and each required
+device metric. A C surrogate can never satisfy the gate.
 
 ## Timing evidence
 

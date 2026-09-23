@@ -29,6 +29,10 @@ command -v realpath >/dev/null 2>&1 || {
     echo "FAIL: realpath is required to validate Core and scratch boundaries" >&2
     exit 1
 }
+command -v nm >/dev/null 2>&1 || {
+    echo "FAIL: nm is required to inspect the Embedded Swift partial link" >&2
+    exit 1
+}
 command -v clang >/dev/null 2>&1 || {
     echo "FAIL: clang is required for the host parser probe" >&2
     exit 1
@@ -294,6 +298,33 @@ echo "  AxolotyWire link probe: ${wire_linked_size} bytes"
     "$workdir/AxolotyObjectModel.o" \
     "$workdir/AxolotyWire.o" \
     "$workdir/_JSONCore.o"
+
+# A relocatable link intentionally has no executable entry point, libgcc, or
+# libc. It must still resolve Core and consumer references among these objects.
+# ld.lld accepts unresolved symbols with -r, so inspect both results and allow
+# only runtime symbols that the firmware image resolves later.
+check_unresolved_symbols() {
+    object=$1
+    if ! nm "$object" >"$workdir/linked-symbols.txt"; then
+        echo "FAIL: nm could not inspect the RISC-V partial link: $object" >&2
+        exit 1
+    fi
+    unresolved_symbols=$(awk '$1 ~ /^[UuWwVv]$/ { print $2 } $2 ~ /^[UuWwVv]$/ { print $3 }' "$workdir/linked-symbols.txt")
+    unexpected_symbols=$(for symbol in $unresolved_symbols; do
+        case "$symbol" in
+            \$e*|_swift_*|swift_*|__adddf3|__ashldi3|__divdf3|__floatunsidf|__lshrdi3|__muldf3|__nedf2|__stack_chk_fail|__stack_chk_guard|__udivdi3|arc4random_buf|free|memcpy|memmove|memset|posix_memalign) ;;
+            *) printf '%s\n' "$symbol" ;;
+        esac
+    done)
+    if [ -n "$unexpected_symbols" ]; then
+        echo "FAIL: partial link leaves unexpected unresolved symbols in $object:" >&2
+        printf '%s\n' "$unexpected_symbols" >&2
+        exit 1
+    fi
+}
+
+check_unresolved_symbols "$workdir/embedded-wire-linked.o"
+check_unresolved_symbols "$workdir/embedded-core-linked.o"
 
 linked_size=$(wc -c < "$workdir/embedded-core-linked.o")
 

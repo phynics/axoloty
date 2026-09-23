@@ -29,7 +29,7 @@ Run the hardware-free nodes from the repository root:
 ```sh
 make test-one FILTER='g3-object-model-evidence-host'
 make test-one FILTER='g3-object-model-evidence-sanitized'
-make test-one FILTER='g3-object-model-evidence-embedded'
+Spikes/BoundedObjectModelEvidence/check-portable.sh
 ```
 
 The host node reuses G1's heaptrack small-vs-large allocation-growth method,
@@ -39,10 +39,10 @@ sanitized node runs the same randomized edit/read tests under Address
 Sanitizer. Generated reports, logs, and build products are written under
 `.testing/g3-object-model/<candidate-sha>/` and are not committed.
 
-Firmware cross-build evidence is owned by `axoloty-embedded`. The legacy
-`check-embedded.sh` path remains as a firmware-free compatibility wrapper for
-the portable object-model probe; no Core spike reads the firmware tree or
-invokes ESP-IDF.
+Firmware cross-build evidence is owned by `axoloty-embedded`.
+`check-portable.sh` runs the firmware-free portable object-model probe. The
+probe is an opt-in script, not a canonical test-tier node. No Core spike reads
+the firmware tree or invokes ESP-IDF.
 
 Schema validation is local and dependency-free:
 

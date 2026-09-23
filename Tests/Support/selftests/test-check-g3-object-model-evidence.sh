@@ -8,23 +8,23 @@ probe="$root/Spikes/BoundedObjectModelEvidence"
 schema="$probe/Evidence/evidence.schema.json"
 validator="$probe/Evidence/validate-evidence.mjs"
 assembler="$probe/Evidence/assemble-host-evidence.mjs"
-legacy_embedded_check="$probe/check-embedded.sh"
-legacy_embedded_assembler="$probe/Evidence/assemble-embedded-evidence.mjs"
+portable_check="$probe/check-portable.sh"
+portable_assembler="$probe/Evidence/assemble-portable-evidence.mjs"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 test -x "$probe/check-host.sh"
 test -x "$probe/check-sanitized.sh"
-test -x "$legacy_embedded_check"
+test -x "$portable_check"
 test -f "$assembler"
-test -f "$legacy_embedded_assembler"
+test -f "$portable_assembler"
 sh -n "$probe/check-host.sh" "$probe/check-sanitized.sh" \
-    "$legacy_embedded_check" \
+    "$portable_check" \
     "$root/Spikes/BoundedPortableRuntime/measure-allocations.sh"
 node --check "$validator"
 node --check "$assembler"
-node --check "$legacy_embedded_assembler"
-if grep -Eq 'Embedded|ESP-IDF|IDF_PATH|idf\.py' "$legacy_embedded_check" "$legacy_embedded_assembler"; then
+node --check "$portable_assembler"
+if grep -Eq 'Embedded|ESP-IDF|IDF_PATH|idf\.py' "$portable_check" "$portable_assembler"; then
     echo "error: Core object-model evidence still owns firmware-tree or ESP-IDF access" >&2
     exit 1
 fi
@@ -141,7 +141,7 @@ node "$validator" "$schema" "$tmp/sanitized.json" >/dev/null
 
 printf 'compileSuccess\ttrue\ncompileSeconds\t12.5\ntoolchain\tSwift version 6.3 (swift-6.3-RELEASE)\n' >"$tmp/portable-metadata.tsv"
 printf '.text\t64\n' >"$tmp/portable-sections.tsv"
-node "$legacy_embedded_assembler" "$tmp/portable-metadata.tsv" "$tmp/portable-sections.tsv" 0123456 "$tmp/portable.json"
+node "$portable_assembler" "$tmp/portable-metadata.tsv" "$tmp/portable-sections.tsv" 0123456 "$tmp/portable.json"
 node "$validator" "$schema" "$tmp/portable.json" >/dev/null
 
 echo "G3 object-model evidence harness checks passed"

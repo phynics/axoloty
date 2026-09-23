@@ -853,7 +853,7 @@ translate_embedded_source_path() {
                             git_common_dir=$(realpath -e -- "$host_path/$git_common_dir" 2>/dev/null || \
                                 realpath -e -- "$git_common_dir" 2>/dev/null || true)
                             case "$git_common_dir" in
-                                ""|"$host_path"|"$host_path"/*) ;;
+                                ""|"$host_path"|"$host_path"/*|"$common_git_dir") ;;
                                 *) external_core_git_mount_spec="$git_common_dir:$git_common_dir:ro$external_mount_suffix" ;;
                             esac
                         fi

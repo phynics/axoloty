@@ -1,11 +1,13 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { validate as validateResourceEvidence } from "../evidence/validate-g6-resource-evidence.mjs";
 import { collectFilterSymbols, collectFilterSymbolsByPackage, discoverSelfTests, discoverTargetSelfTests, expandFilterAlternatives, parseMakeTargets, tierNodeCommandsFrom, validate } from "../validate-test-tiers.mjs";
 
 const root = path.resolve(import.meta.dirname, "../../..");
@@ -584,4 +586,125 @@ test("an attested category is declared by release and typed as a boolean", () =>
   const malformed = JSON.parse(JSON.stringify(document));
   malformed.tiers.find(tier => tier.id === "wire").attested = "yes";
   assert.ok(validate(malformed, base).includes("wire: attested must be a boolean"));
+});
+
+function resourceEvidenceFixture(t) {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-g6-policy-"));
+  t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
+  const evidenceRoot = path.join(temporary, "evidence");
+  fs.mkdirSync(path.join(evidenceRoot, "artifacts"), { recursive: true });
+  const artifactBytes = Buffer.from("resource evidence fixture\n");
+  fs.writeFileSync(path.join(evidenceRoot, "artifacts/run.log"), artifactBytes);
+  const policyPath = path.join(root, "Tests/Support/evidence/g6-resource-policy.json");
+  const policyDigest = crypto.createHash("sha256").update(fs.readFileSync(policyPath)).digest("hex");
+  const subject = {
+    repository: "fixture/axoloty",
+    commit: "a".repeat(40),
+    tree: "b".repeat(40),
+    version: "0.5.1",
+    clean: true,
+  };
+  const artifact = {
+    path: "artifacts/run.log",
+    byteCount: artifactBytes.length,
+    sha256: crypto.createHash("sha256").update(artifactBytes).digest("hex"),
+  };
+  const makeRun = (environment, runID) => ({
+    runID,
+    sourceCommit: subject.commit,
+    compiler: environment === "host" ? "Swift 6.3" : "Embedded Swift 6.3",
+    optimization: "release",
+    policyDigest,
+    board: environment === "host" ? "linux-host" : "esp32c6",
+    container: environment === "host" ? "axoloty-build@sha256:host" : "esp-idf@sha256:device",
+    corpusDigest: `corpus-${environment}`,
+    sourceSetDigest: `sources-${environment}`,
+    measurements: environment === "host" ? { binaryBytes: 12000 } : {
+      freeHeap: 400000,
+      minFreeHeap: 400000,
+      largestFreeBlock: 16000,
+      fragmentation: 0,
+      stackHighWater: 4000,
+      data: 1200,
+      bss: 8000,
+      iram: 2000,
+      flashImage: 800000,
+      hotPathAllocations: 0,
+    },
+    artifacts: [artifact],
+  });
+  const document = {
+    schemaVersion: 1,
+    gate: "g6-resource-evidence",
+    subject,
+    approval: { status: "approved", policyDigest },
+    environments: {
+      host: { runs: [makeRun("host", "host-1"), makeRun("host", "host-2")] },
+      esp32c6: {
+        implementation: "embedded-swift",
+        powerCycleRuns: 2,
+        sustainedWorkload: {
+          durationSeconds: 600,
+          messageRatePerSecond: 100,
+          measuredCapacityPerSecond: 125,
+        },
+        runs: [makeRun("esp32c6", "device-1"), makeRun("esp32c6", "device-2")],
+      },
+    },
+  };
+  const validate = value => validateResourceEvidence(value, {
+    root: evidenceRoot,
+    repositoryRoot: root,
+    policyPath,
+    subject,
+  });
+  return { document, evidenceRoot, policyPath, temporary, validate };
+}
+
+test("G6 resource evidence binds approval and measurements to the committed policy", t => {
+  const { document, validate } = resourceEvidenceFixture(t);
+  assert.deepEqual(validate(document).errors, []);
+
+  const wrongDigest = structuredClone(document);
+  wrongDigest.approval.policyDigest = "0".repeat(64);
+  assert.ok(validate(wrongDigest).errors.some(error => error.includes("exact approved resource policy")));
+
+  const missingMetric = structuredClone(document);
+  delete missingMetric.environments.esp32c6.runs[0].measurements.flashImage;
+  assert.ok(validate(missingMetric).errors.some(error => error.includes("flashImage must be a non-negative integer")));
+
+  const belowBudget = structuredClone(document);
+  belowBudget.environments.esp32c6.runs[0].measurements.freeHeap = 399999;
+  assert.ok(validate(belowBudget).errors.some(error => error.includes("freeHeap is below its approved minimum")));
+});
+
+test("G6 resource evidence requires independent runs and the approved implementation", t => {
+  const { document, validate } = resourceEvidenceFixture(t);
+  const duplicateRun = structuredClone(document);
+  duplicateRun.environments.esp32c6.runs[1].runID = "device-1";
+  assert.ok(validate(duplicateRun).errors.some(error => error.includes("runs must use independent runIDs")));
+
+  const surrogate = structuredClone(document);
+  surrogate.environments.esp32c6.implementation = "c-surrogate";
+  assert.ok(validate(surrogate).errors.some(error => error.includes("implementation must match the approved policy")));
+});
+
+test("G6 resource policy rejects invalid threshold ranges", t => {
+  const { document, evidenceRoot, policyPath, temporary } = resourceEvidenceFixture(t);
+  const policy = JSON.parse(fs.readFileSync(policyPath, "utf8"));
+  policy.environments.esp32c6.thresholds.freeHeap = { minimum: 500000, maximum: 400000 };
+  const invalidPolicyPath = path.join(temporary, "g6-resource-policy-invalid-fixture.json");
+  fs.writeFileSync(invalidPolicyPath, `${JSON.stringify(policy, null, 2)}\n`);
+  const digest = crypto.createHash("sha256").update(fs.readFileSync(invalidPolicyPath)).digest("hex");
+  document.approval.policyDigest = digest;
+  for (const environment of Object.values(document.environments)) {
+    for (const run of environment.runs ?? []) run.policyDigest = digest;
+  }
+  const report = validateResourceEvidence(document, {
+    root: evidenceRoot,
+    repositoryRoot: root,
+    policyPath: invalidPolicyPath,
+    subject: document.subject,
+  });
+  assert.ok(report.errors.some(error => error.includes("resource policy threshold is invalid: freeHeap")));
 });

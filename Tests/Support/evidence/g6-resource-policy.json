@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "gate": "g6-resource-evidence",
+  "approval": {
+    "status": "approved"
+  },
+  "environments": {
+    "host": {
+      "minimumRuns": 2,
+      "requiredMeasurements": [
+        "binaryBytes"
+      ]
+    },
+    "esp32c6": {
+      "implementation": "embedded-swift",
+      "minimumRuns": 2,
+      "requiredMeasurements": [
+        "freeHeap",
+        "minFreeHeap",
+        "largestFreeBlock",
+        "fragmentation",
+        "stackHighWater",
+        "data",
+        "bss",
+        "iram",
+        "flashImage",
+        "hotPathAllocations"
+      ],
+      "thresholds": {
+        "freeHeap": {
+          "minimum": 400000
+        },
+        "minFreeHeap": {
+          "minimum": 400000
+        },
+        "stackHighWater": {
+          "minimum": 4000
+        },
+        "flashImage": {
+          "maximum": 1048576
+        },
+        "hotPathAllocations": {
+          "maximum": 0
+        }
+      },
+      "sustainedWorkload": {
+        "minimumDurationSeconds": 600,
+        "minimumMessageRatePerSecond": 100,
+        "minimumMeasuredCapacityPerSecond": 125
+      }
+    }
+  }
+}
