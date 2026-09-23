@@ -20,6 +20,10 @@ private actor StubTransport: AxolotyRuntimeTransport {
     func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {}
     func perform(_ effect: RuntimeTransportEffect) async throws {}
     func stop() async { receive = nil }
+
+    func deliver(_ frame: RuntimeInboundFrame) {
+        receive?(frame)
+    }
 }
 
 /// Records what the session asked its factory to build.
@@ -65,6 +69,46 @@ func inspectorSessionPropagatesTransportFactoryFailure() {
             throw TransportUnavailable()
         }
     }
+}
+
+/// A received Advertise surfaces with its canonical hyphenated source ID.
+///
+/// The session once formatted source IDs with a private helper that indexed
+/// past its sixteen hex pairs, so the first live event trapped.
+@Test @MainActor
+func inspectorSessionFormatsReceivedSourceIDs() async throws {
+    struct AdvertiseTimeout: Error {}
+    let configuration = InspectorConnectionConfiguration(
+        host: "unused.invalid",
+        port: 1883,
+        namespace: "test"
+    )
+    let transport = StubTransport()
+    let session = try AxolotyInspectorSession(configuration: configuration) { _ in transport }
+    try await session.connect()
+    let events = await session.advertiseEvents()
+
+    let sourceID = "0a1b2c3d-4e5f-4061-8293-a4b5c6d7e8f9"
+    await transport.deliver(.profile(
+        route: "coaty/3/test/ADV:CoatyObject/\(sourceID)",
+        payload: Array(#"{"object":{"objectId":"33333333-3333-4333-8333-333333333333","coreType":"CoatyObject","objectType":"com.coaty.test.WireFixture","name":"wire-fixture"}}"#.utf8),
+        nowMS: 1
+    ))
+
+    let event = try await withThrowingTaskGroup(of: InspectorAdvertiseEvent?.self) { group in
+        group.addTask {
+            var iterator = events.makeAsyncIterator()
+            return await iterator.next()
+        }
+        group.addTask {
+            try await Task.sleep(for: .seconds(5))
+            throw AdvertiseTimeout()
+        }
+        defer { group.cancelAll() }
+        return try #require(try await group.next() ?? nil)
+    }
+    #expect(event.sourceId == sourceID)
+    #expect(event.object.objectId == "33333333-3333-4333-8333-333333333333")
 }
 
 /// The configuration owns its timeout conversion, so composition roots do not
