@@ -22,7 +22,7 @@
 /// owned values before asynchronous delivery: copy payload bytes into `[UInt8]`
 /// and materialize topic metadata into `String` values before yielding an
 /// `AsyncStream` closure, creating a task, or sending into an actor.
-public struct BorrowedMessage {
+public struct BorrowedMessage: ~Sendable {
     /// The parsed topic view borrowing the topic bytes.
     public let topic: TopicView
     /// The message payload as a borrowed byte slice.

@@ -12,7 +12,7 @@
 ///   creating a `Task`, crossing an actor or other isolation-domain hop, or
 ///   entering an escaping closure/`AsyncStream`. This type is intentionally
 ///   not `Sendable`.
-public struct ByteSlice: Equatable, Hashable {
+public struct ByteSlice: Equatable, Hashable, ~Sendable {
     /// The raw pointer into the externally-owned byte buffer.
     @usableFromInline let pointer: UnsafeRawPointer
     /// The number of bytes in this slice.

@@ -12,7 +12,7 @@
 /// - Important: When constructed from ``BorrowedMessage``, use this view and
 ///   its returned ``ByteSlice`` levels only in the message's synchronous
 ///   borrow scope. Copy data before an `await` or another isolation-domain hop.
-public struct TopicView {
+public struct TopicView: ~Sendable {
     /// The raw pointer to the topic byte buffer.
     @usableFromInline let bytes: UnsafeRawPointer
     /// The number of valid bytes pointed to by ``bytes``.
