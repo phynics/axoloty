@@ -14,6 +14,7 @@ dependency's GitHub releases page on 2026-07-15.
 | swift-nio-ssl | `from: 2.37.1` | 2.37.1 | 2.37.1 | Apache-2.0 | TLS on Linux (non-Apple platforms); Apple platforms use Network.framework via NIOTransportServices | current |
 | swift-log | `from: 1.14.0` | 1.14.0 | 1.14.0 | Apache-2.0 | Structured diagnostics logging for the Axoloty MCP server | current; MCP-only |
 | ErrorKit | `exact: 1.2.1` | 1.2.1 | 1.2.1 | MIT | `Throwable` error policy and user-facing error formatting (`AxolotyError`) | current; pinned exact |
+| swift-json (phynics fork) | `exact: 2.5.3` | n/a (fork) | 2.5.3 | MIT | `_JSONCore` structural parser behind `AxolotyWire` (product `IkigaJSONCore`) | pinned exact; see notes |
 | swift-docc-plugin | `from: 1.5.0` | 1.5.0 | 1.5.0 | Apache-2.0 | Provides `swift package generate-documentation` used by `make docs` | current; build-tool only |
 
 The audited direct dependencies are resolved at their latest published release,
@@ -69,6 +70,33 @@ rather than `from:` to keep the error-policy contract reproducible, as
 recommended by T-025. Current at latest (1.2.1 adds `Logger` convenience
 overloads). No action needed. Relaxing the `exact:` pin to a `from:` range is
 possible once the policy surface is stable, but is out of scope here.
+
+### swift-json (`2.5.3` exact, phynics fork, MIT)
+
+`AxolotyWire` depends on the `IkigaJSONCore` product, which exposes the
+Foundation-free `_JSONCore` target, and is the only target that does. Upstream
+swift-json declared no such product for Swift 6.2+
+([orlandos-nl/swift-json#63](https://github.com/orlandos-nl/swift-json/issues/63));
+the minimal manifest fix was submitted as
+[orlandos-nl/swift-json#68](https://github.com/orlandos-nl/swift-json/pull/68).
+Until that ships in an upstream release, Axoloty pins the
+`phynics/swift-json` fork that exposes the product; the fork is meant to carry
+only that manifest correction. Vendoring parser sources was considered and rejected
+(#394).
+
+swift-json declares swift-nio as an unconditional package dependency, so
+SwiftPM resolves swift-nio and its transitives even for a portable consumer.
+That cost is accepted because it is resolution-only: no NIO target is built or
+linked into `AxolotyWire` (module policy forbids the import), and
+`_JSONCore` compiles without Foundation or NIO.
+
+Before updating the pin, review upstream source and license changes, then
+confirm that `make check-embedded-core-consumer` still compiles and links
+`_JSONCore` for Embedded Swift. Reject the update if NIO begins building or
+linking into `AxolotyWire`, or if `_JSONCore` stops compiling on host or
+Embedded Swift. The one-off probes behind this decision (#394, #395) were
+removed once the required Embedded Swift gate took over the check; they
+remain in git history.
 
 ### swift-docc-plugin (`1.5.0`, Apache-2.0)
 
