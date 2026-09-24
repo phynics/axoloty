@@ -427,14 +427,3 @@ private extension BorrowedProtocolPublishTarget {
         }
     }
 }
-
-private extension ByteSlice {
-    borrowing func ownedBytes() -> [UInt8] {
-        withBytes { pointer, length in
-            Array(UnsafeBufferPointer(
-                start: pointer.assumingMemoryBound(to: UInt8.self),
-                count: length
-            ))
-        }
-    }
-}

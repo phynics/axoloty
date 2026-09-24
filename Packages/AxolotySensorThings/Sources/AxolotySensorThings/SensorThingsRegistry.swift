@@ -466,7 +466,7 @@ private func parentFilter(thingID: ObjectID, extra: [UInt8]?) -> [UInt8] {
     guard let extra,
           let condition = extra.withUnsafeBufferPointer({ buffer -> [UInt8]? in
               guard let base = buffer.baseAddress else { return nil }
-              return WireReader(bytes: base, length: buffer.count).readField("conditions").map(copyBytes)
+              return WireReader(bytes: base, length: buffer.count).readField("conditions").map { $0.ownedBytes() }
           }) else {
         return Array("{\"conditions\":\(String(decoding: parent, as: UTF8.self))}".utf8)
     }
@@ -480,7 +480,7 @@ private func jsonArray(_ value: StaticString) -> [UInt8] {
 private func wrappedObject(_ payload: [UInt8], field: StaticString) -> [UInt8]? {
     payload.withUnsafeBufferPointer { buffer in
         guard let base = buffer.baseAddress else { return nil }
-        return WireReader(bytes: base, length: buffer.count).readField(field).map(copyBytes)
+        return WireReader(bytes: base, length: buffer.count).readField(field).map { $0.ownedBytes() }
     }
 }
 
@@ -510,9 +510,9 @@ private func decodeResponse(_ payload: [UInt8]) -> (object: [UInt8], related: [[
         else { return nil }
         var related: [[UInt8]] = []
         if let values = response.relatedObjects {
-            try? values.withArrayElements { related.append(copyBytes($0)) }
+            try? values.withArrayElements { related.append($0.ownedBytes()) }
         }
-        return (copyBytes(response.object), related)
+        return (response.object.ownedBytes(), related)
     }
 }
 
@@ -522,7 +522,7 @@ private func decodeRetrieve(_ payload: [UInt8]) -> [[UInt8]]? {
               let response = try? RetrieveWireData(from: WireReader(bytes: base, length: buffer.count))
         else { return nil }
         var objects: [[UInt8]] = []
-        try? response.objects.withArrayElements { objects.append(copyBytes($0)) }
+        try? response.objects.withArrayElements { objects.append($0.ownedBytes()) }
         return objects
     }
 }
@@ -552,10 +552,3 @@ private func registryCorrelationID(thingID: ObjectID, discriminator: UInt8) -> U
         b.8, b.9, b.10, b.11, b.12, b.13, b.14, b.15 ^ discriminator
     ))
 }
-
-private func copyBytes(_ bytes: ByteSlice) -> [UInt8] {
-    bytes.withBytes { pointer, length in
-        Array(UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: UInt8.self), count: length))
-    }
-}
-

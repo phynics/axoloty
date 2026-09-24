@@ -764,9 +764,7 @@ actor ProtocolExecutor {
     private func channelIdentifier(for delivery: BorrowedProtocolDelivery) -> String? {
         guard delivery.routingKey.capability == .channel,
               case let .channel(identifier) = delivery.deliveryKey else { return nil }
-        return identifier.withBytes { pointer, length in
-            String(decoding: UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: UInt8.self), count: length), as: UTF8.self)
-        }
+        return identifier.asString()
     }
     private func eventFamily(for capability: ProtocolCapability) -> RuntimeEventFamily {
         switch capability {

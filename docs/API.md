@@ -134,7 +134,8 @@ growable collection is part of the static runtime.
 Wire views such as `ByteSlice` and `TopicView` borrow externally owned bytes for
 synchronous work. Never retain them, pass them across an actor or task, or
 store them in an asynchronous stream. Copy the required bytes into an owned
-value before any suspension point. Validate untrusted bytes at the wire
+value before any suspension point; `ByteSlice.ownedBytes()` returns such a
+copy. Validate untrusted bytes at the wire
 boundary before reading fields.
 
 `BorrowedProtocolAction` is valid only during the synchronous handler or sink

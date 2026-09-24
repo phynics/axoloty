@@ -9,6 +9,13 @@ fork, through CoatySwift 2.4.0, remain documented in the
 
 ## [Unreleased]
 
+### Added
+
+- `ByteSlice.ownedBytes()` copies a borrowed slice into an owned `[UInt8]`,
+  the copy the borrowed-value lifetime rules require before a suspension
+  point. It replaces four private copies across `AxolotyWire`,
+  `AxolotyProtocol`, and `AxolotySensorThings`.
+
 ### Fixed
 
 - `AxolotyInspectorSession` no longer traps on the first Advertise,

@@ -512,6 +512,17 @@ struct WireCodecTests {
     }
 
     @Test
+    func byteSliceOwnedBytesCopyOutlivesTheBorrowedBuffer() {
+        var source: [UInt8] = [0x7B, 0x22, 0x61, 0x22, 0x7D]
+        let owned = source.withUnsafeBufferPointer { buffer in
+            ByteSlice(bytes: buffer.baseAddress! + 1, length: 3).ownedBytes()
+        }
+        source[2] = 0x58
+        #expect(owned == [0x22, 0x61, 0x22])
+        #expect(ByteSlice.empty.ownedBytes().isEmpty)
+    }
+
+    @Test
     func negativeLengthsAreClampedToZeroWithoutTrapping() throws {
         var dummy: UInt8 = 0
         withUnsafePointer(to: &dummy) { pointer in
