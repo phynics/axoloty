@@ -45,7 +45,7 @@ public struct AxolotyCheckExecutor: Sendable {
     public init(
         commandRunner: any AxolotyCheckCommandRunning,
         cancellation: AxolotyCommandCancellation? = nil,
-        resourceLeaseManager: (any AxolotyResourceLeasing)? = nil,
+        resourceLeaseManager: any AxolotyResourceLeasing? = nil,
         quarantine: AxolotyQuarantineLedger = AxolotyQuarantineLedger(entries: []),
         eventSink: @escaping @Sendable (AxolotyCheckExecutionEvent) -> Void = { _ in }
     ) {
@@ -64,7 +64,7 @@ public struct AxolotyCheckExecutor: Sendable {
         contextValidator: AxolotyExecutionContextValidator,
         cancellation: AxolotyCommandCancellation? = nil,
         clock: any AxolotyTimingClock = AxolotyContinuousTimingClock(),
-        resourceLeaseManager: (any AxolotyResourceLeasing)? = nil,
+        resourceLeaseManager: any AxolotyResourceLeasing? = nil,
         overrunScheduler: any AxolotyOverrunScheduling = DispatchOverrunScheduler(),
         quarantine: AxolotyQuarantineLedger = AxolotyQuarantineLedger(entries: []),
         eventSink: @escaping @Sendable (AxolotyCheckExecutionEvent) -> Void = { _ in }
@@ -289,7 +289,7 @@ public struct AxolotyCheckExecutor: Sendable {
         _ results: [AxolotyCheckResult],
         plan: AxolotyCheckPlan,
         startedAt: TimeInterval,
-        warning: (any AxolotyOverrunCancellation)?
+        warning: any AxolotyOverrunCancellation?
     ) {
         warning?.cancel()
         let commands = results.compactMap(\.command)

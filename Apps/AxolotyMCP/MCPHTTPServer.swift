@@ -40,7 +40,7 @@ public actor MCPHTTPServer {
     private let endpoint: String
     private let maxRequestBodyBytes: Int
     private let serverFactory: ServerFactory
-    private let validationPipeline: (any HTTPRequestValidationPipeline)?
+    private let validationPipeline: any HTTPRequestValidationPipeline?
     private var eventLoopGroup: MultiThreadedEventLoopGroup?
     private var channel: Channel?
     private var cleanupTask: Task<Void, Never>?
@@ -75,7 +75,7 @@ public actor MCPHTTPServer {
         port: UInt16,
         endpoint: String = "/mcp",
         maxRequestBodyBytes: Int = 1_048_576,
-        validationPipeline: (any HTTPRequestValidationPipeline)? = nil,
+        validationPipeline: any HTTPRequestValidationPipeline? = nil,
         serverFactory: @escaping ServerFactory
     ) {
         self.host = host

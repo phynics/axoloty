@@ -275,6 +275,26 @@ for a recorded, expiring reviewed exemption.
 - Avoid public internet access during tests. Reference images and dependencies
   are prepared before execution.
 
+## Compiler warning policy
+
+The canonical Swift builds treat warnings as errors
+(`swift build -Xswiftc -warnings-as-errors`). That global switch is the policy:
+a new warning fails the plan rather than being suppressed.
+
+Swift 6.4 adds `@diagnose` (SE-0522) for narrowly scoped warning control. It is
+**not adopted as a general suppression mechanism**. The zero-warning build is
+retained, and a diagnostic is fixed rather than silenced. If a migration makes a
+suppression unavoidable for a bounded interval, it must be a temporary,
+expiring entry in `docs/architecture-exceptions.yml` with an owner and a removal
+deadline, and it must never mask a protocol, ownership, concurrency, or
+wire-compatibility diagnostic.
+
+Swift 6.4 module selectors (SE-0491, `Module::Name`) are adopted only where an
+unqualified name is genuinely ambiguous. The current source has no such site, so
+there is no module-qualified reference to convert. Trailing closures after array
+or dictionary literals (SE-0508) are permitted where they read more clearly;
+they are a style choice, not a requirement.
+
 ## Timeouts
 
 The tier timeout is a hard upper bound for the complete tier. Individual

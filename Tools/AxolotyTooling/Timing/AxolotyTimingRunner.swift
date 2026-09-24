@@ -29,7 +29,7 @@ public struct AxolotyTimingRunner: Sendable {
         platform: AxolotyCheckPlan.Platform = AxolotyCheckPlan.currentPlatform,
         workspace: any AxolotyTimingWorkspaceManaging = FoundationTimingWorkspaceManager(),
         clock: any AxolotyTimingClock = AxolotyContinuousTimingClock(),
-        cacheReader: (any AxolotyTimingCacheStatsReading)? = nil,
+        cacheReader: any AxolotyTimingCacheStatsReading? = nil,
         identity: AxolotyTimingToolchainIdentity? = nil
     ) {
         let planResolver: Result<AxolotyCanonicalTestPlanResolver, AxolotyCanonicalTestManifestError>
@@ -61,7 +61,7 @@ public struct AxolotyTimingRunner: Sendable {
         platform: AxolotyCheckPlan.Platform = AxolotyCheckPlan.currentPlatform,
         workspace: any AxolotyTimingWorkspaceManaging = FoundationTimingWorkspaceManager(),
         clock: any AxolotyTimingClock = AxolotyContinuousTimingClock(),
-        cacheReader: (any AxolotyTimingCacheStatsReading)? = nil,
+        cacheReader: any AxolotyTimingCacheStatsReading? = nil,
         identity: AxolotyTimingToolchainIdentity? = nil,
         planResolver: Result<AxolotyCanonicalTestPlanResolver, AxolotyCanonicalTestManifestError>
     ) {
