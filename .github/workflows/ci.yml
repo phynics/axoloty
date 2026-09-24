@@ -38,14 +38,14 @@ jobs:
       # export it for later steps.
       - name: Compute cache key
         run: |
-          echo "SWIFT_CACHE_KEY=swiftpm-v2-6.3-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile', '.devcontainer/image-lock.json') }}" >> "$GITHUB_ENV"
+          echo "SWIFT_CACHE_KEY=swiftpm-v2-6.4-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile', '.devcontainer/image-lock.json') }}" >> "$GITHUB_ENV"
           # Compiler intermediates and planner metadata are specific to the
           # development container toolchain. Key them by the reviewed image
           # identity too, so an image-lock refresh never reuses a cache built
           # with a different container (SwiftPM emits a fatal incremental
           # build error when incremental state is incompatible).
           image_identity=$(jq -er '.buildInputsSha256' .devcontainer/image-lock.json)
-          SWIFT_BUILD_CACHE_PREFIX="swift-build-v3-compiler-6.3-linux-${image_identity}-${{ hashFiles('Package.resolved', '**/Package.swift', '.devcontainer/Dockerfile') }}-"
+          SWIFT_BUILD_CACHE_PREFIX="swift-build-v3-compiler-6.4-linux-${image_identity}-${{ hashFiles('Package.resolved', '**/Package.swift', '.devcontainer/Dockerfile') }}-"
           echo "SWIFT_BUILD_CACHE_PREFIX=${SWIFT_BUILD_CACHE_PREFIX}" >> "$GITHUB_ENV"
           echo "SWIFT_BUILD_CACHE_KEY=${SWIFT_BUILD_CACHE_PREFIX}${GITHUB_SHA}" >> "$GITHUB_ENV"
 
@@ -67,8 +67,8 @@ jobs:
           # cannot observe its live publication state. The setup action still
           # supports publisher-in-progress for callers with concrete evidence;
           # CI uses the no-wait bounded fallback here.
-          content-tag-prefix: swift-6.3
-          candidate-tag-prefix: ${{ github.event_name == 'pull_request' && format('swift-6.3-pr-{0}', github.event.pull_request.number) || 'swift-6.3' }}
+          content-tag-prefix: swift-6.4
+          candidate-tag-prefix: ${{ github.event_name == 'pull_request' && format('swift-6.4-pr-{0}', github.event.pull_request.number) || 'swift-6.4' }}
 
       - name: Restore SwiftPM dependency cache
         id: swiftpm_cache
@@ -309,15 +309,15 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           cache_ids="$RUNNER_TEMP/swift-build-cache-ids"
-          gh cache list --ref refs/heads/main --key "swift-build-v3-compiler-6.3-linux-" \
+          gh cache list --ref refs/heads/main --key "swift-build-v3-compiler-6.4-linux-" \
             --sort created_at --order desc --limit 100 --json id --jq '.[2:][].id' > "$cache_ids"
           # ESP-IDF ccache keys are per-commit too; unpruned copies (~370 MB
           # each) filled the repository quota and evicted the Swift caches.
           gh cache list --ref refs/heads/main --key "esp-idf-ccache-v1-" \
             --sort created_at --order desc --limit 100 --json id --jq '.[2:][].id' >> "$cache_ids"
-          gh cache list --ref refs/heads/main --key "swift-build-v2-coverage-6.3-linux-" \
+          gh cache list --ref refs/heads/main --key "swift-build-v2-coverage-6.4-linux-" \
             --limit 100 --json id --jq '.[].id' >> "$cache_ids"
-          gh cache list --ref refs/heads/main --key "swift-build-coverage-6.3-linux-" \
+          gh cache list --ref refs/heads/main --key "swift-build-coverage-6.4-linux-" \
             --limit 100 --json id --jq '.[].id' >> "$cache_ids"
           while IFS= read -r cache_id; do
             [ -n "$cache_id" ] || continue

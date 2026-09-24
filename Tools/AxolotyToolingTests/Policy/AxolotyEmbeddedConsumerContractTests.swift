@@ -63,7 +63,7 @@ func repositoryAuthorityPassesForCheckoutRejectingEmbeddedContractSchemaAndPathM
 
     let rootManifestURL = fixture.appendingPathComponent("Package.swift")
     let rootManifest = try String(contentsOf: rootManifestURL, encoding: .utf8)
-        .replacingOccurrences(of: "swift-tools-version:6.3", with: "swift-tools-version:6.2")
+        .replacingOccurrences(of: "swift-tools-version:6.4", with: "swift-tools-version:6.3")
         .replacingOccurrences(of: "swiftLanguageModes: [.v6]", with: "swiftLanguageModes: [.v5]")
     try Data(rootManifest.utf8).write(to: rootManifestURL)
     let rootManifestFindings = AxolotyEmbeddedConsumerContractValidator(root: fixture).validate()

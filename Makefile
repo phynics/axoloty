@@ -8,7 +8,7 @@ WORKDIR := /workspace
 # labeling for ordinary Podman invocations and honors this override.
 CONTAINER_MOUNT_SUFFIX ?=
 export CONTAINER_MOUNT_SUFFIX
-CACHE_NAMESPACE ?= swift-6.3-linux
+CACHE_NAMESPACE ?= swift-6.4-linux
 # The sed delimiter must not be '#': GNU Make starts a comment at '#' even
 # inside $(shell ...), which hides the closing paren and breaks parsing on
 # GNU Make 3.81 (shipped by macOS). See issue #100.

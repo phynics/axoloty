@@ -204,7 +204,7 @@ func validateAllocations() {
     // These functions have known allocation profiles. heaptrack should
     // measure: zeroAlloc=0, oneAlloc=1, manyAllocs(100)=100. The trailing
     // `wireDecodeRoute` fixture exercises the real borrowed decode + static
-    // routing hot path; on Swift 6.3 host builds its reader workspace is
+    // routing hot path; on Swift 6.4 host builds its reader workspace is
     // stack-resident and must allocate nothing, so expected is 0.
     print(#"{"mode":"validate-allocations","fixtures":["#)
 
@@ -230,7 +230,7 @@ func validateAllocations() {
     // The wire decode + static route steady state. The reader/decoder must not
     // allocate String/Array or a JSON value tree per iteration, and the reader
     // workspace is a constant-size inline/temporary buffer (stack-resident on
-    // Swift 6.3 host builds). This fixture asserts per-iteration behavior; a
+    // Swift 6.4 host builds). This fixture asserts per-iteration behavior; a
     // small constant number of one-time setup allocations is expected and is
     // not measured as a per-message cost.
     let payload = "{\"ioSourceId\":\"33333333-3333-4333-8333-333333333333\",\"ioActorId\":\"33333333-3333-4333-8333-333333333333\",\"isExternalRoute\":true}"
@@ -272,7 +272,7 @@ func runBenchmark() throws {
     let corpus = loadedCorpus.cases
 
     // Environment fingerprint.
-    let swiftVersion = "Swift 6.3"
+    let swiftVersion = "Swift 6.4"
     let targetTriple = "x86_64-unknown-linux-gnu"
     let cpu = readProcLine("/proc/cpuinfo", key: "model name") ?? "unknown"
     let kernel = readProcLine("/proc/version", key: nil) ?? "unknown"

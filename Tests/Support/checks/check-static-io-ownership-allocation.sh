@@ -24,7 +24,7 @@ command -v heaptrack_print >/dev/null 2>&1 || fail "heaptrack_print not found"
 
 swift build --package-path "$package_dir" -c release \
     --product StaticIoOwnershipAllocation \
-    --cache-path "${SPM_CACHE_DIR:-$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux}" \
+    --cache-path "${SPM_CACHE_DIR:-$HOME/.cache/coaty-swift/swiftpm/swift-6.4-linux}" \
     --disable-automatic-resolution >/dev/null
 
 count_allocations() {

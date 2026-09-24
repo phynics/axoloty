@@ -6,7 +6,7 @@
     "revisionFormat": "git-commit-sha1"
   },
   "swift": {
-    "toolsVersion": "6.3",
+    "toolsVersion": "6.4",
     "languageMode": 6,
     "requiredExperimentalFeatures": [
       "Embedded",

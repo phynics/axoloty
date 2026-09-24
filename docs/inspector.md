@@ -207,7 +207,7 @@ On Linux, use the pinned container via the Makefile env or `.devcontainer/run.sh
 ```sh
 CONTAINER_RUNTIME=podman IMAGE=axoloty-dev \
 BUILD_DIR=.build BUILD_LOCK=0 \
-SPM_CACHE_DIR="$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux" \
+SPM_CACHE_DIR="$HOME/.cache/coaty-swift/swiftpm/swift-6.4-linux" \
 .devcontainer/run.sh swift build --package-path /workspace/Apps \
   --cache-path /workspace/.swiftpm-cache \
   --disable-automatic-resolution \
@@ -215,7 +215,7 @@ SPM_CACHE_DIR="$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux" \
 
 CONTAINER_RUNTIME=podman IMAGE=axoloty-dev \
 BUILD_DIR=.build BUILD_LOCK=0 \
-SPM_CACHE_DIR="$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux" \
+SPM_CACHE_DIR="$HOME/.cache/coaty-swift/swiftpm/swift-6.4-linux" \
 .devcontainer/run.sh swift test --package-path /workspace/Apps \
   --cache-path /workspace/.swiftpm-cache \
   --disable-automatic-resolution \

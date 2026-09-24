@@ -18,7 +18,7 @@ run_swift() {
     CONTAINER_RUNTIME=${CONTAINER_RUNTIME:-podman} \
     IMAGE=${IMAGE:-axoloty-dev} \
     BUILD_DIR="$build" \
-    SPM_CACHE_DIR="${SPM_CACHE_DIR:-$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux}" \
+    SPM_CACHE_DIR="${SPM_CACHE_DIR:-$HOME/.cache/coaty-swift/swiftpm/swift-6.4-linux}" \
     "$root/.devcontainer/run.sh" "$@"
 }
 

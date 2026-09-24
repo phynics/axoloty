@@ -32,7 +32,7 @@ in by the SwiftNIO family and swift-docc-plugin and inherit Apache-2.0.
 Imported only by `Packages/AxolotyMQTT/Sources/AxolotyMQTT/RuntimeMQTTClient.swift`, which the
 `MQTTBinding` owns for the host runtime. It is the sole MQTT transport and
 defines the wire path exercised by the compatibility suite. It must remain
-compatible with the Swift 6.3 container toolchain and the WASI feasibility
+compatible with the Swift 6.4 container toolchain and the WASI feasibility
 target (T-030). The `2.13.0` release adds Android support and is the current
 latest; no action needed. Keep as a `from:` range.
 

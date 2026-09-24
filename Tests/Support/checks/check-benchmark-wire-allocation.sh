@@ -35,7 +35,7 @@ command -v heaptrack >/dev/null 2>&1 || fail "heaptrack not found (needed in the
 command -v heaptrack_print >/dev/null 2>&1 || fail "heaptrack_print not found"
 
 [ -x "$binary" ] || (cd "$root_dir" && swift build -c release --product WireAllocation \
-    --cache-path "${SPM_CACHE_DIR:-$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux}" \
+    --cache-path "${SPM_CACHE_DIR:-$HOME/.cache/coaty-swift/swiftpm/swift-6.4-linux}" \
     --disable-automatic-resolution >/dev/null)
 
 count_allocs() {

@@ -5,7 +5,7 @@
 </p>
 
 [![Swift
-version](https://img.shields.io/badge/swift-6.3-%23F05138?logo=swift)](https://developer.apple.com/swift/)
+version](https://img.shields.io/badge/swift-6.4-%23F05138?logo=swift)](https://developer.apple.com/swift/)
 [![License:
 MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 

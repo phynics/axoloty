@@ -29,11 +29,11 @@ inputs:
   content-tag-prefix:
     description: Prefix for the immutable content-keyed image tag.
     required: false
-    default: swift-6.3
+    default: swift-6.4
   candidate-tag-prefix:
     description: Tag prefix used by a concurrent image publisher for stale-lock candidates.
     required: false
-    default: swift-6.3
+    default: swift-6.4
 
 runs:
   using: composite

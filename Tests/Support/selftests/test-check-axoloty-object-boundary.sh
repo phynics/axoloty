@@ -18,14 +18,14 @@ write_fixture() {
         "$tmp/Packages/AxolotyObjectMacros/Sources/AxolotyObjectMacros" \
         "$tmp/Packages/AxolotyObjectMacros/Sources/AxolotyObjectMacrosImplementation" \
         "$tmp/Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels"
-    printf '%s\n' '// swift-tools-version:6.3' 'import PackageDescription' 'let package = Package(name: "AxolotyCoatyModels", products: [.library(name: "AxolotyCoatyModels", targets: ["AxolotyCoatyModels"])], dependencies: [.package(path: "../AxolotyObjectModel")], targets: [.target(name: "AxolotyCoatyModels", path: "Sources/AxolotyCoatyModels")])' > "$tmp/Packages/AxolotyCoatyModels/Package.swift"
+    printf '%s\n' '// swift-tools-version:6.4' 'import PackageDescription' 'let package = Package(name: "AxolotyCoatyModels", products: [.library(name: "AxolotyCoatyModels", targets: ["AxolotyCoatyModels"])], dependencies: [.package(path: "../AxolotyObjectModel")], targets: [.target(name: "AxolotyCoatyModels", path: "Sources/AxolotyCoatyModels")])' > "$tmp/Packages/AxolotyCoatyModels/Package.swift"
     printf '%s\n' \
-        '// swift-tools-version:6.3' \
+        '// swift-tools-version:6.4' \
         'import PackageDescription' \
         'let package = Package(name: "AxolotyObjectModel", products: [.library(name: "AxolotyObjectModel", targets: ["AxolotyObjectModel"])], dependencies: [.package(path: "../AxolotyWire")], targets: [.target(name: "AxolotyObjectModel", path: "Sources/AxolotyObjectModel")])' \
         > "$tmp/Packages/AxolotyObjectModel/Package.swift"
     printf '%s\n' \
-        '// swift-tools-version:6.3' \
+        '// swift-tools-version:6.4' \
         'import PackageDescription' \
         'let package = Package(name: "AxolotyObjectMacros", products: [.library(name: "AxolotyObjectMacros", targets: ["AxolotyObjectMacros"])], dependencies: [.package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "603.0.0")], targets: [.target(name: "AxolotyObjectMacros", dependencies: [.product(name: "SwiftSyntax", package: "swift-syntax")], path: "Sources/AxolotyObjectMacros")])' \
         > "$tmp/Packages/AxolotyObjectMacros/Package.swift"

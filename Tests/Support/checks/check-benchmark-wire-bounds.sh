@@ -51,8 +51,8 @@ fi
 echo "== Running wire bounds tests (release mode) =="
 CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-podman}" \
 IMAGE="${IMAGE:-axoloty-dev}" \
-BUILD_DIR="${BUILD_DIR:-/tmp/coaty-swift-build/axoloty/swift-6.3-linux/debug}" \
-SPM_CACHE_DIR="${SPM_CACHE_DIR:-$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux}" \
+BUILD_DIR="${BUILD_DIR:-/tmp/coaty-swift-build/axoloty/swift-6.4-linux/debug}" \
+SPM_CACHE_DIR="${SPM_CACHE_DIR:-$HOME/.cache/coaty-swift/swiftpm/swift-6.4-linux}" \
 .devcontainer/run.sh swift test $(test -n "${SWIFT_LOCKED_ARGS:-}" && echo "$SWIFT_LOCKED_ARGS") \
     --filter "WireBounds|TruncationBounds|CorruptionBounds|MalformedInput|NestingDepth|SizeLimit|RouterCapacity|ParserWorkBounds" \
     2>&1 || fail "bounds tests failed"

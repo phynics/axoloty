@@ -15,7 +15,7 @@ checker="$fixture/Tests/Support/checks/check-g6-unused-product-deps.sh"
 
 package() {
     cat > "$fixture/Package.swift" <<EOF
-// swift-tools-version:6.3
+// swift-tools-version:6.4
 import PackageDescription
 let package = Package(
     name: "Fixture",
