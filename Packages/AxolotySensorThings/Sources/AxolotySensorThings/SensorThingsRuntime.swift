@@ -92,7 +92,7 @@ public struct SensorThingsObjectSnapshot<Schema: SensorThingsTopLevelSchema>: Se
         var envelope: ObjectEnvelope<128, 128>?
         try object.withEnvelope { (value: ObjectEnvelope<128, 128>) in envelope = value }
         let value = object.value
-        let bytes = object.withEncodedBytes(copyBytes)
+        let bytes = object.withEncodedBytes { $0.ownedBytes() }
         guard let envelope else { throw ObjectError(.invalidEnvelope) }
         self.envelope = envelope
         self.value = value
@@ -146,7 +146,7 @@ public struct SensorThingsPublisher: Sendable {
     public func advertise<Schema: SensorThingsTopLevelSchema>(
         _ object: consuming Object<Schema>
     ) async throws {
-        let bytes = object.withEncodedBytes(copyBytes)
+        let bytes = object.withEncodedBytes { $0.ownedBytes() }
         try await checked(.advertise(try encodeAdvertise(object: bytes)))
     }
 
@@ -155,7 +155,7 @@ public struct SensorThingsPublisher: Sendable {
         _ object: consuming Object<Schema>,
         on channel: SensorThingsChannel<Schema>
     ) async throws {
-        let bytes = object.withEncodedBytes(copyBytes)
+        let bytes = object.withEncodedBytes { $0.ownedBytes() }
         try await checked(.channel(
             identifier: channel.identifier,
             payload: try encodeChannel(object: bytes)
@@ -489,7 +489,7 @@ public extension RuntimeBuilder {
             let orderedThings = thingsByID.sorted {
                 $0.key.uuid.isLexicographicallyBefore($1.key.uuid)
             }
-            let sourceBytes = orderedSources.map { $0.sensor.withEncodedBytes(copyBytes) }
+            let sourceBytes = orderedSources.map { $0.sensor.withEncodedBytes { $0.ownedBytes() } }
             let sourceAdvertise = try sourceBytes.map { try encodeAdvertise(object: $0) }
             let thingAdvertise = try orderedThings.map { try encodeAdvertise(object: $0.value) }
             let sourceDeadvertise = try orderedSources.map { try encodeDeadvertise(objectID: $0.sensor.envelope.objectID) }
@@ -700,13 +700,6 @@ private func invocationPayload(_ invocation: RuntimeInvocation) -> [UInt8] {
     case let .associationChanged(transition): return transition.delivery.payload
     case .publish, .externalRouteActivated, .externalRouteDeactivated: return []
     }
-}
-
-private func copyBytes(_ bytes: borrowing ByteSlice) -> [UInt8] {
-    var result: [UInt8] = []
-    result.reserveCapacity(bytes.length)
-    for index in 0..<bytes.length { result.append(bytes.byte(at: index) ?? 0) }
-    return result
 }
 
 private func decodeSnapshot<Schema: SensorThingsTopLevelSchema>(

@@ -9,8 +9,12 @@ fork, through CoatySwift 2.4.0, remain documented in the
 
 ## [Unreleased]
 
-No changes are pending. Strategy for the next line is tracked in
-[`docs/ROADMAP.md`](./docs/ROADMAP.md).
+### Added
+
+- `ByteSlice.ownedBytes()` copies a borrowed slice into an owned `[UInt8]`,
+  the copy the borrowed-value lifetime rules require before a suspension
+  point. It replaces four private copies across `AxolotyWire`,
+  `AxolotyProtocol`, and `AxolotySensorThings`.
 
 ## [0.8.2] - 2026-09-18
 

@@ -179,6 +179,16 @@ public struct ByteSlice: Equatable, Hashable {
         body(pointer, length)
     }
 
+    /// Copies the borrowed bytes into an owned array.
+    ///
+    /// Use this before a suspension point, an isolation hop, or any storage
+    /// that outlives the buffer this slice borrows.
+    ///
+    /// - Returns: A new array holding exactly ``length`` bytes.
+    public func ownedBytes() -> [UInt8] {
+        Array(UnsafeRawBufferPointer(start: pointer, count: length))
+    }
+
     #if !hasFeature(Embedded)
     /// Converts this byte slice to a `String` by copying the bytes.
     ///
