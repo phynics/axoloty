@@ -149,6 +149,77 @@ graph. A maintainer adding it to CI should add
 `check-no-foundation-types.sh`) in whatever manifest drives the check-plan
 (e.g. `test-tiers.json` / the CI workflow that invokes `Tests/Support/*.sh`).
 
+## Swift 6.4 `~Escapable` + `RawSpan` spike (#872)
+
+Question: should the borrowed wire views (`ByteSlice`, `TopicView`,
+`WireValueReader`) store a `RawSpan` and become `~Escapable`, so the rule
+above ("borrowed values stay inside synchronous calls") is enforced by the
+compiler instead of by convention and review?
+
+A prototype was compiled with the pinned `swift:6.4-jammy` toolchain for both
+the host and `riscv32-none-none-eabi` Embedded. The viable shape is:
+
+```swift
+public struct SpanSlice: ~Escapable {
+    @usableFromInline let raw: RawSpan
+
+    @_lifetime(borrow raw)
+    @usableFromInline init(borrowing raw: RawSpan) { self.raw = raw }
+
+    public var length: Int { raw.byteCount }
+
+    public func byte(at index: Int) -> UInt8? {
+        guard index >= 0, index < raw.byteCount else { return nil }
+        return raw[index]
+    }
+
+    @_lifetime(copy self)
+    public consuming func subSlice(from start: Int, length len: Int) -> SpanSlice {
+        let lower = Swift.max(0, start)
+        let end = Swift.min(start + len, raw.byteCount)
+        return SpanSlice(borrowing: raw.extracting(lower..<end))
+    }
+}
+```
+
+Findings:
+
+- The shape works. With `-enable-experimental-feature Lifetimes`, the struct,
+  the `@_lifetime` annotations, safe construction from `Array.span.bytes`, a
+  localized `@unsafe RawSpan(_unsafeBytes:)` pointer bridge, a static `empty`
+  sentinel, noncopyable `Equatable`/`Hashable`, and passing into an `async`
+  function all compile. They also compile for Embedded riscv32.
+- The feature is still experimental in 6.4. Without the flag the host build
+  fails with `'@_lifetime' attribute is only valid when experimental feature
+  Lifetimes is enabled`. Only
+  `Tests/Support/checks/check-embedded-swift-core.sh` passes the flag today;
+  no host target enables it. Adopting `~Escapable` publicly would mean
+  enabling an experimental compiler feature on every host target.
+- `~Escapable` values cannot be stored in `Array` or `Set`. The compiler
+  reports `generic struct 'Array' requires that 'SpanSlice' conform to
+  'Escapable'` and `type 'SpanSlice' does not conform to protocol
+  'Escapable'`. No first-party code stores `ByteSlice` in a container today,
+  so this does not block now, but it removes that option.
+- The change is API-breaking. `ByteSlice` reaches 53 production files and 268
+  public-signature sites and conforms to `Equatable, Hashable`. Every
+  returning or accepting signature needs a `@_lifetime` annotation and every
+  caller must respect the borrow.
+
+**Decision: defer.** Keep `~Escapable` as the target end state for the
+borrowed-view types, but do not convert in #872. It is the correct
+compiler-enforced form of the invariant, but it depends on the `Lifetimes`
+feature stabilizing and on an API-breaking sweep that overlaps #871
+(`~Sendable` and borrowed-value isolation) and #873 (ownership features). Do
+not enable an experimental feature host-wide as part of the Span migration.
+
+**Consequence for #872.** Adopt the safe Span APIs inside the current
+escapable views instead: derive a local `RawSpan` at each view boundary
+through one documented `@unsafe` bridge, convert the per-access byte loads
+and stores to safe subscripts and `load(fromByteOffset:as:)`, and replace
+`withUnsafeTemporaryAllocation` with `withTemporaryAllocation`. That path
+needs no experimental feature flag and no public API break. Note the pointer
+bridge spelling is `RawSpan(_unsafeBytes:)`.
+
 ## Explicitly out of scope
 
 `Packages/AxolotyStaticRuntime/` and `Tests/AxolotyTests/ProtocolTrace/`
