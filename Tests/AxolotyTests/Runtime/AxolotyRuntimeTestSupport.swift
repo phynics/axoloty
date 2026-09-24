@@ -38,6 +38,7 @@ actor TestTransport: AxolotyRuntimeTransport {
     private var sent: [RuntimeOutboundMessage] = []
     private(set) var lifecycle: [String] = []
     private(set) var lastWills: [RuntimeTransportLastWill?] = []
+    private(set) var stopObservedCancellation = false
     private let failureStage: SetupFailureStage?
 
     init(failing failureStage: SetupFailureStage? = nil) {
@@ -75,6 +76,7 @@ actor TestTransport: AxolotyRuntimeTransport {
     }
 
     func stop() async {
+        stopObservedCancellation = Task.isCancelled
         receive = nil
         lifecycle.append("stop")
     }

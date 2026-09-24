@@ -32,6 +32,10 @@ fork, through CoatySwift 2.4.0, remain documented in the
 
 ### Fixed
 
+- Runtime, MCP HTTP, and inspector shutdown run their asynchronous cleanup
+  under a task cancellation shield, so a cancelled caller still deadvertises,
+  unsubscribes, and closes its transport. `AxolotyRuntime.run()` uses an
+  asynchronous `defer` to guarantee that shutdown on every exit.
 - The lifecycle matrix's monotonic millisecond clock no longer clamps
   after 24 days of host uptime. The old `awk` format stopped deadlines from
   advancing on long-running hosts.

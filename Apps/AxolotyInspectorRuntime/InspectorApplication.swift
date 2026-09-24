@@ -114,12 +114,12 @@ public final class InspectorApplication {
             initialConnectEvent = try await connectWhileMonitoringSignals()
         } catch let error as InspectorError {
             writeDiagnostic("error: \(error.userFriendlyMessage)")
-            session.stop()
+            await session.stop()
             return error
         } catch {
             let msg = String(describing: error)
             writeDiagnostic("error: \(msg)")
-            session.stop()
+            await session.stop()
             return .connectionUnavailable(reason: msg)
         }
 
@@ -217,7 +217,7 @@ public final class InspectorApplication {
             writeOutput(output)
         }
 
-        session.stop()
+        await session.stop()
         return result
     }
 
@@ -260,7 +260,7 @@ public final class InspectorApplication {
             }
 
             if case .interrupted = event {
-                session.stop()
+                await session.stop()
             }
             group.cancelAll()
             return event

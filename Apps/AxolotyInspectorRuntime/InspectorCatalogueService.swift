@@ -83,12 +83,12 @@ public final class InspectorCatalogueService {
     }
 
     /// Stops the service and disconnects.
-    public func stop() {
+    public func stop() async {
         startGeneration += 1
         startTask?.cancel()
         startTask = nil
         streamTask?.cancel()
-        session.stop()
+        await session.stop()
         started = false
     }
 

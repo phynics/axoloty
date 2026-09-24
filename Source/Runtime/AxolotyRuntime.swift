@@ -178,38 +178,40 @@ actor ProtocolExecutor {
 
     func stop() async {
         guard state == .running || state == .starting || state == .reconnecting || state == .failed else { return }
-        await stopRuntimeModules()
-        state = .stopping
-        offlineOperations.removeAll(keepingCapacity: true)
-        pendingOutboundEffects.removeAll(keepingCapacity: true)
-        transportEpoch &+= 1
-        let stoppingEpoch = transportEpoch
-        await cancelAndDrainHandlers()
-        typedIoState.clearTransportState()
-        finishIoObservers()
-        cancelIngressPump()
-        let hasLifecycleEffects = lifecycleAdvertisementActive || typedIoState.hasEndpoints
-        do {
-            try enqueueIoDeadvertisements(nowMS: monotonicNowMS())
-            try enqueueLifecycleDeadvertisement(nowMS: monotonicNowMS())
-        } catch {
-            emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
+        await withTaskCancellationShield {
+            await stopRuntimeModules()
+            state = .stopping
+            offlineOperations.removeAll(keepingCapacity: true)
+            pendingOutboundEffects.removeAll(keepingCapacity: true)
+            transportEpoch &+= 1
+            let stoppingEpoch = transportEpoch
+            await cancelAndDrainHandlers()
+            typedIoState.clearTransportState()
+            finishIoObservers()
+            cancelIngressPump()
+            let hasLifecycleEffects = lifecycleAdvertisementActive || typedIoState.hasEndpoints
+            do {
+                try enqueueIoDeadvertisements(nowMS: monotonicNowMS())
+                try enqueueLifecycleDeadvertisement(nowMS: monotonicNowMS())
+            } catch {
+                emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
+            }
+            if hasLifecycleEffects {
+                await drainOutboundPump()
+            }
+            do {
+                try await transport.removeSubscriptions(namespace: definition.namespace)
+            } catch {
+                emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
+            }
+            await transport.stop()
+            if !hasLifecycleEffects {
+                await drainOutboundPump()
+            }
+            guard state == .stopping, transportEpoch == stoppingEpoch else { return }
+            state = .stopped
+            signalTermination()
         }
-        if hasLifecycleEffects {
-            await drainOutboundPump()
-        }
-        do {
-            try await transport.removeSubscriptions(namespace: definition.namespace)
-        } catch {
-            emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
-        }
-        await transport.stop()
-        if !hasLifecycleEffects {
-            await drainOutboundPump()
-        }
-        guard state == .stopping, transportEpoch == stoppingEpoch else { return }
-        state = .stopped
-        signalTermination()
     }
 
     func close() async {

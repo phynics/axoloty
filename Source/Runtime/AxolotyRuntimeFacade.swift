@@ -85,30 +85,33 @@ public final class AxolotyRuntime: Sendable {
     /// requests the same graceful stop and is consumed after cleanup. The
     /// transport remains owned by the runtime for the duration of this call.
     public func run() async throws {
-        var started = false
+        var stopOnExit = false
+        defer {
+            if stopOnExit {
+                await stop()
+            }
+        }
         do {
             try await withTaskCancellationHandler(operation: {
                 try await start()
             }, onCancel: {
                 Task { await self.stop() }
             })
-            started = true
+            stopOnExit = true
             _ = await executor.waitForTermination()
             try Task.checkCancellation()
             if let failure = await executor.terminalFailure() {
-                await stop()
                 throw AxolotyError.runtime(code: failure.0, reason: failure.1)
             }
         } catch is CancellationError {
-            await stop()
+            stopOnExit = true
         } catch {
             if Task.isCancelled {
-                await stop()
+                stopOnExit = true
                 return
             }
-            let failedDuringStart = await lifecycleState() == .failed
-            if started || failedDuringStart {
-                await stop()
+            if await lifecycleState() == .failed {
+                stopOnExit = true
             }
             throw error
         }

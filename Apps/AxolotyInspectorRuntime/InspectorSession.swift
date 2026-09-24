@@ -19,7 +19,7 @@ public protocol InspectorSession: InspectorDiscovering {
     /// Publishes one typed Discover operation and returns matching Resolve events.
     func discover(_ request: InspectorDiscoverRequest) async -> AsyncStream<InspectorResponseEvent>
     /// Requests runtime shutdown.
-    func stop()
+    func stop() async
 }
 
 /// Inspector adapter over the structured host runtime and a supplied transport.
@@ -178,9 +178,13 @@ public final class AxolotyInspectorSession: InspectorSession {
         return stream
     }
 
-    public func stop() {
+    /// Requests runtime shutdown and waits for cleanup to finish.
+    ///
+    /// Cleanup is shielded from task cancellation so the runtime still
+    /// deadvertises and closes its transport when the caller is cancelled.
+    public func stop() async {
         cancelDiscovery()
-        Task { await runtime.stop() }
+        await runtime.stop()
     }
 
     private func cancelDiscovery() {

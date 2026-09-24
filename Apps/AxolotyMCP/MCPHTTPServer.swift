@@ -91,6 +91,9 @@ public actor MCPHTTPServer {
     /// - Throws: ``AxolotyError`` if `host` is not a loopback address, or a
     ///   NIO error if the channel cannot be bound.
     public func start() async throws {
+        defer {
+            await stop()
+        }
         guard Self.isLoopback(host) else {
             throw AxolotyError.invalidConfiguration(
                 option: "host",
@@ -124,26 +127,26 @@ public actor MCPHTTPServer {
             cleanupTask = Task { await self.sessionCleanupLoop() }
 
             try await channel.closeFuture.get()
-            await stop()
         } catch {
             resumeListeningWaiters()
-            await stop()
             throw error
         }
     }
 
     /// Stops the HTTP server, closing all active sessions and the channel.
     public func stop() async {
-        cleanupTask?.cancel()
-        cleanupTask = nil
-        let channel = channel
-        self.channel = nil
-        try? await channel?.close()
-        await closeAllSessions()
-        let eventLoopGroup = eventLoopGroup
-        self.eventLoopGroup = nil
-        if let eventLoopGroup {
-            try? await eventLoopGroup.shutdownGracefully()
+        await withTaskCancellationShield {
+            cleanupTask?.cancel()
+            cleanupTask = nil
+            let channel = channel
+            self.channel = nil
+            try? await channel?.close()
+            await closeAllSessions()
+            let eventLoopGroup = eventLoopGroup
+            self.eventLoopGroup = nil
+            if let eventLoopGroup {
+                try? await eventLoopGroup.shutdownGracefully()
+            }
         }
     }
 

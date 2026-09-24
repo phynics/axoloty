@@ -247,4 +247,61 @@ extension AxolotyRuntimeTests {
         await stopping.value
         #expect(await runtime.lifecycleState() == .stopped)
     }
+
+    @Test("runtime shutdown shields transport cleanup from caller cancellation")
+    func shutdownShieldsTransportCleanup() async throws {
+        let identity = try RuntimeIdentity(id: .zero, name: "shield-stop")
+        let definition = try RuntimeBuilder(
+            sourceID: .zero,
+            namespace: "test",
+            identity: identity,
+            capacities: try RuntimeCapacities()
+        ).finish()
+        let transport = TestTransport()
+        let runtime = AxolotyRuntime(definition: definition, transport: transport)
+        try await runtime.start()
+
+        let stopping = Task { await runtime.stop() }
+        stopping.cancel()
+        await stopping.value
+
+        #expect(await runtime.state() == .stopped)
+        #expect(await transport.stopObservedCancellation == false)
+        #expect(Array((await transport.lifecycle).suffix(2)) == ["remove", "stop"])
+        let deadvertisement = try #require(await transport.lastSent())
+        #expect(isDeadvertiseRoute(deadvertisement.route))
+    }
+
+    @Test("cancellation after a transport failure still runs shutdown cleanup")
+    func transportFailureCancellationStillCleansUp() async throws {
+        let identity = try RuntimeIdentity(id: .zero, name: "failure-cancel")
+        let definition = try RuntimeBuilder(
+            sourceID: .zero,
+            namespace: "test",
+            identity: identity,
+            capacities: try RuntimeCapacities()
+        ).finish()
+        let transport = TestTransport()
+        let runtime = AxolotyRuntime(definition: definition, transport: transport)
+        let running = Task { try await runtime.run() }
+        try await waitUntil("runtime to start before transport failure") {
+            await runtime.state() == .running
+        }
+
+        await transport.fail(TestTransportFailure())
+        try await waitUntil("runtime to enter reconnecting after transport failure") {
+            await runtime.state() == .reconnecting
+        }
+
+        running.cancel()
+        do {
+            try await running.value
+        } catch {
+            Issue.record("run propagated cancellation after performing its shutdown: \(error)")
+        }
+
+        #expect(await runtime.state() == .stopped)
+        #expect(await transport.stopObservedCancellation == false)
+        #expect(Array((await transport.lifecycle).suffix(2)) == ["remove", "stop"])
+    }
 }
