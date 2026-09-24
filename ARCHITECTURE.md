@@ -1,6 +1,13 @@
 # Axoloty architecture
 
-This document records the accepted architecture for the 0.6 alignment tracked by [epic #627](https://github.com/phynics/axoloty/issues/627), deepened by the 0.7 [runtime-registration](https://github.com/phynics/axoloty/issues/753) and [transport-boundary](https://github.com/phynics/axoloty/issues/781) epics. The repository completed the G4 runtime cutover in PR [#649](https://github.com/phynics/axoloty/pull/649) and released the aligned 0.6 architecture as `0.6.0`; the 0.7 epics released as `0.7.0`. The 0.8 line adds the versioned embedded consumer boundary released as `0.8.0`, under the firmware-split [epic #845](https://github.com/phynics/axoloty/issues/845).
+This document records the implemented architecture and its invariants. The
+0.6 alignment ([epic #627](https://github.com/phynics/axoloty/issues/627)),
+the 0.7 [runtime-registration](https://github.com/phynics/axoloty/issues/753)
+and [transport-boundary](https://github.com/phynics/axoloty/issues/781)
+epics, and the 0.8 firmware split
+([epic #845](https://github.com/phynics/axoloty/issues/845)) are complete and
+released. Their history is in [`docs/ROADMAP.md`](./docs/ROADMAP.md),
+[`docs/releases/`](./docs/releases/), and git.
 
 ## Current implementation (0.8 checkpoint)
 
@@ -16,7 +23,7 @@ dependency graph reaches a runtime consumer. The inherited class-object,
 controller, manager, and SensorThings runtime hierarchy has been removed
 from active production targets.
 
-The host runtime target, `Axoloty`, contains the G4 ``AxolotyRuntime``
+The host runtime target, `Axoloty`, contains the ``AxolotyRuntime``
 lifecycle and the ``AxolotyRuntimeTransport`` port; it imports no MQTT or
 SwiftNIO code. `AxolotyMQTT` is the sole MQTT/SwiftNIO adapter: it depends on
 `Axoloty`, implements `AxolotyRuntimeTransport`, and is the only target a
@@ -56,87 +63,57 @@ cross-target dependency is a policy change rather than a silent one.
 
 This section is the source of truth for what exists today. It must be updated whenever a gate changes the implemented package graph or removes a legacy path.
 
-G6 now includes a release-evidence boundary in `AxolotyTooling`: typed,
-exact-subject envelopes rehash their declared artifacts, and checkpoint plans
-resolve hardware inheritance before execution. This is certification
-infrastructure, not a claim that live broker, macOS, or physical-device
-evidence has already been collected. A 0.6 release remains uncertified until
-the final exact-SHA checkpoint validates every required domain.
+`AxolotyTooling` owns the release-evidence boundary: typed, exact-subject
+envelopes rehash their declared artifacts, and a release is certified only by
+an exact-SHA checkpoint that validates every required domain.
 
-### G2 status: shared fixed-inline processor
+### Shared processor
 
-Issue [#638](https://github.com/phynics/axoloty/issues/638) now lands the
-standalone [`Packages/AxolotyProtocol`](./Packages/AxolotyProtocol) package
-and the matching root product. Its host and ESP-IDF source-inclusion checks
-compile the same Foundation-free sources; release mode additionally records
-actual compiler-input receipts and compares exact path/hash sets. Issue
-[#640](https://github.com/phynics/axoloty/issues/640) now owns the
-fixed-inline processor seam, bounded action sink, handler table, and
-binding-supplied route classifier. The state-owning sources are under
-`AxolotyProtocol`; `AxolotyWire` contains only syntax, codecs, validation,
-values, errors, and parser workspaces. Trace adapters translate fixtures into
-real borrowed frames and typed local operations before calling the shared
-`ProtocolProcessor` Interfaces. The processor
-also owns the fixed-inline subscription registry and generation-protected
-handler table; no router or endpoint compatibility state remains in
-`AxolotyWire`.
+[`Packages/AxolotyProtocol`](./Packages/AxolotyProtocol) owns the fixed-inline
+processor, bounded action sink, handler table, subscription registry, and
+binding-supplied route classifier. `AxolotyWire` contains only syntax, codecs,
+validation, values, errors, and parser workspaces; no router or endpoint state
+lives there. Host and Embedded Swift builds compile the same Foundation-free
+sources, and release validation compares compiler-input receipts from both.
 
-The fixture-backed trace contract and host/static replay adapters under
-`Tests/AxolotyTests/ProtocolTrace` remain test-only. Both use the same production processor
-and fixed action sink seam, without promoting a second processor. Issue
-[#637](https://github.com/phynics/axoloty/issues/637) records that contract;
-[#639](https://github.com/phynics/axoloty/issues/639) is closed by the state
-move; [#641](https://github.com/phynics/axoloty/issues/641) is closed by the
-binding-supplied route classifier.
+The fixture-backed trace contract and the host/static replay adapters under
+`Tests/AxolotyTests/ProtocolTrace` are test-only. They translate fixtures into
+real borrowed frames and typed local operations and drive the production
+`ProtocolProcessor`, so they never form a second processor.
 
-### G3 status: portable object model complete
+### Object model
 
-Issue [#631](https://github.com/phynics/axoloty/issues/631) establishes the
-production `AxolotyObjectModel`, build-time `AxolotyObjectMacros`, and
-first-party `AxolotyCoatyModels` packages. Host and ESP-IDF consumers compile
-the same object-model and first-party-model sources. The portable model owns
-bounded raw JSON, inline descriptors, semantic envelopes, checked number
-views, presence, typed/manual schemas, transactional edits, fixed runtime-local
-registration, and the bounded Coaty-compatible predicate AST. Macro-generated
-schemas and manual conformances implement the same `ObjectSchema` contract;
-the macro is not an Embedded runtime dependency.
-
-`AxolotyProtocol` adapts Coaty `objectFilter` values into the shared predicate
-implementation. Unknown object types remain dynamic, registration has no
-process-global side effects, and unknown fields and number lexemes remain in
-the same bounded object arena. `AxolotyCoatyModels` supplies the portable
-protocol-required Coaty/IO schemas as a separate convenience product. The
-inherited Foundation-backed hierarchy was removed by G4; excluded legacy
-fixtures remain historical evidence only. G3 does not introduce a second
-runtime or lifecycle.
-The boundary checks and the maintained
+`AxolotyObjectModel` owns bounded raw JSON, inline descriptors, semantic
+envelopes, checked number views, presence, typed and manual schemas,
+transactional edits, fixed runtime-local registration, and the bounded
+Coaty-compatible predicate AST. Macro-generated schemas (`AxolotyObjectMacros`)
+and manual conformances implement the same `ObjectSchema` contract; the macro
+is not an Embedded runtime dependency. Unknown object types stay dynamic,
+registration has no process-global side effects, and unknown fields and
+number lexemes stay in the same bounded arena. `AxolotyProtocol` adapts Coaty
+`objectFilter` values into the shared predicate implementation.
 [`Spikes/BoundedObjectModelEvidence`](./Spikes/BoundedObjectModelEvidence)
-host/sanitizer evidence enforce this package graph and its fixed-storage
-claims. ESP32-C6 cross-build evidence is owned by `phynics/axoloty-embedded`.
+maintains host and sanitizer evidence for the fixed-storage claims.
 
-### G4 status: runtime replacement complete
+### Host and static runtimes
 
-The ``Axoloty`` target has an explicit modern source list containing the
-runtime definition, host runtime, the ``AxolotyRuntimeTransport`` port, and
-error boundary; it contains no MQTT or transport-client sources; those moved
-to the separate ``AxolotyMQTT`` adapter target in the 0.7 transport-boundary
-epic. Its private actor executor owns bounded ingress, dispatch, lifecycle,
-reconnect, cancellation, and diagnostics while all thirteen protocol families
-enter the shared ``ProtocolProcessor``. ``AxolotyStaticRuntime`` provides the
-fixed synchronous profile for Embedded Swift. Inspector and MCP use the same
-runtime contracts, and neutral benchmark consumers measure protocol,
-object-model, host-runtime, and static-runtime products.
+The `Axoloty` target has an explicit source list: runtime definition, host
+runtime, the ``AxolotyRuntimeTransport`` port, and the error boundary. It
+contains no MQTT or transport-client source. Its private actor executor owns
+bounded ingress, dispatch, lifecycle, reconnect, cancellation, and
+diagnostics, and all thirteen protocol families enter the shared
+``ProtocolProcessor``. ``AxolotyStaticRuntime`` is the fixed synchronous
+profile for Embedded Swift. Inspector and MCP use the same runtime contracts.
 
-The strict G4 package and consumer boundaries are required gates. They reject
-legacy runtime symbols, raw MQTT APIs outside the binding, parallel encoders,
-and implicit SwiftPM source discovery. Controller-based IO remains outside the
-G4 core. G5 now provides the optional AxolotySensorThings product with bounded
-Foundation-free schemas and one atomic runtime-owned source/direct-observation
-module. Sources validate Sensor-to-Thing parentage and deduplicate bounded
-Thing advertisements; direct observation subscribes only to its configured
-Channel.
+The required `g4-runtime-boundary`, `g4-runtime-package-boundary`, and
+`g4-runtime-consumer-boundary` checks reject legacy runtime symbols, raw MQTT
+APIs outside the adapter, parallel encoders, and implicit SwiftPM source
+discovery. `AxolotySensorThings` supplies bounded Foundation-free schemas and
+one atomic runtime-owned source and direct-observation module. Sources
+validate Sensor-to-Thing parentage and deduplicate bounded Thing
+advertisements; direct observation subscribes only to its configured Channel.
 
-### Transport-session transition investigation
+### Decision: transport-session mechanics stay in `ProtocolExecutor`
 
 Issue [#664](https://github.com/phynics/axoloty/issues/664) investigated whether
 the repeated transport mechanics in `ProtocolExecutor.start()` and
@@ -159,37 +136,17 @@ supersession, cancellation, reconnect replay, and outbound shutdown draining
 therefore remain explicit responsibilities of the actor rather than a hidden
 session object.
 
-## Accepted 0.6 delta
+## Capacity presets and payload bound
 
-The target package graph and runtime boundaries below are accepted direction,
-with the shared `AxolotyProtocol` processor implemented in G2 and the portable
-object-model slice implemented in G3.
-G1 accepted [ADR 0004](./docs/adr/0004-literal-inline-bounded-runtime-state.md)
-from host and ESP32-C6 evidence, selecting measured tiny/static/host capacity
-presets of 1/16/64 for runtime state. Those measurements do not select G3
-object byte/field capacities: G3 owns the object model and its own evidence;
-host evidence covers bounded operations and specialization growth at the
-1/16/64 measurement points, while the 2,048-byte/24-field convenience aliases
-remain wire-authority bounds rather than resource presets. Static runtime
-specializations now spell both dimensions (`StaticRuntime<capacity,
+[ADR 0004](./docs/adr/0004-literal-inline-bounded-runtime-state.md) selects the
+measured tiny/static/host capacity presets of 1/16/64 for runtime state. Those
+measurements do not select object byte or field capacities: the object model
+owns its own evidence, and the 2,048-byte/24-field convenience aliases are
+wire-authority bounds rather than resource presets. Static runtime
+specializations spell both dimensions (`StaticRuntime<capacity,
 payloadCapacity>`); the payload dimension may be reduced below 2,048 bytes but
 cannot exceed Axoloty's sealed wire maximum. This bounded-memory ceiling is an
 intentional divergence from Coaty, which does not define a 2 KiB payload limit.
-The ESP32-C6 node proved same-source compilation and linkage; that node now lives in `phynics/axoloty-embedded`, while the hardware-free Core gate proves portable-module compilation and linkage here. G4 owns runtime replacement;
-G5 owns IO and optional-product boundaries; G6 owns non-divergence and release
-proof.
-
-The `g4-runtime-*` checks (lifecycle, static, host, concurrency, boundary, and
-package) enforce this: replacement sources must not retain inherited
-lifecycle or parallel encoder symbols, and every current inspector/MCP
-consumer must use the replacement runtime or be removed. They are required
-nodes of the `ci`/`release` categories; the eleven-tier/nine-plan taxonomy
-this paragraph originally described (a standalone `g4-runtime` tier) no
-longer exists; 0.7's [#755](https://github.com/phynics/axoloty/issues/755)
-and [#756](https://github.com/phynics/axoloty/issues/756) collapsed it into
-the four canonical categories `ci`, `wire`, `embedded`, `release`. The
-reports remain acceptance evidence, not an allowlist or an architecture
-exception.
 
 ## Embedded consumer boundary
 
@@ -221,8 +178,8 @@ The host and static runtime profiles execute one portable protocol path. They
 may choose different capabilities, capacities, transports, ownership and
 delivery representations, scheduling adapters, and diagnostics, but they may
 not differ in protocol semantics for overlapping inputs. The test adapters
-provide replay evidence for this shared path; G4 now supplies the host actor
-and lifecycle runtime that owns transport scheduling and application delivery.
+provide replay evidence for this shared path; the host actor runtime owns
+transport scheduling and application delivery.
 
 Inbound processing is:
 
@@ -268,7 +225,7 @@ decoding, borrowed and owned wire values, caller-owned parser workspaces, and
 wire errors. It owns no semantic object schema, subscriber, endpoint,
 association, correlation, handler, or processor state.
 
-`AxolotyObjectModel` is the implemented G3 semantic layer above `AxolotyWire`.
+`AxolotyObjectModel` is the semantic layer above `AxolotyWire`.
 It owns bounded typed/dynamic objects, presence, semantic envelopes, JSON
 value/number views, predicates, and explicit sealed schema registries. It does
 not own a transport, protocol processor, runtime
@@ -277,9 +234,9 @@ schema-generation package and is not part of the portable runtime graph.
 
 `AxolotyCoatyModels` is a separate first-party convenience product containing
 the portable Coaty schema. It depends on `AxolotyObjectModel` and is compiled
-from the same sources for host and ESP-IDF. G5 IO contracts and SensorThings
-schemas are owned by their respective optional products, not by this
-convenience package.
+from the same sources for host and Embedded Swift. IO contracts live in
+`AxolotyProtocol` and SensorThings schemas in `AxolotySensorThingsModel`, not
+in this convenience package.
 
 `AxolotyProtocol` owns the closed built-in profile inventory, capabilities,
 routing keys, portable frames, structured protocol errors, fixed-inline
@@ -302,7 +259,7 @@ logging, actor, or controller framework.
 - `INV-005` **typed external routes:** external non-Coaty routes exist only as typed Coaty IO external routes.
 - `INV-006` **no general raw MQTT runtime API:** general raw MQTT application APIs are outside the target runtime.
 
-Temporary violations require a narrow, expiring entry in [`docs/architecture-exceptions.yml`](./docs/architecture-exceptions.yml). The shared-production-processor invariant cannot be waived for a 0.6 release.
+Temporary violations require a narrow, expiring entry in [`docs/architecture-exceptions.yml`](./docs/architecture-exceptions.yml). The shared-production-processor invariant cannot be waived.
 
 The ledger is JSON-compatible YAML with `schemaVersion: 1` and an `exceptions`
 array. Each entry contains `id`, `invariant`, exact repository-relative `paths`,
