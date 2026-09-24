@@ -10,7 +10,7 @@ enum AxolotyCheckCommand: Equatable, Sendable {
     case testOffline
     case testTooling
     case verify(ci: Bool)
-    case testOne(filter: String)
+    case testOne(filter: String, repetition: AxolotyTestRepetition?)
     case testTier(name: String, ci: Bool)
     case explain(tier: String, ci: Bool)
     case integration
@@ -53,8 +53,8 @@ struct AxolotyCheckCommands: Sendable {
             return checkResult(requested: ["test-tooling"])
         case .verify(let ci):
             return verifyResult(ci: ci)
-        case .testOne(let filter):
-            return testOneResult(filter: filter)
+        case .testOne(let filter, let repetition):
+            return testOneResult(filter: filter, repetition: repetition)
         case .testTier(let name, let ci):
             return testTierResult(tier: name, ci: ci)
         case .explain(let tier, let ci):
@@ -130,7 +130,10 @@ struct AxolotyCheckCommands: Sendable {
         }
     }
 
-    private func testOneResult(filter: String) -> AxolotyCommandResult {
+    private func testOneResult(
+        filter: String,
+        repetition: AxolotyTestRepetition?
+    ) -> AxolotyCommandResult {
         guard !filter.isEmpty else {
             return AxolotyCommandResult(
                 standardError: "error: test-one requires a non-empty FILTER or --filter value\n",
@@ -139,10 +142,15 @@ struct AxolotyCheckCommands: Sendable {
         }
         do {
             let resolver = try planResolver.get()
-            let command = try resolver.command(.testOneOrNode(
-                value: filter,
-                platform: AxolotyCheckPlan.currentPlatform
-            ))
+            let command: AxolotyCommandPlan
+            if let repetition {
+                command = try resolver.command(.testOne(filter: filter, repetition: repetition))
+            } else {
+                command = try resolver.command(.testOneOrNode(
+                    value: filter,
+                    platform: AxolotyCheckPlan.currentPlatform
+                ))
+            }
             if let failure = contextValidator.failureResult(validating: [command]) {
                 return AxolotyCommandFamilySupport.commandResult(failure)
             }

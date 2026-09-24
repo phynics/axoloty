@@ -33,7 +33,8 @@ enum AxolotyCommandHelp {
       check --plan         Print the initial offline check plan as JSON.
       check                Run the initial offline check plan and print JSON.
       verify [--ci]        Run the canonical ordinary or CI verification plan.
-      test-one --filter F  Run one bounded Swift suite/test filter.
+      test-one --filter F [--maximum-repetitions N] [--repeat-until pass|fail]
+                           Run one bounded Swift test filter, optionally repeated.
       test-tier TIER       Run one canonical test tier.
       explain TIER          Print its command graph and execution policies.
       build                Build the host package and its prerequisites.

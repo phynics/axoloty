@@ -32,7 +32,7 @@ enum CanonicalPlanRequest: Sendable {
 
 enum CanonicalCommandRequest: Sendable {
     case node(name: String)
-    case testOne(filter: String)
+    case testOne(filter: String, repetition: AxolotyTestRepetition?)
     case testOneOrNode(value: String, platform: AxolotyCheckPlan.Platform)
     case timing(
         scenario: AxolotyTimingScenario,
@@ -40,6 +40,16 @@ enum CanonicalCommandRequest: Sendable {
         workspace: String,
         filter: String
     )
+}
+
+enum AxolotyTestRepeatCondition: String, Equatable, Sendable {
+    case pass
+    case fail
+}
+
+struct AxolotyTestRepetition: Equatable, Sendable {
+    let maximumRepetitions: Int
+    let repeatUntil: AxolotyTestRepeatCondition?
 }
 
 struct AxolotyCanonicalTestPlanResolver: Sendable {
@@ -84,11 +94,12 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
         switch request {
         case .node(let name):
             return command(for: try node(named: name))
-        case .testOne(let filter):
+        case .testOne(let filter, let repetition):
             return command(
                 from: manifest.testOne.command,
                 filter: filter,
-                timeoutSeconds: manifest.testOne.timeoutSeconds
+                timeoutSeconds: manifest.testOne.timeoutSeconds,
+                repetition: repetition
             )
         case .testOneOrNode(let value, let platform):
             if let node = manifest.nodes.first(where: { $0.id == value }),
@@ -107,7 +118,7 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
             case .hostBuild:
                 try command(.node(name: "build"))
             case .focusedTestBuild:
-                try command(.testOne(filter: filter))
+                try command(.testOne(filter: filter, repetition: nil))
             }
             var arguments = base.arguments
             var environment = base.environment
@@ -294,7 +305,8 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
     private func command(
         from specification: AxolotyCanonicalTestCommand,
         filter: String?,
-        timeoutSeconds: TimeInterval?
+        timeoutSeconds: TimeInterval?,
+        repetition: AxolotyTestRepetition? = nil
     ) -> AxolotyCommandPlan {
         var arguments = specification.arguments
         if let filterFlag = specification.filterFlag, let filter {
@@ -303,6 +315,15 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
                 arguments[arguments.index(after: flagIndex)] = filter
             } else {
                 arguments.append(contentsOf: [filterFlag, filter])
+            }
+        }
+        if let repetition {
+            arguments.append(contentsOf: [
+                "--maximum-repetitions",
+                String(repetition.maximumRepetitions),
+            ])
+            if let repeatUntil = repetition.repeatUntil {
+                arguments.append(contentsOf: ["--repeat-until", repeatUntil.rawValue])
             }
         }
         return AxolotyCommandPlan(

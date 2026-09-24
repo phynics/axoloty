@@ -104,7 +104,7 @@ help:
 		'make worktree-warm  Bootstrap and compile the current worktree' \
 		'make axoloty-tool AXOLOTY_TOOL_ARGS="--help"  Run the Swift tooling CLI in-container' \
 		'make verify        Run the canonical ordinary pre-PR verification plan' \
-		'make test-one FILTER=...  Run one bounded suite or test filter' \
+		'make test-one FILTER=... [REPEAT=n] [REPEAT_UNTIL=pass|fail]  Run a bounded test filter, optionally repeated' \
 		'make test-tier TIER=ci|wire|embedded|release  Run one canonical test category' \
 		'make explain TIER=...  Explain commands, policies, locks, and artifacts' \
 		'make checkpoint     Run the release checkpoint validation' \
@@ -196,10 +196,18 @@ verify-ci:
 
 test-one: image
 	@filter=$(call shell_quote,$(FILTER)); \
+		repeat=$(call shell_quote,$(REPEAT)); \
+		repeat_until=$(call shell_quote,$(REPEAT_UNTIL)); \
 		test -n "$$filter" || { echo 'FILTER is required' >&2; exit 2; }; \
+		case "$$repeat" in '' ) ;; *[!0-9]*) echo 'REPEAT must be a positive integer' >&2; exit 2;; *) test "$$repeat" -gt 0 || { echo 'REPEAT must be a positive integer' >&2; exit 2; };; esac; \
+		case "$$repeat_until" in ''|pass|fail) ;; *) echo 'REPEAT_UNTIL must be pass or fail' >&2; exit 2;; esac; \
+		if test -n "$$repeat_until" && test -z "$$repeat"; then echo 'REPEAT_UNTIL requires REPEAT' >&2; exit 2; fi; \
+		set -- test-one --filter "$$filter"; \
+		if test -n "$$repeat"; then set -- "$$@" --maximum-repetitions "$$repeat"; fi; \
+		if test -n "$$repeat_until"; then set -- "$$@" --repeat-until "$$repeat_until"; fi; \
 		CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_TEST_ONE_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
 		CONTAINER_ENV_VARS="$(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
-		.devcontainer/run.sh /opt/axoloty/bin/axoloty-tool test-one --filter "$$filter"
+		.devcontainer/run.sh /opt/axoloty/bin/axoloty-tool "$$@"
 
 # The four categories are the only test entry points. The wire category needs
 # the host runtime bridge, and records the G6 wire matrix when a run asks for

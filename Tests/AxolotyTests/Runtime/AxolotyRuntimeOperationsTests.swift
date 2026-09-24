@@ -153,4 +153,18 @@ extension AxolotyRuntimeTests {
         #expect(await transport.sentCount() == 0)
         await runtime.stop()
     }
+
+    @Test("root test support reflects byte slices as hex and text")
+    func rootByteSliceTestMirrorShowsHexAndText() {
+        Array("ADV".utf8).withUnsafeBufferPointer { buffer in
+            let slice = ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+            let fields = Dictionary(
+                uniqueKeysWithValues: Mirror(reflectingForTest: slice).children.map {
+                    ($0.label ?? "", $0.value)
+                }
+            )
+            #expect(fields["hex"] as? String == "41 44 56")
+            #expect(fields["text"] as? String == "ADV")
+        }
+    }
 }

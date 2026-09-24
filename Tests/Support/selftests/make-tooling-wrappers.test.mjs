@@ -147,6 +147,18 @@ test("direct test wrappers preserve the invocation resource namespace", () => {
   );
 });
 
+test("test-one forwards bounded Swift Testing repetition options", () => {
+  const result = spawnSync("make", [
+    "--no-print-directory", "-n", "test-one", "FILTER=flakyTest",
+    "REPEAT=5", "REPEAT_UNTIL=fail", "CONTAINER_RUNTIME=docker",
+  ], { encoding: "utf8" });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /repeat='5'/);
+  assert.match(result.stdout, /repeat_until='fail'/);
+  assert.match(result.stdout, /--maximum-repetitions "\$repeat"/);
+  assert.match(result.stdout, /--repeat-until "\$repeat_until"/);
+});
+
 test("service wrappers forward an explicit MCP executable override", () => {
   const makefile = fs.readFileSync("Makefile", "utf8");
   for (const target of ["serve-mcp", "serve-dev"]) {

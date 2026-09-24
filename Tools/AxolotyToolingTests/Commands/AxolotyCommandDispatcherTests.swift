@@ -84,9 +84,31 @@ func typedInvocationParserClassifiesReleaseCommandsAndEnvironmentFallbacks() {
     let parser = AxolotyCommandParser(environment: ["FILTER": "FallbackSuite", "TIER": "unit"])
 
     #expect(parser.parse(["release", "checkpoint"]) == .release(.checkpoint))
-    #expect(parser.parse(["test-one"]) == .testOne(filter: "FallbackSuite"))
+    #expect(parser.parse(["test-one"]) == .testOne(filter: "FallbackSuite", repetition: nil))
     #expect(parser.parse(["test-tier"]) == .testTier(name: "unit", ci: false))
     #expect(parser.parse(["explain"]) == .explain(tier: "unit", ci: false))
+    #expect(parser.parse([
+        "test-one", "--filter", "flakyTest",
+        "--maximum-repetitions", "12", "--repeat-until", "fail",
+    ]) == .testOne(
+        filter: "flakyTest",
+        repetition: AxolotyTestRepetition(maximumRepetitions: 12, repeatUntil: .fail)
+    ))
+    #expect(parser.parse([
+        "test-one", "--filter", "flakyTest", "--maximum-repetitions", "3",
+    ]) == .testOne(
+        filter: "flakyTest",
+        repetition: AxolotyTestRepetition(maximumRepetitions: 3, repeatUntil: nil)
+    ))
+    #expect(parser.parse([
+        "test-one", "--filter", "flakyTest", "--maximum-repetitions", "0",
+    ]) == .unsupported)
+    #expect(parser.parse([
+        "test-one", "--filter", "flakyTest", "--maximum-repetitions", "2", "--repeat-until", "sometimes",
+    ]) == .unsupported)
+    #expect(parser.parse([
+        "test-one", "--filter", "flakyTest", "--repeat-until", "fail",
+    ]) == .unsupported)
 }
 
 @Test
@@ -254,7 +276,17 @@ func canonicalManifestDefinesVerifyRootsAndBoundedTestOne() throws {
     #expect(manifest.releaseGates == ["ci", "wire", "embedded"])
     #expect(manifest.toolContainerEnv?.allowlist(for: "release-checkpoint")?.contains("AXOLOTY_GIT_TREE") == true)
     #expect(manifest.toolContainerEnv?.allowlist(for: "release-unknown") == nil)
-    #expect(try resolver.command(.testOne(filter: "suite;touch /tmp/injected")).arguments.last == "suite;touch /tmp/injected")
+    #expect(try resolver.command(.testOne(
+        filter: "suite;touch /tmp/injected",
+        repetition: nil
+    )).arguments.last == "suite;touch /tmp/injected")
+    let repeated = try resolver.command(.testOne(
+        filter: "flakyTest",
+        repetition: AxolotyTestRepetition(maximumRepetitions: 4, repeatUntil: .fail)
+    ))
+    #expect(repeated.arguments.suffix(4).elementsEqual([
+        "--maximum-repetitions", "4", "--repeat-until", "fail",
+    ]))
     #expect(manifest.testOne.timeoutSeconds > 0)
     #expect(try resolver.resolve(.tier(
         name: CanonicalTier.wire.rawValue,

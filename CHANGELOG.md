@@ -11,6 +11,9 @@ fork, through CoatySwift 2.4.0, remain documented in the
 
 ### Added
 
+- Test failures show bounded hex/text mirrors for `ByteSlice` and `TopicView`.
+  `make test-one` accepts `REPEAT` and `REPEAT_UNTIL` to reproduce intermittent
+  failures with Swift Testing 6.4.
 - The development and CI toolchain now uses Swift 6.4. All current package
   manifests require Swift tools version 6.4, and canonical Linux builds use the
   Swift Build default. CI caches Swift Build intermediates without final

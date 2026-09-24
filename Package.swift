@@ -204,8 +204,9 @@ let package = Package(
             dependencies: ["AxolotyMQTT", "Axoloty", "AxolotyProtocol", "AxolotyWire"],
             path: "Packages/AxolotyMQTT/Tests/AxolotyMQTTTests"
         ),
-        .target(
+        .testTarget(
             name: "AxolotyTestSupport",
+            dependencies: ["AxolotyWire"],
             path: "Tests/AxolotyTestSupport"
         ),
         // In-process MQTT 3.1.1 broker for hardware-free, container-free
