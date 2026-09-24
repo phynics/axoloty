@@ -87,22 +87,30 @@ let package = Package(
             dependencies: [
                 .product(name: "IkigaJSONCore", package: "swift-json"),
             ],
-            path: "Packages/AxolotyWire/Sources/AxolotyWire"
+            path: "Packages/AxolotyWire/Sources/AxolotyWire",
+            // The embedded-core-consumer gate remains the enforcing portability check.
+            swiftSettings: [.treatWarning("EmbeddedRestrictions", as: .warning)]
         ),
         .target(
             name: "AxolotyProtocol",
             dependencies: ["AxolotyWire", "AxolotyObjectModel"],
-            path: "Packages/AxolotyProtocol/Sources/AxolotyProtocol"
+            path: "Packages/AxolotyProtocol/Sources/AxolotyProtocol",
+            // The embedded-core-consumer gate remains the enforcing portability check.
+            swiftSettings: [.treatWarning("EmbeddedRestrictions", as: .warning)]
         ),
         .target(
             name: "AxolotyObjectModel",
             dependencies: ["AxolotyWire"],
-            path: "Packages/AxolotyObjectModel/Sources/AxolotyObjectModel"
+            path: "Packages/AxolotyObjectModel/Sources/AxolotyObjectModel",
+            // The embedded-core-consumer gate remains the enforcing portability check.
+            swiftSettings: [.treatWarning("EmbeddedRestrictions", as: .warning)]
         ),
         .target(
             name: "AxolotyCoatyModels",
             dependencies: ["AxolotyObjectModel"],
-            path: "Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels"
+            path: "Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels",
+            // The embedded-core-consumer gate remains the enforcing portability check.
+            swiftSettings: [.treatWarning("EmbeddedRestrictions", as: .warning)]
         ),
         .target(
             name: "AxolotyIoRouting",
@@ -130,7 +138,9 @@ let package = Package(
                 "AxolotyWire",
                 "AxolotyStaticRuntimeMacrosImplementation",
             ],
-            path: "Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntime"
+            path: "Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntime",
+            // The embedded-core-consumer gate remains the enforcing portability check.
+            swiftSettings: [.treatWarning("EmbeddedRestrictions", as: .warning)]
         ),
         .target(
             name: "Axoloty",
