@@ -51,8 +51,12 @@ run_swift bash /workspace/Spikes/BoundedPortableRuntime/measure-allocations.sh \
     bounded-object-model-probe 1 1000 \
     >"$artifact/allocation-measurements.log" 2>&1
 
-release_binary=$(find "$build" "$probe/.build" -type f -path '*/release/bounded-object-model-probe' -perm -111 -print -quit 2>/dev/null || true)
+release_bin_dir=$(run_swift swift build --configuration release \
+    --package-path /workspace/Spikes/BoundedObjectModelEvidence \
+    --cache-path /workspace/.swiftpm-cache --disable-automatic-resolution --show-bin-path)
+release_binary="$release_bin_dir/bounded-object-model-probe"
 [ -n "$release_binary" ] || { echo "release probe binary not found" >&2; exit 1; }
+[ -x "$release_binary" ] || { echo "release probe binary not executable: $release_binary" >&2; exit 1; }
 release_bytes=$(stat -c '%s' "$release_binary")
 size -A "$release_binary" | awk '$2 ~ /^[0-9]+$/ { print $1 "\t" $2 }' >"$artifact/release-sections.tsv"
 

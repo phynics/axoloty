@@ -10,7 +10,7 @@ root_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 package_dir="$root_dir/Packages/AxolotyStaticRuntime"
 small_iters=${1:-1}
 large_iters=${2:-200}
-binary="$package_dir/.build/x86_64-unknown-linux-gnu/release/StaticIoOwnershipAllocation"
+cache_path=${SPM_CACHE_DIR:-"$HOME/.cache/coaty-swift/swiftpm/swift-6.4-linux"}
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/axoloty-static-io-alloc.XXXXXX")
 trap 'rm -rf "$scratch"' EXIT
 
@@ -24,8 +24,13 @@ command -v heaptrack_print >/dev/null 2>&1 || fail "heaptrack_print not found"
 
 swift build --package-path "$package_dir" -c release \
     --product StaticIoOwnershipAllocation \
-    --cache-path "${SPM_CACHE_DIR:-$HOME/.cache/coaty-swift/swiftpm/swift-6.4-linux}" \
+    --cache-path "$cache_path" \
     --disable-automatic-resolution >/dev/null
+binary_dir=$(swift build --package-path "$package_dir" -c release \
+    --product StaticIoOwnershipAllocation --cache-path "$cache_path" \
+    --disable-automatic-resolution --show-bin-path)
+binary="$binary_dir/StaticIoOwnershipAllocation"
+[ -x "$binary" ] || fail "StaticIoOwnershipAllocation product not found at $binary"
 
 count_allocations() {
     heaptrack_print "$1.gz" 2>/dev/null \

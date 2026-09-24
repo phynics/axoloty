@@ -4,7 +4,10 @@ set -eu
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 out_dir=${BENCHMARK_OUTPUT_DIR:-$script_dir/.testing/benchmarks/$(git rev-parse --short HEAD 2>/dev/null || echo unknown)}; baseline=$script_dir/Benchmarks/Baselines/wire-baseline.json; mkdir -p "$out_dir"
 command -v taskset >/dev/null 2>&1 || { echo "BENCHMARK WIRE FAIL: taskset not found (install util-linux)" >&2; exit 1; }
-binary=$script_dir/.build/release/WireBenchmark; [ -x "$binary" ] || (cd "$script_dir" && swift build -c release --product WireBenchmark)
+(cd "$script_dir" && swift build -c release --product WireBenchmark)
+binary_dir=$(cd "$script_dir" && swift build -c release --product WireBenchmark --show-bin-path)
+binary="$binary_dir/WireBenchmark"
+[ -x "$binary" ] || { echo "BENCHMARK WIRE FAIL: WireBenchmark product not found at $binary" >&2; exit 1; }
 for i in 1 2 3 4 5; do taskset -c 0 "$binary" > "$out_dir/run-$i.json" 2>/dev/null || { echo "BENCHMARK WIRE FAIL: run $i failed" >&2; exit 1; }; done
 WIRE_TOOLS="$script_dir/Support/benchmark-wire.mjs" node --input-type=module - "$out_dir" "$baseline" <<'JS'
 import fs from "node:fs";

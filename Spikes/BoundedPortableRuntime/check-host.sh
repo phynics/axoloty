@@ -63,11 +63,12 @@ const line=lines.find(value=>value.trim().startsWith("{"));
 if (!line) process.exit(2);
 process.stdout.write(line.trim());
 ' "$artifact/probe.log")
-release_binary=$(find "$probe/.build" -type f -path '*/release/bounded-runtime-probe' -print -quit)
-release_bytes=0
-if [ -n "$release_binary" ]; then
-    release_bytes=$(stat -c '%s' "$release_binary")
-fi
+release_bin_dir=$(run_swift swift build --configuration release \
+    --package-path /workspace/Spikes/BoundedPortableRuntime \
+    --cache-path /workspace/.swiftpm-cache --disable-automatic-resolution --show-bin-path)
+release_binary="$release_bin_dir/bounded-runtime-probe"
+[ -x "$release_binary" ] || { echo "release probe binary not found at $release_binary" >&2; exit 1; }
+release_bytes=$(stat -c '%s' "$release_binary")
 compile_seconds=$(cat "$time_file")
 
 PROBE_JSON="$probe_json" CANDIDATE_SHA="$candidate" COMPILE_SECONDS="$compile_seconds" \
