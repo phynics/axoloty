@@ -28,17 +28,7 @@ extension ProtocolExecutor {
         default:
             event = nil
         }
-        guard let event else { return nil }
-
-        var output = [UInt8](repeating: 0, count: 1024)
-        guard let length = output.withUnsafeMutableBufferPointer({ buffer -> Int? in
-            guard let baseAddress = buffer.baseAddress else { return nil }
-            var writer = WireWriter(buffer: baseAddress, capacity: buffer.count)
-            guard (try? event.encode(to: &writer)) != nil else { return nil }
-            return writer.position
-        }) else { return nil }
-        output.removeSubrange(length..<output.count)
-        return output
+        return try? event?.encodedBytes(capacity: 1024)
     }
 
     func receipt(for outcome: ProtocolProcessOutcome) -> RuntimeReceipt {

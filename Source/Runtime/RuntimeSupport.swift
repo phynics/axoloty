@@ -60,6 +60,36 @@ final class RuntimeOverflowGate: Sendable {
     }
 }
 
+extension OwnedWireEvent {
+    /// Encodes this event into a new, exactly sized byte array.
+    ///
+    /// Package-visible so first-party runtime modules share one owned-event
+    /// encoder without this becoming public API.
+    ///
+    /// - Parameter capacity: The largest encoding accepted, in bytes.
+    /// - Returns: The encoded JSON payload.
+    /// - Throws: ``WireEncodeError/bufferOverflow`` if the encoding exceeds `capacity`.
+    package func encodedBytes(
+        capacity: Int = WireBufferConfig.maxPayloadSize
+    ) throws(WireEncodeError) -> [UInt8] {
+        var output = [UInt8](repeating: 0, count: capacity)
+        var result: Result<Int, WireEncodeError> = .failure(.bufferOverflow)
+        output.withUnsafeMutableBufferPointer { buffer in
+            guard let baseAddress = buffer.baseAddress else { return }
+            var writer = WireWriter(buffer: baseAddress, capacity: buffer.count)
+            do throws(WireEncodeError) {
+                try encode(to: &writer)
+                result = .success(writer.position)
+            } catch {
+                result = .failure(error)
+            }
+        }
+        let length = try result.get()
+        output.removeSubrange(length..<output.count)
+        return output
+    }
+}
+
 extension ByteSlice {
     /// Package-visible so the transport adapter can compare a borrowed route
     /// against a literal without this becoming public API.

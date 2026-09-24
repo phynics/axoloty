@@ -412,7 +412,7 @@ private func generatedRoute(namespace: String, sourceID: ObjectID) -> [UInt8]? {
     var result = Array("coaty/3/".utf8)
     result.append(contentsOf: namespace.utf8)
     result.append(contentsOf: "/IOV/".utf8)
-    result.append(contentsOf: uuidBytes(sourceID.uuid))
+    result.append(contentsOf: CoatyRoute.uuidString(sourceID.uuid).utf8)
     return result.count <= WireBufferConfig.maxTopicLength ? result : nil
 }
 
@@ -436,37 +436,11 @@ private func validatedExternalRoute(_ route: [UInt8], namespace: String) -> [UIn
     return route
 }
 
-private func uuidBytes(_ uuid: UUID16) -> [UInt8] {
-    let bytes = withUnsafeBytes(of: uuid.bytes) { Array($0) }
-    let hex = Array("0123456789abcdef".utf8)
-    var result: [UInt8] = []
-    result.reserveCapacity(36)
-    for index in 0..<16 {
-        if index == 4 || index == 6 || index == 8 || index == 10 { result.append(0x2D) }
-        result.append(hex[Int(bytes[index] >> 4)])
-        result.append(hex[Int(bytes[index] & 0x0F)])
-    }
-    return result
-}
-
 private func encodeAdvertise(objectBytes: [UInt8]) -> [UInt8] {
     guard let fields = try? OwnedAdvertiseWireData(object: objectBytes, privateData: nil) else {
         return []
     }
-    var output = [UInt8](repeating: 0, count: WireBufferConfig.maxPayloadSize)
-    var length = 0
-    output.withUnsafeMutableBufferPointer { buffer in
-        guard let base = buffer.baseAddress else { return }
-        var writer = WireWriter(buffer: base, capacity: buffer.count)
-        do throws(WireEncodeError) {
-            try OwnedWireEvent.advertise(fields).encode(to: &writer)
-            length = writer.position
-        } catch {
-            length = 0
-        }
-    }
-    output.removeSubrange(length..<output.count)
-    return output
+    return (try? OwnedWireEvent.advertise(fields).encodedBytes()) ?? []
 }
 
 private func encodeAssociate(source: ObjectID, actor: ObjectID, intent: RoutingIntent) -> [UInt8] {
@@ -478,41 +452,14 @@ private func encodeAssociate(source: ObjectID, actor: ObjectID, intent: RoutingI
         updateRate: intent.updateRate.map(Int.init)
     )
     guard let fields else { return [] }
-    var output = [UInt8](repeating: 0, count: WireBufferConfig.maxPayloadSize)
-    var length = 0
-    output.withUnsafeMutableBufferPointer { buffer in
-        guard let base = buffer.baseAddress else { return }
-        var writer = WireWriter(buffer: base, capacity: buffer.count)
-        do throws(WireEncodeError) {
-            try OwnedWireEvent.associate(fields).encode(to: &writer)
-            length = writer.position
-        } catch {
-            length = 0
-        }
-    }
-    output.removeSubrange(length..<output.count)
-    return output
+    return (try? OwnedWireEvent.associate(fields).encodedBytes()) ?? []
 }
 
 private func encodeDeadvertise(objectID: ObjectID) -> [UInt8] {
-    var output = [UInt8](repeating: 0, count: 128)
-    var length = 0
-    output.withUnsafeMutableBufferPointer { buffer in
-        guard let base = buffer.baseAddress else { return }
-        var writer = WireWriter(buffer: base, capacity: buffer.count)
-        let encodedID = Array(String(decoding: uuidBytes(objectID.uuid), as: UTF8.self).utf8)
-        guard let deadvertise = try? OwnedDeadvertiseWireData(
-            objectIds: Array("[\"\(String(decoding: encodedID, as: UTF8.self))\"]".utf8)
-        ) else { return }
-        do throws(WireEncodeError) {
-            try OwnedWireEvent.deadvertise(deadvertise).encode(to: &writer)
-            length = writer.position
-        } catch {
-            length = 0
-        }
-    }
-    output.removeSubrange(length..<output.count)
-    return output
+    guard let deadvertise = try? OwnedDeadvertiseWireData(
+        objectIds: Array("[\"\(CoatyRoute.uuidString(objectID.uuid))\"]".utf8)
+    ) else { return [] }
+    return (try? OwnedWireEvent.deadvertise(deadvertise).encodedBytes(capacity: 128)) ?? []
 }
 
 private func decodeAdvertisedEndpoint(_ bytes: [UInt8]) -> RoutingEndpoint? {
