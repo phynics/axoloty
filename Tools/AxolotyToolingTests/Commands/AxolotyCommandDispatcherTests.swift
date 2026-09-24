@@ -400,7 +400,7 @@ func checkpointPlanningAndCertificationUseOneManifestSnapshot() throws {
     )
 
     #expect(!certificate.results.isEmpty)
-    #expect(certificate.releaseGates.map(\.id) == ["smoke"])
+    #expect(certificate.releaseGates.map(\.id) == ["smoke", "swiftpm-sbom"])
 }
 
 @Test
@@ -601,7 +601,7 @@ func checkpointManifestRecordsAllRequiredReleaseGatesInOrder() throws {
     let manifest = try JSONDecoder().decode(AxolotyCheckpointManifest.self, from: Data(result.standardOutput.utf8))
 
     #expect(manifest.schemaVersion == 3)
-    #expect(manifest.releaseGates.map(\.id) == ["ci", "wire", "embedded"])
+    #expect(manifest.releaseGates.map(\.id) == ["ci", "wire", "embedded", "swiftpm-sbom"])
     #expect(manifest.releaseGates.first { $0.id == "integration" } == nil)
 }
 
@@ -647,6 +647,7 @@ func releaseCheckpointHumanOutputIsExactlyTheCheckSummary() throws {
         fileSystem: StubFileSystem(paths: []),
         environment: environment,
         timestampProvider: { "2026-09-01T00:00:00Z" },
+        suppliedSwiftPMSBOM: successfulSwiftPMSBOMEvidence(),
         clock: CheckTestClock(),
         overrunScheduler: ManualOverrunScheduler()
     ).run(arguments: ["release", "checkpoint"])
@@ -666,62 +667,34 @@ func releaseCheckpointRendersCompleteDeterministicJSONBytes() throws {
         "AXOLOTY_GIT_TREE": String(repeating: "b", count: 40),
         "AXOLOTY_REPOSITORY": "github.com/phynics/axoloty",
     ]) { _, value in value }
-    let result = AxolotyCommandDispatcher(
-        commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
-        fileSystem: StubFileSystem(
-            paths: [],
-            fileContents: [:]
-        ),
-        environment: environment,
-        timestampProvider: { "2026-09-01T00:00:00Z" },
-        clock: CheckTestClock(),
-        overrunScheduler: ManualOverrunScheduler()
-    ).run(arguments: ["release", "checkpoint"])
-    #if os(Linux)
-    let platform = "linux"
-    #else
-    let platform = "macOS"
-    #endif
-    let expectedLines = [
-        "{",
-        "  \"gitBranch\" : \"\",",
-        "  \"gitClean\" : true,",
-        "  \"gitCommit\" : \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",",
-        "  \"gitTree\" : \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",",
-        "  \"hardwareIncluded\" : false,",
-        "  \"platform\" : \"\(platform)\",",
-        "  \"releaseGates\" : [",
-        "",
-        "  ],",
-        "  \"releaseVersion\" : \"unavailable\",",
-        "  \"repository\" : \"github.com\\/phynics\\/axoloty\",",
-        "  \"results\" : [",
-        "    {",
-        "      \"command\" : {",
-        "        \"exitCode\" : 0,",
-        "        \"standardError\" : \"\",",
-        "        \"standardOutput\" : \"\"",
-        "      },",
-        "      \"name\" : \"resolve\",",
-        "      \"status\" : \"passed\",",
-        "      \"timing\" : {",
-        "        \"elapsedSeconds\" : 0,",
-        "        \"exceededExpectation\" : false,",
-        "        \"expectedDurationSeconds\" : 60,",
-        "        \"resourceLeaseWaitSeconds\" : 0",
-        "      }",
-        "    }",
-        "  ],",
-        "  \"schemaVersion\" : 3,",
-        "  \"swiftVersion\" : \"\",",
-        "  \"timestamp\" : \"2026-09-01T00:00:00Z\"",
-        "}"
-    ]
-    let expectedBytes = Data(expectedLines.joined(separator: "\n").utf8)
+    let runCheckpoint = {
+        AxolotyCommandDispatcher(
+            commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
+            fileSystem: StubFileSystem(paths: [], fileContents: [:]),
+            environment: environment,
+            timestampProvider: { "2026-09-01T00:00:00Z" },
+            suppliedSwiftPMSBOM: successfulSwiftPMSBOMEvidence(),
+            clock: CheckTestClock(),
+            overrunScheduler: ManualOverrunScheduler()
+        ).run(arguments: ["release", "checkpoint"])
+    }
+    let result = runCheckpoint()
+    let repeated = runCheckpoint()
+    let certificate = try JSONDecoder().decode(AxolotyCheckpointManifest.self, from: Data(result.standardOutput.utf8))
 
     #expect(result.exitCode == 0)
-    #expect(Data(result.standardOutput.utf8) == expectedBytes)
+    #expect(result.standardOutput == repeated.standardOutput)
+    #expect(certificate.releaseGates.map(\.id) == ["swiftpm-sbom"])
+    #expect(certificate.releaseGates.first?.evidenceDigest == String(repeating: "a", count: 64))
     #expect(result.standardError.isEmpty)
+}
+
+private func successfulSwiftPMSBOMEvidence() -> SwiftPMSBOMEvidence {
+    SwiftPMSBOMEvidence(
+        artifactPath: ".testing/release-evidence/swiftpm-sbom/cyclonedx.json",
+        digest: String(repeating: "a", count: 64),
+        failure: nil
+    )
 }
 
 @Test

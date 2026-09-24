@@ -132,11 +132,21 @@ struct ReleaseEvidenceBundle: Equatable, Sendable {
 struct ReleaseEvidenceInput: Equatable, Sendable {
     /// Bundles keyed by their release-gate identifier.
     let bundles: [String: ReleaseEvidenceBundle]
+    /// SwiftPM's generated dependency inventory, when checkpointed.
+    let swiftPMSBOM: SwiftPMSBOMEvidence?
 
     /// Creates release evidence input.
-    init(bundles: [String: ReleaseEvidenceBundle] = [:]) {
+    init(bundles: [String: ReleaseEvidenceBundle] = [:], swiftPMSBOM: SwiftPMSBOMEvidence? = nil) {
         self.bundles = bundles
+        self.swiftPMSBOM = swiftPMSBOM
     }
+}
+
+/// The generated root-package SBOM and its validation result.
+struct SwiftPMSBOMEvidence: Equatable, Sendable {
+    let artifactPath: String
+    let digest: String?
+    let failure: String?
 }
 
 /// The pure result of certifying a checkpoint's in-process evidence.
@@ -170,7 +180,7 @@ struct AxolotyCheckpointCertification: Sendable {
         }
         let hardwareIncluded = !hardwareResults.isEmpty
             && hardwareResults.allSatisfy { $0.status == .passed }
-        let gates = manifest.releaseGates.map { gate in
+        var gates = manifest.releaseGates.map { gate in
             disposition(
                 gate: gate,
                 manifest: manifest,
@@ -179,6 +189,15 @@ struct AxolotyCheckpointCertification: Sendable {
                 evidence: evidence.bundles[gate],
                 expectedProducerID: expectedProducerID
             )
+        }
+        if let sbom = evidence.swiftPMSBOM {
+            gates.append(AxolotyCheckpointGate(
+                id: "swiftpm-sbom",
+                result: sbom.failure == nil ? .executed : .failed,
+                evidence: sbom.artifactPath,
+                evidenceDigest: sbom.digest,
+                note: sbom.failure ?? "SwiftPM CycloneDX SBOM matches Package.resolved"
+            ))
         }
         let certificate = AxolotyCheckpointManifest(
             releaseVersion: metadata.releaseVersion,
@@ -335,6 +354,7 @@ struct AxolotyReleaseCommands: Sendable {
     private let resolver: Result<AxolotyCanonicalTestPlanResolver, AxolotyCanonicalTestManifestError>
     private let executor: AxolotyCheckExecutor
     private let timestampProvider: @Sendable () -> String
+    private let suppliedSwiftPMSBOM: SwiftPMSBOMEvidence?
 
     init(
         commandRunner: any AxolotyCheckCommandRunning,
@@ -345,6 +365,7 @@ struct AxolotyReleaseCommands: Sendable {
         outputMode: AxolotyCommandOutputMode,
         resolver: Result<AxolotyCanonicalTestPlanResolver, AxolotyCanonicalTestManifestError>,
         executor: AxolotyCheckExecutor,
+        suppliedSwiftPMSBOM: SwiftPMSBOMEvidence? = nil,
         timestampProvider: @escaping @Sendable () -> String = {
             ISO8601DateFormatter().string(from: Date())
         }
@@ -357,6 +378,7 @@ struct AxolotyReleaseCommands: Sendable {
         self.outputMode = outputMode
         self.resolver = resolver
         self.executor = executor
+        self.suppliedSwiftPMSBOM = suppliedSwiftPMSBOM
         self.timestampProvider = timestampProvider
     }
 
@@ -384,7 +406,10 @@ struct AxolotyReleaseCommands: Sendable {
             }
             let results = execute(plan)
             let metadata = collectMetadata(gitCommands: gitCommands)
-            let evidence = loadEvidence(for: resolved.manifest)
+            let evidence = loadEvidence(
+                for: resolved.manifest,
+                swiftPMSBOM: suppliedSwiftPMSBOM ?? generateSwiftPMSBOM()
+            )
             let certified = AxolotyCheckpointCertification().certify(
                 manifest: resolved.manifest,
                 results: results,
@@ -446,7 +471,10 @@ struct AxolotyReleaseCommands: Sendable {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    private func loadEvidence(for manifest: AxolotyCanonicalTestManifest) -> ReleaseEvidenceInput {
+    private func loadEvidence(
+        for manifest: AxolotyCanonicalTestManifest,
+        swiftPMSBOM: SwiftPMSBOMEvidence?
+    ) -> ReleaseEvidenceInput {
         var bundles: [String: ReleaseEvidenceBundle] = [:]
         for gate in manifest.releaseGates {
             let normalized = gate.uppercased().replacingOccurrences(of: "-", with: "_")
@@ -512,7 +540,68 @@ struct AxolotyReleaseCommands: Sendable {
                 state: .loaded
             )
         }
-        return ReleaseEvidenceInput(bundles: bundles)
+        return ReleaseEvidenceInput(bundles: bundles, swiftPMSBOM: swiftPMSBOM)
+    }
+
+    private func generateSwiftPMSBOM() -> SwiftPMSBOMEvidence {
+        let relativeDirectory = ".testing/release-evidence/swiftpm-sbom"
+        let outputDirectory = repositoryRoot.appendingPathComponent(relativeDirectory, isDirectory: true)
+        do {
+            if fileSystem.exists(atPath: outputDirectory.path) {
+                try FileManager.default.removeItem(at: outputDirectory)
+            }
+            try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+        } catch {
+            return SwiftPMSBOMEvidence(
+                artifactPath: relativeDirectory,
+                digest: nil,
+                failure: "unable to prepare SwiftPM SBOM output: \(error.localizedDescription)"
+            )
+        }
+
+        let command = AxolotyCommandPlan(
+            executable: "swift",
+            arguments: [
+                "package", "generate-sbom", "--disable-automatic-resolution",
+                "--sbom-spec", "cyclonedx", "--sbom-output-dir", relativeDirectory,
+            ],
+            timeoutSeconds: 300
+        )
+        let result = commandRunner.run(command)
+        guard result.exitCode == 0 else {
+            let diagnostic = result.standardError.trimmingCharacters(in: .whitespacesAndNewlines)
+            let reason = diagnostic.isEmpty ? "exit code \(result.exitCode)" : diagnostic
+            return SwiftPMSBOMEvidence(
+                artifactPath: relativeDirectory,
+                digest: nil,
+                failure: "SwiftPM SBOM generation failed: \(reason)"
+            )
+        }
+
+        do {
+            let files = try FileManager.default.contentsOfDirectory(at: outputDirectory, includingPropertiesForKeys: nil)
+                .filter { $0.pathExtension == "json" }
+            guard files.count == 1 else {
+                throw AxolotySwiftPMSBOMError.malformedSBOM
+            }
+            let sbom = try Data(contentsOf: files[0])
+            let lockPath = repositoryRoot.appendingPathComponent("Package.resolved").path
+            guard let resolved = (fileSystem as? any ReleaseEvidenceByteLoading)?.data(atPath: lockPath) else {
+                throw AxolotyReleaseEvidenceError.unreadable(lockPath)
+            }
+            try AxolotySwiftPMSBOMValidator().validate(sbom: sbom, resolved: resolved)
+            return SwiftPMSBOMEvidence(
+                artifactPath: "\(relativeDirectory)/\(files[0].lastPathComponent)",
+                digest: AxolotySHA256().hash(sbom),
+                failure: nil
+            )
+        } catch {
+            return SwiftPMSBOMEvidence(
+                artifactPath: relativeDirectory,
+                digest: nil,
+                failure: error.localizedDescription
+            )
+        }
     }
 
     private func execute(_ plan: AxolotyCheckPlan) -> [AxolotyCheckResult] {
