@@ -27,6 +27,14 @@ project's MIT license. Transitive dependencies recorded in `Package.resolved`
 swift-nio-transport-services, swift-system, swift-docc-symbolkit) are brought
 in by the SwiftNIO family and swift-docc-plugin and inherit Apache-2.0.
 
+`make checkpoint` also generates a SwiftPM CycloneDX SBOM for the root package
+and verifies that every external dependency package in the SBOM has a matching
+identity, version, and revision in `Package.resolved`. The checkpoint writes
+the SBOM under `.testing/release-evidence/swiftpm-sbom/` and records its path
+and digest in the checkpoint manifest. This machine-readable release inventory
+complements this human-reviewed audit; it does not replace the purpose and
+dependency notes below.
+
 ## Per-dependency notes
 
 ### mqtt-nio (`2.13.0`, Apache-2.0)

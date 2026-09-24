@@ -493,6 +493,40 @@ func checkpointCertificationHardwareInclusionComesFromExecutedResults() {
 }
 
 @Test
+func checkpointCertificationRecordsValidatedSwiftPMSBOMArtifact() {
+    let sbom = SwiftPMSBOMEvidence(
+        artifactPath: ".testing/release-evidence/swiftpm-sbom/cyclonedx.json",
+        digest: String(repeating: "a", count: 64),
+        failure: nil
+    )
+    let passed = AxolotyCheckpointCertification().certify(
+        manifest: certificationManifest(),
+        results: [AxolotyCheckResult(name: "checkpoint-node", status: .passed)],
+        metadata: certificationMetadata(),
+        evidence: ReleaseEvidenceInput(swiftPMSBOM: sbom)
+    )
+    let gate = passed.manifest.releaseGates.first { $0.id == "swiftpm-sbom" }
+
+    #expect(gate?.result == .executed)
+    #expect(gate?.evidence == sbom.artifactPath)
+    #expect(gate?.evidenceDigest == sbom.digest)
+    #expect(passed.exitCode == 0)
+
+    let failed = AxolotyCheckpointCertification().certify(
+        manifest: certificationManifest(),
+        results: [AxolotyCheckResult(name: "checkpoint-node", status: .passed)],
+        metadata: certificationMetadata(),
+        evidence: ReleaseEvidenceInput(swiftPMSBOM: SwiftPMSBOMEvidence(
+            artifactPath: ".testing/release-evidence/swiftpm-sbom",
+            digest: nil,
+            failure: "mismatch"
+        ))
+    )
+    #expect(failed.manifest.releaseGates.first { $0.id == "swiftpm-sbom" }?.result == .failed)
+    #expect(failed.exitCode == 1)
+}
+
+@Test
 func checkpointCertificationPreservesBinaryArtifactBytesAndExactSubject() throws {
     let binary = Data([0x00, 0xFF, 0x10, 0x80, 0x0A])
     let bundle = try makeEvidenceBundle(

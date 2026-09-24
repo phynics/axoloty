@@ -60,6 +60,7 @@ public struct AxolotyCommandDispatcher: Sendable {
         cancellation: AxolotyCommandCancellation? = nil,
         eventSink: (@Sendable (AxolotyCheckExecutionEvent) -> Void)? = nil,
         timestampProvider: (@Sendable () -> String)? = nil,
+        suppliedSwiftPMSBOM: SwiftPMSBOMEvidence? = nil,
         clock: any AxolotyTimingClock = AxolotyContinuousTimingClock(),
         overrunScheduler: any AxolotyOverrunScheduling = DispatchOverrunScheduler()
     ) {
@@ -163,6 +164,7 @@ public struct AxolotyCommandDispatcher: Sendable {
             outputMode: runnerConfiguration.outputMode,
             resolver: planResolution,
             executor: executor,
+            suppliedSwiftPMSBOM: suppliedSwiftPMSBOM,
             timestampProvider: timestampProvider ?? {
                 ISO8601DateFormatter().string(from: Date())
             }
