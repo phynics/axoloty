@@ -35,7 +35,7 @@ enum WireValueReaderLimits {
 ///
 /// The view can only be borrowed by the visitor that receives it. It has no
 /// owned storage and cannot be retained across the visitor boundary.
-public struct WireValueView: ~Copyable {
+public struct WireValueView: ~Copyable, ~Sendable {
     @usableFromInline let bytes: UnsafeRawPointer
     /// The encoded value length.
     public let length: Int
@@ -142,7 +142,7 @@ public struct WireValueView: ~Copyable {
 ///
 /// This is a small tokenizer-backed seam for portable consumers. It exposes
 /// child ranges without introducing a second JSON parser in those consumers.
-public struct WireValueReader: ~Copyable {
+public struct WireValueReader: ~Copyable, ~Sendable {
     private let bytes: UnsafeRawPointer
     /// The number of bytes in the value.
     public let length: Int

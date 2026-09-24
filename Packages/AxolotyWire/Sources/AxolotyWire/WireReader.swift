@@ -21,7 +21,7 @@ public enum WireObjectFieldKind: UInt8, Sendable {
 }
 
 /// A borrowed top-level object field produced by ``WireReader/withObjectFields(_:)``.
-public struct WireObjectField: ~Copyable {
+public struct WireObjectField: ~Copyable, ~Sendable {
     @usableFromInline let bytes: UnsafeRawPointer
     /// The decoded key content range, excluding JSON quotes.
     public let keyRange: Range<Int>
@@ -233,7 +233,7 @@ func wireSemanticKeysEqual(bytes: UnsafeBufferPointer<UInt8>, lhs: Range<Int>, r
 }
 
 /// A Foundation-free reader which tokenizes once into bounded borrowed slots.
-public struct WireReader {
+public struct WireReader: ~Sendable {
     @usableFromInline let bytes: UnsafeRawPointer
     public let length: Int
     @usableFromInline let index: WireFieldIndex

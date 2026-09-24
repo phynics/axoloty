@@ -2,13 +2,13 @@
 set -euo pipefail
 
 module_path="${1:?usage: $0 <swift-module-search-path>}"
-fixture="$(dirname "$0")/borrowed-action-sendability-probe.swift"
+fixture="$(dirname "$0")/../lib/borrowed-action-sendability-probe.swift"
 diagnostics="$(mktemp)"
 trap 'rm -f "$diagnostics"' EXIT
 
 if swiftc -swift-version 6 -strict-concurrency=complete -typecheck \
     -I "$module_path" "$fixture" 2>"$diagnostics"; then
-    echo "borrowed action unexpectedly crossed an async isolation boundary" >&2
+    echo "a borrowed value unexpectedly crossed an async isolation boundary" >&2
     exit 1
 fi
 
@@ -18,4 +18,4 @@ if ! grep -Eqi 'sendable|task-isolated|escaping|non-sendable' "$diagnostics"; th
     exit 1
 fi
 
-echo "borrowed action boundary probe rejected as expected"
+echo "borrowed value isolation probe rejected as expected"

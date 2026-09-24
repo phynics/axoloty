@@ -51,7 +51,7 @@ public struct ProtocolFrame: Sendable, Equatable {
 /// This type intentionally is not `Sendable`. It is valid only while the
 /// source topic and payload buffers remain pinned. Call ``owned()`` before an
 /// asynchronous or isolation-domain boundary.
-public struct BorrowedProtocolFrame {
+public struct BorrowedProtocolFrame: ~Sendable {
     /// The complete borrowed topic buffer.
     public let topic: ByteSlice
     /// The event-type filter borrowed from the topic, if present.
