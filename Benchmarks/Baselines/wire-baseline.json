@@ -1,6 +1,6 @@
 {
   "environment": {
-    "swiftVersion": "Swift 6.3",
+    "swiftVersion": "Swift 6.4",
     "targetTriple": "x86_64-unknown-linux-gnu",
     "optimization": "release",
     "cpu": "model name : AMD Ryzen 3 PRO 3200G with Radeon Vega Graphics",

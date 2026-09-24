@@ -39,7 +39,7 @@ assert_no_host_targets() {
 root_consumer="$work/root-consumer"
 mkdir -p "$root_consumer/Sources/RootWireConsumer"
 cat >"$root_consumer/Package.swift" <<EOF
-// swift-tools-version:6.3
+// swift-tools-version:6.4
 import PackageDescription
 
 let package = Package(

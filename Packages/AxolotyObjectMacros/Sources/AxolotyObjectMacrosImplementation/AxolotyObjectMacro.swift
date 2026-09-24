@@ -184,13 +184,13 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
                 decode = "try fields.decode(\(literal(descriptor.wireName)), as: \(descriptor.type).self)"
             }
             return "self.\(descriptor.name) = \(decode)"
-        }.joined(separator: "\n            ")
+        }.joined(separator: "\n    ")
         let encoderStatements = descriptors.prefix(24).map { descriptor in
             if let defaultExpression = descriptor.defaultExpression {
                 return "try encoder.encodeDefault(\(descriptor.name), default: \(defaultExpression), forKey: \(literal(descriptor.wireName)))"
             }
             return "try \(descriptor.name).encode(to: &encoder, forKey: \(literal(descriptor.wireName)))"
-        }.joined(separator: "\n        ")
+        }.joined(separator: "\n    ")
         let decoderWitness = decoderStatements
         let encoderWitness = encoderStatements.isEmpty ? "" : encoderStatements
         let generated: DeclSyntax = """
@@ -231,6 +231,7 @@ public struct AxolotyObjectMacro: MemberMacro, ExtensionMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
+        guard declaration.is(StructDeclSyntax.self) else { return [] }
         let extensionDecl: DeclSyntax = "extension \(type): ObjectSchema {}"
         guard let extensionDecl = extensionDecl.as(ExtensionDeclSyntax.self) else { return [] }
         return [extensionDecl]

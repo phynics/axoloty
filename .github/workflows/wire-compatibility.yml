@@ -200,7 +200,7 @@ jobs:
       - name: Compute cache key
         if: steps.classify.outputs.protocol == '1' && steps.classify.outputs.exempt == '0'
         run: |
-          echo "SWIFT_CACHE_KEY=swiftpm-v2-6.3-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile', '.devcontainer/image-lock.json') }}" >> "$GITHUB_ENV"
+          echo "SWIFT_CACHE_KEY=swiftpm-v2-6.4-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile', '.devcontainer/image-lock.json') }}" >> "$GITHUB_ENV"
 
       - name: Setup container image
         if: steps.classify.outputs.protocol == '1' && steps.classify.outputs.exempt == '0'

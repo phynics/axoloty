@@ -855,7 +855,7 @@ public struct AxolotyGateEvidenceValidatorCatalog: Sendable {
     }
 
     /// Returns the registered validator, if the gate accepts envelope evidence.
-    public func validator(for gate: AxolotyReleaseGateID) -> (any GateEvidenceValidator)? {
+    public func validator(for gate: AxolotyReleaseGateID) -> any GateEvidenceValidator? {
         validators[gate]
     }
 }

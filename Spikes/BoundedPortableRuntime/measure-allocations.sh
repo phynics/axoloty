@@ -10,8 +10,12 @@ cases=${4:-"inline-initialization inline-warmed handler-initialization handler-w
 binary_name=${5:-bounded-runtime-probe}
 small_iterations=${6:-1}
 large_iterations=${7:-1000}
-binary=$(find "$probe/.build" -type f -path "*/release/$binary_name" -perm -111 -print -quit)
+cache_dir=${SPM_CACHE_DIR:-"${HOME}/.cache/coaty-swift/swiftpm/swift-6.4-linux"}
+binary_dir=$(swift build --package-path "$probe" --configuration release \
+    --cache-path "$cache_dir" --disable-automatic-resolution --show-bin-path)
+binary="$binary_dir/$binary_name"
 [ -n "$binary" ] || { echo "allocation probe binary not found" >&2; exit 1; }
+[ -x "$binary" ] || { echo "allocation probe binary not executable: $binary" >&2; exit 1; }
 command -v heaptrack >/dev/null 2>&1 || { echo "heaptrack not found" >&2; exit 1; }
 command -v heaptrack_print >/dev/null 2>&1 || { echo "heaptrack_print not found" >&2; exit 1; }
 

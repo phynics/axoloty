@@ -21,7 +21,7 @@ set -eu
 root_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 small_iters=${1:-1}
 large_iters=${2:-200}
-binary="$root_dir/.build/x86_64-unknown-linux-gnu/release/WireAllocation"
+cache_path=${SPM_CACHE_DIR:-"$HOME/.cache/coaty-swift/swiftpm/swift-6.4-linux"}
 small_profile=$(mktemp "${TMPDIR:-/tmp}/axoloty-wire-alloc-small.XXXXXX")
 large_profile=$(mktemp "${TMPDIR:-/tmp}/axoloty-wire-alloc-large.XXXXXX")
 trap 'rm -f "$small_profile" "$small_profile.gz" "$large_profile" "$large_profile.gz" 2>/dev/null || true' EXIT
@@ -34,9 +34,12 @@ fail() {
 command -v heaptrack >/dev/null 2>&1 || fail "heaptrack not found (needed in the axoloty-dev container)"
 command -v heaptrack_print >/dev/null 2>&1 || fail "heaptrack_print not found"
 
-[ -x "$binary" ] || (cd "$root_dir" && swift build -c release --product WireAllocation \
-    --cache-path "${SPM_CACHE_DIR:-$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux}" \
-    --disable-automatic-resolution >/dev/null)
+(cd "$root_dir" && swift build -c release --product WireAllocation \
+    --cache-path "$cache_path" --disable-automatic-resolution >/dev/null)
+binary_dir=$(cd "$root_dir" && swift build -c release --product WireAllocation \
+    --cache-path "$cache_path" --disable-automatic-resolution --show-bin-path)
+binary="$binary_dir/WireAllocation"
+[ -x "$binary" ] || fail "WireAllocation product not found at $binary"
 
 count_allocs() {
     # $1: profile path (without .gz). Prints the total allocation-call count.

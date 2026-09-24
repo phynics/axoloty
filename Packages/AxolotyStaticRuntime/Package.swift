@@ -1,4 +1,4 @@
-// swift-tools-version:6.3
+// swift-tools-version:6.4
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import CompilerPluginSupport
@@ -21,7 +21,7 @@ let package = Package(
         .package(path: "../AxolotyProtocol"),
         .package(path: "../AxolotyObjectModel"),
         .package(path: "../AxolotyWire"),
-        .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "603.0.0"),
+        .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "604.0.0"),
     ],
     targets: [
         .macro(

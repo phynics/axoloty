@@ -1,8 +1,8 @@
 # Dev/CI container for Axoloty.
 #
 # Based on the official Swift Docker image (Ubuntu Jammy variant). As of writing
-# (2026-07-12) the latest released Swift toolchain is 6.3 (confirmed on Docker
-# Hub - 6.4 has not been released yet). Verified: `podman pull swift:6.3-jammy`
+# (2026-09-24) the latest released Swift toolchain is 6.4 (confirmed on Docker
+# Hub - `swift:6.4-jammy` is published). Verified: `podman pull swift:6.4-jammy`
 # and `podman build` with this file succeed against docker.io/library/swift.
 #
 # This image intentionally does NOT COPY any project source in - the Axoloty
@@ -14,7 +14,7 @@
 # The image carries the host development tools (Swift, SwiftLint, mosquitto,
 # heaptrack). Firmware and the ESP32-C6 toolchain live in the dedicated
 # `axoloty-embedded` repository.
-ARG SWIFT_VERSION=6.3
+ARG SWIFT_VERSION=6.4
 ARG SWIFTLINT_VERSION=0.65.0
 ARG NODE_VERSION=22.17.1
 ARG CMAKE_VERSION=3.29.6

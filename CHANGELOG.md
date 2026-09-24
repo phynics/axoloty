@@ -11,10 +11,27 @@ fork, through CoatySwift 2.4.0, remain documented in the
 
 ### Added
 
+- The development and CI toolchain now uses Swift 6.4. All current package
+  manifests require Swift tools version 6.4, and canonical Linux builds use the
+  Swift Build default. CI caches Swift Build intermediates without final
+  products.
 - `ByteSlice.ownedBytes()` copies a borrowed slice into an owned `[UInt8]`,
   the copy the borrowed-value lifetime rules require before a suspension
   point. It replaces four private copies across `AxolotyWire`,
   `AxolotyProtocol`, and `AxolotySensorThings`.
+
+### Changed
+
+- Swift progress and timing parsers recognize Swift Build's whitespace-padded
+  step counters. Optional existential types use the Swift 6.4 `any X?` syntax.
+- SwiftSyntax is pinned to 604.0.0 to match the Swift 6.4 toolchain and report
+  macro-test failures through Swift Testing.
+
+### Fixed
+
+- The lifecycle matrix's monotonic millisecond clock no longer clamps
+  after 24 days of host uptime. The old `awk` format stopped deadlines from
+  advancing on long-running hosts.
 
 ### Fixed
 

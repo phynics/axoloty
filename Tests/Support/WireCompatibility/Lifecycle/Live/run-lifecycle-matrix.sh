@@ -43,7 +43,10 @@ monotonic_ms() {
     # fallback for macOS shell self-tests, where Bash's SECONDS is monotonic
     # for the lifetime of this process.
     if [ -r /proc/uptime ]; then
-        awk '{ printf "%d\n", $1 * 1000 }' /proc/uptime
+        # awk's %d conversion can clamp to a signed 32-bit integer on older
+        # implementations. Keep the millisecond uptime in a 64-bit decimal so
+        # deadlines continue advancing after the host has been up for 24 days.
+        awk '{ printf "%.0f\n", $1 * 1000 }' /proc/uptime
     else
         printf '%s000\n' "$SECONDS"
     fi

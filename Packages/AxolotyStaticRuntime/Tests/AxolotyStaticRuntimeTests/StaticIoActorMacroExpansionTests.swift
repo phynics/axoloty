@@ -20,7 +20,7 @@ func staticIoActorRejectsNonEnum() {
         struct Handler {}
         """,
         diagnostics: [
-            DiagnosticSpec(message: "@StaticIoActor can only annotate an enum", line: 2, column: 1),
+            DiagnosticSpec(message: "@StaticIoActor can only annotate an enum", line: 1, column: 1),
         ],
         macros: staticIoMacros
     )

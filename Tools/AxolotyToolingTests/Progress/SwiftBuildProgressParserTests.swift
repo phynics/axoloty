@@ -77,6 +77,14 @@ struct SwiftBuildProgressParserTests {
     }
 
     @Test
+    func swiftBuildSpacedCountersMapToRunningProgress() throws {
+        let progress = try #require(parse("[59 / 1664] SwiftSyntaxBuilder"))
+        #expect(progress.phase == .running)
+        #expect(progress.completed == 59)
+        #expect(progress.total == 1664)
+    }
+
+    @Test
     func malformedCountersAreIgnored() throws {
         #expect(parse("[10/10] Compiling Foo Bar.swift") != nil)
         #expect(parse("[12/10] Compiling Foo Bar.swift") == nil)

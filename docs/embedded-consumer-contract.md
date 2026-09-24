@@ -63,15 +63,16 @@ $CONSUMER_CORE_TOOLS_SCRATCH/checkouts/swift-json/Sources/_JSONCore
 
 Building `AxolotyStaticRuntime` links the macro executable as a build
 prerequisite. Building only the macro target compiles its objects but does not
-link the executable with SwiftPM 6.3. Locate the output directory with the same
+link the executable with SwiftPM 6.4. Locate the output directory with the same
 package and scratch arguments plus `swift build --show-bin-path`.
 
 The executable name depends on the build system. SwiftPM's native build system
 emits `staticRuntimeMacro.executable`, which ends in `-tool`. Swift Build, the
-default on an Apple host from Swift 6.4, emits the bare target name without
-that suffix. A consumer accepts either, preferring the contract spelling; the
-preparation report always carries the resolved absolute path, so a consumer
-that reads the report needs no name handling of its own. Load it with:
+SwiftPM default from 6.4 across supported platforms, emits the bare target name
+without that suffix. A consumer accepts either, preferring the contract
+spelling; the preparation report always carries the resolved absolute path, so
+a consumer that reads the report needs no name handling of its own. Load it
+with:
 
 ```text
 -load-plugin-executable <absolute-executable-path>#AxolotyStaticRuntimeMacrosImplementation
@@ -123,7 +124,7 @@ that it writes to `--output`. It does not inspect `Tests/Support`, firmware
 files, ESP-IDF, or hardware. Scratch and output paths must be outside Core.
 
 The report has schema version 1 and contains the Core commit and dirty state,
-the contract SHA-256, Swift 6.3 compiler flags, the five portable source
+the contract SHA-256, Swift 6.4 compiler flags, the five portable source
 directories in dependency order, the locked `_JSONCore` revision and source,
 and the static-runtime macro executable and scratch directory. Consumers must
 treat paths as absolute and reject reports with an unknown schema or a path

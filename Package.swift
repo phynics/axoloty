@@ -1,4 +1,4 @@
-// swift-tools-version:6.3
+// swift-tools-version:6.4
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import CompilerPluginSupport
@@ -68,7 +68,7 @@ let package = Package(
         .package(url: "https://github.com/FlineDev/ErrorKit.git", exact: "1.2.1"),
         .package(url: "https://github.com/phynics/swift-json.git", exact: "2.5.3"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin.git", from: "1.5.0"),
-        .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "603.0.0"),
+        .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "604.0.0"),
     ],
     targets: [
         .macro(

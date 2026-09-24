@@ -12,7 +12,7 @@ internal struct AxolotyEmbeddedConsumerContractValidator {
     private static let expectedRepositoryIdentity = "phynics/axoloty"
     private static let expectedRepositoryURL = "https://github.com/phynics/axoloty.git"
     private static let expectedRevisionFormat = "git-commit-sha1"
-    private static let expectedSwiftToolsVersion = "6.3"
+    private static let expectedSwiftToolsVersion = "6.4"
     private static let expectedSwiftLanguageMode = 6
     private static let expectedFeatures = ["Embedded", "Lifetimes"]
     private static let expectedCompilerFlags = [

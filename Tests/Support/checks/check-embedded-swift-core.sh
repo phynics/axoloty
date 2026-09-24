@@ -312,7 +312,7 @@ check_unresolved_symbols() {
     unresolved_symbols=$(awk '$1 ~ /^[UuWwVv]$/ { print $2 } $2 ~ /^[UuWwVv]$/ { print $3 }' "$workdir/linked-symbols.txt")
     unexpected_symbols=$(for symbol in $unresolved_symbols; do
         case "$symbol" in
-            \$e*|_swift_*|swift_*|__adddf3|__ashldi3|__divdf3|__floatunsidf|__lshrdi3|__muldf3|__nedf2|__stack_chk_fail|__stack_chk_guard|__udivdi3|arc4random_buf|free|memcpy|memmove|memset|posix_memalign) ;;
+            \$e*|_swift_*|swift_*|__swift_assignWithCopy_strong|__swift_assignWithTake_strong|__swift_destroy_strong|__swift_initWithCopy_strong|__swift_memcpy4_4|__adddf3|__ashldi3|__divdf3|__floatunsidf|__lshrdi3|__muldf3|__nedf2|__stack_chk_fail|__stack_chk_guard|__udivdi3|arc4random_buf|free|memcpy|memmove|memset|posix_memalign) ;;
             *) printf '%s\n' "$symbol" ;;
         esac
     done)

@@ -612,7 +612,7 @@ function resourceEvidenceFixture(t) {
   const makeRun = (environment, runID) => ({
     runID,
     sourceCommit: subject.commit,
-    compiler: environment === "host" ? "Swift 6.3" : "Embedded Swift 6.3",
+    compiler: environment === "host" ? "Swift 6.4" : "Embedded Swift 6.4",
     optimization: "release",
     policyDigest,
     board: environment === "host" ? "linux-host" : "esp32c6",

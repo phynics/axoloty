@@ -106,7 +106,7 @@ process.stdout.write(String(value) + "\\n");
   fs.chmodSync(jq, 0o755);
 }
 
-function runSetupActionScenario({ availableTag = "", publisherInProgress = "false", candidateBackoffSeconds = "0", availableAfterFirstCandidate = false, candidateTagPrefix = "swift-6.3-pr-42" } = {}) {
+function runSetupActionScenario({ availableTag = "", publisherInProgress = "false", candidateBackoffSeconds = "0", availableAfterFirstCandidate = false, candidateTagPrefix = "swift-6.4-pr-42" } = {}) {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-setup-image-"));
   const lockFile = path.join(tempRoot, "image-lock.json");
   const runtimeLog = path.join(tempRoot, "runtime.log");
@@ -172,7 +172,7 @@ esac
       REQUIRE_CURRENT_BUILD_INPUTS: "true",
       PUBLISHER_IN_PROGRESS: publisherInProgress,
       CANDIDATE_BACKOFF_SECONDS: candidateBackoffSeconds,
-      CONTENT_TAG_PREFIX: "swift-6.3",
+      CONTENT_TAG_PREFIX: "swift-6.4",
       CANDIDATE_TAG_PREFIX: candidateTagPrefix,
       FAKE_AVAILABLE_TAG: availableTag,
       FAKE_AVAILABLE_AFTER_FIRST: availableAfterFirstCandidate ? "1" : "0",
@@ -219,7 +219,7 @@ test("image freshness is keyed by immutable inputs and can skip a current image"
 test("setup action falls back after two missing candidate probes", () => {
   const scenario = runSetupActionScenario();
   assert.equal(scenario.result.status, 0, scenario.result.stderr);
-  const candidatePulls = scenario.log.filter((line) => line === `pull ghcr.io/test/axoloty-dev:swift-6.3-pr-42-${scenario.actualHash}`);
+  const candidatePulls = scenario.log.filter((line) => line === `pull ghcr.io/test/axoloty-dev:swift-6.4-pr-42-${scenario.actualHash}`);
   assert.equal(candidatePulls.length, 2, `${scenario.result.stderr}\n${scenario.log.join("\\n")}`);
   assert.equal(scenario.log.at(-1), "build");
   assert.match(scenario.result.stderr, /candidate probes=2/);
@@ -229,24 +229,24 @@ test("setup action falls back after two missing candidate probes", () => {
 
 test("setup action prefers an available canonical content-keyed image", () => {
   const hash = imageInputHash();
-  const availableTag = `ghcr.io/test/axoloty-dev:swift-6.3-${hash}`;
+  const availableTag = `ghcr.io/test/axoloty-dev:swift-6.4-${hash}`;
   const available = runSetupActionScenario({ availableTag });
   assert.equal(available.result.status, 0, available.result.stderr);
   assert.ok(available.log.includes(`pull ${availableTag}`));
   assert.ok(available.log.includes(`tag ${availableTag} axoloty-dev`));
-  assert.equal(available.log.filter((line) => line.includes("swift-6.3-pr-42-")).length, 0);
+  assert.equal(available.log.filter((line) => line.includes("swift-6.4-pr-42-")).length, 0);
   assert.doesNotMatch(available.result.stderr, /stale/);
 });
 
 test("setup action probes the canonical tag once when main has no separate candidate", () => {
   const hash = imageInputHash();
-  const canonicalTag = `ghcr.io/test/axoloty-dev:swift-6.3-${hash}`;
-  const available = runSetupActionScenario({ availableTag: canonicalTag, candidateTagPrefix: "swift-6.3" });
+  const canonicalTag = `ghcr.io/test/axoloty-dev:swift-6.4-${hash}`;
+  const available = runSetupActionScenario({ availableTag: canonicalTag, candidateTagPrefix: "swift-6.4" });
   assert.equal(available.result.status, 0, available.result.stderr);
   assert.equal(available.log.filter((line) => line === `pull ${canonicalTag}`).length, 1);
   assert.ok(available.log.includes(`tag ${canonicalTag} axoloty-dev`));
 
-  const missing = runSetupActionScenario({ candidateTagPrefix: "swift-6.3" });
+  const missing = runSetupActionScenario({ candidateTagPrefix: "swift-6.4" });
   assert.equal(missing.result.status, 0, missing.result.stderr);
   assert.equal(missing.log.filter((line) => line === `pull ${canonicalTag}`).length, 1);
   assert.equal(missing.log.at(-1), "build");
@@ -255,7 +255,7 @@ test("setup action probes the canonical tag once when main has no separate candi
 
 test("setup action keeps the publisher candidate retry bounded and synchronized", () => {
   const hash = imageInputHash();
-  const candidateTag = `ghcr.io/test/axoloty-dev:swift-6.3-pr-42-${hash}`;
+  const candidateTag = `ghcr.io/test/axoloty-dev:swift-6.4-pr-42-${hash}`;
   const scenario = runSetupActionScenario({
     availableTag: candidateTag,
     publisherInProgress: "true",
@@ -503,53 +503,66 @@ test("service launchers prepare MCP before tooling readiness starts", () => {
 });
 
 test("CI reuses stable, bounded Swift build cache namespaces", () => {
-  assert.match(ciWorkflow, /SWIFT_BUILD_CACHE_PREFIX="swift-build-v3-compiler-6\.3-linux-\$\{image_identity\}-/);
+  assert.match(ciWorkflow, /SWIFT_BUILD_CACHE_PREFIX="swift-build-v3-compiler-6\.4-linux-\$\{image_identity\}-/);
   assert.match(ciWorkflow, /image_identity=\$[^ ]+.*\.buildInputsSha256.*\.devcontainer\/image-lock\.json/);
   assert.match(ciWorkflow, /SWIFT_BUILD_CACHE_KEY=\$\{SWIFT_BUILD_CACHE_PREFIX\}\$\{GITHUB_SHA\}/);
   const compilerCachePaths = [
-    ".build/ci/build.db",
+    ".build/ci/.buildSystem_debug",
+    ".build/ci/artifacts",
     ".build/ci/checkouts",
-    ".build/ci/debug.yaml",
-    ".build/ci/plugin-tools.yaml",
-    ".build/ci/workspace-state.json",
+    ".build/ci/manifest.pif",
     ".build/ci/plugins",
+    ".build/ci/prebuilts",
     ".build/ci/repositories",
-    ".build/ci/x86_64-unknown-linux-gnu/debug/*.build",
-    ".build/ci/x86_64-unknown-linux-gnu/debug/description.json",
-    ".build/ci/x86_64-unknown-linux-gnu/debug/index/store",
-    ".build/ci/x86_64-unknown-linux-gnu/debug/Modules",
-    ".build/ci/x86_64-unknown-linux-gnu/debug/ModuleCache",
-    ".build/ci/tooling/build.db",
-    ".build/ci/tooling/debug.yaml",
+    ".build/ci/workspace-state.json",
+    ".build/ci/out/CompilationCache.noindex",
+    ".build/ci/out/Intermediates.noindex",
+    ".build/ci/out/ModuleCache.noindex",
+    ".build/ci/out/PCH",
+    ".build/ci/out/SDKExplicitPrecompiledModules",
+    ".build/ci/out/v5",
+    ".build/ci/tooling/.buildSystem_debug",
+    ".build/ci/tooling/artifacts",
+    ".build/ci/tooling/checkouts",
+    ".build/ci/tooling/manifest.pif",
+    ".build/ci/tooling/plugins",
+    ".build/ci/tooling/prebuilts",
+    ".build/ci/tooling/repositories",
     ".build/ci/tooling/workspace-state.json",
-    ".build/ci/tooling/x86_64-unknown-linux-gnu/debug/*.build",
-    ".build/ci/tooling/x86_64-unknown-linux-gnu/debug/description.json",
-    ".build/ci/tooling/x86_64-unknown-linux-gnu/debug/index/store",
-    ".build/ci/tooling/x86_64-unknown-linux-gnu/debug/Modules",
-    ".build/ci/packages/*/build.db",
+    ".build/ci/tooling/out/CompilationCache.noindex",
+    ".build/ci/tooling/out/Intermediates.noindex",
+    ".build/ci/tooling/out/ModuleCache.noindex",
+    ".build/ci/tooling/out/PCH",
+    ".build/ci/tooling/out/SDKExplicitPrecompiledModules",
+    ".build/ci/tooling/out/v5",
+    ".build/ci/packages/*/.buildSystem_debug",
+    ".build/ci/packages/*/artifacts",
     ".build/ci/packages/*/checkouts",
-    ".build/ci/packages/*/debug.yaml",
-    ".build/ci/packages/*/plugin-tools.yaml",
-    ".build/ci/packages/*/workspace-state.json",
+    ".build/ci/packages/*/manifest.pif",
     ".build/ci/packages/*/plugins",
+    ".build/ci/packages/*/prebuilts",
     ".build/ci/packages/*/repositories",
-    ".build/ci/packages/*/x86_64-unknown-linux-gnu/debug/*.build",
-    ".build/ci/packages/*/x86_64-unknown-linux-gnu/debug/description.json",
-    ".build/ci/packages/*/x86_64-unknown-linux-gnu/debug/index/store",
-    ".build/ci/packages/*/x86_64-unknown-linux-gnu/debug/Modules",
-    ".build/ci/packages/*/x86_64-unknown-linux-gnu/debug/ModuleCache",
-    ".build/ci/apps/build.db",
+    ".build/ci/packages/*/workspace-state.json",
+    ".build/ci/packages/*/out/CompilationCache.noindex",
+    ".build/ci/packages/*/out/Intermediates.noindex",
+    ".build/ci/packages/*/out/ModuleCache.noindex",
+    ".build/ci/packages/*/out/PCH",
+    ".build/ci/packages/*/out/SDKExplicitPrecompiledModules",
+    ".build/ci/packages/*/out/v5",
+    ".build/ci/apps/.buildSystem_debug",
+    ".build/ci/apps/artifacts",
     ".build/ci/apps/checkouts",
-    ".build/ci/apps/debug.yaml",
-    ".build/ci/apps/plugin-tools.yaml",
-    ".build/ci/apps/workspace-state.json",
+    ".build/ci/apps/manifest.pif",
     ".build/ci/apps/plugins",
+    ".build/ci/apps/prebuilts",
     ".build/ci/apps/repositories",
-    ".build/ci/apps/x86_64-unknown-linux-gnu/debug/*.build",
-    ".build/ci/apps/x86_64-unknown-linux-gnu/debug/description.json",
-    ".build/ci/apps/x86_64-unknown-linux-gnu/debug/index/store",
-    ".build/ci/apps/x86_64-unknown-linux-gnu/debug/Modules",
-    ".build/ci/apps/x86_64-unknown-linux-gnu/debug/ModuleCache",
+    ".build/ci/apps/workspace-state.json",
+    ".build/ci/apps/out/CompilationCache.noindex",
+    ".build/ci/apps/out/Intermediates.noindex",
+    ".build/ci/apps/out/ModuleCache.noindex",
+    ".build/ci/apps/out/PCH",
+    ".build/ci/apps/out/SDKExplicitPrecompiledModules",
+    ".build/ci/apps/out/v5",
   ];
   assert.deepEqual(workflowPathList("Restore Swift compiler cache"), compilerCachePaths);
   assert.deepEqual(workflowPathList("Save Swift compiler cache"), compilerCachePaths);
@@ -558,17 +571,17 @@ test("CI reuses stable, bounded Swift build cache namespaces", () => {
   assert.match(requiredCIJob, /make verify-ci CONTAINER_RUNTIME=podman BUILD_DIR="\.build\/ci" BUILD_LOCK=0/);
   assert.doesNotMatch(ciWorkflow, /BUILD_DIR="\.build\/\$\{GITHUB_SHA\}"/);
   assert.match(ciWorkflow, /actions: write/);
-  assert.match(ciWorkflow, /gh cache list --ref refs\/heads\/main --key "swift-build-v3-compiler-6\.3-linux-"/);
+  assert.match(ciWorkflow, /gh cache list --ref refs\/heads\/main --key "swift-build-v3-compiler-6\.4-linux-"/);
   assert.match(ciWorkflow, /--sort created_at --order desc --limit 100 --json id --jq '\.\[2:\]\[\]\.id'/);
   assert.match(ciWorkflow, /gh cache list --ref refs\/heads\/main --key "esp-idf-ccache-v1-"/);
-  assert.match(ciWorkflow, /gh cache list --ref refs\/heads\/main --key "swift-build-v2-coverage-6\.3-linux-"/);
-  assert.match(ciWorkflow, /gh cache list --ref refs\/heads\/main --key "swift-build-coverage-6\.3-linux-"/);
+  assert.match(ciWorkflow, /gh cache list --ref refs\/heads\/main --key "swift-build-v2-coverage-6\.4-linux-"/);
+  assert.match(ciWorkflow, /gh cache list --ref refs\/heads\/main --key "swift-build-coverage-6\.4-linux-"/);
   assert.match(ciWorkflow, /gh cache delete "\$cache_id"/);
 });
 
 test("SwiftPM caches are content-exact and safe to save after a failed plan", () => {
   for (const workflow of swiftPMWorkflows) {
-    assert.match(workflow, /SWIFT_CACHE_KEY=swiftpm-v2-6\.3-linux-\$\{\{ hashFiles\('Package\.resolved', '\.devcontainer\/Dockerfile', '\.devcontainer\/image-lock\.json'\) \}\}/);
+    assert.match(workflow, /SWIFT_CACHE_KEY=swiftpm-v2-6\.4-linux-\$\{\{ hashFiles\('Package\.resolved', '\.devcontainer\/Dockerfile', '\.devcontainer\/image-lock\.json'\) \}\}/);
     assert.doesNotMatch(workflowStepFrom(workflow, "Restore SwiftPM dependency cache"), /restore-keys:/);
   }
 
@@ -605,10 +618,10 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 case "$key" in
-  swift-build-v3-compiler-6.3-linux-) printf 'v3-oldest\\nv3-old\\n' ;;
+  swift-build-v3-compiler-6.4-linux-) printf 'v3-oldest\\nv3-old\\n' ;;
   esp-idf-ccache-v1-) printf 'esp-oldest\\nesp-old\\n' ;;
-  swift-build-v2-coverage-6.3-linux-) printf 'v2-old\\n' ;;
-  swift-build-coverage-6.3-linux-) printf 'legacy-old\\n' ;;
+  swift-build-v2-coverage-6.4-linux-) printf 'v2-old\\n' ;;
+  swift-build-coverage-6.4-linux-) printf 'legacy-old\\n' ;;
   *) exit 2 ;;
 esac
 `);
@@ -661,19 +674,19 @@ test("published content-keyed images avoid repeated fallback builds and refresh 
   assert.match(imageWorkflow, /Build and publish content-keyed image/);
   assert.match(imageWorkflow, /imagetools inspect "\$image_tag"/);
   assert.match(imageWorkflow, /Content-keyed development image already exists/);
-  assert.match(imageWorkflow, /image_tag="\$IMAGE_BASE:swift-6\.3-pr-\$\{\{ github\.event\.pull_request\.number \}\}-\$build_inputs_hash"/);
+  assert.match(imageWorkflow, /image_tag="\$IMAGE_BASE:swift-6\.4-pr-\$\{\{ github\.event\.pull_request\.number \}\}-\$build_inputs_hash"/);
   assert.match(
     publishPr,
-    /canonical_tag="\$IMAGE_BASE:swift-6\.3-\$build_inputs_hash"[^]*imagetools inspect "\$canonical_tag"[^]*Promoting canonical development image to PR tag[^]*imagetools create --tag "\$image_tag" "\$canonical_tag"[^]*exit 0[^]*docker buildx build/,
+    /canonical_tag="\$IMAGE_BASE:swift-6\.4-\$build_inputs_hash"[^]*imagetools inspect "\$canonical_tag"[^]*Promoting canonical development image to PR tag[^]*imagetools create --tag "\$image_tag" "\$canonical_tag"[^]*exit 0[^]*docker buildx build/,
   );
   assert.match(setupAction, /candidate_tag="\$image:\$CANDIDATE_TAG_PREFIX-\$actual_hash"/);
   assert.match(
     ciWorkflow,
-    /candidate-tag-prefix: \$\{\{ github\.event_name == 'pull_request' && format\('swift-6\.3-pr-\{0\}', github\.event\.pull_request\.number\) \|\| 'swift-6\.3' \}\}/,
+    /candidate-tag-prefix: \$\{\{ github\.event_name == 'pull_request' && format\('swift-6\.4-pr-\{0\}', github\.event\.pull_request\.number\) \|\| 'swift-6\.4' \}\}/,
   );
   assert.match(
     publishMain,
-    /if docker buildx imagetools inspect "\$image_tag"[^]*then[^]*Reusing content-keyed development image[^]*imagetools create --tag "\$IMAGE_BASE:swift-6\.3" "\$image_tag"[^]*elif ! grep -Fqi 'manifest unknown'[^]*&& ! grep -Fqi "\$image_tag: not found"[^]*exit 1[^]*else[^]*docker buildx build[^]*fi[^]*digest=/,
+    /if docker buildx imagetools inspect "\$image_tag"[^]*then[^]*Reusing content-keyed development image[^]*imagetools create --tag "\$IMAGE_BASE:swift-6\.4" "\$image_tag"[^]*elif ! grep -Fqi 'manifest unknown'[^]*&& ! grep -Fqi "\$image_tag: not found"[^]*exit 1[^]*else[^]*docker buildx build[^]*fi[^]*digest=/,
   );
   assert.match(imageWorkflow, /group: development-image-\$\{\{ github\.event_name == 'pull_request'[^\n]+\|\| 'main' \}\}/);
   assert.equal(imageWorkflow.match(/elif ! grep -Fqi 'manifest unknown'/g)?.length, 3);
