@@ -67,6 +67,8 @@ test("principal Make workflows use the canonical tooling entry points", () => {
     "broker",
     "broker-stop",
     "embedded-mqtt-test",
+    "check-static-io-macro-embedded",
+    "check-embedded-swift",
   ]) {
     assert.doesNotMatch(makefile, new RegExp(`^${target}:`, "m"), `${target} should not remain a Make target`);
   }
