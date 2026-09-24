@@ -37,7 +37,10 @@ echo "  PASS: missing firmware and SDK paths are irrelevant"
 # Reuse the macro/dependency preparation from the successful run. This keeps
 # the negative test focused on the consumer source rather than dependency
 # setup, and avoids an unnecessary second cold SwiftPM build.
-macro_tool=$(find "$macro_scratch" -type f -name AxolotyStaticRuntimeMacrosImplementation-tool -perm -111 -print -quit)
+macro_tool=$(find "$macro_scratch" -type f \
+    \( -name AxolotyStaticRuntimeMacrosImplementation-tool \
+    -o -name AxolotyStaticRuntimeMacrosImplementation \) \
+    -perm -111 -print -quit)
 [ -n "$macro_tool" ] || {
     echo "could not locate prepared StaticIoActor macro tool" >&2
     exit 1
