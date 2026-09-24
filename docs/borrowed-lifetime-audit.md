@@ -213,12 +213,40 @@ feature stabilizing and on an API-breaking sweep that overlaps #871
 not enable an experimental feature host-wide as part of the Span migration.
 
 **Consequence for #872.** Adopt the safe Span APIs inside the current
-escapable views instead: derive a local `RawSpan` at each view boundary
-through one documented `@unsafe` bridge, convert the per-access byte loads
-and stores to safe subscripts and `load(fromByteOffset:as:)`, and replace
-`withUnsafeTemporaryAllocation` with `withTemporaryAllocation`. That path
-needs no experimental feature flag and no public API break. Note the pointer
-bridge spelling is `RawSpan(_unsafeBytes:)`.
+escapable views instead: derive a local `RawSpan` through a narrowly-scoped
+`unsafe RawSpan(_unsafeBytes:)` bridge, use checked `RawSpan` subscripts or
+`RawSpan.load(fromByteOffset:as:)` for byte reads, and use
+`withTemporaryAllocation` for temporary padding buffers. Keep `RawSpan` local:
+it cannot be returned from an ordinary computed property or stored in the
+current escapable cursor without lifetime annotations. This path needs no
+experimental feature flag and no public API break.
+
+### #872 migration status
+
+The production wire reader now uses checked `RawSpan` byte access in
+`ByteSlice`, `TopicView`, `WireValueView`, and `WireKeyCursor`. The default
+tokenizer scratch buffers in `WireReader` and `WireValueReader` now use
+`withTemporaryAllocation` and `OutputSpan`; conversion to
+`UnsafeBufferPointer` is kept inside the scoped `Span.withUnsafeBufferPointer`
+interop call because `_JSONCore.JSONTokenizer` still accepts that pointer
+type. The pointer-to-`RawSpan` bridges are localized at these borrowed-view
+boundaries. No public wire signatures changed.
+
+Pointer-based uses remaining in `Packages/AxolotyWire/Sources/AxolotyWire/`
+are retained for these reasons:
+
+| Use | Reason it remains |
+|---|---|
+| `ByteSlice`, `TopicView`, `BorrowedMessage`, `WireReader`, `WireWriter`, `WireValueView`, and `WireValueReader` pointer initializers and stored pointers | These are existing public or internal borrowing boundaries. `RawSpan` cannot be stored by ordinary escapable views without an API/lifetime change. `WireKeyCursor` creates a local `RawSpan` for each bounded load because storing a `RawSpan` would require lifetime annotations. |
+| `ByteSlice.withBytes`, `ownedBytes`, and host `asString` | The callback and standard-library array/string APIs require pointer interop. The pointer stays scoped to the callback or is consumed by an owning copy. |
+| `WireReader` tokenizer `UnsafeBufferPointer` parameters and `WireParserWorkspace.withStorage` | `_JSONCore.JSONTokenizer` and its destination protocol use pointer-based buffer parameters. A future `_JSONCore` Span interface would remove this boundary. |
+| `WireParserWorkspace` inline storage and `UUID16` tuple mutation | These expose or mutate storage owned by an `InlineArray` or tuple. Their existing pointer access is scoped and there is no equivalent Span-based mutation interface for these container shapes. |
+| `WireEvents` array encoding and `OwnedWireDataValidation` array validation | These use scoped Array pointer access to provide storage to existing synchronous wire APIs and tokenizer entry points. |
+| `WireReader` aligned staging in `isValidJSONValue` | The staging buffer is a local `SIMD64` value; `withUnsafeMutableBytes` is the current way to initialize its bytes before an aligned tokenizer call. |
+
+`TopicView.levelOffsets`/`levelLengths` and `WireBufferConfig.TopicLevelStorage`
+already expose fixed `InlineArray` storage directly; no intermediate collection
+copy exists to remove with borrow/mutate accessors.
 
 ## Explicitly out of scope
 

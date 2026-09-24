@@ -55,9 +55,14 @@ public struct TopicView {
     }
 
     private mutating func parseLevels() {
+        // The pointer-to-span conversion is localized to parsing. The
+        // initializer's borrow contract keeps the topic bytes valid here.
+        let rawSpan = unsafe RawSpan(
+            _unsafeBytes: UnsafeRawBufferPointer(start: bytes, count: byteCount)
+        )
         var start = 0
         var count = 0
-        for i in 0..<byteCount where bytes.load(fromByteOffset: i, as: UInt8.self) == 0x2F {
+        for i in 0..<byteCount where rawSpan[i] == 0x2F {
             if count < WireBufferConfig.maxTopicLevels {
                 levelOffsets[count] = start
                 levelLengths[count] = i - start
