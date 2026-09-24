@@ -35,13 +35,14 @@ fork, through CoatySwift 2.4.0, remain documented in the
 - The lifecycle matrix's monotonic millisecond clock no longer clamps
   after 24 days of host uptime. The old `awk` format stopped deadlines from
   advancing on long-running hosts.
-
-### Fixed
-
 - `AxolotyInspectorSession` no longer traps on the first Advertise,
   Deadvertise, or Resolve it receives. Its private source-ID formatter indexed
   past the end of its hex array; the session now uses
   `CoatyRoute.uuidString`, the same formatter as the runtime.
+- SensorThings saturation tests assert the bounded-capacity diagnostic without
+  requiring an unrelated runtime lifecycle transition.
+- The tooling signal-multiplexer test suite runs serially because the test
+  changes process-wide `SIGINT` and `SIGTERM` dispositions.
 
 ## [0.8.2] - 2026-09-18
 
