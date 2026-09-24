@@ -95,6 +95,8 @@ Portable packages compile the same production sources for host and Embedded Swif
 
 Host package APIs wrap foreign errors as `AxolotyError` at the public boundary. Portable protocol layers use focused typed errors and do not depend on ErrorKit. Log the full error chain only where a failure is handled, dropped, converted, or terminates an operation.
 
+Prefer typed throws. Spell the error type, `throws(SomeError)`, on new and changed signatures in every target. Untyped `throws` remains acceptable only where a caller-supplied closure may throw any error (for example `BoundedDynamicObject.edit` and the IO payload decoders) and where a protocol requires it (SwiftSyntax macro conformances). Host APIs that throw `AxolotyError` should say `throws(AxolotyError)` when their signature is next touched, rather than in a sweeping migration. Firmware in `phynics/axoloty-embedded` enforces typed throws mechanically.
+
 Applications choose `swift-log` bootstrap and filtering. Use `Logging.Logger` only in targets that declare `swift-log`. Keep message text stable and dynamic values in metadata. Reuse or mint a local correlation or attempt identifier for multi-hop work without changing the wire contract. Use `RuntimeDiagnostics` for bounded host counters and streams.
 
 ## Wire compatibility
