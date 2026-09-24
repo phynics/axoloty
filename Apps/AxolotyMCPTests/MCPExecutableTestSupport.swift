@@ -21,7 +21,7 @@ internal func runMCPExecutableForPathValidation(
     try invocation.start()
 
     guard let exitCode = waitForProcessExit(
-        invocation.process,
+        invocation.processExit,
         until: MonotonicDeadline(timeout: .milliseconds(500))
     ) else {
         _ = terminateAndReap(invocation, phase: "MCP executable path validation")
@@ -44,7 +44,7 @@ internal func runMCPExecutable(
     try invocation.start()
     let termination: MCPProcessTermination
     if let exitCode = waitForProcessExit(
-        invocation.process,
+        invocation.processExit,
         until: MonotonicDeadline(timeout: .seconds(5))
     ) {
         termination = MCPProcessTermination(
@@ -123,10 +123,6 @@ private struct MonotonicDeadline: Sendable {
             : now + totalNanoseconds
     }
 
-    var isExpired: Bool {
-        DispatchTime.now().uptimeNanoseconds >= uptimeNanoseconds
-    }
-
     var dispatchTime: DispatchTime {
         DispatchTime(uptimeNanoseconds: uptimeNanoseconds)
     }
@@ -141,6 +137,32 @@ private struct MCPProcessTermination {
     let exitCode: Int32
     let outcome: String
     let escalated: Bool
+}
+
+private final class MCPProcessExit: @unchecked Sendable {
+    private let group = DispatchGroup()
+    private let lock = NSLock()
+    private var exitCode: Int32?
+
+    init() {
+        group.enter()
+    }
+
+    func observe(_ process: Process) {
+        process.terminationHandler = { [self] process in
+            lock.lock()
+            exitCode = process.terminationStatus
+            lock.unlock()
+            group.leave()
+        }
+    }
+
+    func wait(until deadline: MonotonicDeadline) -> Int32? {
+        guard group.wait(timeout: deadline.dispatchTime) == .success else { return nil }
+        lock.lock()
+        defer { lock.unlock() }
+        return exitCode
+    }
 }
 
 private final class MCPExecutableOutputDrain: @unchecked Sendable {
@@ -204,11 +226,13 @@ private struct MCPExecutableInvocation {
     let standardOutput: Pipe
     let standardError: Pipe
     private let outputDrain: MCPExecutableOutputDrain
+    let processExit: MCPProcessExit
 
     init(process: Process, standardOutput: Pipe, standardError: Pipe) {
         self.process = process
         self.standardOutput = standardOutput
         self.standardError = standardError
+        processExit = MCPProcessExit()
         outputDrain = MCPExecutableOutputDrain(
             standardOutput: standardOutput,
             standardError: standardError
@@ -216,6 +240,7 @@ private struct MCPExecutableInvocation {
     }
 
     func start() throws {
+        processExit.observe(process)
         do {
             try process.run()
         } catch {
@@ -239,26 +264,10 @@ private struct MCPExecutableInvocation {
 }
 
 private func waitForProcessExit(
-    _ process: Process,
+    _ processExit: MCPProcessExit,
     until deadline: MonotonicDeadline
 ) -> Int32? {
-    let processIdentifier = process.processIdentifier
-    while !deadline.isExpired {
-        var status: Int32 = 0
-        let result = waitpid(processIdentifier, &status, WNOHANG)
-        if result == processIdentifier {
-            return processExitCode(from: status)
-        }
-        if result < 0 {
-            #if canImport(Glibc)
-            if Glibc.errno == ECHILD { return process.terminationStatus }
-            #elseif canImport(Darwin)
-            if Darwin.errno == ECHILD { return process.terminationStatus }
-            #endif
-        }
-        Thread.sleep(forTimeInterval: 0.01)
-    }
-    return nil
+    processExit.wait(until: deadline)
 }
 
 private func terminateAndReap(
@@ -267,7 +276,7 @@ private func terminateAndReap(
 ) -> MCPProcessTermination {
     let processIdentifier = invocation.process.processIdentifier
     if let exitCode = waitForProcessExit(
-        invocation.process,
+        invocation.processExit,
         until: MonotonicDeadline(timeout: .milliseconds(100))
     ) {
         return MCPProcessTermination(
@@ -279,7 +288,7 @@ private func terminateAndReap(
 
     invocation.process.terminate()
     if let exitCode = waitForProcessExit(
-        invocation.process,
+        invocation.processExit,
         until: MonotonicDeadline(timeout: .seconds(1))
     ) {
         return MCPProcessTermination(
@@ -291,7 +300,7 @@ private func terminateAndReap(
 
     _ = kill(processIdentifier, SIGKILL)
     if let exitCode = waitForProcessExit(
-        invocation.process,
+        invocation.processExit,
         until: MonotonicDeadline(timeout: .seconds(1))
     ) {
         return MCPProcessTermination(
@@ -325,13 +334,6 @@ private func recordMCPProcessDiagnostic(
 private func boundedOutputTail(_ output: String, maximumBytes: Int = 512) -> String {
     let bytes = Data(output.utf8)
     return String(bytes: bytes.suffix(maximumBytes), encoding: .utf8) ?? ""
-}
-
-private func processExitCode(from status: Int32) -> Int32 {
-    if status & 0x7f == 0 {
-        return (status >> 8) & 0xff
-    }
-    return 128 + (status & 0x7f)
 }
 
 private func freeLoopbackPort() throws -> UInt16 {

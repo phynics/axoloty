@@ -43,7 +43,9 @@ let package = Package(
                 .product(name: "AxolotyWire", package: "AxolotyWire"),
                 "AxolotyStaticRuntimeMacrosImplementation",
             ],
-            path: "Sources/AxolotyStaticRuntime"
+            path: "Sources/AxolotyStaticRuntime",
+            // The embedded-core-consumer gate remains the enforcing portability check.
+            swiftSettings: [.treatWarning("EmbeddedRestrictions", as: .warning)]
         ),
         .testTarget(
             name: "AxolotyStaticRuntimeTests",

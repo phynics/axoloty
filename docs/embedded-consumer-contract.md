@@ -154,7 +154,10 @@ RISC-V Embedded Swift test target. It then compiles a real `@StaticIoActor`
 consumer with the resolved macro executable and performs a relocatable link of
 the resulting objects. The gate reads Core sources and caller-owned scratch
 storage only. It does not read the firmware project, invoke ESP-IDF, use a
-broker, or probe hardware.
+broker, or probe hardware. Portable targets also enable the Swift 6.4
+`EmbeddedRestrictions` warning group as an advisory host-build signal; this
+RISC-V consumer build remains the enforcing gate for language and standard
+library compatibility.
 
 The target triple and linker are test-gate implementation details. They do not
 extend the downstream contract described by

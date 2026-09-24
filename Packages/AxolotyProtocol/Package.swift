@@ -32,7 +32,9 @@ let package = Package(
                 .product(name: "AxolotyWire", package: "AxolotyWire"),
                 .product(name: "AxolotyObjectModel", package: "AxolotyObjectModel"),
             ],
-            path: "Sources/AxolotyProtocol"
+            path: "Sources/AxolotyProtocol",
+            // The embedded-core-consumer gate remains the enforcing portability check.
+            swiftSettings: [.treatWarning("EmbeddedRestrictions", as: .warning)]
         ),
         .testTarget(
             name: "AxolotyProtocolTests",

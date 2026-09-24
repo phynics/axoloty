@@ -23,7 +23,9 @@ let package = Package(
         .target(
             name: "AxolotyCoatyModels",
             dependencies: ["AxolotyObjectModel"],
-            path: "Sources/AxolotyCoatyModels"
+            path: "Sources/AxolotyCoatyModels",
+            // The embedded-core-consumer gate remains the enforcing portability check.
+            swiftSettings: [.treatWarning("EmbeddedRestrictions", as: .warning)]
         ),
         .testTarget(
             name: "AxolotyCoatyModelsTests",

@@ -159,7 +159,10 @@ the pinned `swift-json` identity. A consumer selects a checkout with
 parent-directory layout, and the `Tests/` tree are outside the boundary. A
 required, hardware-free gate compiles the portable packages for riscv32
 Embedded Swift, expands the production macro, and links an external consumer
-fixture.
+fixture. Portable targets also enable Swift 6.4's `EmbeddedRestrictions`
+warning group for early host-build feedback; the consumer gate remains the
+authoritative portability check because it catches unavailable standard-library
+APIs and cannot be replaced by host warnings.
 
 Completed migration: concrete firmware composition, the ESP32-C6 toolchain, and
 device qualification live in `phynics/axoloty-embedded` under epic #845.
