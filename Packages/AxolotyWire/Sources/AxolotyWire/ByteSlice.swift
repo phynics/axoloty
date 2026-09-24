@@ -18,6 +18,12 @@ public struct ByteSlice: Equatable, Hashable {
     /// The number of bytes in this slice.
     public let length: Int
 
+    /// Performs bounds-checked byte access through one localized pointer bridge.
+    @usableFromInline func withRawSpan<R>(_ body: (RawSpan) -> R) -> R {
+        let span = unsafe RawSpan(_unsafeBytes: UnsafeRawBufferPointer(start: pointer, count: length))
+        return body(span)
+    }
+
     /// An empty slice with a non-dereferenceable sentinel pointer.
     ///
     /// Operations on an empty slice never read the pointer. This value lets
@@ -50,13 +56,14 @@ public struct ByteSlice: Equatable, Hashable {
     public func equals(_ staticString: StaticString) -> Bool {
         let targetLen = staticString.utf8CodeUnitCount
         guard length == targetLen else { return false }
-        for i in 0..<length {
-            let byte = pointer.load(fromByteOffset: i, as: UInt8.self)
-            if byte != staticString.utf8Start[i] {
-                return false
+        return withRawSpan { span in
+            for i in 0..<length {
+                if span[i] != staticString.utf8Start[i] {
+                    return false
+                }
             }
+            return true
         }
-        return true
     }
 
     /// Compares JSON string content using escape-aware scalar semantics.
@@ -151,17 +158,19 @@ public struct ByteSlice: Equatable, Hashable {
     /// from typed filter markers.
     @inlinable
     public func findByteIndex(_ target: UInt8) -> Int? {
-        for i in 0..<length where pointer.load(fromByteOffset: i, as: UInt8.self) == target {
-            return i
+        return withRawSpan { span in
+            for i in 0..<length where span[i] == target {
+                return i
+            }
+            return nil
         }
-        return nil
     }
 
     /// Returns the byte at the given index, or nil if out of bounds.
     @inlinable
     public func byte(at index: Int) -> UInt8? {
         guard index >= 0, index < length else { return nil }
-        return pointer.load(fromByteOffset: index, as: UInt8.self)
+        return withRawSpan { $0[index] }
     }
 
     /// Returns a sub-slice of this slice.
@@ -209,19 +218,19 @@ public struct ByteSlice: Equatable, Hashable {
     /// Returns `true` if both slices have the same length and byte contents.
     public static func == (lhs: ByteSlice, rhs: ByteSlice) -> Bool {
         guard lhs.length == rhs.length else { return false }
-        for i in 0..<lhs.length {
-            let a = lhs.pointer.load(fromByteOffset: i, as: UInt8.self)
-            let b = rhs.pointer.load(fromByteOffset: i, as: UInt8.self)
-            if a != b { return false }
+        return lhs.withRawSpan { left in
+            rhs.withRawSpan { right in
+                for i in 0..<lhs.length where left[i] != right[i] { return false }
+                return true
+            }
         }
-        return true
     }
 
     /// Feeds each byte into `hasher` so ``ByteSlice`` can be used as a
     /// `Set` or `Dictionary` key.
     public func hash(into hasher: inout Hasher) {
-        for i in 0..<length {
-            hasher.combine(pointer.load(fromByteOffset: i, as: UInt8.self))
+        withRawSpan { span in
+            for i in 0..<length { hasher.combine(span[i]) }
         }
     }
 }

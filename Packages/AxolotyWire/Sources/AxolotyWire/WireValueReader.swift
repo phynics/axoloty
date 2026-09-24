@@ -49,7 +49,10 @@ public struct WireValueView: ~Copyable {
     /// Returns one encoded byte while the view is borrowed.
     public borrowing func byte(at index: Int) -> UInt8? {
         guard index >= 0, index < length else { return nil }
-        return bytes.load(fromByteOffset: index, as: UInt8.self)
+        let span = unsafe RawSpan(
+            _unsafeBytes: UnsafeRawBufferPointer(start: bytes, count: length)
+        )
+        return span[index]
     }
 
     /// Runs a synchronous callback over the encoded value without returning a
@@ -197,16 +200,20 @@ public struct WireValueReader: ~Copyable {
             throw WireDecodeError(.unexpectedToken(expected: "valid JSON array", actual: byte(at: 0)))
         }
 
-        var destination = WireArrayElementDestination(bytes: UnsafeBufferPointer(start: bytes.assumingMemoryBound(to: UInt8.self), count: length))
-        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: length + 8) { padded in
-            padded.baseAddress!.initialize(from: bytes.assumingMemoryBound(to: UInt8.self), count: length)
-            for offset in length..<(length + 8) { padded[offset] = 0x5D }
-            var tokenizer = JSONTokenizer(
-                bytes: UnsafeBufferPointer(start: padded.baseAddress!, count: length + 8),
-                destination: destination
-            )
-            _ = tokenizer.scanValueResult()
-            destination = tokenizer.destination
+        let source = unsafe RawSpan(
+            _unsafeBytes: UnsafeRawBufferPointer(start: bytes, count: length)
+        )
+        var destination = WireArrayElementDestination(
+            bytes: UnsafeBufferPointer(start: bytes.assumingMemoryBound(to: UInt8.self), count: length)
+        )
+        withTemporaryAllocation(of: UInt8.self, capacity: length + 8) { padded in
+            for offset in 0..<length { padded.append(source[offset]) }
+            for _ in 0..<8 { padded.append(0x5D) }
+            padded.span.withUnsafeBufferPointer { buffer in
+                var tokenizer = JSONTokenizer(bytes: buffer, destination: destination)
+                _ = tokenizer.scanValueResult()
+                destination = tokenizer.destination
+            }
         }
         guard destination.rootArray, destination.failure == nil else {
             throw destination.failure ?? WireDecodeError(.unexpectedToken(expected: "valid JSON array", actual: byte(at: 0)))
@@ -227,16 +234,20 @@ public struct WireValueReader: ~Copyable {
         guard WireReader.isValidJSONValue(value) else {
             throw WireDecodeError(.unexpectedToken(expected: "valid JSON array", actual: byte(at: 0)))
         }
-        var destination = WireArrayElementDestination(bytes: UnsafeBufferPointer(start: bytes.assumingMemoryBound(to: UInt8.self), count: length))
-        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: length + 8) { padded in
-            padded.baseAddress!.initialize(from: bytes.assumingMemoryBound(to: UInt8.self), count: length)
-            for offset in length..<(length + 8) { padded[offset] = 0x5D }
-            var tokenizer = JSONTokenizer(
-                bytes: UnsafeBufferPointer(start: padded.baseAddress!, count: length + 8),
-                destination: destination
-            )
-            _ = tokenizer.scanValueResult()
-            destination = tokenizer.destination
+        let source = unsafe RawSpan(
+            _unsafeBytes: UnsafeRawBufferPointer(start: bytes, count: length)
+        )
+        var destination = WireArrayElementDestination(
+            bytes: UnsafeBufferPointer(start: bytes.assumingMemoryBound(to: UInt8.self), count: length)
+        )
+        withTemporaryAllocation(of: UInt8.self, capacity: length + 8) { padded in
+            for offset in 0..<length { padded.append(source[offset]) }
+            for _ in 0..<8 { padded.append(0x5D) }
+            padded.span.withUnsafeBufferPointer { buffer in
+                var tokenizer = JSONTokenizer(bytes: buffer, destination: destination)
+                _ = tokenizer.scanValueResult()
+                destination = tokenizer.destination
+            }
         }
         guard destination.rootArray, destination.failure == nil else {
             throw destination.failure ?? WireDecodeError(.unexpectedToken(expected: "valid JSON array", actual: byte(at: 0)))
@@ -267,7 +278,10 @@ public struct WireValueReader: ~Copyable {
     /// Returns a byte from the borrowed value.
     @inline(__always) private func byte(at index: Int) -> UInt8? {
         guard index >= 0, index < length else { return nil }
-        return bytes.load(fromByteOffset: index, as: UInt8.self)
+        let span = unsafe RawSpan(
+            _unsafeBytes: UnsafeRawBufferPointer(start: bytes, count: length)
+        )
+        return span[index]
     }
 }
 
