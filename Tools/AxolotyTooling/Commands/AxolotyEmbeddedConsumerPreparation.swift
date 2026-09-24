@@ -187,8 +187,8 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
         let binLines = binOutput.split(whereSeparator: { character in character == "\n" || character == "\r" })
         let binPath = binLines.last.map(String.init) ?? ""
         // SwiftPM's native build system names a macro executable
-        // "<target>-tool". Swift Build, the default on an Apple host from
-        // Swift 6.4, emits the bare target name. Accept either, preferring
+        // "<target>-tool". Swift Build, SwiftPM's default from Swift 6.4,
+        // emits the bare target name. Accept either, preferring
         // the contract spelling, and report whichever resolved.
         let binURL = URL(fileURLWithPath: binPath)
         let resolvedMacro = Self.macroExecutableNames(for: contract.macroExecutable).lazy.compactMap { name in
@@ -262,8 +262,8 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
     /// Macro executable names to try, in preference order.
     ///
     /// SwiftPM's native build system emits `<target>-tool`, the spelling the
-    /// contract declares. Swift Build, the default on an Apple host from
-    /// Swift 6.4, emits the bare target name.
+    /// contract declares. Swift Build, SwiftPM's default from Swift 6.4,
+    /// emits the bare target name.
     static func macroExecutableNames(for contractName: String) -> [String] {
         let suffix = "-tool"
         guard contractName.hasSuffix(suffix) else { return [contractName] }

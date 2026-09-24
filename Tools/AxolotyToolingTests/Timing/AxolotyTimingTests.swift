@@ -94,6 +94,10 @@ func timingParsersReportBuildStepsAndCacheStatsWithoutGuessing() {
     #expect(steps.status == .available)
     #expect(steps.value == 12)
 
+    let swiftBuildSteps = AxolotyTimingOutputParser.stepMetric(from: "[59 / 1664] SwiftSyntaxBuilder\n")
+    #expect(swiftBuildSteps.status == .available)
+    #expect(swiftBuildSteps.value == 1664)
+
     let cache = AxolotyTimingOutputParser.cacheMetric(from: "Cache hits: 9\nCache misses: 3\n")
     #expect(cache.status == .available)
     #expect(cache.value == 12)

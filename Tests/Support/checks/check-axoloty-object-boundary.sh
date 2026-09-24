@@ -77,9 +77,9 @@ fi
 printf '%s' "$macro_manifest" | grep -Fq 'name: "AxolotyObjectMacros"' || fail "AxolotyObjectMacros manifest has no matching package/target name"
 test -d "$macros/Sources/AxolotyObjectMacros" || fail "AxolotyObjectMacros omits its default source path"
 printf '%s' "$macro_manifest" | grep -Fq 'swift-syntax' || fail "AxolotyObjectMacros must declare SwiftSyntax"
-printf '%s' "$macro_manifest" | grep -Eq '603\.[0-9]+' || fail "AxolotyObjectMacros must pin SwiftSyntax 603.x"
+printf '%s' "$macro_manifest" | grep -Eq '604\.[0-9]+' || fail "AxolotyObjectMacros must pin SwiftSyntax 604.x"
 grep -Fq 'swift-syntax' "$macros/Package.resolved" || fail "AxolotyObjectMacros Package.resolved omits SwiftSyntax"
-grep -Eq '"version"[[:space:]]*:[[:space:]]*"603\.[0-9]+' "$macros/Package.resolved" || fail "AxolotyObjectMacros Package.resolved must pin SwiftSyntax 603.x"
+grep -Eq '"version"[[:space:]]*:[[:space:]]*"604\.[0-9]+' "$macros/Package.resolved" || fail "AxolotyObjectMacros Package.resolved must pin SwiftSyntax 604.x"
 if printf '%s' "$macro_manifest" | grep -Eiq '(Foundation|MQTTNIO|mqtt-nio|swift-nio|Logging|swift-log|OSLog|ErrorKit|Combine|Actor|Controller|Lifecycle)'; then
     fail "forbidden manifest dependency or host boundary in AxolotyObjectMacros"
 fi

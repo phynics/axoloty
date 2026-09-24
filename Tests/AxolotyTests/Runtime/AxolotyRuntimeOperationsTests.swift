@@ -102,12 +102,13 @@ extension AxolotyRuntimeTests {
         let runtime = AxolotyRuntime(definition: definition, transport: TestTransport())
         try await runtime.start()
         let correlation = try #require(UUID16(parsing: "57575757-5757-4575-8575-575757575757"))
+        let beforeRequest = monotonicNowMS()
         #expect(await runtime.request(.discover(
             correlationID: correlation,
             payload: Array("{}".utf8),
-            timeoutMS: 1
+            timeoutMS: 60_000
         )) == .accepted)
-        #expect(await runtime.expire(nowMS: 1) == false)
+        #expect(await runtime.expire(nowMS: beforeRequest) == false)
         await runtime.stop()
     }
 

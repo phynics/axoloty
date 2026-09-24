@@ -15,12 +15,14 @@ dependency's GitHub releases page on 2026-07-15.
 | swift-log | `from: 1.14.0` | 1.14.0 | 1.14.0 | Apache-2.0 | Structured diagnostics logging for the Axoloty MCP server | current; MCP-only |
 | ErrorKit | `exact: 1.2.1` | 1.2.1 | 1.2.1 | MIT | `Throwable` error policy and user-facing error formatting (`AxolotyError`) | current; pinned exact |
 | swift-json (phynics fork) | `exact: 2.5.3` | n/a (fork) | 2.5.3 | MIT | `_JSONCore` structural parser behind `AxolotyWire` (product `IkigaJSONCore`) | pinned exact; see notes |
+| swift-syntax | `exact: 604.0.0` | 604.0.0 | 604.0.0 | Apache-2.0 | Swift macro implementation and macro-test support | pinned to Swift 6.4 |
 | swift-docc-plugin | `from: 1.5.0` | 1.5.0 | 1.5.0 | Apache-2.0 | Provides `swift package generate-documentation` used by `make docs` | current; build-tool only |
 
-The audited direct dependencies are resolved at their latest published release,
-so no version bump is required for freshness. Every dependency is licensed under
-Apache-2.0 or MIT, both permissive and compatible with the project's MIT
-license. Transitive dependencies recorded in `Package.resolved`
+The audited direct dependencies are current. SwiftSyntax is pinned to the
+release that matches the Swift 6.4 compiler. Its 6.4 macro-test support records
+failures through Swift Testing instead of routing them through XCTest. Every
+dependency is licensed under Apache-2.0 or MIT, both compatible with the
+project's MIT license. Transitive dependencies recorded in `Package.resolved`
 (swift-crypto, swift-asn1, swift-collections, swift-atomics,
 swift-nio-transport-services, swift-system, swift-docc-symbolkit) are brought
 in by the SwiftNIO family and swift-docc-plugin and inherit Apache-2.0.
@@ -105,6 +107,14 @@ generate-documentation`, invoked by `make docs`. It is not linked into the
 shipping target. Current at latest (`1.5.0` extends snippet extraction). No
 action needed.
 
+### swift-syntax (`604.0.0`, Apache-2.0)
+
+The macro implementation and test targets use SwiftSyntax. Keep its exact pin
+aligned with the compiler toolchain. SwiftSyntax 604 adds Swift Testing failure
+reporting to `SwiftSyntaxMacrosTestSupport`, which the schema macro tests use.
+SwiftSyntax 603 routed those failures through XCTest and caused every macro
+expansion assertion to fail under the Swift 6.4 test runner.
+
 ## Vendored code
 
 No vendored third-party source exists under `Source/`. The previously vendored
@@ -115,9 +125,9 @@ does not reappear in `Source/`.
 
 ## Actionable recommendations
 
-1. **No version bumps required.** The audited dependencies are resolved at
-   their latest releases. Future updates flow automatically through the
-   `from:` ranges; only ErrorKit's `exact:` pin requires an intentional bump.
+1. **Keep the SwiftSyntax pin aligned with the compiler.** The `from:` ranges
+   resolve to current releases. ErrorKit and SwiftSyntax use exact pins and
+   require intentional updates.
 
 ## Roadmap alignment
 

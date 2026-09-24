@@ -27,10 +27,10 @@ write_fixture() {
     printf '%s\n' \
         '// swift-tools-version:6.4' \
         'import PackageDescription' \
-        'let package = Package(name: "AxolotyObjectMacros", products: [.library(name: "AxolotyObjectMacros", targets: ["AxolotyObjectMacros"])], dependencies: [.package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "603.0.0")], targets: [.target(name: "AxolotyObjectMacros", dependencies: [.product(name: "SwiftSyntax", package: "swift-syntax")], path: "Sources/AxolotyObjectMacros")])' \
+        'let package = Package(name: "AxolotyObjectMacros", products: [.library(name: "AxolotyObjectMacros", targets: ["AxolotyObjectMacros"])], dependencies: [.package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "604.0.0")], targets: [.target(name: "AxolotyObjectMacros", dependencies: [.product(name: "SwiftSyntax", package: "swift-syntax")], path: "Sources/AxolotyObjectMacros")])' \
         > "$tmp/Packages/AxolotyObjectMacros/Package.swift"
     printf '%s\n' '{"version":3,"pins":[]}' > "$tmp/Packages/AxolotyObjectModel/Package.resolved"
-    printf '%s\n' '{"version":3,"pins":[{"identity":"swift-syntax","state":{"version":"603.0.0"}}]}' > "$tmp/Packages/AxolotyObjectMacros/Package.resolved"
+    printf '%s\n' '{"version":3,"pins":[{"identity":"swift-syntax","state":{"version":"604.0.0"}}]}' > "$tmp/Packages/AxolotyObjectMacros/Package.resolved"
     printf '%s\n' 'struct FixtureObjectModel {}' > "$tmp/Packages/AxolotyObjectModel/Sources/AxolotyObjectModel/Fixture.swift"
     printf '%s\n' 'struct FixtureCoatyModel {}' > "$tmp/Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels/Fixture.swift"
     printf '%s\n' 'import SwiftSyntax' > "$tmp/Packages/AxolotyObjectMacros/Sources/AxolotyObjectMacros/Fixture.swift"

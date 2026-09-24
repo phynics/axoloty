@@ -77,64 +77,71 @@ jobs:
           path: .swiftpm-cache
           key: ${{ env.SWIFT_CACHE_KEY }}
 
-      # Keep this separate from the download cache. Cache compiler intermediates
-      # and planner metadata: final binaries, fuzz output, and tooling trees
-      # made the old archive 2.69 GB and could exhaust a runner before Podman
-      # started the test container.
-      #
-      # The index store must be cached too. SwiftPM incremental builds open the
-      # prior index-store unit for a file when it is recompiled; restoring
-      # build.db/*.build/Modules/ModuleCache without index/store leaves those
-      # incremental records referencing unit files that do not exist, which
-      # fails with `Failed opening .../index/store/v5/units/...: No such file`.
+      # Keep this separate from the download cache. Cache Swift Build's
+      # intermediates, module/compilation caches, index records, and planner
+      # metadata, but not final products. The .buildSystem_debug marker keeps
+      # SwiftPM from treating a Swift Build cache as a native-build cache.
       - name: Restore Swift compiler cache
         id: swift_build_cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            .build/ci/build.db
+            .build/ci/.buildSystem_debug
+            .build/ci/artifacts
             .build/ci/checkouts
-            .build/ci/debug.yaml
-            .build/ci/plugin-tools.yaml
-            .build/ci/workspace-state.json
+            .build/ci/manifest.pif
             .build/ci/plugins
+            .build/ci/prebuilts
             .build/ci/repositories
-            .build/ci/x86_64-unknown-linux-gnu/debug/*.build
-            .build/ci/x86_64-unknown-linux-gnu/debug/description.json
-            .build/ci/x86_64-unknown-linux-gnu/debug/index/store
-            .build/ci/x86_64-unknown-linux-gnu/debug/Modules
-            .build/ci/x86_64-unknown-linux-gnu/debug/ModuleCache
-            .build/ci/tooling/build.db
-            .build/ci/tooling/debug.yaml
+            .build/ci/workspace-state.json
+            .build/ci/out/CompilationCache.noindex
+            .build/ci/out/Intermediates.noindex
+            .build/ci/out/ModuleCache.noindex
+            .build/ci/out/PCH
+            .build/ci/out/SDKExplicitPrecompiledModules
+            .build/ci/out/v5
+            .build/ci/tooling/.buildSystem_debug
+            .build/ci/tooling/artifacts
+            .build/ci/tooling/checkouts
+            .build/ci/tooling/manifest.pif
+            .build/ci/tooling/plugins
+            .build/ci/tooling/prebuilts
+            .build/ci/tooling/repositories
             .build/ci/tooling/workspace-state.json
-            .build/ci/tooling/x86_64-unknown-linux-gnu/debug/*.build
-            .build/ci/tooling/x86_64-unknown-linux-gnu/debug/description.json
-            .build/ci/tooling/x86_64-unknown-linux-gnu/debug/index/store
-            .build/ci/tooling/x86_64-unknown-linux-gnu/debug/Modules
-            .build/ci/packages/*/build.db
+            .build/ci/tooling/out/CompilationCache.noindex
+            .build/ci/tooling/out/Intermediates.noindex
+            .build/ci/tooling/out/ModuleCache.noindex
+            .build/ci/tooling/out/PCH
+            .build/ci/tooling/out/SDKExplicitPrecompiledModules
+            .build/ci/tooling/out/v5
+            .build/ci/packages/*/.buildSystem_debug
+            .build/ci/packages/*/artifacts
             .build/ci/packages/*/checkouts
-            .build/ci/packages/*/debug.yaml
-            .build/ci/packages/*/plugin-tools.yaml
-            .build/ci/packages/*/workspace-state.json
+            .build/ci/packages/*/manifest.pif
             .build/ci/packages/*/plugins
+            .build/ci/packages/*/prebuilts
             .build/ci/packages/*/repositories
-            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/*.build
-            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/description.json
-            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/index/store
-            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/Modules
-            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/ModuleCache
-            .build/ci/apps/build.db
+            .build/ci/packages/*/workspace-state.json
+            .build/ci/packages/*/out/CompilationCache.noindex
+            .build/ci/packages/*/out/Intermediates.noindex
+            .build/ci/packages/*/out/ModuleCache.noindex
+            .build/ci/packages/*/out/PCH
+            .build/ci/packages/*/out/SDKExplicitPrecompiledModules
+            .build/ci/packages/*/out/v5
+            .build/ci/apps/.buildSystem_debug
+            .build/ci/apps/artifacts
             .build/ci/apps/checkouts
-            .build/ci/apps/debug.yaml
-            .build/ci/apps/plugin-tools.yaml
-            .build/ci/apps/workspace-state.json
+            .build/ci/apps/manifest.pif
             .build/ci/apps/plugins
+            .build/ci/apps/prebuilts
             .build/ci/apps/repositories
-            .build/ci/apps/x86_64-unknown-linux-gnu/debug/*.build
-            .build/ci/apps/x86_64-unknown-linux-gnu/debug/description.json
-            .build/ci/apps/x86_64-unknown-linux-gnu/debug/index/store
-            .build/ci/apps/x86_64-unknown-linux-gnu/debug/Modules
-            .build/ci/apps/x86_64-unknown-linux-gnu/debug/ModuleCache
+            .build/ci/apps/workspace-state.json
+            .build/ci/apps/out/CompilationCache.noindex
+            .build/ci/apps/out/Intermediates.noindex
+            .build/ci/apps/out/ModuleCache.noindex
+            .build/ci/apps/out/PCH
+            .build/ci/apps/out/SDKExplicitPrecompiledModules
+            .build/ci/apps/out/v5
           key: ${{ env.SWIFT_BUILD_CACHE_KEY }}
           restore-keys: |
             ${{ env.SWIFT_BUILD_CACHE_PREFIX }}
@@ -238,49 +245,62 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            .build/ci/build.db
+            .build/ci/.buildSystem_debug
+            .build/ci/artifacts
             .build/ci/checkouts
-            .build/ci/debug.yaml
-            .build/ci/plugin-tools.yaml
-            .build/ci/workspace-state.json
+            .build/ci/manifest.pif
             .build/ci/plugins
+            .build/ci/prebuilts
             .build/ci/repositories
-            .build/ci/x86_64-unknown-linux-gnu/debug/*.build
-            .build/ci/x86_64-unknown-linux-gnu/debug/description.json
-            .build/ci/x86_64-unknown-linux-gnu/debug/index/store
-            .build/ci/x86_64-unknown-linux-gnu/debug/Modules
-            .build/ci/x86_64-unknown-linux-gnu/debug/ModuleCache
-            .build/ci/tooling/build.db
-            .build/ci/tooling/debug.yaml
+            .build/ci/workspace-state.json
+            .build/ci/out/CompilationCache.noindex
+            .build/ci/out/Intermediates.noindex
+            .build/ci/out/ModuleCache.noindex
+            .build/ci/out/PCH
+            .build/ci/out/SDKExplicitPrecompiledModules
+            .build/ci/out/v5
+            .build/ci/tooling/.buildSystem_debug
+            .build/ci/tooling/artifacts
+            .build/ci/tooling/checkouts
+            .build/ci/tooling/manifest.pif
+            .build/ci/tooling/plugins
+            .build/ci/tooling/prebuilts
+            .build/ci/tooling/repositories
             .build/ci/tooling/workspace-state.json
-            .build/ci/tooling/x86_64-unknown-linux-gnu/debug/*.build
-            .build/ci/tooling/x86_64-unknown-linux-gnu/debug/description.json
-            .build/ci/tooling/x86_64-unknown-linux-gnu/debug/index/store
-            .build/ci/tooling/x86_64-unknown-linux-gnu/debug/Modules
-            .build/ci/packages/*/build.db
+            .build/ci/tooling/out/CompilationCache.noindex
+            .build/ci/tooling/out/Intermediates.noindex
+            .build/ci/tooling/out/ModuleCache.noindex
+            .build/ci/tooling/out/PCH
+            .build/ci/tooling/out/SDKExplicitPrecompiledModules
+            .build/ci/tooling/out/v5
+            .build/ci/packages/*/.buildSystem_debug
+            .build/ci/packages/*/artifacts
             .build/ci/packages/*/checkouts
-            .build/ci/packages/*/debug.yaml
-            .build/ci/packages/*/plugin-tools.yaml
-            .build/ci/packages/*/workspace-state.json
+            .build/ci/packages/*/manifest.pif
             .build/ci/packages/*/plugins
+            .build/ci/packages/*/prebuilts
             .build/ci/packages/*/repositories
-            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/*.build
-            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/description.json
-            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/index/store
-            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/Modules
-            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/ModuleCache
-            .build/ci/apps/build.db
+            .build/ci/packages/*/workspace-state.json
+            .build/ci/packages/*/out/CompilationCache.noindex
+            .build/ci/packages/*/out/Intermediates.noindex
+            .build/ci/packages/*/out/ModuleCache.noindex
+            .build/ci/packages/*/out/PCH
+            .build/ci/packages/*/out/SDKExplicitPrecompiledModules
+            .build/ci/packages/*/out/v5
+            .build/ci/apps/.buildSystem_debug
+            .build/ci/apps/artifacts
             .build/ci/apps/checkouts
-            .build/ci/apps/debug.yaml
-            .build/ci/apps/plugin-tools.yaml
-            .build/ci/apps/workspace-state.json
+            .build/ci/apps/manifest.pif
             .build/ci/apps/plugins
+            .build/ci/apps/prebuilts
             .build/ci/apps/repositories
-            .build/ci/apps/x86_64-unknown-linux-gnu/debug/*.build
-            .build/ci/apps/x86_64-unknown-linux-gnu/debug/description.json
-            .build/ci/apps/x86_64-unknown-linux-gnu/debug/index/store
-            .build/ci/apps/x86_64-unknown-linux-gnu/debug/Modules
-            .build/ci/apps/x86_64-unknown-linux-gnu/debug/ModuleCache
+            .build/ci/apps/workspace-state.json
+            .build/ci/apps/out/CompilationCache.noindex
+            .build/ci/apps/out/Intermediates.noindex
+            .build/ci/apps/out/ModuleCache.noindex
+            .build/ci/apps/out/PCH
+            .build/ci/apps/out/SDKExplicitPrecompiledModules
+            .build/ci/apps/out/v5
           key: ${{ env.SWIFT_BUILD_CACHE_KEY }}
 
       - name: Upload verification run diagnostics

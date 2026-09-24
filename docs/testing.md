@@ -295,6 +295,17 @@ there is no module-qualified reference to convert. Trailing closures after array
 or dictionary literals (SE-0508) are permitted where they read more clearly;
 they are a style choice, not a requirement.
 
+## SwiftPM build system
+
+The repository adopts Swift Build, SwiftPM's default build system in Swift
+6.4, on the canonical Linux verification path. Its artifacts live under
+`out/` rather than SwiftPM's former target-triple directories, and its test
+runner is built per test target. CI caches compiler intermediates, module and
+compilation caches, index records, and planner metadata from that layout, but
+not final products. Tooling must ask `swift build --show-bin-path` for product
+locations instead of constructing a path from the scratch directory. The
+`--build-system native` fallback is not enabled.
+
 ## Timeouts
 
 The tier timeout is a hard upper bound for the complete tier. Individual

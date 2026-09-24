@@ -68,10 +68,11 @@ package and scratch arguments plus `swift build --show-bin-path`.
 
 The executable name depends on the build system. SwiftPM's native build system
 emits `staticRuntimeMacro.executable`, which ends in `-tool`. Swift Build, the
-default on an Apple host from Swift 6.4, emits the bare target name without
-that suffix. A consumer accepts either, preferring the contract spelling; the
-preparation report always carries the resolved absolute path, so a consumer
-that reads the report needs no name handling of its own. Load it with:
+SwiftPM default from 6.4 across supported platforms, emits the bare target name
+without that suffix. A consumer accepts either, preferring the contract
+spelling; the preparation report always carries the resolved absolute path, so
+a consumer that reads the report needs no name handling of its own. Load it
+with:
 
 ```text
 -load-plugin-executable <absolute-executable-path>#AxolotyStaticRuntimeMacrosImplementation
